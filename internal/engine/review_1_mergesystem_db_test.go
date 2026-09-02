@@ -152,7 +152,7 @@ func TestSk1MergedTypeSurvivesRestart(t *testing.T) {
 		return svc
 	}
 	svc := open()
-	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
 		t.Fatalf("repository: %v", err)
 	}
 	ds, err := svc.Dataset(ctx, "geoah")
@@ -193,11 +193,11 @@ func TestSk1RepositoryRowsAreNotRecords(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
-	alpha, err := svc.CreateRepository(ctx, "alpha")
+	alpha, err := svc.CreateRepository(ctx, "alpha", "alpha.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.CreateRepository(ctx, "beta"); err != nil {
+	if _, err := svc.CreateRepository(ctx, "beta", "beta.example.com"); err != nil {
 		t.Fatal(err)
 	}
 	ds, err := svc.Dataset(ctx, "alpha")

@@ -359,7 +359,8 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 	if label == "" {
 		label = "login"
 	}
-	_, signKey, err := s.createSeededRepository(ctx, in.Username, func(t *txn) error {
+	out.Authority = in.Authority
+	_, signKey, err := s.createSeededRepository(ctx, in.Username, in.Authority, func(t *txn) error {
 		// Fresh account: no prior credential to compare against, so no CAS.
 		if err := t.writeCredential(credentialWrite{
 			username: in.Username, passwordHash: hash,

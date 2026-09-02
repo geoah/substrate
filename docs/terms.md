@@ -14,7 +14,7 @@ nothing, there are none.
 
 | Term | What it is |
 | ---- | ---------- |
-| **repository** | Everything one user has: one changelog, the records folded out of it, and the blob store beside them. One user, one repository, no sharing. |
+| **repository** | Everything one user has: one changelog, the records folded out of it, and the blob store beside them. One user, one repository, no sharing. It owns one **authority**, chosen at registration (`ada.substrate.example` by default), the home of every kind its user declares. |
 | **record** | One typed thing. Identity is `(kind, id)` within a repository. It is the only thing the substrate stores. |
 | **kind** | What a record is, written `<authority>/<name>`; every kind carries an authority. A kind declares the properties its records may carry. |
 | **authority** | The DNS-style label that publishes a set of kinds and decides who may write their declarations. One path segment: `/api/v1/{authority}/{kind}`. |

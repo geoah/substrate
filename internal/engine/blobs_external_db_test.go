@@ -105,7 +105,7 @@ func TestBlobFSIsRepositoryScoped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
-	if _, err := svc.CreateRepository(ctx, "otheruser"); err != nil {
+	if _, err := svc.CreateRepository(ctx, "otheruser", "otheruser.example.com"); err != nil {
 		t.Fatalf("create repository B: %v", err)
 	}
 	dsB, err := svc.Dataset(ctx, "otheruser")
@@ -276,7 +276,7 @@ func TestBlobBackendSwitchIsRefused(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, dsn := newService(t)
-	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
 	ds, err := svc.Dataset(ctx, "geoah")
@@ -313,7 +313,7 @@ func TestBlobBackendSwitchBackIsRefused(t *testing.T) {
 		t.Fatalf("open the fs backend: %v", err)
 	}
 	svc, dsn := newService(t, engine.WithBlobStore(fs))
-	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
 	ds, err := svc.Dataset(ctx, "geoah")

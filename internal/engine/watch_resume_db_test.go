@@ -36,7 +36,7 @@ func TestWatchResumesGaplesslyAcrossARestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}
-	if _, err := svc1.CreateRepository(ctx, "geoah"); err != nil {
+	if _, err := svc1.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
 	ds1, err := svc1.Dataset(ctx, "geoah")

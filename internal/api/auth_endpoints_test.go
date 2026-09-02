@@ -41,6 +41,11 @@ func TestRegisterThenLogin(t *testing.T) {
 	if out.Secret == "" || out.Token.Label != "console" {
 		t.Fatalf("registration response = %+v", out)
 	}
+	// A request naming no authority gets the username under the host it
+	// reached (httptest requests carry `example.com`), and learns it here.
+	if out.Authority != "ada.example.com" {
+		t.Fatalf("registration authority = %q, want the default under the request host", out.Authority)
+	}
 	// Registration hands back the signing PIN and no private key material:
 	// `signingPublicKey` is what `repository verify --expect-public-key` wants,
 	// and the seed that mints the signatures stays sealed server-side.
@@ -65,6 +70,26 @@ func TestRegisterThenLogin(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "signingSeed") {
 		t.Fatal("login carried a signing seed; no response hands out private key material")
+	}
+}
+
+// A registration that names its own authority keeps it: the handler defaults
+// only what is absent, and the engine's answer is echoed verbatim.
+func TestRegistrationKeepsTheAuthorityItIsGiven(t *testing.T) {
+	env := newTestEnv(t)
+	rec := env.do(t, http.MethodPost, registerPath, "", map[string]any{
+		"inviteCode": testInviteCode, "username": "ada",
+		"password":   "correct-horse-battery-staple",
+		"totpSecret": "SEED", "totpCode": fakeCode("ada"),
+		"authority": " ada.example.org ",
+	})
+	wantStatus(t, rec, http.StatusCreated)
+	out := decodeJSON[registerResponse](t, rec)
+	if out.Authority != "ada.example.org" {
+		t.Fatalf("registration authority = %q, want the trimmed one the request named", out.Authority)
+	}
+	if got := env.svc.datasets["ada"].Repository().Authority; got != "ada.example.org" {
+		t.Fatalf("the repository was created under %q", got)
 	}
 }
 

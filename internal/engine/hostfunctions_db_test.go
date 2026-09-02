@@ -125,7 +125,7 @@ func TestBootUpgradeDeliversTheHostFunctions(t *testing.T) {
 
 	// The tree as it stood before host functions existed.
 	svc := openWith(preHostKindsDir(t))
-	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
 	dsOld, err := svc.Dataset(ctx, "geoah")

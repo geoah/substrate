@@ -27,7 +27,7 @@ func TestRegistrationDisclosesTheSigningPublicKey(t *testing.T) {
 	}
 	u := &authUser{username: "ada", password: testPassword, seed: enrollment.Secret}
 	res, err := svc.Register(ctx, substrate.RegisterInput{
-		Username: "ada", Password: testPassword,
+		Username: "ada", Authority: "ada" + ".example.com", Password: testPassword,
 		TOTPSecret: u.seed, TOTPCode: u.code(t),
 	})
 	if err != nil {
@@ -81,7 +81,7 @@ func TestRegistrationDisclosesTheSigningPublicKey(t *testing.T) {
 	// Registering the same username again refuses, so the response that carries
 	// the public key is a one-off per repository either way.
 	if _, err := svc.Register(ctx, substrate.RegisterInput{
-		Username: "ada", Password: testPassword,
+		Username: "ada", Authority: "ada" + ".example.com", Password: testPassword,
 		TOTPSecret: u.seed, TOTPCode: u.code(t),
 	}); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("a second registration did not refuse on the taken username: %v", err)

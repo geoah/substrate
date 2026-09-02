@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // testNow is the fixed clock every golden table renders against.
@@ -421,9 +422,18 @@ func (f *fakeSubstrate) handleRegister(w http.ResponseWriter, r *http.Request) {
 	// was supplied.
 	var recipient string
 	_ = json.Unmarshal(f.lastBody["recoveryPublicKey"], &recipient)
+	// The authority the way the server answers it: the one named, else the
+	// username under the host the request reached.
+	var authority, username string
+	_ = json.Unmarshal(f.lastBody["authority"], &authority)
+	_ = json.Unmarshal(f.lastBody["username"], &username)
+	if authority == "" {
+		authority = vocabulary.DefaultRepositoryAuthority(username, r.Host)
+	}
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"token":             substrate.TokenInfo{ID: "tk01", Label: label, Created: testNow},
 		"secret":            fakeSecret,
+		"authority":         authority,
 		"recoveryPublicKey": recipient,
 		"signingPublicKey":  fakeSigningPublicKey,
 	})

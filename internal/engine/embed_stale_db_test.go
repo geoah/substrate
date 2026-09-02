@@ -20,7 +20,7 @@ func TestEmbedQueueDoesNotPublishStaleVectors(t *testing.T) {
 	ctx := context.Background()
 	emb := newFakeEmbedServer(t)
 	svc, dsn := newService(t)
-	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
 	ds, err := svc.Dataset(ctx, "geoah")

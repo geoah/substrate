@@ -52,6 +52,9 @@ export interface RegisterInput {
   totpSecret: string
   totpCode: string
   label?: string
+  /** The DNS-style authority the repository will own, the home of every kind
+   * its user declares. Absent, the substrate names it `<username>.<its host>`. */
+  authority?: string
   /** A client-generated age recipient; absent asks the substrate to mint the
    * pair and return the identity once. */
   recoveryPublicKey?: string
@@ -64,6 +67,9 @@ export interface RegisterInput {
  * the store to. No private key material rides this response: the signing
  * seed stays sealed server-side, where the only signer keeps it. */
 export interface RegisterResult extends MintedToken {
+  /** The authority the repository was created with, echoed so a client that
+   * sent none learns the default it got. */
+  authority?: string
   recoveryKey?: string
   recoveryPublicKey?: string
   signingPublicKey?: string

@@ -27,17 +27,17 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 		return svc
 	}
 	svc := open()
-	info, err := svc.CreateRepository(ctx, "geoah")
+	info, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com")
 	if err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
 	if info.ID == "" || info.Name != "geoah" {
 		t.Fatalf("repository = %+v", info)
 	}
-	if _, err := svc.CreateRepository(ctx, "geoah"); err == nil {
+	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err == nil {
 		t.Fatal("expected a duplicate-repository error")
 	}
-	if _, err := svc.CreateRepository(ctx, "Bad Name"); err == nil {
+	if _, err := svc.CreateRepository(ctx, "Bad Name", "bad.example.com"); err == nil {
 		t.Fatal("expected a repository-name validation error")
 	}
 
@@ -157,7 +157,7 @@ func TestRepositoryDatasetIsolation(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newService(t)
 	for _, name := range []string{"alpha", "beta"} {
-		if _, err := svc.CreateRepository(ctx, name); err != nil {
+		if _, err := svc.CreateRepository(ctx, name, name+".example.com"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -196,7 +196,7 @@ func TestSchemaRowsStoreNoSourceYAML(t *testing.T) {
 		return svc
 	}
 	svc := open()
-	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
 	ds, err := svc.Dataset(ctx, "geoah")

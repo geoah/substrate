@@ -113,7 +113,7 @@ invite code is the only door and there is nothing else to record.`,
 				out := make([]map[string]any, 0, len(rows))
 				for _, r := range rows {
 					out = append(out, map[string]any{
-						"id": r.ID, "username": r.Username,
+						"id": r.ID, "username": r.Username, "authority": r.Authority,
 						"createdAt": r.CreatedAt.Format(time.RFC3339),
 					})
 				}
@@ -127,10 +127,10 @@ invite code is the only door and there is nothing else to record.`,
 				return nil
 			}
 			tw := newTable(a.out)
-			fmt.Fprintln(tw, "ID\tUSERNAME\tCREATED\tAGE")
+			fmt.Fprintln(tw, "ID\tUSERNAME\tAUTHORITY\tCREATED\tAGE")
 			for _, r := range rows {
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-					r.ID, r.Username, r.CreatedAt.Format(time.RFC3339), humanAge(a.now(), r.CreatedAt))
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
+					r.ID, r.Username, r.Authority, r.CreatedAt.Format(time.RFC3339), humanAge(a.now(), r.CreatedAt))
 			}
 			return tw.Flush()
 		},

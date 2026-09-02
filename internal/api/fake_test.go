@@ -140,11 +140,12 @@ func (s *fakeService) Dataset(_ context.Context, repository string) (substrate.D
 	return ds, nil
 }
 
-func (s *fakeService) CreateRepository(_ context.Context, name string) (substrate.RepositoryInfo, error) {
+func (s *fakeService) CreateRepository(_ context.Context, name, authority string) (substrate.RepositoryInfo, error) {
 	if s.createRepositoryErr != nil {
 		return substrate.RepositoryInfo{}, s.createRepositoryErr
 	}
 	ds := s.addRepository(name)
+	ds.repository.Authority = authority
 	return ds.Repository(), nil
 }
 
@@ -174,12 +175,18 @@ func (s *fakeService) Register(_ context.Context, in substrate.RegisterInput) (s
 	if in.TOTPCode != fakeCode(in.Username) {
 		return substrate.RegisterResult{}, fmt.Errorf("%w: bad code", substrate.ErrAuth)
 	}
-	s.addRepository(in.Username)
+	// The engine requires a concrete authority: the handler fills the default,
+	// so an empty one reaching here is the handler's bug.
+	if in.Authority == "" {
+		return substrate.RegisterResult{}, fmt.Errorf("%w: a repository needs an authority", substrate.ErrValidation)
+	}
+	ds := s.addRepository(in.Username)
+	ds.repository.Authority = in.Authority
 	s.passwords[in.Username] = in.Password
 	secret := s.token(in.Username)
 	info := s.tokens[secret].info
 	info.Label = in.Label
-	out := substrate.RegisterResult{Token: info, Secret: secret, RecoveryPublicKey: in.RecoveryPublicKey}
+	out := substrate.RegisterResult{Token: info, Secret: secret, Authority: in.Authority, RecoveryPublicKey: in.RecoveryPublicKey}
 	if out.RecoveryPublicKey == "" {
 		// The fake's stand-in for the server-minted pair: shape, not crypto.
 		out.RecoveryKey = "AGE-SECRET-KEY-FAKE"
@@ -341,7 +348,7 @@ type fakeDataset struct {
 
 func newFakeDataset(name string) *fakeDataset {
 	ds := &fakeDataset{
-		repository: substrate.RepositoryInfo{ID: "r_" + name, Name: name, State: "active"},
+		repository: substrate.RepositoryInfo{ID: "r_" + name, Name: name, Authority: name + ".example.com", State: "active"},
 		types:      testTypes(),
 		records:    map[string]*substrate.Record{},
 		meta:       map[string]map[string]substrate.PropertyMeta{},

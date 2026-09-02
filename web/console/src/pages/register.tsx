@@ -115,6 +115,16 @@ function KeepKeyField({
   )
 }
 
+/** The authority a registration gets when the reader leaves the field alone:
+ * the username as a label under the host serving this console, the way a
+ * handle sits under its server. Mirrors the server's own default so the form
+ * shows the name the repository will actually get. */
+function defaultAuthority(username: string, host: string): string {
+  const h = host.replace(/\.$/, "").toLowerCase()
+  if (!username || !h) return ""
+  return `${username}.${h}`
+}
+
 /** Registration, in two steps.
  *
  * Step one collects the invite code, username AND password, then buys a TOTP
@@ -133,6 +143,13 @@ export function RegisterPage() {
   const navigate = useNavigate()
   const [inviteCode, setInviteCode] = useState("")
   const [username, setUsername] = useState("")
+  // The authority is DERIVED from the username under this console's host
+  // until the reader edits it, at which point their spelling is what is sent.
+  // Sending the derived value rather than leaving it to the server keeps what
+  // the form shows and what the repository gets one string.
+  const [authorityEdit, setAuthorityEdit] = useState<string | null>(null)
+  const authority =
+    authorityEdit ?? defaultAuthority(username.trim(), window.location.hostname)
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
   const [code, setCode] = useState("")
@@ -166,6 +183,7 @@ export function RegisterPage() {
   const canEnroll =
     inviteCode.trim().length > 0 &&
     username.trim().length > 0 &&
+    authority.trim().length > 0 &&
     password.length >= MIN_PASSWORD &&
     passwordsMatch
 
@@ -215,6 +233,7 @@ export function RegisterPage() {
         totpSecret: enrollment?.totpSecret ?? "",
         totpCode: normalized,
         label: "console",
+        authority: authority.trim(),
       })
       // The recovery identity arrives ONCE, on this response, and no later
       // call can produce it: it lands in state BEFORE the fallible session
@@ -373,6 +392,25 @@ export function RegisterPage() {
                     />
                     <FieldDescription>
                       Lowercase letters and digits. It cannot be changed later.
+                    </FieldDescription>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="authority">Authority</FieldLabel>
+                    <Input
+                      id="authority"
+                      className="data"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={authority}
+                      onChange={(e) =>
+                        setAuthorityEdit(e.target.value.toLowerCase())
+                      }
+                      disabled={enrollment !== null}
+                    />
+                    <FieldDescription>
+                      The DNS-style name your repository owns and every kind you
+                      declare lives under. Your username under this host unless
+                      you have a domain of your own. It cannot be changed later.
                     </FieldDescription>
                   </Field>
                   <Field>

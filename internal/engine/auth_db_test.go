@@ -3,6 +3,7 @@ package engine_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -35,7 +36,7 @@ func TestRegistrationCreatesTheUserAndNothingBefore(t *testing.T) {
 		t.Fatalf("registration token = %+v, secret %q", tok, secret)
 	}
 	repos, err := svc.Repositories(ctx)
-	if err != nil || len(repos) != 1 || repos[0].Name != "geoah" {
+	if err != nil || len(repos) != 1 || repos[0].Name != "geoah" || repos[0].Authority != "geoah.example.com" {
 		t.Fatalf("repositories = %v (err %v)", repos, err)
 	}
 
@@ -47,6 +48,15 @@ func TestRegistrationCreatesTheUserAndNothingBefore(t *testing.T) {
 	}
 	if info.ID != tok.ID || ds.Repository().Name != "geoah" {
 		t.Fatalf("authenticated as %+v in %q", info, ds.Repository().Name)
+	}
+	// The repository's self-description carries the authority it owns, so a
+	// client that only speaks the record API can learn where its kinds live.
+	self, err := ds.Get(ctx, "core.substrate.reamde.dev/repository", ds.Repository().ID)
+	if err != nil {
+		t.Fatalf("the repository record: %v", err)
+	}
+	if self.Properties["authority"] != "geoah.example.com" || self.Properties["name"] != "geoah" {
+		t.Fatalf("repository record = %v", self.Properties)
 	}
 
 	// The credential is a singleton record holding REFS, never material.
@@ -86,7 +96,7 @@ func TestRegistrationCreatesTheUserAndNothingBefore(t *testing.T) {
 	}
 	dup := &authUser{username: "geoah", seed: enrollment.Secret}
 	if _, err := svc.Register(ctx, substrate.RegisterInput{
-		Username: "geoah", Password: testPassword,
+		Username: "geoah", Authority: "geoah" + ".example.com", Password: testPassword,
 		TOTPSecret: enrollment.Secret, TOTPCode: dup.code(t),
 	}); err == nil {
 		t.Fatal("a taken username must not register twice")
@@ -125,6 +135,24 @@ func TestRegistrationRefusals(t *testing.T) {
 			Username: "geoah", Password: testPassword,
 			TOTPSecret: "not base32!", TOTPCode: "123456",
 		},
+		// The authority is required, DNS-shaped, and never under the
+		// publisher's namespace (decision record 0046).
+		"no authority": {
+			Username: "geoah", Password: testPassword,
+			TOTPSecret: enrollment.Secret, TOTPCode: u.code(t),
+		},
+		"one-label authority": {
+			Username: "geoah", Password: testPassword,
+			TOTPSecret: enrollment.Secret, TOTPCode: u.code(t), Authority: "geoah",
+		},
+		"uppercase authority": {
+			Username: "geoah", Password: testPassword,
+			TOTPSecret: enrollment.Secret, TOTPCode: u.code(t), Authority: "Geoah.Example.com",
+		},
+		"publisher authority": {
+			Username: "geoah", Password: testPassword,
+			TOTPSecret: enrollment.Secret, TOTPCode: u.code(t), Authority: "geoah.substrate.reamde.dev",
+		},
 	} {
 		if _, err := svc.Register(ctx, in); err == nil {
 			t.Fatalf("%s: registration was accepted", name)
@@ -132,6 +160,32 @@ func TestRegistrationRefusals(t *testing.T) {
 		if repos, err := svc.Repositories(ctx); err != nil || len(repos) != 0 {
 			t.Fatalf("%s: a failed registration created %v", name, repos)
 		}
+	}
+}
+
+// Two repositories cannot own one authority: a kind reference names its
+// authority and nothing else, so a shared one would be two homes for one name.
+func TestRegistrationRefusesATakenAuthority(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, _ := newService(t)
+	registerUser(t, svc, "geoah")
+
+	enrollment, err := svc.BeginRegistration(ctx, "ada")
+	if err != nil {
+		t.Fatalf("begin registration: %v", err)
+	}
+	u := &authUser{username: "ada", seed: enrollment.Secret}
+	_, err = svc.Register(ctx, substrate.RegisterInput{
+		Username: "ada", Password: testPassword,
+		TOTPSecret: enrollment.Secret, TOTPCode: u.code(t),
+		Authority: "geoah.example.com",
+	})
+	if err == nil || !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "already owned") {
+		t.Fatalf("a taken authority registered: %v", err)
+	}
+	if repos, err := svc.Repositories(ctx); err != nil || len(repos) != 1 {
+		t.Fatalf("the refused registration created %v (err %v)", repos, err)
 	}
 }
 
@@ -461,7 +515,7 @@ func TestInsecureDisableTOTPTakesThePasswordAlone(t *testing.T) {
 	svc, _ := newService(t, engine.WithInsecureDisableTOTP())
 
 	res, err := svc.Register(ctx, substrate.RegisterInput{
-		Username: "geoah", Password: testPassword, Label: "cli",
+		Username: "geoah", Authority: "geoah" + ".example.com", Password: testPassword, Label: "cli",
 	})
 	if err != nil {
 		t.Fatalf("register without a second factor: %v", err)
@@ -521,7 +575,7 @@ func TestInsecureDisableTOTPKeepsASuppliedSeed(t *testing.T) {
 		t.Fatalf("mint a seed: %v", err)
 	}
 	if _, err := svc.Register(ctx, substrate.RegisterInput{
-		Username: "geoah", Password: testPassword, TOTPSecret: seed,
+		Username: "geoah", Authority: "geoah" + ".example.com", Password: testPassword, TOTPSecret: seed,
 		TOTPCode: "000000", Label: "cli",
 	}); err != nil {
 		t.Fatalf("register with a seed and a wrong code: %v", err)
@@ -540,7 +594,7 @@ func TestInsecureDisableTOTPKeepsASuppliedSeed(t *testing.T) {
 	// A garbage seed is still refused: the flag drops the VERIFICATION, not
 	// the shape of what gets sealed.
 	if _, err := svc.Register(ctx, substrate.RegisterInput{
-		Username: "other", Password: testPassword, TOTPSecret: "not base32!!",
+		Username: "other", Authority: "other" + ".example.com", Password: testPassword, TOTPSecret: "not base32!!",
 	}); err == nil {
 		t.Fatal("a malformed seed was accepted")
 	}

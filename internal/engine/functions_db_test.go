@@ -951,7 +951,7 @@ func TestTriggerDispatchIsPerRepository(t *testing.T) {
 	svc, _ := newService(t)
 	install := func(username string) (substrate.Dataset, fnOps) {
 		t.Helper()
-		if _, err := svc.CreateRepository(ctx, username); err != nil {
+		if _, err := svc.CreateRepository(ctx, username, username+".example.com"); err != nil {
 			t.Fatalf("create repository %s: %v", username, err)
 		}
 		ds, err := svc.Dataset(ctx, username)

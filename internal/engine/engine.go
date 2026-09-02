@@ -640,8 +640,8 @@ func (s *service) DatasetSeams() substrate.Dataset { return (*dataset)(nil) }
 // that row, and the repository it owns is born holding the shipped kinds.
 // Registration (auth.go) is what calls it — a repository created any other
 // way has no credential and therefore no way in.
-func (s *service) CreateRepository(ctx context.Context, name string) (substrate.RepositoryInfo, error) {
-	repo, _, err := s.createSeededRepository(ctx, name, nil)
+func (s *service) CreateRepository(ctx context.Context, name, authority string) (substrate.RepositoryInfo, error) {
+	repo, _, err := s.createSeededRepository(ctx, name, authority, nil)
 	if err != nil {
 		return substrate.RepositoryInfo{}, err
 	}
@@ -670,15 +670,23 @@ func (s *service) CreateRepository(ctx context.Context, name string) (substrate.
 // The returned key is the repository's freshly minted signing key (nil on a
 // keyless insecure creation). It exists nowhere unsealed but here:
 // registration is the one caller that hands its seed to the user, once.
-func (s *service) createSeededRepository(ctx context.Context, name string, extra func(*txn) error) (Repository, ed25519.PrivateKey, error) {
+func (s *service) createSeededRepository(ctx context.Context, name, authority string, extra func(*txn) error) (Repository, ed25519.PrivateKey, error) {
 	var zero Repository
 	if !vocabulary.ValidRepositoryName(name) {
 		return zero, nil, fmt.Errorf("%w: username %q must match [a-z][a-z0-9]{1,29}", substrate.ErrValidation, name)
 	}
-	// A cheap early no: the unique index below is the authority, and it is
+	if err := validRepositoryAuthority(authority); err != nil {
+		return zero, nil, err
+	}
+	// A cheap early no: the unique indexes below are the truth, and they are
 	// what a race actually loses on.
 	if _, err := s.repositoryByUsername(ctx, name); err == nil {
 		return zero, nil, fmt.Errorf("%w: user %q already exists", substrate.ErrValidation, name)
+	} else if !errors.Is(err, substrate.ErrNotFound) {
+		return zero, nil, err
+	}
+	if _, err := s.repositoryByAuthority(ctx, authority); err == nil {
+		return zero, nil, fmt.Errorf("%w: authority %q is already owned by another repository on this substrate", substrate.ErrValidation, authority)
 	} else if !errors.Is(err, substrate.ErrNotFound) {
 		return zero, nil, err
 	}
@@ -694,7 +702,7 @@ func (s *service) createSeededRepository(ctx context.Context, name string, extra
 	} else if !errors.Is(err, substrate.ErrNotFound) {
 		return zero, nil, err
 	}
-	repo := Repository{ID: id, Username: name}
+	repo := Repository{ID: id, Username: name, Authority: authority}
 	// The DEK is born with the repository: the seed transaction below already
 	// writes sealed material (the credential, at registration), and it seals
 	// under this key from the first byte. The control-plane row wraps it
@@ -777,7 +785,7 @@ func (s *service) createSeededRepository(ctx context.Context, name string, extra
 		if err := t.asActor(substrate.ActorSystem, func() error {
 			_, err := t.put(substrate.PutInput{
 				Kind: kindRepository, ID: repo.ID,
-				Properties: map[string]any{"name": name, "lifecycle": "active"},
+				Properties: map[string]any{"name": name, "authority": authority, "lifecycle": "active"},
 			})
 			return err
 		}); err != nil {
@@ -821,6 +829,29 @@ func (s *service) createSeededRepository(ctx context.Context, name string, extra
 	}
 	return repo, signKey, nil
 }
+
+// validRepositoryAuthority is the door a repository's own authority passes
+// through once, at creation. The grammar is the one every kind carries
+// (vocabulary.ValidRepositoryAuthority), and one namespace is refused on top:
+// `substrate.reamde.dev` and everything under it is where the shipped
+// vocabulary publishes, so a repository claiming a name there would be a
+// user-owned authority that reads as shipped.
+func validRepositoryAuthority(authority string) error {
+	switch {
+	case authority == "":
+		return fmt.Errorf("%w: a repository needs an authority: a DNS-style name such as ada.substrate.example", substrate.ErrValidation)
+	case !vocabulary.ValidRepositoryAuthority(authority):
+		return fmt.Errorf("%w: authority %q must be a lowercase DNS-style name with at least two labels (ada.substrate.example)", substrate.ErrValidation, authority)
+	case authority == publisherAuthority || strings.HasSuffix(authority, "."+publisherAuthority):
+		return fmt.Errorf("%w: authority %q is under %s, where the shipped vocabulary publishes; a repository's authority is its own name", substrate.ErrValidation, authority, publisherAuthority)
+	}
+	return nil
+}
+
+// publisherAuthority is the suffix every shipped authority carries
+// (`core.substrate.reamde.dev`, `google.bundles.substrate.reamde.dev`), and
+// so the one no repository may claim.
+const publisherAuthority = "substrate.reamde.dev"
 
 var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
 

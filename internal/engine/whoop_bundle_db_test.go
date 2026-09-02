@@ -504,7 +504,7 @@ func openWhoopOAuthDataset(t *testing.T, hc *http.Client) *dataset {
 		t.Fatalf("open engine: %v", err)
 	}
 	t.Cleanup(func() { _ = svc.Close() })
-	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
 	d, err := svc.Dataset(ctx, "geoah")

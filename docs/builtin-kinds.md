@@ -132,7 +132,7 @@ speaks:
 
 | Kind                 | What it is                                                                                                                                          |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `repository`         | The repository describing itself from the inside: its id, the owning username, and a lifecycle state.                                               |
+| `repository`         | The repository describing itself from the inside: its id, the owning username, the authority it owns, and a lifecycle state.                        |
 | `credential`         | The one record (id `self`) holding your auth material by reference into the sealed store ([users and tokens](auth.md)).                                         |
 | `recoverykey`        | The one record (id `self`) holding the age recipient the user enrolled and the repository's data-encryption key wrapped to it; only the user's age identity opens the wrap.  |
 | `token`              | One bearer credential: label, optional expiry, coarse last-used, and the hash of its secret.                                                        |

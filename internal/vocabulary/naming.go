@@ -1,6 +1,10 @@
 package vocabulary
 
-import "regexp"
+import (
+	"net"
+	"regexp"
+	"strings"
+)
 
 // Three naming rules are kept as regular-expression SOURCE, because one of them
 // has to leave the process: the guard that counts a keyed map's key-contract
@@ -86,6 +90,49 @@ func ValidID(s string) bool {
 
 // ValidRepositoryName reports whether s is a legal repository (user) name.
 func ValidRepositoryName(s string) bool { return reRepoNm.MatchString(s) }
+
+// The DNS limits an authority is held to when a repository claims one as its
+// own: 253 characters in all and 63 per label (RFC 1035 §2.3.4). A published
+// kind's authority is also held to reAuthority, which has no length rule, so
+// the limit lives here, on the one door that mints an authority from user
+// input.
+const (
+	MaxAuthorityLen      = 253
+	MaxAuthorityLabelLen = 63
+)
+
+// ValidRepositoryAuthority reports whether s may be a repository's own
+// authority: the DNS-style authority grammar every kind carries
+// (ValidAuthority), within the DNS length limits.
+func ValidRepositoryAuthority(s string) bool {
+	if len(s) > MaxAuthorityLen || !ValidAuthority(s) {
+		return false
+	}
+	for _, label := range strings.Split(s, ".") {
+		if len(label) > MaxAuthorityLabelLen {
+			return false
+		}
+	}
+	return true
+}
+
+// DefaultRepositoryAuthority is the authority a registration gets when it
+// names none: the username as a label under the host the request reached
+// (`ada.substrate.example`), the way a handle sits under its server. host is
+// the request's Host header, so a port and a trailing dot are stripped and
+// the case folded; the result is NOT validated here, because a host that is
+// no DNS name (an IPv6 literal) yields a string the caller refuses with the
+// same message as any other bad authority.
+func DefaultRepositoryAuthority(username, host string) string {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	if host == "" {
+		return ""
+	}
+	return username + "." + host
+}
 
 // MetaKeyNamespace returns the writer namespace of a label/annotation key.
 func MetaKeyNamespace(key string) string {

@@ -20,9 +20,10 @@ type Service interface {
 	Dataset(ctx context.Context, username string) (Dataset, error)
 
 	// CreateRepository creates a repository and its control-plane row for a
-	// username, seeded and open. Registration goes through it; nothing else
-	// should, since a repository with no credential has no way in.
-	CreateRepository(ctx context.Context, name string) (RepositoryInfo, error)
+	// username and the authority it owns, seeded and open. Registration goes
+	// through it; nothing else should, since a repository with no credential
+	// has no way in.
+	CreateRepository(ctx context.Context, name, authority string) (RepositoryInfo, error)
 
 	// --- the door ---
 	//

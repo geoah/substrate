@@ -9,6 +9,10 @@ data:
     store you are reading. The control-plane row is the truth and this is
     its projection inside the repository, so a client that only speaks the
     record API can still say where it is.
+  # version 16: the repository gained its `authority`, the home of the kinds
+  # its user declares (decision record 0046). Pinned above core's 15 so the
+  # bump reaches repositories that already hold the kind.
+  version: 16
   names:
     singular: repository
   # ONE record, id = the repository's opaque internal id: the store you are
@@ -21,6 +25,15 @@ data:
       type: string
       required: true
       description: the username this repository belongs to
+    # Not `required`: a repository created before the column existed holds a
+    # self-description without it, and adding `required` is a narrowing the
+    # boot upgrade refuses while that row stands.
+    authority:
+      type: string
+      description: >-
+        the DNS-style authority this repository owns, the home of every kind
+        its user declares; chosen at registration, unique on the substrate
+        and permanent
     # a repository is born `active`; suspend and resume are the operator's,
     # and `deleting` is terminal and reached by the teardown path, not by a
     # declared transition.

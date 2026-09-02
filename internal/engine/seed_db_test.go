@@ -129,7 +129,7 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, dsn := newService(t)
-	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
@@ -231,7 +231,7 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 	// --- binary N: two repositories are created and their seed is the tree.
 	svc1 := openTree(t, dsn, tree)
 	for _, name := range []string{"opened", "asleep"} {
-		if _, err := svc1.CreateRepository(ctx, name); err != nil {
+		if _, err := svc1.CreateRepository(ctx, name, name+".example.com"); err != nil {
 			t.Fatalf("create %s: %v", name, err)
 		}
 	}
@@ -450,7 +450,7 @@ func TestBootUpgradeHoldsRowsToADeclarationItKeeps(t *testing.T) {
 	tree := shippedTree(t)
 
 	svc1 := openTree(t, dsn, tree)
-	if _, err := svc1.CreateRepository(ctx, "geoah"); err != nil {
+	if _, err := svc1.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	ds1, err := svc1.Dataset(ctx, "geoah")
@@ -540,7 +540,7 @@ func TestBootUpgradeNeverDowngrades(t *testing.T) {
 	bumpGroupVersion(t, tree, "core.substrate.reamde.dev", "99")
 
 	svc1 := openTree(t, dsn, tree)
-	if _, err := svc1.CreateRepository(ctx, "geoah"); err != nil {
+	if _, err := svc1.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	ds1, err := svc1.Dataset(ctx, "geoah")

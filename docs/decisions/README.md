@@ -190,3 +190,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0043](0043-occurrences-expand-at-read-in-the-api-layer.md) | Occurrences expand at read, in the API layer, never in the engine | accepted |
 | [0044](0044-a-reference-is-the-only-link-between-records.md) | A reference is the only link between records; `data.edges` is removed | accepted |
 | [0045](0045-a-webhook-trigger-is-a-public-endpoint-with-an-optional-key.md) | A webhook trigger is a public endpoint with an optional key | accepted |
+| [0046](0046-a-repository-owns-one-authority-chosen-at-registration.md) | A repository owns one authority, chosen at registration and defaulting to the server's host | accepted |
