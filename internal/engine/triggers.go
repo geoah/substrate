@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -49,6 +50,9 @@ type trigger struct {
 	Record   *recordSource
 	Schedule *scheduleSource
 	Webhook  bool
+	// WebhookKey is the credential the public endpoint checks; empty means
+	// the endpoint is open.
+	WebhookKey string
 
 	CallableKind string
 	CallableID   string
@@ -278,15 +282,29 @@ func parseTrigger(id string, props map[string]any) (*trigger, error) {
 	case "webhook":
 		m, isMap := source["webhook"].(map[string]any)
 		if source["webhook"] != nil && !isMap {
-			return nil, fmt.Errorf("source.webhook: an empty map")
+			return nil, fmt.Errorf("source.webhook: a map, optionally carrying key")
 		}
-		if len(m) != 0 {
-			return nil, fmt.Errorf("source.webhook declares nothing yet — an empty map")
+		for k := range m {
+			if k != "key" {
+				return nil, fmt.Errorf("source.webhook: unknown key %q — key is the one field", k)
+			}
+		}
+		if raw, has := m["key"]; has && raw != nil {
+			key, ok := raw.(string)
+			if !ok || !webhookKeyPattern.MatchString(key) {
+				return nil, fmt.Errorf("source.webhook.key: 16 to 128 URL-safe characters ([A-Za-z0-9_-])")
+			}
+			t.WebhookKey = key
 		}
 		t.Webhook = true
 	}
 	return t, nil
 }
+
+// webhookKeyPattern is the key alphabet: URL-safe, so a key sits in a path
+// segment or a query value without escaping, and long enough that a key is a
+// credential rather than a guess. The kind declares the same pattern.
+var webhookKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{16,128}$`)
 
 func parseRecordSource(raw any) (*recordSource, error) {
 	m, ok := raw.(map[string]any)

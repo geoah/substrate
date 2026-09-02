@@ -524,6 +524,30 @@ GraphQL's JSON-scalar inputs decode through the same strict path.
 Status codes follow the write: a create is `201`, an update or replace is
 `200`, consistently across POST-to-collection and PUT-at-id.
 
+## Webhooks
+
+`POST /webhooks/{owner}/{trigger}` is the one route that takes a body and no
+bearer. `owner` is the repository's username and `trigger` the id of a
+`core.substrate.reamde.dev/trigger` record whose source is the `webhook` arm;
+the request becomes the delivery's envelope and the trigger's callable runs in
+the background ([functions](functions.md#the-delivery-envelope)). When the
+trigger declares `source.webhook.key`, the request carries it as a trailing
+path segment (`/webhooks/{owner}/{trigger}/{key}`), as `?key=` or as
+`Authorization: Bearer <key>`; without one the endpoint is open to whoever can
+reach the server.
+
+| Answer | When |
+| --- | --- |
+| `202 {"fire": "hook-…"}` | the delivery is on its way; the fire id names its run row |
+| `404 not_found` | no such repository, trigger or key, a disabled trigger, or a trigger of another source: one answer for all of them |
+| `413` | a non-multipart body over 1 MiB, or a multipart request over 32 MiB |
+| `431` | headers over 16 KiB |
+| `503` + `Retry-After` | more than eight deliveries in flight |
+
+A multipart/form-data request's file parts are stored in the repository's
+blob store (`PUT /api/v1/blobs`) before the fire; the callable reads their
+digests. Nothing about the callable's output reaches the sender.
+
 ## Errors
 
 Errors are one shape everywhere, with `problems` carrying the full list when a

@@ -262,6 +262,42 @@ webhook delivery has no changelog entry underneath it, so its envelope carries
 `fire` (the fire's `id` and `at`) and `repository` in place of `change` and
 `record`.
 
+A delivery through the public webhook endpoint adds `request` beside them: the
+HTTP request as it arrived, minus the bytes of any file it carried.
+
+```yaml
+fire:
+  id: hook-k7f3x2m9ab4c
+  at: 2026-09-02T12:00:00Z
+repository:
+  owner: geoah
+request:
+  method: POST
+  contentType: multipart/form-data      # the media type, parameters stripped
+  headers:                              # names lowercased; authorization and
+    x-pebble-mode: note                 # cookie never arrive
+    user-agent: Pebble/1.0
+  query: {}
+  parts:                                # multipart/form-data only
+    - name: transcription
+      value: buy milk
+    - name: audio                       # a file part: the bytes are in the
+      filename: recording.m4a           # blob store, and `blob` is the digest
+      mediaType: audio/mp4              # a blobref property takes as its value
+      size: 4194304
+      blob: blob-sha256-9f2c…
+```
+
+A request that is not multipart carries `body` instead of `parts`:
+`{text: "…"}` when the bytes are valid UTF-8, `{base64: "…"}` otherwise. Both
+are byte-exact, so a body verifies a provider's signature (GitHub's
+`X-Hub-Signature-256` over the raw JSON) by re-encoding the text and hashing
+it against a secret it reads from its bundle's configuration. The host stores
+a part in the blob store when it declares a filename or a media type outside
+`text/*`, and hands every other part inline as `value`. A body under 1 MiB
+rides inline; a multipart request may total 32 MiB. An authenticated wake
+(`POST …/trigger/{id}/wake`) carries no `request`.
+
 **One `kind`, everywhere.** A kind is named by a reference: `<authority>/<name>`
 (`tasks.substrate.reamde.dev/task`, `web.bundles.substrate.reamde.dev/page`), and
 every kind carries an authority
@@ -610,8 +646,16 @@ data:
 - A **`schedule`** arm fires the callable on an RRULE `recurrence` (with a
   `timezone` and optional `startsAt`), with no changelog entry underneath and no
   guard.
-- A **`webhook`** arm has no scan of its own; an authenticated wake delivers one
-  fire.
+- A **`webhook`** arm is a public endpoint: `POST /webhooks/{owner}/{trigger}`,
+  where `owner` is the repository's username and `trigger` the record's id,
+  delivers one fire carrying the request
+  ([the delivery envelope](#the-delivery-envelope)), and an authenticated wake
+  delivers one bare fire. The arm's one field, `key`, is optional: absent, the
+  endpoint accepts every POST that reaches the server (a substrate on a private
+  network wants exactly that); present, a request must carry it as a trailing
+  path segment, as `?key=`, or as `Authorization: Bearer`. `substratectl
+  trigger status` prints the path; the key stays on the record
+  ([decision 0045](decisions/0045-a-webhook-trigger-is-a-public-endpoint-with-an-optional-key.md)).
 
 `callable` is a [reference](data-model.md#property-types) naming the function
 or [agent](agents.md) to run: its `kind` is `core.substrate.reamde.dev/function` or
@@ -662,8 +706,13 @@ repository.
 - `POST …/triggers/{id}/run` takes `{"kind": …, "id": …}`, both required, and
   synthesizes one delivery of that record's current state (guard applied,
   source filter not, cursor untouched).
-- `POST …/triggers/{id}/wake` scans now: a webhook fires once, a record
-  trigger drains its backlog, a schedule checks its due occurrence.
+- `POST …/triggers/{id}/wake` scans now: a webhook fires once with no
+  `request`, a record trigger drains its backlog, a schedule checks its due
+  occurrence.
+- `POST /webhooks/{owner}/{trigger}` is the public door: no bearer, the
+  request in the envelope, `202` with `{"fire": id}` once the delivery is
+  handed to the background, and one `404` for every refusal (no such trigger,
+  disabled, wrong key). The callable's output is never the response.
 - `GET …/triggers/{id}/parked` lists the deliveries the trigger gave up on,
   and `POST …/triggers/{id}/parked/{failureId}/retry` re-runs one.
 

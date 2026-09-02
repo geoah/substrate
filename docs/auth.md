@@ -177,8 +177,9 @@ lock, so two requests racing on one code cannot both win.
 
 ## Rate limits
 
-Registration and the credential endpoints are the substrate's only
-unauthenticated write paths, so they share one posture. Attempts are paced to
+Registration and the credential endpoints are the substrate's unauthenticated
+write paths beside the [webhook door](api.md#webhooks), so they share one
+posture. Attempts are paced to
 one per five seconds, keyed by (client IP, username) and by username alone,
 under one global bucket 32 attempts wide, so a flood is bounded without an
 honest login waiting out somebody else's. There is no failure lockout: a

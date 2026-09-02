@@ -6,7 +6,7 @@
 // into a module with no other dependencies.
 //
 // The compiled binary is a child process speaking the runner's JSON-lines
-// protocol, version 4, on stdio (one frame per line; see functions/runner's
+// protocol, version 5, on stdio (one frame per line; see functions/runner's
 // protocol.go for the full contract): the parent sends `describe` and
 // `invoke` frames, each carrying a `reqId` the child echoes on every frame
 // it emits, alongside an explicit frame `kind`. During an invoke the body
@@ -21,6 +21,7 @@ package substratefn
 import (
 	"bufio"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -76,15 +77,64 @@ type Envelope struct {
 	// Record is the triggering record's current state; nil after a delete.
 	Record *Record `json:"record"`
 	// Fire identifies a schedule or webhook delivery.
-	Fire       *Fire      `json:"fire"`
+	Fire *Fire `json:"fire"`
+	// Request is a public webhook delivery's HTTP request; nil otherwise.
+	Request    *Request   `json:"request"`
 	Repository Repository `json:"repository"`
 }
 
-// Fire is one schedule occurrence or webhook wake: a stable id (missed
+// Fire is one schedule occurrence or webhook delivery: a stable id (missed
 // schedule ticks coalesce to one fire) and the occurrence instant.
 type Fire struct {
 	ID string `json:"id"`
 	At string `json:"at"`
+}
+
+// Request is the HTTP request a public webhook delivery arrived as; nil on
+// every other delivery, including an authenticated wake. Exactly one of Body
+// (a non-multipart request) and Parts (multipart/form-data) is set.
+type Request struct {
+	Method string `json:"method"`
+	// ContentType is the media type with its parameters stripped.
+	ContentType string `json:"contentType"`
+	// Headers are lowercased; multi-valued headers are joined with ", ", and
+	// the credential headers (authorization, cookie) never arrive.
+	Headers map[string]string   `json:"headers"`
+	Query   map[string][]string `json:"query"`
+	Body    *RequestBody        `json:"body"`
+	Parts   []RequestPart       `json:"parts"`
+}
+
+// RequestBody is a non-multipart body, byte-exact: Text when the bytes are
+// valid UTF-8, Base64 otherwise, so a provider's signature over the body
+// verifies against Bytes().
+type RequestBody struct {
+	Text   string `json:"text"`
+	Base64 string `json:"base64"`
+}
+
+// Bytes returns the body as it arrived on the wire.
+func (b *RequestBody) Bytes() ([]byte, error) {
+	if b == nil {
+		return nil, nil
+	}
+	if b.Base64 != "" {
+		return base64.StdEncoding.DecodeString(b.Base64)
+	}
+	return []byte(b.Text), nil
+}
+
+// RequestPart is one multipart part: Value for an inline field; for a file
+// part, the filename and media type the sender declared, the byte size and
+// the blob digest the host stored the bytes under (a blobref property
+// takes it as its value).
+type RequestPart struct {
+	Name      string `json:"name"`
+	Value     string `json:"value"`
+	Filename  string `json:"filename"`
+	MediaType string `json:"mediaType"`
+	Size      int64  `json:"size"`
+	Blob      string `json:"blob"`
 }
 
 // Change is the triggering changelog row, a hint: the function computes
@@ -971,7 +1021,7 @@ func Serve(h Handler) {
 func dispatch(h Handler, op string, reqID uint64, in *Input, proto *protocol) map[string]any {
 	switch op {
 	case "describe":
-		return map[string]any{"ok": true, "functions": []string{"main"}, "protocol": 4}
+		return map[string]any{"ok": true, "functions": []string{"main"}, "protocol": 5}
 	case "invoke":
 		return invoke(h, reqID, in, proto)
 	default:

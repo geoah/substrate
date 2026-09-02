@@ -158,8 +158,11 @@ var exampleFacets = map[string]bool{
 	// delegating to a sub-agent.
 	"notes.bundles.substrate.reamde.dev/notes": true,
 	// The URL harvester: triggers, a sub-agent chain, and a change request an
-	// owner accepts. A bigger read than the other two.
+	// owner accepts. A bigger read than the others.
 	"web.bundles.substrate.reamde.dev/web": true,
+	// Voice capture from the Pebble ring over a public webhook: a
+	// webhook-sourced trigger, header routing, and an agent that writes tasks.
+	"pebble.bundles.substrate.reamde.dev/pebble": true,
 }
 
 var integrationFacets = map[string]bool{

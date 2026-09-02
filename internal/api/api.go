@@ -166,6 +166,13 @@ func New(cfg Config) http.Handler {
 	// only recovery slot and hands out an offline decryption key, so a
 	// bearer token is not evidence here.
 	r.Post("/recovery/enroll", h.postRecoveryEnroll)
+	// The public webhook door (decision 0045), beside the other bearer-less
+	// routes and outside /api so no kind can shadow it. The path names the
+	// repository owner and the trigger; the trigger's own key, when it
+	// declares one, is the credential (the trailing segment, `?key=` or a
+	// bearer header). A GET falls through to the SPA like /login does.
+	r.Post("/webhooks/{owner}/{trigger}", h.postWebhook)
+	r.Post("/webhooks/{owner}/{trigger}/{key}", h.postWebhook)
 	// Tokens: minting and revoking need a token already, so these sit behind
 	// the ordinary bearer check. Revoking is a record delete either way — the
 	// same write the generic surface performs.

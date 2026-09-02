@@ -38,7 +38,11 @@ type TriggerStatus struct {
 	Lag      int64  `json:"lag,omitempty"`
 	// LastFire is the newest schedule occurrence delivered (or parked past).
 	LastFire *time.Time `json:"lastFire,omitempty"`
-	Parked   int64      `json:"parked"`
+	// WebhookPath is a webhook trigger's public endpoint, relative to the
+	// server root: "/webhooks/{owner}/{trigger}". The key, when the trigger
+	// declares one, is on the record and never here.
+	WebhookPath string `json:"webhookPath,omitempty"`
+	Parked      int64  `json:"parked"`
 	// Error names a trigger the dispatcher cannot run: an unparseable row or
 	// a callable that no longer resolves.
 	Error string `json:"error,omitempty"`

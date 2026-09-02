@@ -1,6 +1,6 @@
 # The shared runner's Python host: one long-lived child process hosting
 # every installed `runtime: python` function body. Speaks the runner's
-# JSON-lines protocol, version 4 (one frame per line; functions/runner's
+# JSON-lines protocol, version 5 (one frame per line; functions/runner's
 # protocol.go is the contract):
 #
 #   parent -> host   {"op": "register", "reqId": N, "id": <key>, "source": <inline body>}
@@ -681,7 +681,7 @@ def main():
             elif op == "deregister":
                 resp = deregister(req)
             elif op == "describe":
-                resp = {"ok": True, "functions": sorted(FUNCS), "protocol": 4}
+                resp = {"ok": True, "functions": sorted(FUNCS), "protocol": 5}
             elif op == "invoke":
                 resp = invoke(req, req_id)
             else:

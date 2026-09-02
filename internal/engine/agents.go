@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -60,7 +59,7 @@ func (ds *dataset) deliverToAgent(ctx context.Context, tr *trigger, ch substrate
 // means a concurrent dispatcher fired the occurrence too, and this one's
 // writes stand as at-least-once duplicates (function fires stay
 // effectively-once; agent fires are at-least-once by construction).
-func (ds *dataset) agentFire(ctx context.Context, tr *trigger, mode, fid string, at time.Time, lastFire *time.Time) (map[string]int, int, error) {
+func (ds *dataset) agentFire(ctx context.Context, tr *trigger, mode, fid string, at time.Time, lastFire *time.Time, envelope map[string]any) (map[string]int, int, error) {
 	// Admission under the lifecycle fence, held through the loop's writes and
 	// the fire-state CAS below (bundles.go, review #2).
 	ctx, release, err := ds.admitCallable(ctx, tr.Agent.Authority, tr.Agent.Identity())
@@ -68,7 +67,7 @@ func (ds *dataset) agentFire(ctx context.Context, tr *trigger, mode, fid string,
 		return nil, 0, err
 	}
 	defer release()
-	user, err := json.Marshal(runner.FireEnvelope(fid, at, ds.Repository().Name))
+	user, err := json.Marshal(fireEnvelope(envelope, fid, at, ds.Repository().Name))
 	if err != nil {
 		return nil, 0, err
 	}
