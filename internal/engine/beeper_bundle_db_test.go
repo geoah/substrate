@@ -203,10 +203,10 @@ func TestBeeperBundleAdmitsSchema(t *testing.T) {
 	// (ghost ids like @whatsapp_…) is a deliberate later slice, and
 	// conversationmessage's required conversation/author edges refuse a
 	// property-only mint (see the bundle README).
-	if _, ok := reg.MappingFor(beeperMessageType); ok {
+	if ms := reg.MappingsFrom(beeperMessageType); len(ms) > 0 {
 		t.Fatalf("a mapping registered from %s — this slice ships none", beeperMessageType)
 	}
-	if _, ok := reg.MappingFor(beeperRoomType); ok {
+	if ms := reg.MappingsFrom(beeperRoomType); len(ms) > 0 {
 		t.Fatalf("a mapping registered from %s — this slice ships none", beeperRoomType)
 	}
 

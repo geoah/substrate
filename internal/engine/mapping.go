@@ -22,6 +22,57 @@ import (
 
 // --- subject resolution -----------------------------------------------------
 
+// subjectPinned is THE MAPPING AS THE WRITE-TIME PIN (record 49). A mirror
+// kind leaves its `subject: true` reference unpinned, because the kind it
+// reaches belongs to whoever declares the mapping; from the write path's side
+// that slot is pinned all the same, at the mapping's `to`. Without this an
+// unpinned slot would admit a record of ANY kind, and a bare id in it would
+// have no kind to borrow.
+//
+// A TRAIT-pinned slot is pinned at the mapping's `to` as well, and the trait
+// keeps its say: resolveMapping refuses a mapping whose target does not
+// implement it, so narrowing the slot to that one kind can only narrow within
+// what the trait already admits. It is also what lets a bare id complete
+// there, which a trait pin never could.
+//
+// It returns ty untouched unless some subject slot is unpinned AND a mapping
+// fills it, and otherwise a SHALLOW COPY carrying copies of those properties:
+// the registry's kinds are shared across every clone of it (Registry.Clone),
+// so pinning one in place would leak a candidate registry's mapping into the
+// live one and outlive an uninstall.
+func (t *txn) subjectPinned(ty *vocabulary.Kind) *vocabulary.Kind {
+	var pinned map[string]*vocabulary.Property
+	for _, name := range ty.PropOrder {
+		p := ty.Props[name]
+		if !p.Subject || (p.To != "" && p.To != vocabulary.ToAny) {
+			continue
+		}
+		m, ok := t.ds.registry().MappingFor(ty.Identity, name)
+		if !ok {
+			continue
+		}
+		clone := *p
+		clone.To, clone.ToTrait = m.To, ""
+		if pinned == nil {
+			pinned = map[string]*vocabulary.Property{}
+		}
+		pinned[name] = &clone
+	}
+	if pinned == nil {
+		return ty
+	}
+	out := *ty
+	out.Props = make(map[string]*vocabulary.Property, len(ty.Props))
+	for name, p := range ty.Props {
+		if replaced, ok := pinned[name]; ok {
+			out.Props[name] = replaced
+			continue
+		}
+		out.Props[name] = p
+	}
+	return &out
+}
+
 // subjectTargetOf reads the LIVE record a source record's subject reference
 // names, "" when it names nothing. It reads the refs index rather than the
 // property, so the stored destination is one statement away.
@@ -68,19 +119,17 @@ func (t *txn) liveCanonical(stored eref) (eref, error) {
 	return canon, nil
 }
 
-// subjectOf resolves the record a source record describes, matching or minting
-// the subject an unpointed record implies and storing the pointer in line
-// (proposal §6.2: every source record has its subject from the first moment).
+// subjectOf resolves the record a source record describes THROUGH ONE MAPPING,
+// matching or minting the subject an unpointed record implies and storing the
+// pointer in line (proposal §6.2: every source record has its subject from the
+// first moment). The caller chooses the mapping, because a source kind may
+// carry one per subject property (record 49).
 //
 // It runs OUT OF BAND — inside somebody else's write, when a reference names
 // this record and the declaration pins the subject's kind (references.go
 // subjectHop) — so the source row is already stored and the pointer is written
 // through the ordinary path, as the engine's own hand.
-func (t *txn) subjectOf(src *erow, srcTy *vocabulary.Kind) (string, error) {
-	m, ok := t.ds.registry().MappingFor(srcTy.Identity)
-	if !ok {
-		return src.ID, nil
-	}
+func (t *txn) subjectOf(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mapping) (string, error) {
 	// Two writers resolving the same unpointed record must not each mint a
 	// shell: take the record's lock before looking.
 	if err := t.lockRecord(src.ref()); err != nil {
@@ -542,9 +591,13 @@ func (t *txn) recompute(target eref) error {
 // still names the loser id, and recomputing from the canonical id alone would
 // drop that source's contributions on the floor.
 func (t *txn) subjectSourcesOf(target eref, mappings []*vocabulary.Mapping) ([]mappedSource, error) {
-	byFrom := map[string]*vocabulary.Mapping{}
+	// Keyed by the pair, because one source kind may reach one target through
+	// two subject properties (record 49) and keying by kind alone would drop
+	// the second mapping's sources.
+	type slot struct{ kind, property string }
+	bySlot := map[slot]*vocabulary.Mapping{}
 	for _, m := range mappings {
-		byFrom[m.From] = m
+		bySlot[slot{m.From, m.Property}] = m
 	}
 	ids, err := t.idsOf(target)
 	if err != nil {
@@ -564,18 +617,22 @@ func (t *txn) subjectSourcesOf(target eref, mappings []*vocabulary.Mapping) ([]m
 	}
 	type candidate struct{ rel, id, typ string }
 	var found []candidate
-	seen := map[eref]bool{}
+	// Deduped per (kind, id, PROPERTY): one row reaching two targets through
+	// two subject slots is a source of both, and a key without the property
+	// would drop the second slot's contributions. The refs index holds one row
+	// per site, so the same slot cannot repeat here.
+	seen := map[slot]bool{}
 	for rows.Next() {
 		var c candidate
 		if err := rows.Scan(&c.rel, &c.id, &c.typ); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
-		m, ok := byFrom[c.typ]
-		if !ok || m.Property != c.rel || seen[eref{Kind: c.typ, ID: c.id}] {
+		site := slot{c.typ + "/" + c.id, c.rel}
+		if _, ok := bySlot[slot{c.typ, c.rel}]; !ok || seen[site] {
 			continue
 		}
-		seen[eref{Kind: c.typ, ID: c.id}] = true
+		seen[site] = true
 		found = append(found, c)
 	}
 	if err := rows.Err(); err != nil {
@@ -592,7 +649,7 @@ func (t *txn) subjectSourcesOf(target eref, mappings []*vocabulary.Mapping) ([]m
 		if r == nil {
 			continue
 		}
-		m := byFrom[c.typ]
+		m := bySlot[slot{c.typ, c.rel}]
 		actor, err := t.sourceActor(r.ref(), m)
 		if err != nil {
 			return nil, err
@@ -603,8 +660,12 @@ func (t *txn) subjectSourcesOf(target eref, mappings []*vocabulary.Mapping) ([]m
 }
 
 // sourceActor is the actor a source record's contributions are attributed
-// to: the most recent property_managers row of the record itself, falling
-// back to the first declared actor of the mapping's authority.
+// to: the most recent property_managers row of the record itself, falling back
+// to the first declared actor of the package that owns the SOURCE KIND.
+//
+// The source's package, not the mapping's: since record 49 the mapping is the
+// TARGET owner's declaration, so crediting its package would say a synced name
+// came from the repository's own vocabulary rather than from Google.
 func (t *txn) sourceActor(src eref, m *vocabulary.Mapping) (string, error) {
 	var actor string
 	err := t.row(`
@@ -616,7 +677,7 @@ func (t *txn) sourceActor(src eref, m *vocabulary.Mapping) (string, error) {
 	if actor != "" {
 		return actor, nil
 	}
-	if g, ok := t.ds.registry().PackageByName(m.Package); ok && len(g.Actors) > 0 {
+	if g, ok := t.ds.registry().PackageByName(vocabulary.KindPackage(m.From)); ok && len(g.Actors) > 0 {
 		return g.Actors[0], nil
 	}
 	return string(substrate.ActorSystem), nil

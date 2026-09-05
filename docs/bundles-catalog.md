@@ -38,9 +38,9 @@ thing, and the Records column counts them.
 
 | Bundle     | Tier     | Auth           | Kinds | Functions | Records | Agents |
 | ------------- | -------- | -------------- | ----- | --------- | ------- | ------ |
-| Google        | Provider | OAuth          | 8     | 4         | 6       | 0      |
+| Google        | Provider | OAuth          | 8     | 3         | 6       | 0      |
 | GitHub        | Provider | OAuth          | 6     | 1         | 2       | 0      |
-| Linear        | Provider | OAuth          | 5     | 2         | 3       | 0      |
+| Linear        | Provider | OAuth          | 5     | 1         | 2       | 0      |
 | WHOOP         | Provider | OAuth          | 5     | 1         | 2       | 0      |
 | Notion        | Provider | Internal token | 4     | 1         | 2       | 0      |
 | Beeper        | Provider | Pasted token   | 4     | 1         | 2       | 0      |
@@ -114,9 +114,9 @@ curl -s -X POST "$SUBSTRATE_SERVER/api/v1/substrate.reamde.dev/core/agent/noteke
 
 ## Google
 
-Package `providers.substrate.reamde.dev/google`. An OAuth provider that syncs a Google
-account's address book, mail, and calendars into the repository and folds them
-onto your people.
+Package `providers.substrate.reamde.dev/google`. An OAuth provider that mirrors
+a Google account's address book, mail, and calendars into the repository, in
+Google's own shape.
 
 Three independent streams share one account: contacts, gmail, and calendar.
 Each has its own toggle, its own scope, its own function, its own pair of
@@ -130,35 +130,32 @@ whichever stream finishes stamps them.
   mirrored contact), `emailaddress` (one address, the shared people source),
   `thread` and `message` (the Gmail mirrors), `calendar` and `event` (the
   Calendar mirrors).
-- **Functions (4)**: `contactssync` pages `people/me/connections`, emits
+- **Functions (3)**: `contactssync` pages `people/me/connections`, emits
   `contact` records, and stores the People sync token for incremental runs;
   `gmailsync` drains Gmail history (or a bounded backfill window) into thread
-  and message mirrors plus core `samples.substrate.reamde.dev/messaging/emailthread` and
-  `emailmessage` rows; `calendarsync` drains each calendar's events on that
-  calendar's own sync token into event mirrors plus core
-  `samples.substrate.reamde.dev/calendar/calendar`, `calendarevent` and
-  `calendareventseries` rows; `contactsidmigration`
-  is a bounded, trigger-less callable that re-keys older ad-hoc contact ids onto
-  the deterministic external-id scheme.
+  and message mirrors; `calendarsync` drains each calendar's events on that
+  calendar's own sync token into calendar and event mirrors. All three also
+  write an `emailaddress` mirror per address they see, and none of them writes
+  a kind this package does not own.
 - **Triggers (6)**: `google-contacts-on-connect`, `google-gmail-on-connect`,
   and `google-calendar-on-connect` fire their stream's sync the first time a
   connected account carries that toggle; `google-contacts-scheduled`,
   `google-gmail-scheduled`, and `google-calendar-scheduled` fire them hourly.
-- **Mappings (2)**: `contactperson` folds `contact` onto
-  `samples.substrate.reamde.dev/people/person`, matching on email and mapping name plus the union
-  of emails and phones; `emailaddressperson` folds `emailaddress` onto the same
-  person, matching on the address and contributing the header name plus that
-  address.
+- **Mappings**: none. `contact` and `emailaddress` each carry an empty subject
+  slot, and a mapping onto a person is the declaration of the package that owns
+  that person (record 0049): a repository declares its own, matching on the
+  email address.
 
-**Mirrors plus direct core emission.** Provider records are mirrored in
-Google's own shape, and the sync functions also emit the core row for the same
-logical object under the same derived id, with its required references filled
-in. The mappings resolve people and nothing else, because a mapping mints
-shells that point at nothing and so could never satisfy the required `thread`,
-`account` and `calendar` references the core mail and calendar kinds declare.
-The `emailaddress` record is the bridge: the core rows point at it, and the
-engine's one-hop resolution lands the stored value on the person its mapping
-resolved.
+**Mirrors only.** Every row this closure writes is one of its own kinds, and
+the `emailaddress` mirror is the bridge to the repository's own vocabulary: one
+row per address seen, keyed per account, carrying an empty subject slot.
+Declare a mapping from it onto the kind you keep people in and every address
+converges on one record of yours, an address-book contact and a mail sender
+landing on the same one. A mapping cannot mint a message or an event, which is
+why nothing here tries: a mapping's only creator is a shell mint, a bare row
+with no references, and a kind like `emailmessage` declares a required
+`thread`. A repository that wants its own message rows writes them from a
+function of its own, reading these mirrors.
 
 **All three scopes are wired.** `enabledContacts` maps to `contacts.readonly`,
 `enabledGmail` to `gmail.readonly`, `enabledCalendar` to `calendar.readonly`,
@@ -169,15 +166,15 @@ a reconnect. `gmail.readonly` is one of Google's restricted scopes: a published
 client needs CASA verification, and an External plus Testing client has its
 refresh tokens revoked after seven days.
 
-**Recurring events get a series record.** The event walk keeps Google's
-`singleEvents=true` expansion, so every `calendarevent` is a concrete
-occurrence; beside it, `calendarsync` fetches each distinct recurring master by
-id and writes a `calendareventseries` holding one RRULE line, the EXDATE and
-RDATE dates it parses out, the DTSTART anchor and the zone. The occurrences
-carry the `series` reference, and one Google moved off its slot carries
-`originalStartAt`. The account property `calendarSeries` turns all of it off
-(the flat instance view, one events.get per master saved, and the rule stored
-nowhere).
+**A recurring event carries its rule on the mirror.** The event walk keeps
+Google's `singleEvents=true` expansion, so every `event` mirror is a concrete
+occurrence carrying its master's `recurringEventId` and, where Google moved the
+occurrence off the slot the rule produced, its `originalStartTime`. The rule
+itself appears on no instance, so `calendarsync` fetches each distinct master
+by id, once per delivery, and writes its `recurrence` lines verbatim onto every
+instance of it. Deriving a series record from those is the repository's to do,
+from a kind of its own. The account's `calendarSeries` property is deprecated
+and inert.
 
 **What this slice does not do**: no attachment bytes (metadata and the
 attachment id only), no label kind (core keeps provider label ids as plain
@@ -195,9 +192,10 @@ code work you are involved in.
   review-requested on, one REST page per invocation with per-stage watermarks.
 - **Triggers (2)**: `github-on-connect` fires `githubsync` once an account is
   connected and has a feature toggle on; `github-scheduled` fires it hourly.
-- **Mapping (1)**: `userperson` folds `user` onto `samples.substrate.reamde.dev/people/person`,
-  matching on the public email and mapping name, login as the display name, and
-  the union of emails.
+- **Mappings**: none. `user` carries an empty subject slot, and a repository
+  declares what fills it (record 0049): a mapping matching on the profile's
+  public email, mapping the name, the login as the display name, and the union
+  of emails.
 
 Scopes are derived per toggle (`read:user`, and `repo` for repositories, issues
 and pull requests), and the facility reads the account's public email from
@@ -209,24 +207,21 @@ from GitHub's settings.
 ## Linear
 
 Package `providers.substrate.reamde.dev/linear`. An OAuth provider that mirrors the
-issues assigned to you and projects them onto jointly-owned tasks.
+issues assigned to you, in Linear's own shape.
 
 - **Kinds (5)**: `config`, `account`, and the mirrors `user`, `team`, `issue`.
-- **Functions (2)**: `issuessync` pages the viewer's assigned issues and
-  mirrors the viewer, teams, and issues; `taskprojection` projects one `issue`
-  onto a `samples.substrate.reamde.dev/tasks/task` row, minting open tasks and patching the
-  Linear-owned keys under a version check, moving status only on a real
-  upstream transition.
-- **Triggers (3)**: `linear-issues-on-connect` and `linear-issues-scheduled`
-  drive `issuessync` (on connect and hourly); `linear-task-projection` fires
-  `taskprojection` on every `issue` change.
-- **Mappings (2)**: `userperson` folds `user` onto `samples.substrate.reamde.dev/people/person`
-  (match on email, map names and emails), and `issueperson` resolves an issue's
-  `assignee` reference onto a person by the assignee's email.
+- **Functions (1)**: `issuessync` pages the viewer's assigned issues and
+  mirrors the viewer, teams, and issues.
+- **Triggers (2)**: `linear-issues-on-connect` and `linear-issues-scheduled`
+  drive `issuessync`, on connect and hourly.
+- **Mappings**: none. `user.person` and `issue.assignee` are empty subject
+  slots; a repository declares mappings onto its own person kind, matching on
+  the login and assignee addresses the mirrors carry (record 0049).
 
-This is the one provider that both mirrors its service and projects into the
-shipped `samples.substrate.reamde.dev/tasks` vocabulary, so a Linear issue and a
-hand-written task live side by side.
+A repository that works its Linear issues as tasks declares a mapping from
+`issue` onto its own task kind, or writes a function of its own reading these
+mirrors. The projection's tiers are what keep a hand edit either way: a mapped
+property is recomputed at the machine tier, and an owner write wins.
 
 ## WHOOP
 

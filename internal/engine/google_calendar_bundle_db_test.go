@@ -30,6 +30,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/runner/substratefn"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -78,10 +79,16 @@ func TestGoogleCalendarBundleAdmitsSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("calendar sync %s did not register: %v", googleCalendarFn, err)
 	}
+	// Mirrors only: the ceiling names this package's own kinds and nothing
+	// else (record 49).
 	mustEmit(t, fn, googleCalendarType, googleEventType, googleAddressType,
-		googleAccountType, coreCalendarType, coreEventType, coreSeriesType)
-	mustRead(t, fn, googleCalendarType, googleEventType, coreCalendarType,
-		coreEventType, coreSeriesType)
+		googleAccountType)
+	mustRead(t, fn, googleCalendarType, googleEventType)
+	for _, ident := range fn.Caps.Emit {
+		if strings.HasPrefix(ident, enginetest.SampleAuthority+"/") {
+			t.Fatalf("calendarsync may write %s, a kind this package does not own", ident)
+		}
+	}
 	if strings.Contains(fn.Source, "# /// script") {
 		t.Fatalf("calendarsync declares PEP 723 dependencies — it is meant to run on the dependency-free fast path")
 	}
@@ -407,17 +414,13 @@ func TestGoogleCalendarFakeSyncMirrors(t *testing.T) {
 	if mirror.Properties["syncToken"] != "st-1" {
 		t.Fatalf("calendar syncToken = %v, want st-1 from the final page", mirror.Properties["syncToken"])
 	}
-	core, err := ds.Get(ctx, coreCalendarType, calID)
-	if err != nil {
-		t.Fatalf("core calendar did not sync: %v", err)
+	if mirror.Properties["timezone"] != "Europe/London" {
+		t.Fatalf("calendar mirror timezone = %v", mirror.Properties["timezone"])
 	}
-	if core.Properties["name"] != "Work" || core.Properties["timezone"] != "Europe/London" {
-		t.Fatalf("core calendar = %v", core.Properties)
-	}
-	// `account` is a trait-pinned cascading reference (0034): the body writes the
-	// full account path as a property, not an edge.
-	if got := storedReferencePath(core.Properties["account"]); got != googleAccountType+"/acct-step" {
-		t.Fatalf("core calendar account = %v, want %s/acct-step", got, googleAccountType)
+	// MIRRORS ONLY (record 49): the shared calendar kinds belong to a package
+	// this one does not own, and nothing here writes one.
+	if _, err := ds.Get(ctx, coreCalendarType, calID); err == nil {
+		t.Fatalf("the sync wrote %s, a kind this package does not own", coreCalendarType)
 	}
 
 	// The freeBusyReader share carries no content: never mirrored, never
@@ -436,28 +439,28 @@ func TestGoogleCalendarFakeSyncMirrors(t *testing.T) {
 	// calendar's own (a Google event id is unique per calendar, not globally).
 	for _, id := range []string{"e1", "e2"} {
 		evtID := substratefn.ExternalID("gcal-event", calID, id)
-		if _, err := ds.Get(ctx, googleEventType, evtID); err != nil {
+		row, err := ds.Get(ctx, googleEventType, evtID)
+		if err != nil {
 			t.Fatalf("event mirror %s did not sync: %v", id, err)
 		}
-		row, err := ds.Get(ctx, coreEventType, evtID)
+		if row.Properties["calendarId"] != "primary@example.com" {
+			t.Fatalf("event mirror %s calendarId = %v", id, row.Properties["calendarId"])
+		}
+		if row.Properties["startAt"] == nil || row.Properties["endAt"] == nil {
+			t.Fatalf("event mirror %s missing its instants: %v", id, row.Properties)
+		}
+		if _, err := ds.Get(ctx, coreEventType, evtID); err == nil {
+			t.Fatalf("the sync wrote %s, a kind this package does not own", coreEventType)
+		}
+		// Every attendee address lands as an emailaddress mirror with an
+		// EMPTY subject slot: what a person is belongs to the repository.
+		addrID := substratefn.ExternalID("google-address", "acct-step", "alice@example.com")
+		addr, err := ds.Get(ctx, googleAddressType, addrID)
 		if err != nil {
-			t.Fatalf("core calendarevent %s did not sync: %v", id, err)
+			t.Fatalf("emailaddress mirror did not sync: %v", err)
 		}
-		if got := refIDs(row, "calendar"); len(got) != 1 || got[0] != calID {
-			t.Fatalf("core event %s calendar = %v", id, got)
-		}
-		if row.At == nil || row.EndsAt == nil {
-			t.Fatalf("core event %s missing the temporal(range) columns: at=%v endsAt=%v",
-				id, row.At, row.EndsAt)
-		}
-		// One hop: the body referenced the emailaddress RECORD, and reference
-		// normalization stored the person its mapping resolved.
-		organizer := refPath(row, "organizer")
-		if kind, _, _ := vocabulary.SplitRecordPath(organizer); kind != googlePersonType {
-			t.Fatalf("core event %s organizer = %q, want a %s", id, organizer, googlePersonType)
-		}
-		if got := refPaths(row, "attendees"); len(got) != 2 {
-			t.Fatalf("core event %s has %d attendees, want 2", id, len(got))
+		if got := refIDs(addr, "person"); len(got) != 0 {
+			t.Fatalf("the address row filled its subject slot with %v, and no mapping is declared", got)
 		}
 	}
 
@@ -513,152 +516,14 @@ func TestGoogleCalendarFakeSyncMirrors(t *testing.T) {
 	}
 }
 
-// TestGoogleCalendarSeriesLinksMasters drives the series slice over a walk
-// whose two pages both carry instances of ONE master: the master is fetched by
-// id (a singleEvents list never carries it) and fetched ONCE for the whole
-// delivery, its rule is stored as a single RRULE line with the prefix
-// stripped, its EXDATE and RDATE lines land as RFC3339 UTC from both
-// spellings, every instance carries the `series` edge, the MOVED instance
-// carries `originalStartAt`, and the mirror keeps Google's own
-// `originalStartTime` verbatim.
-func TestGoogleCalendarSeriesLinksMasters(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	fake, ds := newCalendarFixture(t)
-	fake.masters = map[string]any{"master-1": gcalMaster("master-1", "Weekly sync")}
-	// The slot the rule produced, which this occurrence was dragged off.
-	slot := googleAhead(96 * time.Hour)
-	fake.pages = [][]any{
-		{
-			gcalEvent("e1", "Standup", googleAhead(24*time.Hour), googleAhead(25*time.Hour)),
-			gcalRecurring("r1", "Weekly sync", googleAhead(48*time.Hour),
-				googleAhead(49*time.Hour), "master-1", ""),
-		},
-		// The moved occurrence, on the SECOND page: the master must not be
-		// fetched again for it, which is what the delivery's cache is for.
-		{gcalRecurring("r2", "Weekly sync", googleAhead(72*time.Hour),
-			googleAhead(73*time.Hour), "master-1", slot)},
-	}
-
-	s := newGoogleStepper(t, ds, googleCalendarFn, googleStepConfig(calStepProps(nil)))
-	s.drainApplying(nil)
-
-	calID := substratefn.ExternalID("gcal-calendar", "acct-step", "primary@example.com")
-	seriesID := substratefn.ExternalID("gcal-series", calID, "master-1")
-	series, err := ds.Get(ctx, coreSeriesType, seriesID)
-	if err != nil {
-		t.Fatalf("the recurring master wrote no series: %v", err)
-	}
-	// ONE rule, prefix stripped. The engine parses this property with
-	// rrule-go and refuses a multi-line block, so handing it Google's whole
-	// recurrence list would fail the page's transaction.
-	if got := series.Properties["recurrence"]; got != "FREQ=WEEKLY;BYDAY=WE" {
-		t.Fatalf("series recurrence = %v, want the RRULE line alone", got)
-	}
-	if got := series.Properties["timezone"]; got != "Europe/London" {
-		t.Fatalf("series timezone = %v", got)
-	}
-	// DTSTART, the anchor the rule counts from, resolved through the zone.
-	if got := series.Properties["startsAt"]; got != "2026-07-15T12:00:00Z" {
-		t.Fatalf("series startsAt = %v, want the master's start in UTC", got)
-	}
-	// The walk was token-less, so it stamps the span whose occurrences exist
-	// as rows; the occurrences read (decision 0043) expands the rule only
-	// outside it.
-	for _, key := range []string{"materializedFrom", "materializedUntil"} {
-		if got, _ := series.Properties[key].(string); got == "" {
-			t.Fatalf("a full walk left %s unstamped", key)
-		}
-	}
-	until, err := time.Parse(time.RFC3339, series.Properties["materializedUntil"].(string))
-	if err != nil || until.Before(time.Now().Add(360*24*time.Hour)) {
-		t.Fatalf("materializedUntil = %v, want the horizon about a year out",
-			series.Properties["materializedUntil"])
-	}
-	// `EXDATE;TZID=Europe/London:20260805T130000` is a local wall clock in a
-	// named zone; `RDATE:20260819T130000Z` is already UTC. Both land as UTC.
-	if got := gcalStrings(series.Properties["exdates"]); len(got) != 1 ||
-		got[0] != "2026-08-05T12:00:00Z" {
-		t.Fatalf("series exdates = %v, want the zoned EXDATE resolved to UTC", got)
-	}
-	if got := gcalStrings(series.Properties["rdates"]); len(got) != 1 ||
-		got[0] != "2026-08-19T13:00:00Z" {
-		t.Fatalf("series rdates = %v, want the UTC RDATE", got)
-	}
-	if got := refIDs(series, "calendar"); len(got) != 1 || got[0] != calID {
-		t.Fatalf("series calendar = %v", got)
-	}
-
-	// Every instance of the master points at it; the one-off points at
-	// nothing.
-	for _, id := range []string{"r1", "r2"} {
-		row, err := ds.Get(ctx, coreEventType, substratefn.ExternalID("gcal-event", calID, id))
-		if err != nil {
-			t.Fatalf("core event %s did not sync: %v", id, err)
-		}
-		if got := refIDs(row, "series"); len(got) != 1 || got[0] != seriesID {
-			t.Fatalf("core event %s series = %v, want %s", id, got, seriesID)
-		}
-	}
-	oneOff, err := ds.Get(ctx, coreEventType, substratefn.ExternalID("gcal-event", calID, "e1"))
-	if err != nil {
-		t.Fatalf("core event e1 did not sync: %v", err)
-	}
-	if got := refPaths(oneOff, "series"); len(got) != 0 {
-		t.Fatalf("a one-off event names a series: %v", got)
-	}
-
-	// The moved instance carries the slot in both halves: the resolved instant
-	// on core, Google's own value on the mirror.
-	r2 := substratefn.ExternalID("gcal-event", calID, "r2")
-	moved, err := ds.Get(ctx, coreEventType, r2)
-	if err != nil {
-		t.Fatalf("get the moved instance: %v", err)
-	}
-	if got, _ := moved.Properties["originalStartAt"].(string); got != slot {
-		t.Fatalf("core originalStartAt = %q, want the rule's slot %q", got, slot)
-	}
-	mirror, err := ds.Get(ctx, googleEventType, r2)
-	if err != nil {
-		t.Fatalf("get the moved instance's mirror: %v", err)
-	}
-	if got, _ := mirror.Properties["originalStartTime"].(string); got != slot {
-		t.Fatalf("mirror originalStartTime = %q, want Google's own %q", got, slot)
-	}
-	// An instance the rule placed where it sits carries no slot at all.
-	unmoved, err := ds.Get(ctx, coreEventType, substratefn.ExternalID("gcal-event", calID, "r1"))
-	if err != nil {
-		t.Fatalf("get the unmoved instance: %v", err)
-	}
-	if _, ok := unmoved.Properties["originalStartAt"]; ok {
-		t.Fatalf("an instance the rule placed carries originalStartAt: %v", unmoved.Properties)
-	}
-
-	// One events.get for the whole delivery, across both pages, and the
-	// instance list itself never stopped being a singleEvents walk.
-	var fetched int
-	for _, q := range fake.seen() {
-		if isMasterCall(q) {
-			fetched++
-			if got := masterIDOf(q); got != "master-1" {
-				t.Fatalf("an events.get asked for %q, want the master", got)
-			}
-		}
-		if isEventsCall(q) && !strings.Contains(q, "singleEvents=true") {
-			t.Fatalf("the series slice changed the instance list: %q", q)
-		}
-	}
-	if fetched != 1 {
-		t.Fatalf("the master was fetched %d times, want once per delivery: %v",
-			fetched, fake.seen())
-	}
-}
-
-// TestGoogleCalendarSeriesOffKeepsFlatView pins the switch: with
-// `calendarSeries` false the sync is the singleEvents-only view it was before
-// the series slice: no master fetched, no series record, no `series` edge and
-// no `originalStartAt`, while the mirror still keeps Google's verbatim fields.
-func TestGoogleCalendarSeriesOffKeepsFlatView(t *testing.T) {
+// TestGoogleCalendarMirrorsCarryTheRecurrence: the series slice is gone with
+// the core rows (record 49): a `calendareventseries` is the calendar
+// package's kind, and this closure writes only its own. What replaces it is
+// the mirror itself: every instance carries its master's `recurringEventId`,
+// its verbatim `recurrence` lines and Google's own `originalStartTime`, and NO
+// master is fetched at all, so a repository that wants a series record derives
+// one from the mirror.
+func TestGoogleCalendarMirrorsCarryTheRecurrence(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	fake, ds := newCalendarFixture(t)
@@ -667,32 +532,11 @@ func TestGoogleCalendarSeriesOffKeepsFlatView(t *testing.T) {
 	fake.pages = [][]any{{gcalRecurring("r2", "Weekly sync",
 		googleAhead(72*time.Hour), googleAhead(73*time.Hour), "master-1", slot)}}
 
-	props := calStepProps(map[string]any{"calendarSeries": false})
-	newGoogleStepper(t, ds, googleCalendarFn, googleStepConfig(props)).drainApplying(nil)
+	newGoogleStepper(t, ds, googleCalendarFn, googleStepConfig(calStepProps(nil))).
+		drainApplying(nil)
 
 	calID := substratefn.ExternalID("gcal-calendar", "acct-step", "primary@example.com")
-	seriesID := substratefn.ExternalID("gcal-series", calID, "master-1")
-	if _, err := ds.Get(ctx, coreSeriesType, seriesID); err == nil {
-		t.Fatal("a series record was written with series linking off")
-	}
-	for _, q := range fake.seen() {
-		if isMasterCall(q) {
-			t.Fatalf("a master was fetched with series linking off: %q", q)
-		}
-	}
-
 	r2 := substratefn.ExternalID("gcal-event", calID, "r2")
-	core, err := ds.Get(ctx, coreEventType, r2)
-	if err != nil {
-		t.Fatalf("the instance did not sync: %v", err)
-	}
-	if got := refPaths(core, "series"); len(got) != 0 {
-		t.Fatalf("an instance names a series with linking off: %v", got)
-	}
-	if _, ok := core.Properties["originalStartAt"]; ok {
-		t.Fatalf("an instance carries originalStartAt with linking off: %v", core.Properties)
-	}
-	// The mirror is verbatim provenance either way.
 	mirror, err := ds.Get(ctx, googleEventType, r2)
 	if err != nil {
 		t.Fatalf("the instance mirror did not sync: %v", err)
@@ -703,65 +547,39 @@ func TestGoogleCalendarSeriesOffKeepsFlatView(t *testing.T) {
 	if got, _ := mirror.Properties["originalStartTime"].(string); got != slot {
 		t.Fatalf("mirror originalStartTime = %q, want Google's own %q", got, slot)
 	}
-}
-
-// TestGoogleCalendarSeriesStampHoldsAcrossDelta: only a token-less walk read
-// the whole [floor, ceil) window, so only it may move the materialized span.
-// A delta walk still re-stages the series (a rule edit lands that way) and
-// must leave the stamp exactly where the full read put it: a stamp advanced
-// past the rows would silence the occurrences read where no row answers.
-func TestGoogleCalendarSeriesStampHoldsAcrossDelta(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	fake, ds := newCalendarFixture(t)
-	fake.masters = map[string]any{"master-1": gcalMaster("master-1", "Weekly sync")}
-	fake.pages = [][]any{{gcalRecurring("r1", "Weekly sync",
-		googleAhead(48*time.Hour), googleAhead(49*time.Hour), "master-1", "")}}
-
-	// Round one: the token-less full read stamps the span.
-	cfg := googleStepConfig(calStepProps(nil))
-	newGoogleStepper(t, ds, googleCalendarFn, cfg).drainApplying(nil)
-	calID := substratefn.ExternalID("gcal-calendar", "acct-step", "primary@example.com")
-	seriesID := substratefn.ExternalID("gcal-series", calID, "master-1")
-	first, err := ds.Get(ctx, coreSeriesType, seriesID)
-	if err != nil {
-		t.Fatalf("the full walk wrote no series: %v", err)
-	}
-	from0, _ := first.Properties["materializedFrom"].(string)
-	until0, _ := first.Properties["materializedUntil"].(string)
-	if from0 == "" || until0 == "" {
-		t.Fatalf("the full walk left the span unstamped: %v", first.Properties)
+	if got, _ := mirror.Properties["recurrence"].([]any); len(got) == 0 {
+		t.Fatalf("mirror recurrence = %v, want the master's verbatim lines", mirror.Properties["recurrence"])
 	}
 
-	// Round two: the held token makes this walk a delta, whose page carries a
-	// moved instance of the same master, so the series is re-staged.
-	fake.pages = [][]any{{gcalRecurring("r2", "Weekly sync",
-		googleAhead(72*time.Hour), googleAhead(73*time.Hour), "master-1",
-		googleAhead(96*time.Hour))}}
-	newGoogleStepper(t, ds, googleCalendarFn, cfg).drainApplying(nil)
-
-	second, err := ds.Get(ctx, coreSeriesType, seriesID)
-	if err != nil {
-		t.Fatalf("the delta walk lost the series: %v", err)
+	// No series row: that kind belongs to the calendar package, and this one
+	// writes only its own. The master is still fetched, because the rule
+	// lives nowhere else, ONCE for the delivery, and the instance list never
+	// being a singleEvents walk.
+	if _, err := ds.Get(ctx, coreSeriesType, substratefn.ExternalID("gcal-series", calID, "master-1")); err == nil {
+		t.Fatalf("the sync wrote %s, a kind this package does not own", coreSeriesType)
 	}
-	if got := refPaths(second, "calendar"); len(got) != 1 {
-		t.Fatalf("the delta re-stage dropped the calendar reference: %v", second.Properties)
+	var fetched int
+	for _, q := range fake.seen() {
+		if isMasterCall(q) {
+			fetched++
+			if got := masterIDOf(q); got != "master-1" {
+				t.Fatalf("an events.get asked for %q, want the master", got)
+			}
+		}
+		if isEventsCall(q) && !strings.Contains(q, "singleEvents=true") {
+			t.Fatalf("the instance list stopped being a singleEvents walk: %q", q)
+		}
 	}
-	if got, _ := second.Properties["materializedFrom"].(string); got != from0 {
-		t.Fatalf("a delta walk moved materializedFrom: %q -> %q", from0, got)
-	}
-	if got, _ := second.Properties["materializedUntil"].(string); got != until0 {
-		t.Fatalf("a delta walk moved materializedUntil: %q -> %q", until0, got)
+	if fetched != 1 {
+		t.Fatalf("the master was fetched %d times, want once per delivery: %v",
+			fetched, fake.seen())
 	}
 }
 
-// TestGoogleCalendarAccountDisconnectCascades proves the trait-pinned `account`
-// owner pointer end to end on the SHIPPED closure (0034): a real calendar sync
-// mirrors the core calendar and its events through the actual connector body,
-// and disconnecting the account collects the calendar (its `trait: accountconfig`
-// `ownerRef` reference) and the events under it (the calendar `ownerRef` edge),
-// through the ordinary GC sweep. This is the shared-kind half record 0032 could
-// not deliver.
+// TestGoogleCalendarAccountDisconnectCascades proves the cascading `account`
+// owner pointer end to end on the SHIPPED closure (0032): a real calendar sync
+// mirrors the calendar and its events through the actual connector body, and
+// disconnecting the account collects both, through the ordinary GC sweep.
 func TestGoogleCalendarAccountDisconnectCascades(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -771,16 +589,12 @@ func TestGoogleCalendarAccountDisconnectCascades(t *testing.T) {
 	s.drainApplying(nil)
 
 	calID := substratefn.ExternalID("gcal-calendar", "acct-step", "primary@example.com")
-	core, err := ds.Get(ctx, coreCalendarType, calID)
-	if err != nil {
-		t.Fatalf("core calendar did not sync: %v", err)
-	}
-	if got := storedReferencePath(core.Properties["account"]); got != googleAccountType+"/acct-step" {
-		t.Fatalf("core calendar account = %v, want the trait-pinned path", got)
+	if _, err := ds.Get(ctx, googleCalendarType, calID); err != nil {
+		t.Fatalf("calendar mirror did not sync: %v", err)
 	}
 	evtID := substratefn.ExternalID("gcal-event", calID, "e1")
-	if _, err := ds.Get(ctx, coreEventType, evtID); err != nil {
-		t.Fatalf("core calendarevent did not sync: %v", err)
+	if _, err := ds.Get(ctx, googleEventType, evtID); err != nil {
+		t.Fatalf("event mirror did not sync: %v", err)
 	}
 
 	// Disconnect the account, the owner-managed delete the console issues, and
@@ -794,18 +608,18 @@ func TestGoogleCalendarAccountDisconnectCascades(t *testing.T) {
 	if _, err := ds.Get(ctx, googleAccountType, "acct-step"); err == nil {
 		t.Fatal("the disconnected account should be hard-deleted")
 	}
-	if _, err := ds.Get(ctx, coreCalendarType, calID); err == nil {
-		t.Fatal("the calendar's trait-pinned account owner pointer should have collected it")
+	if _, err := ds.Get(ctx, googleCalendarType, calID); err == nil {
+		t.Fatal("the calendar mirror's cascading account pointer should have collected it")
 	}
-	if _, err := ds.Get(ctx, coreEventType, evtID); err == nil {
-		t.Fatal("the calendarevent under the collected calendar should be collected too")
+	if _, err := ds.Get(ctx, googleEventType, evtID); err == nil {
+		t.Fatal("the event under the collected calendar should be collected too")
 	}
 }
 
 // TestGoogleCalendarTokenGoneFullReread runs the whole incremental lifecycle:
 // a first full read stores the token, a second run goes incremental, a 410
 // drops it for a WINDOWED full re-read, a retraction entry takes both
-// halves, and the sweep that follows deletes only inside the window.
+// mirror, and the sweep that follows deletes only inside the window.
 func TestGoogleCalendarTokenGoneFullReread(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -883,16 +697,14 @@ func TestGoogleCalendarTokenGoneFullReread(t *testing.T) {
 		t.Fatalf("incremental=%v full=%v over %v", sawIncremental, sawFull, fake.seen()[before:])
 	}
 
-	// The retracted event took BOTH halves with it.
+	// The retracted event is gone.
 	e1 := substratefn.ExternalID("gcal-event", calID, "e1")
-	for _, typ := range []string{googleEventType, coreEventType} {
-		row, err := ds.Get(ctx, typ, e1)
-		if err != nil {
-			t.Fatalf("get %s %s: %v", typ, e1, err)
-		}
-		if row.DeletedAt == nil {
-			t.Fatalf("a retracted event survived as a live %s row", typ)
-		}
+	row, err := ds.Get(ctx, googleEventType, e1)
+	if err != nil {
+		t.Fatalf("get %s %s: %v", googleEventType, e1, err)
+	}
+	if row.DeletedAt == nil {
+		t.Fatalf("a retracted event survived as a live %s row", googleEventType)
 	}
 
 	// The sweep is window-scoped: the in-window stale row is gone, the
@@ -1012,9 +824,7 @@ func TestGoogleCalendarDeletedCalendarRetracted(t *testing.T) {
 
 	for _, ref := range []struct{ typ, id, what string }{
 		{googleEventType, e1, "the event mirror"},
-		{coreEventType, e1, "the core event"},
 		{googleCalendarType, calID, "the calendar mirror"},
-		{coreCalendarType, calID, "the core calendar"},
 	} {
 		row, err := ds.Get(ctx, ref.typ, ref.id)
 		if err != nil {

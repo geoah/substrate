@@ -1151,29 +1151,60 @@ func TestInstallBumpsVersion(t *testing.T) {
 	}
 }
 
-// A connector's mapping installs with its authority: MappingManifest is the
-// constructor registration calls, and Install runs the same validation the
-// loader does — the registry-wide rules included.
+// A mapping installs with the package that owns its TARGET (record 49):
+// MappingManifest is the constructor an install calls, and Install runs the
+// same validation the loader does, the registry-wide rules included.
 func TestInstalledMapping(t *testing.T) {
 	r := loadVocab(t)
-	const authority = "slack.connectors.example.com/slack"
+	const provider = "slack.connectors.example.com/slack"
+	const home = "home.example.com/home"
+
+	// The PROVIDER installs a mirror kind whose subject slot is unpinned and
+	// optional, and no mapping: the kind a slack user describes belongs to
+	// whoever installed this, and this package owns none (record 49).
+	prov, err := vocabulary.ParseManifest(vocabulary.Manifest{
+		Name: "slack", Authority: provider,
+		Manifests: []map[string]any{
+			vocabulary.PackageManifest(provider, 1),
+			vocabulary.ActorManifest(provider, "connector:slack"),
+			vocabulary.KindManifest(provider,
+				map[string]any{"singular": "slackuser", "plural": "slackusers"},
+				map[string]any{
+					"properties": map[string]any{
+						"realName": map[string]any{"type": "string"},
+						"email":    map[string]any{"type": "email"},
+						"person": map[string]any{
+							"type": "reference", "mustExist": true, "subject": true,
+						},
+					},
+				}),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Install(prov); err != nil {
+		t.Fatalf("install the provider: %v", err)
+	}
+	if ms := r.MappingsFrom(provider + "/slackuser"); len(ms) != 0 {
+		t.Fatalf("the provider installed %d mappings; it declares none", len(ms))
+	}
+
+	// The REPOSITORY's own package owns the target kind, so it is the one that
+	// may say what projects onto it. A scalar path onto a union target is a
+	// singleton contribution, which is legal.
 	mk := func(mapping map[string]any) *vocabulary.Package {
 		t.Helper()
 		g, err := vocabulary.ParseManifest(vocabulary.Manifest{
-			Name: "slack", Authority: authority,
+			Name: "home", Authority: home,
 			Manifests: []map[string]any{
-				vocabulary.PackageManifest(authority, 1),
-				vocabulary.ActorManifest(authority, "connector:slack"),
-				vocabulary.KindManifest(authority,
-					map[string]any{"singular": "slackuser", "plural": "slackusers"},
+				vocabulary.PackageManifest(home, 1),
+				vocabulary.KindManifest(home,
+					map[string]any{"singular": "contactcard", "plural": "contactcards"},
 					map[string]any{
 						"properties": map[string]any{
-							"realName": map[string]any{"type": "string"},
-							"email":    map[string]any{"type": "email"},
-							"person": map[string]any{
-								"type": "reference", "kind": "vocab.example.com/vocab/contact",
-								"required": true, "mustExist": true, "subject": true,
-							},
+							"name":   map[string]any{"type": "string"},
+							"emails": map[string]any{"type": "email", "repeated": true},
 						},
 					}),
 				mapping,
@@ -1184,9 +1215,9 @@ func TestInstalledMapping(t *testing.T) {
 		}
 		return g
 	}
-	good := vocabulary.MappingManifest(authority, "slackusercontact", map[string]any{
-		"from":     authority + "/slackuser",
-		"to":       "vocab.example.com/vocab/contact",
+	good := vocabulary.MappingManifest(home, "slackusercard", map[string]any{
+		"from":     provider + "/slackuser",
+		"to":       home + "/contactcard",
 		"property": "person",
 		"match": []any{
 			map[string]any{"from": "email", "to": "emails"},
@@ -1196,53 +1227,57 @@ func TestInstalledMapping(t *testing.T) {
 			"emails": map[string]any{"path": "email", "merge": "union"},
 		},
 	})
-	// A scalar path onto a union target is a singleton contribution — legal.
 	if err := r.Install(mk(good)); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	m, ok := r.MappingFor(authority + "/slackuser")
-	if !ok || m.To != "vocab.example.com/vocab/contact" {
+	m, ok := r.MappingFor(provider+"/slackuser", "person")
+	if !ok || m.To != home+"/contactcard" || m.Package != home {
 		t.Fatalf("installed mapping = %+v", m)
 	}
-	// Two authorities now map onto contact: both declared actors are authority
-	// actors (the machine tier's connector half, primitives §6), and
-	// MappingsTo orders by identity.
-	for _, a := range []string{"connector:google", "connector:slack"} {
-		if _, ok := r.ActorPackage(a); !ok {
-			t.Fatalf("%s is not a declared authority actor", a)
-		}
+	if tos := r.MappingsTo(home + "/contactcard"); len(tos) != 1 || tos[0] != m {
+		t.Fatalf("mappings to contactcard = %v", tos)
 	}
-	tos := r.MappingsTo("vocab.example.com/vocab/contact")
-	// Ordered by identity, which is now "<authority>/<name>": the slack
-	// authority sorts before vocab's.
-	if len(tos) != 2 || tos[0].Name != "slackusercontact" || tos[1].Name != "googlecontactcontact" {
-		names := make([]string, 0, len(tos))
-		for _, m := range tos {
-			names = append(names, m.Identity())
-		}
-		t.Fatalf("mappings to contact = %v", names)
+	// The provider's declared actor is still a package actor (the machine
+	// tier's sync half, primitives §6), even though it declares no mapping.
+	if _, ok := r.ActorPackage("connector:slack"); !ok {
+		t.Fatal("connector:slack is not a declared package actor")
 	}
 
-	// A mapping onto a source type violates the bipartite rule at INSTALL:
-	// googlecontact is already a mapping's from.
-	bad := vocabulary.MappingManifest("bad.connectors.example.com/bad", "usergooglecontact", map[string]any{
-		"from":     "bad.connectors.example.com/bad/user",
-		"to":       "vocab.example.com/vocab/googlecontact",
-		"property": "record",
-	})
+	// The registry-wide rules run at INSTALL, not only at load: a package
+	// installing two mappings of its own where one's `to` is the other's
+	// `from` breaks the bipartite rule, and nothing of it stays installed.
+	const chain = "chain.example.com/chain"
 	g, err := vocabulary.ParseManifest(vocabulary.Manifest{
-		Name: "bad", Authority: "bad.connectors.example.com/bad",
+		Name: "chain", Authority: chain,
 		Manifests: []map[string]any{
-			vocabulary.PackageManifest("bad.connectors.example.com/bad", 1),
-			vocabulary.KindManifest("bad.connectors.example.com/bad",
-				map[string]any{"singular": "user", "plural": "users"},
+			vocabulary.PackageManifest(chain, 1),
+			vocabulary.KindManifest(chain,
+				map[string]any{"singular": "leaf", "plural": "leaves"},
 				map[string]any{"properties": map[string]any{
-					"record": map[string]any{
-						"type": "reference", "kind": "vocab.example.com/vocab/googlecontact",
+					"middle": map[string]any{
+						"type": "reference", "kind": chain + "/middle",
 						"required": true, "mustExist": true, "subject": true,
 					},
 				}}),
-			bad,
+			vocabulary.KindManifest(chain,
+				map[string]any{"singular": "middle", "plural": "middles"},
+				map[string]any{"properties": map[string]any{
+					"root": map[string]any{
+						"type": "reference", "kind": chain + "/root",
+						"required": true, "mustExist": true, "subject": true,
+					},
+				}}),
+			vocabulary.KindManifest(chain,
+				map[string]any{"singular": "root", "plural": "roots"},
+				map[string]any{"properties": map[string]any{
+					"name": map[string]any{"type": "string"},
+				}}),
+			vocabulary.MappingManifest(chain, "leafmiddle", map[string]any{
+				"from": chain + "/leaf", "to": chain + "/middle", "property": "middle",
+			}),
+			vocabulary.MappingManifest(chain, "middleroot", map[string]any{
+				"from": chain + "/middle", "to": chain + "/root", "property": "root",
+			}),
 		},
 	})
 	if err != nil {
@@ -1253,8 +1288,8 @@ func TestInstalledMapping(t *testing.T) {
 	} else if !strings.Contains(err.Error(), "bipartite") {
 		t.Fatalf("error = %v", err)
 	}
-	if _, ok := r.PackageByName("bad.connectors.example.com/bad"); ok {
-		t.Fatal("a failed install must not leave the authority behind")
+	if _, ok := r.PackageByName(chain); ok {
+		t.Fatal("a failed install must not leave the package behind")
 	}
 }
 
@@ -1376,15 +1411,23 @@ func TestMappings(t *testing.T) {
 	c, _ := r.ByIdentity("vocab.example.com/vocab/contact")
 	g, _ := r.ByIdentity("vocab.example.com/vocab/googlecontact")
 
-	m, ok := r.MappingFor(g.Identity)
+	m, ok := r.MappingFor(g.Identity, "contact")
 	if !ok {
-		t.Fatal("googlecontact carries a mapping")
+		t.Fatal("googlecontact carries a mapping on `contact`")
 	}
 	if m.Identity() != "vocab.example.com/vocab/googlecontactcontact" ||
 		m.From != g.Identity || m.To != c.Identity || m.Property != "contact" {
 		t.Fatalf("mapping = %+v", m)
 	}
-	if _, ok := r.MappingFor(c.Identity); ok {
+	// The key is the pair: the same source kind on another property is
+	// another slot, and an empty one.
+	if _, ok := r.MappingFor(g.Identity, "nosuch"); ok {
+		t.Fatal("a mapping answered for a property it does not fill")
+	}
+	if ms := r.MappingsFrom(g.Identity); len(ms) != 1 || ms[0] != m {
+		t.Fatalf("mappings from googlecontact = %v", ms)
+	}
+	if ms := r.MappingsFrom(c.Identity); len(ms) != 0 {
 		t.Fatal("a subject type is never a source record")
 	}
 
@@ -1565,6 +1608,9 @@ data:
   to: x.example.com/x/person
   property: person
 `),
+		// The source's package resolves at Finalize, so a `from` naming a
+		// package this repository does not have is refused there, naming what
+		// to import.
 		"from must be full": mapping("recperson", `  from: rec
   to: x.example.com/x/person
   property: person
@@ -1612,7 +1658,9 @@ data:
 		"match from must be short-string": recperson(`  match:
     - {from: count, to: emails}
 `),
-		"two mappings for one from-type": recperson("") + `---
+		// Two mappings through ONE subject reference: the key is the (source
+		// kind, subject property) pair, and `person` is filled twice here.
+		"two mappings on one property": recperson("") + `---
 kind: substrate.reamde.dev/core/recordmapping
 metadata: {id: x.example.com/x/recperson2}
 data:
@@ -1667,6 +1715,29 @@ data:
 		})
 	}
 
+	// A `from` in another package resolves at Finalize, not at parse, so its
+	// absence is reported THERE, naming what to import. The message is the
+	// assertion: against the old rule this document failed at parse, with
+	// "data.from must be x.example.com/x/<name>".
+	t.Run("foreign from is absent", func(t *testing.T) {
+		src := mapping("recperson", `  from: y.example.com/y/thing
+  to: x.example.com/x/person
+  property: person
+`)
+		fsys := fstest.MapFS{"x.example.com/x/all.yaml": &fstest.MapFile{Data: []byte(src)}}
+		_, err := vocabulary.LoadFS(fsys)
+		if err == nil {
+			t.Fatal("expected a load error")
+		}
+		if !errors.Is(err, substrate.ErrValidation) {
+			t.Fatalf("expected ErrValidation, got %v", err)
+		}
+		want := "data.from names y.example.com/y/thing, which this repository does not have"
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error = %v, want it to carry %q", err, want)
+		}
+	})
+
 	// `projects:` is deleted from the DSL, and the error names its
 	// replacement rather than treating the key as unknown.
 	t.Run("projects is deleted", func(t *testing.T) {
@@ -1698,12 +1769,313 @@ data:
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}
-		m, ok := r.MappingFor("x.example.com/x/rec")
+		m, ok := r.MappingFor("x.example.com/x/rec", "person")
 		if !ok || len(m.Match) != 0 || len(m.Map) != 0 {
 			t.Fatalf("link-only mapping = %+v", m)
 		}
 	})
+
+	// Record 49, the accepted half: the owner of `to` declares the mapping,
+	// its `from` is a mirror kind in a package it does not own, and that
+	// mirror's subject reference is unpinned and optional. The mapping's `to`
+	// is what says which kind the slot holds.
+	t.Run("foreign from onto an owned to", func(t *testing.T) {
+		r, err := vocabulary.LoadFS(fstest.MapFS{
+			"p.example.com/p/all.yaml": &fstest.MapFile{Data: []byte(mirrorPackage)},
+			"u.example.com/u/all.yaml": &fstest.MapFile{Data: []byte(userPackage)},
+		})
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		m, ok := r.MappingFor("p.example.com/p/issue", "task")
+		if !ok {
+			t.Fatal("the user's package declares the mapping from the mirror")
+		}
+		if m.Package != "u.example.com/u" || m.To != "u.example.com/u/task" {
+			t.Fatalf("mapping = %+v", m)
+		}
+		mirror, _ := r.ByIdentity("p.example.com/p/issue")
+		if slot := mirror.Props["task"]; slot.To != "" || slot.Required {
+			t.Fatalf("the mirror's subject slot is unpinned and optional: %+v", slot)
+		}
+	})
+
+	// The refused half, twice over: OWNING `to` is what licenses a mapping, so
+	// a third package that owns neither end declares nothing, and neither does
+	// the package that owns the SOURCE. Both kinds are installed in each case
+	// and both mappings would type-check; who wrote them is the whole problem.
+	for name, closure := range map[string]string{
+		"neither end owned":        thirdPartyPackage,
+		"source owned, not target": sourceOwnerMapping,
+	} {
+		t.Run(name, func(t *testing.T) {
+			files := fstest.MapFS{
+				"p.example.com/p/all.yaml": &fstest.MapFile{Data: []byte(mirrorPackage)},
+				"u.example.com/u/all.yaml": &fstest.MapFile{Data: []byte(userPackage)},
+			}
+			if closure == sourceOwnerMapping {
+				// The source's own package declares it, in its own file.
+				files["p.example.com/p/all.yaml"] = &fstest.MapFile{
+					Data: []byte(mirrorPackage + sourceOwnerMapping),
+				}
+			} else {
+				files["z.example.com/z/all.yaml"] = &fstest.MapFile{Data: []byte(closure)}
+			}
+			_, err := vocabulary.LoadFS(files)
+			if err == nil {
+				t.Fatal("expected a load error")
+			}
+			if !errors.Is(err, substrate.ErrValidation) ||
+				!strings.Contains(err.Error(), "declared by the package that owns that kind") {
+				t.Fatalf("error = %v", err)
+			}
+		})
+	}
+
+	// One source kind reaches a given TARGET through one property. Two slots
+	// onto the same kind would give the subject hop two answers for one pin,
+	// so the pair is refused at declaration.
+	t.Run("two mappings onto one target", func(t *testing.T) {
+		_, err := vocabulary.LoadFS(fstest.MapFS{
+			"p.example.com/p/all.yaml": &fstest.MapFile{Data: []byte(mirrorPackage)},
+			"u.example.com/u/all.yaml": &fstest.MapFile{Data: []byte(userPackage + overlappingMapping)},
+		})
+		if err == nil {
+			t.Fatal("expected a load error")
+		}
+		if !errors.Is(err, substrate.ErrValidation) ||
+			!strings.Contains(err.Error(), "already reaches") {
+			t.Fatalf("error = %v", err)
+		}
+	})
+
+	// A subject slot may pin a TRAIT instead of a kind (record 0034), and the
+	// mapping's `to` then has to implement it: a mapping that would fill the
+	// slot with a kind the declaration refuses is caught on the manifest.
+	t.Run("trait pin the target does not implement", func(t *testing.T) {
+		_, err := vocabulary.LoadFS(fstest.MapFS{
+			"p.example.com/p/all.yaml": &fstest.MapFile{Data: []byte(traitPinnedMirror)},
+			"u.example.com/u/all.yaml": &fstest.MapFile{Data: []byte(userPackage + traitPinnedMapping)},
+		})
+		if err == nil {
+			t.Fatal("expected a load error")
+		}
+		if !errors.Is(err, substrate.ErrValidation) ||
+			!strings.Contains(err.Error(), "does not implement") {
+			t.Fatalf("error = %v", err)
+		}
+	})
+
+	// One mirror kind reaches TWO subject kinds through two subject
+	// references: two slots, two mappings, one source kind.
+	t.Run("two mappings onto two properties", func(t *testing.T) {
+		r, err := vocabulary.LoadFS(fstest.MapFS{
+			"p.example.com/p/all.yaml": &fstest.MapFile{Data: []byte(mirrorPackage)},
+			"u.example.com/u/all.yaml": &fstest.MapFile{Data: []byte(userPackage + userNotePackage)},
+		})
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		ms := r.MappingsFrom("p.example.com/p/issue")
+		if len(ms) != 2 {
+			t.Fatalf("mappings from the mirror = %d", len(ms))
+		}
+		task, okTask := r.MappingFor("p.example.com/p/issue", "task")
+		note, okNote := r.MappingFor("p.example.com/p/issue", "note")
+		if !okTask || !okNote || task.To != "u.example.com/u/task" || note.To != "u.example.com/u/note" {
+			t.Fatalf("the two slots resolve to %+v and %+v", task, note)
+		}
+	})
 }
+
+// A mapping's paths are type-checked against BOTH declared kinds, and the
+// source kind lives in another package now, so a change to that package has to
+// re-check the mappings other packages declare against it. Install is where
+// that happens: resolvePackage only runs for the packages a batch rebuilds, so
+// without the cross-package pass a narrowed mirror would strand a mapping and
+// nothing would say so until the next repository open.
+func TestInstallRechecksMappingsAgainstAChangedSourceKind(t *testing.T) {
+	r, err := vocabulary.LoadFS(fstest.MapFS{
+		"p.example.com/p/all.yaml": &fstest.MapFile{Data: []byte(mirrorPackage)},
+		"u.example.com/u/all.yaml": &fstest.MapFile{Data: []byte(userPackage)},
+	})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	// The provider's next release retypes `headline`, which the user's
+	// mapping reads onto a string property.
+	next, err := vocabulary.ParseManifest(vocabulary.Manifest{
+		Name: "p", Authority: "p.example.com/p",
+		Manifests: []map[string]any{
+			vocabulary.PackageManifest("p.example.com/p", 2),
+			vocabulary.KindManifest("p.example.com/p",
+				map[string]any{"singular": "issue", "plural": "issues"},
+				map[string]any{"properties": map[string]any{
+					"headline": map[string]any{"type": "int"},
+					"task":     map[string]any{"type": "reference", "mustExist": true, "subject": true},
+					"note":     map[string]any{"type": "reference", "mustExist": true, "subject": true},
+				}}),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Remove("p.example.com/p")
+	err = r.InstallAll([]*vocabulary.Package{next})
+	if err == nil {
+		t.Fatal("a retype under another package's mapping installed silently")
+	}
+	if !strings.Contains(err.Error(), "u.example.com/u/issuetask") ||
+		!strings.Contains(err.Error(), "type-checks against both ends") {
+		t.Fatalf("error = %v, want the stranded mapping named", err)
+	}
+}
+
+// mirrorPackage is a provider's package as record 49 leaves it: a mirror kind
+// with two unpinned, optional subject slots and no mapping of its own.
+const mirrorPackage = `kind: substrate.reamde.dev/core/package
+metadata: {id: p.example.com/p}
+data: {authority: p.example.com, package: p, version: 1}
+---
+kind: substrate.reamde.dev/core/kind
+metadata: {id: p.example.com/p/issue}
+data:
+  authority: p.example.com
+  package: p
+  names: {singular: issue, plural: issues}
+  properties:
+    headline: {type: string}
+    task: {type: reference, mustExist: true, subject: true}
+    note: {type: reference, mustExist: true, subject: true}
+`
+
+// userPackage is the repository's own: it owns `task` and declares the mapping
+// onto it from the mirror it does not own.
+const userPackage = `kind: substrate.reamde.dev/core/package
+metadata: {id: u.example.com/u}
+data: {authority: u.example.com, package: u, version: 1}
+---
+kind: substrate.reamde.dev/core/kind
+metadata: {id: u.example.com/u/task}
+data:
+  authority: u.example.com
+  package: u
+  names: {singular: task, plural: tasks}
+  properties:
+    name: {type: string}
+---
+kind: substrate.reamde.dev/core/recordmapping
+metadata: {id: u.example.com/u/issuetask}
+data:
+  authority: u.example.com
+  package: u
+  from: p.example.com/p/issue
+  to: u.example.com/u/task
+  property: task
+  map:
+    name: {path: headline}
+`
+
+// overlappingMapping is a second slot onto the SAME target kind: legal by the
+// (source, property) key, refused by the (source, target) one.
+const overlappingMapping = `---
+kind: substrate.reamde.dev/core/recordmapping
+metadata: {id: u.example.com/u/issuetaskagain}
+data:
+  authority: u.example.com
+  package: u
+  from: p.example.com/p/issue
+  to: u.example.com/u/task
+  property: note
+`
+
+// traitPinnedMirror pins its subject slot at a TRAIT, and `task` (the mapping
+// target in userPackage) does not implement it.
+const traitPinnedMirror = `kind: substrate.reamde.dev/core/package
+metadata: {id: p.example.com/p}
+data: {authority: p.example.com, package: p, version: 1}
+---
+kind: substrate.reamde.dev/core/trait
+metadata: {id: p.example.com/p/ranked}
+data:
+  authority: p.example.com
+  package: p
+  properties: {score: int}
+---
+kind: substrate.reamde.dev/core/kind
+metadata: {id: p.example.com/p/issue}
+data:
+  authority: p.example.com
+  package: p
+  names: {singular: issue, plural: issues}
+  properties:
+    headline: {type: string}
+    task: {type: reference, trait: ranked, mustExist: true, subject: true}
+`
+
+// traitPinnedMapping fills that trait-pinned slot with a kind that implements
+// nothing.
+const traitPinnedMapping = `---
+kind: substrate.reamde.dev/core/recordmapping
+metadata: {id: u.example.com/u/issuetasktrait}
+data:
+  authority: u.example.com
+  package: u
+  from: p.example.com/p/issue
+  to: u.example.com/u/task
+  property: task
+`
+
+// sourceOwnerMapping is the mirror package declaring a mapping onto a kind it
+// does not own: today's provider mappings, and refused since record 49.
+const sourceOwnerMapping = `---
+kind: substrate.reamde.dev/core/recordmapping
+metadata: {id: p.example.com/p/issuetask}
+data:
+  authority: p.example.com
+  package: p
+  from: p.example.com/p/issue
+  to: u.example.com/u/task
+  property: task
+`
+
+// thirdPartyPackage owns neither end and declares the mapping anyway: both
+// kinds are installed, so the only thing wrong with it is who wrote it.
+const thirdPartyPackage = `kind: substrate.reamde.dev/core/package
+metadata: {id: z.example.com/z}
+data: {authority: z.example.com, package: z, version: 1}
+---
+kind: substrate.reamde.dev/core/recordmapping
+metadata: {id: z.example.com/z/issuenote}
+data:
+  authority: z.example.com
+  package: z
+  from: p.example.com/p/issue
+  to: u.example.com/u/task
+  property: note
+`
+
+// userNotePackage is the second slot: the same mirror onto a second kind the
+// same package owns.
+const userNotePackage = `---
+kind: substrate.reamde.dev/core/kind
+metadata: {id: u.example.com/u/note}
+data:
+  authority: u.example.com
+  package: u
+  names: {singular: note, plural: notes}
+  properties:
+    name: {type: string}
+---
+kind: substrate.reamde.dev/core/recordmapping
+metadata: {id: u.example.com/u/issuenote}
+data:
+  authority: u.example.com
+  package: u
+  from: p.example.com/p/issue
+  to: u.example.com/u/note
+  property: note
+`
 
 func TestTemplates(t *testing.T) {
 	tpl, err := vocabulary.ParseTemplate("{author.name}: {snippet}")

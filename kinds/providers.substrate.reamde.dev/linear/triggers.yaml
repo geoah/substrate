@@ -1,11 +1,10 @@
 # The Linear bundle's delivery wiring — ordinary DATA records of core's
 # `trigger` kind (console-editable, changelog-visible, substratectl get/apply/
-# delete like anything else). Three triggers drive the two functions:
+# delete like anything else). Two triggers drive the one function:
 #
 #   account(connected, issues on, never synced)  --issuessync-->
 #       user + team + issue mirrors  (+ the lastSyncedAt stamp)
 #   hourly schedule  --issuessync-->  every due, connected account
-#   issue(create/update)  --taskprojection-->  the jointly-owned task
 #
 # The on-connect trigger is guarded to fire ONCE per account — its `when`
 # drops the moment the sync stamps lastSyncedAt, so the account's own
@@ -52,21 +51,3 @@ data:
         # (occurrences compute forward from startsAt).
         startsAt: "2025-01-06T09:00:00Z"
     callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/linear/issuessync
----
-# The projection: every mirror write flows into the jointly-owned task. The
-# sync's patches are no-op-suppressed, so an idle re-sync produces NO mirror
-# changelog and this never fires; when it does fire, the projection diffs the
-# Linear-owned keys and moves status only on a real upstream transition
-# (bundle.yaml, taskprojection). Deletes carry a null record and are skipped.
-kind: substrate.reamde.dev/core/trigger
-metadata:
-  id: linear-task-projection
-data:
-  properties:
-    enabled: true
-    source:
-      record:
-        kinds: [providers.substrate.reamde.dev/linear/issue]
-        ops: [create, update]
-        when: "record != null"
-    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/linear/taskprojection

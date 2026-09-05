@@ -172,6 +172,10 @@ func (t *txn) putSpec(ty *vocabulary.Kind, in substrate.PutInput) (*applySpec, e
 	if err := t.forbidSystemKind(ty, substrate.OpPut); err != nil {
 		return nil, err
 	}
+	// An unpinned subject slot is pinned at its mapping's `to` for the whole
+	// write: coercion completes a bare id from it and normalization admits
+	// that kind alone (record 49).
+	ty = t.subjectPinned(ty)
 	// Global lock order: the registry-dep/subject locks this type needs come
 	// before its own record lock.
 	if err := t.preRecordLocks(ty); err != nil {
@@ -534,6 +538,9 @@ func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error
 		return nil, err
 	}
 	ref.Kind = ty.Identity
+	// The mapping is the pin on an unpinned subject slot, on a patch exactly
+	// as on a put (record 49).
+	ty = t.subjectPinned(ty)
 	// Global lock order: take the registry-dep/subject locks this addressed
 	// record's type needs BEFORE its own record lock (the contract "lock
 	// ordering"). A trigger patch can then never hold record|id while a
@@ -703,9 +710,10 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// clears the manager row rather than claiming it, and on a
 	// mapped target it is the release trigger recompute refills from.
 	deleted := map[string]bool{}
-	// srcMapping is non-nil when this type is a source record (§6.1): its
-	// subject reference is guarded, ensured, and recomputed through.
-	srcMapping, _ := t.ds.registry().MappingFor(sp.ty.Identity)
+	// srcMappings is non-empty when this type is a source record (§6.1): each
+	// mapping's subject reference is guarded, ensured, and recomputed through.
+	// A kind carries one per subject property (record 49).
+	srcMappings := t.ds.registry().MappingsFrom(sp.ty.Identity)
 
 	// A blob-ref must name a known blob: the shape passed
 	// coercion, the existence gate is here inside the transaction.
@@ -944,13 +952,13 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// it ends pointing at one — the one it named, one a match probe found, or a
 	// shell born here. The subject is one of its own properties, so the pointer
 	// lands in the row about to be folded.
-	if srcMapping != nil {
-		set, err := t.ensureSubject(sp, row, srcMapping)
+	for _, m := range srcMappings {
+		set, err := t.ensureSubject(sp, row, m)
 		if err != nil {
 			return nil, err
 		}
 		if set {
-			accepted = append(accepted, srcMapping.Property)
+			accepted = append(accepted, m.Property)
 		}
 	}
 
@@ -1147,9 +1155,11 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// write, changed or not, so the subject converges even when this write
 	// was a no-op re-sync — and because recompute itself flows through this
 	// path, an unchanged recompute writes nothing.
-	if srcMapping != nil && !t.recomputing {
-		if err := t.recomputeSubjectOf(sp.ref(), srcMapping); err != nil {
-			return nil, err
+	if !t.recomputing {
+		for _, m := range srcMappings {
+			if err := t.recomputeSubjectOf(sp.ref(), m); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -2490,8 +2500,9 @@ func (t *txn) softDelete(ref eref) (*substrate.Record, error) {
 		}
 		// Deleting a source record changes the set its subject recomputes
 		// from — and delete does not run through apply, so the trigger has
-		// to be here, or the subject keeps values no source carries.
-		if m, ok := t.ds.registry().MappingFor(ty.Identity); ok {
+		// to be here, or the subject keeps values no source carries. One
+		// recompute per mapping the kind carries (record 49).
+		for _, m := range t.ds.registry().MappingsFrom(ty.Identity) {
 			if err := t.recomputeSubjectOf(ref, m); err != nil {
 				return nil, err
 			}
@@ -2523,7 +2534,8 @@ func (t *txn) forbidSystemKind(ty *vocabulary.Kind, op substrate.Op) error {
 //     from holding the trigger's record lock while a connector registration
 //     holds the dep lock EXCLUSIVE and reaches for that same record through its
 //     default-trigger installer;
-//   - the subject-type lock for a mapping-SOURCE write, matching the effect
+//   - the subject-type lock for a mapping-SOURCE write, one per mapping the
+//     kind carries and in ascending key order, matching the effect
 //     lock plan so a source write and an effect list never
 //     order subject|<type> and the source's record lock in opposite ways.
 //
@@ -2539,8 +2551,15 @@ func (t *txn) preRecordLocks(ty *vocabulary.Kind) error {
 	if err := t.lockRegistryDepShared(); err != nil {
 		return err
 	}
-	if m, ok := t.ds.registry().MappingFor(ty.Identity); ok {
-		if err := t.lockKey("subject|" + m.To); err != nil {
+	// One key per mapping the kind carries (record 49), taken in the same
+	// ascending order the effect lock plan takes them in.
+	var keys []string
+	for _, m := range t.ds.registry().MappingsFrom(ty.Identity) {
+		keys = append(keys, "subject|"+m.To)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if err := t.lockKey(key); err != nil {
 			return err
 		}
 	}

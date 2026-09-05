@@ -513,7 +513,7 @@ func loadMapping(t *testing.T, rules string) *vocabulary.Mapping {
 	if err != nil {
 		t.Fatalf("load:\n%s\n%v", rules, err)
 	}
-	m, ok := r.MappingFor("m.example.com/m/row")
+	m, ok := r.MappingFor("m.example.com/m/row", "person")
 	if !ok {
 		t.Fatal("m.example.com/m/row carries a mapping")
 	}

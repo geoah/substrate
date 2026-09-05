@@ -61,18 +61,6 @@ func googleManifest() enginetest.Manifest {
 						},
 					},
 				}),
-			vocabulary.MappingManifest(googlePackage, "contactperson", map[string]any{
-				"from": typeGoogleContact, "to": typePerson, "property": "person",
-				"match": []any{
-					map[string]any{"from": "emails[].value", "to": "emails"},
-					map[string]any{"from": "phones[].canonical", "to": "phones"},
-				},
-				"map": map[string]any{
-					"name":   map[string]any{"path": "name.displayName"},
-					"emails": map[string]any{"path": "emails[].value", "merge": "union"},
-					"phones": map[string]any{"path": "phones[].canonical", "merge": "union"},
-				},
-			}),
 		},
 	}
 }
@@ -101,20 +89,18 @@ func slackManifest() enginetest.Manifest {
 						},
 					},
 				}),
-			vocabulary.MappingManifest(slackPackage, "slackuserperson", map[string]any{
-				"from": typeSlackUser, "to": typePerson, "property": "person",
-				"match": []any{map[string]any{"from": "email", "to": "emails"}},
-				"map": map[string]any{
-					"name":        map[string]any{"path": "realName"},
-					"displayName": map[string]any{"path": "displayName"},
-					"emails":      map[string]any{"path": "email", "merge": "union"},
-				},
-			}),
 		},
 	}
 }
 
-// installPeopleSources installs the google and slack source types.
+// installPeopleSources installs the google and slack source types AND the
+// repository's own mappings onto person.
+//
+// The two halves are separate on purpose, because record 49 made them
+// different authors: a provider ships mirror kinds with an empty subject slot,
+// and the package that owns `person` is the only one that may say what
+// projects onto it. Both mappings are therefore declared by
+// samples.substrate.reamde.dev/people, under the owner's hand.
 func installPeopleSources(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
 	ctx := context.Background()
@@ -122,6 +108,37 @@ func installPeopleSources(t *testing.T, ds substrate.Dataset) {
 		if err := enginetest.Install(ctx, ds, substrate.ActorSystem, m); err != nil {
 			t.Fatalf("register %s: %v", m.Name, err)
 		}
+	}
+	if err := enginetest.DeclareMappings(ctx, ds, peopleMappings()...); err != nil {
+		t.Fatalf("declare the person mappings: %v", err)
+	}
+}
+
+// peopleMappings is what the repository declares: one mapping per provider
+// mirror onto the person kind its own package owns.
+func peopleMappings() []map[string]any {
+	return []map[string]any{
+		enginetest.PeopleMapping("contactperson", map[string]any{
+			"from": typeGoogleContact, "property": "person",
+			"match": []any{
+				map[string]any{"from": "emails[].value", "to": "emails"},
+				map[string]any{"from": "phones[].canonical", "to": "phones"},
+			},
+			"map": map[string]any{
+				"name":   map[string]any{"path": "name.displayName"},
+				"emails": map[string]any{"path": "emails[].value", "merge": "union"},
+				"phones": map[string]any{"path": "phones[].canonical", "merge": "union"},
+			},
+		}),
+		enginetest.PeopleMapping("slackuserperson", map[string]any{
+			"from": typeSlackUser, "property": "person",
+			"match": []any{map[string]any{"from": "email", "to": "emails"}},
+			"map": map[string]any{
+				"name":        map[string]any{"path": "realName"},
+				"displayName": map[string]any{"path": "displayName"},
+				"emails":      map[string]any{"path": "email", "merge": "union"},
+			},
+		}),
 	}
 }
 
@@ -651,28 +668,33 @@ func TestStatesAreNeverRecomputed(t *testing.T) {
 						},
 					},
 				}),
-			vocabulary.MappingManifest(pkg, "promoterrowperson", map[string]any{
-				"from": pkg + "/promoterrow", "to": typePerson, "property": "person",
-				"map": map[string]any{
-					"name":       map[string]any{"path": "name"},
-					"prominence": map[string]any{"path": "prominence"},
-				},
-			}),
 		},
 	}
-	err := enginetest.Install(ctx, ds, substrate.ActorSystem, m)
+	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, m); err != nil {
+		t.Fatalf("register the source kind: %v", err)
+	}
+	// The mapping is the people package's to declare (record 49), and this one
+	// tries to write a state.
+	promote := enginetest.PeopleMapping("promoterrowperson", map[string]any{
+		"from": pkg + "/promoterrow", "property": "person",
+		"map": map[string]any{
+			"name":       map[string]any{"path": "name"},
+			"prominence": map[string]any{"path": "prominence"},
+		},
+	})
+	err := enginetest.DeclareMappings(ctx, ds, promote)
 	if err == nil {
 		t.Fatal("a mapping targeting a state must not register")
 	}
 	wantErr(t, err, substrate.ErrValidation, "state as a map target")
 
-	// Without that rule the pkg installs, and a sync leaves the state
+	// Without that rule the mapping installs, and a sync leaves the state
 	// exactly where the declaration puts it.
-	data, _ := m.Manifests[3]["data"].(map[string]any)
+	data, _ := promote["data"].(map[string]any)
 	mp, _ := data["map"].(map[string]any)
 	delete(mp, "prominence")
-	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, m); err != nil {
-		t.Fatalf("register: %v", err)
+	if err := enginetest.DeclareMappings(ctx, ds, promote); err != nil {
+		t.Fatalf("declare the mapping: %v", err)
 	}
 	row := mustPut(t, ds, substrate.Actor("connector:promoter"), substrate.PutInput{
 		Kind: pkg + "/promoterrow", ID: "p1",

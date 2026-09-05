@@ -57,17 +57,15 @@ import (
 )
 
 const (
-	linearExampleDir   = "../../kinds/providers.substrate.reamde.dev/linear"
-	linearPackage      = "providers.substrate.reamde.dev/linear"
-	linearConfigType   = linearPackage + "/config"
-	linearAccountType  = linearPackage + "/account"
-	linearUserType     = linearPackage + "/user"
-	linearTeamType     = linearPackage + "/team"
-	linearIssueType    = linearPackage + "/issue"
-	linearSyncFn       = linearPackage + "/issuessync"
-	linearProjFn       = linearPackage + "/taskprojection"
-	linearUserMapping  = linearPackage + "/userperson"
-	linearIssueMapping = linearPackage + "/issueperson"
+	linearExampleDir  = "../../kinds/providers.substrate.reamde.dev/linear"
+	linearPackage     = "providers.substrate.reamde.dev/linear"
+	linearConfigType  = linearPackage + "/config"
+	linearAccountType = linearPackage + "/account"
+	linearUserType    = linearPackage + "/user"
+	linearTeamType    = linearPackage + "/team"
+	linearIssueType   = linearPackage + "/issue"
+	linearSyncFn      = linearPackage + "/issuessync"
+	linearProjFn      = linearPackage + "/taskprojection"
 
 	linearPersonType = "samples.substrate.reamde.dev/people/person"
 	linearTaskType   = "samples.substrate.reamde.dev/tasks/task"
@@ -163,48 +161,52 @@ func TestLinearBundleAdmitsSchema(t *testing.T) {
 		t.Fatalf("account type implements oauth2 — client creds belong on the config, not the account")
 	}
 
-	// The mirror types carry their subject edges — required, single, at
-	// person — and the issue's team edge points at the team mirror.
+	// The mirror types carry their subject SLOTS: single, unpinned and
+	// optional, because the kind they reach is the repository's to choose
+	// (record 49). The issue's team edge is an ordinary pinned reference.
 	user, ok := reg.ByIdentity(linearUserType)
 	if !ok {
 		t.Fatalf("mirror type %s missing", linearUserType)
 	}
-	if ed, ok := user.Prop("person"); !ok || ed.To != linearPersonType || !ed.Required || ed.Repeated {
-		t.Fatalf("user person edge shape wrong: %+v (ok=%v)", ed, ok)
+	if ed, ok := user.Prop("person"); !ok || ed.To != "" || ed.Required || ed.Repeated || !ed.Subject {
+		t.Fatalf("user person slot shape wrong: %+v (ok=%v)", ed, ok)
 	}
 	issue, ok := reg.ByIdentity(linearIssueType)
 	if !ok {
 		t.Fatalf("mirror type %s missing", linearIssueType)
 	}
-	if ed, ok := issue.Prop("assignee"); !ok || ed.To != linearPersonType || !ed.Required || ed.Repeated {
-		t.Fatalf("issue assignee edge shape wrong: %+v (ok=%v)", ed, ok)
+	if ed, ok := issue.Prop("assignee"); !ok || ed.To != "" || ed.Required || ed.Repeated || !ed.Subject {
+		t.Fatalf("issue assignee slot shape wrong: %+v (ok=%v)", ed, ok)
 	}
 	if ed, ok := issue.Prop("team"); !ok || ed.To != linearTeamType || ed.Required {
 		t.Fatalf("issue team edge shape wrong: %+v (ok=%v)", ed, ok)
 	}
 
-	// Both mappings resolved: user→person on the person edge, issue→person on
-	// the assignee edge, each probing an email.
-	um, ok := reg.MappingFor(linearUserType)
-	if !ok {
-		t.Fatalf("no mapping registered from %s", linearUserType)
+	// The closure ships NO mapping: this package owns no person.
+	if ms := reg.MappingsFrom(linearUserType); len(ms) != 0 {
+		t.Fatalf("the linear closure ships %d mappings from user; a provider ships none", len(ms))
 	}
-	if um.To != linearPersonType || um.Property != "person" || len(um.Match) == 0 {
-		t.Fatalf("user mapping resolves wrong: to=%q edge=%q match=%d", um.To, um.Property, len(um.Match))
+	if ms := reg.MappingsFrom(linearIssueType); len(ms) != 0 {
+		t.Fatalf("the linear closure ships %d mappings from issue; a provider ships none", len(ms))
 	}
-	im, ok := reg.MappingFor(linearIssueType)
-	if !ok {
-		t.Fatalf("no mapping registered from %s", linearIssueType)
-	}
-	if im.To != linearPersonType || im.Property != "assignee" || len(im.Match) == 0 {
-		t.Fatalf("issue mapping resolves wrong: to=%q edge=%q match=%d", im.To, im.Property, len(im.Match))
+	if ms := reg.MappingsTo(linearPersonType); len(ms) != 0 {
+		t.Fatalf("the linear closure maps onto person: %v", ms)
 	}
 
-	// Both functions are members of the authority.
-	for _, fn := range []string{linearSyncFn, linearProjFn} {
-		if _, err := reg.ResolveFunction(fn); err != nil {
-			t.Fatalf("function %s did not register: %v", fn, err)
+	// The sync is the package's ONE function: the task projection went with
+	// the mappings (record 49), because it wrote a `task` row into a package
+	// this one does not own.
+	sync, err := reg.ResolveFunction(linearSyncFn)
+	if err != nil {
+		t.Fatalf("function %s did not register: %v", linearSyncFn, err)
+	}
+	for _, ident := range sync.Caps.Emit {
+		if strings.HasPrefix(ident, enginetest.SampleAuthority+"/") {
+			t.Fatalf("issuessync may write %s, a kind this package does not own", ident)
 		}
+	}
+	if _, err := reg.ResolveFunction(linearPackage + "/taskprojection"); err == nil {
+		t.Fatal("the closure still ships taskprojection")
 	}
 }
 
@@ -232,16 +234,13 @@ func TestLinearBundleInstalls(t *testing.T) {
 
 	// The bundle row and every schema member landed as its own record.
 	for id, wantType := range map[string]string{
-		linearPackage:      "substrate.reamde.dev/core/bundle",
-		linearConfigType:   "substrate.reamde.dev/core/kind",
-		linearAccountType:  "substrate.reamde.dev/core/kind",
-		linearUserType:     "substrate.reamde.dev/core/kind",
-		linearTeamType:     "substrate.reamde.dev/core/kind",
-		linearIssueType:    "substrate.reamde.dev/core/kind",
-		linearSyncFn:       "substrate.reamde.dev/core/function",
-		linearProjFn:       "substrate.reamde.dev/core/function",
-		linearUserMapping:  "substrate.reamde.dev/core/recordmapping",
-		linearIssueMapping: "substrate.reamde.dev/core/recordmapping",
+		linearPackage:     "substrate.reamde.dev/core/bundle",
+		linearConfigType:  "substrate.reamde.dev/core/kind",
+		linearAccountType: "substrate.reamde.dev/core/kind",
+		linearUserType:    "substrate.reamde.dev/core/kind",
+		linearTeamType:    "substrate.reamde.dev/core/kind",
+		linearIssueType:   "substrate.reamde.dev/core/kind",
+		linearSyncFn:      "substrate.reamde.dev/core/function",
 	} {
 		row, err := ds.Get(ctx, wantType, id)
 		if err != nil {
@@ -252,7 +251,7 @@ func TestLinearBundleInstalls(t *testing.T) {
 		}
 	}
 
-	// Computed status: installed, enabled, unconfigured, both functions.
+	// Computed status: installed, enabled, unconfigured, one function.
 	st, err := ds.BundleStatus(ctx, linearPackage)
 	if err != nil {
 		t.Fatalf("bundle status: %v", err)
@@ -269,8 +268,8 @@ func TestLinearBundleInstalls(t *testing.T) {
 	if len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupMissing || st.Setup[0].Input != "client" {
 		t.Fatalf("status setup = %+v, want the one missing-input item", st.Setup)
 	}
-	if st.Functions != 2 {
-		t.Fatalf("status functions = %d, want 2", st.Functions)
+	if st.Functions != 1 {
+		t.Fatalf("status functions = %d, want the sync alone", st.Functions)
 	}
 
 	// The delivery wiring installs as ordinary data records.
@@ -278,7 +277,7 @@ func TestLinearBundleInstalls(t *testing.T) {
 		putDataDoc(t, ds, m)
 	}
 	for _, id := range []string{
-		"linear-issues-on-connect", "linear-issues-scheduled", "linear-task-projection",
+		"linear-issues-on-connect", "linear-issues-scheduled",
 	} {
 		row, err := ds.Get(ctx, typeTrigger, id)
 		if err != nil {
@@ -535,17 +534,20 @@ func linearGet(t *testing.T, ds *dataset, typ, id string) *substrate.Record {
 	return e
 }
 
-// linearResync clears the account's completion marker under a connector
-// actor (`lastSyncedAt` is writer: connector — only bundle code may touch
-// it) and drains: the removal is itself an account update the on-connect
-// guard now matches, so the one patch both resets the guard and fires the
-// re-sync. The actor is the PROJECTION function, not the sync — a callable
-// never sees its own writes (the dispatcher's self-exclusion), so a clear
-// stamped as the sync's own actor would be skipped, not delivered.
+// linearResync clears the account's completion marker and drains: the removal
+// is itself an account update the on-connect guard matches, so the one patch
+// both resets the guard and fires the re-sync.
+//
+// Two constraints decide whose hand it is. `lastSyncedAt` is
+// `writer: connector`, so only a BUNDLE-tier actor may clear it, and a
+// declared function's actor is that tier. And a callable never sees its own
+// writes (the dispatcher's self-exclusion), so the clear cannot be stamped as
+// the sync itself. The linear closure ships one callable now, the sync, so the
+// hand is a declared function of the TEST's own: installLinearResyncHand.
 func linearResync(t *testing.T, ds *dataset, accountID string) {
 	t.Helper()
-	syncActor := substrate.FunctionActor(vocabulary.SplitKindRef(linearProjFn))
-	if _, err := ds.Patch(context.Background(), syncActor, linearAccountType, accountID, substrate.PatchInput{
+	hand := substrate.FunctionActor(vocabulary.SplitKindRef(linearResyncFn))
+	if _, err := ds.Patch(context.Background(), hand, linearAccountType, accountID, substrate.PatchInput{
 		Properties: map[string]any{"lastSyncedAt": nil},
 	}); err != nil {
 		t.Fatalf("clear lastSyncedAt: %v", err)
@@ -553,11 +555,34 @@ func linearResync(t *testing.T, ds *dataset, accountID string) {
 	drainTriggers(t, ds)
 }
 
-// TestLinearBundleFakeSyncJointOwnership drives the whole connector against
-// loopback fakes: install → configure → connect (host OAuth round trip) →
-// on-connect backfill (two pages, off the causal chain) → mirrors + person +
-// tasks — then the joint-ownership regressions the projection exists for.
-func TestLinearBundleFakeSyncJointOwnership(t *testing.T) {
+// linearResyncFn is the test's own bundle-tier hand: a declared function that
+// never runs, installed only so its actor resolves at the bundle tier.
+const linearResyncFn = "resync.example.com/hand/clear"
+
+func installLinearResyncHand(t *testing.T, ds *dataset) {
+	t.Helper()
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI,
+		[]map[string]any{
+			vocabulary.PackageManifest("resync.example.com/hand", 1),
+			vocabulary.FunctionManifest("resync.example.com/hand", "clear", map[string]any{
+				"description": "a bundle-tier hand for the re-sync clear; never called",
+				"runtime":     vocabulary.RuntimePython,
+				"source":      "def main(input, host):\n    return {}\n",
+			}),
+		}); err != nil {
+		t.Fatalf("install the re-sync hand: %v", err)
+	}
+}
+
+// TestLinearBundleFakeSyncMirrors drives the whole connector against loopback
+// fakes: install → configure → connect (host OAuth round trip) → on-connect
+// backfill (two pages, off the causal chain) → the mirrors, the identity a
+// repository-declared mapping resolves, and the provider-owned reference
+// hygiene. Mirrors are the whole output since record 49; the joint-ownership
+// projection that used to write `task` rows is gone with them, and the tiers
+// are what keep an owner edit now (a mapped property recomputes at the machine
+// tier and an owner write wins).
+func TestLinearBundleFakeSyncMirrors(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
@@ -580,6 +605,26 @@ func TestLinearBundleFakeSyncJointOwnership(t *testing.T) {
 			t.Skipf("bundle install could not warm the PEP 723 body (uv offline?): %v", err)
 		}
 		t.Fatalf("install the linear bundle: %v", err)
+	}
+	// The closure ships no mapping (record 49): the repository declares how
+	// linear's mirrors reach the person kind it owns, and this test wants that
+	// identity resolution, so it declares both.
+	if err := enginetest.DeclareMappings(ctx, ds,
+		enginetest.PeopleMapping("linearuserperson", map[string]any{
+			"from": linearUserType, "property": "person",
+			"match": []any{map[string]any{"from": "email", "to": "emails"}},
+			"map": map[string]any{
+				"name":        map[string]any{"path": "name"},
+				"displayName": map[string]any{"path": "displayName"},
+				"emails":      map[string]any{"path": "email", "merge": "union"},
+			},
+		}),
+		enginetest.PeopleMapping("linearissueperson", map[string]any{
+			"from": linearIssueType, "property": "assignee",
+			"match": []any{map[string]any{"from": "assigneeEmail", "to": "emails"}},
+		}),
+	); err != nil {
+		t.Fatalf("declare the linear mappings: %v", err)
 	}
 	for _, m := range loadYAMLDocs(t, linearExampleDir+"/triggers.yaml") {
 		putDataDoc(t, ds, m)
@@ -623,26 +668,24 @@ func TestLinearBundleFakeSyncJointOwnership(t *testing.T) {
 	}
 
 	// The backfill: on-connect fires the sync, which drains both pages off
-	// the causal chain, and each mirror write flows through the projection.
+	// the causal chain.
+	installLinearResyncHand(t, ds)
 	drainTriggers(t, ds)
 
 	issueAID := substratefn.ExternalID("linear", account.ID, "issue:uuid-a")
 	issueBID := substratefn.ExternalID("linear", account.ID, "issue:uuid-b")
 	teamID := substratefn.ExternalID("linear", account.ID, "team:uuid-t")
 	userID := substratefn.ExternalID("linear", account.ID, "user:uuid-v")
-	taskAID := substratefn.ExternalID("linear-task", account.ID, "uuid-a")
-	taskBID := substratefn.ExternalID("linear-task", account.ID, "uuid-b")
 
 	if n := api.pageCount(); n < 2 {
 		t.Fatalf("the paged drain made %d GraphQL reads, want >= 2 (one per page)", n)
 	}
 
-	// The issue mirror, in Linear's shape, with its team edge and the adopted
-	// projection baseline.
+	// The issue mirror, in Linear's shape, with its team reference.
 	issueA := linearGet(t, ds, linearIssueType, issueAID)
 	for k, want := range map[string]any{
 		"identifier": "ENG-1", "state": "In Progress", "stateType": "started",
-		"priority": "high", "assigneeEmail": linearViewerEmail, "projectedState": "started",
+		"priority": "high", "assigneeEmail": linearViewerEmail,
 	} {
 		if got := issueA.Properties[k]; got != want {
 			t.Fatalf("issue mirror %s = %v, want %v", k, got, want)
@@ -678,22 +721,6 @@ func TestLinearBundleFakeSyncJointOwnership(t *testing.T) {
 		t.Fatalf("issue assignee = %+v, want person %s", ae, personID)
 	}
 
-	// The projection minted both tasks open, headed off the issues: the
-	// issue's title lands on the task's DECLARED `name`, which is what the
-	// task kind renders its title from (decision record 0016).
-	taskA := linearGet(t, ds, linearTaskType, taskAID)
-	if taskA.Kind != linearTaskType {
-		t.Fatalf("task A is a %s, want %s", taskA.Kind, linearTaskType)
-	}
-	if taskA.Properties["status"] != "open" || taskA.Properties["name"] != "Fix the flux capacitor" ||
-		taskA.Title != "Fix the flux capacitor" {
-		t.Fatalf("task A wrong: status=%v name=%v title=%q",
-			taskA.Properties["status"], taskA.Properties["name"], taskA.Title)
-	}
-	if linearGet(t, ds, linearTaskType, taskBID).Properties["status"] != "open" {
-		t.Fatal("task B did not mint open")
-	}
-
 	// The completion stamp: lastSyncedAt, syncStatus, and the viewer's email
 	// (writer: connector — Linear has no userinfo GET for the facility).
 	acct := linearGet(t, ds, linearAccountType, account.ID)
@@ -704,60 +731,25 @@ func TestLinearBundleFakeSyncJointOwnership(t *testing.T) {
 		t.Fatalf("account email = %v, want %s", acct.Properties["email"], linearViewerEmail)
 	}
 
-	// JOINT OWNERSHIP, half one: the owner ticks task A off; an idle re-sync
-	// (upstream still `started`, exactly as last seen) must NOT reopen it —
-	// "Linear still says started" is not news (the v4 policy this projection
-	// ports). The idle mirrors are no-op-suppressed patches, so the baseline
-	// never moves and the task is never touched.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, linearTaskType, taskAID, substrate.PatchInput{
-		Properties: map[string]any{"status": "done"},
-	}); err != nil {
-		t.Fatalf("owner completes task A: %v", err)
+	// NO TASK ROW, from anything in this closure: `task` belongs to a package
+	// the provider does not own, so the repository is what writes one.
+	page, err := ds.List(ctx, substrate.Query{
+		Filter: substrate.Filter{Kinds: []string{linearTaskType}}, First: 10,
+	})
+	if err != nil {
+		t.Fatalf("list tasks: %v", err)
 	}
-	linearResync(t, ds, account.ID)
-	if got := linearGet(t, ds, linearTaskType, taskAID).Properties["status"]; got != "done" {
-		t.Fatalf("an idle re-sync clobbered the owner's done: status=%v", got)
-	}
-	if linearGet(t, ds, linearAccountType, account.ID).Properties["lastSyncedAt"] == nil {
-		t.Fatal("the re-sync did not run (no fresh completion stamp)")
+	if len(page.Records) != 0 {
+		t.Fatalf("the linear closure wrote %d task rows", len(page.Records))
 	}
 
-	// Half one-and-a-half, the fleet review's folded-baseline regression: an
-	// OPEN-FAMILY transition upstream (started → backlog) changes the raw
-	// stateType but folds to the same "open" — churn between open columns is
-	// not news, and must NOT reopen the task the owner completed. (Compared
-	// unfolded, baseline "started" != "backlog" would read as a departure
-	// and clobber the owner's done with upstream's open.)
-	api.moveIssueA("Backlog", "backlog")
+	// An idle re-sync writes nothing: the mirrors are patched, never re-put
+	// whole, so no-op suppression holds end to end.
+	beforeVersion := linearGet(t, ds, linearIssueType, issueAID).Version
 	linearResync(t, ds, account.ID)
-	if got := linearGet(t, ds, linearTaskType, taskAID).Properties["status"]; got != "done" {
-		t.Fatalf("a backlog move reopened the owner-done task: status=%v", got)
-	}
-	movedA := linearGet(t, ds, linearIssueType, issueAID)
-	if movedA.Properties["stateType"] != "backlog" || movedA.Properties["projectedState"] != "backlog" {
-		t.Fatalf("the mirror did not adopt the open-family move: stateType=%v baseline=%v",
-			movedA.Properties["stateType"], movedA.Properties["projectedState"])
-	}
-	// ...and the reverse hop (backlog → started) against the fresh backlog
-	// baseline is the review's exact headline case.
-	api.moveIssueA("In Progress", "started")
-	linearResync(t, ds, account.ID)
-	if got := linearGet(t, ds, linearTaskType, taskAID).Properties["status"]; got != "done" {
-		t.Fatalf("backlog→started reopened the owner-done task: status=%v", got)
-	}
-
-	// Half two: the issue actually completing upstream IS news — the state
-	// departs from the adopted baseline, so the projection moves the task to
-	// done (under its if_version guard) and re-stamps the baseline.
-	api.completeIssueB()
-	linearResync(t, ds, account.ID)
-	if got := linearGet(t, ds, linearTaskType, taskBID).Properties["status"]; got != "done" {
-		t.Fatalf("an upstream completion did not close task B: status=%v", got)
-	}
-	issueB := linearGet(t, ds, linearIssueType, issueBID)
-	if issueB.Properties["projectedState"] != "completed" || issueB.Properties["stateType"] != "completed" {
-		t.Fatalf("issue B baseline not re-adopted: %v / %v",
-			issueB.Properties["projectedState"], issueB.Properties["stateType"])
+	if got := linearGet(t, ds, linearIssueType, issueAID).Version; got != beforeVersion {
+		t.Fatalf("an idle re-sync rewrote the issue mirror: version %d -> %d",
+			beforeVersion, got)
 	}
 
 	// Provider-owned edge hygiene: issue B moves to another team. `team` is
@@ -781,11 +773,7 @@ func TestLinearBundleFakeSyncJointOwnership(t *testing.T) {
 		t.Fatalf("a stale team reference survived the team's removal: %+v", tg)
 	}
 
-	// And through it all, the owner's task A stayed theirs...
-	if got := linearGet(t, ds, linearTaskType, taskAID).Properties["status"]; got != "done" {
-		t.Fatalf("task A moved: status=%v", got)
-	}
-	// ...and NOTHING went back to Linear: sync-only means zero mutations.
+	// And NOTHING went back to Linear: sync-only means zero mutations.
 	api.mu.Lock()
 	mutations, badAuth := api.mutations, api.badAuth
 	api.mu.Unlock()

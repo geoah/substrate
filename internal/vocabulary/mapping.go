@@ -22,9 +22,10 @@ const (
 	MergeUnion  = "union"
 )
 
-// Mapping is one parsed recordmapping. From is a kind declared in Authority; To
-// is a full kind reference, resolved like a reference pin; Property names the
-// declared `subject: true` reference on From that points at the subject.
+// Mapping is one parsed recordmapping. From and To are full kind references,
+// each resolved like a reference pin, and the declaring package owns at least
+// one of them (record 49); Property names the declared `subject: true`
+// reference on From that points at the subject.
 type Mapping struct {
 	Name string
 	// Package is the identity of the package that declares it.
@@ -171,7 +172,7 @@ var mapRuleKeys = map[string]bool{"path": true, "merge": true}
 // parseMapping parses one recordmapping document. Everything that needs the
 // target kind — the subject reference's shape, path type-checks, the bipartite
 // rule — is deferred to Finalize/Install, like a reference pin: `to` may name a
-// kind in an authority that has not loaded yet.
+// kind in an authority that has not loaded yet, and so may `from` (record 49).
 func (l *loader) parseMapping(d Document) *Mapping {
 	g := l.pkg
 	where := DocRecordMapping + " " + d.ID
@@ -188,23 +189,17 @@ func (l *loader) parseMapping(d Document) *Mapping {
 		Map:        map[string]*MapRule{},
 		Definition: d.Data,
 	}
-	// `from` is spelled in full and lives in the declaring package: a mapping
-	// is package-local, like a property type.
+	// Both ends are spelled in full: a bare name would go ambiguous the day a
+	// second authority ships the same word, at registration and not at review.
 	fromPkg, fromLocal := KindPackage(m.From), KindName(m.From)
 	switch {
 	case m.From == "":
 		l.errf("%s: data.from is required", where)
 		return nil
-	case fromPkg != g.Identity || fromLocal == "":
-		l.errf("%s: data.from must be %q — a mapping's source kind lives in its own package", where, g.Identity+"/<name>")
+	case fromPkg == "" || fromLocal == "":
+		l.errf("%s: data.from is a full kind reference (\"providers.substrate.reamde.dev/linear/issue\"), never a bare one", where)
 		return nil
 	}
-	if _, ok := g.Kinds[fromLocal]; !ok {
-		l.errf("%s: data.from: %s is not a declared type of %s", where, m.From, g.Identity)
-		return nil
-	}
-	// `to` is a full type name: a bare name would go ambiguous the day a
-	// second authority ships the same word — at registration, not at review.
 	switch {
 	case m.To == "":
 		l.errf("%s: data.to is required", where)
@@ -212,6 +207,24 @@ func (l *loader) parseMapping(d Document) *Mapping {
 	case !Qualified(m.To):
 		l.errf("%s: data.to is a full type name (\"samples.substrate.reamde.dev/people/person\"), never a bare one (§6.1)", where)
 		return nil
+	}
+	// WHO MAY DECLARE THIS MAPPING (record 49). Ownership of the TARGET is what
+	// licenses a mapping: only the package that declares `to` may say what
+	// projects onto it, so a provider ships mirrors and no mapping, and a
+	// third package may declare none. `from` is therefore free to live
+	// anywhere and resolves at Finalize/Install, the way a `to` pin does; a
+	// source kind in this package is still checked here, where the closure is
+	// in hand.
+	if KindPackage(m.To) != g.Identity {
+		l.errf("%s: data.to: %s is declared in %s, and a mapping onto a kind is declared by the package that owns that kind",
+			where, m.To, KindPackage(m.To))
+		return nil
+	}
+	if fromPkg == g.Identity {
+		if _, ok := g.Kinds[fromLocal]; !ok {
+			l.errf("%s: data.from: %s is not a declared type of %s", where, m.From, g.Identity)
+			return nil
+		}
 	}
 	if m.Property == "" {
 		l.errf("%s: data.property is required — the `subject: true` reference on %s that names the subject", where, m.From)
@@ -290,7 +303,13 @@ func (r *Registry) resolveMapping(m *Mapping) []string {
 	}
 	from, ok := r.ByIdentity(m.From)
 	if !ok {
-		return problems // already reported at parse
+		// The source kind may live in another package (record 49), so its
+		// absence is reported HERE and not at parse: one legible problem
+		// naming what to import first, the shape `requires:` refuses an
+		// install with.
+		errf("%s: data.from names %s, which this repository does not have: import that kind's package first, or delete this mapping",
+			where, m.From)
+		return problems
 	}
 	to, ok := r.ByIdentity(m.To)
 	if !ok {
@@ -298,22 +317,29 @@ func (r *Registry) resolveMapping(m *Mapping) []string {
 		return problems
 	}
 	// The subject reference's shape (§6.1): a kind's own reference property,
-	// marked `subject: true`, single, required, mustExist, never cascading, and
-	// pinned exactly at data.to.
+	// marked `subject: true`, single, mustExist and never cascading. The PIN is
+	// the declaring package's choice (record 49): a mirror kind whose targets
+	// its own package cannot know leaves the reference unpinned and optional,
+	// and the mapping's `to` is the subject kind for that property. A pin, where
+	// there is one, still has to agree with `to`, and a pinned subject is
+	// required.
 	sp, ok := from.Props[m.Property]
+	pinned := ok && sp.To != "" && sp.To != ToAny
 	switch {
 	case !ok:
 		errf("%s: data.property: %s declares no property %q", where, m.From, m.Property)
 	case sp.Datatype != DatatypeReference:
 		errf("%s: data.property: %s.%s is %s — a subject is a `type: reference` property", where, m.From, m.Property, sp.Datatype)
-	case sp.To != m.To:
+	case pinned && sp.To != m.To:
 		errf("%s: data.property: %s.%s points at %q, not data.to %s", where, m.From, m.Property, sp.To, m.To)
+	case sp.ToTrait != "" && !to.Implements(sp.ToTrait):
+		errf("%s: data.property: %s.%s pins the trait %s, which %s does not implement", where, m.From, m.Property, sp.ToTrait, m.To)
 	default:
 		if !sp.Subject {
 			errf("%s: data.property: %s.%s is missing `subject: true` — the write path reads the marker, not this document", where, m.From, m.Property)
 		}
-		if !sp.Required {
-			errf("%s: data.property: the subject reference is required: true — a source record without its subject cannot exist", where)
+		if pinned && !sp.Required {
+			errf("%s: data.property: a subject reference pinned at %s is required: true, because a source record that names its target kind cannot exist without one", where, m.To)
 		}
 		if !sp.MustExist {
 			errf("%s: data.property: the subject reference is mustExist: true — a source record describes a subject that exists", where)
@@ -393,45 +419,109 @@ func (r *Registry) resolveMapping(m *Mapping) []string {
 
 // mappingInvariantProblems checks the registry-wide rules a mapping carries
 // , once every reference pin is resolved: exactly one mapping per
-// source kind, the source→subject graph stays bipartite — a mapping's `to`
-// may never itself be any mapping's `from` — and no reference anywhere may land
-// on a mapped source kind, which keeps resolution one hop deep (§6.2). Registry-
-// wide, because a mapping installs with its connector long after the
-// vocabulary that names its target was loaded.
+// (source kind, subject property), so one mirror kind reaches two subject
+// kinds through two `subject: true` references and two mappings through one
+// reference stay refused (record 49). The source-to-subject graph stays
+// bipartite: a mapping's `to` may never itself be any mapping's `from`, and
+// no reference anywhere may land on a mapped source kind, which keeps
+// resolution one hop deep (§6.2). Registry-wide, because a mapping installs
+// with its connector long after the vocabulary that names its target was
+// loaded.
 func (r *Registry) mappingInvariantProblems() []string {
 	var problems []string
-	byFrom := map[string]*Mapping{}
+	// bySlot is the mapping set's key. byFrom is the source-kind index the
+	// bipartite and no-reference rules read; a source's first mapping names
+	// the violation, so the message does not depend on which of its mappings
+	// the loop reached.
+	bySlot := map[mappingSlot]*Mapping{}
+	byPair := map[mappingSlot]*Mapping{}
+	byFrom := map[string][]*Mapping{}
 	for _, m := range r.Mappings() {
-		if prev, ok := byFrom[m.From]; ok {
+		byFrom[m.From] = append(byFrom[m.From], m)
+		slot := mappingSlot{from: m.From, property: m.Property}
+		if prev, ok := bySlot[slot]; ok {
 			problems = append(problems, fmt.Sprintf(
-				"%s %s: %s already has mapping %s — exactly one mapping per source type (§6.1)",
-				DocRecordMapping, m.Identity(), m.From, prev.Identity()))
+				"%s %s: %s.%s already has mapping %s, and one subject property carries one mapping (record 49)",
+				DocRecordMapping, m.Identity(), m.From, m.Property, prev.Identity()))
 			continue
 		}
-		byFrom[m.From] = m
+		bySlot[slot] = m
+		// One source kind reaches a given target kind through ONE property.
+		// Two slots onto the same target leave every reader choosing between
+		// them: the subject hop would have two answers for one pin, and a
+		// recompute would count one source's contributions twice.
+		pair := mappingSlot{from: m.From, property: m.To}
+		if prev, ok := byPair[pair]; ok {
+			problems = append(problems, fmt.Sprintf(
+				"%s %s: %s already reaches %s through mapping %s, on property %s (record 49)",
+				DocRecordMapping, m.Identity(), m.From, m.To, prev.Identity(), prev.Property))
+			continue
+		}
+		byPair[pair] = m
 	}
 	for _, m := range r.Mappings() {
-		if other, ok := byFrom[m.To]; ok {
+		if others, ok := byFrom[m.To]; ok {
 			problems = append(problems, fmt.Sprintf(
 				"%s %s: data.to: %s is itself the source of mapping %s — the source→subject graph stays bipartite (record 50)",
-				DocRecordMapping, m.Identity(), m.To, other.Identity()))
+				DocRecordMapping, m.Identity(), m.To, others[0].Identity()))
 		}
 	}
 	// Every declared reference site, nested ones included: a pointer at a source
 	// kind is a second hop whichever level it sits at.
 	for _, t := range r.Kinds() {
 		for _, site := range referenceSites(t) {
-			m, ok := byFrom[site.Prop.To]
+			ms, ok := byFrom[site.Prop.To]
 			if !ok {
 				continue
 			}
 			problems = append(problems, fmt.Sprintf(
 				"%s %s: data.properties.%s: no reference may name %s, the source kind of mapping %s — pin it at %s",
-				DocKind, t.Identity, site.Path, site.Prop.To, m.Identity(), m.To))
+				DocKind, t.Identity, site.Path, site.Prop.To, ms[0].Identity(), ms[0].To))
 		}
 	}
 	return problems
 }
+
+// crossPackageMappingProblems re-resolves every mapping declared OUTSIDE the
+// packages being installed whose SOURCE or TARGET kind lives inside them.
+//
+// It exists because a mapping's ends may live in three different packages
+// (record 49): resolvePackage type-checks a mapping's paths against both
+// declared kinds, but it only runs for the packages a batch rebuilds, so
+// narrowing a mirror kind would otherwise strand a mapping another package
+// declared against it and nothing would say so until the next repository
+// open. Install and InstallAll call it; Finalize does not need it, because it
+// resolves every package there is.
+func (r *Registry) crossPackageMappingProblems(installed []*Package) []string {
+	inside := map[string]bool{}
+	for _, g := range installed {
+		inside[g.Identity] = true
+	}
+	var problems []string
+	for _, m := range r.Mappings() {
+		if inside[m.Package] {
+			continue // its own package's resolve already covered it
+		}
+		if !inside[KindPackage(m.From)] && !inside[KindPackage(m.To)] {
+			continue
+		}
+		if _, ok := r.ByIdentity(m.From); !ok {
+			// The source kind LEAVING is not this check's to report: the
+			// engine refuses that at the same guard it refuses every other
+			// breakage at, naming the mapping to delete (schemadiff.go
+			// strandedMappingGuards). Reporting it here too would answer one
+			// situation two ways, and with the worse message.
+			continue
+		}
+		problems = append(problems, r.resolveMapping(m)...)
+	}
+	return problems
+}
+
+// mappingSlot keys the mapping set: a source kind and the subject reference a
+// mapping fills on it. The overlap check reuses it with the TARGET kind in the
+// second field, the other pair a source kind may hold only once.
+type mappingSlot struct{ from, property string }
 
 // --- registry lookups ------------------------------------------------------
 
@@ -448,13 +538,26 @@ func (r *Registry) Mappings() []*Mapping {
 	return out
 }
 
-// MappingFor returns the one mapping whose source is the given kind identity.
-// A kind carrying one is a source record: its id is the provider's key, its
-// subject reference is set at creation and moved only by merge and split, and
-// its writes recompute the subject.
-func (r *Registry) MappingFor(from string) (*Mapping, bool) {
+// MappingsFrom lists every mapping whose source is the given kind identity,
+// ordered by mapping identity. A kind carrying one is a source record: its id
+// is the provider's key, each mapping's subject reference is set at creation
+// and moved only by merge and split, and its writes recompute those subjects.
+// One kind may carry several, one per `subject: true` reference (record 49).
+func (r *Registry) MappingsFrom(from string) []*Mapping {
+	var out []*Mapping
 	for _, m := range r.Mappings() {
 		if m.From == from {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// MappingFor returns the mapping filling one source kind's named subject
+// property: the (source kind, subject property) pair the set is keyed by.
+func (r *Registry) MappingFor(from, property string) (*Mapping, bool) {
+	for _, m := range r.Mappings() {
+		if m.From == from && m.Property == property {
 			return m, true
 		}
 	}
