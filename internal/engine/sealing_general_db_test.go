@@ -5,9 +5,8 @@ package engine_test
 // touches the records fold or the append-only changelog. Alongside: the
 // change feed redacts what it cannot know, a re-pasted secret is a no-op
 // that neither mints a delta nor steals attribution, rotation erases the old
-// material, a pasted ref-shaped string is material like any other, `digest`
-// redacts without indirection, and `repository reseal` moves legacy values
-// into the store so a rebuild folds the changelog to byte-identical rows.
+// material, a pasted ref-shaped string is material like any other, and
+// `digest` redacts without indirection.
 
 import (
 	"context"
@@ -274,97 +273,4 @@ func TestDisplayTemplateRefusesSensitiveProps(t *testing.T) {
 	}
 	_, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, docs)
 	wantErr(t, err, substrate.ErrValidation, "secret in a display template")
-}
-
-type resealer interface {
-	ResealRepository(ctx context.Context, username string) (engine.ResealReport, error)
-}
-
-func TestResealMovesLegacyValuesIntoTheStore(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	svc, ds, db, dsn := newSealingDatasetDSN(t)
-	sgPutProvider(t, ds, sgPlainKey)
-	ref := storedAPIKeyRef(t, db)
-
-	// Plant the pre-store layout: raw plaintext in the records fold and in
-	// every changelog delta, and no sealed row, exactly what an earlier
-	// release left behind. An earlier release also predates the CHAIN, so
-	// the honest legacy state has no hashes either: wipe them and let the
-	// reopen's backfill notarize the planted bytes, exactly as a real
-	// upgrade would — reseal itself verifies first and refuses a chain that
-	// reads as tampered.
-	const legacy = "sk-legacy-99999"
-	if _, err := db.Exec(`UPDATE records SET props = jsonb_set(props, '{apiKey}', to_jsonb($1::text))
-		WHERE kind = $2 AND id = 'prov'`, legacy, sgProviderKind); err != nil {
-		t.Fatalf("plant legacy record: %v", err)
-	}
-	if _, err := db.Exec(`UPDATE changelog SET payload = replace(payload::text, $1, $2)::jsonb
-		WHERE payload::text LIKE '%' || $1 || '%'`, ref, legacy); err != nil {
-		t.Fatalf("plant legacy changelog: %v", err)
-	}
-	if _, err := db.Exec(`DELETE FROM sealed WHERE ref = $1`, ref); err != nil {
-		t.Fatalf("drop the store row: %v", err)
-	}
-	if _, err := db.Exec(`UPDATE changelog SET hash = NULL, sig = decode(repeat('00', 64), 'hex')`); err != nil {
-		t.Fatalf("wind the chain back: %v", err)
-	}
-	if _, err := db.Exec(`DELETE FROM chain_epochs`); err != nil {
-		t.Fatalf("wind the epochs back: %v", err)
-	}
-	if _, err := db.Exec(`UPDATE repositories SET signing_key = NULL, signing_public = NULL, signed_from_seq = NULL`); err != nil {
-		t.Fatalf("wind the signing state back: %v", err)
-	}
-	_ = svc.Close()
-	svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
-		engine.WithCredentialKey(engine.TestCredentialKey))
-	if err != nil {
-		t.Fatalf("reopen: %v", err)
-	}
-	t.Cleanup(func() { _ = svc.Close() })
-	if _, err := svc.Dataset(ctx, "geoah"); err != nil {
-		t.Fatalf("reopen dataset: %v", err)
-	}
-
-	report, err := svc.(resealer).ResealRepository(ctx, "geoah")
-	if err != nil {
-		t.Fatalf("reseal: %v", err)
-	}
-	if report.Records == 0 || report.Entries == 0 {
-		t.Fatalf("reseal touched nothing: %+v", report)
-	}
-	mustHaveNoPlaintext(t, db, legacy)
-
-	// Records and changelog agree on ONE ref, so the fold is byte-identical
-	// to a replay of the rewritten log.
-	migrated := storedAPIKeyRef(t, db)
-	if !strings.HasPrefix(migrated, "secret:") {
-		t.Fatalf("migrated value is not a ref: %q", migrated)
-	}
-	var n int
-	if err := db.QueryRow(`SELECT count(*) FROM changelog WHERE payload::text LIKE '%' || $1 || '%'`,
-		migrated).Scan(&n); err != nil {
-		t.Fatalf("scan: %v", err)
-	}
-	if n == 0 {
-		t.Fatal("no changelog delta points at the migrated ref")
-	}
-
-	// Idempotent: a second pass rewrites nothing.
-	again, err := svc.(resealer).ResealRepository(ctx, "geoah")
-	if err != nil {
-		t.Fatalf("second reseal: %v", err)
-	}
-	if again.Records != 0 || again.Entries != 0 || again.SealedRows != 0 {
-		t.Fatalf("reseal is not idempotent: %+v", again)
-	}
-
-	// A rebuild folds the rewritten deltas to the same bytes.
-	if _, err := svc.(rebuilder).RebuildRepository(ctx, "geoah"); err != nil {
-		t.Fatalf("rebuild: %v", err)
-	}
-	if after := storedAPIKeyRef(t, db); after != migrated {
-		t.Fatalf("rebuild diverged from the migrated fold: %q != %q", after, migrated)
-	}
-	mustHaveNoPlaintext(t, db, legacy)
 }

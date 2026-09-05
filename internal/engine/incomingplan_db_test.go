@@ -31,6 +31,7 @@ func planDataset(t *testing.T) *dataset {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	svc, err := Open(ctx, dsn,
+		WithDataRoot(t.TempDir()),
 		WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		WithCredentialKey(TestCredentialKey))
 	if err != nil {

@@ -62,11 +62,6 @@ type registerResponse struct {
 	Authority         string `json:"authority"`
 	RecoveryKey       string `json:"recoveryKey,omitempty"`
 	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
-	// SigningPublicKey is the repository's Ed25519 changelog-signing public
-	// key (hex) — the pin `repository verify --expect-public-key` checks
-	// against. No private key material rides this response: the seed stays
-	// sealed server-side and nothing outside the server ever needs it.
-	SigningPublicKey string `json:"signingPublicKey,omitempty"`
 }
 
 type loginRequest struct {
@@ -228,7 +223,6 @@ func (h *handler) postRegister(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, registerResponse{
 		Token: res.Token, Secret: res.Secret, Authority: res.Authority,
 		RecoveryKey: res.RecoveryKey, RecoveryPublicKey: res.RecoveryPublicKey,
-		SigningPublicKey: res.SigningPublicKey,
 	})
 }
 

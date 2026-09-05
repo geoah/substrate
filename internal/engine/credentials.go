@@ -30,7 +30,7 @@ import (
 // nonce||ciphertext (sealed). `credBoundSealed` marks a payload whose GCM
 // additional data binds it to the address it was written at, so a row moved,
 // copied or swapped without the key stops decrypting; `credSealed` is the older
-// unbound form, which the open path still reads until every store is resealed
+// unbound form, which the open path still reads until a re-key rebinds it
 // ([0023](../../docs/decisions/0023-a-sealed-payload-is-bound-to-its-address.md)).
 const (
 	credPlain       byte = 'p'
@@ -296,9 +296,8 @@ func deriveCredentialKey(key string) ([]byte, error) {
 // cannot share one sealed row (#233).
 //
 // A record hard-deleted outside the OAuth teardown path may orphan its
-// sealed rows; an orphan is encrypted material addressed by nothing, and the
-// reseal migration reports nothing about it. Erasure-on-delete beyond the
-// OAuth teardown is future work, not a leak.
+// sealed rows; an orphan is encrypted material addressed by nothing.
+// Erasure-on-delete beyond the OAuth teardown is future work, not a leak.
 
 // secretRefPrefix namespaces the refs storeSecretProps mints, so a generic
 // reader recognizes a resolvable ref without probing the store for every
@@ -307,8 +306,8 @@ const secretRefPrefix = "secret:"
 
 // sealedPropPrefix marks the RETIRED inline-sealed form: releases before the
 // store-backed design encrypted the value directly into JSONB under this
-// prefix. openSecretValue still opens it, and the reseal migration moves it
-// into the store.
+// prefix. openSecretValue still opens it; the next accepted write of the
+// property moves the value into the store.
 const sealedPropPrefix = "substrate:sealsecret:v1:"
 
 // newSecretRef mints an unguessable ref for one stored secret value.
@@ -358,8 +357,8 @@ func (t *txn) sealedRefOf(ref string, owner eref) (bool, error) {
 
 // openSecretValue resolves one stored secret value to its material: a secret
 // ref reads its sealed row, the retired inline-sealed form opens in place,
-// and a legacy plaintext passes through unchanged, so every read works
-// before and after the reseal migration.
+// and a legacy plaintext passes through unchanged, so a value written by any
+// release still reads.
 func (ds *dataset) openSecretValue(ctx context.Context, stored string) (string, error) {
 	switch {
 	case stored == "":
@@ -415,4 +414,86 @@ func (s *service) openPropValue(stored string) (string, error) {
 		return "", fmt.Errorf("substrate/engine: open sealed property: %w", err)
 	}
 	return string(out), nil
+}
+
+// rekeySealedStore re-keys every sealed payload not already bound and under the
+// DEK: keyless plain framings, host-key-sealed legacies, and the older unbound
+// `credSealed` form alike. The scan takes every row FOR UPDATE, so a concurrent
+// TOTP step consume or token refresh serializes behind this transaction instead
+// of being overwritten by a stale buffered copy. A payload already `credBoundSealed`
+// and openable under the DEK with its row binding passes byte-identical, which is
+// the idempotency. Recovery enrollment runs it: the
+// recovery promise is only true once every payload is under the DEK the recovery
+// key wraps.
+func (t *txn) rekeySealedStore() (int, error) {
+	dekAEAD, err := aeadOf(t.ds.dek)
+	if err != nil {
+		return 0, err
+	}
+	type pending struct {
+		ref     string
+		payload []byte
+	}
+	total := 0
+	after := ""
+	// One page of rows at a time, flushed before the next loads, so memory
+	// stays bounded by the batch; the FOR UPDATE locks accumulate for the
+	// transaction either way, which is what keeps a concurrent step consume
+	// or token refresh serialized behind the rewrite.
+	for {
+		var updates []pending
+		rows, err := t.query(`
+			SELECT ref, record_kind, record_id, payload FROM sealed
+			WHERE ref > $1 ORDER BY ref LIMIT $2 FOR UPDATE`, after, rebuildBatch)
+		if err != nil {
+			return total, err
+		}
+		n := 0
+		for rows.Next() {
+			var ref string
+			var owner eref
+			var payload []byte
+			if err := rows.Scan(&ref, &owner.Kind, &owner.ID, &payload); err != nil {
+				_ = rows.Close()
+				return total, err
+			}
+			n++
+			after = ref
+			aad := sealedAAD(ref, owner.Kind, owner.ID)
+			// Already bound and openable under the DEK: leave it byte-identical.
+			// A `credSealed` (unbound) payload fails this check and is re-keyed
+			// into the bound framing below.
+			if len(payload) > 0 && payload[0] == credBoundSealed && dekAEAD != nil {
+				if _, err := openWith(dekAEAD, payload, aad); err == nil {
+					continue
+				}
+			}
+			raw, err := t.ds.openPayload(payload, aad)
+			if err != nil {
+				_ = rows.Close()
+				return total, fmt.Errorf("substrate/engine: re-key sealed %s: %w", ref, err)
+			}
+			sealed, err := t.ds.sealPayload(raw, aad)
+			if err != nil {
+				_ = rows.Close()
+				return total, err
+			}
+			updates = append(updates, pending{ref: ref, payload: sealed})
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return total, err
+		}
+		_ = rows.Close()
+		for _, u := range updates {
+			if _, err := t.exec(`UPDATE sealed SET payload = $1 WHERE ref = $2`,
+				u.payload, u.ref); err != nil {
+				return total, err
+			}
+			total++
+		}
+		if n < rebuildBatch {
+			return total, nil
+		}
+	}
 }

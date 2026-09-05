@@ -573,6 +573,7 @@ func openGithubOAuthDataset(t *testing.T, hc *http.Client) *dataset {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	svc, err := Open(ctx, dsn,
+		WithDataRoot(t.TempDir()),
 		WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		WithOAuth("test-state-key", "https://substrate.example/api/v1/substrate.reamde.dev/core/oauth/callback", hc),
 		WithCredentialKey(TestCredentialKey))

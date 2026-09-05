@@ -179,9 +179,9 @@ func (t *txn) settleFold() error {
 	if err != nil {
 		return err
 	}
-	// RETURNING payload::text replaces the pending chain entry's payload with
-	// the merged one AS STORED: the hash stamped at settleChain must cover
-	// what this update just made the entry say.
+	// RETURNING payload::text replaces the pending entry's payload with the
+	// merged one AS STORED: the checksum stamped at settleChecksums must
+	// cover what this update just made the entry say.
 	var stored []byte
 	if err := t.row(`
 		UPDATE changelog
@@ -758,9 +758,8 @@ const foldPayloadKey = "fold"
 // forEachRecordDeltaSet walks a DECODED payload's record-delta effects and
 // hands each one's `set` map to fn, with the kind reference and record id it
 // lands on. It is the one place the raw payload shape (fold, op.kind==record,
-// delta.set) is spelled outside the typed foldOp structs: the change feed's
-// redaction and the reseal migration both walk through here, so extending the
-// delta cannot update one and silently miss the other.
+// delta.set) is spelled outside the typed foldOp structs, so the change
+// feed's redaction and any later payload walk share one reading of it.
 func forEachRecordDeltaSet(payload map[string]any, fn func(kindRef, recordID string, set map[string]any)) {
 	effects, ok := payload[foldPayloadKey].([]any)
 	if !ok {
@@ -843,3 +842,16 @@ const (
 	foldEdgeDelRetired  = "unedge"
 	foldEdgeOnlyRetired = "edge1"
 )
+
+// decodeNumberPreserving decodes stored JSONB without flattening numbers to
+// float64: a rewritten payload must re-marshal every untouched value
+// byte-faithfully, concurrency tokens included.
+func decodeNumberPreserving(raw []byte) (map[string]any, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var out map[string]any
+	if err := dec.Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}

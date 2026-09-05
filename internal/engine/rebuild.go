@@ -57,10 +57,6 @@ type RebuildReport struct {
 	Head       int64         `json:"head"`
 	Records    int64         `json:"records"`
 	Took       time.Duration `json:"took"`
-	// Unverified marks a fold built from history the chain refused
-	// (RebuildRepositoryUnverified): installed on explicit demand, and the
-	// report says so rather than letting it read as clean.
-	Unverified bool `json:"unverified,omitempty"`
 }
 
 // foldTables are cleared and replayed, in this order: a purge effect walks the
@@ -73,45 +69,21 @@ var foldTables = []string{
 // cursor while it writes, so the changelog is read a page at a time by seq.
 const rebuildBatch = 500
 
-// Rebuilder and ForceRebuilder are the operator hat's rebuild seams, off
-// substrate.Service like Resetter (auth.go) and asserted here for the same
-// reason. They stay two interfaces because rebuilding from history the chain
-// refuses is a distinct act, not a flag the ordinary path could trip over.
+// Rebuilder is the operator hat's rebuild seam, off substrate.Service like
+// Resetter (auth.go) and asserted here for the same reason.
 type Rebuilder interface {
 	RebuildRepository(ctx context.Context, username string) (RebuildReport, error)
 }
 
-type ForceRebuilder interface {
-	RebuildRepositoryUnverified(ctx context.Context, username string) (RebuildReport, error)
-}
-
-var (
-	_ Rebuilder      = (*service)(nil)
-	_ ForceRebuilder = (*service)(nil)
-)
+var _ Rebuilder = (*service)(nil)
 
 // RebuildRepository clears one repository's fold and replays its whole changelog
 // into it. The repository's own advisory lock is held for the duration, so no
 // write can interleave, and the whole rebuild is ONE transaction: a rebuild
-// either replaces the fold or leaves it exactly as it was.
-//
-// THE CHAIN IS VERIFIED FIRST, before anything is cleared: tampered history
-// refuses to become the live fold. The explicit escape hatch is
-// RebuildRepositoryUnverified, a distinct method on purpose.
+// either replaces the fold or leaves it exactly as it was. It replays the
+// table; the segment files under the data root take over in phase 2 of
+// docs/plans/filesystem-changelog.md.
 func (s *service) RebuildRepository(ctx context.Context, username string) (RebuildReport, error) {
-	return s.rebuildRepository(ctx, username, true)
-}
-
-// RebuildRepositoryUnverified rebuilds from history the chain may refuse.
-// What it installs is exactly as trustworthy as the bytes in the table, which
-// is the thing the caller is choosing to accept; the report carries the mark.
-func (s *service) RebuildRepositoryUnverified(ctx context.Context, username string) (RebuildReport, error) {
-	report, err := s.rebuildRepository(ctx, username, false)
-	report.Unverified = true
-	return report, err
-}
-
-func (s *service) rebuildRepository(ctx context.Context, username string, verify bool) (RebuildReport, error) {
 	started := time.Now()
 	repo, err := s.repositoryByUsername(ctx, username)
 	if err != nil {
@@ -132,7 +104,7 @@ func (s *service) rebuildRepository(ctx context.Context, username string, verify
 		ctx: ctx, ds: ds, tx: tx, actor: substrate.ActorSystem, tier: substrate.TierMachine,
 		now: nowUTC(), internal: true,
 	}
-	if err := t.rebuild(&report, verify); err != nil {
+	if err := t.rebuild(&report); err != nil {
 		_ = tx.Rollback()
 		return report, err
 	}
@@ -143,7 +115,7 @@ func (s *service) rebuildRepository(ctx context.Context, username string, verify
 	return report, nil
 }
 
-func (t *txn) rebuild(report *RebuildReport, verify bool) error {
+func (t *txn) rebuild(report *RebuildReport) error {
 	// The write path's own serialization: holding the changelog lock for the whole
 	// rebuild means no writer can append while the fold is missing.
 	if err := t.lockKey(changelogLockKey); err != nil {
@@ -155,33 +127,6 @@ func (t *txn) rebuild(report *RebuildReport, verify bool) error {
 	// tables are cleared.
 	if err := t.refuseNewerChangelogDialect(); err != nil {
 		return err
-	}
-	// The chain check runs INSIDE this transaction, under this lock, over the
-	// exact bytes the replay below will fold (adversarial review, both
-	// passes: a verify on a separate connection blesses a moment, not the
-	// bytes installed). It is verifyChainAndEpochs, not the chain walk alone,
-	// so the activation epoch's signed head still catches an unsigned prefix
-	// rewritten and re-chained below signed_from_seq (#252).
-	if verify {
-		signing := t.ds.signing()
-		var finding string
-		if _, _, err := verifyChainAndEpochs(t.ctx, t.tx, t.ds.scope.Repository, signing.signedFrom, signing.public, 0,
-			func(f string) {
-				if finding == "" {
-					finding = f
-				}
-			}); err != nil {
-			return err
-		}
-		if finding != "" {
-			return fmt.Errorf("substrate/engine: rebuild refuses: the chain does not verify (%s); run `repository verify`, and only rebuild --force-unverified once you understand what you would be installing", finding)
-		}
-		// Signing is mandatory; a repository that never activated has hashes
-		// but no signature guarantee at all, so a verified rebuild refuses
-		// it. --force-unverified is the one door, and it says what it is.
-		if signing.signedFrom == 0 {
-			return fmt.Errorf("substrate/engine: rebuild refuses: changelog signing has never activated on this repository, so no signature vouches for the history this would install; open it under a credential key first")
-		}
 	}
 	for _, table := range foldTables {
 		if _, err := t.exec(`DELETE FROM ` + table); err != nil {

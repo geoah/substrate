@@ -10,19 +10,15 @@ import (
 
 // Blobs says where blob bytes live. It is part of Config and also loadable on
 // its own, because substratectl's operator hat needs the same answer to
-// migrate bytes from one backend to another.
+// migrate bytes out of the `blobs` column.
 type Blobs struct {
-	// Store is `postgres` (the default, the `blobs` bytea column, where one
-	// database dump is a whole backup), `fs` (a directory) or `s3` (a
-	// bucket). Both external backends put the bytes outside the database, so
-	// a backup becomes two artifacts — docs/operations.md says what the
-	// second one is. Switching backends on a store that already holds bytes
-	// is refused at boot; `substratectl blobs migrate` is the way across.
-	Store string `envconfig:"SUBSTRATE_BLOB_STORE" default:"postgres"`
-	// FSRoot is the fs backend's root directory, one subdirectory per
-	// repository. It must be absolute, and it must be on storage that
-	// outlives the container.
-	FSRoot string `envconfig:"SUBSTRATE_BLOB_FS_ROOT" default:""`
+	// Store is `fs` (the default: <data root>/repositories/<id>/blobs, so the
+	// repository directory is the whole backup) or `s3` (a bucket, which
+	// makes the backup two artifacts; docs/operations.md says what the second
+	// one is). `postgres`, the `blobs` bytea column, is no longer a runtime
+	// choice: the column is readable only through `substratectl blobs
+	// migrate --from postgres`, which moves the bytes out.
+	Store string `envconfig:"SUBSTRATE_BLOB_STORE" default:"fs"`
 	// The s3 backend: any S3-compatible endpoint. The bucket must be
 	// PRIVATE — the bytes are stored as they arrived, so anything that can
 	// read the bucket can read every repository's blobs.
@@ -50,16 +46,16 @@ func LoadBlobs() (Blobs, error) {
 	return b, err
 }
 
-// Backend builds the configured store. An unknown name is a refusal that
-// lists the three, rather than a silent fall back to the default: a typo in
-// SUBSTRATE_BLOB_STORE would otherwise write bytes somewhere the operator did
-// not mean.
-func (b Blobs) Backend() (blobbytes.Backend, error) {
+// Backend builds the configured store. The fs backend is rooted at dataRoot,
+// the data root every repository directory lives under (Data.Root). An
+// unknown name is a refusal that lists the two, rather than a silent fall
+// back to the default: a typo in SUBSTRATE_BLOB_STORE would otherwise write
+// bytes somewhere the operator did not mean. `postgres` is refused by name,
+// with the one command that still reads the column.
+func (b Blobs) Backend(dataRoot string) (blobbytes.Backend, error) {
 	switch b.Store {
-	case "", blobbytes.BackendPostgres:
-		return blobbytes.NewPostgres(), nil
-	case blobbytes.BackendFS:
-		return blobbytes.NewFS(b.FSRoot)
+	case "", blobbytes.BackendFS:
+		return blobbytes.NewFS(dataRoot)
 	case blobbytes.BackendS3:
 		return blobbytes.NewS3(blobbytes.S3Config{
 			Endpoint:        b.S3Endpoint,
@@ -71,8 +67,11 @@ func (b Blobs) Backend() (blobbytes.Backend, error) {
 			Prefix:          b.S3Prefix,
 			PathStyle:       b.S3PathStyle,
 		})
+	case blobbytes.BackendPostgres:
+		return nil, fmt.Errorf("SUBSTRATE_BLOB_STORE %q is not a runtime store: the `blobs` column is readable only through `substratectl blobs migrate --from postgres`, which moves the bytes into %s or %s",
+			b.Store, blobbytes.BackendFS, blobbytes.BackendS3)
 	default:
-		return nil, fmt.Errorf("unknown SUBSTRATE_BLOB_STORE %q: one of %s, %s, %s",
-			b.Store, blobbytes.BackendPostgres, blobbytes.BackendFS, blobbytes.BackendS3)
+		return nil, fmt.Errorf("unknown SUBSTRATE_BLOB_STORE %q: one of %s, %s",
+			b.Store, blobbytes.BackendFS, blobbytes.BackendS3)
 	}
 }

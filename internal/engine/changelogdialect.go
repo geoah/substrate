@@ -15,7 +15,7 @@ package engine
 //
 // THE STAMP RIDES THE APPEND. Opening READS the stamp and refuses a newer one;
 // the stamp itself is written by the first transaction this binary appends to
-// the changelog (settleChain), in that transaction, so it is exactly as
+// the changelog (settleChecksums), in that transaction, so it is exactly as
 // durable as the first entry it claims. The invariant is then tight in both
 // directions: no entry exists that the stamp does not cover, and no store is
 // barred over entries nobody wrote. An open that fails before it appends, the
@@ -176,7 +176,7 @@ const changelogDialectStamp = `
 	SET dialect = GREATEST(changelog_dialect.dialect, EXCLUDED.dialect), updated_at = now()`
 
 // stampChangelogDialect claims the dialect from inside a transaction that is
-// APPENDING (settleChain calls it, so creation's seed and every later write
+// APPENDING (settleChecksums calls it, so creation's seed and every later write
 // run through the same place). The claim is written by the transaction that
 // writes the entries, so it commits with them or not at all, and the dataset
 // only remembers it AFTER that commit: a flag set on a rolled-back stamp would

@@ -23,20 +23,31 @@ const (
 // mistaken for a digest, so List skips it and a reader never opens one.
 const tmpPrefix = ".incoming-"
 
-// FS keeps blob bytes in a directory, one subdirectory per repository:
-// <root>/<repository>/<digest>. It is the single-box and compose answer.
+// FS keeps blob bytes under the data root, inside each repository's own
+// directory: <root>/repositories/<repository>/blobs/<digest>. It is the
+// default, and the one backend under which the repository directory is the
+// whole backup: the changelog segments, the sealed store and the bytes travel
+// together when the directory is copied.
 //
-// What it gives up against the postgres backend, both deliberately:
-// a database dump is no longer a whole backup (the root is the second half,
-// and docs/operations.md says so), and row level security no longer reaches
-// the bytes — the repository is a directory, and anything that can read the
-// root can read every repository.
+// Row level security does not reach the bytes: the repository is a
+// directory, and anything that can read the root can read every repository,
+// which is what dirMode and fileMode are for.
 type FS struct{ root string }
 
-// NewFS opens the filesystem backend rooted at root, creating it if it is not
-// there. The root must be an absolute path: a relative one would follow the
-// process's working directory, and a store that moves when the server is
-// restarted from another directory is a store that has lost its bytes.
+// repositoriesDir is the directory under the data root that holds one
+// subdirectory per repository, and blobsDir the subdirectory inside each that
+// holds the bytes. The engine creates the first at boot; the second appears
+// on the repository's first Put.
+const (
+	repositoriesDir = "repositories"
+	blobsDir        = "blobs"
+)
+
+// NewFS opens the filesystem backend over the data root, creating the root if
+// it is not there. The root must be an absolute path: a relative one would
+// follow the process's working directory, and a store that moves when the
+// server is restarted from another directory is a store that has lost its
+// bytes.
 func NewFS(root string) (*FS, error) {
 	if root == "" {
 		return nil, errors.New("blobbytes: the fs backend needs a root directory")
@@ -53,14 +64,16 @@ func NewFS(root string) (*FS, error) {
 // Name is BackendFS.
 func (*FS) Name() string { return BackendFS }
 
-// Repository binds the backend to one repository's directory. The id is
-// checked against the repository grammar first, so the directory is always
-// exactly one segment below the root.
+// Repository binds the backend to one repository's blobs directory,
+// <root>/repositories/<repository>/blobs. The id is checked against the
+// repository grammar first, so it is always exactly one path segment. Nothing
+// is created here: the directory appears on the first Put, so binding a
+// repository that never stored a blob leaves no trace on disk.
 func (f *FS) Repository(repository string, _ DB) (Store, error) {
 	if err := checkRepository(repository); err != nil {
 		return nil, err
 	}
-	return &fsStore{dir: filepath.Join(f.root, repository)}, nil
+	return &fsStore{dir: filepath.Join(f.root, repositoriesDir, repository, blobsDir)}, nil
 }
 
 type fsStore struct{ dir string }
@@ -168,10 +181,12 @@ func (f *fsStore) Delete(_ context.Context, digest string) error {
 	return syncDir(f.dir)
 }
 
-// List walks the repository's directory. os.ReadDir sorts by filename, and a
-// digest is its filename, so the entries come back in the order the sweep's
-// cursor expects. Anything that is not a digest — a half-written temporary,
-// something an operator dropped in — is skipped rather than reported as a blob.
+// List walks the repository's blobs directory. os.ReadDir sorts by filename,
+// and a digest is its filename, so the entries come back in the order the
+// sweep's cursor expects. A repository that never stored a blob has no blobs
+// directory and lists as empty. Anything that is not a digest — a half-written
+// temporary, something an operator dropped in — is skipped rather than
+// reported as a blob.
 func (f *fsStore) List(_ context.Context, after string, limit int) ([]Object, error) {
 	entries, err := os.ReadDir(f.dir)
 	if errors.Is(err, os.ErrNotExist) {

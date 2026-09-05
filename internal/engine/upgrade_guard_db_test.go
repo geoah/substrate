@@ -103,7 +103,7 @@ func seededRepository(t *testing.T) (dsn string) {
 func openMoved(t *testing.T, dsn, tree string) error {
 	t.Helper()
 	bumpPackageVersion(t, tree, corePackage, "99")
-	svc, err := engine.Open(context.Background(), dsn, engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(tree))
+	svc, err := engine.Open(context.Background(), dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(tree))
 	if err != nil {
 		return err
 	}
@@ -138,7 +138,7 @@ func TestBootUpgradeRefusesANarrowingWithLiveRows(t *testing.T) {
 func stillSpeaksTheOldShape(t *testing.T, dsn string) {
 	t.Helper()
 	ctx := context.Background()
-	svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(shippedTree(t)))
+	svc, err := engine.Open(ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(shippedTree(t)))
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestBootUpgradeRefusesAnUnstorableDefault(t *testing.T) {
 	// The declaration did not land: the property the bad default rode in on is
 	// not declared, so a write naming it is refused as undeclared.
 	ctx := context.Background()
-	svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(shippedTree(t)))
+	svc, err := engine.Open(ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(shippedTree(t)))
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}

@@ -22,7 +22,7 @@ func TestOldActorSpellingSurvivesRebuild(t *testing.T) {
 	if testing.Short() {
 		t.Skip("db test")
 	}
-	svc, ds, dsn := newChainDataset(t)
+	svc, ds, dsn := newDatasetWithDSN(t)
 
 	task := mustPut(t, ds, retiredActor, substrate.PutInput{
 		Kind:       principalTask,
@@ -69,6 +69,6 @@ func TestOldActorSpellingSurvivesRebuild(t *testing.T) {
 		t.Fatal("the rebuilt fold does not match: a retired actor spelling did not replay as written")
 	}
 	if report := mustVerify(t, svc, "geoah"); !report.OK {
-		t.Fatalf("the chain does not verify over the retired spelling: %+v", report.Findings)
+		t.Fatalf("the checksums do not verify over the retired spelling: %+v", report.Findings)
 	}
 }

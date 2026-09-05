@@ -62,25 +62,22 @@ func (a *app) dsn() (string, error) {
 
 // openEngineRead opens the substrate engine with whatever credential key the
 // environment holds; its absence is not fatal HERE. Rebuild re-links existing
-// sealed material and never opens it, and reseal enforces its own key
-// requirement in the engine (a keyless reseal writes nothing but markers, so
-// it refuses loudly there). The caller closes it.
+// sealed material and never opens it, and verify only reads. The caller
+// closes it.
 func (a *app) openEngineRead(ctx context.Context) (substrate.Service, error) {
 	return a.openEngineWithKey(ctx, os.Getenv(credentialKeyEnv))
 }
 
 // openEngineWrite opens the substrate engine for a command that WRITES sealed
-// material (user reset). The credential key is REQUIRED, with no escape: the
-// write appends changelog entries, every entry is signed, and the signing
-// seed only opens under this key, so a keyless engine cannot finish a reset
-// at all. It would also store the password hash and the TOTP seed as a
-// plain-marked payload. The refusal is here, before a password is typed,
-// rather than at the append.
+// material (user reset). The credential key is REQUIRED, with no escape: a
+// keyless engine would store the password hash and the TOTP seed under a
+// plain-marked DEK wrap the server later accepts. The refusal is here, before
+// a password is typed, rather than at the write.
 func (a *app) openEngineWrite(ctx context.Context) (substrate.Service, error) {
 	credKey := os.Getenv(credentialKeyEnv)
 	if credKey == "" {
 		return nil, fmt.Errorf(
-			"refusing to reset: set %s to the key the server runs with. Changelog signing is mandatory and its seed seals under that key, so a reset without it cannot write",
+			"refusing to reset: set %s to the key the server runs with. The reset writes sealed material, and without the key it would land under a plain-marked wrap",
 			credentialKeyEnv)
 	}
 	return a.openEngineWithKey(ctx, credKey)
@@ -101,11 +98,19 @@ func (a *app) openEngineWithKey(ctx context.Context, credKey string) (substrate.
 	if err != nil {
 		return nil, err
 	}
+	// The data root the server runs with, from the same variable: every
+	// repository's files live under it, and the engine refuses to open
+	// without one.
+	data, err := config.LoadData()
+	if err != nil {
+		return nil, err
+	}
 	// The engine logs its boot at info; an operator command's output is its
 	// own report, so only warnings and worse reach stderr.
 	log := slog.New(slog.NewTextHandler(a.errOut, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	opts := []engine.Option{
 		engine.WithRegistry(vocabulary.NewRegistry()),
+		engine.WithDataRoot(data.Root),
 		engine.WithCredentialKey(credKey),
 		engine.WithLogger(log),
 	}
@@ -228,9 +233,8 @@ func assertScopedAppPrincipal(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-// The operator hat's seams are engine.Resetter, engine.Rebuilder,
-// engine.ForceRebuilder, engine.Resealer and engine.Verifier. All are
-// deliberately OFF substrate.Service — nothing reachable from the network
+// The operator hat's seams are engine.Resetter, engine.Rebuilder and
+// engine.Verifier. All are deliberately OFF substrate.Service — nothing reachable from the network
 // should be able to call them — so substratectl asks for them by shape, and
 // the engine asserts each against *service at compile time.
 

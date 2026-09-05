@@ -54,12 +54,15 @@ type bundleLifecycler interface {
 type reopenableDataset struct {
 	ds  substrate.Dataset
 	dsn string
-	svc substrate.Service
+	// dataRoot is kept with the DSN: a reopen must find the same repository
+	// directory, not a fresh one.
+	dataRoot string
+	svc      substrate.Service
 }
 
 func newReopenableDataset(t *testing.T) *reopenableDataset {
 	t.Helper()
-	r := &reopenableDataset{dsn: testdb.NewSchema(t)}
+	r := &reopenableDataset{dsn: testdb.NewSchema(t), dataRoot: t.TempDir()}
 	r.open(t)
 	ctx := context.Background()
 	if _, err := r.svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
@@ -77,6 +80,7 @@ func (r *reopenableDataset) open(t *testing.T) {
 	t.Helper()
 	svc, err := engine.Open(context.Background(), r.dsn,
 		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		engine.WithDataRoot(r.dataRoot),
 		engine.WithCredentialKey(credKey),
 	)
 	if err != nil {

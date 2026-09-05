@@ -119,7 +119,7 @@ func addShippedKind(t *testing.T, tree, pkg, singular, plural string) {
 
 func openTree(t *testing.T, dsn, tree string) substrate.Service {
 	t.Helper()
-	svc, err := engine.Open(context.Background(), dsn, engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(tree))
+	svc, err := engine.Open(context.Background(), dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(tree))
 	if err != nil {
 		t.Fatalf("open the substrate: %v", err)
 	}

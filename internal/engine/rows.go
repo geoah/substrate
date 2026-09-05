@@ -303,29 +303,27 @@ func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ
 		causedBy = sql.NullInt64{Int64: t.causedBy, Valid: true}
 	}
 	// RETURNING payload::text hands back the payload AS STORED: jsonb
-	// re-renders what Go sent (key order, number lexemes), and the chain
-	// hashes what a verifier will read later, never the bytes that went in.
+	// re-renders what Go sent (key order, number lexemes), and the checksum
+	// covers what a verifier will read later, never the bytes that went in.
 	var seq int64
 	var stored []byte
-	// The INSERT carries the all-zero signature and the transaction's
-	// principal — the token id the door verified, empty where no token stands
-	// behind the write. The zero never survives the transaction: settleChain
-	// signs every pending entry at commit or refuses, and the store's
-	// `changelog_sig_needs_hash` CHECK requires exactly this value while
-	// `hash` is still NULL. The pending entry and the row must agree on every
-	// hashed field, so both sides of this append stamp the same principal.
+	// The INSERT carries the transaction's principal, the token id the door
+	// verified, empty where no token stands behind the write. `hash` is NULL
+	// until settleChecksums stamps it at commit. The pending entry and the
+	// row must agree on every column the checksum covers, so both sides of
+	// this append stamp the same principal.
 	if err := t.row(`
-		INSERT INTO changelog (seq, ts, actor, principal, op, record_id, kind, payload, caused_by, sig)
-		VALUES ((SELECT coalesce(max(seq), 0) + 1 FROM changelog), $1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)
+		INSERT INTO changelog (seq, ts, actor, principal, op, record_id, kind, payload, caused_by)
+		VALUES ((SELECT coalesce(max(seq), 0) + 1 FROM changelog), $1, $2, $3, $4, $5, $6, $7::jsonb, $8)
 		RETURNING seq, payload::text`,
-		t.now, string(actor), t.principal, string(op), recordID, typ, raw, causedBy, unsignedSig).Scan(&seq, &stored); err != nil {
+		t.now, string(actor), t.principal, string(op), recordID, typ, raw, causedBy).Scan(&seq, &stored); err != nil {
 		return err
 	}
 	if seq > t.maxSeq {
 		t.maxSeq = seq
 	}
 	t.entries = append(t.entries, changeEntry{seq: seq, op: op, kind: typ, id: recordID})
-	t.pending = append(t.pending, chainEntry{
+	t.pending = append(t.pending, pendingEntry{
 		Seq: seq, TS: t.now, Actor: string(actor), Principal: t.principal,
 		Op: string(op), RecordID: recordID, Kind: typ,
 		CausedBy: causedBy.Int64, CausedByOK: causedBy.Valid,

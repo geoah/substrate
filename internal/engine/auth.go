@@ -24,7 +24,6 @@ package engine
 
 import (
 	"context"
-	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -360,7 +359,7 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 		label = "login"
 	}
 	out.Authority = in.Authority
-	_, signKey, err := s.createSeededRepository(ctx, in.Username, in.Authority, func(t *txn) error {
+	_, err = s.createSeededRepository(ctx, in.Username, in.Authority, func(t *txn) error {
 		// Fresh account: no prior credential to compare against, so no CAS.
 		if err := t.writeCredential(credentialWrite{
 			username: in.Username, passwordHash: hash,
@@ -377,14 +376,6 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 	})
 	if err != nil {
 		return zero, err
-	}
-	// The PUBLIC key, and only ever that: it is what verifies a signature, so
-	// it is the whole of what a user needs, and it is worth handing over
-	// because a pin read back out of the same database an attacker rewrote
-	// proves nothing. The seed stays sealed under the credential key, where
-	// the only signer keeps it.
-	if signKey != nil {
-		out.SigningPublicKey = hex.EncodeToString(signKey.Public().(ed25519.PublicKey))
 	}
 	return out, nil
 }

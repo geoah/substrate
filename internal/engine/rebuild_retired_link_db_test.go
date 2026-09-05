@@ -50,11 +50,8 @@ func TestRebuildRefusesARetiredLinkOp(t *testing.T) {
 				t.Fatalf("planted %d entries, want 1", n)
 			}
 
-			// UNVERIFIED, deliberately: raw SQL breaks the hash chain, and the
-			// chain check would refuse first and prove nothing about the fold.
-			// Forcing past it is what isolates the refusal under test.
 			before := foldOf(t, ds)
-			_, err = svc.(forceRebuilder).RebuildRepositoryUnverified(ctx, "geoah")
+			_, err = svc.(rebuilder).RebuildRepository(ctx, "geoah")
 			if err == nil {
 				t.Fatalf("the rebuild replayed a %s entry", op)
 			}

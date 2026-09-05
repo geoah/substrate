@@ -2,10 +2,13 @@
 // blob manifest is a record in Postgres and stays the truth; only the bytes
 // live here.
 //
-// Three backends implement one Store: `postgres` keeps the bytes in the
-// `blobs` bytea column (the default, and the only backend whose write settles
-// inside the caller's database transaction), `fs` keeps them at
-// <root>/<repository>/<digest>, `s3` at the same key shape under a bucket.
+// Two backends are runtime choices: `fs` (the default) keeps the bytes at
+// <root>/repositories/<repository>/blobs/<digest>, inside the repository
+// directory that is the backup unit, and `s3` keeps them at
+// <prefix><repository>/<digest> under a bucket. A third, `postgres`, reads
+// the `blobs` bytea column the bytes used to live in; it is a MIGRATION
+// SOURCE for `substratectl blobs migrate --from postgres` and nothing else,
+// and the engine refuses to boot while the column still holds rows.
 //
 // A Store is bound to ONE repository before a caller can reach it. The
 // repository is half of every key and no method takes one, so a caller holding

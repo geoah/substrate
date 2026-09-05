@@ -46,15 +46,6 @@ func TestRegisterThenLogin(t *testing.T) {
 	if out.Authority != "ada.example.com" {
 		t.Fatalf("registration authority = %q, want the default under the request host", out.Authority)
 	}
-	// Registration hands back the signing PIN and no private key material:
-	// `signingPublicKey` is what `repository verify --expect-public-key` wants,
-	// and the seed that mints the signatures stays sealed server-side.
-	if out.SigningPublicKey != strings.Repeat("cd", 32) {
-		t.Fatalf("registration did not carry the signing public key: %+v", out)
-	}
-	if strings.Contains(rec.Body.String(), "signingSeed") {
-		t.Fatal("registration carried a signing seed; no response may hand out private key material")
-	}
 
 	// The token registration handed back is an ordinary bearer.
 	wantStatus(t, env.do(t, http.MethodGet, "/api/v1/samples.substrate.reamde.dev/people/person", out.Secret, nil),
@@ -67,9 +58,6 @@ func TestRegisterThenLogin(t *testing.T) {
 	wantStatus(t, rec, http.StatusCreated)
 	if login := decodeJSON[tokenResponse](t, rec); login.Secret == out.Secret {
 		t.Fatal("login handed back the registration's secret")
-	}
-	if strings.Contains(rec.Body.String(), "signingSeed") {
-		t.Fatal("login carried a signing seed; no response hands out private key material")
 	}
 }
 

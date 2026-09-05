@@ -334,16 +334,13 @@ type registerRequest struct {
 	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
 }
 
-// registerResult is a tokenResult plus the recovery half — the enrolled
-// recipient, and the identity ONLY when the server minted the pair — and the
-// repository's changelog-signing PUBLIC key (hex). No private key material
-// rides this response.
+// registerResult is a tokenResult plus the recovery half: the enrolled
+// recipient, and the identity ONLY when the server minted the pair.
 type registerResult struct {
 	tokenResult
 	Authority         string `json:"authority,omitempty"`
 	RecoveryKey       string `json:"recoveryKey,omitempty"`
 	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
-	SigningPublicKey  string `json:"signingPublicKey,omitempty"`
 }
 
 type recoveryEnrollRequest struct {

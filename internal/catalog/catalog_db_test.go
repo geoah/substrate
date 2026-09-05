@@ -71,6 +71,7 @@ func newDataset(t *testing.T) substrate.Dataset {
 	dsn := testdb.NewSchema(t)
 	svc, err := engine.Open(context.Background(), dsn,
 		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		engine.WithDataRoot(t.TempDir()),
 		engine.WithCredentialKey(credKey),
 	)
 	if err != nil {

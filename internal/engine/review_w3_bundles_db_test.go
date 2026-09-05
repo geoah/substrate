@@ -37,6 +37,7 @@ func newW3Env(t *testing.T, opts ...engine.Option) (substrate.Service, substrate
 	dsn := testdb.NewSchema(t)
 	all := []engine.Option{
 		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		engine.WithDataRoot(t.TempDir()),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 	}
 	all = append(all, opts...)
@@ -260,7 +261,7 @@ func TestW3OAuthStateReplayRefused(t *testing.T) {
 func TestW3OAuthEmptyStateKeyRefused(t *testing.T) {
 	t.Parallel()
 	dsn := testdb.NewSchema(t)
-	_, err := engine.Open(context.Background(), dsn, engine.WithCredentialKey(engine.TestCredentialKey),
+	_, err := engine.Open(context.Background(), dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithOAuth("", "https://substrate.example/callback", nil),
 	)

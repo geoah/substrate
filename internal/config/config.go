@@ -20,6 +20,9 @@ type Config struct {
 	// DatabaseURL is the one Postgres holding every repository, in one
 	// shared schema.
 	DatabaseURL string `envconfig:"DATABASE_URL" required:"true"`
+	// Data is the data root every repository directory lives under. Its own
+	// type, because the operator hat loads it without the rest (LoadData).
+	Data Data
 	// Blobs says where blob bytes live. Its own type, because the operator
 	// hat loads it without the rest (LoadBlobs).
 	Blobs Blobs
@@ -44,12 +47,11 @@ type Config struct {
 	// provider app registers. Both unset disables the facility.
 	OAuthStateKey    string `envconfig:"SUBSTRATE_OAUTH_STATE_KEY" default:""`
 	OAuthCallbackURL string `envconfig:"SUBSTRATE_OAUTH_CALLBACK_URL" default:""`
-	// CredentialKey seals the credential store (AES-256-GCM) and every
-	// repository's changelog signing seed. It is key material, not a
-	// passphrase: standard-base64 of exactly 32 bytes, the AES-256 key
-	// itself, which Validate holds it to (ADR 0024). Changelog signing is
-	// MANDATORY and its seed may never sit unsealed beside the signatures it
-	// mints, so a host without this key refuses to boot. There is no
+	// CredentialKey seals the credential store (AES-256-GCM): every
+	// repository's DEK wraps under it. It is key material, not a passphrase:
+	// standard-base64 of exactly 32 bytes, the AES-256 key itself, which
+	// Validate holds it to (ADR 0024). A host without this key would store
+	// every DEK wrap plain-marked, so it refuses to boot. There is no
 	// exception.
 	CredentialKey string `envconfig:"SUBSTRATE_CREDENTIAL_KEY" default:""`
 	// ConsoleURL is the console origin the OAuth callback return-page posts its
@@ -74,6 +76,9 @@ func Load() (Config, error) {
 // Validate refuses a configuration the service cannot run safely, before any
 // repository opens.
 func (c Config) Validate() error {
+	if err := c.Data.Validate(); err != nil {
+		return err
+	}
 	return ValidateCredentialKey(c.CredentialKey)
 }
 
@@ -88,7 +93,7 @@ func (c Config) Validate() error {
 // in prose.
 func ValidateCredentialKey(key string) error {
 	if key == "" {
-		return errors.New("SUBSTRATE_CREDENTIAL_KEY is unset: changelog signing is mandatory and its seed seals under this key, so a host without it cannot write. Set it to base64 of 32 bytes (generate one with: openssl rand -base64 32)")
+		return errors.New("SUBSTRATE_CREDENTIAL_KEY is unset: every repository's DEK wraps under this key, so a host without it would store its secrets under a plain-marked wrap. Set it to base64 of 32 bytes (generate one with: openssl rand -base64 32)")
 	}
 	raw, err := base64.StdEncoding.DecodeString(key)
 	if err != nil || len(raw) != 32 {

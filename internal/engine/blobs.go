@@ -93,10 +93,12 @@ func (ds *dataset) PutBlob(ctx context.Context, actor substrate.Actor, up substr
 	return ds.putBlobExternal(ctx, actor, store, digest, name, up.MediaType, data)
 }
 
-// putBlobOneTx is the postgres path: bytes AND manifest settle in ONE
-// transaction under the exclusive per-digest lock, so a GC sweep can never
-// delete the byte row between its insert and the manifest settling, and no
-// crash can leave either half without the other.
+// putBlobOneTx is the path for a store that can join the caller's transaction
+// (blobbytes.InTransaction): bytes AND manifest settle in ONE transaction
+// under the exclusive per-digest lock, so a GC sweep can never delete the
+// bytes between their insert and the manifest settling, and no crash can
+// leave either half without the other. Neither runtime backend offers it
+// today; the fs and s3 default is putBlobExternal.
 func (ds *dataset) putBlobOneTx(ctx context.Context, actor substrate.Actor, store blobbytes.InTransaction, digest, name, mediaType string, data []byte) (*substrate.BlobInfo, error) {
 	size := int64(len(data))
 	var info *substrate.BlobInfo
@@ -217,9 +219,9 @@ func (t *txn) authoritativeBlobMeta(digest, name, mediaType string, size int64) 
 }
 
 // blobBytes binds the configured backend to this repository. The repository is
-// half of every key the fs and s3 backends build and the scoped pool is what
-// row level security binds for the postgres one, so a store handed to a
-// request can only ever reach that request's repository.
+// half of every key the fs and s3 backends build (and the scoped pool is what
+// row level security would bind for a backend that runs on it), so a store
+// handed to a request can only ever reach that request's repository.
 func (ds *dataset) blobBytes() (blobbytes.Store, error) {
 	return ds.svc.blobs.Repository(ds.scope.Repository, ds.db)
 }
@@ -283,45 +285,25 @@ func (t *txn) mintPendingBlobRecord(actor substrate.Actor, digest, name, mediaTy
 	return err
 }
 
-// checkBlobBackend refuses a boot whose configured backend is not the one the
-// stored bytes are in. There is no automatic move: switching from postgres to
-// fs or s3 (or back) with blobs already stored would serve a 404 for every
-// blob that did not follow, and a 404 reads like a deletion. The migration is
-// an operator act — `substratectl blobs migrate` — so this names it and stops.
+// checkBlobBackend refuses a boot while the `blobs` bytea column still holds
+// bytes. The column was the store before the data root existed and is not
+// one any more: a boot on fs or s3 over rows left in it would serve a 404 for
+// every blob that did not follow, and a 404 reads like a deletion. There is
+// no automatic move; `substratectl blobs migrate --from postgres` is the
+// operator act that empties the column, so this names it and stops.
 //
-// It runs on the maintenance pool, which is the one that reads across
-// repositories, and it asks one question per direction:
-// into an external backend, whether any byte row is left behind; back into
-// postgres, whether any stored manifest has no byte row.
+// It runs on the maintenance pool, the one that reads across repositories,
+// and asks one question: whether any row is left. The fs and s3 backends are
+// not probed against each other, and never were; the boot check over the
+// repository directory is where the file side's integrity is held.
 func (s *service) checkBlobBackend(ctx context.Context) error {
-	if s.blobs.Name() == blobbytes.BackendPostgres {
-		// One row is the whole answer, so the probe stops at the first
-		// stranded blob rather than counting every record at every boot.
-		var one int
-		err := s.maint.QueryRowContext(ctx, `
-			SELECT 1 FROM records r
-			WHERE r.kind = $1 AND r.deleted_at IS NULL
-			  AND r.states->>'`+blobStateStatus+`' = $2
-			  AND NOT EXISTS (
-			      SELECT 1 FROM blobs b
-			      WHERE b.repository = r.repository AND b.digest = r.id)
-			LIMIT 1`,
-			kindBlob, string(substrate.BlobStored)).Scan(&one)
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("substrate/engine: check the blob store: %w", err)
-		}
-		return errors.New("substrate/engine: stored blobs have no bytes in Postgres — they were written to another blob store. Point SUBSTRATE_BLOB_STORE back at it, or move them with `substratectl blobs migrate`")
-	}
 	var rows int
 	if err := s.maint.QueryRowContext(ctx, `SELECT count(*) FROM blobs`).Scan(&rows); err != nil {
 		return fmt.Errorf("substrate/engine: check the blob store: %w", err)
 	}
 	if rows > 0 {
-		return fmt.Errorf("substrate/engine: SUBSTRATE_BLOB_STORE is %q but %d blobs still hold their bytes in Postgres — move them with `substratectl blobs migrate --to %s`, or set SUBSTRATE_BLOB_STORE back to postgres",
-			s.blobs.Name(), rows, s.blobs.Name())
+		return fmt.Errorf("substrate/engine: %d blobs still hold their bytes in the Postgres `blobs` column, which is no longer a blob store: move them into %s with `substratectl blobs migrate --from postgres`",
+			rows, s.blobs.Name())
 	}
 	return nil
 }

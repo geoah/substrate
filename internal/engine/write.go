@@ -1442,8 +1442,8 @@ func (t *txn) actorMayWriteProp(writer string) bool {
 // value is, never the value's own bytes:
 //
 //   - a property this write did not accept carries its stored ref through
-//     the merge untouched (legacy plaintext is the reseal migration's to
-//     move, not an unrelated patch's);
+//     the merge untouched (legacy plaintext is not an unrelated patch's to
+//     move);
 //   - an accepted value naming an existing sealed row OF THIS RECORD is a
 //     carried ref ONLY for the property that already owns the row, or for a
 //     row inserted in this txn no property owns yet: the auth and OAuth

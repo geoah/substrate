@@ -51,7 +51,7 @@ func lastPrincipal(t *testing.T, dsn string) string {
 
 func TestPrincipalStampsTheEntryAndItsManagerRows(t *testing.T) {
 	t.Parallel()
-	svc, ds, dsn := newChainDataset(t)
+	svc, ds, dsn := newDatasetWithDSN(t)
 	first := substrate.WithPrincipal(context.Background(), "tok_first")
 
 	task, err := ds.Put(first, owner, substrate.PutInput{
@@ -89,10 +89,10 @@ func TestPrincipalStampsTheEntryAndItsManagerRows(t *testing.T) {
 		t.Fatalf("the name manager still names %q after tok_second wrote it", namePrincipal)
 	}
 
-	// The principal is hashed like every other column, so the chain has to
-	// still verify over the entries that now carry one.
+	// The principal is covered by the checksum like every other column, so
+	// the entries that now carry one have to still verify.
 	if report := mustVerify(t, svc, "geoah"); !report.OK {
-		t.Fatalf("the chain does not verify with principals stamped: %+v", report.Findings)
+		t.Fatalf("the checksums do not verify with principals stamped: %+v", report.Findings)
 	}
 }
 
@@ -101,7 +101,7 @@ func TestPrincipalStampsTheEntryAndItsManagerRows(t *testing.T) {
 // placeholder any more: it is migration 0005's mark on history alone.
 func TestPrincipalIsEmptyWhereNoTokenWrote(t *testing.T) {
 	t.Parallel()
-	_, ds, dsn := newChainDataset(t)
+	_, ds, dsn := newDatasetWithDSN(t)
 
 	task := mustPut(t, ds, owner, substrate.PutInput{
 		Kind:       principalTask,
@@ -127,7 +127,7 @@ func TestPrincipalIsEmptyWhereNoTokenWrote(t *testing.T) {
 // and that row records a write the split must not erase.
 func TestSplitKeepsAManagerRowAnotherTokenWroteSince(t *testing.T) {
 	t.Parallel()
-	_, ds, dsn := newChainDataset(t)
+	_, ds, dsn := newDatasetWithDSN(t)
 	first := substrate.WithPrincipal(context.Background(), "tok_first")
 
 	winner, err := ds.Put(first, owner, substrate.PutInput{
@@ -176,7 +176,7 @@ func TestSplitKeepsAManagerRowAnotherTokenWroteSince(t *testing.T) {
 // per-property effect and through the merge's resync snapshot alike.
 func TestRebuildReplaysTheManagerPrincipal(t *testing.T) {
 	t.Parallel()
-	svc, ds, dsn := newChainDataset(t)
+	svc, ds, dsn := newDatasetWithDSN(t)
 	ctx := substrate.WithPrincipal(context.Background(), "tok_first")
 
 	winner, err := ds.Put(ctx, owner, substrate.PutInput{

@@ -4,7 +4,9 @@ package engine_test
 // open one, and what it takes to be refused. The case in hand is the 0005 a
 // branch build applied before the merge added its last CHECK. 0007 adds that
 // constraint wherever it is missing, and supersededSHA256 is what lets the
-// runner get as far as applying it.
+// runner get as far as applying it. 0014 drops the constraint again with the
+// rest of the signing state, so a fully migrated schema no longer carries it;
+// what these hold is the runner's bookkeeping.
 
 import (
 	"context"
@@ -42,12 +44,15 @@ func recordedHash(t *testing.T, db *sql.DB, version int) string {
 
 // strand rewrites a fully migrated schema into the one a pre-merge build of
 // PR #89 left: 0005 recorded under the hash that branch's file had, no 0007,
-// and the constraint 0007 exists to add still missing.
+// and the constraint 0007 exists to add still missing. The column the
+// constraint checks comes back too: 0005 added it and 0014 dropped it, and a
+// database stranded before 0007 still has it.
 func strand(t *testing.T, db *sql.DB) {
 	t.Helper()
 	for _, q := range []string{
 		`DELETE FROM schema_migrations WHERE version >= 7`,
 		`UPDATE schema_migrations SET sha256 = '` + branch0005 + `' WHERE version = 5`,
+		`ALTER TABLE repositories ADD COLUMN IF NOT EXISTS signed_from_seq bigint`,
 		`ALTER TABLE repositories DROP CONSTRAINT IF EXISTS repositories_signed_from_positive`,
 	} {
 		if _, err := db.Exec(q); err != nil {
@@ -66,6 +71,7 @@ func TestOpenHealsADatabaseTheBranchBuildMigrated(t *testing.T) {
 	}
 
 	svc, err := engine.Open(context.Background(), dsn,
+		engine.WithDataRoot(t.TempDir()),
 		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {
@@ -73,8 +79,8 @@ func TestOpenHealsADatabaseTheBranchBuildMigrated(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = svc.Close() })
 
-	if !constraintExists(t, db, "repositories_signed_from_positive") {
-		t.Fatal("0007 did not add the constraint the superseded 0005 lacks")
+	if constraintExists(t, db, "repositories_signed_from_positive") {
+		t.Fatal("0014 left the constraint 0007 added; the signing state was not dropped")
 	}
 	// The recorded 0005 hash STAYS what ran: it is the record of which file
 	// this database applied, and 0007 is what makes accepting it safe.
@@ -84,28 +90,34 @@ func TestOpenHealsADatabaseTheBranchBuildMigrated(t *testing.T) {
 	if recordedHash(t, db, 7) == "" {
 		t.Fatal("0007 is not recorded as applied")
 	}
+	if recordedHash(t, db, 14) == "" {
+		t.Fatal("0014 is not recorded as applied")
+	}
 }
 
-// The database that ran the LANDED 0005 already has the constraint, and 0007
-// runs against it too: the conditional add has to be a no-op rather than a
-// duplicate-object error.
-func TestTheCatchUpMigrationIsANoOpWhereTheConstraintStands(t *testing.T) {
+// Re-running 0014 over a schema it already ran on: every drop is IF EXISTS,
+// so a replay is a no-op rather than an undefined-object error.
+func TestDroppingTheSigningStateIsANoOpWhereItIsAlreadyGone(t *testing.T) {
 	t.Parallel()
 	_, dsn := newService(t)
 	db := rawDB(t, dsn)
-	if _, err := db.Exec(`DELETE FROM schema_migrations WHERE version >= 7`); err != nil {
-		t.Fatalf("unrecord 0007: %v", err)
+	if _, err := db.Exec(`DELETE FROM schema_migrations WHERE version >= 14`); err != nil {
+		t.Fatalf("unrecord 0014: %v", err)
 	}
-	if !constraintExists(t, db, "repositories_signed_from_positive") {
-		t.Fatal("the landed 0005 did not leave the constraint")
+	if constraintExists(t, db, "repositories_signed_from_positive") {
+		t.Fatal("the landed 0014 did not drop the constraint")
 	}
 	svc, err := engine.Open(context.Background(), dsn,
+		engine.WithDataRoot(t.TempDir()),
 		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {
-		t.Fatalf("re-applying 0007 over an existing constraint failed: %v", err)
+		t.Fatalf("re-applying 0014 over a migrated schema failed: %v", err)
 	}
 	t.Cleanup(func() { _ = svc.Close() })
+	if recordedHash(t, db, 14) == "" {
+		t.Fatal("0014 is not recorded as applied after the replay")
+	}
 }
 
 // An edited migration nobody sanctioned is still refused, and the refusal
@@ -118,6 +130,7 @@ func TestOpenRefusesAnUnknownEditedMigration(t *testing.T) {
 		t.Fatalf("edit the recorded hash: %v", err)
 	}
 	_, err := engine.Open(context.Background(), dsn,
+		engine.WithDataRoot(t.TempDir()),
 		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err == nil {

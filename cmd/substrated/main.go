@@ -93,8 +93,8 @@ func run() error {
 	setupLogger(cfg.LogLevel)
 	reportSandbox()
 
-	// Before anything opens: the credential key seals every signing seed and
-	// unwraps every DEK, so a host without valid key material may not boot.
+	// Before anything opens: the credential key unwraps every repository's
+	// DEK, so a host without valid key material may not boot.
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
@@ -108,19 +108,21 @@ func run() error {
 	// per pass. The process holds no key that could reach a
 	// repository-chosen endpoint.
 
-	// Where blob bytes live. The default is the `blobs` bytea column, so a
-	// deployment that sets nothing keeps a database dump as a whole backup.
-	blobs, err := cfg.Blobs.Backend()
+	// Where blob bytes live. The default is the fs backend under the data
+	// root, so a deployment that sets nothing has its bytes in the repository
+	// directory beside everything else the repository needs to come back.
+	blobs, err := cfg.Blobs.Backend(cfg.Data.Root)
 	if err != nil {
 		return err
 	}
-	if blobs.Name() != blobbytes.BackendPostgres {
-		slog.Info("blob bytes are stored outside Postgres: a database dump is no longer a whole backup",
+	if blobs.Name() != blobbytes.BackendFS {
+		slog.Info("blob bytes are stored outside the data root: a repository directory is no longer a whole backup",
 			"backend", blobs.Name())
 	}
 
 	opts := []engine.Option{
 		engine.WithKindsFS(kinds.Seed()),
+		engine.WithDataRoot(cfg.Data.Root),
 		engine.WithCredentialKey(cfg.CredentialKey),
 		engine.WithBlobStore(blobs),
 	}
