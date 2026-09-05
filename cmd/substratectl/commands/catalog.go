@@ -33,7 +33,7 @@ func (a *app) takeBundle(cmd *cobra.Command, id, verb, past string) error {
 	}
 	fmt.Fprintf(a.out, "%s %s\n", taken.ID, past)
 	printBundleStatus(a, taken.BundleStatus)
-	printSuggestedMappings(a, taken.SuggestedMappings)
+	printSuggestedMappings(a, id, taken.SuggestedMappings)
 	return nil
 }
 
@@ -46,17 +46,35 @@ type bundleTaken struct {
 
 // printSuggestedMappings says what the closure's suggested mappings did
 // (decision record 0049). A sample ships one per provider it knows, onto a
-// kind of its own, and the door admits only the ones whose provider this
-// repository holds, so a reader who installs Linear tomorrow has to be told
-// that importing this sample again is what lands the rest.
-func printSuggestedMappings(a *app, mappings []substrate.SuggestedMapping) {
+// kind of its own, and the door admits only the ones that resolve here, so a
+// reader who installs Linear tomorrow has to be told BOTH that importing this
+// sample again is what lands the rest and what that costs: a re-import
+// replaces the package (record 0048), so a kind or a property they added
+// since goes with it.
+//
+// The ids and targets are the ones this repository holds, rehomed by the door,
+// so a line names the person or task kind the reader can actually go and read.
+func printSuggestedMappings(a *app, sample string, mappings []substrate.SuggestedMapping) {
 	for _, m := range mappings {
-		if m.State == substrate.SuggestedMappingLanded {
-			fmt.Fprintf(a.out, "mapping:     %s -> %s: landed\n", m.From, m.To)
-			continue
+		fmt.Fprintf(a.out, "mapping:     %s -> %s: %s\n", m.From, m.To, suggestedMappingLine(m, sample))
+		for _, p := range m.Problems {
+			fmt.Fprintf(a.out, "             %s\n", p)
 		}
-		fmt.Fprintf(a.out, "mapping:     %s -> %s: waiting for %s; install it, then import again\n",
-			m.From, m.To, m.Package)
+	}
+}
+
+// suggestedMappingLine is one mapping's state and what to do about it.
+func suggestedMappingLine(m substrate.SuggestedMapping, sample string) string {
+	again := fmt.Sprintf("import %s again. Re-importing replaces that package and may remove your changes.", sample)
+	switch m.State {
+	case substrate.SuggestedMappingLanded:
+		return "landed"
+	case substrate.SuggestedMappingReady:
+		return "ready; " + again
+	case substrate.SuggestedMappingBlocked:
+		return fmt.Sprintf("blocked; upgrade %s first, then %s", m.Package, again)
+	default:
+		return fmt.Sprintf("waiting; install %s, then %s", m.Package, again)
 	}
 }
 

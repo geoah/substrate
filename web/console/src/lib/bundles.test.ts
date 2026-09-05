@@ -25,8 +25,6 @@ import {
   presentPackages,
   requirementsOf,
   requiresHint,
-  suggestedMappingHint,
-  suggestedMappingsOf,
   upgradableBundleCount,
   upgradeBlocked,
   upgradeMotion,
@@ -807,63 +805,5 @@ describe("oauthConnectBlocked, the connect gate", () => {
         [clientKind]
       )
     ).toBe(false)
-  })
-})
-
-describe("suggestedMappingHint", () => {
-  /** One suggested-mapping row, as suggestedMappingsOf builds them. */
-  function rows(states: ("landed" | "waiting")[], pkgs: string[]) {
-    const catalog = {
-      id: "samples.substrate.reamde.dev/people",
-      suggestedMappings: states.map((state, i) => ({
-        id: `samples.substrate.reamde.dev/people/m${i}`,
-        from: `${pkgs[i]}/thing`,
-        to: "samples.substrate.reamde.dev/people/person",
-        package: pkgs[i],
-        state,
-      })),
-    } as CatalogItem
-    return suggestedMappingsOf({
-      id: catalog.id,
-      name: "people",
-      authority: "samples.substrate.reamde.dev",
-      package: "people",
-      installed: false,
-      requires: [],
-      catalog,
-    })
-  }
-
-  it("says nothing when every mapping landed", () => {
-    expect(
-      suggestedMappingHint(
-        rows(["landed"], ["providers.substrate.reamde.dev/github"])
-      )
-    ).toBe("")
-  })
-
-  it("names the provider to install and the sample to import again", () => {
-    expect(
-      suggestedMappingHint(
-        rows(["waiting"], ["providers.substrate.reamde.dev/linear"])
-      )
-    ).toBe("Install linear to enable this mapping, then import people again.")
-  })
-
-  it("counts several, and names each provider once", () => {
-    expect(
-      suggestedMappingHint(
-        rows(
-          ["waiting", "waiting", "landed"],
-          [
-            "providers.substrate.reamde.dev/linear",
-            "providers.substrate.reamde.dev/google",
-            "providers.substrate.reamde.dev/github",
-          ]
-        )
-      )
-    ).toBe(
-      "Install linear and google to enable these 2 mappings, then import people again."
-    )
   })
 })

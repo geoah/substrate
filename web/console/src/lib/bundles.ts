@@ -21,6 +21,7 @@ import type {
   CatalogTier,
   KindInfo,
   SuggestedMapping,
+  SuggestedMappingState,
 } from "@/lib/api/types"
 import { kindByIdentity, kindPackage, splitKind } from "@/lib/definition"
 
@@ -238,19 +239,25 @@ export function requiresHint(missing: Requirement[]): string {
 // ── suggested mappings (decision record 0049) ──────────────────────────────
 
 /** One suggested mapping as a row renders it: the mapping itself, the sample
- * that declares it, and one sentence saying what it did.
+ * that declares it, its state, and one sentence saying what to do about it.
  *
  * A sample ships one mapping per provider it knows, onto a kind of its own,
- * and the import keeps only the ones whose provider this repository holds.
- * Both sections show them, from the two directions: a sample's card lists what
- * it would project and what is waiting; a provider's lists the samples waiting
- * on it, which is a reason to install it. */
+ * and a door admits only the ones that resolve here. Both sections show them,
+ * from the two directions: a sample's card lists what it projects and what is
+ * not projecting yet; a provider's lists the samples waiting on it, which is a
+ * reason to install it.
+ *
+ * The state is the MAPPING RECORD's, never the provider's: installing GitHub
+ * lands mirrors and no mapping, so a row that read "landed" off the provider
+ * would tell the reader a projection was running when nothing was. */
 export interface SuggestedMappingRow {
   mapping: SuggestedMapping
   /** The sample package that declares it: the bundle to import again. */
   sample: string
   /** That package's own word ("people"), which is how a row names it. */
   sampleWord: string
+  state: SuggestedMappingState
+  /** True only in `landed`: the projection is running. */
   landed: boolean
   /** The chip's label: source kind name to subject kind name. */
   label: string
@@ -264,21 +271,42 @@ function packageWord(pkg: string): string {
   return parts[parts.length - 1] ?? pkg
 }
 
+/** THE COST OF THE FIX, said wherever the fix is offered: a re-import replaces
+ * the package rather than merging into it (decision record 0048), so a kind or
+ * a property the reader added since is dropped by it. */
+export const REIMPORT_WARNING =
+  "Re-importing replaces that package and may remove your changes."
+
 function suggestedRow(
   mapping: SuggestedMapping,
   sample: string
 ): SuggestedMappingRow {
-  const landed = mapping.state === "landed"
+  const provider = packageWord(mapping.package)
+  const word = packageWord(sample)
   const projects = `${mapping.from} projects onto ${mapping.to}`
+  const again = `import ${word} again. ${REIMPORT_WARNING}`
+  const title = () => {
+    switch (mapping.state) {
+      case "landed":
+        return `${projects}: landed.`
+      case "ready":
+        return `${projects}: ${again}`
+      case "blocked":
+        return `${projects}: upgrade ${provider} first, then ${again}${
+          mapping.problems?.length ? ` ${mapping.problems.join(" ")}` : ""
+        }`
+      default:
+        return `${projects}: install ${provider}, then ${again}`
+    }
+  }
   return {
     mapping,
     sample,
-    sampleWord: packageWord(sample),
-    landed,
+    sampleWord: word,
+    state: mapping.state,
+    landed: mapping.state === "landed",
     label: `${splitKind(mapping.from).name} → ${splitKind(mapping.to).name}`,
-    title: landed
-      ? `${projects}: landed.`
-      : `${projects}: install ${packageWord(mapping.package)} to enable, then import ${packageWord(sample)} again.`,
+    title: title(),
   }
 }
 
@@ -292,9 +320,8 @@ export function suggestedMappingsOf(row: BundleRow): SuggestedMappingRow[] {
 }
 
 /** A PROVIDER row's inbound suggested mappings: every sample that carries one
- * onto this provider's kinds, and whether it landed or is waiting for exactly
- * this install. Read over EVERY row, because the samples are in the other
- * section. */
+ * onto this provider's kinds, and what each one is doing. Read over EVERY row,
+ * because the samples are in the other section. */
 export function samplesMappingOnto(
   row: BundleRow,
   rows: BundleRow[]
@@ -311,22 +338,47 @@ export function samplesMappingOnto(
   return out
 }
 
-/** What to do about the waiting ones, in one sentence: which providers to
- * install and which samples to import again afterwards, because a re-import
- * is what lands a mapping the first one dropped (decision records 0048 and
- * 0049). Empty string when nothing is waiting. */
-export function suggestedMappingHint(rows: SuggestedMappingRow[]): string {
-  const waiting = rows.filter((r) => !r.landed)
-  if (!waiting.length) return ""
-  const providers = andList([
-    ...new Set(waiting.map((r) => packageWord(r.mapping.package))),
-  ])
-  const samples = andList([
-    ...new Set(waiting.map((r) => packageWord(r.sample))),
-  ])
+/** The mappings a RE-IMPORT would land: their provider is here and they fit
+ * it, and only the import is missing. This is what earns an installed sample
+ * an "Import again" action, since a sample is never offered an upgrade
+ * (decision record 0048). */
+export function readySuggestedMappings(
+  rows: SuggestedMappingRow[]
+): SuggestedMappingRow[] {
+  return rows.filter((r) => r.state === "ready")
+}
+
+/** What to do about the ones that are not projecting, in one sentence: which
+ * providers to install or upgrade, which samples to import again, and what a
+ * re-import costs (decision records 0048 and 0049). Empty string when every
+ * mapping has landed.
+ *
+ * `held` is whether this repository already has the bundle, and it changes
+ * only the verb: a sample nobody has imported yet is imported, not
+ * re-imported, and its own Import button is right there. */
+export function suggestedMappingHint(
+  rows: SuggestedMappingRow[],
+  held = true
+): string {
+  const pending = rows.filter((r) => !r.landed)
+  if (!pending.length) return ""
+  const samples = andList([...new Set(pending.map((r) => r.sampleWord))])
   const what =
-    waiting.length === 1 ? "this mapping" : `these ${waiting.length} mappings`
-  return `Install ${providers} to enable ${what}, then import ${samples} again.`
+    pending.length === 1 ? "this mapping" : `these ${pending.length} mappings`
+  const words = (state: SuggestedMappingState) =>
+    andList([
+      ...new Set(
+        pending
+          .filter((r) => r.state === state)
+          .map((r) => packageWord(r.mapping.package))
+      ),
+    ])
+  const steps: string[] = []
+  if (words("waiting")) steps.push(`install ${words("waiting")}`)
+  if (words("blocked")) steps.push(`upgrade ${words("blocked")}`)
+  steps.push(held ? `import ${samples} again` : `import ${samples}`)
+  const sentence = `To enable ${what}, ${steps.join(", then ")}.`
+  return held ? `${sentence} ${REIMPORT_WARNING}` : sentence
 }
 
 /** The server's OWN words for a refused import. Admission answers with a

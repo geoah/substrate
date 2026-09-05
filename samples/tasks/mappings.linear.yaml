@@ -9,10 +9,14 @@
 #
 # match probes the issue's Linear URL against tasks' `url`: exactly one live
 # match adopts the task the owner already has, zero-or-many mints one. map
-# gives Linear the heading and the link and NOTHING else: `status` is the
-# owner's, and the projection's tiers are what keep it: a mapped property
-# recomputes at the machine tier and an owner write wins, so moving a task to
-# `done` here is never clobbered by the next sync.
+# gives Linear the heading and the link and NOTHING else.
+#
+# `status` is not mapped and CANNOT be: it is a state, and a state moves
+# through its declared transitions, never through a mapping (record 0040). So
+# the task the mapping mints sits at `open` and every move after that is the
+# owner's, untouched by any sync. What the projection's TIERS buy is the other
+# two: `name` and `url` recompute at the machine tier, so an owner who retypes
+# the heading keeps it, and Linear's next title lands only where nobody has.
 kind: substrate.reamde.dev/core/recordmapping
 metadata:
   id: samples.substrate.reamde.dev/tasks/linearissuetask

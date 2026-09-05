@@ -532,26 +532,41 @@ export interface CatalogBundle {
 
 /** One mapping a SAMPLE ships onto a kind of its own from a PROVIDER's mirror
  * kind (substrate.SuggestedMapping, decision record 0049). It is conditional:
- * a mapping naming a kind this repository does not have is refused by
- * admission, so the door drops it and reports it `waiting` instead. Installing
- * the provider and importing the sample AGAIN is what lands it. */
+ * a mapping naming a kind this repository does not have, or one that does not
+ * fit the version it does have, is refused by admission, so the door drops it
+ * and reports the state below instead. */
 export interface SuggestedMapping {
-  /** The mapping declaration's id, in the spelling the closure ships: a
-   * sample's names the placeholder authority, which the import rehomes. */
+  /** The mapping declaration's id AS THIS REPOSITORY HOLDS IT: rehomed onto
+   * its own authority, because that is the record `state` is read from. */
   id: string
   /** The source kind: a provider mirror the declaring package does not own. */
   from: string
-  /** The subject kind, always one the declaring package owns. */
+  /** The subject kind, always one the declaring package owns, rehomed with
+   * the id. */
   to: string
   /** The PROVIDER package `from` lives in: what has to be installed. */
   package: string
   state: SuggestedMappingState
+  /** Why a `blocked` mapping does not resolve, in the loader's words. Absent
+   * in every other state. */
+  problems?: string[]
 }
 
-/** `landed`: the provider is here, so the mapping is part of what the door
- * admits (or already admitted). `waiting`: the provider is absent, so the
- * mapping is dropped until it is installed and the sample imported again. */
-export type SuggestedMappingState = "landed" | "waiting"
+/** What a suggested mapping is doing here. The state is the MAPPING RECORD's,
+ * never the provider's alone: installing a provider lands mirrors and no
+ * mapping, so "GitHub is here" and "GitHub identities reach my people" are two
+ * different answers.
+ *
+ * - `landed`: the declaration is in this repository and the projection runs.
+ * - `ready`: the provider is here and the mapping fits it, but the declaration
+ *   is not. Importing the sample AGAIN lands it, and that re-import replaces
+ *   the package (decision record 0048).
+ * - `waiting`: the provider package is absent, so the door dropped the
+ *   mapping. Install the provider, then import again.
+ * - `blocked`: the provider is here but older than the mapping needs, so it
+ *   would not resolve. Upgrade the provider; `problems` says what did not fit.
+ */
+export type SuggestedMappingState = "landed" | "ready" | "waiting" | "blocked"
 
 /** One catalog entry as the API serves it: the shipped bundle plus whether
  * THIS repository has it and, for an installed provider whose closure moved,

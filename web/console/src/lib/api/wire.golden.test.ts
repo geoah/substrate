@@ -167,6 +167,7 @@ const suggestedMapping: Keys<SuggestedMapping> = {
   to: true,
   package: true,
   state: true,
+  problems: true,
 }
 
 const bundleClosure: Keys<BundleClosure> = {

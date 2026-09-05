@@ -33,7 +33,7 @@ const (
 func importSamples(t *testing.T, c *catalog.Catalog, ds substrate.Dataset, ids ...string) {
 	t.Helper()
 	for _, id := range ids {
-		if _, err := c.Import(context.Background(), substrate.ActorAPI, id, ds); err != nil {
+		if _, _, err := c.Import(context.Background(), substrate.ActorAPI, id, ds); err != nil {
 			t.Fatalf("import %s: %v", id, err)
 		}
 	}
@@ -47,7 +47,7 @@ func TestImportLandsASampleUnderTheRepositoryAuthority(t *testing.T) {
 	// `requires:` is rehomed with everything else, so a sample that declares
 	// against another is refused until THAT one is imported, and the refusal
 	// names it under this repository's authority, which is where it will land.
-	_, err := c.Import(ctx, substrate.ActorAPI, tasksSampleID, ds)
+	_, _, err := c.Import(ctx, substrate.ActorAPI, tasksSampleID, ds)
 	if err == nil {
 		t.Fatal("imported a sample whose required vocabulary is absent")
 	}
@@ -134,7 +134,7 @@ func TestImportRefusesAProviderAndInstallStillWorks(t *testing.T) {
 	ctx := context.Background()
 
 	const whoop = "providers.substrate.reamde.dev/whoop"
-	_, err := c.Import(ctx, substrate.ActorAPI, whoop, ds)
+	_, _, err := c.Import(ctx, substrate.ActorAPI, whoop, ds)
 	if !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("import of a provider = %v, want a validation refusal", err)
 	}
@@ -142,7 +142,7 @@ func TestImportRefusesAProviderAndInstallStillWorks(t *testing.T) {
 		t.Errorf("the refusal does not name the verb that works: %v", err)
 	}
 
-	if _, err := c.Install(ctx, substrate.ActorAPI, whoop, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorAPI, whoop, ds); err != nil {
 		t.Fatalf("install a provider: %v", err)
 	}
 	// It landed under the authority that publishes it, untouched.

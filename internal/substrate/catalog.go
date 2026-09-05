@@ -57,10 +57,10 @@ type CatalogBundle struct {
 	Requires []string `json:"requires,omitempty"`
 	// SuggestedMappings are the mappings this closure declares onto its own
 	// kinds FROM another package's, each with the state it has in this
-	// repository. A sample ships them for the providers it knows and the
-	// import keeps only the ones whose provider is here (decision record
-	// 0049), so a reader can see what an import will and will not deliver.
-	// Empty for every provider: a provider declares no mapping at all.
+	// repository (below). A sample ships them for the providers it knows and
+	// the door keeps only the ones that resolve here (decision record 0049),
+	// so a reader can see what an import will and will not deliver. Empty for
+	// every provider: a provider declares no mapping at all.
 	SuggestedMappings []SuggestedMapping `json:"suggestedMappings,omitempty"`
 	// Closure enumerates what taking this bundle lands, for the detail preview.
 	Closure CatalogClosure `json:"closure"`
@@ -68,40 +68,54 @@ type CatalogBundle struct {
 
 // SuggestedMapping is one mapping a SAMPLE ships onto a kind of its own from a
 // PROVIDER's mirror kind (decision record 0049): the declaration's id, both
-// ends, the provider package the source lives in, and whether this repository
-// holds that package.
+// ends, the provider package the source lives in, and what that mapping is
+// doing in this repository right now.
 //
 // It is conditional because its source kind is another package's: a mapping
-// naming an absent kind is refused by admission, so the door drops the
-// document (and its `installs:` entry) rather than offering the reader a
-// refusal. Installing the provider and importing the sample AGAIN is what
-// lands it.
+// naming an absent or ill-fitting kind is refused by admission, so the door
+// drops the document (and its `installs:` entry) rather than handing the
+// reader a refusal for something they did not ask for.
 type SuggestedMapping struct {
-	// ID is the mapping declaration's id, in the spelling the closure ships:
-	// a sample's is the placeholder authority, which the import rehomes with
-	// everything else.
+	// ID is the mapping declaration's id AS THIS REPOSITORY WOULD HOLD IT: a
+	// sample's is rehomed onto the repository's own authority, because that is
+	// the record the state below is read from.
 	ID string `json:"id"`
 	// From is the source kind: a provider mirror this package does not own.
 	From string `json:"from"`
-	// To is the subject kind, always one this package declares.
+	// To is the subject kind, always one this package declares, rehomed with
+	// the id.
 	To string `json:"to"`
 	// Package is the PROVIDER package `from` lives in: what has to be
 	// installed for this mapping to land.
 	Package string `json:"package"`
-	// State is SuggestedMappingLanded or SuggestedMappingWaiting.
+	// State is one of the four below.
 	State string `json:"state"`
+	// Problems are the resolution problems behind SuggestedMappingBlocked, as
+	// the loader words them. Empty in every other state.
+	Problems []string `json:"problems,omitempty"`
 }
 
-// SuggestedMapping.State values, read against one repository:
+// SuggestedMapping.State values, read against one repository. The state is the
+// MAPPING RECORD's, never the provider's alone: a provider install lands
+// mirrors and no mapping, so "the provider is here" and "the projection runs"
+// are two different answers and a reader needs both.
 //
-//   - SuggestedMappingLanded: the provider package is here, so the mapping is
-//     part of the closure this door admits (and part of what an earlier import
-//     already admitted).
+//   - SuggestedMappingLanded: the mapping declaration is in this repository.
+//     The projection runs.
+//   - SuggestedMappingReady: the provider is here and the mapping fits it, but
+//     the declaration is not here. Importing the sample AGAIN lands it, and
+//     that re-import replaces the package (record 0048).
 //   - SuggestedMappingWaiting: the provider package is absent, so the mapping
-//     is dropped. Install that provider and import the sample again.
+//     is dropped from the closure. Install the provider, then import again.
+//   - SuggestedMappingBlocked: the provider is here but the mapping does not
+//     resolve against the version installed (a subject slot or a mapped
+//     property it names is missing). Upgrading the provider is what unblocks
+//     it, and Problems says what did not fit.
 const (
 	SuggestedMappingLanded  = "landed"
+	SuggestedMappingReady   = "ready"
 	SuggestedMappingWaiting = "waiting"
+	SuggestedMappingBlocked = "blocked"
 )
 
 // CatalogClosure is what installing or importing a bundle lands, by kind: the

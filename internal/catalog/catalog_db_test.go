@@ -54,7 +54,7 @@ var webRequires = []string{"samples.substrate.reamde.dev/people", "samples.subst
 func importVocabulary(t *testing.T, c *catalog.Catalog, ds substrate.Dataset, ids ...string) {
 	t.Helper()
 	for _, id := range ids {
-		if _, err := c.Install(context.Background(), substrate.ActorAPI, id, ds); err != nil {
+		if _, _, err := c.Install(context.Background(), substrate.ActorAPI, id, ds); err != nil {
 			t.Fatalf("import %s: %v", id, err)
 		}
 	}
@@ -124,7 +124,7 @@ func TestShippedBundlesInstall(t *testing.T) {
 			}
 			install(rb)
 		}
-		if _, err := c.Install(ctx, substrate.ActorAPI, b.ID, ds); err != nil {
+		if _, _, err := c.Install(ctx, substrate.ActorAPI, b.ID, ds); err != nil {
 			t.Fatalf("install %s: %v", b.ID, err)
 		}
 	}
@@ -152,7 +152,7 @@ func TestInstallLandsClosureAndIsIdempotent(t *testing.T) {
 
 	// Missing vocabulary is refused BEFORE anything is touched, naming the
 	// authority to import first — the whole point of `requires:`.
-	_, err := c.Install(ctx, substrate.ActorAPI, webBundleID, ds)
+	_, _, err := c.Install(ctx, substrate.ActorAPI, webBundleID, ds)
 	if err == nil {
 		t.Fatal("installed a closure whose required vocabulary is absent")
 	}
@@ -161,7 +161,7 @@ func TestInstallLandsClosureAndIsIdempotent(t *testing.T) {
 	}
 	importVocabulary(t, c, ds, webRequires...)
 
-	b, err := c.Install(ctx, substrate.ActorAPI, webBundleID, ds)
+	b, _, err := c.Install(ctx, substrate.ActorAPI, webBundleID, ds)
 	if err != nil {
 		t.Fatalf("install: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestInstallLandsClosureAndIsIdempotent(t *testing.T) {
 
 	// Re-install is the bundle's own whole-authority re-apply: idempotent, no
 	// error, and nothing new appears.
-	if _, err := c.Install(ctx, substrate.ActorAPI, webBundleID, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorAPI, webBundleID, ds); err != nil {
 		t.Fatalf("re-install: %v", err)
 	}
 	st2, err := ds.(bundleStatuser).BundleStatus(ctx, webBundleID)
@@ -305,7 +305,7 @@ func TestInstallRollsBackOnBrokenDeliveryWiring(t *testing.T) {
 		t.Fatalf("load catalog: %v", err)
 	}
 
-	if _, err := c.Install(ctx, substrate.ActorAPI, webBundleID, ds); err == nil {
+	if _, _, err := c.Install(ctx, substrate.ActorAPI, webBundleID, ds); err == nil {
 		t.Fatal("install with a broken trigger succeeded, want an admission error")
 	}
 
@@ -336,7 +336,7 @@ func TestInstallRefusesNonOwner(t *testing.T) {
 	c := loadCatalog(t)
 	ctx := context.Background()
 
-	_, err := c.Install(ctx, substrate.FunctionActor("reader.example.com", "reader", "sync"), webBundleID, ds)
+	_, _, err := c.Install(ctx, substrate.FunctionActor("reader.example.com", "reader", "sync"), webBundleID, ds)
 	if !errors.Is(err, substrate.ErrForbidden) {
 		t.Fatalf("non-owner install error = %v, want ErrForbidden", err)
 	}

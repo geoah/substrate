@@ -361,7 +361,8 @@ seeds `substrate.reamde.dev/core` alone.
 The catalog is a read model over the bundle closures baked in, parsed once at
 boot: each entry carries `id` (the package it ships), `name`, `authority`,
 `package`, `description`, `version`, `tier`, `inputs`, `requires`,
-`suggestedMappings` (each with the state it has here, below), and
+`suggestedMappings` (each with the state it has here, and the ids it lands
+under, below), and
 `closure`, which previews the `kinds` (each with its description),
 `functions`, `agents` and `mappings` it declares plus the `records` the
 install writes beside them (a bundle's triggers, the llm example's provider
@@ -444,22 +445,46 @@ an import lands them as yours: edit them, delete them, version them like
 everything else you own.
 
 A suggested mapping names a kind in a package you may not have, and admission
-refuses a mapping whose source kind is absent. So **the import is conditional**:
-a suggested mapping (and its `installs:` entry) is admitted only where this
-repository holds the package its `from` names, and dropped otherwise. Importing
-`people` onto a repository with no provider lands three kinds and no mapping;
-the import response and the catalog entry report each mapping `landed` or
-`waiting`, naming the package it waits for, and the console's Registry says the
-same on both cards: a sample lists what it projects, a provider lists the
-samples waiting on it.
+refuses a mapping whose source kind is absent or shaped wrong. So **the import
+is conditional**: a suggested mapping (and its `installs:` entry) is admitted
+only where this repository can resolve it, and dropped otherwise. Importing
+`people` onto a repository with no provider lands three kinds and no mapping,
+rather than being refused for vocabulary you never asked for.
 
-Installing the provider does not land a waiting mapping by itself. **Import the
-sample again**, which is what applies the closure with the mapping in it. That
-second import REPLACES the package rather than merging into it, the cost every
-re-import carries
+Every door and every surface says which of four states each mapping is in. The
+state is the MAPPING RECORD's, not the provider's: installing GitHub lands
+mirror kinds and nothing else, so "GitHub is installed" and "GitHub identities
+reach my people" are two different answers.
+
+| State     | What it means                                       | What lands it            |
+| --------- | --------------------------------------------------- | ------------------------ |
+| `landed`  | the declaration is here; the projection runs        | nothing left to do       |
+| `ready`   | the provider is here and the mapping fits it        | import the sample again  |
+| `waiting` | the provider package is absent                      | install it, then import again |
+| `blocked` | the provider is older than the mapping needs        | upgrade it, then import again |
+
+`blocked` carries the resolution problems with it (a subject slot or a mapped
+property the installed version does not declare), so a mapping the shipped
+sample outgrew names what to fix instead of failing the import.
+
+**Installing a provider does not land a mapping.** Import the sample AGAIN,
+which is what applies the closure with the mapping in it. That second import
+REPLACES the package rather than merging into it, the cost every re-import
+carries
 ([0048](decisions/0048-providers-are-published-samples-are-copied.md)): a kind
 or a property you added since is dropped by it, or the narrowing guard refuses
-it while live records hold the old shape.
+it while live records hold the old shape. Every surface that offers the
+re-import says so: the console's Registry puts an **Import again** action on a
+held sample whose mapping is `ready` and states the replacement in the
+confirmation, and `substratectl import` prints the same warning beside each
+line.
+
+**A landed mapping changes how you may write its target.** Nothing external
+names a subject, so once a mapping points at your `person` or your `task` their
+ids are server-assigned: `apply -f` of a new task carrying
+`metadata.id: groceries` is refused from that moment on (0049, `checkCreateID`).
+Addressing a record that already exists is not naming one, so an update by id
+keeps working.
 
 **No sample ships a mapping onto a message, a thread or a calendar event**, and
 that is a limit rather than an omission. A mapping's only creator is a shell

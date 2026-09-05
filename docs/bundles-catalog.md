@@ -23,8 +23,8 @@ package that owns that kind
 ([0049](decisions/0049-the-owner-of-a-mappings-target-declares-it.md)), so each
 provider ships mirrors with empty subject slots and the `people` and `tasks`
 samples ship the six SUGGESTED MAPPINGS that fill them. An import keeps a
-suggested mapping only where the provider it reads is installed, and reports
-the rest `waiting`: see
+suggested mapping only where the provider it reads is installed and fits it,
+and reports the rest `waiting`, `blocked` or `ready`: see
 [suggested mappings](bundles.md#suggested-mappings) for the door, and each
 provider section below for the mappings pointed at it.
 
@@ -157,6 +157,8 @@ whichever stream finishes stamps them.
   SUGGESTED MAPPINGS (`googlecontactperson` and `googleaddressperson`, matching
   on the address), so importing `people` with this provider installed is what
   lands them; importing it first lands the kinds and reports the two `waiting`
+  for this package, and installing this package afterwards is not enough on its
+  own: import `people` again
   ([suggested mappings](bundles.md#suggested-mappings)).
 
 **Mirrors only.** Every row this closure writes is one of its own kinds, and
@@ -210,8 +212,9 @@ code work you are involved in.
   declaration as a SUGGESTED MAPPING (`githubuserperson`): it matches on the
   profile's public email and maps the name, the login as the display name, and
   the union of emails. Import `people` with this provider installed and it
-  lands; import it first and it is reported `waiting`
-  ([suggested mappings](bundles.md#suggested-mappings)).
+  lands; import it first and it is reported `waiting` for this package, and
+  installing this package afterwards is not enough on its own: import `people`
+  again ([suggested mappings](bundles.md#suggested-mappings)).
 
 Scopes are derived per toggle (`read:user`, and `repo` for repositories, issues
 and pull requests), and the facility reads the account's public email from
@@ -239,11 +242,17 @@ The two samples ship them as SUGGESTED MAPPINGS: `people` declares
 addresses, and `tasks` declares `linearissuetask`, matching an issue's URL
 against a task's `url` and carrying the heading and the link and nothing else.
 Import either sample with this provider installed and its mapping lands;
-import it first and the mapping is reported `waiting`
-([suggested mappings](bundles.md#suggested-mappings)). The projection's tiers
-are what keep a hand edit: a mapped property is recomputed at the machine tier
-and an owner write wins, so moving a projected task to `done` survives the
-next sync, and `status` is not mapped at all.
+import it first and the mapping is reported `waiting` for this package, and
+installing this package afterwards is not enough on its own: import that
+sample again ([suggested mappings](bundles.md#suggested-mappings)).
+
+A projected task's `status` is not mapped and cannot be: a state moves through
+its declared transitions, never through a mapping
+([0040](decisions/0040-the-four-occurrence-logs-say-done.md)), so the task the
+mapping mints starts `open` and every move after that is yours, untouched by
+any sync. The projection's TIERS are what protect the two properties that ARE
+mapped: `name` and `url` are recomputed at the machine tier, so retyping the
+heading keeps it and Linear's next title lands only where you have not.
 
 ## WHOOP
 

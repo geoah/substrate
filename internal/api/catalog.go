@@ -90,14 +90,11 @@ func (h *handler) getCatalogItem(w http.ResponseWriter, r *http.Request) {
 func (h *handler) catalogItemFor(ctx context.Context, b *catalog.Bundle, installed bool) catalogItem {
 	item := catalogItem{CatalogBundle: b.CatalogBundle, Installed: installed}
 	// Each suggested mapping's state in THIS repository (decision record
-	// 0049): landed where the provider its source kind lives in is here,
-	// waiting where it is not. The copy above carries the shipped list with
-	// no state, so it is CLEARED first: a stateless entry on the wire would
-	// read as neither. A read that fails leaves the list unstated rather than
-	// blanking the entry, for the same reason the upgrade preview below does;
-	// the resolution reads the live registry, so a failure means the
-	// repository is already unreadable, which the caller above met first.
-	item.SuggestedMappings = nil
+	// 0049): whether the declaration is here, whether the provider it reads
+	// is, and whether it fits the version installed. The shipped closure
+	// carries no state of its own, so this list is only ever this read's; a
+	// read that fails leaves it unstated rather than blanking the entry, for
+	// the same reason the upgrade preview below does.
 	if ds := DatasetFrom(ctx); ds != nil {
 		if states, err := b.SuggestedMappingStates(ctx, ds); err == nil {
 			item.SuggestedMappings = states
@@ -136,7 +133,7 @@ func (h *handler) postCatalogImport(w http.ResponseWriter, r *http.Request) {
 // `<authority>/<package>`, while an install landed the id the request named.
 // Asking for the wrong one is a 404 on a write that succeeded.
 func (h *handler) takeCatalogBundle(w http.ResponseWriter, r *http.Request,
-	take func(*catalog.Catalog, context.Context, substrate.Actor, string, substrate.Dataset) (*catalog.Bundle, error),
+	take func(*catalog.Catalog, context.Context, substrate.Actor, string, substrate.Dataset) (*catalog.Bundle, []substrate.SuggestedMapping, error),
 	rehomed bool,
 ) {
 	if h.catalog == nil {
@@ -144,7 +141,7 @@ func (h *handler) takeCatalogBundle(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	ctx := r.Context()
-	b, err := take(h.catalog, ctx, ActorFrom(ctx), pathParam(r, "id"), DatasetFrom(ctx))
+	b, suggested, err := take(h.catalog, ctx, ActorFrom(ctx), pathParam(r, "id"), DatasetFrom(ctx))
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
@@ -169,16 +166,12 @@ func (h *handler) takeCatalogBundle(w http.ResponseWriter, r *http.Request,
 		writeSubstrateError(w, err)
 		return
 	}
-	// What the closure's SUGGESTED MAPPINGS did (decision record 0049): the
-	// door dropped the ones whose provider is absent, so the response says
-	// which landed and which are waiting, and on what. The status itself
-	// cannot say: nothing about a dropped document is stored, so this is the
-	// catalog's answer beside the engine's.
-	taken := bundleTaken{BundleStatus: st}
-	if states, err := b.SuggestedMappingStates(ctx, DatasetFrom(ctx)); err == nil {
-		taken.SuggestedMappings = states
-	}
-	writeJSON(w, http.StatusOK, taken)
+	// What the closure's SUGGESTED MAPPINGS did (decision record 0049),
+	// straight from the door: it decided which ones the batch carried and the
+	// batch committed, so `landed` here is what was actually written. Reading
+	// the states back instead would answer from a registry that may have moved
+	// under the transaction.
+	writeJSON(w, http.StatusOK, bundleTaken{BundleStatus: st, SuggestedMappings: suggested})
 }
 
 // bundleTaken is what the two doors answer: the landed bundle's computed

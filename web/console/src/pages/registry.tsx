@@ -30,7 +30,7 @@
  * `…/catalog/{id}/import` for a sample. enable/disable/uninstall are a
  * DIFFERENT lifecycle and keep their own words. */
 
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
 import type { DataTableColumn } from "@/components/data-table/data-table"
@@ -53,6 +53,14 @@ import { RowDetail } from "@/components/data-table/row-detail"
 import { BundleStateBadge, SetupBadge } from "@/components/bundle-state-badge"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   Empty,
   EmptyContent,
@@ -79,6 +87,7 @@ import {
 } from "@/lib/api/bundles"
 import {
   catalogQueryOptions,
+  importBundle,
   installBundle,
   takeBundle,
 } from "@/lib/api/catalog"
@@ -96,6 +105,8 @@ import {
   missingRequirements,
   presentPackages,
   requirementsOf,
+  readySuggestedMappings,
+  REIMPORT_WARNING,
   requiresHint,
   samplesMappingOnto,
   suggestedMappingHint,
@@ -239,6 +250,126 @@ function TakeButton({
   )
 }
 
+/** IMPORT AGAIN: the one action that lands a suggested mapping a first import
+ * dropped (decision record 0049). A sample is never offered an upgrade, so
+ * without this a reader who installs Linear after importing `tasks` has
+ * nothing to press: the mapping stays `ready` forever and the projection never
+ * runs.
+ *
+ * It CONFIRMS first, because a re-import is not a merge: the batch replaces
+ * the package wholesale (decision record 0048), so a kind or a property the
+ * reader added since is dropped by it, or the narrowing guard refuses the
+ * import while live records still hold the old shape. That cost is the
+ * dialog's whole text. */
+function ImportAgainButton({
+  row,
+  ready,
+}: {
+  row: BundleRow
+  ready: SuggestedMappingRow[]
+}) {
+  const queryClient = useQueryClient()
+  const [confirming, setConfirming] = useState(false)
+  const importing = useMutation({
+    mutationFn: () => importBundle(row.catalog?.id ?? row.id),
+    onSuccess: (status) => {
+      setConfirming(false)
+      toast.add({
+        type: "success",
+        title:
+          ready.length === 1
+            ? `${row.name} re-imported: 1 mapping landed.`
+            : `${row.name} re-imported: ${ready.length} mappings landed.`,
+      })
+      seedBundleStatus(queryClient, status)
+      void queryClient.invalidateQueries()
+      refetchBundleStateSoon(queryClient)
+    },
+    onError: (error) => {
+      toast.add({
+        type: "error",
+        title: `Could not re-import ${row.name}`,
+        description: importFailureText(error),
+      })
+    },
+  })
+  const what =
+    ready.length === 1
+      ? `the ${ready[0].label} mapping`
+      : `${ready.length} mappings`
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={importing.isPending}
+              onClick={(e) => {
+                e.stopPropagation()
+                setConfirming(true)
+              }}
+            />
+          }
+        >
+          {importing.isPending ? (
+            <Spinner className="size-3.5" />
+          ) : (
+            <DownloadIcon />
+          )}
+          {importing.isPending ? "Importing…" : "Import again"}
+        </TooltipTrigger>
+        <TooltipContent>
+          {`Re-import ${row.name} to land ${what}. ${REIMPORT_WARNING}`}
+        </TooltipContent>
+      </Tooltip>
+      {confirming && (
+        <Dialog
+          open
+          onOpenChange={(open) =>
+            !open && !importing.isPending && setConfirming(false)
+          }
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Import {row.name} again?</DialogTitle>
+              <DialogDescription>
+                {`This lands ${what}, now that the provider each one reads is installed. ` +
+                  `A re-import REPLACES ${row.id} rather than merging into it: a kind or a property you added is dropped by it, ` +
+                  `and it is refused outright while live records still hold a shape the shipped closure no longer declares. ` +
+                  `Your records are untouched either way.`}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                disabled={importing.isPending}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setConfirming(false)
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={importing.isPending}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  importing.mutate()
+                }}
+              >
+                {importing.isPending && <Spinner className="size-3.5" />}
+                Import again
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
+  )
+}
+
 /** Upgrade: re-install the shipped closure, which is the provider's own
  * upgrade verb (`…/catalog/{id}/install`). Offered only when the server's
  * preview says the closure moved AND nothing blocks it; a BLOCKED upgrade
@@ -331,7 +462,8 @@ function UpgradeBlockedChip({ row }: { row: BundleRow }) {
 }
 
 function buildColumns(
-  requirements: (row: BundleRow) => Requirement[]
+  requirements: (row: BundleRow) => Requirement[],
+  mappings: (row: BundleRow) => SuggestedMappingRow[]
 ): DataTableColumn<BundleRow>[] {
   return [
     {
@@ -437,6 +569,17 @@ function buildColumns(
               ) : (
                 <UpgradeButton row={row.original} />
               )}
+            </div>
+          ) : readySuggestedMappings(mappings(row.original)).length > 0 ? (
+            // A held SAMPLE is never offered an upgrade (decision record
+            // 0048), so this is the one action that lands a mapping the first
+            // import dropped: re-import the closure, now that the provider it
+            // reads is here.
+            <div className="flex justify-end">
+              <ImportAgainButton
+                row={row.original}
+                ready={readySuggestedMappings(mappings(row.original))}
+              />
             </div>
           ) : null
         ) : row.original.catalog ? (
@@ -625,7 +768,7 @@ function BundleDisclosure({
                 {row.tier === "provider"
                   ? `${m.sampleWord}: ${m.label}`
                   : m.label}
-                <span>{m.landed ? "landed" : "waiting"}</span>
+                <span>{m.state}</span>
               </span>
             ))}
           </Line>
@@ -723,8 +866,10 @@ function BundleDisclosure({
       {missing.length > 0 && (
         <p className="text-warning">{requiresHint(missing)}</p>
       )}
-      {suggestedMappingHint(mappings) && (
-        <p className="text-warning">{suggestedMappingHint(mappings)}</p>
+      {suggestedMappingHint(mappings, row.installed) && (
+        <p className="text-warning">
+          {suggestedMappingHint(mappings, row.installed)}
+        </p>
       )}
       {(row.upgrade?.blockers?.length ?? 0) > 0 && (
         <div className="space-y-1 text-warning">
@@ -788,7 +933,10 @@ function BundleSection({
   kinds: KindInfo[]
   onOpen: (row: BundleRow) => void
 }) {
-  const columns = useMemo(() => buildColumns(requirements), [requirements])
+  const columns = useMemo(
+    () => buildColumns(requirements, mappings),
+    [requirements, mappings]
+  )
   const table = useDataTable({
     columns,
     data: rows,

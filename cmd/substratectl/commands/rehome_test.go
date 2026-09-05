@@ -88,11 +88,14 @@ func TestImportCallsTheSampleDoor(t *testing.T) {
 	// AND what its suggested mappings did (decision record 0049): a reader who
 	// installs Linear tomorrow has to be told that importing again is what
 	// lands the rest.
-	if !strings.Contains(stdout, "providers.substrate.reamde.dev/github/user -> samples.substrate.reamde.dev/tasks/person: landed") {
-		t.Errorf("import does not report the mapping that landed: %s", stdout)
+	if !strings.Contains(stdout, "providers.substrate.reamde.dev/github/user -> geoah.example.com/tasks/person: landed") {
+		t.Errorf("import does not report the mapping that landed, onto the kind that landed: %s", stdout)
 	}
-	if !strings.Contains(stdout, "waiting for providers.substrate.reamde.dev/linear; install it, then import again") {
-		t.Errorf("import does not report what the waiting mapping waits for: %s", stdout)
+	want := "waiting; install providers.substrate.reamde.dev/linear, then import " +
+		"samples.substrate.reamde.dev/tasks again. Re-importing replaces that " +
+		"package and may remove your changes."
+	if !strings.Contains(stdout, want) {
+		t.Errorf("import does not say what the waiting mapping waits for and what a re-import costs: %s", stdout)
 	}
 }
 

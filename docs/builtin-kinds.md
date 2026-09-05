@@ -41,10 +41,11 @@ the vocabulary you import.
 This sample also ships five **suggested mappings** onto its own `person`, from
 GitHub's `user`, Google's `contact` and `emailaddress`, and Linear's `user` and
 an issue's `assignee`. Each is admitted only where you already hold the
-provider it reads, and reported `waiting` otherwise
-([suggested mappings](bundles.md#suggested-mappings)); with one installed, a
-GitHub identity and the same human's address-book contact converge on one
-record of yours.
+provider it reads, and reported `waiting` for that provider otherwise
+([suggested mappings](bundles.md#suggested-mappings)). Installing the provider
+afterwards does not land it: import this sample again, and then a GitHub
+identity and the same human's address-book contact converge on one record of
+yours.
 
 `person` carries a two-state `prominence` machine: `utility` at birth, `known`
 once something promotes it (an address-book sync, or you). Search ranks
@@ -80,9 +81,10 @@ value says so and falls back to they/them.
 | `tasklog` | The done-or-skipped mark against one occurrence of a recurring task.          |
 
 It ships one **suggested mapping** too, from Linear's `issue` onto its own
-`task`: matched on the issue's URL, carrying the heading and the link, leaving
-`status` to you. Like every suggested mapping it lands only where the Linear
-provider is already installed
+`task`: matched on the issue's URL, carrying the heading and the link, and
+never `status`, which is a state and moves only through its own transitions.
+Like every suggested mapping it lands only where the Linear provider is already
+installed, and importing this sample again is what lands it afterwards
 ([suggested mappings](bundles.md#suggested-mappings)).
 
 Seven further vocabulary bundles are ported from mneme v4. The recurring

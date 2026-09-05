@@ -2,18 +2,21 @@ package catalog_test
 
 // SUGGESTED MAPPINGS against a REAL engine (decision record 0049, phase 5 of
 // docs/plans/providers-and-samples.md): a sample ships one mapping per
-// provider it knows, onto a kind of its own, and the import keeps only the
-// ones whose provider this repository holds.
+// provider it knows, onto a kind of its own, and the door keeps only the ones
+// this repository can resolve.
 //
-// The two rounds are the whole story. On a fresh repository the mapping is
-// dropped and reported `waiting`, and the kinds land without it. Install the
-// provider, import the sample AGAIN, and the mapping lands: a mirror row
-// written from then on mints the subject and the map rules project onto it.
+// The three rounds are the whole story, and the middle one is the point. On a
+// fresh repository the mapping is dropped and reported WAITING. Installing the
+// provider does not land it: it lands mirrors, and the mapping is the sample's
+// declaration, so the state is READY. Importing the sample AGAIN lands it, and
+// only then does a mirror row mint the subject and the map rules project onto
+// it.
 //
 // The mirror rows here are written directly, which is what a sync body's
 // effects do to them. The provider fake, uv and the OAuth flow are proven in
-// internal/engine; what needs proving here is that the SHIPPED closures reach
-// each other through the door.
+// internal/engine, where the linear suite also drives this mapping through the
+// real sync; what needs proving here is that the SHIPPED closures reach each
+// other through the door.
 
 import (
 	"context"
@@ -38,24 +41,31 @@ const (
 	linearIssue      = linearProviderID + "/issue"
 )
 
-// suggestedState is one shipped closure's report for one mapping id.
+// suggestedState is one shipped closure's READ of one mapping's state, by the
+// id this repository holds it under.
 func suggestedState(t *testing.T, b *catalog.Bundle, ds substrate.Dataset, id string) substrate.SuggestedMapping {
 	t.Helper()
 	states, err := b.SuggestedMappingStates(context.Background(), ds)
 	if err != nil {
 		t.Fatalf("suggested mapping states: %v", err)
 	}
-	for _, sm := range states {
+	return reported(t, states, id)
+}
+
+// reported picks one mapping out of a door's own report.
+func reported(t *testing.T, report []substrate.SuggestedMapping, id string) substrate.SuggestedMapping {
+	t.Helper()
+	for _, sm := range report {
 		if sm.ID == id {
 			return sm
 		}
 	}
-	t.Fatalf("%s ships no suggested mapping %s: %+v", b.ID, id, states)
+	t.Fatalf("no suggested mapping %s in %+v", id, report)
 	return substrate.SuggestedMapping{}
 }
 
 // subjectOf reads the record a mirror row's subject slot names: the kind and
-// the id, empty where the slot is still empty.
+// the id, both empty where the slot is still empty.
 func subjectOf(t *testing.T, ds substrate.Dataset, kind, id, property string) (string, string) {
 	t.Helper()
 	row, err := ds.Get(context.Background(), kind, id)
@@ -78,10 +88,10 @@ func subjectOf(t *testing.T, ds substrate.Dataset, kind, id, property string) (s
 	return subjectKind, subjectID
 }
 
-// The people sample's github mapping: dropped on a repository with no GitHub,
-// landed on the import after the provider is installed, and projecting from
-// then on.
-func TestASuggestedMappingWaitsForItsProviderAndLandsOnReimport(t *testing.T) {
+// The people sample's github mapping through its three states: dropped and
+// waiting on a repository with no GitHub, READY once the provider is there,
+// landed on the import after it, and projecting from then on.
+func TestASuggestedMappingWaitsThenIsReadyThenLands(t *testing.T) {
 	ds := newDataset(t)
 	c := loadCatalog(t)
 	ctx := context.Background()
@@ -89,51 +99,82 @@ func TestASuggestedMappingWaitsForItsProviderAndLandsOnReimport(t *testing.T) {
 	if !ok {
 		t.Fatalf("no %s in the shipped catalog", peopleSampleID)
 	}
-	const suggested = peopleSampleID + "/githubuserperson"
+	// Every id the report names is the one this repository would HOLD:
+	// rehomed, because that is the record its state is read from.
+	landedMapping := homeAuthority + "/people/githubuserperson"
 
-	// ROUND ONE: a fresh repository. Every suggested mapping is waiting, and
-	// each says which provider package on.
+	// ROUND ONE: a fresh repository. The mapping is waiting, and says which
+	// provider package on.
 	importSamples(t, c, ds, peopleSampleID)
-	sm := suggestedState(t, people, ds, suggested)
+	sm := suggestedState(t, people, ds, landedMapping)
 	if sm.State != substrate.SuggestedMappingWaiting || sm.Package != githubProviderID {
 		t.Fatalf("state = %+v, want waiting for %s", sm, githubProviderID)
 	}
-	if sm.From != githubUser || sm.To != peopleSampleID+"/person" {
-		t.Errorf("the report does not name both ends: %+v", sm)
+	if sm.From != githubUser || sm.To != homeAuthority+"/people/person" {
+		t.Errorf("the report does not name both ends as they land here: %+v", sm)
 	}
 	// The kinds landed and the mapping did not: an import onto an absent
 	// provider is not a refusal, it is a smaller closure.
 	if _, err := ds.KindByRef(ctx, homeAuthority+"/people/person"); err != nil {
 		t.Fatalf("the people kinds did not land: %v", err)
 	}
-	landedMapping := homeAuthority + "/people/githubuserperson"
 	if _, err := ds.Get(ctx, mappingKind, landedMapping); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the suggested mapping landed with no provider to read: %v", err)
 	}
 
-	// ROUND TWO: install the provider, and the same import lands the mapping.
-	if _, err := c.Install(ctx, substrate.ActorAPI, githubProviderID, ds); err != nil {
+	// ROUND TWO: install the provider. THE MAPPING STILL HAS NOT LANDED.
+	// Installing GitHub writes mirrors and nothing else, and the mapping is
+	// the sample's own declaration, so the state is READY. Reading the
+	// provider's presence instead would report `landed` here and tell the
+	// reader a GitHub user reaches their person while no such declaration
+	// exists.
+	if _, _, err := c.Install(ctx, substrate.ActorAPI, githubProviderID, ds); err != nil {
 		t.Fatalf("install %s: %v", githubProviderID, err)
 	}
-	if sm := suggestedState(t, people, ds, suggested); sm.State != substrate.SuggestedMappingLanded {
-		t.Fatalf("state after installing the provider = %+v, want landed", sm)
+	if sm := suggestedState(t, people, ds, landedMapping); sm.State != substrate.SuggestedMappingReady {
+		t.Fatalf("state after installing the provider = %+v, want ready", sm)
 	}
-	importSamples(t, c, ds, peopleSampleID)
+	if _, err := ds.Get(ctx, mappingKind, landedMapping); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("installing the provider landed the sample's mapping: %v", err)
+	}
+	user, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: githubUser, ID: "before",
+		Properties: map[string]any{
+			"account": githubAccount + "/" + mustAccount(t, ds, githubAccount),
+			"login":   "grace", "email": "grace@example.com",
+		},
+	})
+	if err != nil {
+		t.Fatalf("write a user mirror before the mapping: %v", err)
+	}
+	if _, id := subjectOf(t, ds, githubUser, user.ID, "person"); id != "" {
+		t.Fatalf("a mirror synced before the mapping landed points at %s", id)
+	}
+
+	// ROUND THREE: the re-import, which is what lands it. The door's own
+	// report says landed, because the mapping was in the batch that
+	// committed, and a read afterwards agrees.
+	_, report, err := c.Import(ctx, substrate.ActorAPI, peopleSampleID, ds)
+	if err != nil {
+		t.Fatalf("re-import %s: %v", peopleSampleID, err)
+	}
+	if got := reported(t, report, landedMapping); got.State != substrate.SuggestedMappingLanded {
+		t.Fatalf("the door reported %+v, want landed", got)
+	}
 	if _, err := ds.Get(ctx, mappingKind, landedMapping); err != nil {
 		t.Fatalf("the mapping did not land on the re-import: %v", err)
 	}
-
-	// A synced user mirror now mints the person and the map rules project
-	// onto it: the name, the login as the friendly name, and the address
-	// unioned onto the person's own list.
-	account, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: githubAccount, ID: "acct"})
-	if err != nil {
-		t.Fatalf("write the account: %v", err)
+	if sm := suggestedState(t, people, ds, landedMapping); sm.State != substrate.SuggestedMappingLanded {
+		t.Fatalf("state after the re-import = %+v, want landed", sm)
 	}
-	user, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+
+	// A user mirror written from now on mints the person and the map rules
+	// project onto it: the name, the login as the friendly name, and the
+	// address unioned onto the person's own list.
+	fresh, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: githubUser, ID: "user-ada",
 		Properties: map[string]any{
-			"account": githubAccount + "/" + account.ID,
+			"account": githubAccount + "/acct",
 			"login":   "ada",
 			"name":    "Ada Lovelace",
 			"email":   "ada@example.com",
@@ -142,7 +183,7 @@ func TestASuggestedMappingWaitsForItsProviderAndLandsOnReimport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("write the user mirror: %v", err)
 	}
-	personKind, personID := subjectOf(t, ds, githubUser, user.ID, "person")
+	personKind, personID := subjectOf(t, ds, githubUser, fresh.ID, "person")
 	if personID == "" {
 		t.Fatal("the user mirror landed with an empty person slot, so the mapping did not mint")
 	}
@@ -172,30 +213,36 @@ func TestImportingTasksWithLinearInstalledLandsTheIssueMapping(t *testing.T) {
 	if !ok {
 		t.Fatalf("no %s in the shipped catalog", tasksSampleID)
 	}
-	const suggested = tasksSampleID + "/linearissuetask"
+	landedMapping := homeAuthority + "/tasks/linearissuetask"
 
-	if _, err := c.Install(ctx, substrate.ActorAPI, linearProviderID, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorAPI, linearProviderID, ds); err != nil {
 		t.Fatalf("install %s: %v", linearProviderID, err)
 	}
-	if sm := suggestedState(t, tasks, ds, suggested); sm.State != substrate.SuggestedMappingLanded {
-		t.Fatalf("state = %+v, want landed with the provider installed", sm)
+	// The provider is here and the mapping fits it, so it is READY before the
+	// import and LANDED after it, in the door's own report.
+	if sm := suggestedState(t, tasks, ds, landedMapping); sm.State != substrate.SuggestedMappingReady {
+		t.Fatalf("state = %+v, want ready with the provider installed", sm)
 	}
-	importSamples(t, c, ds, peopleSampleID, schedulingSample, tasksSampleID)
-	if _, err := ds.Get(ctx, mappingKind, homeAuthority+"/tasks/linearissuetask"); err != nil {
+	importSamples(t, c, ds, peopleSampleID, schedulingSample)
+	_, report, err := c.Import(ctx, substrate.ActorAPI, tasksSampleID, ds)
+	if err != nil {
+		t.Fatalf("import %s: %v", tasksSampleID, err)
+	}
+	if got := reported(t, report, landedMapping); got.State != substrate.SuggestedMappingLanded {
+		t.Fatalf("the door reported %+v, want landed", got)
+	}
+	if _, err := ds.Get(ctx, mappingKind, landedMapping); err != nil {
 		t.Fatalf("the issue mapping did not land: %v", err)
 	}
 
-	account, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: linearAccount, ID: "acct"})
-	if err != nil {
-		t.Fatalf("write the account: %v", err)
-	}
 	issue, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: linearIssue, ID: "issue-1",
 		Properties: map[string]any{
-			"account":    linearAccount + "/" + account.ID,
-			"title":      "Ship the mappings",
-			"identifier": "ENG-1",
-			"url":        "https://linear.app/acme/issue/ENG-1",
+			"account":       linearAccount + "/" + mustAccount(t, ds, linearAccount),
+			"title":         "Ship the mappings",
+			"identifier":    "ENG-1",
+			"url":           "https://linear.app/acme/issue/ENG-1",
+			"assigneeEmail": "ada@example.com",
 		},
 	})
 	if err != nil {
@@ -218,13 +265,114 @@ func TestImportingTasksWithLinearInstalledLandsTheIssueMapping(t *testing.T) {
 	if got, _ := task.Properties["url"].(string); !strings.HasSuffix(got, "/ENG-1") {
 		t.Errorf("url = %v, want the issue's own link", task.Properties["url"])
 	}
-	// The issue's OTHER subject slot is the people sample's mapping, and it
-	// is empty here: the issue carries no assignee address, so the probe
-	// extracts nothing and nothing links. One mirror kind, two slots, one
-	// mapping each (record 0049).
-	if _, assignee := subjectOf(t, ds, linearIssue, issue.ID, "assignee"); assignee == "" {
-		t.Log("the assignee slot is empty, as an issue with no assignee address should be")
+	// The issue's OTHER subject slot is the people sample's mapping, landed by
+	// the import above, and it minted a person for the assignee address: one
+	// mirror kind reaching two of this repository's kinds through two slots,
+	// one mapping each (record 0049). A shell person is the honest answer to
+	// an address no person carries yet, and the projection's own rule
+	// (zero-or-several candidates mint) is what produces it.
+	personKind, personID := subjectOf(t, ds, linearIssue, issue.ID, "assignee")
+	if personID == "" {
+		t.Fatal("the assignee slot is empty, so the people sample's issue mapping did not mint")
 	}
+	if personKind != homeAuthority+"/people/person" {
+		t.Fatalf("the assignee slot points at %s, not this repository's person", personKind)
+	}
+	person, err := ds.Get(ctx, personKind, personID)
+	if err != nil {
+		t.Fatalf("get the minted person: %v", err)
+	}
+	// A SHELL, and empty on purpose: the issue mapping carries a `match`
+	// block and no `map` block, because an issue describes work and nothing of
+	// it belongs on the human. So the probe finds nobody, a shell is minted,
+	// and not even the address it matched on is copied onto it. Prominence
+	// stays at its initial `utility` until an address book or the owner
+	// promotes the person.
+	if got := storedStrings(person.Properties["emails"]); len(got) != 0 {
+		t.Errorf("the minted person carries %v; the issue mapping maps nothing", got)
+	}
+	if person.Properties["name"] != nil {
+		t.Errorf("the issue mapping copied %v onto the person; an issue describes work, not a human", person.Properties["name"])
+	}
+	if person.Properties["prominence"] != "utility" {
+		t.Errorf("prominence = %v, want the initial utility", person.Properties["prominence"])
+	}
+}
+
+// A provider OLDER than the sample was written against BLOCKS the mapping
+// rather than refusing the import: the door drops it, says which provider to
+// upgrade, and names what did not fit.
+func TestASuggestedMappingIsBlockedByAnOlderProvider(t *testing.T) {
+	ds := newDataset(t)
+	c := loadCatalog(t)
+	ctx := context.Background()
+	tasks, ok := c.ByID(tasksSampleID)
+	if !ok {
+		t.Fatalf("no %s in the shipped catalog", tasksSampleID)
+	}
+	landedMapping := homeAuthority + "/tasks/linearissuetask"
+
+	// A linear package as it stood at version 11: the `issue` mirror without
+	// the `task` subject slot the tasks sample's mapping fills. Applied by
+	// hand, which is the one way a repository can hold a provider's
+	// declarations at a shape the shipped closure has moved past.
+	applier, ok := ds.(substrate.VocabularyApplier)
+	if !ok {
+		t.Skip("this dataset cannot apply vocabulary documents")
+	}
+	older := []map[string]any{
+		vocabulary.PackageManifest(linearProviderID, 11),
+		vocabulary.KindManifest(linearProviderID,
+			map[string]any{"singular": "issue"},
+			map[string]any{
+				"properties": map[string]any{
+					"url":           map[string]any{"type": "url"},
+					"assigneeEmail": map[string]any{"type": "email"},
+					// The `task` slot is NOT here: that is the whole fixture.
+					"assignee": map[string]any{
+						"type": "reference", "mustExist": true, "subject": true,
+					},
+				},
+			}),
+	}
+	if _, err := applier.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, older); err != nil {
+		t.Fatalf("apply the older linear package: %v", err)
+	}
+
+	sm := suggestedState(t, tasks, ds, landedMapping)
+	if sm.State != substrate.SuggestedMappingBlocked {
+		t.Fatalf("state = %+v, want blocked against a provider with no `task` slot", sm)
+	}
+	if len(sm.Problems) == 0 {
+		t.Fatal("a blocked mapping reports no problems, so the reader cannot tell what to fix")
+	}
+	if !strings.Contains(strings.Join(sm.Problems, " "), "task") {
+		t.Errorf("the problems do not name the missing slot: %v", sm.Problems)
+	}
+	if sm.Package != linearProviderID {
+		t.Errorf("package = %q, want the provider to upgrade", sm.Package)
+	}
+
+	// And the import goes THROUGH, without the mapping: a blocked mapping the
+	// reader never wrote must not cost them the sample.
+	importSamples(t, c, ds, peopleSampleID, schedulingSample, tasksSampleID)
+	if _, err := ds.KindByRef(ctx, homeAuthority+"/tasks/task"); err != nil {
+		t.Fatalf("the tasks kinds did not land: %v", err)
+	}
+	if _, err := ds.Get(ctx, mappingKind, landedMapping); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("the blocked mapping landed: %v", err)
+	}
+}
+
+// mustAccount writes one account record of a provider's account kind and
+// answers its id: every mirror row references the account it synced through.
+func mustAccount(t *testing.T, ds substrate.Dataset, kind string) string {
+	t.Helper()
+	rec, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: kind, ID: "acct"})
+	if err != nil {
+		t.Fatalf("write the account %s: %v", kind, err)
+	}
+	return rec.ID
 }
 
 // storedStrings reads a repeated string-family property.
