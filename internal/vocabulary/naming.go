@@ -118,7 +118,7 @@ func ValidRepositoryAuthority(s string) bool {
 
 // DefaultRepositoryAuthority is the authority a registration gets when it
 // names none: the username as a label under the host the request reached
-// (`ada.substrate.example`), the way a handle sits under its server. host is
+// (`ada.example.com`), the way a handle sits under its server. host is
 // the request's Host header, so a port and a trailing dot are stripped and
 // the case folded; the result is NOT validated here, because a host that is
 // no DNS name (an IPv6 literal) yields a string the caller refuses with the

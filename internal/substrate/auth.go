@@ -62,7 +62,7 @@ type RegisterInput struct {
 	// Label names the token registration mints, exactly as login's does.
 	Label string
 	// Authority is the DNS-style authority the new repository owns, the home
-	// of every kind its user declares (`ada.substrate.example`). The HTTP
+	// of every kind its user declares (`ada.example.com`). The HTTP
 	// layer fills the default from the host the request reached; the engine
 	// requires one, validates the grammar and refuses a taken one.
 	Authority string
