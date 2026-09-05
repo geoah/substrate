@@ -224,7 +224,8 @@ func CoreKind(name string) string { return PackageCore + "/" + name }
 // shipped ones, so a bundle can never rename a shipped kind's GraphQL name by
 // colliding with it. Two authorities installing the SAME package name would
 // still collide here, which GraphQLNames resolves over the whole set; a
-// collision it cannot resolve is refused at DECLARATION time (load.go), never
+// collision it cannot resolve is refused where a declaration lands
+// (graphqlNameProblems, run by Finalize, Install and InstallAll alike), never
 // silently renamed.
 func GraphQLName(ref, source string) string {
 	_, pkg, name := SplitKindRef(ref)
@@ -251,12 +252,17 @@ type GraphQLKind struct {
 // schema and the refusal from being two spellings of one rule.
 //
 // The base name is GraphQLName above. Its one ambiguity is two AUTHORITIES
-// installing the same package name — "acme.example.com/tasks/task" and
-// "samples.substrate.reamde.dev/tasks/task" both want Tasks_Task — and there
-// the authority's first label joins the name for EVERY kind of both packages
-// (Acme_Tasks_Task, Samples_Tasks_Task), so a kind's name does not depend on
-// which of its neighbors exist inside its own package. The result is order
-// independent: the input is a set.
+// installing the same package name: "acme.example.com/tasks/task" and
+// "samples.substrate.reamde.dev/tasks/task" both want Tasks_Task. There the
+// FULL authority joins the name, dots folded to underscores, for EVERY kind of
+// both packages (Acme_example_com_Tasks_Task), so a kind's name does not
+// depend on which of its neighbors exist inside its own package. The result is
+// order independent: the input is a set.
+//
+// The full authority and not its first label, because two authorities can
+// share a label ("acme.example.com" and "acme.example.org"), and a tie-break
+// that ties again is a name claimed twice. It is also what decision 0014
+// reserved: no identifier is derived from a first label.
 func GraphQLNames(kinds []GraphQLKind) map[string]string {
 	authoritiesOf := map[string]map[string]bool{}
 	for _, k := range kinds {
@@ -280,18 +286,11 @@ func GraphQLNames(kinds []GraphQLKind) map[string]string {
 		}
 		authority, pkg, _ := SplitKindRef(k.Identity)
 		if k.Source == SourceInstalled && len(authoritiesOf[pkg]) > 1 {
-			name = titleCase(sanitizeName(leadingLabel(authority))) + "_" + name
+			name = titleCase(sanitizeName(strings.ReplaceAll(authority, ".", "_"))) + "_" + name
 		}
 		out[k.Identity] = name
 	}
 	return out
-}
-
-// leadingLabel is an authority's first DNS label ("google" in
-// "providers.substrate.reamde.dev/google").
-func leadingLabel(authority string) string {
-	label, _, _ := strings.Cut(authority, ".")
-	return label
 }
 
 // titleCase upper-cases the first rune and leaves the rest as declared, so a
@@ -304,11 +303,11 @@ func titleCase(s string) string {
 }
 
 // sanitizeName drops every character a GraphQL name may not carry, leaving
-// letters and digits.
+// letters, digits and the underscore an authority's folded dots become.
 func sanitizeName(s string) string {
 	var out strings.Builder
 	for _, r := range s {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
 			out.WriteRune(r)
 		}
 	}

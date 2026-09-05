@@ -26,16 +26,21 @@ import (
 // sunset window.
 const APIVersion = "v1"
 
-// coreAuthority is the core PACKAGE: the substrate's own machinery kinds — the trigger
-// and run vocabulary among them, so a resource's operational verbs
-// hang off core beside the records they act on.
-const coreAuthority = "substrate.reamde.dev/core"
+// corePackage is the core PACKAGE: the substrate's own machinery kinds, the
+// trigger and run vocabulary among them, so a resource's operational verbs
+// hang off core beside the records they act on. coreAuthorityName is the
+// authority half of it, which a KindInfo carries beside the package's own
+// word.
+const (
+	coreAuthorityName = "substrate.reamde.dev"
+	corePackage       = coreAuthorityName + "/core"
+)
 
 // kindBundleIdentity is the bundle kind's reference. A PATCH of a bundle record
 // runs its lifecycle transition (disable/enable/uninstall/purge) instead of a
 // generic property write, because those are the substrate-owned state the
 // lifecycle ops maintain behind the engine's exclusive fence (decision 0019).
-const kindBundleIdentity = coreAuthority + "/bundle"
+const kindBundleIdentity = corePackage + "/bundle"
 
 // Config wires the HTTP layer.
 type Config struct {
@@ -301,26 +306,26 @@ func (h *handler) mountResources(r chi.Router) {
 			// cursor reset, a run is one synthesized delivery, a wake is an
 			// immediate scan. Triggers are substrate.reamde.dev/core records, so
 			// the verbs live at that record.
-			h.mountTriggerVerbs(r, coreAuthority)
+			h.mountTriggerVerbs(r, corePackage)
 			// Bundle status is computed; enable/disable, uninstall and purge are
 			// runtime STATE the substrate owns, reached by a PATCH of the bundle
 			// record (patchBundleLifecycle) rather than verbs. `bind` resolves
 			// an input to a record and is not a lifecycle state, so it stays a
 			// sub-path.
-			bundle := "/" + coreAuthority + "/bundle"
+			bundle := "/" + corePackage + "/bundle"
 			r.Get(bundle+"/status", h.getBundleStatuses)
 			r.Get(bundle+"/{id}/status", h.getBundleStatus)
 			r.Post(bundle+"/{id}/bind", h.postBundleBind)
 			// Traits as host-recognized interfaces: the kinds implementing one,
 			// and their records — the console's "account configs" view.
-			trait := "/" + coreAuthority + "/trait/{id}"
+			trait := "/" + corePackage + "/trait/{id}"
 			r.Get(trait+"/implementors", h.getTraitImplementors)
 			r.Get(trait+"/records", h.getTraitRecords)
 			// The callable invocation API: manual invoke with arbitrary input.
-			r.Post("/"+coreAuthority+"/function/{name}/call", h.postFunctionCall)
+			r.Post("/"+corePackage+"/function/{name}/call", h.postFunctionCall)
 			// Agents: the same call API, plus chat — the one loop streaming.
-			r.Post("/"+coreAuthority+"/agent/{name}/call", h.postAgentCall)
-			r.Post("/"+coreAuthority+"/agent/{name}/chat", h.postAgentChat)
+			r.Post("/"+corePackage+"/agent/{name}/call", h.postAgentCall)
+			r.Post("/"+corePackage+"/agent/{name}/chat", h.postAgentChat)
 
 			// THE GENERIC RECORD SURFACE. The path IS the kind reference:
 			// {authority}/{package}/{kind} for a collection, that plus the id

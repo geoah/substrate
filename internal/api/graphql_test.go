@@ -626,7 +626,7 @@ func TestGraphQLNamesDoNotDependOnRegistryOrder(t *testing.T) {
 // refused at schema-build with a clear error, not silently renamed (A14).
 func TestGraphQLReservedNameCollisionIsRefused(t *testing.T) {
 	bad := substrate.KindInfo{
-		Identity: "substrate.reamde.dev/core/change", Name: "change", Authority: coreAuthority,
+		Identity: "substrate.reamde.dev/core/change", Name: "change", Authority: coreAuthorityName, Package: "core",
 		Version: 1, Plural: "changes", Source: "builtin",
 		Definition: map[string]any{"properties": map[string]any{}},
 	}
@@ -652,11 +652,11 @@ func TestGraphQLReferenceNameCollisionIsRefused(t *testing.T) {
 		}}
 	}
 	task := substrate.KindInfo{
-		Identity: "samples.substrate.reamde.dev/tasks/task", Name: "task", Authority: "samples.substrate.reamde.dev/tasks",
+		Identity: "samples.substrate.reamde.dev/tasks/task", Name: "task", Authority: "samples.substrate.reamde.dev", Package: "tasks",
 		Version: 1, Plural: "tasks", Source: "builtin", Definition: reference("noteX"),
 	}
 	taskNote := substrate.KindInfo{
-		Identity: "samples.substrate.reamde.dev/tasks/taskNote", Name: "taskNote", Authority: "samples.substrate.reamde.dev/tasks",
+		Identity: "samples.substrate.reamde.dev/tasks/taskNote", Name: "taskNote", Authority: "samples.substrate.reamde.dev", Package: "tasks",
 		Version: 1, Plural: "taskNotes", Source: "builtin", Definition: reference("x"),
 	}
 

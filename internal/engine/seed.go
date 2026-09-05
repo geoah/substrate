@@ -67,6 +67,33 @@ func authorizeDeclarationWrite(actor substrate.Actor, current *vocabulary.Regist
 		substrate.ErrForbidden, pkg)
 }
 
+// authorizeNewPackage guards the OTHER half of the chokepoint: a package the
+// registry does not hold yet is the writer's to create, EXCEPT under the
+// publisher's own authority. Nothing is stored there but what this binary
+// seeded, so a token that could declare `substrate.reamde.dev/anything` would
+// mint vocabulary that reads as shipped: `substrate.reamde.dev/core` is
+// refused by the source check above once it exists, and this refuses the
+// sibling package it does not.
+//
+// The check is EQUALITY, never the suffix. `providers.substrate.reamde.dev`
+// and `samples.substrate.reamde.dev` sit under the publisher too, and
+// installing one of their closures by hand (`apply -f` of the files the binary
+// ships) is a sanctioned door; widening this to the suffix would close it.
+func authorizeNewPackage(actor substrate.Actor, current *vocabulary.Registry, pkg string) error {
+	if _, held := current.PackageByName(pkg); held || isSubstratePath(actor) {
+		return nil
+	}
+	authority, _ := vocabulary.SplitPackageRef(pkg)
+	if authority == "" {
+		authority = pkg // an authority row declares itself
+	}
+	if authority != publisherAuthority {
+		return nil
+	}
+	return fmt.Errorf("%w: %s publishes the substrate's own vocabulary — a repository declares its own kinds under its own authority",
+		substrate.ErrForbidden, publisherAuthority)
+}
+
 // isSubstratePath reports whether an actor is one of the substrate's own
 // vocabulary-writing hands: the engine itself (seed, upgrade) or a bundle
 // (`bundle:<authority>:<package>` — the seed's `bundle:core` and every

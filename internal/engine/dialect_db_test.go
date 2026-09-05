@@ -108,6 +108,30 @@ func TestSchemaDialectLadder(t *testing.T) {
 	if _, err := svc4.Dataset(ctx, "geoah"); err != nil {
 		t.Fatalf("reopen after restoring the dialect: %v", err)
 	}
+
+	// AND THE OTHER DIRECTION: a store STAMPED BELOW the maximum is a store
+	// this binary cannot read. Dialect 2 spelled every kind
+	// `{authority}/{name}`, and no rung can invent the package segment
+	// (decision record 0047), so the open refuses instead of misreading the
+	// rows, and it says what to do about it.
+	if _, err := db.ExecContext(ctx, `UPDATE vocabulary_dialect SET dialect = $1`, dialect-1); err != nil {
+		t.Fatalf("wind the stored dialect back: %v", err)
+	}
+	svc5 := open()
+	defer func() { _ = svc5.Close() }()
+	_, err = svc5.Dataset(ctx, "geoah")
+	if err == nil {
+		t.Fatal("a store stamped below the maximum must refuse the open")
+	}
+	if !errors.Is(err, engine.ErrDeclarationUntranslated) {
+		t.Fatalf("expected ErrDeclarationUntranslated, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "no package segment") {
+		t.Fatalf("the refusal must name what it cannot read: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE vocabulary_dialect SET dialect = $1`, dialect); err != nil {
+		t.Fatalf("restore stored dialect: %v", err)
+	}
 }
 
 // A DIALECT-1 STORE REFUSES THE OPEN, AND IS NOT STAMPED. The rung that

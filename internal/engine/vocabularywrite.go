@@ -436,10 +436,13 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		return nil, fmt.Errorf("%w: no documents", substrate.ErrValidation)
 	}
 	if actor != nil {
-		// THE AUTHORITY CHECK, at the one chokepoint (seed.go): who may write a
+		// THE OWNERSHIP CHECK, at the one chokepoint (seed.go): who may write a
 		// kind DECLARATION into each touched package.
 		for _, g := range sortedKeys(touched) {
 			if err := authorizeDeclarationWrite(*actor, current, g); err != nil {
+				return nil, err
+			}
+			if err := authorizeNewPackage(*actor, current, g); err != nil {
 				return nil, err
 			}
 		}
@@ -1535,12 +1538,12 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 	return nil
 }
 
-// admissibleSubset installs the maximal subset of built authorities that admits
+// admissibleSubset installs the maximal subset of built packages that admits
 // into ds.reg and returns the rest as quarantined, with each one's admission
-// error. It is a fixpoint over single-authority Install: an authority that depends on a
-// sibling admits once that sibling is in, and Install self-removes an authority
-// that fails — so ds.reg is left holding exactly the admissible subset. n
-// (installed bundle authorities) is small, so the O(n^2) worst case is fine.
+// error. It is a fixpoint over single-package Install: a package that depends
+// on a sibling admits once that sibling is in, and Install self-removes a
+// package that fails, so ds.reg is left holding exactly the admissible subset.
+// n (installed packages) is small, so the O(n^2) worst case is fine.
 func (ds *dataset) admissibleSubset(built []*vocabulary.Package) (good []*vocabulary.Package, quarantined []quarantinedPackage) {
 	remaining := append([]*vocabulary.Package(nil), built...)
 	for {
@@ -1575,14 +1578,25 @@ func (ds *dataset) admissibleSubset(built []*vocabulary.Package) (good []*vocabu
 // markGroupQuarantined records the quarantine state on the package's own row,
 // so BundleStatuses can surface it and a later re-install (which re-projects
 // the row, clearing these props) lifts it.
-func (ds *dataset) markGroupQuarantined(ctx context.Context, pkg, reason string) error {
-	_, err := ds.patchInternal(ctx, substrate.ActorSystem, kindPackage, pkg, substrate.PatchInput{
+func (ds *dataset) markGroupQuarantined(ctx context.Context, group, reason string) error {
+	_, err := ds.patchInternal(ctx, substrate.ActorSystem, groupKind(group), group, substrate.PatchInput{
 		Properties: map[string]any{
 			propPackageQuarantined:      true,
 			propPackageQuarantineReason: reason,
 		},
 	})
 	return err
+}
+
+// groupKind is the meta-kind a declaration GROUP stores as: a package row for a
+// package, the authority row for an authority. The mark has to land on the row
+// that exists, or an authority document this binary cannot parse could never be
+// quarantined and the repository would refuse to open instead.
+func groupKind(group string) string {
+	if authority, _ := vocabulary.SplitPackageRef(group); authority == "" {
+		return kindAuthority
+	}
+	return kindPackage
 }
 
 // clearGroupQuarantine lifts the quarantine marker off any of the given
@@ -1594,7 +1608,7 @@ func (ds *dataset) clearGroupQuarantine(ctx context.Context, authorities []*voca
 		var flagged bool
 		err := ds.db.QueryRowContext(ctx,
 			`SELECT props ? $2 FROM records WHERE id = $1 AND kind = $3 AND deleted_at IS NULL`,
-			g.Identity, propPackageQuarantined, kindPackage).Scan(&flagged)
+			g.Identity, propPackageQuarantined, groupKind(g.Identity)).Scan(&flagged)
 		if errors.Is(err, sql.ErrNoRows) {
 			continue
 		}
@@ -1604,7 +1618,7 @@ func (ds *dataset) clearGroupQuarantine(ctx context.Context, authorities []*voca
 		if !flagged {
 			continue
 		}
-		if _, err := ds.patchInternal(ctx, substrate.ActorSystem, kindPackage, g.Identity, substrate.PatchInput{
+		if _, err := ds.patchInternal(ctx, substrate.ActorSystem, groupKind(g.Identity), g.Identity, substrate.PatchInput{
 			Properties: map[string]any{propPackageQuarantined: nil, propPackageQuarantineReason: nil},
 		}); err != nil {
 			return err
@@ -1613,14 +1627,14 @@ func (ds *dataset) clearGroupQuarantine(ctx context.Context, authorities []*voca
 	return nil
 }
 
-// storedPackages rebuilds every authority the repository stores FROM its schema
-// record rows, skipping the names the caller already accounts for. Each authority
-// keeps the `source` its authority row records — `builtin` for what the
-// creation seed (or a shipped upgrade) wrote, `installed` for everything a
-// user or a bundle declared — so authority reads the same answer at open
-// as it did at the write. It parses and returns the authorities without installing
-// them anywhere, alongside the ones that no longer parse under this binary —
-// quarantine candidates for the caller to mark.
+// storedPackages rebuilds every package the repository stores FROM its schema
+// record rows, skipping the identities the caller already accounts for. Each
+// package keeps the `source` its own row records: `builtin` for what the
+// creation seed (or a shipped upgrade) wrote, `installed` for everything a user
+// or a bundle declared, so ownership reads the same answer at open as it did at
+// the write. It parses and returns the packages without installing them
+// anywhere, alongside the ones that no longer parse under this binary, which
+// are the quarantine candidates for the caller to mark.
 func (ds *dataset) storedPackages(ctx context.Context, skip func(string) bool) ([]*vocabulary.Package, []quarantinedPackage, error) {
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT id, COALESCE(props->>'source', $3) FROM records

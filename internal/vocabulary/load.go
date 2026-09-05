@@ -2219,7 +2219,7 @@ func (l *loader) parseFields(where string, d map[string]any, depth int) map[stri
 	return out
 }
 
-// add indexes a parsed authority without resolving cross-authority references.
+// add indexes a parsed package without resolving cross-package references.
 func (r *Registry) add(g *Package) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -2236,7 +2236,7 @@ func (r *Registry) add(g *Package) error {
 	return nil
 }
 
-// Finalize resolves every authority's reference pins and trait contracts.
+// Finalize resolves every package's reference pins and trait contracts.
 func (r *Registry) Finalize() error {
 	r.mu.RLock()
 	authorities := make([]*Package, 0, len(r.order))
@@ -2259,16 +2259,22 @@ func (r *Registry) Finalize() error {
 	return nil
 }
 
-// Install adds an already-parsed authority and resolves it, bumping the version
+// Install adds an already-parsed package and resolves it, bumping the version
 // counter the GraphQL layer caches against.
 func (r *Registry) Install(g *Package) error {
 	if err := r.add(g); err != nil {
 		return err
 	}
 	problems := r.resolvePackage(g)
-	// The registry-wide mapping invariants re-run whole: a re-registration
-	// may add a mapping whose violation lives on an already-loaded kind.
+	// The registry-wide invariants re-run whole: a re-registration may add a
+	// mapping whose violation lives on an already-loaded kind, and it may
+	// claim a GraphQL name another package already answers to. Both are
+	// checked HERE and not only in Finalize, because the engine installs
+	// through this door alone (vocabularywrite.go) — a collision it skipped
+	// would land in the store and take the whole repository's schema build
+	// down at the next read.
 	problems = append(problems, r.mappingInvariantProblems()...)
+	problems = append(problems, r.graphqlNameProblems()...)
 	if len(problems) > 0 {
 		r.remove(g.Identity)
 		return validationError(problems)
@@ -2279,31 +2285,36 @@ func (r *Registry) Install(g *Package) error {
 	return nil
 }
 
-// Remove uninstalls an authority. It is the candidate-build step of a schema
-// write: clone the live registry, remove the touched authorities, install their
-// rebuilt replacements. Unknown names are no-ops.
-func (r *Registry) Remove(authority string) { r.remove(authority) }
+// Remove uninstalls a group by its identity, package or authority row alike.
+// It is the candidate-build step of a schema write: clone the live registry,
+// remove the touched groups, install their rebuilt replacements. An identity
+// the registry does not hold is a no-op.
+func (r *Registry) Remove(identity string) { r.remove(identity) }
 
-// InstallAll adds a set of parsed authorities and resolves them together, so
-// authorities that reference each other install in any order — the shape both the
+// InstallAll adds a set of parsed packages and resolves them together, so
+// packages that reference each other install in any order: the shape both the
 // batch apply verb and the repository-open rebuild need. On any problem nothing
 // stays installed and every problem is reported at once.
-func (r *Registry) InstallAll(authorities []*Package) error {
-	for i, g := range authorities {
+func (r *Registry) InstallAll(packages []*Package) error {
+	for i, g := range packages {
 		if err := r.add(g); err != nil {
-			for _, undo := range authorities[:i] {
-				r.remove(undo.Name)
+			// The registry is keyed by IDENTITY, so the undo names the
+			// identity: removing by the package's word took nothing out and
+			// left a half-installed set behind.
+			for _, undo := range packages[:i] {
+				r.remove(undo.Identity)
 			}
 			return err
 		}
 	}
 	var problems []string
-	for _, g := range authorities {
+	for _, g := range packages {
 		problems = append(problems, r.resolvePackage(g)...)
 	}
 	problems = append(problems, r.mappingInvariantProblems()...)
+	problems = append(problems, r.graphqlNameProblems()...)
 	if len(problems) > 0 {
-		for _, g := range authorities {
+		for _, g := range packages {
 			r.remove(g.Identity)
 		}
 		return validationError(problems)
@@ -2314,16 +2325,16 @@ func (r *Registry) InstallAll(authorities []*Package) error {
 	return nil
 }
 
-func (r *Registry) remove(authority string) {
+func (r *Registry) remove(identity string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	g, ok := r.packages[authority]
+	g, ok := r.packages[identity]
 	if !ok {
 		return
 	}
-	delete(r.packages, authority)
+	delete(r.packages, identity)
 	for i, n := range r.order {
-		if n == authority {
+		if n == identity {
 			r.order = append(r.order[:i], r.order[i+1:]...)
 			break
 		}

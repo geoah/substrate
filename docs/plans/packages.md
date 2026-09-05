@@ -89,6 +89,7 @@ data:
 - The **authority document** stays as the owner of packages and the thing a
   repository is born with; a registration creates the repository's authority
   record and no package until the user declares or imports one.
+  (Landed without the registration half: see Open.)
 
 ### Actors and GraphQL
 
@@ -126,8 +127,10 @@ user ends up with `ada.example.com/tasks/task` and
 - URL: `/api/v1/ada.example.com/tasks/task/t1`
 - Console: sidebar grouped authority, then package, then kind; the route is
   `/data/ada.example.com/tasks/task`.
-- `substratectl get task t1` resolves `task` against the repository's own
-  packages first and refuses an ambiguous bare name, naming the two.
+- `substratectl get task t1` resolves `task` against every package the
+  repository holds and refuses an ambiguous bare name, naming each one it
+  found; `--package` picks between them. (What landed has no
+  own-packages-first preference: any ambiguity is an error.)
 - Envelope: `record.kind` is the full reference; nothing else changes shape.
 - A webhook URL is `/webhooks/{authority}/{trigger}` (the hostname as the
   repository's outward name, item B of the tidy-up), unchanged by packages.
@@ -181,6 +184,12 @@ the import rewrites kind ids of the final shape once.
 ## Open
 
 - The exact GraphQL disambiguation rule when two authorities install one
-  package name.
+  package name. What landed reads the FULL authority, dots folded to
+  underscores, rather than the first label this page sketched: two authorities
+  can share a label, and 0014 reserves first-label keying.
+- Writing the repository's own authority row at registration. The `authority`
+  document kind exists and the shipped tree declares one per authority, but
+  registration still records the authority on the repository row alone; the
+  row is 0046 follow-up.
 - Whether the `core/bundle` kind keeps its name or becomes `core/package`
   outright once a bundle owns one package in practice.

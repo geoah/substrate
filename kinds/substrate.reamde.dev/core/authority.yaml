@@ -35,4 +35,18 @@ data:
         - installed
       managed: true
       description: builtin for the seeded authority, installed for the rest
+    # Issue 010 runtime state, owned by repository-open, and here for the same
+    # reason it is on the package row: an authority document that no longer
+    # parses has to be markable, or the repository refuses to open instead of
+    # opening without it.
+    quarantined:
+      type: bool
+      managed: true
+      description: set at repository-open when the authority's stored document
+        fails admission; cleared by re-applying a valid one, or by an open
+        that admits the stored one
+    quarantineReason:
+      type: string
+      managed: true
+      description: the admission error that quarantined the authority
     # No sourceYAML (record 61): declaration rows store parsed facts only.

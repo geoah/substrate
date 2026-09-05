@@ -131,8 +131,9 @@ func TestTwoAuthoritiesMayShareAPackageName(t *testing.T) {
 
 // TWO AUTHORITIES SHARING A PACKAGE NAME KEEP TWO GRAPHQL NAMES. The base name
 // of an installed kind is `<Package>_<Kind>`; when the package name is claimed
-// by two authorities, the authority's first label joins it, for every kind of
-// both packages, so a name never depends on load order.
+// by two authorities, the FULL authority joins it with its dots folded to
+// underscores, for every kind of both packages, so a name never depends on load
+// order and two authorities sharing a first label still get two names.
 func TestGraphQLNamesDisambiguateBySharedPackageName(t *testing.T) {
 	kinds := []vocabulary.GraphQLKind{
 		{Identity: "samples.substrate.reamde.dev/tasks/task", Source: vocabulary.SourceInstalled},
@@ -150,11 +151,22 @@ func TestGraphQLNamesDisambiguateBySharedPackageName(t *testing.T) {
 		Identity: "acme.example.com/tasks/task", Source: vocabulary.SourceInstalled,
 	})
 	names = vocabulary.GraphQLNames(kinds)
-	if got := names["samples.substrate.reamde.dev/tasks/task"]; got != "Samples_Tasks_Task" {
-		t.Errorf("shipped task = %q, want Samples_Tasks_Task", got)
+	if got := names["samples.substrate.reamde.dev/tasks/task"]; got != "Samples_substrate_reamde_dev_Tasks_Task" {
+		t.Errorf("shipped task = %q, want Samples_substrate_reamde_dev_Tasks_Task", got)
 	}
-	if got := names["acme.example.com/tasks/task"]; got != "Acme_Tasks_Task" {
-		t.Errorf("acme task = %q, want Acme_Tasks_Task", got)
+	if got := names["acme.example.com/tasks/task"]; got != "Acme_example_com_Tasks_Task" {
+		t.Errorf("acme task = %q, want Acme_example_com_Tasks_Task", got)
+	}
+	// Two authorities that SHARE a first label still get two names: the
+	// tie-break reads the whole authority, which is what decision 0014
+	// reserved.
+	kinds = append(kinds, vocabulary.GraphQLKind{
+		Identity: "acme.example.org/tasks/task", Source: vocabulary.SourceInstalled,
+	})
+	names = vocabulary.GraphQLNames(kinds)
+	if names["acme.example.com/tasks/task"] == names["acme.example.org/tasks/task"] {
+		t.Errorf("two authorities sharing a first label share the name %q",
+			names["acme.example.com/tasks/task"])
 	}
 	if got := names["samples.substrate.reamde.dev/people/person"]; got != "People_Person" {
 		t.Errorf("a package nobody shares must keep its name: %q", got)
@@ -231,4 +243,47 @@ data:
 	if err == nil || !strings.Contains(err.Error(), "but metadata.id says") {
 		t.Fatalf("a header whose keys disagree with its id must refuse: %v", err)
 	}
+}
+
+// THE ENGINE INSTALLS THROUGH Install AND InstallAll, NEVER Finalize, so both
+// carry the registry-wide checks. A GraphQL name claimed twice is refused
+// there or it lands in the store and takes the schema build down at the next
+// read; a failed InstallAll leaves nothing behind, or the next install meets
+// half of the last one.
+func TestInstallRefusesAGraphQLNameClaimedTwice(t *testing.T) {
+	first, err := vocabulary.BuildPackages(mustParse(t, bnPackageKind("one.example.com/alpha", "widget")), vocabulary.SourceBuiltin)
+	if err != nil {
+		t.Fatalf("build the first package: %v", err)
+	}
+	second, err := vocabulary.BuildPackages(mustParse(t, bnPackageKind("two.example.com/beta", "widget")), vocabulary.SourceBuiltin)
+	if err != nil {
+		t.Fatalf("build the second package: %v", err)
+	}
+	r := vocabulary.NewRegistry()
+	if err := r.InstallAll(first); err != nil {
+		t.Fatalf("the first install must admit: %v", err)
+	}
+	err = r.InstallAll(second)
+	if err == nil || !strings.Contains(err.Error(), "graphql name") {
+		t.Fatalf("a second claim on one GraphQL name must refuse: %v", err)
+	}
+	// And it left nothing behind: the undo removes by identity, so the failed
+	// set is not half-installed.
+	for _, g := range second {
+		if _, held := r.PackageByName(g.Identity); held {
+			t.Errorf("%s survived a failed InstallAll", g.Identity)
+		}
+	}
+	if _, held := r.ByIdentity("two.example.com/beta/widget"); held {
+		t.Error("a kind of the failed set is still resolvable")
+	}
+}
+
+func mustParse(t *testing.T, body string) []vocabulary.Document {
+	t.Helper()
+	docs, err := vocabulary.ParseStream([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	return docs
 }

@@ -7,6 +7,7 @@ package engine_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -291,10 +292,13 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 	if v, _ := vocabulary.VersionValue(pkg.Properties["version"]); v != 99 {
 		t.Fatalf("the stored package version = %v", pkg.Properties["version"])
 	}
-	// Untouched packages stayed untouched: the diff is per package, not a re-assert.
+	// UNTOUCHED GROUPS STAY UNTOUCHED: the diff is per group, not a re-assert.
+	// The seed holds two — the `substrate.reamde.dev` authority row and the
+	// `substrate.reamde.dev/core` package — and only the package moved, so the
+	// authority row must not appear in the upgrade's entries at all.
 	for _, ch := range upgrade {
-		if strings.HasSuffix(ch.RecordID, ".samples.substrate.reamde.dev/people") || ch.RecordID == "samples.substrate.reamde.dev/people" {
-			t.Fatalf("the upgrade touched an unchanged package: %s", ch.RecordID)
+		if ch.RecordID == "substrate.reamde.dev" {
+			t.Fatalf("the upgrade rewrote the unchanged authority row: seq %d", ch.Seq)
 		}
 	}
 	afterUpgrade := maxSeq(t, ds2)
@@ -633,5 +637,52 @@ func TestDeclarationAuthority(t *testing.T) {
 		if !substrate.ReservedActor(actor) {
 			t.Fatalf("actor %q is claimable by a request", actor)
 		}
+	}
+
+	// A package the repository does not hold yet is the user's to create,
+	// EXCEPT under the publisher's own authority: the source check above only
+	// guards packages that already exist, so a NEW sibling of core would
+	// otherwise land as `installed` vocabulary spelled like the substrate's
+	// own (decision record 0047).
+	fresh := []map[string]any{
+		{
+			"kind":     "substrate.reamde.dev/core/package",
+			"metadata": map[string]any{"id": "substrate.reamde.dev/evil"},
+			"data": map[string]any{
+				"authority": "substrate.reamde.dev", "package": "evil", "version": 1,
+			},
+		},
+		{
+			"kind":     "substrate.reamde.dev/core/kind",
+			"metadata": map[string]any{"id": "substrate.reamde.dev/evil/gadget"},
+			"data": map[string]any{
+				"authority": "substrate.reamde.dev",
+				"package":   "evil",
+				"names":     map[string]any{"singular": "gadget"},
+				"properties": map[string]any{
+					"label": map[string]any{"type": "string"},
+				},
+			},
+		},
+	}
+	for _, actor := range []substrate.Actor{owner, "api", "console"} {
+		_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, actor, fresh)
+		wantErr(t, err, substrate.ErrForbidden, "actor "+string(actor)+" declares a new package under the publisher")
+	}
+	if _, err := ds.Get(ctx, "substrate.reamde.dev/core/package", "substrate.reamde.dev/evil"); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("the refused package left a row behind: %v", err)
+	}
+	// The sibling authorities the binary ships under are NOT closed: applying
+	// a provider or sample closure by hand is a door the catalog also opens.
+	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		{
+			"kind":     "substrate.reamde.dev/core/package",
+			"metadata": map[string]any{"id": "providers.substrate.reamde.dev/acme"},
+			"data": map[string]any{
+				"authority": "providers.substrate.reamde.dev", "package": "acme", "version": 1,
+			},
+		},
+	}); err != nil {
+		t.Fatalf("a closure under a publisher SUBDOMAIN must still apply: %v", err)
 	}
 }

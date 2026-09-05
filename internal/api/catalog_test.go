@@ -115,7 +115,7 @@ type upgradeErrDataset struct {
 
 func (d upgradeErrDataset) BundleStatuses(context.Context) ([]substrate.BundleStatus, error) {
 	return []substrate.BundleStatus{{
-		ID: webBundleID, Name: "web", Authority: "samples.substrate.reamde.dev/web",
+		ID: webBundleID, Name: "web", Authority: "samples.substrate.reamde.dev", Package: "web",
 		Installed: true, Enabled: true,
 	}}, nil
 }

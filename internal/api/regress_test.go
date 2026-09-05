@@ -24,7 +24,7 @@ import (
 
 type bundleDataset struct {
 	*fakeDataset
-	authority   string
+	pkg         string
 	statusErr   error
 	uninstalled bool
 	// boundInput/boundRecord record the last bind call, for the handler test.
@@ -40,7 +40,11 @@ func (d *bundleDataset) BundleStatus(_ context.Context, id string) (substrate.Bu
 	if d.statusErr != nil {
 		return substrate.BundleStatus{}, d.statusErr
 	}
-	return substrate.BundleStatus{ID: id, Authority: d.authority, Installed: true, Enabled: true}, nil
+	authority, pkg, _ := strings.Cut(d.pkg, "/")
+	return substrate.BundleStatus{
+		ID: id, Name: pkg, Authority: authority, Package: pkg,
+		Installed: true, Enabled: true,
+	}, nil
 }
 
 func (d *bundleDataset) BundlePackage(_ context.Context, id string) (string, error) {
@@ -50,7 +54,7 @@ func (d *bundleDataset) BundlePackage(_ context.Context, id string) (string, err
 	if id == "" {
 		return "", fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
 	}
-	return d.authority, nil
+	return d.pkg, nil
 }
 func (d *bundleDataset) DisableBundle(context.Context, string) error { return nil }
 func (d *bundleDataset) BindBundleInput(_ context.Context, _, input, record string) error {
@@ -89,7 +93,7 @@ func (s *bundleService) Authenticate(ctx context.Context, secret string) (substr
 func newBundleEnv(t *testing.T) (*testEnv, *bundleDataset) {
 	t.Helper()
 	fs := newFakeService()
-	bd := &bundleDataset{fakeDataset: fs.datasets["geoah"], authority: "widgets.bundles.substrate.reamde.dev"}
+	bd := &bundleDataset{fakeDataset: fs.datasets["geoah"], pkg: "widgets.example.com/widgets"}
 	svc := &bundleService{fakeService: fs, ds: bd}
 	clock := &testClock{t: time.Unix(1_700_000_000, 0).UTC()}
 	return &testEnv{svc: fs, h: New(Config{Service: svc, Now: clock.now}), clock: clock}, bd
@@ -97,7 +101,7 @@ func newBundleEnv(t *testing.T) (*testEnv, *bundleDataset) {
 
 // bundlePath is the bundle RECORD; its lifecycle is record state, so
 // enable/disable/uninstall/purge are a PATCH of it (decision 0033).
-const bundlePath = "/api/v1/substrate.reamde.dev/core/bundle/widgets.bundles.substrate.reamde.dev"
+const bundlePath = "/api/v1/substrate.reamde.dev/core/bundle/widgets.example.com%2Fwidgets"
 
 const bindPath = bundlePath + "/bind"
 

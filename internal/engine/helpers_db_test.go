@@ -379,7 +379,7 @@ func installEmbedProvider(t *testing.T, ds substrate.Dataset, id, baseURL, model
 }
 
 // storedRefPath reads one STORED reference value as the record path it names.
-// A reference is stored as the object `{ref: "<authority>/<kind>/<id>", …}`
+// A reference is stored as the object `{ref: "<authority>/<package>/<kind>/<id>", …}`
 // whatever its declaration says (decision 0044); the string arm is the pre-0044
 // spelling a reader never stops accepting. It takes a value rather than a
 // record so a reference nested in an object or a list answers here too.

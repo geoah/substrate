@@ -348,7 +348,7 @@ func coerceReferencePath(pin, s string) (any, error) {
 	_, id, isPath := vocabulary.SplitRecordPath(s)
 	if pin == "" {
 		// Unpinned there is no kind to borrow, so only a full
-		// "<authority>/<kind>/<id>" path says what this names. Every kind
+		// "<authority>/<package>/<kind>/<id>" path says what this names. Every kind
 		// carries an authority (decision 0042), so "foo.bar/baz" leaves nothing
 		// for the id and "note/abc" has a dotless first segment: neither is a
 		// path, and both are refused here.

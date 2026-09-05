@@ -551,12 +551,18 @@ func TestFunctionDefaults(t *testing.T) {
 func TestTriggerGlobHelpers(t *testing.T) {
 	// The glob vocabulary trigger sources use, exported for the engine's
 	// trigger admission.
-	for _, ok := range []string{"*", "fn.example.com/*", "fn.example.com/fn/widget", "widget"} {
+	// Four spellings: everything, one authority, one PACKAGE inside it, and a
+	// kind reference (qualified or the bare name of a kind in the declaring
+	// package).
+	for _, ok := range []string{
+		"*", "fn.example.com/*", "fn.example.com/fn/*",
+		"fn.example.com/fn/widget", "widget",
+	} {
 		if !vocabulary.ValidTypeGlob(ok) {
 			t.Fatalf("%q must be a valid glob", ok)
 		}
 	}
-	for _, bad := range []string{"Widget", "wid*fn.example.com/fn/get", "*."} {
+	for _, bad := range []string{"Widget", "wid*fn.example.com/fn/get", "*.", "fn.example.com/Fn/*"} {
 		if vocabulary.ValidTypeGlob(bad) {
 			t.Fatalf("%q must not be a valid glob", bad)
 		}
@@ -566,6 +572,12 @@ func TestTriggerGlobHelpers(t *testing.T) {
 		vocabulary.MatchTypeGlob("fn.example.com/*", "samples.substrate.reamde.dev/tasks/task") ||
 		!vocabulary.MatchTypeGlob("fn.example.com/fn/widget", "fn.example.com/fn/widget") {
 		t.Fatal("glob matching broke")
+	}
+	// A PACKAGE glob matches its own package and nothing beside it, which is
+	// the narrowing a trigger reaches for when one authority publishes several.
+	if !vocabulary.MatchTypeGlob("fn.example.com/fn/*", "fn.example.com/fn/widget") ||
+		vocabulary.MatchTypeGlob("fn.example.com/fn/*", "fn.example.com/other/widget") {
+		t.Fatal("a package glob must match its own package alone")
 	}
 	for _, op := range []string{"create", "update", "delete"} {
 		if !vocabulary.ValidFunctionOp(op) {

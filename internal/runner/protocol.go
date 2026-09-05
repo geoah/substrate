@@ -265,9 +265,3 @@ func OpOf(ch substrate.Change) string {
 		return vocabulary.FunctionOpUpdate
 	}
 }
-
-// SplitIdentity splits a kind reference into its local name and the package
-// that declares it.
-func SplitIdentity(ident string) (local, pkg string) {
-	return vocabulary.KindName(ident), vocabulary.KindPackage(ident)
-}

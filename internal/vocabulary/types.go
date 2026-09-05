@@ -726,9 +726,8 @@ func upperFirst(s string) string {
 // declaration is versioned, owned and quarantined in (decision 0047).
 //
 // An AUTHORITY document builds one of these too, with no members: an authority
-// says what it is and owns the packages published under it, and the row it
-// projects is the one a repository is born with. Identity tells the two apart
-// — a package's carries the one slash, an authority's does not.
+// says what it is and owns the packages published under it. Identity tells the
+// two apart: a package's carries the one slash, an authority's does not.
 type Package struct {
 	// Identity is the group key: "<authority>/<package>", or the bare
 	// authority for an authority row.

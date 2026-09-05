@@ -411,7 +411,8 @@ func (t *txn) checkTriggerCallableRow(tr *trigger) error {
 
 // --- the lifecycle verbs ------------------------------------------------------------
 
-// bundleByID resolves a bundle by its record id ("<authority>/<name>") or by its
+// bundleByID resolves a bundle by its record id (the package it owns,
+// "<authority>/<package>") or by its
 // owned authority — the two spellings a caller reasonably has in hand.
 func (ds *dataset) bundleByID(id string) (*vocabulary.Bundle, error) {
 	if b, ok := ds.registry().BundleOf(id); ok {

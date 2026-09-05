@@ -1326,7 +1326,7 @@ func TestApplyRejectsThePreEnvelopeFormat(t *testing.T) {
 	for _, want := range []string{
 		"stdin document 1",
 		"has no `kind`",
-		"kind: <authority>/<name>",
+		"kind: <authority>/<package>/<name>",
 		"id: t9",
 	} {
 		if !strings.Contains(err.Error(), want) {

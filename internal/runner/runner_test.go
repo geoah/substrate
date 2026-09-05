@@ -94,9 +94,9 @@ func testInput() Input {
 func widgetBackend() *fakeBackend {
 	return &fakeBackend{
 		records: map[string]*substrate.Record{
-			"w1": {ID: "w1", Kind: "widget.g.test"},
+			"w1": {ID: "w1", Kind: "g.test/widgets/widget"},
 		},
-		aliases: map[string]string{"widget": "widget.g.test"},
+		aliases: map[string]string{"widget": "g.test/widgets/widget"},
 	}
 }
 
@@ -117,7 +117,7 @@ def main(input, host):
     return {"effects": []}
 `,
 		TimeoutMs: 5000,
-		ReadTypes: []string{"widget.g.test"},
+		ReadTypes: []string{"g.test/widgets/widget"},
 	}
 	if _, err := r.Invoke(context.Background(), spec, testInput(), widgetBackend()); err != nil {
 		t.Fatalf("the bare reference to a declared kind was refused: %v", err)
@@ -143,13 +143,13 @@ func TestPythonInvokeAndHostCalls(t *testing.T) {
 		Source: `
 def main(input, host):
     host.log("hello")
-    got = host.get("widget.g.test", "w1")
-    return {"effects": [{"action": "put", "kind": "widget.g.test", "id": "out",
+    got = host.get("g.test/widgets/widget", "w1")
+    return {"effects": [{"action": "put", "kind": "g.test/widgets/widget", "id": "out",
                          "properties": {"from": got["id"], "key": input["idempotencyKey"]}}],
             "output": {"depth": input["causalDepth"]}}
 `,
 		TimeoutMs: 5000,
-		ReadTypes: []string{"widget.g.test"},
+		ReadTypes: []string{"g.test/widgets/widget"},
 	}
 	res, err := r.Invoke(context.Background(), spec, testInput(), widgetBackend())
 	if err != nil {
@@ -190,7 +190,7 @@ def main(input, host):
     return {"effects": []}
 `,
 		TimeoutMs: 5000,
-		ReadTypes: []string{"widget.g.test"},
+		ReadTypes: []string{"g.test/widgets/widget"},
 	}
 	_, err := r.Invoke(context.Background(), spec, testInput(), widgetBackend())
 	if !errors.Is(err, ErrReadForbidden) {
@@ -212,11 +212,11 @@ func TestGetOutsideAllowlistIsUniformAbsence(t *testing.T) {
 		Source: `
 def main(input, host):
     hidden = host.get("secret.g.test", "s1")
-    absent = host.get("widget.g.test", "nope")
+    absent = host.get("g.test/widgets/widget", "nope")
     return {"output": [hidden is None, absent is None]}
 `,
 		TimeoutMs: 5000,
-		ReadTypes: []string{"widget.g.test"},
+		ReadTypes: []string{"g.test/widgets/widget"},
 	}
 	backend := &fakeBackend{records: map[string]*substrate.Record{
 		"s1": {ID: "s1", Kind: "secret.g.test"},
@@ -324,11 +324,11 @@ func TestTimeoutBoundsStuckHostCall(t *testing.T) {
 		Runtime: "python",
 		Source: `
 def main(input, host):
-    host.get("widget.g.test", "w1")
+    host.get("g.test/widgets/widget", "w1")
     return {}
 `,
 		TimeoutMs: 300,
-		ReadTypes: []string{"widget.g.test"},
+		ReadTypes: []string{"g.test/widgets/widget"},
 	}
 	backend := widgetBackend()
 	backend.blockGet = true
@@ -448,17 +448,17 @@ func TestBudgetsChargeBeforeExecutionAndClampReads(t *testing.T) {
 		Source: `
 def main(input, host):
     try:
-        host.get("widget.g.test", "w1")
+        host.get("g.test/widgets/widget", "w1")
     except Exception:
         pass
     try:
-        host.get("widget.g.test", "w1")
+        host.get("g.test/widgets/widget", "w1")
     except Exception:
         pass
     return {}
 `,
 		TimeoutMs: 5000,
-		ReadTypes: []string{"widget.g.test"},
+		ReadTypes: []string{"g.test/widgets/widget"},
 		ReadCalls: 1, ReadRows: 100,
 	}
 	backend := widgetBackend()
@@ -477,16 +477,16 @@ def main(input, host):
 		Runtime: "python",
 		Source: `
 def main(input, host):
-    host.list(filter={"kinds": ["widget.g.test"]}, first=1000)
-    host.search(q="x", kinds=["widget.g.test"], k=1000)
+    host.list(filter={"kinds": ["g.test/widgets/widget"]}, first=1000)
+    host.search(q="x", kinds=["g.test/widgets/widget"], k=1000)
     try:
-        host.list(filter={"kinds": ["widget.g.test"]}, first=1)
+        host.list(filter={"kinds": ["g.test/widgets/widget"]}, first=1)
     except Exception:
         pass
     return {}
 `,
 		TimeoutMs: 5000,
-		ReadTypes: []string{"widget.g.test"},
+		ReadTypes: []string{"g.test/widgets/widget"},
 		ReadCalls: 10, ReadRows: 1,
 	}
 	backend = widgetBackend()
@@ -566,18 +566,18 @@ import "substratefn.local/substratefn"
 
 func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, error) {
 	host.Logf("depth %d", in.CausalDepth)
-	got, err := host.Get("widget.g.test", "w1")
+	got, err := host.Get("g.test/widgets/widget", "w1")
 	if err != nil {
 		return nil, err
 	}
 	return &substratefn.Result{
 		Output: got["id"],
-		Effects: []substratefn.Effect{{Action: "put", Kind: "widget.g.test", ID: "out"}},
+		Effects: []substratefn.Effect{{Action: "put", Kind: "g.test/widgets/widget", ID: "out"}},
 	}, nil
 }
 `,
 		TimeoutMs: 30000,
-		ReadTypes: []string{"widget.g.test"},
+		ReadTypes: []string{"g.test/widgets/widget"},
 	}
 	res, err := r.Invoke(context.Background(), spec, testInput(), widgetBackend())
 	if err != nil {
@@ -713,7 +713,7 @@ def main(input, host):
 	// Budget: sub-calls charge the caller's call budget before executing.
 	thrifty := spec
 	thrifty.Function = "thrifty.g.test"
-	thrifty.ReadTypes = []string{"widget.g.test"}
+	thrifty.ReadTypes = []string{"g.test/widgets/widget"}
 	thrifty.ReadCalls = 1
 	thrifty.Source = `
 def main(input, host):

@@ -313,16 +313,6 @@ func PackageManifest(pkg string, version int64) map[string]any {
 	}
 }
 
-// AuthorityManifest renders an authority document: the row that says an
-// authority exists and owns the packages published under it.
-func AuthorityManifest(authority string) map[string]any {
-	return map[string]any{
-		"kind":     CoreKind(DocAuthority),
-		"metadata": map[string]any{"id": authority},
-		"data":     map[string]any{},
-	}
-}
-
 // ActorManifest renders an actor document.
 func ActorManifest(pkg, actor string) map[string]any {
 	authority, name := SplitPackageRef(pkg)

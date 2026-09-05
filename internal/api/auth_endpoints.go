@@ -448,4 +448,4 @@ func (h *handler) deleteToken(w http.ResponseWriter, r *http.Request) {
 
 // tokenType is the token kind's reference — the one place the HTTP layer
 // names it, for the revoke path.
-const tokenType = coreAuthority + "/token"
+const tokenType = corePackage + "/token"

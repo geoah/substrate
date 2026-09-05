@@ -38,7 +38,7 @@ func TestSchemaApplyEndpoint(t *testing.T) {
 	rec := env.do(t, http.MethodPost, "/api/v1/vocabulary/apply", tok, map[string]any{
 		"documents": []map[string]any{
 			{
-				"kind":     coreAuthority + "/authority",
+				"kind":     corePackage + "/authority",
 				"metadata": map[string]any{"id": "widgets.example.substrate.reamde.dev"},
 				"data":     map[string]any{"version": 1},
 			},

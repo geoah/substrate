@@ -205,12 +205,12 @@ func TestUVDispatchRunsBody(t *testing.T) {
 # ///
 import sys
 def main(input, host):
-    got = host.get("widget.g.test", "w1")
-    return {"effects": [{"action": "put", "kind": "widget.g.test", "id": "out"}],
+    got = host.get("g.test/widgets/widget", "w1")
+    return {"effects": [{"action": "put", "kind": "g.test/widgets/widget", "id": "out"}],
             "output": {"py": sys.version_info[0], "from": got["id"]}}
 `,
 		TimeoutMs: 60000,
-		ReadTypes: []string{"widget.g.test"},
+		ReadTypes: []string{"g.test/widgets/widget"},
 	}
 	res, err := r.Invoke(context.Background(), spec, testInput(), widgetBackend())
 	if err != nil {

@@ -374,8 +374,8 @@ func TestShippedCallableActorsAreDistinct(t *testing.T) {
 // callable's name, an id that is not its package), and skipping them is how a
 // shipped example reached a release refusing to install. Requires go first,
 // into ONE seed registry, through the same BuildPackages+InstallAll pair
-// admission runs, so the whole shipped set also has to coexist (GraphQL names,
-// cross-package references) without a database.
+// admission runs — which is also the pair that refuses a GraphQL name claimed
+// twice — so the whole shipped set has to coexist without a database.
 func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 	cat, err := catalog.Load(kinds.Bundles(), samples.Samples())
 	if err != nil {

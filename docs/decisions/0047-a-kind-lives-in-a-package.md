@@ -50,11 +50,11 @@ never gains a third." It has a third job now, and the rest of 0014 stands: the
 id alphabet is still frozen and still never gains `%`, an authority still never
 gains a raw `/`, and a kind name still never gains a dot.
 
-**0014's first-label reservation stays open.** The GraphQL prefix no longer
-keys on an authority's first label in the ordinary case (it is the package
-name), but the label is still the tie-break when two authorities publish a
-package of one name, so it stays on 0014's migration list: before authorities
-widen to URLs, that tie-break moves to the full authority or a hash of it.
+**0014's first-label keying is discharged.** The GraphQL prefix is the package
+name, and the tie-break when two authorities publish a package of one name is
+the FULL authority with its dots folded to underscores
+(`Acme_example_com_Tasks_Task`), never a first label. Nothing in the tree
+derives an identifier from a first label any more.
 
 **The package is the unit.** Three things that were the authority's are the
 package's:
@@ -88,10 +88,10 @@ and annotation keys reserve the slash: `bundle:<authority>:<package>`,
 never-declared rule are unchanged.
 
 **The GraphQL name of an installed kind is `<Package>_<Kind>`** (`Tasks_Task`),
-and the authority's first label joins it only when two authorities install a
-package of the same name, for every kind of both packages so a name never
-depends on load order. That is the one place a first label is still read
-(`leadingLabel`, ref.go), and 0014's reservation on it stands.
+and the full authority joins it, dots folded to underscores, only when two
+authorities install a package of the same name, for every kind of both
+packages so a name never depends on load order. That retires the last
+first-label keying 0014 reserved.
 
 **A REST path routes by segment count, shifted by one**: three segments
 (`/api/v1/{authority}/{package}/{kind}`) is a collection, four is a record.
@@ -123,9 +123,9 @@ authority cannot do.
   names, and two imported samples may share a kind name.
 - Good, because ownership, versioning and quarantine are one small unit, so a
   provider's broken closure parks one package instead of six.
-- Good, because the common case stops keying on a first label: an installed
-  kind's GraphQL name is its package's, and the label is read only to break a
-  tie between two authorities publishing one package name.
+- Good, because 0014's last first-label keying is discharged: an installed
+  kind's GraphQL name is its package's, and the tie-break between two
+  authorities reads the whole authority.
 - Bad, because every stored kind string changes. There is no rung that
   translates the old grammar, so the store is wiped: the dialect gate refuses a
   store written before this (`maxVocabularyDialect` 3) and an older binary
@@ -147,8 +147,10 @@ authority cannot do.
 (internal/vocabulary) pin the split and the three grammars;
 `TestABundleIsThePackageItIsNamedFor`, `TestAPackageNameIsOneWord` and
 `TestTwoAuthoritiesMayShareAPackageName` pin the bundle id, the package name
-and the two-authority case; `TestGraphQLNamesDisambiguateBySharedPackageName`
-and `TestOneGraphQLNameIsStillOneKind` pin the naming rule and its refusal;
+and the two-authority case; `TestGraphQLNamesDisambiguateBySharedPackageName`,
+`TestOneGraphQLNameIsStillOneKind` and
+`TestInstallRefusesAGraphQLNameClaimedTwice` pin the naming rule and both doors
+that refuse a collision;
 `internal/api/grammar_test.go` pins the segment counts; `kinds_test.go` installs
 every shipped package on the seed without a database. `mise run kinds:check`
 diffs each shipped tree (`kinds/` and `samples/`) against the merge base, and
@@ -158,7 +160,7 @@ diffs each shipped tree (`kinds/` and `samples/`) against the merge base, and
 
 Amends the third-job sentence of
 [0014](0014-authorities-widen-only-outside-the-id-alphabet.md), whose id
-alphabet freeze and first-label reservation both stand, and amends
+alphabet freeze stands, and discharges its first-label reservation. Amends
 [0025](0025-an-actor-carries-the-full-authority.md),
 [0033](0033-the-path-grammar-has-no-separators.md) and
 [0042](0042-every-kind-carries-an-authority.md) as described above. Closes
