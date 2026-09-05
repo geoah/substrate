@@ -36,7 +36,8 @@ var tasksRequires = []string{
 
 // movedTasksCatalog loads a catalog whose tasks closure is the shipped one
 // with each named file rewritten: binary N+1's tree, against a repository
-// binary N installed into.
+// binary N installed into. Passing no mutation loads the shipped closure
+// unchanged, which is binary N's own tree.
 func movedTasksCatalog(t *testing.T, mutate map[string]func(string) string) *catalog.Catalog {
 	t.Helper()
 	// The copy mirrors the samples root: the authority manifest at the root,
@@ -72,7 +73,10 @@ func movedTasksCatalog(t *testing.T, mutate map[string]func(string) string) *cat
 	}
 	copyManifests(samplesRoot, root)
 	copyManifests(filepath.Join(samplesRoot, tasksPackage), dst)
-	c, err := catalog.Load(os.DirFS(root))
+	// The copy is loaded as a PROVIDER root: only a published package is
+	// offered an upgrade (decision record 0048), so the copy stands in for one
+	// while the closure it is made of stays the tasks closure the tree ships.
+	c, err := catalog.Load(catalog.ProviderRoot(os.DirFS(root)))
 	if err != nil {
 		t.Fatalf("load moved catalog: %v", err)
 	}
@@ -138,9 +142,10 @@ func TestUpgradePreview(t *testing.T) {
 	ds := newDataset(t)
 	c := loadCatalog(t)
 	ctx := context.Background()
+	current := movedTasksCatalog(t, nil)
 
 	// Not installed: nothing to upgrade, only to install.
-	up, err := c.Upgrade(ctx, tasksBundleID, ds)
+	up, err := current.Upgrade(ctx, tasksBundleID, ds)
 	if err != nil {
 		t.Fatalf("preview before install: %v", err)
 	}
@@ -151,7 +156,7 @@ func TestUpgradePreview(t *testing.T) {
 	importVocabulary(t, c, ds, append(tasksRequires, tasksBundleID)...)
 
 	// Installed and current: the shipped closure moves nothing.
-	up, err = c.Upgrade(ctx, tasksBundleID, ds)
+	up, err = current.Upgrade(ctx, tasksBundleID, ds)
 	if err != nil {
 		t.Fatalf("preview after install: %v", err)
 	}
@@ -159,9 +164,19 @@ func TestUpgradePreview(t *testing.T) {
 		t.Fatalf("an up-to-date bundle previews an upgrade: %+v", up)
 	}
 
+	// A SAMPLE is never offered one: what it landed belongs to the repository,
+	// so the catalog answers no preview at all before the dataset is asked.
+	sample, err := c.Upgrade(ctx, tasksBundleID, ds)
+	if err != nil {
+		t.Fatalf("preview of a sample: %v", err)
+	}
+	if sample != nil {
+		t.Errorf("a sample previews an upgrade: %+v", sample)
+	}
+
 	// Binary N+1 ships the package a version ahead with a new optional
 	// property: an additive move, offered with no blockers.
-	shipped := shippedVersion(t, c)
+	shipped := shippedVersion(t, current)
 	moved := movedTasksCatalog(t, map[string]func(string) string{
 		"bundle.yaml": func(doc string) string { return bumpTasksPackage(t, shipped, doc) },
 		"task.yaml": func(doc string) string {

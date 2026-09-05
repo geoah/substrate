@@ -32,11 +32,23 @@ func (h *handler) getCatalog(w http.ResponseWriter, r *http.Request) {
 			writeSubstrateError(w, err)
 			return
 		}
+		home := homeAuthority(r.Context())
 		for _, b := range h.catalog.Bundles() {
-			items = append(items, h.catalogItemFor(r.Context(), b, installed[b.ID]))
+			items = append(items, h.catalogItemFor(r.Context(), b, b.HeldID(installed, home) != ""))
 		}
 	}
 	writeJSON(w, http.StatusOK, substrate.Listed(items))
+}
+
+// homeAuthority is the authority this repository owns, which is where a SAMPLE lands
+// (decision records 0046 and 0048). A dataset that names none answers "", and
+// a sample then reads as its shipped id, which is never installed.
+func homeAuthority(ctx context.Context) string {
+	ds := DatasetFrom(ctx)
+	if ds == nil {
+		return ""
+	}
+	return ds.Repository().Authority
 }
 
 // getCatalogItem is one shipped bundle's detail — the closure it installs
@@ -57,7 +69,8 @@ func (h *handler) getCatalogItem(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, h.catalogItemFor(r.Context(), b, installed[b.ID]))
+	held := b.HeldID(installed, homeAuthority(r.Context())) != ""
+	writeJSON(w, http.StatusOK, h.catalogItemFor(r.Context(), b, held))
 }
 
 // catalogItemFor assembles one wire entry, asking the catalog for the upgrade
@@ -89,17 +102,40 @@ func (h *handler) catalogItemFor(ctx context.Context, b *catalog.Bundle, install
 // own upgrade semantics). The response is the installed bundle's computed
 // status.
 func (h *handler) postCatalogInstall(w http.ResponseWriter, r *http.Request) {
+	h.takeCatalogBundle(w, r, (*catalog.Catalog).Install, false)
+}
+
+// postCatalogImport is the SAMPLE door: the same admission over a closure
+// rehomed onto this repository's own authority first, so what lands is the
+// repository's own vocabulary. A PROVIDER id is refused here, naming install.
+func (h *handler) postCatalogImport(w http.ResponseWriter, r *http.Request) {
+	h.takeCatalogBundle(w, r, (*catalog.Catalog).Import, true)
+}
+
+// takeCatalogBundle runs one of the two doors and answers with the status of
+// the bundle as it LANDED. `rehomed` says which id that is: the import rewrote
+// the closure onto this repository's authority, so its bundle record is
+// `<authority>/<package>`, while an install landed the id the request named.
+// Asking for the wrong one is a 404 on a write that succeeded.
+func (h *handler) takeCatalogBundle(w http.ResponseWriter, r *http.Request,
+	take func(*catalog.Catalog, context.Context, substrate.Actor, string, substrate.Dataset) (*catalog.Bundle, error),
+	rehomed bool,
+) {
 	if h.catalog == nil {
 		writeError(w, http.StatusNotFound, codeNotFound, "no catalog is shipped")
 		return
 	}
 	ctx := r.Context()
-	b, err := h.catalog.Install(ctx, ActorFrom(ctx), pathParam(r, "id"), DatasetFrom(ctx))
+	b, err := take(h.catalog, ctx, ActorFrom(ctx), pathParam(r, "id"), DatasetFrom(ctx))
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
 	}
-	// The response is the installed bundle's computed status — the one schema
+	landed := b.ID
+	if rehomed {
+		landed = b.LandedID(homeAuthority(ctx))
+	}
+	// The response is the landed bundle's computed status, the one schema
 	// this endpoint promises. A dataset that could install the closure runs the
 	// bundle lifecycle; if the required post-install status still cannot be
 	// computed, that is a fault, surfaced as an error rather than a false
@@ -107,10 +143,10 @@ func (h *handler) postCatalogInstall(w http.ResponseWriter, r *http.Request) {
 	ops, ok := bundlesFrom(ctx)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, codeInternal,
-			"installed bundle "+b.ID+" but this substrate computes no bundle status")
+			"installed bundle "+landed+" but this substrate computes no bundle status")
 		return
 	}
-	st, err := ops.BundleStatus(ctx, b.ID)
+	st, err := ops.BundleStatus(ctx, landed)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return

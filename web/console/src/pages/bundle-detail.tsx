@@ -6,8 +6,8 @@
  * then the setup/inputs surface. `bundle` stays the schema term; the
  * advanced/record link still exposes the bundle authority.
  *
- * The same closure facts the Registry row discloses before an import are here
- * after it: the catalog facet (Vocabulary / Integration), the shipped version,
+ * The same closure facts the Registry row discloses before it lands are here
+ * after: the catalog tier (Provider / Sample), the shipped version,
  * the authorities the closure REQUIRES — each marked present or missing against
  * the live kind registry — and the kinds it installed, linked to their
  * collections.
@@ -98,6 +98,7 @@ import {
   formatCount,
 } from "@/lib/api/records"
 import { kindsQueryOptions } from "@/lib/api/kinds"
+import { repositoryQueryOptions } from "@/lib/api/repository"
 import { CORE_AUTHORITY, CORE_PACKAGE, CORE_PACKAGE_NAME } from "@/lib/api/http"
 import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
 import {
@@ -1410,7 +1411,13 @@ export function BundleDetailPage() {
   const { id } = bundleDetailRoute.useParams()
   const status = useQuery(bundleStatusQueryOptions(id))
   const registry = useQuery(kindsQueryOptions)
-  const catalog = useQuery(catalogItemQueryOptions(id))
+  // The repository record says which authority this repository owns, which is
+  // the id an imported SAMPLE landed under: without it the shipped closure
+  // behind this bundle could not be found again (decision record 0048).
+  const repository = useQuery(repositoryQueryOptions)
+  const catalog = useQuery(
+    catalogItemQueryOptions(id, repository.data?.authority ?? "")
+  )
   const types = registry.data ?? []
 
   if (status.isPending) return <DetailSkeleton />
@@ -1472,9 +1479,9 @@ export function BundleDetailPage() {
                 clear it.
               </span>
             ) : null}
-            {item?.integration ? (
+            {item?.tier ? (
               <Badge variant="outline" className="shrink-0 font-normal">
-                Integration
+                {item.tier === "provider" ? "Provider" : "Sample"}
               </Badge>
             ) : null}
           </div>

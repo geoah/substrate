@@ -182,7 +182,7 @@ func run() error {
 	// BOTH SHIPPED TREES: the provider packages under kinds/ and the sample
 	// packages under samples/. A catalog built from one of them serves half
 	// the shipped set and 404s every install of the other.
-	cat, err := catalog.Load(kinds.Bundles(), samples.Samples())
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		return err
 	}

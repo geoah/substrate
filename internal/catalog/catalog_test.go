@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/kinds"
 	"github.com/geoah/substrate/samples"
 )
@@ -13,7 +14,7 @@ import (
 // main.go embeds), so the parse is held against the real closures.
 func realCatalog(t *testing.T) *Catalog {
 	t.Helper()
-	c, err := Load(kinds.Bundles(), samples.Samples())
+	c, err := Load(ProviderRoot(kinds.Bundles()), SampleRoot(samples.Samples()))
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
@@ -125,23 +126,48 @@ func TestCatalogPreviewsTheRecordsAnInstallWrites(t *testing.T) {
 	}
 }
 
-// The integration facet is curated catalog metadata keyed by bundle id, NOT
-// derived from the closure: the google provider bundle carries integration=true
-// and the URL-harvester web bundle integration=false.
-func TestCatalogIntegrationFacetIsCurated(t *testing.T) {
+// The TIER is the tree a closure came from, never a guess from its authority
+// (decision record 0048): kinds/providers.substrate.reamde.dev is a provider,
+// samples/ is a sample. It decides which door a bundle takes, so a wrong
+// answer here sends a user to install what they should own.
+func TestCatalogTierIsTheTreeTheClosureCameFrom(t *testing.T) {
 	c := realCatalog(t)
-	cases := map[string]bool{
-		"providers.substrate.reamde.dev/google": true,
-		"samples.substrate.reamde.dev/web":      false,
+	cases := map[string]string{
+		"providers.substrate.reamde.dev/google": substrate.TierProvider,
+		"providers.substrate.reamde.dev/linear": substrate.TierProvider,
+		"samples.substrate.reamde.dev/web":      substrate.TierSample,
+		"samples.substrate.reamde.dev/tasks":    substrate.TierSample,
 	}
 	for id, want := range cases {
 		b, ok := c.ByID(id)
 		if !ok {
 			t.Fatalf("bundle %q not in catalog", id)
 		}
-		if b.Integration != want {
-			t.Errorf("%s integration = %v, want %v", id, b.Integration, want)
+		if b.Tier != want {
+			t.Errorf("%s tier = %q, want %q", id, b.Tier, want)
 		}
+	}
+	// Every shipped bundle carries one of the two: an entry with an empty
+	// tier is a closure no door serves.
+	for _, b := range c.Bundles() {
+		if b.Tier != substrate.TierProvider && b.Tier != substrate.TierSample {
+			t.Errorf("%s tier = %q, want provider or sample", b.ID, b.Tier)
+		}
+	}
+}
+
+// A sample's shipped id addresses the catalog entry; what LANDS is its package
+// under the repository's own authority, which is the id the bundle status
+// carries afterwards. A provider keeps the id it publishes.
+func TestLandedIDRehomesASampleAndLeavesAProvider(t *testing.T) {
+	c := realCatalog(t)
+	sample, _ := c.ByID("samples.substrate.reamde.dev/tasks")
+	if got, want := sample.LandedID("ada.example.com"), "ada.example.com/tasks"; got != want {
+		t.Errorf("sample lands as %q, want %q", got, want)
+	}
+	provider, _ := c.ByID("providers.substrate.reamde.dev/google")
+	if got, want := provider.LandedID("ada.example.com"), provider.ID; got != want {
+		t.Errorf("provider lands as %q, want %q", got, want)
 	}
 }
 
@@ -159,7 +185,7 @@ func TestCatalogSkipsNonBundleAndMalformed(t *testing.T) {
 	}
 	must("notabundle.bundles.substrate.reamde.dev", "kind: substrate.reamde.dev/core/kind\nmetadata: {id: x.y}\ndata: {authority: y}\n")
 	must("broken.bundles.substrate.reamde.dev", "authority: substrate.reamde.dev/core\n  bad: [indent")
-	c, err := Load(os.DirFS(dir))
+	c, err := Load(ProviderRoot(os.DirFS(dir)))
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}

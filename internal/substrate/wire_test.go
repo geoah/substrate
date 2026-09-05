@@ -49,6 +49,18 @@ var wireTypes = map[string]any{
 	// The operational-list envelope. Element type does not change the field
 	// names, so any instantiation pins items/cursor.
 	"OperationalList": OperationalList[TokenInfo]{},
+	// The catalog entry and the two shapes nested in it. The console's
+	// Registry reads them on every visit and its two sections key on `tier`,
+	// so a field that moves here has to move there (decision record 0048).
+	// internal/catalog embeds CatalogBundle rather than declaring its own,
+	// which is what puts the shape in reach of this reflection.
+	//
+	// The KEYS are the TypeScript names, as every key here is: the console
+	// calls these two `BundleClosure` and `ShippedRecord`, while the Go types
+	// carry the `Catalog` prefix that keeps them apart in this package.
+	"CatalogBundle": CatalogBundle{},
+	"BundleClosure": CatalogClosure{},
+	"ShippedRecord": CatalogShippedRecord{},
 }
 
 // jsonFields lists the wire names a struct serializes, in declaration order. A

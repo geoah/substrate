@@ -482,40 +482,55 @@ export interface BundleUpgrade {
   blockers?: string[]
 }
 
-/** One installable bundle from the catalog embedded in the binary, plus
- * whether THIS repository has it. */
+/** Which of the two catalog doors a shipped closure takes (decision record
+ * 0048). A `provider` INSTALLS under the authority that publishes it; a
+ * `sample` IMPORTS under this repository's own authority and is the
+ * repository's to edit afterwards. */
+export type CatalogTier = "provider" | "sample"
+
+/** One bundle from the catalog embedded in the binary
+ * (substrate.CatalogBundle). Held field-for-field by the wire golden, so
+ * `installed` and `upgrade`, which the API adds around it, live on
+ * CatalogItem instead. */
 export interface CatalogBundle {
   /** The bundle's id — the PACKAGE identity it owns
    * (`providers.substrate.reamde.dev/google`), matching BundleStatus.id once
-   * installed. */
+   * installed. A SAMPLE lands under this repository's authority, so its
+   * stored bundle id is not this one. */
   id: string
   /** The owned package's own word ("google"). */
   name: string
-  /** The authority the closure publishes under. */
+  /** The authority the closure is published under. For a sample that is the
+   * placeholder the tree authors under, never where it lands. */
   authority: string
   /** The owned package's own word, the same word as `name`: the console groups
    * the catalog by authority, then by package. */
   package: string
   description: string
-  /** The owned package's incremental declaration version. */
+  /** The owned package's incremental declaration version. A sample's decides
+   * nothing: it has no upgrade path. */
   version: number
+  /** `provider` or `sample`: which section the Registry lists it under and
+   * which door its button takes. */
+  tier: CatalogTier
   /** The declared inputs, input name keyed. A bundle with no needs omits it. */
   inputs?: Record<string, CatalogInput>
-  closure: BundleClosure
-  installed: boolean
-  /** Catalog facet (backend-owned): this bundle connects an external
-   * provider, so it earns the Integration badge/filter. */
-  integration?: boolean
-  /** Catalog facet: a worked example — grouped under Examples in the console.
-   * Curated by the catalog, never derived from the closure's shape. */
-  example?: boolean
   /** The PACKAGES this closure declares against — the vocabulary its
    * mappings, references and trigger subscriptions point at. Admission REFUSES the
    * import while one of them is absent from the repository, naming what to
    * import first, so the console shows them before the button is pressed. */
   requires?: string[]
-  /** Present only on an installed bundle whose shipped closure moved past the
-   * stored one: what re-importing would change, or why it is blocked. */
+  closure: BundleClosure
+}
+
+/** One catalog entry as the API serves it: the shipped bundle plus whether
+ * THIS repository has it and, for an installed provider whose closure moved,
+ * what re-installing would do. */
+export interface CatalogItem extends CatalogBundle {
+  installed: boolean
+  /** Present only on an installed PROVIDER whose shipped closure moved past
+   * the stored one: what re-installing would change, or why it is blocked. A
+   * sample is never offered one. */
   upgrade?: BundleUpgrade
 }
 

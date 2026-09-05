@@ -69,7 +69,7 @@ What that means for an operator:
 
 - A fresh repository has no agents and no semantic search until its owner
   writes a provider row. Nothing seeds one; the
-  [LLM example bundle](bundles-catalog.md#llm-example) ships two ready to key.
+  [LLM sample bundle](bundles-catalog.md#llm-sample) ships two ready to key.
 - Semantic search runs against the one row that declares `embedModel`, and
   hybrid search returns its lexical arm alone until that row exists.
 - Every stored vector names the row and the model that produced it. Change

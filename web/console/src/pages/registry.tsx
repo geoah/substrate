@@ -1,11 +1,15 @@
-/** Registry (`/registry`): every bundle this substrate knows — the IMPORTED
- * bundles with their runtime state (from the computed status endpoint) AND the
- * closures shipped in the catalog that have not been imported yet. One row per
- * bundle on THE table system; a not-imported row carries an Import button,
- * an imported row opens the bundle's detail with the lifecycle verbs, the
- * setup/inputs surface and the accounts/connect flow. Integration bundles (backend
- * `integration` facet) carry an Integration badge and can be narrowed with the
- * All / Vocabulary / Integrations filter, orthogonal to the imported state.
+/** Registry (`/registry`): every bundle this substrate knows: the ones this
+ * repository holds, with their runtime state (from the computed status
+ * endpoint), and the closures shipped in the catalog it has not taken yet.
+ *
+ * TWO SECTIONS, the two catalog tiers (decision record 0048). PROVIDERS are
+ * packages a publisher owns: they install under the authority that publishes
+ * them, and their upgrades are offered here. SAMPLES are vocabulary to copy:
+ * importing one rewrites it onto THIS repository's authority, so the row
+ * previews the identity it will land under before the button is pressed, and
+ * nothing upstream can change it afterwards. A bundle applied outside the
+ * shipped catalog has no tier and is listed on its own rather than guessed
+ * into one.
  *
  * EVERY ROW DISCLOSES ITS CLOSURE (owner ask): a fresh repository holds
  * `substrate.reamde.dev/core` and nothing else, so the reader meets this page before they
@@ -16,13 +20,15 @@
  * each marked present or missing.
  *
  * REQUIREMENTS ARE A GATE, not a surprise: `schema.resolveBundle` refuses an
- * install whose `requires:` authorities are absent, so the console refuses it
- * first — Import is disabled with a tooltip naming what to import first. If the
- * server still refuses (a race), its own problems ride the toast verbatim.
+ * install whose `requires:` packages are absent, so the console refuses it
+ * first, so the button is disabled with a tooltip naming what to take first. A
+ * sample's requirements are shown REHOMED, under this repository's authority,
+ * because that is what the server will look for. If the server still refuses
+ * (a race), its own problems ride the toast verbatim.
  *
- * VOCABULARY (owner ruling): the reader IMPORTS an bundle from the registry.
- * enable/disable/uninstall are a DIFFERENT lifecycle and keep their own words.
- * The wire is untouched — importing still POSTs `…/catalog/{id}/install`. */
+ * The two doors are two endpoints: `…/catalog/{id}/install` for a provider,
+ * `…/catalog/{id}/import` for a sample. enable/disable/uninstall are a
+ * DIFFERENT lifecycle and keep their own words. */
 
 import { useMemo } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -40,8 +46,6 @@ import {
   TriangleAlertIcon,
   ZapIcon,
 } from "lucide-react"
-import { parseAsStringLiteral, useQueryState } from "nuqs"
-
 import { DataTable, useDataTable } from "@/components/data-table/data-table"
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
 import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
@@ -73,14 +77,19 @@ import {
   seedBundleStatus,
   setupCount,
 } from "@/lib/api/bundles"
-import { catalogQueryOptions, importBundle } from "@/lib/api/catalog"
+import {
+  catalogQueryOptions,
+  installBundle,
+  takeBundle,
+} from "@/lib/api/catalog"
+import { repositoryQueryOptions } from "@/lib/api/repository"
 import { CORE_PACKAGE } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import type { KindInfo } from "@/lib/api/types"
 import { splitKind } from "@/lib/definition"
 import {
   bundleRecordRows,
-  filterBundles,
+  bundleSections,
   importFailureText,
   installedKindRows,
   mergeBundles,
@@ -91,7 +100,6 @@ import {
   upgradeAvailable,
   upgradeBlocked,
   upgradeMotion,
-  type BundleFacet,
   type BundleRow,
   type Requirement,
 } from "@/lib/bundles"
@@ -149,13 +157,15 @@ function numColumn(
   }
 }
 
-/** Import, gated by the closure's own `requires:`. A missing requirement is a
- * refusal the server WILL make (schema.resolveBundle), so the button is
- * disabled and its tooltip names what to import first — the trigger is a span,
- * since a disabled button dispatches no pointer events. A refusal that still
- * arrives (the requirement was torn down between the read and the click)
- * surfaces the server's own problems verbatim. */
-function ImportButton({
+/** The row's door, named for its tier: a PROVIDER installs under the authority
+ * that publishes it, a SAMPLE imports as yours. Gated by the closure's own
+ * `requires:`. A missing requirement is a refusal the server WILL make
+ * (schema.resolveBundle), so the button is disabled and its tooltip names what
+ * to take first; the trigger is a span, since a disabled button dispatches no
+ * pointer events. A refusal that still arrives (the requirement was torn down
+ * between the read and the click) surfaces the server's own problems
+ * verbatim. */
+function TakeButton({
   row,
   missing,
 }: {
@@ -163,23 +173,35 @@ function ImportButton({
   missing: Requirement[]
 }) {
   const queryClient = useQueryClient()
-  const importing = useMutation({
-    mutationFn: () => importBundle(row.id),
+  const sample = row.tier === "sample"
+  const verb = sample ? "Import as yours" : "Install"
+  const running = sample ? "Importing…" : "Installing…"
+  const taking = useMutation({
+    mutationFn: () =>
+      takeBundle({
+        id: row.catalog?.id ?? row.id,
+        tier: row.tier ?? "provider",
+      }),
     onSuccess: (status) => {
-      toast.add({ type: "success", title: `${row.name} imported.` })
-      // The import answers with the fresh status — seed it so this row flips
-      // to imported immediately, without waiting on the next status probe.
+      toast.add({
+        type: "success",
+        title: sample
+          ? `${row.name} imported as ${status.id}.`
+          : `${row.name} installed.`,
+      })
+      // The door answers with the fresh status, so seed it and this row flips to
+      // held immediately, without waiting on the next status probe.
       seedBundleStatus(queryClient, status)
-      // An import lands schema + wiring the whole console reads — refresh all,
-      // and re-read the bundle surfaces again shortly since the probe-backed
-      // reads can lag it.
+      // It lands schema + wiring the whole console reads, so refresh all, and
+      // re-read the bundle surfaces again shortly since the probe-backed reads
+      // can lag it.
       void queryClient.invalidateQueries()
       refetchBundleStateSoon(queryClient)
     },
     onError: (error) => {
       toast.add({
         type: "error",
-        title: `Could not import ${row.name}`,
+        title: `Could not ${sample ? "import" : "install"} ${row.name}`,
         description: importFailureText(error),
       })
     },
@@ -190,18 +212,14 @@ function ImportButton({
     <Button
       variant="outline"
       size="sm"
-      disabled={blocked || importing.isPending}
+      disabled={blocked || taking.isPending}
       onClick={(e) => {
         e.stopPropagation()
-        importing.mutate()
+        taking.mutate()
       }}
     >
-      {importing.isPending ? (
-        <Spinner className="size-3.5" />
-      ) : (
-        <DownloadIcon />
-      )}
-      {importing.isPending ? "Importing…" : "Import"}
+      {taking.isPending ? <Spinner className="size-3.5" /> : <DownloadIcon />}
+      {taking.isPending ? running : verb}
     </Button>
   )
   if (!blocked) return button
@@ -217,17 +235,18 @@ function ImportButton({
   )
 }
 
-/** Upgrade: re-import the shipped closure, which is the bundle's own upgrade
- * verb (the wire still POSTs `…/catalog/{id}/install`). Offered only when the
- * server's preview says the closure moved AND nothing blocks it; a BLOCKED
- * upgrade renders as UpgradeBlockedChip instead, because the server would
- * refuse it, so the console never offers the click (owner decision: no
- * force). */
+/** Upgrade: re-install the shipped closure, which is the provider's own
+ * upgrade verb (`…/catalog/{id}/install`). Offered only when the server's
+ * preview says the closure moved AND nothing blocks it; a BLOCKED upgrade
+ * renders as UpgradeBlockedChip instead, because the server would refuse it,
+ * so the console never offers the click (owner decision: no force). A SAMPLE
+ * never reaches here: the server attaches no preview to one, because what it
+ * landed belongs to the repository (decision record 0048). */
 function UpgradeButton({ row }: { row: BundleRow }) {
   const queryClient = useQueryClient()
   const upgrade = row.upgrade
   const upgrading = useMutation({
-    mutationFn: () => importBundle(row.id),
+    mutationFn: () => installBundle(row.catalog?.id ?? row.id),
     onSuccess: (status) => {
       toast.add({
         type: "success",
@@ -307,18 +326,6 @@ function UpgradeBlockedChip({ row }: { row: BundleRow }) {
   )
 }
 
-/** The catalog facets said plainly. */
-function FacetBadge({ row }: { row: BundleRow }) {
-  if (row.integration) {
-    return (
-      <Badge variant="outline" className="shrink-0 font-normal">
-        Integration
-      </Badge>
-    )
-  }
-  return null
-}
-
 function buildColumns(
   requirements: (row: BundleRow) => Requirement[]
 ): DataTableColumn<BundleRow>[] {
@@ -335,7 +342,6 @@ function buildColumns(
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="truncate font-medium">{row.original.name}</span>
-            <FacetBadge row={row.original} />
           </div>
           <div
             className="truncate data text-xs text-muted-foreground"
@@ -349,7 +355,7 @@ function buildColumns(
     },
     {
       id: "state",
-      accessorFn: (r) => (r.status ? bundleState(r.status) : "not imported"),
+      accessorFn: (r) => (r.status ? bundleState(r.status) : "not taken"),
       enableSorting: false,
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="state" />
@@ -373,8 +379,23 @@ function buildColumns(
             ) : (
               <Badge variant="outline" className="gap-1.5 font-normal">
                 <span className="size-1.5 rounded-full bg-muted-foreground/40" />
-                <span className="data">not imported</span>
+                <span className="data">
+                  {row.original.tier === "sample"
+                    ? "not imported"
+                    : "not installed"}
+                </span>
               </Badge>
+            )}
+            {/* A sample is rewritten onto this repository's authority on the
+                way in, so the row says the identity it will land under before
+                the button is pressed, since the reader is about to own it. */}
+            {!row.original.status && row.original.tier === "sample" && (
+              <div
+                className="truncate pt-0.5 data text-xs text-muted-foreground"
+                title={`Importing lands ${row.original.id}, yours to edit`}
+              >
+                lands as {row.original.id}
+              </div>
             )}
             {missing.length > 0 && (
               <div
@@ -416,7 +437,7 @@ function buildColumns(
           ) : null
         ) : row.original.catalog ? (
           <div className="flex justify-end">
-            <ImportButton
+            <TakeButton
               row={row.original}
               missing={missingRequirements(requirements(row.original))}
             />
@@ -522,11 +543,13 @@ function BundleDisclosure({
             ))}
           </Line>
         )}
-        <Line label="bundle">
+        <Line label="tier">
           <span>
-            {row.integration
-              ? "Integration — connects an external provider through its own configuration and accounts."
-              : "Bundle — ships callables and configuration in its own package."}
+            {row.tier === "provider"
+              ? "Provider: a published package. It installs under the authority that publishes it, and its publisher ships each change as an upgrade."
+              : row.tier === "sample"
+                ? `Sample: vocabulary to copy. Importing lands it as ${row.id}, yours to edit, and nothing upstream changes it afterwards.`
+                : "Applied directly: this bundle is not in the shipped catalog, so it has no tier and no closure to preview."}
           </span>
         </Line>
         {catalog?.inputs && Object.keys(catalog.inputs).length > 0 && (
@@ -704,43 +727,76 @@ function BundleDisclosure({
   )
 }
 
-const FACETS = ["all", "integrations", "examples", "upgrades"] as const
-
-/** The catalog facet toggle: All / Integrations / Examples / Upgrades,
- * orthogonal to whether a row is imported. Full-size h-8 outline controls
- * (GUIDE rule 3 — filters are controls, not chips); the choice lives in the URL
- * (nuqs). */
-function FacetFilter({
-  value,
-  onChange,
+/** One tier's table: its own heading, its own column preferences, its own
+ * empty state. Two of these are the page (decision record 0048), because the
+ * two tiers answer different questions: what connects to a service, and what
+ * vocabulary to start from. */
+function BundleSection({
+  title,
+  description,
+  rows,
+  prefsKey,
+  emptyTitle,
+  emptyDescription,
+  requirements,
+  kinds,
+  onOpen,
 }: {
-  value: BundleFacet
-  onChange: (facet: BundleFacet) => void
+  title: string
+  description: string
+  rows: BundleRow[]
+  prefsKey: string
+  emptyTitle: string
+  emptyDescription: string
+  requirements: (row: BundleRow) => Requirement[]
+  kinds: KindInfo[]
+  onOpen: (row: BundleRow) => void
 }) {
-  const options: { value: BundleFacet; label: string }[] = [
-    { value: "all", label: "All" },
-    { value: "integrations", label: "Integrations" },
-    { value: "examples", label: "Examples" },
-    { value: "upgrades", label: "Upgrades" },
-  ]
+  const columns = useMemo(() => buildColumns(requirements), [requirements])
+  const table = useDataTable({
+    columns,
+    data: rows,
+    getRowId: (row) => row.id,
+    prefsKey,
+  })
+  const held = rows.filter((r) => r.installed).length
   return (
-    <div className="flex h-8 items-center rounded-md border p-0.5">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          onClick={() => onChange(o.value)}
-          className={cn(
-            "h-7 rounded-sm px-2.5 text-xs font-medium transition-colors",
-            value === o.value
-              ? "bg-muted text-foreground"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
+    <section className="pb-6">
+      <div className="flex items-end justify-between gap-3 px-6 pt-4 pb-2">
+        <div>
+          <h2 className="text-sm font-semibold">{title}</h2>
+          <p className="text-xs text-muted-foreground">{description}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">
+            {held.toLocaleString()} of {rows.length.toLocaleString()}
+          </span>
+          <DataTableViewOptions table={table} />
+        </div>
+      </div>
+      <DataTable
+        table={table}
+        onRowClick={(row) => onOpen(row)}
+        renderExpanded={(row) => (
+          <BundleDisclosure
+            row={row}
+            requirements={requirements(row)}
+            kinds={kinds}
+          />
+        )}
+        empty={
+          <Empty className="py-10">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <BoxesIcon />
+              </EmptyMedia>
+              <EmptyTitle>{emptyTitle}</EmptyTitle>
+              <EmptyDescription>{emptyDescription}</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        }
+      />
+    </section>
   )
 }
 
@@ -748,23 +804,23 @@ export function RegistryPage() {
   const navigate = useNavigate()
   const statuses = useQuery(bundleStatusesQueryOptions)
   const catalog = useQuery(catalogQueryOptions)
-  // The kind registry answers two questions here: which authorities this
-  // repository already holds (a requirement is met when its authority is
-  // live), and where a closure's kinds actually browse once imported.
+  // The repository's own record answers ONE question: the authority this
+  // repository owns, which is where an imported sample lands (decision records
+  // 0046 and 0048) and so what a sample row previews.
+  const repository = useQuery(repositoryQueryOptions)
+  // The kind registry answers two more: which packages this repository already
+  // holds (a requirement is met when its package is live), and where a
+  // closure's kinds actually browse once they land.
   const registry = useQuery(kindsQueryOptions)
   const kinds = useMemo(() => registry.data ?? [], [registry.data])
-
-  const [facet, setFacet] = useQueryState(
-    "facet",
-    parseAsStringLiteral(FACETS).withDefault("all")
-  )
+  const home = repository.data?.authority ?? ""
 
   const allRows = useMemo(
-    () => mergeBundles(statuses.data ?? [], catalog.data ?? []),
-    [statuses.data, catalog.data]
+    () => mergeBundles(statuses.data ?? [], catalog.data ?? [], home),
+    [statuses.data, catalog.data, home]
   )
-  // Presence is computed over EVERY row, never the filtered view: hiding a
-  // package behind a facet must not make an integration look unimportable.
+  // Presence is computed over EVERY row, never one section's: a package in the
+  // other section still satisfies a requirement.
   const present = useMemo(
     () => presentPackages(allRows, kinds),
     [allRows, kinds]
@@ -774,22 +830,20 @@ export function RegistryPage() {
     for (const row of allRows) byId.set(row.id, requirementsOf(row, present))
     return (row: BundleRow) => byId.get(row.id) ?? []
   }, [allRows, present])
-
-  const rows = useMemo(() => filterBundles(allRows, facet), [allRows, facet])
-  const importedCount = rows.filter((r) => r.installed).length
-  const notImportedCount = rows.length - importedCount
-  const columns = useMemo(() => buildColumns(requirements), [requirements])
-  const table = useDataTable({
-    columns,
-    data: rows,
-    getRowId: (row) => row.id,
-    prefsKey: "registry",
-  })
+  const sections = useMemo(() => bundleSections(allRows), [allRows])
+  const heldCount = allRows.filter((r) => r.installed).length
 
   // The kind registry is a read the whole console shares (the sidebar holds it
   // warm); waiting for it here keeps a requirement from reading as missing for
-  // one frame and disabling an Import that is perfectly legal.
-  if (statuses.isPending || catalog.isPending || registry.isPending)
+  // one frame and disabling a button that is perfectly legal. The repository
+  // read is waited on for the same reason: without the authority a sample row
+  // would preview the wrong identity for a frame.
+  if (
+    statuses.isPending ||
+    catalog.isPending ||
+    registry.isPending ||
+    repository.isPending
+  )
     return <RegistrySkeleton />
 
   if (statuses.isError || catalog.isError) {
@@ -821,74 +875,69 @@ export function RegistryPage() {
     )
   }
 
+  // Only a bundle this repository holds has a detail page (it reads runtime
+  // status); a catalog closure is taken from its row button and read from the
+  // chevron's disclosure.
+  const open = (row: BundleRow) => {
+    if (row.status)
+      void navigate({ to: "/registry/$id", params: { id: row.id } })
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-end justify-between gap-3 px-6 pt-5 pb-2">
-        <div>
-          <h1 className="text-lg font-semibold">Registry</h1>
-          <p className="text-xs text-muted-foreground">
-            {importedCount.toLocaleString()} imported,{" "}
-            {notImportedCount.toLocaleString()} not imported
-            {facet === "integrations"
-              ? " (integrations)"
-              : facet === "upgrades"
-                ? " (upgrades)"
-                : ""}
-            , from <span className="data">/api/v1/catalog</span>
-          </p>
-          <p className="pt-0.5 text-xs text-muted-foreground">
-            A new repository ships{" "}
-            <span className="data">substrate.reamde.dev/core</span> alone — the
-            vocabulary it records into and every integration are imported from
-            here. Expand a row to see what it adds.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <FacetFilter value={facet} onChange={(f) => void setFacet(f)} />
-          <DataTableViewOptions table={table} />
-        </div>
+      <div className="shrink-0 px-6 pt-5 pb-1">
+        <h1 className="text-lg font-semibold">Registry</h1>
+        <p className="text-xs text-muted-foreground">
+          {heldCount.toLocaleString()} of {allRows.length.toLocaleString()}{" "}
+          taken, from <span className="data">/api/v1/catalog</span>
+        </p>
+        <p className="pt-0.5 text-xs text-muted-foreground">
+          A new repository ships{" "}
+          <span className="data">substrate.reamde.dev/core</span> alone, and
+          every other kind it records into comes from here. Expand a row to see
+          what it adds.
+        </p>
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
-        <DataTable
-          table={table}
-          onRowClick={(row) => {
-            // Only imported bundles have a detail page (it reads runtime
-            // status); a catalog closure is imported from its row button, and
-            // read from the chevron's disclosure.
-            if (row.status)
-              void navigate({ to: "/registry/$id", params: { id: row.id } })
-          }}
-          renderExpanded={(row) => (
-            <BundleDisclosure
-              row={row}
-              requirements={requirements(row)}
-              kinds={kinds}
-            />
-          )}
-          empty={
-            <Empty className="py-16">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <BoxesIcon />
-                </EmptyMedia>
-                <EmptyTitle>
-                  {facet === "integrations"
-                    ? "No integrations"
-                    : facet === "upgrades"
-                      ? "Everything is current"
-                      : "No bundles"}
-                </EmptyTitle>
-                <EmptyDescription>
-                  {facet === "integrations"
-                    ? "No bundle in the catalog connects an external provider."
-                    : facet === "upgrades"
-                      ? "Every imported bundle matches the closure this binary ships."
-                      : "Nothing is imported and the catalog is empty."}
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          }
+        <BundleSection
+          title="Providers"
+          description="Packages a publisher owns: they install under the authority that publishes them, and their upgrades arrive here."
+          rows={sections.providers}
+          prefsKey="registry.providers"
+          emptyTitle="No providers"
+          emptyDescription="This binary ships no provider packages."
+          requirements={requirements}
+          kinds={kinds}
+          onOpen={open}
         />
+        <BundleSection
+          title="Samples"
+          description={
+            home
+              ? `Vocabulary to copy: importing one lands it under ${home}, yours to edit.`
+              : "Vocabulary to copy: importing one lands it under this repository's own authority, yours to edit."
+          }
+          rows={sections.samples}
+          prefsKey="registry.samples"
+          emptyTitle="No samples"
+          emptyDescription="This binary ships no sample packages."
+          requirements={requirements}
+          kinds={kinds}
+          onOpen={open}
+        />
+        {sections.applied.length > 0 && (
+          <BundleSection
+            title="Applied directly"
+            description="Bundles this repository applied outside the shipped catalog, so there is no closure to preview and no tier to place them under."
+            rows={sections.applied}
+            prefsKey="registry.applied"
+            emptyTitle="Nothing applied directly"
+            emptyDescription="Every bundle here came from the shipped catalog."
+            requirements={requirements}
+            kinds={kinds}
+            onOpen={open}
+          />
+        )}
       </div>
     </div>
   )

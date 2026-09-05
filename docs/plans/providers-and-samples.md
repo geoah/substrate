@@ -177,6 +177,28 @@ vocabulary. Nothing breaks for an existing repository: its installed
   ordinary admission when the home authority does not declare it, naming the
   sample to import first, exactly as `requires:` works today.
 
+**What phase 2 landed differently, and what phase 4 owes.** Two of the
+sentences above turned out to be about a phase 4 tree, not this one.
+
+The placeholder is refused by `Catalog.Import` alone, not by admission. A
+closure still spelling `samples.substrate.reamde.dev` after the walk is refused
+there, but `POST …/catalog/{id}/install` and `substratectl apply -f` of the
+shipped files admit it verbatim, which `authorizeNewPackage` sanctions on
+purpose (the equality check is against `substrate.reamde.dev` itself, so the
+sibling publisher authorities stay open to a hand apply). That door is not a
+loose end: it is what keeps Google, GitHub and Linear installable while they
+name `samples.substrate.reamde.dev/<pkg>` under `requires:` and pin
+`samples.substrate.reamde.dev/people/person` in their mappings, since an
+imported sample lands `<home>/<pkg>` and satisfies neither. The console never
+offers it: the Samples section offers "Import as yours" and a provider whose
+requirement is missing shows a disabled Install with the hint naming what is
+missing.
+
+Phase 4 closes both. When the providers stop requiring and pinning sample
+packages, the verbatim install of a sample has no caller left, `install` on a
+sample id can be refused naming `import`, and the placeholder refusal can move
+down into admission where Q3 wanted it.
+
 ### 3. Provider immutability
 
 - The stored `source` enum gains `published` (additive, so an upgrade).
@@ -258,7 +280,10 @@ remote install path (ticket 011). Filed as
 2. **One authority for every imported sample.** Yes: `<home>/task`,
    `<home>/person`. The seventeen samples have no kind-name collisions.
 3. **Placeholder in the tree.** `samples.substrate.reamde.dev`, refused at
-   admission if unrewritten.
+   admission if unrewritten. Phase 2 landed the refusal in `Catalog.Import`
+   instead, because the verbatim install is still the door that keeps the
+   providers installable; the note under phase 2 has why and what phase 4
+   owes.
 4. **Provider upgrades.** A click in the console, as today.
 5. **The worked examples** (`llm`, `notes`, `web`, `pebble`) are samples.
 6. **`firecrawl`** is a sample, not a provider.
