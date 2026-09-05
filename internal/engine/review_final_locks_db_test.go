@@ -34,7 +34,7 @@ func tryLockFree(t *testing.T, ds *dataset, key string) bool {
 	defer func() { _ = probe.Rollback() }()
 	var free bool
 	if err := probe.QueryRowContext(ctx,
-		`SELECT pg_try_advisory_xact_lock(hashtext($1)::bigint)`, key).Scan(&free); err != nil {
+		`SELECT pg_try_advisory_xact_lock(`+advisoryKeySQL+`)`, key).Scan(&free); err != nil {
 		t.Fatal(err)
 	}
 	return free
@@ -75,7 +75,7 @@ func TestEffectFormerIDFoldsCanonicalIntoLockOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := barrier.ExecContext(ctx,
-		`SELECT pg_advisory_xact_lock(hashtext($1)::bigint)`, ds.scope.lockKey("record|"+raceWidget+"|mmm")); err != nil {
+		`SELECT pg_advisory_xact_lock(`+advisoryKeySQL+`)`, ds.scope.lockKey("record|"+raceWidget+"|mmm")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -228,7 +228,7 @@ func TestEffectSubjectLockPrecedesRecordLocks(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := barrier.ExecContext(ctx,
-		`SELECT pg_advisory_xact_lock(hashtext($1)::bigint)`, ds.scope.lockKey("subject|"+subjPerson)); err != nil {
+		`SELECT pg_advisory_xact_lock(`+advisoryKeySQL+`)`, ds.scope.lockKey("subject|"+subjPerson)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -312,7 +312,7 @@ func TestEffectSubjectLockCoversAReferencedSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := barrier.ExecContext(ctx,
-		`SELECT pg_advisory_xact_lock(hashtext($1)::bigint)`, ds.scope.lockKey("subject|"+subjPerson)); err != nil {
+		`SELECT pg_advisory_xact_lock(`+advisoryKeySQL+`)`, ds.scope.lockKey("subject|"+subjPerson)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -446,7 +446,7 @@ func TestOwnerTriggerTakesRegistryDepBeforeRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := barrier.ExecContext(ctx,
-		`SELECT pg_advisory_xact_lock(hashtext($1)::bigint)`, ds.scope.lockKey(registryDepKey(ds))); err != nil {
+		`SELECT pg_advisory_xact_lock(`+advisoryKeySQL+`)`, ds.scope.lockKey(registryDepKey(ds))); err != nil {
 		t.Fatal(err)
 	}
 

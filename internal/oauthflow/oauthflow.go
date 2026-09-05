@@ -50,8 +50,8 @@ type Endpoints struct {
 // state — the callback's sole authentication — authorizes exactly one
 // completion inside its TTL, never a replay.
 type State struct {
-	// Username names the repository by its OWNER, not by the opaque internal
-	// id an engine.Scope carries: the callback arrives unauthenticated and
+	// Username names the repository by its OWNER, not by the authority an
+	// engine.Scope carries: the callback arrives unauthenticated and
 	// resolves the repository with the ordinary by-username lookup, which is
 	// the only lookup a maintenance-pool read offers. Spelling this field
 	// `Repository` invited exactly one wrong fix — handing it a scope id —

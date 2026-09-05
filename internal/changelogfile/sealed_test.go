@@ -11,7 +11,7 @@ import (
 )
 
 func TestSealedRoundTrip(t *testing.T) {
-	repoDir := filepath.Join(t.TempDir(), "repositories", "abc")
+	repoDir := filepath.Join(t.TempDir(), "repositories", "ada.example.com")
 	if err := os.MkdirAll(repoDir, dirMode); err != nil {
 		t.Fatal(err)
 	}

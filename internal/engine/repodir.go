@@ -3,10 +3,12 @@ package engine
 // THE REPOSITORY DIRECTORY.
 //
 // Every repository has one directory under the data root,
-// <root>/repositories/<id>, holding its manifest, its changelog segments,
-// its blob bytes and one file per sealed row (internal/changelogfile,
-// decision 0051). The Postgres tables stay the live index and the commit
-// point; the directory is what a backup copies and what a boot reads back.
+// <root>/repositories/<authority>, holding its manifest, its changelog
+// segments, its blob bytes and one file per sealed row (internal/changelogfile,
+// decision 0051). The repository's id is its authority, so the directory, the
+// row's primary key and the manifest's `authority` are one name. The Postgres
+// tables stay the live index and the commit point; the directory is what a
+// backup copies and what a boot reads back.
 //
 // The two are kept equal in three places, and nowhere else:
 //
@@ -39,6 +41,15 @@ package engine
 //  5. Row with no directory: write the directory out from the tables. This is
 //     the one-time migration from a store that predates the data root.
 //
+// Two checks come from before the authority was the id. A `repositories` row
+// whose id is not its authority refuses the boot, at Open before the
+// credential key is tried against it, with the instruction to wipe the
+// database and boot again, because the tree assumes fresh repositories before
+// v1 and migrates no rows (checkRepositoryRows). And before the five cases, a
+// directory named by the random id such a binary minted is moved under its
+// authority, its DEK re-wrapped from the old binding to the new, so that the
+// wiped database then imports it as case 3 (migrateLegacyDirs).
+//
 // Sealed files follow the changelog's direction in every case: an import
 // reads them into the table; everything else writes the table out, so a
 // mirror a crash skipped (a TOTP step consume appends no entry, so heads
@@ -64,6 +75,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -90,6 +102,12 @@ var ErrChangelogFileAhead = errors.New("substrate/engine: the changelog file is 
 // repository's changelog writer lock: the operator ran `rebuild` or `user
 // reset` beside a running server. It wraps changelogfile.ErrLocked.
 var ErrChangelogLocked = errors.New("substrate/engine: another process holds the repository's changelog writer lock; stop the server before running this command")
+
+// ErrRepositoryIDNotAuthority is the boot check's refusal of a `repositories`
+// row whose id is not its authority: a database written before the authority
+// became the id. There is no data migration; the operator wipes the database
+// and boots again, and the repository directory under the data root imports.
+var ErrRepositoryIDNotAuthority = errors.New("substrate/engine: a repository row's id is not its authority: this database was written before the authority became the repository id. Wipe the database and boot again; the repository directory under SUBSTRATE_DATA_ROOT imports")
 
 // ErrDirectoryReadOnly is the refusal every write meets on a service opened
 // with WithDirectoryReadOnly: this process is not the directory's writer.
@@ -140,6 +158,10 @@ type reconcileOutcome struct {
 	Entries int64
 	// TruncatedBytes is the torn tail Open cut from the active segment.
 	TruncatedBytes int64
+	// StrayRepositoryID is the id of a live self-description record that is
+	// not the repository's id: what the changelog of a pre-authority binary
+	// holds, under the random id it minted. correctSelfDescription moves it.
+	StrayRepositoryID string
 }
 
 // repositoryDir is the repository's directory under the data root, created
@@ -161,6 +183,9 @@ func (s *service) reconcileRepositories(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("substrate/engine: boot check: list repositories: %w", err)
 	}
+	if err := s.migrateLegacyDirs(ctx); err != nil {
+		return fmt.Errorf("substrate/engine: boot check: %w", err)
+	}
 	dirs, err := changelogfile.ListRepositoryDirs(s.dataRoot)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: boot check: list repository directories: %w", err)
@@ -173,6 +198,9 @@ func (s *service) reconcileRepositories(ctx context.Context) error {
 			return fmt.Errorf("substrate/engine: boot check: repository %s (%s): %w", repo.ID, repo.Username, err)
 		}
 		s.logReconcile(out)
+		if err := s.correctSelfDescription(ctx, out); err != nil {
+			return fmt.Errorf("substrate/engine: boot check: repository %s (%s): %w", repo.ID, repo.Username, err)
+		}
 	}
 	for _, id := range dirs {
 		if hasRow[id] {
@@ -183,8 +211,248 @@ func (s *service) reconcileRepositories(ctx context.Context) error {
 			return fmt.Errorf("substrate/engine: boot check: repository directory %s: %w", id, err)
 		}
 		s.logReconcile(out)
+		if err := s.correctSelfDescription(ctx, out); err != nil {
+			return fmt.Errorf("substrate/engine: boot check: repository directory %s: %w", id, err)
+		}
 	}
 	return nil
+}
+
+// strayRepositoryRecord is the id of a live self-description record
+// (kindRepository) that is not the repository's own id, or "". A changelog a
+// pre-authority binary wrote holds the record under the random id it minted,
+// and the import folds it as written.
+func strayRepositoryRecord(ctx context.Context, q dbx, id string) (string, error) {
+	var stray string
+	err := q.QueryRowContext(ctx, `
+		SELECT id FROM records
+		WHERE kind = $1 AND id <> $2 AND deleted_at IS NULL
+		ORDER BY id LIMIT 1`, kindRepository, id).Scan(&stray)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("substrate/engine: look for a stray self-description: %w", err)
+	}
+	return stray, nil
+}
+
+// correctSelfDescription moves the repository's self-description record from
+// the id a pre-authority binary gave it (out.StrayRepositoryID) to the
+// repository's id, the authority, the one way the fold moves: two entries
+// appended through the ordinary write path, a put of the record under the
+// authority with the properties the stray carries and a delete of the stray,
+// in ONE transaction, so the table and the segment files both receive them
+// and a rebuild reproduces the fold. The dataset is opened the ordinary way,
+// after the reconcile that found the stray has closed its own pool. A second
+// boot finds no stray and appends nothing.
+func (s *service) correctSelfDescription(ctx context.Context, out reconcileOutcome) error {
+	if out.StrayRepositoryID == "" {
+		return nil
+	}
+	repo, err := s.repositoryByID(ctx, out.Repository)
+	if err != nil {
+		return err
+	}
+	ds, err := s.open(ctx, repo)
+	if err != nil {
+		return err
+	}
+	stray, err := ds.Get(ctx, kindRepository, out.StrayRepositoryID)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: read the self-description under %s: %w", out.StrayRepositoryID, err)
+	}
+	props := make(map[string]any, len(stray.Properties)+2)
+	for k, v := range stray.Properties {
+		props[k] = v
+	}
+	props["name"], props["authority"] = repo.Username, repo.ID
+	if err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		if _, err := t.put(substrate.PutInput{Kind: kindRepository, ID: repo.ID, Properties: props}); err != nil {
+			return err
+		}
+		_, err := t.softDelete(eref{Kind: kindRepository, ID: out.StrayRepositoryID})
+		return err
+	}); err != nil {
+		return fmt.Errorf("substrate/engine: move the self-description of %s from %s to its authority: %w",
+			repo.Username, out.StrayRepositoryID, err)
+	}
+	s.log.Info("substrate: repository self-description moved under the authority",
+		"repository", repo.ID, "username", repo.Username, "from", out.StrayRepositoryID)
+	return nil
+}
+
+// requireRepositoryRowsAreAuthorities runs checkRepositoryRows over the
+// control-plane table at Open, in every process, read-only ones included: a
+// verify beside a server cannot open such a row either.
+func (s *service) requireRepositoryRowsAreAuthorities(ctx context.Context) error {
+	repos, err := s.listRepositories(ctx)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: boot check: list repositories: %w", err)
+	}
+	return checkRepositoryRows(repos)
+}
+
+// checkRepositoryRows refuses a control-plane row whose id is not a valid
+// authority equal to its authority column. Migration 0015 holds every row
+// written from now on to it (NOT VALID, so it applies over old rows); this is
+// the check over the rows it did not validate.
+func checkRepositoryRows(repos []Repository) error {
+	for _, repo := range repos {
+		if repo.ID != repo.Authority || validRepositoryID(repo.ID) != nil {
+			return fmt.Errorf("%w (row id %q, authority %q, user %s)", ErrRepositoryIDNotAuthority, repo.ID, repo.Authority, repo.Username)
+		}
+	}
+	return nil
+}
+
+// migrateLegacyDirs moves every directory a pre-authority binary wrote under
+// its authority: `<root>/repositories/<random id>` with a manifest carrying
+// `id` becomes `<root>/repositories/<authority>` with the format-1 manifest,
+// and the DEK wrap, bound to the old id (dekAAD), is re-wrapped under the
+// authority. The unwrap comes first, so a directory the credential key does
+// not open is refused before anything moves; the rename comes before the
+// manifest write, and a crash between the two leaves an authority-named
+// directory holding the old manifest, which the second pass finishes under the
+// same checks (legacyAuthorityFree). Under a blob store that keys objects by
+// the repository id the move waits for the operator (legacyBlobsMoved). A
+// directory that is neither shape is refused, by name: the boot check must
+// never skip a directory that may be a repository.
+func (s *service) migrateLegacyDirs(ctx context.Context) error {
+	names, err := changelogfile.ListLegacyRepositoryDirs(s.dataRoot)
+	if err != nil {
+		return fmt.Errorf("a directory under %s/ is named neither by an authority nor by a pre-authority repository id; move it out of the data root: %w", changelogfile.RepositoriesDir, err)
+	}
+	for _, name := range names {
+		dir, err := changelogfile.LegacyRepoDir(s.dataRoot, name)
+		if err != nil {
+			return err
+		}
+		lm, err := changelogfile.ReadLegacyManifest(dir)
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("repository directory %s is not named by an authority and carries no manifest; move it out of the data root", name)
+		}
+		if err != nil {
+			return fmt.Errorf("repository directory %s is not named by an authority and its manifest is not the pre-authority shape: %w", name, err)
+		}
+		if lm.ID != name {
+			return fmt.Errorf("repository directory %s carries a manifest whose id is %q", name, lm.ID)
+		}
+		if err := s.legacyAuthorityFree(ctx, name, lm.Manifest.Authority); err != nil {
+			return err
+		}
+		if err := s.legacyBlobsMoved(ctx, name, lm.Manifest.Authority); err != nil {
+			return err
+		}
+		m, err := s.rewrapLegacyDEK(lm)
+		if err != nil {
+			return err
+		}
+		newDir, err := changelogfile.RenameRepoDir(s.dataRoot, name, m.Authority)
+		if err != nil {
+			return fmt.Errorf("move repository directory %s under its authority: %w", name, err)
+		}
+		if err := changelogfile.WriteManifest(newDir, m); err != nil {
+			return fmt.Errorf("write the manifest of repository %s after moving it under its authority: %w", m.Authority, err)
+		}
+		s.log.Info("substrate: repository directory moved under its authority",
+			"repository", m.Authority, "username", m.Username, "from", name)
+	}
+	// The crash window: renamed, manifest not yet rewritten.
+	dirs, err := changelogfile.ListRepositoryDirs(s.dataRoot)
+	if err != nil {
+		return err
+	}
+	for _, authority := range dirs {
+		dir, err := changelogfile.RepoDir(s.dataRoot, authority)
+		if err != nil {
+			return err
+		}
+		if _, err := changelogfile.ReadManifest(dir); err == nil || errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		lm, err := changelogfile.ReadLegacyManifest(dir)
+		if err != nil || lm.Manifest.Authority != authority {
+			// Not the window; the reconcile names the manifest's real fault.
+			continue
+		}
+		if err := s.legacyAuthorityFree(ctx, lm.ID, authority); err != nil {
+			return err
+		}
+		m, err := s.rewrapLegacyDEK(lm)
+		if err != nil {
+			return err
+		}
+		if err := changelogfile.WriteManifest(dir, m); err != nil {
+			return fmt.Errorf("write the manifest of repository %s after moving it under its authority: %w", authority, err)
+		}
+		s.log.Info("substrate: repository directory's manifest rewritten after an interrupted move",
+			"repository", authority, "username", m.Username, "from", lm.ID)
+	}
+	return nil
+}
+
+// legacyAuthorityFree holds the authority a pre-authority directory (oldID)
+// names to what a repository id may be (validRepositoryID) and refuses one a
+// `repositories` row already holds. Both passes of migrateLegacyDirs run it,
+// so a move that crashed between the rename and the manifest write meets the
+// same checks the first pass ran.
+func (s *service) legacyAuthorityFree(ctx context.Context, oldID, authority string) error {
+	if err := validRepositoryID(authority); err != nil {
+		return fmt.Errorf("repository directory %s names an authority that cannot be a repository id: %w", oldID, err)
+	}
+	if _, err := s.repositoryByID(ctx, authority); err == nil {
+		return fmt.Errorf("repository directory %s names authority %q, which a `repositories` row already holds", oldID, authority)
+	} else if !errors.Is(err, substrate.ErrNotFound) {
+		return err
+	}
+	return nil
+}
+
+// legacyBlobsMoved refuses to move a pre-authority directory while the blob
+// store still keys the repository's objects by the old id. The fs backend
+// keeps them in the directory, so the rename moves them; the s3 backend keys
+// them `<prefix><repository id>/<digest>` and a rename on disk moves nothing
+// in the bucket, so every blob of the moved repository would read as
+// ErrNotStored. The move proceeds once the old prefix is empty, which is the
+// operator's step; a backend that cannot list the old prefix refuses outright.
+func (s *service) legacyBlobsMoved(ctx context.Context, oldID, authority string) error {
+	if s.blobs.Name() == blobbytes.BackendFS {
+		return nil
+	}
+	lister, ok := s.blobs.(blobbytes.LegacyRepositoryLister)
+	if !ok {
+		return fmt.Errorf("repository directory %s was written before the authority became the repository id, and the %s blob store keys objects by that id and cannot list them; move its objects from the old id to %s in the store, then boot again",
+			oldID, s.blobs.Name(), authority)
+	}
+	objs, err := lister.ListLegacyRepository(ctx, oldID, 1)
+	if err != nil {
+		return fmt.Errorf("repository directory %s: list the %s blob store's objects under the old id: %w", oldID, s.blobs.Name(), err)
+	}
+	if len(objs) > 0 {
+		return fmt.Errorf("repository directory %s was written before the authority became the repository id, and the %s blob store still holds its objects under the old id: move every object under `<SUBSTRATE_BLOB_S3_PREFIX>%s/` to `<SUBSTRATE_BLOB_S3_PREFIX>%s/` in the bucket, then boot again; the directory moves under its authority once the old prefix is empty",
+			oldID, s.blobs.Name(), oldID, authority)
+	}
+	return nil
+}
+
+// rewrapLegacyDEK renders a pre-authority manifest as the format-1 manifest,
+// with the DEK re-wrapped from the old id's binding to the authority's. An
+// empty DEK (a pre-DEK repository) is carried as is.
+func (s *service) rewrapLegacyDEK(lm changelogfile.LegacyManifest) (changelogfile.Manifest, error) {
+	m := lm.Manifest
+	if len(lm.Manifest.DEK) == 0 {
+		return m, nil
+	}
+	dek, err := s.unwrapDEK(lm.Manifest.DEK, lm.ID)
+	if err != nil {
+		return m, fmt.Errorf("SUBSTRATE_CREDENTIAL_KEY does not open the DEK in the manifest of repository %s (%s, directory %s): the directory was written under a different key. Set the key the directory was written under, or move the directory out of the data root (%w)",
+			lm.Manifest.Authority, lm.Manifest.Username, lm.ID, err)
+	}
+	if m.DEK, err = s.wrapDEK(dek, m.Authority); err != nil {
+		return m, err
+	}
+	return m, nil
 }
 
 func (s *service) logReconcile(out reconcileOutcome) {
@@ -232,6 +500,14 @@ func (s *service) reconcileRow(ctx context.Context, repo Repository, allowImport
 	defer ds.close()
 	if err := ds.reconcileDir(ctx, &out, allowImport); err != nil {
 		return out, err
+	}
+	// At boot only: a creation's self-description is under the authority by
+	// construction, and a stray one is what an import of an older changelog
+	// leaves (correctSelfDescription).
+	if allowImport {
+		if out.StrayRepositoryID, err = strayRepositoryRecord(ctx, ds.db, repo.ID); err != nil {
+			return out, err
+		}
 	}
 	if fresh && out.Action == reconcileCaughtUp {
 		out.Action = reconcileWroteDir
@@ -556,13 +832,16 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 		return out, fmt.Errorf("a directory with no `repositories` row must carry a manifest to import: %w", err)
 	}
 	out.Username = m.Username
+	if err := validRepositoryID(m.Authority); err != nil {
+		return out, fmt.Errorf("the manifest names an authority that cannot be a repository id: %w", err)
+	}
 	if m.ChangelogDialect > maxChangelogDialect {
 		return out, newerChangelogDialect(m.Username, m.ChangelogDialect)
 	}
 	if len(m.DEK) > 0 {
-		if _, err := s.unwrapDEK(m.DEK, m.ID); err != nil {
+		if _, err := s.unwrapDEK(m.DEK, m.Authority); err != nil {
 			return out, fmt.Errorf("SUBSTRATE_CREDENTIAL_KEY does not open the DEK in the manifest of repository %s (%s): the directory was written under a different key, so importing it would leave a repository whose sealed store no login can open. Set the key the directory was written under, or move the directory out of the data root (%w)",
-				m.ID, m.Username, err)
+				m.Authority, m.Username, err)
 		}
 	}
 	if other, err := s.repositoryByUsername(ctx, m.Username); err == nil {
@@ -570,12 +849,10 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 	} else if !errors.Is(err, substrate.ErrNotFound) {
 		return out, err
 	}
-	if other, err := s.repositoryByAuthority(ctx, m.Authority); err == nil {
-		return out, fmt.Errorf("the manifest names authority %q, which repository %s already holds", m.Authority, other.ID)
-	} else if !errors.Is(err, substrate.ErrNotFound) {
-		return out, err
-	}
-	repo := Repository{ID: m.ID, Username: m.Username, Authority: m.Authority, CreatedAt: m.CreatedAt, DEK: m.DEK}
+	// The directory is listed because no row has its authority as id, and the
+	// authority column always equals the id; this is the check that the
+	// manifest agrees with the directory name it was read under.
+	repo := Repository{ID: m.Authority, Username: m.Username, Authority: m.Authority, CreatedAt: m.CreatedAt, DEK: m.DEK}
 	if repo.CreatedAt.IsZero() {
 		repo.CreatedAt = nowUTC()
 	}
@@ -606,7 +883,7 @@ func (s *service) manifestOf(ctx context.Context, repo Repository, q dbx) (chang
 		return changelogfile.Manifest{}, err
 	}
 	return changelogfile.Manifest{
-		Format: changelogfile.ManifestFormat, ID: repo.ID, Username: repo.Username,
+		Format: changelogfile.ManifestFormat, Username: repo.Username,
 		Authority: repo.Authority, CreatedAt: repo.CreatedAt, ChangelogDialect: dialect, DEK: repo.DEK,
 	}, nil
 }
@@ -630,7 +907,7 @@ func (s *service) ensureManifest(ctx context.Context, dir string, repo Repositor
 }
 
 func manifestsEqual(a, b changelogfile.Manifest) bool {
-	return a.Format == b.Format && a.ID == b.ID && a.Username == b.Username && a.Authority == b.Authority &&
+	return a.Format == b.Format && a.Username == b.Username && a.Authority == b.Authority &&
 		a.CreatedAt.Equal(b.CreatedAt) && a.ChangelogDialect == b.ChangelogDialect && bytes.Equal(a.DEK, b.DEK)
 }
 

@@ -17,11 +17,11 @@ func TestMoveBetweenPostgresAndFS(t *testing.T) {
 	db := newPostgresDB(t)
 	fs := newFS(t)
 
-	pg, err := blobbytes.NewPostgres().Repository("repomigrate", db)
+	pg, err := blobbytes.NewPostgres().Repository("repomigrate.example.com", db)
 	if err != nil {
 		t.Fatalf("bind postgres: %v", err)
 	}
-	disk, err := fs.Repository("repomigrate", nil)
+	disk, err := fs.Repository("repomigrate.example.com", nil)
 	if err != nil {
 		t.Fatalf("bind fs: %v", err)
 	}
@@ -95,11 +95,11 @@ func TestMoveResumesOverACopyThatAlreadyLanded(t *testing.T) {
 	ctx := context.Background()
 	db := newPostgresDB(t)
 	fs := newFS(t)
-	pg, err := blobbytes.NewPostgres().Repository("reporesume", db)
+	pg, err := blobbytes.NewPostgres().Repository("reporesume.example.com", db)
 	if err != nil {
 		t.Fatalf("bind postgres: %v", err)
 	}
-	disk, err := fs.Repository("reporesume", nil)
+	disk, err := fs.Repository("reporesume.example.com", nil)
 	if err != nil {
 		t.Fatalf("bind fs: %v", err)
 	}

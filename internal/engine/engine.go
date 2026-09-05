@@ -122,7 +122,7 @@ func WithChangelogSegmentBytes(n int64) Option { return func(o *options) { o.seg
 func WithDirectoryReadOnly() Option { return func(o *options) { o.dirReadOnly = true } }
 
 // WithBlobStore puts blob bytes somewhere other than the default, which is the
-// fs backend under the data root (<root>/repositories/<id>/blobs). The s3
+// fs backend under the data root (<root>/repositories/<authority>/blobs). The s3
 // backend trades the one-directory backup for bytes in a bucket;
 // internal/blobbytes says what each one keeps. The postgres backend is not a
 // choice here: the engine refuses to boot while the `blobs` column holds rows
@@ -189,7 +189,7 @@ type service struct {
 	oauth *oauthflow.Client
 	// credKey seals the sealed store (AES-256-GCM); empty stores plain.
 	credKey []byte
-	// dataRoot is the data root (WithDataRoot); <dataRoot>/repositories/<id>
+	// dataRoot is the data root (WithDataRoot); <dataRoot>/repositories/<authority>
 	// is one repository's directory (repodir.go).
 	dataRoot string
 	// segmentBytes is the size every changelog writer rotates at.
@@ -212,8 +212,8 @@ type service struct {
 	bg *background
 
 	mu sync.Mutex
-	// datasets is keyed by REPOSITORY ID, never by username: a username is a
-	// lookup key, the id is the identity.
+	// datasets is keyed by REPOSITORY ID, the authority, never by username: a
+	// username is a lookup key, the authority is the identity.
 	datasets map[string]*dataset
 	// opening is the per-repository singleflight: an id maps to the channel
 	// the in-flight open closes when it is done, either way. It exists because
@@ -423,6 +423,15 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 	// the open path a request drives. What arrives later (a bundle's
 	// kinds) is materialized by the schema write that admits it.
 	if err := ensureIndices(ctx, admin, reg.Kinds()); err != nil {
+		_ = maint.Close()
+		_ = admin.Close()
+		return nil, err
+	}
+	// A row from before the authority was the repository id is refused before
+	// anything reads it by that id (repodir.go checkRepositoryRows): its DEK
+	// is bound to the old id, so the key check below would otherwise name the
+	// key when the answer is the database.
+	if err := s.requireRepositoryRowsAreAuthorities(ctx); err != nil {
 		_ = maint.Close()
 		_ = admin.Close()
 		return nil, err
@@ -700,7 +709,12 @@ func (s *service) CreateRepository(ctx context.Context, name, authority string) 
 	return repo.info(), nil
 }
 
-// createSeededRepository is THE creation act:
+// createSeededRepository is THE creation act. The repository's id IS its
+// authority (decision 0046): the control-plane row's primary key, every scope,
+// the DEK wrap's binding, the directory under the data root and the fs blob
+// path are all the one name the registration chose. Nothing is minted.
+//
+// It is
 // the seed of the shipped vocabulary, the repository's own description of
 // itself, and whatever the caller adds — registration passes the sealed
 // material, the credential record and the first token — as ONE transaction in
@@ -714,10 +728,10 @@ func (s *service) CreateRepository(ctx context.Context, name, authority string) 
 // the repository contains commits first, in one transaction, and the
 // control-plane row — the row every lookup starts from, and the unique index
 // on the username — is written LAST. A failure anywhere before it leaves rows
-// under an id no login, token or listing can ever name, and they are deleted
-// on the way out; a failure at the row itself does the same. There is no order
-// in which a HALF-CREATED USER can be observed: the user exists exactly when
-// the row does, and by then the repository is complete.
+// under an authority no login, token or listing can ever name, and they are
+// deleted on the way out; a failure at the row itself does the same. There is
+// no order in which a HALF-CREATED USER can be observed: the user exists
+// exactly when the row does, and by then the repository is complete.
 //
 // THE DIRECTORY COMES LAST. The repository directory under the data root
 // (repodir.go) is written from the tables AFTER the control-plane row, not
@@ -727,6 +741,18 @@ func (s *service) CreateRepository(ctx context.Context, name, authority string) 
 // the boot check writes out (case 5) or catches up (case 2). Neither state
 // needs a rule of its own, and a directory can never exist for a repository
 // that does not.
+//
+// ONE REGISTRATION PER AUTHORITY AT A TIME. The authority is the scope the
+// seed writes under, and the lookup below is all that stands between two
+// registrations and one scope: without a lock both pass it, both seed rows
+// under the same authority, one inserts the control-plane row and the
+// other's cleanup erases the winner's rows, changelog and directory as its
+// own. So the authority's registration lock (lockRegistration) is held from
+// before the lookup to the return, on the one maint connection every
+// control-plane statement here runs on, and the second registrant runs its
+// lookup after the first's row exists and is refused before it writes a byte.
+// The cleanup is ownership-checked on top (eraseFailedCreation): a creation
+// that wrote no row erases nothing while a row holds the authority.
 func (s *service) createSeededRepository(ctx context.Context, name, authority string, extra func(*txn) error) (Repository, error) {
 	var zero Repository
 	if !vocabulary.ValidRepositoryName(name) {
@@ -735,31 +761,27 @@ func (s *service) createSeededRepository(ctx context.Context, name, authority st
 	if err := validRepositoryAuthority(authority); err != nil {
 		return zero, err
 	}
-	// A cheap early no: the unique indexes below are the truth, and they are
-	// what a race actually loses on.
-	if _, err := s.repositoryByUsername(ctx, name); err == nil {
-		return zero, fmt.Errorf("%w: user %q already exists", substrate.ErrValidation, name)
-	} else if !errors.Is(err, substrate.ErrNotFound) {
-		return zero, err
-	}
-	if _, err := s.repositoryByAuthority(ctx, authority); err == nil {
-		return zero, fmt.Errorf("%w: authority %q is already owned by another repository on this substrate", substrate.ErrValidation, authority)
-	} else if !errors.Is(err, substrate.ErrNotFound) {
-		return zero, err
-	}
-	id, err := newID()
+	cp, unlock, err := s.lockRegistration(ctx, authority)
 	if err != nil {
 		return zero, err
 	}
-	// The id is minted BEFORE anything is written under it, so it is checked
-	// before anything is written under it too: rows land in a scope, and a
-	// scope that already belongs to somebody would be somebody else's data.
-	if _, err := s.repositoryByID(ctx, id); err == nil {
-		return zero, fmt.Errorf("substrate/engine: minted a repository id that already exists")
+	defer unlock()
+	// A cheap early no: the unique indexes below are the truth, and they are
+	// what a race actually loses on (insertRepositoryRow names the same
+	// refusals when it does). The authority is checked BEFORE anything is
+	// written under it, because rows land in its scope, and a scope that
+	// already belongs to somebody would be somebody else's data.
+	if _, err := s.repositoryByUsernameOn(ctx, cp, name); err == nil {
+		return zero, errUsernameTaken(name)
 	} else if !errors.Is(err, substrate.ErrNotFound) {
 		return zero, err
 	}
-	repo := Repository{ID: id, Username: name, Authority: authority}
+	if _, err := s.repositoryByIDOn(ctx, cp, authority); err == nil {
+		return zero, errAuthorityTaken(authority)
+	} else if !errors.Is(err, substrate.ErrNotFound) {
+		return zero, err
+	}
+	repo := Repository{ID: authority, Username: name, Authority: authority}
 	// The DEK is born with the repository: the seed transaction below already
 	// writes sealed material (the credential, at registration), and it seals
 	// under this key from the first byte. The control-plane row wraps it
@@ -789,13 +811,15 @@ func (s *service) createSeededRepository(ctx context.Context, name, authority st
 		svc: s, db: db, dek: dek, scope: repo.scope(),
 		reg: s.base.Clone(), watch: newBroadcaster(), info: repo.info(),
 	}
-	fail := func(err error) (Repository, error) {
-		seedDS.close()
-		if cerr := s.eraseRepository(ctx, repo.ID); cerr != nil {
-			s.log.Error("substrate: could not erase a half-made repository; the boot sweep will reclaim it",
-				"repository", repo.ID, "error", cerr)
+	// inserted flips once the control-plane row is this creation's, and
+	// decides what a failure may erase (eraseFailedCreation).
+	inserted := false
+	fail := func(stage string, cause error) (Repository, error) {
+		if cerr := s.eraseFailedCreation(ctx, cp, repo.ID, inserted); cerr != nil {
+			s.log.Error("substrate: could not erase a half-made repository",
+				"repository", repo.ID, "stage", stage, "error", cerr)
 		}
-		return zero, err
+		return zero, cause
 	}
 	// ONE transaction: the seed, the self-description, and the caller's part.
 	// The seed's entries carry `bundle:core` — the shipped tree's own hand —
@@ -822,7 +846,8 @@ func (s *service) createSeededRepository(ctx context.Context, name, authority st
 		}
 		return t.asActor(substrate.ActorSystem, func() error { return extra(t) })
 	}); err != nil {
-		return fail(err)
+		seedDS.close()
+		return fail("seed", err)
 	}
 	seedDS.close()
 
@@ -830,47 +855,53 @@ func (s *service) createSeededRepository(ctx context.Context, name, authority st
 	// has committed, the control-plane row has not.
 	if s.testFailAfterSeed != nil {
 		if err := s.testFailAfterSeed(); err != nil {
-			if cerr := s.eraseRepository(ctx, repo.ID); cerr != nil {
-				s.log.Error("substrate: could not erase after a forced post-seed failure",
-					"repository", repo.ID, "error", cerr)
-			}
-			return zero, err
+			return fail("after the seed", err)
 		}
 	}
 
-	if err := s.insertRepositoryRow(ctx, &repo); err != nil {
-		if cerr := s.eraseRepository(ctx, repo.ID); cerr != nil {
-			s.log.Error("substrate: could not erase after a control-plane insert failure; the boot sweep will reclaim it",
-				"repository", repo.ID, "error", cerr)
-		}
-		return zero, err
+	if err := s.insertRepositoryRow(ctx, cp, &repo); err != nil {
+		return fail("control-plane row", err)
 	}
+	inserted = true
 	// The directory, from the tables the seed just committed. A failure here
 	// is a failed registration like any other: the row is erased with the
 	// rows and the directory, so nothing half-made survives the call.
 	if _, err := s.reconcileRow(ctx, repo, false); err != nil {
-		if cerr := s.eraseRepository(ctx, repo.ID); cerr != nil {
-			s.log.Error("substrate: could not erase after a repository directory write failure",
-				"repository", repo.ID, "error", cerr)
-		}
-		return zero, fmt.Errorf("substrate/engine: write the repository directory of %s: %w", name, err)
+		return fail("directory", fmt.Errorf("substrate/engine: write the repository directory of %s: %w", name, err))
 	}
 	return repo, nil
 }
 
-// validRepositoryAuthority is the door a repository's own authority passes
-// through once, at creation. The grammar is the one every kind carries
-// (vocabulary.ValidRepositoryAuthority), and one namespace is refused on top:
-// `substrate.reamde.dev` and everything under it is where the shipped
-// vocabulary publishes, so a repository claiming a name there would be a
-// user-owned authority that reads as shipped.
-func validRepositoryAuthority(authority string) error {
+// validRepositoryID is the grammar a repository id is held to at BOTH doors,
+// registration (validRepositoryAuthority) and the boot import of a directory
+// (repodir.go): the authority grammar every kind carries
+// (vocabulary.ValidRepositoryAuthority), capped at MaxIDLen. The authority is
+// the repository's id everywhere (decision record 0052), including the id of
+// its self-description record, and a record id is at most MaxIDLen bytes
+// where DNS would admit 253; a directory the import accepted past the cap
+// would be a repository whose self-description no write could address.
+func validRepositoryID(authority string) error {
 	switch {
 	case authority == "":
 		return fmt.Errorf("%w: a repository needs an authority: a hostname you control, such as ada.example.com", substrate.ErrValidation)
 	case !vocabulary.ValidRepositoryAuthority(authority):
 		return fmt.Errorf("%w: authority %q must be a lowercase DNS-style name with at least two labels (ada.example.com)", substrate.ErrValidation, authority)
-	case authority == publisherAuthority || strings.HasSuffix(authority, "."+publisherAuthority):
+	case len(authority) > vocabulary.MaxIDLen:
+		return fmt.Errorf("%w: authority %q is longer than %d bytes, the most a repository id may be", substrate.ErrValidation, authority, vocabulary.MaxIDLen)
+	}
+	return nil
+}
+
+// validRepositoryAuthority is the door a repository's own authority passes
+// through once, at creation: validRepositoryID, and one namespace refused on
+// top. `substrate.reamde.dev` and everything under it is where the shipped
+// vocabulary publishes, so a repository claiming a name there would be a
+// user-owned authority that reads as shipped.
+func validRepositoryAuthority(authority string) error {
+	if err := validRepositoryID(authority); err != nil {
+		return err
+	}
+	if authority == publisherAuthority || strings.HasSuffix(authority, "."+publisherAuthority) {
 		return fmt.Errorf("%w: authority %q is under %s, where the shipped vocabulary publishes; a repository's authority is its own name", substrate.ErrValidation, authority, publisherAuthority)
 	}
 	return nil
@@ -881,9 +912,22 @@ func validRepositoryAuthority(authority string) error {
 // so the one no repository may claim.
 const publisherAuthority = "substrate.reamde.dev"
 
+// errUsernameTaken and errAuthorityTaken are the two refusals a registration
+// meets when its names are somebody's: spelled once, because the early lookup
+// and the row insert's unique violation must say the same thing.
+func errUsernameTaken(name string) error {
+	return fmt.Errorf("%w: user %q already exists", substrate.ErrValidation, name)
+}
+
+func errAuthorityTaken(authority string) error {
+	return fmt.Errorf("%w: authority %q is already owned by another repository on this substrate", substrate.ErrValidation, authority)
+}
+
 var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
 
-// newID mints a bare 12-character lowercase base32 record ID.
+// newID mints a bare 12-character lowercase base32 record ID: tokens, refs,
+// fires and the other minted records. A repository is not one of them; its id
+// is its authority.
 func newID() (string, error) {
 	raw := make([]byte, 10)
 	if _, err := rand.Read(raw); err != nil {

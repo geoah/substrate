@@ -37,7 +37,7 @@ boot.
 | `LOG_LEVEL`                    | `info`                                 | `debug`, `info`, `warn`, `error`.                                                                         |
 | `WEB_DIR`                      | —                                      | The built console, served at `/`. Empty disables static serving.                                          |
 | `SUBSTRATE_INVITE_CODE`        | — (unset: registration is off)         | The one way in. See below.                                                                                  |
-| `SUBSTRATE_DATA_ROOT`          | required                               | The directory every repository's files live under: `repositories/<id>/` with the manifest, the changelog segments, the sealed store's files and (on the `fs` blob store) the blob bytes. See [the repository directory](#the-repository-directory). It must be an absolute path, it must outlive the container, and a host without one refuses to boot, naming the variable. |
+| `SUBSTRATE_DATA_ROOT`          | required                               | The directory every repository's files live under: `repositories/<authority>/` with the manifest, the changelog segments, the sealed store's files and (on the `fs` blob store) the blob bytes. See [the repository directory](#the-repository-directory). It must be an absolute path, it must outlive the container, and a host without one refuses to boot, naming the variable. |
 | `SUBSTRATE_CHANGELOG_SEGMENT_BYTES` | `268435456`                       | The size past which the active changelog segment rotates: the writer fsyncs, writes the finished file's `.sha256` sidecar and opens the next segment. At least 1 MiB. |
 | `SUBSTRATE_CREDENTIAL_KEY`     | required                               | Wraps each repository's data-encryption key (DEK), which encrypts the sealed store: every secret-typed property's material, the password hash, the TOTP seed and stored provider tokens (AES-256-GCM). It is key material, not a passphrase: base64 of exactly 32 bytes, the AES-256 key itself. Generate one with `openssl rand -base64 32`; a host whose key is empty or any other shape refuses to boot, naming the variable (ADR [0024](decisions/0024-the-credential-key-is-key-material-not-a-passphrase.md)). A host whose key does not open the wrapped DEKs the store already holds refuses to boot too, naming the repositories: that is a wrong key or a store from somewhere else, and nothing here can be re-keyed. |
 | `SUBSTRATE_INSECURE_DISABLE_TOTP` | `false`                             | **Local development only.** Stops verifying the second factor, so a password is the whole credential: see [the local TOTP-off switch](auth.md#the-second-factor-can-be-switched-off-locally). Boots with a warning, and `GET /.well-known/substrate/server.json` says so. |
@@ -61,15 +61,17 @@ data root: without it, sealed material is unreadable
 
 ## The repository directory
 
-Every repository owns one directory under the data root, named by its id, and
+Every repository owns one directory under the data root, named by its
+authority, which is the repository's id everywhere
+([decision 0052](decisions/0052-the-authority-is-the-repository-id.md)), and
 that directory is the truth on disk and the unit a backup copies
 ([decision 0051](decisions/0051-a-repository-directory-is-the-backup-unit.md)):
 
 ```
 $SUBSTRATE_DATA_ROOT/
   repositories/
-    <repository id>/
-      repository.json               # the manifest: id, username, authority, createdAt, changelogDialect, the wrapped DEK
+    ada.example.com/                # one per repository, named by its authority
+      repository.json               # the manifest: authority, username, createdAt, changelogDialect, the wrapped DEK
       changelog/
         000000000000001.ndjson      # a segment, named by its first seq; the highest is the active one
         000000000000001.ndjson.sha256   # the digest of a finished segment
@@ -83,12 +85,12 @@ $SUBSTRATE_DATA_ROOT/
 The changelog segments are newline-delimited JSON, one entry per line, each
 line carrying its own SHA-256 checksum
 ([the checksum and the segment files](changelog.md#the-checksum-and-the-segment-files)).
-`repository.json` carries the username, so `grep -l '"username": "ada"'
-$SUBSTRATE_DATA_ROOT/repositories/*/repository.json` finds a person's
-directory, and the DEK wrapped under `SUBSTRATE_CREDENTIAL_KEY`, the same
-bytes as the `repositories.dek` column, so a copy restored onto a host with
-the same key opens without anything else. The key itself is never in the
-directory.
+The directory is `repositories/ada.example.com/` for the repository whose
+authority is `ada.example.com`, so a person finds it by name; `repository.json`
+carries the username beside the authority. It also carries the DEK wrapped
+under `SUBSTRATE_CREDENTIAL_KEY`, the same bytes as the `repositories.dek`
+column, so a copy restored onto a host with the same key opens without
+anything else. The key itself is never in the directory.
 
 Postgres is the commit point and the live index: every write commits to the
 `changelog` table first, and the repository's one writer then appends the same
@@ -137,8 +139,8 @@ always the truth. `SUBSTRATE_BLOB_STORE` says where the bytes go.
 
 | Backend            | Where the bytes are                                        | Backup                                  |
 | ------------------ | ---------------------------------------------------------- | --------------------------------------- |
-| `fs`               | `$SUBSTRATE_DATA_ROOT/repositories/<id>/blobs/<digest>`    | the repository directory, and nothing else |
-| `s3`               | `<prefix><repository id>/<digest>` in the bucket           | the directory **plus** the bucket        |
+| `fs`               | `$SUBSTRATE_DATA_ROOT/repositories/<authority>/blobs/<digest>` | the repository directory, and nothing else |
+| `s3`               | `<prefix><authority>/<digest>` in the bucket               | the directory **plus** the bucket        |
 
 `fs` is the default: the bytes sit in the repository directory beside the
 changelog, so one copy of the directory is a whole backup. `s3` is for a
@@ -246,8 +248,26 @@ on the box, through the DSN.
   operator reads, rather than a repository half-open beside the others); a
   row with no directory has its directory written out from the tables, once,
   which is how a store from a release before the data root gets one. A
-  directory with no row and no `repository.json` is logged and left alone:
-  nothing says whose it is, so it is neither imported nor deleted.
+  directory under `repositories/` named by an authority (`ada.example.com`)
+  with no row and no `repository.json` is logged and skipped: nothing says
+  whose it is, so it is neither imported nor deleted. Any other entry under
+  `repositories/` (a `tmp`, a `Backup-2026`, an old-id name with no manifest)
+  refuses the boot and names the entry; move it out of the data root.
+- **A `repositories` row whose `id` is not its authority refuses the boot.**
+  Before [decision 0052](decisions/0052-the-authority-is-the-repository-id.md)
+  the id was a random 12-character string; now it is the authority, and there
+  is no migration between the two. The error names the repository and says to
+  wipe the database and boot again. The repository directories under the data
+  root are what comes back: a directory still named by an old id is renamed
+  to its authority, its DEK re-wrapped, imported, and its self-description
+  record (`substrate.reamde.dev/core/repository`) moved from the old id to
+  the authority by two changelog entries the boot appends. Under the `s3`
+  blob store the bucket still keys that repository's objects by the old id,
+  so the boot refuses until you move every object under
+  `<SUBSTRATE_BLOB_S3_PREFIX><old id>/` to
+  `<SUBSTRATE_BLOB_S3_PREFIX><authority>/` and boot again. On the dev
+  substrate that is `mise run dev:wipe` followed by a start with the data
+  root kept (move `.dev/data` aside first, since `dev:wipe` removes it too).
 - **Shipped vocabulary is upgraded, per repository, in one transaction**: the
   first open under a new binary appends the version diff to that repository's
   changelog under the `substrate` actor
@@ -409,6 +429,10 @@ DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository list
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository verify ada     # once per repository
 ```
 
+Each directory under `repositories/` is one repository, named by its
+authority: `./substrate-backup/repositories/ada.example.com/` is Ada's, and
+its `repository.json` names the username the operator commands take.
+
 A directory whose files do not verify (a bad `sum`, a sidecar that does not
 match) refuses the boot with the repository and the seq or the file named;
 move that directory out of the root or restore it from an older copy, then
@@ -473,8 +497,8 @@ worse trade: it exposes the database to everything that can reach the host, and
 the exec path needs nothing open at all.
 
 - **`repository list`** reads the one control-plane table: one row per user.
-- **`repository inspect <username>`** reports the repository id, the username,
-  when it was created, the changelog head in the table and the head in the
+- **`repository inspect <username>`** reports the authority (the repository's
+  id, and the name of its directory), the username, when it was created, the changelog head in the table and the head in the
   segment files with the segment count, live and tombstoned record counts,
   and the declaration versions per package. Two heads that differ are the gap
   the next boot closes. It is the first thing to run when something looks

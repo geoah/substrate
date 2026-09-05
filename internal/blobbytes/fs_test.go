@@ -66,13 +66,13 @@ func TestFSKeyShapeAndModes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open the fs backend: %v", err)
 	}
-	s, err := b.Repository("repokeys", nil)
+	s, err := b.Repository("repokeys.example.com", nil)
 	if err != nil {
 		t.Fatalf("bind: %v", err)
 	}
 	// Binding creates nothing: a repository that never stores a blob leaves
 	// no directory behind.
-	if _, err := os.Stat(filepath.Join(root, "repositories", "repokeys")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(root, "repositories", "repokeys.example.com")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("Repository() created the directory before any Put: %v", err)
 	}
 	data := []byte("bytes at a known path")
@@ -81,7 +81,7 @@ func TestFSKeyShapeAndModes(t *testing.T) {
 	// <root>/repositories/<repository>/blobs/<digest>: the bytes sit inside
 	// the repository directory, beside its changelog and sealed store, so a
 	// copy of that one directory is the whole backup.
-	path := filepath.Join(root, "repositories", "repokeys", "blobs", digest)
+	path := filepath.Join(root, "repositories", "repokeys.example.com", "blobs", digest)
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("the object is not at %s: %v", path, err)
@@ -90,8 +90,8 @@ func TestFSKeyShapeAndModes(t *testing.T) {
 		t.Fatalf("object mode is %o, want 600 — the bytes are stored in the clear", got)
 	}
 	for _, dir := range []string{
-		filepath.Join(root, "repositories", "repokeys"),
-		filepath.Join(root, "repositories", "repokeys", "blobs"),
+		filepath.Join(root, "repositories", "repokeys.example.com"),
+		filepath.Join(root, "repositories", "repokeys.example.com", "blobs"),
 	} {
 		st, err := os.Stat(dir)
 		if err != nil {
@@ -108,7 +108,7 @@ func TestFSKeyShapeAndModes(t *testing.T) {
 func TestFSList(t *testing.T) {
 	t.Parallel()
 	b := newFS(t)
-	s, err := b.Repository("repolist", nil)
+	s, err := b.Repository("repolist.example.com", nil)
 	if err != nil {
 		t.Fatalf("bind: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestFSListSkipsWhatIsNotABlob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open the fs backend: %v", err)
 	}
-	s, err := b.Repository("repostray", nil)
+	s, err := b.Repository("repostray.example.com", nil)
 	if err != nil {
 		t.Fatalf("bind: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestFSListSkipsWhatIsNotABlob(t *testing.T) {
 	// A half-written upload and something an operator dropped in. Neither is
 	// an object, and the sweep must not offer either as one to delete.
 	for _, name := range []string{".incoming-1234", "notes.txt"} {
-		if err := os.WriteFile(filepath.Join(root, "repositories", "repostray", "blobs", name), []byte("x"), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(root, "repositories", "repostray.example.com", "blobs", name), []byte("x"), 0o600); err != nil {
 			t.Fatalf("write %s: %v", name, err)
 		}
 	}

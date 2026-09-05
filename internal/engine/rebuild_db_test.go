@@ -467,7 +467,7 @@ func stripResyncEffects(t *testing.T, svc substrate.Service, dsn string, ds subs
 	}
 }
 
-// repositoryIDOf is the opaque internal id a scoped pool is opened on.
+// repositoryIDOf is the repository id (its authority) a scoped pool is opened on.
 func repositoryIDOf(t *testing.T, ds substrate.Dataset) string {
 	t.Helper()
 	if id := ds.Repository().ID; id != "" {

@@ -346,7 +346,7 @@ type fakeDataset struct {
 
 func newFakeDataset(name string) *fakeDataset {
 	ds := &fakeDataset{
-		repository: substrate.RepositoryInfo{ID: "r_" + name, Name: name, Authority: name + ".example.com", State: "active"},
+		repository: substrate.RepositoryInfo{ID: name + ".example.com", Name: name, Authority: name + ".example.com", State: "active"},
 		types:      testTypes(),
 		records:    map[string]*substrate.Record{},
 		meta:       map[string]map[string]substrate.PropertyMeta{},

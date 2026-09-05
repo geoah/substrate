@@ -45,7 +45,7 @@ func TestBlobGCCannotDangleUncommittedRef(t *testing.T) {
 		t.Fatalf("begin: %v", err)
 	}
 	if _, err := tx1.ExecContext(ctx,
-		`SELECT pg_advisory_xact_lock_shared(hashtext($1)::bigint)`, ds.Repository().ID+"|blob|"+blob.Digest); err != nil {
+		`SELECT pg_advisory_xact_lock_shared(`+engine.AdvisoryKeySQL+`)`, ds.Repository().ID+"|blob|"+blob.Digest); err != nil {
 		t.Fatalf("shared lock: %v", err)
 	}
 

@@ -80,7 +80,7 @@ func TestDataWriteParksAtTheRegistryDepLockAndKeepsItsRefsRow(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := barrier.ExecContext(ctx,
-		`SELECT pg_advisory_xact_lock(hashtext($1)::bigint)`, ds.scope.lockKey(registryDepKey(ds))); err != nil {
+		`SELECT pg_advisory_xact_lock(`+advisoryKeySQL+`)`, ds.scope.lockKey(registryDepKey(ds))); err != nil {
 		t.Fatal(err)
 	}
 
@@ -159,7 +159,7 @@ func TestPatchParksAtTheRegistryDepLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := barrier.ExecContext(ctx,
-		`SELECT pg_advisory_xact_lock(hashtext($1)::bigint)`, ds.scope.lockKey(registryDepKey(ds))); err != nil {
+		`SELECT pg_advisory_xact_lock(`+advisoryKeySQL+`)`, ds.scope.lockKey(registryDepKey(ds))); err != nil {
 		t.Fatal(err)
 	}
 

@@ -40,6 +40,11 @@ func mustDecodeTestCredentialKey(key string) []byte {
 // a repository's directory (changelogfile.RepoDir) and damage or copy it.
 func DataRootOf(svc substrate.Service) string { return svc.(*service).dataRoot }
 
+// AdvisoryKeySQL is the engine's advisory-lock key expression (identity.go),
+// for a test that takes one of the engine's locks by hand: a barrier test that
+// composed the key itself would park on a lock nothing else takes.
+const AdvisoryKeySQL = advisoryKeySQL
+
 // BreakChangelogWriter closes a dataset's changelog writer under its mutex, so
 // the next commit's append fails the way a full disk would: the tables take
 // the write, the directory does not, and the dataset latches
@@ -58,6 +63,16 @@ func SealedAAD(ref, recordKind, recordID string) []byte { return sealedAAD(ref, 
 
 // DEKAAD builds the additional data the control-plane DEK wrap binds to.
 func DEKAAD(repoID string) []byte { return dekAAD(repoID) }
+
+// SealWithKey seals raw under key bound to aad, the way the host credential
+// key wraps a DEK, so a test can build a directory another binary wrote.
+func SealWithKey(key, raw, aad []byte) ([]byte, error) {
+	aead, err := newAEAD(key)
+	if err != nil {
+		return nil, err
+	}
+	return sealWith(aead, raw, aad)
+}
 
 // refPaths reads a record's reference property as the record paths it names, in
 // order. It is the tests' one reader of a stored reference, so a test asserting

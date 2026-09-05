@@ -39,7 +39,7 @@ func fsBackedDataset(t *testing.T) (substrate.Service, substrate.Dataset, string
 }
 
 // objectPath is where the fs backend keeps one repository's blob:
-// <root>/repositories/<id>/blobs/<digest>.
+// <root>/repositories/<authority>/blobs/<digest>.
 func objectPath(root string, ds substrate.Dataset, digest string) string {
 	return filepath.Join(root, "repositories", ds.Repository().ID, "blobs", digest)
 }
@@ -57,7 +57,7 @@ func TestBlobFSRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
-	// The bytes are on disk under <root>/repositories/<id>/blobs/<digest> and
+	// The bytes are on disk under <root>/repositories/<authority>/blobs/<digest> and
 	// nowhere in the database.
 	onDisk, err := os.ReadFile(objectPath(root, ds, info.Digest))
 	if err != nil {

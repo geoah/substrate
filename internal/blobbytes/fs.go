@@ -65,8 +65,8 @@ func NewFS(root string) (*FS, error) {
 func (*FS) Name() string { return BackendFS }
 
 // Repository binds the backend to one repository's blobs directory,
-// <root>/repositories/<repository>/blobs. The id is checked against the
-// repository grammar first, so it is always exactly one path segment. Nothing
+// <root>/repositories/<authority>/blobs. The id is checked against the
+// authority grammar first, so it is always exactly one path segment. Nothing
 // is created here: the directory appears on the first Put, so binding a
 // repository that never stored a blob leaves no trace on disk.
 func (f *FS) Repository(repository string, _ DB) (Store, error) {

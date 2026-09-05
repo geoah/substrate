@@ -295,7 +295,7 @@ func TestAdvisoryLocksArePerRepository(t *testing.T) {
 	defer func() { _ = tx.Rollback() }()
 	// The exact key rows.go composes for alpha's changelog.
 	if _, err := tx.ExecContext(ctx,
-		`SELECT pg_advisory_xact_lock(hashtext($1)::bigint)`, alpha+"|changelog"); err != nil {
+		`SELECT pg_advisory_xact_lock(`+engine.AdvisoryKeySQL+`)`, alpha+"|changelog"); err != nil {
 		t.Fatal(err)
 	}
 

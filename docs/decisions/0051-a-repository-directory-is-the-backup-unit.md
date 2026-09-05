@@ -1,7 +1,8 @@
 ---
-status: accepted
+status: superseded
 date: 2026-09-05
 decision-makers: George Antoniadis
+superseded-by: 0052
 ---
 
 # 0051. A repository directory under the data root is the backup unit

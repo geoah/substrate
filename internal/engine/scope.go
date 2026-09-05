@@ -23,8 +23,9 @@ import (
 // serialization that used to be one lock for the whole database is now one
 // lock per repository per purpose.
 type Scope struct {
-	// Repository is the opaque internal repository id — the `repositories`
-	// row's primary key. It is never in a URL.
+	// Repository is the repository id, the `repositories` row's primary key,
+	// which is the repository's authority (`ada.example.com`). A REST path
+	// never carries it; the token implies the repository.
 	Repository string
 }
 

@@ -30,8 +30,11 @@ func newDEK() ([]byte, error) {
 }
 
 // dekAAD binds the control-plane DEK wrap to its repository. The wrap has no
-// owning record, so it binds the literal "dek" and the repository id (0023): a
-// wrap lifted into another repository's row stops opening.
+// owning record, so it binds the literal "dek" and the repository id, which is
+// its authority (0023): `dek\x00<authority>`, so a wrap lifted into another
+// repository's row stops opening. A directory written before the authority
+// was the id is bound to the old random id, and the boot check re-wraps it
+// (repodir.go, migrateLegacyDir).
 func dekAAD(repoID string) []byte {
 	return []byte("dek\x00" + repoID)
 }

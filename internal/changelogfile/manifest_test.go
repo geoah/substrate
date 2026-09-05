@@ -11,9 +11,9 @@ import (
 	"time"
 )
 
-func sampleManifest(id string) Manifest {
+func sampleManifest(authority string) Manifest {
 	return Manifest{
-		Format: 1, ID: id, Username: "ada", Authority: "ada.example.com",
+		Format: 1, Username: "ada", Authority: authority,
 		CreatedAt:        time.Date(2026, 9, 5, 10, 0, 0, 123456000, time.UTC),
 		ChangelogDialect: 2,
 		DEK:              []byte{0, 1, 2, 3, 250, 251, 252, 253},
@@ -22,11 +22,11 @@ func sampleManifest(id string) Manifest {
 
 func TestManifestRoundTrip(t *testing.T) {
 	root := t.TempDir()
-	dir, err := EnsureRepoDir(root, "k3j9x2m41pfq")
+	dir, err := EnsureRepoDir(root, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := sampleManifest("k3j9x2m41pfq")
+	m := sampleManifest("ada.example.com")
 	if err := WriteManifest(dir, m); err != nil {
 		t.Fatal(err)
 	}
@@ -34,10 +34,14 @@ func TestManifestRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"format": 1`, `"id": "k3j9x2m41pfq"`, `"createdAt": "2026-09-05T10:00:00.123456Z"`, `"dek": "AAECA/r7/P0="`, `"changelogDialect": 2`} {
+	for _, want := range []string{`"format": 1`, `"authority": "ada.example.com"`, `"createdAt": "2026-09-05T10:00:00.123456Z"`, `"dek": "AAECA/r7/P0="`, `"changelogDialect": 2`} {
 		if !bytes.Contains(raw, []byte(want)) {
 			t.Errorf("manifest lacks %s:\n%s", want, raw)
 		}
+	}
+	// The authority is the id: there is no second key for it.
+	if bytes.Contains(raw, []byte(`"id"`)) {
+		t.Errorf("manifest carries an id key:\n%s", raw)
 	}
 	info, err := os.Stat(filepath.Join(dir, ManifestName))
 	if err != nil {
@@ -50,7 +54,7 @@ func TestManifestRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Format != m.Format || got.ID != m.ID || got.Username != m.Username || got.Authority != m.Authority ||
+	if got.Format != m.Format || got.Username != m.Username || got.Authority != m.Authority ||
 		!got.CreatedAt.Equal(m.CreatedAt) || got.ChangelogDialect != m.ChangelogDialect || !bytes.Equal(got.DEK, m.DEK) {
 		t.Fatalf("round trip: got %+v, want %+v", got, m)
 	}
@@ -73,19 +77,18 @@ func TestManifestRoundTrip(t *testing.T) {
 }
 
 func TestManifestMissingIsNotExist(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "repositories", "abc")
+	dir := filepath.Join(t.TempDir(), "repositories", "ada.example.com")
 	if _, err := ReadManifest(dir); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("err = %v, want os.ErrNotExist", err)
 	}
 }
 
 func TestManifestReadsThePlanExample(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "k3j9x2m41pfq")
+	dir := filepath.Join(t.TempDir(), "ada.example.com")
 	if err := os.MkdirAll(dir, dirMode); err != nil {
 		t.Fatal(err)
 	}
 	example := `{"format": 1,
- "id": "k3j9x2m41pfq",
  "username": "ada",
  "authority": "ada.example.com",
  "createdAt": "2026-09-05T10:00:00.000000Z",
@@ -98,8 +101,79 @@ func TestManifestReadsThePlanExample(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.ID != "k3j9x2m41pfq" || m.Username != "ada" || !m.CreatedAt.Equal(time.Date(2026, 9, 5, 10, 0, 0, 0, time.UTC)) || !bytes.Equal(m.DEK, []byte{0, 1, 2, 3}) {
+	if m.Authority != "ada.example.com" || m.Username != "ada" || !m.CreatedAt.Equal(time.Date(2026, 9, 5, 10, 0, 0, 0, time.UTC)) || !bytes.Equal(m.DEK, []byte{0, 1, 2, 3}) {
 		t.Fatalf("manifest = %+v", m)
+	}
+}
+
+// The manifest a pre-authority binary wrote carries `id`, which ReadManifest
+// refuses as an unknown key and ReadLegacyManifest reads, holding the id to the
+// directory name and the authority to the grammar the directory will be
+// renamed to.
+func TestLegacyManifest(t *testing.T) {
+	legacy := `{"format": 1,
+ "id": "k3j9x2m41pfq",
+ "username": "ada",
+ "authority": "ada.example.com",
+ "createdAt": "2026-09-05T10:00:00.000000Z",
+ "changelogDialect": 2,
+ "dek": "AAECAw=="}`
+	write := func(t *testing.T, dirName, body string) string {
+		dir := filepath.Join(t.TempDir(), RepositoriesDir, dirName)
+		if err := os.MkdirAll(dir, dirMode); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, ManifestName), []byte(body), fileMode); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	dir := write(t, "k3j9x2m41pfq", legacy)
+	if _, err := ReadManifest(dir); err == nil || !strings.Contains(err.Error(), `"id"`) {
+		t.Fatalf("ReadManifest read a manifest carrying id: err = %v", err)
+	}
+	lm, err := ReadLegacyManifest(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lm.ID != "k3j9x2m41pfq" || lm.Manifest.Authority != "ada.example.com" || lm.Manifest.Username != "ada" ||
+		lm.Manifest.ChangelogDialect != 2 || !bytes.Equal(lm.Manifest.DEK, []byte{0, 1, 2, 3}) ||
+		!lm.Manifest.CreatedAt.Equal(time.Date(2026, 9, 5, 10, 0, 0, 0, time.UTC)) {
+		t.Fatalf("legacy manifest = %+v", lm)
+	}
+	// The read manifest, minus the id, is one WriteManifest accepts once the
+	// directory is renamed.
+	renamed, err := RenameRepoDir(filepath.Dir(filepath.Dir(dir)), "k3j9x2m41pfq", "ada.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteManifest(renamed, lm.Manifest); err != nil {
+		t.Fatalf("write the new manifest: %v", err)
+	}
+	if got, err := ReadManifest(renamed); err != nil || got.Authority != "ada.example.com" {
+		t.Fatalf("after the rename: %+v, %v", got, err)
+	}
+
+	refusals := []struct {
+		name, dir, body string
+		want            error
+	}{
+		{"no id", "k3j9x2m41pfq", `{"format":1,"username":"ada","authority":"ada.example.com"}`, ErrManifestIncomplete},
+		{"authority is not one", "k3j9x2m41pfq", `{"format":1,"id":"k3j9x2m41pfq","username":"ada","authority":"nodot"}`, ErrRepositoryAuthority},
+		{"format 2", "k3j9x2m41pfq", `{"format":2,"id":"k3j9x2m41pfq","username":"ada","authority":"ada.example.com"}`, ErrManifestFormat},
+		{"unknown key", "k3j9x2m41pfq", `{"format":1,"id":"k3j9x2m41pfq","username":"ada","authority":"ada.example.com","head":5}`, nil},
+	}
+	for _, c := range refusals {
+		t.Run(c.name, func(t *testing.T) {
+			dir := write(t, c.dir, c.body)
+			_, err := ReadLegacyManifest(dir)
+			if err == nil {
+				t.Fatal("read a legacy manifest that must be refused")
+			}
+			if c.want != nil && !errors.Is(err, c.want) {
+				t.Fatalf("err = %v, want %v", err, c.want)
+			}
+		})
 	}
 }
 
@@ -111,18 +185,19 @@ func TestWriteManifestRefusals(t *testing.T) {
 	}{
 		{"format 0", func(m *Manifest) { m.Format = 0 }, ErrManifestFormat},
 		{"format 2", func(m *Manifest) { m.Format = 2 }, ErrManifestFormat},
-		{"no id", func(m *Manifest) { m.ID = "" }, ErrManifestIncomplete},
+		{"no authority", func(m *Manifest) { m.Authority = "" }, ErrManifestIncomplete},
 		{"no username", func(m *Manifest) { m.Username = "" }, ErrManifestIncomplete},
-		{"id is not a repository id", func(m *Manifest) { m.ID = "a/b" }, ErrRepositoryID},
-		{"id names another directory", func(m *Manifest) { m.ID = "other" }, ErrManifestID},
+		{"authority is not one", func(m *Manifest) { m.Authority = "a/b" }, ErrRepositoryAuthority},
+		{"authority is the old id shape", func(m *Manifest) { m.Authority = "k3j9x2m41pfq" }, ErrRepositoryAuthority},
+		{"authority names another directory", func(m *Manifest) { m.Authority = "other.example.com" }, ErrManifestAuthority},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			dir, err := EnsureRepoDir(t.TempDir(), "k3j9x2m41pfq")
+			dir, err := EnsureRepoDir(t.TempDir(), "ada.example.com")
 			if err != nil {
 				t.Fatal(err)
 			}
-			m := sampleManifest("k3j9x2m41pfq")
+			m := sampleManifest("ada.example.com")
 			c.mutate(&m)
 			if err := WriteManifest(dir, m); !errors.Is(err, c.want) {
 				t.Fatalf("err = %v, want %v", err, c.want)
@@ -140,19 +215,20 @@ func TestReadManifestRefusals(t *testing.T) {
 		body string
 		want error
 	}{
-		{"format 2", `{"format":2,"id":"abc","username":"ada"}`, ErrManifestFormat},
-		{"no format", `{"id":"abc","username":"ada"}`, ErrManifestFormat},
-		{"no id", `{"format":1,"username":"ada"}`, ErrManifestIncomplete},
-		{"no username", `{"format":1,"id":"abc"}`, ErrManifestIncomplete},
-		{"wrong directory", `{"format":1,"id":"xyz","username":"ada"}`, ErrManifestID},
-		{"unknown key", `{"format":1,"id":"abc","username":"ada","head":5}`, nil},
-		{"bad time", `{"format":1,"id":"abc","username":"ada","createdAt":"yesterday"}`, nil},
-		{"bad base64", `{"format":1,"id":"abc","username":"ada","dek":"!!"}`, nil},
+		{"format 2", `{"format":2,"authority":"ada.example.com","username":"ada"}`, ErrManifestFormat},
+		{"no format", `{"authority":"ada.example.com","username":"ada"}`, ErrManifestFormat},
+		{"no authority", `{"format":1,"username":"ada"}`, ErrManifestIncomplete},
+		{"no username", `{"format":1,"authority":"ada.example.com"}`, ErrManifestIncomplete},
+		{"wrong directory", `{"format":1,"authority":"grace.example.com","username":"ada"}`, ErrManifestAuthority},
+		{"the pre-authority id key", `{"format":1,"id":"k3j9x2m41pfq","authority":"ada.example.com","username":"ada"}`, nil},
+		{"unknown key", `{"format":1,"authority":"ada.example.com","username":"ada","head":5}`, nil},
+		{"bad time", `{"format":1,"authority":"ada.example.com","username":"ada","createdAt":"yesterday"}`, nil},
+		{"bad base64", `{"format":1,"authority":"ada.example.com","username":"ada","dek":"!!"}`, nil},
 		{"not JSON", `{`, nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			dir := filepath.Join(t.TempDir(), "abc")
+			dir := filepath.Join(t.TempDir(), "ada.example.com")
 			if err := os.MkdirAll(dir, dirMode); err != nil {
 				t.Fatal(err)
 			}
@@ -173,11 +249,11 @@ func TestReadManifestRefusals(t *testing.T) {
 func TestManifestJSONOmitsNothing(t *testing.T) {
 	// Every key is written even when zero, so a reader never has to guess
 	// whether a missing key was unset or unknown to the writer.
-	raw, err := json.Marshal(Manifest{Format: 1, ID: "abc", Username: "ada"})
+	raw, err := json.Marshal(Manifest{Format: 1, Username: "ada"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"format":1,"id":"abc","username":"ada","authority":"","createdAt":"","changelogDialect":0,"dek":null}`
+	want := `{"format":1,"username":"ada","authority":"","createdAt":"","changelogDialect":0,"dek":null}`
 	if string(raw) != want {
 		t.Fatalf("got %s\nwant %s", raw, want)
 	}

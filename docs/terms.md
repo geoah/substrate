@@ -30,7 +30,7 @@ nothing, there are none.
 | ---- | ---------- |
 | **changelog** | The repository's one append-only, strictly sequential list of every change. It is the truth. |
 | **fold** | The records the changelog is replayed into. The only write path to them, so a live write and a rebuild cannot drift. |
-| **data root** | `SUBSTRATE_DATA_ROOT`: the directory holding one subdirectory per repository, `repositories/<id>/`, with the manifest, the changelog segments, the sealed files and the blob bytes. The unit a backup copies. |
+| **data root** | `SUBSTRATE_DATA_ROOT`: the directory holding one subdirectory per repository, `repositories/<authority>/`, with the manifest, the changelog segments, the sealed files and the blob bytes. The unit a backup copies. |
 | **segment** | One file of a repository's changelog on disk, `changelog/<first seq>.ndjson`: newline-delimited JSON, one entry per line, each line carrying its own SHA-256 checksum in `sum`. A finished segment has a `.sha256` sidecar and never changes. |
 | **checksum** | The SHA-256 of one entry's canonical line, stored as the entry's `hash` and returned on the wire under that name. It detects damage; it does not chain to the previous entry and nothing signs it. |
 | **projection** | Recomputing a record's mapped properties from every live source record that maps onto it. |

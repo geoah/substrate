@@ -19,9 +19,9 @@ import (
 )
 
 // A repository is the store: one changelog, its fold and its side stores, one per
-// user. Its id is opaque and internal — "it appears in `substratectl`
-// output and nowhere else" — which is why these commands
-// exist at all: they are the only place the control plane is visible.
+// user. Its id is its authority (`ada.example.com`, decision 0046): the row's
+// primary key, the scope, the directory under the data root. These commands
+// are the only place the control plane is visible.
 //
 // All three run ON THE BOX against the database (operator.go): there is no
 // repository segment in any URL and no HTTP surface that lists other people's
@@ -102,8 +102,9 @@ func (a *app) repositoryListCommand() *cobra.Command {
 		Short: "List every repository on this substrate",
 		Long: `List the control-plane table: one row per user, and the whole of it.
 
-The id is opaque and internal; created_at is the admission record, since the
-invite code is the only door and there is nothing else to record.`,
+The authority is the repository's id, and the directory under
+SUBSTRATE_DATA_ROOT is named by it; created_at is the admission record, since
+the invite code is the only door and there is nothing else to record.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			db, err := a.controlPlane()
@@ -119,7 +120,7 @@ invite code is the only door and there is nothing else to record.`,
 				out := make([]map[string]any, 0, len(rows))
 				for _, r := range rows {
 					out = append(out, map[string]any{
-						"id": r.ID, "username": r.Username, "authority": r.Authority,
+						"authority": r.ID, "username": r.Username,
 						"createdAt": r.CreatedAt.Format(time.RFC3339),
 					})
 				}
@@ -133,10 +134,10 @@ invite code is the only door and there is nothing else to record.`,
 				return nil
 			}
 			tw := newTable(a.out)
-			fmt.Fprintln(tw, "ID\tUSERNAME\tAUTHORITY\tCREATED\tAGE")
+			fmt.Fprintln(tw, "AUTHORITY\tUSERNAME\tCREATED\tAGE")
 			for _, r := range rows {
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
-					r.ID, r.Username, r.Authority, r.CreatedAt.Format(time.RFC3339), humanAge(a.now(), r.CreatedAt))
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
+					r.ID, r.Username, r.CreatedAt.Format(time.RFC3339), humanAge(a.now(), r.CreatedAt))
 			}
 			return tw.Flush()
 		},
@@ -148,13 +149,13 @@ invite code is the only door and there is nothing else to record.`,
 func (a *app) repositoryInspectCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "inspect <username>",
-		Short: "Show one repository: id, both changelog heads, records, vocabulary versions",
+		Short: "Show one repository: authority, both changelog heads, records, vocabulary versions",
 		Long: `Describe a repository from the outside.
 
 The changelog's head is its length — seq is per-repository, gapless and assigned at
 commit — and the records count is the fold's size. The changelog lives twice:
 the table is the live index and the segment files under SUBSTRATE_DATA_ROOT
-(<root>/repositories/<id>/changelog) are the copy a backup takes, so both heads
+(<root>/repositories/<authority>/changelog) are the copy a backup takes, so both heads
 are printed and a healthy repository shows the same number twice. The
 vocabulary section is what this repository's OWN changelog says its kinds are,
 which is the only authority on the question: the embedded tree is a seed, not
@@ -178,8 +179,8 @@ This command only reads.`,
 			}
 			defer func() { _ = scoped.Close() }()
 
-			fmt.Fprintf(a.out, "repository %s\n", repo.ID)
-			fmt.Fprintf(a.out, "  username:  %s\n", repo.Username)
+			fmt.Fprintf(a.out, "repository %s\n", repo.Username)
+			fmt.Fprintf(a.out, "  authority: %s\n", repo.ID)
 			fmt.Fprintf(a.out, "  created:   %s (%s)\n",
 				repo.CreatedAt.Format(time.RFC3339), humanAge(a.now(), repo.CreatedAt))
 
@@ -283,7 +284,7 @@ which is why it is the backup unit.`,
 				return lockHint(err)
 			}
 			fmt.Fprintf(a.out, "repository %s rebuilt\n", report.Username)
-			fmt.Fprintf(a.out, "  id:       %s\n", report.Repository)
+			fmt.Fprintf(a.out, "  authority: %s\n", report.Repository)
 			fmt.Fprintf(a.out, "  replayed: %d entries to head %d\n", report.Entries, report.Head)
 			fmt.Fprintf(a.out, "  records:  %d\n", report.Records)
 			fmt.Fprintf(a.out, "  took:     %s\n", report.Took.Round(time.Millisecond))
@@ -339,7 +340,7 @@ Exits nonzero when anything does not verify.`,
 				}
 			} else {
 				fmt.Fprintf(a.out, "repository %s\n", report.Username)
-				fmt.Fprintf(a.out, "  id:       %s\n", report.Repository)
+				fmt.Fprintf(a.out, "  authority: %s\n", report.Repository)
 				fmt.Fprintf(a.out, "  table:    %d entries, head %d\n", report.Entries, report.Head)
 				fmt.Fprintf(a.out, "  files:    head %d in %d segment(s)\n", report.FileHead, report.Segments)
 				fmt.Fprintf(a.out, "  sealed:   %d rows, %d files\n", report.SealedRows, report.SealedFiles)

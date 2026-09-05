@@ -8,8 +8,10 @@ facility plus bundle functions.
 **The model, in one paragraph.** One invite code admits people. Registering
 creates a **user** — username, password and TOTP, all three — and that user's
 one **repository**, which owns one **authority** (`<username>.<server host>`
-unless the registration names one; the home of the kinds the user declares,
-[0046](docs/decisions/0046-a-repository-owns-one-authority-chosen-at-registration.md)).
+unless the registration names one; the home of the kinds the user declares
+and the repository's id on disk, in the database and on the wire,
+[0046](docs/decisions/0046-a-repository-owns-one-authority-chosen-at-registration.md),
+[0052](docs/decisions/0052-the-authority-is-the-repository-id.md)).
 Everything the user has lives in it: an append-only,
 strictly sequential **changelog**, checksummed segment files in the
 repository's directory under `SUBSTRATE_DATA_ROOT` that Postgres indexes,
