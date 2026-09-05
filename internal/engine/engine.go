@@ -56,6 +56,9 @@ type options struct {
 	// insecureDisableTOTP stops verifying the second factor
 	// (WithInsecureDisableTOTP). Dev/test only; never the production default.
 	insecureDisableTOTP bool
+	// dirReadOnly opens the service beside a running server
+	// (WithDirectoryReadOnly): no boot check, no writer, no write.
+	dirReadOnly bool
 }
 
 // Option configures Open.
@@ -107,6 +110,16 @@ func WithDataRoot(root string) Option { return func(o *options) { o.dataRoot = r
 // (SUBSTRATE_CHANGELOG_SEGMENT_BYTES). changelogfile.DefaultSegmentBytes
 // when not given or not positive.
 func WithChangelogSegmentBytes(n int64) Option { return func(o *options) { o.segmentBytes = n } }
+
+// WithDirectoryReadOnly opens the service as a second process beside a running
+// server: the operator hat's `repository verify` and `reembed`. Open runs no
+// boot check and no orphan sweep, a dataset opens no changelog writer and
+// refuses every inTx write with ErrDirectoryReadOnly, and VerifyRepository
+// reports a torn tail or a table ahead of its file as findings instead of
+// repairing them. Without this option a second process on the same data root
+// is a second writer, and the server's running writer refuses it with
+// ErrChangelogLocked at the first repository it opens for writing.
+func WithDirectoryReadOnly() Option { return func(o *options) { o.dirReadOnly = true } }
 
 // WithBlobStore puts blob bytes somewhere other than the default, which is the
 // fs backend under the data root (<root>/repositories/<id>/blobs). The s3
@@ -187,7 +200,10 @@ type service struct {
 	// totpDisabled stops verifying the second factor (WithInsecureDisableTOTP):
 	// the password is then the whole credential. Dev only.
 	totpDisabled bool
-	log          *slog.Logger
+	// readOnly is WithDirectoryReadOnly: this process is not the repository
+	// directories' writer and must not become one (repodir.go).
+	readOnly bool
+	log      *slog.Logger
 	// gqlSchemas caches the agent loop's GraphQL schema per repository
 	// (internal/gql owns the key and builder); the API layer holds its own.
 	gqlSchemas *gql.Cache
@@ -287,6 +303,7 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 		segmentBytes: o.segmentBytes,
 		blobs:        o.blobs,
 		totpDisabled: o.insecureDisableTOTP,
+		readOnly:     o.dirReadOnly,
 		log:          o.log,
 		gqlSchemas:   gql.NewCache(),
 		bg:           newBackground(),
@@ -390,11 +407,15 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 	// Reclaim any repository-scoped rows a registration that crashed between its
 	// scoped commit and its control-plane insert left behind (createSeededRepository
 	// commits the repository's own rows FIRST and the control-plane row LAST, so
-	// a crash in that window orphans rows under an id no lookup can name).
-	if err := s.sweepOrphans(ctx); err != nil {
-		_ = maint.Close()
-		_ = admin.Close()
-		return nil, err
+	// a crash in that window orphans rows under an id no lookup can name). Not
+	// from a read-only process: beside a running server those rows may be a
+	// registration in flight, not a crash.
+	if !s.readOnly {
+		if err := s.sweepOrphans(ctx); err != nil {
+			_ = maint.Close()
+			_ = admin.Close()
+			return nil, err
+		}
 	}
 	// The shipped vocabulary's declared indexes, ONCE PER PROCESS. A
 	// plain CREATE INDEX locks the shared records table for every repository,
@@ -417,11 +438,15 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 	// Every repository's directory against its rows, before anything is
 	// served (repodir.go): a crash left the file a transaction behind, a
 	// restore left a directory with no row, or a store predates the data
-	// root. A repository the two sides disagree on refuses the boot.
-	if err := s.reconcileRepositories(ctx); err != nil {
-		_ = maint.Close()
-		_ = admin.Close()
-		return nil, err
+	// root. A repository the two sides disagree on refuses the boot. A
+	// read-only process skips it: the check writes, and the server that owns
+	// the directories runs it at its own boot.
+	if !s.readOnly {
+		if err := s.reconcileRepositories(ctx); err != nil {
+			_ = maint.Close()
+			_ = admin.Close()
+			return nil, err
+		}
 	}
 	return s, nil
 }
@@ -603,9 +628,11 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.close()
 		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.Username, err)
 	}
-	if err := s.ensureManifest(ctx, dir, repo, db); err != nil {
-		ds.close()
-		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.Username, err)
+	if !s.readOnly {
+		if err := s.ensureManifest(ctx, dir, repo, db); err != nil {
+			ds.close()
+			return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.Username, err)
+		}
 	}
 	// The changelog dialect gate runs next, ahead of every step that writes:
 	// a binary that cannot replay this history must not extend it either. It

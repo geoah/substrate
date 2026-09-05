@@ -243,7 +243,8 @@ func (s *service) openSealed(ctx context.Context, repoID, ref string) ([]byte, e
 // logins racing on one code cannot both win it — a code is one-time, which is
 // the whole reason the step lives beside the seed. It writes no changelog entry: a
 // replay counter is not a change to the credential.
-func (s *service) consumeTOTPStep(ctx context.Context, repoID, ref string, to int64) (bool, error) {
+func (s *service) consumeTOTPStep(ctx context.Context, repo Repository, ref string, to int64) (bool, error) {
+	repoID := repo.ID
 	tx, err := s.maint.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
@@ -292,8 +293,19 @@ func (s *service) consumeTOTPStep(ctx context.Context, repoID, ref string, to in
 		return false, err
 	}
 	// The step lives in the sealed row and nowhere in the changelog, so the
-	// mirror is the only thing that carries it into the directory.
-	s.mirrorSealedByRef(repoID, sealedRecordOf(ref, owner.Kind, owner.ID, sealed, expires, updated))
+	// mirror is the only thing that carries it into the directory. It goes
+	// through the dataset, under the writer mutex every other sealed write
+	// takes: written straight from here it could lose the rename race against
+	// a concurrent rekeySealedStore and leave the older payload on disk. The
+	// row is committed either way; a mirror this cannot run is the boot
+	// check's to rewrite.
+	rec := sealedRecordOf(ref, owner.Kind, owner.ID, sealed, expires, updated)
+	if ds, err := s.open(ctx, repo); err != nil {
+		s.log.Error("substrate: could not open the repository to mirror a sealed row; the boot check will rewrite it",
+			"repository", repoID, "ref", ref, "error", err)
+	} else {
+		ds.mirrorSealedNow([]sealedMirrorOp{{rec: rec}})
+	}
 	return true, nil
 }
 
@@ -546,7 +558,7 @@ func (s *service) verifyFactors(ctx context.Context, in substrate.LoginInput) (R
 	}
 	// The code is spent BEFORE anything is handed out, under the sealed row's
 	// own lock, so two requests racing on one code cannot both win.
-	won, err := s.consumeTOTPStep(ctx, repo.ID, material.totpRef, step)
+	won, err := s.consumeTOTPStep(ctx, repo, material.totpRef, step)
 	if err != nil {
 		return Repository{}, authMaterial{}, err
 	}

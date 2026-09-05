@@ -88,6 +88,9 @@ var _ Rebuilder = (*service)(nil)
 // or the rebuild refuses rather than fold a history the table does not index.
 func (s *service) RebuildRepository(ctx context.Context, username string) (RebuildReport, error) {
 	started := time.Now()
+	if s.readOnly {
+		return RebuildReport{}, ErrDirectoryReadOnly
+	}
 	repo, err := s.repositoryByUsername(ctx, username)
 	if err != nil {
 		return RebuildReport{}, err

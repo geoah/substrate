@@ -21,12 +21,14 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/changelogfile"
+	"github.com/geoah/substrate/internal/substrate"
 )
 
 // pendingEntry is one changelog row this transaction appended, as the
 // checksum sees it: every column the line carries, with the payload as the
-// STORED text. Line holds the encoded line once settleChecksums has run, so
-// the segment writer appends the same bytes without re-encoding.
+// STORED text. Line holds the encoded line once settleChecksums has run, and
+// the segment writer appends exactly those bytes (mirrorAfterCommit), so what
+// was checked before commit is what lands after it.
 type pendingEntry struct {
 	Seq   int64
 	TS    time.Time
@@ -62,6 +64,11 @@ func (e pendingEntry) fileEntry() changelogfile.Entry {
 // made the last payload final, so the checksum covers the payload as stored.
 // The pending entries stay on the transaction, each with its encoded line,
 // for the segment writer that runs after commit.
+//
+// Every refusal the writer could give the line is given HERE, before commit:
+// a line over changelogfile.MaxLineBytes rolls the transaction back, because
+// the same refusal after commit would leave a row in the table that no boot
+// can ever append to the file.
 func (t *txn) settleChecksums() error {
 	if len(t.pending) == 0 {
 		return nil
@@ -77,6 +84,10 @@ func (t *txn) settleChecksums() error {
 		line, sum, err := changelogfile.Encode(e.fileEntry())
 		if err != nil {
 			return fmt.Errorf("substrate/engine: checksum seq %d: %w", e.Seq, err)
+		}
+		if len(line) > changelogfile.MaxLineBytes {
+			return fmt.Errorf("%w: %w: the entry for %s %s/%s is %d bytes as a changelog line and the cap is %d",
+				substrate.ErrValidation, changelogfile.ErrLineTooLong, e.Op, e.Kind, e.RecordID, len(line), changelogfile.MaxLineBytes)
 		}
 		res, err := t.exec(`UPDATE changelog SET hash = $2 WHERE seq = $1`, e.Seq, sum[:])
 		if err != nil {

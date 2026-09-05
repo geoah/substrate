@@ -80,6 +80,19 @@ func TestEnsureRepoDirAndList(t *testing.T) {
 	if len(ids) != 2 || ids[0] != "alpha" || ids[1] != "zeta" {
 		t.Fatalf("ids = %v", ids)
 	}
+	// A dot-prefixed directory is a filesystem's or a tool's, never a
+	// repository: skipped, so a `.snapshot` under the root does not refuse
+	// the boot.
+	if err := os.Mkdir(filepath.Join(root, RepositoriesDir, ".snapshot"), dirMode); err != nil {
+		t.Fatal(err)
+	}
+	ids, err = ListRepositoryDirs(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 2 || ids[0] != "alpha" || ids[1] != "zeta" {
+		t.Fatalf("ids with a .snapshot beside them = %v", ids)
+	}
 	// A directory that is not a repository id is refused, not skipped.
 	if err := os.Mkdir(filepath.Join(root, RepositoriesDir, "not an id"), dirMode); err != nil {
 		t.Fatal(err)

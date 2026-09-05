@@ -217,6 +217,11 @@ func (s *service) insertRepositoryRow(ctx context.Context, r *Repository) error 
 //   - It VERIFIES the scope is empty afterwards — scoped tables AND the
 //     control-plane row — and returns an error if anything survived, so a caller
 //     can changelog it and the boot sweeper can reclaim what a crash left.
+//   - The DIRECTORY GOES FIRST, then the rows. A crash between the two leaves
+//     a row with no directory, which the next boot writes out again from the
+//     tables (repodir.go, case 5): consistent, and complete. The other order
+//     would leave a directory with no row, which the next boot IMPORTS as a
+//     repository whose registration was reported failed.
 func (s *service) eraseRepository(ctx context.Context, id string) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
@@ -228,6 +233,14 @@ func (s *service) eraseRepository(ctx context.Context, id string) error {
 		ds.close()
 	}
 	s.mu.Unlock()
+
+	dir, err := changelogfile.RepoDir(s.dataRoot, id)
+	if err != nil {
+		return err
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("substrate/engine: erase repository %s: remove its directory: %w", id, err)
+	}
 
 	tx, err := s.maint.BeginTx(ctx, nil)
 	if err != nil {
@@ -249,16 +262,6 @@ func (s *service) eraseRepository(ctx context.Context, id string) error {
 		return err
 	} else if residue != "" {
 		return fmt.Errorf("substrate/engine: erase repository %s left rows in %s", id, residue)
-	}
-	// The directory goes with the rows: a directory with no row would import
-	// at the next boot as the repository this erase just promised does not
-	// exist.
-	dir, err := changelogfile.RepoDir(s.dataRoot, id)
-	if err != nil {
-		return err
-	}
-	if err := os.RemoveAll(dir); err != nil {
-		return fmt.Errorf("substrate/engine: erase repository %s: remove its directory: %w", id, err)
 	}
 	return nil
 }

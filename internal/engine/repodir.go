@@ -43,6 +43,17 @@ package engine
 // reads them into the table; everything else writes the table out, so a
 // mirror a crash skipped (a TOTP step consume appends no entry, so heads
 // alone would not notice) is rewritten at the next boot.
+//
+// ONE WRITER PER DIRECTORY, ACROSS PROCESSES. The changelog writer holds an
+// exclusive advisory lock on the directory (changelogfile.LockFileName) for
+// its lifetime, so a second process that opens a repository for writing (an
+// operator's `rebuild` or `user reset` beside a running server) is refused
+// with ErrChangelogLocked instead of appending seqs the server is about to
+// append too. The boot check's own writers are opened and closed inside
+// reconcileDir, so a server never holds a lock against itself. A process that
+// must run beside the server opens with WithDirectoryReadOnly: no boot check,
+// no writer, every inTx write refused, and a verify that reports rather than
+// repairs.
 
 import (
 	"bytes"
@@ -75,6 +86,34 @@ var ErrChangelogDiverged = errors.New("substrate/engine: the changelog file and 
 // nowhere else, so the answer is a restart.
 var ErrChangelogFileAhead = errors.New("substrate/engine: the changelog file is ahead of the table; restart the server so the boot check imports it")
 
+// ErrChangelogLocked is the refusal a process meets when another one holds a
+// repository's changelog writer lock: the operator ran `rebuild` or `user
+// reset` beside a running server. It wraps changelogfile.ErrLocked.
+var ErrChangelogLocked = errors.New("substrate/engine: another process holds the repository's changelog writer lock; stop the server before running this command")
+
+// ErrDirectoryReadOnly is the refusal every write meets on a service opened
+// with WithDirectoryReadOnly: this process is not the directory's writer.
+var ErrDirectoryReadOnly = errors.New("substrate/engine: the service is open read-only (WithDirectoryReadOnly) and refuses to write")
+
+// writerErr classifies an error from opening a repository's changelog for
+// writing: another process's lock is named as such, the operator's cue to stop
+// the server; damage keeps its own name.
+func writerErr(err error) error {
+	if errors.Is(err, changelogfile.ErrLocked) {
+		return fmt.Errorf("%w: %w", ErrChangelogLocked, err)
+	}
+	return err
+}
+
+// directoryOpenErr is writerErr for changelogfile.Open, whose torn-tail cut
+// runs under the lock: locked is locked, anything else is divergence.
+func directoryOpenErr(err error) error {
+	if errors.Is(err, changelogfile.ErrLocked) {
+		return writerErr(err)
+	}
+	return fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
+}
+
 // tailCompareEntries is how many entries of the common tail the head
 // comparison checks entry by entry. A divergence anywhere below the tail is
 // what `repository verify` walks for; the tail is what a crash can touch.
@@ -86,6 +125,9 @@ const (
 	reconcileCaughtUp = "caught up"
 	reconcileImported = "imported"
 	reconcileWroteDir = "wrote directory"
+	// reconcileSkipped is a directory with no row and no manifest: nothing
+	// says whose it is, so it is neither imported nor deleted.
+	reconcileSkipped = "skipped: no manifest"
 )
 
 // reconcileOutcome is what the boot check did for one repository.
@@ -153,6 +195,10 @@ func (s *service) logReconcile(out reconcileOutcome) {
 	if out.TruncatedBytes > 0 {
 		attrs = append(attrs, "truncatedBytes", out.TruncatedBytes)
 	}
+	if out.Action == reconcileSkipped {
+		s.log.Warn("substrate: repository directory has no row and no manifest; left alone", attrs...)
+		return
+	}
 	s.log.Info("substrate: repository directory checked", attrs...)
 }
 
@@ -210,8 +256,9 @@ func (s *service) bareDataset(repo Repository, db *sql.DB, dir string) *dataset 
 // directory: it opens the changelog (repairing a torn tail), compares heads and
 // the common tail, appends what the table has and the file lacks, imports what
 // the file has and the table lacks when allowed, and then mirrors the sealed
-// store in the same direction. The dataset's writer, when it has one, is used
-// for the append; otherwise a writer is opened over the log and closed.
+// store in the same direction. It runs on a bare dataset, which has no writer:
+// the writer an append needs is opened over the log and closed with the
+// append, so the lock it holds is released before any dataset opens its own.
 func (ds *dataset) reconcileDir(ctx context.Context, out *reconcileOutcome, allowImport bool) error {
 	tableHead, err := tableChangelogHead(ctx, ds.db)
 	if err != nil {
@@ -219,7 +266,7 @@ func (ds *dataset) reconcileDir(ctx context.Context, out *reconcileOutcome, allo
 	}
 	log, err := changelogfile.Open(changelogfile.ChangelogDir(ds.dir))
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
+		return directoryOpenErr(err)
 	}
 	out.TruncatedBytes = log.TruncatedBytes
 	fileHead := log.Head()
@@ -229,14 +276,14 @@ func (ds *dataset) reconcileDir(ctx context.Context, out *reconcileOutcome, allo
 	out.Action = reconcileOK
 	switch {
 	case tableHead > fileHead:
-		w := ds.writer
-		if w == nil {
-			if w, err = log.Writer(ds.svc.writerOptions()); err != nil {
-				return err
-			}
-			defer func() { _ = w.Close() }()
+		w, err := log.Writer(ds.svc.writerOptions())
+		if err != nil {
+			return writerErr(err)
 		}
 		n, err := appendFromTable(ctx, ds.db, w, fileHead)
+		if cerr := w.Close(); err == nil {
+			err = cerr
+		}
 		if err != nil {
 			return err
 		}
@@ -317,16 +364,20 @@ func compareTails(ctx context.Context, q dbx, log *changelogfile.Log, head int64
 	return nil
 }
 
-// appendFromTable appends every table row above the writer's head to the
-// file, in pages, and returns how many it wrote.
+// appendFromTable appends every table row above the writer's head (after) to
+// the file, in pages, and returns how many it wrote.
 //
 // A row whose stamped `hash` is not the checksum of what it holds is
-// RE-STAMPED as it is written out. That is the one-time migration from the
-// store this replaced, whose `hash` was a chain hash no line can carry
-// (decision 0050): the file has nothing to compare such a row against, so the
-// row as it stands is what the file records, and the table's stamp is made to
-// agree with it. A row this binary wrote is already equal and is not touched.
+// RE-STAMPED only while the file is EMPTY (after == 0). That is the one-time
+// migration from the store this replaced, whose `hash` was a chain hash no
+// line can carry (decision 0050): the file has nothing to compare such a row
+// against, so the row as it stands is what the file records, and the table's
+// stamp is made to agree with it. Above a non-empty file every row was stamped
+// by this format, so a mismatch is a row whose content or stamp changed after
+// commit, and it is refused as divergence (case 4) rather than written out as
+// history.
 func appendFromTable(ctx context.Context, q dbx, w *changelogfile.Writer, after int64) (int64, error) {
+	migrating := after == 0
 	var n int64
 	for {
 		page, err := scanChecksumPage(ctx, q, after, rebuildBatch)
@@ -344,6 +395,9 @@ func appendFromTable(ctx context.Context, q dbx, w *changelogfile.Writer, after 
 				return n, fmt.Errorf("substrate/engine: seq %d does not encode as a changelog line: %w", e.Seq, err)
 			}
 			if !bytes.Equal(row.hash, sum[:]) {
+				if !migrating {
+					return n, fmt.Errorf("%w: seq %d: the table's checksum is not the checksum of the row it holds", ErrChangelogDiverged, e.Seq)
+				}
 				if _, err := q.ExecContext(ctx, `UPDATE changelog SET hash = $2 WHERE seq = $1`, e.Seq, sum[:]); err != nil {
 					return n, fmt.Errorf("substrate/engine: re-stamp the checksum of seq %d: %w", e.Seq, err)
 				}
@@ -479,6 +533,14 @@ func (ds *dataset) loadDeclarationsForReplay(ctx context.Context) error {
 // row is inserted first and the import is idempotent, so a crash anywhere in
 // between leaves a row whose file is ahead of its table, which the next boot
 // finishes.
+//
+// A directory with NO MANIFEST is skipped, logged and left where it is: without
+// one nothing says whose repository it is, so it can be neither imported nor
+// safely deleted, and an operator reads the log. A manifest that is present
+// and unreadable, or whose DEK the credential key does not open, refuses the
+// boot: the first would import under a guessed identity, the second would
+// import a repository whose sealed store no login could then open, and both
+// are better refused here than discovered by the user.
 func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcileOutcome, error) {
 	out := reconcileOutcome{Repository: id}
 	dir, err := changelogfile.RepoDir(s.dataRoot, id)
@@ -486,12 +548,22 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 		return out, err
 	}
 	m, err := changelogfile.ReadManifest(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		out.Action = reconcileSkipped
+		return out, nil
+	}
 	if err != nil {
 		return out, fmt.Errorf("a directory with no `repositories` row must carry a manifest to import: %w", err)
 	}
 	out.Username = m.Username
 	if m.ChangelogDialect > maxChangelogDialect {
 		return out, newerChangelogDialect(m.Username, m.ChangelogDialect)
+	}
+	if len(m.DEK) > 0 {
+		if _, err := s.unwrapDEK(m.DEK, m.ID); err != nil {
+			return out, fmt.Errorf("SUBSTRATE_CREDENTIAL_KEY does not open the DEK in the manifest of repository %s (%s): the directory was written under a different key, so importing it would leave a repository whose sealed store no login can open. Set the key the directory was written under, or move the directory out of the data root (%w)",
+				m.ID, m.Username, err)
+		}
 	}
 	if other, err := s.repositoryByUsername(ctx, m.Username); err == nil {
 		return out, fmt.Errorf("the manifest names username %q, which repository %s already holds", m.Username, other.ID)
@@ -713,15 +785,29 @@ func loadSealedFiles(ctx context.Context, q dbx, dir string) error {
 // serve: the directory must be at the table's head (a creation's directory
 // write racing a first open is the one way it can be behind, and it is caught
 // up here), never ahead, and the common tail must agree. It opens the
-// dataset's writer over the same scan.
+// dataset's writer over the same scan, which is where a second process meets
+// the running server's lock (ErrChangelogLocked).
+//
+// A read-only service opens the directory read-only and stops at the
+// comparison: it repairs no torn tail, appends nothing, mirrors nothing and
+// opens no writer. Either head may be ahead of the other, because the server
+// that owns the directory may be between a commit and its append, and only the
+// common tail is held to agree.
 func (ds *dataset) openDirectory(ctx context.Context) error {
 	tableHead, err := tableChangelogHead(ctx, ds.db)
 	if err != nil {
 		return err
 	}
+	if ds.svc.readOnly {
+		log, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(ds.dir))
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
+		}
+		return compareTails(ctx, ds.db, log, min(tableHead, log.Head()))
+	}
 	log, err := changelogfile.Open(changelogfile.ChangelogDir(ds.dir))
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
+		return directoryOpenErr(err)
 	}
 	if log.Head() > tableHead {
 		return fmt.Errorf("%w: file head %d, table head %d", ErrChangelogFileAhead, log.Head(), tableHead)
@@ -731,7 +817,7 @@ func (ds *dataset) openDirectory(ctx context.Context) error {
 	}
 	w, err := log.Writer(ds.svc.writerOptions())
 	if err != nil {
-		return err
+		return writerErr(err)
 	}
 	ds.writer = w
 	if tableHead > log.Head() {
@@ -758,25 +844,51 @@ func (ds *dataset) directoryErr() error {
 // happened, so the caller's write is durable in the tables, and every later
 // write is refused until a restart lets the boot check catch the directory
 // up.
+//
+// THE ORDER IS THE INVARIANT: sealed writes, then the changelog lines, then
+// sealed deletes, so that at every instant the sealed directory is a superset
+// of what the log references. A copy that reads sealed/ and then changelog/
+// (an rsync mid-flight, a crash between the three) can therefore hold a line
+// naming a ref whose file is already there, and never a line whose file is
+// not yet written or already gone.
 func (ds *dataset) mirrorAfterCommit(t *txn) {
+	writes, deletes := splitSealedOps(t.sealedMirror)
+	if err := applySealedMirror(ds.dir, writes); err != nil {
+		ds.latchDirectoryErr(err)
+		return
+	}
 	if len(t.pending) > 0 {
-		entries := make([]changelogfile.Entry, 0, len(t.pending))
+		lines := make([]changelogfile.Line, 0, len(t.pending))
 		for _, e := range t.pending {
-			entries = append(entries, e.fileEntry())
+			lines = append(lines, changelogfile.Line{Seq: e.Seq, Bytes: e.Line})
 		}
-		if err := ds.writer.Append(entries); err != nil {
-			ds.latchDirectoryErr(fmt.Errorf("append seq %d..%d: %w", entries[0].Seq, entries[len(entries)-1].Seq, err))
+		if err := ds.writer.AppendLines(lines); err != nil {
+			ds.latchDirectoryErr(fmt.Errorf("append seq %d..%d: %w", lines[0].Seq, lines[len(lines)-1].Seq, err))
 			return
 		}
 	}
-	if err := applySealedMirror(ds.dir, t.sealedMirror); err != nil {
+	if err := applySealedMirror(ds.dir, deletes); err != nil {
 		ds.latchDirectoryErr(err)
 	}
 }
 
+// splitSealedOps separates a transaction's sealed writes from its deletes,
+// each in the order recorded, for mirrorAfterCommit's ordering.
+func splitSealedOps(ops []sealedMirrorOp) (writes, deletes []sealedMirrorOp) {
+	for _, op := range ops {
+		if op.delete {
+			deletes = append(deletes, op)
+		} else {
+			writes = append(writes, op)
+		}
+	}
+	return writes, deletes
+}
+
 // mirrorSealedNow applies sealed operations for a write that ran outside
-// inTx (a refreshed token, a teardown's deletes), under the same mutex and
-// the same latch.
+// inTx (a refreshed token, a teardown's deletes, a TOTP step consume), under
+// the same mutex and the same latch. A dataset with no writer (read-only, or
+// the creation dataset) mirrors nothing; the boot check writes the table out.
 func (ds *dataset) mirrorSealedNow(ops []sealedMirrorOp) {
 	if ds.writer == nil || len(ops) == 0 {
 		return
@@ -800,19 +912,4 @@ func (ds *dataset) latchDirectoryErr(cause error) {
 	ds.fileErr = fmt.Errorf("%w: repository %s: %w", ErrChangelogFileBehind, ds.info.Name, cause)
 	ds.svc.log.Error("substrate: the repository directory fell behind the tables; refusing writes until restart",
 		"repository", ds.scope.Repository, "username", ds.info.Name, "error", cause)
-}
-
-// mirrorSealedByRef writes one sealed row's file for a service-level write
-// that ran on the maintenance pool with no dataset in hand (the TOTP step
-// consume). It is best effort in the same sense as the dataset's mirror: the
-// row is committed, and a failure is logged for the boot check to close.
-func (s *service) mirrorSealedByRef(repoID string, rec changelogfile.SealedRecord) {
-	dir, err := changelogfile.RepoDir(s.dataRoot, repoID)
-	if err == nil {
-		err = changelogfile.WriteSealed(dir, rec)
-	}
-	if err != nil {
-		s.log.Error("substrate: could not mirror a sealed row to the repository directory; the boot check will rewrite it",
-			"repository", repoID, "ref", rec.Ref, "error", err)
-	}
 }

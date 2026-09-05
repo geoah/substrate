@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 )
 
 // The data root's layout: `<root>/repositories/<id>/` holds one repository,
@@ -82,10 +83,11 @@ func EnsureRepoDir(root, id string) (string, error) {
 }
 
 // ListRepositoryDirs returns the ids of the repository directories under
-// root, in name order. A missing `repositories/` lists as empty; files are
-// ignored; a directory whose name is not a repository id is refused, because
-// a directory the boot check silently skipped would be a repository that
-// never imports.
+// root, in name order. A missing `repositories/` lists as empty; files and
+// dot-prefixed directories (a filesystem's `.snapshot`, a sync tool's state)
+// are ignored, because no repository id starts with a dot; any other directory
+// whose name is not a repository id is refused, because a directory the boot
+// check silently skipped would be a repository that never imports.
 func ListRepositoryDirs(root string) ([]string, error) {
 	if err := checkRoot(root); err != nil {
 		return nil, err
@@ -99,7 +101,7 @@ func ListRepositoryDirs(root string) ([]string, error) {
 	}
 	var ids []string
 	for _, e := range entries {
-		if !e.IsDir() {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
 		if err := checkRepositoryID(e.Name()); err != nil {

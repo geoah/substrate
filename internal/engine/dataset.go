@@ -398,6 +398,12 @@ type txn struct {
 }
 
 func (ds *dataset) inTx(ctx context.Context, actor substrate.Actor, internal bool, fn func(*txn) error) error {
+	// A read-only process is not the directory's writer, so it appends
+	// nothing to the tables either: a row it committed would be one the file
+	// never receives until the server's next boot (repodir.go).
+	if ds.svc.readOnly {
+		return ErrDirectoryReadOnly
+	}
 	// A directory that fell behind the tables refuses every write until a
 	// restart: the boot check is the one repair path (repodir.go).
 	if err := ds.directoryErr(); err != nil {
@@ -624,6 +630,9 @@ func metaKeyAllowed(actor substrate.Actor, key string) error {
 // changelog entry, the shape a re-key or a maintenance read needs. It
 // settles nothing on purpose: fn must not fold.
 func (ds *dataset) inRawTx(ctx context.Context, fn func(*txn) error) error {
+	if ds.svc.readOnly {
+		return ErrDirectoryReadOnly
+	}
 	tx, err := ds.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err

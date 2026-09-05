@@ -60,10 +60,13 @@ and why a large repository catches up over minutes rather than in one call.
 
 --all ignores the stored provenance and queues everything. It is the answer to
 a gateway swapped behind an unchanged provider row and model name, which
-nothing stored can tell apart.`,
+nothing stored can tell apart.
+
+It runs beside a live server: the engine opens read-only against the data
+root, and the queue rows it writes are not changelog entries.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			svc, err := a.openEngineRead(cmd.Context())
+			svc, err := a.openEngineReadOnly(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -256,12 +259,17 @@ repository's write lock for the duration and runs as ONE transaction: a rebuild
 either replaces the fold or leaves it exactly as it was. Run 'repository
 verify' first to see whether the changelog it would replay is intact.
 
+STOP THE SERVER FIRST. The rebuild opens the repository as its changelog
+writer, and a running server holds that lock; the command refuses rather than
+write beside it. 'repository inspect' and 'repository verify' run beside a
+live server; this does not.
+
 Blobs and sealed material are SIDE STORES: their bytes were never in the changelog
 and are re-linked, not regenerated. The repository directory holds all three,
 which is why it is the backup unit.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			svc, err := a.openEngineRead(cmd.Context())
+			svc, err := a.openEngineExclusive(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -272,7 +280,7 @@ which is why it is the backup unit.`,
 			}
 			report, err := r.RebuildRepository(cmd.Context(), args[0])
 			if err != nil {
-				return err
+				return lockHint(err)
 			}
 			fmt.Fprintf(a.out, "repository %s rebuilt\n", report.Username)
 			fmt.Fprintf(a.out, "  id:       %s\n", report.Repository)
@@ -297,9 +305,14 @@ is walked from seq 1 to the head in one read-only snapshot: the sequence must
 be gapless, and every entry's checksum, recomputed from the stored row, must
 equal the one stamped when the entry was written and the one the file's line
 carries. Both heads must agree, and every sealed row must have its file and
-every sealed file its row. It never repairs or touches the repository it judges
+every sealed file its row.
+
+It never repairs or touches the repository it judges, and it runs beside a live
+server: the engine opens read-only against the data root, so a torn tail or a
+table ahead of its file is reported as a finding, never cut or caught up
 (opening the engine still applies any pending schema migration, as every
-operator command does).
+operator command does). Against a server that is mid-write a finding about the
+heads can be a transaction in flight; run it again before believing it.
 
 The checksum catches corruption, not tampering: whoever holds the disk can
 rewrite a line and its checksum together.
@@ -307,7 +320,7 @@ rewrite a line and its checksum together.
 Exits nonzero when anything does not verify.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			svc, err := a.openEngineRead(cmd.Context())
+			svc, err := a.openEngineReadOnly(cmd.Context())
 			if err != nil {
 				return err
 			}

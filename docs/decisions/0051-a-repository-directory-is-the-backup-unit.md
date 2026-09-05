@@ -54,8 +54,10 @@ At boot the server compares every directory with every `repositories` row.
 Equal heads open; a table ahead of its file catches the file up; a file ahead
 of its table, or a directory with no row, imports; a seq present in both with
 different checksums, or a finished segment whose sidecar does not match,
-refuses that repository and names the seq or the file. Import is the only
-restore path, and `repository rebuild` replays from the files.
+refuses the whole boot and names the repository and the seq or the file. One
+refusal an operator reads is simpler than a repository half-open beside the
+others, and that is the v1 trade. Import is the only restore path, and
+`repository rebuild` replays from the files.
 
 ### Consequences
 
@@ -63,15 +65,19 @@ restore path, and `repository rebuild` replays from the files.
   the credential key separately.
 - Good, because finished segments and blobs never change and the manifest,
   sidecars and sealed files are replaced atomically, so a copy taken
-  mid-write is either consistent or short by one torn line the importer
-  discards.
+  mid-write is usually consistent or short by one torn line the importer
+  discards. Not always: a copy that catches a segment as it is finished can
+  hold a sidecar that does not match it yet, so the procedure is to run
+  `repository verify` on the copy and retake one that fails.
 - Bad, because the root is as private as its mode: anything that can read it
   can read every repository's blobs and every changelog in the clear
   ([0031](0031-blob-bytes-outside-postgres-are-stored-plaintext.md)). Encrypt
   the volume or the copy.
 - Bad, because runtime state (trigger cursors, paged cursors, embeddings,
-  OAuth flows in flight) is not in the directory and does not come back;
-  triggers resume from the head after an import.
+  OAuth flows in flight) is not in the directory and does not come back.
+  Imported into an empty database, triggers start at the head; imported over
+  an older database dump, the dump's cursors stand and every entry since the
+  dump is delivered again.
 - Bad, because a restore onto a host with a different credential key needs
   the age identity and a tool that does not exist yet
   ([#137](https://github.com/geoah/substrate/issues/137)).

@@ -241,10 +241,13 @@ on the box, through the DSN.
   inserts the missing entries with their checksums and folds them through
   `fold.go` (this is the restore path, and the only one); a seq present in
   both with different checksums, a line whose `sum` does not verify or a
-  finished segment whose sidecar does not match **refuses that repository**,
-  naming the seq or the file, and repairs nothing; a row with no directory
-  has its directory written out from the tables, once, which is how a store
-  from a release before the data root gets one.
+  finished segment whose sidecar does not match **refuses the boot**, naming
+  the repository and the seq or the file, and repairs nothing (one refusal an
+  operator reads, rather than a repository half-open beside the others); a
+  row with no directory has its directory written out from the tables, once,
+  which is how a store from a release before the data root gets one. A
+  directory with no row and no `repository.json` is logged and left alone:
+  nothing says whose it is, so it is neither imported nor deleted.
 - **Shipped vocabulary is upgraded, per repository, in one transaction**: the
   first open under a new binary appends the version diff to that repository's
   changelog under the `substrate` actor
@@ -262,8 +265,10 @@ row-level-security-bound pool a request uses.
 Keep it to **one replica**. The watch signal and the trigger dispatcher are
 in-process, and two dispatchers would serialize on compare-and-swap rather than
 scale. The segment files lean on the same shape: one writer process per data
-root, so no second process ever appends to the active segment behind the
-first one's back.
+root. The writer holds an exclusive advisory lock on
+`<repository>/changelog/.lock` for as long as the repository is open, so a
+second process that opens a repository for writing is refused with a named
+error instead of appending behind the first one's back.
 
 ## Upgrading the binary
 
@@ -350,11 +355,17 @@ files, the `records` table is their fold, and both are rebuilt on import. A
 copy of the directory and the key that opens its sealed files is a complete
 backup.
 
-**Copy the root at any moment.** Finished segments and blobs never change, the
-active segment only grows, and the manifest, the sidecars and the sealed files
-are replaced atomically, so a copy taken mid-write is either consistent or
-short by one torn last line, which the importer discards. A cron running this
-is enough:
+**Copy the root at any moment, then verify the copy.** Finished segments and
+blobs never change, the active segment only grows, and the manifest, the
+sidecars and the sealed files are replaced atomically, so a copy taken
+mid-write is usually consistent or short by one torn last line, which the
+importer discards. Two windows remain: a copy that reads a segment while the
+server finishes it can hold the segment with a sidecar that does not match
+yet, and a copy that reads `sealed/` before `changelog/` can hold a line whose
+sealed file it missed. So a copy is a backup once `repository verify` passes
+on it (boot a scratch server over the copy with an empty database, which
+imports it, then verify); one that fails is retaken. A cron running this is
+enough:
 
 ```
 rsync -a --delete "$SUBSTRATE_DATA_ROOT"/ backup-host:/srv/substrate-backup/
@@ -399,16 +410,23 @@ DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository verify ada     
 ```
 
 A directory whose files do not verify (a bad `sum`, a sidecar that does not
-match) is refused at boot with the seq or the file named, and the other
-repositories open; restore that one from an older copy. Under the `s3` blob
-store the bucket is the second artifact: restore it too, or the manifests come
-back `stored` with no bytes behind them.
+match) refuses the boot with the repository and the seq or the file named;
+move that directory out of the root or restore it from an older copy, then
+boot again. A directory whose `repository.json` carries a DEK the host's
+`SUBSTRATE_CREDENTIAL_KEY` does not open refuses the boot the same way, naming
+the repository and the variable, because importing it would create a
+repository no login could open. Under the `s3` blob store the bucket is the
+second artifact: restore it too, or the manifests come back `stored` with no
+bytes behind them.
 
 **What does not come back.** Runtime state is not in the directory: trigger
-cursors, paged cursors, embeddings and OAuth flows in flight. Triggers resume
-from the head after an import, so a delivery that had not settled before the
-copy does not run; embeddings are re-bought by the drain loop; a consent flow
-in flight is started again. A user's tokens are records, so they come back.
+cursors, paged cursors, embeddings and OAuth flows in flight. On an import
+into an empty database triggers start at the head, so a delivery that had not
+settled before the copy does not run. On an import of a newer directory over
+an older database dump the cursors the dump holds stay where they were, so
+every entry since the dump is delivered again. Embeddings are re-bought by the
+drain loop; a consent flow in flight is started again. A user's tokens are
+records, so they come back.
 
 **Encrypt the copy.** The changelog and the blobs are plaintext in the
 directory, on the backup host and in the dump alike. The substrate does not
@@ -420,6 +438,14 @@ Operator commands (the "operator hat" of
 [substratectl](substratectl.md#two-hats)) speak to Postgres and the data root
 directly and hold no token. They need `--dsn` (or `DATABASE_URL`) and
 `SUBSTRATE_DATA_ROOT`, and refuse before touching anything without them.
+
+**Three of them run beside a live server; two need it stopped.** `repository
+list`, `repository inspect` and `repository verify` read: `verify` opens the
+engine read-only, so it runs no boot check, appends nothing and reports a torn
+tail or a table ahead of its file as a finding instead of repairing it.
+`repository rebuild` and `user reset` write, so each opens the repository as
+its changelog writer, and a running server holds that lock: the command
+refuses, naming the lock, until the server is stopped.
 
 ```
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository list
@@ -458,9 +484,11 @@ the exec path needs nothing open at all.
   against each other. It reports the head `(seq, checksum)` or every finding
   by seq or file name, never repairs the repository it judges (opening the
   engine still applies pending schema migrations, as every operator command
-  does), and exits nonzero on any finding. Run it on every restored copy and
-  before and after a Postgres major upgrade. It proves the files are
-  undamaged and agree with the table; it does not prove who wrote them
+  does), and exits nonzero on any finding. It is safe beside a running
+  server; a finding about the heads taken mid-write can be a transaction in
+  flight, so run it twice before believing one. Run it on every restored
+  copy and before and after a Postgres major upgrade. It proves the files
+  are undamaged and agree with the table; it does not prove who wrote them
   ([the checksum](changelog.md#the-checksum-and-the-segment-files)).
 - **`repository rebuild <username>`** replays the segment files into a fresh
   fold, in one transaction, under that repository's own lock, after running
@@ -469,7 +497,9 @@ the exec path needs nothing open at all.
   that the directory alone reproduces the records. It does not touch blobs or
   sealed files, which were never in the changelog, and it leaves runtime
   state (trigger cursors, OAuth flows) alone, because a cursor is a
-  consumer's position in the changelog, not a fold of it.
+  consumer's position in the changelog, not a fold of it. Stop the server
+  first: it opens the repository as its changelog writer and refuses while
+  the server holds the lock.
 - **`blobs migrate`** moves blob bytes from one store to another, one
   repository at a time, and is the only way across a
   `SUBSTRATE_BLOB_STORE` change: see [the blob store](#the-blob-store). It
@@ -478,7 +508,9 @@ the exec path needs nothing open at all.
 - **`user reset <username>`** is the answer to a user who has lost both
   factors. It writes fresh sealed material and a new credential record and
   prints a fresh TOTP enrollment. The data is untouched; the account gets new
-  keys. There is no self-serve recovery, deliberately.
+  keys. There is no self-serve recovery, deliberately. Like `rebuild` it
+  needs the server stopped, because the credential record is a changelog
+  entry.
 
 `user reset` refuses on a deployment whose `SUBSTRATE_CREDENTIAL_KEY` the
 container was not created with, because it writes sealed material. Set the key

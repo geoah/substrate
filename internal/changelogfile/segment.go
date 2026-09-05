@@ -83,8 +83,9 @@ func parseSegmentName(name string) (int64, bool) {
 
 // Segments lists the segments in a changelog directory in seq order. A
 // missing directory lists as empty. Files that are neither a segment nor a
-// sidecar are ignored, as is anything half-written; a `.ndjson` whose name
-// does not parse and a sidecar with no segment are refused.
+// sidecar are ignored, as is anything half-written and anything dot-prefixed
+// (the lock file, a filesystem's own artifacts); a `.ndjson` whose name does
+// not parse and a sidecar with no segment are refused.
 func Segments(dir string) ([]Segment, error) {
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -97,7 +98,7 @@ func Segments(dir string) ([]Segment, error) {
 	var sidecars []string
 	for _, e := range entries {
 		name := e.Name()
-		if e.IsDir() || strings.HasPrefix(name, tmpPrefix) {
+		if e.IsDir() || strings.HasPrefix(name, ".") {
 			continue
 		}
 		switch {

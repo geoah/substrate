@@ -22,6 +22,10 @@ var (
 	// on write, an entry whose seq is not the head plus one (a gap or a
 	// repeat); on read, a line whose seq is not the previous line's plus one.
 	ErrSeqGap = errors.New("changelogfile: seq does not continue the previous one")
+	// ErrLogStale is returned by Log.Writer when the directory no longer
+	// matches the Log's snapshot: another writer appended, rotated or repaired
+	// between Open and Writer. The caller opens the directory again.
+	ErrLogStale = errors.New("changelogfile: the changelog directory changed since it was opened")
 )
 
 // segment is a listed Segment plus what Open learned by reading it.
@@ -59,6 +63,10 @@ type Log struct {
 // which it truncates away and reports in TruncatedBytes. Any other damage is
 // a named error, and nothing is changed. A missing directory opens as an
 // empty log with head 0.
+//
+// The truncation is a write, so it is done under the directory's writer lock
+// and refused with ErrLocked while another process holds it: a line that
+// looks torn to a second process may be one the live writer is still writing.
 func Open(dir string) (*Log, error) { return open(dir, true) }
 
 // OpenReadOnly reads and checks a changelog directory exactly as Open does
@@ -112,7 +120,7 @@ func open(dir string, repair bool) (*Log, error) {
 			if end < s.Size {
 				l.TruncatedBytes = s.Size - end
 				if repair {
-					if err := truncateFile(path, end); err != nil {
+					if err := truncateLocked(dir, path, end); err != nil {
 						return nil, fmt.Errorf("changelogfile: %s: cut torn tail: %w", s.Name, err)
 					}
 					seg.Size = end
@@ -163,6 +171,17 @@ func scanActive(path, name string, first int64) (last, end int64, err error) {
 	return expected - 1, end, nil
 }
 
+// truncateLocked cuts path to size bytes under the directory's writer lock, so
+// a live writer's active segment is never cut from under it.
+func truncateLocked(dir, path string, size int64) error {
+	lock, err := lockDir(dir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lock.release() }()
+	return truncateFile(path, size)
+}
+
 // truncateFile cuts path to size bytes and fsyncs it.
 func truncateFile(path string, size int64) error {
 	f, err := os.OpenFile(path, os.O_WRONLY, fileMode)
@@ -178,6 +197,26 @@ func truncateFile(path string, size int64) error {
 
 // Head is the seq of the last entry, 0 for an empty log.
 func (l *Log) Head() int64 { return l.head }
+
+// unchanged reports whether the directory still lists exactly the segments
+// this Log was opened over, by name, state and size. It is Writer's check that
+// nothing appended, rotated or repaired between Open and the lock.
+func (l *Log) unchanged() (bool, error) {
+	now, err := Segments(l.dir)
+	if err != nil {
+		return false, err
+	}
+	if len(now) != len(l.segments) {
+		return false, nil
+	}
+	for i, s := range now {
+		was := l.segments[i].Segment
+		if s.Name != was.Name || s.Finished != was.Finished || s.Size != was.Size {
+			return false, nil
+		}
+	}
+	return true, nil
+}
 
 // Read returns the entries with seq greater than after, in order, at most
 // limit of them (every one when limit is not positive). It opens only the

@@ -309,3 +309,144 @@ func TestWriterRefusesALineOverTheCap(t *testing.T) {
 		t.Fatalf("a refused append created %v", segs)
 	}
 }
+
+// One writer per directory: a second OpenWriter on a locked directory is
+// refused with ErrLocked and the directory is untouched; once the first is
+// closed the second opens at the same head. The lock file is not a segment.
+func TestWriterLockRefusesASecondWriter(t *testing.T) {
+	dir := t.TempDir()
+	first, err := OpenWriter(dir, WriterOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Append(entriesFrom(1, 2)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, LockFileName)); err != nil {
+		t.Fatalf("no lock file after OpenWriter: %v", err)
+	}
+	if _, err := OpenWriter(dir, WriterOptions{}); !errors.Is(err, ErrLocked) {
+		t.Fatalf("second writer: err = %v, want ErrLocked", err)
+	}
+	// A read-only open and a verify pass beside a live writer, and neither
+	// lists the lock file as a segment.
+	if l, err := OpenReadOnly(dir); err != nil || l.Head() != 2 {
+		t.Fatalf("OpenReadOnly beside a writer: head %d, err %v", l.Head(), err)
+	}
+	if rep, err := Verify(dir); err != nil || rep.Segments != 1 || rep.Entries != 2 {
+		t.Fatalf("Verify beside a writer: %+v, %v", rep, err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	second, err := OpenWriter(dir, WriterOptions{})
+	if err != nil {
+		t.Fatalf("after Close the second writer must open: %v", err)
+	}
+	defer func() { _ = second.Close() }()
+	if second.Head() != 2 {
+		t.Fatalf("head = %d, want 2", second.Head())
+	}
+	if err := second.Append(entriesFrom(3, 1)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A torn tail is cut under the writer lock: a second process that finds one
+// while the writer holds the lock is refused rather than allowed to truncate
+// a line the writer may still be writing.
+func TestOpenRefusesToCutATornTailUnderAnotherWriter(t *testing.T) {
+	dir := t.TempDir()
+	w, err := OpenWriter(dir, WriterOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = w.Close() }()
+	if err := w.Append(entriesFrom(1, 1)); err != nil {
+		t.Fatal(err)
+	}
+	torn := encodeLine(t, entryAt(2))
+	appendRaw(t, filepath.Join(dir, SegmentName(1)), torn[:len(torn)/2])
+	if _, err := Open(dir); !errors.Is(err, ErrLocked) {
+		t.Fatalf("Open with a torn tail under another writer: err = %v, want ErrLocked", err)
+	}
+	// Read-only sees the tail and leaves it.
+	l, err := OpenReadOnly(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.Head() != 1 || l.TruncatedBytes != int64(len(torn)/2) {
+		t.Fatalf("head %d, truncated %d", l.Head(), l.TruncatedBytes)
+	}
+}
+
+// A Log whose directory moved between Open and Writer is refused: a writer
+// opened at a stale head would write seqs the file already holds.
+func TestLogWriterRefusesAStaleSnapshot(t *testing.T) {
+	dir := t.TempDir()
+	appendAll(t, dir, WriterOptions{}, entriesFrom(1, 2))
+	stale, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appendAll(t, dir, WriterOptions{}, entriesFrom(3, 1))
+	if _, err := stale.Writer(WriterOptions{}); !errors.Is(err, ErrLogStale) {
+		t.Fatalf("err = %v, want ErrLogStale", err)
+	}
+	fresh, err := OpenWriter(dir, WriterOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = fresh.Close() }()
+	if fresh.Head() != 3 {
+		t.Fatalf("head = %d, want 3", fresh.Head())
+	}
+}
+
+// AppendLines writes what Encode produced byte for byte, holds the same seq
+// rule, and refuses a line over the cap without writing anything.
+func TestWriterAppendLines(t *testing.T) {
+	dir := t.TempDir()
+	w, err := OpenWriter(dir, WriterOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = w.Close() }()
+	lines := []Line{{Seq: 1, Bytes: encodeLine(t, entryAt(1))}, {Seq: 2, Bytes: encodeLine(t, entryAt(2))}}
+	if err := w.AppendLines(lines); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.AppendLines([]Line{{Seq: 4, Bytes: encodeLine(t, entryAt(4))}}); !errors.Is(err, ErrSeqGap) {
+		t.Fatalf("gap: err = %v, want ErrSeqGap", err)
+	}
+	before := fileSize(t, filepath.Join(dir, SegmentName(1)))
+	over := Line{Seq: 3, Bytes: make([]byte, MaxLineBytes+1)}
+	if err := w.AppendLines([]Line{over}); !errors.Is(err, ErrLineTooLong) {
+		t.Fatalf("over the cap: err = %v, want ErrLineTooLong", err)
+	}
+	if after := fileSize(t, filepath.Join(dir, SegmentName(1))); after != before {
+		t.Fatalf("a refused line wrote %d bytes", after-before)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	l, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := l.Read(0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !equalSeqs(seqs(got), 1, 2) {
+		t.Fatalf("read %v", seqs(got))
+	}
+	want := append(append(append([]byte{}, lines[0].Bytes...), '\n'), append(lines[1].Bytes, '\n')...)
+	whole, err := os.ReadFile(filepath.Join(dir, SegmentName(1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(whole) != string(want) {
+		t.Fatal("AppendLines did not write the given bytes verbatim")
+	}
+}

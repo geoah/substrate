@@ -182,6 +182,9 @@ You choose the new password; the substrate issues the new TOTP enrollment and
 prints it exactly once. Hand both over out of band — and tell the user to
 change the password once they are back in.
 
+Stop the server first: the reset appends to the repository's changelog, so it
+opens the repository as its writer, and a running server holds that lock.
+
   DATABASE_URL=… substratectl user reset geoah`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -214,7 +217,7 @@ change the password once they are back in.
 			}
 			enrollment, err := r.ResetUser(cmd.Context(), username, password)
 			if err != nil {
-				return err
+				return lockHint(err)
 			}
 			fmt.Fprintf(a.out, "user %s reset\n", username)
 			fmt.Fprintln(a.out, "  the password is the one you just typed; the old one no longer works")
