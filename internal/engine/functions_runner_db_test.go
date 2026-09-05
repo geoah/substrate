@@ -53,7 +53,7 @@ func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, e
 	name, _ := in.Envelope.Record.Properties["name"].(string)
 	host.Logf("mirroring %s", c.ID)
 	return &substratefn.Result{Effects: []substratefn.Effect{{
-		Action: "put", Kind: "tasks.substrate.reamde.dev/task", ID: "t-" + c.ID,
+		Action: "put", Kind: "samples.substrate.reamde.dev/tasks/task", ID: "t-" + c.ID,
 		Properties: map[string]any{"name": name},
 	}}}, nil
 }
@@ -83,25 +83,25 @@ def main(input, host):
     p = e["properties"]
     mode = p.get("mode")
     if mode == "get":
-        got = host.get("widgets.test.dev/widget", p["target"])
+        got = host.get("widgets.test.dev/widgets/widget", p["target"])
         title = got["kind"] if got else "missing"
     elif mode == "list":
-        page = host.list(filter={"kinds": ["widgets.test.dev/widget"],
+        page = host.list(filter={"kinds": ["widgets.test.dev/widgets/widget"],
                                  "properties": {"name": {"eq": p["match"]}}}, first=10)
         title = str(len(page.get("records") or []))
     elif mode == "search":
-        hits = host.search(q=p["q"], mode="lexical", kinds=["widgets.test.dev/widget"], k=5)
+        hits = host.search(q=p["q"], mode="lexical", kinds=["widgets.test.dev/widgets/widget"], k=5)
         title = str(len(hits))
     elif mode == "forbidden":
-        host.list(filter={"kinds": ["tasks.substrate.reamde.dev/task"]})
+        host.list(filter={"kinds": ["samples.substrate.reamde.dev/tasks/task"]})
         title = "never"
     elif mode == "burn":
         for i in range(int(p["calls"])):
-            host.get("widgets.test.dev/widget", "nothing-" + str(i))
+            host.get("widgets.test.dev/widgets/widget", "nothing-" + str(i))
         title = "never"
     else:
         return {}
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "t-" + e["id"], "properties": {"name": title}}]}
 `
 
@@ -225,7 +225,7 @@ def main(input, host):
 const mintSource = `
 def main(input, host):
     c = input["envelope"]["change"]
-    return {"effects": [{"action": "put", "ifAbsent": True, "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "ifAbsent": True, "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "mint-" + c["id"], "properties": {"name": "pending"}}]}
 `
 
@@ -249,13 +249,13 @@ func TestTriggerEffectPutIfAbsent(t *testing.T) {
 
 	// Re-mention: the widget changes again, the mint re-fires, the task is
 	// untouched and nothing lands in the changelog under the function.
-	rows := len(actorChanges(t, ds, fnAuthority+"/mint"))
+	rows := len(actorChanges(t, ds, fnPackage+"/mint"))
 	mustPatch(t, ds, fnActor, w.Kind, w.ID, substrate.PatchInput{Properties: map[string]any{"name": "b"}})
 	process(t, ops)
 	if got := mustGet(t, ds, taskType, "mint-"+w.ID); got.Title != "owned downstream" {
 		t.Fatalf("ifAbsent put reset downstream state: %q", got.Title)
 	}
-	if got := len(actorChanges(t, ds, fnAuthority+"/mint")); got != rows {
+	if got := len(actorChanges(t, ds, fnPackage+"/mint")); got != rows {
 		t.Fatalf("ifAbsent no-op wrote: %d rows, had %d", got, rows)
 	}
 
@@ -315,7 +315,7 @@ def main(input, host):
     e = input["envelope"]["record"]
     p = e["properties"]
     target = p["target"] if p["wire"] == "point" else None
-    return {"effects": [{"action": "patch", "kind": "widgets.test.dev/gadget",
+    return {"effects": [{"action": "patch", "kind": "widgets.test.dev/widgets/gadget",
                          "id": e["id"], "properties": {"widget": target}}]}
 `))
 	ctx := context.Background()
@@ -345,10 +345,10 @@ const fuserSource = `
 def main(input, host):
     p = input["envelope"]["record"]["properties"]
     if p.get("op") == "merge":
-        return {"effects": [{"action": "merge", "kind": "tasks.substrate.reamde.dev/task",
+        return {"effects": [{"action": "merge", "kind": "samples.substrate.reamde.dev/tasks/task",
                              "id": p["winner"], "loser": p["loser"]}]}
     if p.get("op") == "split":
-        return {"effects": [{"action": "split", "kind": "tasks.substrate.reamde.dev/task",
+        return {"effects": [{"action": "split", "kind": "samples.substrate.reamde.dev/tasks/task",
                              "merge": p["record"]}]}
     return {}
 `
@@ -410,8 +410,8 @@ func TestTriggerEffectMergeAndSplit(t *testing.T) {
 
 	// The merge record is the function's own write, found via the changelog.
 	var recordID string
-	for _, ch := range actorChanges(t, ds, fnAuthority+"/fuser") {
-		if ch.Kind == "core.substrate.reamde.dev/recordmerge" {
+	for _, ch := range actorChanges(t, ds, fnPackage+"/fuser") {
+		if ch.Kind == "substrate.reamde.dev/core/recordmerge" {
 			recordID = ch.RecordID
 		}
 	}

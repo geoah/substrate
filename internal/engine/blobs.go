@@ -36,7 +36,7 @@ func blobLockKey(digest string) string { return "blob|" + digest }
 // kindBlob is the shipped blob manifest type: the metadata half of the
 // content-addressed store. The bytes live in the `blobs` byte
 // table; this record is their manifest, keyed by the same digest.
-const kindBlob = "core.substrate.reamde.dev/blob"
+const kindBlob = "substrate.reamde.dev/core/blob"
 
 // The blob record's manifest property names.
 const (

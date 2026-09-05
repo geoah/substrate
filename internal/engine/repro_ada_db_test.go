@@ -14,8 +14,8 @@ func TestReproAdaCreate(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
-	_, err := ds.Put(context.Background(), "google.connectors.substrate.reamde.dev/people", substrate.PutInput{
-		Kind: "google.connectors.substrate.reamde.dev/contact",
+	_, err := ds.Put(context.Background(), "google.connectors.substrate.reamde.dev/google/people", substrate.PutInput{
+		Kind: "google.connectors.substrate.reamde.dev/google/contact",
 		ID:   "people-c1001",
 		Properties: map[string]any{
 			"name": map[string]any{"displayName": "Ada Lovelace", "firstName": "Ada", "lastName": "Lovelace"},

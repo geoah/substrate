@@ -1,7 +1,7 @@
 package engine
 
 // The WHOOP bundle — the sync-only wearable integration. Three proofs, from
-// the shipped closure at ../../kinds/whoop.bundles.substrate.reamde.dev:
+// the shipped closure at ../../kinds/providers.substrate.reamde.dev/whoop:
 //
 //  1. TestWhoopBundleAdmitsSchema — the closure ADMITS through the schema
 //     loader: the bundle declares the `client` input (facility-read, never
@@ -49,15 +49,14 @@ import (
 )
 
 const (
-	whoopExampleDir   = "../../kinds/whoop.bundles.substrate.reamde.dev"
-	whoopAuthority    = "whoop.bundles.substrate.reamde.dev"
-	whoopBundleRow    = whoopAuthority + "/whoop"
-	whoopConfigType   = whoopAuthority + "/config"
-	whoopAccountType  = whoopAuthority + "/account"
-	whoopRecoveryType = whoopAuthority + "/recovery"
-	whoopSleepType    = whoopAuthority + "/sleep"
-	whoopWorkoutType  = whoopAuthority + "/workout"
-	whoopSyncFn       = whoopAuthority + "/whoopsync"
+	whoopExampleDir   = "../../kinds/providers.substrate.reamde.dev/whoop"
+	whoopPackage      = "providers.substrate.reamde.dev/whoop"
+	whoopConfigType   = whoopPackage + "/config"
+	whoopAccountType  = whoopPackage + "/account"
+	whoopRecoveryType = whoopPackage + "/recovery"
+	whoopSleepType    = whoopPackage + "/sleep"
+	whoopWorkoutType  = whoopPackage + "/workout"
+	whoopSyncFn       = whoopPackage + "/whoopsync"
 
 	whoopProdBase = "https://api.prod.whoop.com"
 )
@@ -71,7 +70,7 @@ func TestWhoopBundleAdmitsSchema(t *testing.T) {
 	// alone) plus the shipped VOCABULARY bundles this repository imported —
 	// what a closure declaring onto people/tasks/messaging/calendar/media
 	// needs present, and what `requires:` names.
-	reg, err := enginetest.SeededRegistry("../../kinds/core.substrate.reamde.dev")
+	reg, err := enginetest.SeededRegistry("../../kinds/substrate.reamde.dev/core")
 	if err != nil {
 		t.Fatalf("build the repository registry: %v", err)
 	}
@@ -83,7 +82,7 @@ func TestWhoopBundleAdmitsSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse bundle.yaml: %v", err)
 	}
-	authorities, err := vocabulary.BuildAuthorities(docs, vocabulary.SourceInstalled)
+	authorities, err := vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
 	if err != nil {
 		t.Fatalf("build the bundle authority: %v", err)
 	}
@@ -93,9 +92,9 @@ func TestWhoopBundleAdmitsSchema(t *testing.T) {
 
 	// The bundle exists and declares the `client` input the oauth2 block
 	// names: facility-read, so it must NOT inject.
-	b, ok := reg.BundleOf(whoopAuthority)
+	b, ok := reg.BundleOf(whoopPackage)
 	if !ok {
-		t.Fatalf("no bundle owns %s after install", whoopAuthority)
+		t.Fatalf("no bundle owns %s after install", whoopPackage)
 	}
 	in, ok := b.Inputs["client"]
 	if !ok {
@@ -256,13 +255,13 @@ func TestWhoopBundleInstalls(t *testing.T) {
 
 	// The bundle row and every schema member landed as its own record.
 	for id, wantType := range map[string]string{
-		whoopBundleRow:    "core.substrate.reamde.dev/bundle",
-		whoopConfigType:   "core.substrate.reamde.dev/kind",
-		whoopAccountType:  "core.substrate.reamde.dev/kind",
-		whoopRecoveryType: "core.substrate.reamde.dev/kind",
-		whoopSleepType:    "core.substrate.reamde.dev/kind",
-		whoopWorkoutType:  "core.substrate.reamde.dev/kind",
-		whoopSyncFn:       "core.substrate.reamde.dev/function",
+		whoopPackage:      "substrate.reamde.dev/core/bundle",
+		whoopConfigType:   "substrate.reamde.dev/core/kind",
+		whoopAccountType:  "substrate.reamde.dev/core/kind",
+		whoopRecoveryType: "substrate.reamde.dev/core/kind",
+		whoopSleepType:    "substrate.reamde.dev/core/kind",
+		whoopWorkoutType:  "substrate.reamde.dev/core/kind",
+		whoopSyncFn:       "substrate.reamde.dev/core/function",
 	} {
 		row, err := ds.Get(ctx, wantType, id)
 		if err != nil {
@@ -274,7 +273,7 @@ func TestWhoopBundleInstalls(t *testing.T) {
 	}
 
 	// Computed status: installed, enabled, and the closure's member counts.
-	st, err := ds.BundleStatus(ctx, whoopAuthority)
+	st, err := ds.BundleStatus(ctx, whoopPackage)
 	if err != nil {
 		t.Fatalf("bundle status: %v", err)
 	}
@@ -497,8 +496,8 @@ func openWhoopOAuthDataset(t *testing.T, hc *http.Client) *dataset {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	svc, err := Open(ctx, dsn,
-		WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/core.substrate.reamde.dev"),
-		WithOAuth("test-state-key", "https://substrate.example/api/v1/core.substrate.reamde.dev/oauth/callback", hc),
+		WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		WithOAuth("test-state-key", "https://substrate.example/api/v1/substrate.reamde.dev/core/oauth/callback", hc),
 		WithCredentialKey(TestCredentialKey))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)

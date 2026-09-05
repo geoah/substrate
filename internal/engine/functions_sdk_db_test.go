@@ -24,12 +24,12 @@ func TestSDKBuilderEffectsAndIds(t *testing.T) {
 def main(input, host):
     a = input["args"]
     tid = host.ids.external("prov", a["account"], a["ext"])
-    host.effects.put("tasks.substrate.reamde.dev/task", tid,
+    host.effects.put("samples.substrate.reamde.dev/tasks/task", tid,
                      properties={"name": a["title"]}, if_absent=True)
     return {"output": {"id": tid}}
 `))
 	ctx := context.Background()
-	fn := fnAuthority + "/sdkbuild"
+	fn := fnPackage + "/sdkbuild"
 
 	out, n, err := ops.CallFunction(ctx, fn, map[string]any{
 		"account": "acct1", "ext": "rec/9", "title": "staged",
@@ -76,7 +76,7 @@ func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, e
 	a, _ := in.Args.(map[string]any)
 	id := host.IDs.External("prov", a["account"].(string), a["ext"].(string))
 	host.Effects.Put(substratefn.PutEffect{
-		Kind: "tasks.substrate.reamde.dev/task", ID: id,
+		Kind: "samples.substrate.reamde.dev/tasks/task", ID: id,
 		Properties: map[string]any{"name": a["title"]},
 		IfAbsent:   true,
 	})
@@ -84,7 +84,7 @@ func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, e
 }
 `))
 	ctx := context.Background()
-	out, n, err := ops.CallFunction(ctx, fnAuthority+"/gosdk", map[string]any{
+	out, n, err := ops.CallFunction(ctx, fnPackage+"/gosdk", map[string]any{
 		"account": "acct1", "ext": "rec/9", "title": "go-staged",
 	})
 	if err != nil {
@@ -113,12 +113,12 @@ func TestSDKBuilderMixedModeRejected(t *testing.T) {
 	ds, ops := newFnDataset(t, nil, pyFn("bothways", map[string]any{}, []any{taskType}, `
 def main(input, host):
     k = input["args"]["k"]
-    host.effects.put("tasks.substrate.reamde.dev/task", "staged-" + k, properties={"name": "staged"})
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    host.effects.put("samples.substrate.reamde.dev/tasks/task", "staged-" + k, properties={"name": "staged"})
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "returned-" + k, "properties": {"name": "returned"}}]}
 `))
 	ctx := context.Background()
-	_, _, err := ops.CallFunction(ctx, fnAuthority+"/bothways", map[string]any{"k": "1"})
+	_, _, err := ops.CallFunction(ctx, fnPackage+"/bothways", map[string]any{"k": "1"})
 	if err == nil || !strings.Contains(err.Error(), "not both") {
 		t.Fatalf("mixed mode: want the one-mode refusal, got %v", err)
 	}
@@ -138,20 +138,20 @@ func TestSDKBuilderStagedHandleReturnDoesNotKillHost(t *testing.T) {
 	ds, ops := newFnDataset(t, nil,
 		pyFn("badreturn", map[string]any{}, []any{taskType}, `
 def main(input, host):
-    h = host.effects.put("tasks.substrate.reamde.dev/task", "x", properties={"name": "t"})
+    h = host.effects.put("samples.substrate.reamde.dev/tasks/task", "x", properties={"name": "t"})
     return {"effects": [h]}  # a StagedEffect handle is not serializable
 `),
 		pyFn("goodafter", map[string]any{}, []any{taskType}, `
 def main(input, host):
-    host.effects.put("tasks.substrate.reamde.dev/task", "survivor", properties={"name": "ok"})
+    host.effects.put("samples.substrate.reamde.dev/tasks/task", "survivor", properties={"name": "ok"})
     return {}
 `))
 	ctx := context.Background()
-	if _, _, err := ops.CallFunction(ctx, fnAuthority+"/badreturn", map[string]any{}); err == nil {
+	if _, _, err := ops.CallFunction(ctx, fnPackage+"/badreturn", map[string]any{}); err == nil {
 		t.Fatalf("returning a staged handle should fail the delivery")
 	}
 	// The shared host survived: a subsequent delivery still works.
-	if _, _, err := ops.CallFunction(ctx, fnAuthority+"/goodafter", map[string]any{}); err != nil {
+	if _, _, err := ops.CallFunction(ctx, fnPackage+"/goodafter", map[string]any{}); err != nil {
 		t.Fatalf("shared host did not survive a bad return: %v", err)
 	}
 	if got := mustGet(t, ds, taskType, "survivor"); got.Title != "ok" {
@@ -168,11 +168,11 @@ def main(input, host):
     props = {}
     for i in range(3):
         props["name"] = "t%d" % i
-        host.effects.put("tasks.substrate.reamde.dev/task", "snap-%d" % i, properties=props)
+        host.effects.put("samples.substrate.reamde.dev/tasks/task", "snap-%d" % i, properties=props)
     return {}
 `))
 	ctx := context.Background()
-	if _, n, err := ops.CallFunction(ctx, fnAuthority+"/snap", map[string]any{}); err != nil || n != 3 {
+	if _, n, err := ops.CallFunction(ctx, fnPackage+"/snap", map[string]any{}); err != nil || n != 3 {
 		t.Fatalf("snapshot call: n=%d err=%v", n, err)
 	}
 	for i, want := range []string{"t0", "t1", "t2"} {
@@ -191,15 +191,15 @@ func TestSDKBuilderIfVersionSentinel(t *testing.T) {
 def main(input, host):
     mode = input["args"]["mode"]
     if mode == "omitted":
-        host.effects.put("tasks.substrate.reamde.dev/task", "v-omitted", properties={"name": "t"})
+        host.effects.put("samples.substrate.reamde.dev/tasks/task", "v-omitted", properties={"name": "t"})
     elif mode == "none":
-        host.effects.put("tasks.substrate.reamde.dev/task", "v-none", properties={"name": "t"}, if_version=None)
+        host.effects.put("samples.substrate.reamde.dev/tasks/task", "v-none", properties={"name": "t"}, if_version=None)
     elif mode == "zero":
-        host.effects.put("tasks.substrate.reamde.dev/task", "v-zero", properties={"name": "t"}, if_version=0)
+        host.effects.put("samples.substrate.reamde.dev/tasks/task", "v-zero", properties={"name": "t"}, if_version=0)
     return {}
 `))
 	ctx := context.Background()
-	fn := fnAuthority + "/ver"
+	fn := fnPackage + "/ver"
 
 	// Omitted → unguarded, applies.
 	if _, _, err := ops.CallFunction(ctx, fn, map[string]any{"mode": "omitted"}); err != nil {
@@ -233,13 +233,13 @@ func TestSDKBuilderLocalValidation(t *testing.T) {
 	_, ops := newFnDataset(t, nil,
 		pyFn("badid", map[string]any{}, []any{taskType}, `
 def main(input, host):
-    host.effects.put("tasks.substrate.reamde.dev/task", "people 123", properties={"name": "t"})
+    host.effects.put("samples.substrate.reamde.dev/tasks/task", "people 123", properties={"name": "t"})
     return {}
 `),
 		pyFn("selfmerge", map[string]any{"permissions": map[string]any{"mutations": []any{"merge"}}},
 			[]any{taskType}, `
 def main(input, host):
-    host.effects.merge("tasks.substrate.reamde.dev/task", "x", "x")
+    host.effects.merge("samples.substrate.reamde.dev/tasks/task", "x", "x")
     return {}
 `),
 		pyFn("nilmore", map[string]any{}, []any{taskType}, `
@@ -253,7 +253,7 @@ def main(input, host):
 		{"nilmore", "cursor is required"},
 	}
 	for _, tc := range cases {
-		if _, _, err := ops.CallFunction(ctx, fnAuthority+"/"+tc.fn, map[string]any{}); err == nil ||
+		if _, _, err := ops.CallFunction(ctx, fnPackage+"/"+tc.fn, map[string]any{}); err == nil ||
 			!strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("%s: want %q, got %v", tc.fn, tc.want, err)
 		}
@@ -273,7 +273,7 @@ import "substratefn.local/substratefn"
 func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, error) {
 	a, _ := in.Args.(map[string]any)
 	id, _ := a["id"].(string)
-	e, err := host.Records.Get("tasks.substrate.reamde.dev/task", id)
+	e, err := host.Records.Get("samples.substrate.reamde.dev/tasks/task", id)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +281,7 @@ func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, e
 		return &substratefn.Result{Output: map[string]any{"found": false}}, nil
 	}
 	host.Effects.Patch(substratefn.PatchEffect{
-		Kind: "tasks.substrate.reamde.dev/task", ID: id,
+		Kind: "samples.substrate.reamde.dev/tasks/task", ID: id,
 		Properties: map[string]any{"name": "guarded"},
 		IfVersion:  substratefn.Version(e.Version),
 	})
@@ -289,7 +289,7 @@ func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, e
 }
 `))
 	ctx := context.Background()
-	fn := fnAuthority + "/goguard"
+	fn := fnPackage + "/goguard"
 	task := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"name": "v"}})
 
 	// The typed read's version feeds a matching guarded patch — it applies.
@@ -324,15 +324,15 @@ func TestEffectIfVersionPrecondition(t *testing.T) {
 def main(input, host):
     a = input["args"]
     if a["action"] == "put":
-        host.effects.put("tasks.substrate.reamde.dev/task", a["id"],
+        host.effects.put("samples.substrate.reamde.dev/tasks/task", a["id"],
                          properties=a.get("properties"), if_version=a.get("ifVersion"))
     else:
-        host.effects.patch("tasks.substrate.reamde.dev/task", a["id"],
+        host.effects.patch("samples.substrate.reamde.dev/tasks/task", a["id"],
                            properties=a.get("properties"), if_version=a.get("ifVersion"))
     return {}
 `))
 	ctx := context.Background()
-	fn := fnAuthority + "/verwrite"
+	fn := fnPackage + "/verwrite"
 	call := func(args map[string]any) error {
 		_, _, err := ops.CallFunction(ctx, fn, args)
 		return err
@@ -396,13 +396,13 @@ func TestSDKProposeStagesChangeRequest(t *testing.T) {
 	ds, ops := newFnDataset(t, nil, pyFn("proposer", map[string]any{}, []any{requestKind}, `
 def main(input, host):
     a = input["args"]
-    host.effects.propose(a["id"], "tasks.substrate.reamde.dev/task", a["target"],
+    host.effects.propose(a["id"], "samples.substrate.reamde.dev/tasks/task", a["target"],
                          diff=a.get("diff"), op=a.get("op", "patch"),
                          rationale=a.get("rationale"))
     return {}
 `))
 	ctx := context.Background()
-	fn := fnAuthority + "/proposer"
+	fn := fnPackage + "/proposer"
 
 	task := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: taskType, ID: "t-proposed", Properties: map[string]any{"name": "draft"},
@@ -491,7 +491,7 @@ import "substratefn.local/substratefn"
 func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, error) {
 	a, _ := in.Args.(map[string]any)
 	host.Effects.Propose(substratefn.ProposeEffect{
-		ID: "req-go", TargetKind: "tasks.substrate.reamde.dev/task",
+		ID: "req-go", TargetKind: "samples.substrate.reamde.dev/tasks/task",
 		TargetID:  a["target"].(string),
 		Diff:      map[string]any{"description": "from Go"},
 		Rationale: "the mirror",
@@ -503,7 +503,7 @@ func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, e
 	task := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: taskType, ID: "t-go-proposed", Properties: map[string]any{"name": "draft"},
 	})
-	if _, _, err := ops.CallFunction(ctx, fnAuthority+"/goproposer", map[string]any{"target": task.ID}); err != nil {
+	if _, _, err := ops.CallFunction(ctx, fnPackage+"/goproposer", map[string]any{"target": task.ID}); err != nil {
 		t.Fatalf("call: %v", err)
 	}
 	req := mustGet(t, ds, requestKind, "req-go")

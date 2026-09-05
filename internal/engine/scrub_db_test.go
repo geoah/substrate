@@ -18,21 +18,21 @@ import (
 )
 
 const (
-	vAuthority  = "vault.bundles.substrate.reamde.dev"
-	vConfigType = vAuthority + "/vaultconfig"
+	vPackage    = "vault.bundles.substrate.reamde.dev/vault"
+	vConfigType = vPackage + "/vaultconfig"
 	vSecret     = "sk-live-supersecret-77"
 )
 
 // installVaultBundle stands up a bundle whose config carries one secret and
 // one plain property, plus a function that spills its config and one that
 // crashes with the secret in the exception text.
-const vNoteType = vAuthority + "/vaultnote"
+const vNoteType = vPackage + "/vaultnote"
 
 func installVaultBundle(t *testing.T) substrate.Dataset {
 	t.Helper()
 	_, ds := newDataset(t)
 	fn := func(name, source string) map[string]any {
-		return vocabulary.FunctionManifest(vAuthority, name, map[string]any{
+		return vocabulary.FunctionManifest(vPackage, name, map[string]any{
 			"description": "test function " + name,
 			"runtime":     vocabulary.RuntimePython,
 			"source":      source,
@@ -49,22 +49,22 @@ func installVaultBundle(t *testing.T) substrate.Dataset {
 		if call != nil {
 			data["permissions"].(map[string]any)["call"] = call
 		}
-		return vocabulary.FunctionManifest(vAuthority, name, data)
+		return vocabulary.FunctionManifest(vPackage, name, data)
 	}
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(vAuthority, 0),
-		vocabulary.BundleManifest(vAuthority, map[string]any{
+		vocabulary.PackageManifest(vPackage, 0),
+		vocabulary.BundleManifest(vPackage, map[string]any{
 			"description": "the vault bundle",
 			"inputs": map[string]any{
 				"connector": map[string]any{"kind": vConfigType, "inject": "functions"},
 			},
 			"installs": []any{
 				vConfigType, vNoteType,
-				vAuthority + "/spill", vAuthority + "/crash",
-				vAuthority + "/leakval", vAuthority + "/leakid", vAuthority + "/callerleak",
+				vPackage + "/spill", vPackage + "/crash",
+				vPackage + "/leakval", vPackage + "/leakid", vPackage + "/callerleak",
 			},
 		}),
-		vocabulary.KindManifest(vAuthority,
+		vocabulary.KindManifest(vPackage,
 			map[string]any{"singular": "vaultconfig", "plural": "vaultconfigs"},
 			map[string]any{
 				"properties": map[string]any{
@@ -72,7 +72,7 @@ func installVaultBundle(t *testing.T) substrate.Dataset {
 					"note":     map[string]any{"type": "string"},
 				},
 			}),
-		vocabulary.KindManifest(vAuthority,
+		vocabulary.KindManifest(vPackage,
 			map[string]any{"singular": "vaultnote", "plural": "vaultnotes"},
 			map[string]any{"properties": map[string]any{"text": map[string]any{"type": "string"}}}),
 		fn("spill", `
@@ -89,7 +89,7 @@ def main(input, host):
 		noteFn("leakval", nil, `
 def main(input, host):
     props = input["config"]["inputs"]["connector"]["properties"]
-    return {"effects": [{"action": "put", "kind": "vault.bundles.substrate.reamde.dev/vaultnote",
+    return {"effects": [{"action": "put", "kind": "vault.bundles.substrate.reamde.dev/vault/vaultnote",
                          "id": "leak-note", "properties": {"text": props["apiToken"]}}],
             "output": {}}
 `),
@@ -97,15 +97,15 @@ def main(input, host):
 		noteFn("leakid", nil, `
 def main(input, host):
     props = input["config"]["inputs"]["connector"]["properties"]
-    return {"effects": [{"action": "put", "kind": "vault.bundles.substrate.reamde.dev/vaultnote",
+    return {"effects": [{"action": "put", "kind": "vault.bundles.substrate.reamde.dev/vault/vaultnote",
                          "id": "leak-" + props["apiToken"], "properties": {"text": "x"}}],
             "output": {}}
 `),
 		// callerleak host-calls leakval: the callee's secret-bearing effect
 		// must be rejected at the host-Call boundary too.
-		noteFn("callerleak", []any{vAuthority + "/leakval"}, `
+		noteFn("callerleak", []any{vPackage + "/leakval"}, `
 def main(input, host):
-    host.call("vault.bundles.substrate.reamde.dev/leakval", {})
+    host.call("vault.bundles.substrate.reamde.dev/vault/leakval", {})
     return {"effects": [], "output": {}}
 `),
 	}
@@ -123,7 +123,7 @@ func TestScrubberHoldsFunctionOutput(t *testing.T) {
 	// The body sees the raw secret; the output crossing back out does not.
 	ctx := context.Background()
 	ds := installVaultBundle(t)
-	out, _, err := ds.(fnOps).CallFunction(ctx, vAuthority+"/spill", map[string]any{})
+	out, _, err := ds.(fnOps).CallFunction(ctx, vPackage+"/spill", map[string]any{})
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestScrubberHoldsErrorsAndParkedFailures(t *testing.T) {
 
 	// A crash whose exception text embeds the secret: the call error is
 	// scrubbed before anything (API response, run row) renders it.
-	_, _, err := ds.(fnOps).CallFunction(ctx, vAuthority+"/crash", map[string]any{})
+	_, _, err := ds.(fnOps).CallFunction(ctx, vPackage+"/crash", map[string]any{})
 	if err == nil {
 		t.Fatal("crash returned no error")
 	}
@@ -158,11 +158,11 @@ func TestScrubberHoldsErrorsAndParkedFailures(t *testing.T) {
 	// The same crash through a trigger: the parked-failure row and the
 	// parked run row hold the scrubbed text, never the raw secret.
 	tr := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/trigger",
+		Kind: "substrate.reamde.dev/core/trigger",
 		Properties: map[string]any{
 			"enabled":  true,
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{vConfigType}}},
-			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", vAuthority+"/crash"),
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", vPackage+"/crash"),
 		},
 	})
 	mustPatch(t, ds, owner, vConfigType, mustConfigID(t, ds), substrate.PatchInput{Properties: map[string]any{"note": "poke"}})
@@ -209,7 +209,7 @@ func TestScrubberRejectsSecretInEffectValue(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := installVaultBundle(t)
-	_, _, err := ds.(fnOps).CallFunction(ctx, vAuthority+"/leakval", map[string]any{})
+	_, _, err := ds.(fnOps).CallFunction(ctx, vPackage+"/leakval", map[string]any{})
 	if err == nil {
 		t.Fatal("a secret in an effect property value was applied")
 	}
@@ -223,7 +223,7 @@ func TestScrubberRejectsSecretInEffectID(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := installVaultBundle(t)
-	_, _, err := ds.(fnOps).CallFunction(ctx, vAuthority+"/leakid", map[string]any{})
+	_, _, err := ds.(fnOps).CallFunction(ctx, vPackage+"/leakid", map[string]any{})
 	if err == nil {
 		t.Fatal("a secret in an effect id was applied")
 	}
@@ -238,7 +238,7 @@ func TestScrubberRejectsSecretThroughHostCall(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := installVaultBundle(t)
-	_, _, err := ds.(fnOps).CallFunction(ctx, vAuthority+"/callerleak", map[string]any{})
+	_, _, err := ds.(fnOps).CallFunction(ctx, vPackage+"/callerleak", map[string]any{})
 	if err == nil {
 		t.Fatal("a callee's secret effect escaped through a host Call")
 	}
@@ -256,11 +256,11 @@ func TestScrubberRejectsSecretThroughParkedTrigger(t *testing.T) {
 	ctx := context.Background()
 	ds := installVaultBundle(t)
 	tr := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/trigger",
+		Kind: "substrate.reamde.dev/core/trigger",
 		Properties: map[string]any{
 			"enabled":  true,
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{vConfigType}}},
-			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", vAuthority+"/leakval"),
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", vPackage+"/leakval"),
 		},
 	})
 	mustPatch(t, ds, owner, vConfigType, mustConfigID(t, ds), substrate.PatchInput{Properties: map[string]any{"note": "poke"}})

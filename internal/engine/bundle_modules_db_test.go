@@ -2,7 +2,7 @@ package engine_test
 
 // The shared-module wiring end to end: a bundle ships a `modules:`
 // library and one of its functions imports it. The chain under test is
-// runnerSpec attaching BundleOf(fn.Authority).Modules → the runner writing the
+// runnerSpec attaching BundleOf(fn.Package).Modules → the runner writing the
 // module onto a bundle-scoped PYTHONPATH → the python body importing it.
 
 import (
@@ -13,7 +13,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-const mbImpFn = mbAuthority + "/imp"
+const mbImpFn = mbPackage + "/imp"
 
 // mbModuleDocs is the standard closure plus a function that imports the shared
 // module, and a `modules:` section carrying that module's source. Modules are
@@ -35,9 +35,9 @@ def main(input, host):
 		installs = append(installs, meta["id"].(string))
 	}
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(mbAuthority, 0),
-		vocabulary.ActorManifest(mbAuthority, vocabulary.AuthorityActor(mbAuthority)),
-		vocabulary.BundleManifest(mbAuthority, map[string]any{
+		vocabulary.PackageManifest(mbPackage, 0),
+		vocabulary.ActorManifest(mbPackage, vocabulary.PackageActor(mbPackage)),
+		vocabulary.BundleManifest(mbPackage, map[string]any{
 			"description": "the mail bundle",
 			"inputs": map[string]any{
 				"client": map[string]any{"kind": mbConfigType},
@@ -113,7 +113,7 @@ func TestBundleSharedModuleImportable(t *testing.T) {
 	}
 
 	// Sanity: modules are not smuggled into the install closure.
-	if _, err := ds.Get(ctx, "core.substrate.reamde.dev/function", "connkit.py"); err == nil {
+	if _, err := ds.Get(ctx, "substrate.reamde.dev/core/function", "connkit.py"); err == nil {
 		t.Fatal("a shared module became a record")
 	}
 }

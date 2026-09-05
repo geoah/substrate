@@ -20,7 +20,7 @@ func newDatasetWithDB(t *testing.T, opts ...engine.Option) (substrate.Dataset, *
 	dsn := testdb.NewSchema(t)
 	ctx := context.Background()
 	all := []engine.Option{
-		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 	}
 	all = append(all, opts...)
@@ -49,13 +49,13 @@ func newDatasetWithDB(t *testing.T, opts ...engine.Option) (substrate.Dataset, *
 // place a caller can write one through the generic surface.
 func installSecretCRD(t *testing.T, ds substrate.Dataset) string {
 	t.Helper()
-	const authority = "gmail.google.connectors.substrate.reamde.dev"
+	const pkg = "gmail.google.connectors.substrate.reamde.dev/gmail"
 	if err := enginetest.Install(context.Background(), ds, substrate.ActorSystem, enginetest.Manifest{
-		Name: "google.gmail", Authority: authority,
+		Name: "google.gmail", Authority: pkg,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(authority, 1),
-			vocabulary.ActorManifest(authority, "connector:gmail"),
-			vocabulary.KindManifest(authority,
+			vocabulary.PackageManifest(pkg, 1),
+			vocabulary.ActorManifest(pkg, "connector:gmail"),
+			vocabulary.KindManifest(pkg,
 				map[string]any{"singular": "accountconfig", "plural": "accountconfigs"},
 				map[string]any{"properties": map[string]any{
 					"label":  map[string]any{"type": "string"},
@@ -65,7 +65,7 @@ func installSecretCRD(t *testing.T, ds substrate.Dataset) string {
 	}); err != nil {
 		t.Fatalf("register connector: %v", err)
 	}
-	return "gmail.google.connectors.substrate.reamde.dev/accountconfig"
+	return "gmail.google.connectors.substrate.reamde.dev/gmail/accountconfig"
 }
 
 // A deletion is an ordinary write: nothing ranks writers, so any actor may
@@ -235,11 +235,11 @@ func TestSecretPropertiesAreNotFilterable(t *testing.T) {
 
 	for name, q := range map[string]substrate.Query{
 		"eq on a typed collection": {Filter: substrate.Filter{
-			Kinds:      []string{"core.substrate.reamde.dev/token"},
+			Kinds:      []string{"substrate.reamde.dev/core/token"},
 			Properties: map[string]substrate.Cond{"hash": {Eq: "abc"}},
 		}},
 		"prefix binary search": {Filter: substrate.Filter{
-			Kinds:      []string{"core.substrate.reamde.dev/token"},
+			Kinds:      []string{"substrate.reamde.dev/core/token"},
 			Properties: map[string]substrate.Cond{"hash": {Prefix: "a"}},
 		}},
 		"untyped filter": {Filter: substrate.Filter{
@@ -249,7 +249,7 @@ func TestSecretPropertiesAreNotFilterable(t *testing.T) {
 			Properties: map[string]substrate.Cond{"passwordRef": {Exists: ptr(true)}},
 		}},
 		"ordering oracle": {
-			Filter:  substrate.Filter{Kinds: []string{"core.substrate.reamde.dev/token"}},
+			Filter:  substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/token"}},
 			OrderBy: []substrate.Order{{Property: "hash"}},
 		},
 	} {
@@ -262,7 +262,7 @@ func TestSecretPropertiesAreNotFilterable(t *testing.T) {
 
 	// Ordinary properties still filter.
 	if _, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
-		Kinds:      []string{"core.substrate.reamde.dev/token"},
+		Kinds:      []string{"substrate.reamde.dev/core/token"},
 		Properties: map[string]substrate.Cond{"label": {Eq: "cli"}},
 	}}); err != nil {
 		t.Fatalf("ordinary filter broke: %v", err)
@@ -304,7 +304,7 @@ func TestApplyDiffChecksTargetVersion(t *testing.T) {
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
 			"diff":   map[string]any{"properties": map[string]any{"description": "due Friday"}},
-			"target": vocabulary.RecordPath("tasks.substrate.reamde.dev/task", task.ID),
+			"target": vocabulary.RecordPath("samples.substrate.reamde.dev/tasks/task", task.ID),
 		},
 	})
 
@@ -338,7 +338,7 @@ func TestApplyDiffChecksTargetVersion(t *testing.T) {
 		Kind: "recordpatchrequest", ID: req.ID,
 		Properties: map[string]any{
 			"diff":   map[string]any{"properties": map[string]any{"description": "due Friday"}},
-			"target": vocabulary.RecordPath("tasks.substrate.reamde.dev/task", task.ID),
+			"target": vocabulary.RecordPath("samples.substrate.reamde.dev/tasks/task", task.ID),
 		},
 	})
 	if _, err := ds.Patch(ctx, owner, req.Kind, req.ID, substrate.PatchInput{
@@ -352,7 +352,7 @@ func TestApplyDiffChecksTargetVersion(t *testing.T) {
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
 			"diff":   map[string]any{"properties": map[string]any{"description": "due Tuesday"}},
-			"target": vocabulary.RecordPath("tasks.substrate.reamde.dev/task", task.ID),
+			"target": vocabulary.RecordPath("samples.substrate.reamde.dev/tasks/task", task.ID),
 		},
 	})
 	mustPatch(t, ds, owner, fresh.Kind, fresh.ID, substrate.PatchInput{Properties: map[string]any{"decision": "accepted"}, IfVersion: ptr(fresh.Version)})

@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	tsAuthority    = "titles.example.substrate.reamde.dev"
-	transcriptKind = "calendar.substrate.reamde.dev/transcript"
+	tsPackage      = "titles.example.substrate.reamde.dev/titles"
+	transcriptKind = "samples.substrate.reamde.dev/calendar/transcript"
 )
 
 // The two shipped kinds this closed (issue 123): `task` and `transcript` used
@@ -63,8 +63,8 @@ func TestLegacyTitlesSurviveADisplayTemplate(t *testing.T) {
 
 	memoNames := map[string]any{"singular": "memo", "plural": "memos"}
 	before := []map[string]any{
-		vocabulary.AuthorityManifest(tsAuthority, 0),
-		vocabulary.KindManifest(tsAuthority, memoNames, map[string]any{
+		vocabulary.PackageManifest(tsPackage, 0),
+		vocabulary.KindManifest(tsPackage, memoNames, map[string]any{
 			"properties": map[string]any{"note": map[string]any{"type": "string"}},
 		}),
 	}
@@ -72,7 +72,7 @@ func TestLegacyTitlesSurviveADisplayTemplate(t *testing.T) {
 		t.Fatalf("install the memo kind: %v", err)
 	}
 	memo := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: tsAuthority + "/memo", ID: "m1",
+		Kind: tsPackage + "/memo", ID: "m1",
 		Properties: map[string]any{"title": "old heading", "note": "as written"},
 	})
 	if memo.Title != "old heading" {
@@ -80,7 +80,7 @@ func TestLegacyTitlesSurviveADisplayTemplate(t *testing.T) {
 	}
 
 	after := []map[string]any{
-		vocabulary.KindManifest(tsAuthority, memoNames, map[string]any{
+		vocabulary.KindManifest(tsPackage, memoNames, map[string]any{
 			"displayTemplate": "{name|title}",
 			"properties": map[string]any{
 				"note": map[string]any{"type": "string"},
@@ -94,14 +94,14 @@ func TestLegacyTitlesSurviveADisplayTemplate(t *testing.T) {
 
 	// A write that touches something else re-derives the title. Without the
 	// `|title` alternative this row would go blank here.
-	moved := mustPatch(t, ds, owner, tsAuthority+"/memo", "m1", substrate.PatchInput{
+	moved := mustPatch(t, ds, owner, tsPackage+"/memo", "m1", substrate.PatchInput{
 		Properties: map[string]any{"note": "amended"},
 	})
 	if moved.Title != "old heading" {
 		t.Fatalf("the legacy title did not survive the template: %q", moved.Title)
 	}
 	// And the declared property wins the moment it holds anything.
-	named := mustPatch(t, ds, owner, tsAuthority+"/memo", "m1", substrate.PatchInput{
+	named := mustPatch(t, ds, owner, tsPackage+"/memo", "m1", substrate.PatchInput{
 		Properties: map[string]any{"name": "new heading"},
 	})
 	if named.Title != "new heading" || named.Properties["name"] != "new heading" {
@@ -112,7 +112,7 @@ func TestLegacyTitlesSurviveADisplayTemplate(t *testing.T) {
 	// carries, so a rebuild under the NEW declaration reproduces both the
 	// legacy row and the renamed one rather than re-rendering them.
 	legacy := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: tsAuthority + "/memo", ID: "m2", Properties: map[string]any{"note": "untouched"},
+		Kind: tsPackage + "/memo", ID: "m2", Properties: map[string]any{"note": "untouched"},
 	})
 	if legacy.Title != "" {
 		t.Fatalf("a row written after the template with no heading has no title: %q", legacy.Title)
@@ -124,7 +124,7 @@ func TestLegacyTitlesSurviveADisplayTemplate(t *testing.T) {
 	if _, err := rb.RebuildRepository(ctx, "geoah"); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
-	if got := mustGet(t, ds, tsAuthority+"/memo", "m1"); got.Title != "new heading" {
+	if got := mustGet(t, ds, tsPackage+"/memo", "m1"); got.Title != "new heading" {
 		t.Fatalf("the rebuild lost the title: %q", got.Title)
 	}
 }

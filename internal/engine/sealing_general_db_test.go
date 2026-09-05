@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	sgProviderKind = "core.substrate.reamde.dev/llmprovider"
+	sgProviderKind = "substrate.reamde.dev/core/llmprovider"
 	sgPlainKey     = "sk-plain-12345"
 )
 
@@ -217,10 +217,10 @@ func TestPastedRefShapedStringIsMaterial(t *testing.T) {
 func TestDigestRedactsWithoutIndirection(t *testing.T) {
 	t.Parallel()
 	_, ds, db := newSealingDataset(t)
-	const auth = "digests.example.substrate.reamde.dev"
+	const pkg = "digests.example.substrate.reamde.dev/digests"
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(auth, 0),
-		vocabulary.KindManifest(auth,
+		vocabulary.PackageManifest(pkg, 0),
+		vocabulary.KindManifest(pkg,
 			map[string]any{"singular": "artifact", "plural": "artifacts"},
 			map[string]any{"properties": map[string]any{
 				"name":        map[string]any{"type": "string"},
@@ -233,14 +233,14 @@ func TestDigestRedactsWithoutIndirection(t *testing.T) {
 
 	// Not a SHA-256: refused at coercion.
 	_, err := ds.Put(context.Background(), owner, substrate.PutInput{
-		Kind: auth + "/artifact", ID: "a1",
+		Kind: pkg + "/artifact", ID: "a1",
 		Properties: map[string]any{"fingerprint": "not-a-digest"},
 	})
 	wantErr(t, err, substrate.ErrValidation, "malformed digest")
 
 	sum := strings.Repeat("ab", 32)
 	rec := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: auth + "/artifact", ID: "a1",
+		Kind: pkg + "/artifact", ID: "a1",
 		Properties: map[string]any{"name": "one", "fingerprint": sum},
 	})
 	if got := rec.Properties["fingerprint"]; got != "<redacted>" {
@@ -249,7 +249,7 @@ func TestDigestRedactsWithoutIndirection(t *testing.T) {
 	// Stored as the value itself: the engine compares digests in SQL.
 	var stored string
 	if err := db.QueryRow(`SELECT props->>'fingerprint' FROM records WHERE kind = $1 AND id = 'a1'`,
-		auth+"/artifact").Scan(&stored); err != nil {
+		pkg+"/artifact").Scan(&stored); err != nil {
 		t.Fatalf("read stored fingerprint: %v", err)
 	}
 	if stored != sum {
@@ -260,10 +260,10 @@ func TestDigestRedactsWithoutIndirection(t *testing.T) {
 func TestDisplayTemplateRefusesSensitiveProps(t *testing.T) {
 	t.Parallel()
 	_, ds, _ := newSealingDataset(t)
-	const auth = "leaky.example.substrate.reamde.dev"
+	const pkg = "leaky.example.substrate.reamde.dev/leaky"
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(auth, 0),
-		vocabulary.KindManifest(auth,
+		vocabulary.PackageManifest(pkg, 0),
+		vocabulary.KindManifest(pkg,
 			map[string]any{"singular": "leak", "plural": "leaks"},
 			map[string]any{
 				"displayTemplate": "{apiKey}",
@@ -316,7 +316,7 @@ func TestResealMovesLegacyValuesIntoTheStore(t *testing.T) {
 		t.Fatalf("wind the signing state back: %v", err)
 	}
 	_ = svc.Close()
-	svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+	svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {
 		t.Fatalf("reopen: %v", err)

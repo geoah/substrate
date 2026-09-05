@@ -18,7 +18,7 @@ func TestSk3MergeSystemTypes(t *testing.T) {
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
 		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 		if err != nil {
 			t.Fatalf("open engine: %v", err)
 		}
@@ -35,20 +35,20 @@ func TestSk3MergeSystemTypes(t *testing.T) {
 
 	// Sanity: put/patch/delete refuse type projections.
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/kind", ID: "people.substrate.reamde.dev/organization",
+		Kind: "substrate.reamde.dev/core/kind", ID: "samples.substrate.reamde.dev/people/organization",
 		Properties: map[string]any{"name": "organization"},
 	}); err == nil {
 		t.Fatal("put on a type projection unexpectedly succeeded")
 	} else {
 		t.Logf("put refused: %v", err)
 	}
-	if _, err := ds.Delete(ctx, owner, "core.substrate.reamde.dev/kind", "people.substrate.reamde.dev/organization"); err == nil {
+	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/kind", "samples.substrate.reamde.dev/people/organization"); err == nil {
 		t.Fatal("delete on a type projection unexpectedly succeeded")
 	} else {
 		t.Logf("delete refused: %v", err)
 	}
 
-	rec, err := ds.Merge(ctx, owner, "core.substrate.reamde.dev/kind", "people.substrate.reamde.dev/person", "people.substrate.reamde.dev/organization")
+	rec, err := ds.Merge(ctx, owner, "substrate.reamde.dev/core/kind", "samples.substrate.reamde.dev/people/person", "samples.substrate.reamde.dev/people/organization")
 	if err != nil {
 		t.Logf("merge refused (claim REFUTED): %v", err)
 		return
@@ -57,13 +57,13 @@ func TestSk3MergeSystemTypes(t *testing.T) {
 
 	listed := func(d substrate.Dataset) bool {
 		page, err := d.List(ctx, substrate.Query{
-			Filter: substrate.Filter{Kinds: []string{"core.substrate.reamde.dev/kind"}}, First: 500,
+			Filter: substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/kind"}}, First: 500,
 		})
 		if err != nil {
 			t.Fatalf("list types: %v", err)
 		}
 		for _, e := range page.Records {
-			if e.ID == "people.substrate.reamde.dev/organization" {
+			if e.ID == "samples.substrate.reamde.dev/people/organization" {
 				return true
 			}
 		}
@@ -78,7 +78,7 @@ func TestSk3MergeSystemTypes(t *testing.T) {
 		t.Logf("split ok; organization type listed again: %v", listed(ds))
 	}
 	// Re-merge, this time with a connector actor, to see if authz blocks it.
-	rec2, err := ds.Merge(ctx, substrate.Actor("connector:slack"), "core.substrate.reamde.dev/kind", "people.substrate.reamde.dev/person", "people.substrate.reamde.dev/organization")
+	rec2, err := ds.Merge(ctx, substrate.Actor("connector:slack"), "substrate.reamde.dev/core/kind", "samples.substrate.reamde.dev/people/person", "samples.substrate.reamde.dev/people/organization")
 	if err != nil {
 		t.Logf("connector-actor merge refused: %v", err)
 	} else {
@@ -94,7 +94,7 @@ func TestSk3MergeSystemTypes(t *testing.T) {
 		t.Fatalf("dataset after restart: %v", err)
 	}
 	t.Logf("organization type listed after restart: %v", listed(ds2))
-	after, err := ds2.Get(ctx, "core.substrate.reamde.dev/kind", "people.substrate.reamde.dev/organization")
+	after, err := ds2.Get(ctx, "substrate.reamde.dev/core/kind", "samples.substrate.reamde.dev/people/organization")
 	if err == nil {
 		t.Logf("after restart: deletedAt=%v finalizers=%v version=%d", after.DeletedAt, after.Finalizers, after.Version)
 	} else {
@@ -116,13 +116,13 @@ func TestSk3MergeOfOneType(t *testing.T) {
 		Kind: enginetest.AccountType, Properties: map[string]any{"provider": "slack"},
 	})
 	conv := mustPut(t, ds, owner, substrate.PutInput{
-		Kind:       "messaging.substrate.reamde.dev/conversation",
+		Kind:       "samples.substrate.reamde.dev/messaging/conversation",
 		Properties: map[string]any{"title": "c", "account": enginetest.AccountType + "/" + acc.ID},
 	})
-	author := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "alex"}})
+	author := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "alex"}})
 	mk := func(ext, text string) *substrate.Record {
 		return mustPut(t, ds, owner, substrate.PutInput{
-			Kind: "messaging.substrate.reamde.dev/conversationmessage",
+			Kind: "samples.substrate.reamde.dev/messaging/conversationmessage",
 			ID:   extID("slack.msg", ext),
 			Properties: map[string]any{
 				"at": "2026-01-01T10:00:00Z", "text": text,

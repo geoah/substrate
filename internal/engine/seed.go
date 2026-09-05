@@ -18,10 +18,10 @@ package engine
 //     entries under the actor `substrate`. Convergent, idempotent,
 //     one transaction per repository — and a repository nobody opens is never
 //     touched.
-//   - THE INSTALL, when a user installs a bundle: the catalog's manifests
-//     are COPIED into the changelog under `bundle:<authority>` (catalog/catalog.go). The
-//     embedded catalog is a source, never an authority; nothing on the serving
-//     path reads it.
+//   - THE INSTALL, when a user installs a bundle: the catalog's manifests are
+//     COPIED into the changelog under `bundle:<authority>:<package>`
+//     (catalog/catalog.go). The embedded catalog is a source, never a
+//     publisher; nothing on the serving path reads it.
 //
 // And one function decides who may write a declaration at all:
 // authorizeDeclarationWrite, below.
@@ -36,26 +36,27 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// --- the authority chokepoint -------------------------------------------------
+// --- the ownership chokepoint -------------------------------------------------
 
 // authorizeDeclarationWrite is THE ONE PLACE that decides who may write a kind
-// DECLARATION. Every declaration write in the
-// engine reaches it through applyVocabularyBatch.
+// DECLARATION. Every declaration write in the engine reaches it through
+// applyVocabularyBatch, and the unit it decides on is the PACKAGE
+// (decision 0047).
 //
-//   - SHIPPED vocabulary — an authority whose stored rows say `source: builtin`,
+//   - SHIPPED vocabulary — a package whose stored rows say `source: builtin`,
 //     which is exactly what the creation seed and shipped upgrades write — is
 //     writable only by a SUBSTRATE PATH: the seed, an install or an upgrade,
-//     which is what the actors `substrate` and `bundle:<authority>` name.
-//     A generic API write into one is refused here; those actors cannot be
-//     claimed by a request (substrate.ReservedActor, checked on the
+//     which is what the actors `substrate` and `bundle:<authority>:<package>`
+//     name. A generic API write into one is refused here; those actors cannot
+//     be claimed by a request (substrate.ReservedActor, checked on the
 //     X-Substrate-Actor header), so "substrate path" means what it says.
-//   - Everything else — the repository's own kinds, and the bundle authorities
-//     it installed — belongs to the repository's user, who may write it.
+//   - Everything else — the repository's own kinds, and the packages it
+//     installed — belongs to the repository's user, who may write it.
 //
-// It takes the authority NAME and the registry that currently holds it, so an authority
-// nobody has yet (a first declaration) is the user's to create.
-func authorizeDeclarationWrite(actor substrate.Actor, current *vocabulary.Registry, authority string) error {
-	cur, ok := current.AuthorityByName(authority)
+// It takes the PACKAGE identity and the registry that currently holds it, so a
+// package nobody has yet (a first declaration) is the user's to create.
+func authorizeDeclarationWrite(actor substrate.Actor, current *vocabulary.Registry, pkg string) error {
+	cur, ok := current.PackageByName(pkg)
 	if !ok || cur.Source != vocabulary.SourceBuiltin {
 		return nil
 	}
@@ -63,12 +64,13 @@ func authorizeDeclarationWrite(actor substrate.Actor, current *vocabulary.Regist
 		return nil
 	}
 	return fmt.Errorf("%w: %s is shipped vocabulary — it changes with the substrate (seed, upgrade, install), not through the API",
-		substrate.ErrForbidden, authority)
+		substrate.ErrForbidden, pkg)
 }
 
 // isSubstratePath reports whether an actor is one of the substrate's own
 // vocabulary-writing hands: the engine itself (seed, upgrade) or a bundle
-// (`bundle:<authority>` — the seed's `bundle:core` and every install).
+// (`bundle:<authority>:<package>` — the seed's `bundle:core` and every
+// install).
 func isSubstratePath(actor substrate.Actor) bool {
 	return actor == substrate.ActorSystem || substrate.IsBundleActor(actor)
 }
@@ -83,24 +85,24 @@ func isSubstratePath(actor substrate.Actor) bool {
 // It never prunes and never re-asserts: this is the one and only time the
 // embedded tree writes itself into this repository wholesale.
 func (t *txn) seedShippedSchema(reg *vocabulary.Registry) error {
-	authorities := shippedAuthorities(reg)
+	authorities := shippedPackages(reg)
 	if len(authorities) == 0 {
 		return fmt.Errorf("substrate/engine: the binary ships no vocabulary to seed")
 	}
-	_, err := t.projectAuthorities(reg, authorities, projectOpts{})
+	_, err := t.projectPackages(reg, authorities, projectOpts{})
 	return err
 }
 
-// shippedAuthorities is the binary's own vocabulary: the authorities the embedded tree
-// declares.
-func shippedAuthorities(reg *vocabulary.Registry) map[string]bool {
-	authorities := map[string]bool{}
-	for _, g := range reg.AuthorityList() {
+// shippedPackages is the binary's own vocabulary: the packages (and the
+// authority rows beside them) the embedded tree declares.
+func shippedPackages(reg *vocabulary.Registry) map[string]bool {
+	out := map[string]bool{}
+	for _, g := range reg.PackageList() {
 		if g.Source == vocabulary.SourceBuiltin {
-			authorities[g.Name] = true
+			out[g.Identity] = true
 		}
 	}
-	return authorities
+	return out
 }
 
 // --- the boot-time upgrade ----------------------------------------------------
@@ -133,7 +135,7 @@ func shippedAuthorities(reg *vocabulary.Registry) map[string]bool {
 // the repository down and leave no way back in, since the migration the guard
 // demands runs through the API that failure just closed.
 //
-// A authority whose stored rows are NOT shipped vocabulary (a user or a bundle
+// A package whose stored rows are NOT shipped vocabulary (a user or a bundle
 // took the name) is skipped whole: the upgrade never seizes a name it does not
 // already own here.
 func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
@@ -144,23 +146,23 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 	}
 	current := ds.registry()
 
-	// What each shipped authority would have to write, and what it would leave
-	// alone. A authority with nothing to write is not touched at all.
+	// What each shipped package would have to write, and what it would leave
+	// alone. A package with nothing to write is not touched at all.
 	upgrade := map[string]bool{}
 	keep := map[string]bool{}
 	// The kinds this upgrade will NOT rewrite, by identity: a declaration held
 	// at its stored version keeps whatever shape it has, so it is not the
 	// upgrade's business and must not be able to refuse the boot below.
 	keptKinds := map[string]bool{}
-	for _, aname := range sortedKeys(shippedAuthorities(reg)) {
-		g, ok := reg.AuthorityByName(aname)
+	for _, aname := range sortedKeys(shippedPackages(reg)) {
+		g, ok := reg.PackageByName(aname)
 		if !ok {
 			continue
 		}
-		if cur, ok := current.AuthorityByName(aname); ok && cur.Source != vocabulary.SourceBuiltin {
+		if cur, ok := current.PackageByName(aname); ok && cur.Source != vocabulary.SourceBuiltin {
 			continue // the name is somebody else's here; the tree does not take it
 		}
-		decls, err := authorityDeclarations(g)
+		decls, err := packageDeclarations(g)
 		if err != nil {
 			return err
 		}
@@ -230,7 +232,7 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 				refused = guards
 				return nil
 			}
-			_, err = t.projectAuthorities(reg, upgrade, projectOpts{
+			_, err = t.projectPackages(reg, upgrade, projectOpts{
 				skip: func(key string) bool { return keep[key] },
 			})
 			return err
@@ -260,30 +262,27 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 	return ds.loadStoredVocabulary(ctx)
 }
 
-// storedDeclaration is one stored declaration as the version diff sees it:
-// its version, and its declaring authority (the authority row's own id).
+// storedDeclaration is one stored declaration as the version diff sees it: its
+// version, and the package it belongs to (the package row's own id).
 type storedDeclaration struct {
-	version   int64
-	authority string
+	version int64
+	pkg     string
 }
 
-// storedDeclarations reads every stored declaration's version and authority,
-// keyed exactly as authorityDeclarations keys it. A row without a version —
-// or one still holding a spelling the 0004 backfill somehow missed — reads
+// storedDeclarations reads every stored declaration's version and package,
+// keyed exactly as packageDeclarations keys it. A row without a version reads
 // as version 0, which compares below everything, so it upgrades on the next
 // open rather than sticking.
 func (ds *dataset) storedDeclarations(ctx context.Context) (map[string]storedDeclaration, error) {
-	args := make([]any, 0, len(vocabularyKindRefs)+1)
+	args := make([]any, 0, len(vocabularyKindRefs))
 	ph := make([]string, 0, len(vocabularyKindRefs))
 	for i, ident := range vocabularyKindRefs {
 		args = append(args, ident)
 		ph = append(ph, "$"+strconv.Itoa(i+1))
 	}
-	args = append(args, kindAuthority)
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT kind, id, COALESCE(props->>'version', ''),
-		       CASE WHEN kind = $`+strconv.Itoa(len(args))+` THEN id
-		            ELSE COALESCE(props->>'authority', '') END
+		       props->>'authority', props->>'package'
 		FROM records
 		WHERE kind IN (`+strings.Join(ph, ", ")+`) AND deleted_at IS NULL`, args...)
 	if err != nil {
@@ -292,11 +291,15 @@ func (ds *dataset) storedDeclarations(ctx context.Context) (map[string]storedDec
 	defer func() { _ = rows.Close() }()
 	out := map[string]storedDeclaration{}
 	for rows.Next() {
-		var typ, id, version, authority string
-		if err := rows.Scan(&typ, &id, &version, &authority); err != nil {
+		var typ, id, version string
+		var authority, pkg *string
+		if err := rows.Scan(&typ, &id, &version, &authority, &pkg); err != nil {
 			return nil, err
 		}
-		out[typ+"\x00"+id] = storedDeclaration{version: storedVersion(version), authority: authority}
+		out[typ+"\x00"+id] = storedDeclaration{
+			version: storedVersion(version),
+			pkg:     rowPackage(typ, id, authority, pkg),
+		}
 	}
 	return out, rows.Err()
 }

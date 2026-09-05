@@ -18,13 +18,13 @@ import (
 // records delivering inline Python bodies on the shared runner.
 
 const (
-	fnAuthority = "widgets.test.dev"
-	fnActor     = substrate.Actor(fnAuthority)
+	fnPackage = "widgets.test.dev/widgets"
+	fnActor   = substrate.Actor(fnPackage)
 
-	widgetType = fnAuthority + "/widget"
-	gadgetType = fnAuthority + "/gadget"
-	taskType   = "tasks.substrate.reamde.dev/task"
-	runType    = "core.substrate.reamde.dev/run"
+	widgetType = fnPackage + "/widget"
+	gadgetType = fnPackage + "/gadget"
+	taskType   = "samples.substrate.reamde.dev/tasks/task"
+	runType    = "substrate.reamde.dev/core/run"
 )
 
 // fnOps is the engine's automation seam the API asserts at runtime; tests
@@ -46,7 +46,7 @@ func fnDoc(name string, data map[string]any) map[string]any {
 	if _, ok := data["description"]; !ok {
 		data["description"] = "test function " + name
 	}
-	return vocabulary.FunctionManifest(fnAuthority, name, data)
+	return vocabulary.FunctionManifest(fnPackage, name, data)
 }
 
 // pyFn renders a python function manifest: the inline body as source, the write
@@ -71,7 +71,7 @@ func fnPermissions(data map[string]any) map[string]any {
 }
 
 // trigID is the default trigger id a test function's subscription wears.
-func trigID(fn string) string { return "on-" + fnAuthority + "/" + fn }
+func trigID(fn string) string { return "on-" + fnPackage + "/" + fn }
 
 // trigOn renders one trigger record binding an record source to a test
 // function: `record` carries types/ops/when/coalesce.
@@ -81,7 +81,7 @@ func trigOn(fn string, record map[string]any) enginetest.Trigger {
 		Properties: map[string]any{
 			"enabled":  true,
 			"source":   map[string]any{"record": record},
-			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", fnAuthority+"/"+fn),
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", fnPackage+"/"+fn),
 		},
 	}
 }
@@ -90,9 +90,9 @@ func trigOn(fn string, record map[string]any) enginetest.Trigger {
 // types, the functions under test and their default triggers.
 func fnConnector(triggers []enginetest.Trigger, fns ...map[string]any) enginetest.Manifest {
 	manifests := []map[string]any{
-		vocabulary.AuthorityManifest(fnAuthority, 0),
-		vocabulary.ActorManifest(fnAuthority, vocabulary.AuthorityActor(fnAuthority)),
-		vocabulary.KindManifest(fnAuthority, map[string]any{"singular": "widget", "plural": "widgets"}, map[string]any{
+		vocabulary.PackageManifest(fnPackage, 0),
+		vocabulary.ActorManifest(fnPackage, vocabulary.PackageActor(fnPackage)),
+		vocabulary.KindManifest(fnPackage, map[string]any{"singular": "widget", "plural": "widgets"}, map[string]any{
 			// Only `name` indexes: the scenario knobs must not pollute the
 			// lexical arm the host-read search test asserts on.
 			"properties": map[string]any{
@@ -111,7 +111,7 @@ func fnConnector(triggers []enginetest.Trigger, fns ...map[string]any) enginetes
 				"record":   map[string]any{"type": "string", "fts": false},
 			},
 		}),
-		vocabulary.KindManifest(fnAuthority, map[string]any{"singular": "gadget", "plural": "gadgets"}, map[string]any{
+		vocabulary.KindManifest(fnPackage, map[string]any{"singular": "gadget", "plural": "gadgets"}, map[string]any{
 			"properties": map[string]any{
 				"count":  map[string]any{"type": "float"},
 				"wire":   map[string]any{"type": "string", "fts": false},
@@ -124,7 +124,7 @@ func fnConnector(triggers []enginetest.Trigger, fns ...map[string]any) enginetes
 		}),
 	}
 	manifests = append(manifests, fns...)
-	return enginetest.Manifest{Name: "widgets", Authority: fnAuthority, Manifests: manifests, Triggers: triggers}
+	return enginetest.Manifest{Name: "widgets", Authority: fnPackage, Manifests: manifests, Triggers: triggers}
 }
 
 // newFnDataset provisions a repository and installs the test connector.
@@ -152,9 +152,9 @@ func TestPrepareBatchCountCap(t *testing.T) {
 	_, ds := newDataset(t)
 	sa := applier(t, ds)
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(fnAuthority, 0),
-		vocabulary.ActorManifest(fnAuthority, vocabulary.AuthorityActor(fnAuthority)),
-		vocabulary.KindManifest(fnAuthority, map[string]any{"singular": "widget", "plural": "widgets"},
+		vocabulary.PackageManifest(fnPackage, 0),
+		vocabulary.ActorManifest(fnPackage, vocabulary.PackageActor(fnPackage)),
+		vocabulary.KindManifest(fnPackage, map[string]any{"singular": "widget", "plural": "widgets"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 	}
 	// 65 bodies — one over the maxPrepareBatch=64 cap.
@@ -182,9 +182,8 @@ func process(t *testing.T, ops fnOps) int {
 // is named by its IDENTITY, because so is its actor (record 0025).
 func actorChanges(t *testing.T, ds substrate.Dataset, function string) []substrate.Change {
 	t.Helper()
-	authority, name := vocabulary.SplitKindRef(function)
 	out, err := ds.Changes(context.Background(), 0, substrate.ChangeFilter{
-		Actors: []substrate.Actor{substrate.FunctionActor(authority, name)},
+		Actors: []substrate.Actor{substrate.FunctionActor(vocabulary.SplitKindRef(function))},
 	}, 500)
 	if err != nil {
 		t.Fatalf("changes: %v", err)
@@ -229,7 +228,7 @@ func statusOf(t *testing.T, ops fnOps, triggerID string) substrate.TriggerStatus
 const mirrorSource = `
 def main(input, host):
     env = input["envelope"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "t-" + env["change"]["id"],
                          "properties": {"name": env["record"]["properties"]["name"]}}]}
 `
@@ -241,18 +240,18 @@ func TestTriggerSourceMatchingAndGlob(t *testing.T) {
 			// Exact source, create only.
 			trigOn("exact", map[string]any{"kinds": []any{widgetType}, "ops": []any{"create"}}),
 			// Authority glob, all ops.
-			trigOn("glob", map[string]any{"kinds": []any{fnAuthority + "/*"}}),
+			trigOn("glob", map[string]any{"kinds": []any{fnPackage + "/*"}}),
 		},
 		pyFn("exact", map[string]any{}, []any{taskType}, `
 def main(input, host):
     c = input["envelope"]["change"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "e-" + c["id"], "properties": {"name": c["kind"]}}]}
 `),
 		pyFn("glob", map[string]any{}, []any{taskType}, `
 def main(input, host):
     c = input["envelope"]["change"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "g-" + c["id"], "properties": {"name": c["kind"] + "/" + c["op"]}}]}
 `),
 	)
@@ -278,18 +277,18 @@ def main(input, host):
 
 	// The ops filter: an update re-fires the glob (op in title changes) but
 	// never the create-only trigger.
-	exactRows := len(actorChanges(t, ds, fnAuthority+"/exact"))
+	exactRows := len(actorChanges(t, ds, fnPackage+"/exact"))
 	mustPatch(t, ds, fnActor, w.Kind, w.ID, substrate.PatchInput{Properties: map[string]any{"name": "two"}})
 	process(t, ops)
 	if got := mustGet(t, ds, taskType, "g-"+w.ID); got.Title != widgetType+"/update" {
 		t.Fatalf("glob after update: %q", got.Title)
 	}
-	if got := len(actorChanges(t, ds, fnAuthority+"/exact")); got != exactRows {
+	if got := len(actorChanges(t, ds, fnPackage+"/exact")); got != exactRows {
 		t.Fatalf("create-only trigger fired on an update: %d rows, had %d", got, exactRows)
 	}
 
 	// The callable's writes carry its own actor and normal attribution.
-	rows := actorChanges(t, ds, fnAuthority+"/exact")
+	rows := actorChanges(t, ds, fnPackage+"/exact")
 	if len(rows) != 1 || rows[0].RecordID != "e-"+w.ID || rows[0].Op != substrate.OpPut {
 		t.Fatalf("exact's changelog rows: %+v", rows)
 	}
@@ -339,7 +338,7 @@ func runRowsOf(t *testing.T, ds substrate.Dataset, triggerID, status string) []*
 		Filter: substrate.Filter{
 			Kinds: []string{runType},
 			Properties: map[string]substrate.Cond{
-				"trigger": {Eq: vocabulary.RecordPath("core.substrate.reamde.dev/trigger", triggerID)},
+				"trigger": {Eq: vocabulary.RecordPath("substrate.reamde.dev/core/trigger", triggerID)},
 				"status":  {Eq: status},
 			},
 		},
@@ -361,7 +360,7 @@ func TestTriggerSelfEchoExclusion(t *testing.T) {
 		pyFn("echo", map[string]any{}, []any{taskType}, `
 def main(input, host):
     c = input["envelope"]["change"]
-    return {"effects": [{"action": "patch", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "patch", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": c["id"], "properties": {"description": "seen-" + str(c["seq"])}}]}
 `))
 
@@ -380,7 +379,7 @@ def main(input, host):
 	if got := mustGet(t, ds, task.Kind, task.ID); got.Properties["description"] != desc {
 		t.Fatalf("trigger saw its callable's own write: %q → %q", desc, got.Properties["description"])
 	}
-	if rows := actorChanges(t, ds, fnAuthority+"/echo"); len(rows) != 1 {
+	if rows := actorChanges(t, ds, fnPackage+"/echo"); len(rows) != 1 {
 		t.Fatalf("expected exactly one function-authored row, got %d", len(rows))
 	}
 	if st := statusOf(t, ops, trigID("echo")); st.Lag != 0 {
@@ -396,7 +395,7 @@ func TestTriggerCoalescingAndSerialOrder(t *testing.T) {
 		return fmt.Sprintf(`
 def main(input, host):
     c = input["envelope"]["change"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "%s-" + c["id"], "properties": {"name": "seen-" + str(c["seq"])}}]}
 `, prefix)
 	}
@@ -417,7 +416,7 @@ def main(input, host):
 
 	// Coalesced: three pending changes to one record, one run, cursor past
 	// all three.
-	if rows := actorChanges(t, ds, fnAuthority+"/collapsed"); len(rows) != 1 {
+	if rows := actorChanges(t, ds, fnPackage+"/collapsed"); len(rows) != 1 {
 		t.Fatalf("coalesced runs: %d rows", len(rows))
 	}
 	want := fmt.Sprintf("seen-%d", lastSeq)
@@ -427,7 +426,7 @@ def main(input, host):
 
 	// Serial: one run per change, applied in seq order — the title walks the
 	// seqs upward and lands on the last.
-	rows := actorChanges(t, ds, fnAuthority+"/serial")
+	rows := actorChanges(t, ds, fnPackage+"/serial")
 	if len(rows) != 3 {
 		t.Fatalf("serial runs: %d rows", len(rows))
 	}
@@ -540,7 +539,7 @@ func TestTriggerTransitionViaPatch(t *testing.T) {
 		pyFn("closer", map[string]any{}, []any{taskType}, `
 def main(input, host):
     env = input["envelope"]
-    return {"effects": [{"action": "patch", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "patch", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "t-" + env["change"]["id"],
                          "properties": {"status": env["record"]["properties"]["want"]}}]}
 `))
@@ -578,21 +577,21 @@ def main(input, host):
 
 func TestTriggerEmitViolationParks(t *testing.T) {
 	t.Parallel()
-	// tasks.substrate.reamde.dev/project exists but is not in the allowlist: the effect
+	// samples.substrate.reamde.dev/tasks/project exists but is not in the allowlist: the effect
 	// is rejected at apply time and the delivery parks.
 	ds, ops := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("wild", map[string]any{"kinds": []any{widgetType}})},
 		pyFn("wild", map[string]any{}, []any{taskType}, `
 def main(input, host):
     c = input["envelope"]["change"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/project", "id": "p-" + c["id"]}]}
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/project", "id": "p-" + c["id"]}]}
 `))
 	ctx := context.Background()
 
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType})
 	process(t, ops)
 
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/project", "p-"+w.ID); err == nil {
+	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/project", "p-"+w.ID); err == nil {
 		t.Fatal("an effect outside emit was applied")
 	}
 	parked, err := ops.TriggerFailures(ctx, trigID("wild"))
@@ -619,8 +618,8 @@ func TestTriggerEffectsAndCursorAreOneTransaction(t *testing.T) {
 def main(input, host):
     c = input["envelope"]["change"]
     return {"effects": [
-        {"action": "put", "kind": "tasks.substrate.reamde.dev/task", "id": "ok-" + c["id"], "properties": {"name": "half"}},
-        {"action": "patch", "kind": "tasks.substrate.reamde.dev/task", "id": "missing-" + c["id"], "properties": {"name": "x"}},
+        {"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task", "id": "ok-" + c["id"], "properties": {"name": "half"}},
+        {"action": "patch", "kind": "samples.substrate.reamde.dev/tasks/task", "id": "missing-" + c["id"], "properties": {"name": "x"}},
     ]}
 `))
 	ctx := context.Background()
@@ -642,7 +641,7 @@ def main(input, host):
 		t.Fatalf("cursor after rollback: %+v", st)
 	}
 	// And nothing the rolled-back transaction touched reached the changelog.
-	if rows := actorChanges(t, ds, fnAuthority+"/pair"); len(rows) != 0 {
+	if rows := actorChanges(t, ds, fnPackage+"/pair"); len(rows) != 0 {
 		t.Fatalf("rolled-back writes logged: %+v", rows)
 	}
 }
@@ -692,7 +691,7 @@ def main(input, host):
 		t.Fatalf("park reason: %q", parked[0].LastError)
 	}
 	// The cap is per chain: the chain wrote cap-many times and stopped.
-	total := len(actorChanges(t, ds, fnAuthority+"/ping")) + len(actorChanges(t, ds, fnAuthority+"/pong"))
+	total := len(actorChanges(t, ds, fnPackage+"/ping")) + len(actorChanges(t, ds, fnPackage+"/pong"))
 	if total > 17 {
 		t.Fatalf("the chain kept going: %d function-authored rows", total)
 	}
@@ -749,7 +748,7 @@ func TestTriggerDeleteSource(t *testing.T) {
 		pyFn("sweeper", map[string]any{}, []any{taskType}, `
 def main(input, host):
     c = input["envelope"]["change"]
-    return {"effects": [{"action": "delete", "kind": "tasks.substrate.reamde.dev/task", "id": "t-" + c["id"]}]}
+    return {"effects": [{"action": "delete", "kind": "samples.substrate.reamde.dev/tasks/task", "id": "t-" + c["id"]}]}
 `))
 	ctx := context.Background()
 
@@ -782,7 +781,7 @@ func TestTriggerSameStatePatchIsNoOp(t *testing.T) {
 		pyFn("closer", map[string]any{}, []any{taskType}, `
 def main(input, host):
     c = input["envelope"]["change"]
-    return {"effects": [{"action": "patch", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "patch", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "t-" + c["id"], "properties": {"status": "done"}}]}
 `))
 	ctx := context.Background()
@@ -828,7 +827,7 @@ func TestTriggerDisabledStandsStill(t *testing.T) {
 		pyFn("mirror", map[string]any{}, []any{taskType}, mirrorSource))
 	ctx := context.Background()
 
-	if _, err := ds.Patch(ctx, owner, "core.substrate.reamde.dev/trigger", trigID("mirror"), substrate.PatchInput{
+	if _, err := ds.Patch(ctx, owner, "substrate.reamde.dev/core/trigger", trigID("mirror"), substrate.PatchInput{
 		Properties: map[string]any{"enabled": false},
 	}); err != nil {
 		t.Fatalf("disable: %v", err)
@@ -842,7 +841,7 @@ func TestTriggerDisabledStandsStill(t *testing.T) {
 		t.Fatalf("disabled status: %+v", st)
 	}
 
-	if _, err := ds.Patch(ctx, owner, "core.substrate.reamde.dev/trigger", trigID("mirror"), substrate.PatchInput{
+	if _, err := ds.Patch(ctx, owner, "substrate.reamde.dev/core/trigger", trigID("mirror"), substrate.PatchInput{
 		Properties: map[string]any{"enabled": true},
 	}); err != nil {
 		t.Fatalf("re-enable: %v", err)
@@ -863,7 +862,7 @@ func TestTriggerWriteAdmission(t *testing.T) {
 		pyFn("mirror", map[string]any{}, []any{taskType}, mirrorSource))
 	ctx := context.Background()
 
-	callable := vocabulary.RecordPath("core.substrate.reamde.dev/function", fnAuthority+"/mirror")
+	callable := vocabulary.RecordPath("substrate.reamde.dev/core/function", fnPackage+"/mirror")
 	cases := map[string]map[string]any{
 		"no source": {
 			"callable": callable,
@@ -895,11 +894,11 @@ func TestTriggerWriteAdmission(t *testing.T) {
 		},
 		"unknown callable": {
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{widgetType}}},
-			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", fnAuthority+"/nothing"),
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", fnPackage+"/nothing"),
 		},
 		"undispatchable kind": {
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{widgetType}}},
-			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/agent", fnAuthority+"/mirror"),
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/agent", fnPackage+"/mirror"),
 		},
 		"bad recurrence": {
 			"source":   map[string]any{"schedule": map[string]any{"recurrence": "EVERY=DAY"}},
@@ -913,7 +912,7 @@ func TestTriggerWriteAdmission(t *testing.T) {
 	for name, props := range cases {
 		t.Run(name, func(t *testing.T) {
 			_, err := ds.Put(ctx, owner, substrate.PutInput{
-				Kind: "core.substrate.reamde.dev/trigger", Properties: props,
+				Kind: "substrate.reamde.dev/core/trigger", Properties: props,
 			})
 			if err == nil {
 				t.Fatal("an undispatchable trigger landed")
@@ -924,7 +923,7 @@ func TestTriggerWriteAdmission(t *testing.T) {
 	// The healthy shape lands, and a patch that would break it refuses while
 	// the row keeps working.
 	tr, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/trigger",
+		Kind: "substrate.reamde.dev/core/trigger",
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{widgetType}}},
 			"callable": callable,
@@ -934,7 +933,7 @@ func TestTriggerWriteAdmission(t *testing.T) {
 		t.Fatalf("valid trigger refused: %v", err)
 	}
 	if _, err := ds.Patch(ctx, owner, tr.Kind, tr.ID, substrate.PatchInput{
-		Properties: map[string]any{"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", fnAuthority+"/nothing")},
+		Properties: map[string]any{"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", fnPackage+"/nothing")},
 	}); err == nil {
 		t.Fatal("a breaking patch landed")
 	}
@@ -964,7 +963,7 @@ func TestTriggerDispatchIsPerRepository(t *testing.T) {
 			pyFn("mirror", map[string]any{}, []any{taskType}, `
 def main(input, host):
     c = input["envelope"]["change"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "m-" + c["id"], "properties": {"name": input["envelope"]["repository"]["owner"]}}]}
 `)))
 		if err != nil {

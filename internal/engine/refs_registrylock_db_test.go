@@ -26,19 +26,19 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-const refLockAuthority = "reflock.example.substrate.reamde.dev"
+const refLockPackage = "reflock.example.substrate.reamde.dev/reflock"
 
 // refLockDocs is one authority: a target kind and a holder pointing at it.
 func refLockDocs() []map[string]any {
 	return []map[string]any{
-		vocabulary.AuthorityManifest(refLockAuthority, 0),
-		vocabulary.KindManifest(refLockAuthority,
+		vocabulary.PackageManifest(refLockPackage, 0),
+		vocabulary.KindManifest(refLockPackage,
 			map[string]any{"singular": "target", "plural": "targets"},
 			map[string]any{}),
-		vocabulary.KindManifest(refLockAuthority,
+		vocabulary.KindManifest(refLockPackage,
 			map[string]any{"singular": "holder", "plural": "holders"},
 			map[string]any{"properties": map[string]any{
-				"points": map[string]any{"type": "reference", "kind": refLockAuthority + "/target"},
+				"points": map[string]any{"type": "reference", "kind": refLockPackage + "/target"},
 			}}),
 	}
 }
@@ -67,7 +67,7 @@ func TestDataWriteParksAtTheRegistryDepLockAndKeepsItsRefsRow(t *testing.T) {
 		t.Fatalf("install the reflock authority: %v", err)
 	}
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: refLockAuthority + "/target", ID: "a", Properties: map[string]any{},
+		Kind: refLockPackage + "/target", ID: "a", Properties: map[string]any{},
 	}); err != nil {
 		t.Fatalf("put the target: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestDataWriteParksAtTheRegistryDepLockAndKeepsItsRefsRow(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-			Kind: refLockAuthority + "/holder", ID: holderID,
+			Kind: refLockPackage + "/holder", ID: holderID,
 			Properties: map[string]any{"points": "a"},
 		})
 		done <- err
@@ -103,11 +103,11 @@ func TestDataWriteParksAtTheRegistryDepLockAndKeepsItsRefsRow(t *testing.T) {
 	// It parked at the DEP lock, which is FIRST in the order (registry-dep <
 	// subject-type < record), so it has not reached its own record lock. A write
 	// that took the dep lock only later would already be holding this one.
-	if !tryLockFree(t, ds, "record|"+refLockAuthority+"/holder|"+holderID) {
+	if !tryLockFree(t, ds, "record|"+refLockPackage+"/holder|"+holderID) {
 		t.Fatal("the data write locked its record before the registry-dep lock; the write can still commit across a reprojection")
 	}
 	// Nothing of it is visible either: neither half of the pair landed.
-	if n := refRowsOf(t, ds, refLockAuthority+"/holder", holderID, "points"); n != 0 {
+	if n := refRowsOf(t, ds, refLockPackage+"/holder", holderID, "points"); n != 0 {
 		t.Fatalf("the parked write already wrote %d refs rows", n)
 	}
 
@@ -119,14 +119,14 @@ func TestDataWriteParksAtTheRegistryDepLockAndKeepsItsRefsRow(t *testing.T) {
 	// THE PAIR, together. The row carries the reference and the index carries
 	// its row: the outcome #321 asks for is that the refs row is present or the
 	// write refused, never silently absent.
-	got, err := ds.Get(ctx, refLockAuthority+"/holder", holderID)
+	got, err := ds.Get(ctx, refLockPackage+"/holder", holderID)
 	if err != nil {
 		t.Fatalf("get the holder: %v", err)
 	}
-	if storedReferencePath(got.Properties["points"]) != vocabulary.RecordPath(refLockAuthority+"/target", "a") {
+	if storedReferencePath(got.Properties["points"]) != vocabulary.RecordPath(refLockPackage+"/target", "a") {
 		t.Fatalf("stored points = %#v", got.Properties["points"])
 	}
-	if n := refRowsOf(t, ds, refLockAuthority+"/holder", holderID, "points"); n != 1 {
+	if n := refRowsOf(t, ds, refLockPackage+"/holder", holderID, "points"); n != 1 {
 		t.Fatalf("refs rows for the committed reference = %d, want 1 — the write committed props without its index row", n)
 	}
 }
@@ -143,12 +143,12 @@ func TestPatchParksAtTheRegistryDepLock(t *testing.T) {
 		t.Fatalf("install the reflock authority: %v", err)
 	}
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: refLockAuthority + "/target", ID: "a", Properties: map[string]any{},
+		Kind: refLockPackage + "/target", ID: "a", Properties: map[string]any{},
 	}); err != nil {
 		t.Fatalf("put the target: %v", err)
 	}
 	holder, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: refLockAuthority + "/holder", ID: "h2", Properties: map[string]any{},
+		Kind: refLockPackage + "/holder", ID: "h2", Properties: map[string]any{},
 	})
 	if err != nil {
 		t.Fatalf("put the holder: %v", err)

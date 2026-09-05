@@ -24,7 +24,7 @@ func TestPutIfAbsentIfVersionRejectedAtDecode(t *testing.T) {
 	}
 	ds := newTierDataset(t)
 	fn := &vocabulary.Function{
-		Name: "fixer", Authority: tierAuthority, Description: "test",
+		Name: "fixer", Package: tierPackage, Description: "test",
 		Caps: vocabulary.FunctionCaps{Emit: []string{typeTierProfile}},
 	}
 

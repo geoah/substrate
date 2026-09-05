@@ -18,7 +18,7 @@ import (
 
 // taskKind is a kind OUTSIDE the crew authority's own vocabulary: the arbiter's
 // emit does not name it, so it is the confused-deputy target.
-const taskKind = "tasks.substrate.reamde.dev/task"
+const taskKind = "samples.substrate.reamde.dev/tasks/task"
 
 func gqlToolArgs(t *testing.T, m map[string]any) string {
 	t.Helper()
@@ -49,18 +49,18 @@ func TestAgentGraphQLReads(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewAuthority + "/widget", ID: "w-listed",
+		Kind: crewPackage + "/widget", ID: "w-listed",
 		Properties: map[string]any{"name": "first"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	fake.script("gql",
 		fakeTurn{calls: []fakeCall{{"graphql", gqlToolArgs(t, map[string]any{
-			"query": `{ records(filter: {kinds: ["crew.test.dev/widget"]}, first: 5) { nodes { id kind } } }`,
+			"query": `{ records(filter: {kinds: ["crew.test.dev/crew/widget"]}, first: 5) { nodes { id kind } } }`,
 		})}}},
 		fakeTurn{content: "one widget"},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/archivist", "list widgets")
+	res, err := ds.CallAgent(ctx, crewPackage+"/archivist", "list widgets")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -85,11 +85,11 @@ func TestAgentGraphQLRefusesMutations(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	fake.script("gql",
 		fakeTurn{calls: []fakeCall{{"graphql", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "crew.test.dev/widget", id: "w-sneak", properties: {name: "no"}}) { id } }`,
+			"query": `mutation { put(input: {kind: "crew.test.dev/crew/widget", id: "w-sneak", properties: {name: "no"}}) { id } }`,
 		})}}},
 		fakeTurn{content: "refused, stopping"},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/archivist", "write one")
+	res, err := ds.CallAgent(ctx, crewPackage+"/archivist", "write one")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestAgentGraphQLRefusesMutations(t *testing.T) {
 	if content, _ := tool["content"].(string); !strings.Contains(content, "mutations are not allowed") {
 		t.Fatalf("refusal does not name the gate: %s", content)
 	}
-	if _, err := ds.Get(ctx, crewAuthority+"/widget", "w-sneak"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, crewPackage+"/widget", "w-sneak"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the refused mutation landed: %v", err)
 	}
 	if res.Effects != 0 {
@@ -114,11 +114,11 @@ func TestAgentMutateWritesWithinEmit(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	fake.script("mut",
 		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "crew.test.dev/widget", id: "w-made", properties: {name: "made"}}) { id } }`,
+			"query": `mutation { put(input: {kind: "crew.test.dev/crew/widget", id: "w-made", properties: {name: "made"}}) { id } }`,
 		})}}},
 		fakeTurn{content: "made it"},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/editor", "make a widget")
+	res, err := ds.CallAgent(ctx, crewPackage+"/editor", "make a widget")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestAgentMutateWritesWithinEmit(t *testing.T) {
 	if tool["ok"] != true {
 		t.Fatalf("mutate failed: %v", tool["content"])
 	}
-	e, err := ds.Get(ctx, crewAuthority+"/widget", "w-made")
+	e, err := ds.Get(ctx, crewPackage+"/widget", "w-made")
 	if err != nil {
 		t.Fatalf("the mutation did not land: %v", err)
 	}
@@ -137,11 +137,11 @@ func TestAgentMutateWritesWithinEmit(t *testing.T) {
 		t.Fatalf("widget props: %+v", e.Properties)
 	}
 	// The write landed under the AGENT's actor, through the public write path.
-	changes, err := ds.Changes(ctx, 0, substrate.ChangeFilter{RecordID: "w-made", Kinds: []string{crewAuthority + "/widget"}}, 10)
+	changes, err := ds.Changes(ctx, 0, substrate.ChangeFilter{RecordID: "w-made", Kinds: []string{crewPackage + "/widget"}}, 10)
 	if err != nil || len(changes) == 0 {
 		t.Fatalf("changes: %v %v", changes, err)
 	}
-	if changes[0].Actor != substrate.Actor("agent:"+crewAuthority+":editor") {
+	if changes[0].Actor != substrate.AgentActor(vocabulary.SplitKindRef(crewPackage+"/editor")) {
 		t.Fatalf("actor %q, want the agent's", changes[0].Actor)
 	}
 }
@@ -155,14 +155,14 @@ func TestAgentMutateHoldsEmitAndRefusesMerge(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	fake.script("mut",
 		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "tasks.substrate.reamde.dev/task", id: "t-sneak", properties: {title: "no"}}) { id } }`,
+			"query": `mutation { put(input: {kind: "samples.substrate.reamde.dev/tasks/task", id: "t-sneak", properties: {title: "no"}}) { id } }`,
 		})}}},
 		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { merge(kind: "crew.test.dev/widget", winner: "w-a", loser: "w-b") { id } }`,
+			"query": `mutation { merge(kind: "crew.test.dev/crew/widget", winner: "w-a", loser: "w-b") { id } }`,
 		})}}},
 		fakeTurn{content: "blocked twice"},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/editor", "go")
+	res, err := ds.CallAgent(ctx, crewPackage+"/editor", "go")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestAgentMutateHoldsEmitAndRefusesMerge(t *testing.T) {
 	if !strings.Contains(toolContents[1], "owner's decision") {
 		t.Fatalf("merge refusal does not name the owner: %s", toolContents[1])
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "t-sneak"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "t-sneak"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the refused put landed: %v", err)
 	}
 }
@@ -219,7 +219,7 @@ func decideArgs(t *testing.T, id, decision string) string {
 	t.Helper()
 	return gqlToolArgs(t, map[string]any{
 		"query": `mutation Decide($id: ID!, $decision: JSON!) {
-			patch(kind: "core.substrate.reamde.dev/recordpatchrequest", id: $id, input: $decision) { id }
+			patch(kind: "substrate.reamde.dev/core/recordpatchrequest", id: $id, input: $decision) { id }
 		}`,
 		"variables": map[string]any{
 			"id": id, "decision": map[string]any{"properties": map[string]any{"decision": decision}},
@@ -238,7 +238,7 @@ func TestAgentMutateDecidesRequestsWithinEmit(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 
 	widget, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewAuthority + "/widget", ID: "w-decided", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: "w-decided", Properties: map[string]any{"name": "raw"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -259,7 +259,7 @@ func TestAgentMutateDecidesRequestsWithinEmit(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"mutate", decideArgs(t, "req-reject", "rejected")}}},
 		fakeTurn{content: "decided"},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/arbiter", "work the inbox")
+	res, err := ds.CallAgent(ctx, crewPackage+"/arbiter", "work the inbox")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -341,13 +341,13 @@ func TestTriggerFiresAgentThatAcceptsRequest(t *testing.T) {
 			"source": map[string]any{"record": map[string]any{
 				"kinds": []any{vocabulary.KindRecordPatchRequest}, "ops": []any{"create"},
 			}},
-			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/agent", crewAuthority+"/arbiter"),
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/agent", crewPackage+"/arbiter"),
 		},
 	}); err != nil {
 		t.Fatalf("put the proposal trigger: %v", err)
 	}
 	widget, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewAuthority + "/widget", ID: "w-reviewed", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: "w-reviewed", Properties: map[string]any{"name": "raw"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -383,27 +383,27 @@ func TestHiddenFromChatWithholdsChatAlone(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 
 	// The chat surface refuses before any completion is bought.
-	_, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewAuthority+"/judge", "", "hi", nil)
+	_, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/judge", "", "hi", nil)
 	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "hidden from chat") {
 		t.Fatalf("chat on an agent hidden from chat: %v", err)
 	}
 
 	// The flag projects onto the agent's row, where the console's filter
 	// reads it; the unmarked sibling projects without the key.
-	row, err := ds.Get(ctx, kindAgent, crewAuthority+"/judge")
+	row, err := ds.Get(ctx, kindAgent, crewPackage+"/judge")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if row.Properties["hiddenFromChat"] != true {
 		t.Fatalf("projection: %+v", row.Properties["hiddenFromChat"])
 	}
-	if chatter, err := ds.Get(ctx, kindAgent, crewAuthority+"/chatter"); err != nil || chatter.Properties["hiddenFromChat"] != nil {
+	if chatter, err := ds.Get(ctx, kindAgent, crewPackage+"/chatter"); err != nil || chatter.Properties["hiddenFromChat"] != nil {
 		t.Fatalf("unmarked agent projects hiddenFromChat: %v %v", chatter, err)
 	}
 
 	// The call API still dispatches it, and so does a caller's sub-agent hop.
 	fake.script("judge", fakeTurn{content: "verdict"})
-	if res, err := ds.CallAgent(ctx, crewAuthority+"/judge", "weigh this"); err != nil || res.Reply != "verdict" {
+	if res, err := ds.CallAgent(ctx, crewPackage+"/judge", "weigh this"); err != nil || res.Reply != "verdict" {
 		t.Fatalf("call on a subagent-only agent: %+v %v", res, err)
 	}
 	fake.script("justice",
@@ -411,7 +411,7 @@ func TestHiddenFromChatWithholdsChatAlone(t *testing.T) {
 		fakeTurn{content: "delivered"},
 	)
 	fake.script("judge", fakeTurn{content: "guilty"})
-	res, err := ds.CallAgent(ctx, crewAuthority+"/justice", "try the case")
+	res, err := ds.CallAgent(ctx, crewPackage+"/justice", "try the case")
 	if err != nil || res.Status != threadOK || res.Reply != "delivered" {
 		t.Fatalf("sub-agent hop to a subagent-only agent: %+v %v", res, err)
 	}

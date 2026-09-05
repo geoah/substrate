@@ -36,9 +36,9 @@ import (
 // separate authority (the former `ai.substrate.reamde.dev`, folded in 2026-08-12), and
 // the `agent` kind was always core's.
 const (
-	typeProvider  = "core.substrate.reamde.dev/llmprovider"
-	typeThread    = "core.substrate.reamde.dev/llmthread"
-	typeMessage   = "core.substrate.reamde.dev/llmmessage"
+	typeProvider  = "substrate.reamde.dev/core/llmprovider"
+	typeThread    = "substrate.reamde.dev/core/llmthread"
+	typeMessage   = "substrate.reamde.dev/core/llmmessage"
 	msgRelThread  = "thread"
 	threadRelPare = "parent"
 )
@@ -930,7 +930,7 @@ func (l *agentLoop) dispatch(ctx context.Context, tc llm.ToolCall) (string, bool
 // remaining row budget, and a blown budget is a tool error the model sees.
 //
 // The loop owns the BUDGET; runQueryTool owns the reading. The split exists
-// because `core.substrate.reamde.dev/query` is also callable directly, where the
+// because `substrate.reamde.dev/core/query` is also callable directly, where the
 // caller is a token that owns the whole repository and there is no loop to
 // account against.
 func (l *agentLoop) dispatchQuery(ctx context.Context, args map[string]any) (string, bool) {
@@ -1237,7 +1237,7 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, fn *vocabulary.Functio
 	// agent root's already-held fence: an agent cannot invoke — or
 	// commit effects from — a disabled bundle's function. No re-acquire; the
 	// lease rides ctx from the agent's root admission.
-	if _, _, err := l.ds.admitCallable(ctx, fn.Authority, fn.Identity()); err != nil {
+	if _, _, err := l.ds.admitCallable(ctx, fn.Package, fn.Identity()); err != nil {
 		return toolError(err.Error()), false
 	}
 	// The tool key derives from the STABLE delivery identity plus the call
@@ -1357,7 +1357,7 @@ func (l *agentLoop) dispatchSubAgent(ctx context.Context, sub *vocabulary.Agent,
 	// The lifecycle gate holds on the child hop too, re-checked under the
 	// root's held fence: a disabled or uninstalled bundle's agent
 	// refuses even when a live parent asks. No re-acquire; the lease rides ctx.
-	if _, _, err := l.ds.admitCallable(ctx, sub.Authority, sub.Identity()); err != nil {
+	if _, _, err := l.ds.admitCallable(ctx, sub.Package, sub.Identity()); err != nil {
 		return toolError(err.Error()), false
 	}
 	depth := l.in.depth + 1

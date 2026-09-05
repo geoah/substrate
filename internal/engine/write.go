@@ -1357,7 +1357,7 @@ func (t *txn) isBundleOwnerGated(ty *vocabulary.Kind) bool {
 	if ty.Implements(vocabulary.TraitAccountConfigCore) {
 		return true
 	}
-	b, ok := t.ds.registry().BundleOf(ty.Authority)
+	b, ok := t.ds.registry().BundleOf(ty.Package)
 	return ok && bundleInputKind(b, ty.Identity)
 }
 

@@ -55,7 +55,7 @@ func TestMeetingScenario(t *testing.T) {
 		Properties: map[string]any{
 			"at": "2026-08-05T13:00:00Z", "endsAt": "2026-08-05T13:30:00Z", "summary": "Standup", "location": "Meet",
 			"calendar":  cal.ID,
-			"series":    vocabulary.RecordPath("calendar.substrate.reamde.dev/calendareventseries", series.ID),
+			"series":    vocabulary.RecordPath("samples.substrate.reamde.dev/calendar/calendareventseries", series.ID),
 			"attendees": []any{alex.ID, nina.ID},
 			"organizer": george.ID,
 		},
@@ -93,7 +93,7 @@ func TestMeetingScenario(t *testing.T) {
 		Properties: map[string]any{
 			"title": "Send rack layout to Alex", "dueAt": "2026-08-08T00:00:00Z",
 			"status": "proposed",
-			"source": vocabulary.RecordPath("calendar.substrate.reamde.dev/transcript", transcript.ID),
+			"source": vocabulary.RecordPath("samples.substrate.reamde.dev/calendar/transcript", transcript.ID),
 		},
 	})
 	if task.Properties["status"] != "proposed" {

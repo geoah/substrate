@@ -616,7 +616,7 @@ func (t *txn) sourceActor(src eref, m *vocabulary.Mapping) (string, error) {
 	if actor != "" {
 		return actor, nil
 	}
-	if g, ok := t.ds.registry().AuthorityByName(m.Authority); ok && len(g.Actors) > 0 {
+	if g, ok := t.ds.registry().PackageByName(m.Package); ok && len(g.Actors) > 0 {
 		return g.Actors[0], nil
 	}
 	return string(substrate.ActorSystem), nil

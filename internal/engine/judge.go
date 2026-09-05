@@ -212,7 +212,7 @@ func (ds *dataset) runJudge(ctx context.Context, req *substrate.Record, rule *po
 	if err != nil {
 		return v, "", err
 	}
-	ctx, release, err := ds.admitCallable(ctx, ag.Authority, ag.Identity())
+	ctx, release, err := ds.admitCallable(ctx, ag.Package, ag.Identity())
 	if err != nil {
 		return v, "", err
 	}

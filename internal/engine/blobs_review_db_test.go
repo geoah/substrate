@@ -59,7 +59,7 @@ func TestBlobGCCannotDangleUncommittedRef(t *testing.T) {
 	refDone := make(chan error, 1)
 	go func() {
 		_, e := ds.Put(ctx, owner, substrate.PutInput{
-			Kind: blobAuthority + "/doc", ID: "racedoc",
+			Kind: blobPackage + "/doc", ID: "racedoc",
 			Properties: map[string]any{"attachment": blob.Digest},
 		})
 		refDone <- e
@@ -129,7 +129,7 @@ func TestBlobManifestForgeRefusedAndDedupAuthoritative(t *testing.T) {
 
 	forged := substrate.BlobDigestPrefix + strings.Repeat("2", 64)
 	_, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/blob", ID: forged,
+		Kind: "substrate.reamde.dev/core/blob", ID: forged,
 		Properties: map[string]any{
 			"digest": forged, "size": 99999,
 			"mediaType": "text/plain", "status": "stored",

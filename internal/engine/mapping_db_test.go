@@ -16,24 +16,24 @@ import (
 // exercise the real path, not a hand-built registry.
 
 const (
-	googleAuthority = "google.connectors.substrate.reamde.dev"
-	slackAuthority  = "slack.connectors.substrate.reamde.dev"
+	googlePackage = "google.connectors.substrate.reamde.dev/google"
+	slackPackage  = "slack.connectors.substrate.reamde.dev/slack"
 
-	typeGoogleContact = googleAuthority + "/contact"
-	typeSlackUser     = slackAuthority + "/slackuser"
+	typeGoogleContact = googlePackage + "/contact"
+	typeSlackUser     = slackPackage + "/slackuser"
 
-	typePerson = "people.substrate.reamde.dev/person"
+	typePerson = "samples.substrate.reamde.dev/people/person"
 )
 
 // googleManifest mirrors the People API: a structured name, and
 // repeated objects for what Google actually sends.
 func googleManifest() enginetest.Manifest {
 	return enginetest.Manifest{
-		Name: "google.people", Authority: googleAuthority,
+		Name: "google.people", Authority: googlePackage,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(googleAuthority, 1),
-			vocabulary.ActorManifest(googleAuthority, string(people)),
-			vocabulary.KindManifest(googleAuthority,
+			vocabulary.PackageManifest(googlePackage, 1),
+			vocabulary.ActorManifest(googlePackage, string(people)),
+			vocabulary.KindManifest(googlePackage,
 				map[string]any{"singular": "contact", "plural": "contacts"},
 				map[string]any{
 					"displayTemplate": "{name.displayName}",
@@ -61,7 +61,7 @@ func googleManifest() enginetest.Manifest {
 						},
 					},
 				}),
-			vocabulary.MappingManifest(googleAuthority, "contactperson", map[string]any{
+			vocabulary.MappingManifest(googlePackage, "contactperson", map[string]any{
 				"from": typeGoogleContact, "to": typePerson, "property": "person",
 				"match": []any{
 					map[string]any{"from": "emails[].value", "to": "emails"},
@@ -79,11 +79,11 @@ func googleManifest() enginetest.Manifest {
 
 func slackManifest() enginetest.Manifest {
 	return enginetest.Manifest{
-		Name: "slack", Authority: slackAuthority,
+		Name: "slack", Authority: slackPackage,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(slackAuthority, 1),
-			vocabulary.ActorManifest(slackAuthority, string(slack)),
-			vocabulary.KindManifest(slackAuthority,
+			vocabulary.PackageManifest(slackPackage, 1),
+			vocabulary.ActorManifest(slackPackage, string(slack)),
+			vocabulary.KindManifest(slackPackage,
 				map[string]any{"singular": "slackuser", "plural": "slackusers"},
 				map[string]any{
 					"displayTemplate": "{displayName|realName}",
@@ -101,7 +101,7 @@ func slackManifest() enginetest.Manifest {
 						},
 					},
 				}),
-			vocabulary.MappingManifest(slackAuthority, "slackuserperson", map[string]any{
+			vocabulary.MappingManifest(slackPackage, "slackuserperson", map[string]any{
 				"from": typeSlackUser, "to": typePerson, "property": "person",
 				"match": []any{map[string]any{"from": "email", "to": "emails"}},
 				"map": map[string]any{
@@ -633,13 +633,13 @@ func TestStatesAreNeverRecomputed(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	const authority = "promoter.connectors.substrate.reamde.dev"
+	const pkg = "promoter.connectors.substrate.reamde.dev/promoter"
 	m := enginetest.Manifest{
-		Name: "promoter", Authority: authority,
+		Name: "promoter", Authority: pkg,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(authority, 1),
-			vocabulary.ActorManifest(authority, "connector:promoter"),
-			vocabulary.KindManifest(authority,
+			vocabulary.PackageManifest(pkg, 1),
+			vocabulary.ActorManifest(pkg, "connector:promoter"),
+			vocabulary.KindManifest(pkg,
 				map[string]any{"singular": "promoterrow", "plural": "promoterrows"},
 				map[string]any{
 					"properties": map[string]any{
@@ -651,8 +651,8 @@ func TestStatesAreNeverRecomputed(t *testing.T) {
 						},
 					},
 				}),
-			vocabulary.MappingManifest(authority, "promoterrowperson", map[string]any{
-				"from": authority + "/promoterrow", "to": typePerson, "property": "person",
+			vocabulary.MappingManifest(pkg, "promoterrowperson", map[string]any{
+				"from": pkg + "/promoterrow", "to": typePerson, "property": "person",
 				"map": map[string]any{
 					"name":       map[string]any{"path": "name"},
 					"prominence": map[string]any{"path": "prominence"},
@@ -666,7 +666,7 @@ func TestStatesAreNeverRecomputed(t *testing.T) {
 	}
 	wantErr(t, err, substrate.ErrValidation, "state as a map target")
 
-	// Without that rule the authority installs, and a sync leaves the state
+	// Without that rule the pkg installs, and a sync leaves the state
 	// exactly where the declaration puts it.
 	data, _ := m.Manifests[3]["data"].(map[string]any)
 	mp, _ := data["map"].(map[string]any)
@@ -675,7 +675,7 @@ func TestStatesAreNeverRecomputed(t *testing.T) {
 		t.Fatalf("register: %v", err)
 	}
 	row := mustPut(t, ds, substrate.Actor("connector:promoter"), substrate.PutInput{
-		Kind: authority + "/promoterrow", ID: "p1",
+		Kind: pkg + "/promoterrow", ID: "p1",
 		Properties: map[string]any{"name": "Ada", "prominence": "known"},
 	})
 	person := mustGet(t, ds, typePerson, personOf(t, ds, row))
@@ -738,7 +738,7 @@ func TestOneHopResolution(t *testing.T) {
 		Kind: "conversationmessage", ID: "s-msg-1",
 		Properties: map[string]any{
 			"text": "hi", "at": "2026-08-03T10:00:00Z", "conversation": conv.ID,
-			"author": vocabulary.RecordPath(slackAuthority+"/slackuser", s.ID),
+			"author": vocabulary.RecordPath(slackPackage+"/slackuser", s.ID),
 		},
 	})
 	author := refPathValue(mustGet(t, ds, msg.Kind, msg.ID), "author")
@@ -777,7 +777,7 @@ func TestUnlinkedSourceGetsAShell(t *testing.T) {
 		Properties: map[string]any{
 			"text": "hi", "at": "2026-08-03T10:00:00Z",
 			"conversation": newConversation(t, ds).ID,
-			"author":       vocabulary.RecordPath(googleAuthority+"/contact", g.ID),
+			"author":       vocabulary.RecordPath(googlePackage+"/contact", g.ID),
 		},
 	})
 	authorKind, authorID, ok := vocabulary.SplitRecordPath(
@@ -981,7 +981,7 @@ func TestConcurrentShellBirthMintsOneShell(t *testing.T) {
 				Kind: "conversationmessage", ID: "s-msg-" + string(rune('a'+i)),
 				Properties: map[string]any{
 					"text": "hi", "conversation": conv.ID,
-					"author": vocabulary.RecordPath(googleAuthority+"/contact", src.ID),
+					"author": vocabulary.RecordPath(googlePackage+"/contact", src.ID),
 				},
 			})
 			errs <- err
@@ -1054,13 +1054,13 @@ func TestObjectPropertyValidation(t *testing.T) {
 	// Fields nest to vocabulary.MaxFieldDepth — a kind's own property is level 1
 	// — and one level past it is a LOAD error, because the narrowing guards walk
 	// exactly that many jsonb notches.
-	const authority = "nested.connectors.substrate.reamde.dev"
+	const pkg = "nested.connectors.substrate.reamde.dev/nested"
 	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, enginetest.Manifest{
-		Name: "nested", Authority: authority,
+		Name: "nested", Authority: pkg,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(authority, 1),
-			vocabulary.ActorManifest(authority, "connector:nested"),
-			vocabulary.KindManifest(authority,
+			vocabulary.PackageManifest(pkg, 1),
+			vocabulary.ActorManifest(pkg, "connector:nested"),
+			vocabulary.KindManifest(pkg,
 				map[string]any{"singular": "row", "plural": "rows"},
 				map[string]any{"properties": map[string]any{
 					"outer": map[string]any{"type": "object", "fields": map[string]any{
@@ -1073,11 +1073,11 @@ func TestObjectPropertyValidation(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("an object nested inside an object must register: %v", err)
 	}
-	const deep = "toodeep.connectors.substrate.reamde.dev"
+	const deep = "toodeep.connectors.substrate.reamde.dev/toodeep"
 	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, enginetest.Manifest{
 		Name: "toodeep", Authority: deep,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(deep, 1),
+			vocabulary.PackageManifest(deep, 1),
 			vocabulary.ActorManifest(deep, "connector:toodeep"),
 			vocabulary.KindManifest(deep,
 				map[string]any{"singular": "row", "plural": "rows"},
@@ -1108,19 +1108,19 @@ func TestHotMapTargets(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	const authority = "library.connectors.substrate.reamde.dev"
+	const pkg = "library.connectors.substrate.reamde.dev/library"
 	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, enginetest.Manifest{
-		Name: "library", Authority: authority,
+		Name: "library", Authority: pkg,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(authority, 1),
-			vocabulary.ActorManifest(authority, "connector:library"),
-			vocabulary.KindManifest(authority,
+			vocabulary.PackageManifest(pkg, 1),
+			vocabulary.ActorManifest(pkg, "connector:library"),
+			vocabulary.KindManifest(pkg,
 				map[string]any{"singular": "work", "plural": "works"},
 				map[string]any{"properties": map[string]any{
 					"subtitle": map[string]any{"type": "string"},
 					"body":     map[string]any{"type": "text"},
 				}}),
-			vocabulary.KindManifest(authority,
+			vocabulary.KindManifest(pkg,
 				map[string]any{"singular": "libraryrow", "plural": "libraryrows"},
 				map[string]any{
 					"traits": []any{"temporal(point)"},
@@ -1128,13 +1128,13 @@ func TestHotMapTargets(t *testing.T) {
 						"subtitle": map[string]any{"type": "string"},
 						"body":     map[string]any{"type": "text"},
 						"work": map[string]any{
-							"type": "reference", "kind": authority + "/work",
+							"type": "reference", "kind": pkg + "/work",
 							"required": true, "mustExist": true, "subject": true,
 						},
 					},
 				}),
-			vocabulary.MappingManifest(authority, "libraryrowwork", map[string]any{
-				"from": authority + "/libraryrow", "to": authority + "/work", "property": "work",
+			vocabulary.MappingManifest(pkg, "libraryrowwork", map[string]any{
+				"from": pkg + "/libraryrow", "to": pkg + "/work", "property": "work",
 				"map": map[string]any{
 					"title":    map[string]any{"path": "title"},
 					"body":     map[string]any{"path": "body"},
@@ -1147,7 +1147,7 @@ func TestHotMapTargets(t *testing.T) {
 	}
 	lib := substrate.Actor("connector:library")
 	row := mustPut(t, ds, lib, substrate.PutInput{
-		Kind: authority + "/libraryrow", ID: "lib:1",
+		Kind: pkg + "/libraryrow", ID: "lib:1",
 		Properties: map[string]any{
 			"title": "Piranesi", "body": "a house of statues",
 			"at": "2020-09-15T00:00:00Z", "subtitle": "a novel",

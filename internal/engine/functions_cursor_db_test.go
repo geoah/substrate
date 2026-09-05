@@ -22,10 +22,10 @@ func TestTriggerCursorSwapLosesToReplay(t *testing.T) {
 	ds := openCursorDataset(t)
 	ctx := context.Background()
 
-	const authority = "widgets.test.dev"
-	actor := substrate.Actor(authority)
-	widgetType := authority + "/widget"
-	const triggerID = "on-mirror.widgets.test.dev"
+	const pkg = "widgets.test.dev/widgets"
+	actor := substrate.Actor(pkg)
+	widgetType := pkg + "/widget"
+	triggerID := "on-mirror." + pkg
 
 	w, err := ds.Put(ctx, actor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "one"}})
 	if err != nil {
@@ -87,35 +87,35 @@ func TestTriggerCursorSwapLosesToReplay(t *testing.T) {
 func openCursorDataset(t *testing.T) *dataset {
 	t.Helper()
 	ctx := context.Background()
-	const authority = "widgets.test.dev"
-	widgetType := authority + "/widget"
+	const pkg = "widgets.test.dev/widgets"
+	widgetType := pkg + "/widget"
 	d := openInternalDataset(t)
 	if err := enginetest.Install(ctx, d, substrate.ActorAPI, enginetest.Manifest{
-		Name: "widgets", Authority: authority,
+		Name: "widgets", Authority: pkg,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(authority, 0),
-			vocabulary.ActorManifest(authority, vocabulary.AuthorityActor(authority)),
-			vocabulary.KindManifest(authority, map[string]any{"singular": "widget", "plural": "widgets"},
+			vocabulary.PackageManifest(pkg, 0),
+			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
+			vocabulary.KindManifest(pkg, map[string]any{"singular": "widget", "plural": "widgets"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
-			vocabulary.FunctionManifest(authority, "mirror", map[string]any{
+			vocabulary.FunctionManifest(pkg, "mirror", map[string]any{
 				"description": "mirrors widgets into tasks",
 				"runtime":     vocabulary.RuntimePython,
-				"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
+				"permissions": map[string]any{"writes": []any{"samples.substrate.reamde.dev/tasks/task"}},
 				"source": `
 def main(input, host):
     env = input["envelope"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "t-" + env["change"]["id"],
                          "properties": {"name": env["record"]["properties"]["name"]}}]}
 `,
 			}),
 		},
 		Triggers: []enginetest.Trigger{{
-			ID: "on-mirror." + authority,
+			ID: "on-mirror." + pkg,
 			Properties: map[string]any{
 				"enabled":  true,
 				"source":   map[string]any{"record": map[string]any{"kinds": []any{widgetType}}},
-				"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", authority+"/mirror"),
+				"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", pkg+"/mirror"),
 			},
 		}},
 	}); err != nil {
@@ -132,7 +132,7 @@ func openInternalDataset(t *testing.T, opts ...Option) *dataset {
 	dsn := testdb.NewSchema(t)
 	svc, err := Open(ctx, dsn,
 		append([]Option{
-			WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+			WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 			WithCredentialKey(TestCredentialKey),
 		}, opts...)...)
 	if err != nil {
@@ -167,7 +167,7 @@ func importVocabulary(t *testing.T, ds substrate.Dataset, names ...string) {
 
 func taskTitle(t *testing.T, d substrate.Dataset, id string) string {
 	t.Helper()
-	e, err := d.Get(context.Background(), "tasks.substrate.reamde.dev/task", id)
+	e, err := d.Get(context.Background(), "samples.substrate.reamde.dev/tasks/task", id)
 	if err != nil {
 		t.Fatalf("get %s: %v", id, err)
 	}

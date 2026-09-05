@@ -24,25 +24,26 @@ import (
 
 // openPagedDataset provisions a repository with one widget type, one PAGED
 // function draining `source`, and an record trigger on the widget. A unique
-// authority per test keeps the shared runner's registration (hence any body-side
+// package per test keeps the shared runner's registration (hence any body-side
 // module state) isolated across cases.
-func openPagedDataset(t *testing.T, authority, source string) (*dataset, string) {
+func openPagedDataset(t *testing.T, pkg, source string) (*dataset, string) {
 	t.Helper()
 	ctx := context.Background()
-	widgetType := authority + "/widget"
+	authority, _ := vocabulary.SplitPackageRef(pkg)
+	widgetType := pkg + "/widget"
 	triggerID := "on-page." + authority
 	d := openInternalDataset(t)
 	if err := enginetest.Install(ctx, d, substrate.ActorAPI, enginetest.Manifest{
 		Name: "widgets", Authority: authority,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(authority, 0),
-			vocabulary.ActorManifest(authority, vocabulary.AuthorityActor(authority)),
-			vocabulary.KindManifest(authority, map[string]any{"singular": "widget", "plural": "widgets"},
+			vocabulary.PackageManifest(pkg, 0),
+			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
+			vocabulary.KindManifest(pkg, map[string]any{"singular": "widget", "plural": "widgets"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
-			vocabulary.FunctionManifest(authority, "page", map[string]any{
+			vocabulary.FunctionManifest(pkg, "page", map[string]any{
 				"description": "a paged backfill body",
 				"runtime":     vocabulary.RuntimePython,
-				"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
+				"permissions": map[string]any{"writes": []any{"samples.substrate.reamde.dev/tasks/task"}},
 				"source":      source,
 			}),
 		},
@@ -51,7 +52,7 @@ func openPagedDataset(t *testing.T, authority, source string) (*dataset, string)
 			Properties: map[string]any{
 				"enabled":  true,
 				"source":   map[string]any{"record": map[string]any{"kinds": []any{widgetType}}},
-				"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", authority+"/page"),
+				"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", pkg+"/page"),
 			},
 		}},
 	}); err != nil {
@@ -69,7 +70,7 @@ func pagedBody(n int) string {
 def main(input, host):
     page = input.get("resume") or 0
     depth = input.get("causalDepth", 0)
-    effects = [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    effects = [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                 "id": "p-%%d" %% page, "properties": {"name": str(depth)}}]
     if page < %d - 1:
         return {"effects": effects, "more": {"cursor": page + 1}}
@@ -83,11 +84,11 @@ def main(input, host):
 // causal-depth budget (the whole point over a self-emit).
 func TestPagedDrainConstantDepth(t *testing.T) {
 	t.Parallel()
-	ds, triggerID := openPagedDataset(t, "pageddepth.test.dev", pagedBody(3))
+	ds, triggerID := openPagedDataset(t, "pageddepth.test.dev/pageddepth", pagedBody(3))
 	ctx := context.Background()
 	actor := substrate.Actor("connector:pageddepth")
 
-	w, err := ds.Put(ctx, actor, substrate.PutInput{Kind: "pageddepth.test.dev/widget", Properties: map[string]any{"name": "big"}})
+	w, err := ds.Put(ctx, actor, substrate.PutInput{Kind: "pageddepth.test.dev/pageddepth/widget", Properties: map[string]any{"name": "big"}})
 	if err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -137,17 +138,17 @@ func TestPagedDrainMaxPagesCap(t *testing.T) {
 	source := `
 def main(input, host):
     page = input.get("resume") or 0
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "p-%d" % page, "properties": {"name": "x"}}],
             "more": {"cursor": page + 1}}
 `
-	ds, triggerID := openPagedDataset(t, "pagedcap.test.dev", source)
+	ds, triggerID := openPagedDataset(t, "pagedcap.test.dev/pagedcap", source)
 	ctx := context.Background()
 	actor := substrate.Actor("connector:pagedcap")
 
 	defer withMaxPages(2)()
 
-	w, err := ds.Put(ctx, actor, substrate.PutInput{Kind: "pagedcap.test.dev/widget", Properties: map[string]any{"name": "endless"}})
+	w, err := ds.Put(ctx, actor, substrate.PutInput{Kind: "pagedcap.test.dev/pagedcap/widget", Properties: map[string]any{"name": "endless"}})
 	if err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -161,11 +162,11 @@ def main(input, host):
 
 	// Exactly the cap's worth of pages committed; the next never ran.
 	for page := range 2 {
-		if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", fmt.Sprintf("p-%d", page)); err != nil {
+		if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", fmt.Sprintf("p-%d", page)); err != nil {
 			t.Fatalf("page %d task missing under the cap: %v", page, err)
 		}
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "p-2"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "p-2"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("page 2 ran past the cap")
 	}
 	// Parked, with the cap as the reason, and the resume cursor left at 2 so a
@@ -184,13 +185,13 @@ def main(input, host):
 // committed pages are deleted before the retry; if the retry restarted from
 // zero it would recreate them — it must not.
 func TestPagedParkResumesFromCursor(t *testing.T) {
-	ds, triggerID := openPagedDataset(t, "pagedresume.test.dev", pagedBody(5))
+	ds, triggerID := openPagedDataset(t, "pagedresume.test.dev/pagedresume", pagedBody(5))
 	ctx := context.Background()
 	actor := substrate.Actor("connector:pagedresume")
 
 	restore := withMaxPages(2)
 
-	w, err := ds.Put(ctx, actor, substrate.PutInput{Kind: "pagedresume.test.dev/widget", Properties: map[string]any{"name": "mailbox"}})
+	w, err := ds.Put(ctx, actor, substrate.PutInput{Kind: "pagedresume.test.dev/pagedresume/widget", Properties: map[string]any{"name": "mailbox"}})
 	if err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -213,7 +214,7 @@ func TestPagedParkResumesFromCursor(t *testing.T) {
 	// Erase the already-committed pages: a resume must leave them erased, a
 	// restart-from-zero would recreate them.
 	for _, id := range []string{"p-0", "p-1"} {
-		if _, err := ds.Delete(ctx, substrate.ActorAPI, "tasks.substrate.reamde.dev/task", id); err != nil {
+		if _, err := ds.Delete(ctx, substrate.ActorAPI, "samples.substrate.reamde.dev/tasks/task", id); err != nil {
 			t.Fatalf("delete %s: %v", id, err)
 		}
 	}
@@ -254,15 +255,15 @@ func TestNonPagedDeliveryUntouched(t *testing.T) {
 	source := `
 def main(input, host):
     env = input["envelope"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "t-" + env["change"]["id"],
                          "properties": {"name": env["record"]["properties"]["name"]}}]}
 `
-	ds, triggerID := openPagedDataset(t, "pagedplain.test.dev", source)
+	ds, triggerID := openPagedDataset(t, "pagedplain.test.dev/pagedplain", source)
 	ctx := context.Background()
 	actor := substrate.Actor("connector:pagedplain")
 
-	w, err := ds.Put(ctx, actor, substrate.PutInput{Kind: "pagedplain.test.dev/widget", Properties: map[string]any{"name": "one"}})
+	w, err := ds.Put(ctx, actor, substrate.PutInput{Kind: "pagedplain.test.dev/pagedplain/widget", Properties: map[string]any{"name": "one"}})
 	if err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -299,18 +300,18 @@ func TestPagedDeliveryHonorsIfVersion(t *testing.T) {
 def main(input, host):
     page = input.get("resume") or 0
     if page == 0:
-        host.effects.put("tasks.substrate.reamde.dev/task", "pcas",
+        host.effects.put("samples.substrate.reamde.dev/tasks/task", "pcas",
                          properties={"name": "a"}, if_version=0)
         return {"more": host.page.more(1)}
-    host.effects.patch("tasks.substrate.reamde.dev/task", "pcas",
+    host.effects.patch("samples.substrate.reamde.dev/tasks/task", "pcas",
                        properties={"name": "b"}, if_version=0)
     return {}
 `
-	ds, triggerID := openPagedDataset(t, "pagedcas.test.dev", source)
+	ds, triggerID := openPagedDataset(t, "pagedcas.test.dev/pagedcas", source)
 	ctx := context.Background()
 	actor := substrate.Actor("connector:pagedcas")
 
-	if _, err := ds.Put(ctx, actor, substrate.PutInput{Kind: "pagedcas.test.dev/widget", Properties: map[string]any{"name": "mailbox"}}); err != nil {
+	if _, err := ds.Put(ctx, actor, substrate.PutInput{Kind: "pagedcas.test.dev/pagedcas/widget", Properties: map[string]any{"name": "mailbox"}}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
 	if _, err := ds.ProcessTriggers(ctx); err != nil {
@@ -404,7 +405,7 @@ func pagedRowCount(t *testing.T, ds *dataset) int {
 // causedByOf reads the caused_by of a task's newest changelog row.
 func causedByOf(t *testing.T, ds *dataset, recordID string) int64 {
 	t.Helper()
-	ch, err := ds.latestChangeOf(context.Background(), "tasks.substrate.reamde.dev/task", recordID)
+	ch, err := ds.latestChangeOf(context.Background(), "samples.substrate.reamde.dev/tasks/task", recordID)
 	if err != nil {
 		t.Fatalf("change of %s: %v", recordID, err)
 	}
@@ -419,7 +420,7 @@ func causedByOf(t *testing.T, ds *dataset, recordID string) int64 {
 // depthOf is the causal depth of a task's newest changelog row.
 func depthOf(t *testing.T, ds *dataset, recordID string) int {
 	t.Helper()
-	ch, err := ds.latestChangeOf(context.Background(), "tasks.substrate.reamde.dev/task", recordID)
+	ch, err := ds.latestChangeOf(context.Background(), "samples.substrate.reamde.dev/tasks/task", recordID)
 	if err != nil {
 		t.Fatalf("change of %s: %v", recordID, err)
 	}

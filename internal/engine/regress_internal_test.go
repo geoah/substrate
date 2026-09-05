@@ -13,8 +13,8 @@ import (
 func TestCoalesceChangesKeysByTypeAndID(t *testing.T) {
 	// Two changes, identical ids, different types: both must survive coalescing.
 	both := coalesceChanges([]substrate.Change{
-		{Seq: 1, Kind: "a.substrate.reamde.dev/widget", RecordID: "dup"},
-		{Seq: 2, Kind: "b.substrate.reamde.dev/gadget", RecordID: "dup"},
+		{Seq: 1, Kind: "a.substrate.reamde.dev/a/widget", RecordID: "dup"},
+		{Seq: 2, Kind: "b.substrate.reamde.dev/b/gadget", RecordID: "dup"},
 	})
 	if len(both) != 2 {
 		t.Fatalf("coalesced two distinct (type, id) records into %d — a delivery was dropped", len(both))
@@ -22,8 +22,8 @@ func TestCoalesceChangesKeysByTypeAndID(t *testing.T) {
 
 	// Same (type, id) repeated: coalescing keeps the LAST, as before.
 	one := coalesceChanges([]substrate.Change{
-		{Seq: 1, Kind: "a.substrate.reamde.dev/widget", RecordID: "dup"},
-		{Seq: 2, Kind: "a.substrate.reamde.dev/widget", RecordID: "dup"},
+		{Seq: 1, Kind: "a.substrate.reamde.dev/a/widget", RecordID: "dup"},
+		{Seq: 2, Kind: "a.substrate.reamde.dev/a/widget", RecordID: "dup"},
 	})
 	if len(one) != 1 || one[0].Seq != 2 {
 		t.Fatalf("same-identity coalescing = %+v, want the last (seq 2) only", one)

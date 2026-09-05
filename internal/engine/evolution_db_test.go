@@ -15,7 +15,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-const evoAuthority = "evo.example.substrate.reamde.dev"
+const evoPackage = "evo.example.substrate.reamde.dev/evo"
 
 // evoBaseProps is the base gizmo declaration the narrowing subtests diff
 // against: a plain string, an enum, a state machine and an optional string.
@@ -32,7 +32,7 @@ func evoBaseProps() map[string]any {
 }
 
 func evoTypeDoc(props map[string]any) map[string]any {
-	return vocabulary.KindManifest(evoAuthority,
+	return vocabulary.KindManifest(evoPackage,
 		map[string]any{"singular": "gizmo", "plural": "gizmos"},
 		map[string]any{"properties": props})
 }
@@ -40,7 +40,7 @@ func evoTypeDoc(props map[string]any) map[string]any {
 func evoApply(t *testing.T, ds substrate.Dataset, props map[string]any) error {
 	t.Helper()
 	_, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, []map[string]any{
-		vocabulary.AuthorityManifest(evoAuthority, 0),
+		vocabulary.PackageManifest(evoPackage, 0),
 		evoTypeDoc(props),
 	})
 	return err
@@ -71,7 +71,7 @@ func TestSchemaEvolutionNarrowingRefused(t *testing.T) {
 	// One live row that every narrowing below would strand: it carries size
 	// and level, occupies the done state, and lacks note.
 	gizmo := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: evoAuthority + "/gizmo",
+		Kind: evoPackage + "/gizmo",
 		Properties: map[string]any{
 			"size": "big", "level": "high", "phase": "done",
 		},
@@ -146,7 +146,7 @@ func TestSchemaEvolutionNarrowingRefused(t *testing.T) {
 
 	t.Run("the count is real", func(t *testing.T) {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind:       evoAuthority + "/gizmo",
+			Kind:       evoPackage + "/gizmo",
 			Properties: map[string]any{"size": "small"},
 		})
 		props := evoBaseProps()
@@ -155,7 +155,7 @@ func TestSchemaEvolutionNarrowingRefused(t *testing.T) {
 	})
 
 	// Nothing above landed: the stored definition is still the base.
-	ty, err := ds.Get(ctx, "core.substrate.reamde.dev/kind", evoAuthority+"/gizmo")
+	ty, err := ds.Get(ctx, "substrate.reamde.dev/core/kind", evoPackage+"/gizmo")
 	if err != nil {
 		t.Fatalf("read stored type: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestSchemaEvolutionAdditiveAdmits(t *testing.T) {
 		t.Fatalf("install base type: %v", err)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind:       evoAuthority + "/gizmo",
+		Kind:       evoPackage + "/gizmo",
 		Properties: map[string]any{"size": "big", "level": "high", "phase": "done"},
 	})
 
@@ -205,13 +205,13 @@ func TestSchemaEvolutionAdditiveAdmits(t *testing.T) {
 	}
 	// The widened declaration is live: the new property takes values.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind:       evoAuthority + "/gizmo",
+		Kind:       evoPackage + "/gizmo",
 		Properties: map[string]any{"weight": 1.5, "level": "mid"},
 	})
 
 	// Dropping the property after nulling it on every row admits: the guard
 	// is refuse-while-stranded, not refuse-forever.
-	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{evoAuthority + "/gizmo"}}, First: 10})
+	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{evoPackage + "/gizmo"}}, First: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +237,7 @@ func TestSchemaEvolutionStringToEnumFollowsTheValues(t *testing.T) {
 		t.Fatalf("install base type: %v", err)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind:       evoAuthority + "/gizmo",
+		Kind:       evoPackage + "/gizmo",
 		Properties: map[string]any{"size": "big"},
 	})
 
@@ -250,13 +250,13 @@ func TestSchemaEvolutionStringToEnumFollowsTheValues(t *testing.T) {
 
 	// The payoff: the closed set now refuses at the write.
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind:       evoAuthority + "/gizmo",
+		Kind:       evoPackage + "/gizmo",
 		Properties: map[string]any{"size": "huge"},
 	}); err == nil {
 		t.Fatal("a value outside the declared enum set must refuse at the write")
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind:       evoAuthority + "/gizmo",
+		Kind:       evoPackage + "/gizmo",
 		Properties: map[string]any{"size": "small"},
 	})
 }
@@ -291,8 +291,8 @@ func TestSchemaEvolutionReservedKeysRoundTrip(t *testing.T) {
 	props["predecessor"] = map[string]any{"type": "reference", "deprecated": true}
 	apply := func() error {
 		_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-			vocabulary.AuthorityManifest(evoAuthority, 0),
-			vocabulary.KindManifest(evoAuthority,
+			vocabulary.PackageManifest(evoPackage, 0),
+			vocabulary.KindManifest(evoPackage,
 				map[string]any{"singular": "gizmo", "plural": "gizmos"},
 				map[string]any{"properties": props}),
 		})
@@ -304,7 +304,7 @@ func TestSchemaEvolutionReservedKeysRoundTrip(t *testing.T) {
 
 	assertStored := func(when string) {
 		t.Helper()
-		ty, err := ds.Get(ctx, "core.substrate.reamde.dev/kind", evoAuthority+"/gizmo")
+		ty, err := ds.Get(ctx, "substrate.reamde.dev/core/kind", evoPackage+"/gizmo")
 		if err != nil {
 			t.Fatalf("%s: read stored type: %v", when, err)
 		}
@@ -350,7 +350,7 @@ func TestSchemaEvolutionReservedKeysRoundTrip(t *testing.T) {
 
 	version := func(when string) int64 {
 		t.Helper()
-		ty, err := ds.Get(ctx, "core.substrate.reamde.dev/kind", evoAuthority+"/gizmo")
+		ty, err := ds.Get(ctx, "substrate.reamde.dev/core/kind", evoPackage+"/gizmo")
 		if err != nil {
 			t.Fatalf("%s: read stored type: %v", when, err)
 		}
@@ -375,7 +375,7 @@ func TestSchemaEvolutionReservedKeysRoundTrip(t *testing.T) {
 	// would be storing rows it cannot keep: two records, one serial.
 	for _, id := range []string{"one", "two"} {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: evoAuthority + "/gizmo", ID: id,
+			Kind: evoPackage + "/gizmo", ID: id,
 			Properties: map[string]any{"serial": "SN-1"},
 		})
 	}
@@ -403,7 +403,7 @@ func TestSchemaEvolutionRenamedFromRoundTrips(t *testing.T) {
 
 	assertStored := func(when string) {
 		t.Helper()
-		ty, err := ds.Get(ctx, "core.substrate.reamde.dev/kind", evoAuthority+"/gizmo")
+		ty, err := ds.Get(ctx, "substrate.reamde.dev/core/kind", evoPackage+"/gizmo")
 		if err != nil {
 			t.Fatalf("%s: read stored type: %v", when, err)
 		}

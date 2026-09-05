@@ -31,11 +31,11 @@ func TestWhenMissingKeyIsSkipNotPark(t *testing.T) {
 	preOAuth := map[string]any{"record": map[string]any{
 		// The delivery envelope carries the KIND REFERENCE (runner.Envelope).
 		// Mirror that here, or the fixture teaches a shape no body ever sees.
-		"kind":       "google.bundles.substrate.reamde.dev/account",
+		"kind":       "providers.substrate.reamde.dev/google/account",
 		"properties": map[string]any{}, // tokenStatus / enabledContacts not written yet
 	}}
 	connected := map[string]any{"record": map[string]any{
-		"kind": "google.bundles.substrate.reamde.dev/account",
+		"kind": "providers.substrate.reamde.dev/google/account",
 		"properties": map[string]any{
 			"tokenStatus":     "connected",
 			"enabledContacts": true,

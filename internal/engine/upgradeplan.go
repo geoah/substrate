@@ -1,7 +1,7 @@
 package engine
 
 // The upgrade PREVIEW. Install is already the upgrade (a bundle document
-// replaces its authority whole, atomically, breakage refused,
+// replaces its package whole, atomically, breakage refused,
 // vocabularywrite.go), so the only thing a "check for updates" needs is the
 // install verb's answer WITHOUT the install: would this shipped closure move
 // anything here, and would the door refuse it. PlanBundleUpgrade computes
@@ -12,9 +12,9 @@ package engine
 // The two halves reuse the two existing mechanisms rather than paralleling
 // them:
 //
-//   - the VERSION DIFF is the boot upgrade's (seed.go): the closure's
-//     authorities built alone, enumerated by authorityDeclarations (the one
-//     enumeration) against the stored versions, same keys, same comparator;
+//   - the VERSION DIFF is the boot upgrade's (seed.go): the closure's packages
+//     built alone, enumerated by packageDeclarations (the one enumeration)
+//     against the stored versions, same keys, same comparator;
 //   - the BLOCKERS are the apply door's own staging and guard counts
 //     (stageVocabularyBatch, schemadiff.go), run over the bare pool instead
 //     of the batch transaction. What the preview reports blocked, the install
@@ -51,10 +51,10 @@ func (r dbReader) query(sqlText string, args ...any) (*sql.Rows, error) {
 
 // PlanBundleUpgrade reports what installing the given closure over this
 // repository's stored declarations would do: which declarations it moves
-// (newer version, new here, or pruned by the whole-authority replace) and the
+// (newer version, new here, or pruned by the whole-package replace) and the
 // guard lines the install verb would refuse it on. It writes nothing. A
-// repository that never installed the bundle's authority answers
-// not-available: there is nothing to upgrade, only to install.
+// repository that never installed the bundle's package answers not-available:
+// there is nothing to upgrade, only to install.
 func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[string]any) (substrate.BundleUpgrade, error) {
 	var plan substrate.BundleUpgrade
 	if len(vocabularyDocs) == 0 {
@@ -64,13 +64,13 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 	if err != nil {
 		return plan, err
 	}
-	var bundleAuthority string
+	var bundlePackage string
 	for _, d := range docs {
 		if d.Kind == vocabulary.DocBundle {
-			bundleAuthority = d.DeclaredAuthority()
+			bundlePackage = d.DeclaredPackage()
 		}
 	}
-	if bundleAuthority == "" {
+	if bundlePackage == "" {
 		return plan, fmt.Errorf("%w: the closure carries no bundle document", substrate.ErrValidation)
 	}
 
@@ -78,24 +78,24 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 	if err != nil {
 		return plan, err
 	}
-	authorityRow, installed := stored[kindAuthority+"\x00"+bundleAuthority]
+	packageRow, installed := stored[kindPackage+"\x00"+bundlePackage]
 	if !installed {
 		return plan, nil
 	}
-	plan.From = authorityRow.version
+	plan.From = packageRow.version
 
 	// The version diff, exactly as the boot upgrade computes it (seed.go).
-	byAuthority := map[string][]vocabulary.Document{}
+	byPackage := map[string][]vocabulary.Document{}
 	for _, d := range docs {
-		g := d.DeclaredAuthority()
+		g := d.DeclaredPackage()
 		if g == "" {
-			return plan, fmt.Errorf("%w: %s %s: data.authority is required", substrate.ErrValidation, d.Kind, d.ID)
+			return plan, fmt.Errorf("%w: %s %s: data.authority and data.package are required", substrate.ErrValidation, d.Kind, d.ID)
 		}
-		byAuthority[g] = append(byAuthority[g], d)
+		byPackage[g] = append(byPackage[g], d)
 	}
 	shipped := map[string]bool{}
-	for _, aname := range sortedKeys(byAuthority) {
-		gs, err := vocabulary.BuildAuthorities(byAuthority[aname], vocabulary.SourceInstalled)
+	for _, aname := range sortedKeys(byPackage) {
+		gs, err := vocabulary.BuildPackages(byPackage[aname], vocabulary.SourceInstalled)
 		if err != nil {
 			// A shipped closure that cannot even build is a blocker, not a
 			// failed READ: this preview is computed for every installed bundle
@@ -111,10 +111,10 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 			return plan, err
 		}
 		for _, g := range gs {
-			if g.Name == bundleAuthority {
+			if g.Identity == bundlePackage {
 				plan.To = g.Version
 			}
-			decls, err := authorityDeclarations(g)
+			decls, err := packageDeclarations(g)
 			if err != nil {
 				// Same posture as the build above: a declaration missing its
 				// version is the shipped closure's bug, reported, never a
@@ -143,10 +143,10 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 		}
 	}
 	// Declarations the closure stopped shipping under the bundle's own
-	// authority: the whole-authority replace prunes them, so they are part of
-	// the move, and with live rows its likeliest blocker.
+	// package: the whole-package replace prunes them, so they are part of the
+	// move, and with live rows its likeliest blocker.
 	for key, s := range stored {
-		if s.authority != bundleAuthority || shipped[key] {
+		if s.pkg != bundlePackage || shipped[key] {
 			continue
 		}
 		typ, id, _ := strings.Cut(key, "\x00")
@@ -167,7 +167,7 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 
 	// The blockers: the same staging and the same guard counts the install
 	// door runs, minus the transaction. A closure this repository cannot even
-	// compile (a missing `requires:` authority, say) blocks the same install,
+	// compile (a missing `requires:` package, say) blocks the same install,
 	// so its problems land where the guard lines would rather than failing
 	// the read.
 	st, err := ds.stageVocabularyBatch(ctx, ds.registry(), nil, vocabularyBatch{docs: docs})

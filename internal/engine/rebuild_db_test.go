@@ -55,7 +55,7 @@ func writeSomeHistory(t *testing.T, ds substrate.Dataset) {
 	due := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Second)
 
 	first := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "tasks.substrate.reamde.dev/task",
+		Kind: "samples.substrate.reamde.dev/tasks/task",
 		Properties: map[string]any{
 			// The heading is `name`; the title column holds what the kind's
 			// displayTemplate renders from it. A task carries no `body` (#68),
@@ -68,11 +68,11 @@ func writeSomeHistory(t *testing.T, ds substrate.Dataset) {
 		Labels: map[string]any{"owner/pinned": true},
 	})
 	second := mustPut(t, ds, owner, substrate.PutInput{
-		Kind:       "tasks.substrate.reamde.dev/task",
+		Kind:       "samples.substrate.reamde.dev/tasks/task",
 		Properties: map[string]any{"name": "Rebuild the repository", "description": "replay every entry"},
 	})
 	third := mustPut(t, ds, owner, substrate.PutInput{
-		Kind:       "tasks.substrate.reamde.dev/task",
+		Kind:       "samples.substrate.reamde.dev/tasks/task",
 		Properties: map[string]any{"name": "Collect me", "description": "and then go"},
 	})
 
@@ -143,7 +143,7 @@ func TestRebuildReproducesTheFold(t *testing.T) {
 		t.Fatalf("the rebuild moved the changelog's head from %d to %d", head, got)
 	}
 	// And the reads that run off the fold still answer.
-	if e := mustGet(t, ds, "tasks.substrate.reamde.dev/task", firstTaskID(t, ds)); e == nil {
+	if e := mustGet(t, ds, "samples.substrate.reamde.dev/tasks/task", firstTaskID(t, ds)); e == nil {
 		t.Fatal("the rebuilt fold reads back empty")
 	}
 }
@@ -184,7 +184,7 @@ func TestRebuildKeeps64BitIntegers(t *testing.T) {
 	exact := strconv.FormatInt(big, 10)
 
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind:        "tasks.substrate.reamde.dev/task",
+		Kind:        "samples.substrate.reamde.dev/tasks/task",
 		Properties:  map[string]any{"name": "Count past the mantissa"},
 		Annotations: map[string]any{"owner/count": big},
 	})
@@ -214,7 +214,7 @@ func TestLogEntryCarriesValues(t *testing.T) {
 	_, ds := newDataset(t)
 	before := maxSeq(t, ds)
 	e := mustPut(t, ds, owner, substrate.PutInput{
-		Kind:       "tasks.substrate.reamde.dev/task",
+		Kind:       "samples.substrate.reamde.dev/tasks/task",
 		Properties: map[string]any{"name": "Carry the values", "description": "a delta, with values"},
 	})
 
@@ -273,10 +273,10 @@ func writeAMergeablePair(t *testing.T, ds substrate.Dataset) mergedPair {
 	// `bookedition` kind whose `work` edge names the loser so the merge has an
 	// edge outside the pair to re-point.
 	installShelf(t, ds)
-	const shelf = enginetest.ShelfAuthority
+	const shelf = enginetest.ShelfPackage
 
 	author := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "Ada Lovelace"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Ada Lovelace"},
 	})
 	winner := mustPut(t, ds, owner, substrate.PutInput{
 		Kind:        shelf + "/book",
@@ -408,10 +408,10 @@ func TestRebuildRefusesWhatItCannotReplay(t *testing.T) {
 	}
 	importVocabulary(t, ds)
 	a := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "Ada Lovelace"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Ada Lovelace"},
 	})
 	b := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "A. Lovelace"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "A. Lovelace"},
 	})
 	if _, err := ds.Merge(ctx, owner, a.Kind, a.ID, b.ID); err != nil {
 		t.Fatalf("merge: %v", err)
@@ -527,7 +527,7 @@ func firstDifference(a, b []byte) string {
 func firstTaskID(t *testing.T, ds substrate.Dataset) string {
 	t.Helper()
 	page, err := ds.List(context.Background(), substrate.Query{
-		Filter: substrate.Filter{Kinds: []string{"tasks.substrate.reamde.dev/task"}}, First: 1,
+		Filter: substrate.Filter{Kinds: []string{"samples.substrate.reamde.dev/tasks/task"}}, First: 1,
 	})
 	if err != nil || page == nil || len(page.Records) == 0 {
 		t.Fatalf("list tasks: %v", err)

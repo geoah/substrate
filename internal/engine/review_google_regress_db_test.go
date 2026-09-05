@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // #1: a config patch that sets a would-be endpoint property does NOT redirect
@@ -88,7 +89,7 @@ func TestReviewGoogleOAuthStartOwnerGated(t *testing.T) {
 	ctx := context.Background()
 	_, ds, ops, _, account := installOAuthBundle(t)
 	_ = ds
-	connector := substrate.FunctionActor(mbAuthority, "echo")
+	connector := substrate.FunctionActor(vocabulary.SplitKindRef(mbEchoFn))
 	_, err := ops.StartOAuth(ctx, connector, account.ID)
 	wantErr(t, err, substrate.ErrForbidden, "non-owner oauth/start")
 }
@@ -98,7 +99,7 @@ func TestReviewGoogleConfigAccountCreateOwnerGated(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds, _, _, account := installOAuthBundle(t)
-	connector := substrate.FunctionActor(mbAuthority, "echo")
+	connector := substrate.FunctionActor(vocabulary.SplitKindRef(mbEchoFn))
 
 	if _, err := ds.Put(ctx, connector, substrate.PutInput{
 		Kind: mbAccountType, Properties: map[string]any{"address": "intruder@example.com"},
@@ -135,7 +136,7 @@ func TestReviewGooglePropertyOwnership(t *testing.T) {
 	}
 	// A connector actor may write its own sync state, but not the owner's
 	// account settings.
-	connector := substrate.FunctionActor(mbAuthority, "echo")
+	connector := substrate.FunctionActor(vocabulary.SplitKindRef(mbEchoFn))
 	if _, err := ds.Patch(ctx, connector, account.Kind, account.ID, substrate.PatchInput{
 		Properties: map[string]any{"syncToken": "s1"},
 	}); err != nil {

@@ -19,7 +19,7 @@ func openBareService(t *testing.T) (*service, string) {
 	t.Helper()
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
-	svcIface, err := Open(ctx, dsn, WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+	svcIface, err := Open(ctx, dsn, WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}
@@ -58,12 +58,12 @@ func plantOrphan(t *testing.T, dsn, id string) {
 	defer func() { _ = raw.Close() }()
 	if _, err := raw.Exec(
 		`INSERT INTO records (kind, id, title) VALUES ($1, $2, $3)`,
-		"tasks.substrate.reamde.dev/task", "orphan-rec", "nowhere"); err != nil {
+		"samples.substrate.reamde.dev/tasks/task", "orphan-rec", "nowhere"); err != nil {
 		t.Fatalf("plant orphan record: %v", err)
 	}
 	if _, err := raw.Exec(
 		`INSERT INTO sealed (ref, record_kind, record_id, payload, updated_at) VALUES ($1, $2, $3, $4, now())`,
-		"auth:password:orphan", "core.substrate.reamde.dev/credential", "self", []byte("secret")); err != nil {
+		"auth:password:orphan", "substrate.reamde.dev/core/credential", "self", []byte("secret")); err != nil {
 		t.Fatalf("plant orphan sealed: %v", err)
 	}
 }

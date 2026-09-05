@@ -29,8 +29,8 @@ func TestFinalFenceDrainsBundledAgent(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	installGreeterBundle(t, ds, fake)
-	const greeter = "abundle.bundles.substrate.reamde.dev/greeter"
-	const abAuthority = "abundle.bundles.substrate.reamde.dev"
+	const greeter = "abundle.bundles.substrate.reamde.dev/abundle/greeter"
+	const abPackage = "abundle.bundles.substrate.reamde.dev/abundle"
 
 	release := make(chan struct{})
 	arrived := make(chan struct{})
@@ -59,7 +59,7 @@ func TestFinalFenceDrainsBundledAgent(t *testing.T) {
 	}
 
 	disableDone := make(chan error, 1)
-	go func() { disableDone <- ds.DisableBundle(ctx, abAuthority) }()
+	go func() { disableDone <- ds.DisableBundle(ctx, abPackage) }()
 	select {
 	case err := <-disableDone:
 		t.Fatalf("disable returned while an admitted agent was in flight: %v", err)
@@ -109,22 +109,22 @@ func TestFinalFenceDrainsBundledAgentTrigger(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	installGreeterBundle(t, ds, fake)
-	const abAuthority = "abundle.bundles.substrate.reamde.dev"
+	const abPackage = "abundle.bundles.substrate.reamde.dev/abundle"
 
 	// A trigger on the bundle's config type delivering to the bundled agent.
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/trigger", ID: "on-greet",
+		Kind: "substrate.reamde.dev/core/trigger", ID: "on-greet",
 		Properties: map[string]any{
 			"enabled":  true,
-			"source":   map[string]any{"record": map[string]any{"kinds": []any{abAuthority + "/abconfig"}}},
-			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/agent", abAuthority+"/greeter"),
+			"source":   map[string]any{"record": map[string]any{"kinds": []any{abPackage + "/abconfig"}}},
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/agent", abPackage+"/greeter"),
 		},
 	}); err != nil {
 		t.Fatalf("put trigger: %v", err)
 	}
 	// The change the trigger delivers on.
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: abAuthority + "/abconfig", ID: "ab-cfg", Properties: map[string]any{"note": "x"},
+		Kind: abPackage + "/abconfig", ID: "ab-cfg", Properties: map[string]any{"note": "x"},
 	}); err != nil {
 		t.Fatalf("put config: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestFinalFenceDrainsBundledAgentTrigger(t *testing.T) {
 	}
 
 	disableDone := make(chan error, 1)
-	go func() { disableDone <- ds.DisableBundle(ctx, abAuthority) }()
+	go func() { disableDone <- ds.DisableBundle(ctx, abPackage) }()
 	select {
 	case err := <-disableDone:
 		t.Fatalf("disable returned while an admitted agent delivery was in flight: %v", err)
@@ -167,11 +167,11 @@ func TestFinalFenceDrainsBundledAgentTrigger(t *testing.T) {
 
 	// A fresh pass after disable delivers nothing — the trigger loads its
 	// callable unresolved and skips.
-	before := threadCountOf(t, ds, abAuthority+"/greeter")
+	before := threadCountOf(t, ds, abPackage+"/greeter")
 	if _, err := ds.ProcessTriggers(ctx); err != nil {
 		t.Fatalf("post-disable process: %v", err)
 	}
-	if after := threadCountOf(t, ds, abAuthority+"/greeter"); after != before {
+	if after := threadCountOf(t, ds, abPackage+"/greeter"); after != before {
 		t.Fatalf("a disabled bundle's agent trigger delivered: threads %d -> %d", before, after)
 	}
 }
@@ -182,31 +182,31 @@ func TestFinalFenceDrainsBundledAgentTrigger(t *testing.T) {
 func installToolBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 	t.Helper()
 	ctx := context.Background()
-	const tbAuthority = "toolb.bundles.substrate.reamde.dev"
+	const tbPackage = "toolb.bundles.substrate.reamde.dev/toolb"
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: typeProvider, ID: "userllm",
 		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-userllm"},
 	}); err != nil {
 		t.Fatalf("put llmprovider row: %v", err)
 	}
-	writer := vocabulary.FunctionManifest(tbAuthority, "writer", map[string]any{
+	writer := vocabulary.FunctionManifest(tbPackage, "writer", map[string]any{
 		"description": "writes one task",
 		"runtime":     vocabulary.RuntimePython,
-		"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
+		"permissions": map[string]any{"writes": []any{"samples.substrate.reamde.dev/tasks/task"}},
 		"source": `
 def main(input, host):
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "t-tool", "properties": {"name": "written"}}],
             "output": {"ok": True}}
 `,
 	})
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(tbAuthority, 0),
-		vocabulary.BundleManifest(tbAuthority, map[string]any{
+		vocabulary.PackageManifest(tbPackage, 0),
+		vocabulary.BundleManifest(tbPackage, map[string]any{
 			"description": "the tool bundle",
-			"installs":    []any{tbAuthority + "/tbconfig", tbAuthority + "/writer"},
+			"installs":    []any{tbPackage + "/tbconfig", tbPackage + "/writer"},
 		}),
-		vocabulary.KindManifest(tbAuthority,
+		vocabulary.KindManifest(tbPackage,
 			map[string]any{"singular": "tbconfig", "plural": "tbconfigs"},
 			map[string]any{"properties": map[string]any{
 				"note": map[string]any{"type": "string"},
@@ -216,15 +216,15 @@ def main(input, host):
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
 		t.Fatalf("install tool bundle: %v", err)
 	}
-	const uAuthority = "userc.test.dev"
-	user := vocabulary.AgentManifest(uAuthority, "user", map[string]any{
+	const uPackage = "userc.test.dev/userc"
+	user := vocabulary.AgentManifest(uPackage, "user", map[string]any{
 		"description": "uses the bundled writer tool", "prompt": "You write.",
 		"provider": "userllm", "model": "user",
-		"tools":       []any{map[string]any{"function": tbAuthority + "/writer"}},
-		"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
+		"tools":       []any{map[string]any{"function": tbPackage + "/writer"}},
+		"permissions": map[string]any{"writes": []any{"samples.substrate.reamde.dev/tasks/task"}},
 	})
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
-		vocabulary.AuthorityManifest(uAuthority, 0), user,
+		vocabulary.PackageManifest(uPackage, 0), user,
 	}); err != nil {
 		t.Fatalf("install user agent: %v", err)
 	}
@@ -238,16 +238,16 @@ func TestFinalCrossBundleAgentToolRefused(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	installToolBundle(t, ds, fake)
-	const tbAuthority = "toolb.bundles.substrate.reamde.dev"
+	const tbPackage = "toolb.bundles.substrate.reamde.dev/toolb"
 
-	if err := ds.DisableBundle(ctx, tbAuthority); err != nil {
+	if err := ds.DisableBundle(ctx, tbPackage); err != nil {
 		t.Fatalf("disable tool bundle: %v", err)
 	}
 	fake.script("user",
 		fakeTurn{calls: []fakeCall{{"writer", `{}`}}},
 		fakeTurn{content: "gave up"},
 	)
-	res, err := ds.CallAgent(ctx, "userc.test.dev/user", "write it")
+	res, err := ds.CallAgent(ctx, "userc.test.dev/userc/user", "write it")
 	if err != nil {
 		t.Fatalf("call user agent: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestFinalCrossBundleAgentToolRefused(t *testing.T) {
 	if !refused {
 		t.Fatal("the agent's transcript carries no lifecycle refusal for the cross-bundle tool")
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "t-tool"); err == nil {
+	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "t-tool"); err == nil {
 		t.Fatal("the disabled bundle's function landed an effect through the agent tool")
 	}
 }
@@ -274,27 +274,27 @@ func TestFinalCrossBundleAgentToolRefused(t *testing.T) {
 func installCallerBundle(t *testing.T, ds *dataset) {
 	t.Helper()
 	ctx := context.Background()
-	const cbAuthority = "callerb.bundles.substrate.reamde.dev"
-	caller := vocabulary.FunctionManifest(cbAuthority, "caller", map[string]any{
+	const cbPackage = "callerb.bundles.substrate.reamde.dev/callerb"
+	caller := vocabulary.FunctionManifest(cbPackage, "caller", map[string]any{
 		"description": "host-calls the bundled writer",
 		"runtime":     vocabulary.RuntimePython,
 		"permissions": map[string]any{
-			"writes": []any{"tasks.substrate.reamde.dev/task"},
-			"call":   []any{"toolb.bundles.substrate.reamde.dev/writer"},
+			"writes": []any{"samples.substrate.reamde.dev/tasks/task"},
+			"call":   []any{"toolb.bundles.substrate.reamde.dev/toolb/writer"},
 		},
 		"source": `
 def main(input, host):
-    out = host.call("toolb.bundles.substrate.reamde.dev/writer", {})
+    out = host.call("toolb.bundles.substrate.reamde.dev/toolb/writer", {})
     return {"effects": [], "output": {"called": out}}
 `,
 	})
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(cbAuthority, 0),
-		vocabulary.BundleManifest(cbAuthority, map[string]any{
+		vocabulary.PackageManifest(cbPackage, 0),
+		vocabulary.BundleManifest(cbPackage, map[string]any{
 			"description": "the caller bundle",
-			"installs":    []any{cbAuthority + "/cbconfig", cbAuthority + "/caller"},
+			"installs":    []any{cbPackage + "/cbconfig", cbPackage + "/caller"},
 		}),
-		vocabulary.KindManifest(cbAuthority,
+		vocabulary.KindManifest(cbPackage,
 			map[string]any{"singular": "cbconfig", "plural": "cbconfigs"},
 			map[string]any{"properties": map[string]any{
 				"note": map[string]any{"type": "string"},
@@ -315,20 +315,20 @@ func TestFinalCrossBundleHostCallRefused(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	installToolBundle(t, ds, fake)
 	installCallerBundle(t, ds)
-	const tbAuthority = "toolb.bundles.substrate.reamde.dev"
-	const callerFn = "callerb.bundles.substrate.reamde.dev/caller"
+	const tbPackage = "toolb.bundles.substrate.reamde.dev/toolb"
+	const callerFn = "callerb.bundles.substrate.reamde.dev/callerb/caller"
 
 	// The callee's bundle is disabled while the CALLER's bundle stays live: the
 	// nested host Call must refuse under the root's held fence, so the callee
 	// never runs and its effect never commits.
-	if err := ds.DisableBundle(ctx, tbAuthority); err != nil {
+	if err := ds.DisableBundle(ctx, tbPackage); err != nil {
 		t.Fatalf("disable tool bundle: %v", err)
 	}
 	_, _, err := ds.CallFunction(ctx, callerFn, map[string]any{})
 	if err == nil || !strings.Contains(err.Error(), "disabled") {
 		t.Fatalf("cross-bundle call into a disabled bundle: %v", err)
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "t-tool"); err == nil {
+	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "t-tool"); err == nil {
 		t.Fatal("the disabled callee committed an effect through a live host Call")
 	}
 }

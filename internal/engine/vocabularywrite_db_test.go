@@ -27,10 +27,13 @@ func applier(t *testing.T, ds substrate.Dataset) substrate.VocabularyApplier {
 	return sa
 }
 
-const swAuthority = "widgets.example.substrate.reamde.dev"
+const (
+	swAuthority = "widgets.example.substrate.reamde.dev"
+	swPackage   = swAuthority + "/widgets"
+)
 
 func swTypeDoc(singular, plural string, props map[string]any) map[string]any {
-	return vocabulary.KindManifest(swAuthority,
+	return vocabulary.KindManifest(swPackage,
 		map[string]any{"singular": singular, "plural": plural},
 		map[string]any{"properties": props})
 }
@@ -44,7 +47,7 @@ func TestSchemaApplyBatchAllOrNone(t *testing.T) {
 	before := maxSeq(t, ds)
 
 	_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, 0),
+		vocabulary.PackageManifest(swPackage, 0),
 		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
 		swTypeDoc("gadget", "gadgets", map[string]any{"weird": map[string]any{"type": "nosuchkind"}}),
 	})
@@ -63,10 +66,10 @@ func TestSchemaApplyBatchAllOrNone(t *testing.T) {
 	if got := maxSeq(t, ds); got != before {
 		t.Fatalf("failed batch wrote %+v", changesSince(t, ds, before))
 	}
-	if _, err := ds.Get(ctx, "core.substrate.reamde.dev/authority", swAuthority); err == nil {
+	if _, err := ds.Get(ctx, "substrate.reamde.dev/core/package", swPackage); err == nil {
 		t.Fatal("failed batch left the authority row behind")
 	}
-	if _, err := ds.KindByRef(ctx, swAuthority+"/widget"); err == nil {
+	if _, err := ds.KindByRef(ctx, swPackage+"/widget"); err == nil {
 		t.Fatal("failed batch installed the good type")
 	}
 }
@@ -95,7 +98,7 @@ func TestSchemaApplyActivatesOnCommit(t *testing.T) {
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
 		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -112,7 +115,7 @@ func TestSchemaApplyActivatesOnCommit(t *testing.T) {
 	before := maxSeq(t, ds)
 
 	ents, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, 0),
+		vocabulary.PackageManifest(swPackage, 0),
 		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
 	})
 	if err != nil {
@@ -131,21 +134,21 @@ func TestSchemaApplyActivatesOnCommit(t *testing.T) {
 			t.Fatalf("schema change attributed to %q", ch.Actor)
 		}
 	}
-	if !seen["core.substrate.reamde.dev/authority"] || !seen["core.substrate.reamde.dev/kind"] {
+	if !seen["substrate.reamde.dev/core/package"] || !seen["substrate.reamde.dev/core/kind"] {
 		t.Fatalf("schema changes missing from the changelog: %+v", rows)
 	}
 
 	// Commit is activation: the type is writable NOW, no reopen, no restart.
 	w := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: swAuthority + "/widget", Properties: map[string]any{"name": "roof"},
+		Kind: swPackage + "/widget", Properties: map[string]any{"name": "roof"},
 	})
 	if w.Properties["name"] != "roof" {
 		t.Fatalf("widget = %v", w.Properties)
 	}
 	// And the declarations are ordinary, queryable records.
-	row := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/widget")
+	row := mustGet(t, ds, "substrate.reamde.dev/core/kind", swPackage+"/widget")
 	names, _ := row.Properties["names"].(map[string]any)
-	if row.Kind != "core.substrate.reamde.dev/kind" || names["plural"] != "widgets" ||
+	if row.Kind != "substrate.reamde.dev/core/kind" || names["plural"] != "widgets" ||
 		row.Properties["source"] != "installed" {
 		t.Fatalf("declaration record = %v", row.Properties)
 	}
@@ -166,7 +169,7 @@ func TestSchemaApplyActivatesOnCommit(t *testing.T) {
 	if got := maxSeq(t, ds2); got != seq {
 		t.Fatalf("reopen wrote %+v", changesSince(t, ds2, seq))
 	}
-	ti, err := ds2.KindByRef(ctx, swAuthority+"/widget")
+	ti, err := ds2.KindByRef(ctx, swPackage+"/widget")
 	if err != nil || ti.Source != "installed" {
 		t.Fatalf("rebuilt type = %+v %v", ti, err)
 	}
@@ -190,39 +193,40 @@ func TestSchemaApplySwapsFunctionsLive(t *testing.T) {
 	fnData := func(title string) map[string]any {
 		return map[string]any{
 			"authority":   swAuthority,
+			"package":     "widgets",
 			"description": "mirrors widgets into tasks",
 			"runtime":     vocabulary.RuntimePython,
-			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
+			"permissions": map[string]any{"writes": []any{"samples.substrate.reamde.dev/tasks/task"}},
 			"source": `
 def main(input, host):
     c = input["envelope"]["change"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "t-" + c["id"], "properties": {"name": "` + title + `"}}]}
 `,
 		}
 	}
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, 0),
+		vocabulary.PackageManifest(swPackage, 0),
 		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
-		vocabulary.FunctionManifest(swAuthority, "mirror", fnData("v1")),
+		vocabulary.FunctionManifest(swPackage, "mirror", fnData("v1")),
 	}); err != nil {
 		t.Fatalf("apply v1: %v", err)
 	}
 	// The subscription is a trigger RECORD, written like any other data row.
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/trigger", ID: "on-mirror." + swAuthority,
+		Kind: "substrate.reamde.dev/core/trigger", ID: "on-mirror." + swPackage,
 		Properties: map[string]any{
 			"enabled": true,
 			"source": map[string]any{"record": map[string]any{
-				"kinds": []any{swAuthority + "/widget"}, "ops": []any{"create", "update"},
+				"kinds": []any{swPackage + "/widget"}, "ops": []any{"create", "update"},
 			}},
-			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", swAuthority+"/mirror"),
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", swPackage+"/mirror"),
 		},
 	}); err != nil {
 		t.Fatalf("put trigger: %v", err)
 	}
 
-	a := mustPut(t, ds, owner, substrate.PutInput{Kind: swAuthority + "/widget", Properties: map[string]any{"name": "a"}})
+	a := mustPut(t, ds, owner, substrate.PutInput{Kind: swPackage + "/widget", Properties: map[string]any{"name": "a"}})
 	process(t, ops)
 	if got := mustGet(t, ds, taskType, "t-"+a.ID); got.Title != "v1" {
 		t.Fatalf("v1 delivery title = %q", got.Title)
@@ -231,18 +235,18 @@ def main(input, host):
 	// Swap the body. The write commits, the pointer publishes, the very next
 	// delivery runs v2 — the restart-to-activate hazard is dead.
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.FunctionManifest(swAuthority, "mirror", fnData("v2")),
+		vocabulary.FunctionManifest(swPackage, "mirror", fnData("v2")),
 	}); err != nil {
 		t.Fatalf("apply v2: %v", err)
 	}
-	b := mustPut(t, ds, owner, substrate.PutInput{Kind: swAuthority + "/widget", Properties: map[string]any{"name": "b"}})
+	b := mustPut(t, ds, owner, substrate.PutInput{Kind: swPackage + "/widget", Properties: map[string]any{"name": "b"}})
 	process(t, ops)
 	if got := mustGet(t, ds, taskType, "t-"+b.ID); got.Title != "v2" {
 		t.Fatalf("post-swap delivery title = %q (the old registry answered)", got.Title)
 	}
 	// The function is queryable as a record, its declaration in its properties.
-	fnRow := mustGet(t, ds, "core.substrate.reamde.dev/function", swAuthority+"/mirror")
-	if fnRow.Kind != "core.substrate.reamde.dev/function" || fnRow.Properties["source"] == nil ||
+	fnRow := mustGet(t, ds, "substrate.reamde.dev/core/function", swPackage+"/mirror")
+	if fnRow.Kind != "substrate.reamde.dev/core/function" || fnRow.Properties["source"] == nil ||
 		fnRow.Properties["runtime"] == nil {
 		t.Fatalf("function record = %v", fnRow.Properties)
 	}
@@ -258,7 +262,7 @@ func TestSchemaWritesSerializeDataWritesFlow(t *testing.T) {
 	sa := applier(t, ds)
 
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, 0),
+		vocabulary.PackageManifest(swPackage, 0),
 	}); err != nil {
 		t.Fatalf("apply authority: %v", err)
 	}
@@ -298,7 +302,7 @@ func TestSchemaWritesSerializeDataWritesFlow(t *testing.T) {
 	}
 	// Serialization means every type survived: no batch clobbered another.
 	for _, ty := range []string{"alpha", "beta", "gamma", "delta"} {
-		if _, err := ds.KindByRef(ctx, swAuthority+"/"+ty); err != nil {
+		if _, err := ds.KindByRef(ctx, swPackage+"/"+ty); err != nil {
 			t.Fatalf("type %s lost to a concurrent schema write: %v", ty, err)
 		}
 	}
@@ -314,16 +318,16 @@ func TestSchemaDeleteRefusesWithInstances(t *testing.T) {
 	sa := applier(t, ds)
 
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, 0),
+		vocabulary.PackageManifest(swPackage, 0),
 		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
 	}); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	w := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: swAuthority + "/widget", Properties: map[string]any{"name": "keep"},
+		Kind: swPackage + "/widget", Properties: map[string]any{"name": "keep"},
 	})
 
-	_, err := ds.Delete(ctx, owner, "core.substrate.reamde.dev/kind", swAuthority+"/widget")
+	_, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/kind", swPackage+"/widget")
 	if err == nil {
 		t.Fatal("type deletion with live instances must refuse")
 	}
@@ -332,21 +336,21 @@ func TestSchemaDeleteRefusesWithInstances(t *testing.T) {
 		t.Fatalf("refusal should carry the transactional count: %v", err)
 	}
 	// Still installed, still writable.
-	if _, err := ds.KindByRef(ctx, swAuthority+"/widget"); err != nil {
+	if _, err := ds.KindByRef(ctx, swPackage+"/widget"); err != nil {
 		t.Fatalf("refused delete uninstalled the type: %v", err)
 	}
 
 	if _, err := ds.Delete(ctx, owner, w.Kind, w.ID); err != nil {
 		t.Fatalf("delete instance: %v", err)
 	}
-	gone, err := ds.Delete(ctx, owner, "core.substrate.reamde.dev/kind", swAuthority+"/widget")
+	gone, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/kind", swPackage+"/widget")
 	if err != nil {
 		t.Fatalf("delete type: %v", err)
 	}
 	if gone.DeletedAt == nil {
 		t.Fatalf("schema row not tombstoned: %+v", gone)
 	}
-	if _, err := ds.KindByRef(ctx, swAuthority+"/widget"); err == nil {
+	if _, err := ds.KindByRef(ctx, swPackage+"/widget"); err == nil {
 		t.Fatal("deleted type still resolves")
 	}
 	// History orphans by design: the instance's changelog rows remain.
@@ -384,12 +388,13 @@ func TestProjectionStoresTheAuthoredDeclaration(t *testing.T) {
 	_, ds := newDataset(t)
 
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, 0),
+		vocabulary.PackageManifest(swPackage, 0),
 		{
 			"kind":     vocabulary.CoreKind(vocabulary.DocPropertyType),
-			"metadata": map[string]any{"id": swAuthority + "/grade"},
+			"metadata": map[string]any{"id": swPackage + "/grade"},
 			"data": map[string]any{
 				"authority": swAuthority,
+				"package":   "widgets",
 				"base":      "enum",
 				"values":    []any{"good", "bad"},
 			},
@@ -404,7 +409,7 @@ func TestProjectionStoresTheAuthoredDeclaration(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 
-	row := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/widget")
+	row := mustGet(t, ds, "substrate.reamde.dev/core/kind", swPackage+"/widget")
 	props, _ := row.Properties["properties"].(map[string]any)
 	status, _ := props["status"].(map[string]any)
 	values, _ := status["values"].([]any)
@@ -421,7 +426,7 @@ func TestProjectionStoresTheAuthoredDeclaration(t *testing.T) {
 	}
 
 	// The property type's row carries the objects its own declaration types.
-	pt := mustGet(t, ds, "core.substrate.reamde.dev/propertytype", swAuthority+"/grade")
+	pt := mustGet(t, ds, "substrate.reamde.dev/core/propertytype", swPackage+"/grade")
 	ptValues, _ := pt.Properties["values"].([]any)
 	if len(ptValues) != 2 {
 		t.Fatalf("the stored property type values = %#v", pt.Properties["values"])
@@ -444,7 +449,7 @@ func TestKindInfoDefinitionSurvivesAReload(t *testing.T) {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -461,12 +466,12 @@ func TestKindInfoDefinitionSurvivesAReload(t *testing.T) {
 	}
 	// No `version:` on the declaration — the authority's is what the row gets.
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, 3),
+		vocabulary.PackageManifest(swPackage, 3),
 		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
 	}); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	before, err := ds.KindByRef(ctx, swAuthority+"/widget")
+	before, err := ds.KindByRef(ctx, swPackage+"/widget")
 	if err != nil {
 		t.Fatalf("read the kind: %v", err)
 	}
@@ -477,7 +482,7 @@ func TestKindInfoDefinitionSurvivesAReload(t *testing.T) {
 		t.Fatalf("the stamped version is not on the KindInfo: %+v", before)
 	}
 	// The ROW carries it, because a boot upgrade diffs on it.
-	row := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/widget")
+	row := mustGet(t, ds, "substrate.reamde.dev/core/kind", swPackage+"/widget")
 	if v, _ := vocabulary.VersionValue(row.Properties["version"]); v != 3 {
 		t.Fatalf("the row carries no stamped version: %v", row.Properties)
 	}
@@ -489,7 +494,7 @@ func TestKindInfoDefinitionSurvivesAReload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
-	after, err := ds2.KindByRef(ctx, swAuthority+"/widget")
+	after, err := ds2.KindByRef(ctx, swPackage+"/widget")
 	if err != nil {
 		t.Fatalf("read the kind again: %v", err)
 	}
@@ -502,13 +507,13 @@ func TestKindInfoDefinitionSurvivesAReload(t *testing.T) {
 	}
 	// A declaration that PINS its own version keeps reading it off KindInfo.
 	if _, err := applier(t, ds2).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.KindManifest(swAuthority,
+		vocabulary.KindManifest(swPackage,
 			map[string]any{"singular": "gadget", "plural": "gadgets"},
 			map[string]any{"version": 21, "properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 	}); err != nil {
 		t.Fatalf("apply the pinned declaration: %v", err)
 	}
-	pinned, err := ds2.KindByRef(ctx, swAuthority+"/gadget")
+	pinned, err := ds2.KindByRef(ctx, swPackage+"/gadget")
 	if err != nil {
 		t.Fatalf("read the pinned kind: %v", err)
 	}
@@ -527,7 +532,7 @@ func TestGenericWritesRouteThroughAdmission(t *testing.T) {
 	sa := applier(t, ds)
 
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, 0),
+		vocabulary.PackageManifest(swPackage, 0),
 		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
 	}); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -536,7 +541,7 @@ func TestGenericWritesRouteThroughAdmission(t *testing.T) {
 	// PUT with an extended declaration: the new property is usable at once. The
 	// row's properties ARE the declaration — there is no `definition` blob to
 	// reach into — so what a reader gets back is what a writer sends.
-	row := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/widget")
+	row := mustGet(t, ds, "substrate.reamde.dev/core/kind", swPackage+"/widget")
 	if _, blob := row.Properties["definition"]; blob {
 		t.Fatalf("a declaration row still carries a definition blob: %v", row.Properties)
 	}
@@ -546,16 +551,17 @@ func TestGenericWritesRouteThroughAdmission(t *testing.T) {
 	}
 	declared["count"] = map[string]any{"type": "float"}
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget",
+		Kind: "substrate.reamde.dev/core/kind", ID: swPackage + "/widget",
 		Properties: map[string]any{
-			"authority": swAuthority, "names": row.Properties["names"],
+			"authority": swAuthority,
+			"package":   "widgets", "names": row.Properties["names"],
 			"properties": declared,
 		},
 	}); err != nil {
 		t.Fatalf("generic put of a declaration record: %v", err)
 	}
 	if e := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: swAuthority + "/widget", Properties: map[string]any{"name": "n", "count": 3},
+		Kind: swPackage + "/widget", Properties: map[string]any{"name": "n", "count": 3},
 	}); e.Properties["count"] == nil {
 		t.Fatalf("new property not live: %v", e.Properties)
 	}
@@ -565,9 +571,10 @@ func TestGenericWritesRouteThroughAdmission(t *testing.T) {
 	// at, and dropping it would tell the client an edit landed.
 	declared["note"] = map[string]any{"type": "text"}
 	_, blobErr := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget",
+		Kind: "substrate.reamde.dev/core/kind", ID: swPackage + "/widget",
 		Properties: map[string]any{"definition": map[string]any{
-			"authority": swAuthority, "names": row.Properties["names"], "properties": declared,
+			"authority": swAuthority,
+			"package":   "widgets", "names": row.Properties["names"], "properties": declared,
 		}},
 	})
 	wantErr(t, blobErr, substrate.ErrValidation, "a write carrying a definition blob")
@@ -576,7 +583,7 @@ func TestGenericWritesRouteThroughAdmission(t *testing.T) {
 		t.Fatalf("the refusal must name the blob and the typed properties: %v", blobErr)
 	}
 	if e := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: swAuthority + "/widget", Properties: map[string]any{"name": "n2"},
+		Kind: swPackage + "/widget", Properties: map[string]any{"name": "n2"},
 	}); e.Properties["note"] != nil {
 		t.Fatalf("the refused blob still landed: %v", e.Properties)
 	}
@@ -585,9 +592,10 @@ func TestGenericWritesRouteThroughAdmission(t *testing.T) {
 	// carries a blob — so a client naming the key at all is working from a
 	// document this substrate stopped storing.
 	_, nullErr := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget",
+		Kind: "substrate.reamde.dev/core/kind", ID: swPackage + "/widget",
 		Properties: map[string]any{
-			"authority": swAuthority, "names": row.Properties["names"],
+			"authority": swAuthority,
+			"package":   "widgets", "names": row.Properties["names"],
 			"properties": declared, "definition": nil,
 		},
 	})
@@ -599,25 +607,28 @@ func TestGenericWritesRouteThroughAdmission(t *testing.T) {
 	// A declaration that breaks the closure refuses whole.
 	declared["bad"] = map[string]any{"type": "nosuchkind"}
 	_, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget",
+		Kind: "substrate.reamde.dev/core/kind", ID: swPackage + "/widget",
 		Properties: map[string]any{
-			"authority": swAuthority, "names": row.Properties["names"], "properties": declared,
+			"authority": swAuthority,
+			"package":   "widgets", "names": row.Properties["names"], "properties": declared,
 		},
 	})
 	wantErr(t, err, substrate.ErrValidation, "closure-breaking declaration")
 
-	// The shipped vocabulary is the embedded tree's to change.
-	taskRow := mustGet(t, ds, "core.substrate.reamde.dev/kind", "tasks.substrate.reamde.dev/task")
+	// The shipped vocabulary is the embedded tree's to change. The seeded core
+	// package is the whole of it: a sample package installs, so `core` is what
+	// a request meets the refusal on.
+	tokenRow := mustGet(t, ds, "substrate.reamde.dev/core/kind", "substrate.reamde.dev/core/token")
 	_, err = ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/kind", ID: "tasks.substrate.reamde.dev/task",
+		Kind: "substrate.reamde.dev/core/kind", ID: "substrate.reamde.dev/core/token",
 		Properties: map[string]any{
-			"authority": "tasks.substrate.reamde.dev", "names": taskRow.Properties["names"],
-			"properties": taskRow.Properties["properties"],
+			"authority": "substrate.reamde.dev", "package": "core", "names": tokenRow.Properties["names"],
+			"properties": tokenRow.Properties["properties"],
 		},
 	})
-	wantErr(t, err, substrate.ErrForbidden, "builtin authority write")
-	_, err = ds.Delete(ctx, owner, "core.substrate.reamde.dev/kind", "tasks.substrate.reamde.dev/task")
-	wantErr(t, err, substrate.ErrForbidden, "builtin authority delete")
+	wantErr(t, err, substrate.ErrForbidden, "builtin package write")
+	_, err = ds.Delete(ctx, owner, "substrate.reamde.dev/core/kind", "substrate.reamde.dev/core/token")
+	wantErr(t, err, substrate.ErrForbidden, "builtin package delete")
 }
 
 // THE ENGINE'S PROPERTIES ARE NOT THE WRITER'S. A declaration write that
@@ -632,16 +643,17 @@ func TestDeclarationWritesRefuseWhatTheEngineOwns(t *testing.T) {
 	_, ds := newDataset(t)
 	sa := applier(t, ds)
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, 0),
+		vocabulary.PackageManifest(swPackage, 0),
 		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
 	}); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	row := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/widget")
+	row := mustGet(t, ds, "substrate.reamde.dev/core/kind", swPackage+"/widget")
 	declared, _ := row.Properties["properties"].(map[string]any)
 	base := func() map[string]any {
 		return map[string]any{
-			"authority": swAuthority, "names": row.Properties["names"], "properties": declared,
+			"authority": swAuthority,
+			"package":   "widgets", "names": row.Properties["names"], "properties": declared,
 		}
 	}
 
@@ -653,7 +665,7 @@ func TestDeclarationWritesRefuseWhatTheEngineOwns(t *testing.T) {
 	echoed["version"] = row.Properties["version"]
 	echoed["title"] = row.Title
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget", Properties: echoed,
+		Kind: "substrate.reamde.dev/core/kind", ID: swPackage + "/widget", Properties: echoed,
 	}); err != nil {
 		t.Fatalf("a read echoed straight back must apply: %v", err)
 	}
@@ -664,33 +676,35 @@ func TestDeclarationWritesRefuseWhatTheEngineOwns(t *testing.T) {
 	origin := base()
 	origin["source"] = "builtin"
 	_, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget", Properties: origin,
+		Kind: "substrate.reamde.dev/core/kind", ID: swPackage + "/widget", Properties: origin,
 	})
 	wantErr(t, err, substrate.ErrValidation, "managed origin mismatch")
 	if !strings.Contains(err.Error(), "props.source") {
 		t.Fatalf("the refusal must name the property: %v", err)
 	}
-	if got := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/widget"); got.Properties["source"] != row.Properties["source"] {
+	if got := mustGet(t, ds, "substrate.reamde.dev/core/kind", swPackage+"/widget"); got.Properties["source"] != row.Properties["source"] {
 		t.Fatalf("the refused write moved the origin to %v", got.Properties["source"])
 	}
 
 	// A TRAIT's version is the engine's whole and simple: its document admits no
 	// `version:` at all, so an invented one is refused and the stored one echoes.
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{{
-		"kind":     "core.substrate.reamde.dev/trait",
-		"metadata": map[string]any{"id": swAuthority + "/spanned"},
+		"kind":     "substrate.reamde.dev/core/trait",
+		"metadata": map[string]any{"id": swPackage + "/spanned"},
 		"data": map[string]any{
 			"authority":  swAuthority,
+			"package":    "widgets",
 			"properties": map[string]any{"span": "string"},
 		},
 	}}); err != nil {
 		t.Fatalf("apply a trait: %v", err)
 	}
-	traitRow := mustGet(t, ds, "core.substrate.reamde.dev/trait", swAuthority+"/spanned")
+	traitRow := mustGet(t, ds, "substrate.reamde.dev/core/trait", swPackage+"/spanned")
 	_, err = ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/trait", ID: swAuthority + "/spanned",
+		Kind: "substrate.reamde.dev/core/trait", ID: swPackage + "/spanned",
 		Properties: map[string]any{
-			"authority": swAuthority, "properties": traitRow.Properties["properties"],
+			"authority": swAuthority,
+			"package":   "widgets", "properties": traitRow.Properties["properties"],
 			"version": 99,
 		},
 	})
@@ -698,13 +712,14 @@ func TestDeclarationWritesRefuseWhatTheEngineOwns(t *testing.T) {
 	if !strings.Contains(err.Error(), "props.version") {
 		t.Fatalf("the refusal must name the property: %v", err)
 	}
-	if got := mustGet(t, ds, "core.substrate.reamde.dev/trait", swAuthority+"/spanned"); got.Properties["version"] != traitRow.Properties["version"] {
+	if got := mustGet(t, ds, "substrate.reamde.dev/core/trait", swPackage+"/spanned"); got.Properties["version"] != traitRow.Properties["version"] {
 		t.Fatalf("the refused write moved the version to %v", got.Properties["version"])
 	}
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/trait", ID: swAuthority + "/spanned",
+		Kind: "substrate.reamde.dev/core/trait", ID: swPackage + "/spanned",
 		Properties: map[string]any{
-			"authority": swAuthority, "properties": traitRow.Properties["properties"],
+			"authority": swAuthority,
+			"package":   "widgets", "properties": traitRow.Properties["properties"],
 			"version": traitRow.Properties["version"], "title": traitRow.Title,
 		},
 	}); err != nil {
@@ -714,10 +729,11 @@ func TestDeclarationWritesRefuseWhatTheEngineOwns(t *testing.T) {
 	// Both spellings in one write: refused, naming what it carried twice.
 	both := base()
 	both["definition"] = map[string]any{
-		"authority": swAuthority, "names": row.Properties["names"], "properties": declared,
+		"authority": swAuthority,
+		"package":   "widgets", "names": row.Properties["names"], "properties": declared,
 	}
 	_, err = ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget", Properties: both,
+		Kind: "substrate.reamde.dev/core/kind", ID: swPackage + "/widget", Properties: both,
 	})
 	wantErr(t, err, substrate.ErrValidation, "definition and typed properties")
 	if !strings.Contains(err.Error(), "definition") || !strings.Contains(err.Error(), "properties") {
@@ -728,13 +744,13 @@ func TestDeclarationWritesRefuseWhatTheEngineOwns(t *testing.T) {
 	typo := base()
 	typo["displayTemplat"] = "{name}"
 	_, err = ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget", Properties: typo,
+		Kind: "substrate.reamde.dev/core/kind", ID: swPackage + "/widget", Properties: typo,
 	})
 	wantErr(t, err, substrate.ErrValidation, "undeclared property")
 
 	// A PATCH of an ordinary property is unaffected: the merge carries the stored
 	// managed values, which are the engine's own answer by definition.
-	if _, err := ds.Patch(ctx, owner, "core.substrate.reamde.dev/kind", swAuthority+"/widget",
+	if _, err := ds.Patch(ctx, owner, "substrate.reamde.dev/core/kind", swPackage+"/widget",
 		substrate.PatchInput{Properties: map[string]any{"description": "the widget kind"}}); err != nil {
 		t.Fatalf("patch an ordinary property: %v", err)
 	}
@@ -743,7 +759,7 @@ func TestDeclarationWritesRefuseWhatTheEngineOwns(t *testing.T) {
 // A DELETED SPELLING IS NAMED AT BOTH DOORS. A declaration arrives here as
 // PROPERTIES and at the YAML door as a document, and a writer sending the
 // retired `emit` deserves the same sentence either way: "not declared on
-// core.substrate.reamde.dev/function" tells them nothing about where the grant
+// substrate.reamde.dev/core/function" tells them nothing about where the grant
 // went. Every retired grant key is checked on PUT and on PATCH, since a patch
 // carrying one is the same mistake with a smaller payload.
 func TestDeclarationWritesNameTheDeletedSpellings(t *testing.T) {
@@ -751,21 +767,22 @@ func TestDeclarationWritesNameTheDeletedSpellings(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	sa := applier(t, ds)
-	const fnKind = "core.substrate.reamde.dev/function"
-	const agentKind = "core.substrate.reamde.dev/agent"
-	fnID, agentID := swAuthority+"/mirror", swAuthority+"/thinker"
+	const fnKind = "substrate.reamde.dev/core/function"
+	const agentKind = "substrate.reamde.dev/core/agent"
+	fnID, agentID := swPackage+"/mirror", swPackage+"/thinker"
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, 0),
+		vocabulary.PackageManifest(swPackage, 0),
 		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
-		vocabulary.FunctionManifest(swAuthority, "mirror", map[string]any{
-			"authority": swAuthority, "description": "mirrors widgets", "runtime": vocabulary.RuntimePython,
-			"permissions": map[string]any{"writes": []any{swAuthority + "/widget"}},
+		vocabulary.FunctionManifest(swPackage, "mirror", map[string]any{
+			"authority": swAuthority,
+			"package":   "widgets", "description": "mirrors widgets", "runtime": vocabulary.RuntimePython,
+			"permissions": map[string]any{"writes": []any{swPackage + "/widget"}},
 			"source":      "def main(input, host): return {}",
 		}),
-		vocabulary.AgentManifest(swAuthority, "thinker", map[string]any{
+		vocabulary.AgentManifest(swPackage, "thinker", map[string]any{
 			"description": "thinks", "prompt": "be useful",
 			"provider": "default", "model": "gpt-5",
-			"permissions": map[string]any{"writes": []any{swAuthority + "/widget"}},
+			"permissions": map[string]any{"writes": []any{swPackage + "/widget"}},
 		}),
 	}); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -782,17 +799,17 @@ func TestDeclarationWritesNameTheDeletedSpellings(t *testing.T) {
 	}{
 		"a function's emit": {
 			fnKind, fnID, fnRow, "emit",
-			[]any{swAuthority + "/widget"},
+			[]any{swPackage + "/widget"},
 			"props.emit: the deleted key, replaced by permissions.writes",
 		},
 		"a function's reads": {
 			fnKind, fnID, fnRow, "reads",
-			map[string]any{"kinds": []any{swAuthority + "/widget"}},
+			map[string]any{"kinds": []any{swPackage + "/widget"}},
 			"props.reads: the deleted key, replaced by permissions.reads",
 		},
 		"a function's call": {
 			fnKind, fnID, fnRow, "call",
-			[]any{swAuthority + "/other"},
+			[]any{swPackage + "/other"},
 			"props.call: the deleted key, replaced by permissions.call",
 		},
 		"a function's network": {
@@ -807,17 +824,17 @@ func TestDeclarationWritesNameTheDeletedSpellings(t *testing.T) {
 		},
 		"a function's capability wrapper": {
 			fnKind, fnID, fnRow, "capabilities",
-			map[string]any{"emit": []any{swAuthority + "/widget"}},
+			map[string]any{"emit": []any{swPackage + "/widget"}},
 			"props.capabilities: the deleted key, replaced by permissions",
 		},
 		"an agent's emit": {
 			agentKind, agentID, agentRow, "emit",
-			[]any{swAuthority + "/widget"},
+			[]any{swPackage + "/widget"},
 			"props.emit: the deleted key, replaced by permissions.writes",
 		},
 		"an agent's reads": {
 			agentKind, agentID, agentRow, "reads",
-			map[string]any{"kinds": []any{swAuthority + "/widget"}},
+			map[string]any{"kinds": []any{swPackage + "/widget"}},
 			"props.reads: the deleted key, replaced by permissions.reads",
 		},
 	} {
@@ -880,34 +897,35 @@ func TestTriggerOutlivesItsCallable(t *testing.T) {
 
 	fnData := map[string]any{
 		"authority":   swAuthority,
+		"package":     "widgets",
 		"description": "mirrors widgets into tasks",
 		"runtime":     vocabulary.RuntimePython,
-		"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
+		"permissions": map[string]any{"writes": []any{"samples.substrate.reamde.dev/tasks/task"}},
 		"source": `
 def main(input, host):
     c = input["envelope"]["change"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "t-" + c["id"], "properties": {"name": "mirrored"}}]}
 `,
 	}
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, 0),
+		vocabulary.PackageManifest(swPackage, 0),
 		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
-		vocabulary.FunctionManifest(swAuthority, "mirror", fnData),
+		vocabulary.FunctionManifest(swPackage, "mirror", fnData),
 	}); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	const triggerID = "on-mirror.widgets.example.substrate.reamde.dev"
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/trigger", ID: triggerID,
+		Kind: "substrate.reamde.dev/core/trigger", ID: triggerID,
 		Properties: map[string]any{
-			"source":   map[string]any{"record": map[string]any{"kinds": []any{swAuthority + "/widget"}}},
-			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", swAuthority+"/mirror"),
+			"source":   map[string]any{"record": map[string]any{"kinds": []any{swPackage + "/widget"}}},
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", swPackage+"/mirror"),
 		},
 	}); err != nil {
 		t.Fatalf("put trigger: %v", err)
 	}
-	a := mustPut(t, ds, owner, substrate.PutInput{Kind: swAuthority + "/widget", Properties: map[string]any{"name": "a"}})
+	a := mustPut(t, ds, owner, substrate.PutInput{Kind: swPackage + "/widget", Properties: map[string]any{"name": "a"}})
 	process(t, ops)
 	if _, err := ds.Get(ctx, taskType, "t-"+a.ID); err != nil {
 		t.Fatalf("first incarnation never delivered: %v", err)
@@ -915,10 +933,10 @@ def main(input, host):
 
 	// The function dies; a widget changes while the callable is gone. The
 	// trigger is skipped — no delivery, no cursor motion, no park.
-	if _, err := ds.Delete(ctx, owner, "core.substrate.reamde.dev/function", swAuthority+"/mirror"); err != nil {
+	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/function", swPackage+"/mirror"); err != nil {
 		t.Fatalf("delete function: %v", err)
 	}
-	b := mustPut(t, ds, owner, substrate.PutInput{Kind: swAuthority + "/widget", Properties: map[string]any{"name": "b"}})
+	b := mustPut(t, ds, owner, substrate.PutInput{Kind: swPackage + "/widget", Properties: map[string]any{"name": "b"}})
 	process(t, ops)
 	if _, err := ds.Get(ctx, taskType, "t-"+b.ID); err == nil {
 		t.Fatal("a trigger with no callable delivered")
@@ -931,7 +949,7 @@ def main(input, host):
 	// Reinstall: the trigger resumes from where it stood — the interim
 	// change delivers late, not lost.
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.FunctionManifest(swAuthority, "mirror", fnData),
+		vocabulary.FunctionManifest(swPackage, "mirror", fnData),
 	}); err != nil {
 		t.Fatalf("reinstall: %v", err)
 	}
@@ -955,34 +973,35 @@ func TestBuiltinActorRowsRefuseRedeclaration(t *testing.T) {
 	sa := applier(t, ds)
 
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, 0),
+		vocabulary.PackageManifest(swPackage, 0),
 	}); err != nil {
 		t.Fatalf("apply authority: %v", err)
 	}
 
 	// Through the batch verb.
 	_, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.ActorManifest(swAuthority, "api"),
+		vocabulary.ActorManifest(swPackage, "api"),
 	})
 	wantErr(t, err, substrate.ErrForbidden, "batch redeclares a shipped actor")
 
 	// Through the generic put.
 	_, err = ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/actor", ID: "substrate",
-		Properties: map[string]any{"authority": swAuthority},
+		Kind: "substrate.reamde.dev/core/actor", ID: "substrate",
+		Properties: map[string]any{"authority": swAuthority, "package": "widgets"},
 	})
 	wantErr(t, err, substrate.ErrForbidden, "put hijacks a shipped actor")
 
 	// Through a patch that retargets the row's authority.
-	_, err = ds.Patch(ctx, owner, "core.substrate.reamde.dev/actor", "api", substrate.PatchInput{
-		Properties: map[string]any{"authority": swAuthority},
+	_, err = ds.Patch(ctx, owner, "substrate.reamde.dev/core/actor", "api", substrate.PatchInput{
+		Properties: map[string]any{"authority": swAuthority, "package": "widgets"},
 	})
 	wantErr(t, err, substrate.ErrForbidden, "patch retargets a shipped actor")
 
 	// The shipped rows are untouched.
 	for _, id := range []string{"api", "console", "substratectl", "substrate"} {
-		row := mustGet(t, ds, "core.substrate.reamde.dev/actor", id)
-		if row.Properties["authority"] != "core.substrate.reamde.dev" || row.Properties["source"] != "builtin" {
+		row := mustGet(t, ds, "substrate.reamde.dev/core/actor", id)
+		if row.Properties["authority"] != "substrate.reamde.dev" || row.Properties["package"] != "core" ||
+			row.Properties["source"] != "builtin" {
 			t.Fatalf("shipped actor row %s = %v", id, row.Properties)
 		}
 	}
@@ -999,7 +1018,7 @@ func TestOpenNeverPrunesShippedRows(t *testing.T) {
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
 		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -1022,12 +1041,12 @@ func TestOpenNeverPrunesShippedRows(t *testing.T) {
 	t.Cleanup(func() { _ = raw.Close() })
 	for _, row := range []struct{ id, typ, props string }{
 		{
-			"ghost.substrate.reamde.dev", "core.substrate.reamde.dev/authority",
+			"ghost.substrate.reamde.dev", "substrate.reamde.dev/core/authority",
 			`{"name": "ghost.substrate.reamde.dev", "version": 1, "source": "builtin", "actors": []}`,
 		},
 		{
-			"ghost.substrate.reamde.dev/color", "core.substrate.reamde.dev/propertytype",
-			`{"name": "color", "authority": "ghost.substrate.reamde.dev", "base": "string", "version": 1}`,
+			"ghost.substrate.reamde.dev/ghost/color", "substrate.reamde.dev/core/propertytype",
+			`{"name": "color", "authority": "ghost.substrate.reamde.dev", "package": "ghost", "base": "string", "version": 1}`,
 		},
 	} {
 		if _, err := raw.ExecContext(ctx, `
@@ -1044,8 +1063,8 @@ func TestOpenNeverPrunesShippedRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	for id, typ := range map[string]string{
-		"ghost.substrate.reamde.dev":       "core.substrate.reamde.dev/authority",
-		"ghost.substrate.reamde.dev/color": "core.substrate.reamde.dev/propertytype",
+		"ghost.substrate.reamde.dev":             "substrate.reamde.dev/core/authority",
+		"ghost.substrate.reamde.dev/ghost/color": "substrate.reamde.dev/core/propertytype",
 	} {
 		row := mustGet(t, ds2, typ, id)
 		if row.DeletedAt != nil {
@@ -1053,7 +1072,7 @@ func TestOpenNeverPrunesShippedRows(t *testing.T) {
 		}
 	}
 	// And the authority is LIVE vocabulary, rebuilt from the rows like every other.
-	if _, err := ds2.KindByRef(ctx, "ghost.substrate.reamde.dev/color"); err == nil {
+	if _, err := ds2.KindByRef(ctx, "ghost.substrate.reamde.dev/ghost/color"); err == nil {
 		t.Log("the ghost authority's property type is not a record type; nothing to assert")
 	}
 	types, err := ds2.Kinds(ctx)
@@ -1065,10 +1084,10 @@ func TestOpenNeverPrunesShippedRows(t *testing.T) {
 	}
 }
 
-// swInstallAuthority is the closure the install below admits, kept apart from
-// swAuthority so the whole-authority replace never prunes the widget kind its
+// swInstallPackage is the closure the install below admits, kept apart from
+// swPackage so the whole-authority replace never prunes the widget kind its
 // data documents are written against.
-const swInstallAuthority = "installer.example.substrate.reamde.dev"
+const swInstallPackage = "installer.example.substrate.reamde.dev/installer"
 
 // The projection resolves a declaration row's kind against the CANDIDATE when
 // this projection is what installs that kind's declaration, because the row is
@@ -1082,7 +1101,7 @@ func TestCandidateResolutionIsTheProjectionsAlone(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, 0),
+		vocabulary.PackageManifest(swPackage, 0),
 		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
 	}); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -1090,18 +1109,18 @@ func TestCandidateResolutionIsTheProjectionsAlone(t *testing.T) {
 
 	t.Run("an ordinary put", func(t *testing.T) {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: swAuthority + "/widget", ID: "declared",
+			Kind: swPackage + "/widget", ID: "declared",
 			Properties: map[string]any{"name": "ok"},
 		})
 		_, err := ds.Put(ctx, owner, substrate.PutInput{
-			Kind: swAuthority + "/widget", ID: "undeclared",
+			Kind: swPackage + "/widget", ID: "undeclared",
 			Properties: map[string]any{"name": "ok", "color": "red"},
 		})
 		wantErr(t, err, substrate.ErrValidation, "a put carrying an undeclared property")
 		if !strings.Contains(fmt.Sprint(err), "not declared") {
 			t.Fatalf("the refusal must name the undeclared property: %v", err)
 		}
-		if _, err := ds.Get(ctx, swAuthority+"/widget", "undeclared"); err == nil {
+		if _, err := ds.Get(ctx, swPackage+"/widget", "undeclared"); err == nil {
 			t.Fatal("the refused put landed a row")
 		}
 	})
@@ -1111,30 +1130,30 @@ func TestCandidateResolutionIsTheProjectionsAlone(t *testing.T) {
 		if !ok {
 			t.Fatal("dataset does not implement the closure-install seam")
 		}
-		closure := []map[string]any{vocabulary.AuthorityManifest(swInstallAuthority, 0)}
+		closure := []map[string]any{vocabulary.PackageManifest(swInstallPackage, 0)}
 
 		_, err := inst.InstallBundleClosure(ctx, owner, closure, []substrate.PutInput{{
-			Kind: swAuthority + "/widget", ID: "from-install",
+			Kind: swPackage + "/widget", ID: "from-install",
 			Properties: map[string]any{"name": "ok", "color": "red"},
 		}})
 		wantErr(t, err, substrate.ErrValidation, "an install's data document carrying an undeclared property")
 		// The whole install rolled back with it: no data row, and no closure.
-		if _, err := ds.Get(ctx, swAuthority+"/widget", "from-install"); err == nil {
+		if _, err := ds.Get(ctx, swPackage+"/widget", "from-install"); err == nil {
 			t.Fatal("the refused data document landed a row")
 		}
-		if _, err := ds.Get(ctx, "core.substrate.reamde.dev/authority", swInstallAuthority); err == nil {
+		if _, err := ds.Get(ctx, "substrate.reamde.dev/core/package", swInstallPackage); err == nil {
 			t.Fatal("a refused data document must roll the closure back with it")
 		}
 
 		// The same install with a declared property admits both halves.
 		if _, err := inst.InstallBundleClosure(ctx, owner, closure, []substrate.PutInput{{
-			Kind: swAuthority + "/widget", ID: "from-install",
+			Kind: swPackage + "/widget", ID: "from-install",
 			Properties: map[string]any{"name": "ok"},
 		}}); err != nil {
 			t.Fatalf("install: %v", err)
 		}
-		mustGet(t, ds, swAuthority+"/widget", "from-install")
-		mustGet(t, ds, "core.substrate.reamde.dev/authority", swInstallAuthority)
+		mustGet(t, ds, swPackage+"/widget", "from-install")
+		mustGet(t, ds, "substrate.reamde.dev/core/package", swInstallPackage)
 	})
 }
 
@@ -1146,7 +1165,7 @@ type vocabularyRemover interface {
 		docs []map[string]any, removeShort, removeID, removeAuthority string) error
 }
 
-const dkAuthority = "dropkind.example.substrate.reamde.dev"
+const dkPackage = "dropkind.example.substrate.reamde.dev/dropkind"
 
 // dkDocs is the bundle's whole closure: header, actor, the bundle listing what
 // it installs, and the members. A re-apply REPLACES the authority, so a member
@@ -1158,9 +1177,9 @@ func dkDocs(members ...map[string]any) []map[string]any {
 		installs = append(installs, meta["id"])
 	}
 	return append([]map[string]any{
-		vocabulary.AuthorityManifest(dkAuthority, 0),
-		vocabulary.ActorManifest(dkAuthority, vocabulary.AuthorityActor(dkAuthority)),
-		vocabulary.BundleManifest(dkAuthority, map[string]any{
+		vocabulary.PackageManifest(dkPackage, 0),
+		vocabulary.ActorManifest(dkPackage, vocabulary.PackageActor(dkPackage)),
+		vocabulary.BundleManifest(dkPackage, map[string]any{
 			"description": "the drop-kind bundle",
 			"installs":    installs,
 		}),
@@ -1168,7 +1187,7 @@ func dkDocs(members ...map[string]any) []map[string]any {
 }
 
 func dkKindDoc(singular, plural string) map[string]any {
-	return vocabulary.KindManifest(dkAuthority,
+	return vocabulary.KindManifest(dkPackage,
 		map[string]any{"singular": singular, "plural": plural},
 		map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}})
 }
@@ -1190,13 +1209,13 @@ func TestBundleUpgradeRefusesARowOfTheKindItRemoves(t *testing.T) {
 	if !ok {
 		t.Fatal("dataset does not implement the closure-install seam")
 	}
-	actor := substrate.BundleActor("dropkind")
+	actor := substrate.BundleActor(vocabulary.SplitPackageRef(dkPackage))
 
 	if _, err := inst.InstallBundleClosure(ctx, actor,
 		dkDocs(dkKindDoc("widget", "widgets"), dkKindDoc("gadget", "gadgets")), nil); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	if _, err := ds.KindByRef(ctx, dkAuthority+"/widget"); err != nil {
+	if _, err := ds.KindByRef(ctx, dkPackage+"/widget"); err != nil {
 		t.Fatalf("the installed widget kind: %v", err)
 	}
 
@@ -1204,18 +1223,18 @@ func TestBundleUpgradeRefusesARowOfTheKindItRemoves(t *testing.T) {
 	// and carries a widget record in the same package.
 	_, err := inst.InstallBundleClosure(ctx, actor, dkDocs(dkKindDoc("gadget", "gadgets")),
 		[]substrate.PutInput{{
-			Kind: dkAuthority + "/widget", ID: "late", Properties: map[string]any{"name": "late"},
+			Kind: dkPackage + "/widget", ID: "late", Properties: map[string]any{"name": "late"},
 		}})
 	wantErr(t, err, substrate.ErrGuard, "an upgrade that writes a row of the kind it removes")
-	if !strings.Contains(err.Error(), dkAuthority+"/widget") {
+	if !strings.Contains(err.Error(), dkPackage+"/widget") {
 		t.Fatalf("the refusal must name the kind: %v", err)
 	}
 	// Whole rollback: the kind is still live, and the row it would have stranded
 	// is not there.
-	if _, err := ds.KindByRef(ctx, dkAuthority+"/widget"); err != nil {
+	if _, err := ds.KindByRef(ctx, dkPackage+"/widget"); err != nil {
 		t.Fatalf("the refused upgrade removed the kind anyway: %v", err)
 	}
-	if _, err := ds.Get(ctx, dkAuthority+"/widget", "late"); err == nil {
+	if _, err := ds.Get(ctx, dkPackage+"/widget", "late"); err == nil {
 		t.Fatal("the refused upgrade landed the row")
 	}
 
@@ -1224,10 +1243,10 @@ func TestBundleUpgradeRefusesARowOfTheKindItRemoves(t *testing.T) {
 	if _, err := inst.InstallBundleClosure(ctx, actor, dkDocs(dkKindDoc("gadget", "gadgets")), nil); err != nil {
 		t.Fatalf("an upgrade that removes an unused kind must admit: %v", err)
 	}
-	if _, err := ds.KindByRef(ctx, dkAuthority+"/widget"); err == nil {
+	if _, err := ds.KindByRef(ctx, dkPackage+"/widget"); err == nil {
 		t.Fatal("the upgrade did not remove the unused kind")
 	}
-	if _, err := ds.KindByRef(ctx, dkAuthority+"/gadget"); err != nil {
+	if _, err := ds.KindByRef(ctx, dkPackage+"/gadget"); err != nil {
 		t.Fatalf("the upgrade removed a member it keeps: %v", err)
 	}
 }
@@ -1241,7 +1260,7 @@ func TestVocabularyApplyRefusesADeclarationRowOfTheMetaKindItRemoves(t *testing.
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newCoreDataset(t)
-	const metaKind = "core.substrate.reamde.dev/propertytype"
+	const metaKind = "substrate.reamde.dev/core/propertytype"
 
 	// A core-only repository declares no property types at all, so the opening
 	// count is zero and the removal looks free.
@@ -1260,13 +1279,13 @@ func TestVocabularyApplyRefusesADeclarationRowOfTheMetaKindItRemoves(t *testing.
 	// One batch: a property type declared into a new authority (its row's kind is
 	// the meta-kind), and core's declaration of that meta-kind removed.
 	err = rm.ApplyVocabularyWithRemoval(ctx, substrate.ActorSystem, []map[string]any{
-		vocabulary.AuthorityManifest("mine.example.com", 0),
+		vocabulary.PackageManifest("mine.example.com/mine", 0),
 		{
 			"kind":     metaKind,
-			"metadata": map[string]any{"id": "mine.example.com/color"},
-			"data":     map[string]any{"authority": "mine.example.com", "base": "string"},
+			"metadata": map[string]any{"id": "mine.example.com/mine/color"},
+			"data":     map[string]any{"authority": "mine.example.com", "package": "mine", "base": "string"},
 		},
-	}, vocabulary.DocKind, metaKind, "core.substrate.reamde.dev")
+	}, vocabulary.DocKind, metaKind, "substrate.reamde.dev/core")
 	wantErr(t, err, substrate.ErrGuard, "a batch that projects a row of the meta-kind it removes")
 	if !strings.Contains(err.Error(), metaKind) {
 		t.Fatalf("the refusal must name the kind: %v", err)
@@ -1276,7 +1295,7 @@ func TestVocabularyApplyRefusesADeclarationRowOfTheMetaKindItRemoves(t *testing.
 	if _, err := ds.KindByRef(ctx, metaKind); err != nil {
 		t.Fatalf("the refused batch removed the meta-kind anyway: %v", err)
 	}
-	if _, err := ds.Get(ctx, metaKind, "mine.example.com/color"); err == nil {
+	if _, err := ds.Get(ctx, metaKind, "mine.example.com/mine/color"); err == nil {
 		t.Fatal("the refused batch landed the declaration row")
 	}
 }

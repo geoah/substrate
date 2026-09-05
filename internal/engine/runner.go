@@ -122,7 +122,7 @@ func (ds *dataset) runnerSpecIn(fn *vocabulary.Function, reg *vocabulary.Registr
 	// path (PYTHONPATH for python, the vendored `lib` package for go). The
 	// module set re-keys the installation, so changing one re-registers or
 	// rebuilds the body exactly like editing it.
-	if b, ok := reg.BundleOf(fn.Authority); ok && len(b.Modules) > 0 {
+	if b, ok := reg.BundleOf(fn.Package); ok && len(b.Modules) > 0 {
 		spec.Modules = b.Modules
 	}
 	return spec
@@ -263,7 +263,7 @@ func (b *callBackend) Search(ctx context.Context, in substrate.SearchInput) ([]s
 }
 
 // ResolveKind answers the runner's reads gate in the repository's own
-// vocabulary: bare `task` and `tasks.substrate.reamde.dev/task` are one kind, and the
+// vocabulary: bare `task` and `samples.substrate.reamde.dev/tasks/task` are one kind, and the
 // allowlist is written in identities. A name the registry does not know comes
 // back unchanged and is refused there.
 func (b *callBackend) ResolveKind(name string) string {
@@ -299,7 +299,7 @@ func (b *callBackend) Call(ctx context.Context, ident string, args any) (any, er
 	// disabled bundle's function, and — because the fence is held for the
 	// whole tree — cannot commit that callee's effects after its lifecycle
 	// verb returns. No re-acquire (the lease is inherited via ctx).
-	if _, _, err := ds.admitCallable(ctx, target.Authority, target.Identity()); err != nil {
+	if _, _, err := ds.admitCallable(ctx, target.Package, target.Identity()); err != nil {
 		return nil, fmt.Errorf("call: %w", err)
 	}
 	for _, on := range b.inv.stack {
@@ -400,7 +400,7 @@ func (ds *dataset) CallFunction(ctx context.Context, name string, args any) (any
 	// commit: a concurrent disable/uninstall/purge waits this invocation out
 	// instead of racing effects in behind it (bundles.go, review #2). The
 	// leased context flows into runCallable so nested host Calls inherit it.
-	ctx, release, err := ds.admitCallable(ctx, fn.Authority, fn.Identity())
+	ctx, release, err := ds.admitCallable(ctx, fn.Package, fn.Identity())
 	if err != nil {
 		return nil, 0, err
 	}

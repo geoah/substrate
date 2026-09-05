@@ -24,7 +24,7 @@ func TestSchemaDialectLadder(t *testing.T) {
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
 		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -125,9 +125,9 @@ func TestSchemaDialectLadder(t *testing.T) {
 func TestSchemaDialectRefusesADefinitionBearingStore(t *testing.T) {
 	t.Parallel()
 	blobs := map[string]any{
-		"a map":    map[string]any{"authority": "core.substrate.reamde.dev"},
+		"a map":    map[string]any{"authority": "substrate.reamde.dev", "package": "core"},
 		"a null":   nil,
-		"a string": "authority: core.substrate.reamde.dev",
+		"a string": "authority: substrate.reamde.dev/core",
 		"a list":   []any{"authority"},
 		"a number": float64(1),
 	}
@@ -146,9 +146,9 @@ func TestSchemaDialectRefusesADefinitionBearingStore(t *testing.T) {
 			// as covered without having reached the refusal, and an earlier
 			// revision of this test skipped every case in silence.
 			for _, want := range []string{
-				"core.substrate.reamde.dev/kind",
-				"core.substrate.reamde.dev/function",
-				"core.substrate.reamde.dev/authority",
+				"substrate.reamde.dev/core/kind",
+				"substrate.reamde.dev/core/function",
+				"substrate.reamde.dev/core/package",
 			} {
 				if !slices.Contains(covered, want) {
 					t.Errorf("%s was never planted into; covered = %v", want, covered)
@@ -161,11 +161,12 @@ func TestSchemaDialectRefusesADefinitionBearingStore(t *testing.T) {
 // declarationKindRefs is every kind a declaration row stores as: the gate reads
 // them all, so the test plants into each one in turn.
 var declarationKindRefs = []string{
-	"core.substrate.reamde.dev/authority", "core.substrate.reamde.dev/actor",
-	"core.substrate.reamde.dev/kind", "core.substrate.reamde.dev/trait",
-	"core.substrate.reamde.dev/propertytype", "core.substrate.reamde.dev/recordmapping",
-	"core.substrate.reamde.dev/function", "core.substrate.reamde.dev/agent",
-	"core.substrate.reamde.dev/bundle",
+	"substrate.reamde.dev/core/authority", "substrate.reamde.dev/core/package",
+	"substrate.reamde.dev/core/actor",
+	"substrate.reamde.dev/core/kind", "substrate.reamde.dev/core/trait",
+	"substrate.reamde.dev/core/propertytype", "substrate.reamde.dev/core/recordmapping",
+	"substrate.reamde.dev/core/function", "substrate.reamde.dev/core/agent",
+	"substrate.reamde.dev/core/bundle",
 }
 
 // assertDefinitionBlobRefusesTheOpen plants one `definition` value onto one
@@ -181,7 +182,7 @@ func assertDefinitionBlobRefusesTheOpen(t *testing.T, declKind string, blob any)
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
 		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -277,7 +278,7 @@ func TestStampedStoreRefusesANullDefinitionAtTheRow(t *testing.T) {
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
 		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -301,11 +302,11 @@ func TestStampedStoreRefusesANullDefinitionAtTheRow(t *testing.T) {
 	defer func() { _ = db.Close() }()
 	// The store is stamped dialect 2 (a fresh repository is typed from birth), and
 	// the stamp is left alone: this row meets the live reader, not the gate.
-	const fn = "web.bundles.substrate.reamde.dev/findurls"
+	const fn = "samples.substrate.reamde.dev/web/findurls"
 	if _, err := db.ExecContext(ctx, `
 		UPDATE records SET props = jsonb_set(props, '{definition}', 'null')
 		WHERE kind = $1 AND id = $2`,
-		"core.substrate.reamde.dev/function", fn); err != nil {
+		"substrate.reamde.dev/core/function", fn); err != nil {
 		t.Fatalf("plant a null definition: %v", err)
 	}
 	_ = svc.Close()
@@ -335,7 +336,7 @@ func TestStampedStoreRefusesAnInterimGrantRow(t *testing.T) {
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
 		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -359,13 +360,13 @@ func TestStampedStoreRefusesAnInterimGrantRow(t *testing.T) {
 	defer func() { _ = db.Close() }()
 	// The row as the flip's own unreleased binary left it: the grant hoisted onto
 	// `data` itself, with no `permissions` object.
-	const fn = "web.bundles.substrate.reamde.dev/findurls"
+	const fn = "samples.substrate.reamde.dev/web/findurls"
 	if _, err := db.ExecContext(ctx, `
 		UPDATE records
 		SET props = jsonb_set(props - 'permissions', '{emit}', $3::jsonb)
 		WHERE kind = $1 AND id = $2`,
-		"core.substrate.reamde.dev/function", fn,
-		`["web.bundles.substrate.reamde.dev/page"]`); err != nil {
+		"substrate.reamde.dev/core/function", fn,
+		`["samples.substrate.reamde.dev/web/page"]`); err != nil {
 		t.Fatalf("plant an interim grant row: %v", err)
 	}
 	_ = svc.Close()

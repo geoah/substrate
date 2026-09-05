@@ -116,7 +116,7 @@ const countStateQuery = `SELECT count(*) FROM records WHERE kind = $1 AND delete
 const countStateValuesQuery = `SELECT count(*) FROM records
 	WHERE kind = $1 AND deleted_at IS NULL AND states ? $2 AND $3::jsonb @> (states->$2)`
 
-// checkDeclaredDefaults holds every `default:` the touched authorities declare
+// checkDeclaredDefaults holds every `default:` the touched packages declare
 // to the coercion a WRITE puts a value through, and answers one problem per
 // default that would not survive it. The loader has already checked the
 // literal's shape (parseDefault); what is left is the value's own rules (a
@@ -126,7 +126,7 @@ const countStateValuesQuery = `SELECT count(*) FROM records
 func checkDeclaredDefaults(candidate *vocabulary.Registry, touched map[string]bool) []string {
 	var problems []string
 	for aname := range touched {
-		a, ok := candidate.AuthorityByName(aname)
+		a, ok := candidate.PackageByName(aname)
 		if !ok || a == nil {
 			continue
 		}
@@ -150,7 +150,7 @@ func checkDeclaredDefaults(candidate *vocabulary.Registry, touched map[string]bo
 
 // classifyNarrowings walks every type present in BOTH the current and the
 // candidate registry (dropped types are refuse-with-instances' whole-type
-// count) across the touched authorities and returns the narrowing diffs. Pure
+// count) across the touched packages and returns the narrowing diffs. Pure
 // classification — the counts run later, inside the batch transaction.
 func classifyNarrowings(current, candidate *vocabulary.Registry, touched map[string]bool) []narrowing {
 	return classifyNarrowingsExcept(current, candidate, touched, nil)
@@ -167,8 +167,8 @@ func classifyNarrowingsExcept(
 ) []narrowing {
 	var out []narrowing
 	for _, aname := range sortedKeys(touched) {
-		cur, _ := current.AuthorityByName(aname)
-		cand, _ := candidate.AuthorityByName(aname)
+		cur, _ := current.PackageByName(aname)
+		cand, _ := candidate.PackageByName(aname)
 		if cur == nil || cand == nil {
 			continue
 		}

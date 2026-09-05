@@ -13,16 +13,18 @@ package engine
 //   - a store still holding dialect 1's `definition` blob REFUSES the open with
 //     ErrDeclarationUntranslated, because no rung translates it any more.
 //
-// THE LADDER IS EMPTY, and dialect 2 is where it starts. Dialect 1 stored a
-// declaration's content in a `definition` json blob; dialect 2 stores the
-// declaration's own properties. The rung that moved a repository between them
-// was deleted before the first release (#217): no release ever produced a
-// dialect-1 store, so every install from here on carries a rung it can never
-// reach, and the standing answer for a development store that has one is
+// THE LADDER IS EMPTY, and dialect 3 is where it starts. Dialect 1 stored a
+// declaration's content in a `definition` json blob and dialect 2 stored the
+// declaration's own properties, both under a two-segment kind reference;
+// dialect 3 is the same rows under `{authority}/{package}/{name}` (decision
+// record 0047). Neither rung exists: no release ever produced a dialect-1
+// store, and nothing translates a dialect-2 one, because every stored kind
+// string would have to be rewritten and no package name can be invented for
+// it. The standing answer for a development store below 3 is
 // `mise run dev:wipe`.
 //
 // A NEW DIALECT ADDS A STEP BACK. dialectStep and the loop that ran it are gone
-// with the rung, so dialect 3 reintroduces both; what stays is the shape they
+// with the rungs, so dialect 4 reintroduces both; what stays is the shape they
 // need — a step is content-gated and idempotent, records itself in
 // vocabulary_promotions, and stamps inside its own transaction where the
 // rewrite and the stamp must be indivisible.
@@ -50,13 +52,13 @@ var ErrVocabularyDialectNewer = errors.New("substrate/engine: the store speaks a
 // stamp that lies about its own rows.
 var ErrDeclarationUntranslated = errors.New("substrate/engine: a stored declaration is in a shape this binary cannot read")
 
-// dialectTypedDeclarations is dialect 2's name in vocabulary_promotions.
-const dialectTypedDeclarations = "typed-declarations"
+// dialectPackagedKinds is dialect 3's name in vocabulary_promotions.
+const dialectPackagedKinds = "packaged-kinds"
 
 // maxVocabularyDialect is the newest dialect this binary speaks. A fresh
 // repository is stamped here at its first open; a repository stored above it
-// refuses to open.
-const maxVocabularyDialect = 2
+// refuses to open, and one stored below it cannot be read at all.
+const maxVocabularyDialect = 3
 
 // MaxSchemaDialect is the newest dialect this binary speaks — the value GET
 // /api discovery reports as the binary maximum. Exported so the
@@ -99,12 +101,17 @@ func (ds *dataset) promoteSchemaDialect(ctx context.Context) error {
 		return nil
 	}
 	// BELOW THE MAXIMUM AND NOT PROMOTABLE. An unstamped store is a fresh
-	// repository in almost every case, and its rows say which: dialect 1 is the
-	// `definition` blob, and a repository being created has no declaration row
-	// carrying one. The check runs BEFORE the stamp because the stamp is durable
-	// and one-way — stamping a dialect-1 store and letting the reader refuse it
-	// a moment later (rowDocument) would leave a mark that says the rows are
-	// typed when they are not.
+	// repository, and a STAMPED one below the maximum is a store this binary
+	// cannot read: dialect 2 spelled every kind `{authority}/{name}`, and
+	// nothing can invent the package segment the reader needs. The refusal is
+	// the whole handling.
+	if stored > 0 {
+		return fmt.Errorf("%w: repository %s stores dialect %d, whose kind references carry no package segment (decision record 0047); no rung translates them, so wipe the store: mise run dev:wipe in development, and restore a dump taken before the upgrade anywhere else",
+			ErrDeclarationUntranslated, ds.info.Name, stored)
+	}
+	// The dialect-1 shape is refused by its own tell, before the stamp: the
+	// stamp is durable and one-way, and stamping a store whose rows the reader
+	// then refuses (rowDocument) would leave a mark that lies about them.
 	if left, err := ds.definitionBearingRows(ctx); err != nil {
 		return err
 	} else if len(left) > 0 {
@@ -114,7 +121,7 @@ func (ds *dataset) promoteSchemaDialect(ctx context.Context) error {
 	// A gate that promoted nothing still stamps: the dialect is the store's
 	// SHAPE, not a count of promotions run, so a fresh repository leaves its
 	// first open at the binary's maximum and never re-enters this path.
-	return ds.recordDialectStep(ctx, maxVocabularyDialect, dialectTypedDeclarations)
+	return ds.recordDialectStep(ctx, maxVocabularyDialect, dialectPackagedKinds)
 }
 
 // definitionBearingRows lists the live declaration rows that still carry a

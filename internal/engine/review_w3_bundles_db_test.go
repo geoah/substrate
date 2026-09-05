@@ -36,7 +36,7 @@ func newW3Env(t *testing.T, opts ...engine.Option) (substrate.Service, substrate
 	t.Helper()
 	dsn := testdb.NewSchema(t)
 	all := []engine.Option{
-		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 	}
 	all = append(all, opts...)
@@ -184,7 +184,7 @@ func installW3OAuthBundle(t *testing.T) (substrate.Service, substrate.Dataset, *
 	t.Helper()
 	p := newW3Provider(t)
 	svc, ds, db := newW3Env(t,
-		engine.WithOAuth("w3-state-key", "https://substrate.example/api/v1/core.substrate.reamde.dev/oauth/callback", p.ts.Client()),
+		engine.WithOAuth("w3-state-key", "https://substrate.example/api/v1/substrate.reamde.dev/core/oauth/callback", p.ts.Client()),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 	)
 	docs := mbStandardDocs()
@@ -261,7 +261,7 @@ func TestW3OAuthEmptyStateKeyRefused(t *testing.T) {
 	t.Parallel()
 	dsn := testdb.NewSchema(t)
 	_, err := engine.Open(context.Background(), dsn, engine.WithCredentialKey(engine.TestCredentialKey),
-		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithOAuth("", "https://substrate.example/callback", nil),
 	)
 	if err == nil || !strings.Contains(err.Error(), "state key") {
@@ -402,10 +402,10 @@ func TestW3BundlePurgeRevokesAccounts(t *testing.T) {
 	svc, _, db, ops, p, account := installW3OAuthBundle(t)
 	w3Connect(t, svc, ops, account.ID)
 
-	if err := ops.DisableBundle(ctx, mbAuthority); err != nil {
+	if err := ops.DisableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
-	if _, err := ops.PurgeBundle(ctx, mbAuthority); err != nil {
+	if _, err := ops.PurgeBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("purge: %v", err)
 	}
 	p.mu.Lock()
@@ -417,7 +417,7 @@ func TestW3BundlePurgeRevokesAccounts(t *testing.T) {
 	if n := w3CredentialCount(t, db); n != 0 {
 		t.Fatalf("purge left credentials: %d", n)
 	}
-	st, err := ops.BundleStatus(ctx, mbAuthority)
+	st, err := ops.BundleStatus(ctx, mbPackage)
 	if err != nil || st.LiveRecords != 0 {
 		t.Fatalf("post-purge status: %+v %v", st, err)
 	}
@@ -460,29 +460,33 @@ func TestW3OAuthRevoke500StillReleases(t *testing.T) {
 
 // --- #2: shadow traits cannot counterfeit the host-recognized core ones -------------
 
-// w3TraitDoc renders a trait document declared inside the mail bundle authority.
+// w3TraitDoc renders a trait document declared inside the mail bundle package.
 func w3TraitDoc(name string, props map[string]any) map[string]any {
-	data := map[string]any{"authority": mbAuthority, "description": "a bundle-local trait named like a core one"}
+	authority, pkg := vocabulary.SplitPackageRef(mbPackage)
+	data := map[string]any{
+		"authority": authority, "package": pkg,
+		"description": "a bundle-local trait named like a core one",
+	}
 	if len(props) > 0 {
 		data["properties"] = props
 	}
 	return map[string]any{
 		"kind":     vocabulary.CoreKind(vocabulary.DocTrait),
-		"metadata": map[string]any{"id": mbAuthority + "/" + name},
+		"metadata": map[string]any{"id": mbPackage + "/" + name},
 		"data":     data,
 	}
 }
 
 // A bundle whose oauth2 clientInput kind binds a LOCAL trait named "oauth2"
 // declares no client at all: the host key is the resolved identity
-// core.substrate.reamde.dev/oauth2, and a same-named local trait does not count.
+// substrate.reamde.dev/core/oauth2, and a same-named local trait does not count.
 func TestW3ShadowOAuth2Refused(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	docs := mbDocs(nil,
 		w3TraitDoc("oauth2", map[string]any{"clientId": "string", "clientSecret": "secret"}),
-		vocabulary.KindManifest(mbAuthority,
+		vocabulary.KindManifest(mbPackage,
 			map[string]any{"singular": "mailconfig", "plural": "mailconfigs"},
 			map[string]any{
 				// Resolves in-authority FIRST: this binds the local shadow, never core.
@@ -528,7 +532,7 @@ func TestW3ShadowAccountConfigIsNotAnAccount(t *testing.T) {
 		t.Fatalf("StartOAuth on a shadow-trait record: %v", err)
 	}
 	// Status counts no accounts.
-	st, err := ops.BundleStatus(ctx, mbAuthority)
+	st, err := ops.BundleStatus(ctx, mbPackage)
 	if err != nil {
 		t.Fatalf("status: %v", err)
 	}
@@ -536,7 +540,7 @@ func TestW3ShadowAccountConfigIsNotAnAccount(t *testing.T) {
 		t.Fatalf("a shadow-trait record counted as an account: %+v", st)
 	}
 	// The core trait query does not list the shadow-bound type.
-	types, err := ops.TypesImplementing(ctx, "core.substrate.reamde.dev/accountconfig")
+	types, err := ops.TypesImplementing(ctx, "substrate.reamde.dev/core/accountconfig")
 	if err != nil {
 		t.Fatalf("implementors: %v", err)
 	}
@@ -576,12 +580,12 @@ func TestW3MergeSplitBundleLifecycleGuards(t *testing.T) {
 	a2 := mustPut(t, ds, owner, substrate.PutInput{Kind: mbAccountType, Properties: map[string]any{"address": "a2@x.co"}})
 
 	// Disabled: accounts are frozen — merge refuses like put/patch/delete do.
-	if err := ops.DisableBundle(ctx, mbAuthority); err != nil {
+	if err := ops.DisableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
 	_, err := ds.Merge(ctx, owner, a1.Kind, a1.ID, a2.ID)
 	wantErr(t, err, substrate.ErrGuard, "merge of frozen accounts")
-	if err := ops.EnableBundle(ctx, mbAuthority); err != nil {
+	if err := ops.EnableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
 	rec, err := ds.Merge(ctx, owner, a1.Kind, a1.ID, a2.ID)
@@ -589,12 +593,12 @@ func TestW3MergeSplitBundleLifecycleGuards(t *testing.T) {
 		t.Fatalf("merge while live: %v", err)
 	}
 	// Disabled again: the split would resurrect a frozen account.
-	if err := ops.DisableBundle(ctx, mbAuthority); err != nil {
+	if err := ops.DisableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
 	_, err = ds.Split(ctx, owner, rec.ID)
 	wantErr(t, err, substrate.ErrGuard, "split resurrecting a frozen account")
-	if err := ops.EnableBundle(ctx, mbAuthority); err != nil {
+	if err := ops.EnableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
 	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
@@ -606,18 +610,18 @@ func TestW3MergeSplitBundleLifecycleGuards(t *testing.T) {
 	// tears the authority down only once purge has cleared the data.
 	i1 := mustPut(t, ds, owner, substrate.PutInput{Kind: mbItemType, Properties: map[string]any{"name": "i1"}})
 	_ = mustPut(t, ds, owner, substrate.PutInput{Kind: mbItemType, Properties: map[string]any{"name": "i2"}})
-	err = ops.UninstallBundle(ctx, mbAuthority)
+	err = ops.UninstallBundle(ctx, mbPackage)
 	wantErr(t, err, substrate.ErrGuard, "uninstall with live data")
 	if !strings.Contains(err.Error(), "live records") {
 		t.Fatalf("uninstall refusal must carry the count: %v", err)
 	}
-	if err := ops.DisableBundle(ctx, mbAuthority); err != nil {
+	if err := ops.DisableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
-	if _, err := ops.PurgeBundle(ctx, mbAuthority); err != nil {
+	if _, err := ops.PurgeBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("purge: %v", err)
 	}
-	if err := ops.UninstallBundle(ctx, mbAuthority); err != nil {
+	if err := ops.UninstallBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("uninstall after purge: %v", err)
 	}
 	// The type is gone: a merge no longer resolves it.
@@ -634,11 +638,11 @@ func TestW3MergeEffectBundleGuard(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, ops := installMailBundle(t)
-	const toolAuthority = "wtool.test.dev"
+	const toolPackage = "wtool.test.dev/wtool"
 	mergerDocs := []map[string]any{
-		vocabulary.AuthorityManifest(toolAuthority, 0),
-		vocabulary.ActorManifest(toolAuthority, vocabulary.AuthorityActor(toolAuthority)),
-		vocabulary.FunctionManifest(toolAuthority, "merger", map[string]any{
+		vocabulary.PackageManifest(toolPackage, 0),
+		vocabulary.ActorManifest(toolPackage, vocabulary.PackageActor(toolPackage)),
+		vocabulary.FunctionManifest(toolPackage, "merger", map[string]any{
 			"description": "merges two mail accounts",
 			"runtime":     vocabulary.RuntimePython,
 			"source": `
@@ -655,11 +659,11 @@ def main(input, host):
 	}
 	a1 := mustPut(t, ds, owner, substrate.PutInput{Kind: mbAccountType, Properties: map[string]any{"address": "e1@x.co"}})
 	a2 := mustPut(t, ds, owner, substrate.PutInput{Kind: mbAccountType, Properties: map[string]any{"address": "e2@x.co"}})
-	if err := ops.DisableBundle(ctx, mbAuthority); err != nil {
+	if err := ops.DisableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
 	args := map[string]any{"winner": a1.ID, "loser": a2.ID}
-	_, _, err := ds.(fnOps).CallFunction(ctx, toolAuthority+"/merger", args)
+	_, _, err := ds.(fnOps).CallFunction(ctx, toolPackage+"/merger", args)
 	if err == nil || !strings.Contains(err.Error(), "frozen") {
 		t.Fatalf("a merge effect bypassed the bundle freeze: %v", err)
 	}
@@ -668,10 +672,10 @@ def main(input, host):
 		t.Fatalf("frozen loser was merged away: %+v", got)
 	}
 	// Enabled again, the same effect lands.
-	if err := ops.EnableBundle(ctx, mbAuthority); err != nil {
+	if err := ops.EnableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
-	if _, n, err := ds.(fnOps).CallFunction(ctx, toolAuthority+"/merger", args); err != nil || n != 1 {
+	if _, n, err := ds.(fnOps).CallFunction(ctx, toolPackage+"/merger", args); err != nil || n != 1 {
 		t.Fatalf("merge effect while live: %d %v", n, err)
 	}
 }
@@ -698,7 +702,7 @@ func TestW3SplitInputTurnsAmbiguous(t *testing.T) {
 	const rec = "w3fabmerge00"
 	if _, err := db.Exec(`
 		INSERT INTO records (id, kind, props)
-		VALUES ($1, 'core.substrate.reamde.dev/recordmerge',
+		VALUES ($1, 'substrate.reamde.dev/core/recordmerge',
 			jsonb_build_object('moved', '{}'::jsonb, 'winner', $2::text, 'loser', $3::text))`,
 		rec, mbConfigType+"/"+c2.ID, mbConfigType+"/"+c1.ID); err != nil {
 		t.Fatalf("insert merge record: %v", err)
@@ -709,7 +713,7 @@ func TestW3SplitInputTurnsAmbiguous(t *testing.T) {
 	for property, dst := range map[string]string{"winner": c2.ID, "loser": c1.ID} {
 		if _, err := db.Exec(`
 			INSERT INTO refs (src_kind, src, property, path, ord, dst_kind, dst)
-			VALUES ('core.substrate.reamde.dev/recordmerge', $1, $2, '', 0, $3, $4)`,
+			VALUES ('substrate.reamde.dev/core/recordmerge', $1, $2, '', 0, $3, $4)`,
 			rec, property, mbConfigType, dst); err != nil {
 			t.Fatalf("insert the %s row: %v", property, err)
 		}
@@ -725,7 +729,7 @@ func TestW3SplitInputTurnsAmbiguous(t *testing.T) {
 	// Two live records, none bound or named "default": the input is
 	// ambiguous — surfaced per input, never tie-broken, never a refusal of
 	// the split itself.
-	st, err := bundler(t, ds).BundleStatus(ctx, mbAuthority)
+	st, err := bundler(t, ds).BundleStatus(ctx, mbPackage)
 	if err != nil || len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupAmbiguous {
 		t.Fatalf("post-split status: %+v %v", st, err)
 	}
@@ -739,16 +743,16 @@ const w3WaiterSource = `
 import time
 def main(input, host):
     for _ in range(150):
-        got = host.get("mail.bundles.substrate.reamde.dev/mailitem", "w3-fence-flag")
+        got = host.get("mail.bundles.substrate.reamde.dev/mail/mailitem", "w3-fence-flag")
         if got:
-            return {"effects": [{"action": "put", "kind": "mail.bundles.substrate.reamde.dev/mailmessage",
+            return {"effects": [{"action": "put", "kind": "mail.bundles.substrate.reamde.dev/mail/mailmessage",
                                  "id": "w3-fence-done", "properties": {"subject": "done"}}]}
         time.sleep(0.05)
     return {"effects": []}
 `
 
 func w3WaiterDoc() map[string]any {
-	return vocabulary.FunctionManifest(mbAuthority, "waiter", map[string]any{
+	return vocabulary.FunctionManifest(mbPackage, "waiter", map[string]any{
 		"description": "waits for the fence flag",
 		"runtime":     vocabulary.RuntimePython,
 		"source":      w3WaiterSource,
@@ -775,7 +779,7 @@ func TestW3LifecycleFenceDrainsInvocation(t *testing.T) {
 	}
 	ops := bundler(t, ds)
 	fops := ds.(fnOps)
-	const waiterFn = mbAuthority + "/waiter"
+	const waiterFn = mbPackage + "/waiter"
 
 	type callRes struct {
 		effects int
@@ -789,7 +793,7 @@ func TestW3LifecycleFenceDrainsInvocation(t *testing.T) {
 	time.Sleep(1 * time.Second) // the invocation is admitted and polling
 
 	disableDone := make(chan error, 1)
-	go func() { disableDone <- ops.DisableBundle(ctx, mbAuthority) }()
+	go func() { disableDone <- ops.DisableBundle(ctx, mbPackage) }()
 	select {
 	case err := <-disableDone:
 		select {
@@ -839,24 +843,24 @@ func TestW3EnableRefusesInterruptedPurge(t *testing.T) {
 	}
 	ops := bundler(t, ds)
 	mustPut(t, ds, owner, substrate.PutInput{Kind: mbItemType, Properties: map[string]any{"name": "x"}})
-	if err := ops.DisableBundle(ctx, mbAuthority); err != nil {
+	if err := ops.DisableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
 	// Simulate a purge that died mid-run: the marker is set, the data is
 	// half-gone or whole — either way the bundle must not come live.
 	if _, err := db.Exec(`
-		UPDATE records SET props = jsonb_set(props, '{purging}', 'true') WHERE id = $1`, mbBundleRow); err != nil {
+		UPDATE records SET props = jsonb_set(props, '{purging}', 'true') WHERE id = $1`, mbPackage); err != nil {
 		t.Fatalf("fabricate interrupted purge: %v", err)
 	}
-	if err := ops.EnableBundle(ctx, mbAuthority); err == nil || !errors.Is(err, substrate.ErrGuard) ||
+	if err := ops.EnableBundle(ctx, mbPackage); err == nil || !errors.Is(err, substrate.ErrGuard) ||
 		!strings.Contains(err.Error(), "purging") {
 		t.Fatalf("enable during purge: %v", err)
 	}
 	// A purge run to completion clears the marker; enable then works.
-	if _, err := ops.PurgeBundle(ctx, mbAuthority); err != nil {
+	if _, err := ops.PurgeBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("re-purge: %v", err)
 	}
-	if err := ops.EnableBundle(ctx, mbAuthority); err != nil {
+	if err := ops.EnableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("enable after a completed purge: %v", err)
 	}
 }
@@ -867,21 +871,21 @@ func TestW3BundledAgentUpgradeGuard(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	const wagAuthority = "wagent.bundles.substrate.reamde.dev"
-	configDoc := vocabulary.KindManifest(wagAuthority,
+	const wagPackage = "wagent.bundles.substrate.reamde.dev/wagent"
+	configDoc := vocabulary.KindManifest(wagPackage,
 		map[string]any{"singular": "wagconfig", "plural": "wagconfigs"},
 		map[string]any{"properties": map[string]any{
 			"note": map[string]any{"type": "string"},
 		}})
-	agentDoc := vocabulary.AgentManifest(wagAuthority, "helper", map[string]any{
+	agentDoc := vocabulary.AgentManifest(wagPackage, "helper", map[string]any{
 		"description": "a bundled agent", "prompt": "You help.",
 		"provider": "default", "model": "claude-opus-5",
 	})
 	withAgent := []map[string]any{
-		vocabulary.AuthorityManifest(wagAuthority, 0),
-		vocabulary.BundleManifest(wagAuthority, map[string]any{
+		vocabulary.PackageManifest(wagPackage, 0),
+		vocabulary.BundleManifest(wagPackage, map[string]any{
 			"description": "the agent bundle",
-			"installs":    []any{wagAuthority + "/wagconfig", wagAuthority + "/helper"},
+			"installs":    []any{wagPackage + "/wagconfig", wagPackage + "/helper"},
 		}),
 		configDoc, agentDoc,
 	}
@@ -890,30 +894,30 @@ func TestW3BundledAgentUpgradeGuard(t *testing.T) {
 		t.Fatalf("install: %v", err)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/trigger", ID: "on-wag-helper",
+		Kind: "substrate.reamde.dev/core/trigger", ID: "on-wag-helper",
 		Properties: map[string]any{
 			"enabled":  true,
-			"source":   map[string]any{"record": map[string]any{"kinds": []any{wagAuthority + "/wagconfig"}, "ops": []any{"create"}}},
-			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/agent", wagAuthority+"/helper"),
+			"source":   map[string]any{"record": map[string]any{"kinds": []any{wagPackage + "/wagconfig"}, "ops": []any{"create"}}},
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/agent", wagPackage+"/helper"),
 		},
 	})
 
 	// The upgrade drops the agent while the trigger references it: refused.
 	withoutAgent := []map[string]any{
-		vocabulary.AuthorityManifest(wagAuthority, 0),
-		vocabulary.BundleManifest(wagAuthority, map[string]any{
+		vocabulary.PackageManifest(wagPackage, 0),
+		vocabulary.BundleManifest(wagPackage, map[string]any{
 			"description": "the agent bundle",
-			"installs":    []any{wagAuthority + "/wagconfig"},
+			"installs":    []any{wagPackage + "/wagconfig"},
 		}),
 		configDoc,
 	}
 	_, err := sa.ApplyVocabularyDocuments(ctx, owner, withoutAgent)
 	wantErr(t, err, substrate.ErrGuard, "dropping a trigger-referenced agent")
-	if !strings.Contains(err.Error(), "referenced by live trigger") || !strings.Contains(err.Error(), wagAuthority+"/helper") {
+	if !strings.Contains(err.Error(), "referenced by live trigger") || !strings.Contains(err.Error(), wagPackage+"/helper") {
 		t.Fatalf("agent upgrade refusal: %v", err)
 	}
 	// Rewire the trigger away; the same upgrade then lands.
-	if _, err := ds.Delete(ctx, owner, "core.substrate.reamde.dev/trigger", "on-wag-helper"); err != nil {
+	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/trigger", "on-wag-helper"); err != nil {
 		t.Fatalf("delete trigger: %v", err)
 	}
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, withoutAgent); err != nil {
@@ -967,11 +971,11 @@ func TestW3TriggerVsUpgradeBarrier(t *testing.T) {
 	triggerDone := make(chan error, 1)
 	go func() {
 		_, err := ds.Put(ctx, owner, substrate.PutInput{
-			Kind: "core.substrate.reamde.dev/trigger", ID: "on-w3-barrier",
+			Kind: "substrate.reamde.dev/core/trigger", ID: "on-w3-barrier",
 			Properties: map[string]any{
 				"enabled":  true,
 				"source":   map[string]any{"record": map[string]any{"kinds": []any{mbItemType}, "ops": []any{"create"}}},
-				"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", mbMarkFn),
+				"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", mbMarkFn),
 			},
 		})
 		triggerDone <- err

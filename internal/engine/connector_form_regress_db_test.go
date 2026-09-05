@@ -24,7 +24,7 @@ func TestConnectorFormDisplayNameAndEnumSurviveTypeRead(t *testing.T) {
 	sa := applier(t, ds)
 
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, 0),
+		vocabulary.PackageManifest(swPackage, 0),
 		swTypeDoc("gizmo", "gizmos", map[string]any{
 			"cadence": map[string]any{
 				"type":        "enum",
@@ -39,7 +39,7 @@ func TestConnectorFormDisplayNameAndEnumSurviveTypeRead(t *testing.T) {
 
 	// The type read (the projection the console/GraphQL get) carries both the
 	// human label and the enum's allowed values.
-	row := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/gizmo")
+	row := mustGet(t, ds, "substrate.reamde.dev/core/kind", swPackage+"/gizmo")
 	props, _ := row.Properties["properties"].(map[string]any)
 	cadence, _ := props["cadence"].(map[string]any)
 	if cadence["displayName"] != "Sync frequency" {
@@ -62,10 +62,10 @@ func TestConnectorFormDisplayNameAndEnumSurviveTypeRead(t *testing.T) {
 
 	// A value in the set is accepted; one outside it is rejected on write.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: swAuthority + "/gizmo", Properties: map[string]any{"cadence": "daily"},
+		Kind: swPackage + "/gizmo", Properties: map[string]any{"cadence": "daily"},
 	})
 	_, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: swAuthority + "/gizmo", Properties: map[string]any{"cadence": "weekly"},
+		Kind: swPackage + "/gizmo", Properties: map[string]any{"cadence": "weekly"},
 	})
 	wantErr(t, err, substrate.ErrValidation, "out-of-enum value")
 }
@@ -78,7 +78,7 @@ func TestOAuthPopulatesAccountEmailFromGrant(t *testing.T) {
 	ctx := context.Background()
 	p := newFakeProvider(t)
 	svc, ds := newDataset(t,
-		engine.WithOAuth("test-state-key", "https://substrate.example/api/v1/core.substrate.reamde.dev/oauth/callback", p.ts.Client()),
+		engine.WithOAuth("test-state-key", "https://substrate.example/api/v1/substrate.reamde.dev/core/oauth/callback", p.ts.Client()),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 	)
 	docs := mbStandardDocs()

@@ -19,7 +19,10 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-const reviewAuthority = "reqreview.example.substrate.reamde.dev"
+const (
+	reviewAuthority = "reqreview.example.substrate.reamde.dev"
+	reviewPackage   = reviewAuthority + "/reqreview"
+)
 
 // reviewDocs declares one kind whose `name` is optional or required as the
 // caller asks, so the same store can be walked across the narrowing.
@@ -29,8 +32,8 @@ func reviewDocs(required bool) []map[string]any {
 		name["required"] = true
 	}
 	return []map[string]any{
-		vocabulary.AuthorityManifest(reviewAuthority, 0),
-		vocabulary.KindManifest(reviewAuthority,
+		vocabulary.PackageManifest(reviewPackage, 0),
+		vocabulary.KindManifest(reviewPackage,
 			map[string]any{"singular": "note", "plural": "notes"},
 			map[string]any{"properties": map[string]any{
 				"name": name,
@@ -57,7 +60,7 @@ func TestAddingRequiredCountsAnEmptyValueAsMissing(t *testing.T) {
 		"list":    {"name": "held", "tags": []any{}},
 	} {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: reviewAuthority + "/note", ID: id, Properties: props,
+			Kind: reviewPackage + "/note", ID: id, Properties: props,
 		})
 	}
 
@@ -78,8 +81,8 @@ func TestRequiredObjectFieldIsEnforced(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(reviewAuthority+".fields", 0),
-		vocabulary.KindManifest(reviewAuthority+".fields",
+		vocabulary.PackageManifest(reviewAuthority+"/fields", 0),
+		vocabulary.KindManifest(reviewAuthority+"/fields",
 			map[string]any{"singular": "profile", "plural": "profiles"},
 			map[string]any{"properties": map[string]any{
 				"contact": map[string]any{"type": "object", "fields": map[string]any{
@@ -94,7 +97,7 @@ func TestRequiredObjectFieldIsEnforced(t *testing.T) {
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
 		t.Fatalf("apply the field declaration: %v", err)
 	}
-	kind := reviewAuthority + ".fields/profile"
+	kind := reviewAuthority + "/fields/profile"
 
 	for name, tc := range map[string]struct {
 		props map[string]any
@@ -129,21 +132,21 @@ func TestClearingARequiredReferenceIsRefused(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(reviewAuthority+".refs", 0),
-		vocabulary.KindManifest(reviewAuthority+".refs",
+		vocabulary.PackageManifest(reviewAuthority+"/refs", 0),
+		vocabulary.KindManifest(reviewAuthority+"/refs",
 			map[string]any{"singular": "owner", "plural": "owners"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
-		vocabulary.KindManifest(reviewAuthority+".refs",
+		vocabulary.KindManifest(reviewAuthority+"/refs",
 			map[string]any{"singular": "asset", "plural": "assets"},
 			map[string]any{
 				"properties": map[string]any{
 					"name": map[string]any{"type": "string"},
 					"holder": map[string]any{
-						"type": "reference", "kind": reviewAuthority + ".refs/owner",
+						"type": "reference", "kind": reviewAuthority + "/refs/owner",
 						"required": true, "mustExist": true,
 					},
 					"seenBy": map[string]any{
-						"type": "reference", "kind": reviewAuthority + ".refs/owner",
+						"type": "reference", "kind": reviewAuthority + "/refs/owner",
 						"repeated": true, "mustExist": true,
 					},
 				},
@@ -152,7 +155,7 @@ func TestClearingARequiredReferenceIsRefused(t *testing.T) {
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
 		t.Fatalf("apply the reference declaration: %v", err)
 	}
-	ownerKind, assetKind := reviewAuthority+".refs/owner", reviewAuthority+".refs/asset"
+	ownerKind, assetKind := reviewAuthority+"/refs/owner", reviewAuthority+"/refs/asset"
 	mustPut(t, ds, owner, substrate.PutInput{Kind: ownerKind, ID: "ada", Properties: map[string]any{"name": "Ada"}})
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: assetKind, ID: "a1",
@@ -187,15 +190,15 @@ func TestAddingARequiredFieldIsRefusedWhileObjectsLackIt(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	authority := reviewAuthority + ".fieldguard"
+	pkg := reviewAuthority + "/fieldguard"
 	docs := func(required bool) []map[string]any {
 		email := map[string]any{"type": "email"}
 		if required {
 			email["required"] = true
 		}
 		return []map[string]any{
-			vocabulary.AuthorityManifest(authority, 0),
-			vocabulary.KindManifest(authority,
+			vocabulary.PackageManifest(pkg, 0),
+			vocabulary.KindManifest(pkg,
 				map[string]any{"singular": "profile", "plural": "profiles"},
 				map[string]any{"properties": map[string]any{
 					"contact": map[string]any{"type": "object", "fields": map[string]any{
@@ -208,7 +211,7 @@ func TestAddingARequiredFieldIsRefusedWhileObjectsLackIt(t *testing.T) {
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs(false)); err != nil {
 		t.Fatalf("apply the optional field: %v", err)
 	}
-	kind := authority + "/profile"
+	kind := pkg + "/profile"
 	// One object without the field, one with it, and one record with no object
 	// at all: only the first is stranded.
 	mustPut(t, ds, owner, substrate.PutInput{
@@ -246,10 +249,10 @@ func TestDefaultFillsACreateThatNamesNoProperties(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	authority := reviewAuthority + ".nilmap"
+	pkg := reviewAuthority + "/nilmap"
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(authority, 0),
-		vocabulary.KindManifest(authority,
+		vocabulary.PackageManifest(pkg, 0),
+		vocabulary.KindManifest(pkg,
 			map[string]any{"singular": "knob", "plural": "knobs"},
 			map[string]any{"properties": map[string]any{
 				"mode":  map[string]any{"type": "enum", "values": []any{"off", "on"}, "default": "off"},
@@ -259,7 +262,7 @@ func TestDefaultFillsACreateThatNamesNoProperties(t *testing.T) {
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
 		t.Fatalf("apply the knob declaration: %v", err)
 	}
-	created := mustPut(t, ds, owner, substrate.PutInput{Kind: authority + "/knob", ID: "k1"})
+	created := mustPut(t, ds, owner, substrate.PutInput{Kind: pkg + "/knob", ID: "k1"})
 	if created.Properties["mode"] != "off" {
 		t.Fatalf("a default must fill a create that names nothing, got %v", created.Properties["mode"])
 	}

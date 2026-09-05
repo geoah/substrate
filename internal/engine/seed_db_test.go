@@ -23,15 +23,16 @@ import (
 // declarationKinds are the record types a kind DECLARATION stores as — what
 // the seed writes and an upgrade appends to.
 var declarationKinds = map[string]bool{
-	"core.substrate.reamde.dev/authority":     true,
-	"core.substrate.reamde.dev/kind":          true,
-	"core.substrate.reamde.dev/trait":         true,
-	"core.substrate.reamde.dev/propertytype":  true,
-	"core.substrate.reamde.dev/recordmapping": true,
-	"core.substrate.reamde.dev/function":      true,
-	"core.substrate.reamde.dev/agent":         true,
-	"core.substrate.reamde.dev/bundle":        true,
-	"core.substrate.reamde.dev/actor":         true,
+	"substrate.reamde.dev/core/authority":     true,
+	"substrate.reamde.dev/core/package":       true,
+	"substrate.reamde.dev/core/kind":          true,
+	"substrate.reamde.dev/core/trait":         true,
+	"substrate.reamde.dev/core/propertytype":  true,
+	"substrate.reamde.dev/core/recordmapping": true,
+	"substrate.reamde.dev/core/function":      true,
+	"substrate.reamde.dev/core/agent":         true,
+	"substrate.reamde.dev/core/bundle":        true,
+	"substrate.reamde.dev/core/actor":         true,
 }
 
 // shippedTree copies the embedded schema tree into a directory the test owns,
@@ -48,50 +49,50 @@ func shippedTree(t *testing.T) string {
 	return dir
 }
 
-// authorityHeader is where a shipped authority declares itself. Core's header
-// sits in core.yaml, because authority.yaml there declares the `authority` KIND.
-func authorityHeader(tree, authority string) string {
-	if authority == "core.substrate.reamde.dev" {
-		return filepath.Join(tree, authority, "core.yaml")
+// packageHeader is where a shipped package declares itself. Core's header sits
+// in core.yaml, because package.yaml there declares the `package` KIND.
+func packageHeader(tree, pkg string) string {
+	if pkg == "substrate.reamde.dev/core" {
+		return filepath.Join(tree, pkg, "core.yaml")
 	}
-	return filepath.Join(tree, authority, "authority.yaml")
+	return filepath.Join(tree, pkg, "package.yaml")
 }
 
-// declaredVersion is the version a shipped authority's header carries. Read from
+// declaredVersion is the version a shipped package's header carries. Read from
 // the TREE rather than written into these tests as a literal: bumping a shipped
-// authority is an ordinary change, and it must not break the upgrade suite.
+// package is an ordinary change, and it must not break the upgrade suite.
 //
-// The FIRST document only. core.yaml is a stream — the authority header, then
+// The FIRST document only. core.yaml is a stream — the package header, then
 // actors and traits — and a later document that grows a `version:` must not be
 // the one this answers with.
-var reAuthorityVersion = regexp.MustCompile(`(?m)^  version: (\S+)$`)
+var rePackageVersion = regexp.MustCompile(`(?m)^  version: (\S+)$`)
 
-func declaredVersion(t *testing.T, tree, authority string) string {
+func declaredVersion(t *testing.T, tree, pkg string) string {
 	t.Helper()
-	path := authorityHeader(tree, authority)
+	path := packageHeader(tree, pkg)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	header, _, _ := strings.Cut(string(raw), "\n---")
-	m := reAuthorityVersion.FindStringSubmatch(header)
+	m := rePackageVersion.FindStringSubmatch(header)
 	if m == nil {
 		t.Fatalf("%s declares no version in its first document", path)
 	}
 	return m[1]
 }
 
-// bumpGroupVersion rewrites one shipped authority's declared version — the whole
-// of what "the binary shipped a newer vocabulary" means. The header document
-// alone, for declaredVersion's reason.
-func bumpGroupVersion(t *testing.T, tree, authority, to string) {
+// bumpPackageVersion rewrites one shipped package's declared version — the
+// whole of what "the binary shipped a newer vocabulary" means. The header
+// document alone, for declaredVersion's reason.
+func bumpPackageVersion(t *testing.T, tree, pkg, to string) {
 	t.Helper()
-	path := authorityHeader(tree, authority)
+	path := packageHeader(tree, pkg)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
-	from := declaredVersion(t, tree, authority)
+	from := declaredVersion(t, tree, pkg)
 	header, rest, split := strings.Cut(string(raw), "\n---")
 	src := strings.Replace(header, "version: "+from, "version: "+to, 1)
 	if split {
@@ -102,14 +103,16 @@ func bumpGroupVersion(t *testing.T, tree, authority, to string) {
 	}
 }
 
-// addShippedType drops a new record type into a shipped authority.
-func addShippedType(t *testing.T, tree, authority, singular, plural string) {
+// addShippedKind drops a new record kind into a shipped package.
+func addShippedKind(t *testing.T, tree, pkg, singular, plural string) {
 	t.Helper()
-	doc := "kind: core.substrate.reamde.dev/kind\nmetadata:\n  id: " + authority + "/" + singular +
-		"\ndata:\n  authority: " + authority + "\n  names:\n    singular: " + singular +
+	authority, name := vocabulary.SplitPackageRef(pkg)
+	doc := "kind: substrate.reamde.dev/core/kind\nmetadata:\n  id: " + pkg + "/" + singular +
+		"\ndata:\n  authority: " + authority + "\n  package: " + name +
+		"\n  names:\n    singular: " + singular +
 		"\n    plural: " + plural + "\n  displayTemplate: \"{title}\"\n  properties:\n    note:\n      type: string\n"
-	if err := os.WriteFile(filepath.Join(tree, authority, singular+".yaml"), []byte(doc), 0o600); err != nil {
-		t.Fatalf("add a shipped type: %v", err)
+	if err := os.WriteFile(filepath.Join(tree, pkg, singular+".yaml"), []byte(doc), 0o600); err != nil {
+		t.Fatalf("add a shipped kind: %v", err)
 	}
 }
 
@@ -156,7 +159,7 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 	// re-assert, and the upgrade diff against the binary that seeded it is
 	// empty. (Open still seeds the create-only llmprovider row, which is data.)
 	for _, ch := range changesSince(t, ds, atCreation) {
-		if strings.HasSuffix(ch.Kind, ".core.substrate.reamde.dev") && declarationKinds[ch.Kind] {
+		if strings.HasSuffix(ch.Kind, ".substrate.reamde.dev/core") && declarationKinds[ch.Kind] {
 			t.Fatalf("opening a freshly seeded repository re-wrote declaration %s %s", ch.Kind, ch.RecordID)
 		}
 	}
@@ -172,10 +175,10 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 	}
 	// The shipped kinds are live vocabulary, and they are live because their
 	// ROWS say so: the declaration is a record.
-	if _, err := ds.KindByRef(ctx, "core.substrate.reamde.dev/trigger"); err != nil {
+	if _, err := ds.KindByRef(ctx, "substrate.reamde.dev/core/trigger"); err != nil {
 		t.Fatalf("the seeded trigger kind: %v", err)
 	}
-	decl, err := ds.Get(ctx, "core.substrate.reamde.dev/kind", "core.substrate.reamde.dev/trigger")
+	decl, err := ds.Get(ctx, "substrate.reamde.dev/core/kind", "substrate.reamde.dev/core/trigger")
 	if err != nil {
 		t.Fatalf("the trigger declaration record: %v", err)
 	}
@@ -186,8 +189,8 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 	// user imports, so a fresh repository holds no authority but core and no
 	// kind outside it.
 	for _, id := range []string{
-		"people.substrate.reamde.dev/person", "tasks.substrate.reamde.dev/task",
-		"messaging.substrate.reamde.dev/conversation", "calendar.substrate.reamde.dev/calendarevent",
+		"samples.substrate.reamde.dev/people/person", "samples.substrate.reamde.dev/tasks/task",
+		"samples.substrate.reamde.dev/messaging/conversation", "samples.substrate.reamde.dev/calendar/calendarevent",
 	} {
 		if _, err := ds.KindByRef(ctx, id); err == nil {
 			t.Fatalf("creation seeded %s — vocabulary is imported, not seeded", id)
@@ -198,15 +201,15 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 		t.Fatalf("kinds: %v", err)
 	}
 	for _, k := range declared {
-		if k.Authority != "core.substrate.reamde.dev" {
+		if k.Authority != "substrate.reamde.dev" || k.Package != "core" {
 			t.Errorf("a freshly created repository speaks %s — only core is seeded", k.Identity)
 		}
 	}
 	// Every declaration kind carries one, not just record types.
 	for _, ref := range []struct{ typ, id string }{
-		{"core.substrate.reamde.dev/authority", "core.substrate.reamde.dev"},
-		{"core.substrate.reamde.dev/trait", "core.substrate.reamde.dev/temporal"},
-		{"core.substrate.reamde.dev/actor", "api"},
+		{"substrate.reamde.dev/core/package", "substrate.reamde.dev/core"},
+		{"substrate.reamde.dev/core/trait", "substrate.reamde.dev/core/temporal"},
+		{"substrate.reamde.dev/core/actor", "api"},
 	} {
 		row, err := ds.Get(ctx, ref.typ, ref.id)
 		if err != nil {
@@ -245,14 +248,14 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 		t.Fatal(err)
 	}
 	head := maxSeq(t, dsOpened)
-	if _, err := dsOpened.KindByRef(ctx, "core.substrate.reamde.dev/widget"); err == nil {
+	if _, err := dsOpened.KindByRef(ctx, "substrate.reamde.dev/core/widget"); err == nil {
 		t.Fatal("binary N already ships the widget type")
 	}
 	_ = svc1.Close()
 
 	// --- binary N+1: the core authority gains a kind and a version.
-	addShippedType(t, tree, "core.substrate.reamde.dev", "widget", "widgets")
-	bumpGroupVersion(t, tree, "core.substrate.reamde.dev", "99")
+	addShippedKind(t, tree, "substrate.reamde.dev/core", "widget", "widgets")
+	bumpPackageVersion(t, tree, "substrate.reamde.dev/core", "99")
 
 	svc2 := openTree(t, dsn, tree)
 	ds2, err := svc2.Dataset(ctx, "opened")
@@ -260,7 +263,7 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 		t.Fatalf("open on binary N+1: %v", err)
 	}
 	// The new vocabulary is live…
-	if _, err := ds2.KindByRef(ctx, "core.substrate.reamde.dev/widget"); err != nil {
+	if _, err := ds2.KindByRef(ctx, "substrate.reamde.dev/core/widget"); err != nil {
 		t.Fatalf("the upgraded vocabulary: %v", err)
 	}
 	// …and it arrived as EXPLICIT ENTRIES, attributed to the substrate.
@@ -273,7 +276,7 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 		if ch.Actor != substrate.ActorSystem {
 			t.Fatalf("upgrade entry %d is attributed to %q", ch.Seq, ch.Actor)
 		}
-		if ch.RecordID == "core.substrate.reamde.dev/widget" {
+		if ch.RecordID == "substrate.reamde.dev/core/widget" {
 			sawWidget = true
 		}
 	}
@@ -281,17 +284,17 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 		t.Fatal("the upgrade entries do not include the new declaration")
 	}
 	// The stored declarations carry the new version — the diff's own input.
-	authority, err := ds2.Get(ctx, "core.substrate.reamde.dev/authority", "core.substrate.reamde.dev")
+	pkg, err := ds2.Get(ctx, "substrate.reamde.dev/core/package", "substrate.reamde.dev/core")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v, _ := vocabulary.VersionValue(authority.Properties["version"]); v != 99 {
-		t.Fatalf("the stored authority version = %v", authority.Properties["version"])
+	if v, _ := vocabulary.VersionValue(pkg.Properties["version"]); v != 99 {
+		t.Fatalf("the stored package version = %v", pkg.Properties["version"])
 	}
-	// Untouched authorities stayed untouched: the diff is per authority, not a re-assert.
+	// Untouched packages stayed untouched: the diff is per package, not a re-assert.
 	for _, ch := range upgrade {
-		if strings.HasSuffix(ch.RecordID, ".people.substrate.reamde.dev") || ch.RecordID == "people.substrate.reamde.dev" {
-			t.Fatalf("the upgrade touched an unchanged authority: %s", ch.RecordID)
+		if strings.HasSuffix(ch.RecordID, ".samples.substrate.reamde.dev/people") || ch.RecordID == "samples.substrate.reamde.dev/people" {
+			t.Fatalf("the upgrade touched an unchanged package: %s", ch.RecordID)
 		}
 	}
 	afterUpgrade := maxSeq(t, ds2)
@@ -325,10 +328,10 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 	var version string
 	if err := rawAsleep.QueryRowContext(ctx,
 		`SELECT props->>'version' FROM records WHERE kind = $1 AND id = $2`,
-		"core.substrate.reamde.dev/authority", "core.substrate.reamde.dev").Scan(&version); err != nil {
+		"substrate.reamde.dev/core/package", "substrate.reamde.dev/core").Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if want := declaredVersion(t, shippedTree(t), "core.substrate.reamde.dev"); version != want {
+	if want := declaredVersion(t, shippedTree(t), "substrate.reamde.dev/core"); version != want {
 		t.Fatalf("an unopened repository's vocabulary moved to %s, not %s", version, want)
 	}
 
@@ -337,7 +340,7 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := dsAwake.KindByRef(ctx, "core.substrate.reamde.dev/widget"); err != nil {
+	if _, err := dsAwake.KindByRef(ctx, "substrate.reamde.dev/core/widget"); err != nil {
 		t.Fatalf("the sleeper did not upgrade when it opened: %v", err)
 	}
 	_ = svc3.Close()
@@ -345,7 +348,7 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 
 // kindDecl is the record kind a kind DECLARATION stores as, spelled once for
 // the projection test below.
-const kindDecl = "core.substrate.reamde.dev/kind"
+const kindDecl = "substrate.reamde.dev/core/kind"
 
 // declarationPlanter is the internal-write seam a declaration row is rewritten
 // through (vocabularyplant_internal_test.go). No public door offers it: the
@@ -368,11 +371,12 @@ func declarationRows(t *testing.T, ds substrate.Dataset) map[string][]*substrate
 	t.Helper()
 	out := map[string][]*substrate.Record{}
 	for _, kind := range []string{
-		"core.substrate.reamde.dev/authority", "core.substrate.reamde.dev/actor",
-		"core.substrate.reamde.dev/kind", "core.substrate.reamde.dev/trait",
-		"core.substrate.reamde.dev/propertytype", "core.substrate.reamde.dev/recordmapping",
-		"core.substrate.reamde.dev/function", "core.substrate.reamde.dev/agent",
-		"core.substrate.reamde.dev/bundle",
+		"substrate.reamde.dev/core/authority", "substrate.reamde.dev/core/package",
+		"substrate.reamde.dev/core/actor",
+		"substrate.reamde.dev/core/kind", "substrate.reamde.dev/core/trait",
+		"substrate.reamde.dev/core/propertytype", "substrate.reamde.dev/core/recordmapping",
+		"substrate.reamde.dev/core/function", "substrate.reamde.dev/core/agent",
+		"substrate.reamde.dev/core/bundle",
 	} {
 		page, err := ds.List(context.Background(), substrate.Query{
 			Filter: substrate.Filter{Kinds: []string{kind}}, First: 500,
@@ -536,8 +540,8 @@ func TestBootUpgradeNeverDowngrades(t *testing.T) {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	tree := shippedTree(t)
-	addShippedType(t, tree, "core.substrate.reamde.dev", "widget", "widgets")
-	bumpGroupVersion(t, tree, "core.substrate.reamde.dev", "99")
+	addShippedKind(t, tree, "substrate.reamde.dev/core", "widget", "widgets")
+	bumpPackageVersion(t, tree, "substrate.reamde.dev/core", "99")
 
 	svc1 := openTree(t, dsn, tree)
 	if _, err := svc1.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
@@ -562,16 +566,16 @@ func TestBootUpgradeNeverDowngrades(t *testing.T) {
 	if got := maxSeq(t, ds2); got != head {
 		t.Fatalf("an older binary appended %d entries", got-head)
 	}
-	authority, err := ds2.Get(ctx, "core.substrate.reamde.dev/authority", "core.substrate.reamde.dev")
+	pkg, err := ds2.Get(ctx, "substrate.reamde.dev/core/package", "substrate.reamde.dev/core")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v, _ := vocabulary.VersionValue(authority.Properties["version"]); v != 99 {
-		t.Fatalf("the stored version was downgraded to %v", authority.Properties["version"])
+	if v, _ := vocabulary.VersionValue(pkg.Properties["version"]); v != 99 {
+		t.Fatalf("the stored version was downgraded to %v", pkg.Properties["version"])
 	}
 	// The kind the older tree does not ship is still the repository's: nothing
 	// prunes it, and it is still live vocabulary.
-	if _, err := ds2.KindByRef(ctx, "core.substrate.reamde.dev/widget"); err != nil {
+	if _, err := ds2.KindByRef(ctx, "substrate.reamde.dev/core/widget"); err != nil {
 		t.Fatalf("an older binary pruned a kind the repository holds: %v", err)
 	}
 }
@@ -585,16 +589,13 @@ func TestDeclarationAuthority(t *testing.T) {
 
 	// A user's own kind: theirs to declare.
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest("mine.example.com/mine", 1),
 		{
-			"kind":     "core.substrate.reamde.dev/authority",
-			"metadata": map[string]any{"id": "mine.example.com"},
-			"data":     map[string]any{"version": 1},
-		},
-		{
-			"kind":     "core.substrate.reamde.dev/kind",
-			"metadata": map[string]any{"id": "mine.example.com/gadget"},
+			"kind":     "substrate.reamde.dev/core/kind",
+			"metadata": map[string]any{"id": "mine.example.com/mine/gadget"},
 			"data": map[string]any{
 				"authority": "mine.example.com",
+				"package":   "mine",
 				"names":     map[string]any{"singular": "gadget", "plural": "gadgets"},
 				"properties": map[string]any{
 					"label": map[string]any{"type": "string"},
@@ -605,19 +606,20 @@ func TestDeclarationAuthority(t *testing.T) {
 		t.Fatalf("a user may not declare their own kind: %v", err)
 	}
 
-	// Shipped vocabulary: refused, for every actor a request can name. An
-	// IMPORTED vocabulary bundle is shipped vocabulary too — the binary
-	// publishes it, the registry only delivered it — so the chokepoint holds
-	// it exactly as it holds core.
+	// Shipped vocabulary: refused, for every actor a request can name. The
+	// seeded core package is the whole of what a repository holds as
+	// `builtin` — a sample package is INSTALLED, and the chokepoint that
+	// guards core is what a request meets here.
 	shipped := []map[string]any{
 		{
-			"kind":     "core.substrate.reamde.dev/kind",
-			"metadata": map[string]any{"id": "tasks.substrate.reamde.dev/task"},
+			"kind":     "substrate.reamde.dev/core/kind",
+			"metadata": map[string]any{"id": "substrate.reamde.dev/core/token"},
 			"data": map[string]any{
-				"authority": "tasks.substrate.reamde.dev",
-				"names":     map[string]any{"singular": "task", "plural": "tasks"},
+				"authority": "substrate.reamde.dev",
+				"package":   "core",
+				"names":     map[string]any{"singular": "token", "plural": "tokens"},
 				"properties": map[string]any{
-					"title": map[string]any{"type": "string"},
+					"label": map[string]any{"type": "string"},
 				},
 			},
 		},
@@ -627,7 +629,7 @@ func TestDeclarationAuthority(t *testing.T) {
 		wantErr(t, err, substrate.ErrForbidden, "actor "+string(actor)+" rewrites shipped vocabulary")
 	}
 	// And a request cannot dress itself as a substrate path to get around it.
-	for _, actor := range []substrate.Actor{substrate.ActorSeed, substrate.BundleActor("core"), substrate.ActorSystem} {
+	for _, actor := range []substrate.Actor{substrate.ActorSeed, substrate.BundleActor("substrate.reamde.dev", "core"), substrate.ActorSystem} {
 		if !substrate.ReservedActor(actor) {
 			t.Fatalf("actor %q is claimable by a request", actor)
 		}

@@ -40,13 +40,13 @@ func TestAgentKeyNeverReachesThreadRecordOrError(t *testing.T) {
 		t.Fatalf("put provider row: %v", err)
 	}
 
-	const authority = "leaktest.test.dev"
-	leaker := vocabulary.AgentManifest(authority, "leaker", map[string]any{
+	const pkg = "leaktest.test.dev/leaktest"
+	leaker := vocabulary.AgentManifest(pkg, "leaker", map[string]any{
 		"description": "the key-leak fixture", "prompt": "You are leaker.",
 		"provider": "leakllm", "model": "leak",
 	})
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
-		vocabulary.AuthorityManifest(authority, 0), leaker,
+		vocabulary.PackageManifest(pkg, 0), leaker,
 	}); err != nil {
 		t.Fatalf("install leaker: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestAgentKeyNeverReachesThreadRecordOrError(t *testing.T) {
 			`. You can find your API key at https://example.com/account/api-keys.","type":"invalid_request_error"}}`,
 	})
 
-	_, err := ds.CallAgent(ctx, authority+"/leaker", "go")
+	_, err := ds.CallAgent(ctx, pkg+"/leaker", "go")
 	if err == nil {
 		t.Fatal("a 401 was not reported as an error")
 	}
@@ -83,7 +83,7 @@ func TestAgentKeyNeverReachesThreadRecordOrError(t *testing.T) {
 	rows, qerr := ds.db.QueryContext(ctx, `
 		SELECT props->>'status', props->>'reason' FROM records
 		WHERE kind = $1 AND deleted_at IS NULL AND `+referencePathSQL("props", "agent")+` = $2`,
-		typeThread, vocabulary.RecordPath(kindAgent, authority+"/leaker"))
+		typeThread, vocabulary.RecordPath(kindAgent, pkg+"/leaker"))
 	if qerr != nil {
 		t.Fatalf("query threads: %v", qerr)
 	}

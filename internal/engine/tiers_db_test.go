@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	tierAuthority = "tiers.test.dev"
+	tierPackage = "tiers.test.dev/tiers"
 	// tierSync is an authority-declared actor with no tier attribute: the machine
 	// tier's connector half, by default.
 	tierSync = substrate.Actor("connector:sync")
@@ -30,14 +30,14 @@ const (
 	// code by DATA, nothing in the name says so.
 	tierFixer = substrate.Actor("connector:fixer")
 
-	typeTierRecord  = tierAuthority + "/record"
-	typeTierProfile = tierAuthority + "/profile"
+	typeTierRecord  = tierPackage + "/record"
+	typeTierProfile = tierPackage + "/profile"
 )
 
 // actorManifestTier renders an actor document carrying the explicit tier
 // attribute.
-func actorManifestTier(authority, actor, tier string) map[string]any {
-	m := vocabulary.ActorManifest(authority, actor)
+func actorManifestTier(pkg, actor, tier string) map[string]any {
+	m := vocabulary.ActorManifest(pkg, actor)
 	m["data"].(map[string]any)["tier"] = tier
 	return m
 }
@@ -50,7 +50,7 @@ func newTierDataset(t *testing.T) *dataset {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	svc, err := Open(ctx, dsn,
-		WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}
@@ -67,12 +67,12 @@ func newTierDataset(t *testing.T) *dataset {
 		t.Fatalf("dataset is a %T", d)
 	}
 	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
-		Name: "tiers", Authority: tierAuthority,
+		Name: "tiers", Authority: tierPackage,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(tierAuthority, 0),
-			vocabulary.ActorManifest(tierAuthority, string(tierSync)),
-			actorManifestTier(tierAuthority, string(tierFixer), "bundle"),
-			vocabulary.KindManifest(tierAuthority, map[string]any{"singular": "profile", "plural": "profiles"},
+			vocabulary.PackageManifest(tierPackage, 0),
+			vocabulary.ActorManifest(tierPackage, string(tierSync)),
+			actorManifestTier(tierPackage, string(tierFixer), "bundle"),
+			vocabulary.KindManifest(tierPackage, map[string]any{"singular": "profile", "plural": "profiles"},
 				map[string]any{
 					"displayTemplate": "{name}",
 					"properties": map[string]any{
@@ -81,7 +81,7 @@ func newTierDataset(t *testing.T) *dataset {
 						"nickname": map[string]any{"type": "string"},
 					},
 				}),
-			vocabulary.KindManifest(tierAuthority, map[string]any{"singular": "record", "plural": "records"},
+			vocabulary.KindManifest(tierPackage, map[string]any{"singular": "record", "plural": "records"},
 				map[string]any{
 					"displayTemplate": "{name}",
 					"properties": map[string]any{
@@ -93,7 +93,7 @@ func newTierDataset(t *testing.T) *dataset {
 						},
 					},
 				}),
-			vocabulary.MappingManifest(tierAuthority, "recordprofile", map[string]any{
+			vocabulary.MappingManifest(tierPackage, "recordprofile", map[string]any{
 				"from": typeTierRecord, "to": typeTierProfile, "property": "profile",
 				"match": []any{map[string]any{"from": "email", "to": "emails"}},
 				"map": map[string]any{
@@ -232,7 +232,7 @@ func TestTierIsActorDataNotSpelling(t *testing.T) {
 
 	// A stranger's actor SPELLED like a function is still a stranger: no
 	// function document backs it, so it holds at the owner tier.
-	ghost := substrate.Actor("function.ghost." + tierAuthority)
+	ghost := substrate.Actor("function.ghost." + tierPackage)
 	if _, err := ds.Patch(ctx, ghost, typeTierProfile, pid, substrate.PatchInput{
 		Properties: map[string]any{"name": "Ghost Name"},
 	}); err != nil {
@@ -324,8 +324,8 @@ func TestActorTierValidated(t *testing.T) {
 	err := enginetest.Install(context.Background(), ds, substrate.ActorAPI, enginetest.Manifest{
 		Name: "badtier", Authority: "badtier.test.dev",
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest("badtier.test.dev", 0),
-			actorManifestTier("badtier.test.dev", "connector:helper", "superuser"),
+			vocabulary.PackageManifest("badtier.test.dev/badtier", 0),
+			actorManifestTier("badtier.test.dev/badtier", "connector:helper", "superuser"),
 		},
 	})
 	if err == nil || !strings.Contains(err.Error(), "tier must be owner, bundle or machine") {
@@ -344,7 +344,7 @@ func TestOfferRemovedAtDecode(t *testing.T) {
 	}
 	ds := newTierDataset(t)
 	fn := &vocabulary.Function{
-		Name: "fixer", Authority: tierAuthority, Description: "test",
+		Name: "fixer", Package: tierPackage, Description: "test",
 		Caps: vocabulary.FunctionCaps{Emit: []string{typeTierProfile, typeTierRecord}},
 	}
 

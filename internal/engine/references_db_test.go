@@ -8,21 +8,21 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-const refAuthority = "refs.example.substrate.reamde.dev"
+const refPackage = "refs.example.substrate.reamde.dev/refs"
 
 // refDocs installs a tiny authority for the reference property type:
 // two target types (widget, gadget) and a holder carrying a pinned reference,
 // an unconstrained one, and a repeated one.
 func refDocs() []map[string]any {
 	return []map[string]any{
-		vocabulary.AuthorityManifest(refAuthority, 0),
-		vocabulary.KindManifest(refAuthority,
+		vocabulary.PackageManifest(refPackage, 0),
+		vocabulary.KindManifest(refPackage,
 			map[string]any{"singular": "widget", "plural": "widgets"},
 			map[string]any{}),
-		vocabulary.KindManifest(refAuthority,
+		vocabulary.KindManifest(refPackage,
 			map[string]any{"singular": "gadget", "plural": "gadgets"},
 			map[string]any{}),
-		vocabulary.KindManifest(refAuthority,
+		vocabulary.KindManifest(refPackage,
 			map[string]any{"singular": "holder", "plural": "holders"},
 			map[string]any{"properties": map[string]any{
 				"pin":    map[string]any{"type": "reference", "kind": "widget"},
@@ -68,18 +68,18 @@ func TestReferenceRoundTrip(t *testing.T) {
 	// A pointer at a widget that does NOT exist yet — a reference is a pointer,
 	// not an edge, so no existence gate refuses it.
 	h := mustPut(t, ds, owner, substrate.PutInput{
-		Kind:       refAuthority + "/holder",
+		Kind:       refPackage + "/holder",
 		Properties: map[string]any{"pin": "ghost"},
 	})
 	got := mustGet(t, ds, h.Kind, h.ID)
 	kind, id := asRef(t, got.Properties["pin"])
-	if kind != refAuthority+"/widget" || id != "ghost" {
+	if kind != refPackage+"/widget" || id != "ghost" {
 		t.Fatalf("pin = %v, want the bare name resolved to a kind reference", got.Properties["pin"])
 	}
 
 	// Re-apply the canonical shape the read produced (apply round-trip).
 	h2 := mustPut(t, ds, owner, substrate.PutInput{
-		Kind:       refAuthority + "/holder",
+		Kind:       refPackage + "/holder",
 		ID:         h.ID,
 		Properties: map[string]any{"pin": got.Properties["pin"]},
 	})
@@ -96,8 +96,8 @@ func TestReferenceUnknownTypeRefused(t *testing.T) {
 	installRefAuthority(t, ds)
 
 	_, err := ds.Put(context.Background(), owner, substrate.PutInput{
-		Kind:       refAuthority + "/holder",
-		Properties: map[string]any{"anyref": vocabulary.RecordPath("nosuch.example.com/thing", "x")},
+		Kind:       refPackage + "/holder",
+		Properties: map[string]any{"anyref": vocabulary.RecordPath("nosuch.example.com/nosuch/thing", "x")},
 	})
 	wantErr(t, err, substrate.ErrValidation, "unknown referent type")
 }
@@ -110,8 +110,8 @@ func TestReferenceToMismatchRefused(t *testing.T) {
 	installRefAuthority(t, ds)
 
 	_, err := ds.Put(context.Background(), owner, substrate.PutInput{
-		Kind:       refAuthority + "/holder",
-		Properties: map[string]any{"pin": vocabulary.RecordPath(refAuthority+"/gadget", "g1")},
+		Kind:       refPackage + "/holder",
+		Properties: map[string]any{"pin": vocabulary.RecordPath(refPackage+"/gadget", "g1")},
 	})
 	wantErr(t, err, substrate.ErrValidation, "to mismatch")
 }
@@ -124,7 +124,7 @@ func TestReferenceAnyNeedsType(t *testing.T) {
 	installRefAuthority(t, ds)
 
 	_, err := ds.Put(context.Background(), owner, substrate.PutInput{
-		Kind:       refAuthority + "/holder",
+		Kind:       refPackage + "/holder",
 		Properties: map[string]any{"anyref": "barestring"},
 	})
 	wantErr(t, err, substrate.ErrValidation, "bare id on to:any")
@@ -137,10 +137,10 @@ func TestRepeatedReferences(t *testing.T) {
 	installRefAuthority(t, ds)
 
 	h := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: refAuthority + "/holder",
+		Kind: refPackage + "/holder",
 		Properties: map[string]any{"pins": []any{
 			"a",
-			vocabulary.RecordPath(refAuthority+"/widget", "b"),
+			vocabulary.RecordPath(refPackage+"/widget", "b"),
 		}},
 	})
 	got := mustGet(t, ds, h.Kind, h.ID)
@@ -149,7 +149,7 @@ func TestRepeatedReferences(t *testing.T) {
 		t.Fatalf("pins = %T %v", got.Properties["pins"], got.Properties["pins"])
 	}
 	for i, want := range []string{"a", "b"} {
-		if kind, id := asRef(t, list[i]); id != want || kind != refAuthority+"/widget" {
+		if kind, id := asRef(t, list[i]); id != want || kind != refPackage+"/widget" {
 			t.Fatalf("pins[%d] = %v", i, list[i])
 		}
 	}

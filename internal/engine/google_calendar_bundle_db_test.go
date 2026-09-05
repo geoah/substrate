@@ -39,9 +39,9 @@ func TestGoogleCalendarBundleAdmitsSchema(t *testing.T) {
 	t.Parallel()
 	reg := googleRegistry(t)
 
-	b, ok := reg.BundleOf(googleAuthority)
+	b, ok := reg.BundleOf(googlePackage)
 	if !ok {
-		t.Fatalf("no bundle owns %s", googleAuthority)
+		t.Fatalf("no bundle owns %s", googlePackage)
 	}
 	scopes := b.OAuth2.FeatureScopes["enabledCalendar"]
 	if len(scopes) != 1 || scopes[0] != "https://www.googleapis.com/auth/calendar.readonly" {

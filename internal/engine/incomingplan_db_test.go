@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	planAuthority = "incomingplan.example.substrate.reamde.dev"
-	planHub       = planAuthority + "/hub"
-	planSpoke     = planAuthority + "/spoke"
+	planPackage = "incomingplan.example.substrate.reamde.dev/incomingplan"
+	planHub     = planPackage + "/hub"
+	planSpoke   = planPackage + "/spoke"
 )
 
 // planDataset provisions a repository holding one hub and a few spokes that
@@ -31,7 +31,7 @@ func planDataset(t *testing.T) *dataset {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	svc, err := Open(ctx, dsn,
-		WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		WithCredentialKey(TestCredentialKey))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
@@ -49,11 +49,11 @@ func planDataset(t *testing.T) *dataset {
 		t.Fatalf("the service handed back a %T", generic)
 	}
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
-		vocabulary.AuthorityManifest(planAuthority, 0),
-		vocabulary.KindManifest(planAuthority,
+		vocabulary.PackageManifest(planPackage, 0),
+		vocabulary.KindManifest(planPackage,
 			map[string]any{"singular": "hub", "plural": "hubs"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
-		vocabulary.KindManifest(planAuthority,
+		vocabulary.KindManifest(planPackage,
 			map[string]any{"singular": "spoke", "plural": "spokes"},
 			map[string]any{"properties": map[string]any{
 				"hub": map[string]any{"type": "reference", "kind": planHub},

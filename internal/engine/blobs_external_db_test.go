@@ -195,7 +195,7 @@ func TestBlobFSFailedWriteLeavesNoStoredManifest(t *testing.T) {
 
 	// The manifest exists and is PENDING: the intent is recorded, but nothing
 	// claims the bytes are there.
-	rec, err := ds.Get(ctx, "core.substrate.reamde.dev/blob", digest)
+	rec, err := ds.Get(ctx, "substrate.reamde.dev/core/blob", digest)
 	if err != nil {
 		t.Fatalf("the pending manifest is missing: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestBlobFSFailedWriteLeavesNoStoredManifest(t *testing.T) {
 	if _, err := ds.RunGC(ctx); err != nil {
 		t.Fatalf("gc: %v", err)
 	}
-	rec, err = ds.Get(ctx, "core.substrate.reamde.dev/blob", digest)
+	rec, err = ds.Get(ctx, "substrate.reamde.dev/core/blob", digest)
 	if err != nil {
 		t.Fatalf("the manifest should be tombstoned, not vanished: %v", err)
 	}
@@ -292,7 +292,7 @@ func TestBlobBackendSwitchIsRefused(t *testing.T) {
 		t.Fatalf("open the fs backend: %v", err)
 	}
 	switched, err := engine.Open(ctx, dsn,
-		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithBlobStore(fs))
 	if err == nil {
@@ -325,7 +325,7 @@ func TestBlobBackendSwitchBackIsRefused(t *testing.T) {
 	}
 
 	switched, err := engine.Open(ctx, dsn,
-		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err == nil {
 		_ = switched.Close()

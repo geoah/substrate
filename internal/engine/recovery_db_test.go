@@ -24,7 +24,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-const recoveryKeyKind = "core.substrate.reamde.dev/recoverykey"
+const recoveryKeyKind = "substrate.reamde.dev/core/recoverykey"
 
 // unwrapWithIdentity opens an age-wrapped sealedKey with the user's identity.
 func unwrapWithIdentity(t *testing.T, identityStr, sealedKeyB64 string) []byte {
@@ -119,7 +119,7 @@ func TestRegistrationEnrollsRecoveryKey(t *testing.T) {
 	// a secret and decrypt its sealed row with nothing but the identity's
 	// DEK, which is the whole recovery claim.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/llmprovider", ID: "prov",
+		Kind: "substrate.reamde.dev/core/llmprovider", ID: "prov",
 		Properties: map[string]any{
 			"label": "prov", "wire": "openai",
 			"baseURL": "https://llm.example.com/v1", "apiKey": "sk-recover-me",
@@ -127,7 +127,7 @@ func TestRegistrationEnrollsRecoveryKey(t *testing.T) {
 	})
 	var ref string
 	if err := db.QueryRow(`SELECT props->>'apiKey' FROM records WHERE kind = $1 AND id = 'prov'`,
-		"core.substrate.reamde.dev/llmprovider").Scan(&ref); err != nil {
+		"substrate.reamde.dev/core/llmprovider").Scan(&ref); err != nil {
 		t.Fatalf("read ref: %v", err)
 	}
 	var payload []byte
@@ -236,7 +236,7 @@ func TestEnrollRecoveryKeyMigratesLegacyPayloads(t *testing.T) {
 		t.Fatalf("drop recovery record: %v", err)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/llmprovider", ID: "prov",
+		Kind: "substrate.reamde.dev/core/llmprovider", ID: "prov",
 		Properties: map[string]any{
 			"label": "prov", "wire": "openai",
 			"baseURL": "https://llm.example.com/v1", "apiKey": "sk-legacy-material",
@@ -244,7 +244,7 @@ func TestEnrollRecoveryKeyMigratesLegacyPayloads(t *testing.T) {
 	})
 	var ref string
 	if err := db.QueryRow(`SELECT props->>'apiKey' FROM records WHERE kind = $1 AND id = 'prov'`,
-		"core.substrate.reamde.dev/llmprovider").Scan(&ref); err != nil {
+		"substrate.reamde.dev/core/llmprovider").Scan(&ref); err != nil {
 		t.Fatalf("read ref: %v", err)
 	}
 	hostKey := engine.TestCredentialKeyBytes

@@ -29,7 +29,7 @@ func w2Opener(t *testing.T) (open func() *dataset, closeSvc func()) {
 	imported := false
 	open = func() *dataset {
 		svc, err := Open(ctx, dsn,
-			WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+			WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 		if err != nil {
 			t.Fatalf("open engine: %v", err)
 		}
@@ -61,29 +61,29 @@ func w2Opener(t *testing.T) (open func() *dataset, closeSvc func()) {
 }
 
 const (
-	w2Group  = "widgets.test.dev"
-	w2Widget = w2Group + "/widget"
-	w2Mirror = w2Group + "/mirror"
+	w2Package = "widgets.test.dev/widgets"
+	w2Widget  = w2Package + "/widget"
+	w2Mirror  = w2Package + "/mirror"
 )
 
 // w2Manifest is the widget connector: one type, one inline mirror function,
 // and optionally the function's default trigger.
 func w2Manifest(withTrigger bool) enginetest.Manifest {
 	m := enginetest.Manifest{
-		Name: "widgets", Authority: w2Group,
+		Name: "widgets", Authority: w2Package,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(w2Group, 0),
-			vocabulary.ActorManifest(w2Group, vocabulary.AuthorityActor(w2Group)),
-			vocabulary.KindManifest(w2Group, map[string]any{"singular": "widget", "plural": "widgets"},
+			vocabulary.PackageManifest(w2Package, 0),
+			vocabulary.ActorManifest(w2Package, vocabulary.PackageActor(w2Package)),
+			vocabulary.KindManifest(w2Package, map[string]any{"singular": "widget", "plural": "widgets"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
-			vocabulary.FunctionManifest(w2Group, "mirror", map[string]any{
+			vocabulary.FunctionManifest(w2Package, "mirror", map[string]any{
 				"description": "mirrors widgets into tasks",
 				"runtime":     vocabulary.RuntimePython,
-				"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
+				"permissions": map[string]any{"writes": []any{"samples.substrate.reamde.dev/tasks/task"}},
 				"source": `
 def main(input, host):
     env = input["envelope"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "t-" + env["change"]["id"],
                          "properties": {"name": env["record"]["properties"]["name"]}}]}
 `,
@@ -96,7 +96,7 @@ def main(input, host):
 			Properties: map[string]any{
 				"enabled":  true,
 				"source":   map[string]any{"record": map[string]any{"kinds": []any{w2Widget}, "ops": []any{"create", "update"}}},
-				"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", w2Mirror),
+				"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", w2Mirror),
 			},
 		}}
 	}
@@ -134,10 +134,10 @@ func w2AssertExactResume(t *testing.T, ds *dataset, seq int64, pendingID, proces
 	if _, err := ds.ProcessTriggers(ctx); err != nil {
 		t.Fatalf("process: %v", err)
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "t-"+pendingID); err != nil {
+	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "t-"+pendingID); err != nil {
 		t.Fatalf("the pending change was skipped: %v", err)
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "t-"+processedID); err == nil {
+	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "t-"+processedID); err == nil {
 		t.Fatal("the already-processed change was redelivered")
 	}
 }

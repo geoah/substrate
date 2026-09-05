@@ -320,7 +320,7 @@ func (ds *dataset) continueThread(ctx context.Context, threadID string) {
 		ds.svc.log.Warn("substrate: resume: agent does not resolve", "thread", threadID, "agent", agentID, "error", err)
 		return
 	}
-	ctx, release, err := ds.admitCallable(ctx, ag.Authority, ag.Identity())
+	ctx, release, err := ds.admitCallable(ctx, ag.Package, ag.Identity())
 	if err != nil {
 		ds.svc.log.Warn("substrate: resume: agent is not admissible", "thread", threadID, "agent", agentID, "error", err)
 		return
@@ -349,7 +349,7 @@ func (ds *dataset) SweepResolutions(ctx context.Context) (int, error) {
 		    SELECT 1 FROM records m
 		    WHERE m.kind = $2 AND m.deleted_at IS NULL
 		      AND m.props->>'role' = 'system'
-		      AND `+referencePathSQL("m.props", msgRelThread)+` = 'core.substrate.reamde.dev/llmthread/' || t.id
+		      AND `+referencePathSQL("m.props", msgRelThread)+` = 'substrate.reamde.dev/core/llmthread/' || t.id
 		      AND m.created_at > (t.props->>'finishedAt')::timestamptz
 		  )`,
 		typeThread, typeMessage)

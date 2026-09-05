@@ -53,15 +53,15 @@ func TestFunctionProposalLandsAndApplies(t *testing.T) {
 	const propose = `
 def main(input, host):
     return {"effects": [
-        {"action": "put", "kind": "core.substrate.reamde.dev/recordpatchrequest",
+        {"action": "put", "kind": "substrate.reamde.dev/core/recordpatchrequest",
          "id": "req-wrapped",
          "properties": {"rationale": "the widget says so",
                         "diff": {"properties": {"description": "wrapped"}},
-                        "target": "tasks.substrate.reamde.dev/task/t-wrapped"}},
-        {"action": "put", "kind": "core.substrate.reamde.dev/recordpatchrequest",
+                        "target": "samples.substrate.reamde.dev/tasks/task/t-wrapped"}},
+        {"action": "put", "kind": "substrate.reamde.dev/core/recordpatchrequest",
          "id": "req-bare",
          "properties": {"diff": {"description": "bare"},
-                        "target": "tasks.substrate.reamde.dev/task/t-bare"}}
+                        "target": "samples.substrate.reamde.dev/tasks/task/t-bare"}}
     ]}
 `
 	ds, ops := newFnDataset(t,
@@ -115,16 +115,16 @@ func TestFunctionMalformedProposalRefusedAtWrite(t *testing.T) {
 	const badShape = `
 def main(input, host):
     return {"effects": [
-        {"action": "put", "kind": "core.substrate.reamde.dev/recordpatchrequest",
+        {"action": "put", "kind": "substrate.reamde.dev/core/recordpatchrequest",
          "id": "req-badshape",
          "properties": {"diff": {"properties": "not a map"},
-                        "target": "tasks.substrate.reamde.dev/task/t-victim"}}
+                        "target": "samples.substrate.reamde.dev/tasks/task/t-victim"}}
     ]}
 `
 	const badCreate = `
 def main(input, host):
     return {"effects": [
-        {"action": "put", "kind": "core.substrate.reamde.dev/recordpatchrequest",
+        {"action": "put", "kind": "substrate.reamde.dev/core/recordpatchrequest",
          "id": "req-badcreate",
          "properties": {"op": "create", "diff": {"properties": {"title": "nameless"}}}}
     ]}
@@ -405,22 +405,22 @@ func TestTwoTargetsSmuggleNothing(t *testing.T) {
 	// Two gauges: one where `apiKey` is an ordinary string (so a diff naming it
 	// validates), one where it is a SECRET (so a diff naming it must not be
 	// stored at all).
-	const gaugeAuthority = "gauge.example.com"
+	const gaugePackage = "gauge.example.com/gauge"
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(gaugeAuthority, 0),
-		vocabulary.KindManifest(gaugeAuthority, map[string]any{"singular": "safegauge", "plural": "safegauges"},
+		vocabulary.PackageManifest(gaugePackage, 0),
+		vocabulary.KindManifest(gaugePackage, map[string]any{"singular": "safegauge", "plural": "safegauges"},
 			map[string]any{"properties": map[string]any{"apiKey": map[string]any{"type": "string"}}}),
-		vocabulary.KindManifest(gaugeAuthority, map[string]any{"singular": "secretgauge", "plural": "secretgauges"},
+		vocabulary.KindManifest(gaugePackage, map[string]any{"singular": "secretgauge", "plural": "secretgauges"},
 			map[string]any{"properties": map[string]any{"apiKey": map[string]any{"type": "secret"}}}),
 	}
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
 		t.Fatalf("install the gauge authority: %v", err)
 	}
 	safe := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: gaugeAuthority + "/safegauge", ID: "g-safe", Properties: map[string]any{"apiKey": "public"},
+		Kind: gaugePackage + "/safegauge", ID: "g-safe", Properties: map[string]any{"apiKey": "public"},
 	})
 	secret := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: gaugeAuthority + "/secretgauge", ID: "g-secret", Properties: map[string]any{"apiKey": "sk-stored"},
+		Kind: gaugePackage + "/secretgauge", ID: "g-secret", Properties: map[string]any{"apiKey": "sk-stored"},
 	})
 
 	_, err := ds.Put(ctx, engram, substrate.PutInput{
@@ -473,7 +473,7 @@ func TestIdenticalReproposalIsANoOp(t *testing.T) {
 	ctx := context.Background()
 	ds, ops := newFnDataset(t, nil, pyFn("reproposer", map[string]any{}, []any{requestKind}, `
 def main(input, host):
-    host.effects.propose("req-replayed", "tasks.substrate.reamde.dev/task",
+    host.effects.propose("req-replayed", "samples.substrate.reamde.dev/tasks/task",
                          input["args"]["target"], diff={"description": "same as ever"},
                          rationale="steady")
     return {}
@@ -481,7 +481,7 @@ def main(input, host):
 	task := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: taskType, ID: "t-replayed", Properties: map[string]any{"name": "draft"},
 	})
-	fn := fnAuthority + "/reproposer"
+	fn := fnPackage + "/reproposer"
 
 	if _, _, err := ops.CallFunction(ctx, fn, map[string]any{"target": task.ID}); err != nil {
 		t.Fatalf("first delivery: %v", err)

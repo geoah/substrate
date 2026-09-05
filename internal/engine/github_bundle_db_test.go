@@ -2,7 +2,7 @@ package engine
 
 // The GitHub bundle — the substrate's second real integration, SYNC-ONLY
 // (no writeback until the outbound outbox, issue 009, exists). Five proofs,
-// from the shipped closure at ../../kinds/github.bundles.substrate.reamde.dev:
+// from the shipped closure at ../../kinds/providers.substrate.reamde.dev/github:
 //
 //  1. TestGithubBundleAdmitsSchema — the closure ADMITS through the schema
 //     loader: the bundle declares the `client` input (facility-read, never
@@ -71,17 +71,16 @@ import (
 )
 
 const (
-	githubExampleDir  = "../../kinds/github.bundles.substrate.reamde.dev"
-	githubAuthority   = "github.bundles.substrate.reamde.dev"
-	githubBundleRow   = githubAuthority + "/github"
-	githubConfigType  = githubAuthority + "/config"
-	githubAccountType = githubAuthority + "/account"
-	githubUserType    = githubAuthority + "/user"
-	githubRepoType    = githubAuthority + "/repository"
-	githubIssueType   = githubAuthority + "/issue"
-	githubPullType    = githubAuthority + "/pullrequest"
-	githubSyncFn      = githubAuthority + "/githubsync"
-	githubMapping     = githubAuthority + "/userperson"
+	githubExampleDir  = "../../kinds/providers.substrate.reamde.dev/github"
+	githubPackage     = "providers.substrate.reamde.dev/github"
+	githubConfigType  = githubPackage + "/config"
+	githubAccountType = githubPackage + "/account"
+	githubUserType    = githubPackage + "/user"
+	githubRepoType    = githubPackage + "/repository"
+	githubIssueType   = githubPackage + "/issue"
+	githubPullType    = githubPackage + "/pullrequest"
+	githubSyncFn      = githubPackage + "/githubsync"
+	githubMapping     = githubPackage + "/userperson"
 )
 
 // TestGithubBundleAdmitsSchema loads the builtin schema, then installs the
@@ -94,7 +93,7 @@ func TestGithubBundleAdmitsSchema(t *testing.T) {
 	// alone) plus the shipped VOCABULARY bundles this repository imported —
 	// what a closure declaring onto people/tasks/messaging/calendar/media
 	// needs present, and what `requires:` names.
-	reg, err := enginetest.SeededRegistry("../../kinds/core.substrate.reamde.dev")
+	reg, err := enginetest.SeededRegistry("../../kinds/substrate.reamde.dev/core")
 	if err != nil {
 		t.Fatalf("build the repository registry: %v", err)
 	}
@@ -106,7 +105,7 @@ func TestGithubBundleAdmitsSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse bundle.yaml: %v", err)
 	}
-	authorities, err := vocabulary.BuildAuthorities(docs, vocabulary.SourceInstalled)
+	authorities, err := vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
 	if err != nil {
 		t.Fatalf("build the bundle authority: %v", err)
 	}
@@ -116,9 +115,9 @@ func TestGithubBundleAdmitsSchema(t *testing.T) {
 
 	// The bundle exists and declares the `client` input the oauth2 block
 	// names: facility-read, so it must NOT inject.
-	b, ok := reg.BundleOf(githubAuthority)
+	b, ok := reg.BundleOf(githubPackage)
 	if !ok {
-		t.Fatalf("no bundle owns %s after install", githubAuthority)
+		t.Fatalf("no bundle owns %s after install", githubPackage)
 	}
 	in, ok := b.Inputs["client"]
 	if !ok {
@@ -218,7 +217,7 @@ func TestGithubBundleAdmitsSchema(t *testing.T) {
 	if !ok {
 		t.Fatalf("%s declares no `person` edge", githubUserType)
 	}
-	if ed.To != "people.substrate.reamde.dev/person" || !ed.Required || ed.Repeated {
+	if ed.To != "samples.substrate.reamde.dev/people/person" || !ed.Required || ed.Repeated {
 		t.Fatalf("person edge shape wrong: to=%q required=%v many=%v", ed.To, ed.Required, ed.Repeated)
 	}
 
@@ -260,7 +259,7 @@ func TestGithubBundleAdmitsSchema(t *testing.T) {
 	if !ok {
 		t.Fatalf("no mapping registered from %s", githubUserType)
 	}
-	if m.To != "people.substrate.reamde.dev/person" || m.Property != "person" {
+	if m.To != "samples.substrate.reamde.dev/people/person" || m.Property != "person" {
 		t.Fatalf("mapping resolves wrong: to=%q edge=%q", m.To, m.Property)
 	}
 	if len(m.Match) == 0 {
@@ -301,15 +300,15 @@ func TestGithubBundleInstalls(t *testing.T) {
 
 	// The bundle row and every schema member landed as its own record.
 	for id, wantType := range map[string]string{
-		githubBundleRow:   "core.substrate.reamde.dev/bundle",
-		githubConfigType:  "core.substrate.reamde.dev/kind",
-		githubAccountType: "core.substrate.reamde.dev/kind",
-		githubUserType:    "core.substrate.reamde.dev/kind",
-		githubRepoType:    "core.substrate.reamde.dev/kind",
-		githubIssueType:   "core.substrate.reamde.dev/kind",
-		githubPullType:    "core.substrate.reamde.dev/kind",
-		githubSyncFn:      "core.substrate.reamde.dev/function",
-		githubMapping:     "core.substrate.reamde.dev/recordmapping",
+		githubPackage:     "substrate.reamde.dev/core/bundle",
+		githubConfigType:  "substrate.reamde.dev/core/kind",
+		githubAccountType: "substrate.reamde.dev/core/kind",
+		githubUserType:    "substrate.reamde.dev/core/kind",
+		githubRepoType:    "substrate.reamde.dev/core/kind",
+		githubIssueType:   "substrate.reamde.dev/core/kind",
+		githubPullType:    "substrate.reamde.dev/core/kind",
+		githubSyncFn:      "substrate.reamde.dev/core/function",
+		githubMapping:     "substrate.reamde.dev/core/recordmapping",
 	} {
 		row, err := ds.Get(ctx, wantType, id)
 		if err != nil {
@@ -321,7 +320,7 @@ func TestGithubBundleInstalls(t *testing.T) {
 	}
 
 	// Computed status: installed, enabled, and the closure's member counts.
-	st, err := ds.BundleStatus(ctx, githubAuthority)
+	st, err := ds.BundleStatus(ctx, githubPackage)
 	if err != nil {
 		t.Fatalf("bundle status: %v", err)
 	}
@@ -577,8 +576,8 @@ func openGithubOAuthDataset(t *testing.T, hc *http.Client) *dataset {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	svc, err := Open(ctx, dsn,
-		WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/core.substrate.reamde.dev"),
-		WithOAuth("test-state-key", "https://substrate.example/api/v1/core.substrate.reamde.dev/oauth/callback", hc),
+		WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		WithOAuth("test-state-key", "https://substrate.example/api/v1/substrate.reamde.dev/core/oauth/callback", hc),
 		WithCredentialKey(TestCredentialKey))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)

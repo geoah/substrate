@@ -21,9 +21,9 @@ import (
 )
 
 const (
-	raceAuthority = "race.test.dev"
-	raceWidget    = raceAuthority + "/widget"
-	raceActor     = substrate.Actor("function.racer." + raceAuthority)
+	racePackage = "race.test.dev/race"
+	raceWidget  = racePackage + "/widget"
+	raceActor   = substrate.Actor("function.racer." + racePackage)
 )
 
 // newRaceDataset provisions a repository with one plain widget type and hands
@@ -33,7 +33,7 @@ func newRaceDataset(t *testing.T) *dataset {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	svc, err := Open(ctx, dsn,
-		WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}
@@ -51,11 +51,11 @@ func newRaceDataset(t *testing.T) *dataset {
 	}
 	importVocabulary(t, ds)
 	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
-		Name: "race", Authority: raceAuthority,
+		Name: "race", Authority: racePackage,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(raceAuthority, 0),
-			vocabulary.ActorManifest(raceAuthority, vocabulary.AuthorityActor(raceAuthority)),
-			vocabulary.KindManifest(raceAuthority, map[string]any{"singular": "widget", "plural": "widgets"},
+			vocabulary.PackageManifest(racePackage, 0),
+			vocabulary.ActorManifest(racePackage, vocabulary.PackageActor(racePackage)),
+			vocabulary.KindManifest(racePackage, map[string]any{"singular": "widget", "plural": "widgets"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 		},
 	}); err != nil {
@@ -221,7 +221,7 @@ func TestEffectDecodeRejectsNonBooleanIfAbsent(t *testing.T) {
 	// silently become a destructive upsert.
 	ds := newRaceDataset(t)
 	fn := &vocabulary.Function{
-		Name: "m", Authority: raceAuthority,
+		Name: "m", Package: racePackage,
 		Caps: vocabulary.FunctionCaps{Emit: []string{raceWidget}},
 	}
 	_, err := ds.decodeEffects(fn, []any{map[string]any{
@@ -303,14 +303,14 @@ func TestSchemaApplyRejectsUnpreparableBody(t *testing.T) {
 	// and nothing activates.
 	ds := newRaceDataset(t)
 	ctx := context.Background()
-	const badAuthority = "broken.test.dev"
+	const badPackage = "broken.test.dev/broken"
 	manifest := func(source string) enginetest.Manifest {
 		return enginetest.Manifest{
-			Name: "broken", Authority: badAuthority,
+			Name: "broken", Authority: badPackage,
 			Manifests: []map[string]any{
-				vocabulary.AuthorityManifest(badAuthority, 0),
-				vocabulary.ActorManifest(badAuthority, vocabulary.AuthorityActor(badAuthority)),
-				vocabulary.FunctionManifest(badAuthority, "mangle", map[string]any{
+				vocabulary.PackageManifest(badPackage, 0),
+				vocabulary.ActorManifest(badPackage, vocabulary.PackageActor(badPackage)),
+				vocabulary.FunctionManifest(badPackage, "mangle", map[string]any{
 					"description": "a body that must compile at registration",
 					"runtime":     vocabulary.RuntimePython,
 					"source":      source,
@@ -324,7 +324,7 @@ func TestSchemaApplyRejectsUnpreparableBody(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "failed to prepare") {
 		t.Fatalf("invalid source admitted: %v", err)
 	}
-	if _, ok := ds.registry().AuthorityByName(badAuthority); ok {
+	if _, ok := ds.registry().PackageByName(badPackage); ok {
 		t.Fatal("the failed batch activated")
 	}
 	// The corrected body admits.
@@ -332,7 +332,7 @@ func TestSchemaApplyRejectsUnpreparableBody(t *testing.T) {
 		manifest("def main(input, host):\n    return {}\n")); err != nil {
 		t.Fatalf("valid source refused: %v", err)
 	}
-	if _, ok := ds.registry().AuthorityByName(badAuthority); !ok {
+	if _, ok := ds.registry().PackageByName(badPackage); !ok {
 		t.Fatal("the corrected batch did not activate")
 	}
 }

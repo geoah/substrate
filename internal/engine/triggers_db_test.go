@@ -34,7 +34,7 @@ func TestScheduleFireIdempotentAndCoalesced(t *testing.T) {
 	// pass at the same instant fires nothing.
 	ctx := context.Background()
 	ds := openCursorDataset(t)
-	const authority = "widgets.test.dev"
+	const pkg = "widgets.test.dev/widgets"
 
 	_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: typeTrigger,
@@ -42,7 +42,7 @@ func TestScheduleFireIdempotentAndCoalesced(t *testing.T) {
 			"source": map[string]any{"schedule": map[string]any{
 				"recurrence": "FREQ=HOURLY", "timezone": "UTC",
 			}},
-			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", authority+"/hourly"),
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", pkg+"/hourly"),
 		},
 	})
 	if err == nil {
@@ -51,14 +51,14 @@ func TestScheduleFireIdempotentAndCoalesced(t *testing.T) {
 
 	// Install the fire-counting function, then the trigger.
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
-		vocabulary.FunctionManifest(authority, "hourly", map[string]any{
+		vocabulary.FunctionManifest(pkg, "hourly", map[string]any{
 			"description": "mints one task per fire",
 			"runtime":     vocabulary.RuntimePython,
-			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
+			"permissions": map[string]any{"writes": []any{"samples.substrate.reamde.dev/tasks/task"}},
 			"source": `
 def main(input, host):
     fire = input["envelope"]["fire"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "fire-" + fire["id"],
                          "properties": {"name": input["mode"] + " " + fire["at"]}}]}
 `,
@@ -72,7 +72,7 @@ def main(input, host):
 			"source": map[string]any{"schedule": map[string]any{
 				"recurrence": "FREQ=HOURLY", "timezone": "UTC",
 			}},
-			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", authority+"/hourly"),
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", pkg+"/hourly"),
 		},
 	})
 	if err != nil {
@@ -83,7 +83,7 @@ def main(input, host):
 	if _, err := ds.ProcessTriggers(ctx); err != nil {
 		t.Fatalf("process: %v", err)
 	}
-	if n := countLiveOf(t, ds, "tasks.substrate.reamde.dev/task"); n != 0 {
+	if n := countLiveOf(t, ds, "samples.substrate.reamde.dev/tasks/task"); n != 0 {
 		t.Fatalf("a fresh schedule backfilled: %d tasks", n)
 	}
 
@@ -97,7 +97,7 @@ def main(input, host):
 	if _, err := ds.ProcessTriggers(ctx); err != nil {
 		t.Fatalf("process: %v", err)
 	}
-	if n := countLiveOf(t, ds, "tasks.substrate.reamde.dev/task"); n != 1 {
+	if n := countLiveOf(t, ds, "samples.substrate.reamde.dev/tasks/task"); n != 1 {
 		t.Fatalf("missed ticks did not coalesce: %d tasks", n)
 	}
 	// The fire id is the occurrence instant — stable, not a random mint.
@@ -115,7 +115,7 @@ def main(input, host):
 	if since := time.Since(at); since < 0 || since > time.Hour {
 		t.Fatalf("the coalesced fire is not the newest occurrence: %s", fid)
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "fire-"+fid); err != nil {
+	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "fire-"+fid); err != nil {
 		t.Fatalf("the body did not see the stable fire id: %v", err)
 	}
 
@@ -146,14 +146,14 @@ func TestCallAtDepthCapRefuses(t *testing.T) {
 	// a function already on the stack refuses as recursion.
 	ds := openCursorDataset(t)
 	ctx := context.Background()
-	const ident = "widgets.test.dev/mirror"
+	const ident = "widgets.test.dev/widgets/mirror"
 	fn, err := ds.registry().ResolveFunction(ident)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
 
 	deep := &callBackend{
-		inv: &invocation{ds: ds, stack: []string{"widgets.test.dev/root"}},
+		inv: &invocation{ds: ds, stack: []string{"widgets.test.dev/widgets/root"}},
 		fn:  fn, key: "k", causalDepth: causalDepthCap - 1,
 	}
 	if _, err := deep.Call(ctx, ident, nil); !errors.Is(err, errCausalDepth) {

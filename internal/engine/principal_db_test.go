@@ -13,7 +13,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-const principalTask = "tasks.substrate.reamde.dev/task"
+const principalTask = "samples.substrate.reamde.dev/tasks/task"
 
 // managerPrincipals reads the distinct principals the record's manager rows
 // carry, so a test can say "every property this write landed names the token".

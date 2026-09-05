@@ -240,7 +240,7 @@ func TestFinalizersAndCascadeGC(t *testing.T) {
 		},
 	})
 	// The connector holds a finalizer while it manages the conversation.
-	mustPatch(t, ds, beeper, conv.Kind, conv.ID, substrate.PatchInput{AddFinalizers: []string{"beeper.connectors.substrate.reamde.dev/teardown"}})
+	mustPatch(t, ds, beeper, conv.Kind, conv.ID, substrate.PatchInput{AddFinalizers: []string{"beeper.connectors.substrate.reamde.dev/beeper/teardown"}})
 
 	del, err := ds.Delete(ctx, owner, acc.Kind, acc.ID)
 	if err != nil {
@@ -280,7 +280,7 @@ func TestFinalizersAndCascadeGC(t *testing.T) {
 	}
 
 	// Release the finalizer: the cascade runs to the leaves.
-	mustPatch(t, ds, beeper, conv.Kind, conv.ID, substrate.PatchInput{RemoveFinalizers: []string{"beeper.connectors.substrate.reamde.dev/teardown"}})
+	mustPatch(t, ds, beeper, conv.Kind, conv.ID, substrate.PatchInput{RemoveFinalizers: []string{"beeper.connectors.substrate.reamde.dev/beeper/teardown"}})
 	if _, err := ds.RunGC(ctx); err != nil {
 		t.Fatal(err)
 	}

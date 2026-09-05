@@ -177,7 +177,7 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 
 // --- fixtures ---------------------------------------------------------------------
 
-const crewAuthority = "crew.test.dev"
+const crewPackage = "crew.test.dev/crew"
 
 // openAgentDataset provisions a repository, points a set of llmprovider rows at the fake
 // server (one model id per loop under test), and installs one authority carrying
@@ -207,28 +207,28 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 	agent := func(name string, data map[string]any) map[string]any {
 		data["description"] = name + " under test"
 		data["prompt"] = "You are " + name + "."
-		return vocabulary.AgentManifest(crewAuthority, name, data)
+		return vocabulary.AgentManifest(crewPackage, name, data)
 	}
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(crewAuthority, 0),
-		vocabulary.KindManifest(crewAuthority, map[string]any{"singular": "widget", "plural": "widgets"},
+		vocabulary.PackageManifest(crewPackage, 0),
+		vocabulary.KindManifest(crewPackage, map[string]any{"singular": "widget", "plural": "widgets"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
-		vocabulary.FunctionManifest(crewAuthority, "annotate", map[string]any{
+		vocabulary.FunctionManifest(crewPackage, "annotate", map[string]any{
 			"description": "writes one annotated task under the id you pass",
 			"runtime":     vocabulary.RuntimePython,
 			"arguments":   []any{map[string]any{"name": "id", "type": "string", "required": true}},
-			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
+			"permissions": map[string]any{"writes": []any{"samples.substrate.reamde.dev/tasks/task"}},
 			"source": `
 def main(input, host):
     tid = input["args"]["id"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": tid, "properties": {"name": "annotated"}}],
             "output": {"ok": True}}
 `,
 		}),
 		// A PURE FUNCTION: it declares no emit at all, returns an output and
 		// stages nothing. Legal since `emit:` stopped being required.
-		vocabulary.FunctionManifest(crewAuthority, "measure", map[string]any{
+		vocabulary.FunctionManifest(crewPackage, "measure", map[string]any{
 			"description": "measures a widget name and returns its length, writing nothing",
 			"runtime":     vocabulary.RuntimePython,
 			"arguments":   []any{map[string]any{"name": "name", "type": "string", "required": true}},
@@ -238,14 +238,14 @@ def main(input, host):
     return {"output": {"length": len(input["args"]["name"])}}
 `,
 		}),
-		vocabulary.FunctionManifest(crewAuthority, "keyecho", map[string]any{
+		vocabulary.FunctionManifest(crewPackage, "keyecho", map[string]any{
 			"description": "writes one task carrying the invocation's idempotency key",
 			"runtime":     vocabulary.RuntimePython,
-			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
+			"permissions": map[string]any{"writes": []any{"samples.substrate.reamde.dev/tasks/task"}},
 			"source": `
 def main(input, host):
     key = input["idempotencyKey"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "t-idem", "properties": {"name": key}}],
             "output": {"key": key}}
 `,
@@ -253,12 +253,12 @@ def main(input, host):
 		agent("classifier", map[string]any{
 			"provider": "rootllm", "model": "root",
 			"tools": []any{
-				map[string]any{"function": crewAuthority + "/annotate"},
+				map[string]any{"function": crewPackage + "/annotate"},
 				map[string]any{"function": vocabulary.HostFunctionPropose},
 			},
-			"subagents": []any{crewAuthority + "/scribe"},
+			"subagents": []any{crewPackage + "/scribe"},
 			"permissions": map[string]any{
-				"writes": []any{"tasks.substrate.reamde.dev/task", vocabulary.KindRecordPatchRequest},
+				"writes": []any{"samples.substrate.reamde.dev/tasks/task", vocabulary.KindRecordPatchRequest},
 			},
 		}),
 		agent("scribe", map[string]any{"provider": "subllm", "model": "sub"}),
@@ -295,22 +295,22 @@ def main(input, host):
 			"provider": "vjudgellm", "model": "vjudge",
 		}),
 		// burn carries the author's floor: its effects are never auto-applied.
-		vocabulary.FunctionManifest(crewAuthority, "burn", map[string]any{
+		vocabulary.FunctionManifest(crewPackage, "burn", map[string]any{
 			"description":  "writes one task, but its author demands review first",
 			"runtime":      vocabulary.RuntimePython,
 			"confirmation": "always",
-			"permissions":  map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
+			"permissions":  map[string]any{"writes": []any{"samples.substrate.reamde.dev/tasks/task"}},
 			"source": `
 def main(input, host):
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "t-burned", "properties": {"name": "burned"}}],
             "output": {"ok": True}}
 `,
 		}),
 		agent("burner", map[string]any{
 			"provider": "burnllm", "model": "burn",
-			"tools":       []any{map[string]any{"function": crewAuthority + "/burn"}},
-			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
+			"tools":       []any{map[string]any{"function": crewPackage + "/burn"}},
+			"permissions": map[string]any{"writes": []any{"samples.substrate.reamde.dev/tasks/task"}},
 		}),
 		// selfjudge can both propose and decide: the self-exclusion pair — a
 		// thread's own agent resolving something never wakes that thread.
@@ -321,42 +321,42 @@ def main(input, host):
 				map[string]any{"function": vocabulary.HostFunctionMutate},
 			},
 			"permissions": map[string]any{
-				"writes": []any{vocabulary.KindRecordPatchRequest, crewAuthority + "/widget"},
+				"writes": []any{vocabulary.KindRecordPatchRequest, crewPackage + "/widget"},
 			},
 		}),
 		agent("rogue", map[string]any{
 			"provider": "roguellm", "model": "rogue",
-			"tools": []any{map[string]any{"function": crewAuthority + "/annotate"}},
+			"tools": []any{map[string]any{"function": crewPackage + "/annotate"}},
 			// annotate emits tasks, but THIS agent's emit does not allow them.
 		}),
 		agent("budgeter", map[string]any{
 			"provider": "budgetllm", "model": "budget",
-			"tools":       []any{map[string]any{"function": crewAuthority + "/annotate"}},
-			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
+			"tools":       []any{map[string]any{"function": crewPackage + "/annotate"}},
+			"permissions": map[string]any{"writes": []any{"samples.substrate.reamde.dev/tasks/task"}},
 			"budgets":     map[string]any{"maxTurns": 2},
 		}),
 		agent("chatter", map[string]any{"provider": "chatllm", "model": "chat"}),
 		// warden writes NOTHING (empty emit) but delegates to minion, whose
 		// own emit could write tasks — the ceiling test pair.
 		agent("warden", map[string]any{
-			"provider": "wardenllm", "model": "warden", "subagents": []any{crewAuthority + "/minion"},
+			"provider": "wardenllm", "model": "warden", "subagents": []any{crewPackage + "/minion"},
 		}),
 		agent("minion", map[string]any{
 			"provider": "minionllm", "model": "minion",
 			"tools": []any{
-				map[string]any{"function": crewAuthority + "/annotate"},
+				map[string]any{"function": crewPackage + "/annotate"},
 				map[string]any{"function": vocabulary.HostFunctionPropose},
 			},
 			"permissions": map[string]any{
-				"writes": []any{"tasks.substrate.reamde.dev/task", vocabulary.KindRecordPatchRequest},
+				"writes": []any{"samples.substrate.reamde.dev/tasks/task", vocabulary.KindRecordPatchRequest},
 			},
 		}),
 		// keeper's keyecho tool records its idempotency key — the stable-key
 		// retry test.
 		agent("keeper", map[string]any{
 			"provider": "keepllm", "model": "keep",
-			"tools":       []any{map[string]any{"function": crewAuthority + "/keyecho"}},
-			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
+			"tools":       []any{map[string]any{"function": crewPackage + "/keyecho"}},
+			"permissions": map[string]any{"writes": []any{"samples.substrate.reamde.dev/tasks/task"}},
 		}),
 		// archivist reads the whole graph through the graphql built-in and
 		// writes nothing; editor holds both graphql tools, its mutate gated to
@@ -371,7 +371,7 @@ def main(input, host):
 				map[string]any{"function": vocabulary.HostFunctionGraphQL},
 				map[string]any{"function": vocabulary.HostFunctionMutate},
 			},
-			"permissions": map[string]any{"writes": []any{crewAuthority + "/widget"}},
+			"permissions": map[string]any{"writes": []any{crewPackage + "/widget"}},
 		}),
 		// arbiter DECIDES change requests through the mutate tool: its emit
 		// names the request kind (so it may write the decision) and widgets (so
@@ -381,7 +381,7 @@ def main(input, host):
 			"provider": "arbiterllm", "model": "arbiter",
 			"tools": []any{map[string]any{"function": vocabulary.HostFunctionMutate}},
 			"permissions": map[string]any{
-				"writes": []any{vocabulary.KindRecordPatchRequest, crewAuthority + "/widget"},
+				"writes": []any{vocabulary.KindRecordPatchRequest, crewPackage + "/widget"},
 			},
 		}),
 		// librarian holds the capability-scoped read: the query built-in named by
@@ -390,14 +390,14 @@ def main(input, host):
 			"provider": "libllm", "model": "lib",
 			"tools": []any{map[string]any{"function": vocabulary.HostFunctionQuery}},
 			"permissions": map[string]any{
-				"reads": map[string]any{"kinds": []any{crewAuthority + "/widget"}},
+				"reads": map[string]any{"kinds": []any{crewPackage + "/widget"}},
 			},
 		}),
 		// purist carries the PURE function as a tool: no emit anywhere, an output
 		// the model reads.
 		agent("purist", map[string]any{
 			"provider": "purellm", "model": "pure",
-			"tools": []any{map[string]any{"function": crewAuthority + "/measure"}},
+			"tools": []any{map[string]any{"function": crewPackage + "/measure"}},
 		}),
 		// judge is hiddenFromChat: off the chat surface, still a callable and
 		// still justice's sub-agent.
@@ -406,13 +406,13 @@ def main(input, host):
 		}),
 		agent("justice", map[string]any{
 			"provider": "justicellm", "model": "justice",
-			"subagents": []any{crewAuthority + "/judge"},
+			"subagents": []any{crewPackage + "/judge"},
 		}),
 		agent("e", map[string]any{"provider": "chainllm", "model": "chain"}),
-		agent("d", map[string]any{"provider": "chainllm", "model": "chain", "subagents": []any{crewAuthority + "/e"}}),
-		agent("c", map[string]any{"provider": "chainllm", "model": "chain", "subagents": []any{crewAuthority + "/d"}}),
-		agent("b", map[string]any{"provider": "chainllm", "model": "chain", "subagents": []any{crewAuthority + "/c"}}),
-		agent("a", map[string]any{"provider": "chainllm", "model": "chain", "subagents": []any{crewAuthority + "/b"}}),
+		agent("d", map[string]any{"provider": "chainllm", "model": "chain", "subagents": []any{crewPackage + "/e"}}),
+		agent("c", map[string]any{"provider": "chainllm", "model": "chain", "subagents": []any{crewPackage + "/d"}}),
+		agent("b", map[string]any{"provider": "chainllm", "model": "chain", "subagents": []any{crewPackage + "/c"}}),
+		agent("a", map[string]any{"provider": "chainllm", "model": "chain", "subagents": []any{crewPackage + "/b"}}),
 	}
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
 		t.Fatalf("install crew authority: %v", err)
@@ -425,7 +425,7 @@ func agentThreadsOf(t *testing.T, ds *dataset, agent string) []map[string]any {
 	rows, err := ds.db.QueryContext(context.Background(), `
 		SELECT id, props FROM records
 		WHERE kind = $1 AND deleted_at IS NULL AND `+referencePathSQL("props", "agent")+` = $2
-		ORDER BY created_at, id`, typeThread, vocabulary.RecordPath(kindAgent, crewAuthority+"/"+agent))
+		ORDER BY created_at, id`, typeThread, vocabulary.RecordPath(kindAgent, crewPackage+"/"+agent))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -504,8 +504,8 @@ func TestAgentTriggerDispatch(t *testing.T) {
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
-			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewAuthority + "/widget"}}},
-			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/agent", crewAuthority+"/ghost"),
+			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}}},
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/agent", crewPackage+"/ghost"),
 		},
 	}); err == nil {
 		t.Fatal("a trigger naming an unknown agent landed")
@@ -513,8 +513,8 @@ func TestAgentTriggerDispatch(t *testing.T) {
 	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
-			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewAuthority + "/widget"}, "ops": []any{"create"}}},
-			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/agent", crewAuthority+"/classifier"),
+			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/agent", crewPackage+"/classifier"),
 		},
 	})
 	if err != nil {
@@ -524,13 +524,13 @@ func TestAgentTriggerDispatch(t *testing.T) {
 	fake.script("root",
 		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"t-classified"}`}}},
 		fakeTurn{calls: []fakeCall{{"scribe", `{"input":"summarize the widget"}`}}},
-		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/widget","target":"w-fixed","diff":{"name":"better"},"rationale":"tidy"}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-fixed","diff":{"name":"better"},"rationale":"tidy"}`}}},
 		fakeTurn{content: "classified."},
 	)
 	fake.script("sub", fakeTurn{content: "the summary"})
 
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewAuthority + "/widget", ID: "w-fixed",
+		Kind: crewPackage + "/widget", ID: "w-fixed",
 		Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -540,7 +540,7 @@ func TestAgentTriggerDispatch(t *testing.T) {
 	}
 
 	// The function tool's effect applied, under the AGENT's actor.
-	task, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "t-classified")
+	task, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "t-classified")
 	if err != nil {
 		t.Fatalf("the annotate tool's task: %v", err)
 	}
@@ -552,7 +552,7 @@ func TestAgentTriggerDispatch(t *testing.T) {
 		SELECT actor FROM changelog WHERE record_id = 't-classified' ORDER BY seq LIMIT 1`).Scan(&taskActor); err != nil {
 		t.Fatal(err)
 	}
-	if taskActor != "agent:"+crewAuthority+":classifier" {
+	if substrate.Actor(taskActor) != substrate.AgentActor(vocabulary.SplitKindRef(crewPackage+"/classifier")) {
 		t.Fatalf("the tool effect's actor is %q, not the agent's", taskActor)
 	}
 
@@ -678,14 +678,14 @@ func TestAgentEmitHoldsFunctionToolEffects(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"t-rogue"}`}}},
 		fakeTurn{content: "blocked, giving up"},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/rogue", "go")
+	res, err := ds.CallAgent(ctx, crewPackage+"/rogue", "go")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
 	if res.Status != threadOK || res.Effects != 0 {
 		t.Fatalf("rogue result: %+v", res)
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "t-rogue"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "t-rogue"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the held-back task landed: %v", err)
 	}
 	msgs := threadMessages(t, ds, res.Thread)
@@ -718,7 +718,7 @@ func TestAgentDepthCapRefusesAtFour(t *testing.T) {
 		fakeTurn{content: "b done"},                          // b turn 2
 		fakeTurn{content: "a done"},                          // a turn 2
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/a", "start")
+	res, err := ds.CallAgent(ctx, crewPackage+"/a", "start")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -765,7 +765,7 @@ func TestAgentBudgetExhaustionSettlesCleanly(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"t-b1"}`}}},
 		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"t-b2"}`}}},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/budgeter", "go")
+	res, err := ds.CallAgent(ctx, crewPackage+"/budgeter", "go")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -780,7 +780,7 @@ func TestAgentBudgetExhaustionSettlesCleanly(t *testing.T) {
 		t.Fatalf("threads: %+v", threads)
 	}
 	for _, id := range []string{"t-b1", "t-b2"} {
-		if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", id); err != nil {
+		if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", id); err != nil {
 			t.Fatalf("task %s: %v", id, err)
 		}
 	}
@@ -792,7 +792,7 @@ func TestAgentBudgetExhaustionSettlesCleanly(t *testing.T) {
 func installGreeterBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 	t.Helper()
 	ctx := context.Background()
-	const abAuthority = "abundle.bundles.substrate.reamde.dev"
+	const abPackage = "abundle.bundles.substrate.reamde.dev/abundle"
 	for _, id := range []string{"greetllm", "callerllm"} {
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: typeProvider, ID: id,
@@ -801,16 +801,16 @@ func installGreeterBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 			t.Fatalf("put llmprovider row %s: %v", id, err)
 		}
 	}
-	greeter := vocabulary.AgentManifest(abAuthority, "greeter", map[string]any{
+	greeter := vocabulary.AgentManifest(abPackage, "greeter", map[string]any{
 		"description": "greets", "prompt": "You greet.", "provider": "greetllm", "model": "greet",
 	})
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(abAuthority, 0),
-		vocabulary.BundleManifest(abAuthority, map[string]any{
+		vocabulary.PackageManifest(abPackage, 0),
+		vocabulary.BundleManifest(abPackage, map[string]any{
 			"description": "the agent bundle",
-			"installs":    []any{abAuthority + "/abconfig", abAuthority + "/greeter"},
+			"installs":    []any{abPackage + "/abconfig", abPackage + "/greeter"},
 		}),
-		vocabulary.KindManifest(abAuthority,
+		vocabulary.KindManifest(abPackage,
 			map[string]any{"singular": "abconfig", "plural": "abconfigs"},
 			map[string]any{"properties": map[string]any{
 				"note": map[string]any{"type": "string"},
@@ -820,13 +820,13 @@ func installGreeterBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
 		t.Fatalf("install agent bundle: %v", err)
 	}
-	const hostAuthority = "hostcrew.test.dev"
-	caller := vocabulary.AgentManifest(hostAuthority, "caller", map[string]any{
+	const hostPackage = "hostcrew.test.dev/hostcrew"
+	caller := vocabulary.AgentManifest(hostPackage, "caller", map[string]any{
 		"description": "delegates to greeter", "prompt": "You delegate.",
-		"provider": "callerllm", "model": "caller", "subagents": []any{abAuthority + "/greeter"},
+		"provider": "callerllm", "model": "caller", "subagents": []any{abPackage + "/greeter"},
 	})
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
-		vocabulary.AuthorityManifest(hostAuthority, 0), caller,
+		vocabulary.PackageManifest(hostPackage, 0), caller,
 	}); err != nil {
 		t.Fatalf("install caller agent: %v", err)
 	}
@@ -839,7 +839,10 @@ func TestBundledAgentLifecycleGate(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	installGreeterBundle(t, ds, fake)
-	const greeter = "abundle.bundles.substrate.reamde.dev/greeter"
+	const (
+		abPackage = "abundle.bundles.substrate.reamde.dev/abundle"
+		greeter   = abPackage + "/greeter"
+	)
 
 	// Live bundle: the agent answers.
 	fake.script("greet", fakeTurn{content: "hello"})
@@ -847,7 +850,7 @@ func TestBundledAgentLifecycleGate(t *testing.T) {
 		t.Fatalf("live call: %v %+v", err, res)
 	}
 
-	if err := ds.DisableBundle(ctx, "abundle.bundles.substrate.reamde.dev"); err != nil {
+	if err := ds.DisableBundle(ctx, abPackage); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
 	if _, err := ds.CallAgent(ctx, greeter, "hi"); !errors.Is(err, substrate.ErrGuard) {
@@ -862,7 +865,7 @@ func TestBundledAgentLifecycleGate(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"greeter", `{"input":"say hi"}`}}},
 		fakeTurn{content: "gave up"},
 	)
-	res, err := ds.CallAgent(ctx, "hostcrew.test.dev/caller", "go")
+	res, err := ds.CallAgent(ctx, "hostcrew.test.dev/hostcrew/caller", "go")
 	if err != nil {
 		t.Fatalf("caller: %v", err)
 	}
@@ -885,10 +888,10 @@ func TestBundledAgentLifecycleGate(t *testing.T) {
 	// Uninstalled: the agent is gone entirely — uninstall tears the owned authority
 	// down, so the agent no longer resolves and every entry 404s
 	// rather than refusing with a lifecycle guard.
-	if err := ds.EnableBundle(ctx, "abundle.bundles.substrate.reamde.dev"); err != nil {
+	if err := ds.EnableBundle(ctx, abPackage); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
-	if err := ds.UninstallBundle(ctx, "abundle.bundles.substrate.reamde.dev"); err != nil {
+	if err := ds.UninstallBundle(ctx, abPackage); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
 	if _, err := ds.CallAgent(ctx, greeter, "hi"); !errors.Is(err, substrate.ErrNotFound) {
@@ -908,7 +911,7 @@ func TestSubAgentEmitCeiling(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewAuthority + "/widget", ID: "w-ceiling", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: "w-ceiling", Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -919,17 +922,17 @@ func TestSubAgentEmitCeiling(t *testing.T) {
 	)
 	fake.script("minion",
 		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"t-ceiling"}`}}},
-		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/widget","target":"w-ceiling","diff":{"name":"better"}}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-ceiling","diff":{"name":"better"}}`}}},
 		fakeTurn{content: "minion blocked"},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/warden", "go")
+	res, err := ds.CallAgent(ctx, crewPackage+"/warden", "go")
 	if err != nil {
 		t.Fatalf("warden: %v", err)
 	}
 	if res.Reply != "warden done" || res.Effects != 0 {
 		t.Fatalf("warden result: %+v", res)
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "t-ceiling"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "t-ceiling"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the ceilinged function-tool effect landed: %v", err)
 	}
 	var proposals int
@@ -960,14 +963,14 @@ func TestSubAgentEmitCeiling(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"t-direct"}`}}},
 		fakeTurn{content: "minion wrote"},
 	)
-	direct, err := ds.CallAgent(ctx, crewAuthority+"/minion", "go")
+	direct, err := ds.CallAgent(ctx, crewPackage+"/minion", "go")
 	if err != nil {
 		t.Fatalf("direct minion: %v", err)
 	}
 	if direct.Effects != 1 {
 		t.Fatalf("direct minion effects: %d", direct.Effects)
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "t-direct"); err != nil {
+	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "t-direct"); err != nil {
 		t.Fatalf("the direct write is missing: %v", err)
 	}
 }
@@ -984,8 +987,8 @@ func TestAgentRetryKeepsIdempotencyKeys(t *testing.T) {
 	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
-			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewAuthority + "/widget"}, "ops": []any{"create"}}},
-			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/agent", crewAuthority+"/keeper"),
+			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/agent", crewPackage+"/keeper"),
 		},
 	})
 	if err != nil {
@@ -998,7 +1001,7 @@ func TestAgentRetryKeepsIdempotencyKeys(t *testing.T) {
 		fakeTurn{content: "kept"},                      // attempt 2: settles
 	)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewAuthority + "/widget", ID: "w-idem", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: "w-idem", Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -1073,7 +1076,7 @@ func TestChatThreadSingleActiveTurn(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	fake.script("chat", fakeTurn{content: "first"})
-	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewAuthority+"/chatter", "", "hi", nil)
+	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", "", "hi", nil)
 	if err != nil {
 		t.Fatalf("open thread: %v", err)
 	}
@@ -1083,12 +1086,12 @@ func TestChatThreadSingleActiveTurn(t *testing.T) {
 	fake.script("chat", fakeTurn{content: "second", arrived: arrived, release: release})
 	done := make(chan error, 1)
 	go func() {
-		_, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewAuthority+"/chatter", res.Thread, "more", nil)
+		_, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", res.Thread, "more", nil)
 		done <- err
 	}()
 	<-arrived // the first continuation holds the lease, parked at the model
 
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewAuthority+"/chatter", res.Thread, "sneak", nil); !errors.Is(err, substrate.ErrConflict) {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", res.Thread, "sneak", nil); !errors.Is(err, substrate.ErrConflict) {
 		close(release)
 		t.Fatalf("a second active turn was admitted: %v", err)
 	}
@@ -1114,7 +1117,7 @@ func TestChatThreadSingleActiveTurn(t *testing.T) {
 
 	// The settled thread admits the next turn.
 	fake.script("chat", fakeTurn{content: "third"})
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewAuthority+"/chatter", res.Thread, "again", nil); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", res.Thread, "again", nil); err != nil {
 		t.Fatalf("post-settle turn: %v", err)
 	}
 }
@@ -1171,7 +1174,7 @@ func TestProviderRowCarriesItsOwnEndpointAndKey(t *testing.T) {
 	// End to end: a chat against a custom-endpoint agent — the fake server
 	// sees the ROW's bearer and nothing else.
 	fake.script("chat", fakeTurn{content: "done"})
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewAuthority+"/chatter", "", "hi", func(substrate.AgentEvent) {}); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", "", "hi", func(substrate.AgentEvent) {}); err != nil {
 		t.Fatalf("chat: %v", err)
 	}
 	auths := fake.authsSeen()
@@ -1195,7 +1198,7 @@ func TestAgentChatRoundTrip(t *testing.T) {
 	fake.script("chat", fakeTurn{content: "hello there"})
 
 	var events []substrate.AgentEvent
-	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewAuthority+"/chatter", "", "hi", func(ev substrate.AgentEvent) {
+	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", "", "hi", func(ev substrate.AgentEvent) {
 		events = append(events, ev)
 	})
 	if err != nil {
@@ -1218,7 +1221,7 @@ func TestAgentChatRoundTrip(t *testing.T) {
 	}
 
 	fake.script("chat", fakeTurn{content: "again"})
-	res2, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewAuthority+"/chatter", res.Thread, "more", func(substrate.AgentEvent) {})
+	res2, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", res.Thread, "more", func(substrate.AgentEvent) {})
 	if err != nil {
 		t.Fatalf("continue: %v", err)
 	}
@@ -1293,15 +1296,15 @@ func TestProposeRejectsMalformedDiffAtProposeTime(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewAuthority + "/widget", ID: "w-mal", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: "w-mal", Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
 	fake.script("root",
-		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/widget","target":"w-mal","diff":{"type":"article","bogus":true}}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-mal","diff":{"type":"article","bogus":true}}`}}},
 		fakeTurn{content: "understood, giving up"},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/classifier", "go")
+	res, err := ds.CallAgent(ctx, crewPackage+"/classifier", "go")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -1322,18 +1325,18 @@ func TestProposeDeleteRefusesADiff(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewAuthority + "/widget", ID: "w-doomed", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: "w-doomed", Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
 	fake.script("root",
-		fakeTurn{calls: []fakeCall{{"propose", `{"op":"delete","kind":"crew.test.dev/widget","target":"w-doomed","diff":{"name":"why"},"rationale":"tidy"}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"op":"delete","kind":"crew.test.dev/crew/widget","target":"w-doomed","diff":{"name":"why"},"rationale":"tidy"}`}}},
 		// An EMPTY diff is a claim about the proposal too: presence, not content.
-		fakeTurn{calls: []fakeCall{{"propose", `{"op":"delete","kind":"crew.test.dev/widget","target":"w-doomed","diff":{},"rationale":"tidy"}`}}},
-		fakeTurn{calls: []fakeCall{{"propose", `{"op":"delete","kind":"crew.test.dev/widget","target":"w-doomed","rationale":"tidy"}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"op":"delete","kind":"crew.test.dev/crew/widget","target":"w-doomed","diff":{},"rationale":"tidy"}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"op":"delete","kind":"crew.test.dev/crew/widget","target":"w-doomed","rationale":"tidy"}`}}},
 		fakeTurn{content: "proposed the delete alone"},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/classifier", "go")
+	res, err := ds.CallAgent(ctx, crewPackage+"/classifier", "go")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -1370,20 +1373,20 @@ func TestProposeCoercesBareDiffAndCreates(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewAuthority + "/widget", ID: "w-good", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: "w-good", Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
 	fake.script("root",
 		// A bare diff (no `properties` wrapper) coerces and lands.
-		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/widget","target":"w-good","diff":{"name":"tidier"},"rationale":"cleanup"}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-good","diff":{"name":"tidier"},"rationale":"cleanup"}`}}},
 		// A create proposal for a brand-new widget.
-		fakeTurn{calls: []fakeCall{{"propose", `{"op":"create","kind":"crew.test.dev/widget","id":"w-minted","diff":{"properties":{"name":"born"}},"rationale":"the note asks for it"}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"op":"create","kind":"crew.test.dev/crew/widget","id":"w-minted","diff":{"properties":{"name":"born"}},"rationale":"the note asks for it"}`}}},
 		// A create proposal with a bad shape is refused at propose.
-		fakeTurn{calls: []fakeCall{{"propose", `{"op":"create","kind":"crew.test.dev/widget","id":"w-bad","diff":{"nope":1}}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"op":"create","kind":"crew.test.dev/crew/widget","id":"w-bad","diff":{"nope":1}}`}}},
 		fakeTurn{content: "proposed."},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/classifier", "go")
+	res, err := ds.CallAgent(ctx, crewPackage+"/classifier", "go")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -1419,7 +1422,7 @@ func TestProposeCoercesBareDiffAndCreates(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("accept create: %v", err)
 	}
-	minted, err := ds.Get(ctx, crewAuthority+"/widget", "w-minted")
+	minted, err := ds.Get(ctx, crewPackage+"/widget", "w-minted")
 	if err != nil {
 		t.Fatalf("minted widget: %v", err)
 	}
@@ -1438,10 +1441,10 @@ func TestProposeDiffValidation(t *testing.T) {
 	ds := openInternalDataset(t)
 	// A gauge kind carries what the checks need in one place: a secret, an
 	// object property with declared fields, and no edges.
-	const gaugeAuthority = "gauge.example.com"
+	const gaugePackage = "gauge.example.com/gauge"
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(gaugeAuthority, 0),
-		vocabulary.KindManifest(gaugeAuthority, map[string]any{"singular": "gauge", "plural": "gauges"},
+		vocabulary.PackageManifest(gaugePackage, 0),
+		vocabulary.KindManifest(gaugePackage, map[string]any{"singular": "gauge", "plural": "gauges"},
 			map[string]any{"properties": map[string]any{
 				"model":  map[string]any{"type": "string"},
 				"apiKey": map[string]any{"type": "secret"},
@@ -1453,7 +1456,7 @@ func TestProposeDiffValidation(t *testing.T) {
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
 		t.Fatalf("install gauge authority: %v", err)
 	}
-	gauge, err := ds.resolveType(gaugeAuthority + "/gauge")
+	gauge, err := ds.resolveType(gaugePackage + "/gauge")
 	if err != nil {
 		t.Fatalf("resolve gauge kind: %v", err)
 	}

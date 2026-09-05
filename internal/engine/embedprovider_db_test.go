@@ -165,7 +165,7 @@ func TestProviderRowsAreOutsideTheMergeSurface(t *testing.T) {
 
 	// And the merge record that a split would need cannot be written by hand.
 	_, err = ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/recordmerge", ID: "forged",
+		Kind: "substrate.reamde.dev/core/recordmerge", ID: "forged",
 	})
 	if err == nil || !errors.Is(err, substrate.ErrForbidden) {
 		t.Fatalf("a recordmerge was forged: %v", err)

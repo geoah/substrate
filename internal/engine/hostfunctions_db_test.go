@@ -140,7 +140,7 @@ func TestBootUpgradeDeliversTheHostFunctions(t *testing.T) {
 	_ = svc.Close()
 
 	// This binary's tree: the open runs the upgrade.
-	svc2 := openWith("../../kinds/core.substrate.reamde.dev")
+	svc2 := openWith("../../kinds/substrate.reamde.dev/core")
 	ds2, err := svc2.Dataset(ctx, "geoah")
 	if err != nil {
 		t.Fatalf("the boot upgrade could not deliver the host functions: %v", err)
@@ -170,7 +170,7 @@ func TestBootUpgradeDeliversTheHostFunctions(t *testing.T) {
 // `host` value and whose `source` is required.
 func preHostKindsDir(t *testing.T) string {
 	t.Helper()
-	const src = "../../kinds/core.substrate.reamde.dev"
+	const src = "../../kinds/substrate.reamde.dev/core"
 	dir := t.TempDir()
 	entries, err := os.ReadDir(src)
 	if err != nil {
@@ -218,14 +218,14 @@ func TestCallFunctionOnHostFunctions(t *testing.T) {
 	ds := openInternalDataset(t)
 	importVocabulary(t, ds, "tasks")
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: "tasks.substrate.reamde.dev/task", ID: "t-1",
+		Kind: "samples.substrate.reamde.dev/tasks/task", ID: "t-1",
 		Properties: map[string]any{"name": "written by hand"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	out, effects, err := ds.CallFunction(ctx, vocabulary.HostFunctionGraphQL, map[string]any{
-		"query": `{ record(kind: "tasks.substrate.reamde.dev/task", id: "t-1") { id } }`,
+		"query": `{ record(kind: "samples.substrate.reamde.dev/tasks/task", id: "t-1") { id } }`,
 	})
 	if err != nil {
 		t.Fatalf("graphql under a token: %v", err)
@@ -238,7 +238,7 @@ func TestCallFunctionOnHostFunctions(t *testing.T) {
 	}
 
 	out, _, err = ds.CallFunction(ctx, vocabulary.HostFunctionQuery, map[string]any{
-		"kind": "tasks.substrate.reamde.dev/task",
+		"kind": "samples.substrate.reamde.dev/tasks/task",
 	})
 	if err != nil {
 		t.Fatalf("query under a token: %v", err)
@@ -250,8 +250,8 @@ func TestCallFunctionOnHostFunctions(t *testing.T) {
 	// Each refusal is reached with arguments its own card admits, so what refuses
 	// is the missing grant and not the shape.
 	for id, args := range map[string]map[string]any{
-		vocabulary.HostFunctionPropose: {"op": "patch", "kind": "tasks.substrate.reamde.dev/task", "target": "t-1"},
-		vocabulary.HostFunctionMutate:  {"query": `mutation { delete(kind: "tasks.substrate.reamde.dev/task", id: "t-1") { id } }`},
+		vocabulary.HostFunctionPropose: {"op": "patch", "kind": "samples.substrate.reamde.dev/tasks/task", "target": "t-1"},
+		vocabulary.HostFunctionMutate:  {"query": `mutation { delete(kind: "samples.substrate.reamde.dev/tasks/task", id: "t-1") { id } }`},
 	} {
 		_, _, err := ds.CallFunction(ctx, id, args)
 		if !errors.Is(err, substrate.ErrForbidden) {
@@ -283,7 +283,7 @@ func TestTriggerRefusesAHostFunctionCallable(t *testing.T) {
 		Properties: map[string]any{
 			"enabled": true,
 			"source": map[string]any{
-				"record": map[string]any{"kinds": []any{"tasks.substrate.reamde.dev/task"}, "ops": []any{"create"}},
+				"record": map[string]any{"kinds": []any{"samples.substrate.reamde.dev/tasks/task"}, "ops": []any{"create"}},
 			},
 			"callable": vocabulary.RecordPath(kindFunction, vocabulary.HostFunctionQuery),
 		},
@@ -313,7 +313,7 @@ func TestRunCallableRefusesAHostFunction(t *testing.T) {
 }
 
 // THE QUERY BUILT-IN, DISPATCHED BY REFERENCE, END TO END. The librarian names
-// `core.substrate.reamde.dev/query` under `callable:` like any other function and
+// `substrate.reamde.dev/core/query` under `callable:` like any other function and
 // carries the `reads:` that grants it; the loop's card is the declaration's, and
 // the read is still held to the allowlist.
 func TestAgentQueryBuiltinByReference(t *testing.T) {
@@ -321,22 +321,22 @@ func TestAgentQueryBuiltinByReference(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewAuthority + "/widget", ID: "w-shelved",
+		Kind: crewPackage + "/widget", ID: "w-shelved",
 		Properties: map[string]any{"name": "shelved"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	fake.script("lib",
 		fakeTurn{calls: []fakeCall{{"query", gqlToolArgs(t, map[string]any{
-			"kind": crewAuthority + "/widget",
+			"kind": crewPackage + "/widget",
 		})}}},
 		// A kind OUTSIDE the reads allowlist refuses by naming it.
 		fakeTurn{calls: []fakeCall{{"query", gqlToolArgs(t, map[string]any{
-			"kind": "tasks.substrate.reamde.dev/task",
+			"kind": "samples.substrate.reamde.dev/tasks/task",
 		})}}},
 		fakeTurn{content: "one widget on the shelf"},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/librarian", "what is on the shelf")
+	res, err := ds.CallAgent(ctx, crewPackage+"/librarian", "what is on the shelf")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -382,19 +382,19 @@ func TestAgentQueryRefusesAnUnknownFilterKey(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	for _, id := range []string{"w-mon", "w-tue"} {
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-			Kind: crewAuthority + "/widget", ID: id, Properties: map[string]any{"name": id},
+			Kind: crewPackage + "/widget", ID: id, Properties: map[string]any{"name": id},
 		}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	fake.script("lib",
 		fakeTurn{calls: []fakeCall{{"query", gqlToolArgs(t, map[string]any{
-			"kind":   crewAuthority + "/widget",
+			"kind":   crewPackage + "/widget",
 			"filter": map[string]any{"at": map[string]any{"gte": "2026-08-15T00:00:00Z"}},
 		})}}},
 		fakeTurn{content: "asked wrong"},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/librarian", "what is on the shelf today")
+	res, err := ds.CallAgent(ctx, crewPackage+"/librarian", "what is on the shelf today")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -425,7 +425,7 @@ func TestAgentPureFunctionTool(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"measure", gqlToolArgs(t, map[string]any{"name": "widget"})}}},
 		fakeTurn{content: "six"},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/purist", "measure widget")
+	res, err := ds.CallAgent(ctx, crewPackage+"/purist", "measure widget")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -450,19 +450,19 @@ func TestTriggerWarnsWhenTheOutputIsDiscarded(t *testing.T) {
 	var logs syncBuffer
 	ds := openInternalDataset(t, WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest("pure.test.dev", 0),
-		vocabulary.KindManifest("pure.test.dev", map[string]any{"singular": "gizmo", "plural": "gizmos"},
+		vocabulary.PackageManifest("pure.test.dev/pure", 0),
+		vocabulary.KindManifest("pure.test.dev/pure", map[string]any{"singular": "gizmo", "plural": "gizmos"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 		// One writes, one cannot: the pair is what makes the warning a signal.
-		vocabulary.FunctionManifest("pure.test.dev", "counter", map[string]any{
+		vocabulary.FunctionManifest("pure.test.dev/pure", "counter", map[string]any{
 			"description": "counts gizmos and returns the count, writing nothing",
 			"runtime":     vocabulary.RuntimePython,
 			"source":      "def main(input, host): return {\"output\": {\"n\": 1}}",
 		}),
-		vocabulary.FunctionManifest("pure.test.dev", "stamper", map[string]any{
+		vocabulary.FunctionManifest("pure.test.dev/pure", "stamper", map[string]any{
 			"description": "stamps a gizmo",
 			"runtime":     vocabulary.RuntimePython,
-			"permissions": map[string]any{"writes": []any{"pure.test.dev/gizmo"}},
+			"permissions": map[string]any{"writes": []any{"pure.test.dev/pure/gizmo"}},
 			"source":      "def main(input, host): return {\"effects\": []}",
 		}),
 	}
@@ -476,7 +476,7 @@ func TestTriggerWarnsWhenTheOutputIsDiscarded(t *testing.T) {
 			Properties: map[string]any{
 				"enabled": true,
 				"source": map[string]any{
-					"record": map[string]any{"kinds": []any{"pure.test.dev/gizmo"}, "ops": []any{"create"}},
+					"record": map[string]any{"kinds": []any{"pure.test.dev/pure/gizmo"}, "ops": []any{"create"}},
 				},
 				"callable": vocabulary.RecordPath(kindFunction, fn),
 			},
@@ -484,13 +484,13 @@ func TestTriggerWarnsWhenTheOutputIsDiscarded(t *testing.T) {
 			t.Fatalf("trigger %s: %v", id, err)
 		}
 	}
-	trigger("on-gizmo-stamp", "pure.test.dev/stamper")
+	trigger("on-gizmo-stamp", "pure.test.dev/pure/stamper")
 	if got := logs.String(); strings.Contains(got, "output is discarded") {
 		t.Fatalf("a granted callable warned: %s", got)
 	}
-	trigger("on-gizmo-count", "pure.test.dev/counter")
+	trigger("on-gizmo-count", "pure.test.dev/pure/counter")
 	got := logs.String()
-	if !strings.Contains(got, "output is discarded") || !strings.Contains(got, "pure.test.dev/counter") {
+	if !strings.Contains(got, "output is discarded") || !strings.Contains(got, "pure.test.dev/pure/counter") {
 		t.Fatalf("the discarded-output warning did not fire: %s", got)
 	}
 }

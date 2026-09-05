@@ -1,7 +1,7 @@
 package engine
 
 // The Notion bundle — the sync-only workspace mirror, from the shipped
-// closure at ../../kinds/notion.bundles.substrate.reamde.dev. Three tests:
+// closure at ../../kinds/providers.substrate.reamde.dev/notion. Three tests:
 //
 //  1. TestNotionBundleAdmitsSchema — the closure ADMITS through the schema
 //     loader: the bundle declares one `connector` input injected into its
@@ -63,14 +63,13 @@ import (
 )
 
 const (
-	notionExampleDir  = "../../kinds/notion.bundles.substrate.reamde.dev"
-	notionAuthority   = "notion.bundles.substrate.reamde.dev"
-	notionBundleRow   = notionAuthority + "/notion"
-	notionConfigType  = notionAuthority + "/config"
-	notionAccountType = notionAuthority + "/account"
-	notionPageType    = notionAuthority + "/page"
-	notionDBType      = notionAuthority + "/database"
-	notionSyncFn      = notionAuthority + "/workspacesync"
+	notionExampleDir  = "../../kinds/providers.substrate.reamde.dev/notion"
+	notionPackage     = "providers.substrate.reamde.dev/notion"
+	notionConfigType  = notionPackage + "/config"
+	notionAccountType = notionPackage + "/account"
+	notionPageType    = notionPackage + "/page"
+	notionDBType      = notionPackage + "/database"
+	notionSyncFn      = notionPackage + "/workspacesync"
 
 	// The pinned wire version the body must speak — the fake 400s anything
 	// older, because 2022-06-28 clients silently lose multi-source databases
@@ -108,7 +107,7 @@ func TestNotionBundleAdmitsSchema(t *testing.T) {
 	// alone) plus the shipped VOCABULARY bundles this repository imported —
 	// what a closure declaring onto people/tasks/messaging/calendar/media
 	// needs present, and what `requires:` names.
-	reg, err := enginetest.SeededRegistry("../../kinds/core.substrate.reamde.dev")
+	reg, err := enginetest.SeededRegistry("../../kinds/substrate.reamde.dev/core")
 	if err != nil {
 		t.Fatalf("build the repository registry: %v", err)
 	}
@@ -120,7 +119,7 @@ func TestNotionBundleAdmitsSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse bundle.yaml: %v", err)
 	}
-	authorities, err := vocabulary.BuildAuthorities(docs, vocabulary.SourceInstalled)
+	authorities, err := vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
 	if err != nil {
 		t.Fatalf("build the bundle authority: %v", err)
 	}
@@ -132,9 +131,9 @@ func TestNotionBundleAdmitsSchema(t *testing.T) {
 	// its functions, and — the token model — declares NO oauth2 manifest
 	// block: the host's exchange cannot speak Notion's Basic-auth token
 	// endpoint, so nothing here pretends to.
-	b, ok := reg.BundleOf(notionAuthority)
+	b, ok := reg.BundleOf(notionPackage)
 	if !ok {
-		t.Fatalf("no bundle owns %s after install", notionAuthority)
+		t.Fatalf("no bundle owns %s after install", notionPackage)
 	}
 	in, ok := b.Inputs["connector"]
 	if !ok {
@@ -410,12 +409,12 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 
 	// The bundle row and every schema member landed as its own record.
 	for id, wantType := range map[string]string{
-		notionBundleRow:   "core.substrate.reamde.dev/bundle",
-		notionConfigType:  "core.substrate.reamde.dev/kind",
-		notionAccountType: "core.substrate.reamde.dev/kind",
-		notionPageType:    "core.substrate.reamde.dev/kind",
-		notionDBType:      "core.substrate.reamde.dev/kind",
-		notionSyncFn:      "core.substrate.reamde.dev/function",
+		notionPackage:     "substrate.reamde.dev/core/bundle",
+		notionConfigType:  "substrate.reamde.dev/core/kind",
+		notionAccountType: "substrate.reamde.dev/core/kind",
+		notionPageType:    "substrate.reamde.dev/core/kind",
+		notionDBType:      "substrate.reamde.dev/core/kind",
+		notionSyncFn:      "substrate.reamde.dev/core/function",
 	} {
 		row, err := ds.Get(ctx, wantType, id)
 		if err != nil {
@@ -428,7 +427,7 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 
 	// Computed status: installed, enabled, one function, the connector input
 	// unresolved so far.
-	st, err := ds.BundleStatus(ctx, notionAuthority)
+	st, err := ds.BundleStatus(ctx, notionPackage)
 	if err != nil {
 		t.Fatalf("bundle status: %v", err)
 	}

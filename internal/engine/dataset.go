@@ -19,29 +19,31 @@ import (
 // loader-as-admission path (schemawrite.go); the txn-level guard still keeps
 // the raw mutations out.
 const (
-	kindKind = "core.substrate.reamde.dev/kind"
-	// The rest of the schema meta-model: the authority's own header, its
-	// traits, custom property types, mappings and functions, so every
-	// declaration the console can render is addressable, not just the kinds.
-	kindAuthority     = "core.substrate.reamde.dev/authority"
-	kindTrait         = "core.substrate.reamde.dev/trait"
-	kindPropertyType  = "core.substrate.reamde.dev/propertytype"
-	kindRecordMapping = "core.substrate.reamde.dev/recordmapping"
-	kindFunction      = "core.substrate.reamde.dev/function"
-	kindAgent         = "core.substrate.reamde.dev/agent"
-	kindBundle        = "core.substrate.reamde.dev/bundle"
+	kindKind = "substrate.reamde.dev/core/kind"
+	// The rest of the schema meta-model: the package's own header, the
+	// authority that owns it, its traits, custom property types, mappings and
+	// functions, so every declaration the console can render is addressable,
+	// not just the kinds.
+	kindPackage       = "substrate.reamde.dev/core/package"
+	kindAuthority     = "substrate.reamde.dev/core/authority"
+	kindTrait         = "substrate.reamde.dev/core/trait"
+	kindPropertyType  = "substrate.reamde.dev/core/propertytype"
+	kindRecordMapping = "substrate.reamde.dev/core/recordmapping"
+	kindFunction      = "substrate.reamde.dev/core/function"
+	kindAgent         = "substrate.reamde.dev/core/agent"
+	kindBundle        = "substrate.reamde.dev/core/bundle"
 
 	// kindRepository is the repository's own self-description: one record, id
 	// `self`, saying which repository this is.
-	kindRepository = "core.substrate.reamde.dev/repository"
+	kindRepository = "substrate.reamde.dev/core/repository"
 	// kindToken and kindCredential (auth.go) are the two AUTH kinds: the
 	// generic surface refuses writes to both (forbidSystemKind) and only the
 	// auth paths write them. Revoking a token is the one exception — an
 	// ordinary record delete, so every revoke path is the same write.
-	kindToken       = "core.substrate.reamde.dev/token"
-	kindActor       = "core.substrate.reamde.dev/actor"
-	kindRecordMerge = "core.substrate.reamde.dev/recordmerge"
-	kindRecordSplit = "core.substrate.reamde.dev/recordsplit"
+	kindToken       = "substrate.reamde.dev/core/token"
+	kindActor       = "substrate.reamde.dev/core/actor"
+	kindRecordMerge = "substrate.reamde.dev/core/recordmerge"
+	kindRecordSplit = "substrate.reamde.dev/core/recordsplit"
 
 	annApplyConflict = "substrate/conflict"
 
@@ -51,7 +53,7 @@ const (
 )
 
 var systemKinds = map[string]bool{
-	kindKind: true, kindAuthority: true, kindTrait: true,
+	kindKind: true, kindPackage: true, kindAuthority: true, kindTrait: true,
 	kindPropertyType: true, kindRecordMapping: true, kindFunction: true,
 	kindAgent: true, kindBundle: true,
 	kindRepository: true, kindToken: true, kindCredential: true, kindRecoveryKey: true, kindActor: true,
@@ -191,7 +193,7 @@ func (ds *dataset) KindByRef(ctx context.Context, ref string) (substrate.KindInf
 //
 // `Definition` is RENDERED FROM THE PARSED DECLARATION — the data map the loader
 // left behind, which is the same map the projection writes as the row's
-// properties (vocabularywrite.go authorityDeclarations) — and no longer read out
+// properties (vocabularywrite.go packageDeclarations) — and no longer read out
 // of a `definition` property, because no row carries one.
 //
 // It is the AUTHORED half of that map: the engine's own `version` is dropped,
@@ -203,8 +205,10 @@ func (ds *dataset) KindByRef(ctx context.Context, ref string) (substrate.KindInf
 // wants it already looks. Nothing else on a kind is engine-owned: `source` is
 // not a document key at all.
 func typeInfo(t *vocabulary.Kind) substrate.KindInfo {
+	authority, pkg := vocabulary.SplitPackageRef(t.Package)
 	return substrate.KindInfo{
-		Identity: t.Identity, Name: t.Name, Authority: t.Authority, Version: t.Version,
+		Identity: t.Identity, Name: t.Name,
+		Authority: authority, Package: pkg, Version: t.Version,
 		Source: t.Source, Description: t.Description,
 		Definition: authoredKindData(t.Definition),
 	}

@@ -17,7 +17,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-const aliasVaultAuthority = "alias.example.substrate.reamde.dev"
+const aliasVaultPackage = "alias.example.substrate.reamde.dev/alias"
 
 func TestSecretPropsDoNotAliasOneSealedRow(t *testing.T) {
 	t.Parallel()
@@ -27,10 +27,10 @@ func TestSecretPropsDoNotAliasOneSealedRow(t *testing.T) {
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 
-	vaultKind := aliasVaultAuthority + "/vault"
+	vaultKind := aliasVaultPackage + "/vault"
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(aliasVaultAuthority, 0),
-		vocabulary.KindManifest(aliasVaultAuthority,
+		vocabulary.PackageManifest(aliasVaultPackage, 0),
+		vocabulary.KindManifest(aliasVaultPackage,
 			map[string]any{"singular": "vault", "plural": "vaults"},
 			map[string]any{"properties": map[string]any{
 				"name":    map[string]any{"type": "string"},

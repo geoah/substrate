@@ -13,7 +13,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-const derivedHub = "graph.example.substrate.reamde.dev/hub"
+const derivedHub = "graph.example.substrate.reamde.dev/graph/hub"
 
 // hubPath renders a referent the derivation should read.
 func hubPath(id string) string { return vocabulary.RecordPath(derivedHub, id) }
@@ -21,7 +21,7 @@ func hubPath(id string) string { return vocabulary.RecordPath(derivedHub, id) }
 // derivedKind assembles a kind whose properties are the ones named, in order.
 func derivedKind(props map[string]*vocabulary.Property, order ...string) *vocabulary.Kind {
 	return &vocabulary.Kind{
-		Identity: "graph.example.substrate.reamde.dev/src",
+		Identity: "graph.example.substrate.reamde.dev/graph/src",
 		Props:    props, PropOrder: order,
 	}
 }

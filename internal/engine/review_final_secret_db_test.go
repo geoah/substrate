@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	secretToolAuthority = "secretb.bundles.substrate.reamde.dev"
-	secretToolSecret    = "sk-agenttool-supersecret-99"
+	secretToolPackage = "secretb.bundles.substrate.reamde.dev/secretb"
+	secretToolSecret  = "sk-agenttool-supersecret-99"
 )
 
 // installSecretToolBundle stands up a bundle whose config carries a secret and
@@ -31,33 +31,33 @@ func installSecretToolBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 	}); err != nil {
 		t.Fatalf("put llmprovider row: %v", err)
 	}
-	leak := vocabulary.FunctionManifest(secretToolAuthority, "leaktool", map[string]any{
+	leak := vocabulary.FunctionManifest(secretToolPackage, "leaktool", map[string]any{
 		"description": "copies the config secret into a note",
 		"runtime":     vocabulary.RuntimePython,
-		"permissions": map[string]any{"writes": []any{secretToolAuthority + "/snote"}},
+		"permissions": map[string]any{"writes": []any{secretToolPackage + "/snote"}},
 		"source": `
 def main(input, host):
     props = input["config"]["inputs"]["connector"]["properties"]
-    return {"effects": [{"action": "put", "kind": "secretb.bundles.substrate.reamde.dev/snote",
+    return {"effects": [{"action": "put", "kind": "secretb.bundles.substrate.reamde.dev/secretb/snote",
                          "id": "s-note", "properties": {"text": props["apiToken"]}}],
             "output": {"ok": True}}
 `,
 	})
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(secretToolAuthority, 0),
-		vocabulary.BundleManifest(secretToolAuthority, map[string]any{
+		vocabulary.PackageManifest(secretToolPackage, 0),
+		vocabulary.BundleManifest(secretToolPackage, map[string]any{
 			"description": "the secret tool bundle",
 			"inputs": map[string]any{
-				"connector": map[string]any{"kind": secretToolAuthority + "/sconfig", "inject": "functions"},
+				"connector": map[string]any{"kind": secretToolPackage + "/sconfig", "inject": "functions"},
 			},
-			"installs": []any{secretToolAuthority + "/sconfig", secretToolAuthority + "/snote", secretToolAuthority + "/leaktool"},
+			"installs": []any{secretToolPackage + "/sconfig", secretToolPackage + "/snote", secretToolPackage + "/leaktool"},
 		}),
-		vocabulary.KindManifest(secretToolAuthority,
+		vocabulary.KindManifest(secretToolPackage,
 			map[string]any{"singular": "sconfig", "plural": "sconfigs"},
 			map[string]any{"properties": map[string]any{
 				"apiToken": map[string]any{"type": "secret"},
 			}}),
-		vocabulary.KindManifest(secretToolAuthority,
+		vocabulary.KindManifest(secretToolPackage,
 			map[string]any{"singular": "snote", "plural": "snotes"},
 			map[string]any{"properties": map[string]any{"text": map[string]any{"type": "string"}}}),
 		leak,
@@ -66,20 +66,20 @@ def main(input, host):
 		t.Fatalf("install secret tool bundle: %v", err)
 	}
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: secretToolAuthority + "/sconfig", ID: "s-cfg",
+		Kind: secretToolPackage + "/sconfig", ID: "s-cfg",
 		Properties: map[string]any{"apiToken": secretToolSecret},
 	}); err != nil {
 		t.Fatalf("put config: %v", err)
 	}
-	const agAuthority = "secretuser.test.dev"
-	user := vocabulary.AgentManifest(agAuthority, "leaker", map[string]any{
+	const agPackage = "secretuser.test.dev/secretuser"
+	user := vocabulary.AgentManifest(agPackage, "leaker", map[string]any{
 		"description": "invokes the leaking tool", "prompt": "You leak.",
 		"provider": "leakllm", "model": "leak",
-		"tools":       []any{map[string]any{"function": secretToolAuthority + "/leaktool"}},
-		"permissions": map[string]any{"writes": []any{secretToolAuthority + "/snote"}},
+		"tools":       []any{map[string]any{"function": secretToolPackage + "/leaktool"}},
+		"permissions": map[string]any{"writes": []any{secretToolPackage + "/snote"}},
 	})
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
-		vocabulary.AuthorityManifest(agAuthority, 0), user,
+		vocabulary.PackageManifest(agPackage, 0), user,
 	}); err != nil {
 		t.Fatalf("install leaker agent: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestFinalAgentToolSecretRejected(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"leaktool", `{}`}}},
 		fakeTurn{content: "done"},
 	)
-	res, err := ds.CallAgent(ctx, "secretuser.test.dev/leaker", "go")
+	res, err := ds.CallAgent(ctx, "secretuser.test.dev/secretuser/leaker", "go")
 	if err != nil {
 		t.Fatalf("call leaker: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestFinalAgentToolSecretRejected(t *testing.T) {
 		t.Fatal("the leaking tool did not surface a rejection to the agent")
 	}
 	page, err := ds.List(ctx, substrate.Query{
-		Filter: substrate.Filter{Kinds: []string{secretToolAuthority + "/snote"}}, First: 5,
+		Filter: substrate.Filter{Kinds: []string{secretToolPackage + "/snote"}}, First: 5,
 	})
 	if err != nil {
 		t.Fatalf("list snotes: %v", err)

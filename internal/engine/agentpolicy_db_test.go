@@ -34,25 +34,25 @@ func TestPolicyGatesAMutateIntoARequest(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	policy := putPolicy(t, ds, "gate-widgets", map[string]any{
 		"selector": map[string]any{
-			"kinds":  []any{crewAuthority + "/widget"},
-			"agents": []any{crewAuthority + "/editor"},
+			"kinds":  []any{crewPackage + "/widget"},
+			"agents": []any{crewPackage + "/editor"},
 		},
 		"action": "gate",
 	})
 	fake.script("mut",
 		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "crew.test.dev/widget", id: "w-held", properties: {name: "wanted"}}) { id } }`,
+			"query": `mutation { put(input: {kind: "crew.test.dev/crew/widget", id: "w-held", properties: {name: "wanted"}}) { id } }`,
 		})}}},
 		fakeTurn{content: "held, waiting."},
 		// The decision's resume.
 		fakeTurn{content: "landed at last."},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/editor", "make a widget")
+	res, err := ds.CallAgent(ctx, crewPackage+"/editor", "make a widget")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
 	// The write did NOT land; the tool result is honest about the hold.
-	if _, err := ds.Get(ctx, crewAuthority+"/widget", "w-held"); err == nil {
+	if _, err := ds.Get(ctx, crewPackage+"/widget", "w-held"); err == nil {
 		t.Fatal("a gated write landed")
 	}
 	tool := lastToolMessage(t, ds, res.Thread)
@@ -87,7 +87,7 @@ func TestPolicyGatesAMutateIntoARequest(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("accept: %v", err)
 	}
-	if got, err := ds.Get(ctx, crewAuthority+"/widget", "w-held"); err != nil || got.Properties["name"] != "wanted" {
+	if got, err := ds.Get(ctx, crewPackage+"/widget", "w-held"); err != nil || got.Properties["name"] != "wanted" {
 		t.Fatalf("the accepted gate did not land: %+v %v", got, err)
 	}
 	waitUntil(t, "the gate's resume", func() bool {
@@ -111,18 +111,18 @@ func TestPolicyGatesAPatchOfAnAbsentTargetIntoACreate(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	putPolicy(t, ds, "gate-widget-patches", map[string]any{
 		"selector": map[string]any{
-			"kinds": []any{crewAuthority + "/widget"},
+			"kinds": []any{crewPackage + "/widget"},
 			"ops":   []any{"patch"},
 		},
 		"action": "gate",
 	})
 	fake.script("mut",
 		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { patch(kind: "crew.test.dev/widget", id: "w-absent", input: {properties: {name: "wanted"}}) { id } }`,
+			"query": `mutation { patch(kind: "crew.test.dev/crew/widget", id: "w-absent", input: {properties: {name: "wanted"}}) { id } }`,
 		})}}},
 		fakeTurn{content: "held, waiting."},
 	)
-	if _, err := ds.CallAgent(ctx, crewAuthority+"/editor", "edit a widget"); err != nil {
+	if _, err := ds.CallAgent(ctx, crewPackage+"/editor", "edit a widget"); err != nil {
 		t.Fatalf("call: %v", err)
 	}
 	req := onlyPatchRequest(t, ds)
@@ -140,16 +140,16 @@ func TestPolicyNeverGatesAnEdgeWrite(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	putPolicy(t, ds, "gate-everything", map[string]any{"action": "gate"})
-	mustPutInternal(t, ds, substrate.PutInput{Kind: crewAuthority + "/widget", ID: "w-a"})
-	mustPutInternal(t, ds, substrate.PutInput{Kind: crewAuthority + "/widget", ID: "w-b"})
+	mustPutInternal(t, ds, substrate.PutInput{Kind: crewPackage + "/widget", ID: "w-a"})
+	mustPutInternal(t, ds, substrate.PutInput{Kind: crewPackage + "/widget", ID: "w-b"})
 	fake.script("mut",
 		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { link(rel: "related", srcKind: "crew.test.dev/widget", src: "w-a",
-				dstKind: "crew.test.dev/widget", dst: "w-b") { id } }`,
+			"query": `mutation { link(rel: "related", srcKind: "crew.test.dev/crew/widget", src: "w-a",
+				dstKind: "crew.test.dev/crew/widget", dst: "w-b") { id } }`,
 		})}}},
 		fakeTurn{content: "linked."},
 	)
-	if _, err := ds.CallAgent(ctx, crewAuthority+"/editor", "link the widgets"); err != nil {
+	if _, err := ds.CallAgent(ctx, crewPackage+"/editor", "link the widgets"); err != nil {
 		t.Fatalf("call: %v", err)
 	}
 	page, err := ds.List(ctx, substrate.Query{
@@ -194,11 +194,11 @@ func TestPolicySelectorRefusesAVerbFromAnotherVocabulary(t *testing.T) {
 		"selector": map[string]any{"ops": []any{"put"}},
 		"action":   "gate",
 	})
-	verdict, _, err := ds.policyVerdict(ctx, crewAuthority+"/widget", policyOpPut, crewAuthority+"/editor")
+	verdict, _, err := ds.policyVerdict(ctx, crewPackage+"/widget", policyOpPut, crewPackage+"/editor")
 	if err != nil || verdict != policyGate {
 		t.Fatalf("verdict for a put = %s %v", verdict, err)
 	}
-	verdict, _, err = ds.policyVerdict(ctx, crewAuthority+"/widget", policyOpDelete, crewAuthority+"/editor")
+	verdict, _, err = ds.policyVerdict(ctx, crewPackage+"/widget", policyOpDelete, crewPackage+"/editor")
 	if err != nil || verdict != policyAllow {
 		t.Fatalf("verdict for a delete = %s %v", verdict, err)
 	}
@@ -214,14 +214,14 @@ func TestPolicySelectorKindsGlobCoversAnAuthority(t *testing.T) {
 	ctx := context.Background()
 	ds, _ := openAgentDataset(t)
 	putPolicy(t, ds, "gate-crew", map[string]any{
-		"selector": map[string]any{"kinds": []any{crewAuthority + "/*"}},
+		"selector": map[string]any{"kinds": []any{crewPackage + "/*"}},
 		"action":   "gate",
 	})
-	verdict, _, err := ds.policyVerdict(ctx, crewAuthority+"/widget", policyOpPut, crewAuthority+"/editor")
+	verdict, _, err := ds.policyVerdict(ctx, crewPackage+"/widget", policyOpPut, crewPackage+"/editor")
 	if err != nil || verdict != policyGate {
 		t.Fatalf("verdict for the globbed authority = %s %v", verdict, err)
 	}
-	verdict, _, err = ds.policyVerdict(ctx, "tasks.substrate.reamde.dev/task", policyOpPut, crewAuthority+"/editor")
+	verdict, _, err = ds.policyVerdict(ctx, "samples.substrate.reamde.dev/tasks/task", policyOpPut, crewPackage+"/editor")
 	if err != nil || verdict != policyAllow {
 		t.Fatalf("the glob reached another authority = %s %v", verdict, err)
 	}
@@ -241,7 +241,7 @@ func TestPolicySelectorKindsGlobCoversAnAuthority(t *testing.T) {
 	_, err = ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchPolicy, ID: "gate-actionless",
 		Properties: map[string]any{
-			"selector": map[string]any{"kinds": []any{crewAuthority + "/widget"}},
+			"selector": map[string]any{"kinds": []any{crewPackage + "/widget"}},
 		},
 	})
 	if err == nil || !strings.Contains(err.Error(), "`action` is required") {
@@ -257,7 +257,7 @@ func TestPolicySelectorRefusesAKindTheRepositoryDoesNotHave(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, _ := openAgentDataset(t)
-	for _, pat := range []string{"widgets", "crew.test.dev/widgets", "gadget"} {
+	for _, pat := range []string{"widgets", "crew.test.dev/crew/widgets", "gadget"} {
 		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: vocabulary.KindRecordPatchPolicy, ID: "gate-typo",
 			Properties: map[string]any{
@@ -292,16 +292,16 @@ func TestPolicyGovernanceStaysWithTheRuleThatReachesTheOwner(t *testing.T) {
 	putPolicy(t, ds, "a-widgets", map[string]any{
 		"selector":   map[string]any{"kinds": []any{"widget"}},
 		"action":     "gate",
-		"judge":      crewAuthority + "/verdictor",
+		"judge":      crewPackage + "/verdictor",
 		"criteria":   "small honest changes yes",
 		"mode":       "enforce",
 		"autoAccept": 0.6,
 	})
 	putPolicy(t, ds, "b-editor", map[string]any{
-		"selector": map[string]any{"agents": []any{crewAuthority + "/editor"}},
+		"selector": map[string]any{"agents": []any{crewPackage + "/editor"}},
 		"action":   "gate",
 	})
-	verdict, rule, err := ds.policyVerdict(ctx, crewAuthority+"/widget", policyOpPut, crewAuthority+"/editor")
+	verdict, rule, err := ds.policyVerdict(ctx, crewPackage+"/widget", policyOpPut, crewPackage+"/editor")
 	if err != nil || verdict != policyGate {
 		t.Fatalf("verdict = %s %v", verdict, err)
 	}
@@ -310,7 +310,7 @@ func TestPolicyGovernanceStaysWithTheRuleThatReachesTheOwner(t *testing.T) {
 	}
 	// The arm only breaks ties: where the judged rule is the only match it
 	// still governs and its judge still runs.
-	verdict, rule, err = ds.policyVerdict(ctx, crewAuthority+"/widget", policyOpPut, crewAuthority+"/ghost")
+	verdict, rule, err = ds.policyVerdict(ctx, crewPackage+"/widget", policyOpPut, crewPackage+"/ghost")
 	if err != nil || verdict != policyGate {
 		t.Fatalf("verdict for the unmatched agent = %s %v", verdict, err)
 	}
@@ -336,7 +336,7 @@ func TestActionlessPolicyIsSkippedAndWarnedOnce(t *testing.T) {
 		t.Fatalf("plant the row: %v", err)
 	}
 	for i := range 2 {
-		verdict, rule, err := ds.policyVerdict(ctx, typeThread, policyOpPut, "crew.test.dev/editor")
+		verdict, rule, err := ds.policyVerdict(ctx, typeThread, policyOpPut, "crew.test.dev/crew/editor")
 		if err != nil || verdict != policyAllow || rule != nil {
 			t.Fatalf("evaluation %d saw the actionless rule: %s %v %v", i, verdict, rule, err)
 		}
@@ -372,7 +372,7 @@ func TestPolicySelectorResolvesABareKindName(t *testing.T) {
 		"selector": map[string]any{"kinds": []any{"widget"}},
 		"action":   "gate",
 	})
-	verdict, _, err := ds.policyVerdict(ctx, crewAuthority+"/widget", policyOpPut, crewAuthority+"/editor")
+	verdict, _, err := ds.policyVerdict(ctx, crewPackage+"/widget", policyOpPut, crewPackage+"/editor")
 	if err != nil || verdict != policyGate {
 		t.Fatalf("verdict for a bare-named kind = %s %v", verdict, err)
 	}
@@ -383,15 +383,15 @@ func TestPolicyRefusesAndComposesMostRestrictive(t *testing.T) {
 	ctx := context.Background()
 	ds, _ := openAgentDataset(t)
 	putPolicy(t, ds, "allow-widgets", map[string]any{
-		"selector": map[string]any{"kinds": []any{crewAuthority + "/widget"}},
+		"selector": map[string]any{"kinds": []any{crewPackage + "/widget"}},
 		"action":   "allow",
 	})
 	putPolicy(t, ds, "refuse-widgets", map[string]any{
-		"selector": map[string]any{"kinds": []any{crewAuthority + "/widget"}},
+		"selector": map[string]any{"kinds": []any{crewPackage + "/widget"}},
 		"action":   "refuse",
 	})
 	// Most restrictive wins: refuse over allow.
-	verdict, rule, err := ds.policyVerdict(ctx, crewAuthority+"/widget", policyOpPut, crewAuthority+"/editor")
+	verdict, rule, err := ds.policyVerdict(ctx, crewPackage+"/widget", policyOpPut, crewPackage+"/editor")
 	if err != nil || verdict != policyRefuse || rule == nil || rule.id != "refuse-widgets" {
 		t.Fatalf("verdict = %s %v %v", verdict, rule, err)
 	}
@@ -401,18 +401,18 @@ func TestPolicyRefusesAndComposesMostRestrictive(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	verdict, rule, err = ds.policyVerdict(ctx, crewAuthority+"/widget", policyOpPut, crewAuthority+"/editor")
+	verdict, rule, err = ds.policyVerdict(ctx, crewPackage+"/widget", policyOpPut, crewPackage+"/editor")
 	if err != nil || verdict != policyAllow || rule == nil || rule.id != "allow-widgets" {
 		t.Fatalf("verdict after disable = %s %v %v", verdict, rule, err)
 	}
 	// No match at all is allow with nothing to audit.
-	verdict, rule, err = ds.policyVerdict(ctx, taskKind, policyOpPut, crewAuthority+"/editor")
+	verdict, rule, err = ds.policyVerdict(ctx, taskKind, policyOpPut, crewPackage+"/editor")
 	if err != nil || verdict != policyAllow || rule != nil {
 		t.Fatalf("unmatched verdict = %s %v %v", verdict, rule, err)
 	}
 	// The request kind is never policed: it IS the gate.
 	putPolicy(t, ds, "gate-everything", map[string]any{"action": "gate"})
-	verdict, _, err = ds.policyVerdict(ctx, vocabulary.KindRecordPatchRequest, policyOpPut, crewAuthority+"/editor")
+	verdict, _, err = ds.policyVerdict(ctx, vocabulary.KindRecordPatchRequest, policyOpPut, crewPackage+"/editor")
 	if err != nil || verdict != policyAllow {
 		t.Fatalf("the gate gated itself: %s %v", verdict, err)
 	}
@@ -424,11 +424,11 @@ func TestBundleHandsStayOffThePolicyKind(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	fake.script("med",
 		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "core.substrate.reamde.dev/recordpatchpolicy", id: "backdoor", properties: {action: "allow"}}) { id } }`,
+			"query": `mutation { put(input: {kind: "substrate.reamde.dev/core/recordpatchpolicy", id: "backdoor", properties: {action: "allow"}}) { id } }`,
 		})}}},
 		fakeTurn{content: "tried."},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/meddler", "open the door")
+	res, err := ds.CallAgent(ctx, crewPackage+"/meddler", "open the door")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -453,7 +453,7 @@ func TestConfirmationFloorGatesFunctionEffects(t *testing.T) {
 		fakeTurn{content: "held, as declared."},
 		fakeTurn{content: "burned at last."},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/burner", "burn one")
+	res, err := ds.CallAgent(ctx, crewPackage+"/burner", "burn one")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -498,19 +498,19 @@ func TestVoluntaryProposalsStaySelfAcceptable(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewAuthority + "/widget", ID: "w-mine", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: "w-mine", Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	arrived := make(chan struct{})
 	release := make(chan struct{})
 	fake.script("self",
-		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/widget","target":"w-mine","diff":{"properties":{"name":"mine"}}}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-mine","diff":{"properties":{"name":"mine"}}}`}}},
 		fakeTurn{content: "waiting for the id.", arrived: arrived, release: release},
 	)
 	done := make(chan error, 1)
 	go func() {
-		_, err := ds.CallAgent(ctx, crewAuthority+"/selfjudge", "take the widget")
+		_, err := ds.CallAgent(ctx, crewPackage+"/selfjudge", "take the widget")
 		done <- err
 	}()
 	<-arrived
@@ -523,7 +523,7 @@ func TestVoluntaryProposalsStaySelfAcceptable(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"mutate", decideArgs(t, req.ID, "accepted")}}},
 		fakeTurn{content: "approved my own."},
 	)
-	res2, err := ds.CallAgent(ctx, crewAuthority+"/selfjudge", "approve your proposal")
+	res2, err := ds.CallAgent(ctx, crewPackage+"/selfjudge", "approve your proposal")
 	if err != nil {
 		t.Fatalf("second call: %v", err)
 	}
@@ -531,7 +531,7 @@ func TestVoluntaryProposalsStaySelfAcceptable(t *testing.T) {
 	if tool["ok"] != true {
 		t.Fatalf("a within-emit self-accept refused: %v", tool["content"])
 	}
-	if got, err := ds.Get(ctx, crewAuthority+"/widget", "w-mine"); err != nil || got.Properties["name"] != "mine" {
+	if got, err := ds.Get(ctx, crewPackage+"/widget", "w-mine"); err != nil || got.Properties["name"] != "mine" {
 		t.Fatalf("the self-accepted diff did not land: %+v %v", got, err)
 	}
 }
@@ -541,16 +541,16 @@ func TestGatedRequestsRefuseBundleDecisions(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	putPolicy(t, ds, "gate-widgets", map[string]any{
-		"selector": map[string]any{"kinds": []any{crewAuthority + "/widget"}},
+		"selector": map[string]any{"kinds": []any{crewPackage + "/widget"}},
 		"action":   "gate",
 	})
 	fake.script("mut",
 		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "crew.test.dev/widget", id: "w-gated", properties: {name: "wanted"}}) { id } }`,
+			"query": `mutation { put(input: {kind: "crew.test.dev/crew/widget", id: "w-gated", properties: {name: "wanted"}}) { id } }`,
 		})}}},
 		fakeTurn{content: "held."},
 	)
-	if _, err := ds.CallAgent(ctx, crewAuthority+"/editor", "make a widget"); err != nil {
+	if _, err := ds.CallAgent(ctx, crewPackage+"/editor", "make a widget"); err != nil {
 		t.Fatalf("editor call: %v", err)
 	}
 	req := onlyPatchRequest(t, ds)
@@ -560,7 +560,7 @@ func TestGatedRequestsRefuseBundleDecisions(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"mutate", decideArgs(t, req.ID, "accepted")}}},
 		fakeTurn{content: "tried."},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/arbiter", "work the inbox")
+	res, err := ds.CallAgent(ctx, crewPackage+"/arbiter", "work the inbox")
 	if err != nil {
 		t.Fatalf("arbiter call: %v", err)
 	}
@@ -577,7 +577,7 @@ func TestGatedRequestsRefuseBundleDecisions(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("owner accept: %v", err)
 	}
-	if _, err := ds.Get(ctx, crewAuthority+"/widget", "w-gated"); err != nil {
+	if _, err := ds.Get(ctx, crewPackage+"/widget", "w-gated"); err != nil {
 		t.Fatalf("the accepted gate did not land: %v", err)
 	}
 }

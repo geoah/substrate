@@ -16,7 +16,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// The accountconfig trait's host-written properties (core.substrate.reamde.dev):
+// The accountconfig trait's host-written properties (substrate.reamde.dev/core):
 // tokenRef is a secret-typed credential-store reference — never a raw token —
 // tokenStatus is the connection state the facility last reported, and
 // grantedScopes is the scope set the last consent was granted for. All three
@@ -37,12 +37,12 @@ const (
 // live access tokens) the invocation scrubber holds every outbound surface
 // to. Nil config for a function outside any bundle.
 func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Function) (map[string]any, []string, error) {
-	b, ok := ds.registry().BundleOf(fn.Authority)
+	b, ok := ds.registry().BundleOf(fn.Package)
 	if !ok {
 		return nil, nil, nil
 	}
-	cfg := map[string]any{"bundle": b.Authority}
-	g, ok := ds.registry().AuthorityByName(b.Authority)
+	cfg := map[string]any{"bundle": b.Package}
+	g, ok := ds.registry().PackageByName(b.Package)
 	if !ok {
 		return cfg, nil, nil
 	}

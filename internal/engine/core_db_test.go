@@ -300,7 +300,7 @@ func TestMutationRequestApplyDiff(t *testing.T) {
 				"ifVersion":  task.Version,
 			},
 			// The target is an unpinned reference (MODEL §11.5).
-			"target": vocabulary.RecordPath("tasks.substrate.reamde.dev/task", task.ID),
+			"target": vocabulary.RecordPath("samples.substrate.reamde.dev/tasks/task", task.ID),
 		},
 	})
 	if req.Properties["decision"] != "proposed" {
@@ -322,7 +322,7 @@ func TestMutationRequestApplyDiff(t *testing.T) {
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
 			"diff":   map[string]any{"properties": map[string]any{"description": "later"}, "ifVersion": task.Version + 1},
-			"target": vocabulary.RecordPath("tasks.substrate.reamde.dev/task", task.ID),
+			"target": vocabulary.RecordPath("samples.substrate.reamde.dev/tasks/task", task.ID),
 		},
 	})
 	if _, err := ds.Patch(ctx, owner, needsVersion.Kind, needsVersion.ID, substrate.PatchInput{
@@ -350,7 +350,7 @@ func TestMutationRequestApplyDiff(t *testing.T) {
 				"properties": map[string]any{"description": "due Monday"},
 				"ifVersion":  1,
 			},
-			"target": vocabulary.RecordPath("tasks.substrate.reamde.dev/task", task.ID),
+			"target": vocabulary.RecordPath("samples.substrate.reamde.dev/tasks/task", task.ID),
 		},
 	})
 	if _, err := ds.Patch(ctx, owner, stale.Kind, stale.ID, substrate.PatchInput{
@@ -394,7 +394,7 @@ func TestAcceptedNoOpDiffFailsTransition(t *testing.T) {
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
 			"diff":   map[string]any{"description": "wrapper-less"},
-			"target": vocabulary.RecordPath("tasks.substrate.reamde.dev/task", task.ID),
+			"target": vocabulary.RecordPath("samples.substrate.reamde.dev/tasks/task", task.ID),
 		},
 	})
 	if _, err := ds.Patch(ctx, owner, bare.Kind, bare.ID, substrate.PatchInput{
@@ -415,7 +415,7 @@ func TestAcceptedNoOpDiffFailsTransition(t *testing.T) {
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
 			"diff":   map[string]any{"properties": map[string]any{"description": "already here"}},
-			"target": vocabulary.RecordPath("tasks.substrate.reamde.dev/task", settled.ID),
+			"target": vocabulary.RecordPath("samples.substrate.reamde.dev/tasks/task", settled.ID),
 		},
 	})
 	if _, err := ds.Patch(ctx, owner, noop.Kind, noop.ID, substrate.PatchInput{
@@ -443,14 +443,14 @@ func TestChangeRequestCreateMints(t *testing.T) {
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
 			"op":         "create",
-			"targetKind": "tasks.substrate.reamde.dev/task",
+			"targetKind": "samples.substrate.reamde.dev/tasks/task",
 			"targetId":   targetID,
 			"rationale":  "the transcript asks for a follow-up",
 			"diff":       map[string]any{"properties": map[string]any{"name": "Follow up with Dana", "description": "before Friday"}},
 		},
 	})
 	// The target does not exist yet.
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", targetID); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", targetID); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("target existed before accept: %v", err)
 	}
 	accepted := mustPatch(t, ds, owner, req.Kind, req.ID, substrate.PatchInput{
@@ -459,7 +459,7 @@ func TestChangeRequestCreateMints(t *testing.T) {
 	if accepted.Properties["decision"] != "accepted" || accepted.Properties["decidedAt"] == nil {
 		t.Fatalf("create request not accepted: %+v", accepted.Properties)
 	}
-	minted := mustGet(t, ds, "tasks.substrate.reamde.dev/task", targetID)
+	minted := mustGet(t, ds, "samples.substrate.reamde.dev/tasks/task", targetID)
 	if minted.Properties["name"] != "Follow up with Dana" || minted.Properties["description"] != "before Friday" {
 		t.Fatalf("minted record wrong: %+v", minted.Properties)
 	}
@@ -475,7 +475,7 @@ func TestChangeRequestCreateMints(t *testing.T) {
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
 			"op":         "create",
-			"targetKind": "tasks.substrate.reamde.dev/task",
+			"targetKind": "samples.substrate.reamde.dev/tasks/task",
 			"targetId":   targetID,
 			"diff":       map[string]any{"properties": map[string]any{"name": "Follow up with Dana", "description": "before Friday"}},
 		},
@@ -485,7 +485,7 @@ func TestChangeRequestCreateMints(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("same-shape replay accept errored instead of no-op: %v", err)
 	}
-	if again := mustGet(t, ds, "tasks.substrate.reamde.dev/task", targetID); again.Properties["name"] != "Follow up with Dana" {
+	if again := mustGet(t, ds, "samples.substrate.reamde.dev/tasks/task", targetID); again.Properties["name"] != "Follow up with Dana" {
 		t.Fatalf("same-shape replay changed the record: %+v", again.Properties)
 	}
 
@@ -497,7 +497,7 @@ func TestChangeRequestCreateMints(t *testing.T) {
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
 			"op":         "create",
-			"targetKind": "tasks.substrate.reamde.dev/task",
+			"targetKind": "samples.substrate.reamde.dev/tasks/task",
 			"targetId":   targetID,
 			"diff":       map[string]any{"properties": map[string]any{"name": "SHOULD NOT WIN"}},
 		},
@@ -509,7 +509,7 @@ func TestChangeRequestCreateMints(t *testing.T) {
 	} else {
 		wantErr(t, err, substrate.ErrConflict, "divergent create collision")
 	}
-	if again := mustGet(t, ds, "tasks.substrate.reamde.dev/task", targetID); again.Properties["name"] != "Follow up with Dana" {
+	if again := mustGet(t, ds, "samples.substrate.reamde.dev/tasks/task", targetID); again.Properties["name"] != "Follow up with Dana" {
 		t.Fatalf("divergent replay reset the record: %+v", again.Properties)
 	}
 	if after := mustGet(t, ds, diverge.Kind, diverge.ID); after.Properties["decision"] != "proposed" ||
@@ -533,7 +533,7 @@ func TestChangeRequestCreateDivergence(t *testing.T) {
 	otherType := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
-			"op": "create", "targetKind": "tasks.substrate.reamde.dev/task", "targetId": "occupied-1",
+			"op": "create", "targetKind": "samples.substrate.reamde.dev/tasks/task", "targetId": "occupied-1",
 			"diff": map[string]any{"properties": map[string]any{"name": "a task"}},
 		},
 	})
@@ -542,7 +542,7 @@ func TestChangeRequestCreateDivergence(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("a create beside another type's id should land: %v", err)
 	}
-	if got := mustGet(t, ds, "tasks.substrate.reamde.dev/task", "occupied-1"); got.Properties["name"] != "a task" {
+	if got := mustGet(t, ds, "samples.substrate.reamde.dev/tasks/task", "occupied-1"); got.Properties["name"] != "a task" {
 		t.Fatalf("per-type create did not mint: %+v", got.Properties)
 	}
 	if got := mustGet(t, ds, proj.Kind, proj.ID); got.Properties["name"] != "a project" {
@@ -557,7 +557,7 @@ func TestChangeRequestCreateDivergence(t *testing.T) {
 	tomb := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
-			"op": "create", "targetKind": "tasks.substrate.reamde.dev/task", "targetId": "gone-1",
+			"op": "create", "targetKind": "samples.substrate.reamde.dev/tasks/task", "targetId": "gone-1",
 			"diff": map[string]any{"properties": map[string]any{"name": "was here"}},
 		},
 	})
@@ -585,7 +585,7 @@ func TestChangeRequestDeleteTombstones(t *testing.T) {
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
 			"op": "delete", "rationale": "duplicate",
-			"target": vocabulary.RecordPath("tasks.substrate.reamde.dev/task", task.ID),
+			"target": vocabulary.RecordPath("samples.substrate.reamde.dev/tasks/task", task.ID),
 		},
 	})
 	if _, err := ds.Patch(ctx, owner, req.Kind, req.ID, substrate.PatchInput{
@@ -601,7 +601,7 @@ func TestChangeRequestDeleteTombstones(t *testing.T) {
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
 			"op":     "delete",
-			"target": vocabulary.RecordPath("tasks.substrate.reamde.dev/task", task.ID),
+			"target": vocabulary.RecordPath("samples.substrate.reamde.dev/tasks/task", task.ID),
 		},
 	})
 	if _, err := ds.Patch(ctx, owner, replay.Kind, replay.ID, substrate.PatchInput{
@@ -621,12 +621,12 @@ func TestSecretsRedacted(t *testing.T) {
 	if secret == "" {
 		t.Fatal("secret not returned")
 	}
-	e := mustGet(t, ds, "core.substrate.reamde.dev/token", info.ID)
+	e := mustGet(t, ds, "substrate.reamde.dev/core/token", info.ID)
 	if e.Properties["hash"] != "<redacted>" {
 		t.Fatalf("secret property leaked: %v", e.Properties["hash"])
 	}
 	page, err := ds.List(context.Background(), substrate.Query{
-		Filter: substrate.Filter{Kinds: []string{"core.substrate.reamde.dev/token"}},
+		Filter: substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/token"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -646,7 +646,7 @@ func TestSystemTypesRejectGenericWrites(t *testing.T) {
 	// writes through admission: an id-less, definition-less put is refused by
 	// the admission path, not silently stored.
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/kind", Properties: map[string]any{"name": "evil"},
+		Kind: "substrate.reamde.dev/core/kind", Properties: map[string]any{"name": "evil"},
 	}); err == nil {
 		t.Fatal("expected a refusal")
 	} else {
@@ -656,17 +656,17 @@ func TestSystemTypesRejectGenericWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ds.Patch(ctx, owner, "core.substrate.reamde.dev/token", info.ID, substrate.PatchInput{Properties: map[string]any{"title": "x"}}); err == nil {
+	if _, err := ds.Patch(ctx, owner, "substrate.reamde.dev/core/token", info.ID, substrate.PatchInput{Properties: map[string]any{"title": "x"}}); err == nil {
 		t.Fatal("expected forbidden")
 	}
 	// Revoking a token is a delete.
-	if _, err := ds.Delete(ctx, owner, "core.substrate.reamde.dev/token", info.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/token", info.ID); err != nil {
 		t.Fatalf("token revoke: %v", err)
 	}
 	// A repository's lifecycle machine is the one system transition the generic
 	// surface may drive.
 	page, err := ds.List(ctx, substrate.Query{
-		Filter: substrate.Filter{Kinds: []string{"core.substrate.reamde.dev/repository"}},
+		Filter: substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/repository"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -941,11 +941,11 @@ def main(input, host):
     c = input["envelope"]["change"]
     rid = "req-%s-" + c["id"]
     return {"effects": [
-        {"action": "put", "kind": "core.substrate.reamde.dev/recordpatchrequest", "id": rid,
-         "properties": {"op": "create", "targetKind": "tasks.substrate.reamde.dev/task",
+        {"action": "put", "kind": "substrate.reamde.dev/core/recordpatchrequest", "id": rid,
+         "properties": {"op": "create", "targetKind": "samples.substrate.reamde.dev/tasks/task",
                         "targetId": "%s-" + c["id"],
                         "diff": {"properties": {"name": "smuggled"}}}},
-        {"action": "patch", "kind": "core.substrate.reamde.dev/recordpatchrequest", "id": rid,
+        {"action": "patch", "kind": "substrate.reamde.dev/core/recordpatchrequest", "id": rid,
          "properties": {"decision": "accepted"}}
     ]}
 `
@@ -1018,7 +1018,7 @@ func TestAcceptFailuresAnnotateConflict(t *testing.T) {
 	missingRef := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
-			"op": "create", "targetKind": "tasks.substrate.reamde.dev/task", "targetId": "orphan-task",
+			"op": "create", "targetKind": "samples.substrate.reamde.dev/tasks/task", "targetId": "orphan-task",
 			"diff": map[string]any{
 				"properties": map[string]any{"name": "needs a project", "project": "ghost-project"},
 			},
@@ -1035,7 +1035,7 @@ func TestAcceptFailuresAnnotateConflict(t *testing.T) {
 		after.Annotations["substrate/conflict"] == nil {
 		t.Fatalf("the create should stay proposed + annotated: %+v", after.Properties)
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "orphan-task"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "orphan-task"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the orphan task should not exist: %v", err)
 	}
 }

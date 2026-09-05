@@ -15,11 +15,11 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-const refsAuthority = "refsindex.example.substrate.reamde.dev"
+const refsPackage = "refsindex.example.substrate.reamde.dev/refsindex"
 
 const (
-	refsHub   = refsAuthority + "/hub"
-	refsSpoke = refsAuthority + "/spoke"
+	refsHub   = refsPackage + "/hub"
+	refsSpoke = refsPackage + "/spoke"
 )
 
 // refsVocabulary installs a hub and a spoke naming it twice: once singly, once
@@ -33,11 +33,11 @@ func refsVocabulary(t *testing.T, ds substrate.Dataset, withHub bool) error {
 		spoke["hub"] = map[string]any{"type": "reference", "kind": refsHub}
 	}
 	_, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, []map[string]any{
-		vocabulary.AuthorityManifest(refsAuthority, 0),
-		vocabulary.KindManifest(refsAuthority,
+		vocabulary.PackageManifest(refsPackage, 0),
+		vocabulary.KindManifest(refsPackage,
 			map[string]any{"singular": "hub", "plural": "hubs"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
-		vocabulary.KindManifest(refsAuthority,
+		vocabulary.KindManifest(refsPackage,
 			map[string]any{"singular": "spoke", "plural": "spokes"},
 			map[string]any{"properties": spoke}),
 	})
@@ -253,18 +253,18 @@ func TestAReferenceFreeKindIssuesNoRefsStatements(t *testing.T) {
 	t.Parallel()
 	ds, _, dsn := newDatasetWithDB(t)
 	ctx := context.Background()
-	const note = refsAuthority + "/note"
+	const note = refsPackage + "/note"
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(refsAuthority, 0),
-		vocabulary.KindManifest(refsAuthority,
+		vocabulary.PackageManifest(refsPackage, 0),
+		vocabulary.KindManifest(refsPackage,
 			map[string]any{"singular": "hub", "plural": "hubs"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
-		vocabulary.KindManifest(refsAuthority,
+		vocabulary.KindManifest(refsPackage,
 			map[string]any{"singular": "spoke", "plural": "spokes"},
 			map[string]any{"properties": map[string]any{
 				"hub": map[string]any{"type": "reference", "kind": refsHub},
 			}}),
-		vocabulary.KindManifest(refsAuthority,
+		vocabulary.KindManifest(refsPackage,
 			map[string]any{"singular": "note", "plural": "notes"},
 			map[string]any{"properties": map[string]any{"text": map[string]any{"type": "string"}}}),
 	}); err != nil {
@@ -311,7 +311,7 @@ func TestAContainerFlipAboveAReferenceReDerivesTombstones(t *testing.T) {
 	t.Parallel()
 	ds, raw, _ := newDatasetWithDB(t)
 	ctx := context.Background()
-	const agent = refsAuthority + "/agent"
+	const agent = refsPackage + "/agent"
 	nested := func(repeated bool) error {
 		tool := map[string]any{
 			"type": "object",
@@ -323,11 +323,11 @@ func TestAContainerFlipAboveAReferenceReDerivesTombstones(t *testing.T) {
 			tool["repeated"] = true
 		}
 		_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-			vocabulary.AuthorityManifest(refsAuthority, 0),
-			vocabulary.KindManifest(refsAuthority,
+			vocabulary.PackageManifest(refsPackage, 0),
+			vocabulary.KindManifest(refsPackage,
 				map[string]any{"singular": "hub", "plural": "hubs"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
-			vocabulary.KindManifest(refsAuthority,
+			vocabulary.KindManifest(refsPackage,
 				map[string]any{"singular": "agent", "plural": "agents"},
 				map[string]any{"properties": map[string]any{"tool": tool}}),
 		})

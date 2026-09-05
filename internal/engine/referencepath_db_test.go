@@ -17,7 +17,7 @@ func assertDeepEqual(t *testing.T, where string, got, want any) {
 	}
 }
 
-const pathAuthority = "paths.example.substrate.reamde.dev"
+const pathPackage = "paths.example.substrate.reamde.dev/paths"
 
 // refValue is THE stored shape of a reference (decision 0044): the object, with
 // the referent's canonical path under `ref`, whether or not the declaration
@@ -35,31 +35,31 @@ func refValue(path string) map[string]any {
 // has four segments and the id half carries its own slash.
 func pathDocs() []map[string]any {
 	return []map[string]any{
-		vocabulary.AuthorityManifest(pathAuthority, 0),
-		vocabulary.KindManifest(pathAuthority,
+		vocabulary.PackageManifest(pathPackage, 0),
+		vocabulary.KindManifest(pathPackage,
 			map[string]any{"singular": "target", "plural": "targets"},
 			map[string]any{}),
-		vocabulary.KindManifest(pathAuthority,
+		vocabulary.KindManifest(pathPackage,
 			map[string]any{"singular": "holder", "plural": "holders"},
 			map[string]any{"properties": map[string]any{
-				"pinned":   map[string]any{"type": "reference", "kind": pathAuthority + "/target"},
+				"pinned":   map[string]any{"type": "reference", "kind": pathPackage + "/target"},
 				"local":    map[string]any{"type": "reference", "kind": "target"},
 				"free":     map[string]any{"type": "reference", "kind": "any"},
-				"declared": map[string]any{"type": "reference", "kind": "core.substrate.reamde.dev/kind"},
+				"declared": map[string]any{"type": "reference", "kind": "substrate.reamde.dev/core/kind"},
 				"many": map[string]any{
-					"type": "reference", "kind": pathAuthority + "/target", "repeated": true,
+					"type": "reference", "kind": pathPackage + "/target", "repeated": true,
 				},
 				"keyed": map[string]any{
-					"type": "reference", "kind": pathAuthority + "/target",
+					"type": "reference", "kind": pathPackage + "/target",
 					"keyed": true, "keyPattern": "camel",
 				},
 				"spec": map[string]any{"type": "object", "fields": map[string]any{
-					"ref": map[string]any{"type": "reference", "kind": pathAuthority + "/target"},
+					"ref": map[string]any{"type": "reference", "kind": pathPackage + "/target"},
 				}},
 				"entries": map[string]any{
 					"type": "object", "repeated": true,
 					"fields": map[string]any{
-						"ref": map[string]any{"type": "reference", "kind": pathAuthority + "/target"},
+						"ref": map[string]any{"type": "reference", "kind": pathPackage + "/target"},
 					},
 				},
 			}}),
@@ -79,12 +79,12 @@ func TestReferencePathAuthoredStoredAndReadBack(t *testing.T) {
 		t.Fatalf("install the paths authority: %v", err)
 	}
 
-	target := vocabulary.RecordPath(pathAuthority+"/target", "a")
-	otherTarget := vocabulary.RecordPath(pathAuthority+"/target", "b")
+	target := vocabulary.RecordPath(pathPackage+"/target", "a")
+	otherTarget := vocabulary.RecordPath(pathPackage+"/target", "b")
 	// A DECLARATION record's id is a kind reference, so this path has FOUR
 	// segments and the id half keeps its slash. It is the case the grammar
 	// exists for.
-	declared := vocabulary.RecordPath("core.substrate.reamde.dev/kind", pathAuthority+"/target")
+	declared := vocabulary.RecordPath("substrate.reamde.dev/core/kind", pathPackage+"/target")
 
 	for name, tc := range map[string]struct {
 		authored any
@@ -104,19 +104,19 @@ func TestReferencePathAuthoredStoredAndReadBack(t *testing.T) {
 		// SLASH and is still unambiguous: a kind identity cannot be read as a
 		// path, because splitting it leaves nothing for the id. This is the
 		// ordinary spelling for every property that names a kind or a function.
-		"declaration pin, authored bare": {authored: pathAuthority + "/target", stored: refValue(declared)},
+		"declaration pin, authored bare": {authored: pathPackage + "/target", stored: refValue(declared)},
 		"declaration pin, authored path": {authored: declared, stored: refValue(declared)},
 		// An id that is EQUAL to a kind identity works on purpose, not by
 		// accident: same reasoning, pinned at an ordinary kind this time.
 		"pinned, id equal to a kind identity": {
-			authored: "core.substrate.reamde.dev/kind",
-			stored:   refValue(vocabulary.RecordPath(pathAuthority+"/target", "core.substrate.reamde.dev/kind")),
+			authored: "substrate.reamde.dev/core/kind",
+			stored:   refValue(vocabulary.RecordPath(pathPackage+"/target", "substrate.reamde.dev/core/kind")),
 		},
 		// A slash-bearing id that WOULD parse as a path is refused as a short
 		// form (below) and accepted written out in full.
 		"pinned, slash-bearing id in full path form": {
-			authored: vocabulary.RecordPath(pathAuthority+"/target", "foo.bar/baz/qux"),
-			stored:   refValue(vocabulary.RecordPath(pathAuthority+"/target", "foo.bar/baz/qux")),
+			authored: vocabulary.RecordPath(pathPackage+"/target", "foo.bar/baz/qux"),
+			stored:   refValue(vocabulary.RecordPath(pathPackage+"/target", "foo.bar/baz/qux")),
 		},
 		// Containers carry the same rule elementwise, at every declared depth.
 		// A repeated reference holds each record ONCE, so the two spellings
@@ -160,7 +160,7 @@ func TestReferencePathAuthoredStoredAndReadBack(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			row := mustPut(t, ds, owner, substrate.PutInput{
-				Kind:       pathAuthority + "/holder",
+				Kind:       pathPackage + "/holder",
 				Properties: map[string]any{prop: tc.authored},
 			})
 			assertDeepEqual(t, "stored "+prop, row.Properties[prop], tc.stored)
@@ -200,7 +200,7 @@ func TestReferencePathRefusals(t *testing.T) {
 		},
 
 		"a pointer at a kind nothing declares": {
-			prop: "free", value: "nosuch.example.com/thing/x",
+			prop: "free", value: "nosuch.example.com/nosuch/thing/x",
 			want: []string{"unknown"},
 		},
 		// The retired pair is refused by NAME wherever it appears: nothing
@@ -216,18 +216,18 @@ func TestReferencePathRefusals(t *testing.T) {
 		// be the one admitted mapping hop (references.go subjectHop), and
 		// refusing at coercion would close that door.
 		"a slash-bearing id that also parses as a path": {
-			prop: "pinned", value: "foo.bar/baz/qux",
-			want: []string{"unknown", "foo.bar/baz"},
+			prop: "pinned", value: "foo.bar/baz/qux/quux",
+			want: []string{"unknown", "foo.bar/baz/qux"},
 		},
 		// The same corner with a KNOWN kind that is not a mapping source for the
 		// pin: refused, with both readings named.
 		"a path at a known kind the pin does not admit": {
 			prop:  "pinned",
-			value: vocabulary.RecordPath("core.substrate.reamde.dev/kind", pathAuthority+"/target"),
+			value: vocabulary.RecordPath("substrate.reamde.dev/core/kind", pathPackage+"/target"),
 			want: []string{
-				"the declaration pins " + pathAuthority + "/target",
+				"the declaration pins " + pathPackage + "/target",
 				"the bare id",
-				"core.substrate.reamde.dev/kind/" + pathAuthority + "/target",
+				"substrate.reamde.dev/core/kind/" + pathPackage + "/target",
 			},
 		},
 		// Empty-id shapes name no record, pinned or not.
@@ -236,7 +236,7 @@ func TestReferencePathRefusals(t *testing.T) {
 			want: []string{"empty segment"},
 		},
 		"the bare pin itself, with nothing after it": {
-			prop: "pinned", value: pathAuthority + "/target/",
+			prop: "pinned", value: pathPackage + "/target/",
 			want: []string{"empty"},
 		},
 		// Unpinned, a two-segment value with a DOTTED first segment names a kind
@@ -249,7 +249,7 @@ func TestReferencePathRefusals(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			_, err := ds.Put(ctx, owner, substrate.PutInput{
-				Kind:       pathAuthority + "/holder",
+				Kind:       pathPackage + "/holder",
 				Properties: map[string]any{tc.prop: tc.value},
 			})
 			if err == nil {

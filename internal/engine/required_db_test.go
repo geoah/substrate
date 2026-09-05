@@ -19,12 +19,12 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-const requiredAuthority = "required.example.substrate.reamde.dev"
+const requiredPackage = "required.example.substrate.reamde.dev/required"
 
-const requiredTicket = requiredAuthority + "/ticket"
+const requiredTicket = requiredPackage + "/ticket"
 
-// badDefaultAuthority is where the unstorable default is declared.
-const badDefaultAuthority = "baddefault.example.substrate.reamde.dev"
+// badDefaultPackage is where the unstorable default is declared.
+const badDefaultPackage = "baddefault.example.substrate.reamde.dev/baddefault"
 
 // requiredVocabulary declares one kind carrying the three cases: a required
 // scalar with no default, a required scalar WITH one, and an ordinary optional
@@ -32,8 +32,8 @@ const badDefaultAuthority = "baddefault.example.substrate.reamde.dev"
 func requiredVocabulary(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(requiredAuthority, 0),
-		vocabulary.KindManifest(requiredAuthority,
+		vocabulary.PackageManifest(requiredPackage, 0),
+		vocabulary.KindManifest(requiredPackage,
 			map[string]any{"singular": "ticket", "plural": "tickets"},
 			map[string]any{
 				"displayTemplate": "{name}",
@@ -169,8 +169,8 @@ func TestDeclaredDefaultMustBeStorable(t *testing.T) {
 	_, ds := newDataset(t)
 
 	_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(badDefaultAuthority, 0),
-		vocabulary.KindManifest(badDefaultAuthority,
+		vocabulary.PackageManifest(badDefaultPackage, 0),
+		vocabulary.KindManifest(badDefaultPackage,
 			map[string]any{"singular": "seen", "plural": "seens"},
 			map[string]any{
 				"properties": map[string]any{

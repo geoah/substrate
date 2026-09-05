@@ -19,7 +19,7 @@ func TestSk1MergeSystemTypeProjections(t *testing.T) {
 	_, ds := newDataset(t)
 
 	page, err := ds.List(ctx, substrate.Query{
-		Filter: substrate.Filter{Kinds: []string{"core.substrate.reamde.dev/kind"}}, First: 500,
+		Filter: substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/kind"}}, First: 500,
 	})
 	if err != nil {
 		t.Fatalf("list types: %v", err)
@@ -28,9 +28,9 @@ func TestSk1MergeSystemTypeProjections(t *testing.T) {
 	var contactTy, teamTy string
 	for _, e := range page.Records {
 		switch e.ID {
-		case "people.substrate.reamde.dev/person":
+		case "samples.substrate.reamde.dev/people/person":
 			contactTy = e.ID
-		case "people.substrate.reamde.dev/organization":
+		case "samples.substrate.reamde.dev/people/organization":
 			teamTy = e.ID
 		}
 	}
@@ -43,12 +43,12 @@ func TestSk1MergeSystemTypeProjections(t *testing.T) {
 	}
 
 	// Control: put/patch/delete all refuse.
-	_, perr := ds.Put(ctx, owner, substrate.PutInput{Kind: "core.substrate.reamde.dev/kind", ID: teamTy, Properties: map[string]any{"name": "hax"}})
+	_, perr := ds.Put(ctx, owner, substrate.PutInput{Kind: "substrate.reamde.dev/core/kind", ID: teamTy, Properties: map[string]any{"name": "hax"}})
 	t.Logf("put on type projection: %v (forbidden=%v)", perr, errors.Is(perr, substrate.ErrForbidden))
-	_, derr := ds.Delete(ctx, owner, "core.substrate.reamde.dev/kind", teamTy)
+	_, derr := ds.Delete(ctx, owner, "substrate.reamde.dev/core/kind", teamTy)
 	t.Logf("delete on type projection: %v (forbidden=%v)", derr, errors.Is(derr, substrate.ErrForbidden))
 
-	rec, merr := ds.Merge(ctx, owner, "core.substrate.reamde.dev/kind", contactTy, teamTy)
+	rec, merr := ds.Merge(ctx, owner, "substrate.reamde.dev/core/kind", contactTy, teamTy)
 	if merr != nil {
 		t.Logf("merge REFUSED: %v (forbidden=%v)", merr, errors.Is(merr, substrate.ErrForbidden))
 		return
@@ -56,7 +56,7 @@ func TestSk1MergeSystemTypeProjections(t *testing.T) {
 	t.Errorf("merge of two type projections SUCCEEDED, record %s", rec.ID)
 
 	after, err := ds.List(ctx, substrate.Query{
-		Filter: substrate.Filter{Kinds: []string{"core.substrate.reamde.dev/kind"}}, First: 500,
+		Filter: substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/kind"}}, First: 500,
 	})
 	if err != nil {
 		t.Fatalf("list types after: %v", err)
@@ -67,7 +67,7 @@ func TestSk1MergeSystemTypeProjections(t *testing.T) {
 			t.Errorf("team type still listed")
 		}
 	}
-	got, err := ds.Get(ctx, "core.substrate.reamde.dev/kind", teamTy)
+	got, err := ds.Get(ctx, "substrate.reamde.dev/core/kind", teamTy)
 	if err != nil {
 		t.Logf("get team type: %v", err)
 	} else {
@@ -82,7 +82,7 @@ func TestSk1MergeSystemTypeProjections(t *testing.T) {
 	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
 		t.Logf("split FAILED (damage is unrecoverable via API): %v", err)
 	} else {
-		back, err := ds.Get(ctx, "core.substrate.reamde.dev/kind", teamTy)
+		back, err := ds.Get(ctx, "substrate.reamde.dev/core/kind", teamTy)
 		t.Logf("after split: team type err=%v deletedAt=%v", err, func() any {
 			if back == nil {
 				return nil
@@ -145,7 +145,7 @@ func TestSk1MergedTypeSurvivesRestart(t *testing.T) {
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
 		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -160,7 +160,7 @@ func TestSk1MergedTypeSurvivesRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	importVocabulary(t, ds, "people")
-	_, merr := ds.Merge(ctx, owner, "core.substrate.reamde.dev/kind", "people.substrate.reamde.dev/person", "people.substrate.reamde.dev/organization")
+	_, merr := ds.Merge(ctx, owner, "substrate.reamde.dev/core/kind", "samples.substrate.reamde.dev/people/person", "samples.substrate.reamde.dev/people/organization")
 	if !errors.Is(merr, substrate.ErrForbidden) {
 		t.Fatalf("merge of two type projections: %v", merr)
 	}
@@ -172,7 +172,7 @@ func TestSk1MergedTypeSurvivesRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e, err := ds2.Get(ctx, "core.substrate.reamde.dev/kind", "people.substrate.reamde.dev/organization")
+	e, err := ds2.Get(ctx, "substrate.reamde.dev/core/kind", "samples.substrate.reamde.dev/people/organization")
 	if err != nil {
 		t.Fatalf("get after restart: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestSk1RepositoryRowsAreNotRecords(t *testing.T) {
 		t.Fatal(err)
 	}
 	page, err := ds.List(ctx, substrate.Query{
-		Filter: substrate.Filter{Kinds: []string{"core.substrate.reamde.dev/repository"}}, First: 50,
+		Filter: substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/repository"}}, First: 50,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -213,7 +213,7 @@ func TestSk1RepositoryRowsAreNotRecords(t *testing.T) {
 	if len(page.Records) != 1 || page.Records[0].ID != alpha.ID {
 		t.Fatalf("alpha sees %v, want only its own description", ids(page.Records))
 	}
-	if _, err := ds.Delete(ctx, owner, "core.substrate.reamde.dev/repository", alpha.ID); err == nil {
+	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/repository", alpha.ID); err == nil {
 		t.Fatal("deleting the repository's own description succeeded")
 	}
 	// beta stays reachable whatever alpha does with its own rows.

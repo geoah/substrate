@@ -7,6 +7,7 @@ import (
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // An owner pointer is a reference declaring `onDelete: cascade`: collecting the
@@ -14,17 +15,21 @@ import (
 // the three ways it must NOT fire — a pointer at another owner, a reference the
 // declaration did not mark, and a plain string carrying the same value.
 
-// mirrorAuthority is a provider bundle's shape in miniature: three kinds that
+// mirrorPackage is a provider bundle's shape in miniature: three kinds that
 // name an account three different ways, so one delete separates them.
-const mirrorAuthority = "testmirror.example.com"
+const (
+	mirrorAuthority = "testmirror.example.com"
+	mirrorPackage   = mirrorAuthority + "/testmirror"
+)
 
 func mirrorManifest() enginetest.Manifest {
 	kind := func(id string, account map[string]any) map[string]any {
 		return map[string]any{
-			"kind":     "core.substrate.reamde.dev/kind",
+			"kind":     "substrate.reamde.dev/core/kind",
 			"metadata": map[string]any{"id": id},
 			"data": map[string]any{
 				"authority":       mirrorAuthority,
+				"package":         "testmirror",
 				"names":           map[string]any{"singular": last(id), "plural": last(id) + "s"},
 				"displayTemplate": "{label}",
 				"properties": map[string]any{
@@ -38,24 +43,20 @@ func mirrorManifest() enginetest.Manifest {
 		Name:      "testmirror",
 		Authority: mirrorAuthority,
 		Manifests: []map[string]any{
-			{
-				"kind":     "core.substrate.reamde.dev/authority",
-				"metadata": map[string]any{"id": mirrorAuthority},
-				"data":     map[string]any{"version": 1},
-			},
+			vocabulary.PackageManifest(mirrorPackage, 1),
 			// The owner pointer under test.
-			kind(mirrorAuthority+"/owned", map[string]any{
+			kind(mirrorPackage+"/owned", map[string]any{
 				"type": "reference", "kind": enginetest.AccountType,
 				"required": true, "onDelete": "cascade",
 			}),
 			// The same pin, the same value, no `onDelete:`: provenance, and the
 			// sweep must leave it alone. Without this the test would pass on a
 			// cascade that collected every reference at the owner's kind.
-			kind(mirrorAuthority+"/pointer", map[string]any{
+			kind(mirrorPackage+"/pointer", map[string]any{
 				"type": "reference", "kind": enginetest.AccountType,
 			}),
 			// The pre-0032 spelling: a string holding the account's id.
-			kind(mirrorAuthority+"/legacy", map[string]any{"type": "string"}),
+			kind(mirrorPackage+"/legacy", map[string]any{"type": "string"}),
 		},
 	}
 }
@@ -93,22 +94,22 @@ func TestOwnerRefReferenceCascade(t *testing.T) {
 	// supplies the kind, so the stored reference carries the path the sweep
 	// probes under `ref` (decision 0044).
 	synced := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: mirrorAuthority + "/owned", ID: "synced-one",
+		Kind: mirrorPackage + "/owned", ID: "synced-one",
 		Properties: map[string]any{"label": "synced", "account": acc.ID},
 	})
 	if got := storedRefPath(mustGet(t, ds, synced.Kind, synced.ID).Properties["account"]); got != enginetest.AccountType+"/"+acc.ID {
 		t.Fatalf("stored account = %v, want the canonical path", got)
 	}
 	elsewhere := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: mirrorAuthority + "/owned", ID: "synced-two",
+		Kind: mirrorPackage + "/owned", ID: "synced-two",
 		Properties: map[string]any{"label": "other account", "account": other.ID},
 	})
 	provenance := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: mirrorAuthority + "/pointer", ID: "pointer-one",
+		Kind: mirrorPackage + "/pointer", ID: "pointer-one",
 		Properties: map[string]any{"label": "not an owner", "account": acc.ID},
 	})
 	legacy := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: mirrorAuthority + "/legacy", ID: "legacy-one",
+		Kind: mirrorPackage + "/legacy", ID: "legacy-one",
 		Properties: map[string]any{"label": "a string", "account": acc.ID},
 	})
 
@@ -116,7 +117,7 @@ func TestOwnerRefReferenceCascade(t *testing.T) {
 	// observable: RunGC runs to a fixpoint, and without the hold the same call
 	// would collect the synced record in its second pass.
 	mustPatch(t, ds, owner, synced.Kind, synced.ID,
-		substrate.PatchInput{AddFinalizers: []string{"testmirror.example.com/teardown"}})
+		substrate.PatchInput{AddFinalizers: []string{"testmirror.example.com/testmirror/teardown"}})
 
 	if _, err := ds.Delete(ctx, owner, acc.Kind, acc.ID); err != nil {
 		t.Fatal(err)
@@ -152,7 +153,7 @@ func TestOwnerRefReferenceCascade(t *testing.T) {
 
 	// Release the hold: the next sweep takes the tombstone the first one wrote.
 	mustPatch(t, ds, owner, synced.Kind, synced.ID,
-		substrate.PatchInput{RemoveFinalizers: []string{"testmirror.example.com/teardown"}})
+		substrate.PatchInput{RemoveFinalizers: []string{"testmirror.example.com/testmirror/teardown"}})
 	if _, err := ds.RunGC(ctx); err != nil {
 		t.Fatal(err)
 	}

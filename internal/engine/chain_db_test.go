@@ -79,13 +79,13 @@ func TestChainEveryEntryHashedAndVerifies(t *testing.T) {
 	svc, ds, dsn := newChainDataset(t)
 	ctx := context.Background()
 	task := mustPut(t, ds, owner, substrate.PutInput{
-		Kind:       "tasks.substrate.reamde.dev/task",
+		Kind:       "samples.substrate.reamde.dev/tasks/task",
 		Properties: map[string]any{"name": "Ship it"},
 	})
-	mustPatch(t, ds, owner, "tasks.substrate.reamde.dev/task", task.ID, substrate.PatchInput{
+	mustPatch(t, ds, owner, "samples.substrate.reamde.dev/tasks/task", task.ID, substrate.PatchInput{
 		Properties: map[string]any{"name": "Ship it now"},
 	})
-	if _, err := ds.Delete(ctx, owner, "tasks.substrate.reamde.dev/task", task.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, "samples.substrate.reamde.dev/tasks/task", task.ID); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 
@@ -117,8 +117,8 @@ func TestChainEveryEntryHashedAndVerifies(t *testing.T) {
 func TestChainNamesEveryTamper(t *testing.T) {
 	t.Parallel()
 	svc, ds, dsn := newChainDataset(t)
-	mustPut(t, ds, owner, substrate.PutInput{Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"name": "a"}})
-	mustPut(t, ds, owner, substrate.PutInput{Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"name": "b"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "a"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "b"}})
 	db := rawDB(t, dsn)
 
 	var mid int64
@@ -168,8 +168,8 @@ func TestChainNamesEveryTamper(t *testing.T) {
 func TestChainDeletionReadsAsGapAndRebuildRefuses(t *testing.T) {
 	t.Parallel()
 	svc, ds, dsn := newChainDataset(t)
-	mustPut(t, ds, owner, substrate.PutInput{Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"name": "a"}})
-	mustPut(t, ds, owner, substrate.PutInput{Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"name": "b"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "a"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "b"}})
 	db := rawDB(t, dsn)
 	var mid int64
 	if err := db.QueryRow(`SELECT max(seq) - 1 FROM changelog`).Scan(&mid); err != nil {
@@ -199,9 +199,9 @@ func TestChainDeletionReadsAsGapAndRebuildRefuses(t *testing.T) {
 func TestChainTailTruncationIsTheDocumentedLimit(t *testing.T) {
 	t.Parallel()
 	svc, ds, dsn := newChainDataset(t)
-	mustPut(t, ds, owner, substrate.PutInput{Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"name": "a"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "a"}})
 	before := mustVerify(t, svc, "geoah")
-	mustPut(t, ds, owner, substrate.PutInput{Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"name": "b"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "b"}})
 	after := mustVerify(t, svc, "geoah")
 	db := rawDB(t, dsn)
 	if _, err := db.Exec(`DELETE FROM changelog WHERE seq = (SELECT max(seq) FROM changelog)`); err != nil {
@@ -246,7 +246,7 @@ func TestChainBackfillStampsLegacyHistory(t *testing.T) {
 	t.Parallel()
 	svc, ds, dsn := newChainDataset(t)
 	ctx := context.Background()
-	mustPut(t, ds, owner, substrate.PutInput{Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"name": "old world"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "old world"}})
 	db := rawDB(t, dsn)
 	// Wind signing back: all-zero signatures, no signing state at all, which
 	// is what a release before signing left behind. Verify names it.
@@ -279,7 +279,7 @@ func TestChainBackfillStampsLegacyHistory(t *testing.T) {
 
 	// A fresh service on the same store: first open backfills, activates
 	// signing on the settled head, then serves.
-	svc2, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+	svc2, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
@@ -330,7 +330,7 @@ func TestChangelogSigningSignsAndDetectsRemoval(t *testing.T) {
 	// No option: signing is mandatory, and a keyed host activates on its own.
 	svc, ds, dsn := newChainDataset(t)
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind:       "tasks.substrate.reamde.dev/task",
+		Kind:       "samples.substrate.reamde.dev/tasks/task",
 		Properties: map[string]any{"name": "signed"},
 	})
 
@@ -392,7 +392,7 @@ func TestLegacyStoreWithAPendingUpgradeOpens(t *testing.T) {
 	svc, ds, dsn := newChainDataset(t)
 	ctx := context.Background()
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind:       "tasks.substrate.reamde.dev/task",
+		Kind:       "samples.substrate.reamde.dev/tasks/task",
 		Properties: map[string]any{"name": "written before signing"},
 	})
 	db := rawDB(t, dsn)
@@ -412,7 +412,7 @@ func TestLegacyStoreWithAPendingUpgradeOpens(t *testing.T) {
 	_ = svc.Close()
 
 	svc2, err := engine.Open(ctx, dsn,
-		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {
 		t.Fatalf("reopen a legacy store with a pending upgrade: %v", err)
@@ -447,7 +447,7 @@ func TestLegacyStoreWithAPendingUpgradeOpens(t *testing.T) {
 		t.Fatalf("reopen dataset: %v", err)
 	}
 	if _, err := ds2.Put(ctx, owner, substrate.PutInput{
-		Kind:       "tasks.substrate.reamde.dev/task",
+		Kind:       "samples.substrate.reamde.dev/tasks/task",
 		Properties: map[string]any{"name": "written after signing"},
 	}); err != nil {
 		t.Fatalf("write after the upgrade: %v", err)
@@ -464,7 +464,7 @@ func TestAWrongCredentialKeyIsRefusedAtBoot(t *testing.T) {
 	svc, ds, dsn := newChainDataset(t)
 	ctx := context.Background()
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind:       "tasks.substrate.reamde.dev/task",
+		Kind:       "samples.substrate.reamde.dev/tasks/task",
 		Properties: map[string]any{"name": "signed"},
 	})
 	db := rawDB(t, dsn)
@@ -481,7 +481,7 @@ func TestAWrongCredentialKeyIsRefusedAtBoot(t *testing.T) {
 		t.Fatalf("spoil the stored seed: %v", err)
 	}
 	_, err := engine.Open(ctx, dsn,
-		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err == nil {
 		t.Fatal("a host whose key opens nothing in this database booted anyway")
@@ -496,7 +496,7 @@ func TestAWrongCredentialKeyIsRefusedAtBoot(t *testing.T) {
 		t.Fatalf("restore the stored seed: %v", err)
 	}
 	svc2, err := engine.Open(ctx, dsn,
-		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {
 		t.Fatalf("reopen with the original seed restored: %v", err)
@@ -553,7 +553,7 @@ func TestResealRefusesTamperThenRechainsLegacy(t *testing.T) {
 		t.Fatalf("wind the signing state back: %v", err)
 	}
 	_ = svc.Close()
-	svc2, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+	svc2, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {
 		t.Fatalf("reopen: %v", err)

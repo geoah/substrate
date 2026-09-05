@@ -116,7 +116,7 @@ func installOAuthBundle(t *testing.T) (substrate.Service, substrate.Dataset, bun
 	t.Helper()
 	p := newFakeProvider(t)
 	svc, ds := newDataset(t,
-		engine.WithOAuth("test-state-key", "https://substrate.example/api/v1/core.substrate.reamde.dev/oauth/callback", p.ts.Client()),
+		engine.WithOAuth("test-state-key", "https://substrate.example/api/v1/substrate.reamde.dev/core/oauth/callback", p.ts.Client()),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 	)
 	docs := mbStandardDocs()
@@ -228,7 +228,7 @@ func TestOAuthRunnerConfigAndRefresh(t *testing.T) {
 	if cfg == nil {
 		t.Fatalf("no config in output: %v", out)
 	}
-	if cfg["bundle"] != mbAuthority {
+	if cfg["bundle"] != mbPackage {
 		t.Fatalf("config bundle: %v", cfg["bundle"])
 	}
 	ins, _ := cfg["inputs"].(map[string]any)

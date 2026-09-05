@@ -245,7 +245,7 @@ func coerceObject(p *vocabulary.Property, v any) (any, error) {
 // referent KIND must be known, and the `kind:` pin must match — is taken inside
 // the transaction (validateReferences). Here we only reach a path:
 //
-//   - a full path ("core.substrate.reamde.dev/llmprovider/claude"), left alone;
+//   - a full path ("substrate.reamde.dev/core/llmprovider/claude"), left alone;
 //   - the AUTHORED SHORT FORM, a bare record id, ONLY when `kind:` pins a
 //     concrete kind, which then supplies what the value omits, mirroring a
 //     which supplies what the value omits.
@@ -757,7 +757,7 @@ func (r *titleResolver) Prop(name string) string {
 	}
 	if v, ok := r.row.Props[name]; ok {
 		// A reference is a record PATH, which scalarString would render
-		// verbatim — a title reading "core.substrate.reamde.dev/agent/x"
+		// verbatim — a title reading "substrate.reamde.dev/core/agent/x"
 		// names the pointer, not the thing. It follows the pointer instead,
 		// and falls back to the id when the referent is not there to read: a
 		// reference may name a row that does not exist (references.go).
@@ -886,7 +886,7 @@ func referenceTargetOf(row *erow, property string) eref {
 
 // Derived renders a derived token from the row itself. {localName} is the id's
 // last segment and {id} the whole id: a DECLARATION's id is a kind reference
-// ("people.substrate.reamde.dev/person"), so the local name is what a reader
+// ("samples.substrate.reamde.dev/people/person"), so the local name is what a reader
 // calls the thing, and for an ordinary slashless id the two answer the same.
 func (r *titleResolver) Derived(token string) string {
 	switch token {
