@@ -45,3 +45,23 @@ if (!Element.prototype.getAnimations) {
     return []
   }
 }
+
+/** The one entry here that is not a missing API. node 26 (the pinned version)
+ * defines `localStorage` and `sessionStorage` as accessors that yield
+ * `undefined` (and warn: ExperimentalWarning), and vitest's `populateGlobal`
+ * skips a window key the global already has, so jsdom's storages never land.
+ * `jsdom` is vitest's handle on the window the tests render into; the install
+ * is unconditional, because no value read tells jsdom's accessor from node's. */
+// `jsdom` is declared by vitest/jsdom as a JSDOM, a type the jsdom package
+// does not ship, so annotate the window to keep the storages typed.
+const jsdomWindow: Window | undefined =
+  typeof jsdom === "undefined" ? undefined : jsdom.window
+if (jsdomWindow) {
+  for (const key of ["localStorage", "sessionStorage"] as const) {
+    Object.defineProperty(globalThis, key, {
+      value: jsdomWindow[key],
+      writable: true,
+      configurable: true,
+    })
+  }
+}
