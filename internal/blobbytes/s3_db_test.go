@@ -51,11 +51,15 @@ func minioURL(t *testing.T) string {
 					"MINIO_ROOT_USER":     minioUser,
 					"MINIO_ROOT_PASSWORD": minioSecret,
 				},
-				// `/ready`, not `/live`: live returns 200 as soon as the process
-				// is up, while the S3 object layer is still initializing and a
-				// bucket op answers 503 XMinioServerNotInitialized. ready gates on
-				// the object layer, so CreateBucket cannot race the boot (#279).
-				WaitingFor: wait.ForHTTP("/minio/health/ready").
+				// `/cluster`, because neither the port nor the other two health
+				// endpoints gate on the S3 object layer: `/live` and `/ready`
+				// answer 200 while the layer is still nil and report it in a
+				// header nothing here reads, so a bucket op in that window gets
+				// 503 XMinioServerNotInitialized (#349, and #279 before it).
+				// `/cluster` returns 503 until the layer is up with read quorum,
+				// which is the condition CreateBucket needs. Measured on a
+				// CPU-starved container: ready flips at 1.64s, cluster at 1.73s.
+				WaitingFor: wait.ForHTTP("/minio/health/cluster").
 					WithPort("9000/tcp").WithStartupTimeout(120 * time.Second),
 			},
 		})
