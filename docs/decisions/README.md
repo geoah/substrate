@@ -190,9 +190,10 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0043](0043-occurrences-expand-at-read-in-the-api-layer.md) | Occurrences expand at read, in the API layer, never in the engine | accepted |
 | [0044](0044-a-reference-is-the-only-link-between-records.md) | A reference is the only link between records; `data.edges` is removed | accepted |
 | [0045](0045-a-webhook-trigger-is-a-public-endpoint-with-an-optional-key.md) | A webhook trigger is a public endpoint with an optional key | accepted |
-| [0046](0046-a-repository-owns-one-authority-chosen-at-registration.md) | A repository owns one authority, chosen at registration and defaulting to the server's host | accepted |
+| [0046](0046-a-repository-owns-one-authority-chosen-at-registration.md) | A repository owns one authority, chosen at registration and defaulting to the server's host | superseded |
 | [0047](0047-a-kind-lives-in-a-package.md) | A kind lives in a package, and a package lives in an authority | accepted |
 | [0048](0048-providers-are-published-samples-are-copied.md) | Providers are published packages; samples are copied and owned | accepted |
 | [0049](0049-the-owner-of-a-mappings-target-declares-it.md) | The owner of a mapping's target declares it and pins the subject | accepted |
 | [0050](0050-the-changelog-is-checksummed-segment-files-and-postgres-indexes-it.md) | The changelog is checksummed segment files per repository, and Postgres indexes it | accepted |
-| [0051](0051-a-repository-directory-is-the-backup-unit.md) | A repository directory under the data root is the backup unit | accepted |
+| [0051](0051-a-repository-directory-is-the-backup-unit.md) | A repository directory under the data root is the backup unit | superseded |
+| [0052](0052-the-authority-is-the-repository-id.md) | The authority is the repository id | accepted |

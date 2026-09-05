@@ -1,8 +1,8 @@
 # Plan: the changelog as segment files, one directory per repository
 
 Status: in progress, September 2026. This page is the working spec for the
-change; the decision records 0050 and 0051 hold the reasoning once the work
-lands, and `docs/operations.md` the operator procedure.
+change; the decision records 0050, 0051 and 0052 hold the reasoning once the
+work lands, and `docs/operations.md` the operator procedure.
 
 ## Why
 
@@ -24,7 +24,7 @@ refuse.
 ```
 $SUBSTRATE_DATA_ROOT/
   repositories/
-    <repository id>/
+    <authority>/                   # the repository's authority is its id (0052)
       repository.json               # manifest, written atomically (temp + rename)
       changelog/
         000000000000001.ndjson      # named by first seq, 15 digits; the highest is the active segment
@@ -37,19 +37,16 @@ $SUBSTRATE_DATA_ROOT/
         auth-<hex>.json
 ```
 
-The directory is named by `repositories.id`, not the username. The username
-is a login label that #341 wants renameable, the fs blob backend already
-keys on the id, and the id is the AAD the DEK wrap is bound to, so an import
-under the same id opens without re-wrapping. The manifest carries the
-username so a person can find the directory with `grep`.
+The directory is named by the repository's authority, which is its id on
+disk, in the database and on the wire
+([0052](../decisions/0052-the-authority-is-the-repository-id.md)).
 
 `repository.json`:
 
 ```json
 {"format": 1,
- "id": "k3j9x2m41pfq",
- "username": "ada",
  "authority": "ada.example.com",
+ "username": "ada",
  "createdAt": "2026-09-05T10:00:00.000000Z",
  "changelogDialect": 2,
  "dek": "<base64 of the DEK wrapped under SUBSTRATE_CREDENTIAL_KEY, the repositories.dek bytes>"}
@@ -114,11 +111,11 @@ file holds `ref`, `recordKind`, `recordId`, `payload` (base64 ciphertext
 under the DEK), `expiresAt` and `updatedAt`.
 
 Blob bytes go through the existing fs backend, rooted at
-`<root>/repositories/<id>/blobs/`. `fs` is the default and the only backend
-under which the directory is the whole backup; `s3` stays selectable and the
-docs say the bucket is then a second artifact; `postgres` is no longer a
-runtime choice (`blobs migrate --from postgres` still reads the column, so an
-existing store moves out).
+`<root>/repositories/<authority>/blobs/`. `fs` is the default and the only
+backend under which the directory is the whole backup; `s3` stays selectable
+and the docs say the bucket is then a second artifact; `postgres` is no
+longer a runtime choice (`blobs migrate --from postgres` still reads the
+column, so an existing store moves out).
 
 ## The boot check
 
@@ -189,7 +186,7 @@ Phase 1, in parallel:
    manifest read and write, sealed file read and write. Unit tests for every
    crash point. No database.
 3. `SUBSTRATE_DATA_ROOT` in config and `engine.WithDataRoot`; the fs blob
-   backend under `<root>/repositories/<id>/blobs`; `fs` the default;
+   backend under `<root>/repositories/<authority>/blobs`; `fs` the default;
    `postgres` retired as a runtime backend; every `engine.Open` call site
    and test helper passes a root.
 
