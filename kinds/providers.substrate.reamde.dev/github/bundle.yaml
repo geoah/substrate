@@ -50,12 +50,17 @@ data:
   # `subject: true` reference the mapping names with `property:`, the issue
   # and pullrequest `repository` references carry `mustExist: true`, and every
   # account reference carries `onDelete: cascade`.
-  version: 9
+  # version 10: the `user` -> `person` mapping is GONE, and `user.person` is an
+  # unpinned, optional subject slot. A mapping onto a kind is declared by the
+  # package that owns that kind (docs/decisions/0049), and this package owns no
+  # person; the slot stays empty until the repository declares a mapping that
+  # fills it, so this closure names no vocabulary it does not own.
+  version: 10
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
 # package header and the bundle itself): the two config types, the four mirror
-# types, the sync function, and the user→person mapping.
+# types and the sync function. No mapping: this package owns no person.
 kind: substrate.reamde.dev/core/bundle
 metadata:
   id: providers.substrate.reamde.dev/github
@@ -73,9 +78,8 @@ data:
     client:
       kind: providers.substrate.reamde.dev/github/config
       description: the GitHub OAuth app the host exchanges codes through
-  # The vocabulary this bundle maps ONTO (see google): import it first.
-  requires:
-    - samples.substrate.reamde.dev/people
+  # No `requires:`: this closure names no kind outside its own package and
+  # core, so it installs on a bare repository.
   # TRUSTED provider metadata (review-google #1): the host reads endpoints and
   # the feature→scope mapping ONLY from here — the immutable install artifact —
   # never from the mutable config record, so a config edit can never redirect
@@ -127,7 +131,6 @@ data:
     - providers.substrate.reamde.dev/github/issue
     - providers.substrate.reamde.dev/github/pullrequest
     - providers.substrate.reamde.dev/github/githubsync
-    - providers.substrate.reamde.dev/github/userperson
 ---
 # ---- the config type: the `client` input's kind ----------------------------
 # oauth2 (the OAuth CLIENT credentials the facility uses to exchange codes):
@@ -314,8 +317,8 @@ data:
 # One user per (account, login), in GitHub's own shape. The connected user's
 # row is written whole off GET /user; issue and PR authors land as create-only
 # stubs (login + profile URL) so the graph knows who wrote what. The `person`
-# subject reference is left EMPTY on write; the mapping below matches a person
-# on the public email or mints a shell in the same transaction.
+# subject slot is left EMPTY on write and stays empty until the repository
+# declares a mapping onto a kind of its own that fills it (record 0049).
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: providers.substrate.reamde.dev/github/user
@@ -324,8 +327,9 @@ data:
   package: github
   description: >-
     What GitHub holds about one user, in GitHub's own shape: login, name,
-    public email and profile URL. It points at a person, so a GitHub identity
-    and the same human's address-book contact converge on one record.
+    public email and profile URL. It carries an empty subject slot, so a repository
+    that declares a mapping onto its own person kind can converge a GitHub
+    identity and the same human's address-book contact on one record.
   names:
     singular: user
   displayTemplate: "{name|login}"
@@ -352,7 +356,7 @@ data:
     email:
       type: email
       displayName: Email
-      description: the profile's PUBLIC email — the identity probe the person
+      description: the profile's PUBLIC email, the identity probe a person
         mapping matches on
     htmlURL:
       type: url
@@ -366,19 +370,21 @@ data:
       type: json
       displayName: Raw payload
       description: the raw /user payload as fetched, for provenance
-    # The subject reference (§6.1): required, single, never cascading, pointing
-    # at person — left empty on write so the substrate resolves it. NOTE the
-    # bipartite rule (record 50): because user is a mapped source type,
-    # no other reference anywhere may point at it — issues and pull requests
-    # carry authorLogin as a property and reach the human THROUGH this record.
+    # The subject slot (record 0049): single, never cascading, UNPINNED and
+    # optional, because the kind it reaches is the repository's to choose and
+    # this package owns none. A mapping declared by the owner of that kind is
+    # what pins it and fills it; until then the slot is empty. NOTE the
+    # bipartite rule (record 50): the moment a mapping names user as its
+    # source, no other reference anywhere may point at user, which is why
+    # issues and pull requests carry authorLogin as a property and reach the
+    # human THROUGH this record.
     person:
       type: reference
-      kind: samples.substrate.reamde.dev/people/person
       displayName: Person
-      required: true
       mustExist: true
       subject: true
-      description: the human this GitHub profile describes
+      description: the human this GitHub profile describes, once a mapping
+        says which kind that is
 ---
 # ---- mirror: one repository -------------------------------------------------
 # Written whole off GET /user/repos when enabledRepos; issues and PRs also
@@ -1194,33 +1200,3 @@ data:
             if rest:
                 return {"more": host.page.more(_fresh(rest))}
             return {"output": {"account": aid, "error": msg}}
----
-# ---- the mapping: user → person ---------------------------------------------
-# The record's `person` reference, and how its properties reach the human (§6.1/
-# §7.1). match probes the profile's PUBLIC email against people's emails:
-# exactly one live match links it, zero-or-many mints a person shell (a bare
-# author stub carries no email, so its probe extracts nothing and a shell is
-# minted — prominence stays `utility` until an address book or the owner
-# promotes it). map copies the name, prefers the login as the friendly name,
-# and unions the email onto the person (machine-managed, yielding to any
-# owner edit).
-kind: substrate.reamde.dev/core/recordmapping
-metadata:
-  id: providers.substrate.reamde.dev/github/userperson
-data:
-  authority: providers.substrate.reamde.dev
-  package: github
-  from: providers.substrate.reamde.dev/github/user
-  to: samples.substrate.reamde.dev/people/person
-  property: person
-  match:
-    - from: email
-      to: emails
-  map:
-    name:
-      path: name
-    displayName:
-      path: login
-    emails:
-      path: email
-      merge: union

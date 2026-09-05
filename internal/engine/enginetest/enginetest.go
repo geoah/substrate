@@ -417,6 +417,64 @@ func AccountManifest() Manifest {
 	}
 }
 
+// --- the repository's own mappings ---------------------------------------------
+
+// PersonKind is the shipped people sample's person kind, the target every
+// provider mirror used to map onto itself.
+const PersonKind = SampleAuthority + "/people/person"
+
+// PeopleMapping renders a recordmapping declared BY the people package. Since
+// record 49 a mapping onto a kind is the declaration of the package that owns
+// that kind, so a provider ships mirrors and the REPOSITORY says which of its
+// own kinds they reach. A test that wants the person mint, the projection or
+// the one-hop resolution declares one of these; without it a mirror row lands
+// with an empty subject slot, which is the shipped default.
+func PeopleMapping(name string, data map[string]any) map[string]any {
+	full := map[string]any{"to": PersonKind}
+	for k, v := range data {
+		full[k] = v
+	}
+	return vocabulary.MappingManifest(SamplePackage("people"), name, full)
+}
+
+// DeclareMappings re-applies the PEOPLE closure with mapping documents added
+// to it: the people package owns `person`, so it is the only package that may
+// declare a mapping onto it (record 49).
+//
+// It has to carry the whole closure because a package with a bundle document
+// must list every declaration it holds in `data.installs`, so a mapping cannot
+// be bolted onto an installed sample from outside its closure. That is the
+// shape a sample's suggested mappings ship in, and the reason this helper
+// re-applies rather than adding one document.
+func DeclareMappings(ctx context.Context, ds substrate.Dataset, mappings ...map[string]any) error {
+	sa, ok := ds.(substrate.VocabularyApplier)
+	if !ok {
+		return errors.New("enginetest: dataset does not support ApplyVocabularyDocuments")
+	}
+	docs, err := readBundleDir(filepath.Join(SamplesDir, "people"))
+	if err != nil {
+		return err
+	}
+	var installs []any
+	for _, m := range mappings {
+		meta, _ := m["metadata"].(map[string]any)
+		installs = append(installs, meta["id"])
+	}
+	for _, d := range docs {
+		if kind, _ := d["kind"].(string); kind != "substrate.reamde.dev/core/bundle" {
+			continue
+		}
+		data, _ := d["data"].(map[string]any)
+		have, _ := data["installs"].([]any)
+		data["installs"] = append(append([]any(nil), have...), installs...)
+	}
+	docs = append(docs, mappings...)
+	if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+		return fmt.Errorf("enginetest: declare mappings: %w", err)
+	}
+	return nil
+}
+
 // InstallAccountType installs AccountManifest into the dataset.
 func InstallAccountType(ctx context.Context, ds substrate.Dataset, actor substrate.Actor) error {
 	return Install(ctx, ds, actor, AccountManifest())

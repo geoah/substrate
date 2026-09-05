@@ -154,6 +154,37 @@ func openInternalDataset(t *testing.T, opts ...Option) *dataset {
 	return ds
 }
 
+// openCoreDataset is openInternalDataset without the sample import: core
+// alone, which is what a repository looks like the moment it is created. A
+// provider closure installs on it since record 49, because it names no kind
+// outside its own package.
+func openCoreDataset(t *testing.T, opts ...Option) *dataset {
+	t.Helper()
+	ctx := context.Background()
+	dsn := testdb.NewSchema(t)
+	svc, err := Open(ctx, dsn,
+		append([]Option{
+			WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+			WithCredentialKey(TestCredentialKey),
+		}, opts...)...)
+	if err != nil {
+		t.Fatalf("open engine: %v", err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	d, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("open dataset: %v", err)
+	}
+	ds, ok := d.(*dataset)
+	if !ok {
+		t.Fatalf("dataset is a %T", d)
+	}
+	return ds
+}
+
 // importVocabulary imports the shipped vocabulary bundles (all of them when
 // none are named) through the ordinary install path. Repository creation seeds
 // CORE ALONE — people/tasks/messaging/calendar/media are vocabulary bundles a
@@ -162,6 +193,19 @@ func importVocabulary(t *testing.T, ds substrate.Dataset, names ...string) {
 	t.Helper()
 	if err := enginetest.ImportVocabulary(context.Background(), ds, names...); err != nil {
 		t.Fatalf("import the shipped vocabulary: %v", err)
+	}
+}
+
+// declarePersonMapping declares the repository's OWN mapping from a provider
+// mirror kind onto the shipped person. Since record 49 a provider ships no
+// mapping (the package that owns `person` is the only one that may declare one
+// onto it), so a test that wants the shell mint, the projection or the one-hop
+// resolution declares it here, exactly as a repository would.
+func declarePersonMapping(t *testing.T, ds substrate.Dataset, name string, data map[string]any) {
+	t.Helper()
+	if err := enginetest.DeclareMappings(context.Background(), ds,
+		enginetest.PeopleMapping(name, data)); err != nil {
+		t.Fatalf("declare the %s mapping: %v", name, err)
 	}
 }
 

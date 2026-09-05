@@ -2284,6 +2284,7 @@ func (r *Registry) Install(g *Package) error {
 	// would land in the store and take the whole repository's schema build
 	// down at the next read.
 	problems = append(problems, r.mappingInvariantProblems()...)
+	problems = append(problems, r.crossPackageMappingProblems([]*Package{g})...)
 	problems = append(problems, r.graphqlNameProblems()...)
 	if len(problems) > 0 {
 		r.remove(g.Identity)
@@ -2322,6 +2323,7 @@ func (r *Registry) InstallAll(packages []*Package) error {
 		problems = append(problems, r.resolvePackage(g)...)
 	}
 	problems = append(problems, r.mappingInvariantProblems()...)
+	problems = append(problems, r.crossPackageMappingProblems(packages)...)
 	problems = append(problems, r.graphqlNameProblems()...)
 	if len(problems) > 0 {
 		for _, g := range packages {

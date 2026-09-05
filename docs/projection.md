@@ -13,17 +13,47 @@ and tiers, and the merges that join two subjects that turn out to be one.
 describes through an ordinary reference. A `recordmapping` names that reference
 and declares how the record's properties reach the subject.
 
-The GitHub [integration](bundles-catalog.md#github) ships a `user` kind
-(GitHub's record of an account, in GitHub's own shape) and this mapping onto
-the shipped `person`:
+**The package that owns the TARGET kind declares the mapping**, and no other
+([decision record 0049](decisions/0049-the-owner-of-a-mappings-target-declares-it.md)).
+A provider ships mirror kinds whose subject slot is unpinned and empty, and
+nothing that names a kind it does not own; the package that owns the kind
+those mirrors describe says how they reach it, and edits, versions and deletes
+that declaration like everything else it owns. A mapping onto somebody else's
+kind is refused, whichever end the declaring package owns.
+
+Three rules follow. **`from` may name a kind in any package**, and it resolves
+when the mapping is installed, so a mapping naming a provider that is absent
+fails on that document.
+
+**One mapping per (source kind, subject property), and one per (source kind,
+target kind).** The first is the record's rule: one mirror kind reaches two
+subject kinds through two `subject: true` references, and two mappings through
+one reference are refused. The second goes past it, because two slots onto ONE
+target give the [subject hop](data-model.md#kinds-and-references) two answers for one
+value: a reference that admits that kind could resolve through either mapping,
+and a recompute would take one source's contributions twice. So a source kind
+reaches a given target through one property only.
+
+**Uninstalling a package another package's mapping names as its source is
+refused**, naming the mapping: removing Linear while a mapping reads
+`linear/issue` fails until the mapping goes. The same guard refuses an UPGRADE
+that drops the kind, which is the one case with a remedy other than deleting
+the mapping: apply the provider's new closure and the edited mapping in ONE
+batch, and the admission sees the end state rather than the gap. A change to a
+source kind that a mapping's paths no longer type-check against is refused the
+same way, on the mapping that stopped fitting.
+
+A repository that imported the [people sample](bundles-catalog.md) and
+installed the GitHub [integration](bundles-catalog.md#github) writes this
+mapping to say that GitHub's `user` mirror describes a `person`:
 
 ```yaml
 kind: substrate.reamde.dev/core/recordmapping
 metadata:
-  id: providers.substrate.reamde.dev/github/userperson
+  id: samples.substrate.reamde.dev/people/githubuserperson
 data:
-  authority: providers.substrate.reamde.dev
-  package: github
+  authority: samples.substrate.reamde.dev
+  package: people                  # the package that owns `person`
   from: providers.substrate.reamde.dev/github/user
   to: samples.substrate.reamde.dev/people/person
   property: person                 # the source's `subject: true` reference
@@ -39,6 +69,12 @@ data:
       path: email
       merge: union
 ```
+
+**The mapping is the pin.** GitHub's `user.person` is declared with no `kind:`
+and no `required:`, because GitHub cannot know which kind a repository keeps
+its people in. The mapping's `to` is what the write path enforces on that slot:
+a value of another kind is refused, a bare id completes against it, and until a
+mapping exists the slot stays empty.
 
 `from:` and `to:` are kind references, so a mapping says exactly which two
 kinds it joins and an installed manifest can name a shipped kind without
@@ -162,10 +198,10 @@ owner hold.
 ### Contributing a value
 
 There is exactly one way for an integration to contribute a value without
-pinning it: ship a **source kind** and a **recordmapping**, and write your
-own records. Your records become live sources, your values compete in the same
-selection as every provider's, and they release by omission when your records
-go. A minimal contribution:
+pinning it: ship a **source kind** with an empty subject slot and write your
+own records. Your records become live sources once a mapping points them at a
+subject, your values compete in the same selection as every provider's, and
+they release by omission when your records go. The integration's half:
 
 ```yaml
 kind: substrate.reamde.dev/core/kind
@@ -181,19 +217,22 @@ data:
       type: string
     email:
       type: email
-    person:
+    person:                        # the subject slot: no kind, not required
       type: reference
-      kind: samples.substrate.reamde.dev/people/person
-      required: true
       mustExist: true
       subject: true
----
+```
+
+The repository's half is the mapping, declared by the package that owns the
+kind being described:
+
+```yaml
 kind: substrate.reamde.dev/core/recordmapping
 metadata:
-  id: enrich.example.com/crm/enrichmentperson
+  id: samples.substrate.reamde.dev/people/enrichmentperson
 data:
-  authority: enrich.example.com
-  package: crm
+  authority: samples.substrate.reamde.dev
+  package: people
   from: enrich.example.com/crm/enrichment
   to: samples.substrate.reamde.dev/people/person
   property: person

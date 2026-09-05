@@ -414,22 +414,24 @@ the repository. `requires:` is rehomed with everything else, so importing
 `<your authority>/people`, the sample to import first.
 
 `import` on a provider id is refused naming `install`. `install` on a sample id
-still admits the closure verbatim, under the placeholder authority, and that is
-the seam holding the two tiers together while they are still coupled.
+still admits the closure verbatim, under the placeholder authority: nothing
+needs it now that no provider names a sample package, but a repository that
+wants the shipped vocabulary under the shipped authority may still ask for it.
 
-**Until the providers stop requiring sample packages, a provider that lists one
-installs through the API only.** Google, GitHub and Linear name
-`samples.substrate.reamde.dev/people`, `/messaging`, `/calendar` and `/tasks`
-under `requires:` and pin their kinds
-(`to: samples.substrate.reamde.dev/people/person`), while importing a sample
-lands `<your authority>/people`. So the requirement is satisfied by installing
-the sample verbatim, which the console does not offer: the Samples section
-offers "Import as yours" and nothing else, and a provider whose requirement is
-missing shows a disabled Install with the hint. Installing the sample verbatim
-first, then the provider, is `POST …/catalog/{id}/install` twice, or
-`substratectl install` twice. Phase 4 of the
-[plan](plans/providers-and-samples.md) closes the gap by dropping those
-requirements and the pins, and the verbatim door goes with it.
+**No provider requires a sample package, and every provider installs on a bare
+repository.** A provider ships mirror kinds in its own shape and writes nothing
+else: no `requires:`, no reference pinned at a sample kind, no core row. So the
+console can install any of the six from a repository that has imported nothing,
+and the Registry's Install button is never disabled for a missing requirement.
+
+What reaches a `person`, an `emailmessage` or a `task` is the mapping the
+repository declares, from a mirror onto a kind of its own. A mapping onto a
+kind is the declaration of the package that owns that kind
+([decision record 0049](decisions/0049-the-owner-of-a-mappings-target-declares-it.md)),
+so every mirror ships an unpinned, empty subject slot and the repository fills
+it: import the people sample, declare a mapping from `github/user` onto your
+`person`, and GitHub identities converge on it. Until you do, the mirrors sync
+and the slots stay empty, which is the whole of what an install delivers.
 
 What lands either way is a copy: the bundle's own declarations, written into
 this repository's changelog under `bundle:<authority>:<package>`. So the

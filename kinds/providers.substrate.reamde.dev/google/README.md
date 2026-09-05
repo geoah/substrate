@@ -3,11 +3,11 @@
 This is the first genuine **integration-as-bundle**: it connects a Google
 account over the host OAuth facility and syncs three streams into the graph.
 
-| Stream   | Toggle            | Scope               | Function       | Mirrors             | Core rows                     |
-| -------- | ----------------- | ------------------- | -------------- | ------------------- | ----------------------------- |
-| Contacts | `enabledContacts` | `contacts.readonly` | `contactssync` | `contact`           | `person` (via mapping)        |
-| Gmail    | `enabledGmail`    | `gmail.readonly`    | `gmailsync`    | `thread`, `message` | `emailthread`, `emailmessage` |
-| Calendar | `enabledCalendar` | `calendar.readonly` | `calendarsync` | `calendar`, `event` | `calendar`, `calendarevent`, `calendareventseries` |
+| Stream   | Toggle            | Scope               | Function       | Mirrors                            |
+| -------- | ----------------- | ------------------- | -------------- | ---------------------------------- |
+| Contacts | `enabledContacts` | `contacts.readonly` | `contactssync` | `contact`                          |
+| Gmail    | `enabledGmail`    | `gmail.readonly`    | `gmailsync`    | `thread`, `message`, `emailaddress` |
+| Calendar | `enabledCalendar` | `calendar.readonly` | `calendarsync` | `calendar`, `event`, `emailaddress` |
 
 Each stream is a separate toggle, a separate scope, a separate function, a
 separate pair of triggers and a separate slice of connector state on the
@@ -25,52 +25,39 @@ things the URL-harvester conformance example deliberately left out:
    the shared `python3` fast path with no provisioning at all.
 
 Everything else is the same primitive set the harvester uses:
-**bundle · kind · trait · function · recordmapping · trigger**.
+**bundle · kind · trait · function · trigger**.
 
-## How the records reach the core vocabulary
+## What it writes, and what it does not
 
-Mirror types hold Google's own shape. The sync functions **also emit the core
-row for the same logical object directly**, under the **same derived id**, with
-its required references supplied explicitly. Recordmappings resolve **people** and
-nothing else.
+**Mirrors only.** Every row this closure writes is one of its own kinds, in
+Google's own shape: a contact, an address, a thread, a message, a calendar, an
+event. It writes nothing into a package it does not own, and it declares no
+mapping, because a mapping onto a kind is the declaration of the package that
+owns that kind (decision record 0049).
 
 ```
-messages.get ──▶ message (mirror)  ──same id──▶ emailmessage (core)
-                                                  │ thread   ─▶ emailthread
-                                                  │ sender   ─┐
-                                                  └ recipients┤
-                                                              ▼
-                       every address ──▶ emailaddress ──mapping──▶ person
-                                                              ▲
-events.list ───▶ event (mirror)   ──same id──▶ calendarevent  │
-                                                  │ calendar ─▶ calendar (core)
-                                                  │ organizer ┘
-                                                  └ attendees
+messages.get ──▶ message (mirror) ──▶ thread (mirror)
+events.list  ──▶ event (mirror)   ──▶ calendar (mirror)
+people.list  ──▶ contact (mirror)
+every address on a header or an attendee list ──▶ emailaddress (mirror)
+                                                       │
+                            a mapping YOU declare ─────┴──▶ your person kind
 ```
 
-**Why not map onto `emailmessage` / `calendarevent`?** Because the engine
-cannot, today, and saying so is part of the contract:
+The `emailaddress` record is the bridge to the repository's own vocabulary:
+one row per address seen, keyed per account, carrying an empty
+`subject: true` slot. Declare a mapping from it onto the kind you keep people
+in and every address converges on one record of yours; an address-book contact
+and a mail sender land on the same one, because both mirrors carry the same
+address. Until you declare one, the slot stays empty and the mirrors are the
+whole output.
 
-- A type any mapping points at gets **server-assigned ids**
-  (`checkCreateID`), so no connector could ever name one.
-- A mapping's only creator is its **shell mint**, a bare row with no
-  references, and every candidate target declares a **required** reference
-  (`emailmessage.thread`, `emailthread.account`, `calendarevent.calendar`), so
-  the mint would fail validation and take the source record's write down with
-  it.
-- A mapping carries **plain properties only, never references**, so even a
-  successful mint would be structurally empty.
-
-`samples.substrate.reamde.dev/people/person` is mappable precisely because it
-declares no required references, which is why every mapping in the fleet targets
-it. The
-general capability is filed as ticket 041, "structural recordmappings".
-
-The `emailaddress` record is the bridge: the sync writes one per address it
-sees, its mapping matches or mints the person, and the core rows name the
-**record** in their `sender`/`recipients`/`organizer`/`attendees` references.
-The engine's one-hop rule lands the stored reference on the person. An address-book
-contact and a mail sender therefore converge on **one** person.
+**A mapping cannot mint a message or an event**, which is why nothing here
+tries: a mapping's only creator is a shell mint, a bare row with no
+references, and a kind like `emailmessage` declares a required `thread`. The
+general capability is filed as ticket 041, "structural recordmappings"; until
+it exists, a repository that wants messages in its own vocabulary writes them
+from a function of its own, reading these mirrors.
 
 ## The pieces
 
@@ -82,8 +69,8 @@ contact and a mail sender therefore converge on **one** person.
   `default`, or a bound one); while it is unresolved or incomplete the bundle
   status carries a setup step and the OAuth flow refuses.
 - **`account`** (accountconfig): one connected account — `email`, the three
-  toggles, `syncFrequency`, `backfillDepth`, `calendarSeries` (series linking,
-  on when absent), the host-written
+  toggles, `syncFrequency`, `backfillDepth`, `calendarSeries` (deprecated and
+  inert), the host-written
   `tokenRef`/`tokenStatus`/`grantedScopes`, and connector state in **two
   tiers**:
   - **The rollup**, account-level and unprefixed: `lastSyncedAt` and
@@ -116,10 +103,11 @@ contact and a mail sender therefore converge on **one** person.
 - **`contact`** (source type): what Google holds about one contact, in
   Google's own shape. Its id is
   `ids.external("google-contacts", account, resourceName)`. Its `person`
-  subject reference is left empty on write; the mapping resolves it.
+  subject slot is unpinned, optional and left empty on write: a mapping the
+  repository declares is what fills it.
 - **`emailaddress`** (source type): one address, keyed by
   `ids.external("google-address", account, address)`. Written by both
-  `gmailsync` and `calendarsync`, mapped onto `person`.
+  `gmailsync` and `calendarsync`, and carrying the same empty subject slot.
 - **`thread` / `message`** (gmail mirrors): ids
   `ids.external("gmail-thread"|"gmail-message", account, providerId)`.
 - **`calendar` / `event`** (calendar mirrors): ids
@@ -127,12 +115,13 @@ contact and a mail sender therefore converge on **one** person.
   event id is unique **per calendar** rather than globally,
   `ids.external("gcal-event", <the calendar's derived id>, eventId)` — the
   helper NESTED, never a string composition, which would not be injective.
-- **`contactperson`** and **`emailaddressperson`** (recordmappings): both
-  probe an email against people's emails, link the single live match or mint a
-  shell, and contribute machine-managed properties that yield to any owner
-  edit. `emailaddress.displayName` maps onto the person's `name` only, never
-  `displayName`: a header's "Alice Example" is weaker than an address book's
-  nickname, and mail volume would clobber it under latest-write-wins.
+This closure ships NO recordmapping (decision record 0049). A repository that
+wants contacts and addresses to reach its people declares two of its own, from
+`contact` and from `emailaddress` on `property: person`, each probing an email
+against its people's emails. One note worth copying: map
+`emailaddress.displayName` onto the person's `name` only, never `displayName`,
+because a header's "Alice Example" is weaker than an address book's nickname
+and mail volume would clobber it under latest-write-wins.
 
 ## `backfillDepth`, identically for gmail and calendar
 
@@ -179,8 +168,7 @@ One provider page, or one hydrate batch of 25 `messages.get`, per invocation.
   drains the walk**: a truncated walk has stamped nothing behind its page
   token, so sweeping there would delete every in-window row it never reached —
   under `backfillDepth: all` the window has no floor and that is the entire
-  archive, mirror and core, with the core `emailthread` deletes cascading
-  their messages. The pending sweep therefore rides **in the resume**.
+  archive. The pending sweep therefore rides **in the resume**.
 - **A cold start is bounded twice over**: at most 20 listing pages per run,
   and at most ~12 **invocations**. The invocation bound is the one that binds:
   the engine's paged drain is capped by cumulative wall clock from the chain's
@@ -212,7 +200,7 @@ One provider page, or one hydrate batch of 25 `messages.get`, per invocation.
   `text/plain` part, but only if it says something: an empty or whitespace
   plain part is a template's placeholder, not a body. Otherwise the
   `text/html` part goes through `html.parser` and an `<a href>` comes out as
-  `[label](url)`, because core's `emailmessage.text` is a markdown property
+  `[label](url)`, because the mirror's `text` is a markdown property
   and a tag-strip left a mail whose visible words are "click here" with
   nothing to follow. The rest of the rules, each one a mail shape that got
   them written:
@@ -269,53 +257,27 @@ invocation.
   delta carries no time bounds at all, so it legitimately stores an event
   eighteen months out; the re-read is capped at `now + 365d` and can never
   re-stamp one, so without the upper bound the sweep would delete it.
-- A delta always carries `status: cancelled` entries. Those are **deletes** of
-  both halves: core's `calendarevent` is documented as retracted rather than
-  tombstoned, so a reader never filters cancellations. They are counted as
+- A delta always carries `status: cancelled` entries. Those are **deletes**:
+  an event mirror is retracted rather than tombstoned, so a reader never
+  filters cancellations. They are counted as
   `cancelled`, **not** as `skipped`: a cancellation is the provider's ordinary
   housekeeping, and counting it as a failure made every healthy calendar sync
   read `ok (N skipped)` on the console forever.
 - **A calendar that went away is retracted.** The `calendarList` walk asks for
-  `showDeleted=true`, and a deleted entry takes its event mirrors, their core
-  rows and both halves of the calendar with it, a bounded page at a time — and
+  `showDeleted=true`, and a deleted entry takes its event mirrors and the
+  calendar mirror with it, a bounded page at a time, and
   is never enqueued for event sync. Nothing else could: a calendar that is no
   longer walked never 410s, and the sweep is per-calendar.
 - **Every calendar except an `accessRole: freeBusyReader` share** is synced (a
   free/busy share carries no content). `selected` is recorded so a later slice
   can add per-calendar opt-out without a re-sync.
-- **The series slice, on unless `calendarSeries` is false.** A master never
-  appears in a `singleEvents` list, so each distinct `recurringEventId` a page
-  stages is fetched by id (`events.get`) and written as a
-  `calendareventseries` at
-  `ids.external("gcal-series", <the calendar's derived id>, masterId)`. Its
-  `recurrence` is the master's **one RRULE line with the `RRULE:` prefix
-  stripped**: core's `recurrence` property is a single rule the engine parses
-  with rrule-go, and handing it Google's whole `recurrence` list (EXDATE and
-  RDATE lines included) fails validation and rolls the page back. The other
-  lines are parsed into `exdates` and `rdates` as RFC3339 UTC, in both
-  spellings Google sends: `EXDATE;TZID=Europe/London:20260805T130000`, a wall
-  clock in a named zone, and `EXDATE:20260805T120000Z`, already UTC, each
-  comma-separated and over any number of lines. The master's start supplies
-  `startsAt` (the DTSTART anchor) and `timezone`. A master reported
-  `cancelled` deletes the series row instead, and one with no RRULE line
-  writes none. Each instance then carries the `series` reference, plus
-  `originalStartAt` where Google's `originalStartTime` says the occurrence was
-  moved off the slot the rule produced. A **token-less (full) walk** also
-  stamps the series with `materializedFrom` / `materializedUntil`, the
-  `[floor, ceil)` window whose occurrences exist as `calendarevent` rows, so
-  the occurrences read (decision 0043) expands the rule only outside it; a
-  delta walk leaves the stamp alone, because its window is whatever Google
-  remembered from the initial read.
-- **Masters are refetched every delivery, not tracked.** They do not appear in
-  the incremental delta either, so the cache is per delivery (it rides in the
-  paged cursor and clears per calendar): a rule edited at Google lands on
-  whichever later delivery carries an instance of it. That is eventual
-  consistency without a second sync token to expire.
-- **`calendarSeries: false` is the singleEvents-only switch.** The instance
-  walk is unchanged, and no master is fetched, no series record is written and
-  no instance carries the `series` reference or `originalStartAt`. The mirror keeps
-  `recurringEventId`, `recurrence` and `originalStartTime` either way, because
-  it is the verbatim record.
+- **Recurrence rides the mirror, and no master is fetched.** The instance
+  walk stays `singleEvents=true`, so Google does the expanding and each
+  instance mirror carries its master's `recurringEventId`, `recurrence` (the
+  verbatim RRULE/EXDATE/RDATE lines) and `originalStartTime`. Deriving a
+  series record out of those is the repository's to do, from its own kinds:
+  this closure writes nothing outside its own package. The account's
+  `calendarSeries` toggle is deprecated and inert.
 
 Both stdlib bodies **origin-pin** every credentialed call to their provider
 host over https, or loopback (the test seam), **refuse to follow redirects**
@@ -334,15 +296,12 @@ Stated plainly, because a README that overclaims is worse than none:
   `attachmentId` a later slice can fetch by. `raw` has every base64 `data`
   field stripped.
 - **No second view of a recurring event.** `singleEvents=true` stays, so every
-  `calendarevent` row is a concrete occurrence and the `calendareventseries`
-  beside it is the rule alone, never an occurrence: the substrate stores a
-  rule and does not expand it
+  event mirror is a concrete occurrence carrying its master's rule verbatim in
+  `recurrence`. Nothing here expands a rule, and nothing here derives a series
+  record from one
   ([0039](../../docs/decisions/0039-the-substrate-stores-a-recurrence-rule-and-never-expands-it.md)).
-- **No label type.** Core deliberately chose plain `labelIds` strings over an
-  reference into a connector-owned label type, so there is no `label` mirror.
-- **Attendee `responseStatus`, `optional` and `resource` live on the mirror
-  only.** Core's `attendees` reference declares no link data, so the core row
-  cannot hold them.
+- **No label type.** The message mirror keeps plain `labelIds` strings rather
+  than a reference into a label mirror, so there is no `label` kind.
 - **No writeback.** Every stream is read-only.
 - **Deletes reconcile only where the provider says so.** Gmail's history
   tombstones and the sweep cover mail; calendar's `cancelled` entries, its
@@ -400,82 +359,11 @@ shipped here):
    grant, sets `tokenStatus: connected`, and each enabled stream's on-connect
    trigger fires its first backfill.
 
-## Migrating contact ids (upgrading a pre-SDK-id install)
-
-A repository that ran the bundle before the `ids.external` scheme holds `contact`
-rows under the old `account-people-c123` ids. Upgrading the bundle alone would
-DUPLICATE every contact on the next sync (new ids, old rows still live) — run
-the migration loop right after the upgrade.
-
-The migration is **batched**: one call examines at most 200 contacts
-(`{limit?, cursor?}` in — the input is an object, so pass at least `{}`),
-re-puts each old-scheme row under its new id carrying its existing `person`
-reference, tombstones the old row, and returns
-`{migrated, absorbed, skipped, nextCursor}`. Feed `nextCursor` back as
-`cursor` until it comes back **empty** — that bound is what keeps every
-response frame (the `raw` People payloads included) well under the runner's
-8 MiB cap, whatever the book size.
-
-What the counts mean:
-
-- **`migrated`** — re-keyed rows: new id created (guarded create-only, so a
-  racing write turns the batch into a clean conflict re-run, never a
-  clobber), person reference carried, old id tombstoned. Person records are
-  untouched: no shell is minted, no mapping re-match happens, owner edits
-  and offers stand.
-- **`absorbed`** — a sync already wrote the contact under its new id: the
-  fresher row and its data stand; the old row only tombstones. If the raced
-  row resolved a **different** person (an email-less contact re-mints a
-  shell), the migration **merges the new shell into the original person** —
-  the original wins because it may carry owner edits — so no person is
-  orphaned and none is duplicated.
-- **`skipped`** — rows written by nothing: either no `account`/`resourceName`
-  to derive a key from, or the new id is a **tombstone** (Google deleted the
-  contact after the upgrade; a re-put would resurrect it). Skipped rows stay
-  in place and are re-reported on every pass — inspect them by hand.
-
-Re-running a drained loop is a no-op (`migrated: 0`, `nextCursor: ""`).
-
-### Prod steps
-
-Disable the contacts triggers before migrating so a scheduled sync cannot race
-the re-key mid-loop, and re-enable them after (`substratectl apply -f triggers.yaml`
-would reset `enabled: true`, so the upgrade apply is `bundle.yaml` alone):
-
-```sh
-# 1. pause the contacts stream: both its triggers off
-substratectl patch trigger google-contacts-on-connect -p '{"properties":{"enabled":false}}'
-substratectl patch trigger google-contacts-scheduled -p '{"properties":{"enabled":false}}'
-
-# 2. the upgrade: the schema closure only (NOT triggers.yaml — that would
-#    re-enable the sync mid-migration)
-substratectl apply -f bundle.yaml
-
-# 3. the re-key loop: repeat, feeding each nextCursor back, until it is empty
-substratectl function call providers.substrate.reamde.dev/google/contactsidmigration --input '{}'
-# → {"output": {"migrated": 200, "absorbed": 0, "skipped": 0, "nextCursor": "0"}, …}
-substratectl function call providers.substrate.reamde.dev/google/contactsidmigration --input '{"cursor":"0"}'
-# … until: {"…": …, "nextCursor": ""}
-#
-# nextCursor is a retained-prefix count, not a progress offset — the same
-# value coming back twice is normal (rows the batch re-keyed have LEFT the
-# listing). Loop until it is EMPTY, nothing else.
-
-# 4. resume the contacts stream: both triggers back on
-substratectl patch trigger google-contacts-on-connect -p '{"properties":{"enabled":true}}'
-substratectl patch trigger google-contacts-scheduled -p '{"properties":{"enabled":true}}'
-```
-
-Run the loop **before** the first post-upgrade sync gets to full-read the
-book if you can: an expired-sync-token full read stamps a fresh generation
-and its sweep deletes every old-scheme row for that account wholesale, which
-loses the person continuity this migration exists to preserve.
-
 ## Files
 
 - `bundle.yaml` — the **schema closure**: package + bundle + config type +
   account type + the six source/mirror types + the three sync functions +
-  the one-shot id migration + the two mappings onto person.
+  the one-shot id migration. No mapping: this package owns no person.
 - `triggers.yaml` — the **delivery wiring**: three on-connect backfill
   triggers and three hourly re-sync schedules, as ordinary data records.
 
@@ -490,13 +378,13 @@ repository and asserts every member and all six triggers install.
 `engine/google_gmail_bundle_db_test.go` and
 `engine/google_calendar_bundle_db_test.go` prove the two new streams. Each
 starts with a no-DB admission test (the feature scope is really wired, the
-mirrors declare what the body writes, and the emit ceiling names the core
+mirrors declare what the body writes, and the emit ceiling names the
 types the body emits directly) and then drives the sync body **page by page**
 through the runner against a loopback provider, so the paged cursor itself is
 observable:
 
-- the mirrors and the core rows land under the same derived ids, with the
-  required references filled and the addresses resolved to people one hop away;
+- the mirrors land under their derived ids, and every address on a header or
+  an attendee list lands as one `emailaddress` row;
 - the stamp carries the **run-start** watermark, not the completion clock;
 - only a Gmail 404 (and only a Calendar 410) drops to a full re-read — a 400
   surfaces as `erroring` instead;
@@ -516,36 +404,22 @@ observable:
 - an address the engine's `email` validator would reject is skipped rather
   than staged, so one malformed header cannot park the drain;
 - a history delta's retractions take the thread once its last message is gone;
-- a `cancelled` calendar entry retracts both halves and is counted as a
+- a `cancelled` calendar entry retracts the event mirror and is counted as a
   cancellation rather than a failure, a deleted calendar takes its whole event
   tree with it, and the sync token commits only from the page that omits
   `nextPageToken`;
-- a recurring master is fetched by id ONCE for a delivery that spans two
-  pages, its rule is stored as one prefix-stripped RRULE line with the EXDATE
-  and RDATE lines resolved to UTC, the instances carry the `series` reference and
-  the moved one carries `originalStartAt`
-  (`TestGoogleCalendarSeriesLinksMasters`); with `calendarSeries: false` no
-  master is fetched and no series row or reference exists
-  (`TestGoogleCalendarSeriesOffKeepsFlatView`);
+- an instance mirror carries its master's `recurringEventId`, `recurrence`
+  and `originalStartTime`, and no master is fetched
+  (`TestGoogleCalendarMirrorsCarryTheRecurrence`);
 - a calendar failure is recorded even while gmail already owns the erroring
   rollup;
 - a tampered API base refuses to send the token and stamps `erroring` without
   advancing either the rollup `lastSyncedAt` or the stream's own anchor;
 - one poisoned account never stalls the account behind it;
-- and the same address on two accounts, or an address an address-book contact
-  already minted a person for, converges on ONE person.
+- and the same address on two accounts lands on ONE `emailaddress` row, which
+  is what makes a repository's mapping converge them on one person.
 
 Real Google API calls can't run in a test (no creds); live OAuth + sync is
 verified against a connected account (alice@example.com), which needs a
 reconnect after this upgrade because the existing grant carries only
 `contacts.readonly`.
-
-`engine/google_id_migration_db_test.go` proves the contact re-key end to end:
-contacts seeded under the OLD ids (email-matched, email-less, and
-cross-account shared-email — the person-shell hazard cases), the migration
-driven as the operator drives it — batched, more contacts than the limit,
-looping until `nextCursor` is empty — and the same logical contacts asserted
-under the NEW ids with the SAME person records (none re-minted), old ids
-tombstoned, an idempotent re-run, and a post-migration upsert under the sync's
-new scheme landing on the migrated row. Two more tests pin the review fixes:
-the absorbed-merge case and the skip paths.

@@ -1,18 +1,23 @@
-# The Linear bundle — assigned issues, mirrored and projected as tasks
+# The Linear bundle: the issues assigned to you, mirrored
 
 Connects a Linear workspace over the host OAuth facility and syncs the issues
-assigned to the connected login into `issue` mirrors, mapped to persons and
-projected onto `samples.substrate.reamde.dev/tasks/task` rows the owner
-actually works.
+assigned to the connected login into `issue`, `user` and `team` mirrors, in
+Linear's own shape.
+
+**MIRRORS ONLY.** Every row it writes is one of its own kinds: what an issue
+means to your repository (a task, a person) is your vocabulary, reached by a
+mapping you declare from these mirrors (decision record 0049). A mapped
+property is recomputed at the machine tier, so a value you write by hand wins
+over the sync, which is what the deleted `taskprojection` used to arrange by
+hand.
 
 **SYNC-ONLY.** Nothing in this bundle writes back to Linear: completing a task
 in the substrate does **not** move the Linear issue. Provider writeback is an
 outward write to someone else's system and waits on the outbound-writes outbox
 (issue 009); until that lands, this bundle's only writes are substrate writes.
 
-It composes from the same primitive set as the Google bundle —
-**bundle · kind · trait · function · recordmapping · trigger** — and adds
-the one thing Google didn't need: a **joint-ownership projection**.
+It composes from the same primitive set as the Google bundle:
+**bundle · kind · trait · function · trigger**.
 
 ## What it does
 
@@ -23,11 +28,8 @@ account (connected, issues on)
 issuessync (python / uv / Linear GraphQL)
       │  pages viewer.assignedIssues, off the causal chain
       ▼
-user ──mapping──▶ person      (match on email, or mint a shell)
-team ◀──team reference── issue ──mapping──▶ person (assignee)
-      │                        │
-      │                        ▼  linear-task-projection trigger
-      │                  taskprojection ──▶ task  (read, diff, patch if_version)
+user (empty subject slot: a mapping the repository declares fills it)
+team ◀──team reference── issue (empty `assignee` slot, same rule)
       │
       └─ final page stamps the account: lastSyncedAt (→ incremental next run),
          syncStatus, email (from `viewer`)
@@ -54,27 +56,27 @@ hourly schedule ──▶ issuessync ──▶ every connected account due by it
   own shape, ids composed with `host.ids.external("linear", account,
   "user:|team:|issue:<uuid>")`. The issue carries `identifier`, `title` (the
   reserved built-in), `state` + `stateType`, `priority` (as its label), `url`,
-  the raw node, an `assignee` subject reference at person and a `team`
+  the raw node, an unpinned `assignee` subject slot and a `team`
   reference at its team mirror. The team reference is kept **current**: `team`
   is not repeated, so a write replaces a moved issue's previous team, and an
   issue that lost its team upstream gets its stale reference cleared.
-- **`userperson` / `issueperson`** (recordmappings): match on the
-  login/assignee email against people's emails — exactly one live match links,
-  zero-or-many mints a person shell. The user mapping copies names and unions
-  the address onto the person; the issue mapping only resolves the reference (an
-  issue describes work, not the human). When the workspace **hides the viewer's
-  email** (admin-restricted visibility), the issues carry no probe value — and
-  an empty probe would mint one person shell _per issue_ — so the sync instead
-  points each issue's `assignee` reference at the viewer's own `user` mirror and the
-  engine's one-hop subject resolution lands it on the same person that record
-  resolves to: one shell per login, never one per issue (logged once per run).
+This closure ships NO recordmapping. A mapping onto a kind is declared by the
+package that owns that kind (decision record 0049), and this package owns no
+person: a repository declares its own, from `user` on `property: person` and
+from `issue` on `property: assignee`, probing the login and assignee addresses
+it mirrors. When the workspace **hides the viewer's email** (admin-restricted
+visibility) the issues carry no probe value at all, so the sync points each
+issue's `assignee` slot at the viewer's own `user` mirror instead: a repository
+whose mapping reaches people through that mirror resolves it in one hop, and a
+hidden address costs one shell per login rather than one per issue (logged once
+per run).
 - **`issuessync`** (python / PEP 723 / requests): reads the account's
   host-resolved access token off the injected config, pages
   `viewer.assignedIssues` (50/page, `orderBy: updatedAt`) with an `updatedAt`
   floor, and emits mirrors. Large workspaces drain **off the causal chain**
   via the paged-checkpoint `more`/`resume` contract. Mirrors are minted with
   put-if-absent and updated with **patch** (never re-put whole), so an idle
-  re-sync is no-op-suppressed end to end and the projection baseline survives.
+  re-sync is no-op-suppressed end to end.
   - **Incremental floor = run-start watermark.** When an account reaches the
     head of the queue the clock is captured into the page cursor, and a
     _completed_ drain stamps that value — never the completion clock — into
@@ -96,26 +98,6 @@ hourly schedule ──▶ issuessync ──▶ every connected account due by it
   - **Origin pinning.** The bearer token leaves the body only over HTTPS to
     `api.linear.app`, or to loopback (the test seam); anything else refuses
     before a byte is sent.
-- **`taskprojection`**: the joint-ownership policy, ported from the v4 Linear
-  integration's read-diff-patch contract. A synced task is jointly owned —
-  Linear owns the issue's identity (`title`, `url`); the owner owns how they
-  are dealing with it (`status`, once they have moved it). So the projection:
-  1. **reads** the task (`host.records.get`) — committed state, version
-     included;
-  2. **diffs** only the Linear-owned keys, patching what actually moved;
-  3. moves **`status` only when the upstream state departed from the adopted
-     baseline** (`projectedState` on the mirror — v4's
-     `_meta.linear_state_type`), **compared folded** onto the task machine's
-     open/done: "Linear still says started" is not news, and neither is an
-     open-family drag (backlog → started, triage → unstarted) — only a real
-     open↔done transition moves the task, so upstream churn can never undo a
-     task the owner ticked off. A row with no baseline counts as unchanged —
-     except where adopting cannot undo anything (a local task not yet done),
-     so an issue completed in Linear still closes here;
-  4. guards every task patch with `if_version=host.version(task)` — the
-     SDK's optimistic precondition — so a concurrent owner edit conflicts and
-     the redelivery re-reads instead of a stale diff clobbering it.
-
 ## Install, configure, connect
 
 ```sh
@@ -156,37 +138,38 @@ shipped here):
 
 ## Deliberately out of scope (for now)
 
-- **No writeback** — completing/reopening tasks never touches Linear
-  (outbound outbox, issue 009). The v4 integration's `completeIssue` mutation
-  has no counterpart here yet.
+- **No writeback**: nothing here touches Linear (outbound outbox, issue
+  009). The v4 integration's `completeIssue` mutation has no counterpart here
+  yet.
+- **No task projection**: the mirrors are the whole output. A repository that
+  wants issues as tasks declares a mapping from `issue` onto its own task
+  kind, or writes a function of its own; version 11 deleted the projection
+  this closure used to ship, because it wrote a kind the package does not own.
 - **No projects** — v4 mapped Linear projects onto its own projects but never
   synced them as records; no `enabledProjects` toggle is declared until a
   slice wants them.
 - **No delete sweep** — an issue deleted or unassigned upstream keeps its
-  mirror (and its task) until a tombstone slice adds reconciliation; the
-  incremental floor means a full re-read is rare anyway.
+  mirror until a tombstone slice adds reconciliation; the incremental floor
+  means a full re-read is rare anyway.
 - **No comments/attachments/cycles** — issue-level only.
 
 ## Files
 
 - `bundle.yaml` — the **schema closure**: package + bundle + config type +
-  account type + three mirror types + the sync and projection functions + the
-  two →person mappings.
-- `triggers.yaml` — the **delivery wiring**: the on-connect backfill, the
-  hourly re-sync schedule, and the per-issue projection trigger, as ordinary
-  data records.
+  account type + three mirror types + the sync function. No mapping and no
+  projection: every kind it writes is its own.
+- `triggers.yaml`, the **delivery wiring**: the on-connect backfill and the
+  hourly re-sync schedule, as ordinary data records.
 
 ## Tested
 
 `engine/linear_bundle_db_test.go` installs this closure from these very files:
-admission through the schema loader (traits, subject references, both mappings, the
+admission through the schema loader (traits, subject slots, the
 install closure), the whole-closure install into a live repository (skips when uv
 cannot provision the PEP 723 body), and a FAKE-provider end-to-end sync —
-loopback OAuth + a loopback GraphQL stub — proving the mirrors and the person
-land, the paging drains, and the joint-ownership policy holds: a task the
-owner marked done survives an idle re-sync untouched, an OPEN-FAMILY upstream
-move (started → backlog → started) leaves it untouched too — the folded-state
-regression — and an issue completed upstream still closes its task. The team
-reference stays current across a team move (exactly one reference, the new
-team) and a team removal (the stale reference is cleared). Real Linear API
-calls never run in tests.
+loopback OAuth + a loopback GraphQL stub, proving the mirrors land, the
+paging drains, and an idle re-sync writes nothing. The subject slots stay
+empty until a mapping fills them, and with one declared the assignee resolves
+onto the repository's own person. The team reference stays current across a
+team move (exactly one reference, the new team) and a team removal (the stale
+reference is cleared). Real Linear API calls never run in tests.

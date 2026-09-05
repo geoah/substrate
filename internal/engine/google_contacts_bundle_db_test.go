@@ -43,8 +43,6 @@ const (
 	googleAccountType = googlePackage + "/account"
 	googleContactType = googlePackage + "/contact"
 	googleSyncFn      = googlePackage + "/contactssync"
-	googleMigrationFn = googlePackage + "/contactsidmigration"
-	googleMapping     = googlePackage + "/contactperson"
 	googlePersonType  = "samples.substrate.reamde.dev/people/person"
 
 	// The gmail + calendar half of the same closure.
@@ -55,7 +53,6 @@ const (
 	googleEventType    = googlePackage + "/event"
 	googleGmailFn      = googlePackage + "/gmailsync"
 	googleCalendarFn   = googlePackage + "/calendarsync"
-	googleAddressMap   = googlePackage + "/emailaddressperson"
 
 	coreThreadType   = "samples.substrate.reamde.dev/messaging/emailthread"
 	coreMessageType  = "samples.substrate.reamde.dev/messaging/emailmessage"
@@ -137,59 +134,51 @@ func TestGoogleContactsBundleAdmitsSchema(t *testing.T) {
 		t.Fatalf("account type implements oauth2 — client creds belong on the config, not the account")
 	}
 
-	// The source type carries its `person` subject edge — required, single,
-	// pointing at person — which is what the mapping names.
+	// The contact mirror carries an EMPTY subject slot: single, unpinned and
+	// optional (record 49). The repository's own mapping pins it.
 	contact, ok := reg.ByIdentity(googleContactType)
 	if !ok {
 		t.Fatalf("source type %s missing", googleContactType)
 	}
 	ed, ok := contact.Prop("person")
 	if !ok {
-		t.Fatalf("contact declares no `person` edge")
+		t.Fatalf("contact declares no `person` slot")
 	}
-	if ed.To != "samples.substrate.reamde.dev/people/person" || !ed.Required || ed.Repeated {
-		t.Fatalf("person edge shape wrong: to=%q required=%v many=%v", ed.To, ed.Required, ed.Repeated)
-	}
-
-	// The mapping resolved: from the contact, to the person, on the person edge.
-	m, ok := reg.MappingFor(googleContactType)
-	if !ok {
-		t.Fatalf("no mapping registered from %s", googleContactType)
-	}
-	if m.To != "samples.substrate.reamde.dev/people/person" || m.Property != "person" {
-		t.Fatalf("mapping resolves wrong: to=%q edge=%q", m.To, m.Property)
-	}
-	if len(m.Match) == 0 {
-		t.Fatalf("mapping ships no match probe — identity would never link on email")
+	if ed.To != "" || ed.Required || ed.Repeated || !ed.Subject || !ed.MustExist {
+		t.Fatalf("person slot shape wrong: to=%q required=%v many=%v subject=%v mustExist=%v",
+			ed.To, ed.Required, ed.Repeated, ed.Subject, ed.MustExist)
 	}
 
-	// The sync function and the batched id migration are members of the authority.
-	if _, err := reg.ResolveFunction(googleSyncFn); err != nil {
+	// The closure ships NO mapping: this package owns no person.
+	if ms := reg.MappingsFrom(googleContactType); len(ms) != 0 {
+		t.Fatalf("the google closure ships %d mappings from contact; a provider ships none", len(ms))
+	}
+	if ms := reg.MappingsTo("samples.substrate.reamde.dev/people/person"); len(ms) != 0 {
+		t.Fatalf("the google closure maps onto person: %v", ms)
+	}
+
+	// The sync function is a member of the package, and it is the ONLY
+	// contacts callable: the one-shot id migration went with the core rows
+	// (record 49), because no store old enough to need it can open on the
+	// package grammar of record 0047.
+	sync, err := reg.ResolveFunction(googleSyncFn)
+	if err != nil {
 		t.Fatalf("sync function %s did not register: %v", googleSyncFn, err)
 	}
-	mig, err := reg.ResolveFunction(googleMigrationFn)
-	if err != nil {
-		t.Fatalf("id migration function %s did not register: %v", googleMigrationFn, err)
-	}
-	// The migration is a bounded, batched callable (fleet review): it
-	// declares its {limit, cursor} tool card, and the absorbed-orphan fix
-	// needs BOTH halves of the merge gate — person in emit and the
-	// mutations grant — or the fold is refused at effect decode.
-	if mig.Input == nil || mig.Output == nil {
-		t.Fatalf("the migration is not a full tool card: input=%v output=%v",
-			mig.Input != nil, mig.Output != nil)
-	}
-	if !mig.Caps.AllowsMutation(vocabulary.MutationMerge) {
-		t.Fatalf("the migration lacks the permissions.mutations merge grant, so the absorbed-orphan fold would be refused")
-	}
-	var emitsPerson bool
-	for _, ty := range mig.Caps.Emit {
-		if ty == googlePersonType {
-			emitsPerson = true
+	for _, ident := range sync.Caps.Emit {
+		if strings.HasPrefix(ident, enginetest.SampleAuthority+"/") {
+			t.Fatalf("contactssync may write %s, a kind this package does not own", ident)
 		}
 	}
-	if !emitsPerson {
-		t.Fatalf("the migration's emit %v does not name %s — the person merge would be refused", mig.Caps.Emit, googlePersonType)
+	for _, g := range reg.PackageList() {
+		if g.Identity != googlePackage {
+			continue
+		}
+		for _, name := range g.FunctionOrder {
+			if strings.Contains(name, "migration") {
+				t.Fatalf("the closure still ships %s", name)
+			}
+		}
 	}
 
 	// The three feature toggles are declared bool properties on the account.
@@ -259,11 +248,9 @@ func TestGoogleContactsBundleInstalls(t *testing.T) {
 		googleAccountType: "substrate.reamde.dev/core/kind",
 		googleContactType: "substrate.reamde.dev/core/kind",
 		googleSyncFn:      "substrate.reamde.dev/core/function",
-		googleMigrationFn: "substrate.reamde.dev/core/function",
-		googleMapping:     "substrate.reamde.dev/core/recordmapping",
 		// The gmail and calendar closure installs from the same
-		// atomic manifest: four mirror types, the shared address source, two
-		// sync functions and the address mapping.
+		// atomic manifest: four mirror types, the shared address source and two
+		// sync functions. No mapping: this package owns no person (record 49).
 		googleAddressType:  "substrate.reamde.dev/core/kind",
 		googleThreadType:   "substrate.reamde.dev/core/kind",
 		googleMessageType:  "substrate.reamde.dev/core/kind",
@@ -271,7 +258,6 @@ func TestGoogleContactsBundleInstalls(t *testing.T) {
 		googleEventType:    "substrate.reamde.dev/core/kind",
 		googleGmailFn:      "substrate.reamde.dev/core/function",
 		googleCalendarFn:   "substrate.reamde.dev/core/function",
-		googleAddressMap:   "substrate.reamde.dev/core/recordmapping",
 	} {
 		row, err := ds.Get(ctx, wantType, id)
 		if err != nil {
@@ -299,8 +285,8 @@ func TestGoogleContactsBundleInstalls(t *testing.T) {
 	if len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupMissing || st.Setup[0].Input != "client" {
 		t.Fatalf("status setup = %+v, want the one missing-input item", st.Setup)
 	}
-	if st.Functions != 4 {
-		t.Fatalf("status functions = %d, want 4 (contacts sync + id migration + gmail sync + calendar sync)", st.Functions)
+	if st.Functions != 3 {
+		t.Fatalf("status functions = %d, want the three syncs", st.Functions)
 	}
 
 	// The delivery wiring installs as ordinary data records, two triggers per

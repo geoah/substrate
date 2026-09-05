@@ -80,7 +80,6 @@ const (
 	githubIssueType   = githubPackage + "/issue"
 	githubPullType    = githubPackage + "/pullrequest"
 	githubSyncFn      = githubPackage + "/githubsync"
-	githubMapping     = githubPackage + "/userperson"
 )
 
 // TestGithubBundleAdmitsSchema loads the builtin schema, then installs the
@@ -207,18 +206,21 @@ func TestGithubBundleAdmitsSchema(t *testing.T) {
 		}
 	}
 
-	// The mapped source type carries its `person` subject edge — required,
-	// single, pointing at person — which is what the mapping names.
+	// The user mirror carries an EMPTY subject slot: single, unpinned and
+	// optional, because the kind it reaches belongs to the repository and this
+	// package owns none (record 49). A mapping the owner of that kind declares
+	// is what pins it.
 	user, ok := reg.ByIdentity(githubUserType)
 	if !ok {
 		t.Fatalf("source type %s missing", githubUserType)
 	}
 	ed, ok := user.Prop("person")
 	if !ok {
-		t.Fatalf("%s declares no `person` edge", githubUserType)
+		t.Fatalf("%s declares no `person` slot", githubUserType)
 	}
-	if ed.To != "samples.substrate.reamde.dev/people/person" || !ed.Required || ed.Repeated {
-		t.Fatalf("person edge shape wrong: to=%q required=%v many=%v", ed.To, ed.Required, ed.Repeated)
+	if ed.To != "" || ed.Required || ed.Repeated || !ed.Subject || !ed.MustExist {
+		t.Fatalf("person slot shape wrong: to=%q required=%v many=%v subject=%v mustExist=%v",
+			ed.To, ed.Required, ed.Repeated, ed.Subject, ed.MustExist)
 	}
 
 	// The issue and pull-request mirrors each carry a required, single
@@ -253,17 +255,13 @@ func TestGithubBundleAdmitsSchema(t *testing.T) {
 		}
 	}
 
-	// The mapping resolved: from the user, to the person, on the
-	// person edge, probing the public email.
-	m, ok := reg.MappingFor(githubUserType)
-	if !ok {
-		t.Fatalf("no mapping registered from %s", githubUserType)
+	// The closure ships NO mapping: a mapping onto a kind is the declaration of
+	// the package that owns that kind, and this one owns no person (record 49).
+	if ms := reg.MappingsFrom(githubUserType); len(ms) != 0 {
+		t.Fatalf("the github closure ships %d mappings; a provider ships none", len(ms))
 	}
-	if m.To != "samples.substrate.reamde.dev/people/person" || m.Property != "person" {
-		t.Fatalf("mapping resolves wrong: to=%q edge=%q", m.To, m.Property)
-	}
-	if len(m.Match) == 0 {
-		t.Fatalf("mapping ships no match probe — identity would never link on email")
+	if ms := reg.MappingsTo("samples.substrate.reamde.dev/people/person"); len(ms) != 0 {
+		t.Fatalf("the github closure maps onto person: %v", ms)
 	}
 
 	// The sync function is a member of the authority.
@@ -308,7 +306,6 @@ func TestGithubBundleInstalls(t *testing.T) {
 		githubIssueType:   "substrate.reamde.dev/core/kind",
 		githubPullType:    "substrate.reamde.dev/core/kind",
 		githubSyncFn:      "substrate.reamde.dev/core/function",
-		githubMapping:     "substrate.reamde.dev/core/recordmapping",
 	} {
 		row, err := ds.Get(ctx, wantType, id)
 		if err != nil {

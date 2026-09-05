@@ -122,6 +122,7 @@ func TestEffectFormerIDFoldsCanonicalIntoLockOrder(t *testing.T) {
 const (
 	csrcPackage = "csrc.connectors.substrate.reamde.dev/csrc"
 	csrcContact = csrcPackage + "/contact"
+	csrcNote    = csrcPackage + "/note"
 	csrcActor   = substrate.Actor(csrcPackage)
 	subjPerson  = "samples.substrate.reamde.dev/people/person"
 )
@@ -136,6 +137,19 @@ func installContactSource(t *testing.T, ds *dataset) {
 			vocabulary.PackageManifest(csrcPackage, 1),
 			vocabulary.ActorManifest(csrcPackage, vocabulary.PackageActor(csrcPackage)),
 			vocabulary.KindManifest(csrcPackage,
+				map[string]any{"singular": "note", "plural": "notes"},
+				map[string]any{
+					"properties": map[string]any{
+						"text": map[string]any{"type": "string"},
+						// Pinned at the SUBJECT kind, and written with a
+						// contact path: the write takes the subject hop, which
+						// resolves under subject|person.
+						"about": map[string]any{
+							"type": "reference", "kind": subjPerson, "mustExist": true,
+						},
+					},
+				}),
+			vocabulary.KindManifest(csrcPackage,
 				map[string]any{"singular": "contact", "plural": "contacts"},
 				map[string]any{
 					"properties": map[string]any{
@@ -147,17 +161,22 @@ func installContactSource(t *testing.T, ds *dataset) {
 						},
 					},
 				}),
-			vocabulary.MappingManifest(csrcPackage, "contactperson", map[string]any{
-				"from": csrcContact, "to": subjPerson, "property": "person",
-				"match": []any{map[string]any{"from": "email", "to": "emails"}},
-				"map": map[string]any{
-					"name":   map[string]any{"path": "name"},
-					"emails": map[string]any{"path": "email", "merge": "union"},
-				},
-			}),
 		},
 	}); err != nil {
 		t.Fatalf("register contact source: %v", err)
+	}
+	// The mapping belongs to the package that owns `person` (record 49), so
+	// the repository declares it, not the connector.
+	if err := enginetest.DeclareMappings(context.Background(), ds,
+		enginetest.PeopleMapping("contactperson", map[string]any{
+			"from": csrcContact, "property": "person",
+			"match": []any{map[string]any{"from": "email", "to": "emails"}},
+			"map": map[string]any{
+				"name":   map[string]any{"path": "name"},
+				"emails": map[string]any{"path": "email", "merge": "union"},
+			},
+		})); err != nil {
+		t.Fatalf("declare the contact mapping: %v", err)
 	}
 }
 
@@ -253,6 +272,88 @@ func TestEffectSubjectLockPrecedesRecordLocks(t *testing.T) {
 	got := personOfContact(t, ds, "c-s")
 	if got == "" {
 		t.Fatal("the put source never got a subject")
+	}
+}
+
+// TestEffectSubjectLockCoversAReferencedSource is the same order for the OTHER
+// way an effect list reaches a subject: not by writing a mapping source, but by
+// REFERENCING one. A `note` whose `about` names a contact takes the subject hop
+// when it applies, and that hop resolves under subject|person, so the plan has
+// to take that key too, ahead of every record lock. A list holding
+// record|n-1 would wait on a key an ordinary source write holds while reaching
+// for that same record.
+//
+// The branch is new with record 49's per-mapping lock planning; before it, the
+// plan took subject keys only for the effect's OWN kind.
+func TestEffectSubjectLockCoversAReferencedSource(t *testing.T) {
+	t.Parallel()
+	ds := newRaceDataset(t)
+	installContactSource(t, ds)
+	ctx := context.Background()
+
+	// A contact, so the reference has something live to hop through.
+	if _, err := ds.Put(ctx, csrcActor, substrate.PutInput{
+		Kind: csrcContact, ID: "c-x", Properties: map[string]any{"email": "x@example.com", "name": "X"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The list writes NO mapping source: it writes a note that POINTS at one.
+	list := []effect{{
+		Action: effectPut, Type: csrcNote, ID: "n-1",
+		Properties: map[string]any{
+			"text":  "about X",
+			"about": vocabulary.RecordPath(csrcContact, "c-x"),
+		},
+	}}
+
+	barrier, err := ds.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := barrier.ExecContext(ctx,
+		`SELECT pg_advisory_xact_lock(hashtext($1)::bigint)`, ds.scope.lockKey("subject|"+subjPerson)); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- ds.inTx(ctx, csrcActor, false, func(tx *txn) error {
+			if err := tx.lockEffectTargets(list); err != nil {
+				return err
+			}
+			for _, ef := range list {
+				if err := tx.applyEffect(ef); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}()
+
+	time.Sleep(400 * time.Millisecond)
+	if !tryLockFree(t, ds, "record|"+csrcNote+"|n-1") {
+		t.Fatal("the effect plan locked the note before subject|person: a referenced source's subject key is missing from the plan")
+	}
+	select {
+	case err := <-done:
+		t.Fatalf("the effect plan did not park at subject|person: %v", err)
+	default:
+	}
+
+	_ = barrier.Rollback()
+	if err := <-done; err != nil {
+		t.Fatalf("effect list: %v", err)
+	}
+
+	// And the hop landed: the note points at the contact's subject.
+	note, err := ds.Get(ctx, csrcNote, "n-1")
+	if err != nil {
+		t.Fatalf("get the note: %v", err)
+	}
+	kind, id, ok := vocabulary.SplitRecordPath(refPath(note, "about"))
+	if !ok || kind != subjPerson || id != personOfContact(t, ds, "c-x") {
+		t.Fatalf("note.about = %v, want the contact's person", note.Properties["about"])
 	}
 }
 

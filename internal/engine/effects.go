@@ -242,8 +242,18 @@ func (t *txn) lockEffectTargets(effects []effect) error {
 		// the effect's own apply resolves and refuses them under its locks.
 		for _, ref := range effectReferenceTargets(reg, ef) {
 			note(ref)
+			// A reference naming a mapping SOURCE record takes the subject hop
+			// when it applies (references.go subjectHop), and that hop resolves
+			// the source's subject under subject|<to>. Planning the key here,
+			// ahead of every record lock, is what keeps one order: without it
+			// this list could hold a record lock and then reach for a subject
+			// lock a concurrent source write already holds while reaching for
+			// that same record.
+			for _, m := range reg.MappingsFrom(ref.Kind) {
+				subjects["subject|"+m.To] = true
+			}
 		}
-		if m, ok := reg.MappingFor(ef.Type); ok {
+		for _, m := range reg.MappingsFrom(ef.Type) {
 			subjects["subject|"+m.To] = true
 		}
 	}

@@ -184,6 +184,7 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 	if err != nil {
 		return plan, err
 	}
+	blockers = append(blockers, st.strandedMappings...)
 	narrowed, err := narrowingGuards(q, st.narrowings)
 	if err != nil {
 		return plan, err

@@ -161,10 +161,17 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
   ([decision record 0016](decisions/0016-a-kind-titles-itself-from-a-declared-property.md)).
 - **Unknown keys anywhere in `data` are refused**, so a typo cannot be
   silently ignored.
-- **Mapping constraints**: at most one `recordmapping` per `from` kind; its
-  `property` names a reference the from-kind declares `subject: true`, which
-  must be single-valued, `required: true`, `mustExist: true`, never
-  `onDelete: cascade`, and pinned at the mapping's `to`; a mapping's `to` kind
+- **Mapping constraints**: a `recordmapping` is declared by the package that
+  owns its `to` kind, and by no other
+  ([decision record 0049](decisions/0049-the-owner-of-a-mappings-target-declares-it.md));
+  `from` may name a kind in any package, and it resolves at install. At most
+  one mapping per (`from` kind, `property`) pair and one per (`from` kind, `to`
+  kind), so one mirror kind reaches two subject kinds through two references
+  and never one kind twice. Its `property` names a reference the from-kind
+  declares `subject: true`, which must be single-valued, `mustExist: true` and
+  never `onDelete: cascade`; the reference is pinned at the mapping's `to` or
+  left unpinned, and a pinned one is `required: true`. An unpinned one is
+  pinned at the mapping's `to` by the write path. A mapping's `to` kind
   may not itself be any mapping's `from` (bipartite, one level). Every `map`
   path type-checks against both declared kinds at load, so a disagreement
   fails on the manifest that caused it, never on the first sync that hits it.

@@ -1,21 +1,18 @@
-# The Linear bundle — issues assigned to you, mirrored into the graph and
-# projected as tasks. SYNC-ONLY: the substrate reads Linear and never writes
-# it back (completing a task here does NOT move the Linear issue — the
+# The Linear bundle: the issues assigned to you, mirrored into the graph.
+# SYNC-ONLY: the substrate reads Linear and never writes it back (the
 # outbound-writes outbox, issue 009, is where provider writeback lands; until
 # then this bundle's only writes are substrate writes).
 #
-# It composes from the same primitive set the Google bundle does — bundle +
-# kind + trait + function + recordmapping + trigger — over the host
+# It composes from the same primitive set the Google bundle does (bundle +
+# kind + trait + function + trigger) over the host
 # OAUTH facility (Linear's OAuth 2 endpoints as TRUSTED manifest metadata)
 # and the connector runtime (a PEP 723 Python body importing requests through
-# uv). What it adds over Google is the JOINT-OWNERSHIP projection: mirrored
-# issues also mint samples.substrate.reamde.dev/tasks/task rows, and once a task exists it is
-# jointly owned — Linear owns the issue's identity (title, url), the owner
-# owns how they are dealing with it (status, once they have moved it) — so
-# the projection READS the task, DIFFS only the keys Linear owns, and PATCHES
-# under an if_version guard instead of blindly re-putting (the read-diff-patch
-# policy the v4 Linear integration converged on after wholesale upserts kept
-# resurrecting cleared tasks).
+# uv). MIRRORS ONLY: this closure writes nothing outside its own kinds
+# (docs/decisions/0049). What an issue means to the repository (a task, a
+# person) is the repository's own vocabulary, reached by a mapping it
+# declares from these mirrors, and the projection's tiers are what keep a
+# hand edit: a mapped property is recomputed at the machine tier and an owner
+# write wins.
 #
 # Install:  substratectl apply -f bundle.yaml -f triggers.yaml
 # Configure: create a config record — ONLY the Linear OAuth client id +
@@ -60,12 +57,20 @@ data:
   # `issue.assignee` are `subject: true` references the two mappings name with
   # `property:`, `issue.team` carries `mustExist: true`, and every account
   # reference carries `onDelete: cascade`.
-  version: 10
+  # version 11: MIRRORS ONLY. Both `-> person` mappings are gone and
+  # `user.person` and `issue.assignee` are unpinned, optional subject slots,
+  # because a mapping onto a kind is declared by the package that owns that
+  # kind (docs/decisions/0049) and this package owns no person. `taskprojection`
+  # goes with them, and `requires:` with it: this closure wrote `task` rows
+  # into a package it does not own, and what an issue means to the repository
+  # is now the repository's own declaration.
+  version: 11
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
 # package header and the bundle itself): the two config types, the three mirror
-# types, the two functions, and the two →person mappings.
+# types and the sync function. No mapping and no projection: this package
+# writes nothing outside its own kinds.
 kind: substrate.reamde.dev/core/bundle
 metadata:
   id: providers.substrate.reamde.dev/linear
@@ -74,8 +79,7 @@ data:
   package: linear
   description: >-
     Connects a Linear workspace and syncs the issues assigned to you into
-    issue mirrors projected as tasks — read-only toward Linear, with jointly-owned
-    task state patched, never clobbered.
+    issue mirrors under this package's own kinds, read-only toward Linear.
   # The one declared input: the OAuth client record. NO inject: the host
   # OAuth facility reads it (oauth2.clientInput below); no function body ever
   # sees the client credentials.
@@ -83,10 +87,8 @@ data:
     client:
       kind: providers.substrate.reamde.dev/linear/config
       description: the Linear OAuth application the host exchanges codes through
-  # The vocabulary this bundle maps ONTO (see google): import it first.
-  requires:
-    - samples.substrate.reamde.dev/people
-    - samples.substrate.reamde.dev/tasks
+  # No `requires:`: this closure names no kind outside its own package and
+  # core, so it installs on a bare repository.
   # TRUSTED provider metadata (review-google #1): the host reads endpoints and
   # the feature→scope mapping ONLY from here — the immutable install artifact —
   # never from the mutable config record. Linear has no OIDC userinfo GET (the
@@ -109,9 +111,6 @@ data:
     - providers.substrate.reamde.dev/linear/team
     - providers.substrate.reamde.dev/linear/issue
     - providers.substrate.reamde.dev/linear/issuessync
-    - providers.substrate.reamde.dev/linear/taskprojection
-    - providers.substrate.reamde.dev/linear/userperson
-    - providers.substrate.reamde.dev/linear/issueperson
 ---
 # ---- the config type: the `client` input's kind ----------------------------
 # oauth2 (the OAuth CLIENT credentials the facility uses to exchange codes):
@@ -271,8 +270,8 @@ data:
 # One user per connected account's viewer (the login the issues are assigned
 # to), in Linear's own shape. Its id is the provider key —
 # host.ids.external("linear", account, "user:<uuid>"). The `person` subject
-# reference is left EMPTY on write; the mapping below matches or mints the
-# person and links it in the same transaction.
+# slot is left EMPTY on write and stays empty until the repository declares a
+# mapping onto a kind of its own (record 0049).
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: providers.substrate.reamde.dev/linear/user
@@ -281,8 +280,9 @@ data:
   package: linear
   description: >-
     What Linear holds about one user — full name, handle, login address and
-    profile URL. It points at a person, so a Linear login and the same human's
-    other identities converge on one record.
+    profile URL. It carries an empty subject slot, so a repository that declares
+    a mapping onto its own person kind can land a Linear login and the same
+    human's other identities on one record.
   names:
     singular: user
   displayTemplate: "{displayName|name}"
@@ -318,16 +318,17 @@ data:
       type: url
       displayName: URL
       description: the user's Linear profile URL
-    # The subject reference (§6.1): required, single, never cascading, pointing
-    # at person — left empty on write so the substrate resolves it.
+    # The subject slot (record 0049): single, never cascading, UNPINNED and
+    # optional, because the kind it reaches is the repository's to choose and
+    # this package owns none. Left empty on write; the repository's own
+    # mapping pins it and fills it.
     person:
       type: reference
       displayName: Person
-      kind: samples.substrate.reamde.dev/people/person
-      required: true
       mustExist: true
       subject: true
-      description: the human this Linear login belongs to
+      description: the human this Linear login belongs to, once a mapping
+        says which kind that is
 ---
 # ---- mirror: one Linear team ------------------------------------------------
 # Teams arrive as the issues' team refs — enough to hang the issue→team
@@ -381,9 +382,7 @@ data:
   package: linear
   description: >-
     What Linear holds about one assigned issue: identifier, workflow state,
-    priority, due date and assignee. It projects onto a task and remembers
-    the last upstream state it adopted, so an unchanged Linear state never
-    overwrites a status you set.
+    priority, due date and assignee, in Linear's own shape.
   names:
     singular: issue
   properties:
@@ -432,34 +431,31 @@ data:
     assigneeEmail:
       type: email
       displayName: Assignee email
-      description: the assignee's login address — the identity probe the mapping
+      description: the assignee's login address, the identity probe a mapping
         matches on
-    # The task projection's baseline: the LAST upstream stateType the
-    # projection adopted into the task. Status on the jointly-owned task moves
-    # only when stateType departs from this — "Linear still says started" is
-    # not news and must never overwrite a status the owner set (the v4
-    # read-diff-patch policy's `_meta.linear_state_type`, as a mirror
-    # property). Written by the projection function; the sync PATCHES mirrors
-    # (never re-puts them whole) so the stamp survives every re-sync.
+    # DEPRECATED and inert since version 11: the baseline the deleted task
+    # projection compared against. Declared still, because dropping a property
+    # a live row may hold is a narrowing the upgrade refuses.
     projectedState:
+      deprecated: true
       type: string
       displayName: Projected state
-      description: the upstream state type the task projection last adopted
-        — the joint-ownership baseline
+      description: "deprecated and inert since version 11: the upstream state
+        type the deleted task projection last adopted"
     raw:
       type: json
       displayName: Raw
       description: the raw issue node as fetched, for provenance
-    # The subject reference (§6.1): required, single, never cascading, pointing
-    # at person — left empty on write so the substrate resolves it.
+    # The subject slot (record 0049): single, never cascading, UNPINNED and
+    # optional. Until the repository declares a mapping from this kind, the
+    # sync leaves it empty (or names the viewer's own user mirror, below).
     assignee:
       type: reference
       displayName: Assignee
-      kind: samples.substrate.reamde.dev/people/person
-      required: true
       mustExist: true
       subject: true
-      description: the human this issue is assigned to
+      description: the human this issue is assigned to, once a mapping says
+        which kind that is
     team:
       type: reference
       displayName: Team
@@ -476,11 +472,10 @@ data:
 # contract — one page per invocation, at constant causal depth.
 #
 # Existing mirrors are PATCHED, never re-put whole: a put replaces the whole
-# property set, which would wipe the projection's `projectedState` baseline
-# every sync and break the joint-ownership policy. So each row is a
-# put-if-absent (the mint) followed by a patch (the update) — an identical
-# patch is no-op-suppressed, so an idle re-sync writes nothing and fires no
-# projection deliveries at all.
+# property set, which would wipe whatever a repository's own code stamped on
+# the row. So each row is a put-if-absent (the mint) followed by a patch (the
+# update), and an identical patch is no-op-suppressed, so an idle re-sync
+# writes nothing and fires no deliveries at all.
 #
 # Per-account isolation (F2/F3): one account's provider failure stamps ITS
 # syncStatus "erroring: <reason>" and the queue drains on behind it — a
@@ -534,8 +529,8 @@ data:
     still running land on the next run (a short overlap absorbs clock skew).
     The first sync's reach is the account's backfillDepth (F4: none = from
     connect time, forward only). Mirrors are minted with put-if-absent and
-    updated with patch, so the projection's joint-ownership baseline
-    (`projectedState`) survives every re-sync.
+    updated with patch, so an idle re-sync writes nothing and whatever the
+    repository stamped on a mirror survives.
 
     Per-account isolation (F2/F3): a provider failure stamps THAT account's
     syncStatus "erroring: <reason>" and the queue moves on — one poisoned
@@ -743,20 +738,18 @@ data:
         viewer_email = str(viewer.get("email") or "").strip().lower()
         vid = viewer.get("id") or ""
         if viewer_email:
-            # Every synced issue is assigned to the viewer: the identity probe
-            # the assignee mapping matches or mints the person on.
+            # Every synced issue is assigned to the viewer, and the address is
+            # the probe a repository's own assignee mapping matches on. The
+            # subject slot itself is left EMPTY: this package declares no
+            # mapping, so nothing here decides which kind fills it.
             props["assigneeEmail"] = viewer_email
         elif vid:
-            # The viewer's address is hidden (admin-restricted visibility).
-            # An EMPTY probe would mint one person shell PER ISSUE — the
-            # mapping mints whenever nothing decides — so point the subject
-            # at the viewer's own user mirror instead: the
-            # engine's one-hop resolution lands it on the SAME person that
-            # record resolves to. A hidden address costs one shell per
-            # login, never one per issue.
-            # The value is the user mirror's flat `<kind>/<id>` path, the same
-            # one-hop shape google's mirrors write: this body names the user
-            # RECORD and never a person.
+            # The viewer's address is hidden (admin-restricted visibility), so
+            # there is no probe to match on. Point the slot at the viewer's own
+            # user mirror instead: it is the one record that names this human,
+            # and a repository whose mapping reaches people through the user
+            # mirror resolves it in one hop. The value is the mirror's flat
+            # `<kind>/<id>` path, the same shape google's mirrors write.
             if not noted.get("hidden"):
                 noted["hidden"] = True
                 host.log("linear-issues: viewer email hidden for %s — "
@@ -765,8 +758,8 @@ data:
                                  + host.ids.external("linear", aid,
                                                      "user:" + vid))
         else:
-            # No address AND no viewer id: nothing to hang identity on, and
-            # staging would spray person shells. Skip the issue, loudly, once.
+            # No address AND no viewer id: nothing to hang identity on, and an
+            # issue nobody can attribute is noise. Skip it, loudly, once.
             if not noted.get("unmappable"):
                 noted["unmappable"] = True
                 host.log("linear-issues: no viewer identity for %s — "
@@ -915,183 +908,3 @@ data:
         if rest:
             return {"more": host.page.more(_fresh(rest))}
         return {"output": {"account": aid, "issues": count}}
----
-# ---- the task projection: the joint-ownership showcase ---------------------
-# Fired per issue write (triggers.yaml). Mints a task for a new open issue
-# and, for an EXISTING task, applies the v4 read-diff-patch policy for JOINT
-# OWNERSHIP: Linear owns the issue's identity (title, url) — those diff and
-# patch whenever they moved; the OWNER owns how they are dealing with the task
-# — `status` moves ONLY when the UPSTREAM state actually departed from the
-# last adopted baseline (`projectedState` on the mirror), compared FOLDED onto
-# the task machine's open/done: an open-family churn (backlog → started,
-# triage → unstarted) is not a departure, so neither "Linear still says
-# started" nor "Linear dragged it to another open column" can undo a task the
-# owner ticked off. On a row with no baseline yet, upstream counts as
-# unchanged — except where adopting it cannot undo anything (a local task not
-# yet done), which lets an issue completed in Linear still close here. Every
-# patch of the task is guarded with if_version=host.version(task) — the SDK's
-# optimistic precondition — so a concurrent owner edit conflicts and the
-# redelivery re-reads, rather than the stale diff clobbering it. This is a
-# SUBSTRATE write; nothing here (or anywhere in this bundle) writes back to
-# Linear.
-kind: substrate.reamde.dev/core/function
-metadata:
-  id: providers.substrate.reamde.dev/linear/taskprojection
-data:
-  authority: providers.substrate.reamde.dev
-  package: linear
-  description: >-
-    Project one issue onto its task: mint open tasks, patch only the Linear-owned
-    keys of existing ones — status moves only on a real upstream transition,
-    under an if_version guard.
-  runtime: python
-  permissions:
-    writes:
-      - samples.substrate.reamde.dev/tasks/task
-      - providers.substrate.reamde.dev/linear/issue
-    reads:
-      kinds:
-        - samples.substrate.reamde.dev/tasks/task
-  source: |
-    TASK_TYPE = "samples.substrate.reamde.dev/tasks/task"
-    ISSUE_TYPE = "providers.substrate.reamde.dev/linear/issue"
-    ACCOUNT_PREFIX = "providers.substrate.reamde.dev/linear/account/"
-    DONE_TYPES = ("completed", "canceled")
-
-
-    def _account_id(value):
-        # `account` is a reference, STORED as the object {"ref": "<kind>/<id>"};
-        # a bare path string is the write-time shorthand a pre-0044 row may
-        # still hold, so both are read. str() of the dict would hash the whole
-        # serialized object into the task id. The task id composes off the bare
-        # account id, so the path's prefix comes off before it is hashed.
-        v = str(value.get("ref") or "") if isinstance(value, dict) else str(value or "")
-        return v[len(ACCOUNT_PREFIX):] if v.startswith(ACCOUNT_PREFIX) else v
-
-
-    def _fold(state_type):
-        # Linear's six stateTypes fold onto the task machine's two: only this
-        # FOLDED value is ever compared. An open-family transition (backlog ->
-        # started, triage -> unstarted) folds to the same "open" and is
-        # upstream churn, not news — it must never reopen a task the owner
-        # ticked off.
-        return "done" if state_type in DONE_TYPES else "open"
-
-
-    def main(input, host):
-        env = input.get("envelope") or {}
-        issue = env.get("record") or {}
-        props = issue.get("properties") or {}
-        aid = _account_id(props.get("account"))
-        pid = props.get("providerId") or ""
-        if not aid or not pid:
-            return {"output": {"skipped": True}}
-
-        state_type = props.get("stateType") or ""
-        upstream = _fold(state_type)
-        title = (props.get("title") or props.get("identifier") or "").strip()
-        url = props.get("url") or ""
-        baseline = props.get("projectedState")
-
-        # The task id composes off the SAME provider key as the mirror, under
-        # its own namespace (ids are one namespace, so the two must differ).
-        task_id = host.ids.external("linear-task", aid, pid)
-        # The read half of read-diff-patch: committed state, version included.
-        task = host.records.get(TASK_TYPE, task_id)
-
-        if task is None:
-            # Mint only tasks that are still open upstream: backfilling a task
-            # that was already done in Linear would create noise, not work.
-            if upstream == "open" and title:
-                # The issue's own heading rides the mirror's built-in title
-                # slot; the task's is its declared `name` (#123).
-                tprops = {"name": title}
-                if url:
-                    tprops["url"] = url
-                host.effects.put(TASK_TYPE, task_id, properties=tprops,
-                                 if_absent=True)
-        else:
-            tprops = task.get("properties") or {}
-            desired = {}
-            # Linear-owned identity keys: diff, and patch only what moved. A
-            # task minted before `name` was declared answers nothing here, so
-            # the first redelivery is also its backfill.
-            if title and tprops.get("name") != title:
-                desired["name"] = title
-            if url and tprops.get("url") != url:
-                desired["url"] = url
-            # STATUS IS THE DELICATE FIELD (the v4 policy): it moves only when
-            # the upstream state actually departed from the adopted baseline
-            # — compared FOLDED, because raw stateType granularity would call
-            # backlog -> started a departure and reopen an owner-done task on
-            # upstream churn that never left the open family. No baseline (a
-            # pre-stamp row) counts as unchanged — except where adopting
-            # cannot undo anything (a local task not yet done). Only
-            # open<->done transitions exist on the task machine; a proposed
-            # or abandoned task is the owner's and is never touched.
-            local = tprops.get("status") or "open"
-            moved = bool(baseline) and _fold(baseline) != upstream
-            adoptable = local in ("open", "done")
-            if adoptable and local != upstream and (
-                    moved or (not baseline and local != "done")):
-                desired["status"] = upstream
-            if desired:
-                # The optimistic precondition: patch applies only against the
-                # exact version read above; a concurrent edit conflicts and the
-                # redelivery re-reads instead of clobbering.
-                host.effects.patch(TASK_TYPE, task_id, properties=desired,
-                                   if_version=host.version(task))
-
-        # Adopt the baseline: stamp the RAW upstream stateType this
-        # projection saw (folding happens at compare time). The stamp carries
-        # this function's own actor, and the dispatcher's self-exclusion
-        # means it is never delivered back to this body.
-        if baseline != state_type:
-            host.effects.patch(ISSUE_TYPE, issue.get("id"),
-                               properties={"projectedState": state_type})
-        return {"output": {"task": task_id}}
----
-# ---- mapping: user → person -------------------------------------------------
-# The record's `person` reference, and how its properties reach the human (§6.1/
-# §7.1). match probes the login address against people's emails: exactly one
-# live match links it, zero-or-many mints a person shell. map copies the names
-# and unions the address onto the person (machine-managed, yielding to any
-# owner edit).
-kind: substrate.reamde.dev/core/recordmapping
-metadata:
-  id: providers.substrate.reamde.dev/linear/userperson
-data:
-  authority: providers.substrate.reamde.dev
-  package: linear
-  from: providers.substrate.reamde.dev/linear/user
-  to: samples.substrate.reamde.dev/people/person
-  property: person
-  match:
-    - from: email
-      to: emails
-  map:
-    name:
-      path: name
-    displayName:
-      path: displayName
-    emails:
-      path: email
-      merge: union
----
-# ---- mapping: issue → person ------------------------------------------------
-# The issue's `assignee` subject reference: match the assignee's address against
-# people's emails (the viewer's user record has usually already minted the
-# person, so this resolves to the same human). No map block — an issue
-# describes work, not the person; nothing of it belongs on the human.
-kind: substrate.reamde.dev/core/recordmapping
-metadata:
-  id: providers.substrate.reamde.dev/linear/issueperson
-data:
-  authority: providers.substrate.reamde.dev
-  package: linear
-  from: providers.substrate.reamde.dev/linear/issue
-  to: samples.substrate.reamde.dev/people/person
-  property: assignee
-  match:
-    - from: assigneeEmail
-      to: emails

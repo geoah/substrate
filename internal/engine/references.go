@@ -296,6 +296,18 @@ func (t *txn) normalizeReference(p *vocabulary.Property, v any) (any, error) {
 	return out, nil
 }
 
+// subjectSlots reports whether a kind declares a `subject: true` reference at
+// all: a mirror waiting for a mapping, as against a kind that simply is not
+// what the pin admits.
+func subjectSlots(ty *vocabulary.Kind) bool {
+	for _, name := range ty.PropOrder {
+		if ty.Props[name].Subject {
+			return true
+		}
+	}
+	return false
+}
+
 // referenceAdmits reports whether a kind satisfies a reference's pin: no pin
 // admits everything, a `kind:` pin names the kind, a `trait:` pin names a
 // contract the kind implements.
@@ -323,6 +335,20 @@ func referenceAdmits(reg *vocabulary.Registry, p *vocabulary.Property, rt *vocab
 // already stored, because this only ever runs inside somebody else's write.
 func (t *txn) subjectHop(p *vocabulary.Property, target eref, rt *vocabulary.Kind) (eref, error) {
 	mismatch := func() error {
+		// A MIRROR WITH NO MAPPING is the one shape whose fix is not "write a
+		// different path": the value names exactly the record the writer
+		// means, and what is missing is the declaration saying which kind it
+		// describes. Since record 49 that declaration is the target owner's,
+		// so the message says whose it is rather than repeating the pin.
+		if subjectSlots(rt) && len(t.ds.registry().MappingsFrom(rt.Identity)) == 0 {
+			pin := p.To
+			if pin == "" {
+				pin = "trait " + p.ToTrait
+			}
+			return fmt.Errorf(
+				"%w: reference points at %s, and no mapping is declared from %s onto %s: declare one in the package that owns %s",
+				substrate.ErrValidation, rt.Identity, rt.Identity, pin, pin)
+		}
 		if p.ToTrait != "" {
 			return fmt.Errorf("reference points at %s, which does not implement the pinned trait %s", rt.Identity, p.ToTrait)
 		}
@@ -334,14 +360,28 @@ func (t *txn) subjectHop(p *vocabulary.Property, target eref, rt *vocabulary.Kin
 			"reference points at %s, but the declaration pins %s — write a %s path, or the bare id %q if that is what was meant",
 			rt.Identity, p.To, p.To, vocabulary.RecordPath(target.Kind, target.ID))
 	}
-	m, isSource := t.ds.registry().MappingFor(rt.Identity)
-	if !isSource {
+	// A source kind may carry a mapping per subject property (record 49), so
+	// the hop collects the candidates the pin admits. TWO of them is not a
+	// choice the engine may make for the writer: a `trait:` pin admitting both
+	// of a mirror's targets means the value names one record and the
+	// declaration means either, so it is refused naming both mappings rather
+	// than resolved by load order.
+	var admitted []*vocabulary.Mapping
+	for _, cand := range t.ds.registry().MappingsFrom(rt.Identity) {
+		to, known := t.ds.registry().ByIdentity(cand.To)
+		if known && referenceAdmits(t.ds.registry(), p, to) {
+			admitted = append(admitted, cand)
+		}
+	}
+	if len(admitted) == 0 {
 		return eref{}, mismatch()
 	}
-	to, known := t.ds.registry().ByIdentity(m.To)
-	if !known || !referenceAdmits(t.ds.registry(), p, to) {
-		return eref{}, mismatch()
+	if len(admitted) > 1 {
+		return eref{}, fmt.Errorf(
+			"%w: reference points at %s, and mappings %s and %s both reach a kind this declaration admits: name the subject record itself",
+			substrate.ErrValidation, rt.Identity, admitted[0].Identity(), admitted[1].Identity())
 	}
+	m := admitted[0]
 	// The hop reads a record, so the source has to be there whatever `mustExist`
 	// says: there is no subject to resolve on a row that does not exist.
 	row, err := t.loadRow(target, false)
@@ -352,7 +392,7 @@ func (t *txn) subjectHop(p *vocabulary.Property, target eref, rt *vocabulary.Kin
 		return eref{}, fmt.Errorf("%w: reference names %s, which does not exist",
 			substrate.ErrNotFound, vocabulary.RecordPath(target.Kind, target.ID))
 	}
-	id, err := t.subjectOf(row, rt)
+	id, err := t.subjectOf(row, rt, m)
 	if err != nil {
 		return eref{}, err
 	}

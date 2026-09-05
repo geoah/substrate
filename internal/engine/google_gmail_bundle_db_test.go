@@ -133,9 +133,10 @@ func TestGoogleGmailBundleAdmitsSchema(t *testing.T) {
 		t.Fatalf("enabledGmail scopes = %v, want the single gmail.readonly", scopes)
 	}
 
-	// The shared people source: a required, single, non-cascading subject reference
-	// and a mapping with a live match probe. Without the probe every address
-	// would mint its own person shell.
+	// The shared people source: a single, non-cascading subject SLOT, unpinned
+	// and optional, and no mapping of its own. The kind it reaches is the
+	// repository's to choose (record 49), and the repository's own mapping is
+	// what carries a match probe.
 	addr, ok := reg.ByIdentity(googleAddressType)
 	if !ok {
 		t.Fatalf("source type %s missing", googleAddressType)
@@ -143,27 +144,17 @@ func TestGoogleGmailBundleAdmitsSchema(t *testing.T) {
 	mustProps(t, addr, "account", "address", "displayName")
 	ed, ok := addr.Prop("person")
 	if !ok {
-		t.Fatalf("emailaddress declares no `person` edge")
+		t.Fatalf("emailaddress declares no `person` slot")
 	}
-	if ed.To != googlePersonType || !ed.Required || ed.Repeated || ed.Cascades() {
-		t.Fatalf("person reference shape wrong: kind=%q required=%v repeated=%v cascades=%v",
-			ed.To, ed.Required, ed.Repeated, ed.Cascades())
+	if ed.To != "" || ed.Required || ed.Repeated || ed.Cascades() || !ed.Subject || !ed.MustExist {
+		t.Fatalf("person slot shape wrong: kind=%q required=%v repeated=%v cascades=%v subject=%v mustExist=%v",
+			ed.To, ed.Required, ed.Repeated, ed.Cascades(), ed.Subject, ed.MustExist)
 	}
-	m, ok := reg.MappingFor(googleAddressType)
-	if !ok {
-		t.Fatalf("no mapping registered from %s", googleAddressType)
+	if ms := reg.MappingsFrom(googleAddressType); len(ms) != 0 {
+		t.Fatalf("the google closure ships %d mappings from emailaddress; a provider ships none", len(ms))
 	}
-	if m.To != googlePersonType || m.Property != "person" {
-		t.Fatalf("mapping resolves wrong: to=%q edge=%q", m.To, m.Property)
-	}
-	if len(m.Match) == 0 {
-		t.Fatalf("the address mapping ships no match probe — every sender would mint a shell")
-	}
-	// The display name is deliberately NOT mapped onto person.displayName:
-	// mail volume would clobber an address book's nickname under atomic
-	// latest-write-wins.
-	if _, mapped := m.Map["displayName"]; mapped {
-		t.Fatalf("the address mapping writes person.displayName — mail headers would clobber the address book")
+	if ms := reg.MappingsTo(googlePersonType); len(ms) != 0 {
+		t.Fatalf("the google closure maps onto person: %v", ms)
 	}
 
 	// The two mirrors carry what the body writes.
@@ -192,14 +183,21 @@ func TestGoogleGmailBundleAdmitsSchema(t *testing.T) {
 	}
 
 	// The function: the emit ceiling names the mirrors, the shared address
-	// source, the account stamp AND the two core messaging types.
+	// source and the account stamp, and NOTHING ELSE. This closure writes no
+	// kind it does not own (record 49), so a core messaging kind in the
+	// ceiling would be a license it must not hold.
 	fn, err := reg.ResolveFunction(googleGmailFn)
 	if err != nil {
 		t.Fatalf("gmail sync %s did not register: %v", googleGmailFn, err)
 	}
 	mustEmit(t, fn, googleThreadType, googleMessageType, googleAddressType,
-		googleAccountType, coreThreadType, coreMessageType)
-	mustRead(t, fn, googleThreadType, googleMessageType, coreThreadType, coreMessageType)
+		googleAccountType)
+	mustRead(t, fn, googleThreadType, googleMessageType)
+	for _, ident := range fn.Caps.Emit {
+		if strings.HasPrefix(ident, enginetest.SampleAuthority+"/") {
+			t.Fatalf("gmailsync may write %s, a kind this package does not own", ident)
+		}
+	}
 	if strings.Contains(fn.Source, "# /// script") {
 		t.Fatalf("gmailsync declares PEP 723 dependencies — it is meant to run on the dependency-free fast path")
 	}
@@ -516,7 +514,7 @@ func googleMillisAgo(d time.Duration) string {
 
 // googleInstallRewired installs the shipped closure with the two sync bodies
 // pointed at the loopback fakes.
-func googleInstallRewired(t *testing.T, ds *dataset, rewire func([]map[string]any)) {
+func googleInstallRewired(t *testing.T, ds *dataset, rewire func([]map[string]any), extra ...map[string]any) {
 	t.Helper()
 	docs := loadYAMLDocs(t, googleExampleDir+"/bundle.yaml")
 	rewire(docs)
@@ -526,6 +524,44 @@ func googleInstallRewired(t *testing.T, ds *dataset, rewire func([]map[string]an
 		}
 		t.Fatalf("install the google bundle: %v", err)
 	}
+	// The closure ships NO mapping and writes no kind it does not own
+	// (record 49), so the shipped default is what a test gets: mirrors, with
+	// every subject slot empty. A test that wants the mint, the projection or
+	// the one-hop resolution passes the mappings the REPOSITORY would declare,
+	// and they land in ONE apply, because a mapping is part of the people
+	// closure and re-applying that closure replaces it whole.
+	if len(extra) == 0 {
+		return
+	}
+	if err := enginetest.DeclareMappings(context.Background(), ds, extra...); err != nil {
+		t.Fatalf("declare the google mappings: %v", err)
+	}
+}
+
+// googleAddressMapping and googleContactMapping are the repository's own
+// declarations onto person, the two the shipped closure used to carry.
+func googleAddressMapping() map[string]any {
+	return enginetest.PeopleMapping("emailaddressperson", map[string]any{
+		"from": googleAddressType, "property": "person",
+		"match": []any{map[string]any{"from": "address", "to": "emails"}},
+		"map": map[string]any{
+			"name":   map[string]any{"path": "displayName"},
+			"emails": map[string]any{"path": "address", "merge": "union"},
+		},
+	})
+}
+
+func googleContactMapping() map[string]any {
+	return enginetest.PeopleMapping("contactperson", map[string]any{
+		"from": googleContactType, "property": "person",
+		"match": []any{map[string]any{"from": "emails[].value", "to": "emails"}},
+		"map": map[string]any{
+			"name":        map[string]any{"path": "name.displayName"},
+			"displayName": map[string]any{"path": "name.displayName"},
+			"emails":      map[string]any{"path": "emails[].value", "merge": "union"},
+			"phones":      map[string]any{"path": "phones[].value", "merge": "union"},
+		},
+	})
 }
 
 // googleStepper drives one sync body page by page through the runner — no
@@ -771,47 +807,31 @@ func TestGoogleGmailFakeSyncMirrors(t *testing.T) {
 	if got := fmt.Sprint(htmlMirror.Properties["text"]); got != wantText {
 		t.Fatalf("html body flattened to %q, want %q", got, wantText)
 	}
-	htmlCore, err := ds.Get(ctx, coreMessageType, htmlID)
-	if err != nil {
-		t.Fatalf("core row for the html-only message did not sync: %v", err)
-	}
-	if got := fmt.Sprint(htmlCore.Properties["text"]); got != wantText {
-		t.Fatalf("core text = %q, want %q", got, wantText)
-	}
-
-	// The CORE row rides the same id, a different type — and its required
-	// thread edge is filled explicitly, which is the whole reason the sync
-	// emits core rows directly instead of mapping onto them.
-	core, err := ds.Get(ctx, coreMessageType, msgID)
-	if err != nil {
-		t.Fatalf("core emailmessage did not sync: %v", err)
-	}
+	// MIRRORS ONLY (record 49): no core messaging row is written at all, and
+	// the mirror is where the flattened body lands.
 	threadID := substratefn.ExternalID("gmail-thread", "acct-step", "t-m1")
-	if got := refIDs(core, "thread"); len(got) != 1 || got[0] != threadID {
-		t.Fatalf("core message thread = %v, want %s", got, threadID)
+	if got := fmt.Sprint(mirror.Properties["threadId"]); got != "t-m1" {
+		t.Fatalf("message mirror threadId = %q", got)
 	}
-	if _, err := ds.Get(ctx, coreThreadType, threadID); err != nil {
-		t.Fatalf("core emailthread did not sync: %v", err)
+	for _, absent := range []struct{ kind, id string }{
+		{coreMessageType, msgID},
+		{coreMessageType, htmlID},
+		{coreThreadType, threadID},
+	} {
+		if _, err := ds.Get(ctx, absent.kind, absent.id); err == nil {
+			t.Fatalf("the sync wrote %s %s, a kind this package does not own", absent.kind, absent.id)
+		}
 	}
 
-	// The one-hop resolution: the body referenced the emailaddress RECORD and
-	// reference normalization stored the PERSON its mapping resolved.
-	senders := refPaths(core, "sender")
-	if len(senders) != 1 {
-		t.Fatalf("core message has %d senders, want 1", len(senders))
-	}
-	senderKind, senderID, _ := vocabulary.SplitRecordPath(senders[0])
-	if senderKind != googlePersonType {
-		t.Fatalf("sender landed on %s, want %s", senderKind, googlePersonType)
-	}
+	// Every address on a header lands as one emailaddress mirror, with an
+	// EMPTY subject slot: the kind it describes is the repository's to say.
 	addrID := substratefn.ExternalID("google-address", "acct-step", "alice@example.com")
 	addrRow, err := ds.Get(ctx, googleAddressType, addrID)
 	if err != nil {
 		t.Fatalf("emailaddress record did not sync: %v", err)
 	}
-	if got := refIDs(addrRow, "person"); len(got) != 1 || got[0] != senderID {
-		t.Fatalf("the message's sender and the address record resolved different people: %v vs %v",
-			got, senderID)
+	if got := refIDs(addrRow, "person"); len(got) != 0 {
+		t.Fatalf("the address row filled its subject slot with %v, and no mapping is declared", got)
 	}
 
 	// Newest-wins on the thread: m2 is the later message, so its subject and
@@ -1158,7 +1178,8 @@ func TestGoogleGmailAddressConverges(t *testing.T) {
 	}
 	ctx := context.Background()
 	ds := openInternalDataset(t)
-	googleInstallRewired(t, ds, func([]map[string]any) {})
+	googleInstallRewired(t, ds, func([]map[string]any) {},
+		googleAddressMapping(), googleContactMapping())
 
 	// A contact the address book already synced: its mapping minted a person.
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
@@ -1409,10 +1430,6 @@ func TestGoogleGmailHistoryDeltaAddsAndSkips(t *testing.T) {
 		substratefn.ExternalID("gmail-message", "acct-step", "m1")); err != nil {
 		t.Fatalf("the delta's added message did not sync: %v", err)
 	}
-	if _, err := ds.Get(ctx, coreMessageType,
-		substratefn.ExternalID("gmail-message", "acct-step", "m1")); err != nil {
-		t.Fatalf("the delta wrote no core row: %v", err)
-	}
 	// Both ids were fetched; the 404 did not abort the batch behind it.
 	if n := fake.gets(); n != 2 {
 		t.Fatalf("messages.get ran %d times, want one per delta id", n)
@@ -1475,9 +1492,7 @@ func TestGoogleGmailHistoryDeleteRetractsEmptyThread(t *testing.T) {
 	threadID := substratefn.ExternalID("gmail-thread", "acct-step", "t-m9")
 	for _, ref := range []struct{ typ, id string }{
 		{googleMessageType, msgID},
-		{coreMessageType, msgID},
 		{googleThreadType, threadID},
-		{coreThreadType, threadID},
 	} {
 		if _, err := ds.Get(ctx, ref.typ, ref.id); err != nil {
 			t.Fatalf("round one wrote no %s: %v", ref.typ, err)
@@ -1492,9 +1507,7 @@ func TestGoogleGmailHistoryDeleteRetractsEmptyThread(t *testing.T) {
 
 	for _, ref := range []struct{ typ, id, what string }{
 		{googleMessageType, msgID, "the message mirror"},
-		{coreMessageType, msgID, "the core message"},
 		{googleThreadType, threadID, "the thread mirror"},
-		{coreThreadType, threadID, "the core thread"},
 	} {
 		row, err := ds.Get(ctx, ref.typ, ref.id)
 		if err != nil {
@@ -1546,12 +1559,8 @@ func TestGoogleGmailMalformedAddressSkipped(t *testing.T) {
 		t.Fatalf("syncStatus = %v", stamp["syncStatus"])
 	}
 	msgID := substratefn.ExternalID("gmail-message", "acct-step", "m1")
-	core, err := ds.Get(ctx, coreMessageType, msgID)
-	if err != nil {
-		t.Fatalf("core emailmessage did not sync: %v", err)
-	}
-	if n := len(refPaths(core, "recipients")); n != 1 {
-		t.Fatalf("core message has %d recipients, want only the parseable one", n)
+	if _, err := ds.Get(ctx, googleMessageType, msgID); err != nil {
+		t.Fatalf("message mirror did not sync: %v", err)
 	}
 	for _, bad := range []string{"a..b@example.com", ".a@example.com", "a.@example.com"} {
 		id := substratefn.ExternalID("google-address", "acct-step", bad)
@@ -1561,11 +1570,17 @@ func TestGoogleGmailMalformedAddressSkipped(t *testing.T) {
 	}
 }
 
-// TestGoogleGmailRecipientCap: a mailing-list blast is one message with a
-// thousand addresses, and every person ref is an edge target LOCKED in the
-// page's one transaction. The core edge is capped; the mirror keeps the whole
-// header, so nothing is actually lost.
-func TestGoogleGmailRecipientCap(t *testing.T) {
+// TestGoogleGmailSyncsWithNoMappingDeclared is the regression the review
+// caught: with the core rows gone, a FRESH repository that has declared no
+// mapping at all must still get its mail. Before phase 4 the mirror and the
+// core row rode in one page, so the refused core write rolled the whole page
+// back and a gmail sync delivered NOTHING; now the mirrors are the output and
+// the subject slots simply stay empty.
+//
+// Nothing here declares a mapping, and nothing imports the people sample: this
+// is a repository with core and the google closure, which is what a first
+// connect looks like.
+func TestGoogleGmailSyncsWithNoMappingDeclared(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
@@ -1574,43 +1589,52 @@ func TestGoogleGmailRecipientCap(t *testing.T) {
 		t.Skip("uv not on PATH — the closure's contacts body warms through uv at install")
 	}
 	ctx := context.Background()
-	var to []string
-	for i := range 6 {
-		to = append(to, fmt.Sprintf("list-%d@example.com", i))
-	}
 	fake := newFakeGmail(t)
 	fake.listed = []string{"m1"}
 	fake.msgs["m1"] = gmailMessage("m1", "t-m1", "Rack layout",
-		"alice@example.com", strings.Join(to, ", "),
-		googleMillisAgo(5*time.Hour), "hi")
+		"Alice Example <alice@example.com>", "ada@example.com",
+		googleMillisAgo(24*time.Hour), "the cold aisle plan")
 	fake.start(t)
 
-	ds := openInternalDataset(t)
+	ds := openCoreDataset(t)
 	googleInstallRewired(t, ds, func(docs []map[string]any) {
 		googlePointGmailAt(docs, fake.ts.URL)
-		googleGmailConst(t, docs, "MAX_RECIPIENTS = 200", "MAX_RECIPIENTS = 3")
 	})
 	googleSeedAccount(t, ds, "acct-step")
 
-	newGoogleStepper(t, ds, googleGmailFn, googleStepConfig(gmailStepProps(nil))).
+	effects := newGoogleStepper(t, ds, googleGmailFn, googleStepConfig(gmailStepProps(nil))).
 		drainApplying(nil)
 
+	// The run completed, and the mirrors are all there.
+	if stamp := googleAccountStamp(t, effects, "acct-step"); stamp["syncStatus"] != "ok" {
+		t.Fatalf("syncStatus = %v, want a clean run with no mapping declared", stamp["syncStatus"])
+	}
 	msgID := substratefn.ExternalID("gmail-message", "acct-step", "m1")
-	core, err := ds.Get(ctx, coreMessageType, msgID)
+	if got := mustGetRow(t, ds, googleMessageType, msgID).Properties["subject"]; got != "Rack layout" {
+		t.Fatalf("message mirror subject = %v", got)
+	}
+	threadID := substratefn.ExternalID("gmail-thread", "acct-step", "t-m1")
+	if _, err := ds.Get(ctx, googleThreadType, threadID); err != nil {
+		t.Fatalf("thread mirror did not sync: %v", err)
+	}
+	addrID := substratefn.ExternalID("google-address", "acct-step", "alice@example.com")
+	addr, err := ds.Get(ctx, googleAddressType, addrID)
 	if err != nil {
-		t.Fatalf("core emailmessage did not sync: %v", err)
+		t.Fatalf("emailaddress mirror did not sync: %v", err)
 	}
-	if n := len(refPaths(core, "recipients")); n != 3 {
-		t.Fatalf("core message has %d recipients, want the cap's 3", n)
+	if got := refIDs(addr, "person"); len(got) != 0 {
+		t.Fatalf("the address row filled its subject slot with %v, and no mapping is declared", got)
 	}
-	mirror, err := ds.Get(ctx, googleMessageType, msgID)
+}
+
+// mustGetRow is Get with the error folded into the test.
+func mustGetRow(t *testing.T, ds *dataset, kind, id string) *substrate.Record {
+	t.Helper()
+	row, err := ds.Get(context.Background(), kind, id)
 	if err != nil {
-		t.Fatalf("message mirror did not sync: %v", err)
+		t.Fatalf("get %s %s: %v", kind, id, err)
 	}
-	if n := len(mirror.Properties["to"].([]any)); n != len(to) {
-		t.Fatalf("the mirror kept %d of %d addresses — the cap must bound the "+
-			"EDGES, never the provenance copy", n, len(to))
-	}
+	return row
 }
 
 // TestGoogleGmailBackfillBoundedByInvocations is the LIVELOCK regression.

@@ -19,7 +19,7 @@ mirror. When it lands, writeback arrives as a separate slice over these same
 mirror types.
 
 It composes from the exact primitive set the google bundle proved:
-**bundle · kind · trait · function · recordmapping · trigger**, the
+**bundle · kind · trait · function · trigger**, the
 host OAuth facility (the `oauth2:` manifest block with its `client` input +
 the `accountconfig`/`oauth2` traits), and the connector runtime (a PEP 723
 Python body pulling `requests` through uv).
@@ -35,7 +35,7 @@ sync (python / uv / GitHub REST)
       │        → search PRs (involves:) → search PRs (review-requested:),
       │  one page per invocation, off the causal chain
       ▼
-user ──recordmapping──▶ person   (match on public email, or mint a shell)
+user (empty subject slot: a mapping the repository declares fills it)
 repository
 issue ────repository reference──▶ repository
 pullrequest ──repository reference──▶ repository
@@ -59,10 +59,12 @@ hourly schedule ──▶ sync ──▶ every connected account due by its sync
   connector state `syncCursor`/`login`/`lastSyncedAt`/`syncStatus` (writer:
   connector). Displays as the public email, falling back to the
   connector-stamped `login` when GitHub exposes no public email.
-- **`user`** (mirror + mapped source type): one row per (account, login). The
+- **`user`** (mirror): one row per (account, login). The
   connected user's row is written whole off `GET /user`; issue and PR authors
-  land as create-only stubs. Its required `person` subject reference is left empty
-  on write — the mapping resolves it.
+  land as create-only stubs. Its `person` subject slot is unpinned, optional
+  and left EMPTY on write: the kind a GitHub user describes is the
+  repository's to choose, and a mapping it declares is what fills the slot
+  (decision record 0049).
 - **`repository`** (mirror): written whole off `GET /user/repos` under
   `enabledRepos`; issues and PRs also mint create-only stubs for repositories
   outside that listing, so their required parent reference always resolves.
@@ -73,9 +75,9 @@ hourly schedule ──▶ sync ──▶ every connected account due by its sync
   keep a 100-item page inside the frame cap), `authorLogin`, `labels`,
   `htmlURL`, the provider timestamps, and `raw`.
   Each carries a required `repository` reference. There is deliberately NO
-  reference at `user`: it is a mapped source type, and the bipartite rule
-  (record 50) forbids any reference landing on one — the human behind
-  `authorLogin` is reached through the user mirror and its person mapping.
+  reference at `user`: the moment a mapping names it as a source the bipartite
+  rule (record 50) forbids any reference landing on it, so the human behind
+  `authorLogin` is reached through the user mirror instead.
 - **`githubsync`** (python / PEP 723): reads the account's host-resolved access token
   off the injected config, walks the stages **pinned at queue-head** (a toggle
   flipped mid-drain can neither crash nor shift the walk), and pages the REST
@@ -84,12 +86,11 @@ hourly schedule ──▶ sync ──▶ every connected account due by its sync
   `host.ids.external("github", account, key)` with keys like `user/<login>`,
   `repo/<owner/name>`, `issue/<owner/name>#<n>` — deterministic, so a re-sync
   upserts the same rows and never duplicates.
-- **`userperson`** (recordmapping): `match` probes the profile's public email
-  against people's emails — exactly one live match links, zero-or-many mints a
-  person shell (author stubs carry no email, so they mint `utility`-prominence
-  shells). `map` copies the full name, prefers the login as the friendly
-  `displayName`, and unions the email onto the person as machine-managed
-  properties.
+This closure ships NO recordmapping. A mapping onto a kind is declared by the
+package that owns that kind (decision record 0049), and this package owns no
+person: a repository that wants GitHub identities to reach its people declares
+its own, from `user` on `property: person`, probing the profile's public email.
+Until it does, every `user` row carries an empty subject slot.
 
 ## Incremental windows: per-stage watermarks
 
@@ -165,8 +166,8 @@ toggle so an issues-only account still derives its email and login off
 `GET /user`. The bundle deliberately does **not** request `user:email`: that
 scope unlocks the private `GET /user/emails` list, which nothing here reads —
 the identity probe uses the **public** profile email only. An account whose
-profile sets no public email carries a blank `email` (its person mapping
-mints a shell instead of matching) and displays as its `login`. v4
+profile sets no public email carries a blank `email` (a repository's person
+mapping mints a shell instead of matching) and displays as its `login`. v4
 sidestepped scopes entirely with a personal access token; the bundle model
 makes the grant explicit at consent time instead.
 
@@ -212,7 +213,7 @@ grant itself from GitHub's settings if desired.
 
 - `bundle.yaml` — the **schema closure**: package + bundle (with the trusted
   `oauth2:` provider metadata) + config type + account type + the four
-  mirror types + the sync function + the user→person mapping.
+  mirror types + the sync function.
 - `triggers.yaml` — the **delivery wiring**: the on-connect backfill trigger
   and the hourly re-sync schedule, as ordinary data records.
 

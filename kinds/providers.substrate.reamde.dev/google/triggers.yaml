@@ -6,9 +6,9 @@
 #   account(connected, contacts on, never synced)  --contactssync-->
 #       contact records  (+ the contacts sync-token / cadence-anchor stamp)
 #   account(connected, gmail on, never synced)     --gmailsync-->
-#       thread + message mirrors, emailthread + emailmessage core rows
+#       thread + message + emailaddress mirrors
 #   account(connected, calendar on, never synced)  --calendarsync-->
-#       calendar + event mirrors, core calendar + calendarevent rows
+#       calendar + event + emailaddress mirrors
 #   hourly schedules  --each function-->  every due, connected account
 #
 # Each on-connect trigger is guarded to fire ONCE per account, on ITS OWN

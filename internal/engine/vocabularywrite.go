@@ -301,12 +301,14 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 			}
 		}
 		// Refuse-breakage, all problems at once: a dropped type with live
-		// rows, a narrowing definition diff stranding live rows, and (bundle
+		// rows, a dropped type another package's mapping names as its source,
+		// a narrowing definition diff stranding live rows, and (bundle
 		// authorities) a dropped callable live triggers name.
 		guards, err := droppedTypeGuards(t, st.droppedTypes)
 		if err != nil {
 			return err
 		}
+		guards = append(guards, st.strandedMappings...)
 		narrowed, err := narrowingGuards(t, st.narrowings)
 		if err != nil {
 			return err
@@ -392,9 +394,14 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 // upgrade preview (PlanBundleUpgrade) share it, so what the preview reports
 // and what the install refuses can never disagree.
 type vocabularyStage struct {
-	candidate        *vocabulary.Registry
-	touched          map[string]bool
-	droppedTypes     []string
+	candidate    *vocabulary.Registry
+	touched      map[string]bool
+	droppedTypes []string
+	// strandedMappings names the mappings another package declares FROM a kind
+	// this batch removes (record 49): uninstalling Linear while the
+	// repository's own mapping reads `linear/issue` is refused until the
+	// mapping goes. One line per mapping, ready to join the guard list.
+	strandedMappings []string
 	droppedCallables []droppedCallable
 	// reprojected names the kinds whose REFERENCE declarations moved, so the
 	// refs index is re-derived for their records in the apply's transaction
@@ -594,6 +601,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		// the looser contract stands — the dispatcher skips an unresolvable
 		// callable loudly.
 		droppedTypes:     droppedTypes,
+		strandedMappings: strandedMappingGuards(candidate, droppedTypes),
 		droppedCallables: droppedBundleCallables(current, candidate, touched),
 		reprojected:      reprojectedKinds(current, candidate, touched),
 		// Evolution-with-data: a NARROWING definition

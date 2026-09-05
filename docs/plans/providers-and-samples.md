@@ -215,18 +215,29 @@ down into admission where Q3 wanted it.
 ### 4. Decouple providers from the shared vocabulary
 
 This is the breaking half, and it changes what an install of Google or
-Linear delivers out of the box.
+Linear delivers out of the box. **Landed with phase 5**, in the same PR,
+because the two could not be separated: with the mappings gone, a core row
+whose reference pins `person` is refused, and mirror and core row rode in one
+page, so a gmail sync delivered nothing at all.
 
-- Every provider drops `requires:` on sample authorities.
-- Google's gmail and calendar syncs stop emitting `emailthread`,
-  `emailmessage`, `calendar` and `calendarevent` rows; the mirrors
-  (`gmailthread`, `gmailmessage`, `calendar`, `event`) are the whole output.
-- Linear drops `taskprojection` and its `issue → task` projection; GitHub and
-  Google drop their `→ person` mappings.
-- Every mirror kind that used to project declares its subject reference
-  unpinned: `issue.task`, `user.person`, `contact.person`, `gmailmessage.email`,
-  `event.calendarevent`. Unpinned and not `required`, so a mirror row lands
-  with the slot empty until a mapping fills it.
+- ~~Every provider drops `requires:` on sample authorities.~~ Landed: no
+  provider names a sample package, and each installs on a bare repository.
+- ~~Google's gmail and calendar syncs stop emitting `emailthread`,
+  `emailmessage`, `calendar` and `calendarevent` rows.~~ Landed, and
+  `calendareventseries` with them: the mirrors are the whole output, an
+  instance carries its master's `recurrence` lines verbatim, and the one-shot
+  `contactsidmigration` is deleted (no store old enough to need it opens on
+  the package grammar of 0047).
+- ~~Linear drops `taskprojection` and its `issue → task` projection.~~ Landed,
+  with its trigger; `issue.projectedState` stays declared and deprecated.
+- ~~GitHub and Google drop their `→ person` mappings.~~ Landed: every provider
+  mapping is gone, because a mapping onto a kind is now the declaration of the
+  package that owns that kind.
+- ~~Every mirror kind that used to project declares its subject reference
+  unpinned.~~ Landed for the five slots that had a mapping
+  (`user.person`, `contact.person`, `emailaddress.person`,
+  `linear/user.person`, `issue.assignee`). Unpinned and not `required`, so a
+  mirror row lands with the slot empty until a mapping fills it.
 - The engine blocks that stopped a mapping targeting `emailmessage`
   (required references a shell mint cannot fill) are reworked: a mapping may
   fill a reference on the subject by following the SOURCE's own reference
@@ -236,10 +247,16 @@ Linear delivers out of the box.
 
 ### 5. Mappings declared by the user, and the samples that suggest them
 
-- `parseMapping` admits a mapping whose `from` kind lives in another
-  authority when the declaring authority owns `to`. `mappingInvariantProblems`
-  keys one-per-source on (from, property) instead of from alone, so one
-  mirror kind may project onto two user kinds through two slots.
+The loader and engine half LANDED; the suggested mappings did not.
+
+- ~~`parseMapping` admits a mapping whose `from` kind lives in another
+  authority when the declaring authority owns `to`.~~ Landed, and stricter
+  than this bullet: the owner of `to` is the ONLY package that may declare a
+  mapping, so `from` is free to live anywhere and the providers ship none. The
+  key is (source kind, subject property), with a second rule that one source
+  kind reaches a given target through one property; the mapping's `to` is the
+  write-time pin on an unpinned slot; and dropping a kind another package's
+  mapping names as `from` is refused at every door.
 - Each sample ships optional **suggested mappings** for the providers it
   knows: `samples/tasks/mappings/linear.yaml` declares
   `linear…/issue → <placeholder>/task` on `property: task`. The import applies

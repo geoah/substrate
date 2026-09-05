@@ -559,6 +559,31 @@ func droppedTypeGuards(q sqlReader, droppedTypes []string) ([]string, error) {
 	return guards, nil
 }
 
+// strandedMappingGuards renders the mapping half of refuse-breakage: a kind
+// this batch removes that a mapping in ANOTHER package names as `from`
+// (record 49). It reads the CANDIDATE registry, so a mapping the same batch
+// removes with its kind raises nothing, and it names the mapping, symmetric
+// with `requires:` refusing an install when the package it names is absent.
+// No query: what it refuses is a declaration, not a row.
+func strandedMappingGuards(candidate *vocabulary.Registry, droppedTypes []string) []string {
+	if len(droppedTypes) == 0 {
+		return nil
+	}
+	dropped := map[string]bool{}
+	for _, ident := range droppedTypes {
+		dropped[ident] = true
+	}
+	var guards []string
+	for _, m := range candidate.Mappings() {
+		if dropped[m.From] {
+			guards = append(guards, fmt.Sprintf(
+				"kind %s is the source of mapping %s: delete that mapping first, or it would name a kind this repository no longer has",
+				m.From, m.Identity()))
+		}
+	}
+	return guards
+}
+
 // refTargetNarrows reports whether a reference's `kind:` pin moved to a
 // STRICTER constraint: an unconstrained target (empty or "any") pinned to a
 // type, or one type replaced by a different one. Widening (→ any) or an
