@@ -90,7 +90,7 @@ func authorizeNewPackage(actor substrate.Actor, current *vocabulary.Registry, pk
 	if authority != publisherAuthority {
 		return nil
 	}
-	return fmt.Errorf("%w: %s publishes the substrate's own vocabulary — a repository declares its own kinds under its own authority",
+	return fmt.Errorf("%w: %s publishes the substrate's own vocabulary; a repository declares its own kinds under its own authority",
 		substrate.ErrForbidden, publisherAuthority)
 }
 

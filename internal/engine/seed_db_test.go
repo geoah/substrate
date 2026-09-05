@@ -293,8 +293,8 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 		t.Fatalf("the stored package version = %v", pkg.Properties["version"])
 	}
 	// UNTOUCHED GROUPS STAY UNTOUCHED: the diff is per group, not a re-assert.
-	// The seed holds two — the `substrate.reamde.dev` authority row and the
-	// `substrate.reamde.dev/core` package — and only the package moved, so the
+	// The seed holds two (the `substrate.reamde.dev` authority row and the
+	// `substrate.reamde.dev/core` package) and only the package moved, so the
 	// authority row must not appear in the upgrade's entries at all.
 	for _, ch := range upgrade {
 		if ch.RecordID == "substrate.reamde.dev" {

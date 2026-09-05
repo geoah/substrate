@@ -2270,7 +2270,7 @@ func (r *Registry) Install(g *Package) error {
 	// mapping whose violation lives on an already-loaded kind, and it may
 	// claim a GraphQL name another package already answers to. Both are
 	// checked HERE and not only in Finalize, because the engine installs
-	// through this door alone (vocabularywrite.go) — a collision it skipped
+	// through this door alone (vocabularywrite.go): a collision it skipped
 	// would land in the store and take the whole repository's schema build
 	// down at the next read.
 	problems = append(problems, r.mappingInvariantProblems()...)
