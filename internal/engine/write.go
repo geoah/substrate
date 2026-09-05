@@ -1515,6 +1515,7 @@ func (t *txn) storeSecretProps(ty *vocabulary.Kind, owner eref, before, row *ero
 				if _, err := t.exec(`DELETE FROM sealed WHERE ref = $1`, old); err != nil {
 					return nil, err
 				}
+				t.mirrorSealedDelete(old)
 			}
 			continue
 		}
@@ -1573,6 +1574,7 @@ func (t *txn) storeSecretProps(ty *vocabulary.Kind, owner eref, before, row *ero
 			if _, err := t.exec(`DELETE FROM sealed WHERE ref = $1`, old); err != nil {
 				return nil, err
 			}
+			t.mirrorSealedDelete(old)
 		}
 	}
 	if len(drop) == 0 {

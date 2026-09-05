@@ -43,8 +43,13 @@ type Log struct {
 	head     int64
 	// TruncatedBytes is the length of the torn tail on the active segment:
 	// the bytes after its last newline, which a crash mid-append leaves
-	// behind. Open cut them from the file; Verify only counted them.
+	// behind. Open cut them from the file; OpenReadOnly and Verify only
+	// counted them.
 	TruncatedBytes int64
+	// repaired records that the torn tail, if any, was cut: only such a Log
+	// may back a Writer, because an append after a torn tail would glue two
+	// half-lines into one unreadable one.
+	repaired bool
 }
 
 // Open reads a changelog directory and checks it: every finished segment
@@ -56,12 +61,19 @@ type Log struct {
 // empty log with head 0.
 func Open(dir string) (*Log, error) { return open(dir, true) }
 
+// OpenReadOnly reads and checks a changelog directory exactly as Open does
+// but changes nothing: a torn tail is counted in TruncatedBytes and left in
+// place, and Read and Walk stop before it. It is for readers that must not
+// write, an operator's verify or an inspection of a directory another process
+// may be appending to. A Log opened this way cannot back a Writer.
+func OpenReadOnly(dir string) (*Log, error) { return open(dir, false) }
+
 func open(dir string, repair bool) (*Log, error) {
 	list, err := Segments(dir)
 	if err != nil {
 		return nil, err
 	}
-	l := &Log{dir: dir}
+	l := &Log{dir: dir, repaired: repair}
 	var prevLast int64
 	for i, s := range list {
 		if s.First != prevLast+1 {

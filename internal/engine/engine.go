@@ -29,6 +29,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/geoah/substrate/internal/blobbytes"
+	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/gql"
 	"github.com/geoah/substrate/internal/oauthflow"
 	"github.com/geoah/substrate/internal/runner"
@@ -45,8 +46,10 @@ type options struct {
 	oauthHTTP *http.Client
 	credKey   string
 	dataRoot  string
-	blobs     blobbytes.Backend
-	log       *slog.Logger
+	// segmentBytes is the changelog segment size (WithChangelogSegmentBytes).
+	segmentBytes int64
+	blobs        blobbytes.Backend
+	log          *slog.Logger
 	// insecureAllowSuperuser downgrades the fail-closed role check to a warning
 	// (WithInsecureAllowSuperuser). Dev/test only; never the production default.
 	insecureAllowSuperuser bool
@@ -99,6 +102,12 @@ func WithCredentialKey(key string) Option { return func(o *options) { o.credKey 
 // for somebody's data.
 func WithDataRoot(root string) Option { return func(o *options) { o.dataRoot = root } }
 
+// WithChangelogSegmentBytes sets the size past which a repository's active
+// changelog segment is finished and the next one opened
+// (SUBSTRATE_CHANGELOG_SEGMENT_BYTES). changelogfile.DefaultSegmentBytes
+// when not given or not positive.
+func WithChangelogSegmentBytes(n int64) Option { return func(o *options) { o.segmentBytes = n } }
+
 // WithBlobStore puts blob bytes somewhere other than the default, which is the
 // fs backend under the data root (<root>/repositories/<id>/blobs). The s3
 // backend trades the one-directory backup for bytes in a bucket;
@@ -110,10 +119,6 @@ func WithBlobStore(b blobbytes.Backend) Option { return func(o *options) { o.blo
 // ErrNoDataRoot is Open's refusal when no data root was given, or the given
 // one is not an absolute path.
 var ErrNoDataRoot = errors.New("substrate/engine: no data root: set SUBSTRATE_DATA_ROOT (engine.WithDataRoot) to the absolute directory that holds every repository's files")
-
-// repositoriesDir is the directory under the data root that holds one
-// subdirectory per repository, named by the repository id.
-const repositoriesDir = "repositories"
 
 // WithInsecureAllowSuperuser DOWNGRADES the fail-closed role check to a loud
 // warning: when the two bound roles are absent or misconfigured, Open proceeds
@@ -172,8 +177,10 @@ type service struct {
 	// credKey seals the sealed store (AES-256-GCM); empty stores plain.
 	credKey []byte
 	// dataRoot is the data root (WithDataRoot); <dataRoot>/repositories/<id>
-	// is one repository's directory.
+	// is one repository's directory (repodir.go).
 	dataRoot string
+	// segmentBytes is the size every changelog writer rotates at.
+	segmentBytes int64
 	// blobs is where blob bytes live (WithBlobStore); the fs backend under
 	// the data root by default.
 	blobs blobbytes.Backend
@@ -242,8 +249,11 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 	if o.dataRoot == "" || !filepath.IsAbs(o.dataRoot) {
 		return nil, fmt.Errorf("%w (got %q)", ErrNoDataRoot, o.dataRoot)
 	}
-	if err := os.MkdirAll(filepath.Join(o.dataRoot, repositoriesDir), 0o700); err != nil {
-		return nil, fmt.Errorf("substrate/engine: create %s under the data root: %w", repositoriesDir, err)
+	if err := os.MkdirAll(filepath.Join(o.dataRoot, changelogfile.RepositoriesDir), 0o700); err != nil {
+		return nil, fmt.Errorf("substrate/engine: create %s under the data root: %w", changelogfile.RepositoriesDir, err)
+	}
+	if o.segmentBytes <= 0 {
+		o.segmentBytes = changelogfile.DefaultSegmentBytes
 	}
 
 	admin, err := sql.Open("pgx", dsn)
@@ -274,6 +284,7 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 		base:         reg,
 		credKey:      credKey,
 		dataRoot:     o.dataRoot,
+		segmentBytes: o.segmentBytes,
 		blobs:        o.blobs,
 		totpDisabled: o.insecureDisableTOTP,
 		log:          o.log,
@@ -399,6 +410,15 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 	// this database already holds is refused HERE, not discovered one
 	// repository at a time by whoever opens one first.
 	if err := s.requireCredentialKeyOpens(ctx); err != nil {
+		_ = maint.Close()
+		_ = admin.Close()
+		return nil, err
+	}
+	// Every repository's directory against its rows, before anything is
+	// served (repodir.go): a crash left the file a transaction behind, a
+	// restore left a directory with no row, or a store predates the data
+	// root. A repository the two sides disagree on refuses the boot.
+	if err := s.reconcileRepositories(ctx); err != nil {
 		_ = maint.Close()
 		_ = admin.Close()
 		return nil, err
@@ -549,12 +569,24 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 			_ = db.Close()
 			return nil, fmt.Errorf("substrate/engine: open repository %s: adopt DEK: %w", repo.Username, err)
 		}
+		// The manifest carries the wrapped DEK, so the row is re-read to
+		// hand ensureManifest the bytes the adoption stored.
+		if repo, err = s.repositoryByID(ctx, repo.ID); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("substrate/engine: open repository %s: re-read after adopting a DEK: %w", repo.Username, err)
+		}
+	}
+	dir, err := s.repositoryDir(repo.ID)
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.Username, err)
 	}
 	ds := &dataset{
 		svc:   s,
 		db:    db,
 		dek:   dek,
 		scope: sc,
+		dir:   dir,
 		// A dataset's registry starts EMPTY and is built from the repository's
 		// OWN rows: the embedded tree seeded them once, at
 		// creation, and has no standing here afterwards. Nothing re-projects
@@ -564,13 +596,24 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		watch: newBroadcaster(),
 		info:  repo.info(),
 	}
-	// The changelog dialect gate runs FIRST, ahead of every step that writes:
+	// The directory before every step that writes: the writer opens at the
+	// file's head, which must be the table's, or the ladder's first append
+	// would land on a file that is not at the seq it claims (repodir.go).
+	if err := ds.openDirectory(ctx); err != nil {
+		ds.close()
+		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.Username, err)
+	}
+	if err := s.ensureManifest(ctx, dir, repo, db); err != nil {
+		ds.close()
+		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.Username, err)
+	}
+	// The changelog dialect gate runs next, ahead of every step that writes:
 	// a binary that cannot replay this history must not extend it either. It
 	// only reads; the claim is written by the first transaction that appends
 	// (changelogdialect.go). This is the entries' half of the downgrade gate,
 	// beside dialect.go's promoteSchemaDialect over the stored declaration rows.
 	if err := ds.gateChangelogDialect(ctx); err != nil {
-		_ = db.Close()
+		ds.close()
 		return nil, err
 	}
 	// The stored rows speak one DIALECT: the gate in dialect.go refuses a
@@ -585,7 +628,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.ensureTriggerCursors,
 	} {
 		if err := step(ctx); err != nil {
-			_ = db.Close()
+			ds.close()
 			return nil, err
 		}
 	}
@@ -648,6 +691,15 @@ func (s *service) CreateRepository(ctx context.Context, name, authority string) 
 // on the way out; a failure at the row itself does the same. There is no order
 // in which a HALF-CREATED USER can be observed: the user exists exactly when
 // the row does, and by then the repository is complete.
+//
+// THE DIRECTORY COMES LAST. The repository directory under the data root
+// (repodir.go) is written from the tables AFTER the control-plane row, not
+// beside the seed: the seed dataset has no writer. So a crash before the row
+// leaves scoped rows and no directory, which sweepOrphans reclaims, and a
+// crash after the row leaves a row with no directory or a partial one, which
+// the boot check writes out (case 5) or catches up (case 2). Neither state
+// needs a rule of its own, and a directory can never exist for a repository
+// that does not.
 func (s *service) createSeededRepository(ctx context.Context, name, authority string, extra func(*txn) error) (Repository, error) {
 	var zero Repository
 	if !vocabulary.ValidRepositoryName(name) {
@@ -765,6 +817,16 @@ func (s *service) createSeededRepository(ctx context.Context, name, authority st
 				"repository", repo.ID, "error", cerr)
 		}
 		return zero, err
+	}
+	// The directory, from the tables the seed just committed. A failure here
+	// is a failed registration like any other: the row is erased with the
+	// rows and the directory, so nothing half-made survives the call.
+	if _, err := s.reconcileRow(ctx, repo, false); err != nil {
+		if cerr := s.eraseRepository(ctx, repo.ID); cerr != nil {
+			s.log.Error("substrate: could not erase after a repository directory write failure",
+				"repository", repo.ID, "error", cerr)
+		}
+		return zero, fmt.Errorf("substrate/engine: write the repository directory of %s: %w", name, err)
 	}
 	return repo, nil
 }

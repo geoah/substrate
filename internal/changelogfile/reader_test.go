@@ -193,6 +193,50 @@ func TestOpenCutsATornTailOnTheActiveSegment(t *testing.T) {
 	}
 }
 
+func TestOpenReadOnlyLeavesATornTailAndRefusesAWriter(t *testing.T) {
+	dir := threeSegments(t)
+	path := filepath.Join(dir, SegmentName(5))
+	clean := fileSize(t, path)
+	torn := encodeLine(t, entryAt(8))
+	appendRaw(t, path, torn[:len(torn)-1])
+	l, err := OpenReadOnly(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.Head() != 7 || l.TruncatedBytes != int64(len(torn)-1) {
+		t.Fatalf("head = %d, truncated = %d", l.Head(), l.TruncatedBytes)
+	}
+	if fileSize(t, path) != clean+int64(len(torn)-1) {
+		t.Fatal("OpenReadOnly changed the file")
+	}
+	// Reads stop before the torn tail.
+	got, err := l.Read(0, 0)
+	if err != nil || !equalSeqs(seqs(got), 1, 7) {
+		t.Fatalf("read = %v, %v", seqs(got), err)
+	}
+	if _, err := l.Writer(WriterOptions{}); !errors.Is(err, ErrLogNotRepaired) {
+		t.Fatalf("Writer over a read-only log: err = %v, want ErrLogNotRepaired", err)
+	}
+	// Open repairs, and a writer over that log continues at the head.
+	l, err = Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := l.Writer(WriterOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Append(entriesFrom(8, 1)); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if rep, err := Verify(dir); err != nil || rep.Head != 8 || rep.TruncatedBytes != 0 {
+		t.Fatalf("after the append: report = %+v, err = %v", rep, err)
+	}
+}
+
 func TestOpenTornTailThatIsTheWholeActiveSegment(t *testing.T) {
 	dir := t.TempDir()
 	writeLines(t, dir, 1, encodeLine(t, entryAt(1)))

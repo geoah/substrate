@@ -36,6 +36,10 @@ func mustDecodeTestCredentialKey(key string) []byte {
 	return raw
 }
 
+// DataRootOf is the data root a service was opened with, so a test can find
+// a repository's directory (changelogfile.RepoDir) and damage or copy it.
+func DataRootOf(svc substrate.Service) string { return svc.(*service).dataRoot }
+
 // SealedAAD builds the additional data a sealed-store row binds to, so a test
 // opens a payload the way the engine does (ADR 0023).
 func SealedAAD(ref, recordKind, recordID string) []byte { return sealedAAD(ref, recordKind, recordID) }

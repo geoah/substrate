@@ -57,13 +57,29 @@ func OpenWriter(dir string, opts WriterOptions) (*Writer, error) {
 	if err != nil {
 		return nil, err
 	}
-	w := &Writer{dir: dir, segmentBytes: opts.SegmentBytes, head: l.head, truncated: l.TruncatedBytes}
+	return l.Writer(opts)
+}
+
+// ErrLogNotRepaired is returned by Log.Writer for a Log that OpenReadOnly
+// produced: its torn tail, if any, is still on disk, and appending after it
+// would corrupt the segment.
+var ErrLogNotRepaired = errors.New("changelogfile: a read-only log cannot back a writer")
+
+// Writer opens a Writer over a Log that Open produced, positioned at the
+// Log's head, so a caller that has already scanned the directory (to compare
+// its tail with the table, say) does not scan it a second time. The Log is a
+// snapshot: after the first Append it no longer describes the directory.
+func (l *Log) Writer(opts WriterOptions) (*Writer, error) {
+	if !l.repaired {
+		return nil, ErrLogNotRepaired
+	}
+	w := &Writer{dir: l.dir, segmentBytes: opts.SegmentBytes, head: l.head, truncated: l.TruncatedBytes}
 	if w.segmentBytes <= 0 {
 		w.segmentBytes = DefaultSegmentBytes
 	}
 	if n := len(l.segments); n > 0 && !l.segments[n-1].Finished {
 		active := l.segments[n-1]
-		f, err := os.OpenFile(filepath.Join(dir, active.Name), os.O_WRONLY|os.O_APPEND, fileMode)
+		f, err := os.OpenFile(filepath.Join(l.dir, active.Name), os.O_WRONLY|os.O_APPEND, fileMode)
 		if err != nil {
 			return nil, err
 		}

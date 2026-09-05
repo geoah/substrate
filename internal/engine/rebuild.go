@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -31,7 +32,7 @@ import (
 //
 //   - blobs, sealed — SIDE STORES. Their bytes were never in the changelog and
 //     cannot be regenerated from it; the changelog only re-links the references.
-//     This is why a backup is changelog + blobs + sealed as ONE unit.
+//     This is why the repository directory holds all three (repodir.go).
 //   - embeddings, embed_queue — DERIVED FROM THE RECORDS, not from the changelog,
 //     and expensive: the vectors of a reproduced row are still that row's, so
 //     they are kept rather than re-bought from the provider.
@@ -77,12 +78,14 @@ type Rebuilder interface {
 
 var _ Rebuilder = (*service)(nil)
 
-// RebuildRepository clears one repository's fold and replays its whole changelog
-// into it. The repository's own advisory lock is held for the duration, so no
-// write can interleave, and the whole rebuild is ONE transaction: a rebuild
-// either replaces the fold or leaves it exactly as it was. It replays the
-// table; the segment files under the data root take over in phase 2 of
-// docs/plans/filesystem-changelog.md.
+// RebuildRepository clears one repository's fold and replays its whole
+// changelog into it FROM THE SEGMENT FILES under the data root, so the
+// directory alone is proven to reproduce the fold. The repository's own
+// advisory lock is held for the duration, so no write can interleave, and the
+// whole rebuild is ONE transaction: a rebuild either replaces the fold or
+// leaves it exactly as it was. Before the replay the files are held to the
+// table (repodir.go): the heads must be equal and the common tail must agree,
+// or the rebuild refuses rather than fold a history the table does not index.
 func (s *service) RebuildRepository(ctx context.Context, username string) (RebuildReport, error) {
 	started := time.Now()
 	repo, err := s.repositoryByUsername(ctx, username)
@@ -94,18 +97,33 @@ func (s *service) RebuildRepository(ctx context.Context, username string) (Rebui
 		return RebuildReport{}, err
 	}
 	report := RebuildReport{Repository: repo.ID, Username: repo.Username}
+	if err := ds.directoryErr(); err != nil {
+		return report, err
+	}
 	// Not inTx: a rebuild is not a write with an actor and must append no
 	// entry of its own. It replays what is already there.
 	tx, err := ds.db.BeginTx(ctx, nil)
 	if err != nil {
 		return report, err
 	}
+	defer func() { _ = tx.Rollback() }()
 	t := &txn{
 		ctx: ctx, ds: ds, tx: tx, actor: substrate.ActorSystem, tier: substrate.TierMachine,
 		now: nowUTC(), internal: true,
 	}
-	if err := t.rebuild(&report); err != nil {
-		_ = tx.Rollback()
+	// The changelog lock first, then the writer mutex: the order inTx takes
+	// them. With both held no committed transaction is still on its way to
+	// the file, so the file is at the table's head or something is wrong.
+	if err := t.lockKey(changelogLockKey); err != nil {
+		return report, err
+	}
+	ds.writerMu.Lock()
+	defer ds.writerMu.Unlock()
+	log, err := ds.replayLog(ctx, t.tx)
+	if err != nil {
+		return report, err
+	}
+	if err := t.rebuild(log, &report); err != nil {
 		return report, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -115,7 +133,33 @@ func (s *service) RebuildRepository(ctx context.Context, username string) (Rebui
 	return report, nil
 }
 
-func (t *txn) rebuild(report *RebuildReport) error {
+// replayLog opens the repository's changelog files for a replay, read-only
+// because the dataset's writer has the active segment open, and holds them
+// to the table: equal heads and an agreeing tail, or a named refusal.
+func (ds *dataset) replayLog(ctx context.Context, q dbx) (*changelogfile.Log, error) {
+	tableHead, err := tableChangelogHead(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	log, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(ds.dir))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
+	}
+	switch {
+	case log.Head() > tableHead:
+		return nil, fmt.Errorf("%w: file head %d, table head %d", ErrChangelogFileAhead, log.Head(), tableHead)
+	case log.Head() < tableHead:
+		return nil, fmt.Errorf("%w: file head %d, table head %d", ErrChangelogFileBehind, log.Head(), tableHead)
+	}
+	if err := compareTails(ctx, q, log, tableHead); err != nil {
+		return nil, err
+	}
+	return log, nil
+}
+
+// rebuild clears the fold tables and replays every entry of log through the
+// fold, in seq order and in pages.
+func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
 	// The write path's own serialization: holding the changelog lock for the whole
 	// rebuild means no writer can append while the fold is missing.
 	if err := t.lockKey(changelogLockKey); err != nil {
@@ -135,14 +179,18 @@ func (t *txn) rebuild(report *RebuildReport) error {
 	}
 	var after int64
 	for {
-		entries, err := t.changelogPage(after)
+		entries, err := log.Read(after, rebuildBatch)
 		if err != nil {
-			return err
+			return fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
 		}
 		if len(entries) == 0 {
 			break
 		}
-		for _, ch := range entries {
+		for _, e := range entries {
+			ch, err := changeOfEntry(e)
+			if err != nil {
+				return err
+			}
 			if foldRefuses(ch) {
 				return fmt.Errorf("substrate/engine: rebuild refuses seq %d: %s cannot be replayed yet — the fold would not be the changelog's",
 					ch.Seq, ch.Op)
@@ -158,24 +206,22 @@ func (t *txn) rebuild(report *RebuildReport) error {
 	return t.row(`SELECT count(*) FROM records`).Scan(&report.Records)
 }
 
-// changelogPage reads one page of the changelog in seq order.
-func (t *txn) changelogPage(after int64) ([]substrate.Change, error) {
-	rows, err := t.query(`
-		SELECT seq, ts, actor, op, record_id, kind, payload, hash FROM changelog
-		WHERE seq > $1 ORDER BY seq LIMIT $2`, after, rebuildBatch)
-	if err != nil {
-		return nil, err
+// changeOfEntry is a file entry in the shape the fold replays. The payload is
+// decoded number-preserving for the same reason scanChange does: float64
+// would round an integer past 2^53 into a value the changelog never held.
+func changeOfEntry(e changelogfile.Entry) (substrate.Change, error) {
+	ch := substrate.Change{
+		Seq: e.Seq, TS: e.TS.UTC(), Actor: substrate.Actor(e.Actor), Op: substrate.Op(e.Op),
+		RecordID: e.RecordID, Kind: e.Kind,
 	}
-	defer func() { _ = rows.Close() }()
-	var out []substrate.Change
-	for rows.Next() {
-		ch, err := scanChange(rows)
+	if len(e.Payload) > 0 {
+		payload, err := decodeNumberPreserving(e.Payload)
 		if err != nil {
-			return nil, err
+			return ch, fmt.Errorf("substrate/engine: seq %d carries an unreadable payload: %w", e.Seq, err)
 		}
-		out = append(out, ch)
+		ch.Payload = payload
 	}
-	return out, rows.Err()
+	return ch, nil
 }
 
 // foldSnapshot reads every folded table in one deterministic order — the shape

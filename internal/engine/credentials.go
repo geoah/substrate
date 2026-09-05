@@ -24,6 +24,8 @@ import (
 	"time"
 
 	"golang.org/x/oauth2"
+
+	"github.com/geoah/substrate/internal/changelogfile"
 )
 
 // Payload framing: one marker byte, then the JSON (plain) or
@@ -73,16 +75,20 @@ func (t *txn) putCredential(ref string, account eref, tok *oauth2.Token) error {
 	if err != nil {
 		return err
 	}
-	_, err = t.exec(`
+	var expiresAt sql.NullTime
+	var updated time.Time
+	err = t.row(`
 		INSERT INTO sealed (ref, record_kind, record_id, payload, expires_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, now())
 		ON CONFLICT (repository, ref) DO UPDATE
 		    SET record_kind = EXCLUDED.record_kind, record_id = EXCLUDED.record_id, payload = EXCLUDED.payload,
-		        expires_at = EXCLUDED.expires_at, updated_at = now()`,
-		ref, account.Kind, account.ID, payload, expires)
+		        expires_at = EXCLUDED.expires_at, updated_at = now()
+		RETURNING expires_at, updated_at`,
+		ref, account.Kind, account.ID, payload, expires).Scan(&expiresAt, &updated)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: put credential: %w", err)
 	}
+	t.mirrorSealedWrite(sealedRecordOf(ref, account.Kind, account.ID, payload, expiresAt, updated))
 	return nil
 }
 
@@ -98,19 +104,23 @@ func (ds *dataset) updateCredential(ctx context.Context, ref string, account ere
 	if err != nil {
 		return false, err
 	}
-	res, err := ds.db.ExecContext(ctx, `
+	var expiresAt sql.NullTime
+	var updated time.Time
+	err = ds.db.QueryRowContext(ctx, `
 		UPDATE sealed SET payload = $4, expires_at = $5, updated_at = now()
 		WHERE ref = $1 AND record_kind = $2 AND record_id = $3 AND updated_at = $6
-		  AND EXISTS (SELECT 1 FROM records e WHERE e.kind = $2 AND e.id = $3 AND e.deleted_at IS NULL)`,
-		ref, account.Kind, account.ID, payload, expires, seen)
+		  AND EXISTS (SELECT 1 FROM records e WHERE e.kind = $2 AND e.id = $3 AND e.deleted_at IS NULL)
+		RETURNING expires_at, updated_at`,
+		ref, account.Kind, account.ID, payload, expires, seen).Scan(&expiresAt, &updated)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
 	if err != nil {
 		return false, fmt.Errorf("substrate/engine: update credential: %w", err)
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return false, err
-	}
-	return n > 0, nil
+	// Outside inTx, so the mirror runs here, right after the row landed.
+	ds.mirrorSealedNow([]sealedMirrorOp{{rec: sealedRecordOf(ref, account.Kind, account.ID, payload, expiresAt, updated)}})
+	return true, nil
 }
 
 // getCredential resolves a ref to its token, owning record and updated_at
@@ -145,11 +155,24 @@ var errCredentialGone = errors.New("substrate/engine: credential not found")
 
 // deleteCredentialsFor drops every credential a record holds — teardown.
 func (ds *dataset) deleteCredentialsFor(ctx context.Context, account eref) error {
-	_, err := ds.db.ExecContext(ctx, `DELETE FROM sealed WHERE record_kind = $1 AND record_id = $2`,
+	rows, err := ds.db.QueryContext(ctx, `DELETE FROM sealed WHERE record_kind = $1 AND record_id = $2 RETURNING ref`,
 		account.Kind, account.ID)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: delete credentials: %w", err)
 	}
+	defer func() { _ = rows.Close() }()
+	var ops []sealedMirrorOp
+	for rows.Next() {
+		var ref string
+		if err := rows.Scan(&ref); err != nil {
+			return err
+		}
+		ops = append(ops, sealedMirrorOp{rec: changelogfile.SealedRecord{Ref: ref}, delete: true})
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	ds.mirrorSealedNow(ops)
 	return nil
 }
 
@@ -330,12 +353,14 @@ func (t *txn) storeSecretValue(owner eref, plaintext string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if _, err := t.exec(`
+	var updated time.Time
+	if err := t.row(`
 		INSERT INTO sealed (ref, record_kind, record_id, payload, updated_at)
-		VALUES ($1, $2, $3, $4, now())`,
-		ref, owner.Kind, owner.ID, payload); err != nil {
+		VALUES ($1, $2, $3, $4, now()) RETURNING updated_at`,
+		ref, owner.Kind, owner.ID, payload).Scan(&updated); err != nil {
 		return "", fmt.Errorf("substrate/engine: store secret value: %w", err)
 	}
+	t.mirrorSealedWrite(sealedRecordOf(ref, owner.Kind, owner.ID, payload, sql.NullTime{}, updated))
 	return ref, nil
 }
 
@@ -431,8 +456,7 @@ func (t *txn) rekeySealedStore() (int, error) {
 		return 0, err
 	}
 	type pending struct {
-		ref     string
-		payload []byte
+		rec changelogfile.SealedRecord
 	}
 	total := 0
 	after := ""
@@ -443,7 +467,7 @@ func (t *txn) rekeySealedStore() (int, error) {
 	for {
 		var updates []pending
 		rows, err := t.query(`
-			SELECT ref, record_kind, record_id, payload FROM sealed
+			SELECT ref, record_kind, record_id, payload, expires_at, updated_at FROM sealed
 			WHERE ref > $1 ORDER BY ref LIMIT $2 FOR UPDATE`, after, rebuildBatch)
 		if err != nil {
 			return total, err
@@ -453,7 +477,9 @@ func (t *txn) rekeySealedStore() (int, error) {
 			var ref string
 			var owner eref
 			var payload []byte
-			if err := rows.Scan(&ref, &owner.Kind, &owner.ID, &payload); err != nil {
+			var expires sql.NullTime
+			var updated time.Time
+			if err := rows.Scan(&ref, &owner.Kind, &owner.ID, &payload, &expires, &updated); err != nil {
 				_ = rows.Close()
 				return total, err
 			}
@@ -478,7 +504,7 @@ func (t *txn) rekeySealedStore() (int, error) {
 				_ = rows.Close()
 				return total, err
 			}
-			updates = append(updates, pending{ref: ref, payload: sealed})
+			updates = append(updates, pending{rec: sealedRecordOf(ref, owner.Kind, owner.ID, sealed, expires, updated)})
 		}
 		if err := rows.Err(); err != nil {
 			_ = rows.Close()
@@ -487,9 +513,10 @@ func (t *txn) rekeySealedStore() (int, error) {
 		_ = rows.Close()
 		for _, u := range updates {
 			if _, err := t.exec(`UPDATE sealed SET payload = $1 WHERE ref = $2`,
-				u.payload, u.ref); err != nil {
+				u.rec.Payload, u.rec.Ref); err != nil {
 				return total, err
 			}
+			t.mirrorSealedWrite(u.rec)
 			total++
 		}
 		if n < rebuildBatch {

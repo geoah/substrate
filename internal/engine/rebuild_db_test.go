@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
@@ -417,7 +418,7 @@ func TestRebuildRefusesWhatItCannotReplay(t *testing.T) {
 		t.Fatalf("merge: %v", err)
 	}
 	// A merge entry as an older binary wrote it: the moved sets, no resync.
-	stripResyncEffects(t, dsn, ds)
+	stripResyncEffects(t, svc, dsn, ds)
 
 	if _, err := svc.(rebuilder).RebuildRepository(ctx, "geoah"); err == nil {
 		t.Fatal("the rebuild replayed a merge nothing describes")
@@ -429,22 +430,40 @@ func TestRebuildRefusesWhatItCannotReplay(t *testing.T) {
 }
 
 // stripResyncEffects removes the resync effect from every merge and split entry
-// — the shape of an entry written before merge could describe its rewrite.
-func stripResyncEffects(t *testing.T, dsn string, ds substrate.Dataset) {
+// — the shape of an entry written before merge could describe its rewrite. The
+// edit lands in the table and the segment file alike, since the rebuild
+// replays the file and holds it to the table first.
+func stripResyncEffects(t *testing.T, svc substrate.Service, dsn string, ds substrate.Dataset) {
 	t.Helper()
-	db, err := engine.OpenScopedDB(dsn, repositoryIDOf(t, ds), engine.RoleMaint)
-	if err != nil {
-		t.Fatalf("open the maintenance pool: %v", err)
-	}
-	defer func() { _ = db.Close() }()
-	// `effect` rather than `op`: the array's alias must not shadow the changelog's own
-	// `op` column, or the aggregate below reads the outer row instead.
-	if _, err := db.Exec(`
-		UPDATE changelog SET payload = jsonb_set(payload, '{fold}', coalesce(
-			(SELECT jsonb_agg(effect.value) FROM jsonb_array_elements(payload->'fold') AS effect
-			 WHERE effect.value->>'kind' <> 'resync'), '[]'::jsonb))
-		WHERE changelog.op IN ('merge', 'split') AND payload ? 'fold'`); err != nil {
-		t.Fatalf("strip the resync effects: %v", err)
+	n := rewriteChangelogEntries(t, svc, dsn, ds, func(e *changelogfile.Entry) bool {
+		if e.Op != "merge" && e.Op != "split" {
+			return false
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(e.Payload, &payload); err != nil {
+			t.Fatalf("decode seq %d: %v", e.Seq, err)
+		}
+		effects, ok := payload["fold"].([]any)
+		if !ok {
+			return false
+		}
+		kept := make([]any, 0, len(effects))
+		for _, effect := range effects {
+			if m, ok := effect.(map[string]any); ok && m["kind"] == "resync" {
+				continue
+			}
+			kept = append(kept, effect)
+		}
+		payload["fold"] = kept
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatalf("encode seq %d: %v", e.Seq, err)
+		}
+		e.Payload = raw
+		return true
+	})
+	if n == 0 {
+		t.Fatal("no merge or split entry carried a resync effect; the test proves nothing")
 	}
 }
 

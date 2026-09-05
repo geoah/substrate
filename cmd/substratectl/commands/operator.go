@@ -111,6 +111,7 @@ func (a *app) openEngineWithKey(ctx context.Context, credKey string) (substrate.
 	opts := []engine.Option{
 		engine.WithRegistry(vocabulary.NewRegistry()),
 		engine.WithDataRoot(data.Root),
+		engine.WithChangelogSegmentBytes(data.ChangelogSegmentBytes),
 		engine.WithCredentialKey(credKey),
 		engine.WithLogger(log),
 	}

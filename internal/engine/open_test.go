@@ -13,7 +13,7 @@ import (
 // root, or a relative one, has nowhere to put them. Open refuses before it
 // opens a connection: the DSN here points nowhere, and the refusal must be
 // the root's, not the database's.
-func TestOpenRefusesWithoutDataRoot(t *testing.T) {
+func TestOpenRequiresADataRoot(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	const dsn = "postgres://substrate@127.0.0.1:1/substrate?connect_timeout=1&sslmode=disable"

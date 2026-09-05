@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
+	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -248,6 +250,16 @@ func (s *service) eraseRepository(ctx context.Context, id string) error {
 	} else if residue != "" {
 		return fmt.Errorf("substrate/engine: erase repository %s left rows in %s", id, residue)
 	}
+	// The directory goes with the rows: a directory with no row would import
+	// at the next boot as the repository this erase just promised does not
+	// exist.
+	dir, err := changelogfile.RepoDir(s.dataRoot, id)
+	if err != nil {
+		return err
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("substrate/engine: erase repository %s: remove its directory: %w", id, err)
+	}
 	return nil
 }
 
@@ -355,7 +367,7 @@ func (s *service) scanRepository(row *sql.Row, what string) (Repository, error) 
 
 func (s *service) listRepositories(ctx context.Context) ([]Repository, error) {
 	rows, err := s.maint.QueryContext(ctx,
-		`SELECT id, username, authority, created_at FROM repositories ORDER BY created_at, id`)
+		`SELECT id, username, authority, created_at, dek FROM repositories ORDER BY created_at, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -363,7 +375,7 @@ func (s *service) listRepositories(ctx context.Context) ([]Repository, error) {
 	var out []Repository
 	for rows.Next() {
 		var r Repository
-		if err := rows.Scan(&r.ID, &r.Username, &r.Authority, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.Username, &r.Authority, &r.CreatedAt, &r.DEK); err != nil {
 			return nil, err
 		}
 		r.CreatedAt = r.CreatedAt.UTC()

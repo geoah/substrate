@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"sort"
 	"strconv"
 	"strings"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/geoah/substrate/internal/changelogfile"
+	"github.com/geoah/substrate/internal/config"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -142,13 +145,17 @@ invite code is the only door and there is nothing else to record.`,
 func (a *app) repositoryInspectCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "inspect <username>",
-		Short: "Show one repository: id, changelog head, records, vocabulary versions",
+		Short: "Show one repository: id, both changelog heads, records, vocabulary versions",
 		Long: `Describe a repository from the outside.
 
 The changelog's head is its length — seq is per-repository, gapless and assigned at
-commit — and the records count is the fold's size. The vocabulary section is
-what this repository's OWN changelog says its kinds are, which is the only authority
-on the question: the embedded tree is a seed, not a source of truth.
+commit — and the records count is the fold's size. The changelog lives twice:
+the table is the live index and the segment files under SUBSTRATE_DATA_ROOT
+(<root>/repositories/<id>/changelog) are the copy a backup takes, so both heads
+are printed and a healthy repository shows the same number twice. The
+vocabulary section is what this repository's OWN changelog says its kinds are,
+which is the only authority on the question: the embedded tree is a seed, not
+a source of truth.
 
 This command only reads.`,
 		Args: cobra.ExactArgs(1),
@@ -177,7 +184,8 @@ This command only reads.`,
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(a.out, "  changelog head:  %d (%d entries)\n", head, entries)
+			fmt.Fprintf(a.out, "  changelog head:  %d (%d entries, table)\n", head, entries)
+			printChangelogFiles(a.out, repo.ID)
 			records, deleted, err := recordCounts(cmd.Context(), scoped)
 			if err != nil {
 				return err
@@ -203,6 +211,34 @@ This command only reads.`,
 	}
 }
 
+// printChangelogFiles reports the repository directory's half of the
+// changelog: the data root, the file head and the segment count. The walk is
+// read-only (changelogfile.Verify), so an inspect never repairs a torn tail.
+// A missing SUBSTRATE_DATA_ROOT is reported, not fatal: the table half of the
+// report stands on its own.
+func printChangelogFiles(out io.Writer, repoID string) {
+	data, err := config.LoadData()
+	if err != nil {
+		fmt.Fprintf(out, "  data root: not set (%v)\n", err)
+		return
+	}
+	fmt.Fprintf(out, "  data root: %s\n", data.Root)
+	dir, err := changelogfile.RepoDir(data.Root, repoID)
+	if err != nil {
+		fmt.Fprintf(out, "  changelog files: %v\n", err)
+		return
+	}
+	rep, err := changelogfile.Verify(changelogfile.ChangelogDir(dir))
+	if err != nil {
+		fmt.Fprintf(out, "  changelog files: head %d in %d segment(s); DAMAGED: %v\n", rep.Head, rep.Segments, err)
+		return
+	}
+	fmt.Fprintf(out, "  changelog files: head %d (%d entries, %d segment(s))\n", rep.Head, rep.Entries, rep.Segments)
+	if rep.TruncatedBytes > 0 {
+		fmt.Fprintf(out, "  changelog files: the active segment ends in a torn line of %d bytes (the next open cuts it)\n", rep.TruncatedBytes)
+	}
+}
+
 func (a *app) repositoryRebuildCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:     "rebuild <username>",
@@ -211,14 +247,18 @@ func (a *app) repositoryRebuildCommand() *cobra.Command {
 		Long: `Clear a repository's fold and replay its whole changelog into it.
 
 The changelog is the truth and the records table is a fold of it, so this is the
-containment test made runnable. It holds the repository's write lock for the
-duration and runs as ONE transaction: a rebuild either replaces the fold or
-leaves it exactly as it was. Run 'repository verify' first to see whether the
-changelog it would replay is intact.
+containment test made runnable. The replay reads the segment files under
+SUBSTRATE_DATA_ROOT, not the table, so a rebuild that reproduces the fold proves
+the repository directory alone can bring the repository back. Before it
+replays, the files are held to the table (equal heads, agreeing checksums on
+the common tail) and a disagreement refuses the rebuild. It holds the
+repository's write lock for the duration and runs as ONE transaction: a rebuild
+either replaces the fold or leaves it exactly as it was. Run 'repository
+verify' first to see whether the changelog it would replay is intact.
 
 Blobs and sealed material are SIDE STORES: their bytes were never in the changelog
-and are re-linked, not regenerated. A backup is changelog + blobs + sealed as one
-unit.`,
+and are re-linked, not regenerated. The repository directory holds all three,
+which is why it is the backup unit.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc, err := a.openEngineRead(cmd.Context())
@@ -248,17 +288,21 @@ func (a *app) repositoryVerifyCommand() *cobra.Command {
 	var output string
 	cmd := &cobra.Command{
 		Use:   "verify <username>",
-		Short: "Walk a repository's changelog and check every entry's checksum",
-		Long: `Walk a repository's changelog from seq 1 to the head in one read-only
-snapshot: the sequence must be gapless, and every entry's checksum, recomputed
-from the stored row, must equal the one stamped when the entry was written. It
-never repairs or touches the repository it judges (opening the engine still
-applies any pending schema migration, as every operator command does).
+		Short: "Walk a repository's changelog files and table and check every checksum",
+		Long: `Walk a repository's changelog in both places and hold them to each other.
 
-The checksum catches corruption, not tampering: whoever holds the database can
-rewrite a row and its checksum together. The segment files under the data
-root are the copy to compare against, and this command will walk those once
-the boot check lands.
+The segment files under SUBSTRATE_DATA_ROOT are walked whole: every line's
+checksum, every finished segment's sidecar digest, the seq sequence. The table
+is walked from seq 1 to the head in one read-only snapshot: the sequence must
+be gapless, and every entry's checksum, recomputed from the stored row, must
+equal the one stamped when the entry was written and the one the file's line
+carries. Both heads must agree, and every sealed row must have its file and
+every sealed file its row. It never repairs or touches the repository it judges
+(opening the engine still applies any pending schema migration, as every
+operator command does).
+
+The checksum catches corruption, not tampering: whoever holds the disk can
+rewrite a line and its checksum together.
 
 Exits nonzero when anything does not verify.`,
 		Args: cobra.ExactArgs(1),
@@ -283,7 +327,9 @@ Exits nonzero when anything does not verify.`,
 			} else {
 				fmt.Fprintf(a.out, "repository %s\n", report.Username)
 				fmt.Fprintf(a.out, "  id:       %s\n", report.Repository)
-				fmt.Fprintf(a.out, "  entries:  %d, head %d\n", report.Entries, report.Head)
+				fmt.Fprintf(a.out, "  table:    %d entries, head %d\n", report.Entries, report.Head)
+				fmt.Fprintf(a.out, "  files:    head %d in %d segment(s)\n", report.FileHead, report.Segments)
+				fmt.Fprintf(a.out, "  sealed:   %d rows, %d files\n", report.SealedRows, report.SealedFiles)
 				if report.HeadHash != "" {
 					fmt.Fprintf(a.out, "  head checksum: %s\n", report.HeadHash)
 				}

@@ -251,9 +251,10 @@ func (s *service) consumeTOTPStep(ctx context.Context, repoID, ref string, to in
 	defer func() { _ = tx.Rollback() }()
 	var payload []byte
 	var owner eref
+	var expires sql.NullTime
 	err = tx.QueryRowContext(ctx,
-		`SELECT payload, record_kind, record_id FROM sealed WHERE repository = $1 AND ref = $2 FOR UPDATE`,
-		repoID, ref).Scan(&payload, &owner.Kind, &owner.ID)
+		`SELECT payload, record_kind, record_id, expires_at FROM sealed WHERE repository = $1 AND ref = $2 FOR UPDATE`,
+		repoID, ref).Scan(&payload, &owner.Kind, &owner.ID, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -281,12 +282,19 @@ func (s *service) consumeTOTPStep(ctx context.Context, repoID, ref string, to in
 	if err != nil {
 		return false, err
 	}
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE sealed SET payload = $3, updated_at = now() WHERE repository = $1 AND ref = $2`,
-		repoID, ref, sealed); err != nil {
+	var updated time.Time
+	if err := tx.QueryRowContext(ctx,
+		`UPDATE sealed SET payload = $3, updated_at = now() WHERE repository = $1 AND ref = $2 RETURNING updated_at`,
+		repoID, ref, sealed).Scan(&updated); err != nil {
 		return false, err
 	}
-	return true, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	// The step lives in the sealed row and nowhere in the changelog, so the
+	// mirror is the only thing that carries it into the directory.
+	s.mirrorSealedByRef(repoID, sealedRecordOf(ref, owner.Kind, owner.ID, sealed, expires, updated))
+	return true, nil
 }
 
 func mustJSON(v any) []byte {
@@ -778,12 +786,14 @@ func (t *txn) writeCredential(cw credentialWrite) error {
 		return err
 	}
 	for ref, payload := range map[string][]byte{passwordRef: sealedPassword, totpRef: sealedTOTP} {
-		if _, err := t.exec(`
+		var updated time.Time
+		if err := t.row(`
 			INSERT INTO sealed (ref, record_kind, record_id, payload, updated_at)
-			VALUES ($1, $2, $3, $4, now())`,
-			ref, kindCredential, credentialID, payload); err != nil {
+			VALUES ($1, $2, $3, $4, now()) RETURNING updated_at`,
+			ref, kindCredential, credentialID, payload).Scan(&updated); err != nil {
 			return fmt.Errorf("substrate/engine: seal credential material: %w", err)
 		}
+		t.mirrorSealedWrite(sealedRecordOf(ref, kindCredential, credentialID, payload, sql.NullTime{}, updated))
 	}
 	if _, err := t.put(substrate.PutInput{
 		Kind: kindCredential, ID: credentialID,
@@ -800,6 +810,7 @@ func (t *txn) writeCredential(cw credentialWrite) error {
 		if _, err := t.exec(`DELETE FROM sealed WHERE ref = $1`, ref); err != nil {
 			return err
 		}
+		t.mirrorSealedDelete(ref)
 	}
 	return nil
 }

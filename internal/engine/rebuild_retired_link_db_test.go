@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geoah/substrate/internal/engine"
+	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -34,19 +34,18 @@ func TestRebuildRefusesARetiredLinkOp(t *testing.T) {
 				Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Ada Lovelace"},
 			})
 
-			// One entry as the old binary spelled it. Raw SQL because no writer
-			// in this tree can produce the op any more, which is the point.
-			db, err := engine.OpenScopedDB(dsn, repositoryIDOf(t, ds), engine.RoleMaint)
-			if err != nil {
-				t.Fatalf("open the maintenance pool: %v", err)
-			}
-			defer func() { _ = db.Close() }()
-			res, err := db.ExecContext(ctx,
-				`UPDATE changelog SET op = $1 WHERE seq = (SELECT max(seq) FROM changelog)`, op)
-			if err != nil {
-				t.Fatalf("plant a %s entry: %v", op, err)
-			}
-			if n, _ := res.RowsAffected(); n != 1 {
+			// One entry as the old binary spelled it, planted in the table AND
+			// the segment file (the rebuild replays the file), because no
+			// writer in this tree can produce the op any more, which is the
+			// point.
+			head := maxSeq(t, ds)
+			if n := rewriteChangelogEntries(t, svc, dsn, ds, func(e *changelogfile.Entry) bool {
+				if e.Seq != head {
+					return false
+				}
+				e.Op = op
+				return true
+			}); n != 1 {
 				t.Fatalf("planted %d entries, want 1", n)
 			}
 

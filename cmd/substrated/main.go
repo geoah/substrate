@@ -123,6 +123,7 @@ func run() error {
 	opts := []engine.Option{
 		engine.WithKindsFS(kinds.Seed()),
 		engine.WithDataRoot(cfg.Data.Root),
+		engine.WithChangelogSegmentBytes(cfg.Data.ChangelogSegmentBytes),
 		engine.WithCredentialKey(cfg.CredentialKey),
 		engine.WithBlobStore(blobs),
 	}
