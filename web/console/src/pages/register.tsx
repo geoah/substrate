@@ -408,9 +408,10 @@ export function RegisterPage() {
                       disabled={enrollment !== null}
                     />
                     <FieldDescription>
-                      The DNS-style name your repository owns and every kind you
-                      declare lives under. Your username under this host unless
-                      you have a domain of your own. It cannot be changed later.
+                      Any hostname you control, such as ada.example.com: it is
+                      the name your repository owns and every kind you declare
+                      lives under. Left alone, it is your username under this
+                      host. It cannot be changed later.
                     </FieldDescription>
                   </Field>
                   <Field>

@@ -45,7 +45,7 @@ type registerRequest struct {
 	Label      string `json:"label,omitempty"`
 	// Authority is the DNS-style authority the new repository will own, the
 	// home of the kinds its user declares. Absent, it defaults to the
-	// username under the host this request reached (`ada.substrate.example`).
+	// username under the host this request reached (`ada.example.com`).
 	Authority string `json:"authority,omitempty"`
 	// RecoveryPublicKey is the client-generated age recipient; absent asks
 	// the server to mint the pair and return the identity once.
