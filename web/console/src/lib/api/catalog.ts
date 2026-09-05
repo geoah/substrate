@@ -65,6 +65,14 @@ export function landedCatalog(item: CatalogItem, home: string): CatalogItem {
     ...item,
     authority: home,
     requires: item.requires?.map(rehome),
+    // A suggested mapping's id and TARGET are this package's, so both land
+    // under this repository's authority; `from` is the provider's own kind
+    // and is left exactly as published (decision record 0049).
+    suggestedMappings: item.suggestedMappings?.map((m) => ({
+      ...m,
+      id: rehome(m.id),
+      to: rehome(m.to),
+    })),
     inputs: item.inputs
       ? Object.fromEntries(
           Object.entries(item.inputs).map(([name, input]) => [

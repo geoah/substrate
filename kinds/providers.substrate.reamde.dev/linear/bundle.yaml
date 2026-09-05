@@ -64,7 +64,11 @@ data:
   # goes with them, and `requires:` with it: this closure wrote `task` rows
   # into a package it does not own, and what an issue means to the repository
   # is now the repository's own declaration.
-  version: 11
+  # version 12: `issue.task` is a second unpinned, optional subject slot, so
+  # an issue can reach the repository's own task kind as well as its person
+  # kind: two slots, one mapping each (docs/decisions/0049). The tasks sample
+  # ships the mapping that fills it; this package still declares none.
+  version: 12
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
@@ -456,6 +460,18 @@ data:
       subject: true
       description: the human this issue is assigned to, once a mapping says
         which kind that is
+    # The SECOND subject slot: what the issue is, as opposed to who it is on.
+    # Unpinned and optional like the first, because the kind an issue means to
+    # the repository (a task, a ticket, nothing) is the repository's to choose:
+    # the tasks sample suggests the mapping that fills this, and until one
+    # exists the sync leaves it empty (record 0049).
+    task:
+      type: reference
+      displayName: Task
+      mustExist: true
+      subject: true
+      description: the piece of work this issue is, once a mapping says which
+        kind that is
     team:
       type: reference
       displayName: Team

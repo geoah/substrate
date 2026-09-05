@@ -123,6 +123,14 @@ against its people's emails. One note worth copying: map
 because a header's "Alice Example" is weaker than an address book's nickname
 and mail volume would clobber it under latest-write-wins.
 
+The people sample already writes both, that note included:
+`samples/people/mappings.google.yaml` holds the two suggested mappings, and
+importing the sample with this provider installed lands them. Import it first
+and they are dropped and reported waiting for this package (docs/bundles.md,
+"Suggested mappings"). There is no suggested mapping onto a message, a thread
+or a calendar event, and there cannot be one: a mapping's only creator is a
+shell mint, which cannot fill a required reference such as a message's thread.
+
 ## `backfillDepth`, identically for gmail and calendar
 
 The first run of each stream stamps a **backfill anchor** (its own run-start

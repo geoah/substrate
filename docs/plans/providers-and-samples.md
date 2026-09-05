@@ -247,7 +247,7 @@ page, so a gmail sync delivered nothing at all.
 
 ### 5. Mappings declared by the user, and the samples that suggest them
 
-The loader and engine half LANDED; the suggested mappings did not.
+LANDED, both halves.
 
 - ~~`parseMapping` admits a mapping whose `from` kind lives in another
   authority when the declaring authority owns `to`.~~ Landed, and stricter
@@ -257,18 +257,30 @@ The loader and engine half LANDED; the suggested mappings did not.
   kind reaches a given target through one property; the mapping's `to` is the
   write-time pin on an unpinned slot; and dropping a kind another package's
   mapping names as `from` is refused at every door.
-- Each sample ships optional **suggested mappings** for the providers it
-  knows: `samples/tasks/mappings/linear.yaml` declares
-  `linear…/issue → <placeholder>/task` on `property: task`. The import applies
-  a suggested mapping only when its provider authority is installed, and the
-  console lists the rest as "install Linear to enable". Because the mapping
-  is imported under the home authority it is the user's, and they edit or
-  delete it like any of their declarations.
-- The Linear read-diff-patch behavior (Linear owns title and url, the user
-  owns status) is what the projection's tiers already do: mapped properties
-  are recomputed at the bundle tier and an owner write wins. The joint
-  ownership comment in `linear/bundle.yaml` becomes the mapping's `map`
-  block.
+- ~~Each sample ships optional **suggested mappings** for the providers it
+  knows.~~ Landed as one file per provider beside the sample's kinds:
+  `samples/people/mappings.github.yaml`, `.google.yaml` (two) and
+  `.linear.yaml` (two), and `samples/tasks/mappings.linear.yaml` declaring
+  `linear/issue → <placeholder>/task` on a new unpinned `task` slot the linear
+  package ships at version 12. Six in all, listed in each sample's
+  `installs:`.
+- ~~The import applies a suggested mapping only when its provider is
+  installed.~~ Landed, in `Catalog.Import` AND `Catalog.Install`: a mapping
+  whose `from` package is absent is dropped with its `installs:` entry, and
+  the import response, the catalog entry and both Registry cards report each
+  one `landed` or `waiting for <package>`. Installing the provider afterwards
+  is not enough; the sample is imported AGAIN, which replaces the package
+  (0048).
+- ~~The Linear read-diff-patch behavior.~~ Landed as the mapping's `map`
+  block: `title → name` and `url → url`, matched on the issue's URL, with
+  `status` mapped by nothing. The projection's tiers keep the hand edit, as
+  they always did.
+- NOT shipped, deliberately: a mapping onto `emailmessage`, `emailthread`,
+  `calendarevent` or `calendareventseries`. A mapping's only creator is a
+  shell mint, which cannot fill a required reference such as
+  `emailmessage.thread` (0049's consequence list). The engine work phase 4
+  reserved for following a source's own reference through another mapping is
+  still unbuilt, and it is what those mappings need.
 
 ### 6. Signed providers (ticketed, not built here)
 

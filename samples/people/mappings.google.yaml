@@ -1,0 +1,65 @@
+# TWO SUGGESTED MAPPINGS: Google's contact and address mirrors onto this
+# package's person. Both are dropped by the import while
+# providers.substrate.reamde.dev/google is absent, and land on the next import
+# once it is installed (docs/decisions/0049).
+#
+# contact → person: match probes the contact's emails against people's emails,
+# exactly one live match links it and zero-or-many mints a person shell. map
+# copies the name and unions the emails and phones onto the person
+# (machine-managed, yielding to any owner edit).
+kind: substrate.reamde.dev/core/recordmapping
+metadata:
+  id: samples.substrate.reamde.dev/people/googlecontactperson
+data:
+  authority: samples.substrate.reamde.dev
+  package: people
+  description: >-
+    Converges a Google contact onto the person it describes, matched on the
+    contact's addresses.
+  from: providers.substrate.reamde.dev/google/contact
+  to: samples.substrate.reamde.dev/people/person
+  property: person
+  match:
+    # Block style, and the paths quoted: `[]` is a flow-sequence opener in
+    # YAML flow context, so `{from: emails[].value}` would not parse.
+    - from: "emails[].value"
+      to: emails
+  map:
+    name:
+      path: name.displayName
+    displayName:
+      path: name.displayName
+    emails:
+      path: "emails[].value"
+      merge: union
+    phones:
+      path: "phones[].value"
+      merge: union
+---
+# emailaddress → person: every address a mail header or an attendee list
+# carries is one of these, and this is what makes an address-book contact and a
+# mail sender converge on ONE person. `displayName` maps onto the person's
+# `name` and DELIBERATELY NOT onto `displayName`: a header's "Alice Example" is
+# weaker than an address book's nickname, and atomic selection is latest-write
+# wins, so mail volume would otherwise clobber the contact's contribution.
+kind: substrate.reamde.dev/core/recordmapping
+metadata:
+  id: samples.substrate.reamde.dev/people/googleaddressperson
+data:
+  authority: samples.substrate.reamde.dev
+  package: people
+  description: >-
+    Converges one mail or attendee address onto the person it belongs to,
+    matched against the addresses people already carry.
+  from: providers.substrate.reamde.dev/google/emailaddress
+  to: samples.substrate.reamde.dev/people/person
+  property: person
+  match:
+    - from: address
+      to: emails
+  map:
+    name:
+      path: displayName
+    emails:
+      path: address
+      merge: union

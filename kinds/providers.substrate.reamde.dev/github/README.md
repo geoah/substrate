@@ -92,6 +92,12 @@ person: a repository that wants GitHub identities to reach its people declares
 its own, from `user` on `property: person`, probing the profile's public email.
 Until it does, every `user` row carries an empty subject slot.
 
+The people sample already writes that declaration:
+`samples/people/mappings.github.yaml` is the suggested mapping, and importing
+the sample with this provider installed lands it. Import it first and the
+mapping is dropped and reported waiting for this package
+(docs/bundles.md, "Suggested mappings").
+
 ## Incremental windows: per-stage watermarks
 
 Each search stage — `issues`, `pulls` (involves:), `pullsReview`

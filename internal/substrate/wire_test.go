@@ -61,6 +61,10 @@ var wireTypes = map[string]any{
 	"CatalogBundle": CatalogBundle{},
 	"BundleClosure": CatalogClosure{},
 	"ShippedRecord": CatalogShippedRecord{},
+	// One suggested mapping and its state. The Registry renders these on both
+	// sections: a sample's card lists what it would project, a provider's
+	// lists the samples waiting on it (decision record 0049).
+	"SuggestedMapping": SuggestedMapping{},
 }
 
 // jsonFields lists the wire names a struct serializes, in declaration order. A

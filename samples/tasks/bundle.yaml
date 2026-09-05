@@ -30,12 +30,23 @@ data:
   # version for its `recurring` binding (#122).
   # version 6: every link is a `type: reference` property carrying
   # `mustExist: true`, and an owning one carries `onDelete: cascade`.
-  version: 6
+  # version 7: the SUGGESTED MAPPING from a linear issue onto `task`. A
+  # mapping onto a kind is declared by the package that owns that kind
+  # (docs/decisions/0049), so the projection the linear provider used to run
+  # as a function is this package's declaration now, and the import drops it
+  # while that provider is absent.
+  version: 7
 ---
 # ---- the bundle document: the import unit -------------------------------------
-# A SAMPLE bundle (see samples.substrate.reamde.dev/people): kinds only, imported from the
-# registry rather than seeded. The assignee reference lands on person, so it
-# requires that package to be present first.
+# A SAMPLE bundle (see samples.substrate.reamde.dev/people): kinds and one
+# suggested mapping, imported from the registry rather than seeded. The
+# assignee reference lands on person, so it requires that package to be
+# present first.
+#
+# The suggested mapping's `from` is a linear mirror, so the import keeps it
+# only where this repository holds that provider and drops the document AND
+# this entry otherwise: `installs:` is the package, both directions, so the
+# two are pruned together (internal/catalog).
 kind: substrate.reamde.dev/core/bundle
 metadata:
   id: samples.substrate.reamde.dev/tasks
@@ -53,3 +64,4 @@ data:
     - samples.substrate.reamde.dev/tasks/project
     - samples.substrate.reamde.dev/tasks/task
     - samples.substrate.reamde.dev/tasks/tasklog
+    - samples.substrate.reamde.dev/tasks/linearissuetask

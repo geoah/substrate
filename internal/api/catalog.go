@@ -13,7 +13,11 @@ import (
 // shipped closure has moved past) what re-installing would do. The bundle's
 // closure documents are unexported, so only the preview metadata marshals.
 type catalogItem struct {
-	*catalog.Bundle
+	// The shipped bundle by VALUE, not by pointer: the catalog holds one
+	// parsed copy of each closure and serves every repository from it, and
+	// `suggestedMappings` carries a per-repository state, so the entry a
+	// request answers with is a copy whose list this handler replaces.
+	substrate.CatalogBundle
 	Installed bool `json:"installed"`
 	// Upgrade is present only when the shipped closure moves something here:
 	// the version motion and the guard lines an install would refuse on. The
@@ -84,7 +88,18 @@ func (h *handler) getCatalogItem(w http.ResponseWriter, r *http.Request) {
 // same reason catalog.Load drops a broken directory instead of bricking the
 // shipped set. The offer is an extra; the listing is the promise.
 func (h *handler) catalogItemFor(ctx context.Context, b *catalog.Bundle, installed bool) catalogItem {
-	item := catalogItem{Bundle: b, Installed: installed}
+	item := catalogItem{CatalogBundle: b.CatalogBundle, Installed: installed}
+	// Each suggested mapping's state in THIS repository (decision record
+	// 0049): whether the declaration is here, whether the provider it reads
+	// is, and whether it fits the version installed. The shipped closure
+	// carries no state of its own, so this list is only ever this read's; a
+	// read that fails leaves it unstated rather than blanking the entry, for
+	// the same reason the upgrade preview below does.
+	if ds := DatasetFrom(ctx); ds != nil {
+		if states, err := b.SuggestedMappingStates(ctx, ds); err == nil {
+			item.SuggestedMappings = states
+		}
+	}
 	if !installed {
 		return item
 	}
@@ -118,7 +133,7 @@ func (h *handler) postCatalogImport(w http.ResponseWriter, r *http.Request) {
 // `<authority>/<package>`, while an install landed the id the request named.
 // Asking for the wrong one is a 404 on a write that succeeded.
 func (h *handler) takeCatalogBundle(w http.ResponseWriter, r *http.Request,
-	take func(*catalog.Catalog, context.Context, substrate.Actor, string, substrate.Dataset) (*catalog.Bundle, error),
+	take func(*catalog.Catalog, context.Context, substrate.Actor, string, substrate.Dataset) (*catalog.Bundle, []substrate.SuggestedMapping, error),
 	rehomed bool,
 ) {
 	if h.catalog == nil {
@@ -126,7 +141,7 @@ func (h *handler) takeCatalogBundle(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	ctx := r.Context()
-	b, err := take(h.catalog, ctx, ActorFrom(ctx), pathParam(r, "id"), DatasetFrom(ctx))
+	b, suggested, err := take(h.catalog, ctx, ActorFrom(ctx), pathParam(r, "id"), DatasetFrom(ctx))
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
@@ -151,7 +166,20 @@ func (h *handler) takeCatalogBundle(w http.ResponseWriter, r *http.Request,
 		writeSubstrateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, st)
+	// What the closure's SUGGESTED MAPPINGS did (decision record 0049),
+	// straight from the door: it decided which ones the batch carried and the
+	// batch committed, so `landed` here is what was actually written. Reading
+	// the states back instead would answer from a registry that may have moved
+	// under the transaction.
+	writeJSON(w, http.StatusOK, bundleTaken{BundleStatus: st, SuggestedMappings: suggested})
+}
+
+// bundleTaken is what the two doors answer: the landed bundle's computed
+// status, plus the state of each suggested mapping the closure carries. A
+// closure with none marshals exactly as the status alone did.
+type bundleTaken struct {
+	substrate.BundleStatus
+	SuggestedMappings []substrate.SuggestedMapping `json:"suggestedMappings,omitempty"`
 }
 
 // installedBundles is the set of bundle ids installed in this repository. A dataset

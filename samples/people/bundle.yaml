@@ -35,13 +35,24 @@ data:
   package: people
   # version 3: every link is a `type: reference` property carrying
   # `mustExist: true`.
-  version: 3
+  # version 4: the five SUGGESTED MAPPINGS onto `person` (github `user`,
+  # google `contact` and `emailaddress`, linear `user` and an issue's
+  # assignee). A mapping onto a kind is declared by the package that owns that
+  # kind (docs/decisions/0049), so they are this package's, and the import
+  # drops the ones whose provider this repository does not hold.
+  version: 4
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A SAMPLE bundle: a bare package the substrate publishes, delivered
-# through the registry instead of the creation seed. It ships kinds and
-# nothing else — no inputs, no functions, no agents, no OAuth, no
-# triggers — so `installs:` is exactly the package's declared members.
+# through the registry instead of the creation seed. It ships kinds and the
+# five suggested mappings onto `person`, and no inputs, no functions, no
+# agents, no OAuth and no triggers, so `installs:` is exactly the package's
+# declared members.
+#
+# A suggested mapping's `from` is a provider mirror, so the import keeps it
+# only where this repository holds that provider and drops the document AND
+# this entry otherwise: `installs:` is the package, both directions, so the
+# two are pruned together (internal/catalog).
 kind: substrate.reamde.dev/core/bundle
 metadata:
   id: samples.substrate.reamde.dev/people
@@ -55,3 +66,8 @@ data:
     - samples.substrate.reamde.dev/people/organization
     - samples.substrate.reamde.dev/people/person
     - samples.substrate.reamde.dev/people/team
+    - samples.substrate.reamde.dev/people/githubuserperson
+    - samples.substrate.reamde.dev/people/googleaddressperson
+    - samples.substrate.reamde.dev/people/googlecontactperson
+    - samples.substrate.reamde.dev/people/linearissueperson
+    - samples.substrate.reamde.dev/people/linearuserperson

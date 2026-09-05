@@ -1,0 +1,39 @@
+# A SUGGESTED MAPPING: a Linear issue onto this package's task.
+#
+# A mapping onto a kind is declared by the package that owns that kind
+# (docs/decisions/0049), so the issue → task projection lives here, in the
+# package that owns `task`, and the linear provider ships `issue` with an empty
+# `task` slot instead. The import DROPS this document (and its `installs:`
+# entry) while providers.substrate.reamde.dev/linear is absent, and lands it on
+# the next import once the provider is installed.
+#
+# match probes the issue's Linear URL against tasks' `url`: exactly one live
+# match adopts the task the owner already has, zero-or-many mints one. map
+# gives Linear the heading and the link and NOTHING else.
+#
+# `status` is not mapped and CANNOT be: it is a state, and a state moves
+# through its declared transitions, never through a mapping (record 0040). So
+# the task the mapping mints sits at `open` and every move after that is the
+# owner's, untouched by any sync. What the projection's TIERS buy is the other
+# two: `name` and `url` recompute at the machine tier, so an owner who retypes
+# the heading keeps it, and Linear's next title lands only where nobody has.
+kind: substrate.reamde.dev/core/recordmapping
+metadata:
+  id: samples.substrate.reamde.dev/tasks/linearissuetask
+data:
+  authority: samples.substrate.reamde.dev
+  package: tasks
+  description: >-
+    Projects an assigned Linear issue onto a task, matched on the issue's
+    URL, carrying the heading and the link and leaving the status to the owner.
+  from: providers.substrate.reamde.dev/linear/issue
+  to: samples.substrate.reamde.dev/tasks/task
+  property: task
+  match:
+    - from: url
+      to: url
+  map:
+    name:
+      path: title
+    url:
+      path: url

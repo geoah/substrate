@@ -27,13 +27,55 @@ func (a *app) takeBundle(cmd *cobra.Command, id, verb, past string) error {
 	if err != nil {
 		return err
 	}
-	var st substrate.BundleStatus
-	if err := cl.do(cmd.Context(), http.MethodPost, catalogPath(id, verb), nil, nil, &st); err != nil {
+	var taken bundleTaken
+	if err := cl.do(cmd.Context(), http.MethodPost, catalogPath(id, verb), nil, nil, &taken); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.out, "%s %s\n", st.ID, past)
-	printBundleStatus(a, st)
+	fmt.Fprintf(a.out, "%s %s\n", taken.ID, past)
+	printBundleStatus(a, taken.BundleStatus)
+	printSuggestedMappings(a, id, taken.SuggestedMappings)
 	return nil
+}
+
+// bundleTaken is the two doors' response: the landed bundle's computed status,
+// plus what each SUGGESTED MAPPING the closure carries did.
+type bundleTaken struct {
+	substrate.BundleStatus
+	SuggestedMappings []substrate.SuggestedMapping `json:"suggestedMappings,omitempty"`
+}
+
+// printSuggestedMappings says what the closure's suggested mappings did
+// (decision record 0049). A sample ships one per provider it knows, onto a
+// kind of its own, and the door admits only the ones that resolve here, so a
+// reader who installs Linear tomorrow has to be told BOTH that importing this
+// sample again is what lands the rest and what that costs: a re-import
+// replaces the package (record 0048), so a kind or a property they added
+// since goes with it.
+//
+// The ids and targets are the ones this repository holds, rehomed by the door,
+// so a line names the person or task kind the reader can actually go and read.
+func printSuggestedMappings(a *app, sample string, mappings []substrate.SuggestedMapping) {
+	for _, m := range mappings {
+		fmt.Fprintf(a.out, "mapping:     %s -> %s: %s\n", m.From, m.To, suggestedMappingLine(m, sample))
+		for _, p := range m.Problems {
+			fmt.Fprintf(a.out, "             %s\n", p)
+		}
+	}
+}
+
+// suggestedMappingLine is one mapping's state and what to do about it.
+func suggestedMappingLine(m substrate.SuggestedMapping, sample string) string {
+	again := fmt.Sprintf("import %s again. Re-importing replaces that package and may remove your changes.", sample)
+	switch m.State {
+	case substrate.SuggestedMappingLanded:
+		return "landed"
+	case substrate.SuggestedMappingReady:
+		return "ready; " + again
+	case substrate.SuggestedMappingBlocked:
+		return fmt.Sprintf("blocked; upgrade %s first, then %s", m.Package, again)
+	default:
+		return fmt.Sprintf("waiting; install %s, then %s", m.Package, again)
+	}
 }
 
 // importCommand is the SAMPLE door (decision record 0048). A sample is

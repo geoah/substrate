@@ -254,6 +254,8 @@ func TestCatalogListReturnsShippedBundles(t *testing.T) {
 
 const googleBundleID = "providers.substrate.reamde.dev/google"
 
+const peopleBundleID = "samples.substrate.reamde.dev/people"
+
 // The catalog list carries each entry's TIER on the wire: the console's two
 // sections and the door each row offers are read from it, so google is a
 // provider and the web sample is a sample (decision record 0048).
@@ -494,5 +496,45 @@ func TestCatalogReportsAnUntakenSampleAvailable(t *testing.T) {
 	env := newHeldEnv(t, googleBundleID)
 	if installedFor(t, env, webBundleID) {
 		t.Error("a sample this repository does not have reads as installed")
+	}
+}
+
+// A SAMPLE's suggested mappings ride the listing with the state each has here
+// (decision record 0049): this repository holds no provider, so the five the
+// people sample ships are all `waiting`, each naming the package to install
+// and both ends of the projection. A provider carries none at all.
+func TestCatalogListsSuggestedMappingsAndTheirState(t *testing.T) {
+	env := newCatalogEnv(t)
+	tok := env.svc.token("geoah")
+	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	body := decodeJSON[struct {
+		Items []struct {
+			ID                string                       `json:"id"`
+			SuggestedMappings []substrate.SuggestedMapping `json:"suggestedMappings"`
+		} `json:"items"`
+	}](t, rec)
+	var people, google int
+	for _, item := range body.Items {
+		switch item.ID {
+		case peopleBundleID:
+			people = len(item.SuggestedMappings)
+			for _, sm := range item.SuggestedMappings {
+				if sm.State != substrate.SuggestedMappingWaiting {
+					t.Errorf("%s: state = %q, want waiting on a repository with no provider", sm.ID, sm.State)
+				}
+				if sm.Package == "" || sm.From == "" || sm.To == "" {
+					t.Errorf("%s: the entry does not say what it waits for: %+v", sm.ID, sm)
+				}
+			}
+		case googleBundleID:
+			google = len(item.SuggestedMappings)
+		}
+	}
+	if people != 5 {
+		t.Errorf("the people sample reports %d suggested mappings, want 5", people)
+	}
+	if google != 0 {
+		t.Errorf("the google provider reports %d suggested mappings, want none: a provider declares no mapping", google)
 	}
 }

@@ -366,9 +366,36 @@ func (f *fakeSubstrate) handleCatalogImport(w http.ResponseWriter, r *http.Reque
 	if _, after, ok := strings.Cut(id, "/"); ok {
 		pkg = after
 	}
-	writeJSON(w, http.StatusOK, substrate.BundleStatus{
-		ID: "geoah.example.com/" + pkg, Name: pkg, Authority: "geoah.example.com",
-		Package: pkg, Installed: true, Enabled: true, Kinds: 3,
+	// The response carries the SUGGESTED MAPPINGS the door decided on: one
+	// landed, one waiting, so the printed report has both lines to show
+	// (decision record 0049). Their ids and targets are REHOMED, as the door
+	// reports them: what lands is this repository's own declaration, and a
+	// line naming the placeholder would send the reader to a kind that does
+	// not exist.
+	writeJSON(w, http.StatusOK, struct {
+		substrate.BundleStatus
+		SuggestedMappings []substrate.SuggestedMapping `json:"suggestedMappings"`
+	}{
+		BundleStatus: substrate.BundleStatus{
+			ID: "geoah.example.com/" + pkg, Name: pkg, Authority: "geoah.example.com",
+			Package: pkg, Installed: true, Enabled: true, Kinds: 3,
+		},
+		SuggestedMappings: []substrate.SuggestedMapping{
+			{
+				ID:      "geoah.example.com/" + pkg + "/githubuserperson",
+				From:    "providers.substrate.reamde.dev/github/user",
+				To:      "geoah.example.com/" + pkg + "/person",
+				Package: "providers.substrate.reamde.dev/github",
+				State:   substrate.SuggestedMappingLanded,
+			},
+			{
+				ID:      "geoah.example.com/" + pkg + "/linearissuetask",
+				From:    "providers.substrate.reamde.dev/linear/issue",
+				To:      "geoah.example.com/" + pkg + "/task",
+				Package: "providers.substrate.reamde.dev/linear",
+				State:   substrate.SuggestedMappingWaiting,
+			},
+		},
 	})
 }
 

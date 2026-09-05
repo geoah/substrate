@@ -57,6 +57,11 @@ type Bundle struct {
 	// dataDocs is the data plane: ordinary records (a provider's triggers,
 	// the llm sample's provider rows), each PUT after the closure lands.
 	dataDocs []map[string]any
+	// suggested are the closure's SUGGESTED MAPPINGS as the documents spell
+	// them (suggested.go). The wire field of the same name carries the state
+	// each one has in ONE repository, so it is filled per request and is empty
+	// here.
+	suggested []vocabulary.SuggestedMapping
 }
 
 // Closure and ShippedRecord are the catalog's names for the two nested wire
@@ -325,6 +330,12 @@ func bundleFromDocs(docs []map[string]any) (*Bundle, error) {
 			b.Closure.Mappings = append(b.Closure.Mappings, id)
 		}
 	}
+	// The SUGGESTED half of that mapping list: the ones declared onto this
+	// package's own kinds FROM another package's, which the two doors admit
+	// only where this repository can resolve them. Read off the documents,
+	// because nothing marks one (decision record 0049). The wire field stays
+	// empty: a state belongs to a repository, not to the shipped closure.
+	b.suggested = vocabulary.SuggestedMappings(docs)
 	if !found {
 		return nil, nil
 	}
@@ -365,16 +376,16 @@ func (c *Catalog) Warnings() []string { return c.warnings }
 // the delivery wiring upserts in place.
 //
 // A SAMPLE takes Import instead, which lands the same closure under the
-// repository's own authority. Install still admits one, and that is
-// deliberate for now: the six shipped providers pin sample kinds
-// (`to: samples.substrate.reamde.dev/people/person`) and name sample packages
-// under `requires:`, so a repository that cannot install a sample verbatim
-// cannot install Google, GitHub or Linear at all. The door closes when phase 4
-// of docs/plans/providers-and-samples.md decouples them.
-func (c *Catalog) Install(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset) (*Bundle, error) {
+// repository's own authority. Install still admits one, verbatim under the
+// placeholder: nothing in the tree needs that door now that no provider names
+// a sample package, but a repository that wants the shipped vocabulary under
+// the shipped authority may still ask for it, which is what
+// `authorizeNewPackage` sanctions. It takes the same suggested-mapping filter
+// an import does.
+func (c *Catalog) Install(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset) (*Bundle, []substrate.SuggestedMapping, error) {
 	b, err := c.installable(actor, id)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// INSTALL IS A COPY: the catalog's manifests are written
 	// into the repository's own changelog under the BUNDLE's actor, not the
@@ -392,10 +403,18 @@ func (c *Catalog) Install(ctx context.Context, actor substrate.Actor, id string,
 	// stays the repository's own, which record 0047 sanctions and which is the
 	// only way to hold a provider's declarations open to editing.
 	opts := substrate.BundleInstall{Published: b.Tier == substrate.TierProvider}
-	if err := install(ctx, ds, substrate.BundleActor(b.Authority, b.Package), b.vocabularyDocs, b.dataDocs, opts); err != nil {
-		return nil, err
+	// A sample installed VERBATIM takes the same suggested-mapping filter an
+	// import does: the mapping's `from` is a provider package either way, and
+	// admission refuses it either way while that package is absent. The
+	// report is SHIPPED-spelled, because that is what this door applies.
+	vocabularyDocs, report, err := b.admitted(ctx, ds, viewShipped)
+	if err != nil {
+		return nil, nil, err
 	}
-	return b, nil
+	if err := install(ctx, ds, substrate.BundleActor(b.Authority, b.Package), vocabularyDocs, b.dataDocs, opts); err != nil {
+		return nil, nil, err
+	}
+	return b, report, nil
 }
 
 // Import is the SAMPLE door (decision record 0048): the same atomic admission
@@ -415,30 +434,46 @@ func (c *Catalog) Install(ctx context.Context, actor substrate.Actor, id string,
 // Requirements are not special-cased: the rehomed `requires:` names the
 // repository's own packages, so ordinary admission refuses an import whose
 // sibling sample has not been imported yet, naming what to import first.
-func (c *Catalog) Import(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset) (*Bundle, error) {
+//
+// SUGGESTED MAPPINGS are: a sample ships one per provider it knows, onto a
+// kind of its own, and the import keeps only the ones whose provider this
+// repository holds. The rest are dropped with their `installs:` entries and
+// reported `waiting`, because a mapping naming an absent kind is refused by
+// admission and would cost the reader the whole import. Installing the
+// provider and importing again lands them; that second import REPLACES the
+// package, which is what a re-import always does (decision record 0048).
+func (c *Catalog) Import(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset) (*Bundle, []substrate.SuggestedMapping, error) {
 	b, err := c.installable(actor, id)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if b.Tier != substrate.TierSample {
-		return nil, fmt.Errorf("%w: %s is a provider, which installs under the authority that publishes it: use install, not import",
+		return nil, nil, fmt.Errorf("%w: %s is a provider, which installs under the authority that publishes it: use install, not import",
 			substrate.ErrValidation, b.ID)
 	}
 	home := ds.Repository().Authority
 	if home == "" {
-		return nil, fmt.Errorf("%w: this repository has no authority of its own, so there is nowhere to import %s to",
+		return nil, nil, fmt.Errorf("%w: this repository has no authority of its own, so there is nowhere to import %s to",
 			substrate.ErrValidation, b.ID)
 	}
-	vocabularyDocs, err := vocabulary.RehomeAuthority(b.vocabularyDocs, b.Authority, home)
+	// The suggested mappings are decided BEFORE the rehome, over the shipped
+	// documents, and the report that comes back with them is what this door
+	// answers: it names the rehomed ids, because those are the declarations
+	// the apply below writes.
+	kept, report, err := b.admitted(ctx, ds, viewRehomed)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s: %w", substrate.ErrValidation, b.ID, err)
+		return nil, nil, err
+	}
+	vocabularyDocs, err := vocabulary.RehomeAuthority(kept, b.Authority, home)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: %s: %w", substrate.ErrValidation, b.ID, err)
 	}
 	dataDocs, err := vocabulary.RehomeAuthority(b.dataDocs, b.Authority, home)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s: %w", substrate.ErrValidation, b.ID, err)
+		return nil, nil, fmt.Errorf("%w: %s: %w", substrate.ErrValidation, b.ID, err)
 	}
 	if left := vocabulary.AuthorityMentions(append(append([]map[string]any{}, vocabularyDocs...), dataDocs...), b.Authority); len(left) > 0 {
-		return nil, &substrate.ValidationError{
+		return nil, nil, &substrate.ValidationError{
 			Problems: []string{fmt.Sprintf("%s still mentions %s after the rehome, so it would declare under an authority this repository does not own",
 				strings.Join(left, ", "), b.Authority)},
 		}
@@ -451,9 +486,9 @@ func (c *Catalog) Import(ctx context.Context, actor substrate.Actor, id string, 
 	// belongs to the repository, and `published` is exactly the origin whose
 	// declarations the repository's own token may not write (record 0048).
 	if err := install(ctx, ds, substrate.BundleActor(home, b.Package), vocabularyDocs, dataDocs, substrate.BundleInstall{}); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return b, nil
+	return b, report, nil
 }
 
 // installable is the gate both doors share: the owner check and the lookup.
@@ -514,7 +549,18 @@ func (c *Catalog) Upgrade(ctx context.Context, id string, ds substrate.Dataset) 
 	if !ok {
 		return nil, nil
 	}
-	plan, err := p.PlanBundleUpgrade(ctx, b.vocabularyDocs)
+	// The preview is of what the DOOR would apply, so it runs over the same
+	// filtered closure. In the shipped tree the filter changes nothing here,
+	// because only a provider is previewed (the tier gate above) and a
+	// provider declares no suggested mapping; it is not a no-op in general,
+	// and the version-motion fixtures that load a sample closure as a
+	// provider root are where the difference shows: previewing a dropped
+	// mapping reports it as a blocker and hides the real ones.
+	vocabularyDocs, _, err := b.admitted(ctx, ds, viewShipped)
+	if err != nil {
+		return nil, err
+	}
+	plan, err := p.PlanBundleUpgrade(ctx, vocabularyDocs)
 	if err != nil {
 		return nil, err
 	}

@@ -2948,7 +2948,7 @@ var shippedVocabularyDirs = []string{
 // (`source: installed`), which is what makes their GraphQL names
 // `People_Person` and `Tasks_Task`.
 func TestShippedVocabularyBundles(t *testing.T) {
-	var docs []vocabulary.Document
+	var raw []map[string]any
 	for _, dir := range shippedVocabularyDirs {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
@@ -2962,12 +2962,39 @@ func TestShippedVocabularyBundles(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read: %v", err)
 			}
-			parsed, err := vocabulary.ParseStream(body)
-			if err != nil {
-				t.Fatalf("%s: %v", e.Name(), err)
+			dec := yaml.NewDecoder(bytes.NewReader(body))
+			for {
+				var m map[string]any
+				if err := dec.Decode(&m); errors.Is(err, io.EOF) {
+					break
+				} else if err != nil {
+					t.Fatalf("%s: %v", e.Name(), err)
+				}
+				if len(m) > 0 {
+					raw = append(raw, m)
+				}
 			}
-			docs = append(docs, parsed...)
 		}
+	}
+	// THE SUGGESTED MAPPINGS GO, exactly as the import door drops them: their
+	// source kinds are a provider's mirrors and this repository holds core
+	// alone (decision record 0049). A sample ships one per provider it knows,
+	// so what is left is the vocabulary a fresh repository actually gets.
+	suggested := vocabulary.SuggestedMappings(raw)
+	if len(suggested) == 0 {
+		t.Fatal("the shipped samples carry no suggested mapping, so the filter below proves nothing")
+	}
+	drop := map[string]bool{}
+	for _, sm := range suggested {
+		drop[sm.ID] = true
+	}
+	var docs []vocabulary.Document
+	for _, m := range vocabulary.WithoutMappings(raw, drop) {
+		d, err := vocabulary.DocumentFromMap(m)
+		if err != nil {
+			t.Fatalf("read a shipped document: %v", err)
+		}
+		docs = append(docs, d)
 	}
 	// SourceInstalled is the install path's answer; a vocabulary bundle
 	// overrides it, because the binary publishes this vocabulary however it

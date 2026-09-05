@@ -75,6 +75,9 @@ const (
 	linearLiveGraphQL = "https://api.linear.app/graphql"
 
 	linearViewerEmail = "geo@linear.example"
+	// linearIssueATitle is issue A's heading upstream, and what the tasks
+	// sample's mapping projects onto the task it mints.
+	linearIssueATitle = "Fix the flux capacitor"
 )
 
 // TestLinearBundleAdmitsSchema loads the builtin schema, then installs the
@@ -354,6 +357,10 @@ type linearFakeAPI struct {
 	issueBState    string
 	issueBStateTyp string
 	issueBTeam     map[string]any // nil means the issue lost its team
+	// issueATitle is Linear's own heading for issue A, which a mapping
+	// projects onto the repository's task: changing it upstream is how the
+	// recompute is observed.
+	issueATitle string
 }
 
 var linearFakeTeamEng = map[string]any{"id": "uuid-t", "key": "ENG", "name": "Engineering"}
@@ -363,7 +370,7 @@ func newLinearFakeAPI(t *testing.T) *linearFakeAPI {
 	f := &linearFakeAPI{
 		issueAState: "In Progress", issueAStateTyp: "started",
 		issueBState: "Todo", issueBStateTyp: "unstarted",
-		issueBTeam: linearFakeTeamEng,
+		issueBTeam: linearFakeTeamEng, issueATitle: linearIssueATitle,
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	mux := http.NewServeMux()
@@ -390,7 +397,7 @@ func newLinearFakeAPI(t *testing.T) *linearFakeAPI {
 		}
 		f.pages++
 		issueA := map[string]any{
-			"id": "uuid-a", "identifier": "ENG-1", "title": "Fix the flux capacitor",
+			"id": "uuid-a", "identifier": "ENG-1", "title": f.issueATitle,
 			"url": "https://linear.app/acme/issue/ENG-1", "dueDate": "2026-09-01",
 			"updatedAt": now, "priority": 2.0,
 			"state": map[string]any{"name": f.issueAState, "type": f.issueAStateTyp},
@@ -447,6 +454,13 @@ func (f *linearFakeAPI) completeIssueB() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.issueBState, f.issueBStateTyp = "Done", "completed"
+}
+
+// retitleIssueA renames issue A upstream: the heading a mapping projects.
+func (f *linearFakeAPI) retitleIssueA(title string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.issueATitle = title
 }
 
 // moveIssueBTeam reassigns issue B's team; nil drops the team entirely.
@@ -607,25 +621,14 @@ func TestLinearBundleFakeSyncMirrors(t *testing.T) {
 		t.Fatalf("install the linear bundle: %v", err)
 	}
 	// The closure ships no mapping (record 49): the repository declares how
-	// linear's mirrors reach the person kind it owns, and this test wants that
-	// identity resolution, so it declares both.
-	if err := enginetest.DeclareMappings(ctx, ds,
-		enginetest.PeopleMapping("linearuserperson", map[string]any{
-			"from": linearUserType, "property": "person",
-			"match": []any{map[string]any{"from": "email", "to": "emails"}},
-			"map": map[string]any{
-				"name":        map[string]any{"path": "name"},
-				"displayName": map[string]any{"path": "displayName"},
-				"emails":      map[string]any{"path": "email", "merge": "union"},
-			},
-		}),
-		enginetest.PeopleMapping("linearissueperson", map[string]any{
-			"from": linearIssueType, "property": "assignee",
-			"match": []any{map[string]any{"from": "assigneeEmail", "to": "emails"}},
-		}),
-	); err != nil {
-		t.Fatalf("declare the linear mappings: %v", err)
-	}
+	// linear's mirrors reach the kinds it owns, and TWO SAMPLES already carry
+	// those declarations as suggested mappings: people's `user -> person` and
+	// `issue.assignee -> person`, tasks' `issue -> task`. All three were
+	// dropped when the samples were imported at open, because this provider
+	// was not installed then, so re-importing both closures now is what lands
+	// them. That re-import is exactly what the console asks a reader for
+	// (decision records 0048 and 0049).
+	importVocabulary(t, ds, "people", "tasks")
 	for _, m := range loadYAMLDocs(t, linearExampleDir+"/triggers.yaml") {
 		putDataDoc(t, ds, m)
 	}
@@ -731,16 +734,51 @@ func TestLinearBundleFakeSyncMirrors(t *testing.T) {
 		t.Fatalf("account email = %v, want %s", acct.Properties["email"], linearViewerEmail)
 	}
 
-	// NO TASK ROW, from anything in this closure: `task` belongs to a package
-	// the provider does not own, so the repository is what writes one.
-	page, err := ds.List(ctx, substrate.Query{
-		Filter: substrate.Filter{Kinds: []string{linearTaskType}}, First: 10,
-	})
-	if err != nil {
-		t.Fatalf("list tasks: %v", err)
+	// NO TASK ROW FROM THIS CLOSURE: `task` belongs to a package the provider
+	// does not own, so nothing here writes one. What DOES write one is the
+	// tasks sample's own mapping, landed above, and it writes it as the
+	// projection of the issue mirror rather than as a row of the sync's.
+	taskRefs := refIDs(issueA, "task")
+	if len(taskRefs) != 1 {
+		t.Fatalf("the issue mirror's task slot = %+v, want the one the mapping minted", taskRefs)
 	}
-	if len(page.Records) != 0 {
-		t.Fatalf("the linear closure wrote %d task rows", len(page.Records))
+	task := linearGet(t, ds, linearTaskType, taskRefs[0])
+	if got := task.Properties["name"]; got != linearIssueATitle {
+		t.Fatalf("the mapping did not project the heading: name = %v", got)
+	}
+	if got := task.Properties["url"]; got != "https://linear.app/acme/issue/ENG-1" {
+		t.Fatalf("the mapping did not project the link: url = %v", got)
+	}
+	// `status` is NOT mapped: a state moves through its transitions and no
+	// mapping may name one (record 40), so the minted task sits at the
+	// declared initial state and the owner owns it from there.
+	if got := task.Properties["status"]; got != "open" {
+		t.Fatalf("the minted task's status = %v, want the declared initial open", got)
+	}
+
+	// THE OWNER'S EDIT SURVIVES THE SYNC, and Linear's own heading still
+	// recomputes. The owner moves the task to `done`; upstream, the issue is
+	// retitled. One re-sync later the status is still the owner's and the
+	// name is Linear's, which is what the projection's tiers buy: a mapped
+	// property recomputes at the machine tier, an owner write wins, and an
+	// unmapped one is never touched at all.
+	if _, err := ds.Patch(ctx, substrate.ActorAPI, linearTaskType, task.ID, substrate.PatchInput{
+		Properties: map[string]any{"status": "done"},
+	}); err != nil {
+		t.Fatalf("the owner could not close the projected task: %v", err)
+	}
+	const retitled = "Fix the flux capacitor, properly"
+	api.retitleIssueA(retitled)
+	linearResync(t, ds, account.ID)
+	after := linearGet(t, ds, linearTaskType, task.ID)
+	if got := after.Properties["status"]; got != "done" {
+		t.Fatalf("the re-sync took the owner's status back: %v", got)
+	}
+	if got := after.Properties["name"]; got != retitled {
+		t.Fatalf("the re-sync did not recompute the mapped heading: %v", got)
+	}
+	if after.Properties["completedAt"] == nil {
+		t.Error("the done transition stamped no completedAt on the projected task")
 	}
 
 	// An idle re-sync writes nothing: the mirrors are patched, never re-put

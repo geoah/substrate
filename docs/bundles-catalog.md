@@ -18,6 +18,16 @@ a repository that imported it
 ([0015](decisions/0015-unproven-kinds-stay-out-of-the-stable-set.md) is what
 that amends).
 
+**No provider ships a mapping.** A mapping onto a kind is declared by the
+package that owns that kind
+([0049](decisions/0049-the-owner-of-a-mappings-target-declares-it.md)), so each
+provider ships mirrors with empty subject slots and the `people` and `tasks`
+samples ship the six SUGGESTED MAPPINGS that fill them. An import keeps a
+suggested mapping only where the provider it reads is installed and fits it,
+and reports the rest `waiting`, `blocked` or `ready`: see
+[suggested mappings](bundles.md#suggested-mappings) for the door, and each
+provider section below for the mappings pointed at it.
+
 This is the map. The source of truth is each bundle's own manifests, under
 `kinds/<authority>/<package>/` for the providers and `samples/<package>/` for
 the samples, and everything taking one will add (the declarations and the
@@ -143,8 +153,13 @@ whichever stream finishes stamps them.
   `google-gmail-scheduled`, and `google-calendar-scheduled` fire them hourly.
 - **Mappings**: none. `contact` and `emailaddress` each carry an empty subject
   slot, and a mapping onto a person is the declaration of the package that owns
-  that person (record 0049): a repository declares its own, matching on the
-  email address.
+  that person (record 0049). The `people` sample ships both of them as
+  SUGGESTED MAPPINGS (`googlecontactperson` and `googleaddressperson`, matching
+  on the address), so importing `people` with this provider installed is what
+  lands them; importing it first lands the kinds and reports the two `waiting`
+  for this package, and installing this package afterwards is not enough on its
+  own: import `people` again
+  ([suggested mappings](bundles.md#suggested-mappings)).
 
 **Mirrors only.** Every row this closure writes is one of its own kinds, and
 the `emailaddress` mirror is the bridge to the repository's own vocabulary: one
@@ -193,9 +208,13 @@ code work you are involved in.
 - **Triggers (2)**: `github-on-connect` fires `githubsync` once an account is
   connected and has a feature toggle on; `github-scheduled` fires it hourly.
 - **Mappings**: none. `user` carries an empty subject slot, and a repository
-  declares what fills it (record 0049): a mapping matching on the profile's
-  public email, mapping the name, the login as the display name, and the union
-  of emails.
+  declares what fills it (record 0049). The `people` sample ships that
+  declaration as a SUGGESTED MAPPING (`githubuserperson`): it matches on the
+  profile's public email and maps the name, the login as the display name, and
+  the union of emails. Import `people` with this provider installed and it
+  lands; import it first and it is reported `waiting` for this package, and
+  installing this package afterwards is not enough on its own: import `people`
+  again ([suggested mappings](bundles.md#suggested-mappings)).
 
 Scopes are derived per toggle (`read:user`, and `repo` for repositories, issues
 and pull requests), and the facility reads the account's public email from
@@ -214,14 +233,26 @@ issues assigned to you, in Linear's own shape.
   mirrors the viewer, teams, and issues.
 - **Triggers (2)**: `linear-issues-on-connect` and `linear-issues-scheduled`
   drive `issuessync`, on connect and hourly.
-- **Mappings**: none. `user.person` and `issue.assignee` are empty subject
-  slots; a repository declares mappings onto its own person kind, matching on
-  the login and assignee addresses the mirrors carry (record 0049).
+- **Mappings**: none. `user.person`, `issue.assignee` and `issue.task` are
+  three empty subject slots, and the mappings that fill them belong to the
+  packages that own their targets (record 0049).
 
-A repository that works its Linear issues as tasks declares a mapping from
-`issue` onto its own task kind, or writes a function of its own reading these
-mirrors. The projection's tiers are what keep a hand edit either way: a mapped
-property is recomputed at the machine tier, and an owner write wins.
+The two samples ship them as SUGGESTED MAPPINGS: `people` declares
+`linearuserperson` and `linearissueperson`, matching on the login and assignee
+addresses, and `tasks` declares `linearissuetask`, matching an issue's URL
+against a task's `url` and carrying the heading and the link and nothing else.
+Import either sample with this provider installed and its mapping lands;
+import it first and the mapping is reported `waiting` for this package, and
+installing this package afterwards is not enough on its own: import that
+sample again ([suggested mappings](bundles.md#suggested-mappings)).
+
+A projected task's `status` is not mapped and cannot be: a state moves through
+its declared transitions, never through a mapping
+([0040](decisions/0040-the-four-occurrence-logs-say-done.md)), so the task the
+mapping mints starts `open` and every move after that is yours, untouched by
+any sync. The projection's TIERS are what protect the two properties that ARE
+mapped: `name` and `url` are recomputed at the machine tier, so retyping the
+heading keeps it and Linear's next title lands only where you have not.
 
 ## WHOOP
 

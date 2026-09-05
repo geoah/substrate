@@ -56,7 +56,8 @@ hourly schedule ──▶ issuessync ──▶ every connected account due by it
   own shape, ids composed with `host.ids.external("linear", account,
   "user:|team:|issue:<uuid>")`. The issue carries `identifier`, `title` (the
   reserved built-in), `state` + `stateType`, `priority` (as its label), `url`,
-  the raw node, an unpinned `assignee` subject slot and a `team`
+  the raw node, two unpinned subject slots (`assignee`, for who the issue is
+  on, and `task`, for what it is) and a `team`
   reference at its team mirror. The team reference is kept **current**: `team`
   is not repeated, so a write replaces a moved issue's previous team, and an
   issue that lost its team upstream gets its stale reference cleared.
@@ -70,6 +71,13 @@ issue's `assignee` slot at the viewer's own `user` mirror instead: a repository
 whose mapping reaches people through that mirror resolves it in one hop, and a
 hidden address costs one shell per login rather than one per issue (logged once
 per run).
+
+Two samples already write those declarations:
+`samples/people/mappings.linear.yaml` holds the two onto `person`, and
+`samples/tasks/mappings.linear.yaml` holds the one onto `task`, which fills the
+issue's second subject slot. Importing either sample with this provider
+installed lands its mapping; importing it first drops the mapping and reports
+it waiting for this package (docs/bundles.md, "Suggested mappings").
 - **`issuessync`** (python / PEP 723 / requests): reads the account's
   host-resolved access token off the injected config, pages
   `viewer.assignedIssues` (50/page, `orderBy: updatedAt`) with an `updatedAt`

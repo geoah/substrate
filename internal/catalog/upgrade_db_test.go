@@ -212,7 +212,7 @@ func TestUpgradePreview(t *testing.T) {
 
 	// The offered upgrade is the install verb, unchanged, and afterwards the
 	// preview reads current again.
-	if _, err := moved.Install(ctx, substrate.ActorAPI, tasksBundleID, ds); err != nil {
+	if _, _, err := moved.Install(ctx, substrate.ActorAPI, tasksBundleID, ds); err != nil {
 		t.Fatalf("install the moved closure: %v", err)
 	}
 	up, err = moved.Upgrade(ctx, tasksBundleID, ds)
@@ -262,7 +262,7 @@ func TestUpgradePreviewReportsBlockers(t *testing.T) {
 	}
 
 	// The preview's blocker IS the install door's refusal.
-	if _, err := moved.Install(ctx, substrate.ActorAPI, tasksBundleID, ds); err == nil {
+	if _, _, err := moved.Install(ctx, substrate.ActorAPI, tasksBundleID, ds); err == nil {
 		t.Fatal("the install door admitted the closure the preview reported blocked")
 	} else if !strings.Contains(err.Error(), `"url"`) {
 		t.Errorf("the refusal does not name the property the preview named: %v", err)
