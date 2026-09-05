@@ -48,7 +48,7 @@ func conformance(t *testing.T, open openStore) {
 	ctx := context.Background()
 
 	t.Run("absent bytes are ErrNotStored", func(t *testing.T) {
-		s := open(t, "repoabsent")
+		s := open(t, "repoabsent.example.com")
 		digest := digestOf([]byte("never stored"))
 		if _, err := s.Open(ctx, digest); !errors.Is(err, blobbytes.ErrNotStored) {
 			t.Fatalf("open absent: got %v, want ErrNotStored", err)
@@ -63,7 +63,7 @@ func conformance(t *testing.T, open openStore) {
 	})
 
 	t.Run("put then read the same bytes", func(t *testing.T) {
-		s := open(t, "reporoundtrip")
+		s := open(t, "reporoundtrip.example.com")
 		data := []byte("the bytes, whole")
 		digest := put(t, s, data)
 		held, err := s.Exists(ctx, digest)
@@ -76,7 +76,7 @@ func conformance(t *testing.T, open openStore) {
 	})
 
 	t.Run("a second put of the same digest is a no-op", func(t *testing.T) {
-		s := open(t, "repodedup")
+		s := open(t, "repodedup.example.com")
 		data := []byte("stored twice, held once")
 		digest := put(t, s, data)
 		put(t, s, data)
@@ -93,7 +93,7 @@ func conformance(t *testing.T, open openStore) {
 	})
 
 	t.Run("delete is idempotent", func(t *testing.T) {
-		s := open(t, "repodelete")
+		s := open(t, "repodelete.example.com")
 		digest := put(t, s, []byte("here, then gone"))
 		if err := s.Delete(ctx, digest); err != nil {
 			t.Fatalf("delete: %v", err)
@@ -114,7 +114,7 @@ func conformance(t *testing.T, open openStore) {
 	})
 
 	t.Run("list reports size, orders by digest and honors the cursor", func(t *testing.T) {
-		s := open(t, "repolist")
+		s := open(t, "repolist.example.com")
 		var digests []string
 		for _, body := range []string{"one", "two", "three", "four"} {
 			digests = append(digests, put(t, s, []byte(body)))
@@ -161,7 +161,7 @@ func conformance(t *testing.T, open openStore) {
 	})
 
 	t.Run("a key that is not a digest is refused", func(t *testing.T) {
-		s := open(t, "repogrammar")
+		s := open(t, "repogrammar.example.com")
 		for _, bad := range []string{
 			"",
 			"../escape",
@@ -185,7 +185,7 @@ func conformance(t *testing.T, open openStore) {
 	})
 
 	t.Run("bytes that are not the promised length are refused", func(t *testing.T) {
-		s := open(t, "repolength")
+		s := open(t, "repolength.example.com")
 		data := []byte("nine byte")
 		if err := s.Put(ctx, digestOf(data), int64(len(data))+5, strings.NewReader(string(data))); err == nil {
 			t.Fatal("put accepted a body shorter than the size it was given")
@@ -202,8 +202,8 @@ func repositoryIsolation(t *testing.T, open openStore) {
 	data := []byte("one repository's attachment")
 	digest := digestOf(data)
 
-	mine := open(t, "repoalpha")
-	theirs := open(t, "repobeta")
+	mine := open(t, "repoalpha.example.com")
+	theirs := open(t, "repobeta.example.com")
 	put(t, mine, data)
 
 	held, err := theirs.Exists(ctx, digest)
@@ -237,11 +237,31 @@ func repositoryIsolation(t *testing.T, open openStore) {
 // that could hold a path separator would let one repository's store address
 // another's.
 func refuseBadRepository(t *testing.T, b blobbytes.Backend, db blobbytes.DB) {
-	// `.` and `..` match the id character class, and either one would address
-	// the store's root or its parent instead of one repository inside it.
-	for _, bad := range []string{"", ".", "..", "../elsewhere", "a/b", strings.Repeat("r", 129)} {
+	// The id is the repository's authority: lowercase DNS labels with at least
+	// one dot, up to 253 bytes. `.` and `..` would address the store's root or
+	// its parent instead of one repository inside it; the old random id has no
+	// dot; a capital letter is not lowercase.
+	for _, bad := range []string{
+		"", ".", "..", "../elsewhere", "a/b", "k3j9x2m41pfq", "Ada.example.com", "ada_1.example.com",
+		strings.Repeat("r", 64) + ".example.com", longAuthority(254),
+	} {
 		if _, err := b.Repository(bad, db); err == nil {
 			t.Fatalf("the backend bound to %q as a repository id", bad)
 		}
 	}
+	if _, err := b.Repository(longAuthority(200), db); err != nil {
+		t.Fatalf("a 200-byte authority is a repository id: %v", err)
+	}
+}
+
+// longAuthority builds a valid authority of exactly n bytes out of 63-byte
+// labels.
+func longAuthority(n int) string {
+	var labels []string
+	for n > 0 {
+		l := min(n, 63)
+		labels = append(labels, strings.Repeat("a", l))
+		n -= l + 1
+	}
+	return strings.Join(labels, ".")
 }

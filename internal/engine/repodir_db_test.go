@@ -391,7 +391,7 @@ func TestBootWritesTheDirectoryForARowWithoutOne(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the boot wrote no manifest: %v", err)
 	}
-	if m.ID != id || m.Username != "ada" || m.Authority != "ada.example.com" || len(m.DEK) == 0 ||
+	if m.Authority != id || m.Username != "ada" || m.Authority != "ada.example.com" || len(m.DEK) == 0 ||
 		m.ChangelogDialect != engine.MaxChangelogDialect() || m.CreatedAt.IsZero() {
 		t.Fatalf("manifest = %+v", m)
 	}
@@ -979,4 +979,238 @@ func TestBootSkipsADirectoryWithNoManifest(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(changelogfile.ChangelogDir(stray), changelogfile.SegmentName(1))); err != nil {
 		t.Fatalf("the boot removed or moved the stray directory's segment: %v", err)
 	}
+}
+
+// The repository's id is its authority at every layer: the control-plane
+// row's primary key and its authority column, RepositoryInfo.ID, the scope a
+// dataset runs under, the self-description record's id, the directory under
+// the data root, the fs blob path, and the binding of the DEK wrap.
+func TestRegistrationUsesTheAuthorityAsTheId(t *testing.T) {
+	t.Parallel()
+	svc, dsn := newService(t)
+	ctx := context.Background()
+	registerUser(t, svc, "ada")
+	const authority = "ada.example.com"
+
+	repos, err := svc.Repositories(ctx)
+	if err != nil || len(repos) != 1 {
+		t.Fatalf("repositories = %+v, %v", repos, err)
+	}
+	if repos[0].ID != authority || repos[0].Authority != authority || repos[0].Name != "ada" {
+		t.Fatalf("RepositoryInfo = %+v, want id and authority %q", repos[0], authority)
+	}
+	var id, column string
+	var wrapped []byte
+	if err := rawDB(t, dsn).QueryRow(`SELECT id, authority, dek FROM repositories`).Scan(&id, &column, &wrapped); err != nil {
+		t.Fatal(err)
+	}
+	if id != authority || column != authority {
+		t.Fatalf("row id = %q, authority = %q, want both %q", id, column, authority)
+	}
+	ds, err := svc.Dataset(ctx, "ada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := repositoryIDOf(t, ds); got != authority {
+		t.Fatalf("the dataset's repository id = %q", got)
+	}
+	// Every scoped row carries the authority as its repository.
+	var scoped string
+	if err := rawDB(t, dsn).QueryRow(`SELECT DISTINCT repository FROM changelog`).Scan(&scoped); err != nil || scoped != authority {
+		t.Fatalf("changelog rows are scoped to %q (%v), want %q", scoped, err, authority)
+	}
+	var selfID string
+	if err := rawDB(t, dsn).QueryRow(`SELECT id FROM records WHERE kind = 'substrate.reamde.dev/core/repository'`).Scan(&selfID); err != nil || selfID != authority {
+		t.Fatalf("the self-description record's id = %q (%v), want %q", selfID, err, authority)
+	}
+
+	root := engine.DataRootOf(svc)
+	dir := filepath.Join(root, changelogfile.RepositoriesDir, authority)
+	m, err := changelogfile.ReadManifest(dir)
+	if err != nil {
+		t.Fatalf("no manifest at %s: %v", dir, err)
+	}
+	if m.Authority != authority || m.Username != "ada" || !bytes.Equal(m.DEK, wrapped) {
+		t.Fatalf("manifest = %+v", m)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, changelogfile.ManifestName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(raw, []byte(`"id"`)) {
+		t.Fatalf("the manifest carries an id key:\n%s", raw)
+	}
+	digest := putBlob(t, ds, []byte("bytes under the authority"))
+	if got, err := os.ReadFile(filepath.Join(dir, "blobs", digest)); err != nil || string(got) != "bytes under the authority" {
+		t.Fatalf("blob at <root>/repositories/%s/blobs/%s: %q, %v", authority, digest, got, err)
+	}
+	// The DEK wrap is bound to the authority and to nothing else.
+	if _, err := engine.OpenPayloadWithKey(engine.TestCredentialKeyBytes, wrapped, engine.DEKAAD(authority)); err != nil {
+		t.Fatalf("the DEK does not open under dek\\x00%s: %v", authority, err)
+	}
+	if _, err := engine.OpenPayloadWithKey(engine.TestCredentialKeyBytes, wrapped, engine.DEKAAD("ada")); err == nil {
+		t.Fatal("the DEK opened under a binding that is not the authority")
+	}
+}
+
+// A `repositories` row whose id is not its authority is a database written
+// before the authority became the id. The boot refuses it and says what to do,
+// and migration 0015's constraint is re-added without validating the old row.
+func TestBootRefusesARowWhoseIdIsNotItsAuthority(t *testing.T) {
+	t.Parallel()
+	svc, dsn := newService(t)
+	registerUser(t, svc, "ada")
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+
+	db := rawDB(t, dsn)
+	// The constraint holds every row written from now on; the old shape is
+	// reached the way an old database reaches it, with no constraint at all.
+	if _, err := db.Exec(`ALTER TABLE repositories DROP CONSTRAINT repositories_id_is_authority`); err != nil {
+		t.Fatalf("drop the constraint: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE repositories SET id = 'k3j9x2m41pfq'`); err != nil {
+		t.Fatalf("give the row a random id: %v", err)
+	}
+	_, err := reopen(t, dsn, root)
+	if err == nil {
+		t.Fatal("a row whose id is not its authority booted")
+	}
+	if !errors.Is(err, engine.ErrRepositoryIDNotAuthority) {
+		t.Fatalf("the refusal must be ErrRepositoryIDNotAuthority: %v", err)
+	}
+	for _, want := range []string{"Wipe the database and boot again", "k3j9x2m41pfq", "ada.example.com"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the refusal must say %q: %v", want, err)
+		}
+	}
+	var validated bool
+	if err := db.QueryRow(`SELECT convalidated FROM pg_constraint WHERE conname = 'repositories_id_is_authority'`).Scan(&validated); err != nil {
+		t.Fatalf("the migration did not re-add the constraint: %v", err)
+	}
+	if validated {
+		t.Fatal("the re-added constraint validated the old row, which it cannot have")
+	}
+	// The wipe the message asks for, then the boot goes through.
+	if _, err := db.Exec(`UPDATE repositories SET id = authority`); err != nil {
+		t.Fatal(err)
+	}
+	mustReopen(t, dsn, root)
+}
+
+// A directory a pre-authority binary wrote, named by the random id it minted
+// and carrying a manifest with `id`, imports into a fresh database: the boot
+// moves it under its authority, re-wraps the DEK from the old binding to the
+// new, writes the format-1 manifest, and then imports it as any directory
+// with no row. The fixture is built by hand from a real repository's
+// directory, so the changelog, the sealed files and the blob are what such a
+// binary wrote.
+func TestBootImportsAnOldIdNamedDirectory(t *testing.T) {
+	t.Parallel()
+	svc, dsn := newService(t)
+	ctx := context.Background()
+	_, token, secret := registerUser(t, svc, "ada")
+	ds, err := svc.Dataset(ctx, "ada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	importVocabulary(t, ds, "tasks")
+	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "from before"}})
+	ref := putProvider(t, ds, dsn, "openai", "sk-old-binding")
+	digest := putBlob(t, ds, []byte("old directory bytes"))
+	before := foldOf(t, ds)
+	head := maxSeq(t, ds)
+	const authority = "ada.example.com"
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+
+	// The old shape: <root>/repositories/<random id>, the manifest with `id`,
+	// the DEK wrapped under `dek\x00<random id>`.
+	const oldID = "k3j9x2m41pfq"
+	src := filepath.Join(root, changelogfile.RepositoriesDir, authority)
+	root2 := t.TempDir()
+	oldDir := filepath.Join(root2, changelogfile.RepositoriesDir, oldID)
+	copyDir(t, src, oldDir)
+	m, err := changelogfile.ReadManifest(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dek, err := engine.OpenPayloadWithKey(engine.TestCredentialKeyBytes, m.DEK, engine.DEKAAD(authority))
+	if err != nil {
+		t.Fatalf("unwrap the DEK: %v", err)
+	}
+	oldWrap, err := engine.SealWithKey(engine.TestCredentialKeyBytes, dek, engine.DEKAAD(oldID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := json.MarshalIndent(map[string]any{
+		"format": 1, "id": oldID, "username": "ada", "authority": authority,
+		"createdAt": m.CreatedAt.Format("2006-01-02T15:04:05.000000Z"), "changelogDialect": m.ChangelogDialect,
+		"dek": base64.StdEncoding.EncodeToString(oldWrap),
+	}, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(oldDir, changelogfile.ManifestName), legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The fixture is what it claims: the new reader refuses it, the old one
+	// reads it.
+	if _, err := changelogfile.ReadManifest(oldDir); err == nil {
+		t.Fatal("the fixture's manifest reads as the current shape")
+	}
+	if lm, err := changelogfile.ReadLegacyManifest(oldDir); err != nil || lm.ID != oldID {
+		t.Fatalf("the fixture's manifest is not the pre-authority shape: %+v, %v", lm, err)
+	}
+
+	dsn2 := testdb.NewSchema(t)
+	svc2 := mustReopen(t, dsn2, root2)
+	if _, err := os.Stat(oldDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the old directory is still there: %v", err)
+	}
+	newDir := filepath.Join(root2, changelogfile.RepositoriesDir, authority)
+	m2, err := changelogfile.ReadManifest(newDir)
+	if err != nil {
+		t.Fatalf("no format-1 manifest under the authority: %v", err)
+	}
+	if m2.Authority != authority || m2.Username != "ada" || m2.ChangelogDialect != m.ChangelogDialect || !m2.CreatedAt.Equal(m.CreatedAt) {
+		t.Fatalf("manifest after the move = %+v", m2)
+	}
+	if bytes.Equal(m2.DEK, oldWrap) {
+		t.Fatal("the DEK was not re-wrapped")
+	}
+	if got, err := engine.OpenPayloadWithKey(engine.TestCredentialKeyBytes, m2.DEK, engine.DEKAAD(authority)); err != nil || !bytes.Equal(got, dek) {
+		t.Fatalf("the re-wrapped DEK does not open under the authority to the same key: %v", err)
+	}
+	repos, err := svc2.Repositories(ctx)
+	if err != nil || len(repos) != 1 || repos[0].ID != authority || repos[0].Name != "ada" {
+		t.Fatalf("repositories after the import = %+v, %v", repos, err)
+	}
+	var wrapped []byte
+	if err := rawDB(t, dsn2).QueryRow(`SELECT dek FROM repositories WHERE id = $1`, authority).Scan(&wrapped); err != nil || !bytes.Equal(wrapped, m2.DEK) {
+		t.Fatalf("the row's DEK is not the manifest's: %v", err)
+	}
+	ds2, err := svc2.Dataset(ctx, "ada")
+	if err != nil {
+		t.Fatalf("open the imported repository: %v", err)
+	}
+	if after := foldOf(t, ds2); string(after) != string(before) {
+		t.Fatalf("the imported fold is not the original\n%s", firstDifference(before, after))
+	}
+	if got := getBlob(t, ds2, digest); string(got) != "old directory bytes" {
+		t.Fatalf("blob bytes = %q", got)
+	}
+	if got := openSecret(t, dsn2, ref); got != "sk-old-binding" {
+		t.Fatalf("secret = %q", got)
+	}
+	if _, info, err := svc2.Authenticate(ctx, secret); err != nil || info.ID != token.ID {
+		t.Fatalf("the registered token does not open the imported repository: %v (%+v)", err, info)
+	}
+	report := mustVerify(t, svc2, "ada")
+	if !report.OK || report.Head != head || report.FileHead != head {
+		t.Fatalf("the imported repository does not verify: %+v", report)
+	}
+	// A second boot finds nothing to move.
+	_ = svc2.Close()
+	mustReopen(t, dsn2, root2)
 }

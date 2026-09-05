@@ -72,7 +72,7 @@ func TestPostgresSettlesInTheCallersTransaction(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	db := newPostgresDB(t)
-	s, err := blobbytes.NewPostgres().Repository("repotest", db)
+	s, err := blobbytes.NewPostgres().Repository("repotest.example.com", db)
 	if err != nil {
 		t.Fatalf("bind: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestPostgresKeepsTheRowShape(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	db := newPostgresDB(t)
-	s, err := blobbytes.NewPostgres().Repository("repotest", db)
+	s, err := blobbytes.NewPostgres().Repository("repotest.example.com", db)
 	if err != nil {
 		t.Fatalf("bind: %v", err)
 	}

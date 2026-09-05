@@ -105,14 +105,14 @@ func TestFailedRegistrationLeavesNoDurableRows(t *testing.T) {
 func TestEraseRepositorySurvivesRequestCancellation(t *testing.T) {
 	t.Parallel()
 	s, dsn := openBareService(t)
-	plantOrphan(t, dsn, "orphanrepoidcancel")
+	plantOrphan(t, dsn, "orphanrepoidcancel.example.com")
 	if orphanRowCount(t, s) == 0 {
 		t.Fatal("setup: no orphan rows planted")
 	}
 
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel() // the request that triggered the failure is already gone
-	if err := s.eraseRepository(canceled, "orphanrepoidcancel"); err != nil {
+	if err := s.eraseRepository(canceled, "orphanrepoidcancel.example.com"); err != nil {
 		t.Fatalf("erase under a canceled context: %v", err)
 	}
 	if n := orphanRowCount(t, s); n != 0 {
@@ -144,7 +144,7 @@ func TestBootSweepReclaimsOrphanedRows(t *testing.T) {
 		t.Fatal("setup: the legit repository has no records")
 	}
 
-	plantOrphan(t, dsn, "orphanrepoidsweep")
+	plantOrphan(t, dsn, "orphanrepoidsweep.example.com")
 	if orphanRowCount(t, s) == 0 {
 		t.Fatal("setup: no orphan rows planted")
 	}

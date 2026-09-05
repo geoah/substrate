@@ -22,21 +22,22 @@ var (
 	// ErrManifestFormat is returned for a manifest whose format is not
 	// ManifestFormat.
 	ErrManifestFormat = errors.New("changelogfile: manifest format is not 1")
-	// ErrManifestIncomplete is returned for a manifest with no id or no
-	// username.
-	ErrManifestIncomplete = errors.New("changelogfile: manifest lacks an id or a username")
-	// ErrManifestID is returned when the manifest's id is not the name of the
-	// directory it sits in: the directory is keyed by the id, and a renamed
-	// copy would import under the wrong key.
-	ErrManifestID = errors.New("changelogfile: manifest id does not name its directory")
+	// ErrManifestIncomplete is returned for a manifest with no authority or
+	// no username.
+	ErrManifestIncomplete = errors.New("changelogfile: manifest lacks an authority or a username")
+	// ErrManifestAuthority is returned when the manifest's authority is not
+	// the name of the directory it sits in: the directory is keyed by the
+	// authority, and a renamed copy would import under the wrong key.
+	ErrManifestAuthority = errors.New("changelogfile: manifest authority does not name its directory")
 )
 
 // Manifest is `repository.json`: what a restore needs to recreate the
 // `repositories` row. It holds no head; the head is the last line of the
-// active segment.
+// active segment. The authority is the repository's id (decision 0046), so
+// there is no separate id field: the directory name, the row's primary key
+// and this field are one value.
 type Manifest struct {
 	Format    int
-	ID        string
 	Username  string
 	Authority string
 	CreatedAt time.Time
@@ -52,7 +53,6 @@ type Manifest struct {
 // precision the row holds, and read as any RFC 3339 time.
 type manifestWire struct {
 	Format           int    `json:"format"`
-	ID               string `json:"id"`
 	Username         string `json:"username"`
 	Authority        string `json:"authority"`
 	CreatedAt        string `json:"createdAt"`
@@ -63,7 +63,7 @@ type manifestWire struct {
 // MarshalJSON renders the manifest in its file form.
 func (m Manifest) MarshalJSON() ([]byte, error) {
 	w := manifestWire{
-		Format: m.Format, ID: m.ID, Username: m.Username, Authority: m.Authority,
+		Format: m.Format, Username: m.Username, Authority: m.Authority,
 		ChangelogDialect: m.ChangelogDialect, DEK: m.DEK,
 	}
 	if !m.CreatedAt.IsZero() {
@@ -74,7 +74,8 @@ func (m Manifest) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON parses the file form. The key set is closed: an unknown key is
 // refused, because format 1 is defined by exactly these keys and a later
-// format announces itself in `format`.
+// format announces itself in `format`. The `id` key a pre-authority binary
+// wrote is unknown here on purpose; ReadLegacyManifest reads that shape.
 func (m *Manifest) UnmarshalJSON(data []byte) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
@@ -82,19 +83,26 @@ func (m *Manifest) UnmarshalJSON(data []byte) error {
 	if err := dec.Decode(&w); err != nil {
 		return err
 	}
-	var created time.Time
-	if w.CreatedAt != "" {
-		t, err := time.Parse(time.RFC3339Nano, w.CreatedAt)
-		if err != nil {
-			return fmt.Errorf("createdAt: %w", err)
-		}
-		created = t.UTC()
+	created, err := parseManifestTime(w.CreatedAt)
+	if err != nil {
+		return err
 	}
 	*m = Manifest{
-		Format: w.Format, ID: w.ID, Username: w.Username, Authority: w.Authority,
+		Format: w.Format, Username: w.Username, Authority: w.Authority,
 		CreatedAt: created, ChangelogDialect: w.ChangelogDialect, DEK: w.DEK,
 	}
 	return nil
+}
+
+func parseManifestTime(s string) (time.Time, error) {
+	if s == "" {
+		return time.Time{}, nil
+	}
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("createdAt: %w", err)
+	}
+	return t.UTC(), nil
 }
 
 // check refuses a manifest this package will neither write nor act on, and
@@ -103,14 +111,14 @@ func (m Manifest) check(repoDir string) error {
 	if m.Format != ManifestFormat {
 		return fmt.Errorf("%w: got %d", ErrManifestFormat, m.Format)
 	}
-	if m.ID == "" || m.Username == "" {
+	if m.Authority == "" || m.Username == "" {
 		return ErrManifestIncomplete
 	}
-	if err := checkRepositoryID(m.ID); err != nil {
+	if err := checkRepositoryAuthority(m.Authority); err != nil {
 		return err
 	}
-	if filepath.Base(filepath.Clean(repoDir)) != m.ID {
-		return fmt.Errorf("%w: id %q in %s", ErrManifestID, m.ID, repoDir)
+	if filepath.Base(filepath.Clean(repoDir)) != m.Authority {
+		return fmt.Errorf("%w: authority %q in %s", ErrManifestAuthority, m.Authority, repoDir)
 	}
 	return nil
 }
@@ -144,4 +152,70 @@ func WriteManifest(repoDir string, m Manifest) error {
 		return err
 	}
 	return writeFileAtomic(repoDir, ManifestName, append(data, '\n'))
+}
+
+// --- the pre-authority manifest ----------------------------------------------
+
+// LegacyManifest is the manifest a binary from before the authority became
+// the id wrote: format 1 with an `id` key holding a random id, which named
+// the directory and was the additional data the DEK wrap was bound to. The
+// engine reads one only to move the directory under its authority.
+type LegacyManifest struct {
+	// ID is the old random repository id, the directory's name.
+	ID       string
+	Manifest Manifest
+}
+
+// legacyManifestWire is manifestWire plus the `id` key.
+type legacyManifestWire struct {
+	Format           int    `json:"format"`
+	ID               string `json:"id"`
+	Username         string `json:"username"`
+	Authority        string `json:"authority"`
+	CreatedAt        string `json:"createdAt"`
+	ChangelogDialect int    `json:"changelogDialect"`
+	DEK              []byte `json:"dek"`
+}
+
+// ReadLegacyManifest reads the pre-authority manifest in repoDir. Its
+// authority must be one a directory can be named by, since that is what the
+// caller renames the directory to; whether the `id` names the directory is
+// the caller's check, because the caller may be finishing a move that renamed
+// the directory and then crashed before writing the new manifest. The same
+// closed key set applies: this reads exactly the old shape.
+func ReadLegacyManifest(repoDir string) (LegacyManifest, error) {
+	raw, err := os.ReadFile(filepath.Join(repoDir, ManifestName))
+	if err != nil {
+		return LegacyManifest{}, err
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	var w legacyManifestWire
+	if err := dec.Decode(&w); err != nil {
+		return LegacyManifest{}, fmt.Errorf("changelogfile: decode %s: %w", ManifestName, err)
+	}
+	created, err := parseManifestTime(w.CreatedAt)
+	if err != nil {
+		return LegacyManifest{}, fmt.Errorf("changelogfile: decode %s: %w", ManifestName, err)
+	}
+	lm := LegacyManifest{
+		ID: w.ID,
+		Manifest: Manifest{
+			Format: w.Format, Username: w.Username, Authority: w.Authority,
+			CreatedAt: created, ChangelogDialect: w.ChangelogDialect, DEK: w.DEK,
+		},
+	}
+	if lm.Manifest.Format != ManifestFormat {
+		return LegacyManifest{}, fmt.Errorf("%w: got %d", ErrManifestFormat, lm.Manifest.Format)
+	}
+	if lm.ID == "" || lm.Manifest.Authority == "" || lm.Manifest.Username == "" {
+		return LegacyManifest{}, fmt.Errorf("%w (a pre-authority manifest needs an id too)", ErrManifestIncomplete)
+	}
+	if !reLegacyRepositoryID.MatchString(lm.ID) || lm.ID == "." || lm.ID == ".." {
+		return LegacyManifest{}, fmt.Errorf("%w: %q", ErrLegacyRepositoryDir, lm.ID)
+	}
+	if err := checkRepositoryAuthority(lm.Manifest.Authority); err != nil {
+		return LegacyManifest{}, err
+	}
+	return lm, nil
 }

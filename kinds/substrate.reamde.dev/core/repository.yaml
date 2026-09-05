@@ -16,10 +16,11 @@ data:
   version: 16
   names:
     singular: repository
-  # ONE record, id = the repository's opaque internal id: the store you are
-  # reading, describing itself. The control-plane row is the
-  # truth; this is its projection inside the repository, so a client that only
-  # ever speaks the record API can still say which repository it is in.
+  # ONE record, id = the repository's authority (decision record 0046), which
+  # is its id everywhere: the store you are reading, describing itself. The
+  # control-plane row is the truth; this is its projection inside the
+  # repository, so a client that only ever speaks the record API can still say
+  # which repository it is in.
   displayTemplate: "{name}"
   properties:
     name:

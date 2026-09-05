@@ -153,6 +153,13 @@ func TestRegistrationRefusals(t *testing.T) {
 			Username: "geoah", Password: testPassword,
 			TOTPSecret: enrollment.Secret, TOTPCode: u.code(t), Authority: "geoah.substrate.reamde.dev",
 		},
+		// DNS admits 253 bytes; a repository id, which the authority now is
+		// (decision record 0052), admits MaxIDLen.
+		"authority longer than a record id": {
+			Username: "geoah", Password: testPassword,
+			TOTPSecret: enrollment.Secret, TOTPCode: u.code(t),
+			Authority: strings.Repeat("a", 60) + "." + strings.Repeat("b", 60) + ".example.com",
+		},
 	} {
 		if _, err := svc.Register(ctx, in); err == nil {
 			t.Fatalf("%s: registration was accepted", name)

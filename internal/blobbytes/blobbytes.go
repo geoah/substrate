@@ -25,6 +25,8 @@ import (
 	"io"
 	"regexp"
 	"time"
+
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The backend names, which are also the SUBSTRATE_BLOB_STORE values and what
@@ -45,10 +47,6 @@ var ErrNotStored = errors.New("blobbytes: no bytes are stored under this digest"
 // address bytes outside the repository it was handed to.
 var reDigest = regexp.MustCompile(`^blob-sha256-[0-9a-f]{64}$`)
 
-// reRepository matches a repository id. The id is a path segment for the same
-// reason, and the engine mints it from a restricted alphabet.
-var reRepository = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
-
 // checkDigest refuses anything that is not a blob digest.
 func checkDigest(digest string) error {
 	if !reDigest.MatchString(digest) {
@@ -57,12 +55,14 @@ func checkDigest(digest string) error {
 	return nil
 }
 
-// checkRepository refuses anything that is not a repository id. `.` and `..`
-// match the character class and are refused by name: either one would address
-// the store's root or its parent rather than one repository inside it.
+// checkRepository refuses anything that is not a repository id, which is the
+// repository's authority (vocabulary.ValidRepositoryAuthority: lowercase DNS
+// labels with at least one dot). The id is a path segment for the same reason
+// the digest is, and the authority grammar admits neither `/` nor `.` alone,
+// so a checked id names exactly one repository inside the store.
 func checkRepository(repository string) error {
-	if !reRepository.MatchString(repository) || repository == "." || repository == ".." {
-		return fmt.Errorf("blobbytes: %q is not a repository id", repository)
+	if !vocabulary.ValidRepositoryAuthority(repository) {
+		return fmt.Errorf("blobbytes: %q is not a repository id (an authority such as ada.example.com)", repository)
 	}
 	return nil
 }

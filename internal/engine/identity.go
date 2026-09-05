@@ -120,12 +120,18 @@ func (t *txn) lockCanonicalPair(a, b eref) (eref, eref, error) {
 }
 
 // lockKey takes a transaction-scoped advisory lock on an arbitrary key,
-// PER REPOSITORY. Advisory locks are cluster-wide — they know nothing about
+// PER REPOSITORY. Advisory locks are database-wide — they know nothing about
 // schemas, tables or row level security — so the repository has to be in the
 // key or every write on the box serializes on one lock, which is exactly what
 // v0 did. The scope composes it (Scope.lockKey), so no caller can forget.
+//
+// The schema joins the key too (advisoryKeySQL): the repository id is its
+// authority, unique within one substrate and not across the substrates that
+// share a database in separate schemas (the test cluster is one), so without
+// it two repositories called `geoah.example.com` in two schemas would take
+// each other's locks and deadlock on rows neither can see.
 func (t *txn) lockKey(key string) error {
-	_, err := t.exec(`SELECT pg_advisory_xact_lock(hashtext($1)::bigint)`, t.ds.scope.lockKey(key))
+	_, err := t.exec(`SELECT pg_advisory_xact_lock(`+advisoryKeySQL+`)`, t.ds.scope.lockKey(key))
 	return err
 }
 
@@ -133,9 +139,14 @@ func (t *txn) lockKey(key string) error {
 // any number of shared holders coexist, an exclusive lockKey on the same key
 // waits them out (and blocks new ones). Per repository, like lockKey.
 func (t *txn) lockKeyShared(key string) error {
-	_, err := t.exec(`SELECT pg_advisory_xact_lock_shared(hashtext($1)::bigint)`, t.ds.scope.lockKey(key))
+	_, err := t.exec(`SELECT pg_advisory_xact_lock_shared(`+advisoryKeySQL+`)`, t.ds.scope.lockKey(key))
 	return err
 }
+
+// advisoryKeySQL is the 64-bit advisory lock key for the scoped key in $1: the
+// current schema and the key, hashed together, so the lock is as local as the
+// tables it guards.
+const advisoryKeySQL = `hashtext(current_schema() || '|' || $1)::bigint`
 
 // lockRegistryDepShared takes the SHARED registry-dependency lock (bundles.go
 // registryDepKey) once per transaction and remembers it. Every data write takes

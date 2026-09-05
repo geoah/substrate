@@ -12,7 +12,7 @@ import (
 // its own, because substratectl's operator hat needs the same answer to
 // migrate bytes out of the `blobs` column.
 type Blobs struct {
-	// Store is `fs` (the default: <data root>/repositories/<id>/blobs, so the
+	// Store is `fs` (the default: <data root>/repositories/<authority>/blobs, so the
 	// repository directory is the whole backup) or `s3` (a bucket, which
 	// makes the backup two artifacts; docs/operations.md says what the second
 	// one is). `postgres`, the `blobs` bytea column, is no longer a runtime

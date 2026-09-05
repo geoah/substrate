@@ -1,6 +1,6 @@
 // Package changelogfile is the on-disk form of a repository's changelog: one
 // JSON object per line, each line carrying its own checksum, in segment files
-// under `<data root>/repositories/<id>/changelog/`. The Postgres `changelog`
+// under `<data root>/repositories/<authority>/changelog/`. The Postgres `changelog`
 // table is the live index of the same entries; this package is what a backup
 // copies and what a boot reads back. docs/plans/filesystem-changelog.md is the
 // spec.

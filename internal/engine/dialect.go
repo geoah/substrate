@@ -34,7 +34,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"strconv"
 	"strings"
 )
@@ -81,13 +80,16 @@ func (ds *dataset) promoteSchemaDialect(ctx context.Context) error {
 		return fmt.Errorf("substrate/engine: dialect lock conn: %w", err)
 	}
 	defer func() { _ = conn.Close() }()
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(ds.scope.Repository))
-	objid := int32(h.Sum32())
-	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1, $2)`, dialectLockClass, objid); err != nil {
+	// The object id is the repository under its schema, for the same reason
+	// lockKey's key is (identity.go): the authority is unique per substrate,
+	// not per database.
+	const objid = `hashtext(current_schema() || '|' || $2)`
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1, `+objid+`)`, dialectLockClass, ds.scope.Repository); err != nil {
 		return fmt.Errorf("substrate/engine: dialect lock: %w", err)
 	}
-	defer func() { _, _ = conn.ExecContext(ctx, `SELECT pg_advisory_unlock($1, $2)`, dialectLockClass, objid) }()
+	defer func() {
+		_, _ = conn.ExecContext(ctx, `SELECT pg_advisory_unlock($1, `+objid+`)`, dialectLockClass, ds.scope.Repository)
+	}()
 
 	stored, err := ds.storedSchemaDialect(ctx)
 	if err != nil {

@@ -8,6 +8,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -20,11 +22,16 @@ import (
 
 // Repository is one row of the control-plane table.
 type Repository struct {
+	// ID is the repository's authority (decision 0046): the DNS-style name
+	// chosen at registration, unique across the substrate, permanent, and the
+	// home of the kinds its user declares. It is the primary key, the scope
+	// every repository-scoped query runs under, the DEK wrap's binding and the
+	// name of the directory under the data root.
 	ID       string
 	Username string
-	// Authority is the DNS-style authority the repository owns, unique across
-	// the substrate like the username, and the home of the kinds its user
-	// declares.
+	// Authority always equals ID: the column predates the decision to make the
+	// authority the id, and a landed migration is never edited, so it stays
+	// and migration 0015 holds the two equal.
 	Authority string
 	CreatedAt time.Time
 	// DEK is the repository's data-encryption key, WRAPPED under the host
@@ -196,9 +203,35 @@ func (s *service) insertRepositoryRow(ctx context.Context, r *Repository) error 
 		VALUES ($1, $2, $3, $4)
 		RETURNING created_at`, r.ID, r.Username, r.Authority, r.DEK).Scan(&r.CreatedAt)
 	if err != nil {
+		if taken := repositoryRowTaken(err, r); taken != nil {
+			return taken
+		}
 		return fmt.Errorf("substrate/engine: create repository %q: %w", r.Username, err)
 	}
 	r.CreatedAt = r.CreatedAt.UTC()
+	return nil
+}
+
+// sqlstateUniqueViolation is Postgres's SQLSTATE for a unique or primary-key
+// violation.
+const sqlstateUniqueViolation = "23505"
+
+// repositoryRowTaken names a unique violation on the control-plane insert the
+// way the early lookups do: the primary key (the authority) and the authority
+// index are one refusal, the username index the other. The race that reaches
+// here is the one the lookups could not see, and the caller must not learn
+// less from it than from the lookup.
+func repositoryRowTaken(err error, r *Repository) error {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != sqlstateUniqueViolation {
+		return nil
+	}
+	switch pgErr.ConstraintName {
+	case "repositories_pkey", "repositories_authority_key":
+		return errAuthorityTaken(r.Authority)
+	case "repositories_username_key":
+		return errUsernameTaken(r.Username)
+	}
 	return nil
 }
 
@@ -347,13 +380,12 @@ func (s *service) repositoryByID(ctx context.Context, id string) (Repository, er
 		`SELECT id, username, authority, created_at, dek FROM repositories WHERE id = $1`, id), id)
 }
 
-// repositoryByAuthority finds the repository that owns an authority. Two
-// repositories on one substrate cannot own the same one: a kind reference
-// names its authority and nothing else, so a shared authority would be two
-// homes for one name.
+// repositoryByAuthority finds the repository that owns an authority, which is
+// the repository whose id it is. Two repositories on one substrate cannot own
+// the same one: a kind reference names its authority and nothing else, so a
+// shared authority would be two homes for one name.
 func (s *service) repositoryByAuthority(ctx context.Context, authority string) (Repository, error) {
-	return s.scanRepository(s.maint.QueryRowContext(ctx,
-		`SELECT id, username, authority, created_at, dek FROM repositories WHERE authority = $1`, authority), authority)
+	return s.repositoryByID(ctx, authority)
 }
 
 func (s *service) scanRepository(row *sql.Row, what string) (Repository, error) {

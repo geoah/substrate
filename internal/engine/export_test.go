@@ -59,6 +59,16 @@ func SealedAAD(ref, recordKind, recordID string) []byte { return sealedAAD(ref, 
 // DEKAAD builds the additional data the control-plane DEK wrap binds to.
 func DEKAAD(repoID string) []byte { return dekAAD(repoID) }
 
+// SealWithKey seals raw under key bound to aad, the way the host credential
+// key wraps a DEK, so a test can build a directory another binary wrote.
+func SealWithKey(key, raw, aad []byte) ([]byte, error) {
+	aead, err := newAEAD(key)
+	if err != nil {
+		return nil, err
+	}
+	return sealWith(aead, raw, aad)
+}
+
 // refPaths reads a record's reference property as the record paths it names, in
 // order. It is the tests' one reader of a stored reference, so a test asserting
 // on a pointer does not have to know whether the declaration carries link data:
