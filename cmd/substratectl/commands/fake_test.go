@@ -173,6 +173,9 @@ func (f *fakeSubstrate) handler() http.Handler {
 	mux.HandleFunc("GET "+triggerColPath+"/status", f.handleTriggerStatus)
 	mux.HandleFunc("POST "+triggerColPath+"/{id}/run", f.handleTriggerRun)
 	mux.HandleFunc("POST "+triggerColPath+"/{id}/wake", f.handleTriggerWake)
+	// The sample door: the server rehomes the closure and answers with the
+	// LANDED bundle's status, whose id is the repository's own authority.
+	mux.HandleFunc("POST /api/v1/catalog/{id}/import", f.handleCatalogImport)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		f.noteRequest(r)
 		writeError(w, http.StatusNotFound, "not_found", "no such route: "+r.URL.Path, nil)
@@ -351,6 +354,22 @@ func (f *fakeSubstrate) handleVocabularyApply(w http.ResponseWriter, r *http.Req
 		ents = append(ents, &substrate.Record{ID: id, Kind: kind, Version: 1})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"records": ents})
+}
+
+// handleCatalogImport stands in for the sample door: it answers the status of
+// the bundle as it LANDED: the sample's package under this repository's own
+// authority, never the shipped id the request named.
+func (f *fakeSubstrate) handleCatalogImport(w http.ResponseWriter, r *http.Request) {
+	f.noteRequest(r)
+	id := r.PathValue("id")
+	pkg := id
+	if _, after, ok := strings.Cut(id, "/"); ok {
+		pkg = after
+	}
+	writeJSON(w, http.StatusOK, substrate.BundleStatus{
+		ID: "geoah.example.com/" + pkg, Name: pkg, Authority: "geoah.example.com",
+		Package: pkg, Installed: true, Enabled: true, Kinds: 3,
+	})
 }
 
 // fakeSecret is what every mint hands back once. The format is the substrate's

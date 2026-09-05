@@ -90,7 +90,7 @@ func newDataset(t *testing.T) substrate.Dataset {
 
 func loadCatalog(t *testing.T) *catalog.Catalog {
 	t.Helper()
-	c, err := catalog.Load(kinds.Bundles(), samples.Samples())
+	c, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
@@ -300,7 +300,7 @@ func TestInstallRollsBackOnBrokenDeliveryWiring(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c, err := catalog.Load(os.DirFS(dir))
+	c, err := catalog.Load(catalog.SampleRoot(os.DirFS(dir)))
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}

@@ -7,12 +7,14 @@ installing a provider like Google adds account access and sync; installing a
 vocabulary bundle adds kinds and rules. All three are bundles — there is no
 second word for them, on the wire or anywhere else.
 
-Two narrower words appear beside it, and neither is a synonym:
+The catalog it comes from has **two doors**, one per tier
+([decision 0048](decisions/0048-providers-are-published-samples-are-copied.md)):
 
 | Word            | Means                                                                  |
 | --------------- | ---------------------------------------------------------------------- |
-| **integration** | a bundle whose job includes an ongoing connection to an outside provider — a curated catalog facet, not a separate kind of thing |
-| **account**     | one configured connection to such a provider: a record of an `accountconfig`-trait kind. The console lists these under **Connections** |
+| **provider**    | a package a publisher owns (`providers.substrate.reamde.dev/google`). It INSTALLS under the authority that publishes it, and the publisher ships each change with a version bump the upgrade preview offers |
+| **sample**      | a package the user copies (`samples/`). It IMPORTS under the repository's own authority (`samples.substrate.reamde.dev/tasks/task` lands as `ada.example.com/tasks/task`) and is the repository's afterwards: writable, never offered an upgrade |
+| **account**     | one configured connection to a provider: a record of an `accountconfig`-trait kind. The console lists these under **Connections** |
 
 ## What a bundle ships
 
@@ -130,7 +132,10 @@ result to the catalog read as `upgrade`, with the same refuse-breakage guard
 lines the install would refuse on as `blockers`. The console's Registry counts
 these on the sidebar badge, offers Upgrade where nothing blocks, and states
 the guard lines where something does; the button is the install verb,
-unchanged. A changed declaration therefore **must** ship a changed version, or no
+unchanged. Only a PROVIDER is previewed: a sample's closure landed under the
+repository's own authority and belongs to it, so the catalog answers
+not-available before the dataset is asked
+([0048](decisions/0048-providers-are-published-samples-are-copied.md)). A changed declaration therefore **must** ship a changed version, or no
 repository ever learns it moved; CI enforces that (`mise run kinds:check`,
 AGENTS.md).
 
@@ -204,21 +209,16 @@ list/status/disable/enable/uninstall/purge` (purge takes `--yes`), plus
 `substratectl bundle connect` for the consent flow below; install and upgrade
 stay `substratectl apply` of the closure.
 
-## Integrations
+## Providers
 
-An **integration** is a bundle whose job includes an ongoing connection to
-an external provider. It is a facet, not the umbrella: the harvester and a
-vocabulary bundle are bundles and not integrations, because network access
-alone does not make one. Saying "install the Google integration" and "install
-the harvester bundle" both stay true.
+A **provider** is a package a publisher owns: the six shipped ones are
+`providers.substrate.reamde.dev/google`, `/github`, `/linear`, `/notion`,
+`/whoop` and `/beeper`. The tier is read from the tree the closure came from,
+never guessed from an OAuth block, from account kinds, or from the package's
+name: a token or webhook provider may declare no OAuth, and an account-shaped
+package is not necessarily one.
 
-The facet is explicit catalog metadata, curated per bundle, not inferred: it
-is not derived from the presence of an OAuth block, from account kinds, or from
-the package's name. A token or webhook integration may declare no OAuth, and
-an account-shaped bundle is not necessarily a provider integration, so the
-classification is stated rather than guessed.
-
-A provider integration ships, on top of the usual closure, the pieces the
+A provider ships, on top of the usual closure, the pieces the
 substrate's OAuth facility recognizes by [trait](data-model.md#traits): an
 `accountconfig` kind (the Connection, one record per account, required to carry
 `tokenRef`, `tokenStatus` and `grantedScopes`) and a client kind wearing the
@@ -349,18 +349,19 @@ trait is queryable.
 
 ## The catalog
 
-The **catalog** lists everything shipped in the binary and ready to install —
-the provider bundles, and the twelve **vocabulary bundles** (`people`, `tasks`,
-`messaging`, `calendar`, `scheduling`, and the mneme-ported `health`,
-`fitness`, `routines`, `journal`, `places`, `food`, `commerce`) a repository
-imports because creation seeds `substrate.reamde.dev/core` alone. A vocabulary
-bundle ships kinds and traits and nothing else: no inputs, no functions, no
-OAuth.
+The **catalog** lists everything shipped in the binary, in the two tiers
+[0048](decisions/0048-providers-are-published-samples-are-copied.md) draws:
+the six **providers** under `kinds/providers.substrate.reamde.dev`, and the
+seventeen **samples** under `samples/` (`people`, `tasks`, `messaging`,
+`calendar`, `scheduling`, the mneme-ported `health`, `fitness`, `routines`,
+`journal`, `places`, `food`, `commerce`, and the worked examples `llm`,
+`notes`, `web`, `pebble`, `firecrawl`) a repository takes because creation
+seeds `substrate.reamde.dev/core` alone.
 
 The catalog is a read model over the bundle closures baked in, parsed once at
-boot: each entry carries `id` (the package it installs), `name`, `authority`,
-`package`, `description`, `version`, `inputs`, `requires`, the curated
-`integration` and `example` facets, and `closure`, which previews the `kinds` (each with its description),
+boot: each entry carries `id` (the package it ships), `name`, `authority`,
+`package`, `description`, `version`, `tier`, `inputs`, `requires`, and
+`closure`, which previews the `kinds` (each with its description),
 `functions`, `agents` and `mappings` it declares plus the `records` the
 install writes beside them (a bundle's triggers, the llm example's provider
 rows), so the console can show what an install will add before it runs. Every one of those is a record: the
@@ -382,25 +383,67 @@ unknown id is a 404 `not_found`. The id is a package identity, so it carries a
 `/` and a URL percent-encodes it once:
 `…/catalog/samples.substrate.reamde.dev%2Ftasks`.
 
-Installing from the catalog is a thin wrapper over the ordinary apply, never a
-parallel path: `POST …/catalog/{id}/install` applies the entry's
-closure exactly the way `substratectl apply -f bundle.yaml -f triggers.yaml` does —
-the declarations through the batch [admission](vocabulary.md#admission), the
-delivery wiring as ordinary records, both committing as one repository
-transaction — and it is idempotent, so a second install changes nothing. It is
-refused for any actor outside the three interactive clients (`api`, `console`,
-`substratectl`) with a 403, before the closure is touched: installing bundle
-code is a person's action. What lands is a copy —
-the bundle's own declarations, written into this repository's changelog under
-`bundle:<authority>:<package>` — so the catalog is the source and the changelog
-is the truth, and
-nothing on the serving path reads the catalog again. The response is the
-installed bundle's computed status. Uninstall, disable, enable, and purge
-are the lifecycle verbs above; the catalog does not duplicate them.
+### The two doors
 
-The shipped bundles, one by one (what each declares, its functions, its
-triggers, and which facet it carries), are the
-[Bundles catalog](bundles-catalog.md).
+Both doors are thin wrappers over the ordinary apply, never a parallel path:
+each applies the entry's closure exactly the way `substratectl apply -f
+bundle.yaml -f triggers.yaml` does: the declarations through the batch
+[admission](vocabulary.md#admission), the delivery wiring as ordinary records,
+both committing as one repository transaction. Each is idempotent, so a
+second call changes nothing. Both are refused for any actor outside the three
+interactive clients (`api`, `console`, `substratectl`) with a 403, before the
+closure is touched: taking bundle code is a person's action.
+
+`POST …/catalog/{id}/install` is the **provider** door. The closure lands
+verbatim, under the authority that publishes it, and the version bump the
+publisher ships is what the upgrade preview above offers.
+
+`POST …/catalog/{id}/import` is the **sample** door. The closure is REHOMED
+first: every mention of `samples.substrate.reamde.dev` in the decoded documents
+(the ids, the declared `authority`, the reference pins, `installs` and
+`requires`, a function's `writes`, a trigger's selectors, a mapping's
+`from`/`to`, and the authority a function's source spells inside its own text
+text) becomes this repository's own authority, and only then does the closure meet
+admission. A document that still mentions the placeholder afterwards is
+refused. So `samples.substrate.reamde.dev/tasks/task` lands as
+`ada.example.com/tasks/task`, `source: installed` and writable through the API,
+and the bundle record it lands as is `ada.example.com/tasks`, not the id the
+request named. A sample is never offered an upgrade: what it landed belongs to
+the repository. `requires:` is rehomed with everything else, so importing
+`tasks` before `people` is refused by the ordinary admission naming
+`<your authority>/people`, the sample to import first.
+
+`import` on a provider id is refused naming `install`. `install` on a sample id
+still admits the closure verbatim, under the placeholder authority, and that is
+the seam holding the two tiers together while they are still coupled.
+
+**Until the providers stop requiring sample packages, a provider that lists one
+installs through the API only.** Google, GitHub and Linear name
+`samples.substrate.reamde.dev/people`, `/messaging`, `/calendar` and `/tasks`
+under `requires:` and pin their kinds
+(`to: samples.substrate.reamde.dev/people/person`), while importing a sample
+lands `<your authority>/people`. So the requirement is satisfied by installing
+the sample verbatim, which the console does not offer: the Samples section
+offers "Import as yours" and nothing else, and a provider whose requirement is
+missing shows a disabled Install with the hint. Installing the sample verbatim
+first, then the provider, is `POST …/catalog/{id}/install` twice, or
+`substratectl install` twice. Phase 4 of the
+[plan](plans/providers-and-samples.md) closes the gap by dropping those
+requirements and the pins, and the verbatim door goes with it.
+
+What lands either way is a copy: the bundle's own declarations, written into
+this repository's changelog under `bundle:<authority>:<package>`. So the
+catalog is the source and the changelog is the truth, and nothing on the
+serving path reads the catalog again. The response is the landed bundle's
+computed status. Uninstall, disable, enable, and purge are the lifecycle verbs
+above; the catalog does not duplicate them.
+
+The CLI faces are `substratectl import <sample>` for the sample door, and
+`substratectl apply -f <files> --as <authority>`, which runs the same rehoming
+client-side over files on disk.
+
+The shipped bundles, one by one (what each declares, its functions and its
+triggers), are the [Bundles catalog](bundles-catalog.md).
 
 Next: [functions](functions.md), the callables a bundle ships, and the
 host SDK.

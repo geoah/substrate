@@ -120,7 +120,7 @@ func Start(t *testing.T, opts ...Option) *Env {
 	}
 	t.Cleanup(func() { _ = svc.Close() })
 
-	cat, err := catalog.Load(kinds.Bundles(), samples.Samples())
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		t.Fatalf("testenv: load catalog: %v", err)
 	}

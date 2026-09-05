@@ -10,14 +10,13 @@ import { rootPath, request, seg } from "./http"
 import type {
   BundleClosure,
   BundleStatus,
-  CatalogBundle,
+  CatalogItem,
+  CatalogTier,
   OperationalList,
 } from "./types"
 
-/** One shipped bundle closure plus whether this repository already installed it
- * (substrate catalog.Bundle + the installed flag). The console's page vocabulary
- * kept the name `CatalogItem`; the wire type is `CatalogBundle`. */
-export type CatalogItem = CatalogBundle
+/** One shipped bundle closure plus whether this repository already has it. */
+export type { CatalogItem } from "./types"
 /** What installing lands, by kind — the detail preview before installing. */
 export type CatalogClosure = BundleClosure
 
@@ -37,29 +36,102 @@ export const catalogQueryOptions = queryOptions({
   staleTime: 60_000,
 })
 
-/** One catalog entry by bundle id, sharing the list's cache (the same
- * `["catalog"]` query, selected down). Returns undefined when this repository's
- * bundle is not a shipped closure — an installed-via-apply bundle has no
- * catalog entry, and the caller falls back to what the registry alone knows. */
-export function catalogItemQueryOptions(id: string) {
+/** The id a catalog entry has in a repository whose own authority is `home`:
+ * a provider keeps the id it publishes, a SAMPLE takes this repository's
+ * authority with the sample's package (decision records 0047 and 0048). This
+ * is the id the bundle STATUS carries once it lands, so it is how a stored
+ * bundle finds its shipped closure again. */
+export function landedId(
+  item: Pick<CatalogItem, "id" | "tier" | "package">,
+  home: string
+): string {
+  if (item.tier !== "sample" || !home) return item.id
+  return `${home}/${item.package}`
+}
+
+/** One catalog entry as it lands HERE: a sample's authority, closure
+ * identities, declared input kinds and `requires:` all carry this repository's
+ * authority, because that is what the import writes and what the registry will
+ * hold. A preview naming the placeholder would link nowhere and gate on a
+ * package the server never looks for. `id` is NOT rewritten: it addresses the
+ * shipped closure, which is what the import door is called with. */
+export function landedCatalog(item: CatalogItem, home: string): CatalogItem {
+  if (item.tier !== "sample" || !home) return item
+  const from = `${item.authority}/`
+  const rehome = (s: string) =>
+    s.startsWith(from) ? `${home}/${s.slice(from.length)}` : s
+  const closure = item.closure
+  return {
+    ...item,
+    authority: home,
+    requires: item.requires?.map(rehome),
+    inputs: item.inputs
+      ? Object.fromEntries(
+          Object.entries(item.inputs).map(([name, input]) => [
+            name,
+            { ...input, kind: rehome(input.kind) },
+          ])
+        )
+      : undefined,
+    closure: {
+      ...closure,
+      kinds: closure.kinds?.map(rehome),
+      functions: closure.functions?.map(rehome),
+      agents: closure.agents?.map(rehome),
+      mappings: closure.mappings?.map(rehome),
+      kindDescriptions: closure.kindDescriptions
+        ? Object.fromEntries(
+            Object.entries(closure.kindDescriptions).map(([k, v]) => [
+              rehome(k),
+              v,
+            ])
+          )
+        : undefined,
+      records: closure.records?.map((r) => ({ ...r, kind: rehome(r.kind) })),
+    },
+  }
+}
+
+/** One catalog entry by the id it has HERE, sharing the list's cache (the same
+ * `["catalog"]` query, selected down) and rehomed the way it landed. Returns
+ * undefined when this repository's bundle is not a shipped closure: a bundle
+ * applied by hand has no catalog entry, and the caller falls back to what the
+ * registry alone knows. */
+export function catalogItemQueryOptions(id: string, home = "") {
   return queryOptions({
     queryKey: catalogQueryOptions.queryKey,
     queryFn: catalogQueryOptions.queryFn,
     staleTime: 60_000,
-    select: (items: CatalogItem[]) => items.find((i) => i.id === id),
+    select: (items: CatalogItem[]) => {
+      const found = items.find((i) => landedId(i, home) === id)
+      return found && landedCatalog(found, home)
+    },
   })
 }
 
-/** Import a shipped bundle's closure into this repository. Owner-gated and
- * idempotent (re-importing is the bundle's own upgrade semantics); the response
- * is the imported bundle's computed status. The catalog id is a reference and
- * may carry a `/`, so it is `%2F`-encoded as one path segment.
- *
- * NAME NOTE: the console says IMPORT (owner ruling) but the WIRE verb is
- * unchanged — this POSTs `…/catalog/{id}/install`. The function is named for
- * what the reader asked for; the path is named for what the server serves. */
-export function importBundle(id: string): Promise<BundleStatus> {
+/** Install a PROVIDER's closure into this repository, under the authority that
+ * publishes it. Owner-gated and idempotent (re-installing is the bundle's own
+ * upgrade semantics); the response is the installed bundle's computed status.
+ * The catalog id is a package reference and carries a `/`, so it is
+ * `%2F`-encoded as one path segment. */
+export function installBundle(id: string): Promise<BundleStatus> {
   return request<BundleStatus>("POST", `${CATALOG}/${seg(id)}/install`)
+}
+
+/** Import a SAMPLE under this repository's own authority (decision record
+ * 0048). The server rehomes the closure before admitting it, so the status it
+ * answers with carries the LANDED id (`<your authority>/<package>`), not the
+ * shipped one this call names. */
+export function importBundle(id: string): Promise<BundleStatus> {
+  return request<BundleStatus>("POST", `${CATALOG}/${seg(id)}/import`)
+}
+
+/** The door a catalog entry takes, by tier. */
+export function takeBundle(item: {
+  id: string
+  tier: CatalogTier
+}): Promise<BundleStatus> {
+  return item.tier === "sample" ? importBundle(item.id) : installBundle(item.id)
 }
 
 /** The substrate origin that actually receives the provider OAuth redirect —

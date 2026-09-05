@@ -1,6 +1,6 @@
-/** The bundle detail after the import, answering the same questions the
- * Registry row answered before it: what this bundle IS (Vocabulary /
- * Integration, at which shipped version), what it declared against (each
+/** The bundle detail after it lands, answering the same questions the
+ * Registry row answered before: what this bundle IS (Provider / Sample, at
+ * which shipped version), what it declared against (each
  * requirement checked against the live kind registry), and what it installed
  * (kinds linked to their collections).
  *
@@ -24,7 +24,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { Toaster } from "@/components/ui/toast"
 import type {
   BundleStatus,
-  CatalogBundle,
+  CatalogItem,
   KindInfo,
   SubstrateRecord,
 } from "@/lib/api/types"
@@ -62,7 +62,7 @@ function jsonResponse(status: number, body: unknown): Response {
   })
 }
 
-function bundle(over: Partial<CatalogBundle>): CatalogBundle {
+function bundle(over: Partial<CatalogItem>): CatalogItem {
   return {
     id: "x.example.com/x",
     name: "x",
@@ -70,6 +70,7 @@ function bundle(over: Partial<CatalogBundle>): CatalogBundle {
     package: "x",
     description: "",
     version: 1,
+    tier: "provider",
     closure: {},
     installed: true,
     ...over,
@@ -83,6 +84,7 @@ const PEOPLE = bundle({
   package: "people",
   description: "The shipped vocabulary for humans.",
   version: 1,
+  tier: "sample",
   closure: { kinds: ["samples.substrate.reamde.dev/people/person"] },
 })
 
@@ -98,7 +100,6 @@ const GOOGLE = bundle({
       description: "The OAuth client record.",
     },
   },
-  integration: true,
   requires: [
     "samples.substrate.reamde.dev/people",
     "samples.substrate.reamde.dev/messaging",
@@ -261,7 +262,7 @@ describe("BundleDetailPage", () => {
     })
   })
 
-  describe("an integration with requirements and inputs", () => {
+  describe("a provider with requirements and inputs", () => {
     function googleStatus(over: Partial<BundleStatus> = {}): BundleStatus {
       return status({
         id: GOOGLE.id,
@@ -319,7 +320,7 @@ describe("BundleDetailPage", () => {
     it("wears the setup chip beside the lifecycle badge and renders the input", async () => {
       renderPage(<BundleDetailPage />)
       await screen.findByText("google")
-      expect(screen.getByText("Integration")).toBeTruthy()
+      expect(screen.getByText("Provider")).toBeTruthy()
       // Separate signals: the lifecycle badge stays `enabled`, the chip counts.
       expect(screen.getByText("enabled")).toBeTruthy()
       expect(screen.getByText("1 setup step")).toBeTruthy()

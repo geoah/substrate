@@ -1,4 +1,24 @@
 {
+  "BundleClosure": [
+    "kinds",
+    "kindDescriptions",
+    "functions",
+    "agents",
+    "mappings",
+    "records"
+  ],
+  "CatalogBundle": [
+    "id",
+    "name",
+    "authority",
+    "package",
+    "description",
+    "version",
+    "tier",
+    "inputs",
+    "requires",
+    "closure"
+  ],
   "Change": [
     "seq",
     "ts",
@@ -63,6 +83,10 @@
     "labels",
     "annotations",
     "ifVersion"
+  ],
+  "ShippedRecord": [
+    "kind",
+    "id"
   ],
   "SubstrateRecord": [
     "id",

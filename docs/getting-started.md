@@ -76,36 +76,43 @@ There is no session object beside it: a session **is** a token record, and
 ## Write your first record
 
 Registration seeded the core vocabulary only, so the task kinds are not there
-yet. Install the bundle that ships them from the catalog built into the binary,
+yet. IMPORT the sample that ships them from the catalog built into the binary,
 and the collection exists. A catalog id is a package identity,
 `{authority}/{package}`, so the slash in it is percent-encoded to stay one path
-segment. Tasks name an assignee, so `people` is admitted first — a bundle whose
+segment. Tasks name an assignee, so `people` is imported first: a bundle whose
 `requires:` is not met is refused:
 
 ```bash
 curl -X POST -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/v1/catalog/samples.substrate.reamde.dev%2Fpeople/install
+  http://localhost:8080/api/v1/catalog/samples.substrate.reamde.dev%2Fpeople/import
 
 curl -X POST -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/v1/catalog/samples.substrate.reamde.dev%2Ftasks/install
+  http://localhost:8080/api/v1/catalog/samples.substrate.reamde.dev%2Fscheduling/import
+
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8080/api/v1/catalog/samples.substrate.reamde.dev%2Ftasks/import
 
 substratectl get task                     # empty, but the collection is there
 ```
 
-The console does the same thing from the [Registry](console.md#registry) page,
-and `substratectl apply -f bundle.yaml` applies a closure you hold as files.
-All three run the same install path and validation, which
-[vocabulary.md](vocabulary.md#admission) calls admission.
+The import rewrites the closure onto the authority THIS repository owns, so
+what lands is `<your authority>/tasks/task` and it is yours to change
+([0048](decisions/0048-providers-are-published-samples-are-copied.md)). The
+console does the same thing from the [Registry](console.md#registry) page,
+`substratectl import samples.substrate.reamde.dev/tasks` does it from a
+terminal, and `substratectl apply -f bundle.yaml --as <your authority>` applies
+a closure you hold as files. All four run the same admission, which
+[vocabulary.md](vocabulary.md#admission) describes.
 
 Add a task. The collection path names the kind, so the body is only the
 properties:
 
 ```http
-POST /api/v1/samples.substrate.reamde.dev/tasks/task
+POST /api/v1/ada.example.com/tasks/task
 Authorization: Bearer substrate_tok_…
 {"properties": {"name": "Buy milk", "dueAt": "2026-08-13T09:00:00Z"}}
 
-→ 201 {"id": "kq3v9x2m41pf", "kind": "samples.substrate.reamde.dev/tasks/task",
+→ 201 {"id": "kq3v9x2m41pf", "kind": "ada.example.com/tasks/task",
        "properties": {"name": "Buy milk", "title": "Buy milk", "status": "open",
                       "dueAt": "2026-08-13T09:00:00Z"},
        "version": 1,
@@ -118,7 +125,7 @@ The server assigned the id, the `status` state started at its declared
 `substratectl apply` takes:
 
 ```yaml
-kind: samples.substrate.reamde.dev/tasks/task
+kind: ada.example.com/tasks/task
 data:
   properties:
     name: Buy milk
@@ -148,7 +155,7 @@ GET /api/v1/changes?watch=1
 
 {"bookmark": 412}
 {"seq": 413, "ts": "2026-08-12T10:00:00.183742Z", "actor": "api", "op": "put",
- "kind": "samples.substrate.reamde.dev/tasks/task", "recordId": "kq3v9x2m41pf",
+ "kind": "ada.example.com/tasks/task", "recordId": "kq3v9x2m41pf",
  "payload": {"created": true, "properties": ["name", "dueAt"]}}
 ```
 

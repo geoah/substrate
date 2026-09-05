@@ -274,13 +274,17 @@ func (h *handler) mountResources(r chi.Router) {
 			// computed instants inside a window. A read, never a write — the
 			// rule stays stored and unexpanded (decision 0039).
 			r.Get("/occurrences", h.getOccurrences)
-			// The catalog: the installable bundle closures shipped in the
-			// binary. List and detail are repository reads (installed reflects
-			// this repository); install is an owner action that applies the
-			// closure through the same vocabulary-apply admission path.
+			// The catalog: the bundle closures shipped in the binary. List and
+			// detail are repository reads (installed reflects this
+			// repository); the two writes are the two TIERS' doors (decision
+			// record 0048), both owner actions applying the closure through
+			// the same vocabulary-apply admission path. `install` takes a
+			// PROVIDER under the authority that publishes it; `import` takes a
+			// SAMPLE under this repository's own authority.
 			r.Get("/catalog", h.getCatalog)
 			r.Get("/catalog/{id}", h.getCatalogItem)
 			r.Post("/catalog/{id}/install", h.postCatalogInstall)
+			r.Post("/catalog/{id}/import", h.postCatalogImport)
 			// The host OAuth facility's authenticated half: start a connect flow
 			// for an account record.
 			r.Post("/oauth/start", h.postOAuthStart)

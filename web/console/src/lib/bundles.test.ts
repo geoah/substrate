@@ -1,9 +1,9 @@
 /** The bundles page folds two reads — the installed bundles' runtime status
  * and the shipped catalog — into one id-keyed row set. Installed wins the
  * counts, available closures surface first (they invite an action), and a
- * bundle present in both carries both. The Integrations and Examples facets
- * come from the backend flags; the provider-copy gate reads the bundle's own
- * declared traits. The requirement fold answers the one question the reader has
+ * bundle present in both carries both. The TIER comes from the backend field
+ * and decides the section and the door; a sample folds by the id it LANDS
+ * under. The provider-copy gate reads the bundle's own declared traits. The requirement fold answers the one question the reader has
  * before importing into a fresh (core-only) repository: is anything this
  * closure declares against still missing, and what must be imported first. */
 
@@ -15,8 +15,8 @@ import { ApiError, type KindInfo } from "@/lib/api/types"
 import {
   accountKindOf,
   bundleRecordRows,
+  bundleSections,
   declaresProviderInterfaces,
-  filterBundles,
   importFailureText,
   installedKindRows,
   mergeBundles,
@@ -67,7 +67,7 @@ function catalog(over: Partial<CatalogItem> = {}): CatalogItem {
     },
     closure: { kinds: ["a", "b"], functions: ["c"] },
     installed: false,
-    integration: true,
+    tier: "provider",
     ...over,
   }
 }
@@ -115,155 +115,155 @@ describe("mergeBundles", () => {
     expect(rows.map((r) => r.installed)).toEqual([false, true])
   })
 
-  it("reads the Integration facet from the catalog flag, defaulting false", () => {
+  it("reads the tier from the catalog entry", () => {
     const rows = mergeBundles(
       [],
       [
+        catalog({ id: "providers.substrate.reamde.dev/google" }),
         catalog({
-          id: "providers.substrate.reamde.dev/google",
-          integration: true,
-        }),
-        catalog({
-          id: "urlharvester.example.com/urlharvester",
-          name: "urlharvester",
-          integration: false,
-        }),
-      ]
-    )
-    const byId = Object.fromEntries(rows.map((r) => [r.id, r]))
-    expect(byId["providers.substrate.reamde.dev/google"].integration).toBe(true)
-    expect(byId["urlharvester.example.com/urlharvester"].integration).toBe(
-      false
-    )
-  })
-
-  it("an installed-only bundle (no catalog entry) is non-integration", () => {
-    const rows = mergeBundles([status({ id: "x.example.com/x" })], [])
-    expect(rows[0].integration).toBe(false)
-  })
-
-  it("keeps the catalog integration flag when a status folds over it", () => {
-    const rows = mergeBundles(
-      [status()],
-      [catalog({ installed: true, integration: true })]
-    )
-    expect(rows[0].integration).toBe(true)
-  })
-})
-
-describe("mergeBundles — the closure facets", () => {
-  it("carries the requires list off the catalog entry", () => {
-    const rows = mergeBundles(
-      [],
-      [
-        catalog({
-          id: "samples.substrate.reamde.dev/people",
-          name: "people",
+          id: "samples.substrate.reamde.dev/tasks",
+          name: "tasks",
           authority: "samples.substrate.reamde.dev",
-          package: "people",
-          integration: false,
+          package: "tasks",
+          tier: "sample",
         }),
-        catalog({
-          requires: [
-            "samples.substrate.reamde.dev/people",
-            "samples.substrate.reamde.dev/messaging",
-          ],
-        }),
-      ]
+      ],
+      "ada.example.com"
     )
     const byId = Object.fromEntries(rows.map((r) => [r.id, r]))
-    expect(byId["samples.substrate.reamde.dev/people"].requires).toEqual([])
-    expect(byId["providers.substrate.reamde.dev/google"].requires).toEqual([
-      "samples.substrate.reamde.dev/people",
-      "samples.substrate.reamde.dev/messaging",
-    ])
+    expect(byId["providers.substrate.reamde.dev/google"].tier).toBe("provider")
+    expect(byId["ada.example.com/tasks"].tier).toBe("sample")
   })
 
-  it("keeps the catalog's facets when a status folds over the same id", () => {
+  it("keys a sample by the id it LANDS under, so its status folds onto it", () => {
     const rows = mergeBundles(
       [
         status({
-          id: "samples.substrate.reamde.dev/people",
-          authority: "samples.substrate.reamde.dev",
-          package: "people",
+          id: "ada.example.com/tasks",
+          name: "tasks",
+          authority: "ada.example.com",
+          package: "tasks",
         }),
       ],
       [
         catalog({
-          id: "samples.substrate.reamde.dev/people",
+          id: "samples.substrate.reamde.dev/tasks",
+          name: "tasks",
           authority: "samples.substrate.reamde.dev",
-          package: "people",
-          integration: true,
-          requires: ["substrate.reamde.dev/core"],
-          installed: true,
+          package: "tasks",
+          tier: "sample",
         }),
-      ]
+      ],
+      "ada.example.com"
     )
-    expect(rows[0].integration).toBe(true)
-    expect(rows[0].requires).toEqual(["substrate.reamde.dev/core"])
+    expect(rows).toHaveLength(1)
+    expect(rows[0].id).toBe("ada.example.com/tasks")
+    // The shipped id stays reachable: it is what the import door is called with.
+    expect(rows[0].catalog?.id).toBe("samples.substrate.reamde.dev/tasks")
+    expect(rows[0].installed).toBe(true)
   })
 
-  it("an applied-only bundle claims no facet — the catalog states them, nothing derives them", () => {
+  it("folds a VERBATIM-installed sample onto its own catalog row", () => {
+    // The sample was installed rather than imported, so it is held under the
+    // SHIPPED id. Keying the row by the rehomed id alone showed it twice: once
+    // as an untaken sample, once as an applied-directly bundle.
+    const rows = mergeBundles(
+      [
+        status({
+          id: "samples.substrate.reamde.dev/tasks",
+          name: "tasks",
+          authority: "samples.substrate.reamde.dev",
+          package: "tasks",
+        }),
+      ],
+      [
+        catalog({
+          id: "samples.substrate.reamde.dev/tasks",
+          name: "tasks",
+          authority: "samples.substrate.reamde.dev",
+          package: "tasks",
+          tier: "sample",
+          installed: true,
+          closure: { kinds: ["samples.substrate.reamde.dev/tasks/task"] },
+        }),
+      ],
+      "ada.example.com"
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0].id).toBe("samples.substrate.reamde.dev/tasks")
+    expect(rows[0].tier).toBe("sample")
+    expect(rows[0].installed).toBe(true)
+    // Its closure is NOT rehomed: the kinds it holds are under the authority
+    // the tree spells, so a rehomed preview would link nowhere.
+    expect(rows[0].catalog?.closure.kinds).toEqual([
+      "samples.substrate.reamde.dev/tasks/task",
+    ])
+  })
+
+  it("rehomes a sample's requires, because that is what the server looks for", () => {
+    const rows = mergeBundles(
+      [],
+      [
+        catalog({
+          id: "samples.substrate.reamde.dev/tasks",
+          name: "tasks",
+          authority: "samples.substrate.reamde.dev",
+          package: "tasks",
+          tier: "sample",
+          requires: [
+            "samples.substrate.reamde.dev/people",
+            "substrate.reamde.dev/core",
+          ],
+        }),
+      ],
+      "ada.example.com"
+    )
+    expect(rows[0].requires).toEqual([
+      "ada.example.com/people",
+      "substrate.reamde.dev/core",
+    ])
+  })
+
+  it("leaves a provider's id and requires exactly as published", () => {
+    const rows = mergeBundles(
+      [],
+      [catalog({ requires: ["samples.substrate.reamde.dev/people"] })],
+      "ada.example.com"
+    )
+    expect(rows[0].id).toBe("providers.substrate.reamde.dev/google")
+    expect(rows[0].requires).toEqual(["samples.substrate.reamde.dev/people"])
+  })
+
+  it("an applied-only bundle claims no tier: the catalog states it, nothing derives it", () => {
     const rows = mergeBundles([status({ id: "x.example.com/x" })], [])
-    expect(rows[0].integration).toBe(false)
+    expect(rows[0].tier).toBeUndefined()
     expect(rows[0].requires).toEqual([])
   })
 })
 
-describe("filterBundles", () => {
+describe("bundleSections", () => {
   const rows = mergeBundles(
-    [],
+    [status({ id: "x.example.com/x", name: "x" })],
     [
+      catalog({ id: "providers.substrate.reamde.dev/google" }),
       catalog({
-        id: "providers.substrate.reamde.dev/google",
-        integration: true,
-      }),
-      catalog({
-        id: "urlharvester.example.com/urlharvester",
-        name: "urlharvester",
-        integration: false,
-      }),
-      catalog({
-        id: "samples.substrate.reamde.dev/people",
-        name: "people",
+        id: "samples.substrate.reamde.dev/tasks",
+        name: "tasks",
         authority: "samples.substrate.reamde.dev",
-        package: "people",
-        integration: false,
+        package: "tasks",
+        tier: "sample",
       }),
-    ]
+    ],
+    "ada.example.com"
   )
 
-  it("all keeps every row", () => {
-    expect(filterBundles(rows, "all")).toHaveLength(3)
-  })
-
-  it("integrations narrows to the integration rows", () => {
-    const only = filterBundles(rows, "integrations")
-    expect(only.map((r) => r.id)).toEqual([
+  it("splits the rows by tier and lists an untiered bundle on its own", () => {
+    const sections = bundleSections(rows)
+    expect(sections.providers.map((r) => r.id)).toEqual([
       "providers.substrate.reamde.dev/google",
     ])
-  })
-
-  it("upgrades narrows to rows whose preview says the closure moved", () => {
-    const moved = mergeBundles(
-      [],
-      [
-        catalog({
-          id: "a.example.com/a",
-          name: "a",
-          installed: true,
-        }),
-        catalog({
-          id: "b.example.com/b",
-          name: "b",
-          installed: true,
-          upgrade: { available: true, from: 1, to: 2 },
-        }),
-      ]
-    )
-    expect(filterBundles(moved, "upgrades").map((r) => r.id)).toEqual([
-      "b.example.com/b",
-    ])
+    expect(sections.samples.map((r) => r.id)).toEqual(["ada.example.com/tasks"])
+    expect(sections.applied.map((r) => r.id)).toEqual(["x.example.com/x"])
   })
 })
 

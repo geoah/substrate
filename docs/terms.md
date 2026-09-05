@@ -51,12 +51,13 @@ nothing, there are none.
 | Term | What it is |
 | ---- | ---------- |
 | **bundle** | The unit of installation: a closure of declarations and behavior, applied and removed as one unit. It owns one package, and its `metadata.id` is that package's identity. |
-| **integration** | A bundle whose job includes an ongoing connection to an outside provider. A catalog facet of a bundle, not a different thing. |
+| **provider** | One of the two catalog tiers: a package a publisher owns (`providers.substrate.reamde.dev/google`). It INSTALLS under the authority that publishes it, and the publisher ships each change with a version bump the upgrade preview offers. Decision record 0048. |
+| **sample** | The other catalog tier: a package the user copies (`samples/`). It IMPORTS under the repository's own authority (`samples.substrate.reamde.dev/tasks/task` lands as `ada.example.com/tasks/task`) and is the repository's afterwards: writable, never offered an upgrade. Decision record 0048. |
 | **vocabulary bundle** | A description, not a catalog tier: a bundle that happens to ship only kinds and rules, with no functions and no provider. Nothing in the code reads it. |
 | **input** | A bundle's named configuration need: it names a kind, and the engine resolves ONE record per input — the bound record, else the record whose id is `default`, else the sole live record, else nothing, surfaced per input on the bundle's status. No cardinality is enforced on the kind. |
 | **bind** | The explicit step of input resolution: a reference on the bundle's own record row, named for the input, pointing it at a chosen record. `POST /substrate.reamde.dev/core/bundle/{id}/bind`; an empty record unbinds. |
 | **account** | One configured connection to a provider: a record of an `accountconfig`-trait kind. The console groups these under **Connections**. |
-| **catalog** | The read-only list of the bundle closures built into the binary. A source to install from, never a package. |
+| **catalog** | The read-only list of the bundle closures built into the binary, each in one of the two tiers. A source to install or import from, never a package. |
 | **callable** | The union of function and agent — what a trigger binds and what dispatch invokes. |
 | **function** | A callable whose body is inline Python or Go, bounded by its declared `permissions`: `reads`, `writes`, `call`, `network` and `mutations`, five grants in one object on the declaration. |
 | **agent** | A callable whose body is an LLM loop. Alpha. |

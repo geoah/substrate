@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/kinds"
@@ -75,7 +77,7 @@ func (s *statusErrService) Authenticate(ctx context.Context, secret string) (sub
 // fails every status read.
 func newStatusErrEnv(t *testing.T) *testEnv {
 	t.Helper()
-	cat, err := catalog.Load(kinds.Bundles(), samples.Samples())
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
@@ -92,7 +94,7 @@ func newStatusErrEnv(t *testing.T) *testEnv {
 // newCatalogEnv is a testEnv whose handler ships the real example catalog.
 func newCatalogEnv(t *testing.T) *testEnv {
 	t.Helper()
-	cat, err := catalog.Load(kinds.Bundles(), samples.Samples())
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
@@ -113,15 +115,18 @@ type upgradeErrDataset struct {
 	err error
 }
 
+// The installed bundle is a PROVIDER: only a provider is offered an upgrade
+// preview at all (decision record 0048), so a sample here would leave the
+// failing preview unreached and this test proving nothing.
 func (d upgradeErrDataset) BundleStatuses(context.Context) ([]substrate.BundleStatus, error) {
 	return []substrate.BundleStatus{{
-		ID: webBundleID, Name: "web", Authority: "samples.substrate.reamde.dev", Package: "web",
+		ID: googleBundleID, Name: "google", Authority: "providers.substrate.reamde.dev", Package: "google",
 		Installed: true, Enabled: true,
 	}}, nil
 }
 
 func (d upgradeErrDataset) BundleStatus(context.Context, string) (substrate.BundleStatus, error) {
-	return substrate.BundleStatus{ID: webBundleID, Installed: true, Enabled: true}, nil
+	return substrate.BundleStatus{ID: googleBundleID, Installed: true, Enabled: true}, nil
 }
 
 func (d upgradeErrDataset) PlanBundleUpgrade(context.Context, []map[string]any) (substrate.BundleUpgrade, error) {
@@ -129,7 +134,7 @@ func (d upgradeErrDataset) PlanBundleUpgrade(context.Context, []map[string]any) 
 }
 
 func (d upgradeErrDataset) BundlePackage(context.Context, string) (string, error) {
-	return "samples.substrate.reamde.dev/web", nil
+	return googleBundleID, nil
 }
 func (d upgradeErrDataset) DisableBundle(context.Context, string) error { return nil }
 func (d upgradeErrDataset) BindBundleInput(context.Context, string, string, string) error {
@@ -169,7 +174,7 @@ func (s *upgradeErrService) Authenticate(ctx context.Context, secret string) (su
 
 func newUpgradeErrEnv(t *testing.T) *testEnv {
 	t.Helper()
-	cat, err := catalog.Load(kinds.Bundles(), samples.Samples())
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
@@ -209,7 +214,7 @@ func TestCatalogListSurvivesAFailedUpgradePreview(t *testing.T) {
 		}
 	}
 
-	rec = env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape(webBundleID), tok, nil)
+	rec = env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape(googleBundleID), tok, nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("catalog detail = %d, want 200: %s", rec.Code, rec.Body)
 	}
@@ -249,34 +254,76 @@ func TestCatalogListReturnsShippedBundles(t *testing.T) {
 
 const googleBundleID = "providers.substrate.reamde.dev/google"
 
-// The catalog list response carries the curated integration facet on the wire:
-// the google provider bundle is integration=true, the web bundle false, so the
-// console can render the Integration badge and filter.
-func TestCatalogListCarriesIntegrationFacet(t *testing.T) {
+// The catalog list carries each entry's TIER on the wire: the console's two
+// sections and the door each row offers are read from it, so google is a
+// provider and the web sample is a sample (decision record 0048).
+func TestCatalogListCarriesTheTier(t *testing.T) {
 	env := newCatalogEnv(t)
 	tok := env.svc.token("geoah")
 	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	body := decodeJSON[struct {
 		Items []struct {
-			ID          string `json:"id"`
-			Integration bool   `json:"integration"`
+			ID   string `json:"id"`
+			Tier string `json:"tier"`
 		} `json:"items"`
 	}](t, rec)
-	want := map[string]bool{googleBundleID: true, webBundleID: false}
+	want := map[string]string{
+		googleBundleID: substrate.TierProvider,
+		webBundleID:    substrate.TierSample,
+	}
 	seen := map[string]bool{}
 	for _, item := range body.Items {
 		if w, ok := want[item.ID]; ok {
 			seen[item.ID] = true
-			if item.Integration != w {
-				t.Errorf("%s integration = %v, want %v", item.ID, item.Integration, w)
+			if item.Tier != w {
+				t.Errorf("%s tier = %q, want %q", item.ID, item.Tier, w)
 			}
+		}
+		if item.Tier == "" {
+			t.Errorf("bundle %q carries no tier, so the console cannot place it", item.ID)
 		}
 	}
 	for id := range want {
 		if !seen[id] {
 			t.Errorf("bundle %q missing from catalog list", id)
 		}
+	}
+}
+
+// The two doors are not interchangeable: a PROVIDER installs under the
+// authority that publishes it, so importing one is refused and the refusal
+// names the verb that does work.
+func TestCatalogImportRefusesAProvider(t *testing.T) {
+	env := newCatalogEnv(t)
+	tok := env.svc.token("geoah")
+	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(googleBundleID)+"/import", tok, nil)
+	wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
+	if body := rec.Body.String(); !strings.Contains(body, "install") {
+		t.Errorf("the refusal does not name the verb that works: %s", body)
+	}
+}
+
+// Import is an owner action, exactly as install is: a request attributed to a
+// machine is refused before the closure is touched.
+func TestCatalogImportRefusesNonOwner(t *testing.T) {
+	env := newCatalogEnv(t)
+	tok := env.svc.token("geoah")
+	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(webBundleID)+"/import", tok, nil,
+		actorHeader, "reader.substrate.reamde.dev")
+	wantErrorCode(t, rec, http.StatusForbidden, codeForbidden)
+}
+
+// An unknown id is refused by the CATALOG, not by the router, so the message
+// names the bundle. A bare 404 would also come back from a path that routes
+// nowhere, which is why the body is what this asserts.
+func TestCatalogImportUnknownNamesTheBundle(t *testing.T) {
+	env := newCatalogEnv(t)
+	tok := env.svc.token("geoah")
+	rec := env.do(t, http.MethodPost, "/api/v1/catalog/nope.example.com%2Fnothing/import", tok, nil)
+	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
+	if body := rec.Body.String(); !strings.Contains(body, "nope.example.com/nothing") {
+		t.Errorf("the refusal does not name the bundle asked for: %s", body)
 	}
 }
 
@@ -325,4 +372,127 @@ func TestCatalogInstallRefusesNonOwner(t *testing.T) {
 	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(webBundleID)+"/install", tok, nil,
 		actorHeader, "reader.substrate.reamde.dev")
 	wantErrorCode(t, rec, http.StatusForbidden, codeForbidden)
+}
+
+// heldDataset reports one bundle installed, whichever id the test names. It
+// exists to ask the catalog read the one question the two tiers make
+// ambiguous: which id counts as "this repository has it".
+type heldDataset struct {
+	*fakeDataset
+	id string
+}
+
+func (d heldDataset) BundleStatuses(context.Context) ([]substrate.BundleStatus, error) {
+	return []substrate.BundleStatus{{
+		ID: d.id, Name: "web", Installed: true, Enabled: true,
+	}}, nil
+}
+
+func (d heldDataset) BundleStatus(_ context.Context, id string) (substrate.BundleStatus, error) {
+	if id != d.id {
+		return substrate.BundleStatus{}, fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
+	}
+	return substrate.BundleStatus{ID: d.id, Installed: true, Enabled: true}, nil
+}
+
+func (d heldDataset) BundlePackage(context.Context, string) (string, error) { return d.id, nil }
+func (d heldDataset) DisableBundle(context.Context, string) error           { return nil }
+func (d heldDataset) BindBundleInput(context.Context, string, string, string) error {
+	return nil
+}
+func (d heldDataset) EnableBundle(context.Context, string) error    { return nil }
+func (d heldDataset) UninstallBundle(context.Context, string) error { return nil }
+func (d heldDataset) PurgeBundle(context.Context, string) (int, error) {
+	return 0, nil
+}
+
+func (d heldDataset) StartOAuth(context.Context, substrate.Actor, string) (string, error) {
+	return "", nil
+}
+
+func (d heldDataset) TypesImplementing(context.Context, string) ([]substrate.KindInfo, error) {
+	return nil, nil
+}
+
+var _ substrate.BundleOps = heldDataset{}
+
+type heldService struct {
+	*fakeService
+	id string
+}
+
+func (s *heldService) Authenticate(ctx context.Context, secret string) (substrate.Dataset, substrate.TokenInfo, error) {
+	ds, info, err := s.fakeService.Authenticate(ctx, secret)
+	if err != nil {
+		return nil, info, err
+	}
+	return heldDataset{fakeDataset: ds.(*fakeDataset), id: s.id}, info, nil
+}
+
+// newHeldEnv is a catalog env whose repository holds exactly one bundle, under
+// the id given.
+func newHeldEnv(t *testing.T, id string) *testEnv {
+	t.Helper()
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	base := newFakeService()
+	svc := &heldService{fakeService: base, id: id}
+	clock := &testClock{}
+	return &testEnv{
+		svc:   base,
+		h:     New(Config{Service: svc, Now: clock.now, Catalog: cat}),
+		clock: clock,
+	}
+}
+
+// installedFor reads one catalog entry's `installed` flag off the listing.
+func installedFor(t *testing.T, env *testEnv, id string) bool {
+	t.Helper()
+	tok := env.svc.token("geoah")
+	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	body := decodeJSON[struct {
+		Items []struct {
+			ID        string `json:"id"`
+			Installed bool   `json:"installed"`
+		} `json:"items"`
+	}](t, rec)
+	for _, item := range body.Items {
+		if item.ID == id {
+			return item.Installed
+		}
+	}
+	t.Fatalf("bundle %q missing from the catalog listing", id)
+	return false
+}
+
+// A sample this repository IMPORTED is held under the rehomed id, so that is
+// what the listing has to look for.
+func TestCatalogReportsAnImportedSampleInstalled(t *testing.T) {
+	// The fake repository's authority is <name>.example.com.
+	env := newHeldEnv(t, "geoah.example.com/web")
+	if !installedFor(t, env, webBundleID) {
+		t.Error("an imported sample reads as available, so the console offers it again")
+	}
+}
+
+// A sample INSTALLED verbatim is held under the SHIPPED id, which is still a
+// door while the providers name sample packages under `requires:`. The listing
+// has to see that one too, or the console offers an install that already ran.
+func TestCatalogReportsAVerbatimInstalledSampleInstalled(t *testing.T) {
+	env := newHeldEnv(t, webBundleID)
+	if !installedFor(t, env, webBundleID) {
+		t.Error("a verbatim-installed sample reads as available, so the console offers it again")
+	}
+}
+
+// A repository holding neither reads as neither: the two-id lookup must not
+// make everything look installed.
+func TestCatalogReportsAnUntakenSampleAvailable(t *testing.T) {
+	env := newHeldEnv(t, googleBundleID)
+	if installedFor(t, env, webBundleID) {
+		t.Error("a sample this repository does not have reads as installed")
+	}
 }

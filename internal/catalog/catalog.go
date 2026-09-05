@@ -5,6 +5,12 @@
 // it ships beside them (a provider's triggers, the llm sample's provider
 // rows).
 //
+// Every entry carries a TIER, and the tier is the tree it came from (decision
+// record 0048). A PROVIDER (kinds/providers.substrate.reamde.dev) INSTALLS
+// under the authority that publishes it. A SAMPLE (samples/) IMPORTS: the
+// closure is rehomed onto the repository's own authority first, so what lands
+// is the repository's to edit.
+//
 // A closure that declares ONTO another package names it in `requires:`, and
 // admission refuses the install while that package is absent (vocabulary
 // resolveBundle), naming what to import first.
@@ -37,153 +43,56 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// Bundle is one installable catalog entry: the shipped closure and the
-// metadata the console previews before installing it.
+// Bundle is one installable catalog entry: the shipped closure and the wire
+// shape the console previews before taking it. The wire half is
+// substrate.CatalogBundle, embedded so the wire golden can hold it
+// (internal/substrate/wire_test.go); the closure documents stay here,
+// unexported, and never marshal.
 type Bundle struct {
-	// ID is the bundle's record id — the PACKAGE it is named for
-	// ("providers.substrate.reamde.dev/google"), matching
-	// substrate.BundleStatus.ID once installed.
-	ID string `json:"id"`
-	// Name is the owned package's own word ("google").
-	Name string `json:"name"`
-	// Authority is the authority the closure publishes under.
-	Authority string `json:"authority"`
-	// Package is the owned package's name, the same word as Name: the console
-	// groups the catalog by authority, then by package.
-	Package string `json:"package"`
-	// Description is the bundle document's description.
-	Description string `json:"description"`
-	// Version is the owned package's version (the closure's version; a
-	// per-bundle semver is future — ticket 011). Zero means the closure
-	// declares none.
-	Version int64 `json:"version"`
-	// Inputs are the bundle's declared configuration needs, verbatim from
-	// the manifest: input name → {kind, inject?, description?}. A bundle
-	// with no needs carries none, and the console previews nothing.
-	Inputs map[string]any `json:"inputs,omitempty"`
-	// Requires names the PACKAGES this bundle's closure declares against — the
-	// vocabulary its mappings, references and trigger subscriptions point at.
-	// Vocabulary is IMPORTED now rather than seeded (repository creation seeds
-	// core alone), so the console shows this before an install and admission
-	// refuses the install when one is absent, naming what to import first.
-	Requires []string `json:"requires,omitempty"`
-	// Example is the curated catalog facet marking a bundle that exists to be
-	// READ and run once: a worked demonstration of a substrate mechanism,
-	// self-contained and safe to install on a fresh repository. It is
-	// presentation metadata keyed by bundle id (exampleFacets), like
-	// Integration, and for the same reason — nothing about a closure's shape
-	// says "this is here to teach you something".
-	Example bool `json:"example"`
-	// Integration is the curated catalog facet marking a bundle whose
-	// purpose is an ongoing connection to an external provider (the console's
-	// Integration badge and filter). It is catalog PRESENTATION metadata keyed
-	// by bundle id (integrationFacets), NOT part of the stored closure and NOT
-	// derived from OAuth blocks, account types, or authority/name shape: a
-	// token/webhook integration may declare no OAuth, and an account-shaped
-	// bundle is not necessarily a provider integration.
-	Integration bool `json:"integration"`
-	// Closure enumerates what installing lands, for the detail preview.
-	Closure Closure `json:"closure"`
+	substrate.CatalogBundle
 
 	// vocabularyDocs is the closure — the core schema documents (bundle.yaml),
 	// applied atomically through ApplyVocabularyDocuments.
 	vocabularyDocs []map[string]any
-	// dataDocs is the data plane: ordinary records (an extension's triggers,
-	// the llm example's provider rows), each PUT after the closure lands.
+	// dataDocs is the data plane: ordinary records (a provider's triggers,
+	// the llm sample's provider rows), each PUT after the closure lands.
 	dataDocs []map[string]any
 }
 
-// Closure is what installing a bundle lands, by kind — the detail preview the
-// console shows before installing. EVERY member of it is a record: a kind, a
-// function and an agent are records of the core meta-kinds, and Records are the
-// ordinary data rows the same transaction writes beside them. The lists are
-// split because a reader asks different questions of each, not because the
-// things differ in nature.
-type Closure struct {
-	Kinds []string `json:"kinds"`
-	// KindDescriptions is each kind's declared description, keyed by identity
-	// — what the closure's kinds ARE, before an install has put them in the
-	// registry a reader could look them up in. Omitted where a kind declares
-	// none, so the map is only as big as the prose.
-	KindDescriptions map[string]string `json:"kindDescriptions,omitempty"`
-	Functions        []string          `json:"functions"`
-	Agents           []string          `json:"agents"`
-	// Mappings answers "what will this project onto the vocabulary I already
-	// have" — the question a reader asks before importing an integration.
-	Mappings []string `json:"mappings"`
-	// Records are the DATA records the install writes after the declarations
-	// land: an extension's triggers, the llm example's two keyless provider
-	// rows. They are ordinary records the moment they exist — editable,
-	// deletable — and half of what a bundle DOES arrives this way, so a preview
-	// that named only the declarations would hide the very row the reader is
-	// about to be told to go and key.
-	Records []ShippedRecord `json:"records"`
+// Closure and ShippedRecord are the catalog's names for the two nested wire
+// shapes, so a caller reads catalog.Closure rather than the substrate
+// spelling.
+type (
+	Closure       = substrate.CatalogClosure
+	ShippedRecord = substrate.CatalogShippedRecord
+)
+
+// LandedID is the bundle id this closure lands under in a repository whose own
+// authority is home. A provider keeps the id it publishes; a SAMPLE is rehomed
+// on import, so what lands is its package under the repository's authority
+// (decision record 0048) and the shipped id addresses the catalog entry alone.
+func (b *Bundle) LandedID(homeAuthority string) string {
+	if b.Tier != substrate.TierSample || homeAuthority == "" {
+		return b.ID
+	}
+	return homeAuthority + "/" + b.Package
 }
 
-// ShippedRecord is one data record a bundle ships. A data record's identity is
-// its KIND and its id together (a declaration's is one reference), so both
-// travel, and the console addresses the record from them.
-type ShippedRecord struct {
-	Kind string `json:"kind"`
-	ID   string `json:"id"`
+// HeldID is the id this closure ALREADY has in a repository that holds it, or
+// "" when it holds neither. Both are asked because both can be there: an
+// import lands the rehomed id, and installing a sample verbatim (still a
+// sanctioned door until the providers stop requiring sample packages) lands
+// the shipped one. A read that asked only for the rehomed id reported a
+// verbatim-installed sample as available, and offered it again.
+func (b *Bundle) HeldID(held map[string]bool, homeAuthority string) string {
+	if landed := b.LandedID(homeAuthority); held[landed] {
+		return landed
+	}
+	if held[b.ID] {
+		return b.ID
+	}
+	return ""
 }
-
-// integrationFacets curates the `integration` catalog facet per bundle id.
-// This is catalog-owned PRESENTATION metadata (the console's Integration badge
-// and filter), not part of the stored bundle closure and deliberately NOT
-// derived from OAuth blocks, account types, or authority/name shape — the naming
-// decision keeps this an explicit, curated map so a token/webhook integration
-// with no OAuth still classifies and an account-shaped non-provider bundle
-// does not. A bundle absent from the map is not an integration. A future
-// remote-registry format can carry the same facet once its compatibility rules
-// exist.
-// exampleFacets curates the `example` facet — the bundles the console groups
-// under Examples. They are ordinary bundles: installable, uninstallable, and
-// no different at runtime from any other. The facet only says what they are
-// FOR — and it marks the one part of the shipped set OUTSIDE the stable
-// vocabulary (decision record 0015): an example's declarations may change or
-// leave without an upgrade path.
-var exampleFacets = map[string]bool{
-	// The two provider rows a substrate needs before an agent can run, plus an
-	// agent chain to prove them.
-	"samples.substrate.reamde.dev/llm": true,
-	// The smallest bundle showing an agent calling functions as tools and
-	// delegating to a sub-agent.
-	"samples.substrate.reamde.dev/notes": true,
-	// The URL harvester: triggers, a sub-agent chain, and a change request an
-	// owner accepts. A bigger read than the others.
-	"samples.substrate.reamde.dev/web": true,
-	// Voice capture from the Pebble ring over a public webhook: a
-	// webhook-sourced trigger, header routing, and an agent that writes tasks.
-	"samples.substrate.reamde.dev/pebble": true,
-}
-
-var integrationFacets = map[string]bool{
-	"providers.substrate.reamde.dev/google": true,
-	"providers.substrate.reamde.dev/github": true,
-	"providers.substrate.reamde.dev/linear": true,
-	"providers.substrate.reamde.dev/notion": true,
-	"providers.substrate.reamde.dev/whoop":  true,
-	"providers.substrate.reamde.dev/beeper": true,
-	// firecrawl is a capability bundle (callable web-search/scrape tools
-	// behind an API key) — no provider account is connected and nothing syncs
-	// from the provider, so like the web harvester it is not an integration.
-	"samples.substrate.reamde.dev/firecrawl": false,
-	"samples.substrate.reamde.dev/web":       false,
-}
-
-// providerPackage answers whether a catalog id is a PROVIDER: the tier whose
-// install lands `source: published`, closing that package's declarations to
-// the repository's own token afterwards (decision record 0048). Everything
-// else the catalog serves is a sample, which the repository installs and then
-// owns.
-//
-// It reads the integration facet rather than restating its list, because the
-// two name the same six ids: a provider is exactly the closure whose job is an
-// ongoing connection to an outside publisher, and one curated list cannot
-// disagree with itself. The `Tier` field replaces both, and this function is
-// the seam it lands on.
-func providerPackage(id string) bool { return integrationFacets[id] }
 
 // Catalog is the parsed set of shipped bundles, indexed by id.
 type Catalog struct {
@@ -202,15 +111,19 @@ type Catalog struct {
 // that carries no bundle document is not a bundle and is skipped; one that
 // fails to parse is dropped with a recorded warning rather than failing the
 // whole catalog — a broken neighbor never bricks the shipped set.
-func Load(roots ...fs.FS) (*Catalog, error) {
+//
+// A root also says which TIER its closures are (decision record 0048): the
+// tier is the tree a closure came from and nothing else, so nothing infers it
+// from an authority's spelling.
+func Load(roots ...Root) (*Catalog, error) {
 	c := &Catalog{byID: map[string]*Bundle{}}
-	for _, fsys := range roots {
-		dirs, err := packageDirs(fsys)
+	for _, root := range roots {
+		dirs, err := packageDirs(root.FS)
 		if err != nil {
 			return nil, err
 		}
 		for _, dir := range dirs {
-			if err := c.load(fsys, dir); err != nil {
+			if err := c.load(root, dir); err != nil {
 				return nil, err
 			}
 		}
@@ -218,6 +131,21 @@ func Load(roots ...fs.FS) (*Catalog, error) {
 	sort.Slice(c.bundles, func(i, j int) bool { return c.bundles[i].ID < c.bundles[j].ID })
 	return c, nil
 }
+
+// Root is one shipped tree and the tier every closure in it takes.
+type Root struct {
+	// Tier is substrate.TierProvider or substrate.TierSample.
+	Tier string
+	FS   fs.FS
+}
+
+// ProviderRoot is a tree of published packages (kinds/), whose closures
+// install under the authority they name.
+func ProviderRoot(fsys fs.FS) Root { return Root{Tier: substrate.TierProvider, FS: fsys} }
+
+// SampleRoot is a tree of copyable packages (samples/), whose closures import
+// under the repository's own authority.
+func SampleRoot(fsys fs.FS) Root { return Root{Tier: substrate.TierSample, FS: fsys} }
 
 // packageDirs lists the directories holding manifests, in lexical order.
 func packageDirs(fsys fs.FS) ([]string, error) {
@@ -245,29 +173,22 @@ func packageDirs(fsys fs.FS) ([]string, error) {
 	return out, nil
 }
 
-func (c *Catalog) load(fsys fs.FS, dir string) error {
-	{
-		b, err := loadBundle(fsys, dir)
-		if err != nil {
-			c.warnings = append(c.warnings, fmt.Sprintf("%s: %v", dir, err))
-			return nil
-		}
-		if b == nil {
-			return nil // not a bundle directory
-		}
-		if _, dup := c.byID[b.ID]; dup {
-			c.warnings = append(c.warnings, fmt.Sprintf("%s: duplicate bundle id %s", dir, b.ID))
-			return nil
-		}
-		// The integration facet is curated catalog presentation metadata,
-		// applied by id AFTER the closure parses — it is not read from the
-		// stored bundle document (a bundle absent from the map is not an
-		// integration).
-		b.Integration = integrationFacets[b.ID]
-		b.Example = exampleFacets[b.ID]
-		c.bundles = append(c.bundles, b)
-		c.byID[b.ID] = b
+func (c *Catalog) load(root Root, dir string) error {
+	b, err := loadBundle(root.FS, dir)
+	if err != nil {
+		c.warnings = append(c.warnings, fmt.Sprintf("%s: %v", dir, err))
+		return nil
 	}
+	if b == nil {
+		return nil // not a bundle directory
+	}
+	if _, dup := c.byID[b.ID]; dup {
+		c.warnings = append(c.warnings, fmt.Sprintf("%s: duplicate bundle id %s", dir, b.ID))
+		return nil
+	}
+	b.Tier = root.Tier
+	c.bundles = append(c.bundles, b)
+	c.byID[b.ID] = b
 	return nil
 }
 
@@ -442,32 +363,22 @@ func (c *Catalog) Warnings() []string { return c.warnings }
 // owner-gated — installing arbitrary bundle code is a human-owner action — and
 // idempotent: the closure re-apply is the bundle's own upgrade semantics and
 // the delivery wiring upserts in place.
+//
+// A SAMPLE takes Import instead, which lands the same closure under the
+// repository's own authority. Install still admits one, and that is
+// deliberate for now: the six shipped providers pin sample kinds
+// (`to: samples.substrate.reamde.dev/people/person`) and name sample packages
+// under `requires:`, so a repository that cannot install a sample verbatim
+// cannot install Google, GitHub or Linear at all. The door closes when phase 4
+// of docs/plans/providers-and-samples.md decouples them.
 func (c *Catalog) Install(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset) (*Bundle, error) {
-	if !substrate.HumanActors[actor] {
-		return nil, fmt.Errorf("%w: installing a bundle is the repository user's action, not a machine's", substrate.ErrForbidden)
-	}
-	b, ok := c.byID[id]
-	if !ok {
-		return nil, fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
-	}
-	inst, ok := ds.(substrate.BundleInstaller)
-	if !ok {
-		return nil, errors.New("catalog: this dataset cannot install bundle closures")
-	}
-	// Pre-admit every data document BEFORE the schema apply: a malformed
-	// delivery-wiring envelope fails here, before anything is touched, rather
-	// than after the schema closure has already committed.
-	dataInputs := make([]substrate.PutInput, 0, len(b.dataDocs))
-	for _, d := range b.dataDocs {
-		in, err := dataPutInput(d)
-		if err != nil {
-			return nil, err
-		}
-		dataInputs = append(dataInputs, in)
+	b, err := c.installable(actor, id)
+	if err != nil {
+		return nil, err
 	}
 	// INSTALL IS A COPY: the catalog's manifests are written
 	// into the repository's own changelog under the BUNDLE's actor, not the
-	// requester's. Installing is an owner action — that is the check above —
+	// requester's. Installing is an owner action, which is the check above,
 	// but what lands in the changelog is the bundle's declarations, attributed to
 	// the bundle, exactly as the core tree's seed is attributed to
 	// `bundle:core`. The catalog is the source; the changelog is the truth, and
@@ -475,16 +386,110 @@ func (c *Catalog) Install(ctx context.Context, actor substrate.Actor, id string,
 	//
 	// A PROVIDER install says so: its packages land `source: published`, which
 	// is what closes them to the repository's token afterwards, and what
-	// promotes a provider an earlier install left `installed`. The same closure
-	// applied by hand (`substratectl apply -f` of these very files) carries no
-	// tier and stays the repository's own, which record 0047 sanctions and
-	// which is the only way to hold a provider's declarations open to
-	// editing.
-	if _, err := inst.InstallBundleClosure(ctx, substrate.BundleActor(b.Authority, b.Package), b.vocabularyDocs, dataInputs,
-		substrate.BundleInstall{Published: providerPackage(b.ID)}); err != nil {
+	// promotes a provider an earlier install left `installed`. The TIER decides
+	// it, so nothing here restates a list of ids. The same closure applied by
+	// hand (`substratectl apply -f` of these very files) carries no tier and
+	// stays the repository's own, which record 0047 sanctions and which is the
+	// only way to hold a provider's declarations open to editing.
+	opts := substrate.BundleInstall{Published: b.Tier == substrate.TierProvider}
+	if err := install(ctx, ds, substrate.BundleActor(b.Authority, b.Package), b.vocabularyDocs, b.dataDocs, opts); err != nil {
 		return nil, err
 	}
 	return b, nil
+}
+
+// Import is the SAMPLE door (decision record 0048): the same atomic admission
+// Install runs, over a closure rehomed onto the repository's OWN authority
+// first. `samples.substrate.reamde.dev/tasks/task` lands as
+// `ada.example.com/tasks/task`, owned by the repository that imported it:
+// `source: installed`, writable through the API, never offered an upgrade.
+//
+// The rehoming is a walk over the decoded documents, so it reaches every
+// string one carries: the ids, the declared authority, the reference pins,
+// `installs` and `requires`, a function's `writes`, a trigger's selectors, a
+// mapping's `from`/`to`, and the authority a function's source spells inside
+// its own text. A document that still mentions the placeholder afterwards is
+// refused rather than admitted, because it would declare under an authority
+// this repository does not own.
+//
+// Requirements are not special-cased: the rehomed `requires:` names the
+// repository's own packages, so ordinary admission refuses an import whose
+// sibling sample has not been imported yet, naming what to import first.
+func (c *Catalog) Import(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset) (*Bundle, error) {
+	b, err := c.installable(actor, id)
+	if err != nil {
+		return nil, err
+	}
+	if b.Tier != substrate.TierSample {
+		return nil, fmt.Errorf("%w: %s is a provider, which installs under the authority that publishes it: use install, not import",
+			substrate.ErrValidation, b.ID)
+	}
+	home := ds.Repository().Authority
+	if home == "" {
+		return nil, fmt.Errorf("%w: this repository has no authority of its own, so there is nowhere to import %s to",
+			substrate.ErrValidation, b.ID)
+	}
+	vocabularyDocs, err := vocabulary.RehomeAuthority(b.vocabularyDocs, b.Authority, home)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s: %w", substrate.ErrValidation, b.ID, err)
+	}
+	dataDocs, err := vocabulary.RehomeAuthority(b.dataDocs, b.Authority, home)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s: %w", substrate.ErrValidation, b.ID, err)
+	}
+	if left := vocabulary.AuthorityMentions(append(append([]map[string]any{}, vocabularyDocs...), dataDocs...), b.Authority); len(left) > 0 {
+		return nil, &substrate.ValidationError{
+			Problems: []string{fmt.Sprintf("%s still mentions %s after the rehome, so it would declare under an authority this repository does not own",
+				strings.Join(left, ", "), b.Authority)},
+		}
+	}
+	// The changelog is attributed to the bundle under the authority it LANDS
+	// in: an imported sample is the repository's own vocabulary, so nothing in
+	// its history names the placeholder it was authored under.
+	//
+	// It lands `installed`, never `published`: what a sample leaves behind
+	// belongs to the repository, and `published` is exactly the origin whose
+	// declarations the repository's own token may not write (record 0048).
+	if err := install(ctx, ds, substrate.BundleActor(home, b.Package), vocabularyDocs, dataDocs, substrate.BundleInstall{}); err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+// installable is the gate both doors share: the owner check and the lookup.
+func (c *Catalog) installable(actor substrate.Actor, id string) (*Bundle, error) {
+	if !substrate.HumanActors[actor] {
+		return nil, fmt.Errorf("%w: taking a bundle is the repository user's action, not a machine's", substrate.ErrForbidden)
+	}
+	b, ok := c.byID[id]
+	if !ok {
+		return nil, fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
+	}
+	return b, nil
+}
+
+// install is the one admission both doors run: every shipped data document is
+// converted and validated BEFORE the schema apply, then the schema closure and
+// the delivery wiring commit as a single repository transaction. `opts` is
+// where the tier arrives: `Published` for a provider, zero for a sample.
+func install(ctx context.Context, ds substrate.Dataset, actor substrate.Actor, vocabularyDocs, dataDocs []map[string]any, opts substrate.BundleInstall) error {
+	inst, ok := ds.(substrate.BundleInstaller)
+	if !ok {
+		return errors.New("catalog: this dataset cannot install bundle closures")
+	}
+	// Pre-admit every data document BEFORE the schema apply: a malformed
+	// delivery-wiring envelope fails here, before anything is touched, rather
+	// than after the schema closure has already committed.
+	dataInputs := make([]substrate.PutInput, 0, len(dataDocs))
+	for _, d := range dataDocs {
+		in, err := dataPutInput(d)
+		if err != nil {
+			return err
+		}
+		dataInputs = append(dataInputs, in)
+	}
+	_, err := inst.InstallBundleClosure(ctx, actor, vocabularyDocs, dataInputs, opts)
+	return err
 }
 
 // Upgrade previews what re-installing a shipped bundle over ds's stored
@@ -492,10 +497,18 @@ func (c *Catalog) Install(ctx context.Context, actor substrate.Actor, id string,
 // dataset against the same closure Install applies. A dataset that offers no
 // preview answers nil, not an error: the catalog still lists and installs
 // there, it just cannot say what an install would change.
+//
+// A SAMPLE has no upgrade to preview, ever: what it landed belongs to the
+// repository, which may have edited it, and re-importing would replace the
+// package wholesale rather than merge (decision record 0048). So the answer is
+// nil before the dataset is asked, and no offer reaches the console.
 func (c *Catalog) Upgrade(ctx context.Context, id string, ds substrate.Dataset) (*substrate.BundleUpgrade, error) {
 	b, ok := c.byID[id]
 	if !ok {
 		return nil, fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
+	}
+	if b.Tier == substrate.TierSample {
+		return nil, nil
 	}
 	p, ok := ds.(substrate.BundleUpgradePlanner)
 	if !ok {

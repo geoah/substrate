@@ -24,6 +24,8 @@ import { describe, expect, it } from "vitest"
 
 import golden from "./wire.golden.json"
 import type {
+  BundleClosure,
+  CatalogBundle,
   Change,
   IncomingReference,
   IncomingSource,
@@ -35,6 +37,7 @@ import type {
   PropertyAlternative,
   PropertyMeta,
   PutInput,
+  ShippedRecord,
   SubstrateRecord,
 } from "./types"
 
@@ -140,6 +143,36 @@ const occurrenceList: Keys<OccurrenceList> = {
   problems: true,
 }
 
+/** The catalog entry, and the two shapes nested in it. `installed` and
+ * `upgrade` are NOT here: the API adds them around the bundle, and the
+ * console carries them on CatalogItem. */
+const catalogBundle: Keys<CatalogBundle> = {
+  id: true,
+  name: true,
+  authority: true,
+  package: true,
+  description: true,
+  version: true,
+  tier: true,
+  inputs: true,
+  requires: true,
+  closure: true,
+}
+
+const bundleClosure: Keys<BundleClosure> = {
+  kinds: true,
+  kindDescriptions: true,
+  functions: true,
+  agents: true,
+  mappings: true,
+  records: true,
+}
+
+const shippedRecord: Keys<ShippedRecord> = {
+  kind: true,
+  id: true,
+}
+
 const mirrors: Record<string, Record<string, true>> = {
   SubstrateRecord: substrateRecord,
   IncomingReference: incomingReference,
@@ -153,6 +186,9 @@ const mirrors: Record<string, Record<string, true>> = {
   OccurrenceLog: occurrenceLog,
   OccurrenceProblem: occurrenceProblem,
   OccurrenceList: occurrenceList,
+  CatalogBundle: catalogBundle,
+  BundleClosure: bundleClosure,
+  ShippedRecord: shippedRecord,
 }
 
 describe("wire types mirror the Go structs", () => {

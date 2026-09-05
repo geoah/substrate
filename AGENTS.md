@@ -154,13 +154,16 @@ bin/substratectl --dsn "$DATABASE_URL" user reset <username>   # needs SUBSTRATE
 ```
 
 **Registration seeds the `core` package and nothing else.** `tasks` above is a
-sample package the repository installs, so a walkthrough that reaches for any
-non-core collection installs one first: `apply -f` of the closure's files, the
-console's Registry page, or `POST /api/v1/catalog/{id}/install` (the id is the
-package, so its slash is percent-encoded:
-`samples.substrate.reamde.dev%2Ftasks`), which are three doors to the same
-admission. A snippet that opens with `get people` on a fresh substrate is
-wrong, and was.
+SAMPLE package the repository imports, so a walkthrough that reaches for any
+non-core collection takes one first: `bin/substratectl import
+samples.substrate.reamde.dev/tasks`, the console's Registry page, or `POST
+/api/v1/catalog/{id}/import` (the id is the package, so its slash is
+percent-encoded: `samples.substrate.reamde.dev%2Ftasks`), which are three doors
+to the same admission. The import REHOMES the closure onto the repository's own
+authority, so what lands is `<authority>/tasks/task`, not the shipped spelling
+(record 0048). A PROVIDER (`providers.substrate.reamde.dev/google`) takes the
+other door, `…/install`, and lands under the authority that publishes it. A
+snippet that opens with `get people` on a fresh substrate is wrong, and was.
 
 Config is `~/.config/substratectl/config.yaml` (override with
 `SUBSTRATECTL_CONFIG`): named contexts of `{name, server, username, authority,
@@ -203,6 +206,8 @@ words, and what each one replaced:
 | **vocabulary**| kinds, traits and property types together; `/vocabulary/apply` | schema   |
 | **changelog** | the append-only sequence of deltas; the `changelog` table  | log          |
 | **bundle**    | the install unit, named for the package it ships; `/bundles`, and the `bundle` tier | extension |
+| **provider**  | a catalog tier: a package a publisher owns, INSTALLED under the authority that publishes it | integration |
+| **sample**    | the other catalog tier: a package the user copies, IMPORTED under the repository's own authority | example, vocabulary bundle |
 | **input**     | a bundle's named configuration need; one record resolves per input (bound edge, the id `default`, then the sole record) | config, configType, singleton |
 | **edge**      | a named (`rel`), directed link between records              | relationship |
 

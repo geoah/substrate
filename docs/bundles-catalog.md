@@ -1,26 +1,27 @@
 # Bundles catalog
 
-The substrate ships ten of these bundles in the binary, each a real closure a
-user installs with `substratectl apply` or from the
-[catalog](bundles.md#the-catalog). (The vocabulary bundles beside them —
-`people`, `tasks`, `calendar` and the rest — are in
-[built-in kinds](builtin-kinds.md).)
-Google, GitHub, Linear, WHOOP, Notion, and Beeper carry the `integration`
-facet; LLM, notes, and the web harvester carry `example`, because they exist
-to be read; Firecrawl carries neither, adding callables behind an API key
-with no provider account. Each facet
-is the catalog's own curated flag, stated per bundle rather than inferred
-from the closure. An example sits outside the stable vocabulary set
-([decision record 0015](decisions/0015-unproven-kinds-stay-out-of-the-stable-set.md)):
-its declarations may change or leave without an upgrade path, and installing
-one accepts that. Every integration syncs from the provider into the
-repository; none writes back to the provider, and each ships a README stating
-its limits.
+The substrate ships ten of these bundles in the binary, in the two tiers
+[decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
+draws. (The vocabulary samples beside them, `people`, `tasks`, `calendar` and
+the rest, are in [built-in kinds](builtin-kinds.md).)
+
+**Six providers**: Google, GitHub, Linear, WHOOP, Notion and Beeper. Each is a
+package its publisher owns, installed under
+`providers.substrate.reamde.dev` and upgraded there. Every one syncs from the
+provider into the repository; none writes back, and each ships a README
+stating its limits.
+
+**Four samples**: LLM, notes, the web harvester and Firecrawl. Each is a worked
+example to read and copy, imported under the repository's own authority and
+owned by it afterwards. It is never offered an upgrade, so a fix here never reaches
+a repository that imported it
+([0015](decisions/0015-unproven-kinds-stay-out-of-the-stable-set.md) is what
+that amends).
 
 This is the map. The source of truth is each bundle's own manifests, under
 `kinds/<authority>/<package>/` for the providers and `samples/<package>/` for
-the samples, and everything an install will add — the declarations and the
-records it writes beside them — is previewable through
+the samples, and everything taking one will add (the declarations and the
+records it writes beside them) is previewable through
 `GET …/catalog/{id}`.
 
 Kinds, functions, agents, and mappings are named `<authority>/<package>/<name>`;
@@ -30,25 +31,25 @@ is `providers.substrate.reamde.dev/github/issue`, Linear's is
 `providers.substrate.reamde.dev/linear/issue`, and one record of either is
 addressed as `<authority>/<package>/<kind>/<id>`. What a closure declares is
 exactly what its `installs:` lists. Beside that closure every bundle may ship **ordinary
-records**, written by the same install: an integration's triggers (the
+records**, written by the same install: a provider's triggers (the
 delivery wiring, in
-`triggers.yaml`) and the LLM example's two provider rows are the same kind of
+`triggers.yaml`) and the LLM sample's two provider rows are the same kind of
 thing, and the Records column counts them.
 
-| Bundle     | Facet       | Auth           | Kinds | Functions | Records | Agents |
-| ------------- | ----------- | -------------- | ----- | --------- | ------- | ------ |
-| Google        | Integration | OAuth          | 8     | 4         | 6       | 0      |
-| GitHub        | Integration | OAuth          | 6     | 1         | 2       | 0      |
-| Linear        | Integration | OAuth          | 5     | 2         | 3       | 0      |
-| WHOOP         | Integration | OAuth          | 5     | 1         | 2       | 0      |
-| Notion        | Integration | Internal token | 4     | 1         | 2       | 0      |
-| Beeper        | Integration | Pasted token   | 4     | 1         | 2       | 0      |
-| LLM           | Example     | Key, per row   | 1     | 0         | 2       | 6      |
-| Notes         | Example     | none           | 1     | 2         | 0       | 2      |
-| Firecrawl     | —           | API key        | 2     | 2         | 0       | 0      |
-| Web harvester | Example     | none           | 2     | 4         | 4       | 3      |
+| Bundle     | Tier     | Auth           | Kinds | Functions | Records | Agents |
+| ------------- | -------- | -------------- | ----- | --------- | ------- | ------ |
+| Google        | Provider | OAuth          | 8     | 4         | 6       | 0      |
+| GitHub        | Provider | OAuth          | 6     | 1         | 2       | 0      |
+| Linear        | Provider | OAuth          | 5     | 2         | 3       | 0      |
+| WHOOP         | Provider | OAuth          | 5     | 1         | 2       | 0      |
+| Notion        | Provider | Internal token | 4     | 1         | 2       | 0      |
+| Beeper        | Provider | Pasted token   | 4     | 1         | 2       | 0      |
+| LLM           | Sample   | Key, per row   | 1     | 0         | 2       | 6      |
+| Notes         | Sample   | none           | 1     | 2         | 0       | 2      |
+| Firecrawl     | Sample   | API key        | 2     | 2         | 0       | 0      |
+| Web harvester | Sample   | none           | 2     | 4         | 4       | 3      |
 
-## LLM (example)
+## LLM (sample)
 
 Package `samples.substrate.reamde.dev/llm`. Install this bundle first if
 you want to run an agent at all. A fresh substrate seeds no `llmprovider` row,
@@ -79,7 +80,7 @@ empty `baseURL` it resolves to the host's configured gateway:
 [providers](agents.md#providers) has the host-gateway rule, the wires, and
 pricing.
 
-## Notes (example)
+## Notes (sample)
 
 Package `samples.substrate.reamde.dev/notes`. The smallest bundle that shows
 an agent calling functions as tools and delegating to a sub-agent, and the one
@@ -113,7 +114,7 @@ curl -s -X POST "$SUBSTRATE_SERVER/api/v1/substrate.reamde.dev/core/agent/noteke
 
 ## Google
 
-Package `providers.substrate.reamde.dev/google`. An OAuth integration that syncs a Google
+Package `providers.substrate.reamde.dev/google`. An OAuth provider that syncs a Google
 account's address book, mail, and calendars into the repository and folds them
 onto your people.
 
@@ -184,7 +185,7 @@ strings), and no writeback.
 
 ## GitHub
 
-Package `providers.substrate.reamde.dev/github`. An OAuth integration that mirrors the
+Package `providers.substrate.reamde.dev/github`. An OAuth provider that mirrors the
 code work you are involved in.
 
 - **Kinds (6)**: `config`, `account`, and the mirrors `user`, `repository`,
@@ -207,7 +208,7 @@ from GitHub's settings.
 
 ## Linear
 
-Package `providers.substrate.reamde.dev/linear`. An OAuth integration that mirrors the
+Package `providers.substrate.reamde.dev/linear`. An OAuth provider that mirrors the
 issues assigned to you and projects them onto jointly-owned tasks.
 
 - **Kinds (5)**: `config`, `account`, and the mirrors `user`, `team`, `issue`.
@@ -223,13 +224,13 @@ issues assigned to you and projects them onto jointly-owned tasks.
   (match on email, map names and emails), and `issueperson` resolves an issue's
   `assignee` reference onto a person by the assignee's email.
 
-This is the one integration that both mirrors a provider and projects into the
+This is the one provider that both mirrors its service and projects into the
 shipped `samples.substrate.reamde.dev/tasks` vocabulary, so a Linear issue and a
 hand-written task live side by side.
 
 ## WHOOP
 
-Package `providers.substrate.reamde.dev/whoop`. An OAuth integration that mirrors a WHOOP
+Package `providers.substrate.reamde.dev/whoop`. An OAuth provider that mirrors a WHOOP
 wearable's daily physiology.
 
 - **Kinds (5)**: `config`, `account`, and the mirrors `recovery`, `sleep`,
@@ -249,7 +250,7 @@ revocation is manual.
 
 ## Notion
 
-Package `providers.substrate.reamde.dev/notion`. An integration that mirrors the Notion
+Package `providers.substrate.reamde.dev/notion`. A provider that mirrors the Notion
 pages and data sources shared with an internal integration. It is authorized by
 an internal-integration token rather than OAuth, because Notion authenticates
 its token exchange with HTTP Basic and the host facility declares one auth
@@ -270,7 +271,7 @@ row is stamped `syncStatus: ignored: duplicate account`.
 
 ## Beeper
 
-Package `providers.substrate.reamde.dev/beeper`. A non-OAuth integration: it connects a
+Package `providers.substrate.reamde.dev/beeper`. A non-OAuth provider: it connects a
 Beeper (Matrix) homeserver with a pasted access token and mirrors bridged rooms
 and messages (WhatsApp, Telegram, Signal, iMessage, and the rest). Read only,
 it never sends.
@@ -289,9 +290,9 @@ The token is a secret on the configuration record, origin-pinned to Beeper's
 hosts or loopback. Only one account per repository syncs: every other account
 row is stamped `syncStatus: ignored: duplicate account`.
 
-## Firecrawl
+## Firecrawl (sample)
 
-Package `samples.substrate.reamde.dev/firecrawl`. Not an integration: no
+Package `samples.substrate.reamde.dev/firecrawl`. Not a provider: no
 provider account is connected and nothing syncs. It is web search and page
 scraping over the Firecrawl API, exposed as two callables an agent binds as
 tools, behind an API key.
@@ -309,7 +310,7 @@ The API key is a secret on the configuration record, and the bodies refuse any
 base URL that is not the pinned Firecrawl origin or loopback, so an edit of the
 owner-editable `baseUrl` can never redirect the key.
 
-## Web harvester
+## Web harvester (sample)
 
 Package `samples.substrate.reamde.dev/web`. The substrate's
 shipped end-to-end conformance example: it proves that `bundle`, `kind`,

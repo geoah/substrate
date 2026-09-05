@@ -109,16 +109,19 @@ transition that applies the change.
 
 ## Registry
 
-The [catalog](bundles-catalog.md): every bundle the binary ships,
-available and installed together, with an Integration badge on the ones that
-connect a provider and a quarantine badge on one that needs re-installing.
-The **All / Vocabulary / Integrations / Examples** filter narrows the list:
-*Vocabulary* is kinds and nothing else, *Integrations* connect an external
-provider, and *Examples* are the worked ones — the LLM example that installs
-the provider rows an agent needs, the notes example that shows an agent
-calling functions and a sub-agent, and the URL harvester that shows triggers
-and a change request end to end.
-Installing shows what the closure added. An installed bundle carries its
+The [catalog](bundles-catalog.md): every bundle the binary ships, in the two
+tier sections
+([0048](decisions/0048-providers-are-published-samples-are-copied.md)), taken
+and untaken together, with a quarantine badge on one that needs re-installing.
+**Providers** are the packages a publisher owns (Google, GitHub, Linear,
+WHOOP, Notion, Beeper) and their row's button is *Install*, under the
+authority that publishes them; the upgrade offer lands here. **Samples** are
+the vocabulary to copy (people, tasks, calendar, and the worked LLM, notes,
+web and pebble examples) and their button is *Import as yours*, with the row
+previewing the identity it will land under (`ada.example.com/tasks`) before it
+is pressed. A bundle applied outside the shipped catalog has no tier and is
+listed on its own.
+Taking one shows what the closure added. An installed bundle carries its
 lifecycle verbs — disable, enable, uninstall, and the purge that a refused
 uninstall points you at — and its connections: one row per configured provider
 account, where the [OAuth consent flow](bundles.md#the-oauth-facility)

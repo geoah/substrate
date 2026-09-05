@@ -15,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/geoah/substrate/internal/catalog"
+	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 	"github.com/geoah/substrate/kinds"
 	"github.com/geoah/substrate/samples"
@@ -102,7 +103,7 @@ func TestBothViewsLoad(t *testing.T) {
 	if len(r.Packages()) == 0 || len(r.Kinds()) == 0 {
 		t.Fatalf("the seed registry is empty: %v", r.Packages())
 	}
-	cat, err := catalog.Load(kinds.Bundles(), samples.Samples())
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		t.Fatalf("load the shipped catalog: %v", err)
 	}
@@ -395,7 +396,7 @@ func asMapping(v any) map[string]any {
 }
 
 func TestShippedCallableActorsAreDistinct(t *testing.T) {
-	cat, err := catalog.Load(kinds.Bundles(), samples.Samples())
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		t.Fatalf("load the shipped catalog: %v", err)
 	}
@@ -423,7 +424,7 @@ func TestShippedCallableActorsAreDistinct(t *testing.T) {
 // admission runs (the pair that also refuses a GraphQL name claimed twice),
 // so the whole shipped set has to coexist without a database.
 func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
-	cat, err := catalog.Load(kinds.Bundles(), samples.Samples())
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		t.Fatalf("load the shipped catalog: %v", err)
 	}
@@ -445,6 +446,91 @@ func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 		if err := installClosure(reg, byPackage, b, done); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// EVERY sample rehomes and then admits, without a database. The import walk
+// touches every string a closure carries, and the samples with functions,
+// agents, triggers and Python sources are where it has the most to reach: an
+// authority left inside a function body is a closure that admits here and
+// fails at the first call. Each is rehomed onto one repository authority, so
+// their `requires:` resolve against each other exactly as an import chain does.
+func TestEverySampleRehomesOntoARepositoryAuthority(t *testing.T) {
+	const home = "ada.example.com"
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	if err != nil {
+		t.Fatalf("load the shipped catalog: %v", err)
+	}
+	reg, err := vocabulary.LoadFS(kinds.Seed())
+	if err != nil {
+		t.Fatalf("load the seed: %v", err)
+	}
+	byPackage := map[string]*catalog.Bundle{}
+	for _, b := range cat.Bundles() {
+		byPackage[b.ID] = b
+	}
+	done := map[string]bool{}
+	var rehome func(b *catalog.Bundle) error
+	rehome = func(b *catalog.Bundle) error {
+		if done[b.ID] {
+			return nil
+		}
+		done[b.ID] = true
+		for _, req := range b.Requires {
+			rb, ok := byPackage[req]
+			if !ok {
+				return fmt.Errorf("%s requires %s, which no shipped bundle owns", b.ID, req)
+			}
+			if err := rehome(rb); err != nil {
+				return err
+			}
+		}
+		maps, err := schemaMaps(b.ID)
+		if err != nil {
+			return err
+		}
+		rehomed, err := vocabulary.RehomeAuthority(maps, samples.Authority, home)
+		if err != nil {
+			return fmt.Errorf("rehome %s: %w", b.ID, err)
+		}
+		if left := vocabulary.AuthorityMentions(rehomed, samples.Authority); len(left) > 0 {
+			return fmt.Errorf("%s still names %s after the rehome: %v", b.ID, samples.Authority, left)
+		}
+		docs, err := documentsFrom(rehomed)
+		if err != nil {
+			return fmt.Errorf("parse the rehomed %s: %w", b.ID, err)
+		}
+		packages, err := vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
+		if err != nil {
+			return fmt.Errorf("build the rehomed %s: %w", b.ID, err)
+		}
+		for _, g := range packages {
+			reg.Remove(g.Identity)
+		}
+		if err := reg.InstallAll(packages); err != nil {
+			return fmt.Errorf("install the rehomed %s: %w", b.ID, err)
+		}
+		return nil
+	}
+	samplesSeen := 0
+	for _, b := range cat.Bundles() {
+		if b.Tier != substrate.TierSample {
+			continue
+		}
+		samplesSeen++
+		if err := rehome(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if samplesSeen == 0 {
+		t.Fatal("no sample bundles in the shipped catalog, so this test proved nothing")
+	}
+	// The kinds landed under the repository's authority, not the placeholder.
+	if _, ok := reg.ByIdentity(home + "/tasks/task"); !ok {
+		t.Errorf("%s/tasks/task is not in the registry after the rehome", home)
+	}
+	if _, ok := reg.ByIdentity(samples.Authority + "/tasks/task"); ok {
+		t.Errorf("%s/tasks/task is live after a rehome that should have moved it", samples.Authority)
 	}
 }
 
@@ -492,12 +578,13 @@ func treeFor(pkg string) (fs.FS, string) {
 	return kinds.All(), pkg
 }
 
-// schemaDocs decodes a package directory's schema documents — and the
-// authority manifest above it, exactly as a closure carries it — skipping the
-// data plane (a provider's triggers) as the install seam splits it.
-func schemaDocs(pkg string) ([]vocabulary.Document, error) {
+// schemaMaps decodes a package directory's schema documents, and the authority
+// manifest above it exactly as a closure carries it, into raw envelope maps,
+// skipping the data plane (a provider's triggers) as the install seam splits
+// it. Raw, because the rehome walks decoded documents rather than parsed ones.
+func schemaMaps(pkg string) ([]map[string]any, error) {
 	fsys, dir := treeFor(pkg)
-	var docs []vocabulary.Document
+	var out []map[string]any
 	dirs := []string{dir}
 	for d := path.Dir(dir); ; d = path.Dir(d) {
 		dirs = append([]string{d}, dirs...)
@@ -531,13 +618,30 @@ func schemaDocs(pkg string) ([]vocabulary.Document, error) {
 					!vocabulary.VocabularyDocumentKind(vocabulary.KindName(ref)) {
 					continue
 				}
-				doc, err := vocabulary.DocumentFromMap(m)
-				if err != nil {
-					return nil, fmt.Errorf("%s/%s: %w", d, e.Name(), err)
-				}
-				docs = append(docs, doc)
+				out = append(out, m)
 			}
 		}
+	}
+	return out, nil
+}
+
+// schemaDocs is schemaMaps parsed into the loader's own documents.
+func schemaDocs(pkg string) ([]vocabulary.Document, error) {
+	maps, err := schemaMaps(pkg)
+	if err != nil {
+		return nil, err
+	}
+	return documentsFrom(maps)
+}
+
+func documentsFrom(maps []map[string]any) ([]vocabulary.Document, error) {
+	docs := make([]vocabulary.Document, 0, len(maps))
+	for _, m := range maps {
+		doc, err := vocabulary.DocumentFromMap(m)
+		if err != nil {
+			return nil, err
+		}
+		docs = append(docs, doc)
 	}
 	return docs, nil
 }

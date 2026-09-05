@@ -3,7 +3,7 @@
 `substratectl` is the command-line client: kubectl-shaped, speaking the
 [REST surface](api.md). Everything in a repository is a record of a declared
 kind, addressed as `{authority}/{package}/{kind}/{id}`, and the CLI mirrors that:
-kinds, get, apply, patch, delete, edit, watch. It lives in the
+kinds, get, apply, import, patch, delete, edit, watch. It lives in the
 same repository as the substrate (`cmd/substratectl`) and builds with Go.
 
 ```
@@ -107,7 +107,11 @@ output applies back unchanged.
   document with `metadata.id` is put at that id; without one it creates. Apply
   is `put`: it **merges and never prunes**; deletion is only ever the explicit
   `delete` verb. Vocabulary documents apply too ([vocabulary](vocabulary.md)): they ride
-  the batch vocabulary verb as one transaction.
+  the batch vocabulary verb as one transaction. `--as <authority>` rehomes the
+  input first: every mention of the one authority its declarations are
+  written under becomes the one named, which is `import` (below) run
+  client-side over files on disk. An input declaring under two authorities is
+  refused naming both.
 - `patch <kind> <id>` edits in place: `--state status=done` for
   [transitions](data-model.md#validation-and-state-machines) (apply cannot
   move a state), `--prop` for properties, `--label` for labels, and `-p` for a
@@ -141,6 +145,14 @@ and `wake` scans a trigger immediately. Trigger rows are ordinary records, so
 [function](functions.md) directly, applies its effects under the function's
 actor, and prints the output. There is no build step: a function is inline
 source on its manifest, so it installs with the ordinary `apply`.
+
+`substratectl import <sample>` takes one of the shipped
+[samples](bundles.md#the-catalog): the server rewrites the closure's
+placeholder authority to the one this repository owns and admits it there, so
+`import samples.substrate.reamde.dev/tasks` lands `<your authority>/tasks/task`
+which is your kind, writable, never offered an upgrade. It prints the id the sample
+landed under, which is not the one typed. A provider takes the other door and
+installs under the authority that publishes it.
 
 `substratectl bundle list` / `status` report a [bundle](bundles.md)'s computed
 state, and `disable` / `enable` / `uninstall` / `purge` move it through its

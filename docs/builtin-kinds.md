@@ -2,27 +2,35 @@
 
 Every repository is seeded at creation with **`substrate.reamde.dev/core` and nothing
 else** — the substrate's own machinery, including the delivery plumbing and the
-agent runtime's data. Everything else is a **vocabulary bundle you import**:
-people, tasks, messaging, calendar, and the mneme-ported health, fitness,
-routines, journal, places, food and commerce. Each ships in the binary and
-installs on request, exactly the way a [bundle](bundles.md) does, under the
-same `bundle:<authority>:<package>` actor. So a brand-new repository has no
-`person` kind until you ask for one.
+agent runtime's data. Everything else is a **sample you import**: people,
+tasks, messaging, calendar, and the mneme-ported health, fitness, routines,
+journal, places, food and commerce. Each ships in the binary under
+`samples.substrate.reamde.dev` and is a starting point, not a dependency
+([decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)):
+importing rewrites the closure onto **your own authority**, so
+`samples.substrate.reamde.dev/tasks/task` lands as `ada.example.com/tasks/task`
+and is yours to add a property to the next day. So a brand-new repository has
+no `person` kind until you ask for one, and the one it gets is its own.
 
-Importing is one action per bundle, and a bundle that maps onto another
-package says so in its `requires:` — installing `google` before `people`
-is refused, naming what to import first. Nothing installed ever redefines a
-shipped kind. Every declaration is queryable in your own repository
-(`substratectl kinds`, or `GET …/substrate.reamde.dev/core/kind`), descriptions included,
-so this page is the map, not the source of truth.
+Importing is one action per sample (`substratectl import <sample>`, or the
+console's Registry page), and a sample that declares onto another says so in
+its `requires:`. Importing `tasks` before `people` is refused, naming what to
+import first under your own authority. A sample is never offered an upgrade:
+what it landed belongs to you. Every declaration is queryable in your own
+repository (`substratectl kinds`, or `GET …/substrate.reamde.dev/core/kind`),
+descriptions included, so this page is the map, not the source of truth.
+
+The PROVIDER packages are the other tier, published rather than copied, and
+they are in the [bundles catalog](bundles-catalog.md).
 
 Kinds are named `<authority>/<package>/<name>`. The tables below give the
-name; the heading gives the authority and the package.
+name; the heading gives the package as the tree spells it, under the
+placeholder authority an import rewrites.
 
 The tables for core are [below](#substratereamdedevcore); what follows first is
 the vocabulary you import.
 
-## samples.substrate.reamde.dev/people — imported
+## samples.substrate.reamde.dev/people (a sample)
 
 | Kind           | What it is                                                                                                                              |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
@@ -37,7 +45,7 @@ once something promotes it (an address-book sync, or you). Search ranks
 an enum, and empty means unknown: a surface rendering a person without a
 value says so and falls back to they/them.
 
-## samples.substrate.reamde.dev/messaging — imported
+## samples.substrate.reamde.dev/messaging (a sample)
 
 | Kind                  | What it is                                                             |
 | --------------------- | ---------------------------------------------------------------------- |
@@ -46,7 +54,7 @@ value says so and falls back to they/them.
 | `emailthread`         | One mail thread.                                                       |
 | `emailmessage`        | One mail message in a thread.                                          |
 
-## samples.substrate.reamde.dev/calendar — imported
+## samples.substrate.reamde.dev/calendar (a sample)
 
 | Kind                  | What it is                                                              |
 | --------------------- | ----------------------------------------------------------------------- |
@@ -55,7 +63,7 @@ value says so and falls back to they/them.
 | `calendareventseries` | The recurring definition, RRULE and exceptions, never on the timeline.  |
 | `transcript`          | A meeting transcript, pointed at the occurrence that actually happened. |
 
-## samples.substrate.reamde.dev/tasks — imported
+## samples.substrate.reamde.dev/tasks (a sample)
 
 | Kind      | What it is                                                                  |
 | --------- | ---------------------------------------------------------------------------- |
@@ -68,7 +76,7 @@ kinds share one stance: a schedule stores an RFC 5545 RRULE the substrate
 never expands, an occurrence exists only when a log records it, and "missed"
 is computed from absence, never stored.
 
-## samples.substrate.reamde.dev/health — imported
+## samples.substrate.reamde.dev/health (a sample)
 
 | Kind                    | What it is                                                                    |
 | ----------------------- | ----------------------------------------------------------------------------- |
@@ -79,7 +87,7 @@ is computed from absence, never stored.
 | `medicationschedulelog` | One dose, done or skipped; absence in the logs is what missed means.          |
 | `bloodtest`             | One blood draw; markers worth tracking are observationlogs pointing at it.    |
 
-## samples.substrate.reamde.dev/fitness — imported
+## samples.substrate.reamde.dev/fitness (a sample)
 
 | Kind              | What it is                                                              |
 | ----------------- | ------------------------------------------------------------------------ |
@@ -89,34 +97,34 @@ is computed from absence, never stored.
 | `workouttemplate` | A reusable session plan built from the catalog.                          |
 | `workoutlog`      | The done-or-skipped mark against a recurring workout's occurrence.       |
 
-## samples.substrate.reamde.dev/routines — imported
+## samples.substrate.reamde.dev/routines (a sample)
 
 | Kind         | What it is                                                                  |
 | ------------ | ---------------------------------------------------------------------------- |
 | `routine`    | The generic recurring obligation, with a window for how literally its time-of-day is meant. |
 | `routinelog` | One occurrence, done or skipped.                                             |
 
-## samples.substrate.reamde.dev/journal — imported
+## samples.substrate.reamde.dev/journal (a sample)
 
 | Kind           | What it is                                                              |
 | -------------- | ------------------------------------------------------------------------ |
 | `journalentry` | One day's reflection; its timeline anchor is the day written about.      |
 | `note`         | Anything else written down; `audience` declares who it is for, `status` its handled lifecycle. |
 
-## samples.substrate.reamde.dev/places — imported
+## samples.substrate.reamde.dev/places (a sample)
 
 | Kind    | What it is                                                          |
 | ------- | -------------------------------------------------------------------- |
 | `place` | Somewhere worth remembering; what happened there points at it.       |
 
-## samples.substrate.reamde.dev/food — imported
+## samples.substrate.reamde.dev/food (a sample)
 
 | Kind     | What it is                                                            |
 | -------- | ---------------------------------------------------------------------- |
 | `recipe` | Instructions for one dish; cooking it is a meal pointing here.         |
 | `meal`   | One sitting on the timeline; nutrition numbers are observationlogs whose `derivedFrom` is the meal. |
 
-## samples.substrate.reamde.dev/commerce — imported
+## samples.substrate.reamde.dev/commerce (a sample)
 
 | Kind        | What it is                                                            |
 | ----------- | ---------------------------------------------------------------------- |

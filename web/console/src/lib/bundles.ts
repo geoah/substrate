@@ -1,29 +1,32 @@
 /** The Registry page's pure fold: it merges the two reads the page makes —
  * the imported bundles' runtime status and the shipped catalog closures — into
  * one id-keyed row set, plus the small domain helpers the registry list and the
- * bundle detail share (the Integrations facet filter and the provider-copy
- * gate). Kept out of the page component modules so the pages stay component-only
+ * bundle detail share (the two tier sections and the provider-copy gate).
+ * Kept out of the page component modules so the pages stay component-only
  * (react-refresh) and this stays unit-testable.
  *
- * Vocabulary: the surface listing them is the REGISTRY, the unit is an
- * EXTENSION, and adding one is an IMPORT (owner ruling); `bundle` stays the
- * schema/API term and `installed` stays the wire field the status carries. An
- * bundle that connects an external provider is an INTEGRATION — a catalog
- * FACET carried by the backend `integration` flag, never derived from OAuth or
- * account shape here. A bundle owns exactly one PACKAGE (decision 0047), and
- * its id IS that package identity. */
+ * Vocabulary: the surface listing them is the REGISTRY and `bundle` stays the
+ * schema/API term. The catalog has two TIERS (decision record 0048): a
+ * PROVIDER is INSTALLED under the authority that publishes it, a SAMPLE is
+ * IMPORTED under this repository's own authority and is the repository's to
+ * edit afterwards. The tier is the backend `tier` field, never derived from an
+ * authority's shape here. A bundle owns exactly one PACKAGE (decision 0047),
+ * and its id IS that package identity. */
 
 import type { BundleStatus, InputStatus, SetupItem } from "@/lib/api/bundles"
-import type { CatalogItem } from "@/lib/api/catalog"
+import { landedCatalog, landedId, type CatalogItem } from "@/lib/api/catalog"
 import { CORE_PACKAGE } from "@/lib/api/http"
-import type { BundleUpgrade, KindInfo } from "@/lib/api/types"
+import type { BundleUpgrade, CatalogTier, KindInfo } from "@/lib/api/types"
 import { kindByIdentity, kindPackage, splitKind } from "@/lib/definition"
 
-/** One bundle row: the installed status (when the lifecycle knows it) and
- * the catalog entry (when it is a shipped closure) folded by bundle id. The
- * `integration` facet comes from the catalog metadata (backend flag). */
+/** One bundle row: the installed status (when the lifecycle knows it) and the
+ * catalog entry (when it is a shipped closure) folded by the id the bundle
+ * has HERE. `tier` comes from the catalog (backend field). */
 export interface BundleRow {
-  /** The bundle's id — the package identity it owns. */
+  /** The bundle's id IN THIS REPOSITORY: the package identity it owns once
+   * it lands. A provider keeps its published id; an imported sample carries
+   * this repository's authority, so this is not always the catalog's id. The
+   * two doors are addressed by `catalog.id`. */
   id: string
   name: string
   authority: string
@@ -32,37 +35,54 @@ export interface BundleRow {
   status?: BundleStatus
   catalog?: CatalogItem
   installed: boolean
-  /** Catalog facet: this bundle connects an external provider. */
-  integration: boolean
-  /** Catalog facet: a worked example — installable, readable, safe to run on
-   * a fresh repository. */
-  example: boolean
-  /** The packages this closure declares against; the server refuses the
-   * import while one of them is missing (catalog.Bundle.requires). */
+  /** Which door this row takes. Absent on a bundle applied outside the
+   * shipped catalog: the tier is the catalog's to state, and guessing one
+   * from an authority's shape is the derivation the backend refuses to make. */
+  tier?: CatalogTier
+  /** The packages this closure declares against, named as they will be HERE:
+   * a sample's are rehomed onto this repository's authority, because that is
+   * what the server will look for. Admission refuses while one is missing
+   * (catalog.Bundle.requires). */
   requires: string[]
   /** The upgrade preview, present only when the shipped closure moved past
-   * what this repository stores (server-computed, catalog read). */
+   * what this repository stores (server-computed, catalog read). A sample is
+   * never offered one. */
   upgrade?: BundleUpgrade
 }
 
-/** Fold the two reads into one id-keyed row set: imported bundles carry their
- * runtime status, not-yet-imported closures carry their catalog entry, and a
- * bundle in both carries both (status wins the count columns). */
+/** Fold the two reads into one row set, keyed by the id each bundle has here:
+ * bundles this repository holds carry their runtime status, closures it has
+ * not taken yet carry their catalog entry, and one in both carries both
+ * (status wins the count columns). `home` is this repository's own authority,
+ * which is where a sample lands. Without it an imported sample would never
+ * meet its catalog entry. */
 export function mergeBundles(
   statuses: BundleStatus[],
-  catalog: CatalogItem[]
+  catalog: CatalogItem[],
+  home = ""
 ): BundleRow[] {
   const byId = new Map<string, BundleRow>()
-  for (const item of catalog) {
-    byId.set(item.id, {
-      id: item.id,
+  // A sample can be here under EITHER id: the import lands the rehomed one,
+  // and installing it verbatim (still a door until the providers stop
+  // requiring sample packages) lands the shipped one. The row takes whichever
+  // this repository actually holds, so a verbatim install folds onto its own
+  // catalog entry instead of showing up twice.
+  const held = new Set(statuses.map((s) => s.id))
+  for (const raw of catalog) {
+    const landed = landedId(raw, home)
+    const id = !held.has(landed) && held.has(raw.id) ? raw.id : landed
+    // The entry is REHOMED only when the row is: a closure the repository
+    // holds verbatim has its kinds under the authority the tree spells, and
+    // previewing them rehomed would link nowhere.
+    const item = id === raw.id ? raw : landedCatalog(raw, home)
+    byId.set(id, {
+      id,
       name: item.name,
       authority: item.authority,
       package: item.package,
       catalog: item,
       installed: item.installed,
-      integration: Boolean(item.integration),
-      example: Boolean(item.example),
+      tier: item.tier,
       requires: item.requires ?? [],
       upgrade: item.upgrade,
     })
@@ -77,43 +97,32 @@ export function mergeBundles(
       status,
       catalog: existing?.catalog,
       installed: status.installed,
-      // The closure facets are the CATALOG's to state; a bundle applied
-      // outside the shipped registry carries neither, and guessing one from
-      // its package's shape would be the derivation the backend refuses to
-      // make.
-      integration: existing?.integration ?? false,
-      example: existing?.example ?? false,
+      tier: existing?.tier,
       requires: existing?.requires ?? [],
       upgrade: existing?.upgrade,
     })
   }
-  // Not-imported first (they invite an action), then imported; alpha in each.
+  // Not taken first (they invite an action), then held; alpha in each.
   return [...byId.values()].sort(
     (a, b) =>
       Number(a.installed) - Number(b.installed) || a.id.localeCompare(b.id)
   )
 }
 
-/** The catalog-list facet, orthogonal to whether a row is imported: `all` shows
- * every bundle, `integrations` narrows to provider integrations, `examples` to
- * the worked demonstrations — which is where a substrate with no llmprovider
- * row of its own is pointed — and `upgrades` to the imported bundles whose
- * shipped closure moved past what is stored (the sidebar badge's set). */
-export type BundleFacet = "all" | "integrations" | "examples" | "upgrades"
+/** The Registry's sections: the published packages, the copyable ones, and
+ * anything applied outside the shipped catalog, which has no tier to sit
+ * under and so is listed on its own rather than guessed into one. */
+export interface BundleSections {
+  providers: BundleRow[]
+  samples: BundleRow[]
+  applied: BundleRow[]
+}
 
-export function filterBundles(
-  rows: BundleRow[],
-  facet: BundleFacet
-): BundleRow[] {
-  switch (facet) {
-    case "integrations":
-      return rows.filter((r) => r.integration)
-    case "examples":
-      return rows.filter((r) => r.example)
-    case "upgrades":
-      return rows.filter((r) => upgradeAvailable(r))
-    default:
-      return rows
+export function bundleSections(rows: BundleRow[]): BundleSections {
+  return {
+    providers: rows.filter((r) => r.tier === "provider"),
+    samples: rows.filter((r) => r.tier === "sample"),
+    applied: rows.filter((r) => !r.tier),
   }
 }
 
