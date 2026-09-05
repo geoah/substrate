@@ -42,17 +42,18 @@ registration leaves no row to expire and nothing to sweep:
 POST /register
 {"inviteCode": "…", "username": "ada", "password": "…",
  "totpSecret": "JBSWY3DPEHPK3PXP", "totpCode": "123456", "label": "laptop",
- "authority": "ada.substrate.example"}
+ "authority": "ada.example.com"}
 
 → 201 {"token": {…}, "secret": "substrate_tok_…",
-       "authority": "ada.substrate.example",
+       "authority": "ada.example.com",
        "recoveryKey": "AGE-SECRET-KEY-1…", "recoveryPublicKey": "age1…",
        "signingPublicKey": "…"}
 ```
 
-`authority` is the DNS-style name the repository owns: the home of every kind
-its user declares, and what a sample import rewrites a copied closure onto.
-Omitted, it defaults to the username under the host the request reached
+`authority` is the hostname the repository owns, any DNS name its user
+controls (`ada.example.com`, `geoah.me`): the home of every kind they
+declare, and what a sample import rewrites a copied closure onto. Omitted,
+it defaults to the username under the host the request reached
 (`ada.substrate.example` for a request to `substrate.example`), and the
 response says what it got. It is lowercase DNS labels with at least one dot,
 within the DNS length limits, never under `substrate.reamde.dev` (where the

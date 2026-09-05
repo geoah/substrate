@@ -2685,7 +2685,7 @@ data:
 // length limits, and the default is the username under the request host with
 // the port gone (decision record 0046).
 func TestRepositoryAuthorityGrammar(t *testing.T) {
-	for _, ok := range []string{"ada.example.com", "ada.localhost", "a.b", "ada.127.0.0.1", "kv-t3.tail83e66.ts.net"} {
+	for _, ok := range []string{"ada.example.com", "geoah.me", "ada.localhost", "a.b", "ada.127.0.0.1", "kv-t3.tail83e66.ts.net"} {
 		if !vocabulary.ValidRepositoryAuthority(ok) {
 			t.Errorf("vocabulary.ValidRepositoryAuthority(%q) = false", ok)
 		}

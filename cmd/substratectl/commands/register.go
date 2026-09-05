@@ -54,8 +54,8 @@ A substrate that verifies no second factor (SUBSTRATE_INSECURE_DISABLE_TOTP, a
 local-development setting) is neither enrolled with nor asked for a code: a
 username and a password make the user.
 
-The repository owns one AUTHORITY, a DNS-style name that is the home of every
-kind you declare (ada.substrate.example). --authority chooses it; omitted, the
+The repository owns one AUTHORITY: any hostname you control (ada.example.com),
+the home of every kind you declare. --authority chooses it; omitted, the
 substrate names it <username>.<its own host>. It is permanent.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -191,7 +191,7 @@ substrate names it <username>.<its own host>. It is permanent.`,
 	f.StringVar(&server, "server", "", "substrate base URL")
 	f.StringVar(&invite, "invite-code", "", "invite code (prompted for when omitted)")
 	f.StringVar(&username, "username", "", "username to claim (prompted for when omitted)")
-	f.StringVar(&authority, "authority", "", "DNS-style authority the repository owns (default: <username>.<the substrate's host>)")
+	f.StringVar(&authority, "authority", "", "hostname the repository owns, e.g. ada.example.com (default: <username>.<the substrate's host>)")
 	f.StringVar(&secret, "totp-secret", "", "base32 TOTP seed to enroll (default: ask the substrate for one)")
 	f.StringVar(&code, "totp-code", "", "6-digit code from the new enrollment (prompted for when omitted)")
 	f.StringVar(&label, "label", "", "label for the first token (default: substratectl@<hostname>)")

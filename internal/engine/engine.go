@@ -839,9 +839,9 @@ func (s *service) createSeededRepository(ctx context.Context, name, authority st
 func validRepositoryAuthority(authority string) error {
 	switch {
 	case authority == "":
-		return fmt.Errorf("%w: a repository needs an authority: a DNS-style name such as ada.substrate.example", substrate.ErrValidation)
+		return fmt.Errorf("%w: a repository needs an authority: a hostname you control, such as ada.example.com", substrate.ErrValidation)
 	case !vocabulary.ValidRepositoryAuthority(authority):
-		return fmt.Errorf("%w: authority %q must be a lowercase DNS-style name with at least two labels (ada.substrate.example)", substrate.ErrValidation, authority)
+		return fmt.Errorf("%w: authority %q must be a lowercase DNS-style name with at least two labels (ada.example.com)", substrate.ErrValidation, authority)
 	case authority == publisherAuthority || strings.HasSuffix(authority, "."+publisherAuthority):
 		return fmt.Errorf("%w: authority %q is under %s, where the shipped vocabulary publishes; a repository's authority is its own name", substrate.ErrValidation, authority, publisherAuthority)
 	}
