@@ -215,10 +215,12 @@ func CoreKind(name string) string { return PackageCore + "/" + name }
 // GraphQLName is the GraphQL object name a kind resolves to WITHOUT
 // disambiguation, and the ONE place that base rule lives:
 //
-//   - a SHIPPED kind keeps its bare singular —
-//     "substrate.reamde.dev/core/token" -> Token;
-//   - an INSTALLED kind is PACKAGE-prefixed —
-//     "samples.substrate.reamde.dev/tasks/task" -> Tasks_Task.
+//   - a SHIPPED kind — the seed's, `source: builtin` — keeps its bare singular
+//     — "substrate.reamde.dev/core/token" -> Token;
+//   - every other kind is PACKAGE-prefixed —
+//     "samples.substrate.reamde.dev/tasks/task" -> Tasks_Task. That is both an
+//     installed kind and a published one: a provider's declarations are a copy
+//     the repository holds, so they are named like one.
 //
 // The underscore keeps installed names in a namespace disjoint from the
 // shipped ones, so a bundle can never rename a shipped kind's GraphQL name by
@@ -233,7 +235,7 @@ func GraphQLName(ref, source string) string {
 	if base == "" {
 		return ""
 	}
-	if source != SourceInstalled {
+	if source == SourceBuiltin {
 		return base
 	}
 	return titleCase(sanitizeName(pkg)) + "_" + base
@@ -266,7 +268,7 @@ type GraphQLKind struct {
 func GraphQLNames(kinds []GraphQLKind) map[string]string {
 	authoritiesOf := map[string]map[string]bool{}
 	for _, k := range kinds {
-		if k.Source != SourceInstalled {
+		if k.Source == SourceBuiltin {
 			continue
 		}
 		authority, pkg, _ := SplitKindRef(k.Identity)
@@ -285,7 +287,7 @@ func GraphQLNames(kinds []GraphQLKind) map[string]string {
 			continue
 		}
 		authority, pkg, _ := SplitKindRef(k.Identity)
-		if k.Source == SourceInstalled && len(authoritiesOf[pkg]) > 1 {
+		if k.Source != SourceBuiltin && len(authoritiesOf[pkg]) > 1 {
 			name = titleCase(sanitizeName(strings.ReplaceAll(authority, ".", "_"))) + "_" + name
 		}
 		out[k.Identity] = name

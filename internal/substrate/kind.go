@@ -19,7 +19,10 @@ type KindInfo struct {
 	// still resolves a typed plural client-side, so a legacy payload that
 	// carries one keeps decoding.
 	Plural string `json:"plural"`
-	Source string `json:"source"` // "builtin" | "installed"
+	// Source is where the declaration came from: "builtin" (the seed),
+	// "published" (a provider install, whose declarations only a substrate path
+	// writes) or "installed" (the repository's own).
+	Source string `json:"source"`
 	// Description is what the kind is for, as its declaration says it: the
 	// line a reader gets above the collection, empty when undeclared.
 	Description string `json:"description"`

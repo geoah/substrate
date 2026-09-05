@@ -97,6 +97,11 @@ type vocabularyBatch struct {
 	deletes         []vocabulary.Document
 	replacePackages []string
 	meta            map[string]vocabularyDocMeta // keyed by docKey
+	// published marks a PROVIDER install (catalog Install, decision record
+	// 0048): every package the batch touches lands `source: published`, which
+	// promotes one a previous install left `installed`. Nothing else sets it,
+	// so a hand `apply -f` of the same closure stays the repository's own.
+	published bool
 	// beforeGuards runs INSIDE the batch transaction, right after the
 	// registry-dependency lock and BEFORE the refuse-breakage guards: a bundle
 	// uninstall tears its delivery wiring (triggers referencing the owned
@@ -172,7 +177,7 @@ func (ds *dataset) ApplyVocabularyDocuments(ctx context.Context, actor substrate
 // callables resolve against the CANDIDATE registry, so a trigger may name a
 // function the same closure installs — the same seam RegisterConnector's
 // default triggers ride (dataset.go).
-func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Actor, vocabularyDocs []map[string]any, dataDocs []substrate.PutInput) ([]*substrate.Record, error) {
+func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Actor, vocabularyDocs []map[string]any, dataDocs []substrate.PutInput, opts substrate.BundleInstall) ([]*substrate.Record, error) {
 	if len(vocabularyDocs) == 0 {
 		return nil, fmt.Errorf("%w: no schema documents", substrate.ErrValidation)
 	}
@@ -181,7 +186,8 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 		return nil, err
 	}
 	written, err := ds.applyVocabularyBatch(ctx, actor, vocabularyBatch{
-		docs: docs,
+		docs:      docs,
+		published: opts.Published,
 		extra: func(t *txn, candidate *vocabulary.Registry) error {
 			for _, in := range dataDocs {
 				// A trigger's callable is validated against the CANDIDATE here:
@@ -511,9 +517,23 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		// authority row and refuse core's own host functions the moment any batch
 		// touched core. A package nobody has yet is the writer's, hence
 		// installed.
+		//
+		// A PROVIDER install is the one thing that moves the origin: the batch
+		// says `published` and every package it touches lands there, which is
+		// how a repository holding the provider as `installed` is promoted by
+		// its next install. `builtin` still wins, so a provider closure naming
+		// core cannot demote the seed.
 		source := vocabulary.SourceInstalled
-		if cur, ok := current.PackageByName(aname); ok && cur.Source == vocabulary.SourceBuiltin {
-			source = vocabulary.SourceBuiltin
+		if b.published {
+			source = vocabulary.SourcePublished
+		}
+		if cur, ok := current.PackageByName(aname); ok {
+			switch cur.Source {
+			case vocabulary.SourceBuiltin:
+				source = vocabulary.SourceBuiltin
+			case vocabulary.SourcePublished:
+				source = vocabulary.SourcePublished
+			}
 		}
 		gs, err := vocabulary.BuildPackages(byPackage[aname], source)
 		if err != nil {
@@ -1630,9 +1650,9 @@ func (ds *dataset) clearGroupQuarantine(ctx context.Context, authorities []*voca
 // storedPackages rebuilds every package the repository stores FROM its schema
 // record rows, skipping the identities the caller already accounts for. Each
 // package keeps the `source` its own row records: `builtin` for what the
-// creation seed (or a shipped upgrade) wrote, `installed` for everything a user
-// or a bundle declared, so ownership reads the same answer at open as it did at
-// the write. It parses and returns the packages without installing them
+// creation seed (or a shipped upgrade) wrote, `published` for a provider the
+// catalog installed, `installed` for everything else a user or a bundle
+// declared, so ownership reads the same answer at open as it did at the write. It parses and returns the packages without installing them
 // anywhere, alongside the ones that no longer parse under this binary, which
 // are the quarantine candidates for the caller to mark.
 func (ds *dataset) storedPackages(ctx context.Context, skip func(string) bool) ([]*vocabulary.Package, []quarantinedPackage, error) {
@@ -1654,7 +1674,10 @@ func (ds *dataset) storedPackages(ctx context.Context, skip func(string) bool) (
 		if skip != nil && skip(name) {
 			continue
 		}
-		if source != vocabulary.SourceBuiltin {
+		// A row spelling an origin this binary does not know reads as the
+		// weakest one: an unknown word must never be taken for ownership the
+		// repository's own token cannot write past.
+		if source != vocabulary.SourceBuiltin && source != vocabulary.SourcePublished {
 			source = vocabulary.SourceInstalled
 		}
 		if bySource[source] == nil {
@@ -1679,7 +1702,7 @@ func (ds *dataset) storedPackages(ctx context.Context, skip func(string) bool) (
 	// own row claims, and the rebuilt types carry it (`Type.Source`).
 	var built []*vocabulary.Package
 	var unparsed []quarantinedPackage
-	for _, source := range []string{vocabulary.SourceBuiltin, vocabulary.SourceInstalled} {
+	for _, source := range []string{vocabulary.SourceBuiltin, vocabulary.SourcePublished, vocabulary.SourceInstalled} {
 		names := bySource[source]
 		if len(names) == 0 {
 			continue

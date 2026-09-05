@@ -19,7 +19,8 @@ whole model; this page goes deeper on the same ground.
 `substrate.reamde.dev/core/trait` is a kind like any other, so every declared
 trait is a record in your repository: it lists, it GETs, it carries a
 `version` the engine maintains and a `source` that says whether it was seeded
-(`builtin`) or arrived with a bundle (`installed`). Its identity is
+(`builtin`), arrived with a provider (`published`) or with anything else a
+repository installed (`installed`). Its identity is
 `{authority}/{package}/{name}`, and traits resolve **across packages**: a kind
 binds core's `temporal` without redeclaring it, by bare name while that name is
 unique and by full identity always.

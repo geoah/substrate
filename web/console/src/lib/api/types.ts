@@ -372,8 +372,9 @@ export interface KindInfo {
   version: number
   /** The collection segment. */
   plural: string
-  /** `builtin` for vocabulary the substrate ships, `installed` for kinds a
-   * bundle declared, `schema` for repository-declared ones. */
+  /** `builtin` for the seeded vocabulary, `published` for a provider's kinds
+   * (only an install or an upgrade writes those declarations), `installed` for
+   * everything the repository declared or imported. */
   source: string
   /** What the kind is for, as its declaration says it — a sentence or two,
    * read above the collection. Empty when the declaration carries none. */

@@ -50,21 +50,31 @@ import (
 //     name. A generic API write into one is refused here; those actors cannot
 //     be claimed by a request (substrate.ReservedActor, checked on the
 //     X-Substrate-Actor header), so "substrate path" means what it says.
-//   - Everything else — the repository's own kinds, and the packages it
-//     installed — belongs to the repository's user, who may write it.
+//   - A PUBLISHED package — a provider the catalog installed, `source:
+//     published` — is refused on the same terms (decision record 0048). Its
+//     publisher ships its declarations and the migrations that follow them, and
+//     a mirror kind edited under the sync that writes it breaks the next sync.
+//     The DATA records of its kinds are untouched by this: they are the
+//     repository's, written under the ordinary bundle-tier rules.
+//   - Everything else — the repository's own kinds, and the sample packages it
+//     imported — belongs to the repository's user, who may write it.
 //
 // It takes the PACKAGE identity and the registry that currently holds it, so a
 // package nobody has yet (a first declaration) is the user's to create.
 func authorizeDeclarationWrite(actor substrate.Actor, current *vocabulary.Registry, pkg string) error {
 	cur, ok := current.PackageByName(pkg)
-	if !ok || cur.Source != vocabulary.SourceBuiltin {
+	if !ok || isSubstratePath(actor) {
 		return nil
 	}
-	if isSubstratePath(actor) {
-		return nil
+	switch cur.Source {
+	case vocabulary.SourceBuiltin:
+		return fmt.Errorf("%w: %s is shipped vocabulary — it changes with the substrate (seed, upgrade, install), not through the API",
+			substrate.ErrForbidden, pkg)
+	case vocabulary.SourcePublished:
+		return fmt.Errorf("%w: %s is a published package — its publisher ships its declarations, so an install or an upgrade changes them, not the API",
+			substrate.ErrForbidden, pkg)
 	}
-	return fmt.Errorf("%w: %s is shipped vocabulary — it changes with the substrate (seed, upgrade, install), not through the API",
-		substrate.ErrForbidden, pkg)
+	return nil
 }
 
 // authorizeNewPackage guards the OTHER half of the chokepoint: a package the

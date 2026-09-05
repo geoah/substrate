@@ -105,7 +105,11 @@ data:
   # and the host function cards describe the list filter, the put input and
   # the mutation roots without the retired link verbs. The pinned kinds bump
   # their own.
-  version: 15
+  # version 16: a provider package is published. The stored `source` enum gains
+  # `published` on every declaration kind that carries it (decision record
+  # 0048); `actor` pins no version of its own and takes this one, while the
+  # other six bump theirs.
+  version: 16
 ---
 # The substrate's own actors: the doors a human write comes through, and the
 # engine's own hand. Attribution, not authorization (§3). The machine hands

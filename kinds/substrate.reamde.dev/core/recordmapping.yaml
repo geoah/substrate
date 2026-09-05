@@ -24,7 +24,9 @@ data:
   # version 8: the mapping names its subject with `property`. The subject is a
   # `subject: true` reference on the source kind, so what the mapping names is
   # a property.
-  version: 8
+  # version 9: `source` gains `published`, the origin a provider install
+  # writes (decision record 0048).
+  version: 9
   names:
     singular: recordmapping
   # id = "<authority>/<package>/<name>". A mapping is package-local like a
@@ -41,9 +43,11 @@ data:
       type: enum
       values:
         - builtin
+        - published
         - installed
       managed: true
-      description: builtin for seeded mappings, installed for bundle ones
+      description: builtin for seeded mappings, published for a provider's,
+        installed for bundle ones
     # NOT a reference, and the reason is identity: an authority is what this
     # declaration IS part of, not a record it points at. Pinning it made the
     # stored row spell it as a path while the manifest spelled the name, so one

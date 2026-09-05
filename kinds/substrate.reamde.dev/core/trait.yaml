@@ -21,7 +21,9 @@ data:
   # not declarable, so the map form went with the blob.
   # version 6: the declaration's own `version` became an incremental
   # integer, maintained by the engine.
-  version: 7
+  # version 8: `source` gains `published`, the origin a provider install
+  # writes (decision record 0048).
+  version: 8
   names:
     singular: trait
   # id = "<authority>/<package>/<name>". Traits resolve across authorities, so
@@ -37,9 +39,11 @@ data:
       type: enum
       values:
         - builtin
+        - published
         - installed
       managed: true
-      description: builtin for seeded traits, installed for bundle ones
+      description: builtin for seeded traits, published for a provider's,
+        installed for bundle ones
     # NOT a reference, and the reason is identity: an authority is what this
     # declaration IS part of, not a record it points at. Pinning it made the
     # stored row spell it as a path while the manifest spelled the name, so one

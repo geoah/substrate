@@ -686,3 +686,99 @@ func TestDeclarationAuthority(t *testing.T) {
 		t.Fatalf("a closure under a publisher SUBDOMAIN must still apply: %v", err)
 	}
 }
+
+// The same chokepoint on a PUBLISHED package (decision record 0048): a
+// provider's declarations are its publisher's, so the install verb writes them
+// and the repository's own token is refused — while the records of its kinds
+// stay the repository's to write.
+func TestAPublishedPackageRefusesATokenDeclarationWrite(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newCoreDataset(t)
+	inst, ok := ds.(substrate.BundleInstaller)
+	if !ok {
+		t.Fatal("dataset does not implement the closure-install seam")
+	}
+	const pkg = "acme.example.com/mirror"
+	actor := substrate.BundleActor(vocabulary.SplitPackageRef(pkg))
+	widget := func(props map[string]any) map[string]any {
+		return vocabulary.KindManifest(pkg, map[string]any{"singular": "widget"},
+			map[string]any{"properties": props})
+	}
+	closure := func(members ...map[string]any) []map[string]any {
+		installs := make([]any, 0, len(members))
+		for _, m := range members {
+			meta, _ := m["metadata"].(map[string]any)
+			installs = append(installs, meta["id"])
+		}
+		return append([]map[string]any{
+			vocabulary.PackageManifest(pkg, 0),
+			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
+			vocabulary.BundleManifest(pkg, map[string]any{
+				"description": "a provider's mirror kinds", "installs": installs,
+			}),
+		}, members...)
+	}
+	shipped := map[string]any{"name": map[string]any{"type": "string"}}
+
+	// The provider install: the tier is what writes the origin, and it lands on
+	// the package row and the kind alike.
+	if _, err := inst.InstallBundleClosure(ctx, actor, closure(widget(shipped)), nil,
+		substrate.BundleInstall{Published: true}); err != nil {
+		t.Fatalf("install a provider closure: %v", err)
+	}
+	for _, id := range []string{pkg, pkg + "/widget"} {
+		kind := "substrate.reamde.dev/core/package"
+		if strings.Contains(id, "/widget") {
+			kind = "substrate.reamde.dev/core/kind"
+		}
+		rec := mustGet(t, ds, kind, id)
+		if got, _ := rec.Properties["source"].(string); got != vocabulary.SourcePublished {
+			t.Fatalf("%s source = %q, want %q", id, got, vocabulary.SourcePublished)
+		}
+	}
+
+	// Every actor a request can name is refused, and the declaration does not
+	// move: this is the `builtin` refusal, on a package the repository asked
+	// for.
+	edit := closure(widget(map[string]any{
+		"name": map[string]any{"type": "string"},
+		"mine": map[string]any{"type": "string"},
+	}))
+	for _, a := range []substrate.Actor{owner, substrate.ActorConsole, substrate.ActorCLI} {
+		_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, a, edit)
+		wantErr(t, err, substrate.ErrForbidden, "actor "+string(a)+" writes a published declaration")
+		if !strings.Contains(err.Error(), pkg) {
+			t.Fatalf("the refusal does not name the package: %v", err)
+		}
+	}
+	if _, added := declaredProps(t, ds, pkg+"/widget")["mine"]; added {
+		t.Fatal("a refused declaration write landed its property")
+	}
+
+	// The records of that kind are not the publisher's: the same token writes
+	// one.
+	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: pkg + "/widget", ID: "mine", Properties: map[string]any{"name": "ok"},
+	}); err != nil {
+		t.Fatalf("a record of a published kind must stay writable: %v", err)
+	}
+
+	// And the publisher's own path still upgrades it — the install verb is what
+	// changes a published declaration.
+	if _, err := inst.InstallBundleClosure(ctx, actor, edit, nil,
+		substrate.BundleInstall{Published: true}); err != nil {
+		t.Fatalf("upgrade a published closure: %v", err)
+	}
+	if _, added := declaredProps(t, ds, pkg+"/widget")["mine"]; !added {
+		t.Fatal("the upgrade did not land the publisher's new property")
+	}
+}
+
+// declaredProps reads a kind declaration's stored `properties` map.
+func declaredProps(t *testing.T, ds substrate.Dataset, ref string) map[string]any {
+	t.Helper()
+	rec := mustGet(t, ds, "substrate.reamde.dev/core/kind", ref)
+	props, _ := rec.Properties["properties"].(map[string]any)
+	return props
+}

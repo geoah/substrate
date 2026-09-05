@@ -109,6 +109,20 @@ ceremony; [vocabulary evolution](vocabulary.md#vocabulary-evolution-and-the-dial
 is the full contract a bundle author designs against. Accounts, triggers,
 and cursors persist by reference across upgrades.
 
+A **provider** is a bundle whose package a publisher owns: `google`, `github`,
+`linear`, `notion`, `whoop` and `beeper`, all published under
+`providers.substrate.reamde.dev`. Installing one from the catalog writes
+`source: published` on its package, and from then on only an install or an
+upgrade writes its declarations: a `POST …/vocabulary/apply` naming that
+package is `403` for every token, because a mirror kind edited under the sync
+that writes it breaks the next sync. Nothing else about the bundle changes.
+Its records are the repository's to write, delete and purge, disable and
+enable and uninstall work as they do on any bundle, and the upgrade offer is
+the same preview and the same button
+([decision 0048](decisions/0048-providers-are-published-samples-are-copied.md)).
+Applying the same closure by hand from the shipped files lands `installed`
+instead, and stays editable.
+
 The upgrade has a read-only **preview** beside it: the catalog compares the
 shipped closure's declaration versions against the stored ones (the same diff
 the boot upgrade runs for core, engine `PlanBundleUpgrade`) and attaches the

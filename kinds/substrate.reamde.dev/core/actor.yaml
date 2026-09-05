@@ -45,10 +45,11 @@ data:
       type: enum
       values:
         - builtin
+        - published
         - installed
       managed: true
-      description: builtin for shipped packages, installed for the ones a
-        bundle install brought
+      description: builtin for shipped packages, published for a provider's,
+        installed for the ones a bundle install brought
     # the actor's manager tier — an explicit attribute of the declaration
     # (ticket 002), never derived from the actor's spelling. Package-declared
     # actors are the sync machinery, so machine is the default.

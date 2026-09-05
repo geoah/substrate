@@ -23,7 +23,9 @@ data:
   # declaration's links live in `properties` with everything else and the
   # loader validates them there. The separate block they used to live in is
   # gone, with the keys only it took.
-  version: 14
+  # version 15: `source` gains `published`, the origin a provider install
+  # writes (decision record 0048).
+  version: 15
   names:
     singular: kind
   # the declarations this repository holds; id is the kind REFERENCE
@@ -49,9 +51,11 @@ data:
       type: enum
       values:
         - builtin
+        - published
         - installed
       managed: true
-      description: builtin for seeded kinds, installed for bundle ones
+      description: builtin for seeded kinds, published for a provider's, installed
+        for bundle ones
     # NOT a reference, and the reason is identity: an authority is what this
     # declaration IS part of, not a record it points at. Pinning it made the
     # stored row spell it as a path while the manifest spelled the name, so one

@@ -14,10 +14,20 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// SourceBuiltin marks authorities that came from a shipped schema file;
-// SourceInstalled marks connector manifests.
+// Where a package's declarations came from, which is what decides who may
+// write them (engine authorizeDeclarationWrite):
+//
+//   - SourceBuiltin is the seed: the core package the binary writes into a new
+//     repository's changelog, and the boot upgrade that carries it forward;
+//   - SourcePublished is a PROVIDER package, installed from the catalog's
+//     provider tier. Its publisher ships its declarations and its migrations,
+//     so only a substrate path writes them (decision record 0048);
+//   - SourceInstalled is everything else: the kinds the repository declares
+//     itself and the sample packages it imported, all of them its own to
+//     change.
 const (
 	SourceBuiltin   = "builtin"
+	SourcePublished = "published"
 	SourceInstalled = "installed"
 )
 
