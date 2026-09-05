@@ -239,8 +239,8 @@ describe("Registry suggested mappings", () => {
     })
     renderPage(<RegistryPage />)
     const detail = expand(await rowOf("people"))
-    const landed = within(detail).getByTitle(
-      new RegExp(`github/user projects onto ${HOME}/people/person: landed\\.`)
+    const landed = within(detail).getByTitle((title) =>
+      title.includes(`github/user projects onto ${HOME}/people/person: landed.`)
     )
     expect(landed.textContent).toContain("user → person")
     expect(landed.textContent).toContain("landed")
