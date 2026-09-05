@@ -191,3 +191,5 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0044](0044-a-reference-is-the-only-link-between-records.md) | A reference is the only link between records; `data.edges` is removed | accepted |
 | [0045](0045-a-webhook-trigger-is-a-public-endpoint-with-an-optional-key.md) | A webhook trigger is a public endpoint with an optional key | accepted |
 | [0046](0046-a-repository-owns-one-authority-chosen-at-registration.md) | A repository owns one authority, chosen at registration and defaulting to the server's host | accepted |
+| [0048](0048-providers-are-published-samples-are-copied.md) | Providers are published packages; samples are copied and owned | accepted |
+| [0049](0049-the-owner-of-a-mappings-target-declares-it.md) | The owner of a mapping's target declares it and pins the subject | accepted |

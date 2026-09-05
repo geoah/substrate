@@ -7,7 +7,7 @@ It is a plan, not a contract: the code that lands is the contract.
 
 ## The problem
 
-The catalog (`kinds/`, served through `GET …/catalog`) holds 24 closures in
+The catalog (`kinds/`, served through `GET …/catalog`) holds 23 closures in
 one tier. Every one installs the same way, lands with `source: installed`,
 and is then writable by the repository's token through `/vocabulary/apply`
 (`authorizeDeclarationWrite`, `internal/engine/seed.go`, protects only the
@@ -64,9 +64,11 @@ can say where a Linear issue projects. Under this plan the user declares
 `linear.bundles.substrate.reamde.dev/issue → <mine>/task` themselves. The provider's
 part is to leave the door open: a mirror kind declares its subject
 reference (`subject: true`) with the target UNPINNED, so the mapping the user
-writes is what pins it. The projection engine (match, shell mint, recompute
-with the owner tier winning) is unchanged; only who may declare the mapping
-moves.
+writes is what pins it. The projection ALGORITHM is unchanged (match, shell
+mint, recompute where a write above the machine tier survives), but the engine
+is not: `Registry.MappingFor` answers with the one mapping of a source kind and
+six call sites read it that way, so they move to a (source kind, subject
+property) key with the rule.
 
 The word **bundle** stays for the mechanism. Both a provider install and a
 sample import land as a `core.substrate.reamde.dev/bundle` record with the
@@ -116,17 +118,27 @@ out:
 
 1. **The catalog has two tiers.** A provider is published and its
    declarations are immutable to the repository token; a sample is copied
-   under the repository's authority and owned by it. Supersedes the `example`
-   facet half of 0015 (a sample is what "outside the stable set" always
-   meant) and the `integration` facet.
+   under the repository's authority and owned by it. Amends 0015, whose
+   `example` facet is what a sample means; the `integration` facet goes with
+   it.
 2. **A mapping is declared by whoever owns its target, and a mirror's
    subject reference is unpinned.** Amends the §6.1 ownership rule in
-   `mapping.go`. Keeps one mapping per (source kind, subject property) and
-   the bipartite rule.
+   `mapping.go`. Today's key is one mapping per source kind; the record
+   changes it to one per (source kind, subject property) and keeps the
+   bipartite rule.
 3. **A repository owns one authority, chosen at registration.** Landed as
    [0046](../decisions/0046-a-repository-owns-one-authority-chosen-at-registration.md):
    `POST /register` takes `authority`, defaulting to `<username>.<request
    host>`, stored on the control-plane row and the repository record.
+
+Records 1 and 2 landed as
+[0048](../decisions/0048-providers-are-published-samples-are-copied.md) and
+[0049](../decisions/0049-the-owner-of-a-mappings-target-declares-it.md), both
+written against the package grammar of record 0047: a sample imports as
+`<repository authority>/<package>/<kind>`, so the kind-name collision worry
+under "What moves where" is gone. Everything above and below this note is
+still written in the pre-0047 two-segment grammar (`<authority>/<kind>`), and
+the phases are read against it.
 
 ### 1. The tree and the catalog (mechanical, no behavior change at the door)
 
