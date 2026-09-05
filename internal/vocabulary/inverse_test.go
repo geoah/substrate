@@ -17,25 +17,35 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// inverseFixture builds a one-authority tree: a `thing`, and a `pointer` whose
-// references are declared by the caller.
+// inverseFixture builds a one-package tree: a `thing`, and a `pointer` whose
+// references are declared by the caller. The package takes the authority's
+// first label, so the fixture names one package per authority.
 func inverseFixture(authority, pointerBody string) string {
-	return `kind: core.substrate.reamde.dev/authority
-metadata: {id: ` + authority + `}
-data: {version: 1}
+	pkg := packageOf(authority)
+	return `kind: substrate.reamde.dev/core/package
+metadata: {id: ` + authority + `/` + pkg + `}
+data: {authority: ` + authority + `, package: ` + pkg + `, version: 1}
 ---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: ` + authority + `/thing}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: ` + authority + `/` + pkg + `/thing}
 data:
   authority: ` + authority + `
+  package: ` + pkg + `
   names: {singular: thing, plural: things}
 ---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: ` + authority + `/pointer}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: ` + authority + `/` + pkg + `/pointer}
 data:
   authority: ` + authority + `
+  package: ` + pkg + `
   names: {singular: pointer, plural: pointers}
 ` + pointerBody
+}
+
+// packageOf is the package a fixture authority publishes: its first label.
+func packageOf(authority string) string {
+	label, _, _ := strings.Cut(authority, ".")
+	return label
 }
 
 // loadInverse loads a fixture and RETURNS the error, which is the point in
@@ -61,7 +71,7 @@ func TestInverseIsCarriedByAReference(t *testing.T) {
       kind: thing
       inverse: seenBy
 `)})
-	p, _ := r.ByIdentity("a.example.com/pointer")
+	p, _ := r.ByIdentity("a.example.com/a/pointer")
 	if got := p.Props["owner"].Inverse; got != "owned" {
 		t.Fatalf("inverse = %q", got)
 	}
@@ -115,30 +125,33 @@ func TestInverseCollisionAcrossAuthoritiesIsLegal(t *testing.T) {
 	// sharing a word, each named by the kind it comes from. Refusing it would
 	// let whichever bundle installed first own a common word and break every
 	// install that came after.
-	shared := `kind: core.substrate.reamde.dev/authority
-metadata: {id: shared.example.com}
-data: {version: 1}
+	shared := `kind: substrate.reamde.dev/core/package
+metadata: {id: shared.example.com/shared}
+data: {authority: shared.example.com, package: shared, version: 1}
 ---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: shared.example.com/note}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: shared.example.com/shared/note}
 data:
   authority: shared.example.com
+  package: shared
   names: {singular: note, plural: notes}
 `
 	pointerAt := func(authority, name string) string {
-		return `kind: core.substrate.reamde.dev/authority
-metadata: {id: ` + authority + `}
-data: {version: 1}
+		pkg := packageOf(authority)
+		return `kind: substrate.reamde.dev/core/package
+metadata: {id: ` + authority + `/` + pkg + `}
+data: {authority: ` + authority + `, package: ` + pkg + `, version: 1}
 ---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: ` + authority + `/` + name + `}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: ` + authority + `/` + pkg + `/` + name + `}
 data:
   authority: ` + authority + `
+  package: ` + pkg + `
   names: {singular: ` + name + `, plural: ` + name + `s}
   properties:
     note:
       type: reference
-      kind: shared.example.com/note
+      kind: shared.example.com/shared/note
       inverse: mentions
 `
 	}
@@ -147,7 +160,7 @@ data:
 		"one.yaml":    pointerAt("one.example.com", "alpha"),
 		"two.yaml":    pointerAt("two.example.com", "beta"),
 	})
-	for _, id := range []string{"one.example.com/alpha", "two.example.com/beta"} {
+	for _, id := range []string{"one.example.com/one/alpha", "two.example.com/two/beta"} {
 		k, ok := r.ByIdentity(id)
 		if !ok {
 			t.Fatalf("%s did not load", id)
@@ -171,7 +184,7 @@ func TestInverseOnAnUnconstrainedPointerCannotCollide(t *testing.T) {
       kind: any
       inverse: related
 `)})
-	p, _ := r.ByIdentity("a.example.com/pointer")
+	p, _ := r.ByIdentity("a.example.com/a/pointer")
 	if p.Props["one"].Inverse != "related" || p.Props["two"].Inverse != "related" {
 		t.Fatal("unconstrained pointers keep their labels")
 	}
@@ -187,7 +200,7 @@ func TestOneNameIsOnePointer(t *testing.T) {
       kind: thing
       inverse: owned
 `)})
-	p, _ := r.ByIdentity("a.example.com/pointer")
+	p, _ := r.ByIdentity("a.example.com/a/pointer")
 	owner, ok := p.Prop("owner")
 	if !ok || owner.Datatype != vocabulary.DatatypeReference || owner.Inverse != "owned" {
 		t.Fatalf("owner = %+v", owner)

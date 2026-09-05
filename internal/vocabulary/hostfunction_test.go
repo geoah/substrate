@@ -28,7 +28,7 @@ func TestPureFunctionDeclaresNoEmit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a pure function refused: %v", err)
 	}
-	fn, err := r.ResolveFunction("fn.example.com/mirror")
+	fn, err := r.ResolveFunction("fn.example.com/fn/mirror")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,29 +39,33 @@ func TestPureFunctionDeclaresNoEmit(t *testing.T) {
 
 // hostFn is one host function declaration under a shipped authority.
 func hostFn(data string) string {
-	return `kind: core.substrate.reamde.dev/authority
+	return `kind: substrate.reamde.dev/core/package
 metadata:
-  id: hf.example.com
+  id: hf.example.com/hf
 data:
+  authority: hf.example.com
+  package: hf
   version: 1
 ---
-kind: core.substrate.reamde.dev/kind
+kind: substrate.reamde.dev/core/kind
 metadata:
-  id: hf.example.com/widget
+  id: hf.example.com/hf/widget
 data:
   authority: hf.example.com
+  package: hf
   names: {singular: widget, plural: widgets}
 ---
-kind: core.substrate.reamde.dev/function
+kind: substrate.reamde.dev/core/function
 metadata:
-  id: hf.example.com/ask
+  id: hf.example.com/hf/ask
 data:
   authority: hf.example.com
+  package: hf
 ` + data
 }
 
 func TestHostFunctionLoadsAsACardAlone(t *testing.T) {
-	fsys := fstest.MapFS{"hf.example.com/all.yaml": &fstest.MapFile{Data: []byte(hostFn(
+	fsys := fstest.MapFS{"hf.example.com/hf/all.yaml": &fstest.MapFile{Data: []byte(hostFn(
 		`  description: runs a read-only GraphQL query against the repository
   runtime: host
   arguments:
@@ -72,7 +76,7 @@ func TestHostFunctionLoadsAsACardAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	fn, err := r.ResolveFunction("hf.example.com/ask")
+	fn, err := r.ResolveFunction("hf.example.com/hf/ask")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +130,7 @@ func TestHostFunctionRefusals(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			fsys := fstest.MapFS{"hf.example.com/all.yaml": &fstest.MapFile{Data: []byte(hostFn(tc.data))}}
+			fsys := fstest.MapFS{"hf.example.com/hf/all.yaml": &fstest.MapFile{Data: []byte(hostFn(tc.data))}}
 			_, err := vocabulary.LoadFS(fsys)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("want %q, got: %v", tc.want, err)
@@ -138,19 +142,20 @@ func TestHostFunctionRefusals(t *testing.T) {
 // A BODY CANNOT SUB-CALL A HOST FUNCTION: the engine runs one under a CALLER's
 // grants, and a function body has none to lend.
 func TestFunctionCallRefusesAHostTarget(t *testing.T) {
-	fsys := fstest.MapFS{"hf.example.com/all.yaml": &fstest.MapFile{Data: []byte(hostFn(
+	fsys := fstest.MapFS{"hf.example.com/hf/all.yaml": &fstest.MapFile{Data: []byte(hostFn(
 		`  description: d
   runtime: host
 `) + `---
-kind: core.substrate.reamde.dev/function
+kind: substrate.reamde.dev/core/function
 metadata:
-  id: hf.example.com/caller
+  id: hf.example.com/hf/caller
 data:
   authority: hf.example.com
+  package: hf
   description: tries to call the built-in
   runtime: python
   permissions:
-    call: [hf.example.com/ask]
+    call: [hf.example.com/hf/ask]
   source: "def main(input, host): return {}"
 `)}}
 	_, err := vocabulary.LoadFS(fsys)
@@ -164,18 +169,21 @@ data:
 // called, so `query` keeps meaning the user's `query`.
 func TestBareNameSkipsHostFunctions(t *testing.T) {
 	fsys := fstest.MapFS{
-		"core.substrate.reamde.dev/core.yaml": &fstest.MapFile{Data: []byte(coreHostStub)},
-		"own.example.com/all.yaml": &fstest.MapFile{Data: []byte(`kind: core.substrate.reamde.dev/authority
+		"substrate.reamde.dev/core/core.yaml": &fstest.MapFile{Data: []byte(coreHostStub)},
+		"own.example.com/own/all.yaml": &fstest.MapFile{Data: []byte(`kind: substrate.reamde.dev/core/package
 metadata:
-  id: own.example.com
-data:
-  version: 1
----
-kind: core.substrate.reamde.dev/function
-metadata:
-  id: own.example.com/query
+  id: own.example.com/own
 data:
   authority: own.example.com
+  package: own
+  version: 1
+---
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: own.example.com/own/query
+data:
+  authority: own.example.com
+  package: own
   description: the repository's own query helper
   runtime: python
   source: "def main(input, host): return {}"
@@ -189,7 +197,7 @@ data:
 	if err != nil {
 		t.Fatalf("the bare name did not resolve: %v", err)
 	}
-	if fn.Identity() != "own.example.com/query" {
+	if fn.Identity() != "own.example.com/own/query" {
 		t.Fatalf("the bare name resolved to %s", fn.Identity())
 	}
 	// The identity still resolves the built-in.

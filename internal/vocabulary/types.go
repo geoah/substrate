@@ -1,7 +1,7 @@
-// Package schema loads the substrate's declarative vocabulary: streams of
-// authority/type/metadata/data manifests — shipped files and connector payloads
-// alike — become a validated registry of authorities and types that the engine
-// validates every write against.
+// Package vocabulary loads the substrate's declarative vocabulary: streams of
+// kind/metadata/data manifests — shipped files and installed payloads alike —
+// become a validated registry of PACKAGES and the kinds they declare, which the
+// engine validates every write against.
 package vocabulary
 
 import (
@@ -260,7 +260,7 @@ type Property struct {
 	// Finalize. Empty for every non-reference kind.
 	To string
 	// ToTrait is a `reference` property's optional TRAIT pin: a resolved full
-	// trait identity ("core.substrate.reamde.dev/accountconfig") the referent
+	// trait identity ("substrate.reamde.dev/core/accountconfig") the referent
 	// KIND must implement, the twin of `To`'s kind pin. A reference pins EITHER
 	// `kind:` (To) or `trait:` (ToTrait), never both. It is what lets a
 	// provider-agnostic kind own its account without naming one provider's
@@ -375,7 +375,7 @@ var keyPatternRE = map[string]*regexp.Regexp{
 // terms rather than the regexp's.
 var keyPatternRule = map[string]string{
 	KeyPatternCamel:   camelRule,
-	KeyPatternKindRef: "a kind reference (`task` or `tasks.example.com/task`)",
+	KeyPatternKindRef: "a kind reference (`task` or `example.com/tasks/task`)",
 }
 
 // CheckKey holds one key of a keyed map to the declared contract. The keys are
@@ -528,8 +528,9 @@ func (m *Machine) HasState(s string) bool {
 // Traits resolve in-authority first and then uniquely across authorities, so an
 // app's authority can bind one the vocabulary declares.
 type Trait struct {
-	Name      string
-	Authority string
+	Name string
+	// Package is the identity of the package that declares the trait.
+	Package string
 	// Variants maps a one_of variant name to its properties.
 	Variants map[string]map[string]Datatype
 	// Properties is the non-variant form.
@@ -542,31 +543,32 @@ type Trait struct {
 	SourceYAML string
 }
 
-// Identity is "<authority>/<name>".
-func (c *Trait) Identity() string { return KindRef(c.Authority, c.Name) }
+// Identity is "<authority>/<package>/<name>".
+func (c *Trait) Identity() string { return c.Package + "/" + c.Name }
 
 // PropertyType is a custom property type: a refinement of a built-in kind with a
 // pattern, a range or an enumeration bolted on. Unlike a capability it is
-// authority-local — a property type is only usable inside its own authority.
+// package-local — a property type is only usable inside its own package.
 type PropertyType struct {
-	Name      string
-	Authority string
-	Base      Datatype
+	Name string
+	// Package is the identity of the package that declares the property type.
+	Package string
+	Base    Datatype
 	// Prop is the refinement as the property parser applies it.
 	Prop       *Property
 	Definition map[string]any
 	SourceYAML string
 }
 
-// Identity is "<authority>/<name>".
-func (d *PropertyType) Identity() string { return KindRef(d.Authority, d.Name) }
+// Identity is "<authority>/<package>/<name>".
+func (d *PropertyType) Identity() string { return d.Package + "/" + d.Name }
 
 // TraitBinding is one type's use of a trait, with the optional
 // hot-column remapping (`temporal(point: dueAt)`).
 type TraitBinding struct {
 	Trait string
 	// Identity is the RESOLVED trait's full identity
-	// ("core.substrate.reamde.dev/accountconfig"): the declaration names a bare trait,
+	// ("substrate.reamde.dev/core/accountconfig"): the declaration names a bare trait,
 	// resolution pins which one, and the binding keeps that answer. Host
 	// behavior keys on it EXACTLY, so a bundle-local trait wearing a core
 	// trait's bare name can never counterfeit the host-recognized interfaces.
@@ -579,11 +581,13 @@ type TraitBinding struct {
 
 // Kind is one declared kind of thing.
 type Kind struct {
-	Name      string
-	Authority string
-	Identity  string
-	Version   int64
-	Source    string // "builtin" | "installed"
+	Name string
+	// Package is the identity of the package that declares the kind — the
+	// group it is versioned, owned and quarantined in.
+	Package  string
+	Identity string
+	Version  int64
+	Source   string // "builtin" | "installed"
 	// Description is what this kind is for, in the author's own words: it
 	// heads the kind's page in the console, so it says what the thing is and
 	// what writes it. A property's description is a tooltip and holds to one
@@ -665,7 +669,7 @@ func (t *Kind) Interfaces() []string {
 }
 
 // Implements reports whether the type satisfies an interface selector: a
-// FULL trait identity ("core.substrate.reamde.dev/accountconfig" — the resolved binding
+// FULL trait identity ("substrate.reamde.dev/core/accountconfig" — the resolved binding
 // identity must match exactly), a bare trait name ("temporal"/"Temporal") or
 // a machine name ("status"/"HasStatus"). Host checks pass full identities: a
 // bare name only says what a binding was spelled as, never which trait it
@@ -717,9 +721,22 @@ func upperFirst(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
-// Authority is one loaded schema authority: every manifest that named it, wherever
-// those documents were declared.
-type Authority struct {
+// Package is one loaded closure: every declaration that named this package,
+// wherever those documents were declared. The package is the unit a
+// declaration is versioned, owned and quarantined in (decision 0047).
+//
+// An AUTHORITY document builds one of these too, with no members: an authority
+// says what it is and owns the packages published under it, and the row it
+// projects is the one a repository is born with. Identity tells the two apart
+// — a package's carries the one slash, an authority's does not.
+type Package struct {
+	// Identity is the group key: "<authority>/<package>", or the bare
+	// authority for an authority row.
+	Identity string
+	// Authority is the DNS-style name the package publishes under.
+	Authority string
+	// Name is the package's own word ("core", "google", "tasks"), empty on an
+	// authority row.
 	Name    string
 	Version int64
 	Source  string
@@ -740,38 +757,45 @@ type Authority struct {
 	FunctionOrder []string
 	Agents        map[string]*Agent
 	AgentOrder    []string
-	// Bundle is the authority's bundle document, set only on owned bundle authorities
-	// ("<name>.bundles.substrate.reamde.dev" — bundle.go).
+	// Bundle is the package's bundle document, set only on the packages a
+	// bundle is named for (bundle.go).
 	Bundle *Bundle
+	// Description is what the package or the authority is for, in the
+	// author's own words.
+	Description string
 
-	// SourceYAML is the authority's own authority manifest, verbatim.
+	// SourceYAML is the package's own header manifest, verbatim.
 	SourceYAML string
 
-	// pending holds trait property contracts checked once every type
-	// in the authority is parsed.
+	// pending holds trait property contracts checked once every kind
+	// in the package is parsed.
 	pending []pendingCapProp
 	// pendingTraits holds trait bindings whose trait is not declared
-	// in this authority; they resolve against the registry in Finalize/Install.
+	// in this package; they resolve against the registry in Finalize/Install.
 	pendingTraits []pendingCapBinding
 }
 
-// Registry holds every loaded authority: the shipped files plus whatever
-// connectors installed. Safe for concurrent use; Version bumps on install.
+// IsAuthority reports whether this group is an AUTHORITY row rather than a
+// package: it declares no members and its identity is the authority itself.
+func (p *Package) IsAuthority() bool { return p.Name == "" }
+
+// Registry holds every loaded package: the shipped files plus whatever a
+// repository installed. Safe for concurrent use; Version bumps on install.
 type Registry struct {
-	mu          sync.RWMutex
-	authorities map[string]*Authority
-	order       []string
-	byIdent     map[string]*Kind
-	byName      map[string][]*Kind
-	version     int64
+	mu       sync.RWMutex
+	packages map[string]*Package
+	order    []string
+	byIdent  map[string]*Kind
+	byName   map[string][]*Kind
+	version  int64
 }
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
 	return &Registry{
-		authorities: map[string]*Authority{},
-		byIdent:     map[string]*Kind{},
-		byName:      map[string][]*Kind{},
+		packages: map[string]*Package{},
+		byIdent:  map[string]*Kind{},
+		byName:   map[string][]*Kind{},
 	}
 }
 
@@ -782,7 +806,7 @@ func (r *Registry) Clone() *Registry {
 	defer r.mu.RUnlock()
 	c := NewRegistry()
 	for _, name := range r.order {
-		c.authorities[name] = r.authorities[name]
+		c.packages[name] = r.packages[name]
 		c.order = append(c.order, name)
 	}
 	for k, v := range r.byIdent {
@@ -802,38 +826,73 @@ func (r *Registry) Version() int64 {
 	return r.version
 }
 
-// Authorities lists loaded authority names in load order.
-func (r *Registry) Authorities() []string {
+// Packages lists loaded group identities in load order — every package, and
+// every authority row beside them.
+func (r *Registry) Packages() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return append([]string(nil), r.order...)
 }
 
-// AuthorityByName returns a loaded authority.
-func (r *Registry) AuthorityByName(name string) (*Authority, bool) {
+// PackageByName returns a loaded group by its identity.
+func (r *Registry) PackageByName(identity string) (*Package, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	g, ok := r.authorities[name]
+	g, ok := r.packages[identity]
 	return g, ok
 }
 
-// AuthorityList returns every loaded authority, ordered by name.
-func (r *Registry) AuthorityList() []*Authority {
+// PackageList returns every loaded group, ordered by identity.
+func (r *Registry) PackageList() []*Package {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	out := make([]*Authority, 0, len(r.authorities))
+	out := make([]*Package, 0, len(r.packages))
 	for _, n := range r.order {
-		out = append(out, r.authorities[n])
+		out = append(out, r.packages[n])
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	sort.Slice(out, func(i, j int) bool { return out[i].Identity < out[j].Identity })
 	return out
 }
 
-// Traits lists every declared trait across authorities, ordered by
+// Authorities lists the authorities the loaded packages publish under, sorted.
+func (r *Registry) Authorities() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	seen := map[string]bool{}
+	var out []string
+	for _, n := range r.order {
+		a := r.packages[n].Authority
+		if a == "" || seen[a] {
+			continue
+		}
+		seen[a] = true
+		out = append(out, a)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// PackagesOf lists the package identities published under one authority,
+// sorted. An authority row is not one of them.
+func (r *Registry) PackagesOf(authority string) []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []string
+	for _, n := range r.order {
+		g := r.packages[n]
+		if g.Authority == authority && !g.IsAuthority() {
+			out = append(out, g.Identity)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Traits lists every declared trait across packages, ordered by
 // identity.
 func (r *Registry) Traits() []*Trait {
 	var out []*Trait
-	for _, g := range r.AuthorityList() {
+	for _, g := range r.PackageList() {
 		for _, n := range g.TraitOrder {
 			out = append(out, g.Traits[n])
 		}
@@ -846,7 +905,7 @@ func (r *Registry) Traits() []*Trait {
 // by identity.
 func (r *Registry) PropertyTypes() []*PropertyType {
 	var out []*PropertyType
-	for _, g := range r.AuthorityList() {
+	for _, g := range r.PackageList() {
 		for _, n := range g.DatatypeOrder {
 			out = append(out, g.PropertyTypes[n])
 		}
@@ -855,19 +914,19 @@ func (r *Registry) PropertyTypes() []*PropertyType {
 	return out
 }
 
-// ResolveTrait finds a trait by bare name, in authority first and then
-// uniquely across authorities — the same rule a short `kind:` pin follows.
-func (r *Registry) ResolveTrait(authority, name string) (*Trait, error) {
+// ResolveTrait finds a trait by bare name, in the declaring package first and
+// then uniquely across packages — the same rule a short `kind:` pin follows.
+func (r *Registry) ResolveTrait(pkg, name string) (*Trait, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	if g, ok := r.authorities[authority]; ok {
+	if g, ok := r.packages[pkg]; ok {
 		if c, ok := g.Traits[name]; ok {
 			return c, nil
 		}
 	}
 	var found []*Trait
 	for _, n := range r.order {
-		if c, ok := r.authorities[n].Traits[name]; ok {
+		if c, ok := r.packages[n].Traits[name]; ok {
 			found = append(found, c)
 		}
 	}
@@ -898,7 +957,7 @@ func (r *Registry) Kinds() []*Kind {
 	return out
 }
 
-// ByIdentity looks a type up by "<authority>/<name>".
+// ByIdentity looks a kind up by "<authority>/<package>/<name>".
 func (r *Registry) ByIdentity(identity string) (*Kind, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -988,7 +1047,7 @@ func (r *Registry) Actors() []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, name := range r.order {
-		for _, a := range r.authorities[name].Actors {
+		for _, a := range r.packages[name].Actors {
 			if !seen[a] {
 				seen[a] = true
 				out = append(out, a)
@@ -999,12 +1058,12 @@ func (r *Registry) Actors() []string {
 	return out
 }
 
-// ActorAuthority returns the authority that declared an actor.
-func (r *Registry) ActorAuthority(actor string) (string, bool) {
+// ActorPackage returns the authority that declared an actor.
+func (r *Registry) ActorPackage(actor string) (string, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for _, name := range r.order {
-		for _, a := range r.authorities[name].Actors {
+		for _, a := range r.packages[name].Actors {
 			if a == actor {
 				return name, true
 			}
@@ -1022,7 +1081,7 @@ func (r *Registry) ActorTier(actor string) (substrate.Tier, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for _, name := range r.order {
-		g := r.authorities[name]
+		g := r.packages[name]
 		for _, a := range g.Actors {
 			if a != actor {
 				continue

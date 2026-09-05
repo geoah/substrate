@@ -8,22 +8,30 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// The manifest envelope (FORMAT.md §1). Every schema resource — an authority,
-// a kind, a trait, a custom property type, an actor — is one document in a
-// `---` separated stream, and every document wears the same four keys. The
-// unit is the document, not the file: any .yaml under the schema tree may hold
-// any documents, and the loader buckets them by `data.authority`.
+// The manifest envelope. Every schema resource — an authority, a package, a
+// kind, a trait, a custom property type, an actor — is one document in a `---`
+// separated stream, and every document wears the same four keys. The unit is
+// the document, not the file: any .yaml under the schema tree may hold any
+// documents, and the loader buckets them by the PACKAGE they declare into
+// (`data.authority` and `data.package`).
 
-// AuthorityCore is the authority the substrate's own meta-kinds are published
-// under: a schema manifest is itself a record of a core kind, whatever
-// authority the document describes (FORMAT.md §4).
-const AuthorityCore = "core.substrate.reamde.dev"
+// AuthorityPublisher is the authority the substrate's own vocabulary publishes
+// under, and PackageCore the package its meta-kinds live in: a schema manifest
+// is itself a record of a core kind, whatever package the document describes.
+// A repository may never claim an authority under the publisher's
+// (engine.validRepositoryAuthority), so nothing a user declares can be
+// mistaken for shipped vocabulary.
+const (
+	AuthorityPublisher = "substrate.reamde.dev"
+	PackageCore        = AuthorityPublisher + "/core"
+)
 
-// The manifest document kinds — the local names under AuthorityCore. The
-// envelope carries the full reference ("core.substrate.reamde.dev/kind"), so a
+// The manifest document kinds — the local names under PackageCore. The
+// envelope carries the full reference ("substrate.reamde.dev/core/kind"), so a
 // manifest names its own kind exactly as any other record does.
 const (
 	DocAuthority     = "authority"
+	DocPackage       = "package"
 	DocKind          = "kind"
 	DocTrait         = "trait"
 	DocPropertyType  = "propertytype"
@@ -35,7 +43,7 @@ const (
 )
 
 var schemaDocumentKinds = map[string]bool{
-	DocAuthority: true, DocKind: true, DocTrait: true,
+	DocAuthority: true, DocPackage: true, DocKind: true, DocTrait: true,
 	DocPropertyType: true, DocRecordMapping: true, DocFunction: true,
 	DocAgent: true,
 	DocActor: true, DocBundle: true,
@@ -53,6 +61,25 @@ func (d Document) DeclaredAuthority() string {
 		return d.ID
 	}
 	return mstr(d.Data, "authority")
+}
+
+// DeclaredPackage is the GROUP a schema document belongs to, and the key
+// everything downstream buckets, versions, owns and quarantines by
+// (decision 0047): "<authority>/<package>" for a member declaration and for
+// the package header, whose own id is exactly that; the bare authority for an
+// authority header, which owns no members. A document naming no authority, or
+// a member naming no package, answers "" and is refused by name at the door
+// that asked.
+func (d Document) DeclaredPackage() string {
+	switch d.Kind {
+	case DocAuthority, DocPackage:
+		return d.ID
+	}
+	authority, pkg := mstr(d.Data, "authority"), mstr(d.Data, "package")
+	if authority == "" || pkg == "" {
+		return ""
+	}
+	return PackageRef(authority, pkg)
 }
 
 var envelopeKeys = map[string]bool{
@@ -77,7 +104,7 @@ var metadataKeys = map[string]bool{"id": true, "labels": true, "annotations": tr
 // was declared in.
 type Document struct {
 	// Kind is the LOCAL name of the envelope's kind reference — "kind"
-	// for `kind: core.substrate.reamde.dev/kind`. A manifest document is always
+	// for `kind: substrate.reamde.dev/core/kind`. A manifest document is always
 	// a core kind; the authority being DECLARED INTO is `data.authority`.
 	Kind string
 	// ID is metadata.id: the resource's identity (FORMAT.md §2).
@@ -142,7 +169,7 @@ func documentFrom(raw map[string]any, text string) (Document, []string) {
 		problems = append(problems, fmt.Sprintf(format, args...))
 	}
 	ref := mstr(raw, "kind")
-	authority, local := SplitKindRef(ref)
+	authority, pkg, local := SplitKindRef(ref)
 	d := Document{
 		Kind:   local,
 		Data:   mmap(raw, "data"),
@@ -161,8 +188,8 @@ func documentFrom(raw map[string]any, text string) (Document, []string) {
 	switch {
 	case ref == "":
 		errf("manifest: kind is required — a kind reference like %q", CoreKind(DocKind))
-	case authority != AuthorityCore:
-		errf("manifest: kind %q: schema manifests are records of the %s kinds", ref, AuthorityCore)
+	case authority+"/"+pkg != PackageCore:
+		errf("manifest: kind %q: schema manifests are records of the %s kinds", ref, PackageCore)
 	case !schemaDocumentKinds[local]:
 		errf("manifest: unknown kind %q", ref)
 	}
@@ -270,39 +297,54 @@ func splitLines(data []byte) []string {
 	return strings.Split(s, "\n")
 }
 
-// AuthorityManifest renders a authority document. Connector registration
-// installs an authority at runtime, so the payload it POSTs is built in code
-// (REGISTRATION.md RG2) with these three constructors.
-func AuthorityManifest(authority string, version int64) map[string]any {
+// PackageManifest renders a package document — the closure header a run-time
+// install builds in code, with the constructors below.
+func PackageManifest(pkg string, version int64) map[string]any {
 	if version == 0 {
 		version = DefaultVersion
 	}
+	authority, name := SplitPackageRef(pkg)
+	return map[string]any{
+		"kind":     CoreKind(DocPackage),
+		"metadata": map[string]any{"id": pkg},
+		"data": map[string]any{
+			"authority": authority, "package": name, "version": version,
+		},
+	}
+}
+
+// AuthorityManifest renders an authority document: the row that says an
+// authority exists and owns the packages published under it.
+func AuthorityManifest(authority string) map[string]any {
 	return map[string]any{
 		"kind":     CoreKind(DocAuthority),
 		"metadata": map[string]any{"id": authority},
-		"data":     map[string]any{"version": version},
+		"data":     map[string]any{},
 	}
 }
 
 // ActorManifest renders an actor document.
-func ActorManifest(authority, actor string) map[string]any {
+func ActorManifest(pkg, actor string) map[string]any {
+	authority, name := SplitPackageRef(pkg)
 	return map[string]any{
 		"kind":     CoreKind(DocActor),
 		"metadata": map[string]any{"id": actor},
-		"data":     map[string]any{"authority": authority},
+		"data":     map[string]any{"authority": authority, "package": name},
 	}
 }
 
-// KindManifest renders a kind document: the identity and the authority are
-// derived from the names block so a caller cannot spell them inconsistently.
-func KindManifest(authority string, names, data map[string]any) map[string]any {
-	full := map[string]any{"authority": authority, "names": names}
+// KindManifest renders a kind document: the identity, the authority and the
+// package are derived from the package identity and the names block, so a
+// caller cannot spell them inconsistently.
+func KindManifest(pkg string, names, data map[string]any) map[string]any {
+	authority, name := SplitPackageRef(pkg)
+	full := map[string]any{"authority": authority, "package": name, "names": names}
 	for _, k := range sortedKeys(data) {
 		full[k] = data[k]
 	}
 	return map[string]any{
 		"kind":     CoreKind(DocKind),
-		"metadata": map[string]any{"id": KindRef(authority, fmt.Sprint(names["singular"]))},
+		"metadata": map[string]any{"id": pkg + "/" + fmt.Sprint(names["singular"])},
 		"data":     full,
 	}
 }
@@ -310,14 +352,15 @@ func KindManifest(authority string, names, data map[string]any) map[string]any {
 // MappingManifest renders a recordmapping document: the identity
 // derives from the name and the authority so a caller cannot spell them
 // inconsistently. data carries from/to/property and the optional match and map.
-func MappingManifest(authority, name string, data map[string]any) map[string]any {
-	full := map[string]any{"authority": authority}
+func MappingManifest(pkg, name string, data map[string]any) map[string]any {
+	authority, pkgName := SplitPackageRef(pkg)
+	full := map[string]any{"authority": authority, "package": pkgName}
 	for _, k := range sortedKeys(data) {
 		full[k] = data[k]
 	}
 	return map[string]any{
 		"kind":     CoreKind(DocRecordMapping),
-		"metadata": map[string]any{"id": KindRef(authority, name)},
+		"metadata": map[string]any{"id": pkg + "/" + name},
 		"data":     full,
 	}
 }
@@ -327,30 +370,31 @@ func MappingManifest(authority, name string, data map[string]any) map[string]any
 // inconsistently. data carries description/runtime/source/capabilities and
 // the optional input/output schemas — never a subscription, which lives on
 // trigger records.
-func FunctionManifest(authority, name string, data map[string]any) map[string]any {
-	full := map[string]any{"authority": authority}
+func FunctionManifest(pkg, name string, data map[string]any) map[string]any {
+	authority, pkgName := SplitPackageRef(pkg)
+	full := map[string]any{"authority": authority, "package": pkgName}
 	for _, k := range sortedKeys(data) {
 		full[k] = data[k]
 	}
 	return map[string]any{
 		"kind":     CoreKind(DocFunction),
-		"metadata": map[string]any{"id": KindRef(authority, name)},
+		"metadata": map[string]any{"id": pkg + "/" + name},
 		"data":     full,
 	}
 }
 
-// BundleManifest renders a bundle document: the identity derives from the
-// owned authority ("<first label>.<authority>"), so a caller cannot spell them
-// inconsistently. data carries description/inputs/installs.
-func BundleManifest(authority string, data map[string]any) map[string]any {
-	full := map[string]any{"authority": authority}
+// BundleManifest renders a bundle document: its id IS the package it is named
+// for, so a caller cannot spell the two inconsistently. data carries
+// description/inputs/installs.
+func BundleManifest(pkg string, data map[string]any) map[string]any {
+	authority, name := SplitPackageRef(pkg)
+	full := map[string]any{"authority": authority, "package": name}
 	for _, k := range sortedKeys(data) {
 		full[k] = data[k]
 	}
-	name, _, _ := strings.Cut(authority, ".")
 	return map[string]any{
 		"kind":     CoreKind(DocBundle),
-		"metadata": map[string]any{"id": KindRef(authority, name)},
+		"metadata": map[string]any{"id": pkg},
 		"data":     full,
 	}
 }

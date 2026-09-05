@@ -24,14 +24,15 @@ import (
 // mkThing builds one authority with one kind, its `data:` body written by the
 // caller, so a case reads as the declaration it is about.
 func mkThing(body string) fstest.MapFS {
-	return fstest.MapFS{"g.yaml": &fstest.MapFile{Data: []byte(`kind: core.substrate.reamde.dev/authority
-metadata: {id: g.example.com}
-data: {version: 1}
+	return fstest.MapFS{"g.yaml": &fstest.MapFile{Data: []byte(`kind: substrate.reamde.dev/core/package
+metadata: {id: g.example.com/g}
+data: {authority: g.example.com, package: g, version: 1}
 ---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: g.example.com/thing}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: g.example.com/g/thing}
 data:
   authority: g.example.com
+  package: g
   names: {singular: thing, plural: things}
 ` + body)}}
 }
@@ -42,9 +43,9 @@ func loadThing(t *testing.T, body string) *vocabulary.Kind {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	ty, ok := r.ByIdentity("g.example.com/thing")
+	ty, ok := r.ByIdentity("g.example.com/g/thing")
 	if !ok {
-		t.Fatal("g.example.com/thing did not load")
+		t.Fatal("g.example.com/g/thing did not load")
 	}
 	return ty
 }
@@ -304,28 +305,30 @@ func TestReferencePropertiesBlock(t *testing.T) {
       properties:
         isbn: {type: isbn}
 `
-		fs := fstest.MapFS{"g.yaml": &fstest.MapFile{Data: []byte(`kind: core.substrate.reamde.dev/authority
-metadata: {id: g.example.com}
-data: {version: 1}
+		fs := fstest.MapFS{"g.yaml": &fstest.MapFile{Data: []byte(`kind: substrate.reamde.dev/core/package
+metadata: {id: g.example.com/g}
+data: {authority: g.example.com, package: g, version: 1}
 ---
-kind: core.substrate.reamde.dev/propertytype
-metadata: {id: g.example.com/isbn}
+kind: substrate.reamde.dev/core/propertytype
+metadata: {id: g.example.com/g/isbn}
 data:
   authority: g.example.com
+  package: g
   base: string
   pattern: "^[0-9]{13}$"
 ---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: g.example.com/thing}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: g.example.com/g/thing}
 data:
   authority: g.example.com
+  package: g
   names: {singular: thing, plural: things}
 ` + body)}}
 		r, err := vocabulary.LoadFS(fs)
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}
-		ty, _ := r.ByIdentity("g.example.com/thing")
+		ty, _ := r.ByIdentity("g.example.com/g/thing")
 		p := ty.Props["author"].Properties["isbn"]
 		if p.Datatype != vocabulary.DatatypeString || p.Pattern == nil {
 			t.Fatalf("refinement did not resolve: %+v", p)

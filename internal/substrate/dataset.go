@@ -29,7 +29,7 @@ type Dataset interface {
 
 	// --- kind registry (builtin + installed) ---
 	Kinds(ctx context.Context) ([]KindInfo, error)
-	// KindByRef resolves a kind REFERENCE ("tasks.substrate.reamde.dev/task", or a bare
+	// KindByRef resolves a kind REFERENCE ("samples.substrate.reamde.dev/tasks/task", or a bare
 	// "task"), or an unambiguous local name. A REST collection segment IS the
 	// kind name, so the two segments a request addresses spell the reference
 	// this resolves — routing needs no plural lookup (decision 0033).
@@ -44,7 +44,7 @@ type Dataset interface {
 	Patch(ctx context.Context, actor Actor, typ, id string, in PatchInput) (*Record, error)
 	Delete(ctx context.Context, actor Actor, typ, id string) (*Record, error)
 	// Merge/Split return the command-as-record record
-	// (core.substrate.reamde.dev/recordmerge / core.substrate.reamde.dev/recordsplit); creating the
+	// (substrate.reamde.dev/core/recordmerge / substrate.reamde.dev/core/recordsplit); creating the
 	// record performs the operation. Merge joins two records of ONE type.
 	Merge(ctx context.Context, actor Actor, typ, winner, loser string) (*Record, error)
 	Split(ctx context.Context, actor Actor, mergeID string) (*Record, error)

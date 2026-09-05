@@ -19,14 +19,15 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-const dialectHead = `kind: core.substrate.reamde.dev/authority
-metadata: {id: w.example.com}
-data: {version: 1}
+const dialectHead = `kind: substrate.reamde.dev/core/package
+metadata: {id: w.example.com/w}
+data: {authority: w.example.com, package: w, version: 1}
 ---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: w.example.com/target}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: w.example.com/w/target}
 data:
   authority: w.example.com
+  package: w
   names: {singular: target, plural: targets}
 `
 
@@ -35,14 +36,15 @@ data:
 func dialectLoad(t *testing.T, body string) (*vocabulary.Registry, error) {
 	t.Helper()
 	src := dialectHead + `---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: w.example.com/widget}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: w.example.com/w/widget}
 data:
   authority: w.example.com
+  package: w
   names: {singular: widget, plural: widgets}
 ` + body
 	return vocabulary.LoadFS(fstest.MapFS{
-		"w.example.com/all.yaml": &fstest.MapFile{Data: []byte(src)},
+		"w.example.com/w/all.yaml": &fstest.MapFile{Data: []byte(src)},
 	})
 }
 
@@ -52,9 +54,9 @@ func dialectWidget(t *testing.T, body string) *vocabulary.Kind {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	w, ok := r.ByIdentity("w.example.com/widget")
+	w, ok := r.ByIdentity("w.example.com/w/widget")
 	if !ok {
-		t.Fatal("w.example.com/widget missing")
+		t.Fatal("w.example.com/w/widget missing")
 	}
 	return w
 }
@@ -153,12 +155,12 @@ func TestKeyedMapsAccepted(t *testing.T) {
 			t.Errorf("camel key %q: %v", ok, err)
 		}
 	}
-	for _, bad := range []string{"", "back_fill", "Backfill", "tasks.example.com/task"} {
+	for _, bad := range []string{"", "back_fill", "Backfill", "tasks.example.com/tasks/task"} {
 		if err := effects.CheckKey(bad); err == nil {
 			t.Errorf("camel key %q must be refused", bad)
 		}
 	}
-	for _, ok := range []string{"task", "tasks.example.com/task"} {
+	for _, ok := range []string{"task", "tasks.example.com/tasks/task"} {
 		if err := installs.CheckKey(ok); err != nil {
 			t.Errorf("kindRef key %q: %v", ok, err)
 		}
@@ -213,7 +215,7 @@ func TestNestedReferenceFieldsResolveTheirTarget(t *testing.T) {
 		if path.prop == nil {
 			t.Fatalf("%s: not parsed", path.label)
 		}
-		if path.prop.To != "w.example.com/target" {
+		if path.prop.To != "w.example.com/w/target" {
 			t.Errorf("%s: to = %q, want the resolved identity", path.label, path.prop.To)
 		}
 	}
@@ -351,16 +353,16 @@ func TestDerivedTokenYieldsToADeclaredProperty(t *testing.T) {
 	}
 	derived := map[string]string{
 		vocabulary.DerivedLocalName: "person",
-		vocabulary.DerivedID:        "people.example.com/person",
+		vocabulary.DerivedID:        "people.example.com/people/person",
 	}
-	if got := tmpl.Render(testResolver{derived: derived}); got != "person/people.example.com/person" {
+	if got := tmpl.Render(testResolver{derived: derived}); got != "person/people.example.com/people/person" {
 		t.Fatalf("derived render = %q", got)
 	}
 	got := tmpl.Render(testResolver{
 		props:   map[string]string{vocabulary.DerivedLocalName: "declared"},
 		derived: derived,
 	})
-	if got != "declared/people.example.com/person" {
+	if got != "declared/people.example.com/people/person" {
 		t.Fatalf("a declared property must win, got %q", got)
 	}
 	// Declared and EMPTY: the token still yields, so the segment renders
@@ -369,7 +371,7 @@ func TestDerivedTokenYieldsToADeclaredProperty(t *testing.T) {
 		declares: []string{vocabulary.DerivedLocalName},
 		derived:  derived,
 	})
-	if got != "/people.example.com/person" {
+	if got != "/people.example.com/people/person" {
 		t.Fatalf("a declared-but-empty property must not fall back, got %q", got)
 	}
 	// An alternative list still moves on, which is how a template asks for the
@@ -381,7 +383,7 @@ func TestDerivedTokenYieldsToADeclaredProperty(t *testing.T) {
 	if got := either.Render(testResolver{
 		declares: []string{vocabulary.DerivedLocalName},
 		derived:  derived,
-	}); got != "people.example.com/person" {
+	}); got != "people.example.com/people/person" {
 		t.Fatalf("an empty alternative must yield to the next, got %q", got)
 	}
 	// A declared REFERENCE of the token's name wins the same way a property
@@ -403,7 +405,7 @@ func TestDerivedTokenYieldsToADeclaredProperty(t *testing.T) {
 // guard hands the same pattern to Postgres, so the two answers cannot drift.
 func TestKeyPatternRegexpAgreesWithCheckKey(t *testing.T) {
 	keys := []string{
-		"backfillDepth", "a", "task", "tasks.example.com/task", "x9",
+		"backfillDepth", "a", "task", "tasks.example.com/tasks/task", "x9",
 		"back_fill", "Backfill", "tasks.*", "a b", "9lives", "a/b/c",
 		"tasks.example.com/Task", "-nope", "tasks.example.com/",
 		// The spellings where the two sides could disagree, and one where they

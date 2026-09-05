@@ -2,9 +2,13 @@ package substrate
 
 // KindInfo is the projection of one declared type the read surfaces use.
 type KindInfo struct {
-	Identity  string `json:"identity"` // "<authority>/<name>"
+	Identity  string `json:"identity"` // "<authority>/<package>/<name>"
 	Name      string `json:"name"`
 	Authority string `json:"authority"`
+	// Package is the package's own word ("core", "tasks"): the middle segment
+	// of the identity, carried beside the authority so a client can group by
+	// one and then the other without splitting the reference itself.
+	Package string `json:"package"`
 	// Version is the declaration's incremental version, server-maintained:
 	// 1 for a first declaration, +1 per change (or whatever higher number an
 	// explicit apply pinned).

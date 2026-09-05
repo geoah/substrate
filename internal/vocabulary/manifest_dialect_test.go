@@ -32,30 +32,30 @@ func TestAgentToolEntriesNameTheirCallable(t *testing.T) {
   model: claude-opus-5
   tools: `+entries+`
   permissions:
-    writes: [ag.example.com/widget]
+    writes: [ag.example.com/ag/widget]
     reads:
-      kinds: [ag.example.com/widget]
+      kinds: [ag.example.com/ag/widget]
 `))
 		if err != nil {
 			t.Fatalf("load %s: %v", entries, err)
 		}
-		ag, err := r.ResolveAgent("ag.example.com/classifier")
+		ag, err := r.ResolveAgent("ag.example.com/ag/classifier")
 		if err != nil {
 			t.Fatal(err)
 		}
 		return ag.Tools
 	}
-	entries := tools(`[{function: core.substrate.reamde.dev/query},
-    {function: core.substrate.reamde.dev/graphql},
-    {function: core.substrate.reamde.dev/mutate},
-    {function: ag.example.com/annotate}]`)
+	entries := tools(`[{function: substrate.reamde.dev/core/query},
+    {function: substrate.reamde.dev/core/graphql},
+    {function: substrate.reamde.dev/core/mutate},
+    {function: ag.example.com/ag/annotate}]`)
 	if len(entries) != 4 || entries[0].Builtin != vocabulary.AgentToolQuery || entries[0].Name != vocabulary.AgentToolQuery {
 		t.Fatalf("tools %+v", entries)
 	}
 	if entries[0].Callable != vocabulary.HostFunctionQuery {
 		t.Fatalf("the built-in entry does not carry its identity: %+v", entries[0])
 	}
-	if entries[3].Callable != "ag.example.com/annotate" || entries[3].Name != "annotate" || entries[3].Builtin != "" {
+	if entries[3].Callable != "ag.example.com/ag/annotate" || entries[3].Name != "annotate" || entries[3].Builtin != "" {
 		t.Fatalf("the function entry %+v", entries[3])
 	}
 }
@@ -69,12 +69,12 @@ func TestAgentBuiltinToolAliases(t *testing.T) {
   provider: default
   model: claude-opus-5
   tools:
-    - {function: core.substrate.reamde.dev/graphql, name: ask, description: asks the graph}
+    - {function: substrate.reamde.dev/core/graphql, name: ask, description: asks the graph}
 `))
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	ag, err := r.ResolveAgent("ag.example.com/classifier")
+	ag, err := r.ResolveAgent("ag.example.com/ag/classifier")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,12 +88,12 @@ func TestAgentBuiltinToolAliases(t *testing.T) {
 // declaration, not its spelling, and the grant is keyed on the identity.
 func TestAgentBuiltinToolEntryGrants(t *testing.T) {
 	cases := map[string]struct{ tools, want string }{
-		"query needs reads": {`[{function: core.substrate.reamde.dev/query}]`, "query needs data.permissions.reads"},
+		"query needs reads": {`[{function: substrate.reamde.dev/core/query}]`, "query needs data.permissions.reads"},
 		"propose needs the request type in emit": {
-			`[{function: core.substrate.reamde.dev/propose}]`,
-			"propose needs core.substrate.reamde.dev/recordpatchrequest in data.permissions.writes",
+			`[{function: substrate.reamde.dev/core/propose}]`,
+			"propose needs substrate.reamde.dev/core/recordpatchrequest in data.permissions.writes",
 		},
-		"mutate needs emit": {`[{function: core.substrate.reamde.dev/mutate}]`, "mutate needs data.permissions.writes"},
+		"mutate needs emit": {`[{function: substrate.reamde.dev/core/mutate}]`, "mutate needs data.permissions.writes"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -114,23 +114,23 @@ func TestAgentToolEntryRefusals(t *testing.T) {
 	cases := map[string]struct{ tools, want string }{
 		"no function":               {`[{name: markWidget}]`, "no function — an entry names one function identity"},
 		"a function is an identity": {`[{function: annotate}]`, "function \"annotate\" — a full function identity"},
-		"unknown entry key":         {`[{function: ag.example.com/annotate, alias: ask}]`, "unknown key \"alias\""},
+		"unknown entry key":         {`[{function: ag.example.com/ag/annotate, alias: ask}]`, "unknown key \"alias\""},
 		// THE RENAMED KEY. `callable` said an entry might name something other
 		// than a function, and it never could: a sub-agent is named on `agents:`,
 		// and the word belongs to a trigger, whose target really is either.
 		"the callable key": {
-			`[{function: ag.example.com/annotate, callable: ag.example.com/annotate}]`,
+			`[{function: ag.example.com/ag/annotate, callable: ag.example.com/ag/annotate}]`,
 			`key "callable" is deleted — function`,
 		},
 		"the callable key alone": {
-			`[{callable: ag.example.com/annotate}]`,
+			`[{callable: ag.example.com/ag/annotate}]`,
 			`key "callable" is deleted — function`,
 		},
 		// THE TOMBSTONE. `{builtin: x}` was the interim arm, and it made the
 		// built-ins the one thing an agent could name that no record declared.
 		"the builtin arm": {
 			`[{builtin: query}]`,
-			`builtin "query" is deleted — the built-ins are function records: {function: core.substrate.reamde.dev/query}`,
+			`builtin "query" is deleted — the built-ins are function records: {function: substrate.reamde.dev/core/query}`,
 		},
 		"the builtin arm, whatever it named": {
 			`[{builtin: frobnicate}]`,
@@ -138,10 +138,10 @@ func TestAgentToolEntryRefusals(t *testing.T) {
 		},
 		// The older retired spelling: a bare string named the arm by its value, so a
 		// typo in a built-in's name became a function nothing declares.
-		"a bare built-in name": {`[query]`, `"query" is a bare string — an entry names its function: {function: core.substrate.reamde.dev/query}`},
+		"a bare built-in name": {`[query]`, `"query" is a bare string — an entry names its function: {function: substrate.reamde.dev/core/query}`},
 		"a bare function identity": {
-			`[ag.example.com/annotate]`,
-			`"ag.example.com/annotate" is a bare string — an entry names its function: {function: ag.example.com/annotate}`,
+			`[ag.example.com/ag/annotate]`,
+			`"ag.example.com/ag/annotate" is a bare string — an entry names its function: {function: ag.example.com/ag/annotate}`,
 		},
 	}
 	for name, tc := range cases {
@@ -151,9 +151,9 @@ func TestAgentToolEntryRefusals(t *testing.T) {
   provider: default
   model: claude-opus-5
   permissions:
-    writes: [ag.example.com/widget]
+    writes: [ag.example.com/ag/widget]
     reads:
-      kinds: [ag.example.com/widget]
+      kinds: [ag.example.com/ag/widget]
   tools: `+tc.tools+`
 `))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -172,13 +172,13 @@ func flatFn(t *testing.T, io string) *vocabulary.Function {
 	r, err := loadFnAuthority(t, `  description: d
   runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
   source: "def main(input, host): return {}"
 `+io)
 	if err != nil {
 		t.Fatalf("load:\n%s\n%v", io, err)
 	}
-	fn, err := r.ResolveFunction("fn.example.com/mirror")
+	fn, err := r.ResolveFunction("fn.example.com/fn/mirror")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +361,7 @@ func TestFunctionArgumentRefusals(t *testing.T) {
 			_, err := loadFnAuthority(t, `  description: d
   runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
   source: "def main(input, host): return {}"
 `+tc.io)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -380,11 +380,11 @@ func TestFunctionGrantsRidePermissions(t *testing.T) {
 	r, err := loadFnAuthority(t, `  description: d
   runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
     reads:
-      kinds: [fn.example.com/widget]
+      kinds: [fn.example.com/fn/widget]
       budgets: {calls: 4}
-    call: [fn.example.com/mirror]
+    call: [fn.example.com/fn/mirror]
     network: ["api.example.com"]
     mutations: [merge]
   source: "def main(input, host): return {}"
@@ -392,13 +392,13 @@ func TestFunctionGrantsRidePermissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	fn, err := r.ResolveFunction("fn.example.com/mirror")
+	fn, err := r.ResolveFunction("fn.example.com/fn/mirror")
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
 	caps := fn.Caps
 	if len(caps.Emit) != 1 || caps.Reads == nil || caps.Reads.Calls != 4 ||
-		!caps.AllowsCall("fn.example.com/mirror") || !caps.AllowsMutation(vocabulary.MutationMerge) {
+		!caps.AllowsCall("fn.example.com/fn/mirror") || !caps.AllowsMutation(vocabulary.MutationMerge) {
 		t.Fatalf("envelope %+v", caps)
 	}
 }
@@ -411,7 +411,7 @@ func TestFunctionGrantRefusals(t *testing.T) {
 			`  description: d
   runtime: python
   permissions:
-    writes: [fn.example.com/nothing]
+    writes: [fn.example.com/fn/nothing]
   source: "def main(input, host): return {}"
 `,
 			"data.permissions.writes: unknown type",
@@ -420,8 +420,8 @@ func TestFunctionGrantRefusals(t *testing.T) {
 			`  description: d
   runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
-    reads: {kinds: [fn.example.com/nothing]}
+    writes: [fn.example.com/fn/gadget]
+    reads: {kinds: [fn.example.com/fn/nothing]}
   source: "def main(input, host): return {}"
 `,
 			"data.permissions.reads.kinds: unknown type",
@@ -430,8 +430,8 @@ func TestFunctionGrantRefusals(t *testing.T) {
 			`  description: d
   runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
-    call: [fn.example.com/nothing]
+    writes: [fn.example.com/fn/gadget]
+    call: [fn.example.com/fn/nothing]
   source: "def main(input, host): return {}"
 `,
 			"data.permissions.call: unknown function",
@@ -440,7 +440,7 @@ func TestFunctionGrantRefusals(t *testing.T) {
 			`  description: d
   runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
     mutations: [delete]
   source: "def main(input, host): return {}"
 `,
@@ -459,23 +459,25 @@ func TestFunctionGrantRefusals(t *testing.T) {
 
 // --- recordmapping: a rule as an object ---------------------------------------
 
-const mapHead = `kind: core.substrate.reamde.dev/authority
-metadata: {id: m.example.com}
-data: {version: 1}
+const mapHead = `kind: substrate.reamde.dev/core/package
+metadata: {id: m.example.com/m}
+data: {authority: m.example.com, package: m, version: 1}
 ---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: m.example.com/person}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: m.example.com/m/person}
 data:
   authority: m.example.com
+  package: m
   names: {singular: person, plural: people}
   properties:
     name: {type: string}
     emails: {type: email, repeated: true}
 ---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: m.example.com/row}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: m.example.com/m/row}
 data:
   authority: m.example.com
+  package: m
   names: {singular: row, plural: rows}
   properties:
     name:
@@ -492,12 +494,13 @@ data:
       mustExist: true
       subject: true
 ---
-kind: core.substrate.reamde.dev/recordmapping
-metadata: {id: m.example.com/rowperson}
+kind: substrate.reamde.dev/core/recordmapping
+metadata: {id: m.example.com/m/rowperson}
 data:
   authority: m.example.com
-  from: m.example.com/row
-  to: m.example.com/person
+  package: m
+  from: m.example.com/m/row
+  to: m.example.com/m/person
   property: person
   map:
 `
@@ -505,14 +508,14 @@ data:
 func loadMapping(t *testing.T, rules string) *vocabulary.Mapping {
 	t.Helper()
 	r, err := vocabulary.LoadFS(fstest.MapFS{
-		"m.example.com/all.yaml": &fstest.MapFile{Data: []byte(mapHead + rules)},
+		"m.example.com/m/all.yaml": &fstest.MapFile{Data: []byte(mapHead + rules)},
 	})
 	if err != nil {
 		t.Fatalf("load:\n%s\n%v", rules, err)
 	}
-	m, ok := r.MappingFor("m.example.com/row")
+	m, ok := r.MappingFor("m.example.com/m/row")
 	if !ok {
-		t.Fatal("m.example.com/row carries a mapping")
+		t.Fatal("m.example.com/m/row carries a mapping")
 	}
 	return m
 }
@@ -569,7 +572,7 @@ func TestMappingRuleRefusals(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			_, err := vocabulary.LoadFS(fstest.MapFS{
-				"m.example.com/all.yaml": &fstest.MapFile{Data: []byte(mapHead + tc.rules)},
+				"m.example.com/m/all.yaml": &fstest.MapFile{Data: []byte(mapHead + tc.rules)},
 			})
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("want %q, got: %v", tc.want, err)
@@ -584,20 +587,22 @@ func TestMappingRuleRefusals(t *testing.T) {
 // binding the `range` variant, which is what proves the parsed variants are the
 // ones a binding reads.
 func traitDocs(oneOf string) string {
-	return `kind: core.substrate.reamde.dev/authority
-metadata: {id: c.example.com}
-data: {version: 1}
+	return `kind: substrate.reamde.dev/core/package
+metadata: {id: c.example.com/c}
+data: {authority: c.example.com, package: c, version: 1}
 ---
-kind: core.substrate.reamde.dev/trait
-metadata: {id: c.example.com/temporal}
+kind: substrate.reamde.dev/core/trait
+metadata: {id: c.example.com/c/temporal}
 data:
   authority: c.example.com
+  package: c
   oneOf:
 ` + oneOf + `---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: c.example.com/meeting}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: c.example.com/c/meeting}
 data:
   authority: c.example.com
+  package: c
   names: {singular: meeting, plural: meetings}
   traits: [temporal(range)]
 `
@@ -606,7 +611,7 @@ data:
 func loadTrait(t *testing.T, oneOf string) *vocabulary.Registry {
 	t.Helper()
 	r, err := vocabulary.LoadFS(fstest.MapFS{
-		"c.example.com/all.yaml": &fstest.MapFile{Data: []byte(traitDocs(oneOf))},
+		"c.example.com/c/all.yaml": &fstest.MapFile{Data: []byte(traitDocs(oneOf))},
 	})
 	if err != nil {
 		t.Fatalf("load:\n%s\n%v", oneOf, err)
@@ -617,9 +622,9 @@ func loadTrait(t *testing.T, oneOf string) *vocabulary.Registry {
 func TestTraitVariantsAreAList(t *testing.T) {
 	variants := func(r *vocabulary.Registry) map[string]map[string]vocabulary.Datatype {
 		t.Helper()
-		g, ok := r.AuthorityByName("c.example.com")
+		g, ok := r.PackageByName("c.example.com/c")
 		if !ok {
-			t.Fatal("c.example.com missing")
+			t.Fatal("c.example.com/c missing")
 		}
 		return g.Traits["temporal"].Variants
 	}
@@ -637,9 +642,9 @@ func TestTraitVariantsAreAList(t *testing.T) {
     - name: range
       properties: {at: datetime, endsAt: datetime}
 `)
-	k, ok := r.ByIdentity("c.example.com/meeting")
+	k, ok := r.ByIdentity("c.example.com/c/meeting")
 	if !ok {
-		t.Fatal("c.example.com/meeting missing")
+		t.Fatal("c.example.com/c/meeting missing")
 	}
 	if !k.UsesHot("at") || !k.UsesHot("endsAt") {
 		t.Fatalf("temporal(range) bound %v", k.HotColumns)
@@ -695,7 +700,7 @@ func TestTraitVariantListRefusals(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			_, err := vocabulary.LoadFS(fstest.MapFS{
-				"c.example.com/all.yaml": &fstest.MapFile{Data: []byte(traitDocs(tc.oneOf))},
+				"c.example.com/c/all.yaml": &fstest.MapFile{Data: []byte(traitDocs(tc.oneOf))},
 			})
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("want %q, got: %v", tc.want, err)
@@ -712,49 +717,53 @@ func TestTraitVariantListRefusals(t *testing.T) {
 // naming the object that replaced it; nothing translates a stored row written
 // the bare way.
 func TestBareListSpellingsAreRefused(t *testing.T) {
-	const indexDoc = `kind: core.substrate.reamde.dev/authority
-metadata: {id: i.example.com}
-data: {version: 1}
+	const indexDoc = `kind: substrate.reamde.dev/core/package
+metadata: {id: i.example.com/i}
+data: {authority: i.example.com, package: i, version: 1}
 ---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: i.example.com/widget}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: i.example.com/i/widget}
 data:
   authority: i.example.com
+  package: i
   names: {singular: widget, plural: widgets}
   indices: [[label, other]]
   properties:
     label: {type: string}
     other: {type: string}
 `
-	const scopesDoc = `kind: core.substrate.reamde.dev/authority
-metadata: {id: s.bundles.example.com}
-data: {version: 1}
+	const scopesDoc = `kind: substrate.reamde.dev/core/package
+metadata: {id: s.bundles.example.com/s}
+data: {authority: s.bundles.example.com, package: s, version: 1}
 ---
-kind: core.substrate.reamde.dev/trait
-metadata: {id: s.bundles.example.com/oauth2}
+kind: substrate.reamde.dev/core/trait
+metadata: {id: s.bundles.example.com/s/oauth2}
 data:
   authority: s.bundles.example.com
+  package: s
   properties: {clientId: string, clientSecret: secret}
 ---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: s.bundles.example.com/config}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: s.bundles.example.com/s/config}
 data:
   authority: s.bundles.example.com
+  package: s
   names: {singular: config, plural: configs}
   traits: [oauth2]
   properties:
     enabledThing: {type: bool}
 ---
-kind: core.substrate.reamde.dev/bundle
+kind: substrate.reamde.dev/core/bundle
 metadata: {id: s.bundles.example.com/s}
 data:
   authority: s.bundles.example.com
+  package: s
   description: one config, so the closure is whole
   inputs:
-    client: {kind: s.bundles.example.com/config}
+    client: {kind: s.bundles.example.com/s/config}
   installs:
-    - s.bundles.example.com/config
-    - s.bundles.example.com/oauth2
+    - s.bundles.example.com/s/config
+    - s.bundles.example.com/s/oauth2
   oauth2:
     clientInput: client
     authorizationEndpoint: https://example.com/authorize
@@ -811,14 +820,15 @@ func TestEmptyIndexPropertiesRefused(t *testing.T) {
 // writer working from an old export is owed the sentence that fixes the document,
 // whichever way it sent it.
 func TestRetiredRowSpellingsAreNamed(t *testing.T) {
-	const kindDoc = `kind: core.substrate.reamde.dev/authority
-metadata: {id: p.example.com}
-data: {version: 1}
+	const kindDoc = `kind: substrate.reamde.dev/core/package
+metadata: {id: p.example.com/p}
+data: {authority: p.example.com, package: p, version: 1}
 ---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: p.example.com/widget}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: p.example.com/p/widget}
 data:
   authority: p.example.com
+  package: p
   names: {singular: widget, plural: widgets}
   plural: widgets
   properties:
@@ -836,7 +846,7 @@ data:
 			fnAuthority(`  description: d
   runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
   definition: {description: d}
   source: "def main(input, host): return {}"
 `),
@@ -846,7 +856,7 @@ data:
 			fnAuthority(`  description: d
   runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
   name: mirror
   source: "def main(input, host): return {}"
 `),
@@ -856,8 +866,8 @@ data:
 			fnAuthority(`  description: d
   runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
-  sourceYAML: "kind: core.substrate.reamde.dev/function"
+    writes: [fn.example.com/fn/gadget]
+  sourceYAML: "kind: substrate.reamde.dev/core/function"
   source: "def main(input, host): return {}"
 `),
 			`key "sourceYAML" is deleted — the retired mirror: nothing stores a document's text`,
@@ -867,11 +877,11 @@ data:
 			"key \"plural\" is deleted — the retired mirror: a kind's collection segment is its name (decision 0033)",
 		},
 		"the functions mirror names tools": {
-			agentMirror("  functions: [ag.example.com/annotate]\n"),
+			agentMirror("  functions: [ag.example.com/ag/annotate]\n"),
 			"key \"functions\" is deleted — the retired mirror: an agent names its callables under `tools`",
 		},
 		"the old agents key names subagents": {
-			agentMirror("  agents: [ag.example.com/sorter]\n"),
+			agentMirror("  agents: [ag.example.com/ag/sorter]\n"),
 			"key \"agents\" is deleted — subagents: an agent names its sub-agents under `subagents`",
 		},
 	} {

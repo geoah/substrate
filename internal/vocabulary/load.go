@@ -23,10 +23,10 @@ const (
 
 var reCapBinding = regexp.MustCompile(`^([a-z][a-zA-Z0-9]*)(?:\(\s*([a-z][a-zA-Z0-9]*)\s*(?::\s*([a-zA-Z0-9,\s]*))?\s*\))?$`)
 
-// LoadFS parses every .yaml document under fsys into one registry. The unit
-// is the document, not the file: manifests are grouped by `data.authority`, and
-// all authorities are built before any pin or cross-authority trait is resolved,
-// so files may reference each other in any order.
+// LoadFS parses every .yaml document under fsys into one registry. The unit is
+// the document, not the file: manifests are grouped by the PACKAGE they
+// declare into, and all packages are built before any pin or cross-package
+// trait is resolved, so files may reference each other in any order.
 func LoadFS(fsys fs.FS) (*Registry, error) {
 	docs, err := readDocuments(fsys)
 	if err != nil {
@@ -35,7 +35,7 @@ func LoadFS(fsys fs.FS) (*Registry, error) {
 	if len(docs) == 0 {
 		return nil, fmt.Errorf("substrate/schema: no schema manifests found")
 	}
-	authorities, err := BuildAuthorities(docs, SourceBuiltin)
+	authorities, err := BuildPackages(docs, SourceBuiltin)
 	if err != nil {
 		return nil, err
 	}
@@ -85,31 +85,33 @@ func readDocuments(fsys fs.FS) ([]Document, error) {
 	return out, nil
 }
 
-// ParseYAML parses one manifest stream into its authorities — one file, one test
+// ParseYAML parses one manifest stream into its packages — one file, one test
 // fixture, one paste.
-func ParseYAML(data []byte, source string) ([]*Authority, error) {
+func ParseYAML(data []byte, source string) ([]*Package, error) {
 	docs, err := ParseStream(data)
 	if err != nil {
 		return nil, err
 	}
-	return BuildAuthorities(docs, source)
+	return BuildPackages(docs, source)
 }
 
-// Manifest is the legacy connector-registration payload shape (name, authority,
-// and the manifest document list). The POST …/connectors shim and the frozen
+// Manifest is the legacy registration payload shape (name, the package it
+// installs, and the manifest document list). The POST …/connectors shim and the frozen
 // substrate.ConnectorManifest wire type were removed at the v1 freeze (ticket
 // 004, ruling A12); this struct survives ONLY as the in-memory shape the
 // loader test's fixture decodes into. It is not a wire contract, and the
 // stored-manifest promotion that once shared it is gone (#217).
 type Manifest struct {
-	Name      string           `json:"name"`
+	Name string `json:"name"`
+	// Authority is the PACKAGE identity the payload installs; the field name
+	// is the legacy payload's.
 	Authority string           `json:"authority"`
 	Manifests []map[string]any `json:"manifests"`
 }
 
-// ParseManifest turns a connector's installed payload — a list of manifest
-// documents — into the single authority it installs.
-func ParseManifest(m Manifest) (*Authority, error) {
+// ParseManifest turns an installed payload — a list of manifest documents —
+// into the single package it installs.
+func ParseManifest(m Manifest) (*Package, error) {
 	docs := make([]Document, 0, len(m.Manifests))
 	var problems []string
 	for _, raw := range m.Manifests {
@@ -123,67 +125,86 @@ func ParseManifest(m Manifest) (*Authority, error) {
 	if len(problems) > 0 {
 		return nil, validationError(problems)
 	}
-	authorities, err := BuildAuthorities(docs, SourceInstalled)
+	packages, err := BuildPackages(docs, SourceInstalled)
 	if err != nil {
 		return nil, err
 	}
 	switch {
-	case len(authorities) == 0:
-		return nil, validationError([]string{"manifest: declares no authority"})
-	case len(authorities) > 1:
-		names := make([]string, 0, len(authorities))
-		for _, g := range authorities {
-			names = append(names, g.Name)
+	case len(packages) == 0:
+		return nil, validationError([]string{"manifest: declares no package"})
+	case len(packages) > 1:
+		names := make([]string, 0, len(packages))
+		for _, g := range packages {
+			names = append(names, g.Identity)
 		}
 		return nil, validationError([]string{
-			fmt.Sprintf("manifest: installs one authority, got %s", strings.Join(names, ", ")),
+			fmt.Sprintf("manifest: installs one package, got %s", strings.Join(names, ", ")),
 		})
-	case m.Authority != "" && authorities[0].Name != m.Authority:
+	case m.Authority != "" && packages[0].Identity != m.Authority:
 		return nil, validationError([]string{
-			fmt.Sprintf("manifest: authority %q, but its manifests declare %q", m.Authority, authorities[0].Name),
+			fmt.Sprintf("manifest: package %q, but its manifests declare %q", m.Authority, packages[0].Identity),
 		})
 	}
-	return authorities[0], nil
+	return packages[0], nil
 }
 
-// BuildAuthorities turns a document stream into authorities, one per declared
-// `data.authority`. Every problem in every document is reported at once.
-func BuildAuthorities(docs []Document, source string) ([]*Authority, error) {
+// BuildPackages turns a document stream into the groups it declares — one per
+// package, plus one per authority document — keyed by DeclaredPackage. Every
+// problem in every document is reported at once.
+func BuildPackages(docs []Document, source string) ([]*Package, error) {
 	l := &loader{source: source}
-	buckets := map[string]*authorityDocs{}
+	buckets := map[string]*packageDocs{}
 	var order []string
-	bucket := func(authority string) *authorityDocs {
-		b, ok := buckets[authority]
+	bucket := func(pkg string) *packageDocs {
+		b, ok := buckets[pkg]
 		if !ok {
-			b = &authorityDocs{}
-			buckets[authority] = b
-			order = append(order, authority)
+			b = &packageDocs{}
+			buckets[pkg] = b
+			order = append(order, pkg)
 		}
 		return b
 	}
 	for _, d := range docs {
-		authority := d.DeclaredAuthority()
-		if authority == "" {
-			l.errf("%s %s: data.authority is required", d.Kind, d.ID)
+		pkg := d.DeclaredPackage()
+		if pkg == "" {
+			l.errf("%s %s: data.authority and data.package are required", d.Kind, d.ID)
 			continue
+		}
+		// A header document IS its group, so its id is what is held to the
+		// grammar; every other document is held to the two keys it named.
+		where := "data.authority"
+		authority, name := pkg, ""
+		if d.Kind != DocAuthority {
+			authority, name = SplitPackageRef(pkg)
+		}
+		if d.Kind == DocAuthority || d.Kind == DocPackage {
+			where = "metadata.id"
 		}
 		if !ValidAuthority(authority) {
-			l.errf("%s %s: data.authority %q must be a DNS name", d.Kind, d.ID, authority)
+			l.errf("%s %s: %s %q must be a DNS name", d.Kind, d.ID, where, authority)
 			continue
 		}
-		b := bucket(authority)
+		if d.Kind != DocAuthority && !ValidPackage(name) {
+			if where == "metadata.id" {
+				l.errf("%s %s: metadata.id is the package identity, %q", d.Kind, d.ID, "<authority>/<package>")
+			} else {
+				l.errf("%s %s: data.package %q must be %s", d.Kind, d.ID, name, wordRule)
+			}
+			continue
+		}
+		b := bucket(pkg)
 		// The bundle closure counts every member kind, present and future:
 		// anything but the header, the actors and the bundle itself.
-		if d.Kind != DocAuthority && d.Kind != DocActor && d.Kind != DocBundle {
+		if d.Kind != DocAuthority && d.Kind != DocPackage && d.Kind != DocActor && d.Kind != DocBundle {
 			b.memberIDs = append(b.memberIDs, d.ID)
 		}
 		switch d.Kind {
-		case DocAuthority:
-			if b.authority != nil {
-				l.errf("authority %s: declared twice", d.ID)
+		case DocAuthority, DocPackage:
+			if b.header != nil {
+				l.errf("%s %s: declared twice", d.Kind, d.ID)
 				continue
 			}
-			b.authority = &d
+			b.header = &d
 		case DocActor:
 			b.actors = append(b.actors, d)
 		case DocTrait:
@@ -203,20 +224,9 @@ func BuildAuthorities(docs []Document, source string) ([]*Authority, error) {
 		}
 	}
 	sort.Strings(order)
-	// A VOCABULARY bundle's authority is SHIPPED vocabulary whichever door it
-	// came through (bundle.go): the binary publishes people/tasks/media/…, the
-	// registry only DELIVERS them. So it is built `builtin` even on an install
-	// path — which keeps its GraphQL names bare (`Person`, not `People_Person`)
-	// and keeps its declarations behind the authority chokepoint, exactly as
-	// when the creation seed still wrote them.
-	vocabulary := VocabularyBundleAuthorities(docs)
-	out := make([]*Authority, 0, len(order))
+	out := make([]*Package, 0, len(order))
 	for _, name := range order {
-		src := source
-		if vocabulary[name] {
-			src = SourceBuiltin
-		}
-		if g := l.buildAuthority(name, buckets[name], src); g != nil {
+		if g := l.buildPackage(name, buckets[name], source); g != nil {
 			out = append(out, g)
 		}
 	}
@@ -226,11 +236,17 @@ func BuildAuthorities(docs []Document, source string) ([]*Authority, error) {
 	return out, nil
 }
 
-// authorityDocs holds one authority's manifests, bucketed by type: an authority is built
-// datatypes first, then traits, then types, so a document's position in
+// wordRule is what a package name and a kind name are held to, in the author's
+// terms rather than the regexp's.
+const wordRule = "one lowercase word ([a-z][a-z0-9]*)"
+
+// packageDocs holds one group's manifests, bucketed by kind: a package is
+// built datatypes first, then traits, then kinds, so a document's position in
 // the stream never decides whether it resolves.
-type authorityDocs struct {
-	authority    *Document
+type packageDocs struct {
+	// header is the group's own document: a `package`, or the `authority`
+	// document of an authority row.
+	header       *Document
 	actors       []Document
 	capabilities []Document
 	datatypes    []Document
@@ -240,20 +256,16 @@ type authorityDocs struct {
 	agents       []Document
 	bundles      []Document
 	// memberIDs are the ids of every member-kind document declared into the
-	// authority — the set a bundle's `installs:` must equal (bundle.go).
+	// package — the set a bundle's `installs:` must equal (bundle.go).
 	memberIDs []string
 }
 
 type loader struct {
-	authority *Authority
-	problems  []string
-	// source is the origin BuildAuthorities was called with, before the
-	// vocabulary-bundle override below promotes an individual authority to
-	// `builtin`. One rule reads it — `runtime: host`, which only the shipped
-	// build may declare (function.go) — and it reads the CALL's source on
-	// purpose: a vocabulary bundle is shipped VOCABULARY however it arrived, but
-	// it is still installed, and the engine implements only what the engine
-	// ships.
+	pkg      *Package
+	problems []string
+	// source is the origin BuildPackages was called with. One rule reads it —
+	// `runtime: host`, which only the shipped build may declare (function.go)
+	// — because the engine implements only what the engine ships.
 	source string
 }
 
@@ -266,26 +278,55 @@ func validationError(problems []string) error {
 	return &substrate.ValidationError{Problems: problems}
 }
 
-var authorityDataKeys = map[string]bool{"version": true}
+// packageDataKeys is the package header's closed key set: which authority
+// publishes it, its own name, what it is for, and the version the whole
+// closure ships at.
+var packageDataKeys = map[string]bool{
+	"authority": true, "package": true, "description": true, "version": true,
+}
 
-var actorDataKeys = map[string]bool{"authority": true, "tier": true}
+// authorityDataKeys is the authority row's closed key set. It owns the packages
+// published under it and says what it is; a closure's version, its ownership
+// and its quarantine all sit on the PACKAGE (decision 0047). The `version` here
+// is the ROW's own, and it is authored for the same reason a kind's is: the
+// boot upgrade diffs rows by version, so a description that changed under an
+// unmoved version is an upgrade no repository receives.
+var authorityDataKeys = map[string]bool{"description": true, "version": true}
+
+var actorDataKeys = map[string]bool{"authority": true, "package": true, "tier": true}
 
 var datatypeDataKeys = map[string]bool{
-	"authority": true, "base": true, "pattern": true, "min": true, "max": true,
+	"authority": true, "package": true, "base": true, "pattern": true, "min": true, "max": true,
 	"values": true, "description": true,
 }
 
 var capabilityDataKeys = map[string]bool{
-	"authority": true, "oneOf": true, "properties": true, "description": true,
+	"authority": true, "package": true, "oneOf": true, "properties": true, "description": true,
 }
 
-// buildAuthority assembles one authority from its manifests.
-func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *Authority {
-	if gd.authority == nil {
-		l.errf("authority %s: no authority manifest declares it", name)
+// buildPackage assembles one group from its manifests: a package with its
+// members, or the authority row an authority document declares.
+func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *Package {
+	authority, name := SplitPackageRef(identity)
+	isAuthority := name == ""
+	if isAuthority {
+		authority = identity
+	}
+	if gd.header == nil {
+		if isAuthority {
+			l.errf("authority %s: no authority manifest declares it", identity)
+		} else {
+			l.errf("package %s: no package manifest declares it", identity)
+		}
 		return nil
 	}
-	g := &Authority{
+	where := DocPackage + " " + identity
+	if isAuthority {
+		where = DocAuthority + " " + identity
+	}
+	g := &Package{
+		Identity:      identity,
+		Authority:     authority,
 		Name:          name,
 		Source:        source,
 		ActorTiers:    map[string]substrate.Tier{},
@@ -295,12 +336,45 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 		Mappings:      map[string]*Mapping{},
 		Functions:     map[string]*Function{},
 		Agents:        map[string]*Agent{},
-		SourceYAML:    gd.authority.Source,
+		SourceYAML:    gd.header.Source,
 	}
-	l.authority = g
+	l.pkg = g
 
-	l.checkKeys("authority "+name, gd.authority.Data, authorityDataKeys)
-	g.Version = l.parseVersion("authority "+name, gd.authority.Data)
+	if isAuthority {
+		// An AUTHORITY row owns packages and declares no members: it carries
+		// no version, because the version unit is the package, and a document
+		// that landed in this group at all is one whose `data.package` was
+		// missing.
+		l.checkKeys(where, gd.header.Data, authorityDataKeys)
+		g.Description = l.parseDescription(where+": data", gd.header.Data)
+		g.Version = l.parseVersion(where, gd.header.Data)
+		if g.Version == 0 {
+			g.Version = DefaultVersion
+		}
+		if gd.header.Kind != DocAuthority {
+			l.errf("%s: an authority names no package, so it declares no members", where)
+		}
+		if len(gd.memberIDs) > 0 || len(gd.actors) > 0 || len(gd.bundles) > 0 {
+			l.errf("%s: a declaration lives in a package — name one in data.package", where)
+		}
+		return g
+	}
+	if gd.header.Kind != DocPackage {
+		l.errf("%s: a package is headed by a %s document", where, CoreKind(DocPackage))
+		return nil
+	}
+	l.checkKeys(where, gd.header.Data, packageDataKeys)
+	// The header's id and its two keys are the same identity said twice, so a
+	// document that spells them apart is a load error rather than a silent
+	// preference for one of them.
+	if declared := mstr(gd.header.Data, "authority"); declared != authority {
+		l.errf("%s: data.authority %q, but metadata.id says %q", where, declared, authority)
+	}
+	if declared := mstr(gd.header.Data, "package"); declared != name {
+		l.errf("%s: data.package %q, but metadata.id says %q", where, declared, name)
+	}
+	g.Description = l.parseDescription(where+": data", gd.header.Data)
+	g.Version = l.parseVersion(where, gd.header.Data)
 	if g.Version == 0 {
 		g.Version = DefaultVersion
 	}
@@ -321,8 +395,8 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 		// before the reserved-name fallback in engine actorTier).
 		//
 		// A dispatch hand is minted per call and declared by nobody. A bundle
-		// hand has one legal declarer, the authority it names, which is the
-		// AuthorityActor an authority declares so its own tier and mapping
+		// hand has one legal declarer, the package it names, which is the
+		// PackageActor a package declares so its own tier and mapping
 		// precedence are legible. The retired `connector:` spelling stays
 		// declarable: repositories written before record 0025 store those
 		// declarations and must keep loading, and since nothing mints one, no
@@ -332,9 +406,9 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 			strings.HasPrefix(d.ID, substrate.AgentActorPrefix):
 			l.errf("%s: a function's and an agent's actor is minted at dispatch from its identity — it is never declared", where)
 			continue
-		case strings.HasPrefix(d.ID, substrate.BundleActorPrefix) && d.ID != AuthorityActor(name):
-			l.errf("%s: a bundle actor belongs to the authority it names — %s may declare %q and no other",
-				where, name, AuthorityActor(name))
+		case strings.HasPrefix(d.ID, substrate.BundleActorPrefix) && d.ID != PackageActor(identity):
+			l.errf("%s: a bundle actor belongs to the package it names — %s may declare %q and no other",
+				where, identity, PackageActor(identity))
 			continue
 		}
 		if slices.Contains(g.Actors, d.ID) {
@@ -354,10 +428,11 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 			l.errf("%s: tier must be owner, bundle or machine, got %q", where, declared)
 			continue
 		}
-		if d.ID == name && tier != substrate.TierMachine {
-			// Record 60: an authority-named actor has no record row of its own — the
-			// authority row is it, and that row carries no tier to round-trip.
-			l.errf("%s: an authority-named actor is the connector's own hand — its tier is machine", where)
+		if d.ID == identity && tier != substrate.TierMachine {
+			// Record 60: a package-named actor has no record row of its own —
+			// the package row is it, and that row carries no tier to
+			// round-trip.
+			l.errf("%s: a package-named actor is the closure's own hand — its tier is machine", where)
 			continue
 		}
 		g.Actors = append(g.Actors, d.ID)
@@ -370,7 +445,7 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 		where := DocPropertyType + " " + d.ID
 		l.checkKeys(where, d.Data, datatypeDataKeys)
 		l.parseDescription(where+": data", d.Data)
-		local, ok := l.localName(where, d.ID, name)
+		local, ok := l.localName(where, d.ID, identity)
 		if !ok {
 			continue
 		}
@@ -405,7 +480,7 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 			continue
 		}
 		g.PropertyTypes[local] = &PropertyType{
-			Name: local, Authority: name, Base: p.Datatype, Prop: p,
+			Name: local, Package: identity, Base: p.Datatype, Prop: p,
 			Definition: data, SourceYAML: d.Source,
 		}
 		g.DatatypeOrder = append(g.DatatypeOrder, local)
@@ -418,12 +493,12 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 		where := DocTrait + " " + d.ID
 		l.checkKeys(where, d.Data, capabilityDataKeys)
 		l.parseDescription(where+": data", d.Data)
-		local, ok := l.localName(where, d.ID, name)
+		local, ok := l.localName(where, d.ID, identity)
 		if !ok {
 			continue
 		}
 		c := &Trait{
-			Name: local, Authority: name, Definition: d.Data, SourceYAML: d.Source,
+			Name: local, Package: identity, Definition: d.Data, SourceYAML: d.Source,
 		}
 		if one, has := d.Data["oneOf"]; has {
 			c.Variants = l.parseTraitVariants(where, one)
@@ -470,8 +545,8 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 	}
 	sort.Strings(g.KindOrder)
 
-	// Mappings, after types: `from` must be a type this authority declares
-	// (§6.1); everything about the target is deferred to Finalize/Install.
+	// Mappings, after kinds: `from` must be a kind this package declares;
+	// everything about the target is deferred to Finalize/Install.
 	sortDocs(gd.mappings)
 	for _, d := range gd.mappings {
 		m := l.parseMapping(d)
@@ -506,11 +581,11 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 
 	// Agents (agent.go): tool callables, sub-agents and emit resolve against
 	// the registry in Finalize/Install; the llmprovider data row resolves at dispatch.
-	l.buildAuthorityAgents(gd, g)
+	l.buildPackageAgents(gd, g)
 
-	// The bundle document (bundle.go): the owned-authority rule and the install
-	// closure check against the authority's own members; the inputs resolve
-	// in Finalize/Install, after trait bindings.
+	// The bundle document (bundle.go): its id is the package it is named for,
+	// and the install closure checks against the package's own members; the
+	// inputs resolve in Finalize/Install, after trait bindings.
 	l.buildBundle(gd)
 	return g
 }
@@ -592,13 +667,18 @@ func (l *loader) parseTraitVariantProps(where string, props map[string]any) map[
 	return out
 }
 
-// localName splits an `<authority>/<name>` kind reference and checks it
-// addresses this authority. Identity is metadata.id (FORMAT.md §2), so a
-// manifest that spells it inconsistently is a load error, not a silent rename.
-func (l *loader) localName(where, identity, authority string) (string, bool) {
-	head, local := SplitKindRef(identity)
-	if head != authority || local == "" {
-		l.errf("%s: metadata.id must be %q", where, KindRef(authority, "<name>"))
+// localName splits an `<authority>/<package>/<name>` kind reference and checks
+// it addresses this package. Identity is metadata.id, so a manifest that spells
+// it inconsistently is a load error, not a silent rename.
+func (l *loader) localName(where, identity, pkg string) (string, bool) {
+	head, local, found := strings.Cut(identity, "/")
+	for found && strings.Contains(local, "/") {
+		var next string
+		next, local, found = strings.Cut(local, "/")
+		head += "/" + next
+	}
+	if head != pkg || local == "" || !found {
+		l.errf("%s: metadata.id must be %q", where, pkg+"/<name>")
 		return "", false
 	}
 	if !ValidCamel(local) {
@@ -612,6 +692,7 @@ func (l *loader) localName(where, identity, authority string) (string, bool) {
 // the manifest short name — the same maps checkKeys holds each document to.
 var declarationDataKeys = map[string]map[string]bool{
 	DocAuthority:     authorityDataKeys,
+	DocPackage:       packageDataKeys,
 	DocActor:         actorDataKeys,
 	DocKind:          typeDataKeys,
 	DocTrait:         capabilityDataKeys,
@@ -734,7 +815,7 @@ func sortDocs(docs []Document) {
 }
 
 var typeDataKeys = map[string]bool{
-	"authority": true, "names": true, "displayTemplate": true, "properties": true,
+	"authority": true, "package": true, "names": true, "displayTemplate": true, "properties": true,
 	"traits": true, "indices": true,
 	"description": true, "version": true,
 }
@@ -750,7 +831,7 @@ var namesKeys = map[string]bool{"singular": true, "plural": true}
 var indexKeys = map[string]bool{"properties": true}
 
 func (l *loader) parseType(doc Document) *Kind {
-	g := l.authority
+	g := l.pkg
 	d := doc.Data
 	where := DocKind + " " + doc.ID
 	l.checkKeys(where, d, typeDataKeys)
@@ -769,14 +850,14 @@ func (l *loader) parseType(doc Document) *Kind {
 	}
 	// The type's identity is its metadata.id and must agree with the names
 	// block; nothing derives one from the other.
-	if doc.ID != KindRef(g.Name, name) {
-		l.errf("%s: metadata.id must be %q", where, KindRef(g.Name, name))
+	if doc.ID != g.Identity+"/"+name {
+		l.errf("%s: metadata.id must be %q", where, g.Identity+"/"+name)
 		return nil
 	}
 
 	t := &Kind{
 		Name:        name,
-		Authority:   g.Name,
+		Package:     g.Identity,
 		Identity:    doc.ID,
 		Version:     g.Version,
 		Source:      g.Source,
@@ -1187,7 +1268,7 @@ const maxCallableDescription = 1000
 
 // maxKindDescription bounds a KIND's description. A kind's is not a tooltip:
 // the console heads the kind's page with it, and a reader arriving at
-// `core.substrate.reamde.dev/run` needs what the thing is AND what writes it,
+// `substrate.reamde.dev/core/run` needs what the thing is AND what writes it,
 // which is two sentences. Still one line — the folded scalar (`>-`) is how a
 // manifest wraps one.
 const maxKindDescription = 400
@@ -1229,7 +1310,7 @@ func (l *loader) parseDescriptionMax(where string, d map[string]any, max int) st
 // It is a LABEL, never an identifier (Property.Inverse says why), so the only
 // thing enforced HERE is that it is spelled like every other declared name, and
 // that a description does not describe an inverse nobody declared. Collisions
-// are settled where the authority is finalized (checkAuthorityInverses) and
+// are settled where the authority is finalized (checkPackageInverses) and
 // only within one authority — the name lives on the TARGET's side, so what the
 // declaring kind happens to call its own properties cannot conflict with it.
 func (l *loader) parseInverse(where string, d map[string]any) (name, description string) {
@@ -1820,7 +1901,7 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 		return nil
 	}
 	if !builtinKinds[kind] {
-		dt, ok := l.authority.PropertyTypes[raw]
+		dt, ok := l.pkg.PropertyTypes[raw]
 		if !ok || !allowRefinement {
 			l.errf("%s: unknown property type %q", where, raw)
 			return nil
@@ -2139,14 +2220,14 @@ func (l *loader) parseFields(where string, d map[string]any, depth int) map[stri
 }
 
 // add indexes a parsed authority without resolving cross-authority references.
-func (r *Registry) add(g *Authority) error {
+func (r *Registry) add(g *Package) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, ok := r.authorities[g.Name]; ok {
-		return fmt.Errorf("substrate/schema: authority %s already loaded", g.Name)
+	if _, ok := r.packages[g.Identity]; ok {
+		return fmt.Errorf("substrate/schema: authority %s already loaded", g.Identity)
 	}
-	r.authorities[g.Name] = g
-	r.order = append(r.order, g.Name)
+	r.packages[g.Identity] = g
+	r.order = append(r.order, g.Identity)
 	for _, name := range g.KindOrder {
 		t := g.Kinds[name]
 		r.byIdent[t.Identity] = t
@@ -2158,14 +2239,14 @@ func (r *Registry) add(g *Authority) error {
 // Finalize resolves every authority's reference pins and trait contracts.
 func (r *Registry) Finalize() error {
 	r.mu.RLock()
-	authorities := make([]*Authority, 0, len(r.order))
+	authorities := make([]*Package, 0, len(r.order))
 	for _, n := range r.order {
-		authorities = append(authorities, r.authorities[n])
+		authorities = append(authorities, r.packages[n])
 	}
 	r.mu.RUnlock()
 	var problems []string
 	for _, g := range authorities {
-		problems = append(problems, r.resolveAuthority(g)...)
+		problems = append(problems, r.resolvePackage(g)...)
 	}
 	problems = append(problems, r.mappingInvariantProblems()...)
 	problems = append(problems, r.graphqlNameProblems()...)
@@ -2180,16 +2261,16 @@ func (r *Registry) Finalize() error {
 
 // Install adds an already-parsed authority and resolves it, bumping the version
 // counter the GraphQL layer caches against.
-func (r *Registry) Install(g *Authority) error {
+func (r *Registry) Install(g *Package) error {
 	if err := r.add(g); err != nil {
 		return err
 	}
-	problems := r.resolveAuthority(g)
+	problems := r.resolvePackage(g)
 	// The registry-wide mapping invariants re-run whole: a re-registration
 	// may add a mapping whose violation lives on an already-loaded kind.
 	problems = append(problems, r.mappingInvariantProblems()...)
 	if len(problems) > 0 {
-		r.remove(g.Name)
+		r.remove(g.Identity)
 		return validationError(problems)
 	}
 	r.mu.Lock()
@@ -2207,7 +2288,7 @@ func (r *Registry) Remove(authority string) { r.remove(authority) }
 // authorities that reference each other install in any order — the shape both the
 // batch apply verb and the repository-open rebuild need. On any problem nothing
 // stays installed and every problem is reported at once.
-func (r *Registry) InstallAll(authorities []*Authority) error {
+func (r *Registry) InstallAll(authorities []*Package) error {
 	for i, g := range authorities {
 		if err := r.add(g); err != nil {
 			for _, undo := range authorities[:i] {
@@ -2218,12 +2299,12 @@ func (r *Registry) InstallAll(authorities []*Authority) error {
 	}
 	var problems []string
 	for _, g := range authorities {
-		problems = append(problems, r.resolveAuthority(g)...)
+		problems = append(problems, r.resolvePackage(g)...)
 	}
 	problems = append(problems, r.mappingInvariantProblems()...)
 	if len(problems) > 0 {
 		for _, g := range authorities {
-			r.remove(g.Name)
+			r.remove(g.Identity)
 		}
 		return validationError(problems)
 	}
@@ -2236,11 +2317,11 @@ func (r *Registry) InstallAll(authorities []*Authority) error {
 func (r *Registry) remove(authority string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	g, ok := r.authorities[authority]
+	g, ok := r.packages[authority]
 	if !ok {
 		return
 	}
-	delete(r.authorities, authority)
+	delete(r.packages, authority)
 	for i, n := range r.order {
 		if n == authority {
 			r.order = append(r.order[:i], r.order[i+1:]...)
@@ -2260,7 +2341,7 @@ func (r *Registry) remove(authority string) {
 	}
 }
 
-// checkAuthorityInverses refuses two pointers of ONE authority that claim the
+// checkPackageInverses refuses two pointers of ONE authority that claim the
 // same inverse name on the same target: standing on that target, both would say
 // `messages` and mean different sets, and the author who wrote both is the one
 // who can fix it.
@@ -2273,7 +2354,7 @@ func (r *Registry) remove(authority string) {
 //
 // Runs after `to:` resolution, so the target compared is the resolved identity;
 // an unconstrained pointer (`any`, or no `to:`) names no target to collide on.
-func (r *Registry) checkAuthorityInverses(g *Authority) []string {
+func (r *Registry) checkPackageInverses(g *Package) []string {
 	type claim struct{ kind, pointer string }
 	seen := map[string]claim{}
 	var problems []string
@@ -2332,7 +2413,7 @@ type referenceSite struct {
 // be half-admitted: before this, a reference field parsed and then never had its
 // `to:` resolved at all, leaving the write path to compare a bare name against a
 // full identity. The inverse-claim check deliberately does NOT
-// (checkAuthorityInverses says why).
+// (checkPackageInverses says why).
 func referenceSites(t *Kind) []referenceSite {
 	var out []referenceSite
 	for _, pn := range t.PropOrder {
@@ -2351,7 +2432,7 @@ func appendReferenceSites(out []referenceSite, path string, p *Property) []refer
 	return out
 }
 
-func (r *Registry) resolveAuthority(g *Authority) []string {
+func (r *Registry) resolvePackage(g *Package) []string {
 	var problems []string
 	for _, tn := range g.KindOrder {
 		t := g.Kinds[tn]
@@ -2365,17 +2446,18 @@ func (r *Registry) resolveAuthority(g *Authority) []string {
 		for _, site := range referenceSites(t) {
 			p := site.Prop
 			// A `trait:` pin resolves against the registry's traits the way a
-			// binding does: a bare name in-authority first then uniquely across
-			// authorities, and a full identity (`authority/name`) against that
-			// authority directly, exactly as a `kind:` pin accepts both. The
-			// resolved full identity is what the write path and the GC cascade key
-			// on, so a bundle-local trait cannot counterfeit a host-recognized one.
+			// binding does: a bare name in the declaring package first then
+			// uniquely across packages, and a full identity
+			// (`authority/package/name`) against that package directly, exactly
+			// as a `kind:` pin accepts both. The resolved full identity is what
+			// the write path and the GC cascade key on, so a package-local
+			// trait cannot counterfeit a host-recognized one.
 			if p.ToTrait != "" {
-				authority, name := g.Name, p.ToTrait
+				pkg, name := g.Identity, p.ToTrait
 				if Qualified(p.ToTrait) {
-					authority, name = SplitKindRef(p.ToTrait)
+					pkg, name = KindPackage(p.ToTrait), KindName(p.ToTrait)
 				}
-				c, err := r.ResolveTrait(authority, name)
+				c, err := r.ResolveTrait(pkg, name)
 				if err != nil {
 					problems = append(problems, fmt.Sprintf("%s: data.properties.%s.trait: %v", where, site.Path, err))
 					continue
@@ -2419,7 +2501,7 @@ func (r *Registry) resolveAuthority(g *Authority) []string {
 					continue
 				}
 				at := fmt.Sprintf("%s: data.properties.%s.transitions[%d].notifies", where, mn, i)
-				if t.Authority != "core.substrate.reamde.dev" {
+				if t.Package != "substrate.reamde.dev/core" {
 					problems = append(problems, fmt.Sprintf("%s: only core kinds may notify a thread in this build", at))
 					continue
 				}
@@ -2430,7 +2512,7 @@ func (r *Registry) resolveAuthority(g *Authority) []string {
 			}
 		}
 	}
-	problems = append(problems, r.checkAuthorityInverses(g)...)
+	problems = append(problems, r.checkPackageInverses(g)...)
 	// Mappings, once the authority's reference pins are resolved identities: the
 	// registry-wide invariants (bipartite, one mapping per source, no reference
 	// onto a source type) run after every authority has, in Finalize and Install.
@@ -2440,7 +2522,7 @@ func (r *Registry) resolveAuthority(g *Authority) []string {
 	for _, fn := range g.FunctionOrder {
 		problems = append(problems, r.resolveFunction(g.Functions[fn])...)
 	}
-	problems = append(problems, r.resolveAuthorityAgents(g)...)
+	problems = append(problems, r.resolvePackageAgents(g)...)
 	// Trait bindings that named a trait from another authority: the
 	// registry is the only place all sibling authorities are visible.
 	contracts := append([]pendingCapProp(nil), g.pending...)
@@ -2449,7 +2531,7 @@ func (r *Registry) resolveAuthority(g *Authority) []string {
 		if !ok {
 			continue
 		}
-		c, err := r.ResolveTrait(g.Name, pc.Cap)
+		c, err := r.ResolveTrait(g.Identity, pc.Cap)
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("%s %s: data.traits: %v", DocKind, t.Identity, err))
 			continue
@@ -2586,13 +2668,16 @@ func mslice(m map[string]any, k string) []any {
 func (r *Registry) graphqlNameProblems() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	byName := map[string][]string{}
+	// The SAME rule the schema builder applies (internal/gql), asked over the
+	// same set: a name this refuses is a name that could not be built, and a
+	// name it admits is the one the schema will carry.
+	kinds := make([]GraphQLKind, 0, len(r.byIdent))
 	for _, t := range r.byIdent {
-		name := GraphQLName(t.Identity, t.Source)
-		if name == "" {
-			continue
-		}
-		byName[name] = append(byName[name], t.Identity)
+		kinds = append(kinds, GraphQLKind{Identity: t.Identity, Source: t.Source})
+	}
+	byName := map[string][]string{}
+	for ident, name := range GraphQLNames(kinds) {
+		byName[name] = append(byName[name], ident)
 	}
 	var problems []string
 	for name, idents := range byName {

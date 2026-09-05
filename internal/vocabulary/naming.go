@@ -17,9 +17,9 @@ const (
 	authorityRE = `[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+`
 	wordRE      = `[a-z][a-z0-9]*`
 	camelRE     = `[a-z][a-zA-Z0-9]*`
-	// kindRefRE is the kind REFERENCE grammar (ref.go): a bare local name, or an
-	// authority and a name split by the one slash.
-	kindRefRE = `(` + authorityRE + `/)?` + wordRE
+	// kindRefRE is the kind REFERENCE grammar (ref.go): a bare local name, or
+	// an authority, a package and a name split by the two slashes.
+	kindRefRE = `(` + authorityRE + `/` + wordRE + `/)?` + wordRE
 )
 
 // Naming rules enforced at load (proposal §3, the contract).
@@ -31,14 +31,15 @@ var (
 	reCamel     = regexp.MustCompile("^" + camelRE + "$")
 	// An actor is one of the closed domain's names: a bare word (`console`,
 	// `substratectl`, `api`, `substrate`) or a prefixed machine hand carrying
-	// the full authority — `bundle:<authority>`,
-	// `function:<authority>:<name>`, `agent:<authority>:<name>` (record 0025).
-	// The first segment after the prefix admits dots so an authority fits; the
-	// optional second is the callable's local name. The retired
-	// `connector:<label>` spelling still matches, because a repository written
-	// before 0025 has actor declarations carrying it and they must keep
-	// loading.
-	reActor = regexp.MustCompile(`^` + wordRE + `(:[a-z][a-z0-9.-]*)?(:` + camelRE + `)?$`)
+	// the full authority and the package — `bundle:<authority>:<package>`,
+	// `function:<authority>:<package>:<name>`,
+	// `agent:<authority>:<package>:<name>` (records 0025 and 0047). The first
+	// segment after the prefix admits dots so an authority fits, the second is
+	// the package, and the optional third is the callable's local name. The
+	// retired `connector:<label>` spelling still matches, because a repository
+	// written before 0025 has actor declarations carrying it and they must
+	// keep loading.
+	reActor = regexp.MustCompile(`^` + wordRE + `(:[a-z][a-z0-9.-]*)?(:` + wordRE + `)?(:` + camelRE + `)?$`)
 	// A namespaced label/annotation key is "<actor>/<name>", and an actor may
 	// carry the domain's colons and an authority's dots
 	// (`function:web.bundles.example.com:harvest/synced`).
@@ -49,7 +50,7 @@ var (
 	// plus the two extra pchars a path segment admits, ":" and "@", plus "/".
 	//
 	// The "/" is there for exactly one reason: a DECLARATION's id is a KIND
-	// REFERENCE ("tasks.substrate.reamde.dev/task"), and the grammar has one
+	// REFERENCE ("samples.substrate.reamde.dev/tasks/task"), and the grammar has one
 	// spelling. A "/" is legal in a URI path segment only when percent-
 	// encoded, so a client writes `%2F` and the API decodes it once
 	// (api/rest.go pathParam). No "%" in the alphabet, so nothing on the wire
@@ -67,6 +68,10 @@ func ValidAuthority(s string) bool { return reAuthority.MatchString(s) }
 
 // ValidName reports whether s is a legal kind name.
 func ValidName(s string) bool { return reWord.MatchString(s) }
+
+// ValidPackage reports whether s is a legal package name: the kind-name
+// grammar, one lowercase word (decision 0047).
+func ValidPackage(s string) bool { return reWord.MatchString(s) }
 
 // ValidCamel reports whether s is a legal declared name — a property or a
 // stamp. One rule: camelCase with initialisms uppercase (`displayName`,

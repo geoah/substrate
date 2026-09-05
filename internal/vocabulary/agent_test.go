@@ -11,110 +11,123 @@ import (
 // agAuthority renders a minimal authority carrying one function tool and one agent
 // whose data is the given YAML block (indented under data:).
 func agAuthority(agData string) string {
-	return `kind: core.substrate.reamde.dev/authority
+	return `kind: substrate.reamde.dev/core/package
 metadata:
-  id: ag.example.com
-data:
-  version: 1
----
-kind: core.substrate.reamde.dev/kind
-metadata:
-  id: ag.example.com/widget
+  id: ag.example.com/ag
 data:
   authority: ag.example.com
+  package: ag
+  version: 1
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: ag.example.com/ag/widget
+data:
+  authority: ag.example.com
+  package: ag
   names: {singular: widget, plural: widgets}
   properties:
     name: {type: string}
 ---
-kind: core.substrate.reamde.dev/function
+kind: substrate.reamde.dev/core/function
 metadata:
-  id: ag.example.com/annotate
+  id: ag.example.com/ag/annotate
 data:
   authority: ag.example.com
+  package: ag
   description: annotates a widget
   runtime: python
   source: "def main(input, host): return {}"
   permissions:
-    writes: [ag.example.com/widget]
+    writes: [ag.example.com/ag/widget]
 ---
-kind: core.substrate.reamde.dev/agent
+kind: substrate.reamde.dev/core/agent
 metadata:
-  id: ag.example.com/sorter
+  id: ag.example.com/ag/sorter
 data:
   authority: ag.example.com
+  package: ag
   description: files widgets where they belong
   prompt: You sort widgets.
   provider: default
   model: claude-opus-5
 ---
-kind: core.substrate.reamde.dev/agent
+kind: substrate.reamde.dev/core/agent
 metadata:
-  id: ag.example.com/classifier
+  id: ag.example.com/ag/classifier
 data:
   authority: ag.example.com
+  package: ag
 ` + agData
 }
 
 func loadAgAuthority(t *testing.T, agData string) (*vocabulary.Registry, error) {
 	t.Helper()
-	fsys := fstest.MapFS{"ag.example.com/all.yaml": &fstest.MapFile{Data: []byte(agData)}}
+	fsys := fstest.MapFS{"ag.example.com/ag/all.yaml": &fstest.MapFile{Data: []byte(agData)}}
 	return vocabulary.LoadFS(fsys)
 }
 
 // coreHostStub is the minimum of core an agent fixture needs to NAME a built-in.
 // The four built-ins are `runtime: host` function records, so
-// `{function: core.substrate.reamde.dev/graphql}` resolves against the registry
+// `{function: substrate.reamde.dev/core/graphql}` resolves against the registry
 // like any other callable — a fixture declaring no core cannot name one, which is
 // exactly the refusal a real repository gets for a function nobody installed.
 // (`host` is admissible here because LoadFS builds `builtin`.)
-const coreHostStub = `kind: core.substrate.reamde.dev/authority
+const coreHostStub = `kind: substrate.reamde.dev/core/package
 metadata:
-  id: core.substrate.reamde.dev
+  id: substrate.reamde.dev/core
 data:
+  authority: substrate.reamde.dev
+  package: core
   version: 1
 ---
-kind: core.substrate.reamde.dev/kind
+kind: substrate.reamde.dev/core/kind
 metadata:
-  id: core.substrate.reamde.dev/recordpatchrequest
+  id: substrate.reamde.dev/core/recordpatchrequest
 data:
-  authority: core.substrate.reamde.dev
+  authority: substrate.reamde.dev
+  package: core
   names: {singular: recordpatchrequest, plural: recordpatchrequests}
   properties:
     op: {type: string}
 ---
-kind: core.substrate.reamde.dev/function
+kind: substrate.reamde.dev/core/function
 metadata:
-  id: core.substrate.reamde.dev/query
+  id: substrate.reamde.dev/core/query
 data:
-  authority: core.substrate.reamde.dev
+  authority: substrate.reamde.dev
+  package: core
   description: reads records under the caller's allowlist
   runtime: host
 ---
-kind: core.substrate.reamde.dev/function
+kind: substrate.reamde.dev/core/function
 metadata:
-  id: core.substrate.reamde.dev/graphql
+  id: substrate.reamde.dev/core/graphql
 data:
-  authority: core.substrate.reamde.dev
+  authority: substrate.reamde.dev
+  package: core
   description: reads the whole repository through GraphQL
   runtime: host
 ---
-kind: core.substrate.reamde.dev/function
+kind: substrate.reamde.dev/core/function
 metadata:
-  id: core.substrate.reamde.dev/mutate
+  id: substrate.reamde.dev/core/mutate
 data:
-  authority: core.substrate.reamde.dev
+  authority: substrate.reamde.dev
+  package: core
   description: writes through GraphQL under the calling agent's emit
   runtime: host
 ---
-kind: core.substrate.reamde.dev/function
+kind: substrate.reamde.dev/core/function
 metadata:
-  id: core.substrate.reamde.dev/propose
+  id: substrate.reamde.dev/core/propose
 data:
-  authority: core.substrate.reamde.dev
+  authority: substrate.reamde.dev
+  package: core
   description: lands a reviewed change request
   runtime: host
   permissions:
-    writes: [core.substrate.reamde.dev/recordpatchrequest]
+    writes: [substrate.reamde.dev/core/recordpatchrequest]
 `
 
 // loadAgAuthorityWithCore is loadAgAuthority with the core stub beside it, for
@@ -122,8 +135,8 @@ data:
 func loadAgAuthorityWithCore(t *testing.T, agData string) (*vocabulary.Registry, error) {
 	t.Helper()
 	fsys := fstest.MapFS{
-		"ag.example.com/all.yaml":             &fstest.MapFile{Data: []byte(agData)},
-		"core.substrate.reamde.dev/core.yaml": &fstest.MapFile{Data: []byte(coreHostStub)},
+		"ag.example.com/ag/all.yaml":          &fstest.MapFile{Data: []byte(agData)},
+		"substrate.reamde.dev/core/core.yaml": &fstest.MapFile{Data: []byte(coreHostStub)},
 	}
 	return vocabulary.LoadFS(fsys)
 }
@@ -155,19 +168,19 @@ func TestAgentLoads(t *testing.T) {
   provider: default
   model: claude-opus-5
   tools:
-    - {function: ag.example.com/annotate, name: markWidget, description: marks one widget}
-  subagents: [ag.example.com/sorter]
+    - {function: ag.example.com/ag/annotate, name: markWidget, description: marks one widget}
+  subagents: [ag.example.com/ag/sorter]
   budgets: {maxTurns: 4, depth: 2}
   permissions:
     writes:
-      - ag.example.com/widget
-      - core.substrate.reamde.dev/recordpatchrequest
+      - ag.example.com/ag/widget
+      - substrate.reamde.dev/core/recordpatchrequest
     reads:
-      kinds: [ag.example.com/widget]
+      kinds: [ag.example.com/ag/widget]
 `))
 	// recordpatchrequest lives in core, which this fixture does not declare
 	// — resolution must fail on exactly that, proving emit resolves.
-	if err == nil || !strings.Contains(err.Error(), "core.substrate.reamde.dev/recordpatchrequest") {
+	if err == nil || !strings.Contains(err.Error(), "substrate.reamde.dev/core/recordpatchrequest") {
 		t.Fatalf("emit did not resolve against the registry: %v", err)
 	}
 	_ = r
@@ -179,28 +192,28 @@ func TestAgentLoadsWithoutCoreEmit(t *testing.T) {
   provider: default
   model: claude-opus-5
   tools:
-    - {function: ag.example.com/annotate, name: markWidget}
-  subagents: [ag.example.com/sorter]
+    - {function: ag.example.com/ag/annotate, name: markWidget}
+  subagents: [ag.example.com/ag/sorter]
   budgets: {maxTurns: 4, depth: 2}
   permissions:
-    writes: [ag.example.com/widget]
+    writes: [ag.example.com/ag/widget]
     reads:
-      kinds: [ag.example.com/widget]
+      kinds: [ag.example.com/ag/widget]
 `))
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	ag, err := r.ResolveAgent("ag.example.com/classifier")
+	ag, err := r.ResolveAgent("ag.example.com/ag/classifier")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ag.Actor() != "agent:ag.example.com:classifier" {
+	if ag.Actor() != "agent:ag.example.com:ag:classifier" {
 		t.Fatalf("actor %q", ag.Actor())
 	}
 	if ag.Budgets.MaxTurns != 4 || ag.Budgets.Depth != 2 || ag.Budgets.MaxToolCalls != vocabulary.DefaultAgentToolCalls {
 		t.Fatalf("budgets %+v", ag.Budgets)
 	}
-	if len(ag.Tools) != 1 || ag.Tools[0].Name != "markWidget" || ag.Tools[0].Callable != "ag.example.com/annotate" {
+	if len(ag.Tools) != 1 || ag.Tools[0].Name != "markWidget" || ag.Tools[0].Callable != "ag.example.com/ag/annotate" {
 		t.Fatalf("tools %+v", ag.Tools)
 	}
 	if ag.Reads == nil || ag.Reads.Calls != vocabulary.DefaultReadCalls {
@@ -220,15 +233,15 @@ func TestAgentGraphQLBuiltinsAndHiddenFromChat(t *testing.T) {
   model: claude-opus-5
   hiddenFromChat: true
   tools:
-    - {function: core.substrate.reamde.dev/graphql}
-    - {function: core.substrate.reamde.dev/mutate}
+    - {function: substrate.reamde.dev/core/graphql}
+    - {function: substrate.reamde.dev/core/mutate}
   permissions:
-    writes: [ag.example.com/widget]
+    writes: [ag.example.com/ag/widget]
 `))
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	ag, err := r.ResolveAgent("ag.example.com/classifier")
+	ag, err := r.ResolveAgent("ag.example.com/ag/classifier")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +254,7 @@ func TestAgentGraphQLBuiltinsAndHiddenFromChat(t *testing.T) {
 		t.Fatalf("tools %+v", ag.Tools)
 	}
 	// The unmarked sibling reads as chattable.
-	sorter, err := r.ResolveAgent("ag.example.com/sorter")
+	sorter, err := r.ResolveAgent("ag.example.com/ag/sorter")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,25 +302,25 @@ func TestAgentRefusals(t *testing.T) {
   prompt: p
   provider: default
   model: claude-opus-5
-  tools: [{function: core.substrate.reamde.dev/query}]
+  tools: [{function: substrate.reamde.dev/core/query}]
 `, "query needs data.permissions.reads"},
 		{"propose without emit", `  description: d
   prompt: p
   provider: default
   model: claude-opus-5
-  tools: [{function: core.substrate.reamde.dev/propose}]
-`, "propose needs core.substrate.reamde.dev/recordpatchrequest in data.permissions.writes"},
+  tools: [{function: substrate.reamde.dev/core/propose}]
+`, "propose needs substrate.reamde.dev/core/recordpatchrequest in data.permissions.writes"},
 		{"mutate without emit", `  description: d
   prompt: p
   provider: default
   model: claude-opus-5
-  tools: [{function: core.substrate.reamde.dev/mutate}]
+  tools: [{function: substrate.reamde.dev/core/mutate}]
 `, "mutate needs data.permissions.writes"},
 		{"self sub-agent", `  description: d
   prompt: p
   provider: default
   model: claude-opus-5
-  subagents: [ag.example.com/classifier]
+  subagents: [ag.example.com/ag/classifier]
 `, "may not name itself"},
 		{"depth above cap", `  description: d
   prompt: p
@@ -319,15 +332,15 @@ func TestAgentRefusals(t *testing.T) {
   prompt: p
   provider: default
   model: claude-opus-5
-  subagents: [ag.example.com/ghost]
+  subagents: [ag.example.com/ag/ghost]
 `, "unknown agent"},
 		{"tool collides with sub-agent", `  description: d
   prompt: p
   provider: default
   model: claude-opus-5
   tools:
-    - {function: ag.example.com/annotate, name: sorter}
-  subagents: [ag.example.com/sorter]
+    - {function: ag.example.com/ag/annotate, name: sorter}
+  subagents: [ag.example.com/ag/sorter]
 `, "collides with tool name"},
 		{"a bare tool string", `  description: d
   prompt: p
@@ -341,20 +354,20 @@ func TestAgentRefusals(t *testing.T) {
   provider: default
   model: claude-opus-5
   tools: [{builtin: query}]
-`, `builtin "query" is deleted — the built-ins are function records: {function: core.substrate.reamde.dev/query}`},
+`, `builtin "query" is deleted — the built-ins are function records: {function: substrate.reamde.dev/core/query}`},
 		// The hoisted grants are deleted too: an agent's two live under
 		// `permissions:` beside a function's five.
 		{"the hoisted emit", `  description: d
   prompt: p
   provider: default
   model: claude-opus-5
-  emit: [ag.example.com/widget]
+  emit: [ag.example.com/ag/widget]
 `, `key "emit" is deleted — permissions.writes`},
 		{"the hoisted reads", `  description: d
   prompt: p
   provider: default
   model: claude-opus-5
-  reads: {kinds: [ag.example.com/widget]}
+  reads: {kinds: [ag.example.com/ag/widget]}
 `, `key "reads" is deleted — permissions.reads`},
 		{"a grant outside the agent's set", `  description: d
   prompt: p

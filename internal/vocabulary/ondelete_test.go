@@ -16,26 +16,30 @@ import (
 // cascadeDocs is one authority holding an account kind and a mirror kind whose
 // `account` property is filled in per case.
 func cascadeDocs(account string) string {
-	return `kind: core.substrate.reamde.dev/authority
+	return `kind: substrate.reamde.dev/core/package
 metadata:
-  id: own.example.com
-data:
-  version: 1
----
-kind: core.substrate.reamde.dev/kind
-metadata:
-  id: own.example.com/account
+  id: own.example.com/own
 data:
   authority: own.example.com
+  package: own
+  version: 1
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: own.example.com/own/account
+data:
+  authority: own.example.com
+  package: own
   names: {singular: account, plural: accounts}
   properties:
     label: {type: string}
 ---
-kind: core.substrate.reamde.dev/kind
+kind: substrate.reamde.dev/core/kind
 metadata:
-  id: own.example.com/mirror
+  id: own.example.com/own/mirror
 data:
   authority: own.example.com
+  package: own
   names: {singular: mirror, plural: mirrors}
   properties:
     account:
@@ -54,7 +58,7 @@ func TestCascadeOnAReference(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	mirror, ok := r.ByIdentity("own.example.com/mirror")
+	mirror, ok := r.ByIdentity("own.example.com/own/mirror")
 	if !ok {
 		t.Fatal("mirror kind missing")
 	}
@@ -66,7 +70,7 @@ func TestCascadeOnAReference(t *testing.T) {
 		t.Fatalf("onDelete = %q, want it to survive the parse", p.OnDelete)
 	}
 	// The pin resolves to a full identity, and the sweep matches on that.
-	if p.To != "own.example.com/account" {
+	if p.To != "own.example.com/own/account" {
 		t.Fatalf("pin = %q, want the resolved identity", p.To)
 	}
 }
@@ -83,7 +87,7 @@ func TestCascadeNeedsNoPin(t *testing.T) {
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}
-			mirror, _ := r.ByIdentity("own.example.com/mirror")
+			mirror, _ := r.ByIdentity("own.example.com/own/mirror")
 			p, _ := mirror.Prop("account")
 			if !p.Cascades() {
 				t.Fatal("an unpinned cascade must be admitted")
@@ -140,35 +144,40 @@ func TestOwnerRefNamesOnDelete(t *testing.T) {
 // traitPinDocs is one authority holding a trait, an account kind that
 // implements it, and a mirror kind whose `account` property is filled per case.
 func traitPinDocs(account string) string {
-	return `kind: core.substrate.reamde.dev/authority
+	return `kind: substrate.reamde.dev/core/package
 metadata:
-  id: own.example.com
-data:
-  version: 1
----
-kind: core.substrate.reamde.dev/trait
-metadata:
-  id: own.example.com/connected
+  id: own.example.com/own
 data:
   authority: own.example.com
+  package: own
+  version: 1
+---
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: own.example.com/own/connected
+data:
+  authority: own.example.com
+  package: own
   properties:
     tokenRef: secret
 ---
-kind: core.substrate.reamde.dev/kind
+kind: substrate.reamde.dev/core/kind
 metadata:
-  id: own.example.com/account
+  id: own.example.com/own/account
 data:
   authority: own.example.com
+  package: own
   names: {singular: account, plural: accounts}
   traits: [connected]
   properties:
     tokenRef: {type: secret}
 ---
-kind: core.substrate.reamde.dev/kind
+kind: substrate.reamde.dev/core/kind
 metadata:
-  id: own.example.com/mirror
+  id: own.example.com/own/mirror
 data:
   authority: own.example.com
+  package: own
   names: {singular: mirror, plural: mirrors}
   properties:
     account:
@@ -184,7 +193,7 @@ func TestCascadeOnATraitReference(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	mirror, ok := r.ByIdentity("own.example.com/mirror")
+	mirror, ok := r.ByIdentity("own.example.com/own/mirror")
 	if !ok {
 		t.Fatal("mirror kind missing")
 	}
@@ -199,7 +208,7 @@ func TestCascadeOnATraitReference(t *testing.T) {
 		t.Fatalf("To = %q, want empty for a trait pin", p.To)
 	}
 	// The trait pin resolves to the full trait identity, the way a binding does.
-	if p.ToTrait != "own.example.com/connected" {
+	if p.ToTrait != "own.example.com/own/connected" {
 		t.Fatalf("ToTrait = %q, want the resolved trait identity", p.ToTrait)
 	}
 }

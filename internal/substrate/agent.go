@@ -4,7 +4,7 @@ import "context"
 
 // The agent loop's wire shapes (primitives §5): what the call API returns
 // and what the chat stream carries. Conversation state itself is llmthread +
-// llmmessage RECORDS in core.substrate.reamde.dev — these types are only the live
+// llmmessage RECORDS in substrate.reamde.dev/core — these types are only the live
 // transport around one invocation.
 //
 // ALPHA (StabilityAlpha, stability.go). The agent kind, the agent-loop

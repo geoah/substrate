@@ -11,20 +11,20 @@ import "strings"
 //	console                          a write from the console
 //	substratectl                     a write from the operator's CLI
 //	api                              a write from a client holding a token, door unnamed
-//	bundle:<authority>               an install, and the authority's own hand
-//	function:<authority>:<name>      a function's effect
-//	agent:<authority>:<name>         an agent's effect
-//	substrate                        the engine's own hand
+//	bundle:<authority>:<package>            an install, and the package's own hand
+//	function:<authority>:<package>:<name>   a function's effect
+//	agent:<authority>:<package>:<name>      an agent's effect
+//	substrate                               the engine's own hand
 //
 // The three human doors are attribution the CALLER declares
 // (`X-Substrate-Actor`); the last four are the substrate's own writing hands
 // and a request may never claim one (ReservedActor).
 //
-// A machine hand carries the FULL AUTHORITY, never its first label, and the
-// separator is a colon because `<actor>/<name>` label and annotation keys
-// reserve the slash (engine metaKeyAllowed). An authority always carries a
-// dot, so nothing derived here can collide with a flat name. Decision record
-// 0025 has the why.
+// A machine hand carries the FULL AUTHORITY and the PACKAGE, never a first
+// label, and the separator is a colon because `<actor>/<name>` label and
+// annotation keys reserve the slash (engine metaKeyAllowed). An authority
+// always carries a dot, so nothing derived here can collide with a flat name.
+// Decision records 0025 and 0047 have the why.
 type Actor string
 
 const (
@@ -54,18 +54,18 @@ const HostActorNamespace = "substrate"
 
 // BundleActorPrefix opens the actor a SHIPPED TREE OR CATALOG writes its
 // declarations under: the core seed is `bundle:core`, an install is
-// `bundle:<authority>`. Like the host namespace above, it is decided by name
-// equality — the declaration authority check (engine) admits it for shipped
-// kinds — so a request may never claim one either.
+// `bundle:<authority>:<package>`. Like the host namespace above, it is decided
+// by name equality — the declaration ownership check (engine) admits it for
+// shipped kinds — so a request may never claim one either.
 const BundleActorPrefix = "bundle:"
 
 // FunctionActorPrefix and AgentActorPrefix open the two dispatch hands
-// installed code writes under: `function:<authority>:<name>` for a function's
-// effects, `agent:<authority>:<name>` for an agent's. Both are the
-// substrate's to stamp on a dispatch, so a request may never claim one. They
-// are held apart because one authority may declare a function and an agent of
-// the same name, and a shared string would merge their manager rows and their
-// trigger self-exclusion.
+// installed code writes under: `function:<authority>:<package>:<name>` for a
+// function's effects, `agent:<authority>:<package>:<name>` for an agent's.
+// Both are the substrate's to stamp on a dispatch, so a request may never
+// claim one. They are held apart because one package may declare a function
+// and an agent of the same name, and a shared string would merge their manager
+// rows and their trigger self-exclusion.
 const (
 	FunctionActorPrefix = "function:"
 	AgentActorPrefix    = "agent:"
@@ -85,21 +85,23 @@ const retiredConnectorPrefix = "connector:"
 // it can never be an install's `bundle:<authority>`.
 const ActorSeed Actor = BundleActorPrefix + "core"
 
-// BundleActor renders a bundle's own writing hand, `bundle:<authority>` — the
-// actor an install (a copy of the catalog's manifests into the repository's
-// changelog) carries, and the hand an authority's own installed code writes
-// under.
-func BundleActor(authority string) Actor { return Actor(BundleActorPrefix + authority) }
-
-// FunctionActor and AgentActor render the two dispatch hands. Both take the
-// declaring authority, so two bundles declaring a callable of one name stay
-// two actors.
-func FunctionActor(authority, name string) Actor {
-	return Actor(FunctionActorPrefix + authority + ":" + name)
+// BundleActor renders a package's own writing hand,
+// `bundle:<authority>:<package>` — the actor an install (a copy of the
+// catalog's manifests into the repository's changelog) carries, and the hand a
+// package's own installed code writes under.
+func BundleActor(authority, pkg string) Actor {
+	return Actor(BundleActorPrefix + authority + ":" + pkg)
 }
 
-func AgentActor(authority, name string) Actor {
-	return Actor(AgentActorPrefix + authority + ":" + name)
+// FunctionActor and AgentActor render the two dispatch hands. Both take the
+// declaring authority and package, so two closures declaring a callable of one
+// name stay two actors.
+func FunctionActor(authority, pkg, name string) Actor {
+	return Actor(FunctionActorPrefix + authority + ":" + pkg + ":" + name)
+}
+
+func AgentActor(authority, pkg, name string) Actor {
+	return Actor(AgentActorPrefix + authority + ":" + pkg + ":" + name)
 }
 
 // IsBundleActor reports whether an actor is a bundle path — the seed, an

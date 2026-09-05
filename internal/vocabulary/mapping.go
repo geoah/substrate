@@ -26,11 +26,12 @@ const (
 // is a full kind reference, resolved like a reference pin; Property names the
 // declared `subject: true` reference on From that points at the subject.
 type Mapping struct {
-	Name      string
-	Authority string
-	From      string
-	To        string
-	Property  string
+	Name string
+	// Package is the identity of the package that declares it.
+	Package  string
+	From     string
+	To       string
+	Property string
 	// Match is the ordered identifier probes (§6.1): when a source record
 	// arrives without a subject, the first probe whose values find candidates
 	// decides — exactly one candidate links, zero or several create a fresh
@@ -47,8 +48,8 @@ type Mapping struct {
 	Definition map[string]any
 }
 
-// Identity is "<authority>/<name>".
-func (m *Mapping) Identity() string { return KindRef(m.Authority, m.Name) }
+// Identity is "<authority>/<package>/<name>".
+func (m *Mapping) Identity() string { return m.Package + "/" + m.Name }
 
 // MatchRule is one identifier probe: values extracted from the source record
 // via From, looked up in the target's To property.
@@ -159,7 +160,7 @@ func PathProperty(t *Kind, p Path) (*Property, bool, error) {
 // --- the loader's half ----------------------------------------------------
 
 var mappingDataKeys = map[string]bool{
-	"authority": true, "from": true, "to": true, "property": true,
+	"authority": true, "package": true, "from": true, "to": true, "property": true,
 	"match": true, "map": true, "description": true,
 }
 
@@ -172,34 +173,34 @@ var mapRuleKeys = map[string]bool{"path": true, "merge": true}
 // rule — is deferred to Finalize/Install, like a reference pin: `to` may name a
 // kind in an authority that has not loaded yet.
 func (l *loader) parseMapping(d Document) *Mapping {
-	g := l.authority
+	g := l.pkg
 	where := DocRecordMapping + " " + d.ID
 	l.checkKeys(where, d.Data, mappingDataKeys)
-	local, ok := l.localName(where, d.ID, g.Name)
+	local, ok := l.localName(where, d.ID, g.Identity)
 	if !ok {
 		return nil
 	}
 	m := &Mapping{
-		Name: local, Authority: g.Name,
-		From:       ReferentID(d.Data["from"], KindRef(AuthorityCore, DocKind)),
-		To:         ReferentID(d.Data["to"], KindRef(AuthorityCore, DocKind)),
+		Name: local, Package: g.Identity,
+		From:       ReferentID(d.Data["from"], CoreKind(DocKind)),
+		To:         ReferentID(d.Data["to"], CoreKind(DocKind)),
 		Property:   mstr(d.Data, "property"),
 		Map:        map[string]*MapRule{},
 		Definition: d.Data,
 	}
-	// `from` lives in data.authority and is spelled in full (§6.1): a mapping is
-	// authority-local, like a datatype.
-	rest, fromLocal := SplitKindRef(m.From)
+	// `from` is spelled in full and lives in the declaring package: a mapping
+	// is package-local, like a property type.
+	fromPkg, fromLocal := KindPackage(m.From), KindName(m.From)
 	switch {
 	case m.From == "":
 		l.errf("%s: data.from is required", where)
 		return nil
-	case rest != g.Name || fromLocal == "":
-		l.errf("%s: data.from must be %q — a mapping's source kind lives in its own authority (§6.1)", where, KindRef(g.Name, "<name>"))
+	case fromPkg != g.Identity || fromLocal == "":
+		l.errf("%s: data.from must be %q — a mapping's source kind lives in its own package", where, g.Identity+"/<name>")
 		return nil
 	}
 	if _, ok := g.Kinds[fromLocal]; !ok {
-		l.errf("%s: data.from: %s is not a declared type of %s", where, m.From, g.Name)
+		l.errf("%s: data.from: %s is not a declared type of %s", where, m.From, g.Identity)
 		return nil
 	}
 	// `to` is a full type name: a bare name would go ambiguous the day a
@@ -209,7 +210,7 @@ func (l *loader) parseMapping(d Document) *Mapping {
 		l.errf("%s: data.to is required", where)
 		return nil
 	case !Qualified(m.To):
-		l.errf("%s: data.to is a full type name (\"people.substrate.reamde.dev/person\"), never a bare one (§6.1)", where)
+		l.errf("%s: data.to is a full type name (\"samples.substrate.reamde.dev/people/person\"), never a bare one (§6.1)", where)
 		return nil
 	}
 	if m.Property == "" {
@@ -438,7 +439,7 @@ func (r *Registry) mappingInvariantProblems() []string {
 // record each (§9.1).
 func (r *Registry) Mappings() []*Mapping {
 	var out []*Mapping
-	for _, g := range r.AuthorityList() {
+	for _, g := range r.PackageList() {
 		for _, n := range g.MappingOrder {
 			out = append(out, g.Mappings[n])
 		}
