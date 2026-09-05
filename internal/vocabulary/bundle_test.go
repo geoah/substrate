@@ -173,6 +173,39 @@ func TestGraphQLNamesDisambiguateBySharedPackageName(t *testing.T) {
 	}
 }
 
+// A PUBLISHED kind is named like an installed one, on the same argument: a
+// provider's declarations are a copy the repository holds, so only the SEED
+// keeps the bare singular. Naming a provider's `account` bare would put it in
+// the namespace core's kinds live in, where the next shipped kind of that name
+// collides with it.
+func TestAPublishedKindIsNamedLikeAnInstalledOne(t *testing.T) {
+	if got := vocabulary.GraphQLName("providers.substrate.reamde.dev/whoop/account", vocabulary.SourcePublished); got != "Whoop_Account" {
+		t.Errorf("published account = %q, want Whoop_Account", got)
+	}
+	if got := vocabulary.GraphQLName("substrate.reamde.dev/core/token", vocabulary.SourceBuiltin); got != "Token" {
+		t.Errorf("seeded token = %q, want the bare Token", got)
+	}
+
+	// And it joins the cross-authority tie-break: two authorities carrying a
+	// package of one name disambiguate whatever origins they hold, so a name
+	// never depends on the mix.
+	kinds := []vocabulary.GraphQLKind{
+		{Identity: "providers.substrate.reamde.dev/whoop/account", Source: vocabulary.SourcePublished},
+		{Identity: "acme.example.com/whoop/account", Source: vocabulary.SourceInstalled},
+		{Identity: "substrate.reamde.dev/core/token", Source: vocabulary.SourceBuiltin},
+	}
+	names := vocabulary.GraphQLNames(kinds)
+	if got := names["providers.substrate.reamde.dev/whoop/account"]; got != "Providers_substrate_reamde_dev_Whoop_Account" {
+		t.Errorf("published account = %q, want Providers_substrate_reamde_dev_Whoop_Account", got)
+	}
+	if got := names["acme.example.com/whoop/account"]; got != "Acme_example_com_Whoop_Account" {
+		t.Errorf("installed account = %q, want Acme_example_com_Whoop_Account", got)
+	}
+	if got := names["substrate.reamde.dev/core/token"]; got != "Token" {
+		t.Errorf("the tie-break moved a seeded name: %q", got)
+	}
+}
+
 // One GraphQL name is still one kind: two SHIPPED packages declaring one kind
 // name both want the bare singular, and the second is refused by name.
 func TestOneGraphQLNameIsStillOneKind(t *testing.T) {

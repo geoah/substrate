@@ -182,8 +182,8 @@ type BundleInstaller interface {
 // documents themselves.
 type BundleInstall struct {
 	// Published marks a PROVIDER install: the closure's packages land with
-	// `source: published`, and afterwards only a substrate path — an install,
-	// an upgrade — may write their declarations, the same refusal the seeded
+	// `source: published`, and afterwards only a substrate path (an install,
+	// an upgrade) may write their declarations, the same refusal the seeded
 	// core package gives (decision record 0048). The catalog sets it from the
 	// tier it served the closure from; a hand-applied closure carries no tier,
 	// so it lands `installed` and stays the repository's own.

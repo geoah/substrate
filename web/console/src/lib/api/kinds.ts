@@ -133,15 +133,19 @@ export interface KindNav {
 }
 
 /** An authority is machinery-shaped when it is the core authority itself or
- * when every kind under it was installed by a bundle rather than declared as
- * schema. It orders the flat nav list, and the dashboard's Data zone reads it
- * to stay off the machinery's count probes. */
+ * when every kind under it arrived with a bundle rather than being declared in
+ * the repository. It orders the flat nav list, and the dashboard's Data zone
+ * reads it to stay off the machinery's count probes.
+ *
+ * The test is "not the seed" rather than "installed", because a provider's
+ * kinds carry `published` (only an install or an upgrade writes those
+ * declarations) and are machinery on the same argument installed ones are. */
 export function isMachineryAuthority(
   authority: string,
   kinds: KindInfo[]
 ): boolean {
   if (authority === CORE_AUTHORITY) return true
-  return kinds.every((k) => k.source === "installed")
+  return kinds.every((k) => k.source !== "builtin")
 }
 
 function byNameOf(a: KindInfo, b: KindInfo): number {

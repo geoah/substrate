@@ -172,23 +172,18 @@ var integrationFacets = map[string]bool{
 	"samples.substrate.reamde.dev/web":       false,
 }
 
-// providerPackages names the catalog's PROVIDER tier: the six packages a
-// publisher owns (decision record 0047), whose install lands
-// `source: published` and whose declarations the repository's own token may not
-// write afterwards (decision record 0048). Everything else the catalog serves
-// is a sample: vocabulary the repository installs and then owns.
+// providerPackage answers whether a catalog id is a PROVIDER: the tier whose
+// install lands `source: published`, closing that package's declarations to
+// the repository's own token afterwards (decision record 0048). Everything
+// else the catalog serves is a sample, which the repository installs and then
+// owns.
 //
-// Curated by id, like the facets above and for the same reason — nothing about
-// a closure's shape says who ships its migrations — and read at one place, the
-// install verb below.
-var providerPackages = map[string]bool{
-	"providers.substrate.reamde.dev/google": true,
-	"providers.substrate.reamde.dev/github": true,
-	"providers.substrate.reamde.dev/linear": true,
-	"providers.substrate.reamde.dev/notion": true,
-	"providers.substrate.reamde.dev/whoop":  true,
-	"providers.substrate.reamde.dev/beeper": true,
-}
+// It reads the integration facet rather than restating its list, because the
+// two name the same six ids: a provider is exactly the closure whose job is an
+// ongoing connection to an outside publisher, and one curated list cannot
+// disagree with itself. The `Tier` field replaces both, and this function is
+// the seam it lands on.
+func providerPackage(id string) bool { return integrationFacets[id] }
 
 // Catalog is the parsed set of shipped bundles, indexed by id.
 type Catalog struct {
@@ -482,10 +477,11 @@ func (c *Catalog) Install(ctx context.Context, actor substrate.Actor, id string,
 	// is what closes them to the repository's token afterwards, and what
 	// promotes a provider an earlier install left `installed`. The same closure
 	// applied by hand (`substratectl apply -f` of these very files) carries no
-	// tier and stays the repository's own — the door 0047 sanctions, and the
-	// only way to hold a provider's declarations open to editing.
+	// tier and stays the repository's own, which record 0047 sanctions and
+	// which is the only way to hold a provider's declarations open to
+	// editing.
 	if _, err := inst.InstallBundleClosure(ctx, substrate.BundleActor(b.Authority, b.Package), b.vocabularyDocs, dataInputs,
-		substrate.BundleInstall{Published: providerPackages[b.ID]}); err != nil {
+		substrate.BundleInstall{Published: providerPackage(b.ID)}); err != nil {
 		return nil, err
 	}
 	return b, nil

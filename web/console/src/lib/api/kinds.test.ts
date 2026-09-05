@@ -213,23 +213,20 @@ describe("buildKindNav", () => {
     expect(people?.kinds.map((k) => k.name)).toEqual(["organization", "person"])
   })
 
-  it("an authority with any schema-declared kind sorts ahead of machinery", () => {
+  // A PROVIDER's kinds carry `published`: only an install or an upgrade writes
+  // those declarations, so the authority is machinery and the dashboard's Data
+  // zone stays off its count probes. The word this fixture used to carry,
+  // `schema`, is one no server writes any more (a repository's own kinds land
+  // `installed`), so it pinned a shape that cannot arrive.
+  it("sorts a published provider authority with the machinery", () => {
     const nav = buildKindNav([
       kindInfo({
-        identity: "acme.substrate.reamde.dev/acme/custom",
-        name: "custom",
-        authority: "acme.substrate.reamde.dev",
-        package: "acme",
-        plural: "customs",
-        source: "schema",
-      }),
-      kindInfo({
-        identity: "acme.substrate.reamde.dev/acme/installedtoo",
-        name: "installedtoo",
-        authority: "acme.substrate.reamde.dev",
-        package: "acme",
-        plural: "installedtoos",
-        source: "installed",
+        identity: "providers.substrate.reamde.dev/whoop/account",
+        name: "account",
+        authority: "providers.substrate.reamde.dev",
+        package: "whoop",
+        plural: "accounts",
+        source: "published",
       }),
       kindInfo({
         identity: "substrate.reamde.dev/core/kind",
@@ -240,8 +237,8 @@ describe("buildKindNav", () => {
       }),
     ])
     expect(nav.authorities.map((a) => a.authority)).toEqual([
-      "acme.substrate.reamde.dev",
       "substrate.reamde.dev",
+      "providers.substrate.reamde.dev",
     ])
   })
 })

@@ -519,12 +519,19 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		// installed.
 		//
 		// A PROVIDER install is the one thing that moves the origin: the batch
-		// says `published` and every package it touches lands there, which is
-		// how a repository holding the provider as `installed` is promoted by
-		// its next install. `builtin` still wins, so a provider closure naming
-		// core cannot demote the seed.
+		// says `published` and the PACKAGES it touches land there, which is how
+		// a repository holding the provider as `installed` is promoted by its
+		// next install. `builtin` still wins, so a provider closure naming core
+		// cannot demote the seed.
+		//
+		// The AUTHORITY row beside them is deliberately left alone. One
+		// authority document travels with every closure published under it, so
+		// publishing that row would close `providers.substrate.reamde.dev`
+		// itself the moment any provider installed, and with it the hand apply
+		// of every sibling closure. The row says who publishes; the package
+		// row says who may write.
 		source := vocabulary.SourceInstalled
-		if b.published {
+		if _, pkgName := vocabulary.SplitPackageRef(aname); b.published && pkgName != "" {
 			source = vocabulary.SourcePublished
 		}
 		if cur, ok := current.PackageByName(aname); ok {

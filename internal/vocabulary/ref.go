@@ -215,9 +215,9 @@ func CoreKind(name string) string { return PackageCore + "/" + name }
 // GraphQLName is the GraphQL object name a kind resolves to WITHOUT
 // disambiguation, and the ONE place that base rule lives:
 //
-//   - a SHIPPED kind — the seed's, `source: builtin` — keeps its bare singular
-//     — "substrate.reamde.dev/core/token" -> Token;
-//   - every other kind is PACKAGE-prefixed —
+//   - a SHIPPED kind, the seed's (`source: builtin`), keeps its bare singular:
+//     "substrate.reamde.dev/core/token" -> Token;
+//   - every other kind is PACKAGE-prefixed,
 //     "samples.substrate.reamde.dev/tasks/task" -> Tasks_Task. That is both an
 //     installed kind and a published one: a provider's declarations are a copy
 //     the repository holds, so they are named like one.

@@ -689,8 +689,8 @@ func TestDeclarationAuthority(t *testing.T) {
 
 // The same chokepoint on a PUBLISHED package (decision record 0048): a
 // provider's declarations are its publisher's, so the install verb writes them
-// and the repository's own token is refused — while the records of its kinds
-// stay the repository's to write.
+// and the repository's own token is refused. The records of its kinds stay the
+// repository's to write.
 func TestAPublishedPackageRefusesATokenDeclarationWrite(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -764,7 +764,7 @@ func TestAPublishedPackageRefusesATokenDeclarationWrite(t *testing.T) {
 		t.Fatalf("a record of a published kind must stay writable: %v", err)
 	}
 
-	// And the publisher's own path still upgrades it — the install verb is what
+	// And the publisher's own path still upgrades it: the install verb is what
 	// changes a published declaration.
 	if _, err := inst.InstallBundleClosure(ctx, actor, edit, nil,
 		substrate.BundleInstall{Published: true}); err != nil {
