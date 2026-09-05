@@ -55,7 +55,9 @@ print(json.dumps(out))
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(python, "-c", probe)
+	// -B: no bytecode. The probe imports host.py from the package directory,
+	// and a __pycache__ beside it is a build artifact in a tracked tree.
+	cmd := exec.Command(python, "-B", "-c", probe)
 	cmd.Dir = "."
 	cmd.Stdin = strings.NewReader(string(cases))
 	out, err := cmd.Output()
