@@ -3,9 +3,9 @@
  *
  * A record's identity is the pair **(kind, id)**: an id is unique only within
  * its kind, so nothing here addresses a record by bare id. A KIND is a
- * reference — `<authority>/<name>` when published, a bare `<name>` when the
- * kind is this repository's own. There is NO tenant and NO group: one user owns
- * one repository, and authorities replace the old group concept. */
+ * reference — `<authority>/<package>/<name>` when published, a bare `<name>`
+ * when the kind is this repository's own. There is NO tenant and NO group: one
+ * user owns one repository, and authorities replace the old group concept. */
 
 /** The closed wire error set, plus `network` for a
  * transport failure that never reached the substrate. Clients switch on it. */
@@ -352,16 +352,21 @@ export function parseEnumValues(raw: unknown): EnumValue[] | undefined {
 
 /** KindInfo — the projection of one declared kind (iface.go). Replaces v0
  * `TypeInfo`: `authority` is what published the kind (empty for a
- * repository-local one), and `identity` is the kind REFERENCE
- * `<authority>/<name>` (or a bare `<name>`). There is no `sourceYAML` on the
- * wire (record 61) — the parsed `definition` IS the document. */
+ * repository-local one), `package` is the package's own word beside it, and
+ * `identity` is the kind REFERENCE `<authority>/<package>/<name>` (or a bare
+ * `<name>`). There is no `sourceYAML` on the wire (record 61) — the parsed
+ * `definition` IS the document. */
 export interface KindInfo {
-  /** The kind REFERENCE: `<authority>/<name>`, or a bare `<name>` for a
-   * repository-local kind. */
+  /** The kind REFERENCE: `<authority>/<package>/<name>`, or a bare `<name>`
+   * for a repository-local kind. */
   identity: string
   name: string
   /** Who publishes the kind; empty for a repository-local one. */
   authority: string
+  /** The package's own word ("core", "tasks"): the middle segment of the
+   * identity, carried beside the authority so the console groups by one and
+   * then the other without splitting the reference itself. */
+  package: string
   /** The declaration's incremental version, server-maintained: every accepted
    * change to the declaration bumps it. 0 means no version is stored. */
   version: number
@@ -373,9 +378,9 @@ export interface KindInfo {
   /** What the kind is for, as its declaration says it — a sentence or two,
    * read above the collection. Empty when the declaration carries none. */
   description?: string
-  /** The reconciled declaration — the `data` of the `core.substrate.reamde.dev/kind`
-   * manifest that declares it (`authority`, `names`, `properties`, …),
-   * key order lost to jsonb. */
+  /** The reconciled declaration — the `data` of the `substrate.reamde.dev/core/kind`
+   * manifest that declares it (`authority`, `package`, `names`,
+   * `properties`, …), key order lost to jsonb. */
   definition?: Record<string, unknown>
 }
 
@@ -447,7 +452,7 @@ export interface CatalogInput {
 
 /** One declaration a bundle upgrade would move (substrate.BundleUpgradeChange). */
 export interface BundleUpgradeChange {
-  /** The declaration's manifest kind: "authority", "kind", "function", ... */
+  /** The declaration's manifest kind: "package", "kind", "function", ... */
   kind: string
   /** The declaration's record id. */
   id: string
@@ -465,7 +470,7 @@ export interface BundleUpgradeChange {
  * verb; this is its preview. */
 export interface BundleUpgrade {
   available: boolean
-  /** Stored and shipped versions of the bundle's owned authority; absent
+  /** Stored and shipped versions of the bundle's owned package; absent
    * (0 is omitted on the wire) where none is stored. */
   from?: number
   to?: number
@@ -479,14 +484,19 @@ export interface BundleUpgrade {
 /** One installable bundle from the catalog embedded in the binary, plus
  * whether THIS repository has it. */
 export interface CatalogBundle {
-  /** The bundle's id — its owned authority, matching BundleStatus.id once
+  /** The bundle's id — the PACKAGE identity it owns
+   * (`providers.substrate.reamde.dev/google`), matching BundleStatus.id once
    * installed. */
   id: string
+  /** The owned package's own word ("google"). */
   name: string
-  /** The authority the bundle owns. */
+  /** The authority the closure publishes under. */
   authority: string
+  /** The owned package's own word, the same word as `name`: the console groups
+   * the catalog by authority, then by package. */
+  package: string
   description: string
-  /** The owned authority's incremental declaration version. */
+  /** The owned package's incremental declaration version. */
   version: number
   /** The declared inputs, input name keyed. A bundle with no needs omits it. */
   inputs?: Record<string, CatalogInput>
@@ -498,13 +508,7 @@ export interface CatalogBundle {
   /** Catalog facet: a worked example — grouped under Examples in the console.
    * Curated by the catalog, never derived from the closure's shape. */
   example?: boolean
-  /** A pure-VOCABULARY bundle (backend-owned): a bare org-domain authority
-   * (`people.substrate.reamde.dev`) shipping kinds and nothing else: no inputs, no
-   * functions, no OAuth. Repository creation seeds core alone, so the
-   * substrate's own vocabulary arrives through this catalog like everything
-   * else. Optional on the wire read only because an older server may omit it. */
-  vocabulary?: boolean
-  /** The AUTHORITIES this closure declares against — the vocabulary its
+  /** The PACKAGES this closure declares against — the vocabulary its
    * mappings, references and trigger subscriptions point at. Admission REFUSES the
    * import while one of them is absent from the repository, naming what to
    * import first, so the console shows them before the button is pressed. */
@@ -536,7 +540,7 @@ export interface InputStatus {
 /** The stable setup-item reasons: missing/ambiguous/dangling are an input's
  * own resolution problems; oauth-client is a resolved client record without
  * clientId/clientSecret; provider is an agent's llmprovider row absent or
- * keyless (kind core.substrate.reamde.dev/llmprovider). */
+ * keyless (kind substrate.reamde.dev/core/llmprovider). */
 export type SetupCode =
   "missing" | "ambiguous" | "dangling" | "oauth-client" | "provider"
 
@@ -557,10 +561,13 @@ export interface SetupItem {
 /** One installed bundle's computed status — stored nowhere, recomputed per
  * read (substrate.BundleStatus). */
 export interface BundleStatus {
-  /** The bundle's id — its owned authority ("web.bundles.substrate.reamde.dev"). */
+  /** The bundle's id — the PACKAGE it is named for
+   * ("samples.substrate.reamde.dev/web"). */
   id: string
   name: string
   authority: string
+  /** The owned package's own word, the same word as `name`. */
+  package: string
   /** False only for a quarantined bundle surfaced from its stored rows; an
    * uninstalled bundle has no status at all (uninstall tears its rows down). */
   installed: boolean
@@ -575,7 +582,7 @@ export interface BundleStatus {
   accounts?: number
   functions?: number
   kinds?: number
-  /** Live data rows across the owned authority — what a purge would tombstone. */
+  /** Live data rows across the owned package — what a purge would tombstone. */
   liveRecords?: number
   quarantined?: boolean
   /** The admission error that quarantined the bundle. */

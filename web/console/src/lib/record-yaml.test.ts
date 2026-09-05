@@ -19,9 +19,10 @@ import {
  * these cases exercise the ORDINARY rules; the nine declaration kinds carry an
  * id rule of their own, which has its own block below. */
 const agentKind: KindInfo = {
-  identity: "crew.test.dev/agent",
+  identity: "crew.test.dev/crew/agent",
   name: "agent",
   authority: "crew.test.dev",
+  package: "crew",
   version: 0,
   plural: "agents",
   source: "builtin",
@@ -47,7 +48,7 @@ const agentKind: KindInfo = {
       enabled: { type: "bool", required: true },
       uses: {
         type: "reference",
-        kind: "core.substrate.reamde.dev/function",
+        kind: "substrate.reamde.dev/core/function",
         repeated: true,
         mustExist: true,
       },
@@ -60,7 +61,7 @@ describe("templateYAML", () => {
 
   it("builds the full apply-able envelope fixed to the kind reference", () => {
     const doc = parse(yaml)
-    expect(doc.kind).toBe("crew.test.dev/agent")
+    expect(doc.kind).toBe("crew.test.dev/crew/agent")
     expect(doc.metadata).toHaveProperty("id")
     expect(doc.data.properties).toMatchObject({
       prompt: "",
@@ -94,9 +95,10 @@ describe("templateYAML", () => {
 
   it("asks for a REQUIRED field inside an object, naming the deep path", () => {
     const kindKind: KindInfo = {
-      identity: "core.substrate.reamde.dev/kind",
+      identity: "substrate.reamde.dev/core/kind",
       name: "kind",
-      authority: "core.substrate.reamde.dev",
+      authority: "substrate.reamde.dev",
+      package: "core",
       version: 0,
       plural: "kinds",
       source: "builtin",
@@ -113,7 +115,7 @@ describe("templateYAML", () => {
         },
       },
     }
-    const doc = `kind: core.substrate.reamde.dev/kind
+    const doc = `kind: substrate.reamde.dev/core/kind
 metadata:
   id: tasks.example.com/task
 data:
@@ -153,7 +155,8 @@ data:
 
 describe("validateApplyDoc", () => {
   it("reports a YAML syntax error with its line", () => {
-    const bad = "kind: crew.test.dev/agent\ndata:\n  properties:\n    a: [1, 2"
+    const bad =
+      "kind: crew.test.dev/crew/agent\ndata:\n  properties:\n    a: [1, 2"
     const problems = validateApplyDoc(bad, agentKind)
     expect(problems).toHaveLength(1)
     expect(problems[0].severity).toBe("error")
@@ -214,15 +217,16 @@ describe("validateApplyDoc", () => {
  * while the field is still on the screen. */
 describe("validateApplyDoc: the declaration id", () => {
   const declaration: KindInfo = {
-    identity: "core.substrate.reamde.dev/agent",
+    identity: "substrate.reamde.dev/core/agent",
     name: "agent",
-    authority: "core.substrate.reamde.dev",
+    authority: "substrate.reamde.dev",
+    package: "core",
     version: 0,
     plural: "agents",
     source: "builtin",
     definition: { properties: { model: { type: "string" } } },
   }
-  const withId = `kind: core.substrate.reamde.dev/agent
+  const withId = `kind: substrate.reamde.dev/core/agent
 metadata:
   id: crew.test.dev/scout
 data:
@@ -256,12 +260,12 @@ data:
   })
 
   it("leaves an ORDINARY kind's create alone: the substrate mints that one", () => {
-    const ordinary = { ...declaration, identity: "crew.test.dev/agent" }
+    const ordinary = { ...declaration, identity: "crew.test.dev/crew/agent" }
     expect(
       validateApplyDoc(
         blank.replace(
-          "kind: core.substrate.reamde.dev/agent",
-          "kind: crew.test.dev/agent"
+          "kind: substrate.reamde.dev/core/agent",
+          "kind: crew.test.dev/crew/agent"
         ),
         ordinary
       ).filter((p) => p.severity === "error")
@@ -284,12 +288,12 @@ const stampedAgentKind: KindInfo = {
 describe("applyManifestYAML (edit seed)", () => {
   const record: SubstrateRecord = {
     id: "contactssync.google",
-    kind: "crew.test.dev/agent",
+    kind: "crew.test.dev/crew/agent",
     properties: {
       prompt: "sync my contacts",
       enabled: true,
       model: "opus",
-      uses: ["core.substrate.reamde.dev/function/gcal.fn"],
+      uses: ["substrate.reamde.dev/core/function/gcal.fn"],
     },
     labels: { tier: "core" },
     version: 4,
@@ -303,7 +307,7 @@ describe("applyManifestYAML (edit seed)", () => {
   it("emits the apply envelope WITHOUT the server-owned status block", () => {
     const yaml = applyManifestYAML(record)
     const doc = parse(yaml)
-    expect(doc.kind).toBe("crew.test.dev/agent")
+    expect(doc.kind).toBe("crew.test.dev/crew/agent")
     expect(doc.metadata.id).toBe("contactssync.google")
     expect(doc.data.properties.prompt).toBe("sync my contacts")
     // Labels ride in metadata now (the v1 envelope).
@@ -312,7 +316,7 @@ describe("applyManifestYAML (edit seed)", () => {
     // there is no second block for it to live in.
     expect(doc.data).not.toHaveProperty("edges")
     expect(doc.data.properties.uses).toEqual([
-      "core.substrate.reamde.dev/function/gcal.fn",
+      "substrate.reamde.dev/core/function/gcal.fn",
     ])
     // status / propertyMeta / version never seed the editor.
     expect(doc).not.toHaveProperty("status")
@@ -345,13 +349,13 @@ describe("toPutInput", () => {
   it("extracts id, properties (references among them) and labels", () => {
     const yaml = applyManifestYAML({
       id: "e1",
-      kind: "crew.test.dev/agent",
+      kind: "crew.test.dev/crew/agent",
       properties: {
         prompt: "hi",
         enabled: true,
         // A served reference: the path under `ref`, which the seed carries
         // through the document and back onto the wire unchanged.
-        uses: [{ ref: "core.substrate.reamde.dev/function/t1" }],
+        uses: [{ ref: "substrate.reamde.dev/core/function/t1" }],
       },
       labels: { a: "b" },
       version: 1,
@@ -364,7 +368,7 @@ describe("toPutInput", () => {
     expect(input.properties).toMatchObject({
       prompt: "hi",
       enabled: true,
-      uses: [{ ref: "core.substrate.reamde.dev/function/t1" }],
+      uses: [{ ref: "substrate.reamde.dev/core/function/t1" }],
     })
     expect(input.labels).toMatchObject({ a: "b" })
     expect(input).not.toHaveProperty("edges")
@@ -397,9 +401,10 @@ describe("toPutInput", () => {
 /** The kind whose datatypes the editor has to be honest about, and the state
  * machine a put may not move. */
 const taskKind: KindInfo = {
-  identity: "tasks.substrate.reamde.dev/task",
+  identity: "samples.substrate.reamde.dev/tasks/task",
   name: "task",
-  authority: "tasks.substrate.reamde.dev",
+  authority: "samples.substrate.reamde.dev",
+  package: "tasks",
   version: 0,
   plural: "tasks",
   source: "installed",
@@ -416,14 +421,14 @@ const taskKind: KindInfo = {
       },
       assignee: {
         type: "reference",
-        kind: "people.substrate.reamde.dev/person",
+        kind: "samples.substrate.reamde.dev/people/person",
         mustExist: true,
       },
       // The one reference here that carries LINK DATA. Every reference serves
       // the `ref` object; this one serves declared properties beside it.
       reviewer: {
         type: "reference",
-        kind: "people.substrate.reamde.dev/person",
+        kind: "samples.substrate.reamde.dev/people/person",
         properties: { round: { type: "int" } },
       },
     },
@@ -432,7 +437,7 @@ const taskKind: KindInfo = {
 
 const openTask: SubstrateRecord = {
   id: "t1",
-  kind: "tasks.substrate.reamde.dev/task",
+  kind: "samples.substrate.reamde.dev/tasks/task",
   properties: { title: "write it", status: "open" },
   labels: {},
   version: 2,
@@ -463,7 +468,7 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
 
   it("refuses a kind that is not this collection's", () => {
     const yaml =
-      "kind: crew.test.dev/agent\ndata:\n  properties:\n    title: hi\n"
+      "kind: crew.test.dev/crew/agent\ndata:\n  properties:\n    title: hi\n"
     const problem = validateApplyDoc(yaml, taskKind).find(
       (p) => p.path === "kind"
     )
@@ -501,7 +506,7 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
   })
 
   it("checks a reference value against its pin, both shapes", () => {
-    const path = "people.substrate.reamde.dev/person/p1"
+    const path = "samples.substrate.reamde.dev/people/person/p1"
     // The served shape, on the reference that declares no link property and on
     // the one that declares `round`.
     const clean =
@@ -526,7 +531,7 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
     // A path at a DIFFERENT kind reads two ways under a pin, so it is refused
     // rather than guessed.
     const wrong =
-      "data:\n  properties:\n    title: hi\n    assignee: crm.example.com/lead/p1\n"
+      "data:\n  properties:\n    title: hi\n    assignee: crm.example.com/crm/lead/p1\n"
     const ambiguous = validateApplyDoc(wrong, taskKind).find(
       (p) => p.path === "assignee"
     )
@@ -537,7 +542,7 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
   it("refuses a link property the reference does not declare", () => {
     const yaml =
       "data:\n  properties:\n    title: hi\n    reviewer:\n" +
-      "      ref: people.substrate.reamde.dev/person/p1\n      bogus: 1\n"
+      "      ref: samples.substrate.reamde.dev/people/person/p1\n      bogus: 1\n"
     const problem = validateApplyDoc(yaml, taskKind).find(
       (p) => p.path === "reviewer"
     )
@@ -591,7 +596,7 @@ describe("the document as both lenses' truth", () => {
 
   it("formats a hand-mangled document back into shape, comments intact", () => {
     const mangled =
-      "kind: tasks.substrate.reamde.dev/task\ndata:\n      properties:\n            title: hi # mine\n"
+      "kind: samples.substrate.reamde.dev/tasks/task\ndata:\n      properties:\n            title: hi # mine\n"
     const { text, error } = formatYAML(mangled)
     expect(error).toBeUndefined()
     expect(text).toContain("    title: hi # mine")

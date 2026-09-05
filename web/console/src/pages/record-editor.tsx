@@ -13,8 +13,9 @@
  * document and writes them back one key at a time, so switching lenses is
  * lossless and a hand-authored comment survives being edited on the form.
  *
- * - **New** (`/data/:authority/:plural/new`) seeds a schema-derived template
- *   (`templateYAML`); **Edit** (`/data/:authority/:plural/:id/edit`) seeds the
+ * - **New** (`/data/:authority/:package/:kind/new`) seeds a schema-derived
+ *   template (`templateYAML`); **Edit**
+ *   (`/data/:authority/:package/:kind/:id/edit`) seeds the
  *   record's apply-able YAML (`applyManifestYAML`, the manifest view's shape
  *   minus server-owned `status`).
  * - Validation runs as the owner types (`validateApplyDoc`): the document
@@ -81,37 +82,52 @@ import { recordEditRoute, recordNewRoute } from "@/router"
 type Mode = "create" | "edit"
 type Lens = "form" | "yaml"
 
-/** New-record route wrapper (`/data/:authority/:plural/new`). */
+/** New-record route wrapper (`/data/:authority/:package/:kind/new`). */
 export function RecordNewPage() {
-  const { authority, name: plural } = recordNewRoute.useParams()
-  return <RecordEditor authority={authority} plural={plural} mode="create" />
+  const { authority, pkg, name: plural } = recordNewRoute.useParams()
+  return (
+    <RecordEditor
+      authority={authority}
+      pkg={pkg}
+      plural={plural}
+      mode="create"
+    />
+  )
 }
 
-/** Edit route wrapper (`/data/:authority/:plural/:id/edit`). */
+/** Edit route wrapper (`/data/:authority/:package/:kind/:id/edit`). */
 export function RecordEditPage() {
-  const { authority, name: plural, id } = recordEditRoute.useParams()
+  const { authority, pkg, name: plural, id } = recordEditRoute.useParams()
   return (
-    <RecordEditor authority={authority} plural={plural} mode="edit" id={id} />
+    <RecordEditor
+      authority={authority}
+      pkg={pkg}
+      plural={plural}
+      mode="edit"
+      id={id}
+    />
   )
 }
 
 function RecordEditor({
   authority,
+  pkg,
   plural,
   mode,
   id,
 }: {
   authority: string
+  pkg: string
   plural: string
   mode: Mode
   id?: string
 }) {
   const registry = useQuery(kindsQueryOptions)
   const kindInfo = registry.data
-    ? kindByCollection(registry.data, authority, plural)
+    ? kindByCollection(registry.data, authority, pkg, plural)
     : undefined
   const record = useQuery({
-    ...recordQueryOptions(authority, plural, id ?? ""),
+    ...recordQueryOptions(authority, pkg, plural, id ?? ""),
     enabled: mode === "edit" && Boolean(id),
   })
 
@@ -144,6 +160,7 @@ function RecordEditor({
   return (
     <RecordEditorForm
       authority={authority}
+      pkg={pkg}
       plural={plural}
       mode={mode}
       kind={kindInfo}
@@ -157,6 +174,7 @@ function RecordEditor({
 /** The editor proper, over plain props (no route, so it is directly testable). */
 export function RecordEditorForm({
   authority,
+  pkg,
   plural,
   mode,
   kind,
@@ -165,6 +183,7 @@ export function RecordEditorForm({
   seed,
 }: {
   authority: string
+  pkg: string
   plural: string
   mode: Mode
   kind: KindInfo
@@ -239,8 +258,8 @@ export function RecordEditorForm({
       }
       const input = toPutInput(parsed.value, kind)
       return mode === "edit" && record
-        ? putRecord(authority, plural, record.id, input)
-        : createRecord(authority, plural, input)
+        ? putRecord(authority, pkg, plural, record.id, input)
+        : createRecord(authority, pkg, plural, input)
     },
     onSuccess: (saved) => {
       toast.add({
@@ -250,8 +269,13 @@ export function RecordEditorForm({
       })
       void queryClient.invalidateQueries()
       void navigate({
-        to: "/data/$authority/$name/$id",
-        params: { authority: authority, name: plural, id: saved.id },
+        to: "/data/$authority/$pkg/$name/$id",
+        params: {
+          authority: authority,
+          pkg: pkg,
+          name: plural,
+          id: saved.id,
+        },
       })
     },
     onError: (error) => {
@@ -324,17 +348,18 @@ export function RecordEditorForm({
             render={
               mode === "edit" && record ? (
                 <Link
-                  to="/data/$authority/$name/$id"
+                  to="/data/$authority/$pkg/$name/$id"
                   params={{
                     authority: authority,
+                    pkg: pkg,
                     name: plural,
                     id: record.id,
                   }}
                 />
               ) : (
                 <Link
-                  to="/data/$authority/$name"
-                  params={{ authority: authority, name: plural }}
+                  to="/data/$authority/$pkg/$name"
+                  params={{ authority: authority, pkg: pkg, name: plural }}
                 />
               )
             }

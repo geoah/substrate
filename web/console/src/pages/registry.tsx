@@ -8,7 +8,7 @@
  * All / Vocabulary / Integrations filter, orthogonal to the imported state.
  *
  * EVERY ROW DISCLOSES ITS CLOSURE (owner ask): a fresh repository holds
- * `core.substrate.reamde.dev` and nothing else, so the reader meets this page before they
+ * `substrate.reamde.dev/core` and nothing else, so the reader meets this page before they
  * have any vocabulary at all and must be able to see what an import will DO
  * before pressing it. The chevron opens the closure in place — the kinds it
  * adds (linked once they are imported), its functions, agents, triggers and
@@ -74,7 +74,7 @@ import {
   setupCount,
 } from "@/lib/api/bundles"
 import { catalogQueryOptions, importBundle } from "@/lib/api/catalog"
-import { CORE_AUTHORITY } from "@/lib/api/http"
+import { CORE_PACKAGE } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import type { KindInfo } from "@/lib/api/types"
 import { splitKind } from "@/lib/definition"
@@ -85,7 +85,7 @@ import {
   installedKindRows,
   mergeBundles,
   missingRequirements,
-  presentAuthorities,
+  presentPackages,
   requirementsOf,
   requiresHint,
   upgradeAvailable,
@@ -307,18 +307,8 @@ function UpgradeBlockedChip({ row }: { row: BundleRow }) {
   )
 }
 
-/** The two catalog facets said plainly. They are disjoint by construction (a
- * vocabulary bundle owns a bare authority and ships kinds alone; an
- * integration owns a categorized one and connects a provider), so a row wears
- * at most one. */
+/** The catalog facets said plainly. */
 function FacetBadge({ row }: { row: BundleRow }) {
-  if (row.vocabulary) {
-    return (
-      <Badge variant="outline" className="shrink-0 font-normal">
-        Vocabulary
-      </Badge>
-    )
-  }
   if (row.integration) {
     return (
       <Badge variant="outline" className="shrink-0 font-normal">
@@ -391,7 +381,7 @@ function buildColumns(
                 className="truncate pt-0.5 data text-xs text-warning"
                 title={requiresHint(missing)}
               >
-                needs {missing.map((r) => r.authority).join(", ")}
+                needs {missing.map((r) => r.package).join(", ")}
               </div>
             )}
             {row.original.upgrade && upgradeAvailable(row.original) && (
@@ -466,17 +456,17 @@ function Line({
  * something new is previewed rather than dropped. */
 const RECORD_KINDS = [
   {
-    kind: `${CORE_AUTHORITY}/function`,
+    kind: `${CORE_PACKAGE}/function`,
     label: "functions",
     icon: FunctionSquareIcon,
   },
-  { kind: `${CORE_AUTHORITY}/agent`, label: "agents", icon: BotIcon },
+  { kind: `${CORE_PACKAGE}/agent`, label: "agents", icon: BotIcon },
   {
-    kind: `${CORE_AUTHORITY}/recordmapping`,
+    kind: `${CORE_PACKAGE}/recordmapping`,
     label: "mappings",
     icon: BoxesIcon,
   },
-  { kind: `${CORE_AUTHORITY}/trigger`, label: "triggers", icon: ZapIcon },
+  { kind: `${CORE_PACKAGE}/trigger`, label: "triggers", icon: ZapIcon },
 ] as const
 
 /** The row's closure, opened in place: what it adds, what it needs, and what it
@@ -494,9 +484,8 @@ function BundleDisclosure({
   const catalog = row.catalog
   const inputs = row.status?.inputs
   const kindRows = useMemo(
-    () =>
-      installedKindRows({ authority: row.authority, inputs }, kinds, catalog),
-    [row.authority, inputs, kinds, catalog]
+    () => installedKindRows({ id: row.id, inputs }, kinds, catalog),
+    [row.id, inputs, kinds, catalog]
   )
   const records = useMemo(() => bundleRecordRows(catalog), [catalog])
   const missing = missingRequirements(requirements)
@@ -535,11 +524,9 @@ function BundleDisclosure({
         )}
         <Line label="bundle">
           <span>
-            {row.vocabulary
-              ? "Vocabulary — record kinds and nothing else: no configuration, no functions, no provider account."
-              : row.integration
-                ? "Integration — connects an external provider through its own configuration and accounts."
-                : "Bundle — ships callables and configuration in its own authority."}
+            {row.integration
+              ? "Integration — connects an external provider through its own configuration and accounts."
+              : "Bundle — ships callables and configuration in its own package."}
           </span>
         </Line>
         {catalog?.inputs && Object.keys(catalog.inputs).length > 0 && (
@@ -563,7 +550,7 @@ function BundleDisclosure({
           <Line label="requires">
             {requirements.map((req) => (
               <span
-                key={req.authority}
+                key={req.package}
                 className={cn(
                   "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 data",
                   req.present
@@ -572,8 +559,8 @@ function BundleDisclosure({
                 )}
                 title={
                   req.present
-                    ? `${req.authority} is imported`
-                    : `${req.authority} is not imported — the import is refused until it is`
+                    ? `${req.package} is imported`
+                    : `${req.package} is not imported — the import is refused until it is`
                 }
               >
                 {req.present ? (
@@ -581,7 +568,7 @@ function BundleDisclosure({
                 ) : (
                   <TriangleAlertIcon className="size-3 shrink-0" />
                 )}
-                {req.authority}
+                {req.package}
                 <span className="sr-only">
                   {req.present ? " imported" : " missing"}
                 </span>
@@ -607,11 +594,15 @@ function BundleDisclosure({
               const title = k.description
                 ? `${named}\n\n${k.description}`
                 : named
-              return k.authority && k.name ? (
+              return k.authority && k.package && k.name ? (
                 <Link
                   key={k.identity}
-                  to="/data/$authority/$name"
-                  params={{ authority: k.authority, name: k.name }}
+                  to="/data/$authority/$pkg/$name"
+                  params={{
+                    authority: k.authority,
+                    pkg: k.package,
+                    name: k.name,
+                  }}
                   className="rounded border bg-background px-1.5 py-0.5 data underline-offset-4 hover:underline"
                   title={title}
                   onClick={(e) => e.stopPropagation()}
@@ -713,17 +704,12 @@ function BundleDisclosure({
   )
 }
 
-const FACETS = [
-  "all",
-  "vocabulary",
-  "integrations",
-  "examples",
-  "upgrades",
-] as const
+const FACETS = ["all", "integrations", "examples", "upgrades"] as const
 
-/** The catalog facet toggle: All / Vocabulary / Integrations, orthogonal to
- * whether a row is imported. Full-size h-8 outline controls (GUIDE rule 3 —
- * filters are controls, not chips); the choice lives in the URL (nuqs). */
+/** The catalog facet toggle: All / Integrations / Examples / Upgrades,
+ * orthogonal to whether a row is imported. Full-size h-8 outline controls
+ * (GUIDE rule 3 — filters are controls, not chips); the choice lives in the URL
+ * (nuqs). */
 function FacetFilter({
   value,
   onChange,
@@ -733,7 +719,6 @@ function FacetFilter({
 }) {
   const options: { value: BundleFacet; label: string }[] = [
     { value: "all", label: "All" },
-    { value: "vocabulary", label: "Vocabulary" },
     { value: "integrations", label: "Integrations" },
     { value: "examples", label: "Examples" },
     { value: "upgrades", label: "Upgrades" },
@@ -778,10 +763,10 @@ export function RegistryPage() {
     () => mergeBundles(statuses.data ?? [], catalog.data ?? []),
     [statuses.data, catalog.data]
   )
-  // Presence is computed over EVERY row, never the filtered view: hiding the
-  // vocabulary behind a facet must not make an integration look unimportable.
+  // Presence is computed over EVERY row, never the filtered view: hiding a
+  // package behind a facet must not make an integration look unimportable.
   const present = useMemo(
-    () => presentAuthorities(allRows, kinds),
+    () => presentPackages(allRows, kinds),
     [allRows, kinds]
   )
   const requirements = useMemo(() => {
@@ -846,17 +831,15 @@ export function RegistryPage() {
             {notImportedCount.toLocaleString()} not imported
             {facet === "integrations"
               ? " (integrations)"
-              : facet === "vocabulary"
-                ? " (vocabulary)"
-                : facet === "upgrades"
-                  ? " (upgrades)"
-                  : ""}
+              : facet === "upgrades"
+                ? " (upgrades)"
+                : ""}
             , from{" "}
-            <span className="data">core.substrate.reamde.dev/catalog</span>
+            <span className="data">substrate.reamde.dev/core/catalog</span>
           </p>
           <p className="pt-0.5 text-xs text-muted-foreground">
             A new repository ships{" "}
-            <span className="data">core.substrate.reamde.dev</span> alone — the
+            <span className="data">substrate.reamde.dev/core</span> alone — the
             vocabulary it records into and every integration are imported from
             here. Expand a row to see what it adds.
           </p>
@@ -892,20 +875,16 @@ export function RegistryPage() {
                 <EmptyTitle>
                   {facet === "integrations"
                     ? "No integrations"
-                    : facet === "vocabulary"
-                      ? "No vocabulary bundles"
-                      : facet === "upgrades"
-                        ? "Everything is current"
-                        : "No bundles"}
+                    : facet === "upgrades"
+                      ? "Everything is current"
+                      : "No bundles"}
                 </EmptyTitle>
                 <EmptyDescription>
                   {facet === "integrations"
                     ? "No bundle in the catalog connects an external provider."
-                    : facet === "vocabulary"
-                      ? "No bundle in the catalog ships vocabulary alone."
-                      : facet === "upgrades"
-                        ? "Every imported bundle matches the closure this binary ships."
-                        : "Nothing is imported and the catalog is empty."}
+                    : facet === "upgrades"
+                      ? "Every imported bundle matches the closure this binary ships."
+                      : "Nothing is imported and the catalog is empty."}
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>

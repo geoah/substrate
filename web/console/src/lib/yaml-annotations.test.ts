@@ -38,7 +38,7 @@ describe("describableSpan", () => {
   it("never describes envelope keys — depth guards the collision", () => {
     // A top-level key is the envelope's, even when a property shares the name.
     expect(
-      describableSpan("authority: people.substrate.reamde.dev", docs)
+      describableSpan("authority: samples.substrate.reamde.dev/people", docs)
     ).toBeNull()
     expect(describableSpan("    authority: x", docs)).toEqual({
       text: "authority",
@@ -77,9 +77,10 @@ describe("describableSpan", () => {
 
 describe("keyDocsOf", () => {
   const person: KindInfo = {
-    identity: "people.substrate.reamde.dev/person",
+    identity: "samples.substrate.reamde.dev/people/person",
     name: "person",
-    authority: "people.substrate.reamde.dev",
+    authority: "samples.substrate.reamde.dev",
+    package: "people",
     version: 0,
     plural: "people",
     source: "builtin",
@@ -120,19 +121,20 @@ describe("keyDocsOf", () => {
 
 const targets: YamlLinkTargets = {
   ids: {
-    "o-abc123": "/data/people.substrate.reamde.dev/organizations/o-abc123",
+    "o-abc123":
+      "/data/samples.substrate.reamde.dev/people/organizations/o-abc123",
     "gcal-a@x.io-b@y.io":
-      "/data/calendar.substrate.reamde.dev/calendars/gcal-a@x.io-b@y.io",
+      "/data/samples.substrate.reamde.dev/calendar/calendars/gcal-a@x.io-b@y.io",
     // A reference property's value is keyed by the whole path, because that is
     // the text the document carries.
-    "people.substrate.reamde.dev/person/p1":
-      "/data/people.substrate.reamde.dev/people/p1",
+    "samples.substrate.reamde.dev/people/person/p1":
+      "/data/samples.substrate.reamde.dev/people/people/p1",
   },
   kinds: {
-    "people.substrate.reamde.dev/person":
-      "/data/people.substrate.reamde.dev/people",
-    "people.substrate.reamde.dev/organization":
-      "/data/people.substrate.reamde.dev/organizations",
+    "samples.substrate.reamde.dev/people/person":
+      "/data/samples.substrate.reamde.dev/people/people",
+    "samples.substrate.reamde.dev/people/organization":
+      "/data/samples.substrate.reamde.dev/people/organizations",
   },
 }
 
@@ -140,41 +142,44 @@ describe("linkableSpan", () => {
   it("links a known id as the value of an id row", () => {
     expect(linkableSpan("      id: o-abc123", targets)).toEqual({
       text: "o-abc123",
-      href: "/data/people.substrate.reamde.dev/organizations/o-abc123",
+      href: "/data/samples.substrate.reamde.dev/people/organizations/o-abc123",
     })
     expect(linkableSpan("  canonicalId: o-abc123", targets)).toEqual({
       text: "o-abc123",
-      href: "/data/people.substrate.reamde.dev/organizations/o-abc123",
+      href: "/data/samples.substrate.reamde.dev/people/organizations/o-abc123",
     })
   })
 
   it("links @-bearing ids untouched", () => {
     expect(linkableSpan("      id: gcal-a@x.io-b@y.io", targets)).toEqual({
       text: "gcal-a@x.io-b@y.io",
-      href: "/data/calendar.substrate.reamde.dev/calendars/gcal-a@x.io-b@y.io",
+      href: "/data/samples.substrate.reamde.dev/calendar/calendars/gcal-a@x.io-b@y.io",
     })
   })
 
   it("links a kind reference value in its key position only", () => {
     // The top-level envelope `kind:` alone.
     expect(
-      linkableSpan("kind: people.substrate.reamde.dev/person", targets)
+      linkableSpan("kind: samples.substrate.reamde.dev/people/person", targets)
     ).toEqual({
-      text: "people.substrate.reamde.dev/person",
-      href: "/data/people.substrate.reamde.dev/people",
+      text: "samples.substrate.reamde.dev/people/person",
+      href: "/data/samples.substrate.reamde.dev/people/people",
     })
     expect(
       linkableSpan(
-        "        kind: people.substrate.reamde.dev/organization",
+        "        kind: samples.substrate.reamde.dev/people/organization",
         targets
       )
     ).toEqual({
-      text: "people.substrate.reamde.dev/organization",
-      href: "/data/people.substrate.reamde.dev/organizations",
+      text: "samples.substrate.reamde.dev/people/organization",
+      href: "/data/samples.substrate.reamde.dev/people/organizations",
     })
     // The same string as a plain value is a word, not a link.
     expect(
-      linkableSpan("    title: people.substrate.reamde.dev/person", targets)
+      linkableSpan(
+        "    title: samples.substrate.reamde.dev/people/person",
+        targets
+      )
     ).toBeNull()
   })
 
@@ -182,14 +187,20 @@ describe("linkableSpan", () => {
     // The key is whatever the declaration named the pointer, so the VALUE has
     // to say what it is: a record path the targets know.
     expect(
-      linkableSpan("    owner: people.substrate.reamde.dev/person/p1", targets)
+      linkableSpan(
+        "    owner: samples.substrate.reamde.dev/people/person/p1",
+        targets
+      )
     ).toEqual({
-      text: "people.substrate.reamde.dev/person/p1",
-      href: "/data/people.substrate.reamde.dev/people/p1",
+      text: "samples.substrate.reamde.dev/people/person/p1",
+      href: "/data/samples.substrate.reamde.dev/people/people/p1",
     })
     // A path nobody registered stays text, and so does a bare id in prose.
     expect(
-      linkableSpan("    owner: people.substrate.reamde.dev/person/p9", targets)
+      linkableSpan(
+        "    owner: samples.substrate.reamde.dev/people/person/p9",
+        targets
+      )
     ).toBeNull()
     expect(linkableSpan("    title: o-abc123", targets)).toBeNull()
   })
@@ -197,12 +208,12 @@ describe("linkableSpan", () => {
   it("links manager and actor rows to the actor view — depth-guarded", () => {
     expect(
       linkableSpan(
-        "      manager: people.google.bundles.substrate.reamde.dev",
+        "      manager: people.providers.substrate.reamde.dev/google",
         targets
       )
     ).toEqual({
-      text: "people.google.bundles.substrate.reamde.dev",
-      href: "/actors/people.google.bundles.substrate.reamde.dev",
+      text: "people.providers.substrate.reamde.dev/google",
+      href: "/actors/people.providers.substrate.reamde.dev/google",
     })
     expect(linkableSpan("        - actor: owner", targets)).toEqual({
       text: "owner",
@@ -215,7 +226,7 @@ describe("linkableSpan", () => {
   it("links a bare list item only when it is a known id (formerIds)", () => {
     expect(linkableSpan("    - o-abc123", targets)).toEqual({
       text: "o-abc123",
-      href: "/data/people.substrate.reamde.dev/organizations/o-abc123",
+      href: "/data/samples.substrate.reamde.dev/people/organizations/o-abc123",
     })
     expect(linkableSpan("    - not-a-known-id", targets)).toBeNull()
   })

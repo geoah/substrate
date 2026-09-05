@@ -4,7 +4,7 @@
  * owner holds), and the verdict patch body — the console's one mutation
  * besides login.
  *
- * Wire facts (read live, 2026-08-06): `recordmergerequest.core.substrate.reamde.dev`
+ * Wire facts (read live, 2026-08-06): `recordmergerequest.substrate.reamde.dev/core`
  * carries `decision` (state: proposed → accepted|rejected, accepting runs
  * `applyMerge` in the same transaction), `rationale` (string), `evidence`
  * (json: `{signals: [{signal, value?, jaccard?}], winner, loser}`) and the

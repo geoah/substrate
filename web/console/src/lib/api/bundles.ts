@@ -1,6 +1,6 @@
 /** Bundle lifecycle reads and writes. Everything rides the host's computed
  * status endpoints and the lifecycle transitions — the bundle ROWS themselves
- * are ordinary `core.substrate.reamde.dev/bundle` records the generic browse
+ * are ordinary `substrate.reamde.dev/core/bundle` records the generic browse
  * already renders. Account configs are a TRAIT query (kinds implementing
  * `accountconfig`), and the OAuth connect button hits `oauth/start` for one
  * account record. */
@@ -26,7 +26,7 @@ export type { BundleStatus, InputStatus, SetupItem } from "./types"
  * read below are unverified against the v1 wire — the standalone connectors
  * plane is gone; anyone building the integrations Accounts surface should
  * confirm both against the server before relying on them. */
-export const ACCOUNT_CONFIG_TRAIT = "accountconfig.core.substrate.reamde.dev"
+export const ACCOUNT_CONFIG_TRAIT = "accountconfig.substrate.reamde.dev/core"
 
 const BUNDLES = corePath("bundle")
 

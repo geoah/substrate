@@ -35,14 +35,16 @@ import { KindDefinition } from "./definition"
 import type { KindInfo } from "@/lib/api/types"
 
 const llmprovider: KindInfo = {
-  identity: "core.substrate.reamde.dev/llmprovider",
+  identity: "substrate.reamde.dev/core/llmprovider",
   name: "llmprovider",
-  authority: "core.substrate.reamde.dev",
+  authority: "substrate.reamde.dev",
+  package: "core",
   version: 1,
   plural: "llmproviders",
   source: "builtin",
   definition: {
-    authority: "core.substrate.reamde.dev",
+    authority: "substrate.reamde.dev",
+    package: "core",
     names: { singular: "llmprovider", plural: "llmproviders" },
     displayTemplate: "{name} ({wire})",
     properties: {
@@ -70,9 +72,10 @@ const llmprovider: KindInfo = {
 }
 
 const account: KindInfo = {
-  identity: "core.substrate.reamde.dev/account",
+  identity: "substrate.reamde.dev/core/account",
   name: "account",
-  authority: "core.substrate.reamde.dev",
+  authority: "substrate.reamde.dev",
+  package: "core",
   version: 1,
   plural: "accounts",
   source: "builtin",
@@ -95,8 +98,8 @@ describe("KindDefinition", () => {
   it("shows the declaration as the document that declared it", () => {
     const { container } = renderDefinition()
     const yaml = container.querySelector("pre")!.textContent ?? ""
-    expect(yaml).toContain("kind: core.substrate.reamde.dev/kind")
-    expect(yaml).toContain("id: core.substrate.reamde.dev/llmprovider")
+    expect(yaml).toContain("kind: substrate.reamde.dev/core/kind")
+    expect(yaml).toContain("id: substrate.reamde.dev/core/llmprovider")
     expect(yaml).toContain("displayTemplate: ")
     expect(yaml).toContain(
       "description: the wire protocol this endpoint speaks"
@@ -144,7 +147,7 @@ describe("KindDefinition", () => {
       (a) => a.textContent === "→ account"
     )
     expect(link?.getAttribute("href")).toBe(
-      "/data/core.substrate.reamde.dev/account"
+      "/data/substrate.reamde.dev/core/account"
     )
   })
 

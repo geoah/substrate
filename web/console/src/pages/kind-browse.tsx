@@ -1,4 +1,4 @@
-/** Kind browse (`/data/:authority/:plural`): ONE schema-driven DataTable for
+/** Kind browse (`/data/:authority/:package/:kind`): ONE schema-driven DataTable for
  * every kind ever installed. Server-side everything — the filter and sort live
  * in the URL (nuqs) and travel to the wire as `?filter=/orderBy`. Pagination is
  * keyset: there is no offset and no page-jump, so a
@@ -75,9 +75,10 @@ function parseSort(sort: string): SortingState {
 }
 
 export function KindBrowsePage() {
-  // The route param is `$name` (the kind name is the collection segment); it is
-  // aliased to a local `plural` only so the rest of this file reads unchanged.
-  const { authority, name: plural } = kindBrowseRoute.useParams()
+  // The route params are the kind reference, segment for segment; `$name` (the
+  // kind name) is the collection segment, aliased to a local `plural` only so
+  // the rest of this file reads unchanged.
+  const { authority, pkg, name: plural } = kindBrowseRoute.useParams()
   const navigate = useNavigate()
 
   const [tab, setTab] = useQueryState("tab", tabParser)
@@ -96,7 +97,7 @@ export function KindBrowsePage() {
   // effect writing on mount would wipe the store before this restore ran.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    const stored = loadBrowsePrefs(authority, plural)
+    const stored = loadBrowsePrefs(`${authority}/${pkg}`, plural)
     if (!stored) return
     if (!params.has("filter") && stored.filter?.length) {
       void setFilterTokens(stored.filter, { history: "replace" })
@@ -105,11 +106,11 @@ export function KindBrowsePage() {
       void setSort(stored.sort, { history: "replace" })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per collection
-  }, [authority, plural])
+  }, [authority, pkg, plural])
 
   /** Write-through: the store always mirrors the view the handlers just set. */
   function persist(next: { filter?: string[]; sort?: string }) {
-    saveBrowsePrefs(authority, plural, {
+    saveBrowsePrefs(`${authority}/${pkg}`, plural, {
       filter: next.filter ?? filterTokens,
       sort:
         (next.sort ?? sort) === DEFAULT_SORT ? undefined : (next.sort ?? sort),
@@ -118,7 +119,7 @@ export function KindBrowsePage() {
 
   const registry = useQuery(kindsQueryOptions)
   const kindInfo = registry.data
-    ? kindByCollection(registry.data, authority, plural)
+    ? kindByCollection(registry.data, authority, pkg, plural)
     : undefined
 
   const filters = useMemo(() => decodeFilters(filterTokens), [filterTokens])
@@ -138,7 +139,7 @@ export function KindBrowsePage() {
     undefined,
   ])
   const [pageIndex, setPageIndex] = useState(0)
-  const viewKey = `${authority}/${plural}|${JSON.stringify(recordFilter ?? null)}|${sort}`
+  const viewKey = `${authority}/${pkg}/${plural}|${JSON.stringify(recordFilter ?? null)}|${sort}`
   const [lastViewKey, setLastViewKey] = useState(viewKey)
   if (lastViewKey !== viewKey) {
     setLastViewKey(viewKey)
@@ -148,6 +149,7 @@ export function KindBrowsePage() {
 
   const listOptions = recordsQueryOptions({
     authority,
+    package: pkg,
     name: plural,
     first: PAGE_SIZE,
     after: cursorStack[pageIndex],
@@ -163,7 +165,7 @@ export function KindBrowsePage() {
   const derivedTotal =
     records.data && !pageCursor && pageIndex === 0 ? rows.length : undefined
   const count = useQuery({
-    ...recordCountQueryOptions(authority, plural, recordFilter),
+    ...recordCountQueryOptions(authority, pkg, plural, recordFilter),
     enabled: Boolean(kindInfo) && Boolean(pageCursor),
   })
   const totalText =
@@ -210,7 +212,7 @@ export function KindBrowsePage() {
     sorting,
     onSortingChange,
     getRowId: (row) => row.id,
-    prefsKey: `browse:${authority}/${plural}`,
+    prefsKey: `browse:${authority}/${pkg}/${plural}`,
   })
 
   // Only the REGISTRY gates the whole page — it names the collection and it
@@ -244,7 +246,7 @@ export function KindBrowsePage() {
       <PageEmpty
         icon={<SearchXIcon />}
         title="Unknown collection"
-        description={`${authority}/${plural} is not in the kind registry.`}
+        description={`${authority}/${pkg}/${plural} is not in the kind registry.`}
       />
     )
   }
@@ -258,7 +260,9 @@ export function KindBrowsePage() {
           <h1 className="text-lg font-semibold">{kindInfo.name}</h1>
           <p className="text-xs text-muted-foreground">
             {totalText !== undefined ? `${totalText} records in ` : ""}
-            <span className="data">{authority}</span>
+            <span className="data">
+              {authority}/{pkg}
+            </span>
           </p>
           {/* What the kind IS, from its declaration — the reader arriving at a
            * collection they did not install should not have to open the
@@ -275,8 +279,8 @@ export function KindBrowsePage() {
           className="shrink-0 gap-1.5"
           render={
             <Link
-              to="/data/$authority/$name/new"
-              params={{ authority: authority, name: plural }}
+              to="/data/$authority/$pkg/$name/new"
+              params={{ authority: authority, pkg: pkg, name: plural }}
             />
           }
         >
@@ -334,9 +338,10 @@ export function KindBrowsePage() {
                   loading={records.isPlaceholderData && records.isFetching}
                   onRowClick={(row) =>
                     void navigate({
-                      to: "/data/$authority/$name/$id",
+                      to: "/data/$authority/$pkg/$name/$id",
                       params: {
                         authority: authority,
+                        pkg: pkg,
                         name: plural,
                         id: row.id,
                       },

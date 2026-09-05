@@ -34,9 +34,10 @@ import { PropertiesRail } from "./properties"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 
 const task: KindInfo = {
-  identity: "tasks.substrate.reamde.dev/task",
+  identity: "samples.substrate.reamde.dev/tasks/task",
   name: "task",
-  authority: "tasks.substrate.reamde.dev",
+  authority: "samples.substrate.reamde.dev",
+  package: "tasks",
   version: 1,
   plural: "tasks",
   source: "installed",
@@ -57,18 +58,21 @@ const task: KindInfo = {
       apiKey: { type: "secret" },
       tags: { type: "string", repeated: true },
       payload: { type: "json" },
-      parent: { type: "reference", kind: "tasks.substrate.reamde.dev/task" },
+      parent: {
+        type: "reference",
+        kind: "samples.substrate.reamde.dev/tasks/task",
+      },
       // A reference carrying LINK DATA: its value is `{ref, role}`, not the
       // bare path, and the link's own properties are data the record holds.
       assignee: {
         type: "reference",
-        kind: "people.substrate.reamde.dev/person",
+        kind: "samples.substrate.reamde.dev/people/person",
         mustExist: true,
         properties: { role: { type: "string" } },
       },
       reviewers: {
         type: "reference",
-        kind: "people.substrate.reamde.dev/person",
+        kind: "samples.substrate.reamde.dev/people/person",
         repeated: true,
       },
     },
@@ -76,9 +80,10 @@ const task: KindInfo = {
 }
 
 const person: KindInfo = {
-  identity: "people.substrate.reamde.dev/person",
+  identity: "samples.substrate.reamde.dev/people/person",
   name: "person",
-  authority: "people.substrate.reamde.dev",
+  authority: "samples.substrate.reamde.dev",
+  package: "people",
   version: 1,
   plural: "people",
   source: "installed",
@@ -86,7 +91,7 @@ const person: KindInfo = {
 
 const record: SubstrateRecord = {
   id: "t1",
-  kind: "tasks.substrate.reamde.dev/task",
+  kind: "samples.substrate.reamde.dev/tasks/task",
   properties: {
     summary: "Ship the console",
     notes: "first line\nsecond line",
@@ -97,11 +102,11 @@ const record: SubstrateRecord = {
     apiKey: "<redacted>",
     tags: ["a", "b"],
     payload: { retries: 2 },
-    parent: "tasks.substrate.reamde.dev/task/t0",
-    assignee: { ref: "people.substrate.reamde.dev/person/p1" },
+    parent: "samples.substrate.reamde.dev/tasks/task/t0",
+    assignee: { ref: "samples.substrate.reamde.dev/people/person/p1" },
     reviewers: [
-      "people.substrate.reamde.dev/person/p2",
-      "people.substrate.reamde.dev/person/p3",
+      "samples.substrate.reamde.dev/people/person/p2",
+      "samples.substrate.reamde.dev/people/person/p3",
     ],
     legacy: "still here",
   },
@@ -170,7 +175,7 @@ describe("PropertiesRail", () => {
       (a) => a.textContent === "t0"
     )
     expect(link?.getAttribute("href")).toBe(
-      "/data/tasks.substrate.reamde.dev/task/t0"
+      "/data/samples.substrate.reamde.dev/tasks/task/t0"
     )
     // The one way a record is referenced from elsewhere — not an ad-hoc link.
     expect(link?.className).toContain("rounded-full")
@@ -240,7 +245,7 @@ describe("PropertiesRail", () => {
       properties: {
         ...record.properties,
         assignee: {
-          ref: "people.substrate.reamde.dev/person/p1",
+          ref: "samples.substrate.reamde.dev/people/person/p1",
           role: "reviewer",
         },
       },
@@ -251,7 +256,7 @@ describe("PropertiesRail", () => {
       (a) => a.textContent === "p1"
     )
     expect(link?.getAttribute("href")).toBe(
-      "/data/people.substrate.reamde.dev/person/p1"
+      "/data/samples.substrate.reamde.dev/people/person/p1"
     )
     expect(link?.className).toContain("rounded-full")
     // ...and the link data rides beside it rather than being dropped.
@@ -271,8 +276,12 @@ describe("PropertiesRail", () => {
     const hrefs = [...container.querySelectorAll("li a")].map((a) =>
       a.getAttribute("href")
     )
-    expect(hrefs).toContain("/data/people.substrate.reamde.dev/person/p2")
-    expect(hrefs).toContain("/data/people.substrate.reamde.dev/person/p3")
+    expect(hrefs).toContain(
+      "/data/samples.substrate.reamde.dev/people/person/p2"
+    )
+    expect(hrefs).toContain(
+      "/data/samples.substrate.reamde.dev/people/person/p3"
+    )
   })
 
   it("sizes a property's name at least as large as its value, and heavier", () => {

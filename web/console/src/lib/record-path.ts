@@ -1,7 +1,8 @@
-/** The RECORD PATH: `<authority>/<kind>/<id>`, one flat string, the whole
- * stored value of a `reference`-typed property
- * (`core.substrate.reamde.dev/llmprovider/claude`). Every kind carries an
- * authority (decision 0042), so a stored path is always three-plus segments.
+/** The RECORD PATH: `<authority>/<package>/<kind>/<id>`, one flat string, the
+ * whole stored value of a `reference`-typed property
+ * (`substrate.reamde.dev/core/llmprovider/claude`). Every kind carries an
+ * authority and a package (decisions 0042 and 0047), so a stored path is always
+ * four-plus segments.
  *
  * This is the console's copy of `internal/vocabulary`'s `SplitRecordPath` /
  * `RecordPath`, and of the write path's `coerceReferencePath`
@@ -26,33 +27,33 @@ export function recordPath(kind: string, id: string): string {
  * the string is not a path at all.
  *
  * The split rests on the KIND GRAMMAR and on nothing else, so it is
- * deterministic WITHOUT the registry: an authority always carries a dot and a
- * kind NAME never does. Every kind carries an authority (decision 0042), so the
- * FIRST segment is the authority, the kind is segments one and two, and a
- * dotless first segment is no path at all.
+ * deterministic WITHOUT the registry: an authority always carries a dot, and a
+ * package name and a kind NAME never do. Every kind carries an authority and a
+ * package (decisions 0042 and 0047), so the FIRST segment is the authority, the
+ * kind is segments one to three, and a dotless first segment is no path at all.
  *
  * The id is EVERYTHING after the kind, slashes included: a DECLARATION
  * record's id is itself a kind reference, so
- * `core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev/task` is one
- * four-segment path naming one record.
+ * `substrate.reamde.dev/core/kind/samples.substrate.reamde.dev/tasks/task` is
+ * one six-segment path naming one record.
  *
  * A string that is not a full path answers `undefined`, which is how an
  * AUTHORED bare id is told from a stored path: a declaration id like
- * `tasks.substrate.reamde.dev/task` has a dotted first segment and nothing
- * left after its kind, so it fails here and the reader completes it from the
- * declaration's pin. */
+ * `samples.substrate.reamde.dev/tasks/task` has a dotted first segment and
+ * nothing left after its kind, so it fails here and the reader completes it
+ * from the declaration's pin. */
 export function splitRecordPath(path: string): RecordPathParts | undefined {
-  const slash = path.indexOf("/")
-  if (slash <= 0) return undefined
-  const first = path.slice(0, slash)
-  const rest = path.slice(slash + 1)
-  if (!rest) return undefined
-  if (!first.includes(".")) return undefined
-  const next = rest.indexOf("/")
-  if (next <= 0) return undefined
-  const remainder = rest.slice(next + 1)
-  if (!remainder) return undefined
-  return { kind: `${first}/${rest.slice(0, next)}`, id: remainder }
+  const authorityEnd = path.indexOf("/")
+  if (authorityEnd <= 0) return undefined
+  const authority = path.slice(0, authorityEnd)
+  if (!authority.includes(".")) return undefined
+  const packageEnd = path.indexOf("/", authorityEnd + 1)
+  if (packageEnd <= authorityEnd + 1) return undefined
+  const nameEnd = path.indexOf("/", packageEnd + 1)
+  if (nameEnd <= packageEnd + 1) return undefined
+  const id = path.slice(nameEnd + 1)
+  if (!id) return undefined
+  return { kind: path.slice(0, nameEnd), id }
 }
 
 /** Whether a record id has a slash with nothing on one side of it. `target/`,
@@ -85,7 +86,7 @@ export interface CoercedReference {
  *
  * A value that does NOT parse as a path is unambiguous even carrying slashes,
  * which is what keeps a kind or function IDENTITY spellable as the short form
- * (`core.substrate.reamde.dev/graphql` under a pin at core's `function`):
+ * (`substrate.reamde.dev/core/graphql` under a pin at core's `function`):
  * nothing is left over for an id, so it cannot be read as a path. Only
  * empty-segment shapes are refused there.
  *

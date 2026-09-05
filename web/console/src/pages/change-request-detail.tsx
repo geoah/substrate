@@ -75,7 +75,7 @@ import {
   changeRequestQueryOptions,
   submitDecision,
 } from "@/lib/api/changerequests"
-import { CORE_AUTHORITY } from "@/lib/api/http"
+import { CORE_PACKAGE } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { recordQueryOptions } from "@/lib/api/records"
 import { ApiError, type KindInfo, type SubstrateRecord } from "@/lib/api/types"
@@ -104,7 +104,7 @@ import {
   type UnreadableField,
   type Verdict,
 } from "@/lib/changerequests"
-import { kindByIdentity, splitKind } from "@/lib/definition"
+import { kindByIdentity } from "@/lib/definition"
 import { cellValue, referenceObjects, relativeTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { changeRequestDetailRoute } from "@/router"
@@ -576,11 +576,15 @@ function useTargetQuery(
   enabled: boolean
 ) {
   const kind = target ? kindByIdentity(types, target.kind) : undefined
-  const authority = target ? splitKind(target.kind).authority : ""
   return {
     kind,
     query: useQuery({
-      ...recordQueryOptions(authority, kind?.name ?? "", target?.id ?? ""),
+      ...recordQueryOptions(
+        kind?.authority ?? "",
+        kind?.package ?? "",
+        kind?.name ?? "",
+        target?.id ?? ""
+      ),
       enabled: enabled && Boolean(target && kind),
     }),
   }
@@ -691,7 +695,7 @@ export function ChangeRequestDetailPage() {
             <ChangeTarget target={target} types={types} />
           </h1>
           <p className="data text-xs text-muted-foreground">
-            {CORE_AUTHORITY}/{CR_NAME}/{request.id}
+            {CORE_PACKAGE}/{CR_NAME}/{request.id}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2 pt-0.5">

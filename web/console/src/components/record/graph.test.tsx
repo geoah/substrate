@@ -44,7 +44,7 @@ vi.mock("@/lib/api/http", async (importOriginal) => {
               property: "task",
               from: {
                 id: "c1",
-                kind: "notes.substrate.reamde.dev/comment",
+                kind: "notes.substrate.reamde.dev/notes/comment",
                 title: "First",
               },
             },
@@ -52,7 +52,7 @@ vi.mock("@/lib/api/http", async (importOriginal) => {
               property: "task",
               from: {
                 id: "c2",
-                kind: "notes.substrate.reamde.dev/comment",
+                kind: "notes.substrate.reamde.dev/notes/comment",
                 title: "Second",
               },
             },
@@ -69,9 +69,10 @@ import { GraphRail } from "./graph"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 
 const task: KindInfo = {
-  identity: "tasks.substrate.reamde.dev/task",
+  identity: "samples.substrate.reamde.dev/tasks/task",
   name: "task",
-  authority: "tasks.substrate.reamde.dev",
+  authority: "samples.substrate.reamde.dev",
+  package: "tasks",
   version: 1,
   plural: "tasks",
   source: "installed",
@@ -89,9 +90,10 @@ const task: KindInfo = {
 }
 
 const person: KindInfo = {
-  identity: "people.substrate.reamde.dev/person",
+  identity: "samples.substrate.reamde.dev/people/person",
   name: "person",
-  authority: "people.substrate.reamde.dev",
+  authority: "samples.substrate.reamde.dev",
+  package: "people",
   version: 1,
   plural: "people",
   source: "installed",
@@ -99,7 +101,7 @@ const person: KindInfo = {
 
 const record: SubstrateRecord = {
   id: "t1",
-  kind: "tasks.substrate.reamde.dev/task",
+  kind: "samples.substrate.reamde.dev/tasks/task",
   // `title` is the server-derived heading `recordTitle` reads.
   properties: {
     summary: "Ship the console",
@@ -108,8 +110,8 @@ const record: SubstrateRecord = {
     // with no query, and a reference carries no title, so the pill renders
     // the referent's id until the record is opened.
     assignee: [
-      "people.substrate.reamde.dev/person/p1",
-      "people.substrate.reamde.dev/person/p2",
+      "samples.substrate.reamde.dev/people/person/p1",
+      "samples.substrate.reamde.dev/people/person/p2",
     ],
   },
   labels: {},
@@ -125,7 +127,8 @@ function renderRail() {
   return render(
     <QueryClientProvider client={client}>
       <GraphRail
-        authority="tasks.substrate.reamde.dev"
+        authority="samples.substrate.reamde.dev"
+        pkg="tasks"
         plural="task"
         record={record}
         kinds={[task, person]}
@@ -162,7 +165,7 @@ describe("GraphRail", () => {
     )
     expect(first?.className).toContain("rounded-full")
     expect(first?.getAttribute("href")).toBe(
-      "/data/people.substrate.reamde.dev/person/p1"
+      "/data/samples.substrate.reamde.dev/people/person/p1"
     )
     await waitFor(() => {
       expect(container.textContent).toContain("Incoming")
@@ -192,14 +195,18 @@ describe("GraphRail", () => {
       properties: {
         ...record.properties,
         assignee: [
-          { ref: "people.substrate.reamde.dev/person/p1", role: "owner" },
+          {
+            ref: "samples.substrate.reamde.dev/people/person/p1",
+            role: "owner",
+          },
         ],
       },
     }
     const { container } = render(
       <QueryClientProvider client={client}>
         <GraphRail
-          authority="tasks.substrate.reamde.dev"
+          authority="samples.substrate.reamde.dev"
+          pkg="tasks"
           plural="task"
           record={linked}
           kinds={[task, person]}
@@ -213,7 +220,7 @@ describe("GraphRail", () => {
       (a) => a.textContent === "p1"
     )
     expect(pill?.getAttribute("href")).toBe(
-      "/data/people.substrate.reamde.dev/person/p1"
+      "/data/samples.substrate.reamde.dev/people/person/p1"
     )
   })
 })

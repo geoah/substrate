@@ -16,7 +16,7 @@ import { AgentChatPage } from "@/pages/agent-chat"
 import { AgentsPage } from "@/pages/agents"
 import { ChangelogPage } from "@/pages/changelog"
 import { BundleDetailPage } from "@/pages/bundle-detail"
-import { AuthorityPage } from "@/pages/authority"
+import { AuthorityPage, PackagePage } from "@/pages/authority"
 import { ChangeRequestDetailPage } from "@/pages/change-request-detail"
 import { HomePage } from "@/pages/home"
 import { LoginPage } from "@/pages/login"
@@ -128,9 +128,17 @@ export const authorityRoute = createRoute({
   component: AuthorityPage,
 })
 
+// A data address is the kind reference, segment for segment (decision 0047):
+// authority, package, kind, then the record id.
+export const packageRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/data/$authority/$pkg",
+  component: PackagePage,
+})
+
 export const kindBrowseRoute = createRoute({
   getParentRoute: () => shellRoute,
-  path: "/data/$authority/$name",
+  path: "/data/$authority/$pkg/$name",
   component: KindBrowsePage,
 })
 
@@ -138,19 +146,19 @@ export const kindBrowseRoute = createRoute({
 // no record yet); `$id/edit` is the edit surface for an existing one.
 export const recordNewRoute = createRoute({
   getParentRoute: () => shellRoute,
-  path: "/data/$authority/$name/new",
+  path: "/data/$authority/$pkg/$name/new",
   component: RecordNewPage,
 })
 
 export const recordRoute = createRoute({
   getParentRoute: () => shellRoute,
-  path: "/data/$authority/$name/$id",
+  path: "/data/$authority/$pkg/$name/$id",
   component: RecordPage,
 })
 
 export const recordEditRoute = createRoute({
   getParentRoute: () => shellRoute,
-  path: "/data/$authority/$name/$id/edit",
+  path: "/data/$authority/$pkg/$name/$id/edit",
   component: RecordEditPage,
 })
 
@@ -188,6 +196,7 @@ const routeTree = rootRoute.addChildren([
     mergeRequestDetailRoute,
     changeRequestDetailRoute,
     authorityRoute,
+    packageRoute,
     kindBrowseRoute,
     recordNewRoute,
     recordRoute,

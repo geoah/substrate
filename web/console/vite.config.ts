@@ -7,7 +7,7 @@ import { defineConfig } from "vite"
 // One host serves both the substrate API and the connectors control plane in
 // production; dev talks to it through this proxy so the app itself only ever
 // speaks same-origin paths. `/connectors` is NOT proxied: the console's own
-// /connectors route reads the entity surface (core.substrate.reamde.dev/connectors +
+// /connectors route reads the entity surface (substrate.reamde.dev/core/connectors +
 // syncruns) and never calls the legacy control plane — proxying it would
 // shadow the page with the API's 404 (slice 4).
 const SUBSTRATE = process.env.VITE_PROXY_SUBSTRATE ?? "http://localhost:8080"

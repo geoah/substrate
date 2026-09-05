@@ -23,10 +23,10 @@ const T0 = Date.parse("2026-08-05T12:00:00Z")
 function row(overrides: Partial<ChangeRow> & { seq: number }): ChangeRow {
   return {
     ts: new Date(T0 + overrides.seq * 1000).toISOString(),
-    actor: "github.bundles.substrate.reamde.dev",
+    actor: "providers.substrate.reamde.dev/github",
     op: "put",
     recordId: `e-${overrides.seq}`,
-    kind: "github.bundles.substrate.reamde.dev/issue",
+    kind: "providers.substrate.reamde.dev/github/issue",
     ...overrides,
   }
 }
@@ -34,13 +34,13 @@ function row(overrides: Partial<ChangeRow> & { seq: number }): ChangeRow {
 describe("isVocabularyChange", () => {
   it("knows the v1 registry vocabulary, all under the core authority", () => {
     for (const k of [
-      "core.substrate.reamde.dev/kind",
-      "core.substrate.reamde.dev/propertytype",
-      "core.substrate.reamde.dev/trait",
-      "core.substrate.reamde.dev/recordmapping",
-      "core.substrate.reamde.dev/function",
-      "core.substrate.reamde.dev/authority",
-      "core.substrate.reamde.dev/actor",
+      "substrate.reamde.dev/core/kind",
+      "substrate.reamde.dev/core/propertytype",
+      "substrate.reamde.dev/core/trait",
+      "substrate.reamde.dev/core/recordmapping",
+      "substrate.reamde.dev/core/function",
+      "substrate.reamde.dev/core/authority",
+      "substrate.reamde.dev/core/actor",
     ]) {
       expect(isVocabularyChange(row({ seq: 1, kind: k }))).toBe(true)
     }
@@ -48,11 +48,11 @@ describe("isVocabularyChange", () => {
 
   it("the old pre-rename kinds no longer classify", () => {
     for (const k of [
-      "core.substrate.reamde.dev/entitytype", // v0 — became entitykind, then kind
-      "core.substrate.reamde.dev/entitykind", // the entity→record rename made this `kind`
-      "core.substrate.reamde.dev/entitymapping", // …and this `recordmapping`
-      "core.substrate.reamde.dev/schemagroup", // now authority
-      "core.substrate.reamde.dev/connector", // removed with the connectors plane
+      "substrate.reamde.dev/core/entitytype", // v0 — became entitykind, then kind
+      "substrate.reamde.dev/core/entitykind", // the entity→record rename made this `kind`
+      "substrate.reamde.dev/core/entitymapping", // …and this `recordmapping`
+      "substrate.reamde.dev/core/schemagroup", // now authority
+      "substrate.reamde.dev/core/connector", // removed with the connectors plane
     ]) {
       expect(isVocabularyChange(row({ seq: 1, kind: k }))).toBe(false)
     }
@@ -61,12 +61,12 @@ describe("isVocabularyChange", () => {
   it("data kinds are not schema, even under the core authority", () => {
     expect(
       isVocabularyChange(
-        row({ seq: 1, kind: "core.substrate.reamde.dev/recordmergerequest" })
+        row({ seq: 1, kind: "substrate.reamde.dev/core/recordmergerequest" })
       )
     ).toBe(false)
     expect(
       isVocabularyChange(
-        row({ seq: 1, kind: "people.substrate.reamde.dev/person" })
+        row({ seq: 1, kind: "samples.substrate.reamde.dev/people/person" })
       )
     ).toBe(false)
   })
@@ -94,7 +94,7 @@ describe("the effects a write recorded", () => {
         withEffects([
           {
             kind: "record",
-            ref: "people.substrate.reamde.dev/person",
+            ref: "samples.substrate.reamde.dev/people/person",
             id: "p1",
             delta: {
               set: { name: "Ada", email: "ada@example.com" },
@@ -108,7 +108,7 @@ describe("the effects a write recorded", () => {
     ).toEqual([
       {
         verb: "updated",
-        target: "people.substrate.reamde.dev/person/p1",
+        target: "samples.substrate.reamde.dev/people/person/p1",
         detail: "set name, email; cleared nickname; moved title, states",
       },
     ])
@@ -187,8 +187,14 @@ describe("the effects a write recorded", () => {
           {
             kind: "resync",
             scope: [
-              { kind: "people.substrate.reamde.dev/person", id: "winner" },
-              { kind: "people.substrate.reamde.dev/person", id: "loser" },
+              {
+                kind: "samples.substrate.reamde.dev/people/person",
+                id: "winner",
+              },
+              {
+                kind: "samples.substrate.reamde.dev/people/person",
+                id: "loser",
+              },
             ],
             rows: {
               annotations: [{}],
@@ -202,7 +208,7 @@ describe("the effects a write recorded", () => {
         verb: "restated",
         target: "",
         detail:
-          "1 annotation, 1 former id — on people.substrate.reamde.dev/person/winner, people.substrate.reamde.dev/person/loser",
+          "1 annotation, 1 former id — on samples.substrate.reamde.dev/people/person/winner, samples.substrate.reamde.dev/people/person/loser",
       },
     ])
   })
@@ -284,8 +290,9 @@ describe("the summary voice", () => {
           seq: 1,
           triggers: [
             {
-              trigger: "on-githubwriteback.github.bundles.substrate.reamde.dev",
-              callable: "githubwriteback.github.bundles.substrate.reamde.dev",
+              trigger:
+                "on-githubwriteback.providers.substrate.reamde.dev/github",
+              callable: "githubwriteback.providers.substrate.reamde.dev/github",
               state: "processed",
             },
           ],
@@ -301,8 +308,8 @@ describe("the summary voice", () => {
           seq: 1,
           triggers: [
             {
-              trigger: "on-dedupe.core.substrate.reamde.dev",
-              callable: "dedupe.core.substrate.reamde.dev",
+              trigger: "on-dedupe.substrate.reamde.dev/core",
+              callable: "dedupe.substrate.reamde.dev/core",
               state: "parked",
               error: "409",
             },
@@ -385,17 +392,19 @@ describe("mergeFeed", () => {
 
 const KINDS: KindInfo[] = [
   {
-    identity: "github.bundles.substrate.reamde.dev/issue",
+    identity: "providers.substrate.reamde.dev/github/issue",
     name: "issue",
-    authority: "github.bundles.substrate.reamde.dev",
+    authority: "providers.substrate.reamde.dev",
+    package: "github",
     version: 0,
     plural: "issues",
     source: "installed",
   },
   {
-    identity: "people.substrate.reamde.dev/person",
+    identity: "samples.substrate.reamde.dev/people/person",
     name: "person",
-    authority: "people.substrate.reamde.dev",
+    authority: "samples.substrate.reamde.dev",
+    package: "people",
     version: 0,
     plural: "people",
     source: "builtin",
@@ -409,14 +418,16 @@ describe("toChangelogQuery", () => {
         {
           field: "kind",
           op: "eq",
-          value: "people.substrate.reamde.dev/person",
+          value: "samples.substrate.reamde.dev/people/person",
         },
         { field: "actor", op: "eq", value: "owner,system" },
         { field: "op", op: "eq", value: "merge" },
       ],
       KINDS
     )
-    expect(q.filter.kinds).toEqual(["people.substrate.reamde.dev/person"])
+    expect(q.filter.kinds).toEqual([
+      "samples.substrate.reamde.dev/people/person",
+    ])
     expect(q.filter.actors).toEqual(["owner", "system"])
     expect(q.filter.ops).toEqual(["merge"])
   })
@@ -427,13 +438,13 @@ describe("toChangelogQuery", () => {
         {
           field: "authority",
           op: "eq",
-          value: "github.bundles.substrate.reamde.dev",
+          value: "providers.substrate.reamde.dev",
         },
       ],
       KINDS
     )
     expect(q.filter.kinds).toEqual([
-      "github.bundles.substrate.reamde.dev/issue",
+      "providers.substrate.reamde.dev/github/issue",
     ])
   })
 
@@ -443,12 +454,12 @@ describe("toChangelogQuery", () => {
         {
           field: "kind",
           op: "eq",
-          value: "people.substrate.reamde.dev/person",
+          value: "samples.substrate.reamde.dev/people/person",
         },
         {
           field: "authority",
           op: "eq",
-          value: "github.bundles.substrate.reamde.dev",
+          value: "providers.substrate.reamde.dev",
         },
       ],
       KINDS

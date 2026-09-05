@@ -23,9 +23,10 @@ import { propertiesOf, templateYAML } from "@/lib/record-yaml"
 import { PropertyForm } from "./property-form"
 
 const llmprovider: KindInfo = {
-  identity: "core.substrate.reamde.dev/llmprovider",
+  identity: "substrate.reamde.dev/core/llmprovider",
   name: "llmprovider",
-  authority: "core.substrate.reamde.dev",
+  authority: "substrate.reamde.dev",
+  package: "core",
   version: 0,
   plural: "llmproviders",
   source: "builtin",
@@ -62,7 +63,7 @@ const llmprovider: KindInfo = {
 
 const record: SubstrateRecord = {
   id: "default",
-  kind: "core.substrate.reamde.dev/llmprovider",
+  kind: "substrate.reamde.dev/core/llmprovider",
   properties: {
     name: "the gateway",
     wire: "openai",
@@ -214,7 +215,7 @@ describe("the form lens", () => {
   })
 
   it("keeps a secret write-only: it never seeds, and blank never touches the document", () => {
-    const seeded = `kind: core.substrate.reamde.dev/llmprovider
+    const seeded = `kind: substrate.reamde.dev/core/llmprovider
 metadata:
   id: default
 data:
@@ -280,9 +281,10 @@ data:
  * still writes through the ONE document. */
 
 const mappingKind: KindInfo = {
-  identity: "crew.test.dev/mapping",
+  identity: "crew.test.dev/crew/mapping",
   name: "mapping",
   authority: "crew.test.dev",
+  package: "crew",
   version: 0,
   plural: "mappings",
   source: "installed",
@@ -304,15 +306,16 @@ const mappingKind: KindInfo = {
   },
 }
 
-const AGENT = "core.substrate.reamde.dev/agent"
-const FUNCTION = "core.substrate.reamde.dev/function"
-const KIND = "core.substrate.reamde.dev/kind"
-const LLMPROVIDER = "core.substrate.reamde.dev/llmprovider"
+const AGENT = "substrate.reamde.dev/core/agent"
+const FUNCTION = "substrate.reamde.dev/core/function"
+const KIND = "substrate.reamde.dev/core/kind"
+const LLMPROVIDER = "substrate.reamde.dev/core/llmprovider"
 
 const agentKind: KindInfo = {
-  identity: "core.substrate.reamde.dev/agent",
+  identity: "substrate.reamde.dev/core/agent",
   name: "agent",
-  authority: "core.substrate.reamde.dev",
+  authority: "substrate.reamde.dev",
+  package: "core",
   version: 0,
   plural: "agents",
   source: "builtin",
@@ -378,8 +381,9 @@ function agentRecord(properties: Record<string, unknown>): SubstrateRecord {
 function registryKind(identity: string, plural: string): KindInfo {
   return {
     identity,
-    name: identity.split("/")[1],
+    name: identity.split("/")[2],
     authority: identity.split("/")[0],
+    package: identity.split("/")[1],
     version: 0,
     plural,
     source: "builtin",
@@ -389,7 +393,7 @@ function registryKind(identity: string, plural: string): KindInfo {
 }
 
 /** The kind records the registry collection serves, which is what a pointer
- * pinned at `core.substrate.reamde.dev/kind` offers. */
+ * pinned at `substrate.reamde.dev/core/kind` offers. */
 const KIND_RECORDS = [FUNCTION, KIND, LLMPROVIDER]
 
 const REGISTRY: KindInfo[] = [
@@ -420,7 +424,7 @@ function stubCollections() {
     if (url.includes("/function?")) {
       return Promise.resolve(
         page([
-          record("core.substrate.reamde.dev/propose", {
+          record("substrate.reamde.dev/core/propose", {
             description: "Propose a reviewed change to the graph",
           }),
           record("crew.test.dev/summarize", { description: "shorten a note" }),
@@ -555,7 +559,7 @@ data:
 
   it("renders a managed property read-only, stamped, never an input", () => {
     stubCollections()
-    const stamped = `kind: core.substrate.reamde.dev/agent
+    const stamped = `kind: substrate.reamde.dev/core/agent
 metadata:
   id: crew.test.dev/scout
 data:
@@ -606,13 +610,13 @@ data:
     fireEvent.click(screen.getByRole("button", { name: "Add Tools row" }))
     fireEvent.click(screen.getByLabelText(/^Function/))
     await waitFor(() =>
-      expect(offered()).toContain("core.substrate.reamde.dev/propose")
+      expect(offered()).toContain("substrate.reamde.dev/core/propose")
     )
     // The card is what makes a host function choosable: its one-liner.
     expect(screen.getByText(/Propose a reviewed change/)).toBeTruthy()
-    fireEvent.click(screen.getByText("core.substrate.reamde.dev/propose"))
+    fireEvent.click(screen.getByText("substrate.reamde.dev/core/propose"))
     expect(propertiesOf(emitted(onChange))?.tools).toEqual([
-      { function: `${FUNCTION}/core.substrate.reamde.dev/propose` },
+      { function: `${FUNCTION}/substrate.reamde.dev/core/propose` },
     ])
   })
 
@@ -649,7 +653,7 @@ data:
     // A comment at every nesting level. A deep edit that re-serialized the
     // property would take all of them with it, which is what the form lens
     // promises never to do.
-    const commented = `kind: core.substrate.reamde.dev/agent
+    const commented = `kind: substrate.reamde.dev/core/agent
 metadata:
   id: crew.test.dev/scout # the declared identity
 data:
@@ -680,7 +684,7 @@ data:
     stubCollections()
     // Absent and empty are different claims: editing `budgets.calls` must not
     // quietly delete an `kinds: []` nobody went near.
-    const seeded = `kind: core.substrate.reamde.dev/agent
+    const seeded = `kind: substrate.reamde.dev/core/agent
 metadata:
   id: crew.test.dev/scout
 data:
@@ -728,7 +732,7 @@ data:
     stubCollections()
     renderKindForm(agentKind, templateYAML(agentKind), { kinds: REGISTRY })
     const id = screen.getByLabelText(/^Record id/) as HTMLInputElement
-    expect(id.placeholder).toBe("<authority>/<name>")
+    expect(id.placeholder).toBe("<authority>/<package>/<name>")
     expect(id.getAttribute("aria-invalid")).toBe("true")
     expect(screen.getByText(/never mints one/)).toBeTruthy()
   })
@@ -799,20 +803,20 @@ data:
 
   it("warns that a host tool's grant is unpaid, and clears when it is paid", () => {
     stubCollections()
-    const unpaid = `kind: core.substrate.reamde.dev/agent
+    const unpaid = `kind: substrate.reamde.dev/core/agent
 metadata:
   id: crew.test.dev/scout
 data:
   properties:
     provider: default
     tools:
-      - function: core.substrate.reamde.dev/propose
+      - function: substrate.reamde.dev/core/propose
 `
     const { view } = renderKindForm(agentKind, unpaid, { kinds: REGISTRY })
     // The hint names the path the loader's own refusal names.
     expect(
       screen.getByText(
-        /needs core\.substrate\.reamde\.dev\/recordpatchrequest in data\.permissions\.writes/
+        /needs substrate\.reamde\.dev\/core\/recordpatchrequest in data\.permissions\.writes/
       )
     ).toBeTruthy()
     view.unmount()
@@ -821,7 +825,7 @@ data:
       agentKind,
       `${unpaid}    permissions:
       writes:
-        - core.substrate.reamde.dev/recordpatchrequest
+        - substrate.reamde.dev/core/recordpatchrequest
 `
     )
     expect(screen.queryByText(/propose lands a change request/)).toBeNull()

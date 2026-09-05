@@ -191,8 +191,12 @@ function TargetCell({
   }
   return (
     <Link
-      to="/data/$authority/$name"
-      params={{ authority: target.authority, name: target.name }}
+      to="/data/$authority/$pkg/$name"
+      params={{
+        authority: target.authority,
+        pkg: target.package,
+        name: target.name,
+      }}
       className="block truncate data underline-offset-4 hover:underline"
       title={target.identity}
     >

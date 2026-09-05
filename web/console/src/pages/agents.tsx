@@ -203,7 +203,7 @@ export function AgentsPage() {
         <h1 className="text-lg font-semibold">Agents</h1>
         <p className="text-xs text-muted-foreground">
           {agentRows.length.toLocaleString()} declared, from{" "}
-          <span className="data">core.substrate.reamde.dev/agents</span>
+          <span className="data">substrate.reamde.dev/core/agents</span>
           {hiddenFromChatCount > 0 &&
             ` (${hiddenFromChatCount.toLocaleString()} more hidden from chat, under Data)`}
         </p>

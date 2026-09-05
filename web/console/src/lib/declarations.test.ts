@@ -14,34 +14,36 @@ import {
   authorityIsDerived,
   declarationIdShape,
   derivedAuthority,
+  derivedPackage,
   isDeclarationKind,
+  packageIsDerived,
 } from "./declarations"
 
 describe("the declaration kinds", () => {
-  it("is the nine the engine routes through admission", () => {
-    expect(DECLARATION_KINDS).toHaveLength(9)
+  it("is the ten the engine routes through admission", () => {
+    expect(DECLARATION_KINDS).toHaveLength(10)
     expect(isDeclarationKind(KIND_KIND)).toBe(true)
     expect(isDeclarationKind(AGENT_KIND)).toBe(true)
-    expect(isDeclarationKind("core.substrate.reamde.dev/llmprovider")).toBe(
+    expect(isDeclarationKind("substrate.reamde.dev/core/llmprovider")).toBe(
       false
     )
     expect(isDeclarationKind("tasks.example.com/task")).toBe(false)
   })
 
   it("spells the id shape each kind is addressed by", () => {
-    expect(declarationIdShape(KIND_KIND)).toBe("<authority>/<name>")
+    expect(declarationIdShape(KIND_KIND)).toBe("<authority>/<package>/<name>")
     expect(declarationIdShape(ACTOR_KIND)).toBe("<name>")
     expect(declarationIdShape(AUTHORITY_KIND)).toBe("<authority>")
-    expect(declarationIdShape(BUNDLE_KIND)).toBe("<authority>")
+    expect(declarationIdShape(BUNDLE_KIND)).toBe("<authority>/<package>")
   })
 })
 
 describe("the authority an id says", () => {
-  it("is the label in front of the slash", () => {
-    expect(derivedAuthority(KIND_KIND, "tasks.example.com/task")).toBe(
+  it("is the label in front of the first slash", () => {
+    expect(derivedAuthority(KIND_KIND, "tasks.example.com/tasks/task")).toBe(
       "tasks.example.com"
     )
-    expect(derivedAuthority(AGENT_KIND, " crew.test.dev/scout ")).toBe(
+    expect(derivedAuthority(AGENT_KIND, " crew.test.dev/crew/scout ")).toBe(
       "crew.test.dev"
     )
   })
@@ -50,7 +52,7 @@ describe("the authority an id says", () => {
     expect(derivedAuthority(AUTHORITY_KIND, "tasks.example.com")).toBe(
       "tasks.example.com"
     )
-    expect(derivedAuthority(BUNDLE_KIND, "tasks.example.com")).toBe(
+    expect(derivedAuthority(BUNDLE_KIND, "tasks.example.com/tasks")).toBe(
       "tasks.example.com"
     )
   })
@@ -61,8 +63,10 @@ describe("the authority an id says", () => {
   })
 
   it("is nothing at all for an ordinary kind, or a blank id", () => {
-    expect(authorityIsDerived("tasks.example.com/task")).toBe(false)
-    expect(derivedAuthority("tasks.example.com/task", "t-1")).toBeUndefined()
+    expect(authorityIsDerived("tasks.example.com/tasks/task")).toBe(false)
+    expect(
+      derivedAuthority("tasks.example.com/tasks/task", "t-1")
+    ).toBeUndefined()
     expect(derivedAuthority(KIND_KIND, "  ")).toBeUndefined()
   })
 
@@ -71,5 +75,28 @@ describe("the authority an id says", () => {
     expect(derivedAuthority(KIND_KIND, "tasks.example.com/")).toBe(
       "tasks.example.com"
     )
+  })
+})
+
+describe("the package an id says", () => {
+  it("is the id's second segment", () => {
+    expect(derivedPackage(KIND_KIND, "tasks.example.com/tasks/task")).toBe(
+      "tasks"
+    )
+    expect(derivedPackage(BUNDLE_KIND, " tasks.example.com/tasks ")).toBe(
+      "tasks"
+    )
+  })
+
+  it("is nothing an AUTHORITY's id can say: one label names no package", () => {
+    expect(packageIsDerived(AUTHORITY_KIND)).toBe(false)
+    expect(derivedPackage(AUTHORITY_KIND, "tasks.example.com")).toBeUndefined()
+    expect(packageIsDerived(ACTOR_KIND)).toBe(false)
+    expect(derivedPackage(ACTOR_KIND, "console")).toBeUndefined()
+  })
+
+  it("is nothing while the id has no second segment yet", () => {
+    expect(derivedPackage(KIND_KIND, "tasks.example.com")).toBeUndefined()
+    expect(derivedPackage(KIND_KIND, "tasks.example.com/")).toBeUndefined()
   })
 })

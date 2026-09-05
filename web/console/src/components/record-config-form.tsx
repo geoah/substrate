@@ -78,14 +78,14 @@ export function RecordConfigForm({
     setErrors({})
   }
 
-  const { authority, name } = splitKind(type.identity)
+  const { authority, pkg, name } = splitKind(type.identity)
 
   const mutation = useMutation({
     mutationFn: () => {
       const properties = toProperties(fields, values, mode)
       return record
-        ? patchRecord(authority, type.name, record.id, { properties })
-        : createRecord(authority, type.name, { properties })
+        ? patchRecord(authority, pkg, type.name, record.id, { properties })
+        : createRecord(authority, pkg, type.name, { properties })
     },
     onSuccess: (saved) => {
       toast.add({

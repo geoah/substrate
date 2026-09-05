@@ -30,7 +30,7 @@ import {
   changeRequestsQueryOptions,
   pendingChangeCountQueryOptions,
 } from "@/lib/api/changerequests"
-import { CORE_AUTHORITY } from "@/lib/api/http"
+import { CORE_AUTHORITY, CORE_PACKAGE_NAME } from "@/lib/api/http"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { changeOp, changeTarget, rationaleOf } from "@/lib/changerequests"
 import { relativeTime } from "@/lib/format"
@@ -97,8 +97,12 @@ export function ChangeRequestsCard({ kinds }: { kinds: KindInfo[] }) {
       <CardHeader>
         <CardTitle className="flex items-baseline gap-2">
           <Link
-            to="/data/$authority/$name"
-            params={{ authority: CORE_AUTHORITY, name: CR_NAME }}
+            to="/data/$authority/$pkg/$name"
+            params={{
+              authority: CORE_AUTHORITY,
+              pkg: CORE_PACKAGE_NAME,
+              name: CR_NAME,
+            }}
             className="underline-offset-4 hover:underline"
           >
             Pending changes
@@ -112,8 +116,12 @@ export function ChangeRequestsCard({ kinds }: { kinds: KindInfo[] }) {
         </CardTitle>
         <CardAction>
           <Link
-            to="/data/$authority/$name"
-            params={{ authority: CORE_AUTHORITY, name: CR_NAME }}
+            to="/data/$authority/$pkg/$name"
+            params={{
+              authority: CORE_AUTHORITY,
+              pkg: CORE_PACKAGE_NAME,
+              name: CR_NAME,
+            }}
             className="text-xs text-muted-foreground underline-offset-4 hover:underline"
           >
             View queue
@@ -144,8 +152,12 @@ export function ChangeRequestsCard({ kinds }: { kinds: KindInfo[] }) {
             ))}
             {pending !== undefined && pending > rows.length && (
               <Link
-                to="/data/$authority/$name"
-                params={{ authority: CORE_AUTHORITY, name: CR_NAME }}
+                to="/data/$authority/$pkg/$name"
+                params={{
+                  authority: CORE_AUTHORITY,
+                  pkg: CORE_PACKAGE_NAME,
+                  name: CR_NAME,
+                }}
                 className="text-xs text-muted-foreground underline-offset-4 hover:underline"
               >
                 +{(pending - rows.length).toLocaleString()}

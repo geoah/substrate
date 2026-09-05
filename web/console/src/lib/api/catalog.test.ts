@@ -15,14 +15,15 @@ import {
 
 function item(over: Partial<CatalogItem> = {}): CatalogItem {
   return {
-    id: "google.bundles.substrate.reamde.dev",
+    id: "providers.substrate.reamde.dev/google",
     name: "google",
-    authority: "google.bundles.substrate.reamde.dev",
+    authority: "providers.substrate.reamde.dev",
+    package: "google",
     description: "Connects a Google account.",
     version: 1,
     inputs: {
       client: {
-        kind: "google.bundles.substrate.reamde.dev/config",
+        kind: "providers.substrate.reamde.dev/google/config",
         description: "The OAuth client record.",
       },
     },
@@ -64,7 +65,7 @@ describe("catalog reads and writes", () => {
     fetchMock.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
-          id: "google.bundles.substrate.reamde.dev",
+          id: "providers.substrate.reamde.dev/google",
           installed: true,
         }),
         {
@@ -72,10 +73,10 @@ describe("catalog reads and writes", () => {
         }
       )
     )
-    await importBundle("google.bundles.substrate.reamde.dev")
+    await importBundle("providers.substrate.reamde.dev/google")
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toBe(
-      "/api/v1/catalog/google.bundles.substrate.reamde.dev/install"
+      "/api/v1/catalog/providers.substrate.reamde.dev%2Fgoogle/install"
     )
     expect(init?.method).toBe("POST")
   })
@@ -84,9 +85,9 @@ describe("catalog reads and writes", () => {
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ installed: true }), { status: 200 })
     )
-    await importBundle("acme.bundles.substrate.reamde.dev/planner")
+    await importBundle("acme.example.com/planner")
     expect(String(fetchMock.mock.calls[0][0])).toBe(
-      "/api/v1/catalog/acme.bundles.substrate.reamde.dev%2Fplanner/install"
+      "/api/v1/catalog/acme.example.com%2Fplanner/install"
     )
   })
 })
@@ -95,17 +96,15 @@ describe("catalogItemQueryOptions", () => {
   it("shares the list cache and selects the entry by bundle id", () => {
     const items = [
       item(),
-      item({ id: "slack.bundles.substrate.reamde.dev", name: "slack" }),
+      item({ id: "slack.example.com/slack", name: "slack" }),
     ]
-    const opts = catalogItemQueryOptions("slack.bundles.substrate.reamde.dev")
+    const opts = catalogItemQueryOptions("slack.example.com/slack")
     expect(opts.queryKey).toEqual(catalogQueryOptions.queryKey)
     expect(opts.select?.(items)?.name).toBe("slack")
   })
 
   it("selects undefined when this repository's bundle is not a shipped closure", () => {
-    const opts = catalogItemQueryOptions(
-      "applied-only.bundles.substrate.reamde.dev"
-    )
+    const opts = catalogItemQueryOptions("appliedonly.example.com/local")
     expect(opts.select?.([item()])).toBeUndefined()
   })
 })

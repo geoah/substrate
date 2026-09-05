@@ -42,10 +42,13 @@ import {
 } from "@/lib/record-form"
 import {
   AUTHORITY_PROPERTY,
+  PACKAGE_PROPERTY,
   authorityIsDerived,
   declarationIdShape,
   derivedAuthority,
+  derivedPackage,
   isDeclarationKind,
+  packageIsDerived,
 } from "@/lib/declarations"
 import { checkValue, emptyContainer, systemSpecs } from "@/lib/record-schema"
 import {
@@ -79,10 +82,11 @@ export function PropertyForm({
 }) {
   const fields = useMemo(() => requiredFirst(buildFormFields(kind)), [kind])
   const properties = propertiesOf(text)
-  // A DECLARATION is named by its id, not given one, and the label in front of
-  // that id's slash IS its authority.
+  // A DECLARATION is named by its id, not given one: the id's first segment IS
+  // its authority and the second IS its package.
   const declared = isDeclarationKind(kind.identity)
   const derivesAuthority = authorityIsDerived(kind.identity)
+  const derivesPackage = packageIsDerived(kind.identity)
 
   // Drafts hold what the person is typing; the document holds what parses. A
   // change that came from ELSEWHERE (the YAML lens) is what reseeds them, which
@@ -112,9 +116,10 @@ export function PropertyForm({
     onChange(next)
   }
 
-  /** The id, and with it the authority a DECLARATION's id puts it under. The
-   * write still carries `authority` (the loader requires it), but nobody is
-   * asked to type a label they have already typed in front of the slash. */
+  /** The id, and with it the authority and the package a DECLARATION's id puts
+   * it under. The write still carries `authority` and `package` (the loader
+   * requires both), but nobody is asked to type segments they have already
+   * typed in the id. */
   function setRecordId(next: string) {
     let doc = setIn(text, ["metadata", "id"], next)
     const authority = derivedAuthority(kind.identity, next)
@@ -124,6 +129,11 @@ export function PropertyForm({
       // reseed (a draft outranks what parses), so a value written from here
       // has to be put in the bag as well as in the text.
       setValues((prev) => ({ ...prev, [AUTHORITY_PROPERTY]: authority }))
+    }
+    const pkg = derivedPackage(kind.identity, next)
+    if (derivesPackage && pkg !== undefined) {
+      doc = setIn(doc, ["data", "properties", PACKAGE_PROPERTY], pkg)
+      setValues((prev) => ({ ...prev, [PACKAGE_PROPERTY]: pkg }))
     }
     emit(doc)
   }
@@ -265,8 +275,10 @@ export function PropertyForm({
             self={record?.id}
             derivedNote={
               derivesAuthority && field.name === AUTHORITY_PROPERTY
-                ? "Derived from the record id: the label in front of its slash."
-                : undefined
+                ? "Derived from the record id: its first segment."
+                : derivesPackage && field.name === PACKAGE_PROPERTY
+                  ? "Derived from the record id: its second segment."
+                  : undefined
             }
           />
         ))}

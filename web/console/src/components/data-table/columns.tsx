@@ -121,7 +121,7 @@ export function actorColumn<T extends RowData>(opts: {
     },
     meta: {
       label: title,
-      // chips are identity-length (`github.connectors.substrate.reamde.dev`): a modest
+      // chips are identity-length (`providers.substrate.reamde.dev/github`): a modest
       // share with a cap. A caller may pin px instead, though none does now —
       // the rails dropped theirs, which truncated every chip they held.
       ...(opts.width
@@ -148,7 +148,7 @@ export function ChangeRecordLink({
   row: ChangeRow
   kinds: KindInfo[]
 }) {
-  const { name, authority } = splitKind(row.kind)
+  const { name } = splitKind(row.kind)
   const kindInfo = kindByIdentity(kinds, row.kind)
   const title = `${row.kind}/${row.recordId}`
   const label = (
@@ -166,9 +166,10 @@ export function ChangeRecordLink({
   }
   return (
     <Link
-      to="/data/$authority/$name/$id"
+      to="/data/$authority/$pkg/$name/$id"
       params={{
-        authority: authority,
+        authority: kindInfo.authority,
+        pkg: kindInfo.package,
         name: kindInfo.name,
         id: row.recordId,
       }}

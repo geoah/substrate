@@ -34,7 +34,7 @@ function call(over: Partial<ToolCallView> = {}): ToolCallView {
   return {
     id: "c1",
     name: "propose",
-    arguments: '{"kind":"crew.test.dev/widget","target":"w-1"}',
+    arguments: '{"kind":"crew.test.dev/crew/widget","target":"w-1"}',
     output: '{"id":"cr7abc4def6k"}',
     ok: true,
     ...over,
@@ -49,7 +49,13 @@ function renderCard(view: ToolCallView, request?: SubstrateRecord) {
   })
   if (request) {
     client.setQueryData(
-      ["record", "core.substrate.reamde.dev", "recordpatchrequest", request.id],
+      [
+        "record",
+        "substrate.reamde.dev",
+        "core",
+        "recordpatchrequest",
+        request.id,
+      ],
       request
     )
   }
@@ -62,7 +68,7 @@ function renderCard(view: ToolCallView, request?: SubstrateRecord) {
 
 const request: SubstrateRecord = {
   id: "cr7abc4def6k",
-  kind: "core.substrate.reamde.dev/recordpatchrequest",
+  kind: "substrate.reamde.dev/core/recordpatchrequest",
   properties: {
     op: "patch",
     decision: "proposed",
@@ -121,7 +127,7 @@ describe("the tool card", () => {
           {
             seq: 4,
             op: "put",
-            kind: "core.substrate.reamde.dev/recordpatchrequest",
+            kind: "substrate.reamde.dev/core/recordpatchrequest",
             id: "cr7abc4def6k",
           },
         ],
@@ -155,7 +161,12 @@ describe("the tool card", () => {
         name: "mutate",
         output: '{"data":{"patch":{"id":"w1"}}}',
         changes: [
-          { seq: 202, op: "patch", kind: "crew.test.dev/widget", id: "w1" },
+          {
+            seq: 202,
+            op: "patch",
+            kind: "crew.test.dev/crew/widget",
+            id: "w1",
+          },
         ],
       })
     )
@@ -163,10 +174,11 @@ describe("the tool card", () => {
     expect(screen.getByText("patch")).toBeTruthy()
     // The record, as the pill: one link straight to the moved record.
     const pill = container.querySelector(
-      'a[data-to="/data/$authority/$name/$id"]'
+      'a[data-to="/data/$authority/$pkg/$name/$id"]'
     )
     expect(JSON.parse(pill?.getAttribute("data-params") ?? "{}")).toEqual({
       authority: "crew.test.dev",
+      pkg: "crew",
       name: "widget",
       id: "w1",
     })

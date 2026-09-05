@@ -98,7 +98,7 @@ import {
   formatCount,
 } from "@/lib/api/records"
 import { kindsQueryOptions } from "@/lib/api/kinds"
-import { CORE_AUTHORITY } from "@/lib/api/http"
+import { CORE_AUTHORITY, CORE_PACKAGE, CORE_PACKAGE_NAME } from "@/lib/api/http"
 import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
 import {
   accountKindOf,
@@ -107,7 +107,7 @@ import {
   installedKindRows,
   isInputSetupCode,
   oauthConnectBlocked,
-  presentAuthorities,
+  presentPackages,
   requirementsOf,
   type Requirement,
   type ShippedRecordRow,
@@ -167,7 +167,7 @@ function CallbackUrlNote() {
   )
 }
 
-/** The authorities the closure declares against, each marked against the LIVE
+/** The packages the closure declares against, each marked against the LIVE
  * kind registry — the same check admission makes (`schema.resolveBundle`), so a
  * requirement torn down after the import reads as missing here rather than
  * silently rotting. Renders only when the shipped closure names any. */
@@ -179,7 +179,7 @@ function RequiresNote({ requirements }: { requirements: Requirement[] }) {
       <div className="flex flex-wrap gap-1.5 pt-1.5">
         {requirements.map((req) => (
           <span
-            key={req.authority}
+            key={req.package}
             className={cn(
               "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 data text-xs",
               req.present
@@ -188,8 +188,8 @@ function RequiresNote({ requirements }: { requirements: Requirement[] }) {
             )}
             title={
               req.present
-                ? `${req.authority} is imported`
-                : `${req.authority} is not imported`
+                ? `${req.package} is imported`
+                : `${req.package} is not imported`
             }
           >
             {req.present ? (
@@ -197,7 +197,7 @@ function RequiresNote({ requirements }: { requirements: Requirement[] }) {
             ) : (
               <TriangleAlertIcon className="size-3 shrink-0" />
             )}
-            {req.authority}
+            {req.package}
             <span className="sr-only">
               {req.present ? " imported" : " missing"}
             </span>
@@ -207,10 +207,10 @@ function RequiresNote({ requirements }: { requirements: Requirement[] }) {
       <p className="pt-1.5 text-xs text-muted-foreground">
         {missing.length
           ? `Not in this repository: ${missing
-              .map((r) => r.authority)
+              .map((r) => r.package)
               .join(
                 ", "
-              )}. This bundle's mappings and references point at it — re-import that authority's bundle from the registry.`
+              )}. This bundle's mappings and references point at it — re-import that package's bundle from the registry.`
           : "The vocabulary this bundle's mappings, references and trigger subscriptions point at. All of it is imported."}
       </p>
     </div>
@@ -269,8 +269,7 @@ function verbPlan(verb: BundleVerb | "purge", b: BundleStatus): VerbPlan {
         title: `Purge ${b.name}'s data?`,
         body: (
           <>
-            Tombstones every live row in{" "}
-            <span className="data">{b.authority}</span> —{" "}
+            Tombstones every live row in <span className="data">{b.id}</span> —{" "}
             <span className="data">
               {(b.liveRecords ?? 0).toLocaleString()}
             </span>{" "}
@@ -428,11 +427,12 @@ function SetupItemRow({ item, types }: { item: SetupItem; types: KindInfo[] }) {
   // resolves its named kind through the registry for the record route.
   const kind =
     item.code === "provider"
-      ? kindByIdentity(types, `${CORE_AUTHORITY}/llmprovider`)
+      ? kindByIdentity(types, `${CORE_PACKAGE}/llmprovider`)
       : item.kind
         ? kindByIdentity(types, item.kind)
         : undefined
   const authority = item.code === "provider" ? CORE_AUTHORITY : kind?.authority
+  const pkg = item.code === "provider" ? CORE_PACKAGE_NAME : kind?.package
   const plural = item.code === "provider" ? "llmprovider" : kind?.name
   return (
     <div className="flex items-center justify-between gap-3 rounded-md border border-warning/40 px-4 py-2.5">
@@ -440,10 +440,10 @@ function SetupItemRow({ item, types }: { item: SetupItem; types: KindInfo[] }) {
         <TriangleAlertIcon className="size-3.5 shrink-0" />
         <span className="min-w-0">{item.message}</span>
       </p>
-      {item.record && authority && plural && (
+      {item.record && authority && pkg && plural && (
         <Link
-          to="/data/$authority/$name/$id"
-          params={{ authority, name: plural, id: item.record }}
+          to="/data/$authority/$pkg/$name/$id"
+          params={{ authority, pkg, name: plural, id: item.record }}
           className="inline-flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground underline-offset-4 hover:underline"
         >
           <span className="data">{item.record}</span>
@@ -470,12 +470,15 @@ function InputCard({
 }) {
   const queryClient = useQueryClient()
   const kind = kindByIdentity(types, input.kind)
-  const authority = kind?.authority ?? splitKind(input.kind).authority
+  const declared = splitKind(input.kind)
+  const authority = kind?.authority ?? declared.authority
+  const pkg = kind?.package ?? declared.pkg
   const [editing, setEditing] = useState<SubstrateRecord | "new" | null>(null)
 
   const records = useQuery({
     ...recordsQueryOptions({
       authority,
+      package: pkg,
       name: kind?.name ?? "",
       first: 50,
     }),
@@ -532,8 +535,13 @@ function InputCard({
               <span className="data">{input.via}</span>
               {kind && (
                 <Link
-                  to="/data/$authority/$name/$id"
-                  params={{ authority, name: kind.name, id: input.record }}
+                  to="/data/$authority/$pkg/$name/$id"
+                  params={{
+                    authority,
+                    pkg,
+                    name: kind.name,
+                    id: input.record,
+                  }}
                   className="inline-flex items-center gap-0.5 underline-offset-4 hover:underline"
                 >
                   record
@@ -755,7 +763,7 @@ function AccountRow({
 }) {
   const queryClient = useQueryClient()
   const type = kindByIdentity(types, account.kind)
-  const authority = splitKind(account.kind).authority
+  const { authority, pkg } = splitKind(account.kind)
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
   // Set once the consent tab is open and awaiting the callback's return
@@ -885,9 +893,10 @@ function AccountRow({
           </span>
           {type && (
             <Link
-              to="/data/$authority/$name/$id"
+              to="/data/$authority/$pkg/$name/$id"
               params={{
                 authority: authority,
+                pkg: pkg,
                 name: type.name,
                 id: account.id,
               }}
@@ -985,17 +994,18 @@ function AccountsSection({
   const accounts = useQuery(traitRecordsQueryOptions(ACCOUNT_CONFIG_TRAIT))
   const [adding, setAdding] = useState(false)
   const accountType = useMemo(
-    () => accountKindOf(types, bundle.authority),
-    [types, bundle.authority]
+    () => accountKindOf(types, bundle.id),
+    [types, bundle.id]
   )
   // The trait query spans every bundle; scope to this one by the owned
-  // authority.
+  // package.
   const mine = useMemo(
     () =>
-      (accounts.data?.records ?? []).filter(
-        (e) => splitKind(e.kind).authority === bundle.authority
-      ),
-    [accounts.data, bundle.authority]
+      (accounts.data?.records ?? []).filter((e) => {
+        const { authority, pkg } = splitKind(e.kind)
+        return `${authority}/${pkg}` === bundle.id
+      }),
+    [accounts.data, bundle.id]
   )
   const capped = accounts.data?.capped ?? false
   // oauth/start refuses while the client input is unresolved or its record is
@@ -1105,9 +1115,13 @@ function AccountsSection({
  * no count — a bounded keyset walk over the list cursor, capped as N+). A kind
  * the registry has not resolved to a collection has no count to walk. */
 function KindRowCount({ row }: { row: KindRow }) {
-  const resolved = Boolean(row.authority && row.name)
+  const resolved = Boolean(row.authority && row.package && row.name)
   const count = useQuery({
-    ...recordCountQueryOptions(row.authority ?? "", row.name ?? ""),
+    ...recordCountQueryOptions(
+      row.authority ?? "",
+      row.package ?? "",
+      row.name ?? ""
+    ),
     enabled: resolved,
   })
   if (!resolved || count.isError) {
@@ -1146,10 +1160,14 @@ function kindColumns(): DataTableColumn<KindRow>[] {
         )
         return (
           <div className="min-w-0">
-            {t.authority && t.name ? (
+            {t.authority && t.package && t.name ? (
               <Link
-                to="/data/$authority/$name"
-                params={{ authority: t.authority, name: t.name }}
+                to="/data/$authority/$pkg/$name"
+                params={{
+                  authority: t.authority,
+                  pkg: t.package,
+                  name: t.name,
+                }}
                 className="underline-offset-4 hover:underline"
               >
                 {name}
@@ -1209,7 +1227,7 @@ function ShippedRecordName({
       </div>
     </div>
   )
-  if (row.kind === `${CORE_AUTHORITY}/agent`) {
+  if (row.kind === `${CORE_PACKAGE}/agent`) {
     return (
       <Link
         to="/agents/$id"
@@ -1226,8 +1244,13 @@ function ShippedRecordName({
   }
   return (
     <Link
-      to="/data/$authority/$name/$id"
-      params={{ authority: k.authority, name: k.name, id: row.id }}
+      to="/data/$authority/$pkg/$name/$id"
+      params={{
+        authority: k.authority,
+        pkg: k.package,
+        name: k.name,
+        id: row.id,
+      }}
       className="block min-w-0 underline-offset-4 hover:underline"
     >
       {name}
@@ -1238,17 +1261,17 @@ function ShippedRecordName({
 /** Declarations the console has no record page for: they are records, but the
  * Data surface does not serve the core meta-kinds that hold them. */
 const NO_DETAIL_ROUTE = new Set([
-  `${CORE_AUTHORITY}/function`,
-  `${CORE_AUTHORITY}/recordmapping`,
+  `${CORE_PACKAGE}/function`,
+  `${CORE_PACKAGE}/recordmapping`,
 ])
 
 /** One icon per shipped-record kind; anything a bundle ships that is not one of
  * these is an ordinary record and gets the record icon. */
 const RECORD_ICON: Record<string, typeof BotIcon> = {
-  [`${CORE_AUTHORITY}/function`]: FunctionSquareIcon,
-  [`${CORE_AUTHORITY}/agent`]: BotIcon,
-  [`${CORE_AUTHORITY}/trigger`]: ZapIcon,
-  [`${CORE_AUTHORITY}/recordmapping`]: BoxesIcon,
+  [`${CORE_PACKAGE}/function`]: FunctionSquareIcon,
+  [`${CORE_PACKAGE}/agent`]: BotIcon,
+  [`${CORE_PACKAGE}/trigger`]: ZapIcon,
+  [`${CORE_PACKAGE}/recordmapping`]: BoxesIcon,
 }
 
 /** Kind FIRST, then the record: the kind is what the reader scans this table
@@ -1418,18 +1441,17 @@ export function BundleDetailPage() {
   const bundle = status.data
   const provider = declaresProviderInterfaces(bundle, types)
   const item = catalog.data
-  const vocabulary = item?.vocabulary ?? false
   // The Setup surface exists only for a bundle that declares inputs or whose
-  // status carries setup items. A vocabulary bundle (the loader forbids it
-  // inputs) shows nothing there: no heading, no empty state.
+  // status carries setup items. A bundle that declares neither shows nothing
+  // there: no heading, no empty state.
   const hasSetup =
     (bundle.inputs?.length ?? 0) > 0 || (bundle.setup?.length ?? 0) > 0
-  // The requirements are checked against the LIVE registry: an authority is
+  // The requirements are checked against the LIVE registry: a package is
   // present when some reconciled kind carries it, which is the check the
   // server's admission makes.
   const requirements = requirementsOf(
     { requires: item?.requires ?? [] },
-    presentAuthorities([], types)
+    presentPackages([], types)
   )
 
   return (
@@ -1446,11 +1468,7 @@ export function BundleDetailPage() {
                 clear it.
               </span>
             ) : null}
-            {vocabulary ? (
-              <Badge variant="outline" className="shrink-0 font-normal">
-                Vocabulary
-              </Badge>
-            ) : item?.integration ? (
+            {item?.integration ? (
               <Badge variant="outline" className="shrink-0 font-normal">
                 Integration
               </Badge>
@@ -1458,15 +1476,16 @@ export function BundleDetailPage() {
           </div>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
             <Link
-              to="/data/$authority/$name/$id"
+              to="/data/$authority/$pkg/$name/$id"
               params={{
-                authority: "core.substrate.reamde.dev",
+                authority: CORE_AUTHORITY,
+                pkg: CORE_PACKAGE_NAME,
                 name: "bundle",
                 id: bundle.id,
               }}
               className="inline-flex items-center gap-0.5 underline-offset-4 hover:underline"
             >
-              <span className="data">{bundle.authority}</span>
+              <span className="data">{bundle.id}</span>
               <ArrowUpRightIcon className="size-3" />
             </Link>
             {item?.version ? (

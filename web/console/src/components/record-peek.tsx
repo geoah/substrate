@@ -48,23 +48,24 @@ export function RecordPeek({
   // An untitled target shows its id — an identifier, so the data voice
   // (codex finding, 2026-08-06: bold-sans ids read wrong in the MR pair).
   const idVoice = !target.title
-  const { authority } = splitKind(target.kind)
+  const { authority, pkg } = splitKind(target.kind)
 
   // Unknown kind (not in the registry) — no route to peek at; plain text.
   if (!targetKind) {
     return <span className="data">{label}</span>
   }
 
-  const path = `${authority}/${targetKind.name}/${target.id}`
+  const path = `${authority}/${pkg}/${targetKind.name}/${target.id}`
 
   return (
     <HoverCard onOpenChange={setOpen}>
       <HoverCardTrigger
         render={
           <Link
-            to="/data/$authority/$name/$id"
+            to="/data/$authority/$pkg/$name/$id"
             params={{
               authority: authority,
+              pkg: pkg,
               name: targetKind.name,
               id: target.id,
             }}
@@ -87,6 +88,7 @@ export function RecordPeek({
         <PeekBody
           open={open}
           authority={authority}
+          pkg={pkg}
           plural={targetKind.name}
           id={target.id}
           targetKind={targetKind}
@@ -101,6 +103,7 @@ export function RecordPeek({
 function PeekBody({
   open,
   authority,
+  pkg,
   plural,
   id,
   targetKind,
@@ -109,6 +112,7 @@ function PeekBody({
 }: {
   open: boolean
   authority: string
+  pkg: string
   plural: string
   id: string
   targetKind: KindInfo
@@ -116,7 +120,7 @@ function PeekBody({
   path: string
 }) {
   const record = useQuery({
-    ...recordQueryOptions(authority, plural, id),
+    ...recordQueryOptions(authority, pkg, plural, id),
     enabled: open,
   })
 

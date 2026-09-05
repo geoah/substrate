@@ -180,7 +180,7 @@ function ActiveFilterControl({
               visible inside the control (codex finding, 2026-08-05) */}
           <span aria-hidden className="h-4 w-px shrink-0 bg-border" />
           {/* max-w-72 fits a full group identity (the longest common value,
-              e.g. github.connectors.substrate.reamde.dev) before truncating; the title
+              e.g. providers.substrate.reamde.dev/github) before truncating; the title
               carries the whole value regardless (sweep finding, 2026-08-06) */}
           <span
             className="max-w-72 truncate data"

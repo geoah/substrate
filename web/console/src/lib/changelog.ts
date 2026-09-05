@@ -8,7 +8,7 @@
 
 import type { ChangeFeedFilter } from "@/lib/api/changes"
 import type { ChangeRow, KindInfo } from "@/lib/api/types"
-import { CORE_AUTHORITY } from "@/lib/api/http"
+import { CORE_PACKAGE } from "@/lib/api/http"
 import type { ActiveFilter } from "@/lib/filters"
 import type { DeclaredProperty } from "@/lib/definition"
 
@@ -17,8 +17,8 @@ import type { DeclaredProperty } from "@/lib/definition"
 /** Registry vocabulary: a change to one of these kinds is the schema itself
  * moving (a bundle install, a mapping update), rendered set apart in the
  * changelog. The v1 meta-kinds: kind, propertytype, trait, recordmapping,
- * function, authority — plus the actor registrations that ride the same install
- * motions. All published by the core authority. */
+ * function, authority, package — plus the actor registrations that ride the
+ * same install motions. All published by the core package. */
 const SCHEMA_KIND_NAMES = [
   "kind",
   "propertytype",
@@ -26,11 +26,12 @@ const SCHEMA_KIND_NAMES = [
   "recordmapping",
   "function",
   "authority",
+  "package",
   "actor",
 ] as const
 
 const SCHEMA_KINDS = new Set<string>(
-  SCHEMA_KIND_NAMES.map((n) => `${CORE_AUTHORITY}/${n}`)
+  SCHEMA_KIND_NAMES.map((n) => `${CORE_PACKAGE}/${n}`)
 )
 
 export function isVocabularyChange(row: ChangeRow): boolean {
@@ -65,7 +66,7 @@ export function changedProperties(row: ChangeRow): string[] {
 }
 
 /** A trigger or callable identity's plain first label:
- * `on-githubwriteback.github.bundles.substrate.reamde.dev` → `on-githubwriteback` — the
+ * `on-githubwriteback.providers.substrate.reamde.dev/github` → `on-githubwriteback` — the
  * summary column speaks it with a plain verb. */
 function shortIdentity(name: string): string {
   return name.split(".")[0] || name

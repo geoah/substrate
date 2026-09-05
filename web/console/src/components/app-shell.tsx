@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { CR_NAME } from "@/lib/api/changerequests"
-import { CORE_AUTHORITY } from "@/lib/api/http"
+import { CORE_AUTHORITY, CORE_PACKAGE, CORE_PACKAGE_NAME } from "@/lib/api/http"
 import { MR_NAME } from "@/lib/api/mergerequests"
 
 interface Crumb {
@@ -35,7 +35,7 @@ interface Crumb {
 }
 
 /** Route depth as crumbs: fixed pages are one crumb; the data routes read
- * Data → group → type → record. */
+ * Data → authority → package → kind → record. */
 function crumbsFor(pathname: string): Crumb[] {
   if (pathname === "/") return [{ label: "Overview" }]
   if (pathname.startsWith("/changelog")) return [{ label: "Changelog" }]
@@ -67,9 +67,10 @@ function crumbsFor(pathname: string): Crumb[] {
     return [
       { label: "Data" },
       { label: CORE_AUTHORITY, to: `/data/${CORE_AUTHORITY}`, mono: true },
+      { label: CORE_PACKAGE_NAME, to: `/data/${CORE_PACKAGE}`, mono: true },
       {
         label: MR_NAME,
-        to: `/data/${CORE_AUTHORITY}/${MR_NAME}`,
+        to: `/data/${CORE_PACKAGE}/${MR_NAME}`,
         mono: true,
       },
       { label: id, mono: true },
@@ -82,9 +83,10 @@ function crumbsFor(pathname: string): Crumb[] {
     return [
       { label: "Data" },
       { label: CORE_AUTHORITY, to: `/data/${CORE_AUTHORITY}`, mono: true },
+      { label: CORE_PACKAGE_NAME, to: `/data/${CORE_PACKAGE}`, mono: true },
       {
         label: CR_NAME,
-        to: `/data/${CORE_AUTHORITY}/${CR_NAME}`,
+        to: `/data/${CORE_PACKAGE}/${CR_NAME}`,
         mono: true,
       },
       { label: id, mono: true },
@@ -95,22 +97,31 @@ function crumbsFor(pathname: string): Crumb[] {
     return [{ label: "Actors" }, { label: id, mono: true }]
   }
   if (pathname.startsWith("/data/")) {
-    const [group, type, id] = pathname
+    // A data address IS the kind reference, segment for segment: authority,
+    // package, kind, then the record id (decision 0047).
+    const [authority, pkg, kind, id] = pathname
       .slice("/data/".length)
       .split("/")
       .map((s) => decodeURIComponent(s ?? ""))
     const crumbs: Crumb[] = [
       { label: "Data" },
       {
-        label: group ?? "",
-        to: type ? `/data/${group}` : undefined,
+        label: authority ?? "",
+        to: pkg ? `/data/${authority}` : undefined,
         mono: true,
       },
     ]
-    if (type) {
+    if (pkg) {
       crumbs.push({
-        label: type,
-        to: id ? `/data/${group}/${type}` : undefined,
+        label: pkg,
+        to: kind ? `/data/${authority}/${pkg}` : undefined,
+        mono: true,
+      })
+    }
+    if (kind) {
+      crumbs.push({
+        label: kind,
+        to: id ? `/data/${authority}/${pkg}/${kind}` : undefined,
         mono: true,
       })
     }

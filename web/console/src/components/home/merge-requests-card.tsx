@@ -18,7 +18,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
-import { CORE_AUTHORITY } from "@/lib/api/http"
+import { CORE_AUTHORITY, CORE_PACKAGE_NAME } from "@/lib/api/http"
 import {
   MR_NAME,
   mergeRequestsQueryOptions,
@@ -90,8 +90,12 @@ export function MergeRequestsCard({ kinds }: { kinds: KindInfo[] }) {
       <CardHeader>
         <CardTitle className="flex items-baseline gap-2">
           <Link
-            to="/data/$authority/$name"
-            params={{ authority: CORE_AUTHORITY, name: MR_NAME }}
+            to="/data/$authority/$pkg/$name"
+            params={{
+              authority: CORE_AUTHORITY,
+              pkg: CORE_PACKAGE_NAME,
+              name: MR_NAME,
+            }}
             className="underline-offset-4 hover:underline"
           >
             Merge requests
@@ -105,8 +109,12 @@ export function MergeRequestsCard({ kinds }: { kinds: KindInfo[] }) {
         </CardTitle>
         <CardAction>
           <Link
-            to="/data/$authority/$name"
-            params={{ authority: CORE_AUTHORITY, name: MR_NAME }}
+            to="/data/$authority/$pkg/$name"
+            params={{
+              authority: CORE_AUTHORITY,
+              pkg: CORE_PACKAGE_NAME,
+              name: MR_NAME,
+            }}
             className="text-xs text-muted-foreground underline-offset-4 hover:underline"
           >
             View queue
@@ -137,8 +145,12 @@ export function MergeRequestsCard({ kinds }: { kinds: KindInfo[] }) {
             ))}
             {pending !== undefined && pending > rows.length && (
               <Link
-                to="/data/$authority/$name"
-                params={{ authority: CORE_AUTHORITY, name: MR_NAME }}
+                to="/data/$authority/$pkg/$name"
+                params={{
+                  authority: CORE_AUTHORITY,
+                  pkg: CORE_PACKAGE_NAME,
+                  name: MR_NAME,
+                }}
                 className="text-xs text-muted-foreground underline-offset-4 hover:underline"
               >
                 +{(pending - rows.length).toLocaleString()}

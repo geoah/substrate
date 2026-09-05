@@ -1,5 +1,5 @@
 /** Changelog (`/changelog`): "what is happening right now / around time T?" —
- * the repository's own log, read through `GET /core.substrate.reamde.dev/changes`, as ONE
+ * the repository's own log, read through `GET /substrate.reamde.dev/core/changes`, as ONE
  * FLAT table on the shared table system (owner ruling 2026-08-06; the intent
  * fold is gone), facet-filtered server-side, expandable per row to a human
  * summary of the write, tailed live via Follow, paged prev/next by seq cursor

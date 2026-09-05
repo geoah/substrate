@@ -1,6 +1,6 @@
 /** The agent's declaration, on the chat page: the system prompt the loop sends
  * and the tools the model may call, read off the agent record itself
- * (`core.substrate.reamde.dev/agent`; the row IS the prompt store). Collapsed
+ * (`substrate.reamde.dev/core/agent`; the row IS the prompt store). Collapsed
  * by default — the conversation is the page's subject — and editing stays on
  * the record page, one link away.
  *
@@ -18,7 +18,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { Spinner } from "@/components/ui/spinner"
-import { CORE_AUTHORITY } from "@/lib/api/http"
+import { CORE_AUTHORITY, CORE_PACKAGE_NAME } from "@/lib/api/http"
 import { recordQueryOptions } from "@/lib/api/records"
 import type { SubstrateRecord } from "@/lib/api/types"
 
@@ -55,7 +55,7 @@ function toolsOf(record: SubstrateRecord): ToolEntry[] {
 }
 
 /** A permissions grant names kind records
- * (`core.substrate.reamde.dev/kind/<kind-ref>`); the kind reference after
+ * (`substrate.reamde.dev/core/kind/<kind-ref>`); the kind reference after
  * `/kind/` is the readable part. */
 function grantKinds(raw: unknown): string[] {
   if (!Array.isArray(raw)) return []
@@ -69,7 +69,9 @@ function grantKinds(raw: unknown): string[] {
 }
 
 export function AgentManifest({ id }: { id: string }) {
-  const agent = useQuery(recordQueryOptions(CORE_AUTHORITY, "agent", id))
+  const agent = useQuery(
+    recordQueryOptions(CORE_AUTHORITY, CORE_PACKAGE_NAME, "agent", id)
+  )
 
   if (agent.isPending) {
     return (
@@ -173,8 +175,13 @@ export function AgentManifest({ id }: { id: string }) {
             </div>
           )}
           <Link
-            to="/data/$authority/$name/$id"
-            params={{ authority: CORE_AUTHORITY, name: "agent", id }}
+            to="/data/$authority/$pkg/$name/$id"
+            params={{
+              authority: CORE_AUTHORITY,
+              pkg: CORE_PACKAGE_NAME,
+              name: "agent",
+              id,
+            }}
             className="inline-flex w-fit items-center gap-1 text-xs text-muted-foreground underline-offset-4 hover:underline"
           >
             The full record

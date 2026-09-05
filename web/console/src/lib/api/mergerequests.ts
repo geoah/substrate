@@ -11,7 +11,14 @@ import {
   recordCountQueryOptions,
   recordQueryOptions,
 } from "./records"
-import { collectionPath, CORE_AUTHORITY, request, seg } from "./http"
+import {
+  collectionPath,
+  CORE_AUTHORITY,
+  CORE_PACKAGE,
+  CORE_PACKAGE_NAME,
+  request,
+  seg,
+} from "./http"
 import type { SubstrateRecord, RecordFilter } from "./types"
 import {
   verdictPatch,
@@ -20,7 +27,7 @@ import {
 } from "@/lib/mergerequests"
 
 export const MR_NAME = "recordmergerequest"
-export const MR_KIND = `${CORE_AUTHORITY}/recordmergerequest`
+export const MR_KIND = `${CORE_PACKAGE}/recordmergerequest`
 
 /** `decision` is a state property; states filter through `properties` like any
  * other (verified live) — one value as `eq`, several as `in`. No decision =
@@ -45,6 +52,7 @@ export function mergeRequestsQueryOptions(opts: {
 }) {
   return recordsQueryOptions({
     authority: CORE_AUTHORITY,
+    package: CORE_PACKAGE_NAME,
     name: MR_NAME,
     first: opts.first,
     after: opts.after,
@@ -60,6 +68,7 @@ export function mergeRequestCountQueryOptions(
 ) {
   return recordCountQueryOptions(
     CORE_AUTHORITY,
+    CORE_PACKAGE_NAME,
     MR_NAME,
     decisionFilter(decision)
   )
@@ -74,7 +83,7 @@ export function pendingMergeCountQueryOptions() {
  * `propertyMeta` (who proposed, who decided) and `annotations` (the note, and
  * the server's conflict record after a refused apply). */
 export function mergeRequestQueryOptions(id: string) {
-  return recordQueryOptions(CORE_AUTHORITY, MR_NAME, id)
+  return recordQueryOptions(CORE_AUTHORITY, CORE_PACKAGE_NAME, MR_NAME, id)
 }
 
 /** The single atomic submit. On accept the substrate applies the merge in this
@@ -87,7 +96,7 @@ export function submitVerdict(
 ): Promise<SubstrateRecord> {
   return request<SubstrateRecord>(
     "PATCH",
-    `${collectionPath(CORE_AUTHORITY, MR_NAME)}/${seg(id)}`,
+    `${collectionPath(CORE_AUTHORITY, CORE_PACKAGE_NAME, MR_NAME)}/${seg(id)}`,
     verdictPatch(verdict, note)
   )
 }

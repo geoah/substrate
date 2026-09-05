@@ -20,9 +20,10 @@ import {
 
 /** An agent-like kind: the projection must cover it with no special-casing. */
 const agentKind: KindInfo = {
-  identity: "core.substrate.reamde.dev/agent",
+  identity: "substrate.reamde.dev/core/agent",
   name: "agent",
-  authority: "core.substrate.reamde.dev",
+  authority: "substrate.reamde.dev",
+  package: "core",
   version: 0,
   plural: "agents",
   source: "builtin",
@@ -52,9 +53,10 @@ const agentKind: KindInfo = {
 
 /** Everything the datatype rules have to answer for, in one declaration. */
 const wideKind: KindInfo = {
-  identity: "core.substrate.reamde.dev/wide",
+  identity: "substrate.reamde.dev/core/wide",
   name: "wide",
-  authority: "core.substrate.reamde.dev",
+  authority: "substrate.reamde.dev",
+  package: "core",
   version: 0,
   plural: "wides",
   source: "builtin",
@@ -72,7 +74,7 @@ const wideKind: KindInfo = {
       price: { type: "decimal", min: 0 },
       headers: { type: "json" },
       callable: { type: "reference", kind: "any" },
-      owner: { type: "reference", kind: "core.substrate.reamde.dev/actor" },
+      owner: { type: "reference", kind: "substrate.reamde.dev/core/actor" },
       status: {
         type: "state",
         states: ["proposed", "open", "done"],
@@ -124,7 +126,7 @@ describe("propSpecs", () => {
       "open",
       "done",
     ])
-    expect(spec(wideKind, "owner").to).toBe("core.substrate.reamde.dev/actor")
+    expect(spec(wideKind, "owner").to).toBe("substrate.reamde.dev/core/actor")
   })
 
   it("labels a property from displayName, else humanizes the id", () => {
@@ -245,7 +247,7 @@ describe("checkValue", () => {
   it("knows a reference is a path, and that only a pin completes a bare id", () => {
     const anyRef = spec(wideKind, "callable")
     expect(
-      checkValue(anyRef, "core.substrate.reamde.dev/function/f")
+      checkValue(anyRef, "substrate.reamde.dev/core/function/f")
     ).toBeUndefined()
     // Unpinned, a bare id names nothing: the refusal quotes it back, as the
     // engine's does.
@@ -255,14 +257,14 @@ describe("checkValue", () => {
     // The released pair is not a value any more, and says so by shape.
     expect(
       checkValue(anyRef, {
-        kind: "core.substrate.reamde.dev/function",
+        kind: "substrate.reamde.dev/core/function",
         id: "f",
       })
     ).toMatch(/path string/)
     // A pinned kind supplies what the bare id omits, on the server and here.
     expect(checkValue(spec(wideKind, "owner"), "alice")).toBeUndefined()
     expect(
-      checkValue(spec(wideKind, "owner"), "core.substrate.reamde.dev/actor/a")
+      checkValue(spec(wideKind, "owner"), "substrate.reamde.dev/core/actor/a")
     ).toBeUndefined()
   })
 
@@ -271,12 +273,12 @@ describe("checkValue", () => {
     // so the shape validates on a declaration that hangs none off it.
     expect(
       checkValue(spec(wideKind, "callable"), {
-        ref: "core.substrate.reamde.dev/function/f",
+        ref: "substrate.reamde.dev/core/function/f",
       })
     ).toBeUndefined()
     expect(
       checkValue(spec(wideKind, "owner"), {
-        ref: "core.substrate.reamde.dev/actor/a",
+        ref: "substrate.reamde.dev/core/actor/a",
       })
     ).toBeUndefined()
     // The pin completes a bare id inside the object too.
@@ -286,7 +288,7 @@ describe("checkValue", () => {
     // A key beside `ref` is link data, and this declaration declares none.
     expect(
       checkValue(spec(wideKind, "owner"), {
-        ref: "core.substrate.reamde.dev/actor/a",
+        ref: "substrate.reamde.dev/core/actor/a",
         round: 2,
       })
     ).toMatch(/not a declared link property/)

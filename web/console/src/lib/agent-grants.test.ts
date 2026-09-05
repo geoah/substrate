@@ -54,7 +54,7 @@ describe("hostToolsOf", () => {
   it("reads a tool entry spelled as a PATH, and one spelled short", () => {
     // A pointer's value is `<kind-identity>/<record-id>`, and the short form
     // somebody typed names the same function until the server rewrites it.
-    const FN = "core.substrate.reamde.dev/function"
+    const FN = "substrate.reamde.dev/core/function"
     expect(
       hostToolsOf(
         agent({
@@ -85,7 +85,7 @@ describe("grantHints", () => {
   })
 
   it("reads a grant spelled as PATHS, and one spelled short", () => {
-    const K = "core.substrate.reamde.dev/kind"
+    const K = "substrate.reamde.dev/core/kind"
     // Paid, both ways round: a grant's entries are pointers at kinds, and the
     // pin makes the path and the short form one value.
     expect(

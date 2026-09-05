@@ -1,9 +1,9 @@
 /** What a POINTER points at, as records to offer.
  *
  * A `reference` property pins the kind its value names, and a `KindInfo` is an
- * authority and a plural, so the registry the editor already holds says which
- * collection to read. That is the whole of `collectionFor`, and it is the only
- * place that decides.
+ * authority, a package and a name, so the registry the editor already holds
+ * says which collection to read. That is the whole of `collectionFor`, and it
+ * is the only place that decides.
  *
  * The four host functions need no special case: they are ordinary `function`
  * records, so they list beside a bundle's with their own cards. */
@@ -24,10 +24,11 @@ import { TO_ANY } from "@/lib/record-schema"
  * out loud rather than pretended away. */
 export const PICKER_PAGE = 200
 
-/** Where a collection lives: the two segments its path is built from. The
+/** Where a collection lives: the three segments its path is built from. The
  * collection segment is the kind NAME (decision 0033). */
 export interface Collection {
   authority: string
+  package: string
   name: string
 }
 
@@ -41,7 +42,11 @@ export function collectionFor(
   if (!pin || pin === TO_ANY) return undefined
   const declared = kindByIdentity(kinds, pin)
   if (!declared?.name) return undefined
-  return { authority: declared.authority, name: declared.name }
+  return {
+    authority: declared.authority,
+    package: declared.package,
+    name: declared.name,
+  }
 }
 
 /** One offered record: the id a selection inserts (the pin supplies the kind
@@ -96,6 +101,7 @@ export function useRecordOptions(
   const records = useQuery({
     ...recordsQueryOptions({
       authority: collection?.authority ?? "",
+      package: collection?.package ?? "",
       name: collection?.name ?? "",
       first: PICKER_PAGE,
     }),
