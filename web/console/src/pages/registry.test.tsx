@@ -375,8 +375,8 @@ describe("RegistryPage", () => {
     renderPage(<RegistryPage />)
     const detail = expand(await rowOf("people"))
     expect(
-      within(detail).getByText(
-        new RegExp(`Importing lands it as ${HOME}/people`)
+      within(detail).getByText((text) =>
+        text.includes(`Importing lands it as ${HOME}/people`)
       )
     ).toBeTruthy()
   })
