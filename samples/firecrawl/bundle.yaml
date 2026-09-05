@@ -1,0 +1,375 @@
+# The Firecrawl bundle — web search + page scraping as CALLABLE AGENT TOOLS.
+#
+# A capability bundle, not an account integration: one API key on the
+# `connector` input's record, no accountconfig, no oauth2, no host OAuth flow —
+# the shape the URL-harvester stubbed (`firecrawlKey`, unused there) made real.
+# And no triggers: both functions are pure callables (`mode: call`) an agent
+# binds as tools or a client invokes over the call API — nothing here
+# subscribes to the changelog, so the closure ships with ZERO delivery wiring.
+#
+# Install:  substratectl apply -f bundle.yaml
+# Configure: create a config record carrying the apiKey; the `connector`
+#   input resolves it (sole record, the one named `default`, or a bound one).
+#
+# This file is the SCHEMA closure (the atomic install unit) — and the whole
+# bundle: with no triggers there is no second file.
+# ---- the owned package --------------------------------------------------------
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: samples.substrate.reamde.dev/firecrawl
+data:
+  authority: samples.substrate.reamde.dev
+  package: firecrawl
+  # version 2: THE TYPED CORE SWEEP. Declarations in this closure moved to the
+  # declared spellings — whichever of them they used: a tool entry naming its arm,
+  # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
+  # naming its properties. THE PACKAGE IS VERSIONED AS A UNIT, so this bump
+  # carries the closure whole rather than saying every declaration in it moved.
+  # version 3: websearch's fake `emit` is gone — a pure function declares none.
+  # version 4: the grants group under one `permissions:` object, and the permission
+  # to write is `writes:` inside it. This closure's functions and agents
+  # follow core's declaration.
+  # version 6: the inline functions' `timeoutMs` (int ms) is `timeout`, the
+  # duration datatype (ISO 8601); the retype rides core's function kind bump.
+  version: 6
+---
+# ---- the bundle document: the install unit --------------------------------
+# `installs:` names EXACTLY the package's schema members (every kind but the
+# package header and the bundle itself) — the loader holds the two equal both
+# ways.
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: samples.substrate.reamde.dev/firecrawl
+data:
+  authority: samples.substrate.reamde.dev
+  package: firecrawl
+  description: >-
+    Web search and page scraping over the Firecrawl API — two callable functions
+    an agent binds as tools: search the live web, and read any page as markdown
+    kept as a webdocument.
+  # The one declared input: the connector record both function bodies read.
+  # `inject: functions` hands the resolved record (apiKey resolved to plaintext,
+  # held to the runner boundary by the scrubber) to every invocation under
+  # config.inputs.connector.
+  inputs:
+    connector:
+      kind: samples.substrate.reamde.dev/firecrawl/config
+      inject: functions
+      description: the Firecrawl API key and the pinned API root
+  installs:
+    - samples.substrate.reamde.dev/firecrawl/config
+    - samples.substrate.reamde.dev/firecrawl/webdocument
+    - samples.substrate.reamde.dev/firecrawl/websearch
+    - samples.substrate.reamde.dev/firecrawl/scrapepage
+---
+# ---- the config type: the `connector` input's kind ------------------------
+# Deliberately NOT oauth2 (there is no OAuth client; the key is a bearer
+# token) and NOT accountconfig (there are no per-user accounts; one key
+# serves the repository). The apiKey is the connector's own secret: injected
+# into its functions' invocations (and held to the runner boundary by the
+# invocation scrubber), never read back over the API.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: samples.substrate.reamde.dev/firecrawl/config
+data:
+  authority: samples.substrate.reamde.dev
+  package: firecrawl
+  description: >-
+    The Firecrawl API key and the API root it may be sent to. One key serves
+    the whole repository — no OAuth client, no per-user accounts — and the
+    origin is pinned, so editing the URL cannot redirect the credential.
+  names:
+    singular: config
+  displayTemplate: "Firecrawl {baseUrl}"
+  properties:
+    apiKey:
+      type: secret
+      writer: owner
+      displayName: API key
+      description: the Firecrawl API key (fc-…) — sealed from reads, injected
+        only into this bundle's functions
+    baseUrl:
+      type: url
+      writer: owner
+      default: https://api.firecrawl.dev
+      displayName: Base URL
+      description: >-
+        the Firecrawl API root — ORIGIN-PINNED: the bodies only send the apiKey
+        to https://api.firecrawl.dev or loopback (the test seam), so an edit
+        cannot redirect the credential
+---
+# ---- the webdocument type: what a scrape leaves behind ---------------------
+# scrapepage's durable output, owned by THIS package (a bundle's effects stay
+# inside its own package's types — it never writes another bundle's, e.g. the
+# web harvester's page). `title` is the reserved built-in (scrapepage writes
+# it); the id is host.ids.url(url), so re-scraping the same URL updates one
+# document instead of minting a second.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: samples.substrate.reamde.dev/firecrawl/webdocument
+data:
+  authority: samples.substrate.reamde.dev
+  package: firecrawl
+  description: >-
+    What a scrape leaves behind: the page as markdown, capped, with the scrape
+    metadata beside it. The id is a hash of the URL, so scraping the same
+    page again updates one document instead of minting a second.
+  names:
+    singular: webdocument
+  properties:
+    url:
+      type: url
+      displayName: URL
+      description: the scraped URL — the document id is host.ids.url(url),
+        a hash of it
+    content:
+      type: text
+      displayName: Content
+      description: the page as markdown, capped at 24000 characters
+    truncated:
+      type: bool
+      displayName: Truncated
+      description: set when the fetched markdown was longer than the cap and
+        got cut
+    fetchedAt:
+      type: datetime
+      displayName: Fetched
+      description: when this document was last scraped
+    raw:
+      type: json
+      displayName: Raw metadata
+      description: the Firecrawl scrape metadata as fetched, for provenance
+---
+# ---- function: websearch ---------------------------------------------------
+# A READ tool: calls Firecrawl search and returns the hits — no effects ever, so
+# it declares NO `emit`. It used to name `webdocument` with a comment
+# apologizing for it, because the loader demanded a non-empty allowlist; a pure
+# function is legal now, and the empty allowlist refuses every effect.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: samples.substrate.reamde.dev/firecrawl/websearch
+data:
+  authority: samples.substrate.reamde.dev
+  package: firecrawl
+  description: >-
+    Search the web for real-time information. Returns hits as {title, url,
+    snippet}. Use for live facts (news, current events) or to find a URL to
+    read with scrapepage. Read-only.
+  runtime: python
+  timeout: PT30S
+  arguments:
+    - name: query
+      type: string
+      required: true
+      description: the search query — specific beats terse
+    - name: limit
+      type: float
+      description: "max hits to return (default 5, capped at 20)"
+  returns:
+    - name: results
+      type: json
+      repeated: true
+      required: true
+  permissions:
+    network:
+      - "api.firecrawl.dev"
+  source: |
+    import json
+    import urllib.request
+    from urllib.parse import urlsplit
+
+    DEFAULT_BASE = "https://api.firecrawl.dev"
+    PINNED_HOST = "api.firecrawl.dev"
+    LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+    def _config(input):
+        return (((input.get("config") or {}).get("inputs") or {}).get("connector") or {}).get("properties") or {}
+
+    def _base(cfg):
+        # Origin pinning (fleet F1 / codex review #1): the apiKey is only ever
+        # sent over HTTPS to the pinned provider host, or to loopback (any
+        # scheme — the test seam). baseUrl is owner-editable, so anything else
+        # refuses BEFORE the request is built: a config edit must never
+        # redirect the bearer key. (The declared `network` capability is not
+        # yet host-enforced; this is the bundle-side defense.)
+        base = str(cfg.get("baseUrl") or DEFAULT_BASE).strip().rstrip("/")
+        parts = urlsplit(base)
+        if parts.username or parts.password:
+            raise ValueError("firecrawl: baseUrl embeds credentials — refusing")
+        host = (parts.hostname or "").lower()
+        if host in LOOPBACK_HOSTS:
+            return base
+        if parts.scheme == "https" and host == PINNED_HOST:
+            return base
+        raise ValueError(
+            "firecrawl: baseUrl %r is not the pinned provider origin — the "
+            "API key is only sent to https://%s or loopback" % (base, PINNED_HOST))
+
+    def main(input, host):
+        args = input.get("args") or {}
+        query = str(args.get("query") or "").strip()
+        if not query:
+            raise ValueError("query is required")
+        cfg = _config(input)
+        key = cfg.get("apiKey") or ""
+        if not key:
+            raise ValueError(
+                "the firecrawl connector input did not resolve: create a "
+                "config record carrying an apiKey")
+        limit = int(args.get("limit") or 5)
+        limit = max(1, min(limit, 20))
+        base = _base(cfg)
+        body = json.dumps({"query": query, "limit": limit,
+                           "sources": ["web"]}).encode("utf-8")
+        req = urllib.request.Request(
+            base + "/v2/search", data=body, method="POST",
+            headers={"Authorization": "Bearer " + key,
+                     "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        if not payload.get("success"):
+            raise RuntimeError("firecrawl search failed: "
+                               + str(payload.get("error") or "unknown error"))
+        results = []
+        for hit in (payload.get("data") or {}).get("web") or []:
+            item = {"title": hit.get("title") or "", "url": hit.get("url") or ""}
+            if hit.get("description"):
+                item["snippet"] = hit["description"]
+            results.append(item)
+        return {"output": {"results": results}}
+---
+# ---- function: scrapepage --------------------------------------------------
+# The write half: scrape one URL as markdown (capped, like the v4 web_fetch
+# tool), keep it as a webdocument put with host.ids.url(url) — if_absent is
+# FALSE on purpose, so a re-scrape UPDATES the one document — and return the
+# document id plus the content.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: samples.substrate.reamde.dev/firecrawl/scrapepage
+data:
+  authority: samples.substrate.reamde.dev
+  package: firecrawl
+  description: >-
+    Fetch a URL and return its readable markdown, capped at 24000 chars. The
+    page is kept as a webdocument (the output's document id); re-scraping
+    the same URL updates it.
+  runtime: python
+  timeout: PT30S
+  arguments:
+    - name: url
+      type: string
+      required: true
+      description: "the URL to fetch — an absolute https:// URL"
+  returns:
+    - name: document
+      type: string
+      required: true
+      description: the webdocument record id the page was kept under
+    - name: url
+      type: string
+      required: true
+    - name: title
+      type: string
+    - name: content
+      type: string
+      required: true
+    - name: truncated
+      type: bool
+  permissions:
+    writes: [samples.substrate.reamde.dev/firecrawl/webdocument]
+    network:
+      - "api.firecrawl.dev"
+  source: |
+    import datetime
+    import json
+    import urllib.request
+    from urllib.parse import urlsplit
+
+    DEFAULT_BASE = "https://api.firecrawl.dev"
+    PINNED_HOST = "api.firecrawl.dev"
+    LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+    DOC_TYPE = "samples.substrate.reamde.dev/firecrawl/webdocument"
+    MAX_CONTENT = 24000
+
+    def _config(input):
+        return (((input.get("config") or {}).get("inputs") or {}).get("connector") or {}).get("properties") or {}
+
+    def _base(cfg):
+        # Origin pinning (fleet F1 / codex review #1): the apiKey is only ever
+        # sent over HTTPS to the pinned provider host, or to loopback (any
+        # scheme — the test seam). baseUrl is owner-editable, so anything else
+        # refuses BEFORE the request is built: a config edit must never
+        # redirect the bearer key. (The declared `network` capability is not
+        # yet host-enforced; this is the bundle-side defense.)
+        base = str(cfg.get("baseUrl") or DEFAULT_BASE).strip().rstrip("/")
+        parts = urlsplit(base)
+        if parts.username or parts.password:
+            raise ValueError("firecrawl: baseUrl embeds credentials — refusing")
+        host = (parts.hostname or "").lower()
+        if host in LOOPBACK_HOSTS:
+            return base
+        if parts.scheme == "https" and host == PINNED_HOST:
+            return base
+        raise ValueError(
+            "firecrawl: baseUrl %r is not the pinned provider origin — the "
+            "API key is only sent to https://%s or loopback" % (base, PINNED_HOST))
+
+    def _check_url(url):
+        # The page to fetch: an absolute https URL with a hostname and no
+        # embedded credentials — held here BEFORE it is hashed into the
+        # document id and BEFORE it reaches the provider (codex review #16):
+        # a junk url must not mint a junk webdocument or waste a scrape.
+        parts = urlsplit(url)
+        if parts.scheme != "https":
+            raise ValueError("url must be an absolute https:// URL")
+        if not parts.hostname:
+            raise ValueError("url carries no hostname")
+        if parts.username or parts.password:
+            raise ValueError("url must not embed credentials")
+
+    def main(input, host):
+        args = input.get("args") or {}
+        url = str(args.get("url") or "").strip()
+        if not url:
+            raise ValueError("url is required")
+        _check_url(url)
+        cfg = _config(input)
+        key = cfg.get("apiKey") or ""
+        if not key:
+            raise ValueError(
+                "the firecrawl connector input did not resolve: create a "
+                "config record carrying an apiKey")
+        base = _base(cfg)
+        body = json.dumps({"url": url, "formats": ["markdown"]}).encode("utf-8")
+        req = urllib.request.Request(
+            base + "/v2/scrape", data=body, method="POST",
+            headers={"Authorization": "Bearer " + key,
+                     "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        if not payload.get("success"):
+            raise RuntimeError("firecrawl scrape failed: "
+                               + str(payload.get("error") or "unknown error"))
+        data = payload.get("data") or {}
+        content = str(data.get("markdown") or "").strip()
+        truncated = len(content) > MAX_CONTENT
+        if truncated:
+            content = content[:MAX_CONTENT]
+        meta = data.get("metadata") or {}
+        title = str(meta.get("title") or "").strip()
+        now = datetime.datetime.now(datetime.timezone.utc)
+        props = {"url": url, "content": content, "truncated": truncated,
+                 "fetchedAt": now.replace(microsecond=0).isoformat(),
+                 "raw": meta}
+        if title:
+            props["title"] = title
+        doc = host.ids.url(url)
+        # if_absent stays False: the SAME id on a re-scrape is an update of
+        # the one document, never a silent no-op.
+        host.effects.put(DOC_TYPE, doc, properties=props)
+        out = {"document": doc, "url": url, "content": content}
+        if title:
+            out["title"] = title
+        if truncated:
+            out["truncated"] = True
+        return {"output": out}

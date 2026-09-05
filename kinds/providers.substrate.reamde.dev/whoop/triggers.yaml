@@ -1,0 +1,57 @@
+# The WHOOP bundle's delivery wiring — ordinary DATA records of core's
+# `trigger` kind (console-editable, changelog-visible, substratectl get/apply/
+# delete like anything else). Two triggers drive the one sync function:
+#
+#   account(connected, any toggle on, never synced)  --sync-->
+#       recovery/sleep/workout mirrors
+#       (+ the lastSyncedAt / syncStatus stamp)
+#   hourly schedule  --sync-->  every due, connected account
+#
+# The on-connect trigger is guarded to fire ONCE per account — its `when` drops
+# the moment the sync stamps lastSyncedAt, so the account's own completion
+# patch cannot re-trigger it. Steady-state re-syncs come from the schedule,
+# which honors each account's syncFrequency.
+# The first backfill: an account whose OAuth just landed (tokenStatus
+# connected), that wants at least one collection, and that has never synced.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: whoop-on-connect
+data:
+  properties:
+    enabled: true
+    source:
+      record:
+        kinds: [providers.substrate.reamde.dev/whoop/account]
+        ops: [create, update]
+        # Every optional property is read through the `in` idiom: tokenStatus
+        # (writer: oauth) and the toggles are ABSENT on a freshly-created
+        # account (pre-OAuth), and CEL map-indexing an absent key throws — an
+        # unguarded read would park the delivery ("no such key: tokenStatus")
+        # instead of skipping it. The short-circuit `&&` means the value read
+        # only runs once its key is proven present.
+        when: >-
+          record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
+          == "connected" && !("lastSyncedAt" in record.properties) && (("enabledRecovery"
+          in record.properties && record.properties.enabledRecovery == true)
+          || ("enabledSleep" in record.properties && record.properties.enabledSleep
+          == true) || ("enabledWorkouts" in record.properties && record.properties.enabledWorkouts
+          == true))
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/whoop/whoopsync
+---
+# The steady-state re-sync: an hourly tick fires the same function with no
+# envelope record, so the body iterates every connected account with a toggle
+# on and syncs the ones due by their own syncFrequency.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: whoop-scheduled
+data:
+  properties:
+    enabled: true
+    source:
+      schedule:
+        recurrence: "FREQ=HOURLY"
+        timezone: Europe/London
+        # A fixed past anchor, so every occurrence since is well-defined
+        # (occurrences compute forward from startsAt).
+        startsAt: "2025-01-06T09:00:00Z"
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/whoop/whoopsync

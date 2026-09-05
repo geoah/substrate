@@ -1,0 +1,30 @@
+# a thing that repeats on an RRULE the substrate stores and never expands
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: samples.substrate.reamde.dev/scheduling/recurring
+data:
+  authority: samples.substrate.reamde.dev
+  package: scheduling
+  description: "a repeat rule the substrate stores and never expands, with
+    the dates it adds, the dates it skips and the zone a time-of-day rule
+    resolves in"
+  # THE OCCURRENCE STANCE (decision record 0039): the substrate stores the
+  # RRULE and never expands it into rows. Occurrences are materialized only
+  # off the substrate: a reader computes them (a recurring task or routine has
+  # an occurrence when its log marks one, and absence is what missed means), or
+  # an external connector writes them as separate records (calendareventseries'
+  # occurrences arrive as calendarevents the connector exploded). A connector
+  # writing records is not the substrate expanding the rule, so
+  # calendareventseries CONFORMS to this trait, it is not an exception.
+  #
+  # The trait contracts the four properties' presence and datatype only.
+  # `rdates` and `exdates` are declared datetime here and repeated on each
+  # binding kind: a trait carries no cardinality, so the binding kind keeps
+  # `repeated: true`. `rdates` carries iCalendar's RDATE extras, the
+  # occurrences a provider adds BESIDE the rule, which one scalar rule string
+  # cannot hold.
+  properties:
+    recurrence: recurrence
+    rdates: datetime
+    exdates: datetime
+    timezone: timezone

@@ -1,0 +1,836 @@
+# The WHOOP bundle — a SYNC-ONLY provider integration, second after Google.
+#
+# It connects a WHOOP account over the host OAuth facility and mirrors the
+# wearable's daily physiology into the graph: recovery (score / HRV / RHR),
+# sleeps and workouts, each as its own source type in WHOOP's shape. No
+# recordmapping this slice — the mirrors are their own subjects; nothing here
+# matches or mints a person.
+#
+# Install:  substratectl apply -f bundle.yaml -f triggers.yaml
+# Configure: create a config record — ONLY the WHOOP OAuth client id +
+#   secret; the `client` input resolves it (sole record, the one named
+#   `default`, or a bound one). The provider ENDPOINTS and the feature→scope mapping
+#   are TRUSTED bundle-manifest metadata (the `oauth2:` block on the bundle
+#   document below), never config-record properties (review-google #1).
+# Connect:  create an account, then run the host OAuth flow against it —
+#   the redirect URL registered in the WHOOP developer dashboard is the host's
+#   GET …/api/v1/oauth/callback (see README).
+#
+# This file is the SCHEMA closure (the atomic install unit). The delivery
+# wiring lives beside it in triggers.yaml as ordinary data records.
+# ---- the owned package --------------------------------------------------------
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: providers.substrate.reamde.dev/whoop
+data:
+  authority: providers.substrate.reamde.dev
+  package: whoop
+  # version 2: THE TYPED CORE SWEEP. Declarations in this closure moved to the
+  # declared spellings — whichever of them they used: a tool entry naming its arm,
+  # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
+  # naming its properties. THE PACKAGE IS VERSIONED AS A UNIT, so this bump
+  # carries the closure whole rather than saying every declaration in it moved.
+  # version 3: the grants group under one `permissions:` object, and the permission
+  # to write is `writes:` inside it. This closure's functions and agents
+  # follow core's declaration.
+  # version 5: `account` on every mirror kind is a pinned owner
+  # reference instead of a string, so disconnecting an account collects
+  # the rows it synced (docs/decisions/0032).
+  # version 7: the inline functions' `timeoutMs` (int ms) is `timeout`, the
+  # duration datatype (ISO 8601); the retype rides core's function kind bump.
+  # version 8: every account reference in this closure carries
+  # `onDelete: cascade`, so disconnecting an account collects the rows it
+  # synced.
+  version: 8
+---
+# ---- the bundle document: the install unit --------------------------------
+# `installs:` names EXACTLY the package's schema members: the two config types,
+# the three mirror types, and the one sync function.
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: providers.substrate.reamde.dev/whoop
+data:
+  authority: providers.substrate.reamde.dev
+  package: whoop
+  description: >-
+    Connects a WHOOP account and syncs its recovery, sleep and workout records
+    into recovery/sleep/workout mirrors — a sync-only wearable integration.
+  # The one declared input: the OAuth client record. NO inject: the host
+  # OAuth facility reads it (oauth2.clientInput below); no function body ever
+  # sees the client credentials.
+  inputs:
+    client:
+      kind: providers.substrate.reamde.dev/whoop/config
+      description: the WHOOP OAuth client the host exchanges codes through
+  # TRUSTED provider metadata (review-google #1): the host reads endpoints and
+  # the feature→scope mapping ONLY from here — the immutable install artifact —
+  # never from the mutable config record. WHOOP's OAuth is standard
+  # authorization-code + refresh; `offline` is what mints the refresh token and
+  # `read:profile` is what lets the facility derive the connected email, so
+  # BOTH ride on every feature's scope list — any one enabled toggle carries
+  # them, and the scope union dedupes.
+  # NO revocationEndpoint (review-fleet codex #3): WHOOP does not expose an
+  # RFC 7009-style form-POST revoke — its documented revocation is an
+  # OAuth-AUTHENTICATED `DELETE /developer/v2/user/access`, a method+auth
+  # shape the host facility cannot speak. Declaring an invented endpoint made
+  # every account deletion changelog a revoke failure while the remote grant stayed
+  # live; the field is optional, so it is simply omitted and the README
+  # documents manual revocation.
+  oauth2:
+    clientInput: client
+    authorizationEndpoint: https://api.prod.whoop.com/oauth/oauth2/auth
+    tokenEndpoint: https://api.prod.whoop.com/oauth/oauth2/token
+    # After the exchange the facility reads the connected account's own address
+    # off the WHOOP basic profile (the read:profile grant authorizes it) and
+    # writes it into the account's `email` property as the substrate.oauth
+    # actor. The user never types their email; it comes from the grant
+    # (review-google #2 — email is writer: oauth).
+    emailEndpoint: https://api.prod.whoop.com/developer/v2/user/profile/basic
+    emailProperty: email
+    featureScopes:
+      enabledRecovery:
+        scopes:
+          - read:recovery
+          - read:profile
+          - offline
+      enabledSleep:
+        scopes:
+          - read:sleep
+          - read:profile
+          - offline
+      enabledWorkouts:
+        scopes:
+          - read:workout
+          - read:profile
+          - offline
+  installs:
+    - providers.substrate.reamde.dev/whoop/config
+    - providers.substrate.reamde.dev/whoop/account
+    - providers.substrate.reamde.dev/whoop/recovery
+    - providers.substrate.reamde.dev/whoop/sleep
+    - providers.substrate.reamde.dev/whoop/workout
+    - providers.substrate.reamde.dev/whoop/whoopsync
+---
+# ---- the config type: the `client` input's kind ----------------------------
+# oauth2 (the OAuth CLIENT credentials the facility uses to exchange codes):
+# the WHOOP app the owner registers in the developer dashboard — ONLY its
+# clientId and secret-typed clientSecret. The provider ENDPOINTS and the
+# feature→scope mapping are trusted manifest metadata (the bundle's `oauth2:`
+# block above), never properties on this mutable row (review-google #1).
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/whoop/config
+data:
+  authority: providers.substrate.reamde.dev
+  package: whoop
+  description: >-
+    The WHOOP OAuth client this bundle authenticates through: a client id
+    and a sealed client secret, the record the bundle's client input resolves.
+    The endpoints and the feature-to-scope mapping are manifest metadata.
+  names:
+    singular: config
+  traits: [oauth2]
+  displayTemplate: "WHOOP client {clientId}"
+  properties:
+    clientId:
+      type: string
+      displayName: Client ID
+      description: the WHOOP OAuth client id (from the WHOOP developer dashboard)
+    clientSecret:
+      type: secret
+      displayName: Client secret
+      description: the WHOOP OAuth client secret — sealed at rest, never read
+        back
+---
+# ---- the account type: one connected WHOOP account --------------------------
+# accountconfig (its records ARE the bundle's connected accounts; the host
+# writes tokenRef + tokenStatus + grantedScopes over the OAuth facility). NOT
+# oauth2: the client creds bind on the CONFIG type, the provider endpoints are
+# manifest metadata, and StartOAuth derives the requested scope union from THIS
+# account's enabled toggles (engine/oauth.go). Each property carries a
+# `writer:` role so only its rightful hand may set it (review-google #2).
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/whoop/account
+data:
+  authority: providers.substrate.reamde.dev
+  package: whoop
+  description: >-
+    One connected WHOOP account. The OAuth facility writes its credential
+    reference, status and granted scopes; the owner chooses which measurements
+    sync and how often the scheduled tick asks.
+  names:
+    singular: account
+  traits: [accountconfig]
+  displayTemplate: "{email}"
+  properties:
+    # The OAuth facility's hands on the account (writer: oauth — only the
+    # facility's actor may set them; a stranger cannot assign a credential ref,
+    # status, or scope set — review-google #2).
+    tokenRef:
+      type: secret
+      writer: oauth
+      displayName: Token reference
+      description: the credential-store reference the OAuth facility writes;
+        never a raw token
+    tokenStatus:
+      type: string
+      writer: oauth
+      displayName: Connection status
+      description: "the connection state the facility last reported (pending
+        | connected | erroring)"
+    grantedScopes:
+      type: string
+      repeated: true
+      writer: oauth
+      displayName: Granted scopes
+      description: the OAuth scopes the last consent was granted for; drives
+        reconnect-on-new-feature
+    # The connected account's address (writer: oauth — the OAuth facility sets
+    # it from the WHOOP basic profile after the consent; the user NEVER types
+    # it, and since it is host-managed the console hides it from the create
+    # form).
+    email:
+      type: email
+      writer: oauth
+      displayName: Email
+      description: the connected WHOOP account's address, set by the OAuth
+        facility from the grant
+    # The scope toggles the console surfaces — all three are wired: each maps
+    # to a read scope in the manifest's featureScopes, and the sync body syncs
+    # exactly the enabled collections.
+    enabledRecovery:
+      type: bool
+      writer: owner
+      displayName: Recovery
+      description: sync daily recovery records (score, HRV, resting heart
+        rate)
+    enabledSleep:
+      type: bool
+      writer: owner
+      displayName: Sleep
+      description: sync sleep records (performance, stage durations)
+    enabledWorkouts:
+      type: bool
+      writer: owner
+      displayName: Workouts
+      description: sync workout records (sport, strain, calories)
+    # How often the scheduled tick should re-sync this account. An enum so the
+    # console renders a fixed choice instead of a free-text box; each value
+    # carries a human label, and it is required with a default so the select
+    # never offers an empty "— none —". The sync body honors it against
+    # lastSyncedAt.
+    syncFrequency:
+      type: enum
+      values:
+        - value: off
+          label: Off
+        - value: hourly
+          label: "Every hour"
+        - value: daily
+          label: "Once a day"
+      required: true
+      default: hourly
+      writer: owner
+      displayName: Sync frequency
+      description: "the scheduled sync cadence for this account (default hourly
+        — WHOOP scores land through the day)"
+    # How far back the FIRST sync reaches. WHOOP has no sync token: the sync
+    # window is the whole incremental contract, so this maps directly to the
+    # first run's start date. An enum, required with a default so the select
+    # shows no empty option; each value carries a human label.
+    backfillDepth:
+      type: enum
+      values:
+        - value: none
+          label: "Don't backfill"
+        - value: last30d
+          label: "Last 30 days"
+        - value: last90d
+          label: "Last 90 days"
+        - value: last1y
+          label: "Last year"
+        - value: all
+          label: Everything
+      required: true
+      default: last30d
+      writer: owner
+      displayName: Backfill depth
+      description: "how far back the first sync reaches (steady-state re-syncs
+        read a short overlap window)"
+    # Connector STATE the sync body owns (writer: connector — only installed
+    # bundle code, the sync function, may set these; neither the owner nor
+    # the OAuth facility writes them — review-google #2).
+    lastSyncedAt:
+      type: datetime
+      writer: connector
+      displayName: Last synced
+      description: when this account last finished syncing — the cadence anchor
+        and completion marker
+    syncStatus:
+      type: string
+      writer: connector
+      displayName: Sync status
+      description: "the last sync outcome — ok, ok with a skipped-record count,
+        or erroring: <reason>"
+---
+# ---- the recovery mirror: one WHOOP recovery per physiological cycle --------
+# Cycle-keyed (record ids compose account + "recovery-<cycle_id>", falling
+# back to the sleep id when a record carries no cycle): WHOOP re-scores a
+# cycle as data settles, so the CYCLE is the identity and a re-sync converges
+# on the same row via a plain put. Cycles do NOT reliably align with calendar
+# days (review-fleet codex #14), so two records created on one UTC date stay
+# two rows; the calendar date is derived display data, never identity.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/whoop/recovery
+data:
+  authority: providers.substrate.reamde.dev
+  package: whoop
+  description: >-
+    One WHOOP recovery score, keyed by the physiological cycle it scores rather
+    than by the day — by its sleep when the record carries no cycle. WHOOP
+    re-scores a cycle as data settles, so a re-sync converges on the same
+    row, and the calendar date is display data, not identity.
+  names:
+    singular: recovery
+  displayTemplate: "Recovery {date}"
+  properties:
+    # NOT a reference, and every `account:` in this closure reads the same way:
+    # the connector writes it as provenance on synced rows, and retyping a live
+    # string property to a reference is a NARROWING the boot upgrade refuses
+    # while rows hold the old shape — it would strand every released store.
+    account:
+      type: reference
+      kind: account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this recovery was synced from
+    cycleId:
+      type: string
+      displayName: Cycle
+      description: the WHOOP cycle id this recovery scores — the row's identity
+        (the sleep id when the record carries no cycle)
+    date:
+      type: date
+      displayName: Date
+      description: the calendar day this recovery landed — display data derived
+        from the record's UTC created_at, never the identity
+    recoveryScore:
+      type: float
+      displayName: Recovery score
+      description: "the WHOOP recovery score for the day (0–100)"
+    hrvMs:
+      type: float
+      displayName: HRV
+      description: heart-rate variability (RMSSD) in milliseconds
+    restingHeartRate:
+      type: float
+      displayName: Resting heart rate
+      description: the day's resting heart rate in bpm
+    raw:
+      type: json
+      displayName: Raw record
+      description: the raw WHOOP recovery record as fetched, for provenance
+---
+# ---- the sleep mirror: one WHOOP sleep activity ------------------------------
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/whoop/sleep
+data:
+  authority: providers.substrate.reamde.dev
+  package: whoop
+  description: >-
+    One WHOOP sleep activity: when it began and ended, whether WHOOP called
+    it a nap, the performance percentage and how long was spent in each stage.
+  names:
+    singular: sleep
+  displayTemplate: "Sleep {start}"
+  properties:
+    account:
+      type: reference
+      kind: account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this sleep was synced from
+    start:
+      type: datetime
+      displayName: Start
+      description: when the sleep began
+    end:
+      type: datetime
+      displayName: End
+      description: when the sleep ended
+    nap:
+      type: bool
+      displayName: Nap
+      description: whether WHOOP classified this sleep as a nap
+    performance:
+      type: float
+      displayName: Sleep performance
+      description: "the WHOOP sleep performance percentage (0–100)"
+    durations:
+      type: object
+      displayName: Stage durations
+      description: the sleep-stage durations in milliseconds, plus their asleep
+        total
+      fields:
+        lightMs: float
+        remMs: float
+        deepMs: float
+        awakeMs: float
+        asleepMs: float
+    raw:
+      type: json
+      displayName: Raw record
+      description: the raw WHOOP sleep record as fetched, for provenance
+---
+# ---- the workout mirror: one WHOOP workout activity --------------------------
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/whoop/workout
+data:
+  authority: providers.substrate.reamde.dev
+  package: whoop
+  description: >-
+    One WHOOP workout: the sport, when it ran, the strain score, and the energy
+    burned in kcal converted from WHOOP's kilojoules.
+  names:
+    singular: workout
+  displayTemplate: "{sport}"
+  properties:
+    account:
+      type: reference
+      kind: account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this workout was synced from
+    start:
+      type: datetime
+      displayName: Start
+      description: when the workout began
+    end:
+      type: datetime
+      displayName: End
+      description: when the workout ended
+    sport:
+      type: string
+      displayName: Sport
+      description: the WHOOP sport name for this workout
+    strain:
+      type: float
+      displayName: Strain
+      description: the WHOOP strain score for this workout
+    calories:
+      type: float
+      displayName: Calories
+      description: the energy burned in kcal, converted from WHOOP's kilojoules
+    raw:
+      type: json
+      displayName: Raw record
+      description: the raw WHOOP workout record as fetched, for provenance
+---
+# ---- the sync function: one WHOOP API page per invocation -------------------
+# A PEP 723 Python body (requests through uv). It reads the account's
+# host-resolved OAuth access token off the injected bundle config, pages each
+# ENABLED collection (recovery → sleep → workouts) over the WHOOP v2 API's
+# nextToken, and upserts one mirror row per record by composed id — plain puts,
+# so a re-sync converges. A deep backfill drains OFF THE CAUSAL CHAIN through
+# the paged-checkpoint `more`/`resume` contract — one page per invocation, at
+# constant causal depth.
+#
+# Per-record failure tolerance (the old integration deliberately kept syncing
+# across bad records): WHOOP records are independent, so a malformed one is
+# SKIPPED and COUNTED — logged, tallied into the final syncStatus stamp — and
+# the page keeps draining. Per-ACCOUNT isolation (F2): a page-level provider
+# failure (a 401 on a revoked grant, a 5xx, a dead network) stamps THAT
+# account's syncStatus "erroring: <reason>" and the queue moves on — one
+# poisoned account never parks the chain for the accounts behind it. Only a
+# body bug (or a tampered API base — F1) parks the delivery.
+#
+# emit names the three mirror types (the records) and the account type (the
+# lastSyncedAt/syncStatus stamp on the final page). No real WHOOP call runs in
+# schema tests; the fake-provider engine test drives the whole flow against a
+# loopback API.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/whoop/whoopsync
+data:
+  authority: providers.substrate.reamde.dev
+  package: whoop
+  description: >-
+    Sync a WHOOP account: page the enabled v2 collections (recovery, sleep,
+    workouts) over the account's OAuth token, upsert provider-keyed mirror
+    records, and stamp the account's lastSyncedAt/syncStatus.
+  runtime: python
+  timeout: PT30S
+  permissions:
+    writes:
+      - providers.substrate.reamde.dev/whoop/recovery
+      - providers.substrate.reamde.dev/whoop/sleep
+      - providers.substrate.reamde.dev/whoop/workout
+      - providers.substrate.reamde.dev/whoop/account
+    network:
+      - "api.prod.whoop.com"
+  source: |
+    # /// script
+    # requires-python = ">=3.11"
+    # dependencies = [
+    #   "requests==2.32.4",
+    # ]
+    # ///
+    """WHOOP sync — one page of one v2 collection per invocation.
+
+    The account's live access token arrives injected on the bundle config
+    (`config.accounts[].token`, host-resolved); this body never sees a raw
+    grant, a refresh token, or the client secret (review-google #4). Each
+    enabled collection pages the WHOOP API off the causal chain via the
+    paged-checkpoint `more`/`resume` contract; the sync window is pinned in
+    the cursor so every page of one run reads the same interval.
+
+    Per-record failure tolerance: records are independent, so a malformed one
+    never fails its page — it is skipped, logged and counted into the final
+    syncStatus stamp, and the page keeps draining.
+
+    Per-account isolation (F2): a page-level provider failure stamps THAT
+    account's syncStatus "erroring: <reason>" and the queue moves on; one
+    poisoned account never parks the accounts behind it.
+    """
+    import datetime as _dt
+    from urllib.parse import urlsplit as _urlsplit
+
+    import requests
+
+    AUTHORITY = "providers.substrate.reamde.dev/whoop"
+    RECOVERY_TYPE = AUTHORITY + "/recovery"
+    SLEEP_TYPE = AUTHORITY + "/sleep"
+    WORKOUT_TYPE = AUTHORITY + "/workout"
+    ACCOUNT_TYPE = AUTHORITY + "/account"
+    API_BASE = "https://api.prod.whoop.com/developer"
+    PAGE_LIMIT = 25
+    KCAL_PER_KJ = 0.239006
+
+    # (cursor key, account toggle, API path) — the per-account sync order.
+    COLLECTIONS = (
+        ("recovery", "enabledRecovery", "/v2/recovery"),
+        ("sleep", "enabledSleep", "/v2/activity/sleep"),
+        ("workout", "enabledWorkouts", "/v2/activity/workout"),
+    )
+
+    # backfillDepth -> how far the FIRST sync reaches. WHOOP has no sync
+    # token; the window IS the incremental contract. "none" means FROM
+    # CONNECT FORWARD (F4): the first window is [connect(=run start), now] —
+    # zero reach back — and the steady-state overlap takes over from there.
+    # "all" is a fixed pre-WHOOP-API epoch.
+    BACKFILL_DAYS = {"none": 0, "last30d": 30, "last90d": 90, "last1y": 365}
+    ALL_EPOCH = "2015-01-01T00:00:00Z"
+    # A steady-state re-sync reaches this far behind lastSyncedAt: recovery
+    # and sleep scores settle hours after their records first appear, and the
+    # provider-keyed puts make the overlap converge instead of duplicate.
+    OVERLAP_HOURS = 48
+    # An erroring stamp carries a BOUNDED reason — a status line, never a body.
+    REASON_MAX = 200
+
+
+    def _pinned(base):
+        """F1 origin pinning: the bearer token leaves this body only over
+        HTTPS to WHOOP's production host, or to loopback (the test seam)."""
+        u = _urlsplit(base)
+        host = (u.hostname or "").lower()
+        if u.scheme == "https" and host == "api.prod.whoop.com":
+            return True
+        return host in ("127.0.0.1", "localhost", "::1")
+
+
+    def _erroring(acct, reason):
+        """One bounded `syncStatus: erroring` stamp for a poisoned account
+        (F2/F3), or None when it already carries one — the stamp is written
+        at most once per episode, so the account's own update cannot re-fire
+        the on-connect trigger into a loop; the schedule retries it and an ok
+        run overwrites. lastSyncedAt is NOT stamped: the run did not
+        complete, and the eventual ok run must not find its window floor
+        advanced past records it never saw."""
+        props = acct.get("properties") or {}
+        if str(props.get("syncStatus") or "").startswith("erroring"):
+            return None
+        return {"action": "patch", "kind": (acct.get("kind") or ACCOUNT_TYPE),
+                "id": acct.get("id"),
+                "properties": {"syncStatus":
+                               "erroring: " + str(reason)[:REASON_MAX]}}
+
+
+    def _wants(acct):
+        props = acct.get("properties") or {}
+        return any(props.get(toggle) for _, toggle, _ in COLLECTIONS)
+
+
+    def _due(props):
+        freq = (props.get("syncFrequency") or "daily").lower()
+        if freq == "off":
+            return False
+        last = props.get("lastSyncedAt")
+        if not last:
+            return True
+        try:
+            seen = _dt.datetime.fromisoformat(str(last).replace("Z", "+00:00"))
+        except ValueError:
+            return True
+        hours = 1 if freq == "hourly" else 24
+        return _dt.datetime.now(_dt.timezone.utc) - seen >= _dt.timedelta(hours=hours)
+
+
+    def _iso(ts):
+        return ts.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+    def _window(props):
+        """[start, end] for this account's run — pinned in the cursor so every
+        page reads the same interval. First sync: backfillDepth maps to the
+        start date. Re-sync: a short overlap behind lastSyncedAt."""
+        now = _dt.datetime.now(_dt.timezone.utc)
+        last = props.get("lastSyncedAt")
+        if last:
+            try:
+                seen = _dt.datetime.fromisoformat(str(last).replace("Z", "+00:00"))
+                return _iso(seen - _dt.timedelta(hours=OVERLAP_HOURS)), _iso(now)
+            except ValueError:
+                pass
+        depth = props.get("backfillDepth") or "last30d"
+        if depth == "all":
+            return ALL_EPOCH, _iso(now)
+        days = BACKFILL_DAYS.get(depth, 30)
+        return _iso(now - _dt.timedelta(days=days)), _iso(now)
+
+
+    def _enabled(props):
+        return [key for key, toggle, _ in COLLECTIONS if props.get(toggle)]
+
+
+    def _fetch_page(token, key, start, end, next_token):
+        path = next(p for k, _, p in COLLECTIONS if k == key)
+        params = {"limit": PAGE_LIMIT, "start": start, "end": end}
+        if next_token:
+            params["nextToken"] = next_token
+        resp = requests.get(
+            API_BASE + path, params=params,
+            headers={"Authorization": "Bearer " + token}, timeout=20)
+        resp.raise_for_status()
+        return resp.json()
+
+
+    def _recovery_effect(host, aid, rec):
+        # Cycle-keyed: recovery is one-per-physiological-cycle, and cycles do
+        # NOT reliably align with calendar days — two records created on one
+        # UTC date are two rows, and a late re-score (or a re-sync overlap)
+        # converges on ITS row. sleep_id is the fallback key; the calendar
+        # date is derived display data, never identity.
+        key = rec.get("cycle_id")
+        if key in (None, ""):
+            key = rec.get("sleep_id")
+        if key in (None, ""):
+            raise ValueError("recovery record carries no cycle_id or sleep_id")
+        key = str(key)
+        props = {"account": aid, "cycleId": key, "raw": rec}
+        day = str(rec.get("created_at") or "")[:10]
+        try:
+            _dt.date.fromisoformat(day)
+            props["date"] = day
+        except ValueError:
+            pass  # display data only — a dateless record still mirrors
+        score = rec.get("score") or {}
+        if score.get("recovery_score") is not None:
+            props["recoveryScore"] = score["recovery_score"]
+        if score.get("hrv_rmssd_milli") is not None:
+            props["hrvMs"] = score["hrv_rmssd_milli"]
+        if score.get("resting_heart_rate") is not None:
+            props["restingHeartRate"] = score["resting_heart_rate"]
+        return {"action": "put", "kind": RECOVERY_TYPE,
+                "id": host.ids.external("whoop", aid, "recovery-" + key),
+                "properties": props}
+
+
+    def _sleep_effect(host, aid, rec):
+        sid = str(rec["id"])
+        if not sid:
+            raise ValueError("sleep record carries no id")
+        props = {"account": aid, "start": rec["start"], "end": rec["end"],
+                 "raw": rec}
+        if rec.get("nap") is not None:
+            props["nap"] = bool(rec["nap"])
+        score = rec.get("score") or {}
+        if score.get("sleep_performance_percentage") is not None:
+            props["performance"] = score["sleep_performance_percentage"]
+        stages = score.get("stage_summary") or {}
+        durations = {}
+        for src, dst in (("total_light_sleep_time_milli", "lightMs"),
+                         ("total_rem_sleep_time_milli", "remMs"),
+                         ("total_slow_wave_sleep_time_milli", "deepMs"),
+                         ("total_awake_time_milli", "awakeMs")):
+            if stages.get(src) is not None:
+                durations[dst] = stages[src]
+        asleep = sum(durations.get(k, 0) for k in ("lightMs", "remMs", "deepMs"))
+        if asleep > 0:
+            durations["asleepMs"] = asleep
+        if durations:
+            props["durations"] = durations
+        return {"action": "put", "kind": SLEEP_TYPE,
+                "id": host.ids.external("whoop", aid, "sleep-" + sid),
+                "properties": props}
+
+
+    def _workout_effect(host, aid, rec):
+        wid = str(rec["id"])
+        if not wid:
+            raise ValueError("workout record carries no id")
+        props = {"account": aid, "start": rec["start"], "end": rec["end"],
+                 "raw": rec}
+        if rec.get("sport_name"):
+            props["sport"] = rec["sport_name"]
+        score = rec.get("score") or {}
+        if score.get("strain") is not None:
+            props["strain"] = score["strain"]
+        if score.get("kilojoule"):
+            props["calories"] = score["kilojoule"] * KCAL_PER_KJ
+        return {"action": "put", "kind": WORKOUT_TYPE,
+                "id": host.ids.external("whoop", aid, "workout-" + wid),
+                "properties": props}
+
+
+    _EFFECTS = {"recovery": _recovery_effect, "sleep": _sleep_effect,
+                "workout": _workout_effect}
+
+
+    def _fresh(queue):
+        # A fresh per-account cursor: the enabled collections and the pinned
+        # window compute when the account reaches the head of the queue.
+        return {"queue": queue, "collections": None, "nextToken": "",
+                "start": "", "end": "", "skipped": 0, "records": 0}
+
+
+    def main(input, host):
+        if not _pinned(API_BASE):
+            # F1: a tampered API base parks the delivery with a clear error —
+            # the token is NEVER sent to an unpinned origin.
+            raise RuntimeError("whoop: API base is not a pinned origin: " + API_BASE)
+        cfg = input.get("config") or {}
+        accounts = {a.get("id"): a for a in (cfg.get("accounts") or [])}
+        # The paged-checkpoint wrapper: host.page.resume() is the opaque cursor
+        # the previous page returned, and host.page.more(cursor) below builds
+        # the continuation that drains the next page off the causal chain.
+        resume = host.page.resume() or None
+
+        if resume:
+            cur = dict(resume)
+        else:
+            record = (input.get("envelope") or {}).get("record") or {}
+            # The envelope SPLITS identity: `type` is the bare local name and
+            # `authority` the authority, so the full identity (ruling A9) has to be
+            # recomposed. Comparing the local name alone would match any
+            # authority's `account`.
+            etype = (record.get("kind") or "")
+            if etype == ACCOUNT_TYPE:
+                # Record-triggered: sync just this account (a connect or edit).
+                queue = [record.get("id")]
+            else:
+                # Schedule-triggered: every connected account that wants any
+                # collection and is due by its cadence.
+                queue = [aid for aid, a in accounts.items()
+                         if _wants(a) and _due(a.get("properties") or {})]
+            cur = _fresh(queue)
+
+        # Advance past accounts we cannot or should not sync (every toggle
+        # off, gone from the config, or never connected). A DEAD GRANT is that
+        # account's problem alone (F2): it stamps its own syncStatus —
+        # tokenStatus is the facility's hand (writer: oauth), not this body's
+        # — and the queue moves on.
+        effects = []
+        queue = list(cur.get("queue") or [])
+        while queue:
+            acct = accounts.get(queue[0])
+            if acct is not None and acct.get("tokenError"):
+                host.log("whoop: skip %s: %s" % (queue[0], acct["tokenError"]))
+                stamp = _erroring(acct, acct["tokenError"])
+                if stamp:
+                    effects.append(stamp)
+            if acct is None or not _wants(acct) or acct.get("tokenError") or not acct.get("token"):
+                queue = queue[1:]
+                cur = _fresh(queue)
+                continue
+            break
+        if not queue:
+            return {"effects": effects}
+
+        aid = queue[0]
+        acct = accounts[aid]
+        props = acct.get("properties") or {}
+        token = acct["token"]
+
+        pending = cur.get("collections")
+        if pending is None:
+            # The account just reached the head: pin its collections + window.
+            pending = _enabled(props)
+            start, end = _window(props)
+            cur.update({"queue": queue, "collections": pending,
+                        "start": start, "end": end})
+        skipped = int(cur.get("skipped") or 0)
+        records = int(cur.get("records") or 0)
+
+        key = pending[0]
+        try:
+            resp = _fetch_page(token, key, cur["start"], cur["end"],
+                               cur.get("nextToken") or "")
+        except Exception as e:
+            # F2 per-account isolation: a provider failure (a 401 on a
+            # revoked-at-WHOOP grant, a 5xx, a dead network) stamps THIS
+            # account erroring and the drain continues behind it; the
+            # schedule retries it next tick.
+            host.log("whoop: %s page failed for %s: %s" % (key, aid, e))
+            stamp = _erroring(acct, e)
+            if stamp:
+                effects.append(stamp)
+            rest = queue[1:]
+            if rest:
+                return {"effects": effects, "more": host.page.more(_fresh(rest))}
+            return {"effects": effects}
+
+        for rec in resp.get("records") or []:
+            # Records are independent: a malformed one is skipped and counted,
+            # never the page's failure. Plain puts — a re-sync converges.
+            try:
+                effects.append(_EFFECTS[key](host, aid, rec))
+                records += 1
+            except Exception as e:
+                skipped += 1
+                host.log("whoop: skip a %s record for %s: %s" % (key, aid, e))
+
+        next_token = resp.get("next_token") or ""
+        if next_token:
+            # More pages of this collection: keep draining off the causal chain.
+            cur.update({"nextToken": next_token, "skipped": skipped,
+                        "records": records})
+            return {"effects": effects, "more": host.page.more(cur)}
+
+        rest_collections = pending[1:]
+        if rest_collections:
+            # This collection drained; the next enabled one starts fresh.
+            cur.update({"collections": rest_collections, "nextToken": "",
+                        "skipped": skipped, "records": records})
+            return {"effects": effects, "more": host.page.more(cur)}
+
+        # Account drained: stamp the completion marker, carrying the skip
+        # tally. The on-connect trigger's guard (no lastSyncedAt yet) goes
+        # false after it, so the account's own stamp cannot re-fire it.
+        status = "ok" if skipped == 0 else "ok (%d skipped)" % skipped
+        now = _iso(_dt.datetime.now(_dt.timezone.utc))
+        effects.append({"action": "patch", "kind": (acct.get("kind") or ACCOUNT_TYPE), "id": aid,
+                        "properties": {"lastSyncedAt": now,
+                                       "syncStatus": status}})
+        rest = queue[1:]
+        if rest:
+            return {"effects": effects, "more": host.page.more(_fresh(rest))}
+        return {"effects": effects,
+                "output": {"account": aid, "records": records,
+                           "skipped": skipped}}

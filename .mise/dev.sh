@@ -184,7 +184,7 @@ urls() {
 # wants either writes one after registering:
 #
 #   bin/substratectl apply -f - <<'YAML'
-#   kind: core.substrate.reamde.dev/llmprovider
+#   kind: substrate.reamde.dev/core/llmprovider
 #   metadata:
 #     id: vectors
 #   data:

@@ -1,0 +1,65 @@
+# the recurring DEFINITION — RRULE and exceptions, never on the timeline
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: samples.substrate.reamde.dev/calendar/calendareventseries
+data:
+  authority: samples.substrate.reamde.dev
+  package: calendar
+  description: >-
+    The recurring DEFINITION behind repeating events: its RRULE and the dates
+    that rule skips. It never sits on the timeline itself — the substrate
+    stores the rule and never expands it, and the occurrences are calendarevents
+    pointing back here.
+  names:
+    singular: calendareventseries
+  displayTemplate: "{summary}"
+  # `recurring` contracts the recurrence/exdates/timezone triple. The series is
+  # the DEFINITION and never sits on the timeline, so it binds no `temporal`.
+  traits:
+    - recurring
+  properties:
+    summary:
+      type: string
+      description: the series' title line
+    # the substrate stores an RRULE and never expands it: occurrences arrive
+    # as `calendarevent`s from the connector that exploded them.
+    recurrence:
+      type: recurrence
+      description: the RRULE, stored and never expanded
+    exdates:
+      type: datetime
+      repeated: true
+      description: occurrence datetimes the rule skips
+    rdates:
+      type: datetime
+      repeated: true
+      description: extra occurrence datetimes beside the rule (iCalendar's
+        RDATE)
+    timezone:
+      type: timezone
+      description: the IANA zone a time-of-day rule resolves in
+    # The rule alone names no instants: DTSTART is what anchors it, so a
+    # reader (or a connector re-deriving occurrences) can expand
+    # deterministically. Named like the trigger schedule's own anchor.
+    startsAt:
+      type: datetime
+      description: the instant the rule counts from (iCalendar's DTSTART)
+    # [materializedFrom, materializedUntil) is the span whose occurrences
+    # exist as calendarevent rows (decision 0043). The connector that writes
+    # the rows stamps it on every full fetch; the occurrences read expands
+    # the rule only OUTSIDE it, because inside the rows are the truth and a
+    # computed twin would double every synced event. Until is exclusive,
+    # Google's timeMax convention. Unset means no occurrence rows exist.
+    materializedFrom:
+      type: datetime
+      description: the instant occurrence rows are complete from
+    materializedUntil:
+      type: datetime
+      description: the instant occurrence rows stop before (exclusive)
+    calendar:
+      type: reference
+      kind: calendar
+      required: true
+      mustExist: true
+      onDelete: cascade
+      description: the calendar the series lives in

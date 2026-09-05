@@ -1,0 +1,151 @@
+# one agent invocation's conversation state — there is no agent-run record,
+# the thread is the run. The loop writes it as it goes: status settles to
+# ok / overbudget / error, the token tally accumulates per assistant turn,
+# and on the ROOT thread the tally includes every sub-agent's spend (cost
+# rolls up — one number answers "what did this chain cost"). A sub-agent's
+# thread names its caller in `parent`; chat threads (mode chat) are the same
+# rows the console renders and continues.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/llmthread
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    One agent invocation's conversation state; there is no agent-run record,
+    the thread IS the run. Status, turns, tokens and cost accumulate as the
+    loop goes, and a root thread's tally rolls up every sub-agent's spend,
+    so one number answers what a chain cost.
+  # version 3: the `llm` column split into `provider` + `model` — the run records
+  # WHERE it bought its completions and WHAT model it sent. The bump is what
+  # carries the new columns into repositories that stored the package's
+  # version 2 projection.
+  # version 4: `agent` and `parent` became REFERENCES. A thread is the audit row
+  # of a run and must keep naming the agent that ran it, which the link of the
+  # day could not do: a purge collected the link from either end, so deleting
+  # an agent erased every thread's record of what ran. A reference survives as
+  # a dangling pointer, and the graph reads it in reverse either way.
+  # version 5: the index names its properties, the declared spelling.
+  # version 6: the title FOLLOWS the reference instead of reading a property off
+  # the referent. core/agent stopped declaring `name`, so `{agent.name}` read
+  # nothing and every thread titled ": running"; a bare token on a reference
+  # renders the referent's own title, which is agent's `{localName}`.
+  # version 7: the agent and parent pointers pin with `kind:`, the reference
+  # property's own word.
+  # version 8: `mode` and `status` become enums, the loop's own closed sets
+  # (agentloop.go). `judge` joins mode: the loop already mints it (judge.go),
+  # the old prose just never named it.
+  # version 9: the numeric and constructor invariants. Every counter and the
+  # cost carry `min: 0`, `agentDepth` carries `max: 3` (the sub-agent depth
+  # cap), and the six fields the loop stamps at open (`provider`, `model`,
+  # `mode`, `status`, `agentDepth`, `startedAt`) are required. The `parent`
+  # inverse label is `subagentThreads`, the spelling the rest of the subagent
+  # vocabulary uses.
+  # version 11: the record-delivery mode value is `record`, where it was
+  # `trigger`, matching the trigger source arm (record/schedule/webhook) the
+  # delivery came from; the `trigger` kind and actor prefix are unchanged.
+  version: 11
+  names:
+    singular: llmthread
+  displayTemplate: "{agent}: {status}"
+  # No index on `agent`: a reference filters by containment, which rides the
+  # repository-wide GIN index on props.
+  indices:
+    - properties:
+        - status
+  properties:
+    agent:
+      type: reference
+      kind: substrate.reamde.dev/core/agent
+      required: true
+      inverse: threads
+      inverseDescription: the runs this agent has had
+      description: the agent this thread ran
+    # NOT a reference, unlike the agent's own `provider:`. This one is what the
+    # ENGINE resolved for this run — provenance on a finished thread, not a
+    # pointer an author picks — and retyping a live string property to a
+    # reference is a narrowing the boot upgrade refuses while rows hold the old
+    # shape.
+    provider:
+      type: string
+      required: true
+      description: the llmprovider row id the run resolved
+    model:
+      type: string
+      required: true
+      description: the model id the run sent
+    mode:
+      type: enum
+      required: true
+      values:
+        - record
+        - schedule
+        - webhook
+        - manual
+        - call
+        - subagent
+        - chat
+        - judge
+      description: how the run was invoked
+    status:
+      type: enum
+      required: true
+      values:
+        - running
+        - ok
+        - overbudget
+        - error
+      description: running, then settled to ok, overbudget or error
+    reason:
+      type: string
+      description: which budget ended an overbudget run, or the error
+    agentDepth:
+      type: int
+      required: true
+      min: 0
+      max: 3
+      description: how many sub-agent hops sit above this thread (0 = root)
+    turns:
+      type: int
+      min: 0
+      description: model calls this thread burned
+    toolCalls:
+      type: int
+      min: 0
+      description: tool dispatches this thread burned
+    promptTokens:
+      type: int
+      min: 0
+      description: prompt tokens; on the root thread, sub-agents included
+    completionTokens:
+      type: int
+      min: 0
+      description: completion tokens; on the root thread, sub-agents included
+    totalTokens:
+      type: int
+      min: 0
+      description: total tokens; on the root thread, sub-agents included
+    costUSD:
+      type: float
+      min: 0
+      description: the provider row's pricing for the model applied to the
+        tally; 0 when unpriced
+    startedAt:
+      type: datetime
+      required: true
+      description: when the loop opened the thread
+    finishedAt:
+      type: datetime
+      description: when the loop settled
+    leaseUntil:
+      type: datetime
+      description: >-
+        the running turn's lease horizon — one active continuation per thread;
+        a second turn is refused while the lease is live, and a crashed turn's
+        expired lease is taken over
+    parent:
+      type: reference
+      kind: substrate.reamde.dev/core/llmthread
+      inverse: subagentThreads
+      inverseDescription: the sub-agent runs this thread called
+      description: the calling agent's thread, on sub-agent threads

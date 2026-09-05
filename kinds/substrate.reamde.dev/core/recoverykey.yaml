@@ -1,0 +1,41 @@
+# the user's recovery key — a RECORD holding a wrap only the user can open
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/recoverykey
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    The repository's one recovery key, id `self`: the age recipient the user
+    enrolled and the repository's data-encryption key wrapped to it. Only
+    the matching age identity, which the user keeps and the substrate never
+    stores, opens the wrap.
+  names:
+    singular: recoverykey
+  # A SINGLETON, id `self`, like the credential. The sealedKey is ciphertext
+  # only the user's age identity opens, so it is safe in an append-only
+  # changelog — and that is the point: a backup of changelog + sealed + blobs
+  # plus the identity is a complete recovery, no host key required.
+  #
+  # Writes come from registration and the one recovery enrollment,
+  # attributed to the substrate; the generic surface refuses them
+  # (engine/write.go forbidSystemKind). Reading and listing it is ordinary.
+  displayTemplate: "{algorithm}"
+  properties:
+    # Registration writes exactly `age-x25519-v1`. It stays a string, not an
+    # enum: an enum value is a lowercase word ([a-z][a-z0-9]*) and this scheme
+    # name carries hyphens the grammar refuses, so the closed set cannot be
+    # spelled as enum values today.
+    algorithm:
+      type: string
+      required: true
+      description: the recovery scheme; age-x25519-v1 in this release
+    publicKey:
+      type: string
+      required: true
+      description: the age recipient the data-encryption key is wrapped to
+    sealedKey:
+      type: string
+      required: true
+      description: the repository's data-encryption key wrapped to the recipient;
+        only the matching age identity opens it

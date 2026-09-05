@@ -1,0 +1,327 @@
+# The Pebble example: voice capture from the Pebble Index 01 ring over a
+# PUBLIC WEBHOOK, and the smallest bundle that shows one.
+#
+# The ring's phone app POSTs multipart/form-data to one URL: the parts are
+# `transcription` (text), `audio` (audio/mp4), `recordedAt` (milliseconds
+# since the epoch, as text) and `client` (the text `ring`). The owner
+# configures that ONE URL twice in the app, once per button gesture, and each
+# gesture carries a different custom header:
+#
+#   single press     X-Pebble-Mode: note    saves a recording
+#   press-and-hold   X-Pebble-Mode: agent   saves the recording AND writes an
+#                                           instruction the assistant acts on
+#
+# The URL is the webhook trigger's (triggers.yaml):
+# POST /webhooks/{authority}/pebble-webhook, open unless the owner sets
+# `source.webhook.key`. The host parses the multipart body and stores the
+# audio part in the repository's blob store before the function runs, so the
+# body reads a blob digest, never bytes.
+#
+# What it demonstrates, in the order a capture hits it:
+#
+#   1. A WEBHOOK-SOURCED trigger delivering the request under
+#      `envelope.request`: lowercased headers, the parsed parts, a `blob`
+#      digest on the file part.
+#   2. A FUNCTION that routes on a header and writes two kinds, one of them
+#      pointing at the other through a reference property.
+#   3. A RECORD-SOURCED trigger that hands each new instruction to an AGENT,
+#      which turns it into tasks through the graphql and mutate host functions.
+#
+# The agent wants an `llmprovider` row at the id it names (`default`); the
+# function wants nothing at all. See README.md beside this file.
+#
+# This bundle declares NO inputs and no OAuth: the endpoint is open, and the
+# one optional credential (`source.webhook.key`) lives on the trigger record.
+#
+# OUT OF THE STABLE SET (decision record 0015): this bundle is a worked
+# example, not shipped vocabulary. Its declarations may change or leave
+# without an upgrade path, and installing it accepts that. Nothing outside
+# this directory declares against it.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: samples.substrate.reamde.dev/pebble
+data:
+  authority: samples.substrate.reamde.dev
+  package: pebble
+  version: 1
+---
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: samples.substrate.reamde.dev/pebble
+data:
+  authority: samples.substrate.reamde.dev
+  package: pebble
+  description: >-
+    Voice capture from the Pebble Index 01 ring over one public webhook: a
+    recording per capture, and in agent mode an instruction the assistant
+    turns into tasks. No OAuth, no key unless you set one.
+  # The assistant writes tasks, so the tasks vocabulary has to be imported
+  # first.
+  requires:
+    - samples.substrate.reamde.dev/tasks
+  installs:
+    - samples.substrate.reamde.dev/pebble/recording
+    - samples.substrate.reamde.dev/pebble/instruction
+    - samples.substrate.reamde.dev/pebble/ingest
+    - samples.substrate.reamde.dev/pebble/assistant
+---
+# ---- the recording: one capture, whatever the gesture ------------------------
+# Written by the ingest function, never by hand. Its id is derived from the
+# webhook fire id, so a retried delivery upserts the same row.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: samples.substrate.reamde.dev/pebble/recording
+data:
+  authority: samples.substrate.reamde.dev
+  package: pebble
+  description: >-
+    One voice capture from the ring: the transcription the app produced, when
+    it was recorded, which gesture sent it, and the audio as a blob reference.
+    Written by the ingest function, never by hand.
+  names:
+    singular: recording
+  displayTemplate: "{transcription}"
+  properties:
+    transcription:
+      type: string
+      required: true
+      description: the transcription as the app sent it
+    recordedAt:
+      type: datetime
+      description: when the ring recorded it, from the app's recordedAt part
+    mode:
+      type: enum
+      values:
+        - note
+        - agent
+      description: the gesture that sent it, from the X-Pebble-Mode header
+    client:
+      type: string
+      description: the sending client as the app names it (ring)
+    # The host stores the audio part in the blob store before the function
+    # runs; this is its digest, so the bytes are one GET away and two
+    # captures of the same bytes share one blob.
+    audio:
+      type: blobref
+      description: the recorded audio, audio/mp4, as stored by the host
+---
+# ---- the instruction: what agent mode asks for ------------------------------
+# Only a press-and-hold capture writes one, at the same id as its recording.
+# The record-sourced trigger in triggers.yaml delivers each new one to the
+# assistant.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: samples.substrate.reamde.dev/pebble/instruction
+data:
+  authority: samples.substrate.reamde.dev
+  package: pebble
+  description: >-
+    One spoken instruction from an agent-mode capture: the text the owner
+    said, when, and the recording it came from. The assistant reads it and
+    writes tasks.
+  names:
+    singular: instruction
+  displayTemplate: "{text}"
+  properties:
+    text:
+      type: string
+      required: true
+      description: the instruction, verbatim from the transcription
+    recordedAt:
+      type: datetime
+      description: when the ring recorded it
+    recording:
+      type: reference
+      kind: samples.substrate.reamde.dev/pebble/recording
+      description: the recording this instruction was transcribed from
+---
+# ---- the function: route on the header, write the capture -------------------
+# Declares no `network:`, so the sandbox denies it sockets: everything it
+# needs is in the envelope. Its writes name both kinds; the instruction put
+# happens only in agent mode, and only when the transcription is non-empty.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: samples.substrate.reamde.dev/pebble/ingest
+data:
+  authority: samples.substrate.reamde.dev
+  package: pebble
+  description: >-
+    Turn one webhook request from the Pebble app into a recording, and in
+    agent mode an instruction too. Runs on the pebble-webhook trigger; not
+    meant to be called by hand.
+  runtime: python
+  timeout: PT10S
+  returns:
+    - name: id
+      type: string
+      description: the id of the recording (and instruction) written
+    - name: mode
+      type: string
+      description: the mode the capture was saved under
+    - name: instruction
+      type: bool
+      description: whether an instruction was written
+    - name: skipped
+      type: string
+      description: why nothing was written, when nothing was
+  permissions:
+    writes:
+      - samples.substrate.reamde.dev/pebble/recording
+      - samples.substrate.reamde.dev/pebble/instruction
+  source: |
+    import datetime
+    import hashlib
+    import re
+
+    RECORDING = "samples.substrate.reamde.dev/pebble/recording"
+    INSTRUCTION = "samples.substrate.reamde.dev/pebble/instruction"
+    MODES = ("note", "agent")
+    # everything the record id alphabet refuses (vocabulary/naming.go reID)
+    NOT_ID = re.compile(r"[^A-Za-z0-9._~:@-]")
+
+
+    def record_id(fire):
+        # The fire id is the delivery's identity: a retried fire lands on the
+        # same record instead of minting a second one.
+        raw = str((fire or {}).get("id") or "")
+        clean = NOT_ID.sub("", raw).lstrip("._~:@-")
+        if not clean:
+            clean = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
+        return "pebble-" + clean
+
+
+    def rfc3339(ms, fallback):
+        # The app sends milliseconds since the epoch as text; a datetime
+        # property wants an RFC 3339 instant. Anything unparseable falls back
+        # to the fire time rather than failing the whole capture.
+        try:
+            secs = int(str(ms).strip()) / 1000.0
+            at = datetime.datetime.fromtimestamp(secs, datetime.timezone.utc)
+        except (TypeError, ValueError, OverflowError, OSError):
+            return fallback
+        return at.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+    def main(input, host):
+        envelope = input.get("envelope") or {}
+        request = envelope.get("request") or {}
+        parts = request.get("parts")
+        if not isinstance(parts, list) or not parts:
+            # A non-multipart or empty request carries `body`, not `parts`;
+            # the ring never sends one, so there is nothing to save.
+            return {"output": {"skipped": "the request carried no multipart parts"}}
+
+        by_name = {}
+        for part in parts:
+            name = (part or {}).get("name")
+            if name and name not in by_name:
+                by_name[name] = part
+
+        def value(name):
+            return str((by_name.get(name) or {}).get("value") or "").strip()
+
+        text = value("transcription")
+        if not text:
+            return {"output": {"skipped": "the transcription part is empty"}}
+
+        headers = request.get("headers") or {}
+        mode = str(headers.get("x-pebble-mode") or "note").strip().lower()
+        if mode not in MODES:
+            # An unknown gesture header is saved as a plain note rather than
+            # refused: the capture is still worth keeping.
+            host.log("unknown X-Pebble-Mode %r, saving as note" % mode)
+            mode = "note"
+
+        fire = envelope.get("fire") or {}
+        rid = record_id(fire)
+        recorded_at = rfc3339(value("recordedAt"), fire.get("at"))
+
+        recording = {"transcription": text, "mode": mode}
+        if recorded_at:
+            recording["recordedAt"] = recorded_at
+        client = value("client")
+        if client:
+            recording["client"] = client
+        # The host already stored the file part; `blob` is the blob record's
+        # digest, which is exactly what a blobref property holds.
+        blob = (by_name.get("audio") or {}).get("blob")
+        if isinstance(blob, str) and blob:
+            recording["audio"] = blob
+        host.effects.put(RECORDING, rid, properties=recording)
+
+        wrote_instruction = False
+        if mode == "agent":
+            instruction = {
+                "text": text,
+                "recording": {"ref": RECORDING + "/" + rid},
+            }
+            if recorded_at:
+                instruction["recordedAt"] = recorded_at
+            host.effects.put(INSTRUCTION, rid, properties=instruction)
+            wrote_instruction = True
+
+        return {"output": {"id": rid, "mode": mode, "instruction": wrote_instruction}}
+---
+# ---- the assistant: an instruction in, tasks out ----------------------------
+# Delivered by the pebble-on-instruction trigger with one instruction record
+# in the envelope. It reads through graphql and writes through mutate, and its
+# writes name the task kind alone, so nothing it is talked into can land
+# anywhere else.
+kind: substrate.reamde.dev/core/agent
+metadata:
+  id: samples.substrate.reamde.dev/pebble/assistant
+data:
+  authority: samples.substrate.reamde.dev
+  package: pebble
+  description: >-
+    Turn one spoken instruction from the ring into task records: read the
+    instruction, check for an existing task, create what is missing.
+  prompt: |
+    You turn the owner's spoken instructions into tasks. The user message is
+    a delivery envelope carrying one record of kind
+    samples.substrate.reamde.dev/pebble/instruction; the instruction is
+    record.properties.text. It was dictated into a ring and transcribed, so
+    read past small transcription errors.
+
+    Work out what the owner wants done. Most instructions are one task; a
+    list ("buy milk and call the dentist") is one task per item. An
+    instruction that asks for nothing to be done ("remember that the meeting
+    moved") is still one task, worded as the thing to do.
+
+    Before creating a task, check for an existing one with the graphql tool:
+    the kind is samples.substrate.reamde.dev/tasks/task and its heading is the `name`
+    property, so a query like
+
+      { records(filter: {kinds: ["samples.substrate.reamde.dev/tasks/task"],
+          properties: {status: {in: ["open", "proposed"]}}}, first: 50)
+        { nodes { id ... on Task { name dueAt } } } }
+
+    lists what is open. Introspect (__type) rather than guess when a field
+    name is in doubt. If an open task already says the same thing, do not
+    create another.
+
+    Create each missing task with ONE mutate call each:
+
+      mutation { put(input: {kind: "samples.substrate.reamde.dev/tasks/task",
+        id: "<short-lowercase-slug>",
+        properties: {name: "<the task, one line>"}}) { id } }
+
+    Add dueAt (RFC 3339, UTC) only when the instruction names a time. Add
+    description only when the instruction carries detail beyond the heading.
+    Invent the id from the name: lowercase words joined by hyphens, at most
+    six words.
+
+    Reply in one short line: the task ids you created, or "already tracked"
+    with the id of the task that covers it.
+  provider: default
+  model: anthropic/claude-sonnet-5
+  tools:
+    - function: substrate.reamde.dev/core/graphql
+    - function: substrate.reamde.dev/core/mutate
+  budgets:
+    maxTurns: 8
+    maxToolCalls: 8
+    deadlineSeconds: 180
+  permissions:
+    writes:
+      - samples.substrate.reamde.dev/tasks/task

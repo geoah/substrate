@@ -1,0 +1,38 @@
+# one authority whose packages this repository holds, id = its DNS name
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/authority
+data:
+  authority: substrate.reamde.dev
+  package: core
+  # version 16: the authority owns packages and nothing else. The version, the
+  # actors, the origin and the quarantine mark moved to the `package` row
+  # beside it (decision record 0047); what stays is the name and what it is
+  # for.
+  version: 16
+  description: >-
+    One authority whose packages this repository holds, named by its DNS-style
+    label. It says who publishes; the packages under it say what, and each
+    one carries its own version, origin and quarantine mark.
+  names:
+    singular: authority
+  displayTemplate: "{localName}"
+  properties:
+    description:
+      type: markdown
+      description: what this authority publishes, in its own words
+    # Every declaration row carries a version, because the boot upgrade diffs
+    # rows by it. This one is the ROW's, not a closure's: a closure's version
+    # is its package's, and nothing authors this.
+    version:
+      type: int
+      managed: true
+      description: the row's incremental version, maintained by the engine
+    source:
+      type: enum
+      values:
+        - builtin
+        - installed
+      managed: true
+      description: builtin for the seeded authority, installed for the rest
+    # No sourceYAML (record 61): declaration rows store parsed facts only.

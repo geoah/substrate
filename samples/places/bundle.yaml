@@ -1,0 +1,32 @@
+# Shipped vocabulary ported from mneme v4: places worth remembering.
+# One kind on purpose: a place is a name, a category, coordinates and the
+# practical strings, and everything that happens AT a place lives on the
+# records that point at it.
+#
+# no new actors: writes arrive under the actor of whatever runs.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: samples.substrate.reamde.dev/places
+data:
+  authority: samples.substrate.reamde.dev
+  package: places
+  # version 2: THE TYPED CORE SWEEP. Declarations in this closure moved to the
+  # declared spellings — whichever of them they used: a tool entry naming its arm,
+  # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
+  # naming its properties. THE PACKAGE IS VERSIONED AS A UNIT, so this bump
+  # carries the closure whole rather than saying every declaration in it moved.
+  version: 3
+---
+# ---- the bundle document: the import unit -----------------------------------
+# A SAMPLE bundle: kinds only, imported from the registry.
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: samples.substrate.reamde.dev/places
+data:
+  authority: samples.substrate.reamde.dev
+  package: places
+  description: >-
+    Places worth remembering: a name, a category, coordinates bounded to the
+    globe, and the practical strings for actually going there.
+  installs:
+    - samples.substrate.reamde.dev/places/place

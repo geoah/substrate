@@ -1,0 +1,51 @@
+# The shipped vocabulary, subsystem 2: things people say to each other.
+# Shipped, but not SEEDED — a SAMPLE BUNDLE a repository imports (the
+# bundle document is at the foot of this file), and it requires people.
+# Chat and mail stay separate families because their shapes differ (a chat
+# message is one line in a stream, a mail message carries a subject and a
+# thread), and both prefix their family name so neither bare `message` nor
+# bare `thread` can be mistaken for the other's.
+#
+# People and plumbing live elsewhere: authors and participants are `person`
+# in samples.substrate.reamde.dev/people, the account is a bundle-owned accountconfig record (ruling A12; the
+# retired `connectoraccount` core kind is gone). Those references
+# name the person; a reference naming a source record instead — a `slackuser`,
+# say — lands on the person that record points at, in one hop (§6.2). The
+# structural references stay in the family — a message to its conversation or
+# thread, a reply to its parent.
+#
+# no new actors: the doors and the substrate ship with core; an installed
+# package's writes arrive under the actor of whatever runs — a bundle function
+# writes as `function:<authority>:<package>:<name>` — so nothing here declares
+# an actor.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: samples.substrate.reamde.dev/messaging
+data:
+  authority: samples.substrate.reamde.dev
+  package: messaging
+  # version 4: `conversation`'s enum property `kind` is `category` (#125).
+  # version 5: every link is a `type: reference` property carrying
+  # `mustExist: true`, and an owning one carries `onDelete: cascade`.
+  version: 5
+---
+# ---- the bundle document: the import unit -------------------------------------
+# A SAMPLE bundle (see samples.substrate.reamde.dev/people): kinds only, imported from the
+# registry rather than seeded. It maps onto people, so it requires that
+# package to be present first.
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: samples.substrate.reamde.dev/messaging
+data:
+  authority: samples.substrate.reamde.dev
+  package: messaging
+  description: >-
+    Chat and mail — conversations, conversation messages, email threads and
+    email messages, with every author and participant pointing at a person.
+  requires:
+    - samples.substrate.reamde.dev/people
+  installs:
+    - samples.substrate.reamde.dev/messaging/conversation
+    - samples.substrate.reamde.dev/messaging/conversationmessage
+    - samples.substrate.reamde.dev/messaging/emailmessage
+    - samples.substrate.reamde.dev/messaging/emailthread

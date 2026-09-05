@@ -1,0 +1,44 @@
+# a working group finer than an organization
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: samples.substrate.reamde.dev/people/team
+data:
+  authority: samples.substrate.reamde.dev
+  package: people
+  description: >-
+    A working group finer than an organization: the people who share a backlog.
+    Teams nest through the parent reference, and leadership is the leads reference
+    rather than a flag on the member, so one person can lead one team and
+    merely sit on another.
+  names:
+    singular: team
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the team's name
+    groupEmail:
+      type: email
+      description: the address that reaches the whole team
+    details:
+      type: markdown
+      embed: true
+      description: what the team owns and how it works, as prose
+    parent:
+      type: reference
+      kind: team
+      mustExist: true
+      description: the team this one nests under
+    members:
+      type: reference
+      kind: person
+      repeated: true
+      mustExist: true
+      description: the people on the team
+    leads:
+      type: reference
+      kind: person
+      repeated: true
+      mustExist: true
+      description: the people who lead it; leading is not membership

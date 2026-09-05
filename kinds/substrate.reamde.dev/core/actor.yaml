@@ -1,0 +1,61 @@
+# one declared actor, the name writes are attributed to
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/actor
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    One declared actor — the name a write is attributed to. Actors are attribution
+    and a manager tier, never authorization: `api`, `console` and `substratectl`
+    are the doors a human write comes through, and machine hands like `function:<authority>:<package>:<name>`
+    are minted at dispatch.
+  names:
+    singular: actor
+  # projections of declared actors — the shipped ones at boot, an installed
+  # package's own at installation. `source` is the declaring package's
+  # origin, the same closed set kind carries.
+  displayTemplate: "{localName}"
+  properties:
+    # Every declaration carries its own version: the
+    # declaring package's, unless the declaration overrides it. It is what the
+    # boot-time upgrade diffs a repository's shipped vocabulary against, so
+    # it is written on every projected declaration row.
+    version:
+      type: int
+      managed: true
+      description: this declaration's incremental version, maintained by the
+        engine
+    # the authority whose manifests declared this actor — what the registry
+    # rebuild reads to put the actor back under its package.
+    # NOT a reference, and the reason is identity: an authority is what this
+    # declaration IS part of, not a record it points at. Pinning it made the
+    # stored row spell it as a path while the manifest spelled the name, so one
+    # declaration had two Definitions — the authored one and the one that came
+    # back after a restart.
+    authority:
+      type: string
+      required: true
+      description: the authority that declares this actor
+    package:
+      type: string
+      description: the package it is declared in, the middle segment of its
+        id
+    source:
+      type: enum
+      values:
+        - builtin
+        - installed
+      managed: true
+      description: builtin for shipped packages, installed for the ones a
+        bundle install brought
+    # the actor's manager tier — an explicit attribute of the declaration
+    # (ticket 002), never derived from the actor's spelling. Package-declared
+    # actors are the sync machinery, so machine is the default.
+    tier:
+      type: enum
+      values:
+        - owner
+        - bundle
+        - machine
+      description: the manager tier this actor's direct writes hold at

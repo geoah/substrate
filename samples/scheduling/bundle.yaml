@@ -1,0 +1,42 @@
+# The shared scheduling vocabulary: the two traits the repeating kinds and
+# their occurrence logs held as hand-copied properties before. `recurring` is
+# the RRULE triple (recurrence, exdates, timezone); `occurrencelog` is the
+# done-or-skipped mark against one occurrence of a recurring thing. Neither
+# trait carries values, only property presence and datatype, so a binding kind
+# keeps its own enum states and its own owner reference.
+#
+# It ships no kinds, only traits, so the five packages that repeat things
+# (tasks, fitness, health, routines, calendar) `require` it and bind its traits
+# cross-package, the way every package binds core's `temporal`. It is a
+# separate package rather than core because it is domain vocabulary, not
+# engine machinery: `temporal` is backed by the physical at/endsAt/dueAt
+# columns, these two are ordinary declared properties.
+#
+# no new actors: writes arrive under the actor of whatever runs.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: samples.substrate.reamde.dev/scheduling
+data:
+  authority: samples.substrate.reamde.dev
+  package: scheduling
+  # version 2: `recurring` contracts `rdates` beside exdates — iCalendar's
+  # RDATE extras, which one scalar rule string cannot hold.
+  version: 2
+---
+# ---- the bundle document: the import unit -----------------------------------
+# A SAMPLE bundle: traits only, imported from the registry. The `installs`
+# closure is the package's members, which for a traits-only package is the
+# two traits.
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: samples.substrate.reamde.dev/scheduling
+data:
+  authority: samples.substrate.reamde.dev
+  package: scheduling
+  description: >-
+    Two shared traits the repeating kinds bind: `recurring`, an RRULE stored
+    and never expanded, and `occurrencelog`, one occurrence marked done or
+    skipped.
+  installs:
+    - samples.substrate.reamde.dev/scheduling/recurring
+    - samples.substrate.reamde.dev/scheduling/occurrencelog

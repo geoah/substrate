@@ -1,0 +1,233 @@
+# one declared agent: a callable whose body is an LLM loop, id =
+# "<authority>/<package>/<name>". The declaration IS the record (schema is
+# records): the row is the prompt store, the changelog is its version history,
+# and the dispatcher reads the registry this row rebuilds into. Agents dispatch
+# like functions — trigger deliveries, the call API, sub-agent calls — under
+# their own actor, `agent:<authority>:<package>:<name>`.
+#
+# THE PROPERTIES ARE THE DECLARATION. There is no `definition` blob and no
+# projected mirror beside it: the row holds the manifest's own keys, one
+# property per key, and what an author writes is what gets stored. The loader
+# rebuilds the registry from exactly these.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/agent
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    One declared agent: a callable whose body is an LLM loop, dispatched like
+    a function by a trigger, the call API or another agent. The row IS the
+    prompt store, so changing what an agent does is a record write and the
+    changelog is its version history.
+  # version 2: the display template dropped the authority. A declaration's
+  # identity is `<authority>/<package>/<name>` and the dotted composite it used
+  # to render names nothing — the bump is what carries the new template into
+  # repositories that already stored the old one.
+  # version 3: the declaration gained a `description` — the bump is what
+  # carries it into repositories that already stored the version 2 one.
+  # version 4: the `llm` reference split into `provider` + `model` — an agent
+  # names WHERE it buys completions and WHAT model it wants, separately.
+  # version 5: the declaration gained `subagentOnly`, the chat-surface
+  # withholding (an llm-as-judge exists to be called by other agents); the
+  # bump carries the column into repositories that stored the version 4 shape.
+  # version 6: TYPED. `definition` and the `functions`/`subagents` mirrors are
+  # gone; the manifest's own keys (params, tools, budgets and the grants) are
+  # properties, and `name` left with them (a declaration's local name is its
+  # id's last segment, which is what `{localName}` renders).
+  # version 7: the `builtin` field left `tools`. The four built-ins are function
+  # records now (`runtime: host`), so an entry names one under `function:` like
+  # any other function and the union has ONE arm. Dropping a field is a
+  # narrowing, and this one is safe because dialect 2 has never shipped in a
+  # release: no store outside our own development instances holds a row with the
+  # field, and the dialect rung rewrites the ones that do.
+  # version 8: `emit` and `reads` became one `permissions` object, and `emit` is
+  # `writes` inside it: the same grouping a function's five grants took, and
+  # safe for the same reason version 7 was. A tool entry's `callable` field
+  # became `function` in the same bump, since an entry admits nothing else.
+  # version 10: the declaration's own `version` became an incremental
+  # integer, maintained by the engine.
+  # version 11: `resume` — whether a resolution on the agent's thread-borne
+  # records continues the thread (docs/plans/thread-interactions.md).
+  # version 12: `params.temperature` carries `min: 0` and `max: 2`, the bounds
+  # the provider row's `defaults.temperature` already declares. The agent
+  # value overrides the provider's, so the two are held to one range.
+  # version 14: the sub-agent list is `subagents`, where it was `agents`, so
+  # the word matches `subagentThreads` and the rest of the subagent
+  # vocabulary; and the chat-surface withholding is `hiddenFromChat`, where it
+  # was `subagentOnly`, naming what the flag does rather than who is left.
+  version: 14
+  names:
+    singular: agent
+  displayTemplate: "{localName}"
+  properties:
+    # Every declaration carries its own version: the declaring package's,
+    # unless the declaration overrides it. It is what the boot-time upgrade
+    # diffs a repository's shipped vocabulary against, so it is written on
+    # every declaration row — by the engine, which is what `managed` says.
+    version:
+      type: int
+      managed: true
+      description: this declaration's incremental version, maintained by the
+        engine
+    # NOT a reference, and the reason is identity: an authority is what this
+    # declaration IS part of, not a record it points at. Pinning it made the
+    # stored row spell it as a path while the manifest spelled the name, so one
+    # declaration had two Definitions — the authored one and the one that came
+    # back after a restart.
+    authority:
+      type: string
+      required: true
+      description: the authority that declares it
+    package:
+      type: string
+      description: the package it is declared in, the middle segment of its
+        id
+    description:
+      type: string
+      required: true
+      description: the model-facing tool card — what this agent is for as
+        a sub-agent
+    # NEVER FTS-indexed: a system prompt is a page of prose, and indexing it
+    # would make every agent the top hit for any word it happens to use.
+    prompt:
+      type: text
+      fts: false
+      required: true
+      description: the system prompt; the row is the prompt store
+    # The llmprovider the loop reads wire/baseURL/apiKey off at dispatch. The
+    # pin is what lets a client offer a picker, and it supplies the kind an
+    # authored bare id omits: `default` stores as
+    # `substrate.reamde.dev/core/llmprovider/default`.
+    provider:
+      type: reference
+      kind: substrate.reamde.dev/core/llmprovider
+      required: true
+      description: the llmprovider this agent's loop completes against
+    model:
+      type: string
+      required: true
+      description: the model id sent on every completion
+    params:
+      type: object
+      description: this agent's request knobs; the provider row's defaults
+        sit under them
+      fields:
+        temperature:
+          type: float
+          min: 0
+          max: 2
+          description: the sampling temperature, when the model accepts one
+        maxTokens:
+          type: int
+          min: 1
+          description: the completion cap sent on every request
+    # `function` names the tool, and it is the ONE arm: the four built-ins are
+    # `runtime: host` function records core ships, so
+    # `{function: substrate.reamde.dev/core/graphql}` names one exactly as a
+    # bundle's function is named. An entry can name nothing else — a sub-agent
+    # is named on `subagents:` — which is why the field is not `callable`, the
+    # trigger's word for a target that really may be either. `name` and
+    # `description` alias the card for this agent's prompt context, built-ins
+    # included.
+    tools:
+      type: object
+      repeated: true
+      description: what the model may call, in declaration order
+      fields:
+        function:
+          type: reference
+          kind: substrate.reamde.dev/core/function
+          required: true
+          description: the function this entry names
+        name:
+          type: string
+          description: the model-facing tool name, aliasing the function
+        description:
+          type: string
+          description: the model-facing card, overriding the function's own
+    subagents:
+      type: reference
+      kind: substrate.reamde.dev/core/agent
+      repeated: true
+      description: the sub-agents the loop exposes as tools
+    budgets:
+      type: object
+      description: what bounds one invocation
+      fields:
+        maxTurns:
+          type: int
+          min: 1
+          max: 64
+          description: completions the loop may spend
+        maxToolCalls:
+          type: int
+          min: 1
+          max: 256
+          description: tool calls the loop may spend
+        deadlineSeconds:
+          type: int
+          min: 1
+          max: 600
+          description: wall clock for the whole invocation
+        depth:
+          type: int
+          min: 1
+          max: 3
+          description: how deep the sub-agent chain below may go
+    # THE GRANT, in one object, spelled the way a function's is: an agent has
+    # no body of its own to spend, so it carries two of the five, what it may
+    # read and what it may write.
+    permissions:
+      type: object
+      description: what this agent is allowed to do while it runs; leave a
+        grant out and what it covers is refused
+      fields:
+        reads:
+          type: object
+          description: which record kinds this agent may read, and how much;
+            leave it out and the query tool is withheld
+          fields:
+            kinds:
+              type: reference
+              kind: substrate.reamde.dev/core/kind
+              repeated: true
+              description: the record kinds every read is held to
+            budgets:
+              type: object
+              description: how much one run may read
+              fields:
+                calls:
+                  type: int
+                  min: 1
+                  max: 1000
+                  description: how many reads one run may make
+                rows:
+                  type: int
+                  min: 1
+                  max: 10000
+                  description: how many records one run may read
+        writes:
+          type: reference
+          kind: substrate.reamde.dev/core/kind
+          repeated: true
+          description: which record kinds it may create or change, the change
+            requests it proposes among them
+    # Withholds the agent from the interactive chat surface only: the console
+    # keeps it off the chat list and the chat API refuses it, while sub-agent
+    # calls, the call API and triggers still dispatch it. Any agent, marked or
+    # not, remains selectable as another agent's sub-agent.
+    hiddenFromChat:
+      type: bool
+      description: only callable by other agents; withheld from the chat surface
+    # A resolution on this agent's thread-borne records (a decided proposal,
+    # an answered interaction) writes the system row either way; `resume` says
+    # whether it also CONTINUES the thread. A resume is a paid agent turn, so
+    # the declaration owns the knob; absent means always (issue 69).
+    resume:
+      type: enum
+      values:
+        - always
+        - never
+      description: whether a resolution resumes this agent's thread; absent
+        means always

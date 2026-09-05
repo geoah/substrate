@@ -1,0 +1,47 @@
+# one movement in the catalog: squat, bench press, plank
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: samples.substrate.reamde.dev/fitness/exercise
+data:
+  authority: samples.substrate.reamde.dev
+  package: fitness
+  description: >-
+    One movement in the catalog: what it is, what it works and what it needs.
+    Performances of it are workoutsets pointing here, so the catalog stays
+    small and the history lives on the sets.
+  names:
+    singular: exercise
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the movement's name
+    activityType:
+      type: enum
+      description: the broad kind of work the movement is
+      values:
+        - strength
+        - cardio
+        - mobility
+        - core
+        - plyometric
+        - other
+    equipment:
+      type: string
+      description: what it needs, barbell or bands or nothing
+    primaryMuscles:
+      type: string
+      repeated: true
+      description: the muscles it mainly works
+    secondaryMuscles:
+      type: string
+      repeated: true
+      description: the muscles it also works
+    defaultWeightIncrement:
+      type: float
+      description: the plate jump progression suggestions use
+    details:
+      type: markdown
+      embed: true
+      description: form cues and setup notes, as prose

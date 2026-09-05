@@ -1,0 +1,79 @@
+# the generic thing done on a schedule
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: samples.substrate.reamde.dev/routines/routine
+data:
+  authority: samples.substrate.reamde.dev
+  package: routines
+  description: >-
+    One recurring obligation: a chore, a habit, hygiene, a practice. It carries
+    its own name so display never needs a hop, an RRULE for when, and a window
+    for how precisely when matters. Each occurrence that actually happened
+    or was skipped is a routinelog.
+  names:
+    singular: routine
+  displayTemplate: "{name}"
+  # `at` seeds the recurrence (its DTSTART) and `endsAt` retires it.
+  traits:
+    - temporal(range)
+    - recurring
+  properties:
+    name:
+      type: string
+      required: true
+      description: the obligation, one line
+    category:
+      type: enum
+      description: what sort of obligation it is
+      values:
+        - chore
+        - exercise
+        - medication
+        - hygiene
+        - habit
+        - other
+    # how literally the RRULE's time of day should be taken: exact renders
+    # at that time, the day parts render inside them, anytime is all-day.
+    window:
+      type: enum
+      description: how literally the rule's time of day is meant
+      values:
+        - value: exact
+          label: At the scheduled time
+        - morning
+        - afternoon
+        - evening
+        - value: anytime
+          label: Any time that day
+    recurrence:
+      type: recurrence
+      description: the RRULE, stored and never expanded
+    exdates:
+      type: datetime
+      repeated: true
+      description: occurrence datetimes the rule skips
+    rdates:
+      type: datetime
+      repeated: true
+      description: extra occurrence datetimes beside the rule (iCalendar's
+        RDATE)
+    timezone:
+      type: timezone
+      description: the IANA zone a time-of-day rule resolves in
+    estimatedDuration:
+      type: duration
+      description: how long an occurrence usually takes, 15m or 1h
+    active:
+      type: bool
+      description: false pauses the routine without deleting its history
+    details:
+      type: markdown
+      embed: true
+      description: what doing it well looks like, as prose
+    # unpinned on purpose: a routine can wrap a medication, a workout
+    # template or a project, and naming each would couple this package to
+    # every other one.
+    subject:
+      type: reference
+      mustExist: true
+      description: the richer record this routine wraps, when there is one

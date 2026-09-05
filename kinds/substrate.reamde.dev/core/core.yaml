@@ -1,0 +1,216 @@
+# The substrate's own machinery as kinds (§9.1, uniformity rule). Shapes are
+# declared here so system kinds list, read, and filter exactly like vocabulary
+# kinds; their BEHAVIOR (repository creation, token minting, bundle
+# installation, merge/split execution) is code, and writes outside that code
+# are rejected.
+#
+# The line between this package and the sample packages: CORE is what
+# exists because the substrate exists — the repository, tokens, the
+# vocabulary's own meta-model, connection plumbing, the envelope a proposed
+# change travels in, AND the runtime the substrate itself maintains: the
+# delivery plumbing (`trigger` + `run`) and the agent loop's data
+# (`llmprovider` + `llmthread` + `llmmessage`). The sample packages (people, messaging,
+# calendar, tasks) are what would exist if you kept your data in a
+# shoebox — they ship as importable bundles under their own
+# samples/<package>/ directories, not here. Nothing else decides the placement.
+#
+# Absorbed here 2026-08-12: the former `automation.substrate.reamde.dev` (subsystem 7 —
+# the bundle tier's delivery plumbing as DATA: a `trigger` binds one source
+# to one callable and owns the cursor, retries, parking and replay; a `run`
+# records one delivery attempt; the cursors and parked failures underneath
+# stay engine tables, never records) and the former `ai.substrate.reamde.dev` (subsystem
+# 8 — the agent runtime's DATA: `llmprovider` is pure configuration naming a
+# wire protocol, an endpoint and a key, with `default` as the well-known row id;
+# conversation state is `llmthread` + `llmmessage`, and there is no agent-run
+# kind because the thread IS the run). Both were core parts of the substrate
+# maintained by it, so they live where the rest of the machinery lives. The
+# `agent` KIND was already core. Neither authority declared an actor, a trait
+# or a property type: `run` rows are written as the system actor, threads and
+# messages under the AGENT's actor (`agent:<authority>:<package>:<name>`), a
+# chat user message under the caller's — every effect a delivery applies
+# carries the CALLABLE's actor.
+#
+# ALPHA at v1: the agent kind, the llmprovider/llmthread/llmmessage vocabulary and the
+# /agents chat+call wire are explicitly ALPHA and UNFROZEN (ruling A12). They
+# may change or be superseded without a v1 wire break the
+# Agents section. recordpatchpolicy's judge half carries the same marker, in
+# its own file.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: substrate.reamde.dev/core
+data:
+  authority: substrate.reamde.dev
+  package: core
+  # a maturity statement, not a routing key: no envelope carries a version.
+  #
+  # version 2: every kind in this package gained a `description` — what the
+  # thing is and what writes it, read above its collection. A declaration
+  # takes this version unless it pins its own, and the bump is what carries
+  # the new text into repositories that already stored the old declarations.
+  #
+  # version 3: THE TYPED CORE. Every declaration kind lost its `definition`
+  # blob and its projected mirrors — the manifest's own keys are properties now
+  # — and `name` left with them, since a declaration's local name is its id's
+  # last segment. The declarations that pin their own version bumped it too;
+  # this carries the rest.
+  # version 4: the grants group under one `permissions:` object, and `emit`
+  # is `writes` inside it. The function and agent kinds pin their own bump;
+  # this one carries the `propose` host function's rewritten grant.
+  # version 6: every declaration's `version` became an incremental integer,
+  # maintained by the engine; the kind, authority, actor and bundle meta-kinds
+  # retype it, and this bump carries them.
+  # version 7: the decision loop's asks — the llminteraction kind and the
+  # `ask` host function (docs/plans/thread-interactions.md phase 2); this
+  # bump is what carries the NEW declarations into repositories already open.
+  # version 8: the policy door — the recordpatchpolicy kind (phase 3); the
+  # bump carries it like version 7 carried the interaction.
+  # version 9: the `graphql` host function's card spells the filter grammar and
+  # the inline-fragment rule. A tool card is what an LLM reads before it writes
+  # a query, so an omission there is a capability the model reports as absent:
+  # one told a user the substrate could not filter by date.
+  # version 10: the change verbs are held apart on the properties that carry
+  # them. `recordpatchpolicy.selector.ops` becomes an enum of put/patch/delete,
+  # so a selector spelled with a trigger's `create` is refused instead of
+  # silently matching nothing, and it, `trigger.source.record.ops` and the
+  # propose card's `op` each say which of the three vocabularies they speak
+  # (docs/changelog.md#change-verbs). The bump carries those three, none of
+  # which pins a version of its own; recordpatchrequest and llmmessage say the
+  # same thing under their own pins.
+  # version 11: the actor kind says what a machine hand is spelled like, and
+  # the spelling changed: an actor carries the full authority
+  # (`bundle:<authority>`, `function:<authority>:<name>`,
+  # `agent:<authority>:<name>`), and `connector:` is retired (record 0025).
+  # Entries already written keep the spelling they recorded. The package
+  # segment joined all three at record 0047; the actor block below spells the
+  # form they carry now.
+  # version 12: the closure's constructor and numeric invariants (issue 51).
+  # The declarations that carry no version of their own take this one:
+  # `credential`, `recoverykey` and `repository` mark their singleton fields
+  # required (`recoverykey.algorithm` stays a required string: its one value
+  # carries hyphens the enum grammar refuses), `recordmerge`
+  # and `recordsplit` require their engine-written ledger and gain a display
+  # template, `bundle` marks its loader-required fields required, `trigger`
+  # requires `callable` and gains a template, and the `query` host card takes
+  # integer counts. The pinned kinds bump their own.
+  # version 14: the settled property renames of issue 51. `trigger` drops the
+  # `source.kind` discriminator (the arm present names the source), which pins
+  # no version of its own and takes this one. The renamed kinds that DO pin
+  # bump their own: agent `agents`->`subagents` and
+  # `subagentOnly`->`hiddenFromChat`, blob `mimeType`->`mediaType`, llmprovider
+  # `name`->`label`, llmmessage `tool`->`name`, and the record-delivery mode
+  # value `trigger`->`record` on llmthread and run.
+  # version 15: a reference is the only link between records. The declarations
+  # that carry no version of their own take this one: `recordmerge` and
+  # `recordsplit` carry their `winner`/`loser`/`merge` as reference properties,
+  # and the host function cards describe the list filter, the put input and
+  # the mutation roots without the retired link verbs. The pinned kinds bump
+  # their own.
+  version: 15
+---
+# The substrate's own actors: the doors a human write comes through, and the
+# engine's own hand. Attribution, not authorization (§3). The machine hands
+# that carry a prefix — `bundle:<authority>:<package>`,
+# `function:<authority>:<package>:<name>` and
+# `agent:<authority>:<package>:<name>` — are minted by the substrate at
+# dispatch from the identity that runs, never declared, and never claimable by
+# a request.
+kind: substrate.reamde.dev/core/actor
+metadata:
+  id: api
+data:
+  authority: substrate.reamde.dev
+  package: core
+  tier: owner
+---
+# the console's writes: the browser app, holding a token like any other client
+kind: substrate.reamde.dev/core/actor
+metadata:
+  id: console
+data:
+  authority: substrate.reamde.dev
+  package: core
+  tier: owner
+---
+# the operator's CLI
+kind: substrate.reamde.dev/core/actor
+metadata:
+  id: substratectl
+data:
+  authority: substrate.reamde.dev
+  package: core
+  tier: owner
+---
+# the engine's own writes: mapping recompute, the declaration mirrors, merge
+# execution, the boot-time vocabulary upgrade, and the auth paths that write
+# the credential and token records. A bare word: the actor domain is closed,
+# so nothing has to be forward-qualified to stay out of the vocabulary's way.
+kind: substrate.reamde.dev/core/actor
+metadata:
+  id: substrate
+data:
+  authority: substrate.reamde.dev
+  package: core
+---
+# when a thing sits on the timeline — an instant, or a span
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/temporal
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: "when a thing sits on the timeline — an instant, or a span"
+  # machinery, not vocabulary: the variants are backed by the physical
+  # `at`/`endsAt`/`dueAt` columns every record row carries, so this lives
+  # with the engine and every vocabulary package binds it cross-package.
+  # The variant LIST: a keyed map of keyed maps is not declarable, so the
+  # variants are a list and each one names itself.
+  oneOf:
+    - name: point
+      properties:
+        at: datetime
+    - name: range
+      properties:
+        at: datetime
+        endsAt: datetime
+---
+# one connected account of a bundle — a host-recognized interface: the
+# console's "account configs" view is a trait query, and the runner's config
+# resolution enumerates a bundle's accounts as a trait-scoped read. The two
+# required properties are the OAuth facility's hands on the account: a
+# secret-typed credential-store REF (never a raw token) and the connection
+# status it last reported.
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/accountconfig
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: "one connected account of a bundle; the host writes its credential
+    ref"
+  # The host-written hands on an account (review-google #2): the account kind
+  # redeclares these with `writer: oauth` so only the OAuth facility may set
+  # them — a stranger cannot assign a credential ref, a status, or a scope set.
+  properties:
+    tokenRef: secret
+    tokenStatus: string
+    grantedScopes: string
+---
+# the OAuth CLIENT credentials, on the kind a bundle's oauth2 clientInput
+# names — the host
+# runs the flow, bundles only declare the client (review-google #1). The
+# PROVIDER ENDPOINTS and the feature→scope mapping are NOT here: they are
+# trusted bundle-manifest metadata (schema.BundleOAuth2), compiled at install
+# and immutable at runtime, so a config-row edit can never redirect a token
+# exchange or a revocation. This config carries only the client id and its
+# secret-typed secret.
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/oauth2
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: "the OAuth client credentials; endpoints are manifest metadata,
+    the host runs the flow"
+  properties:
+    clientId: string
+    clientSecret: secret

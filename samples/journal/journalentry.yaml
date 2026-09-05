@@ -1,0 +1,26 @@
+# one day's reflection
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: samples.substrate.reamde.dev/journal/journalentry
+data:
+  authority: samples.substrate.reamde.dev
+  package: journal
+  description: >-
+    One day's reflection: a heading and the prose. One entry per day is the
+    convention, not a constraint; the timeline anchor is the day written about,
+    which is not always the day of writing.
+  names:
+    singular: journalentry
+  displayTemplate: "{name}"
+  # `at` is the day the entry is about.
+  traits:
+    - temporal(point)
+  properties:
+    name:
+      type: string
+      required: true
+      description: the entry's heading, one line
+    reflection:
+      type: markdown
+      embed: true
+      description: the entry itself, as prose

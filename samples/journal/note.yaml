@@ -1,0 +1,89 @@
+# anything written down that is not a day's reflection
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: samples.substrate.reamde.dev/journal/note
+data:
+  authority: samples.substrate.reamde.dev
+  package: journal
+  description: >-
+    One note. Its audience is the writer's own declaration of who it is for,
+    read before anything acts on it: an instruction is an order to act on
+    and close, standing context is never done, and an idea asks for nothing.
+    Handling stamps its time, so nothing has to remember to.
+  # The declaration inherited the package's version before this pin.
+  # version 2: `handledAt` is a declared property (datetime). The handled
+  # transitions stamped it as an undeclared string before.
+  # version 4: the enum property `kind` is `audience` (#125).
+  # version 5: `subjects` is an unpinned, repeated `type: reference` property
+  # carrying `mustExist: true`.
+  version: 5
+  names:
+    singular: note
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the note's heading, one line
+    # the audience declaration: what a reader, human or agent, is meant to
+    # DO with the note. An instruction is acted on and closed; journal and
+    # self notes are context; agent notes are machine-written receipts.
+    audience:
+      type: enum
+      description: who the note is for and what acting on it means
+      values:
+        - value: self
+          label: Note to self
+        - value: instruction
+          label: Instruction to act on
+        - value: agent
+          label: Written by an agent
+        - value: journal
+          label: Standing journal context
+        - idea
+        - reference
+    # open until someone decides: standing context is never done, and a
+    # handled instruction is spent. Handling stamps handledAt by itself.
+    status:
+      type: state
+      description: "open until triaged; standing is never done; handled is
+        spent"
+      states:
+        - open
+        - standing
+        - handled
+      initial: open
+      transitions:
+        - from: open
+          to: standing
+        - from: standing
+          to: open
+        - from: open
+          to: handled
+          stamps:
+            handledAt: now
+        - from: standing
+          to: handled
+          stamps:
+            handledAt: now
+        - from: handled
+          to: open
+    # Stamped by the handled transitions above. Not managed: an importer
+    # creating a note already handled supplies its own time.
+    handledAt:
+      type: datetime
+      description: when the note was handled, stamped by the transition
+    agentResponse:
+      type: string
+      description: the one-line receipt an agent leaves after acting on it
+    content:
+      type: markdown
+      embed: true
+      description: the note itself, as prose
+    # unpinned on purpose: a note can be about anything, and naming each
+    # possible subject would couple this package to every other one.
+    subjects:
+      type: reference
+      repeated: true
+      mustExist: true
+      description: what the note is about

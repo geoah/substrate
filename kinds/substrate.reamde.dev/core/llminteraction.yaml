@@ -1,0 +1,119 @@
+# an agent asking the user: one batch of questions, answered as a unit. The
+# `ask` built-in lands one with `thread` stamped by the loop; the owner
+# answers (or dismisses) through ONE CAS'd transition, whose `notifies:
+# thread` writes the resolution into the thread and resumes the agent
+# (docs/plans/thread-interactions.md). `questions` and `answers` are two
+# properties on purpose: different writers (the agent, then the user) and
+# different freeze times (creation, then resolution), so the guards stay
+# whole-property checks. There is no forking wizard and no free text in this
+# shape; a wizard is a sequence of interactions, and prose belongs in chat.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/llminteraction
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    One batch of questions an agent asked the user, waiting in the thread
+    it came from: answering (or dismissing) it is one reviewed transition,
+    which reports back into the thread and resumes the agent.
+  # The declaration inherited the package's version before this pin.
+  # version 10: `resolvedAt` is a declared property (datetime, managed). The
+  # answer and dismiss transitions stamped it as an undeclared string before.
+  version: 11
+  names:
+    singular: llminteraction
+  displayTemplate: "{state} #{localName}"
+  indices:
+    - properties:
+        - state
+  properties:
+    # Stamped by the LOOP when the ask built-in lands the record, never by a
+    # generic write: nothing points an interaction at somebody else's thread
+    # from the outside (engine admission holds this).
+    thread:
+      type: reference
+      kind: substrate.reamde.dev/core/llmthread
+      required: true
+      inverse: interactions
+      inverseDescription: the questions this thread's agent asked
+      description: the thread whose ask call created this interaction
+    # The reviewed envelope, immutable after create: what the user read is
+    # what the agent asked. A question with NO authored options is yes/no,
+    # and admission MATERIALIZES the yes/no options into the stored row, so
+    # answer validation and replay never rest on a convention.
+    questions:
+      type: object
+      repeated: true
+      description: the batch, fixed at creation; at most 8 questions
+      fields:
+        id:
+          type: string
+          description: the agent's key for the question, echoed by its answer
+        prompt:
+          type: text
+          description: the question itself, rendered as untrusted content
+        options:
+          type: object
+          repeated: true
+          description: the offered answers; at most 32, values unique
+          fields:
+            value:
+              type: string
+              description: what an answer selects
+            label:
+              type: string
+              description: what the user reads; the value renders otherwise
+            description:
+              type: string
+              description: what picking it means
+        multi:
+          type: bool
+          description: many-of-many; absent means exactly one
+    # Written ONLY by the patch that performs the answering transition, and
+    # frozen with the record afterwards: every question answered exactly
+    # once, every selection a declared option value.
+    answers:
+      type: object
+      repeated: true
+      description: the user's selections, written by the answering transition
+      fields:
+        question:
+          type: string
+          description: the question id this answers
+        selected:
+          type: string
+          repeated: true
+          description: the chosen option values
+    # Stamped by the resolving transitions below; managed because nothing
+    # else writes it: the record is frozen once resolved.
+    resolvedAt:
+      type: datetime
+      managed: true
+      description: when the batch was answered or dismissed, stamped by the
+        transition
+    # Answering and dismissing are the OWNER's transitions (a bundle actor is
+    # refused: asks are always the user's) and require ifVersion at every
+    # tier. `dismissed` is the user declining the whole batch — the agent is
+    # told, not left waiting — and may carry a note annotation like any
+    # decision.
+    state:
+      type: state
+      description: pending until the user answers or dismisses; either way
+        the thread hears it
+      states:
+        - pending
+        - answered
+        - dismissed
+      initial: pending
+      transitions:
+        - from: pending
+          to: answered
+          notifies: thread
+          stamps:
+            resolvedAt: now
+        - from: pending
+          to: dismissed
+          notifies: thread
+          stamps:
+            resolvedAt: now

@@ -1,0 +1,40 @@
+# The Pebble bundle's delivery wiring: ordinary DATA records of core's
+# `trigger` kind (console-editable, changelog-visible, substratectl
+# get/apply/delete like anything else). Two triggers, one chain:
+#
+#   ring app  --POST /webhooks/<authority>/pebble-webhook-->  ingest
+#       recording                       (every capture)
+#       recording + instruction         (X-Pebble-Mode: agent)
+#   instruction(create)  --assistant-->  samples.substrate.reamde.dev/tasks/task
+#
+# The webhook endpoint is OPEN: `webhook: {}` sets no key, and the URL is
+# POST /webhooks/<authority>/pebble-webhook (`substratectl trigger status`
+# prints the path in its WEBHOOK column). To require a credential, set
+# `source.webhook.key` to 16 to 128 characters of [A-Za-z0-9_-]; the server
+# then accepts it as the trailing path segment, as `?key=`, or as
+# `Authorization: Bearer <key>`.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: pebble-webhook
+data:
+  properties:
+    enabled: true
+    source:
+      webhook: {}
+    callable: substrate.reamde.dev/core/function/samples.substrate.reamde.dev/pebble/ingest
+---
+# Each new instruction (agent mode only writes one) goes to the assistant,
+# which turns it into tasks. `create` only: the ingest function upserts at
+# the fire id, so a retried delivery of the same capture is an update and
+# does not run the agent twice.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: pebble-on-instruction
+data:
+  properties:
+    enabled: true
+    source:
+      record:
+        kinds: [samples.substrate.reamde.dev/pebble/instruction]
+        ops: [create]
+    callable: substrate.reamde.dev/core/agent/samples.substrate.reamde.dev/pebble/assistant
