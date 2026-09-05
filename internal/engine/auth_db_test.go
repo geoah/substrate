@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -193,6 +196,83 @@ func TestRegistrationRefusesATakenAuthority(t *testing.T) {
 	}
 	if repos, err := svc.Repositories(ctx); err != nil || len(repos) != 1 {
 		t.Fatalf("the refused registration created %v (err %v)", repos, err)
+	}
+}
+
+// Two registrations for one authority at the same moment: one wins, the other
+// is refused as a taken authority, and the winner is whole. The authority is
+// the scope the seed writes under, so without the registration lock both
+// would seed rows under it and the loser's cleanup would erase the winner's
+// rows, changelog and directory as its own.
+func TestConcurrentRegistrationsForOneAuthorityKeepTheWinner(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, _ := newService(t)
+	const authority = "shared.example.com"
+	names := []string{"ada", "grace"}
+	inputs := make([]substrate.RegisterInput, len(names))
+	for i, name := range names {
+		enrollment, err := svc.BeginRegistration(ctx, name)
+		if err != nil {
+			t.Fatalf("begin registration %s: %v", name, err)
+		}
+		u := &authUser{username: name, seed: enrollment.Secret}
+		inputs[i] = substrate.RegisterInput{
+			Username: name, Password: testPassword,
+			TOTPSecret: enrollment.Secret, TOTPCode: u.code(t), Authority: authority,
+		}
+	}
+	errs := make([]error, len(inputs))
+	var wg sync.WaitGroup
+	for i := range inputs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, errs[i] = svc.Register(ctx, inputs[i])
+		}()
+	}
+	wg.Wait()
+
+	var winner string
+	losers := 0
+	for i, err := range errs {
+		switch {
+		case err == nil:
+			if winner != "" {
+				t.Fatalf("both registrations succeeded for %s", authority)
+			}
+			winner = names[i]
+		case errors.Is(err, substrate.ErrValidation) && strings.Contains(err.Error(), "already owned"):
+			losers++
+		default:
+			t.Fatalf("%s: not the taken-authority refusal: %v", names[i], err)
+		}
+	}
+	if winner == "" || losers != 1 {
+		t.Fatalf("want one winner and one refused registration, got %v", errs)
+	}
+	repos, err := svc.Repositories(ctx)
+	if err != nil || len(repos) != 1 || repos[0].ID != authority || repos[0].Name != winner {
+		t.Fatalf("repositories = %+v (%v), want %s's alone", repos, err, winner)
+	}
+	// The winner's repository opens, describes itself, and its changelog and
+	// directory are intact: the loser erased nothing of the winner's.
+	ds, err := svc.Dataset(ctx, winner)
+	if err != nil {
+		t.Fatalf("the winner's repository does not open: %v", err)
+	}
+	self, err := ds.Get(ctx, "substrate.reamde.dev/core/repository", authority)
+	if err != nil || self.Properties["name"] != winner {
+		t.Fatalf("the winner's self-description: %+v, %v", self, err)
+	}
+	report := mustVerify(t, svc, winner)
+	if !report.OK || report.Head == 0 || report.FileHead != report.Head {
+		t.Fatalf("the winner's changelog does not verify: %+v", report)
+	}
+	dir := filepath.Join(engine.DataRootOf(svc), changelogfile.RepositoriesDir, authority)
+	m, err := changelogfile.ReadManifest(dir)
+	if err != nil || m.Username != winner || m.Authority != authority {
+		t.Fatalf("the winner's manifest: %+v, %v", m, err)
 	}
 }
 

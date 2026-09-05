@@ -948,7 +948,7 @@ func TestW3TriggerVsUpgradeBarrier(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock_shared(hashtext($1)::bigint)`, ds.Repository().ID+"|registrydep"); err != nil {
+	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock_shared(`+engine.AdvisoryKeySQL+`)`, ds.Repository().ID+"|registrydep"); err != nil {
 		t.Fatalf("shared lock: %v", err)
 	}
 

@@ -40,6 +40,11 @@ func mustDecodeTestCredentialKey(key string) []byte {
 // a repository's directory (changelogfile.RepoDir) and damage or copy it.
 func DataRootOf(svc substrate.Service) string { return svc.(*service).dataRoot }
 
+// AdvisoryKeySQL is the engine's advisory-lock key expression (identity.go),
+// for a test that takes one of the engine's locks by hand: a barrier test that
+// composed the key itself would park on a lock nothing else takes.
+const AdvisoryKeySQL = advisoryKeySQL
+
 // BreakChangelogWriter closes a dataset's changelog writer under its mutex, so
 // the next commit's append fails the way a full disk would: the tables take
 // the write, the directory does not, and the dataset latches

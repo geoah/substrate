@@ -218,7 +218,7 @@ func TestEffectListLocksInGlobalOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := barrier.ExecContext(ctx,
-		`SELECT pg_advisory_xact_lock(hashtext($1)::bigint)`, ds.scope.lockKey("record|"+raceWidget+"|"+a.ID)); err != nil {
+		`SELECT pg_advisory_xact_lock(`+advisoryKeySQL+`)`, ds.scope.lockKey("record|"+raceWidget+"|"+a.ID)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -264,7 +264,7 @@ func TestEffectListLocksInGlobalOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := probe.QueryRowContext(ctx,
-		`SELECT pg_try_advisory_xact_lock(hashtext($1)::bigint)`, ds.scope.lockKey("record|"+raceWidget+"|"+z.ID)).Scan(&free); err != nil {
+		`SELECT pg_try_advisory_xact_lock(`+advisoryKeySQL+`)`, ds.scope.lockKey("record|"+raceWidget+"|"+z.ID)).Scan(&free); err != nil {
 		t.Fatal(err)
 	}
 	_ = probe.Rollback()

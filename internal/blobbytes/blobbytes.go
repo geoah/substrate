@@ -125,6 +125,19 @@ type Backend interface {
 	Repository(repository string, db DB) (Store, error)
 }
 
+// LegacyRepositoryLister is implemented by a backend that keys objects by the
+// repository id and so still holds a repository's objects under the random id
+// a binary from before the authority became the id gave it (the s3 backend).
+// The boot check that moves such a repository's directory under its authority
+// asks it whether the old prefix is empty first: a rename on disk moves
+// nothing in a bucket, and a moved repository whose objects stayed under the
+// old id reads every blob as ErrNotStored.
+type LegacyRepositoryLister interface {
+	// ListLegacyRepository lists at most limit objects (limit <= 0 is every
+	// object) still keyed under the pre-authority repository id.
+	ListLegacyRepository(ctx context.Context, id string, limit int) ([]Object, error)
+}
+
 // InTransaction is implemented by a backend whose bytes settle inside the
 // caller's database transaction, which is the postgres backend and only the
 // postgres backend. The engine keeps the one-transaction settle wherever it is

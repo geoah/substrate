@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"os"
@@ -191,14 +192,65 @@ func (s *service) assertAppPoolPrincipal(ctx context.Context) error {
 	return nil
 }
 
+// controlPlane is the maint-pool handle the creation path runs its
+// control-plane statements on: the pool itself, or the one connection the
+// registration lock is held on (lockRegistration), which is what lets a
+// registration finish without a second maint connection.
+type controlPlane interface {
+	dbx
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+}
+
+// registrationLockKeySQL is the advisory-lock key for the authority in $1,
+// composed the way advisoryKeySQL (identity.go) is: the schema joins it, so
+// two substrates sharing a database in separate schemas do not serialize each
+// other's registrations, and `register` names the purpose, so it is not one
+// of the repository's own locks.
+const registrationLockKeySQL = `hashtext(current_schema() || '|register|' || $1)::bigint`
+
+// lockRegistration takes the SESSION-level advisory lock that serializes the
+// registrations for one authority, on a maint connection pinned for the
+// caller's whole creation. Session, not transaction, because the creation
+// spans several transactions in two pools; pinned, because a session lock
+// released from another pooled connection is a silent no-op (the dialect
+// gate's lesson, dialect.go). The returned connection is where the caller
+// runs every control-plane statement, so a registration holds ONE maint
+// connection and no number of them can wait on each other for a second. The
+// unlock runs on a context of its own, since the creation it ends may have
+// failed because the caller's died, and a connection whose unlock failed is
+// discarded rather than returned to the pool still holding the lock.
+func (s *service) lockRegistration(ctx context.Context, authority string) (*sql.Conn, func(), error) {
+	conn, err := s.maint.Conn(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("substrate/engine: registration lock for %s: %w", authority, err)
+	}
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock(`+registrationLockKeySQL+`)`, authority); err != nil {
+		_ = conn.Close()
+		return nil, nil, fmt.Errorf("substrate/engine: registration lock for %s: %w", authority, err)
+	}
+	unlock := func() {
+		unlockCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		if _, err := conn.ExecContext(unlockCtx, `SELECT pg_advisory_unlock(`+registrationLockKeySQL+`)`, authority); err != nil {
+			s.log.Error("substrate: could not release the registration lock; discarding its connection",
+				"authority", authority, "error", err)
+			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		}
+		_ = conn.Close()
+	}
+	return conn, unlock, nil
+}
+
 // insertRepositoryRow writes the control-plane row — THE COMMIT POINT OF A
 // CREATION (engine.go createSeededRepository). Everything the repository
 // contains is already committed when this runs, so the user exists exactly
-// when this row does: the unique index on the username is what a racing
-// registration loses on, and losing it costs the loser nothing but the rows
-// it erases on the way out.
-func (s *service) insertRepositoryRow(ctx context.Context, r *Repository) error {
-	err := s.maint.QueryRowContext(ctx, `
+// when this row does. The registration lock keeps two registrations for one
+// authority apart; the unique index on the username is what a racing
+// registration of one username under two authorities loses on, and losing it
+// costs the loser nothing but the rows under its own authority, which it
+// erases on the way out.
+func (s *service) insertRepositoryRow(ctx context.Context, cp controlPlane, r *Repository) error {
+	err := cp.QueryRowContext(ctx, `
 		INSERT INTO repositories (id, username, authority, dek)
 		VALUES ($1, $2, $3, $4)
 		RETURNING created_at`, r.ID, r.Username, r.Authority, r.DEK).Scan(&r.CreatedAt)
@@ -235,11 +287,37 @@ func repositoryRowTaken(err error, r *Repository) error {
 	return nil
 }
 
+// eraseFailedCreation is the cleanup of a creation that failed, and it erases
+// only what that creation owns. A creation owns its authority's scope once it
+// has written the control-plane row (inserted); before that it owns the scope
+// only while NO row holds the authority, because a row it did not write means
+// another registration holds the authority and every scoped row under it is
+// that repository's. The registration lock (lockRegistration) makes the second
+// case unreachable, and this is the check that holds if it ever is not, since
+// erasing there would delete a live repository's rows, changelog and directory.
+// The lookup runs on a context of its own, like the erase, because the
+// request behind the failure may be gone.
+func (s *service) eraseFailedCreation(ctx context.Context, cp controlPlane, id string, inserted bool) error {
+	if !inserted {
+		lookupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		_, err := s.repositoryByIDOn(lookupCtx, cp, id)
+		if err == nil {
+			return fmt.Errorf("substrate/engine: a `repositories` row for %s exists and this creation did not write it; its rows are left alone", id)
+		}
+		if !errors.Is(err, substrate.ErrNotFound) {
+			return fmt.Errorf("substrate/engine: erase repository %s: look up its row: %w", id, err)
+		}
+	}
+	return s.eraseRepositoryOn(ctx, cp, id)
+}
+
 // eraseRepository erases a repository whole: every repository-scoped row, then
-// the control-plane row if one was ever written. It exists for ONE caller — a
-// creation that failed — because "a failed registration creates nothing" is a
-// promise, and it must keep that promise even when the request that triggered
-// the failure has already gone away.
+// the control-plane row if one was ever written. It exists for ONE caller, a
+// creation that failed (eraseFailedCreation, which decides whether the
+// creation owns what it is about to erase), because "a failed registration
+// creates nothing" is a promise, and it must keep that promise even when the
+// request that triggered the failure has already gone away.
 //
 //   - It runs on a context DECOUPLED from the caller's (context.WithoutCancel
 //     plus a bounded budget): a registration is frequently failing BECAUSE the
@@ -256,6 +334,12 @@ func repositoryRowTaken(err error, r *Repository) error {
 //     would leave a directory with no row, which the next boot IMPORTS as a
 //     repository whose registration was reported failed.
 func (s *service) eraseRepository(ctx context.Context, id string) error {
+	return s.eraseRepositoryOn(ctx, s.maint, id)
+}
+
+// eraseRepositoryOn is eraseRepository on a given control-plane handle: the
+// registration's locked connection, so the cleanup needs no second one.
+func (s *service) eraseRepositoryOn(ctx context.Context, cp controlPlane, id string) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 
@@ -275,7 +359,7 @@ func (s *service) eraseRepository(ctx context.Context, id string) error {
 		return fmt.Errorf("substrate/engine: erase repository %s: remove its directory: %w", id, err)
 	}
 
-	tx, err := s.maint.BeginTx(ctx, nil)
+	tx, err := cp.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: erase repository %s: %w", id, err)
 	}
@@ -291,7 +375,7 @@ func (s *service) eraseRepository(ctx context.Context, id string) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("substrate/engine: erase repository %s: commit: %w", id, err)
 	}
-	if residue, err := s.repositoryResidue(ctx, id); err != nil {
+	if residue, err := repositoryResidue(ctx, cp, id); err != nil {
 		return err
 	} else if residue != "" {
 		return fmt.Errorf("substrate/engine: erase repository %s left rows in %s", id, residue)
@@ -303,10 +387,10 @@ func (s *service) eraseRepository(ctx context.Context, id string) error {
 // the erase was clean. It is the verification eraseRepository owes: a promise
 // that "a failed registration creates nothing" that nobody checks is a promise
 // that quietly breaks.
-func (s *service) repositoryResidue(ctx context.Context, id string) (string, error) {
+func repositoryResidue(ctx context.Context, q dbx, id string) (string, error) {
 	for _, table := range repositoryScopedTables {
 		var n int
-		if err := s.maint.QueryRowContext(ctx,
+		if err := q.QueryRowContext(ctx,
 			`SELECT count(*) FROM `+table+` WHERE repository = $1`, id).Scan(&n); err != nil {
 			return "", err
 		}
@@ -315,7 +399,7 @@ func (s *service) repositoryResidue(ctx context.Context, id string) (string, err
 		}
 	}
 	var n int
-	if err := s.maint.QueryRowContext(ctx,
+	if err := q.QueryRowContext(ctx,
 		`SELECT count(*) FROM repositories WHERE id = $1`, id).Scan(&n); err != nil {
 		return "", err
 	}
@@ -371,12 +455,23 @@ var repositoryScopedTables = []string{
 }
 
 func (s *service) repositoryByUsername(ctx context.Context, username string) (Repository, error) {
-	return s.scanRepository(s.maint.QueryRowContext(ctx,
-		`SELECT id, username, authority, created_at, dek FROM repositories WHERE username = $1`, username), username)
+	return s.repositoryByUsernameOn(ctx, s.maint, username)
 }
 
 func (s *service) repositoryByID(ctx context.Context, id string) (Repository, error) {
-	return s.scanRepository(s.maint.QueryRowContext(ctx,
+	return s.repositoryByIDOn(ctx, s.maint, id)
+}
+
+// repositoryByUsernameOn and repositoryByIDOn are the lookups on a given
+// maint handle, for the creation path, which runs them on the connection the
+// registration lock is held on.
+func (s *service) repositoryByUsernameOn(ctx context.Context, q dbx, username string) (Repository, error) {
+	return s.scanRepository(q.QueryRowContext(ctx,
+		`SELECT id, username, authority, created_at, dek FROM repositories WHERE username = $1`, username), username)
+}
+
+func (s *service) repositoryByIDOn(ctx context.Context, q dbx, id string) (Repository, error) {
+	return s.scanRepository(q.QueryRowContext(ctx,
 		`SELECT id, username, authority, created_at, dek FROM repositories WHERE id = $1`, id), id)
 }
 

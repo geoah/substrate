@@ -741,6 +741,18 @@ func (s *service) CreateRepository(ctx context.Context, name, authority string) 
 // the boot check writes out (case 5) or catches up (case 2). Neither state
 // needs a rule of its own, and a directory can never exist for a repository
 // that does not.
+//
+// ONE REGISTRATION PER AUTHORITY AT A TIME. The authority is the scope the
+// seed writes under, and the lookup below is all that stands between two
+// registrations and one scope: without a lock both pass it, both seed rows
+// under the same authority, one inserts the control-plane row and the
+// other's cleanup erases the winner's rows, changelog and directory as its
+// own. So the authority's registration lock (lockRegistration) is held from
+// before the lookup to the return, on the one maint connection every
+// control-plane statement here runs on, and the second registrant runs its
+// lookup after the first's row exists and is refused before it writes a byte.
+// The cleanup is ownership-checked on top (eraseFailedCreation): a creation
+// that wrote no row erases nothing while a row holds the authority.
 func (s *service) createSeededRepository(ctx context.Context, name, authority string, extra func(*txn) error) (Repository, error) {
 	var zero Repository
 	if !vocabulary.ValidRepositoryName(name) {
@@ -749,17 +761,22 @@ func (s *service) createSeededRepository(ctx context.Context, name, authority st
 	if err := validRepositoryAuthority(authority); err != nil {
 		return zero, err
 	}
+	cp, unlock, err := s.lockRegistration(ctx, authority)
+	if err != nil {
+		return zero, err
+	}
+	defer unlock()
 	// A cheap early no: the unique indexes below are the truth, and they are
 	// what a race actually loses on (insertRepositoryRow names the same
 	// refusals when it does). The authority is checked BEFORE anything is
 	// written under it, because rows land in its scope, and a scope that
 	// already belongs to somebody would be somebody else's data.
-	if _, err := s.repositoryByUsername(ctx, name); err == nil {
+	if _, err := s.repositoryByUsernameOn(ctx, cp, name); err == nil {
 		return zero, errUsernameTaken(name)
 	} else if !errors.Is(err, substrate.ErrNotFound) {
 		return zero, err
 	}
-	if _, err := s.repositoryByID(ctx, authority); err == nil {
+	if _, err := s.repositoryByIDOn(ctx, cp, authority); err == nil {
 		return zero, errAuthorityTaken(authority)
 	} else if !errors.Is(err, substrate.ErrNotFound) {
 		return zero, err
@@ -794,13 +811,15 @@ func (s *service) createSeededRepository(ctx context.Context, name, authority st
 		svc: s, db: db, dek: dek, scope: repo.scope(),
 		reg: s.base.Clone(), watch: newBroadcaster(), info: repo.info(),
 	}
-	fail := func(err error) (Repository, error) {
-		seedDS.close()
-		if cerr := s.eraseRepository(ctx, repo.ID); cerr != nil {
-			s.log.Error("substrate: could not erase a half-made repository; the boot sweep will reclaim it",
-				"repository", repo.ID, "error", cerr)
+	// inserted flips once the control-plane row is this creation's, and
+	// decides what a failure may erase (eraseFailedCreation).
+	inserted := false
+	fail := func(stage string, cause error) (Repository, error) {
+		if cerr := s.eraseFailedCreation(ctx, cp, repo.ID, inserted); cerr != nil {
+			s.log.Error("substrate: could not erase a half-made repository",
+				"repository", repo.ID, "stage", stage, "error", cerr)
 		}
-		return zero, err
+		return zero, cause
 	}
 	// ONE transaction: the seed, the self-description, and the caller's part.
 	// The seed's entries carry `bundle:core` — the shipped tree's own hand —
@@ -827,7 +846,8 @@ func (s *service) createSeededRepository(ctx context.Context, name, authority st
 		}
 		return t.asActor(substrate.ActorSystem, func() error { return extra(t) })
 	}); err != nil {
-		return fail(err)
+		seedDS.close()
+		return fail("seed", err)
 	}
 	seedDS.close()
 
@@ -835,52 +855,53 @@ func (s *service) createSeededRepository(ctx context.Context, name, authority st
 	// has committed, the control-plane row has not.
 	if s.testFailAfterSeed != nil {
 		if err := s.testFailAfterSeed(); err != nil {
-			if cerr := s.eraseRepository(ctx, repo.ID); cerr != nil {
-				s.log.Error("substrate: could not erase after a forced post-seed failure",
-					"repository", repo.ID, "error", cerr)
-			}
-			return zero, err
+			return fail("after the seed", err)
 		}
 	}
 
-	if err := s.insertRepositoryRow(ctx, &repo); err != nil {
-		if cerr := s.eraseRepository(ctx, repo.ID); cerr != nil {
-			s.log.Error("substrate: could not erase after a control-plane insert failure; the boot sweep will reclaim it",
-				"repository", repo.ID, "error", cerr)
-		}
-		return zero, err
+	if err := s.insertRepositoryRow(ctx, cp, &repo); err != nil {
+		return fail("control-plane row", err)
 	}
+	inserted = true
 	// The directory, from the tables the seed just committed. A failure here
 	// is a failed registration like any other: the row is erased with the
 	// rows and the directory, so nothing half-made survives the call.
 	if _, err := s.reconcileRow(ctx, repo, false); err != nil {
-		if cerr := s.eraseRepository(ctx, repo.ID); cerr != nil {
-			s.log.Error("substrate: could not erase after a repository directory write failure",
-				"repository", repo.ID, "error", cerr)
-		}
-		return zero, fmt.Errorf("substrate/engine: write the repository directory of %s: %w", name, err)
+		return fail("directory", fmt.Errorf("substrate/engine: write the repository directory of %s: %w", name, err))
 	}
 	return repo, nil
 }
 
-// validRepositoryAuthority is the door a repository's own authority passes
-// through once, at creation. The grammar is the one every kind carries
-// (vocabulary.ValidRepositoryAuthority), and one namespace is refused on top:
-// `substrate.reamde.dev` and everything under it is where the shipped
-// vocabulary publishes, so a repository claiming a name there would be a
-// user-owned authority that reads as shipped.
-func validRepositoryAuthority(authority string) error {
+// validRepositoryID is the grammar a repository id is held to at BOTH doors,
+// registration (validRepositoryAuthority) and the boot import of a directory
+// (repodir.go): the authority grammar every kind carries
+// (vocabulary.ValidRepositoryAuthority), capped at MaxIDLen. The authority is
+// the repository's id everywhere (decision record 0052), including the id of
+// its self-description record, and a record id is at most MaxIDLen bytes
+// where DNS would admit 253; a directory the import accepted past the cap
+// would be a repository whose self-description no write could address.
+func validRepositoryID(authority string) error {
 	switch {
 	case authority == "":
 		return fmt.Errorf("%w: a repository needs an authority: a hostname you control, such as ada.example.com", substrate.ErrValidation)
 	case !vocabulary.ValidRepositoryAuthority(authority):
 		return fmt.Errorf("%w: authority %q must be a lowercase DNS-style name with at least two labels (ada.example.com)", substrate.ErrValidation, authority)
-	// The authority is the repository's id everywhere (decision record
-	// 0052), including the id of its self-description record, and a record
-	// id is at most MaxIDLen bytes; DNS would admit 253.
 	case len(authority) > vocabulary.MaxIDLen:
 		return fmt.Errorf("%w: authority %q is longer than %d bytes, the most a repository id may be", substrate.ErrValidation, authority, vocabulary.MaxIDLen)
-	case authority == publisherAuthority || strings.HasSuffix(authority, "."+publisherAuthority):
+	}
+	return nil
+}
+
+// validRepositoryAuthority is the door a repository's own authority passes
+// through once, at creation: validRepositoryID, and one namespace refused on
+// top. `substrate.reamde.dev` and everything under it is where the shipped
+// vocabulary publishes, so a repository claiming a name there would be a
+// user-owned authority that reads as shipped.
+func validRepositoryAuthority(authority string) error {
+	if err := validRepositoryID(authority); err != nil {
+		return err
+	}
+	if authority == publisherAuthority || strings.HasSuffix(authority, "."+publisherAuthority) {
 		return fmt.Errorf("%w: authority %q is under %s, where the shipped vocabulary publishes; a repository's authority is its own name", substrate.ErrValidation, authority, publisherAuthority)
 	}
 	return nil

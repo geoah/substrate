@@ -248,17 +248,26 @@ on the box, through the DSN.
   operator reads, rather than a repository half-open beside the others); a
   row with no directory has its directory written out from the tables, once,
   which is how a store from a release before the data root gets one. A
-  directory with no row and no `repository.json` is logged and left alone:
-  nothing says whose it is, so it is neither imported nor deleted.
+  directory under `repositories/` named by an authority (`ada.example.com`)
+  with no row and no `repository.json` is logged and skipped: nothing says
+  whose it is, so it is neither imported nor deleted. Any other entry under
+  `repositories/` (a `tmp`, a `Backup-2026`, an old-id name with no manifest)
+  refuses the boot and names the entry; move it out of the data root.
 - **A `repositories` row whose `id` is not its authority refuses the boot.**
   Before [decision 0052](decisions/0052-the-authority-is-the-repository-id.md)
   the id was a random 12-character string; now it is the authority, and there
   is no migration between the two. The error names the repository and says to
   wipe the database and boot again. The repository directories under the data
-  root are what comes back: a directory still named by an old id is imported,
-  renamed to its authority and its DEK re-wrapped. On the dev substrate that
-  is `mise run dev:wipe` followed by a start with the data root kept (move
-  `.dev/data` aside first, since `dev:wipe` removes it too).
+  root are what comes back: a directory still named by an old id is renamed
+  to its authority, its DEK re-wrapped, imported, and its self-description
+  record (`substrate.reamde.dev/core/repository`) moved from the old id to
+  the authority by two changelog entries the boot appends. Under the `s3`
+  blob store the bucket still keys that repository's objects by the old id,
+  so the boot refuses until you move every object under
+  `<SUBSTRATE_BLOB_S3_PREFIX><old id>/` to
+  `<SUBSTRATE_BLOB_S3_PREFIX><authority>/` and boot again. On the dev
+  substrate that is `mise run dev:wipe` followed by a start with the data
+  root kept (move `.dev/data` aside first, since `dev:wipe` removes it too).
 - **Shipped vocabulary is upgraded, per repository, in one transaction**: the
   first open under a new binary appends the version diff to that repository's
   changelog under the `substrate` actor
