@@ -41,7 +41,7 @@ func (ds *dataset) deliveryEnvelope(ctx context.Context, ch substrate.Change) (m
 			return nil, err
 		}
 	}
-	return runner.Envelope(ch, e, ds.Repository().Name), nil
+	return runner.Envelope(ch, e, ds.Repository().Name, ds.Repository().Authority), nil
 }
 
 // loadRowDB reads one record row by its full (type, id) identity, outside

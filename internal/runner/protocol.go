@@ -190,10 +190,12 @@ func Deterministic(err error) bool {
 
 // Envelope assembles the level-triggered envelope for one delivery: the
 // change (op, changed property names), the record's CURRENT state — nil
-// after a delete — and the repository. Only the record's trimmed shape
+// after a delete — and the repository. The repository carries both names it
+// has: `owner`, the username that logs in, and `authority`, the name it
+// publishes kinds and webhook URLs under. Only the record's trimmed shape
 // crosses: id, kind reference and properties. The `when:` guard
 // binds this map directly; the runner marshals it to the body.
-func Envelope(ch substrate.Change, e *substrate.Record, repositoryOwner string) map[string]any {
+func Envelope(ch substrate.Change, e *substrate.Record, repositoryOwner, repositoryAuthority string) map[string]any {
 	change := map[string]any{
 		"seq":   ch.Seq,
 		"op":    OpOf(ch),
@@ -209,7 +211,7 @@ func Envelope(ch substrate.Change, e *substrate.Record, repositoryOwner string) 
 	envelope := map[string]any{
 		"change":     change,
 		"record":     nil,
-		"repository": map[string]any{"owner": repositoryOwner},
+		"repository": map[string]any{"owner": repositoryOwner, "authority": repositoryAuthority},
 	}
 	if e == nil {
 		return envelope
@@ -236,13 +238,13 @@ func Envelope(ch substrate.Change, e *substrate.Record, repositoryOwner string) 
 //	    - {name: transcription, value: "…"}
 //	    - {name: audio, filename: rec.m4a, mediaType: audio/mp4, size: 4194304,
 //	       blob: blob-sha256-…}             # a file part, stored before the fire
-func FireEnvelope(fireID string, at time.Time, repositoryOwner string) map[string]any {
+func FireEnvelope(fireID string, at time.Time, repositoryOwner, repositoryAuthority string) map[string]any {
 	return map[string]any{
 		"fire": map[string]any{
 			"id": fireID,
 			"at": at.UTC().Format(time.RFC3339),
 		},
-		"repository": map[string]any{"owner": repositoryOwner},
+		"repository": map[string]any{"owner": repositoryOwner, "authority": repositoryAuthority},
 	}
 }
 

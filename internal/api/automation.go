@@ -108,7 +108,7 @@ func (h *handler) postTriggerRun(w http.ResponseWriter, r *http.Request) {
 // postTriggerWake runs a trigger's scan NOW: a webhook trigger delivers one
 // fire, an record trigger drains its backlog, a schedule trigger checks its
 // due occurrence. The body is empty on purpose: a webhook PAYLOAD arrives
-// through the public door, POST /webhooks/{owner}/{trigger} (webhooks.go),
+// through the public door, POST /webhooks/{authority}/{trigger} (webhooks.go),
 // and a wake is the owner asking for a bare fire.
 func (h *handler) postTriggerWake(w http.ResponseWriter, r *http.Request) {
 	ops, ok := automationFrom(r.Context())

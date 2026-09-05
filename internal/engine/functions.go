@@ -646,11 +646,27 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 
 // fireEnvelope is the envelope a fire delivers: the one the caller built
 // (a webhook delivery carrying its request) or, absent that, the bare fire.
-func fireEnvelope(envelope map[string]any, fid string, at time.Time, owner string) map[string]any {
-	if envelope != nil {
-		return envelope
+// A stored envelope restored from trigger_failures.payload was written by
+// whatever binary parked it, so a park from before the repository carried an
+// authority holds `repository: {owner}` alone. The current names fill what it
+// lacks: a body that reads repository.authority must not see an empty string
+// on a retry, and one that indexes it must not fail.
+func fireEnvelope(envelope map[string]any, fid string, at time.Time, owner, authority string) map[string]any {
+	if envelope == nil {
+		return runner.FireEnvelope(fid, at, owner, authority)
 	}
-	return runner.FireEnvelope(fid, at, owner)
+	repo, _ := envelope["repository"].(map[string]any)
+	if repo == nil {
+		repo = map[string]any{}
+		envelope["repository"] = repo
+	}
+	if name, _ := repo["owner"].(string); name == "" {
+		repo["owner"] = owner
+	}
+	if name, _ := repo["authority"].(string); name == "" {
+		repo["authority"] = authority
+	}
+	return envelope
 }
 
 // fireEnvelopePayload is the parked form of a built envelope: its JSON for
@@ -689,7 +705,7 @@ func (ds *dataset) functionFire(ctx context.Context, tr *trigger, mode, fid stri
 	}
 	in := runner.Input{
 		Mode:           mode,
-		Envelope:       fireEnvelope(envelope, fid, at, ds.Repository().Name),
+		Envelope:       fireEnvelope(envelope, fid, at, ds.Repository().Name, ds.Repository().Authority),
 		IdempotencyKey: key,
 		Resume:         resume.cursor,
 	}
@@ -1374,7 +1390,7 @@ func (ds *dataset) TriggerStatuses(ctx context.Context) ([]substrate.TriggerStat
 			}
 		case lt.Webhook:
 			st.Kind = substrate.TriggerKindWebhook
-			st.WebhookPath = webhookPath(ds.Repository().Name, lt.ID)
+			st.WebhookPath = webhookPath(ds.Repository().Authority, lt.ID)
 		}
 		if err := ds.db.QueryRowContext(ctx,
 			`SELECT count(*) FROM trigger_failures WHERE trigger_id = $1`, lt.ID).Scan(&st.Parked); err != nil {
@@ -1605,7 +1621,7 @@ func (ds *dataset) retryFire(ctx context.Context, tr *trigger, fid string, envel
 	}
 	in := runner.Input{
 		Mode:           mode,
-		Envelope:       fireEnvelope(envelope, fid, at, ds.Repository().Name),
+		Envelope:       fireEnvelope(envelope, fid, at, ds.Repository().Name, ds.Repository().Authority),
 		IdempotencyKey: key,
 		Resume:         resume.cursor,
 	}

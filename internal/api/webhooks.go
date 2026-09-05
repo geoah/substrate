@@ -35,7 +35,7 @@ var webhookHeaderDenylist = map[string]bool{
 	"authorization": true, "cookie": true, "proxy-authorization": true,
 }
 
-// postWebhook is POST /webhooks/{owner}/{trigger}[/{key}]: the public door
+// postWebhook is POST /webhooks/{authority}/{trigger}[/{key}]: the public door
 // (decision 0045). No bearer; the path names the repository and the trigger,
 // and the trigger's own key, when it declares one, is the credential, read
 // from the trailing path segment, `?key=` or a bearer header. The request is
@@ -60,7 +60,7 @@ func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, codeBadRequest, err.Error())
 		return
 	}
-	fid, err := rc.ReceiveWebhook(r.Context(), pathParam(r, "owner"), pathParam(r, "trigger"), webhookKey(r), req)
+	fid, err := rc.ReceiveWebhook(r.Context(), pathParam(r, "authority"), pathParam(r, "trigger"), webhookKey(r), req)
 	if err != nil {
 		if errors.Is(err, substrate.ErrNotFound) {
 			writeError(w, http.StatusNotFound, codeNotFound, "no such webhook")

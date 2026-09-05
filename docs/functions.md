@@ -250,13 +250,16 @@ record:
     tokenStatus: connected
 repository:
   owner: geoah
+  authority: geoah.example.com
 ```
 
 `change` says what moved (`op` is `create`, `update` or `delete`, and
 `changed` names the properties when the payload carries them). `record` is the
 row's state **now**, not the old value, and is `null` after a delete, and its
 `properties` carry everything the record points at, each as an object holding
-the referent's path under `ref`. A
+the referent's path under `ref`. `repository` carries both names the
+repository has: `owner`, the username its user logs in with, and `authority`,
+the name it publishes kinds and webhook URLs under. A
 schedule or
 webhook delivery has no changelog entry underneath it, so its envelope carries
 `fire` (the fire's `id` and `at`) and `repository` in place of `change` and
@@ -271,6 +274,7 @@ fire:
   at: 2026-09-02T12:00:00Z
 repository:
   owner: geoah
+  authority: geoah.example.com
 request:
   method: POST
   contentType: multipart/form-data      # the media type, parameters stripped
@@ -646,8 +650,9 @@ data:
 - A **`schedule`** arm fires the callable on an RRULE `recurrence` (with a
   `timezone` and optional `startsAt`), with no changelog entry underneath and no
   guard.
-- A **`webhook`** arm is a public endpoint: `POST /webhooks/{owner}/{trigger}`,
-  where `owner` is the repository's username and `trigger` the record's id,
+- A **`webhook`** arm is a public endpoint: `POST
+  /webhooks/{authority}/{trigger}`, where `authority` is the repository's
+  authority and `trigger` the record's id,
   delivers one fire carrying the request
   ([the delivery envelope](#the-delivery-envelope)), and an authenticated wake
   delivers one bare fire. The arm's one field, `key`, is optional: absent, the
@@ -709,7 +714,7 @@ repository.
 - `POST …/triggers/{id}/wake` scans now: a webhook fires once with no
   `request`, a record trigger drains its backlog, a schedule checks its due
   occurrence.
-- `POST /webhooks/{owner}/{trigger}` is the public door: no bearer, the
+- `POST /webhooks/{authority}/{trigger}` is the public door: no bearer, the
   request in the envelope, `202` with `{"fire": id}` once the delivery is
   handed to the background, and one `404` for every refusal (no such trigger,
   disabled, wrong key). The callable's output is never the response.

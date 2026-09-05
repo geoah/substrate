@@ -37,7 +37,8 @@ writes; install that first if the repository does not carry it.
 
 ## The URL
 
-The endpoint is `POST https://<your substrate host>/webhooks/<username>/pebble-webhook`.
+The endpoint is `POST https://<your substrate host>/webhooks/<authority>/pebble-webhook`,
+where `<authority>` is the repository's authority, chosen at registration.
 `substratectl trigger status` prints the path in its `WEBHOOK` column.
 
 The endpoint is open as shipped. To require a credential, set
@@ -81,7 +82,7 @@ substratectl get task
 
 ```sh
 printf '' > empty.m4a
-curl -s -X POST "https://<your substrate host>/webhooks/<username>/pebble-webhook" \
+curl -s -X POST "https://<your substrate host>/webhooks/<authority>/pebble-webhook" \
   -H "X-Pebble-Mode: agent" \
   -F "transcription=call the dentist tomorrow morning" \
   -F "recordedAt=$(( $(date +%s) * 1000 ))" \

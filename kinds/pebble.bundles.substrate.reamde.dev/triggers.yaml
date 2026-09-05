@@ -2,13 +2,13 @@
 # automation authority (console-editable, changelog-visible, substratectl
 # get/apply/delete like anything else). Two triggers, one chain:
 #
-#   ring app  --POST /webhooks/<owner>/pebble-webhook-->  ingest
+#   ring app  --POST /webhooks/<authority>/pebble-webhook-->  ingest
 #       recording                       (every capture)
 #       recording + instruction         (X-Pebble-Mode: agent)
 #   instruction(create)  --assistant-->  tasks.substrate.reamde.dev/task
 #
 # The webhook endpoint is OPEN: `webhook: {}` sets no key, and the URL is
-# POST /webhooks/<username>/pebble-webhook (`substratectl trigger status`
+# POST /webhooks/<authority>/pebble-webhook (`substratectl trigger status`
 # prints the path in its WEBHOOK column). To require a credential, set
 # `source.webhook.key` to 16 to 128 characters of [A-Za-z0-9_-]; the server
 # then accepts it as the trailing path segment, as `?key=`, or as
