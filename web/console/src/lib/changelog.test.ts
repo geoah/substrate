@@ -308,8 +308,8 @@ describe("the summary voice", () => {
           seq: 1,
           triggers: [
             {
-              trigger: "on-dedupe.substrate.reamde.dev/core",
-              callable: "dedupe.substrate.reamde.dev/core",
+              trigger: "on-dedupe",
+              callable: "acme.example.com/dedupe/dedupe",
               state: "parked",
               error: "409",
             },

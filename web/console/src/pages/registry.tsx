@@ -834,8 +834,7 @@ export function RegistryPage() {
               : facet === "upgrades"
                 ? " (upgrades)"
                 : ""}
-            , from{" "}
-            <span className="data">substrate.reamde.dev/core/catalog</span>
+            , from <span className="data">/api/v1/catalog</span>
           </p>
           <p className="pt-0.5 text-xs text-muted-foreground">
             A new repository ships{" "}

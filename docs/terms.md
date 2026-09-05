@@ -3,7 +3,7 @@
 One word per thing. If a word is not here, it is not a term — and where these
 pages and the code disagree, the code is right.
 
-Dead words, and what replaced them: **entity** → record, **group** → package,
+Dead words, and what replaced them: **entity** → record, **group** → authority,
 **type** → kind, **capability** → trait,
 **schema** → vocabulary, **log** → changelog, **extension** → bundle,
 **relationship** and **edge** → reference, **plural** → the kind's name, which
@@ -18,7 +18,7 @@ nothing, there are none.
 | **record** | One typed thing. Identity is `(kind, id)` within a repository. It is the only thing the substrate stores. |
 | **kind** | What a record is, written `<authority>/<package>/<name>`; every kind carries both. A kind declares the properties its records may carry. |
 | **authority** | The DNS-style label that publishes packages. One path segment: `/api/v1/{authority}/{package}/{kind}`. |
-| **package** | The group a kind lives in, a plain word under one authority: `samples.substrate.reamde.dev/tasks`. It is the unit a declaration is versioned, owned and quarantined in, so two packages under one authority upgrade and fail independently. |
+| **package** | The set of kinds one authority versions, owns and quarantines together, named by a plain word: `samples.substrate.reamde.dev/tasks`. Two packages under one authority upgrade and fail independently. |
 | **property** | A named, typed value on a record, declared by its kind. |
 | **property type** | A named refinement of a base type plus its validations, declared in a package and reusable across its kinds. |
 | **trait** | A contract a kind implements: a set of properties a kind promises to declare, so unrelated kinds can be treated alike. |
@@ -52,7 +52,7 @@ nothing, there are none.
 | ---- | ---------- |
 | **bundle** | The unit of installation: a closure of declarations and behavior, applied and removed as one unit. It owns one package, and its `metadata.id` is that package's identity. |
 | **integration** | A bundle whose job includes an ongoing connection to an outside provider. A catalog facet of a bundle, not a different thing. |
-| **vocabulary bundle** | A bundle that ships only kinds and rules — no functions, no provider. |
+| **vocabulary bundle** | A description, not a catalog tier: a bundle that happens to ship only kinds and rules, with no functions and no provider. Nothing in the code reads it. |
 | **input** | A bundle's named configuration need: it names a kind, and the engine resolves ONE record per input — the bound record, else the record whose id is `default`, else the sole live record, else nothing, surfaced per input on the bundle's status. No cardinality is enforced on the kind. |
 | **bind** | The explicit step of input resolution: a reference on the bundle's own record row, named for the input, pointing it at a chosen record. `POST /substrate.reamde.dev/core/bundle/{id}/bind`; an empty record unbinds. |
 | **account** | One configured connection to a provider: a record of an `accountconfig`-trait kind. The console groups these under **Connections**. |

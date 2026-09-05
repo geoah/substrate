@@ -8,7 +8,7 @@
 import { queryOptions, type QueryClient } from "@tanstack/react-query"
 
 import { catalogQueryOptions, type CatalogItem } from "./catalog"
-import { corePath, request, rootPath, seg } from "./http"
+import { CORE_PACKAGE, corePath, request, rootPath, seg } from "./http"
 import type {
   BundleStatus,
   OperationalList,
@@ -20,13 +20,11 @@ import type {
  * computed status shape (the wire types live in types.ts). */
 export type { BundleStatus, InputStatus, SetupItem } from "./types"
 
-/** The account-config trait, host-recognized — its full identity, so a
- * bundle-local look-alike can never answer for it (api/bundles.go note).
- * NOTE(v1): the trait-reference spelling and the `traits/{trait}/records`
- * read below are unverified against the v1 wire — the standalone connectors
- * plane is gone; anyone building the integrations Accounts surface should
- * confirm both against the server before relying on them. */
-export const ACCOUNT_CONFIG_TRAIT = "accountconfig.substrate.reamde.dev/core"
+/** The account-config trait, host-recognized, by its full identity, so a
+ * package-local look-alike can never answer for it (api/bundles.go note). It
+ * is a kind reference like any other: the core package, then the trait's own
+ * name. */
+export const ACCOUNT_CONFIG_TRAIT = `${CORE_PACKAGE}/accountconfig`
 
 const BUNDLES = corePath("bundle")
 

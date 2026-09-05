@@ -849,6 +849,10 @@ function AccountRow({
   useEffect(() => {
     if (!awaitingReturn) return
     function onMessage(event: MessageEvent) {
+      // ORIGIN FIRST, before the payload is read at all: the callback page that
+      // posts this is served by the substrate that serves this console, so its
+      // origin is ours and anything else is a stranger's window talking.
+      if (event.origin !== window.location.origin) return
       const msg = parseSubstrateOAuthMessage(event.data)
       if (!msg) return
       if (msg.ok) {

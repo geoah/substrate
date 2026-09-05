@@ -454,6 +454,27 @@ func (ds *dataset) warnDiscardedOutput(t *trigger, fn *vocabulary.Function) {
 		"repository", logSafeID(ds.Repository().Name), "trigger", logSafeID(t.ID), "function", logSafeID(fn.Identity()))
 }
 
+// logSafeText is logSafeID for PROSE: an admission error or a quarantine
+// reason carries text a declaration supplied, so a control character in it
+// would end the log line and start a second one. The text is repaired rather
+// than discarded, because it is the whole diagnostic an operator has, and
+// capped, so one stored value cannot flood the log.
+func logSafeText(s string) string {
+	const maxLen = 2000
+	var b strings.Builder
+	for _, r := range s {
+		if b.Len() >= maxLen {
+			break
+		}
+		if r < 0x20 || r == 0x7f {
+			b.WriteRune(' ')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
 // logSafeID admits a value into a log line only when the id grammar does: a
 // record id, a kind reference and a repository name are all built from the
 // same charset, which admits no control character. Anything else logs as a

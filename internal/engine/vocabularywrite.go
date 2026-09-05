@@ -1523,8 +1523,11 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 		return err
 	}
 	for _, q := range quarantined {
+		// Every value here came off a stored row, so each one passes the log
+		// filters first: the two ids by the id grammar, the reason as repaired
+		// prose (triggers.go). A crafted declaration cannot forge a log line.
 		ds.svc.log.Error("substrate: quarantining a stored closure that no longer loads under this binary — the repository opens WITHOUT it; re-install the bundle to clear",
-			"repository", ds.info.Name, "authority", q.name, "reason", q.reason)
+			"repository", logSafeID(ds.info.Name), "package", logSafeID(q.name), "reason", logSafeText(q.reason))
 		if err := ds.markGroupQuarantined(ctx, q.name, q.reason); err != nil {
 			return err
 		}

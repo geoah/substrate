@@ -49,14 +49,40 @@ func main() {
 	// key and the database URL are. The window cannot be closed entirely,
 	// there is always some: only made as small as a Go program can make it.
 	if err := hideProcess(); err != nil {
-		slog.Error("fatal", "error", err)
+		slog.Error("fatal", "error", logSafeError(err))
 		os.Exit(1)
 	}
 
 	if err := run(); err != nil {
-		slog.Error("fatal", "error", err)
+		slog.Error("fatal", "error", logSafeError(err))
 		os.Exit(1)
 	}
+}
+
+// logSafeError renders a fatal error into a log line without letting the value
+// that caused it forge one. Everything this binary fails on carries something
+// somebody typed (a DSN, an invite code, a repository name read back from the
+// store), and a control character in any of them would end the line and start a
+// second, so they are stripped and the text is capped. It is the engine's
+// logSafeID rule (internal/engine/triggers.go) applied to prose: an error is
+// not an id, so the text is kept and repaired rather than discarded.
+func logSafeError(err error) string {
+	if err == nil {
+		return ""
+	}
+	const maxLen = 2000
+	var b strings.Builder
+	for _, r := range err.Error() {
+		if b.Len() >= maxLen {
+			break
+		}
+		if r < 0x20 || r == 0x7f {
+			b.WriteRune(' ')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func run() error {

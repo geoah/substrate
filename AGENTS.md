@@ -155,7 +155,7 @@ bin/substratectl --dsn "$DATABASE_URL" user reset <username>   # needs SUBSTRATE
 
 **Registration seeds the `core` package and nothing else.** `tasks` above is a
 sample package the repository installs, so a walkthrough that reaches for any
-non-core collection installs one first — `apply -f` of the closure's files, the
+non-core collection installs one first: `apply -f` of the closure's files, the
 console's Registry page, or `POST /api/v1/catalog/{id}/install` (the id is the
 package, so its slash is percent-encoded:
 `samples.substrate.reamde.dev%2Ftasks`), which are three doors to the same
@@ -197,7 +197,7 @@ words, and what each one replaced:
 | ------------- | --------------------------------------------------------- | ------------ |
 | **record**    | the thing stored; `record_kind`/`record_id` in every table | entity       |
 | **kind**      | what a record is; `{authority}/{package}/{name}`           | type, schema |
-| **package**   | the group a kind lives in; the version, ownership and quarantine unit | namespace, module |
+| **package**   | the kinds one authority versions, owns and quarantines together | namespace, module |
 | **authority** | who publishes a package; one DNS-style name                | group        |
 | **trait**     | a contract a kind implements                               | capability   |
 | **vocabulary**| kinds, traits and property types together; `/vocabulary/apply` | schema   |
@@ -219,7 +219,7 @@ one. Anywhere else, each of them is a bug.
 A kind reference is `{authority}/{package}/{name}`
 ([0047](docs/decisions/0047-a-kind-lives-in-a-package.md)): the authority is a
 dot-separated DNS-style name, the package and the name are single lowercase
-words, so the reference splits on its two slashes without a registry — the
+words, so the reference splits on its two slashes without a registry: the
 authority is the one segment carrying a dot. A stored reference value is that
 plus the id, and a REST path is the reference under `/api/v1/`: three segments
 address a collection, four a record.
@@ -235,15 +235,18 @@ anyone can publish kinds from a git repo without owning DNS) is real design
 work and it has not happened. Do not half-do it. Its character budget is
 reserved
 ([0014](docs/decisions/0014-authorities-widen-only-outside-the-id-alphabet.md)):
-the record id alphabet is frozen and never gains `%`, an authority widens only
-with characters the id alphabet excludes and never gains a raw `/`. 0047
-supersedes that record's "`/` never gains a third job" clause and discharges
-its last first-label keying: the actors are
-`bundle:<authority>:<package>`, `function:<authority>:<package>:<name>` and
+the record id alphabet is frozen and never gains `%`, and an authority widens
+only with characters the id alphabet excludes and never gains a raw `/`. 0047
+amends that record's third-job sentence, because the package segment is a third
+job for `/`; the rest of it stands, first-label reservation included. The
+actors are `bundle:<authority>:<package>`,
+`function:<authority>:<package>:<name>` and
 `agent:<authority>:<package>:<name>`, derived by the engine and never declared
-([0025](docs/decisions/0025-an-actor-carries-the-full-authority.md)), and an
-installed kind's GraphQL name is `<Package>_<Kind>`, taking its authority's
-first label only when two authorities publish a package of one name.
+([0025](docs/decisions/0025-an-actor-carries-the-full-authority.md)). An
+installed kind's GraphQL name is `<Package>_<Kind>`, and the authority's first
+label joins it only to break a tie between two authorities publishing a package
+of one name. That tie-break is the last first-label keying, and it still owes
+0014 the move to the full authority before authorities widen.
 
 ## House rules
 
@@ -259,7 +262,7 @@ first label only when two authorities publish a package of one name.
   `cmd/`), and the two exceptions are the vocabulary as files: `kinds/` (the
   seeded `core` package and the shipped providers) and `samples/` (the sample
   packages a repository copies), each with the one Go file that embeds it. No
-  package is named for a language construct — no `types.go`, no `iface.go`, no
+  package is named for a language construct: no `types.go`, no `iface.go`, no
   `utils`. An interface lives with the subject it describes.
 - **The changelog is the truth.** `internal/engine/fold.go` is the one path from changelog to
   `records`, so a live write and `RebuildRepository` cannot drift. Anything

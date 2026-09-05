@@ -10,7 +10,7 @@ contract: the code that landed is the contract.
 
 A kind reference is `{authority}/{name}`, and the only way to group kinds is
 to give each group its own authority. The shipped vocabulary does exactly that
-with 25 subdomains of one placeholder (`tasks.substrate.reamde.dev`,
+with 24 directories under one placeholder (`tasks.substrate.reamde.dev`,
 `google.bundles.substrate.reamde.dev`), so grouping, ownership, versioning and
 the DNS name are one knob. A repository that owns one authority
 ([0046](../decisions/0046-a-repository-owns-one-authority-chosen-at-registration.md))
@@ -49,7 +49,10 @@ data:
   rest of 0014 (no raw `/` in an authority, `%` never in an id).
 - A REST path routes by segment count, shifted by one: three segments
   (`/api/v1/{authority}/{package}/{kind}`) is a collection, four is a record.
-  The core verbs move with core: `/api/v1/substrate.reamde.dev/core/catalog`.
+  The core RECORD paths move with core: a trigger sits at
+  `/api/v1/substrate.reamde.dev/core/trigger/{id}`. The repository-wide
+  endpoints stay at the version root, where 0033 put them: `/api/v1/catalog`,
+  `/api/v1/vocabulary/apply`, `/api/v1/changes`.
 - A bare name in a declaration still resolves against the declaring package
   (`kind: account` inside `providers.substrate.reamde.dev/google` means
   `providers.substrate.reamde.dev/google/account`); the shorthand of 0042
