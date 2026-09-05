@@ -7,7 +7,7 @@ import (
 )
 
 func (a *app) deleteCommand() *cobra.Command {
-	var authority string
+	var pkg string
 	cmd := &cobra.Command{
 		Use:   "delete <plural> <id>",
 		Short: "Soft-delete a record",
@@ -16,7 +16,7 @@ tombstoned and hard deletion waits for its finalizers to be released.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			col, err := a.resolveCollection(ctx, args[0], authority)
+			col, err := a.resolveCollection(ctx, args[0], pkg)
 			if err != nil {
 				return err
 			}
@@ -24,7 +24,7 @@ tombstoned and hard deletion waits for its finalizers to be released.`,
 			if err != nil {
 				return err
 			}
-			e, err := cl.delete(ctx, col.Authority, col.Name, args[1])
+			e, err := cl.delete(ctx, col.pkg(), col.Name, args[1])
 			if err != nil {
 				return err
 			}
@@ -39,6 +39,6 @@ tombstoned and hard deletion waits for its finalizers to be released.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&authority, "authority", "g", "", "kind authority for a bare plural")
+	cmd.Flags().StringVar(&pkg, "package", "", "the package (<authority>/<package>) a bare kind name resolves in")
 	return cmd
 }

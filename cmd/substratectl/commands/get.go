@@ -16,29 +16,30 @@ import (
 
 func (a *app) getCommand() *cobra.Command {
 	var (
-		authority string
-		output    string
-		filter    string
-		selector  []string
-		watch     bool
-		limit     int
-		orderBy   string
-		after     string
+		pkg      string
+		output   string
+		filter   string
+		selector []string
+		watch    bool
+		limit    int
+		orderBy  string
+		after    string
 	)
 	cmd := &cobra.Command{
 		Use:   "get <plural> [id]",
 		Short: "List or read records",
 		Long: `Read records from a collection.
 
-The plural may be qualified ("people.substrate.reamde.dev/people") — which is resolved
-without a round trip — or bare ("people"), which is resolved against the kind
-registry and errors when several authorities declare it. The shipped vocabulary is
-split across several authorities (people, messaging, calendar, tasks), so a
-bare plural is only unambiguous while one authority declares it: "tasks" is
-tasks' alone and resolves, but every bundle installs a
-"config", so "configs" always needs qualifying (or -g to name the authority).
+The kind may be qualified ("samples.substrate.reamde.dev/people/person") — which
+is resolved without a round trip — or bare ("person"), which is resolved against
+the kind registry and errors when several packages declare it. The shipped
+vocabulary is split across several packages (people, messaging, calendar,
+tasks), so a bare name is only unambiguous while one package declares it:
+"task" is tasks' alone and resolves, but every provider installs a "config", so
+"config" always needs qualifying (or --package to name the package it lives
+in).
 
--o yaml writes each record as a manifest — authority, kind, metadata, data and the
+-o yaml writes each record as a manifest — kind, metadata, data and the
 server-set status — ---separated, and -o json writes the same shape. status is
 ignored on input, so the output applies back unchanged.
 
@@ -49,7 +50,7 @@ states.`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			col, err := a.resolveCollection(ctx, args[0], authority)
+			col, err := a.resolveCollection(ctx, args[0], pkg)
 			if err != nil {
 				return err
 			}
@@ -66,14 +67,14 @@ states.`,
 			}
 			if watch {
 				q.Set("watch", "1")
-				resp, err := cl.send(ctx, http.MethodGet, collectionPath(col.Authority, col.Name), q, nil)
+				resp, err := cl.send(ctx, http.MethodGet, collectionPath(col.pkg(), col.Name), q, nil)
 				if err != nil {
 					return err
 				}
 				defer resp.Body.Close()
 				return streamChanges(a.out, resp.Body)
 			}
-			page, err := cl.list(ctx, col.Authority, col.Name, q)
+			page, err := cl.list(ctx, col.pkg(), col.Name, q)
 			if err != nil {
 				return err
 			}
@@ -81,7 +82,7 @@ states.`,
 		},
 	}
 	f := cmd.Flags()
-	f.StringVarP(&authority, "authority", "g", "", "kind authority for a bare plural")
+	f.StringVar(&pkg, "package", "", "the package (<authority>/<package>) a bare kind name resolves in")
 	f.StringVarP(&output, "output", "o", "", "output format: table|wide|yaml|json (default table for lists, yaml for a single record)")
 	f.StringVar(&filter, "filter", "", `filter as JSON (substrate.Filter), e.g. '{"properties":{"prominence":{"eq":"known"}}}'`)
 	f.StringArrayVarP(&selector, "selector", "l", nil, "label selector, key=value (repeatable); bare key means present")
@@ -93,7 +94,7 @@ states.`,
 }
 
 func (a *app) getOne(ctx context.Context, cl *client, col collection, id, output string) error {
-	e, meta, err := cl.get(ctx, col.Authority, col.Name, id)
+	e, meta, err := cl.get(ctx, col.pkg(), col.Name, id)
 	if err != nil {
 		return err
 	}

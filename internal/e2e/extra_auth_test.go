@@ -24,11 +24,11 @@ import (
 // xaCoreKindPrefix is what every kind a FRESH repository is seeded with
 // starts with: registration installs core and nothing else, which is what
 // makes "core only" an assertable statement about a second user's changelog.
-const xaCoreKindPrefix = "core.substrate.reamde.dev/"
+const xaCoreKindPrefix = "substrate.reamde.dev/core/"
 
 // xaTokenRecord is the token kind's record route: tokens are records, so the
 // ordinary record surface revokes one exactly as `DELETE /tokens/{id}` does.
-const xaTokenRecord = "/api/v1/core.substrate.reamde.dev/token"
+const xaTokenRecord = "/api/v1/substrate.reamde.dev/core/token"
 
 // xaSecond is the throwaway second user ISO-01 registers and ISO-02 reads
 // again. Registration is one-shot per user and rate-limited, so the pair
@@ -61,7 +61,7 @@ func init() {
 			"401 after it, without anything revoking it.",
 		xaCaseTokenExpiry)
 	registerCase(150, "TOK-03", "Tokens are records, and deleting the record revokes",
-		"`DELETE /api/v1/core.substrate.reamde.dev/token/{id}` tombstones the token record and the secret "+
+		"`DELETE /api/v1/substrate.reamde.dev/core/token/{id}` tombstones the token record and the secret "+
 			"stops authenticating, the same revocation `DELETE /tokens/{id}` performs.",
 		xaCaseTokenRecordRevoke)
 	registerCase(160, "TOK-04", "The bearer and the actor header are both checked",
@@ -464,7 +464,7 @@ func xaCaseBearerAndActor(c *C) {
 
 	// The substrate's own writing hands: a request that could claim one could
 	// forge a credential ref or a shipped declaration.
-	for _, actor := range []string{"substrate", "bundle:tasks.substrate.reamde.dev"} {
+	for _, actor := range []string{"substrate", "bundle:samples.substrate.reamde.dev:tasks"} {
 		status, _, raw = xaSend(c, c.r.token, http.MethodGet, "/tokens", nil,
 			map[string]string{"X-Substrate-Actor": actor})
 		c.requiref(status == http.StatusForbidden,
@@ -474,7 +474,7 @@ func xaCaseBearerAndActor(c *C) {
 		c.requiref(strings.Contains(e.Error.Message, "is reserved"),
 			"the refusal of %q does not say the actor is reserved: %q", actor, e.Error.Message)
 	}
-	c.stepf("`X-Substrate-Actor: console` is accepted; `substrate` and `bundle:tasks.substrate.reamde.dev` are 403 `forbidden`, reserved for the substrate's own hands")
+	c.stepf("`X-Substrate-Actor: console` is accepted; `substrate` and `bundle:samples.substrate.reamde.dev:tasks` are 403 `forbidden`, reserved for the substrate's own hands")
 }
 
 // --- RL-01 -----------------------------------------------------------------

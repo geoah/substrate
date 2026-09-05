@@ -365,7 +365,7 @@ func newFakeDataset(name string) *fakeDataset {
 func testTypes() []substrate.KindInfo {
 	return []substrate.KindInfo{
 		{
-			Identity: "people.substrate.reamde.dev/person", Name: "person", Authority: "people.substrate.reamde.dev",
+			Identity: "samples.substrate.reamde.dev/people/person", Name: "person", Authority: "samples.substrate.reamde.dev/people",
 			Version: 1, Plural: "people", Source: "builtin",
 			Definition: map[string]any{
 				"plural": "people",
@@ -380,7 +380,7 @@ func testTypes() []substrate.KindInfo {
 			},
 		},
 		{
-			Identity: "tasks.substrate.reamde.dev/task", Name: "task", Authority: "tasks.substrate.reamde.dev",
+			Identity: "samples.substrate.reamde.dev/tasks/task", Name: "task", Authority: "samples.substrate.reamde.dev/tasks",
 			Version: 1, Plural: "tasks", Source: "builtin",
 			Definition: map[string]any{
 				"plural": "tasks",
@@ -398,8 +398,8 @@ func testTypes() []substrate.KindInfo {
 			},
 		},
 		{
-			Identity: "messaging.substrate.reamde.dev/conversationmessage", Name: "conversationmessage",
-			Authority: "messaging.substrate.reamde.dev",
+			Identity: "samples.substrate.reamde.dev/messaging/conversationmessage", Name: "conversationmessage",
+			Authority: "samples.substrate.reamde.dev/messaging",
 			Version:   1, Plural: "conversationmessages", Source: "builtin",
 			Definition: map[string]any{
 				"plural": "conversationmessages",
@@ -411,7 +411,7 @@ func testTypes() []substrate.KindInfo {
 					// generated object type, `{ref, since, target}`.
 					"author": map[string]any{
 						"type":      "reference",
-						"kind":      "people.substrate.reamde.dev/person",
+						"kind":      "samples.substrate.reamde.dev/people/person",
 						"mustExist": true,
 						"properties": map[string]any{
 							"since": map[string]any{"type": "int"},
@@ -421,7 +421,7 @@ func testTypes() []substrate.KindInfo {
 			},
 		},
 		{
-			Identity: "library.substrate.reamde.dev/book", Name: "book",
+			Identity: "library.substrate.reamde.dev/library/book", Name: "book",
 			Authority: "library.substrate.reamde.dev",
 			Version:   1, Plural: "books", Source: "builtin",
 			Definition: map[string]any{
@@ -433,7 +433,7 @@ func testTypes() []substrate.KindInfo {
 			},
 		},
 		{
-			Identity: "core.substrate.reamde.dev/repository", Name: "repository", Authority: coreAuthority,
+			Identity: "substrate.reamde.dev/core/repository", Name: "repository", Authority: coreAuthority,
 			Version: 1, Plural: "repositories", Source: "builtin",
 			Definition: map[string]any{
 				"plural":     "repositories",
@@ -441,7 +441,7 @@ func testTypes() []substrate.KindInfo {
 			},
 		},
 		{
-			Identity: "core.substrate.reamde.dev/connector", Name: "connector", Authority: coreAuthority,
+			Identity: "substrate.reamde.dev/core/connector", Name: "connector", Authority: coreAuthority,
 			Version: 1, Plural: "connectors", Source: "builtin",
 			Definition: map[string]any{
 				"plural":     "connectors",
@@ -449,7 +449,7 @@ func testTypes() []substrate.KindInfo {
 			},
 		},
 		{
-			Identity: "core.substrate.reamde.dev/token", Name: "token", Authority: coreAuthority,
+			Identity: "substrate.reamde.dev/core/token", Name: "token", Authority: coreAuthority,
 			Version: 1, Plural: "tokens", Source: "builtin",
 			Definition: map[string]any{
 				"plural":     "tokens",

@@ -42,10 +42,10 @@ func TestTokenListAndRevoke(t *testing.T) {
 	// Revoking IS deleting the record — the same write the generic record
 	// surface performs.
 	ds := env.svc.datasets["geoah"]
-	ds.records["tok1"] = &substrate.Record{ID: "tok1", Kind: "core.substrate.reamde.dev/token"}
+	ds.records["tok1"] = &substrate.Record{ID: "tok1", Kind: "substrate.reamde.dev/core/token"}
 	rec = env.do(t, http.MethodDelete, tokensPath+"/tok1", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
-	if ds.lastDeleteType != "core.substrate.reamde.dev/token" || ds.lastDeleteID != "tok1" {
+	if ds.lastDeleteType != "substrate.reamde.dev/core/token" || ds.lastDeleteID != "tok1" {
 		t.Fatalf("revoke deleted %q/%q", ds.lastDeleteType, ds.lastDeleteID)
 	}
 }
@@ -57,7 +57,7 @@ func TestTokenListAndRevoke(t *testing.T) {
 func TestRepositoryCollectionHasNoInstallVerb(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
-	rec := env.do(t, http.MethodPost, "/api/v1/core.substrate.reamde.dev/repositories/geoah/rotateotp", tok, map[string]any{})
+	rec := env.do(t, http.MethodPost, "/api/v1/substrate.reamde.dev/core/repositories/geoah/rotateotp", tok, map[string]any{})
 	wantStatus(t, rec, http.StatusNotFound)
 }
 
@@ -66,15 +66,15 @@ func TestMergeSplit(t *testing.T) {
 	tok := env.svc.token("geoah")
 
 	rec := env.do(t, http.MethodPost, "/api/v1/merge", tok,
-		map[string]any{"kind": "people.substrate.reamde.dev/person", "winner": "a1", "loser": "b2"})
+		map[string]any{"kind": "samples.substrate.reamde.dev/people/person", "winner": "a1", "loser": "b2"})
 	wantStatus(t, rec, http.StatusCreated)
 	merged := decodeJSON[substrate.Record](t, rec)
 	// The merge record names both sides with reference properties, each served
 	// as the object holding the full record path under `ref` (0044).
 	winner, _ := merged.Properties["winner"].(map[string]any)
 	loser, _ := merged.Properties["loser"].(map[string]any)
-	if winner["ref"] != "people.substrate.reamde.dev/person/a1" ||
-		loser["ref"] != "people.substrate.reamde.dev/person/b2" {
+	if winner["ref"] != "samples.substrate.reamde.dev/people/person/a1" ||
+		loser["ref"] != "samples.substrate.reamde.dev/people/person/b2" {
 		t.Fatalf("merge record properties = %v", merged.Properties)
 	}
 
@@ -82,8 +82,8 @@ func TestMergeSplit(t *testing.T) {
 	wantStatus(t, rec, http.StatusCreated)
 
 	// There is no identify: nothing matches records by value.
-	rec = env.do(t, http.MethodPost, "/api/v1/core.substrate.reamde.dev/identifications", tok, map[string]any{
-		"kind": "people.substrate.reamde.dev/person",
+	rec = env.do(t, http.MethodPost, "/api/v1/substrate.reamde.dev/core/identifications", tok, map[string]any{
+		"kind": "samples.substrate.reamde.dev/people/person",
 	})
 	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
 }

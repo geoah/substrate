@@ -40,6 +40,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/kinds"
+	"github.com/geoah/substrate/samples"
 )
 
 // InviteCode is the one door into the substrate a test starts. It is a
@@ -119,7 +120,7 @@ func Start(t *testing.T, opts ...Option) *Env {
 	}
 	t.Cleanup(func() { _ = svc.Close() })
 
-	cat, err := catalog.Load(kinds.Bundles())
+	cat, err := catalog.Load(kinds.Bundles(), samples.Samples())
 	if err != nil {
 		t.Fatalf("testenv: load catalog: %v", err)
 	}
@@ -264,7 +265,7 @@ func (e *Env) ApplyVocabularyYAML(docs ...string) {
 func (e *Env) CallFunction(ref string, input any) (any, error) {
 	e.t.Helper()
 	status, raw := e.Do(http.MethodPost,
-		"/api/v1/core.substrate.reamde.dev/function/"+ref+"/call",
+		"/api/v1/substrate.reamde.dev/core/function/"+ref+"/call",
 		map[string]any{"input": input})
 	if status < 200 || status >= 300 {
 		return nil, fmt.Errorf("call %s: %d %s", ref, status, strings.TrimSpace(string(raw)))

@@ -15,7 +15,7 @@ import (
 
 // document is one manifest in the pinned envelope
 // : kind, metadata, data,
-// status. `kind` is the kind REFERENCE — "tasks.substrate.reamde.dev/task", or a bare
+// status. `kind` is the kind REFERENCE — "samples.substrate.reamde.dev/tasks/task", or a bare
 // "task" for a repository-local kind. `status` holds server-set data on output
 // and is ignored on input, which keeps `get -o yaml` output directly
 // apply-able.
@@ -166,8 +166,8 @@ func documentOf(e *substrate.Record, meta map[string]statusProperty) any {
 // to /vocabulary/apply, so the reader and the writer agree on what a
 // declaration is by construction.
 func declarationKindOf(kind string) (string, bool) {
-	authority, name := vocabulary.SplitKindRef(kind)
-	if authority != vocabulary.AuthorityCore || !vocabulary.VocabularyDocumentKind(name) {
+	name := vocabulary.KindName(kind)
+	if vocabulary.KindPackage(kind) != vocabulary.PackageCore || !vocabulary.VocabularyDocumentKind(name) {
 		return "", false
 	}
 	return name, true
@@ -393,7 +393,7 @@ func renamedKeyError(where string, node *yaml.Node, p *envelopeProbe) error {
 	}
 	if hasKey(node, "group") || hasKey(node, "type") {
 		return fmt.Errorf("%s writes `group`/`type`, which are one key now: `kind`, the kind reference\n"+
-			"(`kind: tasks.substrate.reamde.dev/task`, or a bare `kind: task` for a repository-local kind)", where)
+			"(`kind: samples.substrate.reamde.dev/tasks/task`, or a bare `kind: task` for a repository-local kind)", where)
 	}
 	if hasKey(node, "spec") {
 		return fmt.Errorf("%s writes `spec`, which is `data` — and everything authored is a property,\n"+

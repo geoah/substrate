@@ -31,10 +31,17 @@ import (
 	"github.com/geoah/substrate/internal/testenv"
 )
 
-const conformanceAuthority = "conformance.example.substrate.reamde.dev"
+const (
+	conformanceAuthority = "conformance.example.substrate.reamde.dev"
+	conformancePackage   = "conformance"
+	// conformanceRef is the package identity the declarations live in, which
+	// is also the first two segments of every kind reference and every route.
+	conformanceRef = conformanceAuthority + "/" + conformancePackage
+)
 
-// notesPath is the collection every record case writes to.
-const notesPath = "/api/v1/" + conformanceAuthority + "/note"
+// notesPath is the collection every record case writes to. A collection is
+// three segments now: authority, package, kind.
+const notesPath = "/api/v1/" + conformanceRef + "/note"
 
 // conformanceVocabulary declares the kind the record cases use and the
 // function the fault case calls. Each note property is load-bearing: `subject`
@@ -45,17 +52,20 @@ const notesPath = "/api/v1/" + conformanceAuthority + "/note"
 // call to it is the 500 function_failed case: the runner reaches the body and
 // it faults, which is ErrFunctionFault, not caller input the schema refuses.
 const conformanceVocabulary = `
-kind: core.substrate.reamde.dev/authority
+kind: substrate.reamde.dev/core/package
 metadata:
-  id: ` + conformanceAuthority + `
-data:
-  version: 1
----
-kind: core.substrate.reamde.dev/kind
-metadata:
-  id: ` + conformanceAuthority + `/note
+  id: ` + conformanceRef + `
 data:
   authority: ` + conformanceAuthority + `
+  package: ` + conformancePackage + `
+  version: 1
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: ` + conformanceRef + `/note
+data:
+  authority: ` + conformanceAuthority + `
+  package: ` + conformancePackage + `
   names:
     singular: note
     plural: notes
@@ -77,11 +87,12 @@ data:
           to: filed
       description: where the note sits in its life
 ---
-kind: core.substrate.reamde.dev/function
+kind: substrate.reamde.dev/core/function
 metadata:
-  id: ` + conformanceAuthority + `/faulting
+  id: ` + conformanceRef + `/faulting
 data:
   authority: ` + conformanceAuthority + `
+  package: ` + conformancePackage + `
   description: a body that always raises, for the function_failed case
   runtime: python
   source: |
@@ -130,7 +141,7 @@ func conformanceCases() []codeCase {
 				"properties": map[string]any{"subject": "the first write"},
 			})
 			rec := wantRecord(t, status, body, http.StatusCreated)
-			if rec.Version != 1 || rec.Kind != conformanceAuthority+"/note" {
+			if rec.Version != 1 || rec.Kind != conformanceRef+"/note" {
 				t.Fatalf("created record: %+v", rec)
 			}
 			if rec.Properties["phase"] != "draft" {
@@ -215,7 +226,7 @@ func conformanceCases() []codeCase {
 		run: func(t *testing.T, e *testenv.Env) {
 			// A token is a record, and the mint path is the only hand that
 			// writes one.
-			status, body := e.Do(http.MethodPost, "/api/v1/core.substrate.reamde.dev/token",
+			status, body := e.Do(http.MethodPost, "/api/v1/substrate.reamde.dev/core/token",
 				map[string]any{"id": "forged", "properties": map[string]any{"label": "forged"}})
 			wantError(t, status, body, http.StatusForbidden, "forbidden")
 		},
@@ -279,7 +290,7 @@ func conformanceCases() []codeCase {
 		code: "function_failed",
 		run: func(t *testing.T, e *testenv.Env) {
 			status, body := e.Do(http.MethodPost,
-				"/api/v1/core.substrate.reamde.dev/function/faulting/call",
+				"/api/v1/substrate.reamde.dev/core/function/faulting/call",
 				map[string]any{"input": map[string]any{}})
 			wantError(t, status, body, http.StatusInternalServerError, "function_failed")
 		},

@@ -83,16 +83,16 @@ func TestWatchCollectionStreamsBookmarkThenChanges(t *testing.T) {
 
 	ds.commit(substrate.Change{
 		TS: time.Unix(5, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
-		RecordID: "c1", Kind: "people.substrate.reamde.dev/person",
+		RecordID: "c1", Kind: "samples.substrate.reamde.dev/people/person",
 	})
 	// A change in another collection must not appear on this stream.
 	ds.commit(substrate.Change{
 		TS: time.Unix(6, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
-		RecordID: "m1", Kind: "messaging.substrate.reamde.dev/conversationmessage",
+		RecordID: "m1", Kind: "samples.substrate.reamde.dev/messaging/conversationmessage",
 	})
 	ds.commit(substrate.Change{
 		TS: time.Unix(7, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPatch,
-		RecordID: "c2", Kind: "people.substrate.reamde.dev/person",
+		RecordID: "c2", Kind: "samples.substrate.reamde.dev/people/person",
 	})
 
 	got := readLine(t, br)
@@ -115,7 +115,7 @@ func TestWatchResumesFromCursor(t *testing.T) {
 	for i := range 3 {
 		ds.commit(substrate.Change{
 			TS: time.Unix(int64(i), 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
-			RecordID: "c" + string(rune('1'+i)), Kind: "people.substrate.reamde.dev/person",
+			RecordID: "c" + string(rune('1'+i)), Kind: "samples.substrate.reamde.dev/people/person",
 		})
 	}
 
@@ -139,10 +139,10 @@ func TestChangesWithoutWatchIsASinglePage(t *testing.T) {
 	ds := env.svc.datasets["geoah"]
 	ds.commit(substrate.Change{
 		TS: time.Unix(1, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
-		RecordID: "c1", Kind: "people.substrate.reamde.dev/person",
+		RecordID: "c1", Kind: "samples.substrate.reamde.dev/people/person",
 	})
 
-	rec := env.do(t, http.MethodGet, "/api/v1/changes?kinds=people.substrate.reamde.dev/person", tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/changes?kinds=samples.substrate.reamde.dev/people/person", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	if got := rec.Header().Get("Content-Type"); got != "application/x-ndjson" {
 		t.Fatalf("content-type = %q", got)

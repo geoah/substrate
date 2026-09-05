@@ -10,16 +10,16 @@ import (
 // EXACT shipped files through the real CLI apply path — schema batch for the
 // bundle closure, the resolver for each trigger — so "shipped example" means
 // installable, not just green in an engine test that bypasses the resolver.
-const exampleDir = "../../../kinds/web.bundles.substrate.reamde.dev"
+const exampleDir = "../../../samples/web"
 
 func TestShippedURLHarvesterExampleApplies(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
-	// triggers.yaml is data in core.substrate.reamde.dev; the real resolver needs the
+	// triggers.yaml is data in substrate.reamde.dev/core; the real resolver needs the
 	// `trigger` type in the registry to route it. bundle.yaml is all core
 	// schema kinds and rides the batch verb without a registry lookup.
 	h.fake.extraTypes = []map[string]any{
-		typeRecord("trigger", "core.substrate.reamde.dev", "triggers", "builtin", nil),
+		typeRecord("trigger", "substrate.reamde.dev/core", "triggers", "builtin", nil),
 	}
 
 	out, errOut, err := h.run("apply",
@@ -30,8 +30,8 @@ func TestShippedURLHarvesterExampleApplies(t *testing.T) {
 	}
 
 	// The bundle closure landed as ONE schema batch, and every schema member
-	// printed an "applied" line (authority + bundle + 2 kinds + 4
-	// functions + 3 agents = 11 documents).
+	// printed an "applied" line (package + bundle + 2 kinds + 4 functions +
+	// 3 agents = 11 documents).
 	if got := strings.Count(out, " applied\n"); got != 11 {
 		t.Fatalf("schema apply output = %d applied lines, want 11:\n%s", got, out)
 	}
@@ -46,7 +46,7 @@ func TestShippedURLHarvesterExampleApplies(t *testing.T) {
 	}
 
 	// The four triggers each resolved through the real `type: trigger` path and
-	// were PUT into core.substrate.reamde.dev/trigger.
+	// were PUT into substrate.reamde.dev/core/trigger.
 	for _, id := range []string{
 		"web-findurls-on-message", "web-fetch-on-page",
 		"web-classify-on-page", "web-rollup-weekly",
@@ -59,7 +59,7 @@ func TestShippedURLHarvesterExampleApplies(t *testing.T) {
 		if !saw {
 			t.Fatalf("trigger %s was not applied to its collection: %v", id, h.fake.requests)
 		}
-		if !strings.Contains(out, "core.substrate.reamde.dev/trigger/"+id+" created") {
+		if !strings.Contains(out, "substrate.reamde.dev/core/trigger/"+id+" created") {
 			t.Fatalf("apply did not report %s created:\n%s", id, out)
 		}
 	}
@@ -81,8 +81,8 @@ func TestShippedTriggersUseTheSingularType(t *testing.T) {
 		t.Fatalf("triggers.yaml carries %d data docs, want 4", len(docs))
 	}
 	for _, d := range docs {
-		if d.Kind != "core.substrate.reamde.dev/trigger" {
-			t.Fatalf("trigger doc kind = %q, want the kind reference core.substrate.reamde.dev/trigger", d.Kind)
+		if d.Kind != "substrate.reamde.dev/core/trigger" {
+			t.Fatalf("trigger doc kind = %q, want the kind reference substrate.reamde.dev/core/trigger", d.Kind)
 		}
 	}
 }

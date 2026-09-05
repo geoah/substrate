@@ -5,19 +5,18 @@ import (
 	"testing"
 )
 
-// A typed declaration row authors `authority` and the `names` object and
-// carries no `name`/`plural` properties: the decoder must read the names off
-// the declaration and derive only the missing halves from the id, never
-// clobbering an authored value. The dot-split this replaces read
-// "core.substrate.reamde.dev/agent" as name "core" under authority
-// "substrate.reamde.dev/agent".
+// A typed declaration row authors `authority`, `package` and the `names`
+// object and carries no `name`/`plural` properties: the decoder must read the
+// names off the declaration and derive only the missing thirds from the id,
+// never clobbering an authored value.
 func TestDecodeTypeInfoTypedRow(t *testing.T) {
 	raw := json.RawMessage(`{
-		"id": "core.substrate.reamde.dev/agent",
-		"kind": "core.substrate.reamde.dev/kind",
+		"id": "substrate.reamde.dev/core/agent",
+		"kind": "substrate.reamde.dev/core/kind",
 		"version": 3,
 		"properties": {
-			"authority": "core.substrate.reamde.dev",
+			"authority": "substrate.reamde.dev",
+			"package": "core",
 			"version": 6,
 			"names": {"singular": "agent", "plural": "agents"},
 			"description": "one declared agent"
@@ -27,11 +26,11 @@ func TestDecodeTypeInfoTypedRow(t *testing.T) {
 	if !ok {
 		t.Fatal("typed row did not decode")
 	}
-	if ti.Identity != "core.substrate.reamde.dev/agent" {
+	if ti.Identity != "substrate.reamde.dev/core/agent" {
 		t.Errorf("identity = %q", ti.Identity)
 	}
-	if ti.Name != "agent" || ti.Authority != "core.substrate.reamde.dev" {
-		t.Errorf("name/authority = %q / %q", ti.Name, ti.Authority)
+	if ti.Name != "agent" || ti.Authority != "substrate.reamde.dev" || ti.Package != "core" {
+		t.Errorf("name/authority/package = %q / %q / %q", ti.Name, ti.Authority, ti.Package)
 	}
 	if ti.Plural != "agents" {
 		t.Errorf("plural = %q", ti.Plural)
@@ -48,11 +47,12 @@ func TestDecodeTypeInfoTypedRow(t *testing.T) {
 // name/plural columns; both shapes must keep decoding.
 func TestDecodeTypeInfoLegacyRow(t *testing.T) {
 	raw := json.RawMessage(`{
-		"id": "tasks.substrate.reamde.dev/task",
+		"id": "samples.substrate.reamde.dev/tasks/task",
 		"properties": {
 			"name": "task",
 			"plural": "tasks",
-			"authority": "tasks.substrate.reamde.dev",
+			"authority": "samples.substrate.reamde.dev",
+			"package": "tasks",
 			"definition": {"description": "one task", "names": {"singular": "task", "plural": "tasks"}}
 		}
 	}`)
@@ -60,22 +60,22 @@ func TestDecodeTypeInfoLegacyRow(t *testing.T) {
 	if !ok {
 		t.Fatal("legacy row did not decode")
 	}
-	if ti.Name != "task" || ti.Plural != "tasks" || ti.Authority != "tasks.substrate.reamde.dev" {
-		t.Errorf("name/plural/authority = %q / %q / %q", ti.Name, ti.Plural, ti.Authority)
+	if ti.Name != "task" || ti.Plural != "tasks" || ti.Authority != "samples.substrate.reamde.dev" || ti.Package != "tasks" {
+		t.Errorf("name/plural/authority/package = %q / %q / %q / %q", ti.Name, ti.Plural, ti.Authority, ti.Package)
 	}
 	if ti.Description != "one task" {
 		t.Errorf("description = %q", ti.Description)
 	}
 }
 
-// A bare repository-local kind id has no authority to derive.
+// A bare repository-local kind id has no authority or package to derive.
 func TestDecodeTypeInfoBareLocalKind(t *testing.T) {
 	raw := json.RawMessage(`{"id": "task", "properties": {"names": {"singular": "task", "plural": "tasks"}}}`)
 	ti, ok := decodeTypeInfo(raw)
 	if !ok {
 		t.Fatal("bare row did not decode")
 	}
-	if ti.Name != "task" || ti.Authority != "" {
-		t.Errorf("name/authority = %q / %q", ti.Name, ti.Authority)
+	if ti.Name != "task" || ti.Authority != "" || ti.Package != "" {
+		t.Errorf("name/authority/package = %q / %q / %q", ti.Name, ti.Authority, ti.Package)
 	}
 }

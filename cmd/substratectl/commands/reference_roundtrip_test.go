@@ -16,13 +16,13 @@ import (
 func TestReferenceLinkPropertiesSurviveTheRoundTrip(t *testing.T) {
 	e := &substrate.Record{
 		ID:        "c1",
-		Kind:      "people.substrate.reamde.dev/person",
+		Kind:      "samples.substrate.reamde.dev/people/person",
 		Version:   1,
 		CreatedAt: time.Unix(0, 0).UTC(),
 		UpdatedAt: time.Unix(0, 0).UTC(),
 		Properties: map[string]any{
 			"memberOf": map[string]any{
-				"ref":  "people.substrate.reamde.dev/organization/org1",
+				"ref":  "samples.substrate.reamde.dev/people/organization/org1",
 				"role": "admin",
 				// The wire decoder is UseNumber, so every number arrives as
 				// json.Number, inside a reference object like anywhere else.
@@ -46,7 +46,7 @@ func TestReferenceLinkPropertiesSurviveTheRoundTrip(t *testing.T) {
 	if !ok {
 		t.Fatalf("parsed memberOf = %#v, want the object shape", in.Properties["memberOf"])
 	}
-	if ref["ref"] != "people.substrate.reamde.dev/organization/org1" || ref["role"] != "admin" {
+	if ref["ref"] != "samples.substrate.reamde.dev/people/organization/org1" || ref["role"] != "admin" {
 		t.Fatalf("parsed reference = %#v, want ref and role preserved", ref)
 	}
 	// A number inside a reference object is typed like every other property

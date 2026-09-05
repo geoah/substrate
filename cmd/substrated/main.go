@@ -27,6 +27,7 @@ import (
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/kinds"
+	"github.com/geoah/substrate/samples"
 )
 
 const (
@@ -152,7 +153,10 @@ func run() error {
 	// boot starts draining without a restart.
 	start("embed queue", embedInterval, func(ctx context.Context) { drainEmbeds(ctx, svc) })
 
-	cat, err := catalog.Load(kinds.Bundles())
+	// BOTH SHIPPED TREES: the provider packages under kinds/ and the sample
+	// packages under samples/. A catalog built from one of them serves half
+	// the shipped set and 404s every install of the other.
+	cat, err := catalog.Load(kinds.Bundles(), samples.Samples())
 	if err != nil {
 		return err
 	}

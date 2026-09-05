@@ -21,11 +21,11 @@ func traitKind(identity, name, authority string, props map[string]any) substrate
 // types DateTime) used to meet an interface field spelled String, so the
 // schema failed to build for any repository holding that one kind.
 func TestTraitInterfaceFieldsTakeTheImplementersTypes(t *testing.T) {
-	task := traitKind("tasks.substrate.reamde.dev/task", "task", "tasks.substrate.reamde.dev", map[string]any{
+	task := traitKind("samples.substrate.reamde.dev/tasks/task", "task", "samples.substrate.reamde.dev/tasks", map[string]any{
 		"name":        map[string]any{"type": "string"},
 		"recurrence":  map[string]any{"type": "recurrence"},
 		"completedAt": map[string]any{"type": "datetime"},
-		"project":     map[string]any{"type": "reference", "kind": "tasks.substrate.reamde.dev/project"},
+		"project":     map[string]any{"type": "reference", "kind": "samples.substrate.reamde.dev/tasks/project"},
 		"status": map[string]any{
 			"type": "state", "states": []any{"open", "done"},
 			"transitions": []any{map[string]any{"from": "open", "to": "done", "stamps": map[string]any{"completedAt": "now"}}},
@@ -52,7 +52,7 @@ func TestTraitInterfaceFieldsTakeTheImplementersTypes(t *testing.T) {
 
 	// Two implementers that disagree on a property's type share the interface
 	// without that field; each object keeps its own.
-	workout := traitKind("fitness.substrate.reamde.dev/workout", "workout", "fitness.substrate.reamde.dev", map[string]any{
+	workout := traitKind("samples.substrate.reamde.dev/fitness/workout", "workout", "samples.substrate.reamde.dev/fitness", map[string]any{
 		"name":        map[string]any{"type": "string"},
 		"recurrence":  map[string]any{"type": "recurrence"},
 		"completedAt": map[string]any{"type": "string"},

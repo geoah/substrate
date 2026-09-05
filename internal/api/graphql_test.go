@@ -41,7 +41,7 @@ func (e *testEnv) gql(t *testing.T, token, query string, vars map[string]any) gq
 func TestRegistryKeyTracksDefinitions(t *testing.T) {
 	widget := func(props map[string]any) []substrate.KindInfo {
 		return []substrate.KindInfo{{
-			Identity: "example.substrate.reamde.dev/widget", Version: 1, Plural: "widgets",
+			Identity: "example.substrate.reamde.dev/example/widget", Version: 1, Plural: "widgets",
 			Definition: map[string]any{"properties": props},
 		}}
 	}
@@ -87,23 +87,23 @@ func TestGraphQLHistoryIsScopedByType(t *testing.T) {
 	// A person materialized at id "shared", plus changelog rows for the SAME id
 	// under two types — the collision A9 removes.
 	ds.records["shared"] = &substrate.Record{
-		ID: "shared", Kind: "people.substrate.reamde.dev/person",
+		ID: "shared", Kind: "samples.substrate.reamde.dev/people/person",
 		Properties: map[string]any{"title": "Ada"}, Version: 1,
 	}
 	ds.commit(substrate.Change{
 		TS: time.Unix(1, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
-		RecordID: "shared", Kind: "people.substrate.reamde.dev/person",
+		RecordID: "shared", Kind: "samples.substrate.reamde.dev/people/person",
 	})
 	ds.commit(substrate.Change{
 		TS: time.Unix(2, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
-		RecordID: "shared", Kind: "tasks.substrate.reamde.dev/task",
+		RecordID: "shared", Kind: "samples.substrate.reamde.dev/tasks/task",
 	})
 
 	res := env.gql(t, tok,
 		`query ($kind: String!, $id: ID!) {
 			record(kind: $kind, id: $id) { id kind history { seq kind recordId } }
 		}`,
-		map[string]any{"kind": "people.substrate.reamde.dev/person", "id": "shared"})
+		map[string]any{"kind": "samples.substrate.reamde.dev/people/person", "id": "shared"})
 
 	record, _ := res.Data["record"].(map[string]any)
 	history, _ := record["history"].([]any)
@@ -111,7 +111,7 @@ func TestGraphQLHistoryIsScopedByType(t *testing.T) {
 		t.Fatalf("history has %d rows, want 1 — the task-typed row sharing id %q leaked into the person's history", len(history), "shared")
 	}
 	row, _ := history[0].(map[string]any)
-	if row["kind"] != "people.substrate.reamde.dev/person" {
+	if row["kind"] != "samples.substrate.reamde.dev/people/person" {
 		t.Fatalf("history row kind = %v, want the person kind only", row["kind"])
 	}
 }
@@ -122,7 +122,7 @@ func TestGraphQLPutPatchRecordRoundTrip(t *testing.T) {
 
 	put := env.gql(t, tok, `mutation ($in: JSON!) { put(input: $in) { id kind title ... on Person { name company } } }`,
 		map[string]any{"in": map[string]any{
-			"kind": "people.substrate.reamde.dev/person",
+			"kind": "samples.substrate.reamde.dev/people/person",
 			// Everything authored is a property: `title` sits in the map with
 			// the declared ones.
 			"properties": map[string]any{"title": "Ada", "name": "Ada"},
@@ -133,16 +133,16 @@ func TestGraphQLPutPatchRecordRoundTrip(t *testing.T) {
 	}
 	id, _ := created["id"].(string)
 
-	patched := env.gql(t, tok, `mutation ($id: ID!, $in: JSON!) { patch(kind: "people.substrate.reamde.dev/person", id: $id, input: $in) { id version ... on Person { company } } }`,
+	patched := env.gql(t, tok, `mutation ($id: ID!, $in: JSON!) { patch(kind: "samples.substrate.reamde.dev/people/person", id: $id, input: $in) { id version ... on Person { company } } }`,
 		map[string]any{"id": id, "in": map[string]any{"properties": map[string]any{"company": "Analytical"}}})
 	got, _ := patched.Data["patch"].(map[string]any)
 	if got["company"] != "Analytical" {
 		t.Fatalf("patch returned %v", got)
 	}
 
-	one := env.gql(t, tok, `query ($id: ID!) { record(kind: "people.substrate.reamde.dev/person", id: $id) { id kind title labels } }`, map[string]any{"id": id})
+	one := env.gql(t, tok, `query ($id: ID!) { record(kind: "samples.substrate.reamde.dev/people/person", id: $id) { id kind title labels } }`, map[string]any{"id": id})
 	ent, _ := one.Data["record"].(map[string]any)
-	if ent["id"] != id || ent["kind"] != "people.substrate.reamde.dev/person" {
+	if ent["id"] != id || ent["kind"] != "samples.substrate.reamde.dev/people/person" {
 		t.Fatalf("record returned %v", ent)
 	}
 }
@@ -156,11 +156,11 @@ func TestGraphQLReferenceRoundTrip(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
 
-	const path = "people.substrate.reamde.dev/person/boss1"
+	const path = "samples.substrate.reamde.dev/people/person/boss1"
 	put := env.gql(t, tok,
 		`mutation ($in: JSON!) { put(input: $in) { id ... on Person { manager { ref } } } }`,
 		map[string]any{"in": map[string]any{
-			"kind": "people.substrate.reamde.dev/person",
+			"kind": "samples.substrate.reamde.dev/people/person",
 			"properties": map[string]any{
 				"title":   "Ada",
 				"manager": path,
@@ -215,10 +215,10 @@ func TestGraphQLRecordsUsesTheJSONFilter(t *testing.T) {
 	// GraphQL input decoder (codex regress #9) refuses it at the top level, so
 	// it rides inside properties like every authored value.
 	env.gql(t, tok, `mutation ($in: JSON!) { put(input: $in) { id } }`, map[string]any{
-		"in": map[string]any{"kind": "people.substrate.reamde.dev/person", "properties": map[string]any{"title": "Ada", "name": "Ada"}},
+		"in": map[string]any{"kind": "samples.substrate.reamde.dev/people/person", "properties": map[string]any{"title": "Ada", "name": "Ada"}},
 	})
 	env.gql(t, tok, `mutation ($in: JSON!) { put(input: $in) { id } }`, map[string]any{
-		"in": map[string]any{"kind": "tasks.substrate.reamde.dev/task", "properties": map[string]any{"title": "ship it", "status": "open"}},
+		"in": map[string]any{"kind": "samples.substrate.reamde.dev/tasks/task", "properties": map[string]any{"title": "ship it", "status": "open"}},
 	})
 
 	res := env.gql(t, tok, `query ($f: JSON, $o: JSON) {
@@ -227,7 +227,7 @@ func TestGraphQLRecordsUsesTheJSONFilter(t *testing.T) {
 			nodes { id kind title ... on Task { status } }
 		}
 	}`, map[string]any{
-		"f": map[string]any{"kinds": []string{"tasks.substrate.reamde.dev/task"}},
+		"f": map[string]any{"kinds": []string{"samples.substrate.reamde.dev/tasks/task"}},
 		"o": []map[string]any{{"property": "created_at", "desc": true}},
 	})
 	conn, _ := res.Data["records"].(map[string]any)
@@ -236,7 +236,7 @@ func TestGraphQLRecordsUsesTheJSONFilter(t *testing.T) {
 		t.Fatalf("nodes = %v", nodes)
 	}
 	node, _ := nodes[0].(map[string]any)
-	if node["kind"] != "tasks.substrate.reamde.dev/task" || node["status"] != "open" {
+	if node["kind"] != "samples.substrate.reamde.dev/tasks/task" || node["status"] != "open" {
 		t.Fatalf("node = %v", node)
 	}
 	if len(ds.lastQuery.OrderBy) != 1 || !ds.lastQuery.OrderBy[0].Desc {
@@ -294,7 +294,7 @@ func TestGraphQLDayRangeFilterReachesTheDataset(t *testing.T) {
 	tok := env.svc.token("geoah")
 	ds := env.svc.datasets["geoah"]
 	env.gql(t, tok, `{
-		records(filter: {kinds: ["tasks.substrate.reamde.dev/task"],
+		records(filter: {kinds: ["samples.substrate.reamde.dev/tasks/task"],
 		                 properties: {at: {gte: "2026-08-15T00:00:00Z", lt: "2026-08-16T00:00:00Z"}}},
 		        orderBy: [{property: "at"}]) { nodes { id } }
 	}`, nil)
@@ -373,7 +373,7 @@ func TestGraphQLSchemaIsCachedPerRegistryFingerprint(t *testing.T) {
 
 	// Installing a type changes the fingerprint and must rebuild.
 	ds.types = append(ds.types, substrate.KindInfo{
-		Identity: "beeper.connectors.substrate.reamde.dev/thread", Name: "thread",
+		Identity: "beeper.connectors.substrate.reamde.dev/beeper/thread", Name: "thread",
 		Authority: "beeper.connectors.substrate.reamde.dev", Version: 1, Plural: "threads",
 		Source:     "installed",
 		Definition: map[string]any{"plural": "threads", "properties": map[string]any{"subject": map[string]any{"type": "string"}}},
@@ -397,23 +397,23 @@ func TestGraphQLReferenceHistoryAndCapabilityInterfaces(t *testing.T) {
 
 	at := time.Unix(1_700_000_500, 0).UTC()
 	ds.records["team1"] = &substrate.Record{
-		ID: "team1", Kind: "people.substrate.reamde.dev/person", Title: "Analytical",
+		ID: "team1", Kind: "samples.substrate.reamde.dev/people/person", Title: "Analytical",
 		Properties: map[string]any{"name": "Analytical"},
 	}
 	ds.records["msg1"] = &substrate.Record{
-		ID: "msg1", Kind: "messaging.substrate.reamde.dev/conversationmessage", Title: "hi", At: &at,
+		ID: "msg1", Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", Title: "hi", At: &at,
 		Properties: map[string]any{
 			"text":   "hi",
-			"author": map[string]any{"ref": "people.substrate.reamde.dev/person/team1", "since": 2020},
+			"author": map[string]any{"ref": "samples.substrate.reamde.dev/people/person/team1", "since": 2020},
 		},
 	}
 	ds.changes = append(ds.changes, substrate.Change{
 		Seq: 1, TS: at, Actor: substrate.ActorAPI, Op: substrate.OpPut,
-		RecordID: "msg1", Kind: "messaging.substrate.reamde.dev/conversationmessage",
+		RecordID: "msg1", Kind: "samples.substrate.reamde.dev/messaging/conversationmessage",
 	})
 
 	res := env.gql(t, tok, `{
-		record(kind: "messaging.substrate.reamde.dev/conversationmessage", id: "msg1") {
+		record(kind: "samples.substrate.reamde.dev/messaging/conversationmessage", id: "msg1") {
 			id
 			... on Temporal { at endsAt }
 			... on Conversationmessage {
@@ -428,7 +428,7 @@ func TestGraphQLReferenceHistoryAndCapabilityInterfaces(t *testing.T) {
 	}
 	author, _ := ent["author"].(map[string]any)
 	target, _ := author["target"].(map[string]any)
-	if author["ref"] != "people.substrate.reamde.dev/person/team1" || author["since"] != float64(2020) {
+	if author["ref"] != "samples.substrate.reamde.dev/people/person/team1" || author["since"] != float64(2020) {
 		t.Fatalf("author = %v", author)
 	}
 	if target["id"] != "team1" || target["name"] != "Analytical" {
@@ -506,16 +506,16 @@ func TestGraphQLPropertyMeta(t *testing.T) {
 
 	at := time.Unix(1_700_000_000, 0).UTC()
 	ds.records["p1"] = &substrate.Record{
-		ID: "p1", Kind: "people.substrate.reamde.dev/person",
+		ID: "p1", Kind: "samples.substrate.reamde.dev/people/person",
 		Properties: map[string]any{"name": "Sam"},
 	}
 	ds.meta["p1"] = map[string]substrate.PropertyMeta{
 		"name": {Manager: "owner", UpdatedAt: at, Alternatives: []substrate.PropertyAlternative{
-			{Actor: "google.connectors.substrate.reamde.dev/people", Value: "Samuel Jones", UpdatedAt: at},
+			{Actor: "google.connectors.substrate.reamde.dev/google/people", Value: "Samuel Jones", UpdatedAt: at},
 		}},
 	}
 
-	res := env.gql(t, tok, `{ record(kind: "people.substrate.reamde.dev/person", id: "p1") { id propertyMeta } }`, nil)
+	res := env.gql(t, tok, `{ record(kind: "samples.substrate.reamde.dev/people/person", id: "p1") { id propertyMeta } }`, nil)
 	ent, _ := res.Data["record"].(map[string]any)
 	meta, _ := ent["propertyMeta"].(map[string]any)
 	name, _ := meta["name"].(map[string]any)
@@ -545,12 +545,12 @@ func TestGraphQLIncomingIsNotOnRecord(t *testing.T) {
 	ds := env.svc.datasets["geoah"]
 
 	ds.records["p1"] = &substrate.Record{
-		ID: "p1", Kind: "people.substrate.reamde.dev/person",
+		ID: "p1", Kind: "samples.substrate.reamde.dev/people/person",
 		Properties: map[string]any{"name": "Sam"},
 	}
 	ds.incoming["p1"] = []substrate.IncomingReference{
 		{Property: "person", From: substrate.IncomingSource{
-			ID: "people-c1001", Kind: "google.connectors.substrate.reamde.dev/contact", Title: "Samuel Jones",
+			ID: "people-c1001", Kind: "google.connectors.substrate.reamde.dev/google/contact", Title: "Samuel Jones",
 		}},
 	}
 
@@ -559,7 +559,7 @@ func TestGraphQLIncomingIsNotOnRecord(t *testing.T) {
 	// null. Query it raw (the gql helper rejects any error) and assert the
 	// field cannot be selected.
 	rec := env.do(t, http.MethodPost, graphqlPath, tok, map[string]any{
-		"query": `{ record(kind: "people.substrate.reamde.dev/person", id: "p1") { id incoming } }`,
+		"query": `{ record(kind: "samples.substrate.reamde.dev/people/person", id: "p1") { id incoming } }`,
 	})
 	res := decodeJSON[gqlResponse](t, rec)
 	if len(res.Errors) == 0 {
@@ -567,26 +567,28 @@ func TestGraphQLIncomingIsNotOnRecord(t *testing.T) {
 	}
 
 	// The record still reads fine without it.
-	ok := env.gql(t, tok, `{ record(kind: "people.substrate.reamde.dev/person", id: "p1") { id } }`, nil)
+	ok := env.gql(t, tok, `{ record(kind: "samples.substrate.reamde.dev/people/person", id: "p1") { id } }`, nil)
 	ent, _ := ok.Data["record"].(map[string]any)
 	if ent["id"] != "p1" {
 		t.Fatalf("record = %#v", ent)
 	}
 }
 
-// Installing a bundle whose singular collides with a shipped type must NOT
-// rename the shipped type's GraphQL name. The shipped task keeps
-// the bare "Task"; the bundle's task is authority-prefixed "Alpha_Task". Both are
+// Installing a package whose singular collides with a shipped kind must NOT
+// rename the shipped kind's GraphQL name. The shipped task keeps the bare
+// "Task"; the installed task is package-prefixed "Alpha_Task". Both are
 // resolvable and distinct — the pre-A14 first-claim scheme renamed the shipped
 // type to "TasksTask" when the bundle sorted ahead of it.
-func TestGraphQLNamesAreAFunctionOfIdentityNotTheRegistry(t *testing.T) {
+func TestGraphQLNamesDoNotDependOnRegistryOrder(t *testing.T) {
 	shipped := substrate.KindInfo{
-		Identity: "tasks.substrate.reamde.dev/task", Name: "task", Authority: "tasks.substrate.reamde.dev",
+		Identity: "substrate.reamde.dev/core/task", Name: "task",
+		Authority: "substrate.reamde.dev", Package: "core",
 		Version: 1, Plural: "tasks", Source: "builtin",
 		Definition: map[string]any{"properties": map[string]any{"note": map[string]any{"type": "string"}}},
 	}
 	installed := substrate.KindInfo{
-		Identity: "alpha.bundles.substrate.reamde.dev/task", Name: "task", Authority: "alpha.bundles.substrate.reamde.dev",
+		Identity: "acme.example.com/alpha/task", Name: "task",
+		Authority: "acme.example.com", Package: "alpha",
 		Version: 1, Plural: "tasks", Source: "installed",
 		Definition: map[string]any{"properties": map[string]any{"note": map[string]any{"type": "string"}}},
 	}
@@ -600,14 +602,14 @@ func TestGraphQLNamesAreAFunctionOfIdentityNotTheRegistry(t *testing.T) {
 	if !ok {
 		t.Fatalf("shipped task lost its bare name; have %v", sortedTypeNames(tm))
 	}
-	if bare.Description() != "tasks.substrate.reamde.dev/task" {
-		t.Fatalf("bare Task resolves to %q, not the shipped type", bare.Description())
+	if bare.Description() != "substrate.reamde.dev/core/task" {
+		t.Fatalf("bare Task resolves to %q, not the shipped kind", bare.Description())
 	}
 	prefixed, ok := tm["Alpha_Task"].(*graphql.Object)
 	if !ok {
-		t.Fatalf("installed task did not get its authority-prefixed name; have %v", sortedTypeNames(tm))
+		t.Fatalf("installed task did not get its package-prefixed name; have %v", sortedTypeNames(tm))
 	}
-	if prefixed.Description() != "alpha.bundles.substrate.reamde.dev/task" {
+	if prefixed.Description() != "acme.example.com/alpha/task" {
 		t.Fatalf("Alpha_Task resolves to %q", prefixed.Description())
 	}
 	// The order the two arrive in must not change either name.
@@ -624,7 +626,7 @@ func TestGraphQLNamesAreAFunctionOfIdentityNotTheRegistry(t *testing.T) {
 // refused at schema-build with a clear error, not silently renamed (A14).
 func TestGraphQLReservedNameCollisionIsRefused(t *testing.T) {
 	bad := substrate.KindInfo{
-		Identity: "core.substrate.reamde.dev/change", Name: "change", Authority: coreAuthority,
+		Identity: "substrate.reamde.dev/core/change", Name: "change", Authority: coreAuthority,
 		Version: 1, Plural: "changes", Source: "builtin",
 		Definition: map[string]any{"properties": map[string]any{}},
 	}
@@ -646,15 +648,15 @@ func TestGraphQLReservedNameCollisionIsRefused(t *testing.T) {
 func TestGraphQLReferenceNameCollisionIsRefused(t *testing.T) {
 	reference := func(prop string) map[string]any {
 		return map[string]any{"properties": map[string]any{
-			prop: map[string]any{"type": "reference", "kind": "people.substrate.reamde.dev/person"},
+			prop: map[string]any{"type": "reference", "kind": "samples.substrate.reamde.dev/people/person"},
 		}}
 	}
 	task := substrate.KindInfo{
-		Identity: "tasks.substrate.reamde.dev/task", Name: "task", Authority: "tasks.substrate.reamde.dev",
+		Identity: "samples.substrate.reamde.dev/tasks/task", Name: "task", Authority: "samples.substrate.reamde.dev/tasks",
 		Version: 1, Plural: "tasks", Source: "builtin", Definition: reference("noteX"),
 	}
 	taskNote := substrate.KindInfo{
-		Identity: "tasks.substrate.reamde.dev/taskNote", Name: "taskNote", Authority: "tasks.substrate.reamde.dev",
+		Identity: "samples.substrate.reamde.dev/tasks/taskNote", Name: "taskNote", Authority: "samples.substrate.reamde.dev/tasks",
 		Version: 1, Plural: "taskNotes", Source: "builtin", Definition: reference("x"),
 	}
 
@@ -662,7 +664,7 @@ func TestGraphQLReferenceNameCollisionIsRefused(t *testing.T) {
 	if err == nil {
 		t.Fatal("two reference properties minting one name must be refused")
 	}
-	for _, want := range []string{"TaskNoteXReference", "tasks.substrate.reamde.dev/task.noteX"} {
+	for _, want := range []string{"TaskNoteXReference", "samples.substrate.reamde.dev/tasks/task.noteX"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("the error must name %s: %v", want, err)
 		}
@@ -686,15 +688,15 @@ func TestGraphQLLongScalarRoundTripsPast2e31(t *testing.T) {
 	const bigVersion = int64(3_000_000_000) // > 2^31-1 (2_147_483_647)
 	const bigSeq = int64(5_000_000_000)
 	ds.records["big1"] = &substrate.Record{
-		ID: "big1", Kind: "people.substrate.reamde.dev/person", Version: bigVersion,
+		ID: "big1", Kind: "samples.substrate.reamde.dev/people/person", Version: bigVersion,
 		Properties: map[string]any{"name": "Ada"},
 	}
 	ds.changes = append(ds.changes, substrate.Change{
 		Seq: bigSeq, TS: time.Unix(1, 0).UTC(), Actor: substrate.ActorAPI,
-		Op: substrate.OpPut, RecordID: "big1", Kind: "people.substrate.reamde.dev/person",
+		Op: substrate.OpPut, RecordID: "big1", Kind: "samples.substrate.reamde.dev/people/person",
 	})
 
-	res := env.gql(t, tok, `{ record(kind: "people.substrate.reamde.dev/person", id: "big1") { version history(first: 50) { seq } } }`, nil)
+	res := env.gql(t, tok, `{ record(kind: "samples.substrate.reamde.dev/people/person", id: "big1") { version history(first: 50) { seq } } }`, nil)
 	ent, _ := res.Data["record"].(map[string]any)
 	if got := int64(ent["version"].(float64)); got != bigVersion {
 		t.Fatalf("version overflowed: got %d, want %d", got, bigVersion)
@@ -716,7 +718,7 @@ func TestGraphQLLongScalarRoundTripsPast2e31(t *testing.T) {
 // object property is JSON, not String.
 func TestGraphQLPropertyTypesListAndObject(t *testing.T) {
 	widget := substrate.KindInfo{
-		Identity: "tools.substrate.reamde.dev/widget", Name: "widget", Authority: "tools.substrate.reamde.dev",
+		Identity: "tools.substrate.reamde.dev/tools/widget", Name: "widget", Authority: "tools.substrate.reamde.dev",
 		Version: 1, Plural: "widgets", Source: "builtin",
 		Definition: map[string]any{"properties": map[string]any{
 			"scores":  map[string]any{"type": "int", "repeated": true},
@@ -764,9 +766,9 @@ func TestGraphQLSearch(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
 	ds := env.svc.datasets["geoah"]
-	ds.records["c1"] = &substrate.Record{ID: "c1", Kind: "people.substrate.reamde.dev/person", Title: "Ada Lovelace"}
+	ds.records["c1"] = &substrate.Record{ID: "c1", Kind: "samples.substrate.reamde.dev/people/person", Title: "Ada Lovelace"}
 
-	res := env.gql(t, tok, `{ search(q: "ada", mode: "hybrid", kinds: ["people.substrate.reamde.dev/person"], k: 5) { lexical record { id } } }`, nil)
+	res := env.gql(t, tok, `{ search(q: "ada", mode: "hybrid", kinds: ["samples.substrate.reamde.dev/people/person"], k: 5) { lexical record { id } } }`, nil)
 	hits, _ := res.Data["search"].([]any)
 	if len(hits) != 1 {
 		t.Fatalf("hits = %v", hits)

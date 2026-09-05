@@ -7,7 +7,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-const tasksPath = "/api/v1/tasks.substrate.reamde.dev/task"
+const tasksPath = "/api/v1/samples.substrate.reamde.dev/tasks/task"
 
 // createPerson returns the id of a person record in the geoah dataset.
 func createPerson(t *testing.T, env *testEnv, tok string) string {
@@ -47,7 +47,7 @@ func TestDeleteThroughTheWrongCollectionIsRefused(t *testing.T) {
 
 	// The token collection must not delete a person (nor a person
 	// collection a token).
-	rec := env.do(t, http.MethodDelete, "/api/v1/core.substrate.reamde.dev/tokens/"+id, tok, nil)
+	rec := env.do(t, http.MethodDelete, "/api/v1/substrate.reamde.dev/core/tokens/"+id, tok, nil)
 	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
 	if ds.records[id].DeletedAt != nil {
 		t.Fatal("delete through a foreign collection tombstoned the record")

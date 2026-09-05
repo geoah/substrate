@@ -64,33 +64,34 @@ func TestConfigRoundTrip(t *testing.T) {
 	}
 }
 
-// The collection path IS the kind reference, split into segments: two for a
-// published kind, one for a repository-local one. An id carrying a slash — a
-// declaration record's id IS a kind reference — travels percent-encoded.
+// The collection path IS the kind reference, split into segments: three for a
+// published kind (authority, package, name), one for a repository-local one.
+// An id carrying a slash, and a declaration record's id IS a kind reference,
+// travels percent-encoded rather than as more path segments.
 func TestCollectionPathIsTheKindReference(t *testing.T) {
 	cases := []struct {
-		authority, kind string
-		id              []string
-		want            string
+		pkg, kind string
+		id        []string
+		want      string
 	}{
-		{"tasks.substrate.reamde.dev", "task", nil, "/api/v1/tasks.substrate.reamde.dev/task"},
-		{"tasks.substrate.reamde.dev", "task", []string{"t9"}, "/api/v1/tasks.substrate.reamde.dev/task/t9"},
+		{"samples.substrate.reamde.dev/tasks", "task", nil, "/api/v1/samples.substrate.reamde.dev/tasks/task"},
+		{"samples.substrate.reamde.dev/tasks", "task", []string{"t9"}, "/api/v1/samples.substrate.reamde.dev/tasks/task/t9"},
 		{"", "task", nil, "/api/v1/task"},
 		{"", "task", []string{"t9"}, "/api/v1/task/t9"},
 		{
-			"core.substrate.reamde.dev", "kind",
-			[]string{"tasks.substrate.reamde.dev/task"},
-			"/api/v1/core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev%2Ftask",
+			"substrate.reamde.dev/core", "kind",
+			[]string{"samples.substrate.reamde.dev/tasks/task"},
+			"/api/v1/substrate.reamde.dev/core/kind/samples.substrate.reamde.dev%2Ftasks%2Ftask",
 		},
-		{"tasks.substrate.reamde.dev", "task", []string{"t9", "incoming"}, "/api/v1/tasks.substrate.reamde.dev/task/t9/incoming"},
+		{"samples.substrate.reamde.dev/tasks", "task", []string{"t9", "incoming"}, "/api/v1/samples.substrate.reamde.dev/tasks/task/t9/incoming"},
 	}
 	for _, tc := range cases {
-		if got := collectionPath(tc.authority, tc.kind, tc.id...); got != tc.want {
-			t.Errorf("collectionPath(%q, %q, %v) = %q, want %q", tc.authority, tc.kind, tc.id, got, tc.want)
+		if got := collectionPath(tc.pkg, tc.kind, tc.id...); got != tc.want {
+			t.Errorf("collectionPath(%q, %q, %v) = %q, want %q", tc.pkg, tc.kind, tc.id, got, tc.want)
 		}
 	}
 	// The encoded id survives the round trip a server does on it.
-	if got, err := url.PathUnescape("tasks.substrate.reamde.dev%2Ftask"); err != nil || got != "tasks.substrate.reamde.dev/task" {
+	if got, err := url.PathUnescape("samples.substrate.reamde.dev%2Ftasks%2Ftask"); err != nil || got != "samples.substrate.reamde.dev/tasks/task" {
 		t.Fatalf("unescape = %q, %v", got, err)
 	}
 }

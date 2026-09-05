@@ -224,6 +224,13 @@ var traitFields = map[string]graphql.Fields{
 
 type schemaBuilder struct {
 	types []substrate.KindInfo
+	// names is every kind's GraphQL object name, computed ONCE over the whole
+	// set by the one naming rule (vocabulary.GraphQLNames): an installed kind
+	// is `<Package>_<Kind>`, and the authority's first label joins it only
+	// where two authorities install a package of one name. The declaration
+	// door computes the same map (vocabulary graphqlNameProblems), so the
+	// schema and the refusal can never disagree.
+	names map[string]string
 
 	changeType *graphql.Object
 	recordIF   *graphql.Interface
@@ -251,8 +258,13 @@ func BuildSchema(types []substrate.KindInfo) (graphql.Schema, error) {
 	copy(sorted, types)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Identity < sorted[j].Identity })
 
+	names := make([]vocabulary.GraphQLKind, 0, len(sorted))
+	for _, t := range sorted {
+		names = append(names, vocabulary.GraphQLKind{Identity: t.Identity, Source: t.Source})
+	}
 	b := &schemaBuilder{
 		types:         sorted,
+		names:         vocabulary.GraphQLNames(names),
 		traitIF:       map[string]*graphql.Interface{},
 		machineIF:     map[string]*graphql.Interface{},
 		machineStamps: map[string][]string{},
@@ -431,19 +443,21 @@ func (b *schemaBuilder) buildObjects() error {
 		return err
 	}
 	for _, t := range b.types {
-		// The GraphQL name is a PURE FUNCTION of the type's identity and
-		// source: shipped types keep bare names, installed types are always
-		// authority-prefixed, and the name never depends on which OTHER types
-		// are in the registry. A name that lands on a structural/interface
-		// name, or on another type's name, is REFUSED here with a clear error
-		// rather than silently renamed — installing a bundle can never rename
-		// an existing type's GraphQL name.
-		name := graphqlTypeName(t)
+		// The GraphQL name is a function of the whole SET, not of load order:
+		// a shipped kind keeps its bare name, an installed kind is
+		// package-prefixed, and the authority's first label joins that only
+		// where two authorities install one package name — for every kind of
+		// both, so no kind's name depends on its neighbors. A name that lands
+		// on a structural/interface name, or on another kind's name, is
+		// REFUSED here with a clear error rather than silently renamed:
+		// installing a bundle can never rename an existing kind's GraphQL
+		// name.
+		name := b.typeName(t)
 		if owner, taken := reserved[name]; taken {
-			return fmt.Errorf("graphql: type %s cannot take name %q — reserved for %s; rename the type or its authority", t.Identity, name, owner)
+			return fmt.Errorf("graphql: type %s cannot take name %q — reserved for %s; rename the kind or its package", t.Identity, name, owner)
 		}
 		if prior, taken := b.objByName[name]; taken && prior != t.Identity {
-			return fmt.Errorf("graphql: types %s and %s both map to GraphQL name %q — authority-prefix collision; rename one type or its authority", prior, t.Identity, name)
+			return fmt.Errorf("graphql: types %s and %s both map to GraphQL name %q — rename one kind or its package", prior, t.Identity, name)
 		}
 		fields := b.recordFields()
 		ifaces := []*graphql.Interface{b.recordIF}
@@ -451,7 +465,7 @@ func (b *schemaBuilder) buildObjects() error {
 		for _, p := range declaredProperties(t.Definition) {
 			fname := camelCase(p)
 			// A declared property may collide with an Record interface
-			// field (core.substrate.reamde.dev/kind declares "version": the
+			// field (substrate.reamde.dev/core/kind declares "version": the
 			// declaration's own version, while Record.version is the CAS
 			// counter — two different numbers). Identical String fields
 			// (title, body) defer to the interface column; everything else
@@ -552,7 +566,7 @@ func (b *schemaBuilder) reservedNames() (map[string]string, error) {
 			if kind, _ := pd["type"].(string); kind != "reference" {
 				continue
 			}
-			name := referenceObjectName(t, p)
+			name := b.referenceObjectName(t, p)
 			owner := "the reference type of " + t.Identity + "." + p
 			if prior, taken := r[name]; taken {
 				return nil, fmt.Errorf(
@@ -575,11 +589,16 @@ func fieldFromDefinition(f *graphql.FieldDefinition) *graphql.Field {
 	return &graphql.Field{Type: f.Type, Args: args, Resolve: f.Resolve}
 }
 
-// graphqlTypeName is the deterministic GraphQL object name for a kind. The
-// rule itself lives in the schema package (vocabulary.GraphQLName), because the
-// DECLARATION path has to apply it too: two kinds that resolve to one GraphQL
-// name are refused when the second is declared, never silently renamed.
-func graphqlTypeName(t substrate.KindInfo) string {
+// typeName is the GraphQL object name for a kind. The rule itself lives in the
+// vocabulary package (vocabulary.GraphQLNames), because the DECLARATION path
+// has to apply it too: two kinds that resolve to one GraphQL name are refused
+// when the second is declared, never silently renamed. A kind the builder was
+// not given falls back to the un-disambiguated base name, which is what a
+// reserved-name check on a stray identity wants.
+func (b *schemaBuilder) typeName(t substrate.KindInfo) string {
+	if name, ok := b.names[t.Identity]; ok {
+		return name
+	}
 	return vocabulary.GraphQLName(t.Identity, t.Source)
 }
 
@@ -614,7 +633,7 @@ var (
 		"); timestamps are RFC3339 strings, compared as instants. A kind with the " +
 		"temporal trait carries `at` and `endsAt` (tasks: `dueAt`) as filterable, " +
 		"orderable properties, so one day's events are " +
-		`{"kinds": ["calendar.substrate.reamde.dev/calendarevent"], ` +
+		`{"kinds": ["samples.substrate.reamde.dev/calendar/calendarevent"], ` +
 		`"properties": {"at": {"gte": "2026-08-15T00:00:00Z", "lt": "2026-08-16T00:00:00Z"}}}.`
 
 	orderByArgDescription = "Sort keys, applied in order: [{" + strings.Join(strictjson.Keys(substrate.Order{}), ", ") +

@@ -20,7 +20,7 @@ func TestCanonicalEnvelopeRoundTripIsByteStable(t *testing.T) {
 	at := time.Unix(1_700_000_000, 0).UTC()
 	e := &substrate.Record{
 		ID:        "p1",
-		Kind:      "people.substrate.reamde.dev/person",
+		Kind:      "samples.substrate.reamde.dev/people/person",
 		Version:   7,
 		CreatedAt: at,
 		UpdatedAt: at,
@@ -31,14 +31,14 @@ func TestCanonicalEnvelopeRoundTripIsByteStable(t *testing.T) {
 		Properties: map[string]any{
 			"name":  "Ada",
 			"age":   36,
-			"knows": map[string]any{"ref": "people.substrate.reamde.dev/person/p2"},
+			"knows": map[string]any{"ref": "samples.substrate.reamde.dev/people/person/p2"},
 			"employs": []any{
-				map[string]any{"ref": "people.substrate.reamde.dev/person/p3"},
-				map[string]any{"ref": "people.substrate.reamde.dev/person/p2"},
+				map[string]any{"ref": "samples.substrate.reamde.dev/people/person/p3"},
+				map[string]any{"ref": "samples.substrate.reamde.dev/people/person/p2"},
 			},
 			"memberOf": []any{
-				map[string]any{"ref": "people.substrate.reamde.dev/organization/org2", "role": "member"},
-				map[string]any{"ref": "people.substrate.reamde.dev/organization/org1", "role": "admin"},
+				map[string]any{"ref": "samples.substrate.reamde.dev/people/organization/org2", "role": "member"},
+				map[string]any{"ref": "samples.substrate.reamde.dev/people/organization/org1", "role": "admin"},
 			},
 		},
 		Labels: map[string]any{"owner/pinned": true},
@@ -85,7 +85,7 @@ func TestCanonicalEnvelopeRoundTripIsByteStable(t *testing.T) {
 		t.Fatalf("repeated reference = %#v, want two entries", in1.Properties["employs"])
 	}
 	first, _ := employs[0].(map[string]any)
-	if first["ref"] != "people.substrate.reamde.dev/person/p3" {
+	if first["ref"] != "samples.substrate.reamde.dev/people/person/p3" {
 		t.Fatalf("repeated reference = %#v, want the authored order", in1.Properties["employs"])
 	}
 }
@@ -96,25 +96,25 @@ func TestCanonicalEnvelopeRoundTripIsByteStable(t *testing.T) {
 // first. What the round trip above pins is the other half: what comes BACK is
 // the object.
 func TestApplyCarriesTheReferenceShorthandThrough(t *testing.T) {
-	raw := []byte(`kind: people.substrate.reamde.dev/person
+	raw := []byte(`kind: samples.substrate.reamde.dev/people/person
 metadata:
   id: p1
 data:
   properties:
     name: Ada
-    knows: people.substrate.reamde.dev/person/p2
+    knows: samples.substrate.reamde.dev/people/person/p2
     employs:
-      - people.substrate.reamde.dev/person/p3
+      - samples.substrate.reamde.dev/people/person/p3
 `)
 	in, err := parseOneDocument(t, raw).putInput()
 	if err != nil {
 		t.Fatalf("putInput: %v", err)
 	}
-	if in.Properties["knows"] != "people.substrate.reamde.dev/person/p2" {
+	if in.Properties["knows"] != "samples.substrate.reamde.dev/people/person/p2" {
 		t.Fatalf("knows = %#v, want the authored shorthand carried through", in.Properties["knows"])
 	}
 	employs, ok := in.Properties["employs"].([]any)
-	if !ok || len(employs) != 1 || employs[0] != "people.substrate.reamde.dev/person/p3" {
+	if !ok || len(employs) != 1 || employs[0] != "samples.substrate.reamde.dev/people/person/p3" {
 		t.Fatalf("employs = %#v, want the authored shorthand carried through", in.Properties["employs"])
 	}
 }

@@ -26,10 +26,10 @@ import (
 // sunset window.
 const APIVersion = "v1"
 
-// coreAuthority publishes the substrate's own machinery kinds — the trigger
+// coreAuthority is the core PACKAGE: the substrate's own machinery kinds — the trigger
 // and run vocabulary among them, so a resource's operational verbs
 // hang off core beside the records they act on.
-const coreAuthority = "core.substrate.reamde.dev"
+const coreAuthority = "substrate.reamde.dev/core"
 
 // kindBundleIdentity is the bundle kind's reference. A PATCH of a bundle record
 // runs its lifecycle transition (disable/enable/uninstall/purge) instead of a
@@ -246,7 +246,7 @@ func (h *handler) mountResources(r chi.Router) {
 			// two-segment kind reference can never collide with a one-segment
 			// reserved word, which is what lets them drop their authority prefix
 			// without a separator. This also frees the collections the old verb
-			// paths shadowed — `core.substrate.reamde.dev/recordmerge` and
+			// paths shadowed — `substrate.reamde.dev/core/recordmerge` and
 			// `/recordsplit` are reachable now that merge and split moved here
 			// (#202).
 			r.Post("/graphql", h.postGraphQL)
@@ -281,7 +281,7 @@ func (h *handler) mountResources(r chi.Router) {
 			r.Post("/oauth/start", h.postOAuthStart)
 			// The content-addressed blob store: store bytes under their digest,
 			// stream them back, both repository-scoped. A blob's manifest is an
-			// ordinary `blob` record under /core.substrate.reamde.dev/blob.
+			// ordinary `blob` record under /substrate.reamde.dev/core/blob.
 			r.Put("/blobs", h.putBlob)
 			r.Put("/blobs/{digest}", h.putBlob)
 			r.Get("/blobs/{digest}", h.getBlob)
@@ -299,7 +299,7 @@ func (h *handler) mountResources(r chi.Router) {
 			//
 			// Trigger delivery bookkeeping: status is computed, a replay is a
 			// cursor reset, a run is one synthesized delivery, a wake is an
-			// immediate scan. Triggers are core.substrate.reamde.dev records, so
+			// immediate scan. Triggers are substrate.reamde.dev/core records, so
 			// the verbs live at that record.
 			h.mountTriggerVerbs(r, coreAuthority)
 			// Bundle status is computed; enable/disable, uninstall and purge are
@@ -323,11 +323,12 @@ func (h *handler) mountResources(r chi.Router) {
 			r.Post("/"+coreAuthority+"/agent/{name}/chat", h.postAgentChat)
 
 			// THE GENERIC RECORD SURFACE. The path IS the kind reference:
-			// {authority}/{kind} for a collection, that plus the id for a
-			// record. Every kind carries an authority (decision 0042), so the
-			// two shapes are told apart by SEGMENT COUNT alone — a two-segment
-			// path is a collection, a three-segment path a record — and
-			// `addressed` is the ONE place that reads it.
+			// {authority}/{package}/{kind} for a collection, that plus the id
+			// for a record. Every kind carries an authority and a package
+			// (decisions 0042, 0047), so the two shapes are told apart by
+			// SEGMENT COUNT alone — a three-segment path is a collection, a
+			// four-segment path a record — and `addressed` is the ONE place
+			// that reads it.
 			//
 			// Each method says which shape it serves, and a method sent to the
 			// other shape answers 405 naming the spelling that works. POST at a
@@ -335,31 +336,31 @@ func (h *handler) mountResources(r chi.Router) {
 			// meant, so a POST to a record discarded the id and created one under
 			// a server id; PUT was the mirror at a collection.
 			//
-			// A one-segment path names no kind, so no route binds it: an unknown
-			// word answers the router's JSON 404 and a wrong method on a
-			// reserved word (`DELETE /graphql`) its JSON 405, never the
-			// console's index.html.
-			r.Get("/{a1}/{a2}", h.listCollection)
-			r.Post("/{a1}/{a2}", h.createInCollection)
-			r.Put("/{a1}/{a2}", h.putResource)
-			r.Patch("/{a1}/{a2}", h.patchResource)
-			r.Delete("/{a1}/{a2}", h.deleteResource)
-
-			r.Get("/{a1}/{a2}/{a3}", h.getResource)
+			// A path shorter than three segments names no kind, so no route
+			// binds it: an unknown word answers the router's JSON 404 and a
+			// wrong method on a reserved word (`DELETE /graphql`) its JSON 405,
+			// never the console's index.html.
+			r.Get("/{a1}/{a2}/{a3}", h.listCollection)
 			r.Post("/{a1}/{a2}/{a3}", h.createInCollection)
 			r.Put("/{a1}/{a2}/{a3}", h.putResource)
 			r.Patch("/{a1}/{a2}/{a3}", h.patchResource)
 			r.Delete("/{a1}/{a2}/{a3}", h.deleteResource)
 
+			r.Get("/{a1}/{a2}/{a3}/{a4}", h.getResource)
+			r.Post("/{a1}/{a2}/{a3}/{a4}", h.createInCollection)
+			r.Put("/{a1}/{a2}/{a3}/{a4}", h.putResource)
+			r.Patch("/{a1}/{a2}/{a3}/{a4}", h.patchResource)
+			r.Delete("/{a1}/{a2}/{a3}/{a4}", h.deleteResource)
+
 			// The record's one sub-resource hangs a level below the id
-			// (`/{authority}/{kind}/{id}/incoming`). A static segment beats a
-			// parameter in chi's tree, so a record whose id is literally
+			// (`/{authority}/{package}/{kind}/{id}/incoming`). A static segment
+			// beats a parameter in chi's tree, so a record whose id is literally
 			// `incoming` is shadowed by the sub-resource route a level up and
 			// is refused as an id in both directions (`reservedRecordID`),
-			// keeping the corner symmetric (decision 0033). The two-segment
-			// route below holds that shadow.
-			r.Get("/{a1}/{a2}/incoming", h.getIncoming)
+			// keeping the corner symmetric (decision 0033). The shorter route
+			// below holds that shadow.
 			r.Get("/{a1}/{a2}/{a3}/incoming", h.getIncoming)
+			r.Get("/{a1}/{a2}/{a3}/{a4}/incoming", h.getIncoming)
 		})
 	}
 }
@@ -374,7 +375,7 @@ const assetPrefix = "/assets/"
 // but an unrelated one ("'text/html' is not a valid JavaScript MIME type"
 // instead of "404"). The set is deliberately narrow, both ways. A console
 // route's last segment legitimately carries a dot (a kind reference,
-// `/kinds/people.substrate.reamde.dev`), so a dot on its own may never be read
+// `/kinds/samples.substrate.reamde.dev/people`), so a dot on its own may never be read
 // as an extension; and a non-API path that ends `.json` is served to the
 // console today (a wrong METHOD on `/.well-known/substrate/server.json` falls
 // through here), so nothing but code belongs in the set.

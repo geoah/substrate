@@ -57,7 +57,7 @@ func TestRegisterThenLogin(t *testing.T) {
 	}
 
 	// The token registration handed back is an ordinary bearer.
-	wantStatus(t, env.do(t, http.MethodGet, "/api/v1/people.substrate.reamde.dev/person", out.Secret, nil),
+	wantStatus(t, env.do(t, http.MethodGet, "/api/v1/samples.substrate.reamde.dev/people/person", out.Secret, nil),
 		http.StatusOK)
 
 	// Login mints another — sessions ARE token records.

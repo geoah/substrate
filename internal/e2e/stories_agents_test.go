@@ -42,9 +42,9 @@ func caseStory02(c *C) {
 	c.putTrigger("story-resolve-attendees", map[string]any{
 		"enabled": true,
 		"source": map[string]any{"record": map[string]any{
-			"kinds": []string{storyAuthority + "/eventimport"}, "ops": []string{"create"},
+			"kinds": []string{storyPkg + "/eventimport"}, "ops": []string{"create"},
 		}},
-		"callable": "core.substrate.reamde.dev/function/" + storyAuthority + "/resolveattendees",
+		"callable": "substrate.reamde.dev/core/function/" + storyPkg + "/resolveattendees",
 	})
 
 	before := c.countRecords(personCollection)
@@ -93,7 +93,7 @@ func caseStory02(c *C) {
 		Ran int `json:"ran"`
 	}
 	status, raw := c.do(http.MethodPost, triggerCollection+"/story-resolve-attendees/run",
-		map[string]any{"kind": storyAuthority + "/eventimport", "id": "imp-kickoff"}, &reran)
+		map[string]any{"kind": storyPkg + "/eventimport", "id": "imp-kickoff"}, &reran)
 	c.requiref(status == http.StatusOK && reran.Ran == 1, "the synthetic re-delivery answered %d, ran %d: %s", status, reran.Ran, raw)
 	ev = c.getRec(eventCollection, "ev-kickoff")
 	c.requiref(sameSet(refPaths(ev, "attendees"), wantAttendees...) &&
@@ -117,7 +117,7 @@ func caseStory03(c *C) {
 		"source": map[string]any{"record": map[string]any{
 			"kinds": []string{transcriptKind}, "ops": []string{"create"},
 		}},
-		"callable": "core.substrate.reamde.dev/agent/" + storyAuthority + "/transcriptMatcher",
+		"callable": "substrate.reamde.dev/core/agent/" + storyPkg + "/transcriptMatcher",
 	})
 
 	// The kickoff's transcript: title copied from the meeting (as recorders
@@ -183,14 +183,14 @@ func caseStory04(c *C) {
 			"when":     `record != null && "meeting" in record.properties && record.properties.meeting != ""`,
 			"coalesce": true,
 		}},
-		"callable": "core.substrate.reamde.dev/agent/" + storyAuthority + "/actionItemExtractor",
+		"callable": "substrate.reamde.dev/core/agent/" + storyPkg + "/actionItemExtractor",
 	})
 	c.putTrigger("story-review-proposals", map[string]any{
 		"enabled": true,
 		"source": map[string]any{"record": map[string]any{
-			"kinds": []string{"core.substrate.reamde.dev/recordpatchrequest"}, "ops": []string{"create"},
+			"kinds": []string{"substrate.reamde.dev/core/recordpatchrequest"}, "ops": []string{"create"},
 		}},
-		"callable": "core.substrate.reamde.dev/agent/" + storyAuthority + "/changeRequestReviewer",
+		"callable": "substrate.reamde.dev/core/agent/" + storyPkg + "/changeRequestReviewer",
 	})
 
 	// The matcher's `meeting` write predates this trigger, so the cursor
@@ -285,7 +285,7 @@ func caseStory04(c *C) {
 	// the feed, checked per request, so a self-graded decision anywhere fails.
 	byRecord := map[string]map[string]string{}
 	for _, row := range c.readChangesForward(0) {
-		if row.Kind != "core.substrate.reamde.dev/recordpatchrequest" {
+		if row.Kind != "substrate.reamde.dev/core/recordpatchrequest" {
 			continue
 		}
 		if byRecord[row.RecordID] == nil {
@@ -347,7 +347,7 @@ func caseStory06(c *C) {
 		// tokens, runs, threads): a task or a story record written as the
 		// system actor would be laundered attribution.
 		ok := row.Actor == "api" || strings.HasPrefix(row.Actor, "bundle:") ||
-			(row.Actor == "substrate" && strings.HasPrefix(row.Kind, "core.substrate.reamde.dev/"))
+			(row.Actor == "substrate" && strings.HasPrefix(row.Kind, "substrate.reamde.dev/core/"))
 		switch row.Actor {
 		case actorResolver, actorMatcher, actorReflection, actorArbiter:
 			ok = true
@@ -389,8 +389,8 @@ func (c *C) graphJoin() []byte {
 	c.t.Helper()
 	kinds := []string{
 		taskKind, projectKind, personKind, teamKind, orgKind,
-		eventKind, transcriptKind, storyAuthority + "/matchverdict",
-		"core.substrate.reamde.dev/recordpatchrequest",
+		eventKind, transcriptKind, storyPkg + "/matchverdict",
+		"substrate.reamde.dev/core/recordpatchrequest",
 	}
 	query := `{ records(filter: {kinds: ["` + strings.Join(kinds, `", "`) + `"]}, orderBy: [{property: "createdAt"}], first: 200) {
 		nodes { id kind properties } } }`
@@ -562,7 +562,7 @@ func matcherResponder(llmReq llmReq) llmTurn {
 		return llmCall{"mutate", map[string]any{
 			"query": "mutation($in: JSON!) { put(input: $in) { id } }",
 			"variables": map[string]any{"in": map[string]any{
-				"kind": storyAuthority + "/matchverdict", "id": "mv-" + tid,
+				"kind": storyPkg + "/matchverdict", "id": "mv-" + tid,
 				"properties": props,
 			}},
 		}}
@@ -698,7 +698,7 @@ func arbiterResponder(req llmReq) llmTurn {
 		decision = "rejected"
 	}
 	return llmTurn{calls: []llmCall{{"mutate", map[string]any{
-		"query": `mutation($id: ID!, $in: JSON!) { patch(kind: "core.substrate.reamde.dev/recordpatchrequest", id: $id, input: $in) { id } }`,
+		"query": `mutation($id: ID!, $in: JSON!) { patch(kind: "substrate.reamde.dev/core/recordpatchrequest", id: $id, input: $in) { id } }`,
 		"variables": map[string]any{
 			"id": id,
 			"in": map[string]any{"properties": map[string]any{"decision": decision}},

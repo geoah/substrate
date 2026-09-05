@@ -62,7 +62,7 @@ func (h *handler) getBundleStatus(w http.ResponseWriter, r *http.Request) {
 // not a capability list — decide what the verb may do. On failure it has
 // already written the response.
 func (h *handler) bundleLifecycleGate(w http.ResponseWriter, r *http.Request, ops substrate.BundleOps) (string, bool) {
-	authority, err := ops.BundleAuthority(r.Context(), pathParam(r, "id"))
+	authority, err := ops.BundlePackage(r.Context(), pathParam(r, "id"))
 	if err != nil {
 		writeSubstrateError(w, err)
 		return "", false
@@ -131,7 +131,7 @@ func (h *handler) patchBundleLifecycle(w http.ResponseWriter, r *http.Request, i
 	// binds it as `a3` (addr.id), not the `{id}` chi param the bind sub-path
 	// uses, so this cannot reuse bundleLifecycleGate — that reads `pathParam
 	// "id"`, which is empty here.
-	if _, err := ops.BundleAuthority(r.Context(), id); err != nil {
+	if _, err := ops.BundlePackage(r.Context(), id); err != nil {
 		writeSubstrateError(w, err)
 		return
 	}

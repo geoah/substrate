@@ -43,7 +43,7 @@ func (d *bundleDataset) BundleStatus(_ context.Context, id string) (substrate.Bu
 	return substrate.BundleStatus{ID: id, Authority: d.authority, Installed: true, Enabled: true}, nil
 }
 
-func (d *bundleDataset) BundleAuthority(_ context.Context, id string) (string, error) {
+func (d *bundleDataset) BundlePackage(_ context.Context, id string) (string, error) {
 	// The lifecycle PATCH addresses the bundle by id; an empty one is the
 	// generic-route param bug (a3, not {id}), so refuse it the way the engine
 	// would rather than answering for a bundle nobody named.
@@ -97,7 +97,7 @@ func newBundleEnv(t *testing.T) (*testEnv, *bundleDataset) {
 
 // bundlePath is the bundle RECORD; its lifecycle is record state, so
 // enable/disable/uninstall/purge are a PATCH of it (decision 0033).
-const bundlePath = "/api/v1/core.substrate.reamde.dev/bundle/widgets.bundles.substrate.reamde.dev"
+const bundlePath = "/api/v1/substrate.reamde.dev/core/bundle/widgets.bundles.substrate.reamde.dev"
 
 const bindPath = bundlePath + "/bind"
 
@@ -205,7 +205,7 @@ func TestGraphQLInputStrictDecodeMiscasedIfVersion(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
 	res := env.gqlRaw(t, tok,
-		`mutation ($in: JSON!) { patch(kind: "people.substrate.reamde.dev/person", id: "x", input: $in) { id } }`,
+		`mutation ($in: JSON!) { patch(kind: "samples.substrate.reamde.dev/people/person", id: "x", input: $in) { id } }`,
 		map[string]any{"in": map[string]any{"ifversion": 3}})
 	if len(res.Errors) == 0 {
 		t.Fatal("a miscased ifversion silently decoded — the strict decoder is not on the GraphQL path")
@@ -276,7 +276,7 @@ func TestGraphQLIntVariableIsUsable(t *testing.T) {
 func TestStrictDecodeRejectsTrailingCloser(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/people.substrate.reamde.dev/person", strings.NewReader("{}}"))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/samples.substrate.reamde.dev/people/person", strings.NewReader("{}}"))
 	req.RemoteAddr = "10.0.0.1:1234"
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rec := httptest.NewRecorder()

@@ -8,7 +8,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-const peopleV1 = "/api/v1/people.substrate.reamde.dev/person"
+const peopleV1 = "/api/v1/samples.substrate.reamde.dev/people/person"
 
 // A reference is written like every other property: one put carries the
 // pointer, and a second put drops it by writing null. There is no link verb
@@ -18,19 +18,19 @@ func TestRESTReferenceIsWrittenAsAProperty(t *testing.T) {
 	tok := env.svc.token("geoah")
 	ds := env.svc.datasets["geoah"]
 	ds.records["p1"] = &substrate.Record{
-		ID: "p1", Kind: "people.substrate.reamde.dev/person", Version: 1,
+		ID: "p1", Kind: "samples.substrate.reamde.dev/people/person", Version: 1,
 		Properties: map[string]any{"name": "Sam"},
 	}
 
 	rec := env.do(t, http.MethodPut, peopleV1+"/p1", tok, map[string]any{
-		"properties": map[string]any{"name": "Sam", "manager": "people.substrate.reamde.dev/person/p2"},
+		"properties": map[string]any{"name": "Sam", "manager": "samples.substrate.reamde.dev/people/person/p2"},
 	})
 	wantStatus(t, rec, http.StatusOK)
 	e := decodeJSON[substrate.Record](t, rec)
 	// The put sent the bare path (write-time shorthand) and the read serves
 	// the object it normalized to (0044).
 	manager, _ := e.Properties["manager"].(map[string]any)
-	if manager["ref"] != "people.substrate.reamde.dev/person/p2" {
+	if manager["ref"] != "samples.substrate.reamde.dev/people/person/p2" {
 		t.Fatalf("after the put, properties = %+v", e.Properties)
 	}
 
@@ -48,7 +48,7 @@ func TestRESTReferenceIsWrittenAsAProperty(t *testing.T) {
 func TestRESTEdgeRoutesAreGone(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
-	env.svc.datasets["geoah"].records["p1"] = &substrate.Record{ID: "p1", Kind: "people.substrate.reamde.dev/person"}
+	env.svc.datasets["geoah"].records["p1"] = &substrate.Record{ID: "p1", Kind: "samples.substrate.reamde.dev/people/person"}
 
 	for _, method := range []string{http.MethodPost, http.MethodDelete} {
 		rec := env.do(t, method, peopleV1+"/p1/edges/member_of", tok, map[string]any{"id": "org1"})
@@ -138,7 +138,7 @@ func TestTriggerVerbsLiveUnderCore(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
 
-	rec := env.do(t, http.MethodGet, "/api/v1/core.substrate.reamde.dev/trigger/status", tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/substrate.reamde.dev/core/trigger/status", tok, nil)
 	wantErrorCode(t, rec, http.StatusNotImplemented, codeUnsupported)
 	if w := rec.Header().Get("Warning"); w != "" {
 		t.Fatalf("the resource path must not carry a deprecation Warning: %q", w)
@@ -168,7 +168,7 @@ func TestWatchRejectsListParams(t *testing.T) {
 func TestIncomingRejectsListParams(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
-	env.svc.datasets["geoah"].records["p1"] = &substrate.Record{ID: "p1", Kind: "people.substrate.reamde.dev/person"}
+	env.svc.datasets["geoah"].records["p1"] = &substrate.Record{ID: "p1", Kind: "samples.substrate.reamde.dev/people/person"}
 	rec := env.do(t, http.MethodGet, peopleV1+"/p1/incoming?filter=%7B%7D", tok, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 	if msg := decodeJSON[errorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "filter") {

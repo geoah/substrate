@@ -14,12 +14,12 @@ func TestApplyNamesTheReplacementForEveryRenamedKey(t *testing.T) {
 	for _, tc := range []struct{ name, doc, want string }{
 		{
 			"apiVersion",
-			"apiVersion: tasks.substrate.reamde.dev/v1alpha1\nkind: task\nmetadata: {name: t1}\nspec: {}\n",
+			"apiVersion: samples.substrate.reamde.dev/tasks/v1alpha1\nkind: task\nmetadata: {name: t1}\nspec: {}\n",
 			"writes `apiVersion`, which is gone",
 		},
 		{
 			"group",
-			"group: core.substrate.reamde.dev\nkind: tasks.substrate.reamde.dev/task\nmetadata: {id: t1}\ndata: {}\n",
+			"group: substrate.reamde.dev/core\nkind: samples.substrate.reamde.dev/tasks/task\nmetadata: {id: t1}\ndata: {}\n",
 			"which are one key now: `kind`",
 		},
 		{
@@ -29,17 +29,17 @@ func TestApplyNamesTheReplacementForEveryRenamedKey(t *testing.T) {
 		},
 		{
 			"spec",
-			"kind: tasks.substrate.reamde.dev/task\nmetadata: {id: t1}\nspec: {}\n",
+			"kind: samples.substrate.reamde.dev/tasks/task\nmetadata: {id: t1}\nspec: {}\n",
 			"writes `spec`, which is `data`",
 		},
 		{
 			"data.edges",
-			"kind: tasks.substrate.reamde.dev/task\nmetadata: {id: t1}\ndata:\n  edges:\n    - rel: source\n      to: {id: f81k}\n",
+			"kind: samples.substrate.reamde.dev/tasks/task\nmetadata: {id: t1}\ndata:\n  edges:\n    - rel: source\n      to: {id: f81k}\n",
 			"writes `data.edges`, which is gone",
 		},
 		{
 			"metadata.name",
-			"kind: tasks.substrate.reamde.dev/task\nmetadata: {name: t1}\ndata: {}\n",
+			"kind: samples.substrate.reamde.dev/tasks/task\nmetadata: {name: t1}\ndata: {}\n",
 			"writes `metadata.name`, which is `metadata.id`",
 		},
 	} {
@@ -63,7 +63,7 @@ func TestApplyNamesTheReplacementForEveryRenamedKey(t *testing.T) {
 func TestApplyKeepsTheAuthorityInTheKind(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
-	h.stdin.WriteString("group: core.substrate.reamde.dev\ntype: task\nmetadata: {id: t1}\ndata: {}\n")
+	h.stdin.WriteString("group: substrate.reamde.dev/core\ntype: task\nmetadata: {id: t1}\ndata: {}\n")
 	_, _, err := h.run("apply", "-f", "-")
 	if err == nil || !strings.Contains(err.Error(), "which are one key now: `kind`") {
 		t.Fatalf("err = %v, want the one-key error", err)
@@ -75,7 +75,7 @@ func TestApplyKeepsTheAuthorityInTheKind(t *testing.T) {
 func TestApplyRefusesAFlatIDUnderTheEnvelope(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
-	h.stdin.WriteString("kind: tasks.substrate.reamde.dev/task\nid: t1\nmetadata: {id: t2}\ndata: {}\n")
+	h.stdin.WriteString("kind: samples.substrate.reamde.dev/tasks/task\nid: t1\nmetadata: {id: t2}\ndata: {}\n")
 	_, _, err := h.run("apply", "-f", "-")
 	if err == nil || !strings.Contains(err.Error(), "mixes the envelope with the pre-envelope key `id`") {
 		t.Fatalf("err = %v", err)
@@ -90,7 +90,7 @@ func TestApplyRefusesAFlatIDUnderTheEnvelope(t *testing.T) {
 func TestApplyRefusesThePluralAsType(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
-	h.stdin.WriteString("kind: tasks.substrate.reamde.dev/tasks\nmetadata: {id: t1}\ndata: {}\n")
+	h.stdin.WriteString("kind: samples.substrate.reamde.dev/tasks/tasks\nmetadata: {id: t1}\ndata: {}\n")
 	_, _, err := h.run("apply", "-f", "-")
 	if err == nil || !strings.Contains(err.Error(), "singular") {
 		t.Fatalf("err = %v, want the singular-name error", err)

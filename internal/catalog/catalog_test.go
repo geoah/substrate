@@ -6,13 +6,14 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/kinds"
+	"github.com/geoah/substrate/samples"
 )
 
 // realCatalog loads the shipped example bundles from disk (the same tree
 // main.go embeds), so the parse is held against the real closures.
 func realCatalog(t *testing.T) *Catalog {
 	t.Helper()
-	c, err := Load(kinds.Bundles())
+	c, err := Load(kinds.Bundles(), samples.Samples())
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
@@ -24,11 +25,11 @@ func TestCatalogListsShippedBundle(t *testing.T) {
 	// A malformed or half-built neighbor is dropped with a warning, not
 	// fatal — but the web closure itself must never be the one dropped.
 	for _, w := range c.Warnings() {
-		if strings.HasPrefix(w, "web.bundles.substrate.reamde.dev") {
+		if strings.HasPrefix(w, "samples.substrate.reamde.dev/web") {
 			t.Fatalf("the web bundle was dropped: %v", w)
 		}
 	}
-	const webID = "web.bundles.substrate.reamde.dev/web"
+	const webID = "samples.substrate.reamde.dev/web"
 	b, ok := c.ByID(webID)
 	if !ok {
 		var ids []string
@@ -40,8 +41,11 @@ func TestCatalogListsShippedBundle(t *testing.T) {
 	if b.Name != "web" {
 		t.Errorf("name = %q, want web", b.Name)
 	}
-	if b.Authority != "web.bundles.substrate.reamde.dev" {
+	if b.Authority != "samples.substrate.reamde.dev" {
 		t.Errorf("authority = %q", b.Authority)
+	}
+	if b.Package != "web" {
+		t.Errorf("package = %q, want web", b.Package)
 	}
 	if b.Version != 8 {
 		t.Errorf("version = %d, want 8", b.Version)
@@ -55,7 +59,7 @@ func TestCatalogListsShippedBundle(t *testing.T) {
 }
 
 func TestCatalogDetailEnumeratesTheClosure(t *testing.T) {
-	b, ok := realCatalog(t).ByID("web.bundles.substrate.reamde.dev/web")
+	b, ok := realCatalog(t).ByID("samples.substrate.reamde.dev/web")
 	if !ok {
 		t.Fatal("web bundle missing")
 	}
@@ -78,7 +82,7 @@ func TestCatalogDetailEnumeratesTheClosure(t *testing.T) {
 			t.Errorf("a shipped record needs both halves of its identity: %+v", r)
 		}
 	}
-	if !contains(b.Closure.Kinds, "web.bundles.substrate.reamde.dev/config") {
+	if !contains(b.Closure.Kinds, "samples.substrate.reamde.dev/web/config") {
 		t.Errorf("config kind not in the closure: %v", b.Closure.Kinds)
 	}
 	// Each kind's own description rides along: before an install there is no
@@ -98,7 +102,7 @@ func TestCatalogDetailEnumeratesTheClosure(t *testing.T) {
 // bundle as "six agents and nothing else", which is what it looked like on
 // the Registry page.
 func TestCatalogPreviewsTheRecordsAnInstallWrites(t *testing.T) {
-	b, ok := realCatalog(t).ByID("llm.examples.substrate.reamde.dev/llm")
+	b, ok := realCatalog(t).ByID("samples.substrate.reamde.dev/llm")
 	if !ok {
 		t.Fatal("llm bundle missing")
 	}
@@ -108,7 +112,7 @@ func TestCatalogPreviewsTheRecordsAnInstallWrites(t *testing.T) {
 	want := map[string]bool{"anthropic": true, "openai": true}
 	got := map[string]bool{}
 	for _, r := range b.Closure.Records {
-		if r.Kind != "core.substrate.reamde.dev/llmprovider" {
+		if r.Kind != "substrate.reamde.dev/core/llmprovider" {
 			t.Errorf("unexpected shipped record %+v", r)
 			continue
 		}
@@ -127,8 +131,8 @@ func TestCatalogPreviewsTheRecordsAnInstallWrites(t *testing.T) {
 func TestCatalogIntegrationFacetIsCurated(t *testing.T) {
 	c := realCatalog(t)
 	cases := map[string]bool{
-		"google.bundles.substrate.reamde.dev/google": true,
-		"web.bundles.substrate.reamde.dev/web":       false,
+		"providers.substrate.reamde.dev/google": true,
+		"samples.substrate.reamde.dev/web":      false,
 	}
 	for id, want := range cases {
 		b, ok := c.ByID(id)
@@ -153,8 +157,8 @@ func TestCatalogSkipsNonBundleAndMalformed(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	must("notabundle.bundles.substrate.reamde.dev", "kind: core.substrate.reamde.dev/kind\nmetadata: {id: x.y}\ndata: {authority: y}\n")
-	must("broken.bundles.substrate.reamde.dev", "authority: core.substrate.reamde.dev\n  bad: [indent")
+	must("notabundle.bundles.substrate.reamde.dev", "kind: substrate.reamde.dev/core/kind\nmetadata: {id: x.y}\ndata: {authority: y}\n")
+	must("broken.bundles.substrate.reamde.dev", "authority: substrate.reamde.dev/core\n  bad: [indent")
 	c, err := Load(os.DirFS(dir))
 	if err != nil {
 		t.Fatalf("load: %v", err)

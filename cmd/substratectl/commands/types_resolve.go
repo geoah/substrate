@@ -24,7 +24,7 @@ const typesPageSize = 500
 const typesPageLimit = 100
 
 // fetchTypes reads the type registry, ENTIRELY. The registry is served as
-// records of core.substrate.reamde.dev/kind, whose properties carry the
+// records of substrate.reamde.dev/core/kind, whose properties carry the
 // projection; a bare TypeInfo array is accepted too.
 //
 // It pages. The collection list defaults to 50 rows and the shipped schema
@@ -61,7 +61,7 @@ func (c *client) fetchTypes(ctx context.Context) ([]substrate.KindInfo, error) {
 // cursor ("" when exhausted, and always "" for the bare-array shape, which
 // does not page).
 func (c *client) fetchTypePage(ctx context.Context, q url.Values) ([]json.RawMessage, string, error) {
-	resp, err := c.send(ctx, http.MethodGet, collectionPath(coreAuthority, nameKind), q, nil)
+	resp, err := c.send(ctx, http.MethodGet, collectionPath(corePackage, nameKind), q, nil)
 	if err != nil {
 		return nil, "", err
 	}
@@ -94,6 +94,7 @@ func decodeTypeInfo(raw json.RawMessage) (substrate.KindInfo, bool) {
 		ID          string         `json:"id"`
 		Name        string         `json:"name"`
 		Authority   string         `json:"authority"`
+		Package     string         `json:"package"`
 		Version     any            `json:"version"`
 		Plural      string         `json:"plural"`
 		Source      string         `json:"source"`
@@ -127,6 +128,7 @@ func decodeTypeInfo(raw json.RawMessage) (substrate.KindInfo, bool) {
 		Identity:    r.Identity,
 		Name:        firstNonEmpty(r.Name, propString(names, "singular"), propString(r.Properties, "name")),
 		Authority:   firstNonEmpty(r.Authority, propString(r.Properties, "authority")),
+		Package:     firstNonEmpty(r.Package, propString(r.Properties, "package")),
 		Version:     declaredVersion,
 		Plural:      firstNonEmpty(r.Plural, propString(names, "plural"), propString(r.Properties, "plural")),
 		Source:      firstNonEmpty(r.Source, propString(r.Properties, "source")),
@@ -136,18 +138,21 @@ func decodeTypeInfo(raw json.RawMessage) (substrate.KindInfo, bool) {
 	if ti.Identity == "" {
 		ti.Identity = r.ID
 	}
-	if ti.Identity == "" && ti.Name != "" && ti.Authority != "" {
-		ti.Identity = vocabulary.KindRef(ti.Authority, ti.Name)
+	if ti.Identity == "" && ti.Name != "" && ti.Authority != "" && ti.Package != "" {
+		ti.Identity = vocabulary.KindRef(ti.Authority, ti.Package, ti.Name)
 	}
-	// Fill only the missing half: a typed row authors `authority` and derives
-	// its name from the id, and the derivation must never clobber the
-	// authored value.
-	if name, authority, ok := splitIdentity(ti.Identity); ok {
+	// Fill only the missing parts: a typed row authors `authority` and
+	// `package` and derives its name from the id, and the derivation must
+	// never clobber the authored values.
+	if authority, pkg, name := vocabulary.SplitKindRef(ti.Identity); authority != "" {
 		if ti.Name == "" {
 			ti.Name = name
 		}
 		if ti.Authority == "" {
 			ti.Authority = authority
+		}
+		if ti.Package == "" {
+			ti.Package = pkg
 		}
 	}
 	if ti.Identity == "" {
@@ -198,7 +203,7 @@ func (a *app) statesFor(ctx context.Context, col collection) []string {
 		return nil
 	}
 	for _, ti := range types {
-		if ti.Authority == col.Authority && ti.Name == col.Name {
+		if ti.Authority == col.Authority && ti.Package == col.Package && ti.Name == col.Name {
 			return stateProperties(ti)
 		}
 	}
@@ -214,52 +219,52 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
-// splitIdentity splits "<name>.<authority>" at the first dot.
-// splitIdentity splits a kind identity into its name and authority. The
-// reference is `{authority}/{name}` and splits on its one slash; a bare
-// repository-local name has no authority to derive.
-func splitIdentity(identity string) (name, authority string, ok bool) {
-	authority, name = vocabulary.SplitKindRef(identity)
-	if authority == "" || name == "" {
-		return "", "", false
-	}
-	return name, authority, true
-}
-
-// collection is a resolved REST collection. Name is the kind NAME, the
-// collection path segment (decision 0033): the path is
-// /api/v1/{Authority}/{Name}, which for a record is its reference value.
+// collection is a resolved REST collection. Name is the kind NAME, the last
+// collection path segment (decisions 0033, 0047): the path is
+// /api/v1/{Authority}/{Package}/{Name}, which for a record is its reference
+// value.
 type collection struct {
 	Authority string
+	Package   string
 	Name      string
 	// Identity is the type identity when known ("" when resolved purely
 	// syntactically from a qualified argument).
 	Identity string
 }
 
+// pkg renders the collection's package identity, which is the first TWO
+// segments of every path the collection is addressed by: a REST collection is
+// /api/v1/{authority}/{package}/{kind} (decision 0047), so a caller that
+// passed the authority alone would build a path the server has no route for.
+func (c collection) pkg() string { return vocabulary.PackageRef(c.Authority, c.Package) }
+
 // ref renders a RECORD reference: the kind reference, then the id.
 func (c collection) ref(id string) string {
 	name := c.Identity
 	if name == "" {
-		name = vocabulary.KindRef(c.Authority, c.Name)
+		name = vocabulary.KindRef(c.Authority, c.Package, c.Name)
 	}
 	return name + "/" + id
 }
 
 // resolveCollection turns a CLI argument into a collection. The qualified form
-// "<authority>/<name>" wins outright; a bare name with -g is taken literally; a
-// bare name or plural otherwise resolves against the kind registry, and the
-// path always uses the resolved kind NAME.
-func (a *app) resolveCollection(ctx context.Context, arg, authority string) (collection, error) {
-	if g, name := vocabulary.SplitKindRef(arg); g != "" {
-		col := collection{Authority: g, Name: name}
-		if ti, found := a.lookupCached(name, g); found {
+// "<authority>/<package>/<name>" wins outright; a bare name with --package is
+// taken literally; a bare name otherwise resolves against the kind registry,
+// and the path always uses the resolved kind NAME.
+func (a *app) resolveCollection(ctx context.Context, arg, pkg string) (collection, error) {
+	if authority, pkgName, name := vocabulary.SplitKindRef(arg); authority != "" {
+		col := collection{Authority: authority, Package: pkgName, Name: name}
+		if ti, found := a.lookupCached(name, vocabulary.PackageRef(authority, pkgName)); found {
 			col.Name, col.Identity = ti.Name, ti.Identity
 		}
 		return col, nil
 	}
-	if authority != "" {
-		return collection{Authority: authority, Name: arg}, nil
+	if pkg != "" {
+		authority, pkgName := vocabulary.SplitPackageRef(pkg)
+		if authority == "" {
+			return collection{}, fmt.Errorf("--package takes a package identity (<authority>/<package>), got %q", pkg)
+		}
+		return collection{Authority: authority, Package: pkgName, Name: arg}, nil
 	}
 	types, err := a.types(ctx)
 	if err != nil {
@@ -276,13 +281,13 @@ func (a *app) resolveCollection(ctx context.Context, arg, authority string) (col
 		return collection{}, fmt.Errorf("no kind named %q; run `substratectl kinds` to list them", arg)
 	case 1:
 		ti := matches[0]
-		return collection{Authority: ti.Authority, Name: ti.Name, Identity: ti.Identity}, nil
+		return collection{Authority: ti.Authority, Package: ti.Package, Name: ti.Name, Identity: ti.Identity}, nil
 	}
 	names := make([]string, 0, len(matches))
 	for _, ti := range matches {
-		names = append(names, vocabulary.KindRef(ti.Authority, ti.Name))
+		names = append(names, ti.Identity)
 	}
-	return collection{}, fmt.Errorf("%q is ambiguous across authorities: %s (qualify it as authority/name or pass -g)",
+	return collection{}, fmt.Errorf("%q is ambiguous across packages: %s (qualify it as authority/package/name or pass --package)",
 		arg, strings.Join(names, ", "))
 }
 
@@ -310,9 +315,9 @@ func (a *app) types(ctx context.Context) ([]substrate.KindInfo, error) {
 	return types, nil
 }
 
-func (a *app) lookupCached(nameOrPlural, authority string) (substrate.KindInfo, bool) {
+func (a *app) lookupCached(nameOrPlural, pkg string) (substrate.KindInfo, bool) {
 	for _, ti := range a.typeCache {
-		if ti.Authority == authority && (ti.Plural == nameOrPlural || ti.Name == nameOrPlural) {
+		if vocabulary.KindPackage(ti.Identity) == pkg && (ti.Plural == nameOrPlural || ti.Name == nameOrPlural) {
 			return ti, true
 		}
 	}
@@ -323,10 +328,11 @@ func (a *app) lookupCached(nameOrPlural, authority string) (substrate.KindInfo, 
 // REST collection. A bare reference resolves the way a bare plural does, and
 // errors the same way when ambiguous.
 func (a *app) collectionForKind(ctx context.Context, ref string) (collection, error) {
-	authority, name := vocabulary.SplitKindRef(ref)
+	authority, pkgName, name := vocabulary.SplitKindRef(ref)
 	if authority == "" {
 		return a.resolveCollection(ctx, name, "")
 	}
+	pkg := vocabulary.PackageRef(authority, pkgName)
 	types, err := a.types(ctx)
 	if err != nil {
 		return collection{}, err
@@ -334,23 +340,24 @@ func (a *app) collectionForKind(ctx context.Context, ref string) (collection, er
 	var elsewhere []string
 	var pluralOnly string
 	for _, ti := range types {
-		if ti.Authority == authority && ti.Plural == name && ti.Name != name {
+		tiPkg := vocabulary.KindPackage(ti.Identity)
+		if tiPkg == pkg && ti.Plural == name && ti.Name != name {
 			pluralOnly = ti.Name
 		}
 		if ti.Name != name {
 			continue
 		}
-		if ti.Authority == authority {
-			return collection{Authority: ti.Authority, Name: ti.Name, Identity: ti.Identity}, nil
+		if tiPkg == pkg {
+			return collection{Authority: ti.Authority, Package: ti.Package, Name: ti.Name, Identity: ti.Identity}, nil
 		}
-		elsewhere = append(elsewhere, ti.Authority)
+		elsewhere = append(elsewhere, tiPkg)
 	}
 	if pluralOnly != "" {
 		return collection{}, fmt.Errorf("`kind` names the singular (%q), not the plural %q", pluralOnly, name)
 	}
 	if len(elsewhere) > 0 {
-		return collection{}, fmt.Errorf("no kind %q under authority %q; it is published by %s (fix the manifest's kind)",
-			name, authority, strings.Join(elsewhere, ", "))
+		return collection{}, fmt.Errorf("no kind %q in package %q; it is declared in %s (fix the manifest's kind)",
+			name, pkg, strings.Join(elsewhere, ", "))
 	}
 	return collection{}, fmt.Errorf("unknown kind %q; run `substratectl kinds` to list them", ref)
 }

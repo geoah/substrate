@@ -32,7 +32,7 @@ func TestTriggerRunSendsKindAndID(t *testing.T) {
 	}
 	// The bare `task` resolves against the registry to the full reference,
 	// which is what the wire names.
-	if gotKind != "tasks.substrate.reamde.dev/task" {
+	if gotKind != "samples.substrate.reamde.dev/tasks/task" {
 		t.Errorf("body kind = %q, want the resolved reference", gotKind)
 	}
 	if gotID != "t9" {
@@ -45,15 +45,15 @@ func TestTriggerRunSendsKindAndID(t *testing.T) {
 func TestTriggerRunAcceptsAQualifiedKind(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
-	h.mustRun("trigger", "run", "classify-page", "tasks.substrate.reamde.dev/task", "t9")
+	h.mustRun("trigger", "run", "classify-page", "samples.substrate.reamde.dev/tasks/task", "t9")
 	var gotKind string
 	_ = json.Unmarshal(h.fake.lastBody["kind"], &gotKind)
-	if gotKind != "tasks.substrate.reamde.dev/task" {
+	if gotKind != "samples.substrate.reamde.dev/tasks/task" {
 		t.Fatalf("body kind = %q, want it passed through", gotKind)
 	}
 }
 
-// Every trigger verb rides the ONE path. Trigger records are core.substrate.reamde.dev's
+// Every trigger verb rides the ONE path. Trigger records are substrate.reamde.dev/core's
 // and a resource's operational verbs live at the resource, so the
 // verbs hang off core; the retired automation.substrate.reamde.dev spelling is gone, not
 // deprecated. The fake serves the core paths only, so a verb still riding the
@@ -137,33 +137,16 @@ type shippedType struct {
 // The schema on disk is the only authority for what exists.
 func shippedTypes(t *testing.T) map[string]shippedType {
 	t.Helper()
-	// The shipped vocabulary lives in TWO places since the seed shrank to
-	// core: the seeded tree, and the VOCABULARY bundles a repository imports
-	// (people, tasks, messaging, calendar). Help examples name kinds
-	// from both, so both are read.
+	// The shipped vocabulary lives in TWO trees since the seed shrank to core:
+	// kinds/ holds the seeded core package, and samples/ holds the sample
+	// packages a repository imports (people, tasks, messaging, calendar).
+	// Help examples name kinds from both, so both are read.
 	base := filepath.Join("..", "..", "..")
-	roots := []string{filepath.Join(base, "kinds", "core.substrate.reamde.dev")}
-	for _, a := range []string{"calendar", "messaging", "people", "tasks"} {
-		roots = append(roots, filepath.Join(base, "kinds", a+".substrate.reamde.dev"))
+	dirs := []string{filepath.Join(base, "kinds", "substrate.reamde.dev", "core")}
+	for _, pkg := range []string{"calendar", "messaging", "people", "tasks"} {
+		dirs = append(dirs, filepath.Join(base, "samples", pkg))
 	}
 	out := map[string]shippedType{}
-	var dirs []string
-	for _, root := range roots {
-		entries, err := os.ReadDir(root)
-		if err != nil {
-			t.Fatalf("read the shipped schema: %v", err)
-		}
-		named := false
-		for _, e := range entries {
-			if e.IsDir() {
-				dirs = append(dirs, filepath.Join(root, e.Name()))
-				named = true
-			}
-		}
-		if !named {
-			dirs = append(dirs, root)
-		}
-	}
 	for _, dir := range dirs {
 		files, err := os.ReadDir(dir)
 		if err != nil {
@@ -186,7 +169,7 @@ func shippedTypes(t *testing.T) map[string]shippedType {
 				} `yaml:"data"`
 			}
 			if err := yaml.Unmarshal(raw, &doc); err != nil {
-				continue // not a type declaration (an authority manifest, a trait)
+				continue // not a kind declaration (a package manifest, a trait)
 			}
 			if doc.Data.Names.Singular == "" {
 				continue

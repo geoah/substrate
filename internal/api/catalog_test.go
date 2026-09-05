@@ -7,12 +7,13 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/kinds"
+	"github.com/geoah/substrate/samples"
 
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-const webBundleID = "web.bundles.substrate.reamde.dev/web"
+const webBundleID = "samples.substrate.reamde.dev/web"
 
 // statusErrDataset is a fake dataset that DOES run the bundle lifecycle but
 // whose status reads fail — the repository/database fault review #11 must surface
@@ -32,8 +33,8 @@ func (d statusErrDataset) BundleStatus(context.Context, string) (substrate.Bundl
 
 // The rest of the substrate.BundleOps seam is stubbed: this fake exists only
 // to fail the status reads while still resolving as a bundle-running dataset.
-func (d statusErrDataset) BundleAuthority(context.Context, string) (string, error) {
-	return "web.bundles.substrate.reamde.dev", nil
+func (d statusErrDataset) BundlePackage(context.Context, string) (string, error) {
+	return "samples.substrate.reamde.dev/web", nil
 }
 func (d statusErrDataset) DisableBundle(context.Context, string) error { return nil }
 func (d statusErrDataset) BindBundleInput(context.Context, string, string, string) error {
@@ -74,7 +75,7 @@ func (s *statusErrService) Authenticate(ctx context.Context, secret string) (sub
 // fails every status read.
 func newStatusErrEnv(t *testing.T) *testEnv {
 	t.Helper()
-	cat, err := catalog.Load(kinds.Bundles())
+	cat, err := catalog.Load(kinds.Bundles(), samples.Samples())
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
@@ -91,7 +92,7 @@ func newStatusErrEnv(t *testing.T) *testEnv {
 // newCatalogEnv is a testEnv whose handler ships the real example catalog.
 func newCatalogEnv(t *testing.T) *testEnv {
 	t.Helper()
-	cat, err := catalog.Load(kinds.Bundles())
+	cat, err := catalog.Load(kinds.Bundles(), samples.Samples())
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
@@ -114,7 +115,7 @@ type upgradeErrDataset struct {
 
 func (d upgradeErrDataset) BundleStatuses(context.Context) ([]substrate.BundleStatus, error) {
 	return []substrate.BundleStatus{{
-		ID: webBundleID, Name: "web", Authority: "web.bundles.substrate.reamde.dev",
+		ID: webBundleID, Name: "web", Authority: "samples.substrate.reamde.dev/web",
 		Installed: true, Enabled: true,
 	}}, nil
 }
@@ -127,8 +128,8 @@ func (d upgradeErrDataset) PlanBundleUpgrade(context.Context, []map[string]any) 
 	return substrate.BundleUpgrade{}, d.err
 }
 
-func (d upgradeErrDataset) BundleAuthority(context.Context, string) (string, error) {
-	return "web.bundles.substrate.reamde.dev", nil
+func (d upgradeErrDataset) BundlePackage(context.Context, string) (string, error) {
+	return "samples.substrate.reamde.dev/web", nil
 }
 func (d upgradeErrDataset) DisableBundle(context.Context, string) error { return nil }
 func (d upgradeErrDataset) BindBundleInput(context.Context, string, string, string) error {
@@ -168,7 +169,7 @@ func (s *upgradeErrService) Authenticate(ctx context.Context, secret string) (su
 
 func newUpgradeErrEnv(t *testing.T) *testEnv {
 	t.Helper()
-	cat, err := catalog.Load(kinds.Bundles())
+	cat, err := catalog.Load(kinds.Bundles(), samples.Samples())
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
@@ -224,6 +225,7 @@ func TestCatalogListReturnsShippedBundles(t *testing.T) {
 			ID        string `json:"id"`
 			Name      string `json:"name"`
 			Authority string `json:"authority"`
+			Package   string `json:"package"`
 			Version   int64  `json:"version"`
 			Installed bool   `json:"installed"`
 		} `json:"items"`
@@ -232,7 +234,7 @@ func TestCatalogListReturnsShippedBundles(t *testing.T) {
 	for _, item := range body.Items {
 		if item.ID == webBundleID {
 			found = true
-			if item.Name != "web" || item.Authority != "web.bundles.substrate.reamde.dev" || item.Version != 8 {
+			if item.Name != "web" || item.Authority != "samples.substrate.reamde.dev" || item.Package != "web" || item.Version != 8 {
 				t.Errorf("web entry fields = %+v", item)
 			}
 			if item.Installed {
@@ -245,7 +247,7 @@ func TestCatalogListReturnsShippedBundles(t *testing.T) {
 	}
 }
 
-const googleBundleID = "google.bundles.substrate.reamde.dev/google"
+const googleBundleID = "providers.substrate.reamde.dev/google"
 
 // The catalog list response carries the curated integration facet on the wire:
 // the google provider bundle is integration=true, the web bundle false, so the

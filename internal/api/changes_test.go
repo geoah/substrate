@@ -17,7 +17,7 @@ func seedChanges(ds *fakeDataset, n int) {
 	for i := range n {
 		ds.commit(substrate.Change{
 			TS: time.Unix(int64(i+1), 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
-			RecordID: "e" + string(rune('1'+i)), Kind: "people.substrate.reamde.dev/person",
+			RecordID: "e" + string(rune('1'+i)), Kind: "samples.substrate.reamde.dev/people/person",
 		})
 		<-ds.signals // keep the buffered signal channel drained
 	}
@@ -61,10 +61,10 @@ func TestChangesHistoryCarriesTriggerStates(t *testing.T) {
 	ds := env.svc.datasets["geoah"]
 	seedChanges(ds, 2)
 	ds.trStates[1] = []substrate.ChangeTrigger{
-		{Trigger: "on-mirror.widgets.test.dev", Callable: "widgets.test.dev/mirror", State: substrate.ChangeTriggerParked, Error: "boom"},
+		{Trigger: "on-mirror.widgets.test.dev", Callable: "widgets.test.dev/widgets/mirror", State: substrate.ChangeTriggerParked, Error: "boom"},
 	}
 	ds.trStates[2] = []substrate.ChangeTrigger{
-		{Trigger: "on-mirror.widgets.test.dev", Callable: "widgets.test.dev/mirror", State: substrate.ChangeTriggerPending},
+		{Trigger: "on-mirror.widgets.test.dev", Callable: "widgets.test.dev/widgets/mirror", State: substrate.ChangeTriggerPending},
 	}
 
 	rec := env.do(t, http.MethodGet, "/api/v1/changes?first=10", tok, nil)
@@ -87,12 +87,12 @@ func TestChangesQFiltersHistory(t *testing.T) {
 	ds := env.svc.datasets["geoah"]
 	ds.commit(substrate.Change{
 		TS: time.Unix(1, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
-		RecordID: "alpha1", Kind: "people.substrate.reamde.dev/person",
+		RecordID: "alpha1", Kind: "samples.substrate.reamde.dev/people/person",
 		Payload: map[string]any{"properties": map[string]any{"name": "Ada"}},
 	})
 	ds.commit(substrate.Change{
 		TS: time.Unix(2, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
-		RecordID: "beta1", Kind: "tasks.substrate.reamde.dev/task",
+		RecordID: "beta1", Kind: "samples.substrate.reamde.dev/tasks/task",
 	})
 
 	// Case-insensitive, and payload text counts as haystack.
@@ -119,11 +119,11 @@ func TestChangesWatchAppliesQ(t *testing.T) {
 
 	ds.commit(substrate.Change{
 		TS: time.Unix(1, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
-		RecordID: "p1", Kind: "people.substrate.reamde.dev/person",
+		RecordID: "p1", Kind: "samples.substrate.reamde.dev/people/person",
 	})
 	ds.commit(substrate.Change{
 		TS: time.Unix(2, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
-		RecordID: "t1", Kind: "tasks.substrate.reamde.dev/task",
+		RecordID: "t1", Kind: "samples.substrate.reamde.dev/tasks/task",
 	})
 
 	if got := readLine(t, br); got["recordId"] != "t1" {
@@ -145,11 +145,11 @@ func TestChangesWatchRowsCarryTriggers(t *testing.T) {
 	}
 
 	ds.trStates[1] = []substrate.ChangeTrigger{
-		{Trigger: "on-mirror.widgets.test.dev", Callable: "widgets.test.dev/mirror", State: substrate.ChangeTriggerPending},
+		{Trigger: "on-mirror.widgets.test.dev", Callable: "widgets.test.dev/widgets/mirror", State: substrate.ChangeTriggerPending},
 	}
 	ds.commit(substrate.Change{
 		TS: time.Unix(1, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
-		RecordID: "p1", Kind: "people.substrate.reamde.dev/person",
+		RecordID: "p1", Kind: "samples.substrate.reamde.dev/people/person",
 	})
 
 	line := readLine(t, br)

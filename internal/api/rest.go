@@ -14,30 +14,31 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// THE PATH GRAMMAR (decisions 0033, 0042).
+// THE PATH GRAMMAR (decisions 0033, 0042, 0047).
 //
-//	/{authority}/{kind}         a kind's collection
-//	/{authority}/{kind}/{id}    a record
+//	/{authority}/{package}/{kind}         a kind's collection
+//	/{authority}/{package}/{kind}/{id}    a record
 //
-// Every kind carries an authority (decision 0042), so a collection is always
-// two segments and a record always three, and the two shapes are told apart by
-// SEGMENT COUNT, never by inspecting a segment. The collection segment is the
-// kind's NAME, so everything after the version prefix is the kind reference,
+// Every kind carries an authority and a package, so a collection is always
+// three segments and a record always four, and the two shapes are told apart
+// by SEGMENT COUNT, never by inspecting a segment. The collection segments ARE
+// the kind reference, so everything after the version prefix is that reference,
 // and a record's path is the record path a `reference` property stores
 // (vocabulary.RecordPath) character for character. There is no separator
 // segment: sub-resources hang one level below the id, and non-record endpoints
 // sit at the version root, so nothing needs one.
 
-// address is what a REST path addresses: the collection's authority, the kind
-// name, and the record id ("" on a collection route).
+// address is what a REST path addresses: the collection's authority, its
+// package, the kind name, and the record id ("" on a collection route).
 type address struct {
 	authority string
+	pkg       string
 	kind      string
 	id        string
 }
 
 // ref is the kind reference the collection segments spell.
-func (a address) ref() string { return vocabulary.KindRef(a.authority, a.kind) }
+func (a address) ref() string { return vocabulary.KindRef(a.authority, a.pkg, a.kind) }
 
 // path is the address as a URL under the version prefix, which for a record is
 // also its stored reference value (vocabulary.RecordPath).
@@ -57,18 +58,18 @@ func reservedRecordID(id string) bool {
 	return id == "incoming"
 }
 
-// addressed reads what a REST path addresses, by SEGMENT COUNT alone: three
-// segments name a record ({authority}/{kind}/{id}), two a collection
-// ({authority}/{kind}). Every kind carries an authority (decision 0042), so a
-// one-segment path names nothing and a second return of false is a 404 rather
-// than a lookup.
+// addressed reads what a REST path addresses, by SEGMENT COUNT alone: four
+// segments name a record ({authority}/{package}/{kind}/{id}), three a
+// collection ({authority}/{package}/{kind}). Every kind carries an authority
+// and a package (decisions 0042, 0047), so a shorter path names nothing and a
+// second return of false is a 404 rather than a lookup.
 func addressed(r *http.Request) (address, bool) {
-	s1, s2, s3 := pathParam(r, "a1"), pathParam(r, "a2"), pathParam(r, "a3")
+	s1, s2, s3, s4 := pathParam(r, "a1"), pathParam(r, "a2"), pathParam(r, "a3"), pathParam(r, "a4")
 	switch {
+	case s4 != "":
+		return address{authority: s1, pkg: s2, kind: s3, id: s4}, true
 	case s3 != "":
-		return address{authority: s1, kind: s2, id: s3}, true
-	case s2 != "":
-		return address{authority: s1, kind: s2}, true
+		return address{authority: s1, pkg: s2, kind: s3}, true
 	default:
 		return address{}, false
 	}
@@ -96,7 +97,7 @@ func (h *handler) collection(w http.ResponseWriter, r *http.Request, wantID bool
 		return nil, substrate.KindInfo{}, address{}, false
 	}
 	if !wantID && addr.id != "" {
-		coll := address{authority: addr.authority, kind: addr.kind}
+		coll := address{authority: addr.authority, pkg: addr.pkg, kind: addr.kind}
 		writeError(w, http.StatusMethodNotAllowed, codeBadRequest,
 			r.Method+" addresses a collection, not a record: POST "+coll.path()+
 				" creates one, PUT "+addr.path()+" writes this record")
@@ -117,8 +118,8 @@ func (h *handler) collection(w http.ResponseWriter, r *http.Request, wantID bool
 	}
 	ctx := r.Context()
 	ds := DatasetFrom(ctx)
-	// The collection segment IS the kind name, so the reference the two
-	// segments spell resolves the kind directly — no plural lookup.
+	// The collection segments ARE the kind reference, so they resolve the kind
+	// directly — no plural lookup.
 	ti, err := ds.KindByRef(ctx, addr.ref())
 	if err != nil {
 		if errors.Is(err, substrate.ErrNotFound) {
