@@ -29,9 +29,9 @@ run anywhere.
 **The operator's hat** speaks to the box's Postgres directly and holds no token
 at all: `user reset`, `repository list`, `repository inspect`,
 `repository verify`, `repository rebuild`, `repository reembed`,
-`repository reseal`, `blobs migrate`. It needs `--dsn` (or
-`DATABASE_URL`), and without one
-every operator command refuses before touching anything.
+`blobs migrate`. It needs `--dsn` (or `DATABASE_URL`) and
+`SUBSTRATE_DATA_ROOT`, and without them every operator command refuses before
+touching anything.
 [Running a substrate](operations.md) is where that hat lives.
 
 `substratectl version` belongs to neither hat: it prints the client version

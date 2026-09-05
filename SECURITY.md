@@ -39,33 +39,33 @@ unless you ask it not to.
   provider OAuth token reaching a response, a log line, another repository, or a
   record a token can read. A secret-typed property reads back `<redacted>`
   everywhere; anything else is a finding. The registration response is the one
-  deliberate disclosure, handing back the repository's changelog signing seed
-  and a server-minted recovery key exactly once, so either of those reaching any
-  other call is a finding too.
+  deliberate disclosure, handing back a server-minted recovery key exactly
+  once, so that key reaching any other call is a finding too.
 - **Sandbox escape under `SUBSTRATE_SANDBOX=enforce`.** A function body
   reaching the filesystem, the network or another process past what
   [the sandbox](docs/functions.md#the-sandbox) says it may.
 - **Remote code execution and SQL injection**, anywhere.
-- **Forging the chain.** An entry that `repository verify` accepts although its
-  bytes, its hash or its signature do not agree, on a repository whose signing
-  has activated.
+- **A damaged entry that verifies.** A changelog line or row that
+  `repository verify` accepts although its bytes do not produce its checksum,
+  or a segment file the boot check opens although its sidecar does not match.
 
 ## Not a finding
 
 - **The shipped compose defaults.** `compose.yaml` is a laptop quick start and
   says so: the invite code is `let-me-in`, the Postgres password is
-  `postgres`, no `SUBSTRATE_CREDENTIAL_KEY` is set, and
-  `SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES=true` runs the changelog
-  unsigned. Each is a deliberate default with a comment naming what to change
-  before the deployment is reachable by anyone else. A report that they are
-  insecure adds nothing.
+  `postgres`, and the credential key is minted into a volume on first start.
+  Each is a deliberate default with a comment naming what to change before the
+  deployment is reachable by anyone else. A report that they are insecure adds
+  nothing.
 - **Anything a `SUBSTRATE_INSECURE_*` variable turns on.** Those switches exist
   to weaken the substrate for local testing, they announce themselves at boot,
   and `SUBSTRATE_INSECURE_DISABLE_TOTP` in particular makes a password the
   whole credential on purpose.
-- **What the host operator can do.** The operator holds the database and the
-  credential key, so the chain and its signatures are tamper evidence and never
-  evidence against the operator ([the chain](docs/changelog.md#the-chain)).
+- **What the host operator can do.** The operator holds the database, the
+  data root and the credential key. The changelog is not signed and its
+  checksums catch corruption, not an operator who rewrites a line and its
+  checksum together
+  ([the checksum](docs/changelog.md#the-checksum-and-the-segment-files)).
   Operator commands run on the box, over the DSN, by design.
 - **A token doing what a token may.** A token has full access to its own
   repository: there are no scopes and no roles, every authenticated request

@@ -11,9 +11,9 @@ one **repository**, which owns one **authority** (`<username>.<server host>`
 unless the registration names one; the home of the kinds the user declares,
 [0046](docs/decisions/0046-a-repository-owns-one-authority-chosen-at-registration.md)).
 Everything the user has lives in it: an append-only,
-strictly sequential, hash-chained and server-signed **changelog**
-is the truth and the **records** table is
-its fold. Tokens and the login credential are themselves records, and a token
+strictly sequential **changelog**, checksummed segment files in the
+repository's directory under `SUBSTRATE_DATA_ROOT` that Postgres indexes,
+is the truth and the **records** table is its fold. Tokens and the login credential are themselves records, and a token
 has full access to its repository. There are no tenants, no identities, no
 user-managed keys, no sharing, no scopes and no roles.
 
@@ -76,8 +76,8 @@ columns, so do not hand-align them. Settings live in `.yamlfmt` and
 `.yamllint`, one comment per decision.
 
 **A substrate to work against** — a Postgres container of its own on `:5433`
-and the binary from the tree on `:8080`, invite code `let-me-in`, pid and log
-under `.dev/`. `docker compose up` builds an image; this does not, so a change
+and the binary from the tree on `:8080`, invite code `let-me-in`, pid, log,
+credential key and data root under `.dev/`. `docker compose up` builds an image; this does not, so a change
 is a restart. Every task is a subcommand of `.mise/dev.sh`.
 
 ```bash
@@ -86,7 +86,7 @@ mise run dev:totp       # dev, with the second factor ENFORCED
 mise run dev:status     # database, server, console, URLs, which door
 mise run dev:restart    # rebuild and restart; the data stays
 mise run dev:logs
-mise run dev:wipe       # DELETE the database: the next start is a fresh substrate
+mise run dev:wipe       # DELETE the database and .dev/data: the next start is a fresh substrate
 ```
 
 `dev:wipe` matters more than it looks: registration is one-shot per user and
@@ -105,13 +105,17 @@ code. A change to the door is tested under
 `mise run dev:totp`, where the factor is enforced, and NEVER by setting the
 variable outside this tree.
 
-**The dev substrate signs.** Changelog signing is mandatory and the signing
-seed seals under `SUBSTRATE_CREDENTIAL_KEY`, so the dev tasks mint a key once
-into `.dev/credential.key` and every start reuses it; `dev:wipe` removes it
-with the database. An operator command that needs the key (`repository
-reseal`) reads the same file — `dev:status` prints the export line. There is
-no keyless mode to fall back to: a host without the key refuses to boot, and
-a repository whose key cannot open refuses every write.
+**The dev substrate has a data root.** Every `dev*` task exports
+`SUBSTRATE_DATA_ROOT` as the absolute path of `.dev/data`, so each
+repository's directory (manifest, changelog segments, sealed files, blobs)
+lands under it, and `dev:wipe` removes it with the database. The two must go
+together: a data root outliving a wiped database is imported at the next
+boot, and a database outliving its root is written back out. The dev tasks
+also mint `SUBSTRATE_CREDENTIAL_KEY` once into `.dev/credential.key` and
+every start reuses it; it wraps each repository's DEK, an operator command
+that writes sealed material (`user reset`) reads the same file, and
+`dev:status` prints both paths. There is no keyless mode: a host without the
+key refuses to boot.
 
 **Run the engine suite on its own.** `internal/engine`'s `*_db_test.go` files
 each start a pgvector testcontainer, and they starve under a full-tree parallel
@@ -147,9 +151,8 @@ bin/substratectl watch                       # resumable change stream
 
 # the operator's hat — a DSN, no HTTP
 bin/substratectl --dsn "$DATABASE_URL" repository list
-bin/substratectl --dsn "$DATABASE_URL" repository verify <username>  # walk the changelog chain: every hash, every signature
-bin/substratectl --dsn "$DATABASE_URL" repository rebuild <username>
-bin/substratectl --dsn "$DATABASE_URL" repository reseal <username>  # migrate legacy secrets into the sealed store; needs SUBSTRATE_CREDENTIAL_KEY
+bin/substratectl --dsn "$DATABASE_URL" repository verify <username>  # walk the segment files: every line's checksum, every sidecar, both heads
+bin/substratectl --dsn "$DATABASE_URL" repository rebuild <username>  # replay the segment files into a fresh fold
 bin/substratectl --dsn "$DATABASE_URL" user reset <username>   # needs SUBSTRATE_CREDENTIAL_KEY
 ```
 
@@ -269,9 +272,13 @@ more, which is 0014's last reservation discharged.
   packages a repository copies), each with the one Go file that embeds it. No
   package is named for a language construct: no `types.go`, no `iface.go`, no
   `utils`. An interface lives with the subject it describes.
-- **The changelog is the truth.** `internal/engine/fold.go` is the one path from changelog to
-  `records`, so a live write and `RebuildRepository` cannot drift. Anything
-  that writes `records` directly is wrong.
+- **The changelog is the truth.** It lives in the repository's directory
+  under `SUBSTRATE_DATA_ROOT` as checksummed segment files, and the
+  `changelog` table indexes them; `internal/engine/fold.go` is the one path
+  from changelog to `records`, so a live write, a boot import and
+  `RebuildRepository` cannot drift. Anything that writes `records` directly,
+  or a changelog entry that reaches one store and not the other outside
+  `inTx`, is wrong.
 - **A changed declaration ships a changed version.** Every document under
   `kinds/` and `samples/` projects with a `version`, an incremental integer (a
   kind's own `data.version` where it pins one, else its package's, else 1). The boot

@@ -46,7 +46,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
       -o /out/substrate ./cmd/substrated
 # The CLI ships beside the server because the operator hat speaks the DSN, not
 # HTTP, and compose publishes no Postgres port. Without this binary in the
-# image, `repository verify`, `repository reseal` and `user reset` are
+# image, `repository verify`, `repository rebuild` and `user reset` are
 # unreachable in the deployment the README tells people to run, so a user who
 # loses their authenticator stays locked out. See docs/operations.md.
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
