@@ -8,55 +8,60 @@ not a file read.
 
 ## The declarable kinds
 
-Nine kinds declare everything:
+Ten kinds declare everything:
 
 | Kind                           | Declares                                              | Taught on                                         |
 | ------------------------------ | ----------------------------------------------------- | ------------------------------------------------- |
-| `core.substrate.reamde.dev/authority`     | one authority: the DNS name that publishes kinds      | [Data model](data-model.md#kinds-and-references) |
-| `core.substrate.reamde.dev/kind`          | one kind: the properties its records carry            | [Data model](data-model.md#kinds-and-references) |
-| `core.substrate.reamde.dev/propertytype`  | one custom property type: a refinement of a base type | [Data model](data-model.md#property-types)       |
-| `core.substrate.reamde.dev/trait`         | one trait, bound by kinds                             | [Data model](data-model.md#traits)               |
-| `core.substrate.reamde.dev/recordmapping` | how a source record's properties reach its subject    | [Projection](projection.md)                      |
-| `core.substrate.reamde.dev/function`      | one pure callable in Python or Go                     | [Functions](functions.md)                        |
-| `core.substrate.reamde.dev/agent`         | one callable whose body is an LLM loop                | [Agents](agents.md)                              |
-| `core.substrate.reamde.dev/bundle`        | one bundle: the closure it installs as a unit      | [Bundles](bundles.md)                      |
-| `core.substrate.reamde.dev/actor`         | one name writes are attributed to                     | [The API](api.md#actors)                         |
+| `substrate.reamde.dev/core/authority`     | one authority: the DNS name packages publish under    | [Data model](data-model.md#kinds-and-references) |
+| `substrate.reamde.dev/core/package`       | one package: the group its kinds live in, and its version | [Data model](data-model.md#kinds-and-references) |
+| `substrate.reamde.dev/core/kind`          | one kind: the properties its records carry            | [Data model](data-model.md#kinds-and-references) |
+| `substrate.reamde.dev/core/propertytype`  | one custom property type: a refinement of a base type | [Data model](data-model.md#property-types)       |
+| `substrate.reamde.dev/core/trait`         | one trait, bound by kinds                             | [Data model](data-model.md#traits)               |
+| `substrate.reamde.dev/core/recordmapping` | how a source record's properties reach its subject    | [Projection](projection.md)                      |
+| `substrate.reamde.dev/core/function`      | one pure callable in Python or Go                     | [Functions](functions.md)                        |
+| `substrate.reamde.dev/core/agent`         | one callable whose body is an LLM loop                | [Agents](agents.md)                              |
+| `substrate.reamde.dev/core/bundle`        | one bundle: the closure it installs as a unit      | [Bundles](bundles.md)                      |
+| `substrate.reamde.dev/core/actor`         | one name writes are attributed to                     | [The API](api.md#actors)                         |
 
 A manifest wears the same four-key [envelope](data-model.md#the-envelope) as
-any record. Its `kind:` is one of the nine above, always a core kind whatever
-authority the document declares into, and any other envelope key is a load
+any record. Its `kind:` is one of the ten above, always a core kind whatever
+package the document declares into, and any other envelope key is a load
 error.
 
 A declaration's id is its declared name. For a `kind` that name is the
-kind reference, and it must equal `<data.authority>/<data.names.singular>`: a
-manifest that spells the two differently is a load error, never a silent
-rename. A `propertytype`, `trait`, `recordmapping`, `function` and `agent`
-take the same `<authority>/<name>` form, and a `bundle`'s name is its
-authority's leading label (`google.bundles.substrate.reamde.dev/google`). An `authority`
-document's id is the DNS name itself, and an `actor`'s id is a bare word. So
-the smallest manifest, an authority, is five lines:
+kind reference, and it must equal
+`<data.authority>/<data.package>/<data.names.singular>`: a manifest that spells
+them differently is a load error, never a silent rename. A `propertytype`,
+`trait`, `recordmapping`, `function` and `agent` take the same
+`<authority>/<package>/<name>` form. A `package`'s id is
+`<authority>/<package>`, and a `bundle`'s id is the package it owns
+(`providers.substrate.reamde.dev/google`). An `authority` document's id is the
+DNS name itself, and an `actor`'s id is a bare word. So the closure header, a
+package, is seven lines:
 
 ```yaml
-kind: core.substrate.reamde.dev/authority
+kind: substrate.reamde.dev/core/package
 metadata:
-  id: tasks.substrate.reamde.dev
+  id: samples.substrate.reamde.dev/tasks
 data:
+  authority: samples.substrate.reamde.dev
+  package: tasks
   version: 1
 ```
 
-Each declarable kind has a collection under `core.substrate.reamde.dev`, the plural of
-its name, and declarations list and read there like any other record. A
+Each declarable kind has a collection under `substrate.reamde.dev/core`, named
+for the kind, and declarations list and read there like any other record. A
 declaration's id is the one id form that carries a `/`, which is legal in a
 URI path segment only percent-encoded, so a REST path spells it `%2F` and the
 API decodes it once:
 
 ```http
-GET /api/v1/core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev%2Ftask
+GET /api/v1/substrate.reamde.dev/core/kind/samples.substrate.reamde.dev%2Ftasks%2Ftask
 ```
 
 ## How the vocabulary reaches a repository
 
-The binary's embedded tree is a seed, not an authority. A declaration is a
+The binary's embedded tree is a seed, not a package. A declaration is a
 record in the repository's own changelog, and there are exactly three ways one gets
 there, each an ordinary changelog entry attributed to the hand that wrote it and
 auditable in the [changelog](changelog.md):
@@ -65,25 +70,25 @@ auditable in the [changelog](changelog.md):
   embedded tree into the new repository's changelog as ordinary record entries,
   under the actor `bundle:core`, in the same transaction as the repository
   itself. After that the tree has no standing over that repository: nothing
-  re-projects it at open, and nothing is ever pruned. A shipped authority the
+  re-projects it at open, and nothing is ever pruned. A shipped package the
   tree stops declaring stays in every repository that already holds it.
 - **The boot-time upgrade, at the first open under a new binary.** Every
-  declaration carries a `version`, the declaring authority's unless the
-  declaration overrides it. The first open of a repository in a process diffs
+  declaration carries a `version`, its package's unless the declaration
+  overrides it. The first open of a repository in a process diffs
   the binary's shipped declarations against the stored ones and appends the
   difference as explicit entries under the actor `substrate`: one transaction
   per repository, convergent and idempotent, so an unchanged tree writes
   nothing at all. Only same-or-newer wins, never a downgrade and never a
   prune, and a repository nobody opens is never touched. A version is an
   incremental integer, ordered as plain integers; 0 is the absent version
-  and orders below everything. An authority whose stored rows belong to
+  and orders below everything. A package whose stored rows belong to
   somebody else here is skipped whole: the upgrade never seizes a name it
   does not already own.
 - **An install, which is a copy.** Installing a bundle writes that
   bundle's manifests into the repository's changelog under
-  `bundle:<authority>`
-  ([Bundles](bundles.md)). The shipped catalog is a source, never an
-  authority, and nothing on the serving path reads it.
+  `bundle:<authority>:<package>`
+  ([Bundles](bundles.md)). The shipped catalog is a source, never a
+  package, and nothing on the serving path reads it.
 
 Install and apply are one path. `POST …/vocabulary/apply` with
 `{"documents": […]}` is the batch verb, the same closure an install applies,
@@ -93,16 +98,16 @@ of these doors the engine maintains the `version` itself: an incoming value is
 honored only when it moves past the stored one, a changed definition lands at
 stored+1, an unchanged one keeps its stored version, and a changed or deleted
 declaration that cannot carry a version of its own (a trait, a function)
-moves its authority's forward instead, so nobody bumps by hand.
+moves its package's forward instead, so nobody bumps by hand.
 
-**The authority chokepoint** decides who may write a declaration, which is
-what an authority is for. Shipped vocabulary, an authority whose stored rows
-say `source: builtin`, is writable only through a substrate path: the seed,
-an upgrade, an install, which is what the actors `substrate` and
-`bundle:<authority>` name. A generic API write into one is `forbidden`, and
-neither actor form can be claimed by a request. Everything else, the kinds the
-repository declares itself and the bundles it installed, is the user's to
-write.
+**The package chokepoint** decides who may write a declaration, which is what
+a package is for. Shipped vocabulary, a package whose stored rows say
+`source: builtin`, is writable only through a substrate path: the seed, an
+upgrade, an install, which is what the actors `substrate` and
+`bundle:<authority>:<package>` name. A generic API write into one is
+`forbidden`, and neither actor form can be claimed by a request. Everything
+else, the kinds the repository declares itself and the packages it installed,
+is the user's to write.
 
 Opening a repository rebuilds its registry from the stored declaration
 records, shipped and installed alike, each carrying the source its rows
@@ -128,9 +133,9 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
 - **Casing is one rule.** Every declared name and system key is camelCase
   with initialisms uppercase (`displayTemplate`, `oneOf`, `ifVersion`,
   `onEnter`, `endsAt`). Snake spellings are errors, not aliases. Kind
-  singulars and plurals stay `[a-z][a-z0-9]*`; an authority stays a dotted
-  lowercase DNS name; an actor is a bare word or a prefixed machine hand,
-  never a DNS name; enum and state values stay lowercase words.
+  singulars and plurals and a package name stay `[a-z][a-z0-9]*`; an authority
+  stays a dotted lowercase DNS name; an actor is a bare word or a prefixed
+  machine hand, never a DNS name; enum and state values stay lowercase words.
 - **Reserved property names.** `title`, `body`, `at`, `endsAt`, `dueAt` are
   the five properties every record already carries, each with its own storage
   column; redeclaring one is a load error naming the built-in. The temporal
@@ -280,7 +285,7 @@ nothing changes shape on the wire.
 ## The reserved keys
 
 A declaration's key set is closed, so a key one binary does not know
-[quarantines](#quarantine) the authority that ships it. That makes adding a
+[quarantines](#quarantine) the package that ships it. That makes adding a
 key an upgrade of every binary that might read the closure, which is why these
 three are in the dialect before anything acts on them. Each is admitted,
 validated at load and stored on the declaration; none of them changes a write.
@@ -390,10 +395,12 @@ A binary that tightens a vocabulary or trait contract can make an
 already-installed bundle's stored closure fail admission at the next
 repository open. When that happens the substrate does not brick the
 repository: it installs the maximal admissible subset of the installed
-authorities and **quarantines** the rest. Each quarantined authority is
+packages and **quarantines** the rest. Each quarantined package is
 logged with its admission reason, left out of the live registry (its kinds
 refuse writes and its callables do not run), and marked `quarantined: true`
-with a `quarantineReason` on its `authority` record. The console surfaces
+with a `quarantineReason` on its `package` record. The package is the unit, so
+one broken closure parks it and leaves every other package its authority
+publishes serving. The console surfaces
 such a bundle as "needs re-install". Re-applying a valid closure clears
 the marker, and so does a later open under a binary that relaxed the contract
 again.

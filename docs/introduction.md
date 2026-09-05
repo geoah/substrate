@@ -24,8 +24,9 @@ answer to "many semi-trusted programs cooperating over shared typed state":
   **bundle**, which is how a provider integration or an automation reaches
   the data without a substrate code change.
 
-Kinds ship under the `substrate.reamde.dev` authority domain, and everywhere
-in these pages "substrate" means the service you run.
+The kinds this binary ships live under `substrate.reamde.dev` and its
+subdomains, and everywhere in these pages "substrate" means the service you
+run.
 
 Everything on these pages builds one running example: **a to-do list**.
 
@@ -39,14 +40,15 @@ Like Kubernetes, the whole system is rules about a handful of primitives.
 | **Repository** | Everything a user has: one append-only changelog, the records computed from it, and the blobs and sealed secrets beside them. Nothing crosses from one to another. |
 | **Changelog**        | The repository's append-only, strictly sequential list of every change. It is the source of truth: replaying it rebuilds the records ([data model](data-model.md)). |
 | **Record**     | One instance of a kind, and the only thing there is. Tasks, people, tokens, and kind declarations are all records. Its identity is the pair `(kind, id)`.    |
-| **Kind**       | What a record is: `task` when it is yours alone, `tasks.substrate.reamde.dev/task` when an authority publishes it. A kind declares the properties its records carry.        |
+| **Kind**       | What a record is, written `samples.substrate.reamde.dev/tasks/task`: an authority, a package, and the kind's own name. A kind declares the properties its records carry.        |
 | **Property**   | A named, typed value slot on a record: `name`, `dueAt`. Declared on the kind, validated on every write.                                                     |
 | **Reference**  | A property whose value is another record's path, and the only link between records. Declared on the kind it points from, like every other property.          |
 
-Two supporting words appear constantly. An **authority** is the DNS name that
-publishes a kind and decides who may change its declaration. An **actor** is
-_what_ wrote a record — the console, `substratectl`, a function — recorded on every
-change as attribution.
+Three supporting words appear constantly. An **authority** is the DNS name a
+set of kinds is published under. A **package** is the group a kind lives in
+under that authority, and the unit a declaration is versioned, owned and
+quarantined in. An **actor** is _what_ wrote a record — the console,
+`substratectl`, a function — recorded on every change as attribution.
 
 ## What one substrate holds
 
@@ -82,8 +84,7 @@ The pages ahead, in reading order:
   [catalog](bundles-catalog.md) of what ships today.
 - **Tools**: the [substratectl](substratectl.md) command line, the [web console](console.md),
   and [running a substrate](operations.md) of your own.
-- **Reference**: the [built-in kinds](builtin-kinds.md), authority by
-  authority.
+- **Reference**: the [built-in kinds](builtin-kinds.md), package by package.
 
 Next: [getting started](getting-started.md), from an empty substrate to a task
 you can read back.

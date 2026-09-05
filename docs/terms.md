@@ -3,7 +3,7 @@
 One word per thing. If a word is not here, it is not a term — and where these
 pages and the code disagree, the code is right.
 
-Dead words, and what replaced them: **entity** → record, **group** → authority,
+Dead words, and what replaced them: **entity** → record, **group** → package,
 **type** → kind, **capability** → trait,
 **schema** → vocabulary, **log** → changelog, **extension** → bundle,
 **relationship** and **edge** → reference, **plural** → the kind's name, which
@@ -14,12 +14,13 @@ nothing, there are none.
 
 | Term | What it is |
 | ---- | ---------- |
-| **repository** | Everything one user has: one changelog, the records folded out of it, and the blob store beside them. One user, one repository, no sharing. It owns one **authority**, any hostname its user controls, chosen at registration (`ada.example.com`; the default is the username under the server's host), the home of every kind its user declares. |
+| **repository** | Everything one user has: one changelog, the records folded out of it, and the blob store beside them. One user, one repository, no sharing. It owns one **authority**, any hostname its user controls, chosen at registration (`ada.example.com`; the default is the username under the server's host), the home of every package its user declares kinds in. |
 | **record** | One typed thing. Identity is `(kind, id)` within a repository. It is the only thing the substrate stores. |
-| **kind** | What a record is, written `<authority>/<name>`; every kind carries an authority. A kind declares the properties its records may carry. |
-| **authority** | The DNS-style label that publishes a set of kinds and decides who may write their declarations. One path segment: `/api/v1/{authority}/{kind}`. |
+| **kind** | What a record is, written `<authority>/<package>/<name>`; every kind carries both. A kind declares the properties its records may carry. |
+| **authority** | The DNS-style label that publishes packages. One path segment: `/api/v1/{authority}/{package}/{kind}`. |
+| **package** | The group a kind lives in, a plain word under one authority: `samples.substrate.reamde.dev/tasks`. It is the unit a declaration is versioned, owned and quarantined in, so two packages under one authority upgrade and fail independently. |
 | **property** | A named, typed value on a record, declared by its kind. |
-| **property type** | A named refinement of a base type plus its validations, declared by an authority and reusable across its kinds. |
+| **property type** | A named refinement of a base type plus its validations, declared in a package and reusable across its kinds. |
 | **trait** | A contract a kind implements: a set of properties a kind promises to declare, so unrelated kinds can be treated alike. |
 | **reference** | A named, directed pointer at one record, declared as a property and stored as an object holding the target's `<kind>/<id>` path under `ref`. The only link between records; it may declare properties of its own, carried beside `ref`. |
 
@@ -40,7 +41,7 @@ nothing, there are none.
 
 | Term | What it is |
 | ---- | ---------- |
-| **vocabulary** | Everything declarable, held as ordinary records: authorities, kinds, property types, traits, recordmappings, functions, agents, bundles and actors. Applied through `POST /{core}/vocabulary/apply`. |
+| **vocabulary** | Everything declarable, held as ordinary records: authorities, packages, kinds, property types, traits, recordmappings, functions, agents, bundles and actors. Applied through `POST /api/v1/vocabulary/apply`. |
 | **registry** | The live, in-memory vocabulary a repository rebuilds from its own stored declarations when it opens. |
 | **dialect** | A monotonic integer stamped on each repository naming a shape it speaks. A binary older than the stamp refuses to open the repository. There are two, refused the same way and stamped differently: the **vocabulary dialect** over its stored declarations, stamped at open by the promotion that rewrites them, and the **changelog dialect** over the entries in its changelog, claimed by the transaction that appends them. |
 | **managed** | A declared property the ENGINE stamps (`managed: true`): a declaration's `version`, its `source`, the quarantine marks, a bundle's lifecycle bools, and the decision stamps `decidedAt` and `resolvedAt`. A write may echo the stored value, but a different one is refused rather than dropped, and a client renders it read-only. The one exception is a declaration's `version`, which the engine resolves itself: an incoming value is honored only when it moves past the stored one, and anything else (absent, echoed, lower) is stamped server-side. Not projection's *managed properties*, which is the ownership rule over a record's values. |
@@ -49,13 +50,13 @@ nothing, there are none.
 
 | Term | What it is |
 | ---- | ---------- |
-| **bundle** | The unit of installation: a closure of declarations and behavior, applied and removed as one unit, owning exactly one authority. |
+| **bundle** | The unit of installation: a closure of declarations and behavior, applied and removed as one unit. It owns one package, and its `metadata.id` is that package's identity. |
 | **integration** | A bundle whose job includes an ongoing connection to an outside provider. A catalog facet of a bundle, not a different thing. |
 | **vocabulary bundle** | A bundle that ships only kinds and rules — no functions, no provider. |
 | **input** | A bundle's named configuration need: it names a kind, and the engine resolves ONE record per input — the bound record, else the record whose id is `default`, else the sole live record, else nothing, surfaced per input on the bundle's status. No cardinality is enforced on the kind. |
-| **bind** | The explicit step of input resolution: a reference on the bundle's own record row, named for the input, pointing it at a chosen record. `POST /core.substrate.reamde.dev/bundle/{id}/bind`; an empty record unbinds. |
+| **bind** | The explicit step of input resolution: a reference on the bundle's own record row, named for the input, pointing it at a chosen record. `POST /substrate.reamde.dev/core/bundle/{id}/bind`; an empty record unbinds. |
 | **account** | One configured connection to a provider: a record of an `accountconfig`-trait kind. The console groups these under **Connections**. |
-| **catalog** | The read-only list of the bundle closures built into the binary. A source to install from, never an authority. |
+| **catalog** | The read-only list of the bundle closures built into the binary. A source to install from, never a package. |
 | **callable** | The union of function and agent — what a trigger binds and what dispatch invokes. |
 | **function** | A callable whose body is inline Python or Go, bounded by its declared `permissions`: `reads`, `writes`, `call`, `network` and `mutations`, five grants in one object on the declaration. |
 | **agent** | A callable whose body is an LLM loop. Alpha. |

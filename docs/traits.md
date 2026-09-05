@@ -16,12 +16,12 @@ whole model; this page goes deeper on the same ground.
 
 ## A trait is a record
 
-`core.substrate.reamde.dev/trait` is a kind like any other, so every declared
+`substrate.reamde.dev/core/trait` is a kind like any other, so every declared
 trait is a record in your repository: it lists, it GETs, it carries a
 `version` the engine maintains and a `source` that says whether it was seeded
 (`builtin`) or arrived with a bundle (`installed`). Its identity is
-`{authority}/{name}`, and traits resolve **across authorities**: a kind binds
-core's `temporal` without redeclaring it, by bare name while that name is
+`{authority}/{package}/{name}`, and traits resolve **across packages**: a kind
+binds core's `temporal` without redeclaring it, by bare name while that name is
 unique and by full identity always.
 
 A trait contracts **presence and datatype only**. It carries no cardinality
@@ -32,14 +32,15 @@ is the shared question, and each kind keeps its own answer's shape.
 ## Declaring one
 
 A shipped example, verbatim
-([kinds/scheduling.substrate.reamde.dev/recurring.yaml](../kinds/scheduling.substrate.reamde.dev/recurring.yaml)):
+([samples/scheduling/recurring.yaml](../samples/scheduling/recurring.yaml)):
 
 ```yaml
-kind: core.substrate.reamde.dev/trait
+kind: substrate.reamde.dev/core/trait
 metadata:
-  id: scheduling.substrate.reamde.dev/recurring
+  id: samples.substrate.reamde.dev/scheduling/recurring
 data:
-  authority: scheduling.substrate.reamde.dev
+  authority: samples.substrate.reamde.dev
+  package: scheduling
   description: "a repeat rule the substrate stores and never expands, with
     the dates it adds, the dates it skips and the zone a time-of-day rule
     resolves in"
@@ -74,31 +75,35 @@ temporal query).
 A trait is a vocabulary declaration, so it enters through the same doors as a
 kind: `substratectl apply -f` over the manifest files, the batch
 `POST /api/v1/vocabulary/apply`, or a [bundle](bundles.md) that ships it.
-One batch, three documents, because every declaration belongs to an authority
-and the batch must open with that authority's manifest:
+One batch, three documents, because every declaration lives in a package and
+the batch must open with that package's manifest:
 
 ```yaml
-kind: core.substrate.reamde.dev/authority
+kind: substrate.reamde.dev/core/package
 metadata:
-  id: pantry.example
-data:
-  version: 1
----
-kind: core.substrate.reamde.dev/trait
-metadata:
-  id: pantry.example/perishable
+  id: pantry.example/kitchen
 data:
   authority: pantry.example
+  package: kitchen
+  version: 1
+---
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: pantry.example/kitchen/perishable
+data:
+  authority: pantry.example
+  package: kitchen
   description: a thing that stops being good at an instant
   properties:
     expiresAt: datetime
     opened: bool
 ---
-kind: core.substrate.reamde.dev/kind
+kind: substrate.reamde.dev/core/kind
 metadata:
-  id: pantry.example/ingredient
+  id: pantry.example/kitchen/ingredient
 data:
   authority: pantry.example
+  package: kitchen
   description: one thing in the pantry
   names:
     singular: ingredient
@@ -137,7 +142,7 @@ fields as strings, the caveat pinned below.)
 ## What binding buys: the queries
 
 **The `implements` filter.** The one generic list query narrows to a trait's
-implementors, cross-authority. Alone it means every implementor in the
+implementors, across every package. Alone it means every implementor in the
 repository; beside `kinds` it intersects, never unions. Over REST it is the
 same filter grammar on any collection read; repository-wide it is GraphQL's
 `records`:
@@ -154,7 +159,7 @@ same filter grammar on any collection read; repository-wide it is GraphQL's
 ```
 
 **The trait endpoints.** `GET
-/api/v1/core.substrate.reamde.dev/trait/{id}/implementors` lists the kinds
+/api/v1/substrate.reamde.dev/core/trait/{id}/implementors` lists the kinds
 that bind a trait, and `.../trait/{id}/records` pages every record of every
 implementor, which is what the console's connections view over
 `accountconfig` accounts is.
@@ -177,9 +182,9 @@ Run against a repository holding medication schedules, dose logs and calendar
 events, that query answers all three in one ordered page:
 
 ```json
-{ "at": "2026-08-17T06:00:00Z", "id": "levothyroxine-daily",    "kind": "health.substrate.reamde.dev/medicationschedule" }
-{ "at": "2026-08-17T09:30:00Z", "id": "x-cal-standup-20260817", "kind": "calendar.substrate.reamde.dev/calendarevent" }
-{ "at": "2026-08-18T06:20:00Z", "id": "x-occ-dose-tue",         "kind": "health.substrate.reamde.dev/medicationschedulelog" }
+{ "at": "2026-08-17T06:00:00Z", "id": "levothyroxine-daily",    "kind": "samples.substrate.reamde.dev/health/medicationschedule" }
+{ "at": "2026-08-17T09:30:00Z", "id": "x-cal-standup-20260817", "kind": "samples.substrate.reamde.dev/calendar/calendarevent" }
+{ "at": "2026-08-18T06:20:00Z", "id": "x-occ-dose-tue",         "kind": "samples.substrate.reamde.dev/health/medicationschedulelog" }
 ```
 
 Where the interface's fields come from has two arms:

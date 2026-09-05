@@ -2,7 +2,7 @@
 
 `substratectl` is the command-line client: kubectl-shaped, speaking the
 [REST surface](api.md). Everything in a repository is a record of a declared
-kind, addressed as `{authority}/{kind}/{id}`, and the CLI mirrors that:
+kind, addressed as `{authority}/{package}/{kind}/{id}`, and the CLI mirrors that:
 kinds, get, apply, patch, delete, edit, watch. It lives in the
 same repository as the substrate (`cmd/substratectl`) and builds with Go.
 
@@ -45,8 +45,9 @@ it asks for a TOTP enrollment, prints it once for an authenticator, and hands
 back one code with the password you choose. `--totp-secret` brings your own
 seed and skips the enrollment call, which is what makes an unattended
 registration possible. `--authority` names the DNS-style authority the
-repository owns, the home of every kind you declare; omitted, the substrate
-names it `<username>.<its own host>`, and `register` prints the result.
+repository owns, the home of every package you declare kinds in; omitted, the
+substrate names it `<username>.<its own host>`, and `register` prints the
+result.
 
 Against a substrate that verifies no second factor
 ([the local TOTP-off switch](auth.md#the-second-factor-can-be-switched-off-locally)),
@@ -85,11 +86,11 @@ defaults to `substratectl`.
 
 ## Reading
 
-`substratectl get <plural> [id]` reads a collection or one record. The plural may be
-qualified (`tasks.substrate.reamde.dev/task`) or bare (`tasks`), which resolves against
-the kind registry; when two installed authorities declare the same plural, that
-plural needs qualifying, or `-g` to name the authority (every bundle
-installs a `config`, so `configs` always needs one). Lists take `--filter` (the
+`substratectl get <kind> [id]` reads a collection or one record. The kind may be
+qualified (`samples.substrate.reamde.dev/tasks/task`) or bare (`task`), which
+resolves against the kind registry; when two installed packages declare the same
+name, it needs qualifying, or `--package` to name the package it resolves in
+(every provider bundle installs a `config`, so `config` always needs one). Lists take `--filter` (the
 JSON [filter grammar](api.md#the-filter-grammar)), `-l` label selectors,
 `--order-by`, and `--limit`; `--after` resends the opaque keyset cursor a page
 printed, and `-w` streams that one collection's changes instead of listing it.
@@ -107,13 +108,13 @@ output applies back unchanged.
   is `put`: it **merges and never prunes**; deletion is only ever the explicit
   `delete` verb. Vocabulary documents apply too ([vocabulary](vocabulary.md)): they ride
   the batch vocabulary verb as one transaction.
-- `patch <plural> <id>` edits in place: `--state status=done` for
+- `patch <kind> <id>` edits in place: `--state status=done` for
   [transitions](data-model.md#validation-and-state-machines) (apply cannot
   move a state), `--prop` for properties, `--label` for labels, and `-p` for a
   raw JSON patch, where a null value deletes a key.
-- `edit <plural> <id>` opens the manifest in `$EDITOR` and applies what comes
+- `edit <kind> <id>` opens the manifest in `$EDITOR` and applies what comes
   back.
-- `delete <plural> <id>` tombstones; hard deletion waits on finalizers.
+- `delete <kind> <id>` tombstones; hard deletion waits on finalizers.
 
 A pointer at another record is a property, so `apply` and `patch` write it like
 any other value: `--prop project=infra7` against a pinned declaration, or the
@@ -123,7 +124,7 @@ full `<kind>/<id>` path where the declaration names no kind.
 
 `substratectl watch` streams [the changelog](changelog.md), one line per committed change,
 resumable with `--from` and filterable by `--kinds`, `--actors` and `--ops`. To
-narrow to one collection instead, `substratectl get <plural> -w` streams that
+narrow to one collection instead, `substratectl get <kind> -w` streams that
 one kind's changes.
 
 Delivery bookkeeping lives on [triggers](functions.md#triggers), not on

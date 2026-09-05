@@ -17,56 +17,53 @@ Two narrower words appear beside it, and neither is a synonym:
 ## What a bundle ships
 
 A `bundle` document wears the ordinary envelope — `kind:`, `metadata:`,
-`data:`, and the server-owned `status:` — and declares the one **authority it
-owns**. A bundle that ships behavior may own any legal authority. The shipped
-tree names them `<name>.bundles.substrate.reamde.dev` by convention, but the
-loader does not require that shape. A vocabulary bundle owns a plain
-organization-style label like `people.substrate.reamde.dev`, and that shape
-is the one the loader does check, because it is what marks a vocabulary
-[shipped](builtin-kinds.md) rather than installed. The authority's **first
-label** is the bundle's name — its `metadata.id` suffix and the prefix an
-installed kind's GraphQL name carries — so it must be one lowercase word. Two
-bundles may share it: an install writes under `bundle:<authority>`, so they
-stay two writers, and what is refused instead is one GraphQL name claimed
-twice. `installs:` lists the exact references of everything the closure
-ships: its [kinds](data-model.md#kinds-and-references),
+`data:`, and the server-owned `status:` — and declares the one **package it
+owns**. Its `metadata.id` IS that package
+([decision 0047](decisions/0047-a-kind-lives-in-a-package.md)): a closure and
+the thing that installs it can never be spelled apart, and a document whose id
+says anything else is refused naming the package. The package's own word is the
+bundle's name and the prefix an installed kind's GraphQL name carries, so it is
+one lowercase word. Two authorities may publish a package of the same word: an
+install writes under `bundle:<authority>:<package>`, so they stay two writers,
+and their GraphQL names take the authority's first label to stay apart.
+`installs:` lists the exact references of everything the closure ships: its [kinds](data-model.md#kinds-and-references),
 [traits](data-model.md#traits),
 [property types](data-model.md#property-types),
 [record mappings](projection.md), [functions](functions.md), and
 [agents](agents.md). The harvester's document, its description elided:
 
 ```yaml
-kind: core.substrate.reamde.dev/bundle
+kind: substrate.reamde.dev/core/bundle
 metadata:
-  id: web.bundles.substrate.reamde.dev/web
+  id: samples.substrate.reamde.dev/web
 data:
-  authority: web.bundles.substrate.reamde.dev
+  authority: samples.substrate.reamde.dev
+  package: web
   inputs:
     connector:
-      kind: web.bundles.substrate.reamde.dev/config
+      kind: samples.substrate.reamde.dev/web/config
       inject: functions
   installs:
-    - web.bundles.substrate.reamde.dev/config
-    - web.bundles.substrate.reamde.dev/page
-    - web.bundles.substrate.reamde.dev/findurls
-    - web.bundles.substrate.reamde.dev/fetchpage
-    - web.bundles.substrate.reamde.dev/setclass
-    - web.bundles.substrate.reamde.dev/stampconfig
-    - web.bundles.substrate.reamde.dev/pageclassifier
-    - web.bundles.substrate.reamde.dev/readinglistagent
-    - web.bundles.substrate.reamde.dev/weeklyrollup
+    - samples.substrate.reamde.dev/web/config
+    - samples.substrate.reamde.dev/web/page
+    - samples.substrate.reamde.dev/web/findurls
+    - samples.substrate.reamde.dev/web/fetchpage
+    - samples.substrate.reamde.dev/web/setclass
+    - samples.substrate.reamde.dev/web/stampconfig
+    - samples.substrate.reamde.dev/web/pageclassifier
+    - samples.substrate.reamde.dev/web/readinglistagent
+    - samples.substrate.reamde.dev/web/weeklyrollup
 ```
 
-The document's own id is the authority followed by its first label
-(`web.bundles.substrate.reamde.dev/web`), and every entry in `installs:` is a reference of
-the same shape, never a bare name. The bundle document never travels alone: the
-[`authority`](vocabulary.md) document that brings the authority into being, and
-every member `installs:` names, belong to the same apply. A closure applied
-without that document is refused — `authority web.bundles.substrate.reamde.dev: no
-authority manifest declares it` — and an authority wearing the shipped tree's
-`*.bundles.substrate.reamde.dev` convention while declaring no bundle document is
-refused too: a closure with no owner there is a forgotten document far more
-often than a deliberate name.
+The document's own id is the package it owns
+(`samples.substrate.reamde.dev/web`), and every entry in `installs:` is a full
+kind reference, never a bare name. The bundle document never travels alone: the
+[`package`](vocabulary.md) document that heads the closure, and every member
+`installs:` names, belong to the same apply. A closure applied without that
+header is refused — `package samples.substrate.reamde.dev/web: no package
+manifest declares it` — and `installs:` is held equal to what the package
+actually declares, both ways, so a member left out and a name that is not there
+are each refused by the same rule: the closure is the package.
 
 Two more fields matter, both covered below. `inputs:` declares the bundle's
 configuration needs by name, each naming a kind whose records satisfy it. No
@@ -90,16 +87,17 @@ The installed callables react through the ordinary machinery: a bundle's
 functions and agents run on the same [changelog](changelog.md) every other write
 lands in, its [mappings](projection.md) fold provider records onto your people
 and tasks, and its writes carry their own machine hands —
-`function:<authority>:<name>` for a function's effects,
-`agent:<authority>:<name>` for an agent's, `bundle:<authority>` for the
-declarations an install lays down ([actors](api.md#actors)).
+`function:<authority>:<package>:<name>` for a function's effects,
+`agent:<authority>:<package>:<name>` for an agent's,
+`bundle:<authority>:<package>` for the declarations an install lays down
+([actors](api.md#actors)).
 
 ## Install and lifecycle
 
 Installing is one atomic apply of the whole closure: the same admission as any
 [vocabulary batch](vocabulary.md#admission), every document admitted or none, active
-on commit. The apply replaces the owned authority whole, and the loader holds
-`installs:` equal to what the authority actually declares, both ways, so
+on commit. The apply replaces the owned package whole, and the loader holds
+`installs:` equal to what the package actually declares, both ways, so
 nothing is smuggled in or orphaned. **Upgrade is the same verb**, re-applying
 the full new closure, and it refuses breakage inside that same transaction, all
 problems at once: a dropped kind with live records, a narrowing change that
@@ -139,20 +137,20 @@ has returned nor commit behind it.
   data otherwise stay untouched, so its kinds keep appearing in the kind
   registry and its other data stays readable and writable. **enable** reverses
   it, and the backlog delivers.
-- **uninstall**: the bundle goes. The owned authority's declarations (the
+- **uninstall**: the bundle goes. The owned package's declarations (the
   bundle, its kinds, functions, agents, actors, traits, property types, and
   mappings) are torn down through the same admission an apply uses, and the
-  delivery wiring — every trigger referencing the authority's callables — is
+  delivery wiring — every trigger referencing the package's callables — is
   tombstoned in the same transaction, before the dropped-callable guard, so a
   full teardown never refuses on its own triggers. Afterwards the kinds leave
   the registry, the callables stop running, and a read of one is a 404.
   Uninstall is governed by the same refuse-with-instances rule a kind drop is:
-  while live data records of the authority's kinds exist it refuses with a guard
+  while live data records of the package's kinds exist it refuses with a guard
   error carrying the count. Purge first. Uninstall is not reversible;
-  re-applying the closure is a fresh install into an empty authority.
+  re-applying the closure is a fresh install into an empty package.
 - **purge**: the explicit destructive verb, refused while the bundle is live
   (disable it first). It tombstones every live data record of the owned
-  authority's kinds through the ordinary soft-delete path, connected accounts
+  package's kinds through the ordinary soft-delete path, connected accounts
   first so their OAuth finalizers run to completion against the still-live
   config, config last. It never touches declarations; it clears the data so a
   following uninstall passes the refuse-with-instances guard. The destructive
@@ -165,11 +163,13 @@ reports `installed: false` beside the `quarantined`/`quarantineReason` pair;
 re-installing it clears the marker, and uninstall still works on one, resolved
 straight from its stored rows.
 
-Status is computed, never stored. `GET …/core.substrate.reamde.dev/bundle/status` answers
+Status is computed, never stored. `GET …/substrate.reamde.dev/core/bundle/status` answers
 every installed bundle under an `{items}` envelope and
-`…/core.substrate.reamde.dev/bundle/{id}/status` answers
-one: `{id, name, authority, installed, enabled, inputs, setup, accounts,
-functions, kinds, liveRecords}`, plus the quarantine pair when it applies.
+`…/substrate.reamde.dev/core/bundle/{id}/status` answers
+one: `{id, name, authority, package, installed, enabled, inputs, setup,
+accounts, functions, kinds, liveRecords}`, plus the quarantine pair when it
+applies. `id` is the package the bundle owns, and `name` and `package` are both
+that package's own word.
 `inputs` is each declared input's resolution: `{name, kind, record?, via?}`,
 where `via` names the matching rule from
 [the resolution order above](#what-a-bundle-ships) (`bound`, `default` or
@@ -177,11 +177,11 @@ where `via` names the matching rule from
 bundle and every runtime path it ships (`{code, input?, kind?, record?,
 message}` — codes `missing`, `ambiguous`, `dangling`, `oauth-client`,
 `provider`), mirrors only refusals dispatch would actually make, and is
-empty when the bundle is ready. `POST …/core.substrate.reamde.dev/bundle/{id}/bind` with
+empty when the bundle is ready. `POST …/substrate.reamde.dev/core/bundle/{id}/bind` with
 `{input, record}` binds an input to a chosen record (empty `record` unbinds).
 Disable, enable, uninstall and purge are runtime state the substrate owns
 ([decision 0033](decisions/0033-the-path-grammar-has-no-separators.md)), so each
-is a `PATCH …/core.substrate.reamde.dev/bundle/{id}` carrying the state change:
+is a `PATCH …/substrate.reamde.dev/core/bundle/{id}` carrying the state change:
 `{"properties": {"disabled": true}}` disables (and `false` enables),
 `{"properties": {"uninstalled": true}}` uninstalls, `{"properties": {"purging":
 true}}` purges. Every path on this page hangs off `/api/v1`, and none of them
@@ -194,13 +194,13 @@ stay `substratectl apply` of the closure.
 
 An **integration** is a bundle whose job includes an ongoing connection to
 an external provider. It is a facet, not the umbrella: the harvester and a
-vocabulary package are bundles and not integrations, because network access
+vocabulary bundle are bundles and not integrations, because network access
 alone does not make one. Saying "install the Google integration" and "install
 the harvester bundle" both stay true.
 
 The facet is explicit catalog metadata, curated per bundle, not inferred: it
 is not derived from the presence of an OAuth block, from account kinds, or from
-the authority's name. A token or webhook integration may declare no OAuth, and
+the package's name. A token or webhook integration may declare no OAuth, and
 an account-shaped bundle is not necessarily a provider integration, so the
 classification is stated rather than guessed.
 
@@ -211,7 +211,7 @@ substrate's OAuth facility recognizes by [trait](data-model.md#traits): an
 `oauth2` trait — client id and secret, nothing else — named by the bundle's
 `oauth2.clientInput`, plus the trusted `oauth2:` block on
 the bundle. Every host check compares the resolved trait reference
-(`core.substrate.reamde.dev/accountconfig` and its siblings), so a bundle's own trait
+(`substrate.reamde.dev/core/accountconfig` and its siblings), so a bundle's own trait
 wearing a core name cannot counterfeit the interface.
 
 A provider's records mirror in as ordinary records of the bundle's own kinds,
@@ -314,7 +314,7 @@ OAuth flow refuses.
 A connected Google account reads back as:
 
 ```yaml
-kind: google.bundles.substrate.reamde.dev/account
+kind: providers.substrate.reamde.dev/google/account
 metadata:
   id: george-work
 data:
@@ -329,22 +329,24 @@ The **Connections** view in the console is a cross-bundle operational
 surface over every such account, one row per account, read from the native
 `accountconfig` records that integration bundles ship. It pages every
 implementor of the `accountconfig` trait, which is a plain query
-(`GET …/core.substrate.reamde.dev/trait/{id}/records`, with `…/traits/{id}/implementors`
-for the kinds themselves), because implementing a trait is queryable.
+(`GET …/substrate.reamde.dev/core/trait/{id}/records`, with
+`…/trait/{id}/implementors` for the kinds themselves), because implementing a
+trait is queryable.
 
 ## The catalog
 
 The **catalog** lists everything shipped in the binary and ready to install —
-the bundles, and the eleven **vocabulary bundles** (`people`, `tasks`,
-`messaging`, `calendar`, and the mneme-ported `health`, `fitness`,
-`routines`, `journal`, `places`, `food`, `commerce`) a repository
-imports because creation seeds `core.substrate.reamde.dev` alone. A vocabulary bundle ships kinds and nothing else: no
-inputs, no functions, no OAuth. Its entry carries `vocabulary: true`.
+the provider bundles, and the twelve **vocabulary bundles** (`people`, `tasks`,
+`messaging`, `calendar`, `scheduling`, and the mneme-ported `health`,
+`fitness`, `routines`, `journal`, `places`, `food`, `commerce`) a repository
+imports because creation seeds `substrate.reamde.dev/core` alone. A vocabulary
+bundle ships kinds and traits and nothing else: no inputs, no functions, no
+OAuth.
 
 The catalog is a read model over the bundle closures baked in, parsed once at
-boot: each entry carries `id`, `name`, `authority`, `description`, `version`,
-`inputs`, `requires`, `vocabulary`, the curated `integration` and `example`
-facets, and `closure`, which previews the `kinds` (each with its description),
+boot: each entry carries `id` (the package it installs), `name`, `authority`,
+`package`, `description`, `version`, `inputs`, `requires`, the curated
+`integration` and `example` facets, and `closure`, which previews the `kinds` (each with its description),
 `functions`, `agents` and `mappings` it declares plus the `records` the
 install writes beside them (a bundle's triggers, the llm example's provider
 rows), so the console can show what an install will add before it runs. Every one of those is a record: the
@@ -353,7 +355,7 @@ rows the moment they land. A shipped directory carrying no bundle document is no
 malformed one is dropped with a logged warning rather than failing the whole
 catalog.
 
-`requires` is the entry's declared vocabulary dependency: the authorities its
+`requires` is the entry's declared vocabulary dependency: the packages its
 mappings, references and trigger subscriptions point at. Installing `google` into a
 repository that has not imported `people` is **refused** by the ordinary
 admission, before anything is touched, with a problem naming what to import
@@ -362,7 +364,9 @@ first. Nothing resolves the dependency for you — the order is yours.
 `GET …/catalog` lists every shipped bundle under an `{items}`
 envelope, each flagged `installed` for this repository;
 `GET …/catalog/{id}` is one entry with its closure, and an
-unknown id is a 404 `not_found`.
+unknown id is a 404 `not_found`. The id is a package identity, so it carries a
+`/` and a URL percent-encodes it once:
+`…/catalog/samples.substrate.reamde.dev%2Ftasks`.
 
 Installing from the catalog is a thin wrapper over the ordinary apply, never a
 parallel path: `POST …/catalog/{id}/install` applies the entry's
@@ -374,7 +378,8 @@ refused for any actor outside the three interactive clients (`api`, `console`,
 `substratectl`) with a 403, before the closure is touched: installing bundle
 code is a person's action. What lands is a copy —
 the bundle's own declarations, written into this repository's changelog under
-`bundle:<authority>` — so the catalog is the source and the changelog is the truth, and
+`bundle:<authority>:<package>` — so the catalog is the source and the changelog
+is the truth, and
 nothing on the serving path reads the catalog again. The response is the
 installed bundle's computed status. Uninstall, disable, enable, and purge
 are the lifecycle verbs above; the catalog does not duplicate them.

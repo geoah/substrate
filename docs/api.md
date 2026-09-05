@@ -4,7 +4,7 @@ The substrate serves one set of operations for everything: four reads
 (`record`, `records`, `search`, `changelog`) plus a watch stream, and seven
 mutations. REST serves all of them but `search`, which is the GraphQL query's
 alone. A new kind never adds an
-endpoint: the REST path pattern is the same routes for every authority, and the
+endpoint: the REST path pattern is the same routes for every package, and the
 [GraphQL](graphql-and-search.md) schema is generated from the loaded kinds.
 This page is the REST surface, the filter grammar, pagination, the mutations,
 errors, and discovery. Authentication has a page of its own,
@@ -14,19 +14,20 @@ differ, [REST and GraphQL](#rest-and-graphql) below lists how.
 
 ## REST resources
 
-Every authority serves the same routes; the collection segment is the kind's
+Every package serves the same routes; the collection segment is the kind's
 **name**, so a record's path after `/api/v1/` is exactly its
 [reference](data-model.md#kinds-and-references) value
-([decision 0033](decisions/0033-the-path-grammar-has-no-separators.md)):
+([decision 0033](decisions/0033-the-path-grammar-has-no-separators.md),
+[decision 0047](decisions/0047-a-kind-lives-in-a-package.md)):
 
 ```http
-GET    /api/v1/{authority}/{kind}            # list, filter, watch
-POST   /api/v1/{authority}/{kind}            # create, server assigns the id
-GET    /api/v1/{authority}/{kind}/{id}
-PATCH  /api/v1/{authority}/{kind}/{id}       # patch, including state transitions
-PUT    /api/v1/{authority}/{kind}/{id}       # upsert at the given id
-DELETE /api/v1/{authority}/{kind}/{id}       # soft delete
-GET    /api/v1/{authority}/{kind}/{id}/incoming       # who points at this record
+GET    /api/v1/{authority}/{package}/{kind}       # list, filter, watch
+POST   /api/v1/{authority}/{package}/{kind}       # create, server assigns the id
+GET    /api/v1/{authority}/{package}/{kind}/{id}
+PATCH  /api/v1/{authority}/{package}/{kind}/{id}  # patch, including state transitions
+PUT    /api/v1/{authority}/{package}/{kind}/{id}  # upsert at the given id
+DELETE /api/v1/{authority}/{package}/{kind}/{id}  # soft delete
+GET    /api/v1/{authority}/{package}/{kind}/{id}/incoming   # who points at this record
 ```
 
 A method sent to the wrong shape answers `405` naming the spelling that works,
@@ -37,24 +38,26 @@ a random one. Both are refused now.
 **There is no repository segment anywhere.** The bearer token names the
 repository, so an address never has to, and there is nothing to get wrong.
 
-The path carries a record's **full identity**: `{authority}/{kind}` names the
-kind, `{id}` the id within it. Ids are unique per kind, so the same id may
-exist in two collections as two unrelated records, and a resource read is
+The path carries a record's **full identity**: `{authority}/{package}/{kind}`
+names the kind, `{id}` the id within it. Ids are unique per kind, so the same
+id may exist in two collections as two unrelated records, and a resource read is
 always scoped to its own collection. There is no cross-kind read by bare id
 anywhere on the surface.
 
-Every kind carries an authority
-([decision 0042](decisions/0042-every-kind-carries-an-authority.md)), so the
-two path shapes are told apart by segment count, in one place: a two-segment
-path is a collection (`{authority}/{kind}`), a three-segment path a record
-(`{authority}/{kind}/{id}`). There is no authority-less shape and no dot rule.
+Every kind carries an authority and a package
+([decision 0042](decisions/0042-every-kind-carries-an-authority.md),
+[decision 0047](decisions/0047-a-kind-lives-in-a-package.md)), so the
+two path shapes are told apart by segment count, in one place: a three-segment
+path is a collection (`{authority}/{package}/{kind}`), a four-segment path a
+record (`{authority}/{package}/{kind}/{id}`). There is no shape that leaves
+either out, and no dot rule.
 
 One id form needs care. A [kind declaration](vocabulary.md)'s id **is** a kind
 reference, so it carries a `/`. A client percent-encodes it, and the API
 decodes it exactly once:
 
 ```http
-GET /api/v1/core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev%2Ftask
+GET /api/v1/substrate.reamde.dev/core/kind/samples.substrate.reamde.dev%2Ftasks%2Ftask
 ```
 
 Incoming references are a derived view of their own, paged separately so a
@@ -86,10 +89,10 @@ A worked sequence over the to-do list. Add a task (the kind comes from the
 path):
 
 ```http
-POST /api/v1/tasks.substrate.reamde.dev/task
+POST /api/v1/samples.substrate.reamde.dev/tasks/task
 {"properties": {"name": "Buy milk", "dueAt": "2026-08-13T09:00:00Z"}}
 
-→ 201 {"id": "kq3v9x2m41pf", "kind": "tasks.substrate.reamde.dev/task",
+→ 201 {"id": "kq3v9x2m41pf", "kind": "samples.substrate.reamde.dev/tasks/task",
        "properties": {"name": "Buy milk", "title": "Buy milk", "status": "open",
                       "dueAt": "2026-08-13T09:00:00Z"},
        "version": 1, "createdAt": "2026-08-04T10:00:00Z",
@@ -100,7 +103,7 @@ List what is open, soonest first (the filter is URL-encoded JSON, the grammar
 is below):
 
 ```http
-GET /api/v1/tasks.substrate.reamde.dev/task
+GET /api/v1/samples.substrate.reamde.dev/tasks/task
       ?filter={"properties":{"status":{"eq":"open"}}}&orderBy=dueAt
 
 → {"records": [...], "cursor": "eyJv…", "head": 4207}
@@ -111,7 +114,7 @@ Complete one. A state change is just a patch, and the
 `completedAt`:
 
 ```http
-PATCH /api/v1/tasks.substrate.reamde.dev/task/kq3v9x2m41pf
+PATCH /api/v1/samples.substrate.reamde.dev/tasks/task/kq3v9x2m41pf
 {"properties": {"status": "done"}}
 ```
 
@@ -123,22 +126,23 @@ mechanism), and, if you asked by an id that was merged away, `canonicalId`
 tells you where it went ([merges](projection.md#merges)):
 
 ```http
-GET /api/v1/people.substrate.reamde.dev/person/9f2k
+GET /api/v1/samples.substrate.reamde.dev/people/person/9f2k
 
-→ {"id": "9f2k", "kind": "people.substrate.reamde.dev/person",
+→ {"id": "9f2k", "kind": "samples.substrate.reamde.dev/people/person",
    "properties": {"name": "Ada Lovelace", "emails": ["ada@example.com"]},
    "propertyMeta": {"name": {"manager": "console", "tier": "owner",
      "updatedAt": "2026-08-04T09:12:00Z",
-     "alternatives": [{"actor": "function:githubsync", "value": "ada",
-                       "updatedAt": "2026-08-04T08:00:00Z"}]}}}
+     "alternatives": [
+       {"actor": "function:providers.substrate.reamde.dev:github:githubsync",
+        "value": "ada", "updatedAt": "2026-08-04T08:00:00Z"}]}}}
 ```
 
 ## The five mutations
 
 The complete write surface, for every actor, forever. Each one addresses its
 target by **full identity**: the kind beside the id (on REST the path's
-`{authority}/{kind}` names the kind; on GraphQL the kind travels in the
-mutation's arguments, as `kind` on `patch`, `delete` and `merge`, and inside
+`{authority}/{package}/{kind}` names the kind; on GraphQL the kind travels in
+the mutation's arguments, as `kind` on `patch`, `delete` and `merge`, and inside
 `input` on `put`), because an id is unique per kind, never per repository:
 
 | Mutation | What it does                                                                                                                                                        |
@@ -166,8 +170,8 @@ read-then-conditional-write primitive.
 A record's own derived views hang off its path too, which is where
 `…/{id}/incoming` sits. That follows one rule, written into the contract: **a
 resource's operational verbs live at the resource**, its own
-`{authority}/{kind}/{id}` path. That is
-also why the trigger verbs live under `core.substrate.reamde.dev/trigger/…` — trigger
+`{authority}/{package}/{kind}/{id}` path. That is
+also why the trigger verbs live under `substrate.reamde.dev/core/trigger/…` — trigger
 records are core's, so their verbs sit beside them.
 
 ### Idempotency and retries
@@ -180,8 +184,8 @@ digest. The trigger delivery path carries its own idempotency key, so a
 redelivered change applies once.
 
 A retried write is NOT safe when the server assigns the identity or the effect.
-A `POST /api/v1/{authority}/{kind}` with no id mints a random id, so a client
-that retries after a timeout creates a second record. `POST
+A `POST /api/v1/{authority}/{package}/{kind}` with no id mints a random id, so
+a client that retries after a timeout creates a second record. `POST
 …/functions/{name}/call` mints a fresh idempotency key per call, so a retry
 re-runs the function's effects; the agent call, agent chat, `merge` and `split`
 POSTs behave the same way.
@@ -198,7 +202,7 @@ A filter is one JSON document, the same shape URL-encoded in REST's `?filter=`
 and passed whole to GraphQL's `filter` argument:
 
 ```json
-{"kinds": ["tasks.substrate.reamde.dev/task"],
+{"kinds": ["samples.substrate.reamde.dev/tasks/task"],
  "properties": {"status": {"eq": "open"},
                 "dueAt": {"lt": "2026-08-11T00:00:00Z"}},
  "labels": {"owner/starred": {"eq": true}}}
@@ -220,7 +224,7 @@ and passed whole to GraphQL's `filter` argument:
 - `deleted` picks the tombstones: absent or `false` lists only live records,
   `true` lists only soft-deleted ones.
 - `implements` selects every kind carrying one [trait](data-model.md#traits),
-  across authorities. Every arm narrows, so `implements` intersects with the
+  across every package. Every arm narrows, so `implements` intersects with the
   kinds already in play rather than widening them: on a REST collection, whose
   path has already fixed the kind, use it to test that kind; use it on
   GraphQL's `records` for the cross-kind query. A pair that can match nothing
@@ -252,10 +256,10 @@ pass `first` for the page size and, on the next request, the `cursor` a page
 returned as `after`:
 
 ```http
-GET /api/v1/tasks.substrate.reamde.dev/task?first=50
+GET /api/v1/samples.substrate.reamde.dev/tasks/task?first=50
 → {"records": [...], "cursor": "eyJv…", "head": 4211}
 
-GET /api/v1/tasks.substrate.reamde.dev/task?first=50&after=eyJv…
+GET /api/v1/samples.substrate.reamde.dev/tasks/task?first=50&after=eyJv…
 → {"records": [...], "cursor": "eyJv…", "head": 4211}
 ```
 
@@ -309,17 +313,19 @@ its stability and the `surfaces` that serve it (`rest`, `graphql`, or both):
 ```json
 {"versions": [{"name": "v1", "status": "served"}],
  "server": {"version": "…", "build": "…"},
- "vocabulary": {"maxDialect": 2, "note": "…"},
+ "vocabulary": {"maxDialect": 3, "note": "…"},
  "changelog": {"horizon": 0, "maxDialect": 1},
  "features": [{"name": "triggers", "stability": "beta", "surfaces": ["rest"]},
               {"name": "changefeed", "stability": "beta", "surfaces": ["rest", "graphql"]},
               {"name": "search", "stability": "beta", "surfaces": ["graphql"]},
               {"name": "agents", "stability": "alpha", "surfaces": ["rest"]}],
- "grammar": {"kind": "<authority>/<name> | <name>",
-             "record": "<authority>/<kind>/<id> | <kind>/<id>",
-             "collection": "/api/v1/{authority}/{kind}[/{id}] | /api/v1/{kind}[/{id}]",
-             "actors": ["api", "console", "substratectl", "bundle:<authority>",
-                        "function:<authority>:<name>", "agent:<authority>:<name>",
+ "grammar": {"kind": "<authority>/<package>/<name>",
+             "record": "<authority>/<package>/<kind>/<id>",
+             "collection": "/api/v1/{authority}/{package}/{kind}[/{id}]",
+             "actors": ["api", "console", "substratectl",
+                        "bundle:<authority>:<package>",
+                        "function:<authority>:<package>:<name>",
+                        "agent:<authority>:<package>:<name>",
                         "substrate"]},
  "endpoints": {"register": "/register", "login": "/login", "tokens": "/tokens",
                "password": "/password", "totp": "/totp"},
@@ -358,8 +364,10 @@ is served and works today.
 
 **Nothing reports `stable` yet.** The path grammar settled the collection
 segment to the kind name and moved the non-record endpoints to the version root
-([decision 0033](decisions/0033-the-path-grammar-has-no-separators.md)), but the
-surface is not frozen. `agents` and `embeddings` report `alpha`; every other
+([decision 0033](decisions/0033-the-path-grammar-has-no-separators.md)), and the
+package segment then moved every kind path again
+([decision 0047](decisions/0047-a-kind-lives-in-a-package.md)); the surface is
+not frozen. `agents` and `embeddings` report `alpha`; every other
 feature reports `beta`.
 
 The list is derived from what the deployment implements, not written out, so a
@@ -438,18 +446,20 @@ Every write is attributed to an **actor**: what wrote the record. The domain is
 closed, seven names:
 
 ```
-console                       a write from the console
-substratectl                  a write from the command line
-api                           a write from a client holding a token, client unnamed
-bundle:<authority>            an install, and the authority's own hand
-function:<authority>:<name>   a function's effects
-agent:<authority>:<name>      an agent's effects
-substrate                     the engine's own hand
+console                                  a write from the console
+substratectl                             a write from the command line
+api                                      a write from a client holding a token, client unnamed
+bundle:<authority>:<package>             an install, and the package's own hand
+function:<authority>:<package>:<name>    a function's effects
+agent:<authority>:<package>:<name>       an agent's effects
+substrate                                the engine's own hand
 ```
 
-A machine hand carries the full authority, so two bundles that share a first
-label are two writers. `connector:<label>` was a second spelling of
-`bundle:<authority>` and is retired
+A machine hand carries the full authority and the package, so two packages that
+share a name under different authorities are two writers, and the segments are
+colons because a `/` is reserved for label and annotation keys
+([0047](decisions/0047-a-kind-lives-in-a-package.md)). `connector:<label>` was
+a second spelling of the bundle hand and is retired
 ([0025](decisions/0025-an-actor-carries-the-full-authority.md)); entries
 written under it keep it, because an actor is part of the hashed changelog
 preimage.
@@ -529,7 +539,7 @@ Status codes follow the write: a create is `201`, an update or replace is
 `POST /webhooks/{authority}/{trigger}` is the one route that takes a body and
 no bearer. `authority` is the repository's authority (the name it publishes
 under, chosen at registration) and `trigger` the id of a
-`core.substrate.reamde.dev/trigger` record whose source is the `webhook` arm;
+`substrate.reamde.dev/core/trigger` record whose source is the `webhook` arm;
 the request becomes the delivery's envelope and the trigger's callable runs in
 the background ([functions](functions.md#the-delivery-envelope)). When the
 trigger declares `source.webhook.key`, the request carries it as a trailing

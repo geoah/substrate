@@ -15,7 +15,7 @@ One entry, as the wire carries it, for the task created on the
  "ts": "2026-08-04T10:00:00.183742Z",
  "actor": "api",
  "op": "put",
- "kind": "tasks.substrate.reamde.dev/task",
+ "kind": "samples.substrate.reamde.dev/tasks/task",
  "recordId": "kq3v9x2m41pf",
  "payload": {"created": true, "properties": ["name", "dueAt"]},
  "hash": "5f0c…64 hex chars…9a1d"}
@@ -228,7 +228,7 @@ resume from, so a consumer that disconnects misses nothing:
 GET /api/v1/changes?from=4189&watch=1
 
 {"bookmark": 4189}
-{"seq": 4190, "op": "put", "kind": "tasks.substrate.reamde.dev/task",
+{"seq": 4190, "op": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
  "recordId": "kq3v9x2m41pf", "actor": "api"}
 ```
 

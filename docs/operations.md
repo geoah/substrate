@@ -250,7 +250,7 @@ entries keep the spelling they were written in.
 
 **The promotion refuses rather than guesses.** It translates every declaration
 row this repository holds, and if one installed closure no longer parses under
-the new binary it fails the open, logging the authority and the reason, instead
+the new binary it fails the open, logging the package and the reason, instead
 of migrating the rest: stamping a store with one un-migrated row would leave two
 encodings in it, and no reader could tell which one it was holding. The repair is
 to re-install that bundle (or open once under the binary that wrote it) before
@@ -381,7 +381,7 @@ the exec path needs nothing open at all.
 - **`repository list`** reads the one control-plane table: one row per user.
 - **`repository inspect <username>`** reports the repository id, the username,
   when it was created, the changelog head and entry count, live and tombstoned record
-  counts, and the declaration versions per authority. It is the first thing to
+  counts, and the declaration versions per package. It is the first thing to
   run when something looks wrong.
 - **`repository verify <username>`** walks the whole chain in one read-only
   snapshot: it recomputes every entry's hash from the stored bytes, checks

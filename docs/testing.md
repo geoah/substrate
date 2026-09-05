@@ -66,10 +66,10 @@ go test ./internal/engine/ -run TestFold -v
 
 A test for boot-upgrade behavior (`upgrade_guard_db_test.go`, whose harness
 patches a copy of the shipped tree and opens the same database twice) must bump
-the version of the DECLARATION it patches, not only its authority's: a kind that
-pins a `data.version` of its own keeps whatever it stands at when the authority
+the version of the DECLARATION it patches, not only its package's: a kind that
+pins a `data.version` of its own keeps whatever it stands at when the package
 moves, so the upgrade under test never runs and the case passes vacuously.
-`pinVersion` is the helper for it, and `bumpGroupVersion` alone is enough only
+`pinVersion` is the helper for it, and `bumpPackageVersion` alone is enough only
 for a declaration that pins no version. Run any new case against the un-fixed
 code once; a boot-upgrade test that passes both ways is proving nothing.
 
@@ -298,7 +298,7 @@ pipeline is reproducible on a laptop:
 
 | Job | Task | Is |
 | --- | ---- | -- |
-| lint | `ci:lint` | formatting, every linter, the release config, and the two diff guards: the `kinds/` version bump (`kinds:check`) and the write-once files (`frozen:check`) |
+| lint | `ci:lint` | formatting, every linter, the release config, and the two diff guards: the `kinds/` and `samples/` version bump (`kinds:check`) and the write-once files (`frozen:check`) |
 | cross compile | `ci:cross` | build and vet for linux and darwin, amd64 and arm64 |
 | go test | `ci:go` | both halves, with the coverage profile kept as an artifact |
 | race | `ci:race` | the short suite under `-race` |

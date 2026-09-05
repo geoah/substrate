@@ -74,7 +74,7 @@ flat, as one JSON object, not wrapped in an envelope.
 Here is a task from the to-do list:
 
 ```yaml
-kind: tasks.substrate.reamde.dev/task
+kind: samples.substrate.reamde.dev/tasks/task
 metadata:
   id: t9                          # omit on create; the server assigns one
   labels:                         # short, queryable metadata
@@ -86,7 +86,7 @@ data:
     status: open                  # a state property, see Validation below
     dueAt: 2026-08-13T09:00:00Z
     project:                      # a reference, always an object
-      ref: tasks.substrate.reamde.dev/project/infra7
+      ref: samples.substrate.reamde.dev/tasks/project/infra7
 status:                           # server-set, ignored on input
   version: 4
   createdAt: "2026-08-04T09:00:00Z"
@@ -114,8 +114,8 @@ accepted as shorthand and stored as the object. Against a pinned declaration a
 bare id is accepted as the authored short form, because ids are unique per kind;
 unpinned, the value carries the kind or it is refused. Declarations may name
 their pin by bare kind
-name (`kind: project`): a bare name resolves in the declaring authority first,
-then uniquely across all authorities, and a name that stays ambiguous refuses
+name (`kind: project`): a bare name resolves in the declaring package first,
+then uniquely across every package, and a name that stays ambiguous refuses
 to load. [References](#property-types) below has the rest.
 
 The envelope is the one canonical representation. The flat JSON that the
@@ -141,43 +141,52 @@ Writers may only touch their own key namespace.
 
 ## Kinds and references
 
-A **kind** is what a record is, and it is named `<authority>/<name>`:
-`tasks.substrate.reamde.dev/task`. Every kind carries an **authority**
-([decision 0042](decisions/0042-every-kind-carries-an-authority.md)).
+A **kind** is what a record is, and it is named `<authority>/<package>/<name>`:
+`samples.substrate.reamde.dev/tasks/task`. Every kind carries an **authority**
+([decision 0042](decisions/0042-every-kind-carries-an-authority.md)) and a
+**package** inside it
+([decision 0047](decisions/0047-a-kind-lives-in-a-package.md)).
 
-An authority is a DNS name. It says who publishes a kind and, more
-importantly, who may change that kind's declaration: shipped vocabulary is the
-substrate's to write, and an installed bundle's kinds belong to that bundle.
+An authority is a DNS name, and it says who publishes. A package is one word
+under it, and it is the unit that matters day to day: a declaration takes its
+version from its package, a broken closure quarantines its package, and the
+package's `source` says who may change the declarations in it — shipped
+vocabulary is the substrate's to write, and an installed bundle's kinds belong
+to that bundle. Two packages under one authority upgrade and fail
+independently, which is what lets `google` and `github` publish under
+`providers.substrate.reamde.dev` without sharing a version.
 
 A **record reference** writes kind and id together:
-`tasks.substrate.reamde.dev/task/t9`. That is the path form, which a reference
+`samples.substrate.reamde.dev/tasks/task/t9`. That is the path form, which a reference
 property carries under `ref`; on REST the same reference is split into path
 segments
-(`/api/v1/tasks.substrate.reamde.dev/task/t9`), and on GraphQL it travels as two
+(`/api/v1/samples.substrate.reamde.dev/tasks/task/t9`), and on GraphQL it travels as two
 arguments.
 
 The shipped vocabulary is split by subsystem, Kubernetes-style, each subsystem
-its own authority: `people.substrate.reamde.dev`, `messaging.substrate.reamde.dev`,
-`calendar.substrate.reamde.dev`, `tasks.substrate.reamde.dev`, and the
-mneme-ported `health`, `fitness`, `routines`, `journal`, `places`, `food`
-and `commerce` under the same domain — each a bundle you
-**import** — and `core.substrate.reamde.dev` for the substrate's own machinery, which is the
-only one a new repository is seeded with. Authorities namespace names; they
-never partition the data: a reference crosses authorities as easily as it
-stays inside one.
+its own package: `samples.substrate.reamde.dev/people`,
+`samples.substrate.reamde.dev/messaging`,
+`samples.substrate.reamde.dev/calendar`, `samples.substrate.reamde.dev/tasks`,
+and the mneme-ported `health`, `fitness`, `routines`, `journal`, `places`,
+`food` and `commerce` under the same authority — each a bundle you
+**import** — and `substrate.reamde.dev/core` for the substrate's own machinery,
+which is the only one a new repository is seeded with. Packages namespace
+names; they never partition the data: a reference crosses packages as easily as
+it stays inside one.
 
 A **kind declaration is itself a record**, living in the repository's own changelog
-like everything else, whatever authority it declares into. Your repository was
-seeded with `core.substrate.reamde.dev` when it was created, and everything else — the
+like everything else, whatever package it declares into. Your repository was
+seeded with `substrate.reamde.dev/core` when it was created, and everything else — the
 vocabulary above included — arrived as an import you asked for; either way the
 declarations are rows in your repository, not a file the server reads at query
 time. [Vocabulary as records](vocabulary.md) is that whole story.
 
-The to-do list needs two kinds. **`people.substrate.reamde.dev/person` ships built in**,
-one record per human, the target of every pointer that means "a person":
+The to-do list needs two kinds. **`samples.substrate.reamde.dev/people/person`
+ships in the binary and installs on request**, one record per human, the target
+of every pointer that means "a person":
 
 ```yaml
-kind: people.substrate.reamde.dev/person
+kind: samples.substrate.reamde.dev/people/person
 metadata:
   id: 9f2k                        # server-assigned: nothing external names a human
 data:
@@ -191,14 +200,15 @@ The task kind we declare ourselves. Kinds are manifests: YAML documents,
 versioned and reviewed in git (or installed by a
 [bundle](bundles.md)). A declaration wears the same envelope as data,
 and its `kind` is always a core kind — the meta-model lives in
-`core.substrate.reamde.dev` whatever authority the document declares into:
+`substrate.reamde.dev/core` whatever package the document declares into:
 
 ```yaml
-kind: core.substrate.reamde.dev/kind   # kind declarations are core records
+kind: substrate.reamde.dev/core/kind   # kind declarations are core records
 metadata:
-  id: tasks.substrate.reamde.dev/task        # = <data.authority>/<data.names.singular>
+  id: samples.substrate.reamde.dev/tasks/task        # = <authority>/<package>/<singular>
 data:
-  authority: tasks.substrate.reamde.dev      # the authority being declared into
+  authority: samples.substrate.reamde.dev            # who publishes
+  package: tasks                                     # the package declared into
   names:
     singular: task
   properties:
@@ -229,17 +239,18 @@ data:
           to: open
     project:
       type: reference
-      kind: project               # a bare name resolves in this authority
+      kind: project               # a bare name resolves in this package
       mustExist: true             # refuse a task filed under no project
     source:
       type: reference             # unpinned: the message, mail, or issue it came from
 ```
 
 A declaration record's id **is** a kind reference
-(`<data.authority>/<data.names.singular>`), which is the one place a `/` and a
-dot are legal in an id. The `authority:` line is required: every kind carries
-an authority
-([decision 0042](decisions/0042-every-kind-carries-an-authority.md)).
+(`<data.authority>/<data.package>/<data.names.singular>`), which is the one
+place a `/` and a dot are legal in an id. The `authority:` and `package:` lines
+are both required: every kind carries an authority
+([decision 0042](decisions/0042-every-kind-carries-an-authority.md)) and lives
+in a package ([decision 0047](decisions/0047-a-kind-lives-in-a-package.md)).
 
 Every property here names a declared property type (`markdown`, `url`,
 `datetime`, `state`), covered next.
@@ -331,7 +342,7 @@ one: a secret never leaves its record.
 
 A `digest` shares the redaction but not the indirection, because the engine
 itself must compare it in SQL: a one-way SHA-256 the server minted, stored
-as the value. The `core.substrate.reamde.dev/token` kind stores its hash
+as the value. The `substrate.reamde.dev/core/token` kind stores its hash
 this way ([users and tokens](auth.md)).
 
 **Objects.** An `object` property declares its fields inline. This is how an
@@ -395,7 +406,7 @@ A value is ONE OBJECT, holding the referent's path under the reserved key
 
 ```yaml
 provider:
-  ref: core.substrate.reamde.dev/llmprovider/claude
+  ref: substrate.reamde.dev/core/llmprovider/claude
 ```
 
 That is the shape every read serves and every row stores, whether or not the
@@ -406,23 +417,24 @@ changing shape: adding `properties:` adds a key beside `ref`, and nothing that
 already reads the pointer moves.
 
 **A bare path string is write-time shorthand.** `provider:
-core.substrate.reamde.dev/llmprovider/claude` applies and is stored as the
+substrate.reamde.dev/core/llmprovider/claude` applies and is stored as the
 object above, so a hand-written document stays short. Nothing serves the
 shorthand back.
 
 Against a concrete pin a bare record id is accepted as the authored short form
 too, and canonicalized to the full path on write, so `provider: default` stores
-as `{ref: core.substrate.reamde.dev/llmprovider/default}`; unpinned, a bare id
+as `{ref: substrate.reamde.dev/core/llmprovider/default}`; unpinned, a bare id
 names no kind and is refused. A path that contradicts its pin is refused naming
 both ends.
 
 Splitting a path back into its two halves needs no registry, because an
-authority always carries a dot and a kind name never does, and every kind
-carries an authority
-([decision 0042](decisions/0042-every-kind-carries-an-authority.md)): the kind
-is the first two segments and the id is **everything after the kind** — slashes
+authority always carries a dot while a package and a kind name never do, and
+every kind carries all three
+([decision 0042](decisions/0042-every-kind-carries-an-authority.md),
+[decision 0047](decisions/0047-a-kind-lives-in-a-package.md)): the kind is the
+first three segments and the id is **everything after the kind** — slashes
 included, since a declaration record's id is itself a kind reference
-(`core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev/task` names one
+(`substrate.reamde.dev/core/kind/samples.substrate.reamde.dev/tasks/task` names one
 record).
 
 Validation checks the shape and that the referent **kind** exists. The referent
@@ -459,7 +471,7 @@ reference already carries:
 
 ```yaml
 memberOf:
-  - ref: people.substrate.reamde.dev/organization/acme
+  - ref: samples.substrate.reamde.dev/people/organization/acme
     role: staff engineer
     since: 2024-03-01
 ```
@@ -492,7 +504,7 @@ projects along.
 **Blob references.** A `blobref` names stored bytes by their digest. The bytes
 live in the repository's content-addressed blob store
 (`PUT /api/v1/blobs`, `GET /api/v1/blobs/{digest}`), and their metadata is an
-ordinary `core.substrate.reamde.dev/blob` record whose id **is** the digest, so the same
+ordinary `substrate.reamde.dev/core/blob` record whose id **is** the digest, so the same
 bytes always mint the same blob. A read resolves the ref to
 `{digest, name, mediaType, size, status}`, never to the bytes inline. The
 manifest is always a record in Postgres; where the BYTES sit is an operator's
@@ -509,14 +521,16 @@ both back, as `Content-Type` and a `Content-Disposition` filename.
 
 **Your own property types.** A custom property type is a **refinement** of a
 base type plus validations, declared as a `propertytype` manifest and local to
-its authority. A library authority would define one for ISBNs like this:
+its package: a kind resolves the name inside its own package and nowhere else.
+A library package would define one for ISBNs like this:
 
 ```yaml
-kind: core.substrate.reamde.dev/propertytype
+kind: substrate.reamde.dev/core/propertytype
 metadata:
-  id: library.substrate.reamde.dev/isbn
+  id: library.example.com/catalog/isbn
 data:
-  authority: library.substrate.reamde.dev
+  authority: library.example.com
+  package: catalog
   description: "ISBN-10 or ISBN-13, normalized and hyphen-free"
   base: string
   pattern: "^(97[89])?[0-9]{9}[0-9X]$"
@@ -542,11 +556,12 @@ GraphQL interface.
 The one worked example is `temporal`, shipped in core:
 
 ```yaml
-kind: core.substrate.reamde.dev/trait
+kind: substrate.reamde.dev/core/trait
 metadata:
-  id: core.substrate.reamde.dev/temporal
+  id: substrate.reamde.dev/core/temporal
 data:
-  authority: core.substrate.reamde.dev
+  authority: substrate.reamde.dev
+  package: core
   oneOf:
     - name: point
       properties:
@@ -611,7 +626,7 @@ traits:
 ```
 
 Because implementing a trait is queryable, a client can page every record of
-a trait (`GET …/core.substrate.reamde.dev/trait/{id}/records`), which is what the
+a trait (`GET …/substrate.reamde.dev/core/trait/{id}/records`), which is what the
 console's connections view over `accountconfig` accounts is.
 [Bundles](bundles.md) puts these three interfaces to work, and
 [traits and interfaces](traits.md) is the worked tour: declaring a trait of

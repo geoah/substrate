@@ -1,7 +1,10 @@
 # Plan: a kind lives in a package, and a package lives in an authority
 
-Status: design settled with the owner, 2026-09-02; not started. It is a plan,
-not a contract: the code that lands is the contract.
+Status: design settled with the owner 2026-09-02, landed as
+[decision record 0047](../decisions/0047-a-kind-lives-in-a-package.md). Sample
+import (phase 2 of [the samples plan](providers-and-samples.md)) is still
+future work: the samples install as ordinary bundles. It is a plan, not a
+contract: the code that landed is the contract.
 
 ## The problem
 

@@ -17,19 +17,20 @@ version where a break would cost you.
 
 An `agent` is a callable whose body is an **LLM loop**, run host-side. It has
 one reference and the same four ways in as a [function](functions.md): a
-trigger delivery (a `callable` whose `kind` is `core.substrate.reamde.dev/agent`), the
-call API, a sub-agent call, and chat. Its actor is `agent:<authority>:<name>`,
-its own machine hand, held apart from a function's so an agent and a function
-of one name under one authority are two writers; its dispatch stamps the
+trigger delivery (a `callable` whose `kind` is `substrate.reamde.dev/core/agent`), the
+call API, a sub-agent call, and chat. Its actor is
+`agent:<authority>:<package>:<name>`, its own machine hand, held apart from a
+function's so an agent and a function of one name in one package are two
+writers; its dispatch stamps the
 bundle tier on its writes, exactly like a function's. A
 bundled agent obeys its bundle's
 [lifecycle](bundles.md#install-and-lifecycle): while the bundle is
 disabled or uninstalled, every entry refuses with a guard error.
 
-The `agent` kind is a first-class core kind, `core.substrate.reamde.dev/agent`, declared
-like every other core kind. Its runtime vocabulary lives in one authority of
-core's own — `core.substrate.reamde.dev/llmprovider`,
-`core.substrate.reamde.dev/llmthread` and `core.substrate.reamde.dev/llmmessage`
+The `agent` kind is a first-class core kind, `substrate.reamde.dev/core/agent`, declared
+like every other core kind. Its runtime vocabulary lives in core beside it —
+`substrate.reamde.dev/core/llmprovider`,
+`substrate.reamde.dev/core/llmthread` and `substrate.reamde.dev/core/llmmessage`
 — beside the rest of the substrate's machinery.
 
 ## The manifest
@@ -38,10 +39,11 @@ Here is the URL harvester's classifier, the agent a freshly fetched page is
 handed to:
 
 ```yaml
-kind: core.substrate.reamde.dev/agent
-metadata: {id: web.bundles.substrate.reamde.dev/pageclassifier}
+kind: substrate.reamde.dev/core/agent
+metadata: {id: samples.substrate.reamde.dev/web/pageclassifier}
 data:
-  authority: web.bundles.substrate.reamde.dev
+  authority: samples.substrate.reamde.dev
+  package: web
   description: Classify a fetched page and route it to the reading-list agent.
   prompt: |
     You are the page classifier. Read the page in the first message, decide
@@ -50,13 +52,13 @@ data:
   provider: default
   model: anthropic/claude-opus-5
   tools:
-    - function: web.bundles.substrate.reamde.dev/setclass
-  subagents: [web.bundles.substrate.reamde.dev/readinglistagent]
+    - function: samples.substrate.reamde.dev/web/setclass
+  subagents: [samples.substrate.reamde.dev/web/readinglistagent]
   budgets: {maxTurns: 4, maxToolCalls: 8, depth: 3}
   permissions:
     writes:
-      - web.bundles.substrate.reamde.dev/page
-      - core.substrate.reamde.dev/recordpatchrequest
+      - samples.substrate.reamde.dev/web/page
+      - substrate.reamde.dev/core/recordpatchrequest
 ```
 
 `data` carries:
@@ -65,7 +67,7 @@ data:
   wherever it appears as a sub-agent.
 - **`prompt`** (required, at most 64 KiB): the row is the prompt store, and the
   changelog's full retention is its version history.
-- **`provider`** (required): a `core.substrate.reamde.dev/llmprovider` record id — **where**
+- **`provider`** (required): a `substrate.reamde.dev/core/llmprovider` record id — **where**
   the completions are bought, resolved at dispatch and never at load.
 - **`model`** (required): the model id sent on every completion, a plain string
   the provider's endpoint understands — a gateway's alias
@@ -102,18 +104,18 @@ What fires an agent is the same [trigger](functions.md#triggers) record a
 function's delivery rides; only the `callable` reference names the other kind:
 
 ```yaml
-kind: core.substrate.reamde.dev/trigger
+kind: substrate.reamde.dev/core/trigger
 metadata: {id: web-classify-on-page}
 data:
   properties:
     enabled: true
     source:
       record:
-        kinds: [web.bundles.substrate.reamde.dev/page]
+        kinds: [samples.substrate.reamde.dev/web/page]
         ops: [update]
         when: 'record != null && record.properties.fetch == "fetched" && !("class"
           in record.properties)'
-    callable: core.substrate.reamde.dev/agent/web.bundles.substrate.reamde.dev/pageclassifier
+    callable: substrate.reamde.dev/core/agent/samples.substrate.reamde.dev/web/pageclassifier
 ```
 
 Because vocabulary is records, a parsed agent projects to a row the console
@@ -140,9 +142,9 @@ ships — so an agent names one exactly as it names a bundle's function:
 
 ```yaml
   tools:
-    - function: core.substrate.reamde.dev/graphql
-    - function: core.substrate.reamde.dev/propose
-    - function: web.bundles.substrate.reamde.dev/setclass
+    - function: substrate.reamde.dev/core/graphql
+    - function: substrate.reamde.dev/core/propose
+    - function: samples.substrate.reamde.dev/web/setclass
 ```
 
 Three older spellings are refused, each naming its replacement. A bare string
@@ -153,11 +155,11 @@ an agent could name that no record declared, and it is gone now that they are
 records. And `{callable: …}` was this key's first name, before it was clear an
 entry could name only a function.
 
-- **`core.substrate.reamde.dev/query`** is the capability-scoped read, and
+- **`substrate.reamde.dev/core/query`** is the capability-scoped read, and
   requires `permissions.reads`, a load error otherwise. A get outside the allowlist
   answers like an absent id; list and search clamp to the remaining row budget;
   a blown budget is a tool error the model sees.
-- **`core.substrate.reamde.dev/graphql`** is the whole-repository read: the
+- **`substrate.reamde.dev/core/graphql`** is the whole-repository read: the
   **same** schema and resolvers the `/graphql` endpoint executes
   (`internal/gql`), run in-process against the loop's dataset under the agent's
   actor. Declaring it is the grant, and it grants reads only: the document is
@@ -166,7 +168,7 @@ entry could name only a function.
   rather than truncated. Use `query` instead when an agent should read a few
   named kinds under a row budget; use `graphql` when the agent's job is the
   graph itself.
-- **`core.substrate.reamde.dev/mutate`** executes GraphQL mutations (`put`,
+- **`substrate.reamde.dev/core/mutate`** executes GraphQL mutations (`put`,
   `patch`, `delete`) through the same resolvers, and requires
   a non-empty `permissions.writes` (a load error otherwise). Every written kind is resolved
   and held to the agent's **effective** emit before the write applies, so a
@@ -174,9 +176,9 @@ entry could name only a function.
   refuse outright, as fusing identities is the owner's reviewed decision. Writes
   ride the full public path (kind guards, schema-record admission) under the
   agent's actor.
-- **`core.substrate.reamde.dev/propose`** is the reviewed write, and requires
+- **`substrate.reamde.dev/core/propose`** is the reviewed write, and requires
   `permissions.writes` to name
-  `core.substrate.reamde.dev/recordpatchrequest`. It lands one
+  `substrate.reamde.dev/core/recordpatchrequest`. It lands one
   [`recordpatchrequest`](projection.md#the-patch-request-sibling), never a
   direct mutation. It carries a `rationale` and an `op`: `patch`, the default,
   names an existing `target` and a `diff` the accept applies; `create` names a
@@ -189,9 +191,9 @@ entry could name only a function.
   sees, never a bad request reaching the owner's inbox. The loop stamps the
   proposing `thread` onto the request, which is where the decision reports
   back (below).
-- **`core.substrate.reamde.dev/ask`** pauses to ask the user, and requires
-  `permissions.writes` to name `core.substrate.reamde.dev/llminteraction`. It
-  lands one [`llminteraction`](builtin-kinds.md#coresubstratereamdedev) carrying
+- **`substrate.reamde.dev/core/ask`** pauses to ask the user, and requires
+  `permissions.writes` to name `substrate.reamde.dev/core/llminteraction`. It
+  lands one [`llminteraction`](builtin-kinds.md#substratereamdedevcore) carrying
   a batch of at most eight questions and returns the record id, not an answer.
   The run continues without one; the answer arrives in a later turn, when the
   user answers the interaction and the thread resumes, so the model must not
@@ -270,10 +272,10 @@ never decided by which id sorts first.
 
 `selector` says which writes a policy speaks for, and an empty dimension
 matches everything in it. `kinds` takes the same grammar a trigger's
-`source.record.kinds` does — a kind reference, every kind one authority
-publishes (`tasks.substrate.reamde.dev/*`), or every kind (`*`) — so a rule
-covering an authority does not have to enumerate today's kinds and miss
-tomorrow's. Any other spelling (`tasks.*`), and any exact reference to a kind
+`source.record.kinds` does — a kind reference, every kind one package declares
+(`samples.substrate.reamde.dev/tasks/*`), every kind one authority publishes
+(`samples.substrate.reamde.dev/*`), or every kind (`*`) — so a rule covering a
+package does not have to enumerate today's kinds and miss tomorrow's. Any other spelling (`tasks.*`), and any exact reference to a kind
 the repository does not have, is refused when the policy is written: a
 selector that matches no write gates nothing. `ops` are the write verbs the
 agent called (`put`, `patch`, `delete`), never a trigger's change classes, and
@@ -281,16 +283,16 @@ agent called (`put`, `patch`, `delete`), never a trigger's change classes, and
 there is no default, and a rule without one speaks for nothing.
 
 ```yaml
-kind: core.substrate.reamde.dev/recordpatchpolicy
+kind: substrate.reamde.dev/core/recordpatchpolicy
 metadata:
   id: gate-tasks
 data:
   properties:
     selector:
       kinds:
-        - tasks.substrate.reamde.dev/*
+        - samples.substrate.reamde.dev/tasks/*
       agents:
-        - crew.example.com/taskbot
+        - crew.example.com/bots/taskbot
     action: gate
 ```
 
@@ -409,7 +411,7 @@ the model is the agent's own word now.
 ### Registering a provider
 
 A provider is a record, so adding one is a write — `apply -f`, or the console
-at **Data → `core.substrate.reamde.dev` → llmproviders → New**. (The Agents
+at **Data → `substrate.reamde.dev/core` → llmproviders → New**. (The Agents
 page does not list providers: an agent names one by id, and that pointer reads
 on the agent's own record.) All three below are ordinary data documents:
 `data.properties`, never a declaration.
@@ -417,7 +419,7 @@ on the agent's own record.) All three below are ordinary data documents:
 ```yaml
 # OpenRouter — the OpenAI wire at its own endpoint. So is LiteLLM, Together,
 # Groq or a local Ollama: same wire, different baseURL.
-kind: core.substrate.reamde.dev/llmprovider
+kind: substrate.reamde.dev/core/llmprovider
 metadata: {id: openrouter}
 data:
   properties:
@@ -430,7 +432,7 @@ data:
       - {name: X-Title, value: substrate}
 ---
 # Anthropic, natively. No baseURL: the official endpoint.
-kind: core.substrate.reamde.dev/llmprovider
+kind: substrate.reamde.dev/core/llmprovider
 metadata: {id: anthropic}
 data:
   properties:
@@ -441,7 +443,7 @@ data:
       - {model: claude-opus-5, inputPer1M: 5, outputPer1M: 25}
 ---
 # Azure OpenAI. The deployment endpoint is the row's, and so is the key.
-kind: core.substrate.reamde.dev/llmprovider
+kind: substrate.reamde.dev/core/llmprovider
 metadata: {id: azure}
 data:
   properties:
@@ -460,7 +462,7 @@ nobody watching:
 
 ```yaml
 # The embeddings provider: one row per repository declares embedModel.
-kind: core.substrate.reamde.dev/llmprovider
+kind: substrate.reamde.dev/core/llmprovider
 metadata: {id: vectors}
 data:
   properties:
@@ -496,7 +498,7 @@ shell history:
 
 ```sh
 cat <<'EOF' | substratectl apply -f -
-kind: core.substrate.reamde.dev/llmprovider
+kind: substrate.reamde.dev/core/llmprovider
 metadata: {id: anthropic}
 data:
   properties: {apiKey: sk-ant-…}
@@ -514,18 +516,21 @@ than by the field. Making it schema-aware is
 ### Testing a provider
 
 Point an agent at the row and run it once. The smallest agent that proves a
-provider works is a throwaway of your own authority:
+provider works is a throwaway package of your own:
 
 ```yaml
-kind: core.substrate.reamde.dev/authority
-metadata: {id: smoke.example.com}
-data:
-  version: 1
----
-kind: core.substrate.reamde.dev/agent
-metadata: {id: smoke.example.com/echo}
+kind: substrate.reamde.dev/core/package
+metadata: {id: smoke.example.com/smoke}
 data:
   authority: smoke.example.com
+  package: smoke
+  version: 1
+---
+kind: substrate.reamde.dev/core/agent
+metadata: {id: smoke.example.com/smoke/echo}
+data:
+  authority: smoke.example.com
+  package: smoke
   description: Smoke-test one provider.
   prompt: Reply with exactly OK.
   provider: anthropic
@@ -544,10 +549,10 @@ so a run is the call API or the console's chat:
 ```sh
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" -d '{"input": "ping"}' \
-  http://localhost:8080/api/v1/core.substrate.reamde.dev/agent/smoke.example.com%2Fecho/call
+  http://localhost:8080/api/v1/substrate.reamde.dev/core/agent/smoke.example.com%2Fsmoke%2Fecho/call
 ```
 
-The id carries a `/`, so the path segment spells it `%2F`. The answer carries
+The id carries two slashes, so the path segment spells each `%2F`. The answer carries
 `reply` and the `thread` id, and the thread is the durable half:
 
 ```sh
@@ -569,13 +574,13 @@ where they happen:
 
 ## Calling an agent
 
-`POST /api/v1/core.substrate.reamde.dev/agent/{name}/call` with `{"input": …}` runs the
+`POST /api/v1/substrate.reamde.dev/core/agent/{name}/call` with `{"input": …}` runs the
 loop once: the input becomes the first user message, and the answer carries
 `reply`, `thread`, `status`, `effects` with its `effectsByAction` breakdown,
 `turns`, `toolCalls`, and the token and `costUSD` tallies. Unlike a function
 call, something durable is minted — the thread is the trace.
 
-`POST /api/v1/core.substrate.reamde.dev/agent/{name}/chat` with `{"thread"?, "message"}`
+`POST /api/v1/substrate.reamde.dev/core/agent/{name}/chat` with `{"thread"?, "message"}`
 opens or continues a thread and streams the loop: `application/x-ndjson`, one
 JSON object per line keyed by `kind` (`thread` first, `delta` carrying `text`
 per streamed token, `toolStarted` and `toolFinished` around each dispatch, one

@@ -14,7 +14,7 @@ listed in [Findings and their issues](#findings-and-their-issues).
 A second pass re-checked every load-bearing claim against the code and
 confirmed each finding's mechanism. It corrected three things, now folded in:
 `rekeySealedStore` does break under the AAD binding (2.1),
-`core.substrate.reamde.dev/credential` is a shipped kind with two secret
+`substrate.reamde.dev/core/credential` is a shipped kind with two secret
 properties (4.1), and 5.2 is latent rather than live.
 
 ## What the sealed store is
@@ -367,9 +367,9 @@ containment working, and it is worth saying explicitly because everything else
 in this section depends on it.
 
 Attacker capability assumed: the ability to write two secret properties on one
-record. One shipped kind declares two, `core.substrate.reamde.dev/credential`
+record. One shipped kind declares two, `substrate.reamde.dev/core/credential`
 with `passwordRef` and `totpRef`
-(`kinds/core.substrate.reamde.dev/credential.yaml:32,35`); the bundle files
+(`kinds/substrate.reamde.dev/core/credential.yaml:32,35`); the bundle files
 spread their two across separate kinds. The bug cannot fire on `credential`:
 `forbidSystemKind` refuses the generic write surface for it, and the auth
 machinery writes the two properties with distinct material through its own
@@ -482,7 +482,7 @@ identity. [#137](https://github.com/geoah/substrate/issues/137) tracks that.
 
 What #137 does not carry, and what a rotation design has to: **a past recipient
 can never be revoked by re-wrapping.** `sealedKey` is declared `type: string`
-on `core.substrate.reamde.dev/recoverykey`, not `type: secret`. It is an
+on `substrate.reamde.dev/core/recoverykey`, not `type: secret`. It is an
 ordinary property value in an append-only changelog, and the reseal migration
 rewrites only secret-typed properties (`resealChangelog`'s `isSecret` filter,
 `reseal.go:354`). Every historical `sealedKey` therefore stays in the log
