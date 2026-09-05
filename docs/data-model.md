@@ -26,8 +26,10 @@ changelog through that same fold code
 ([running a substrate](operations.md#operator-recovery)).
 
 The changelog does not carry the side stores' bytes, so **a backup is changelog plus blobs
-plus sealed, as one unit** — and where blob bytes are configured to live
-outside the database, that unit is two artifacts
+plus sealed, as one unit**: the repository's directory under
+`SUBSTRATE_DATA_ROOT`, which holds all three
+([backups](operations.md#backups)). Where blob bytes are configured to live in
+a bucket, that unit is two artifacts
 ([the blob store](operations.md#the-blob-store)).
 
 Sequence numbers are per repository, gapless, and assigned at commit, so
@@ -35,11 +37,11 @@ commit-visibility order **is** sequence order and a consumer resuming from a
 remembered seq misses nothing. Nothing prunes or compacts today.
 [The changelog and watch](changelog.md) is the consumer's side of this.
 
-Every entry carries a SHA-256 hash chaining to the previous entry's, and
-every repository signs every entry with its own Ed25519 key: an in-place
-edit, a reorder or a splice breaks the chain at the first touched seq, and
-`repository verify` names it. [The chain](changelog.md#the-chain) says
-exactly what that does and does not prove.
+Every entry carries a SHA-256 checksum of its own canonical line, in the
+segment file and in the table alike, and `repository verify` names the first
+seq whose bytes no longer produce it.
+[The checksum and the segment files](changelog.md#the-checksum-and-the-segment-files)
+says exactly what that does and does not prove.
 
 ## Records and identity
 

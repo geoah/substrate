@@ -24,7 +24,6 @@ package engine
 
 import (
 	"context"
-	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -244,7 +243,8 @@ func (s *service) openSealed(ctx context.Context, repoID, ref string) ([]byte, e
 // logins racing on one code cannot both win it — a code is one-time, which is
 // the whole reason the step lives beside the seed. It writes no changelog entry: a
 // replay counter is not a change to the credential.
-func (s *service) consumeTOTPStep(ctx context.Context, repoID, ref string, to int64) (bool, error) {
+func (s *service) consumeTOTPStep(ctx context.Context, repo Repository, ref string, to int64) (bool, error) {
+	repoID := repo.ID
 	tx, err := s.maint.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
@@ -252,9 +252,10 @@ func (s *service) consumeTOTPStep(ctx context.Context, repoID, ref string, to in
 	defer func() { _ = tx.Rollback() }()
 	var payload []byte
 	var owner eref
+	var expires sql.NullTime
 	err = tx.QueryRowContext(ctx,
-		`SELECT payload, record_kind, record_id FROM sealed WHERE repository = $1 AND ref = $2 FOR UPDATE`,
-		repoID, ref).Scan(&payload, &owner.Kind, &owner.ID)
+		`SELECT payload, record_kind, record_id, expires_at FROM sealed WHERE repository = $1 AND ref = $2 FOR UPDATE`,
+		repoID, ref).Scan(&payload, &owner.Kind, &owner.ID, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -282,12 +283,30 @@ func (s *service) consumeTOTPStep(ctx context.Context, repoID, ref string, to in
 	if err != nil {
 		return false, err
 	}
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE sealed SET payload = $3, updated_at = now() WHERE repository = $1 AND ref = $2`,
-		repoID, ref, sealed); err != nil {
+	var updated time.Time
+	if err := tx.QueryRowContext(ctx,
+		`UPDATE sealed SET payload = $3, updated_at = now() WHERE repository = $1 AND ref = $2 RETURNING updated_at`,
+		repoID, ref, sealed).Scan(&updated); err != nil {
 		return false, err
 	}
-	return true, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	// The step lives in the sealed row and nowhere in the changelog, so the
+	// mirror is the only thing that carries it into the directory. It goes
+	// through the dataset, under the writer mutex every other sealed write
+	// takes: written straight from here it could lose the rename race against
+	// a concurrent rekeySealedStore and leave the older payload on disk. The
+	// row is committed either way; a mirror this cannot run is the boot
+	// check's to rewrite.
+	rec := sealedRecordOf(ref, owner.Kind, owner.ID, sealed, expires, updated)
+	if ds, err := s.open(ctx, repo); err != nil {
+		s.log.Error("substrate: could not open the repository to mirror a sealed row; the boot check will rewrite it",
+			"repository", repoID, "ref", ref, "error", err)
+	} else {
+		ds.mirrorSealedNow([]sealedMirrorOp{{rec: rec}})
+	}
+	return true, nil
 }
 
 func mustJSON(v any) []byte {
@@ -360,7 +379,7 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 		label = "login"
 	}
 	out.Authority = in.Authority
-	_, signKey, err := s.createSeededRepository(ctx, in.Username, in.Authority, func(t *txn) error {
+	_, err = s.createSeededRepository(ctx, in.Username, in.Authority, func(t *txn) error {
 		// Fresh account: no prior credential to compare against, so no CAS.
 		if err := t.writeCredential(credentialWrite{
 			username: in.Username, passwordHash: hash,
@@ -377,14 +396,6 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 	})
 	if err != nil {
 		return zero, err
-	}
-	// The PUBLIC key, and only ever that: it is what verifies a signature, so
-	// it is the whole of what a user needs, and it is worth handing over
-	// because a pin read back out of the same database an attacker rewrote
-	// proves nothing. The seed stays sealed under the credential key, where
-	// the only signer keeps it.
-	if signKey != nil {
-		out.SigningPublicKey = hex.EncodeToString(signKey.Public().(ed25519.PublicKey))
 	}
 	return out, nil
 }
@@ -547,7 +558,7 @@ func (s *service) verifyFactors(ctx context.Context, in substrate.LoginInput) (R
 	}
 	// The code is spent BEFORE anything is handed out, under the sealed row's
 	// own lock, so two requests racing on one code cannot both win.
-	won, err := s.consumeTOTPStep(ctx, repo.ID, material.totpRef, step)
+	won, err := s.consumeTOTPStep(ctx, repo, material.totpRef, step)
 	if err != nil {
 		return Repository{}, authMaterial{}, err
 	}
@@ -787,12 +798,14 @@ func (t *txn) writeCredential(cw credentialWrite) error {
 		return err
 	}
 	for ref, payload := range map[string][]byte{passwordRef: sealedPassword, totpRef: sealedTOTP} {
-		if _, err := t.exec(`
+		var updated time.Time
+		if err := t.row(`
 			INSERT INTO sealed (ref, record_kind, record_id, payload, updated_at)
-			VALUES ($1, $2, $3, $4, now())`,
-			ref, kindCredential, credentialID, payload); err != nil {
+			VALUES ($1, $2, $3, $4, now()) RETURNING updated_at`,
+			ref, kindCredential, credentialID, payload).Scan(&updated); err != nil {
 			return fmt.Errorf("substrate/engine: seal credential material: %w", err)
 		}
+		t.mirrorSealedWrite(sealedRecordOf(ref, kindCredential, credentialID, payload, sql.NullTime{}, updated))
 	}
 	if _, err := t.put(substrate.PutInput{
 		Kind: kindCredential, ID: credentialID,
@@ -809,6 +822,7 @@ func (t *txn) writeCredential(cw credentialWrite) error {
 		if _, err := t.exec(`DELETE FROM sealed WHERE ref = $1`, ref); err != nil {
 			return err
 		}
+		t.mirrorSealedDelete(ref)
 	}
 	return nil
 }

@@ -36,6 +36,9 @@ func TestUserResetRefusesWithoutCredentialKey(t *testing.T) {
 func TestRepositoryRebuildNeedsNoCredentialKey(t *testing.T) {
 	h := newHarness(t)
 	t.Setenv("SUBSTRATE_CREDENTIAL_KEY", "")
+	// The data root is the other thing the operator hat needs; with it set,
+	// the unreachable database is the only reason left to fail.
+	t.Setenv("SUBSTRATE_DATA_ROOT", t.TempDir())
 	_, _, err := h.run("repository", "rebuild", "geoah",
 		"--dsn", "postgres://u@127.0.0.1:1/none?sslmode=disable")
 	if err == nil {

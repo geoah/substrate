@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
+	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -28,13 +30,6 @@ type Repository struct {
 	// DEK is the repository's data-encryption key, WRAPPED under the host
 	// credential key. Nil marks a pre-DEK repository; open adopts one.
 	DEK []byte
-	// The signing state a keyed creation is born with: the Ed25519 seed
-	// wrapped under the host credential key, its public key, and the seq the
-	// guarantee covers from (1 at birth). All zero on a keyless (insecure)
-	// creation; the open activates later, exactly as for an upgraded store.
-	SigningKey    []byte
-	SigningPublic []byte
-	SignedFrom    int64
 }
 
 // scope is the repository's query scope.
@@ -196,16 +191,10 @@ func (s *service) assertAppPoolPrincipal(ctx context.Context) error {
 // registration loses on, and losing it costs the loser nothing but the rows
 // it erases on the way out.
 func (s *service) insertRepositoryRow(ctx context.Context, r *Repository) error {
-	// The repositories_signing_whole CHECK holds the three columns together:
-	// all set (a keyed birth) or all NULL (a keyless insecure one).
-	var signKey, signPublic, signedFrom any
-	if r.SignedFrom > 0 {
-		signKey, signPublic, signedFrom = r.SigningKey, r.SigningPublic, r.SignedFrom
-	}
 	err := s.maint.QueryRowContext(ctx, `
-		INSERT INTO repositories (id, username, authority, dek, signing_key, signing_public, signed_from_seq)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING created_at`, r.ID, r.Username, r.Authority, r.DEK, signKey, signPublic, signedFrom).Scan(&r.CreatedAt)
+		INSERT INTO repositories (id, username, authority, dek)
+		VALUES ($1, $2, $3, $4)
+		RETURNING created_at`, r.ID, r.Username, r.Authority, r.DEK).Scan(&r.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: create repository %q: %w", r.Username, err)
 	}
@@ -228,6 +217,11 @@ func (s *service) insertRepositoryRow(ctx context.Context, r *Repository) error 
 //   - It VERIFIES the scope is empty afterwards — scoped tables AND the
 //     control-plane row — and returns an error if anything survived, so a caller
 //     can changelog it and the boot sweeper can reclaim what a crash left.
+//   - The DIRECTORY GOES FIRST, then the rows. A crash between the two leaves
+//     a row with no directory, which the next boot writes out again from the
+//     tables (repodir.go, case 5): consistent, and complete. The other order
+//     would leave a directory with no row, which the next boot IMPORTS as a
+//     repository whose registration was reported failed.
 func (s *service) eraseRepository(ctx context.Context, id string) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
@@ -239,6 +233,14 @@ func (s *service) eraseRepository(ctx context.Context, id string) error {
 		ds.close()
 	}
 	s.mu.Unlock()
+
+	dir, err := changelogfile.RepoDir(s.dataRoot, id)
+	if err != nil {
+		return err
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("substrate/engine: erase repository %s: remove its directory: %w", id, err)
+	}
 
 	tx, err := s.maint.BeginTx(ctx, nil)
 	if err != nil {
@@ -324,12 +326,12 @@ func (s *service) sweepOrphans(ctx context.Context) error {
 }
 
 // repositoryScopedTables is every table carrying a `repository` column — the
-// same set the migrations put row level security on (0001, plus chain_epochs
-// in 0005 and changelog_dialect in 0009). A rollback that missed one would
-// leave rows nothing can ever reach again.
+// same set the migrations put row level security on (0001, plus
+// changelog_dialect in 0009; chain_epochs came in 0005 and left in 0014). A
+// rollback that missed one would leave rows nothing can ever reach again.
 var repositoryScopedTables = []string{
 	"records", "refs", "former_ids", "annotations", "property_managers",
-	"property_offers", "changelog", "chain_epochs", "embeddings", "embed_queue",
+	"property_offers", "changelog", "embeddings", "embed_queue",
 	"trigger_cursors", "trigger_failures", "trigger_schedule", "sealed",
 	"oauth_flows", "paged_cursors", "blobs", "vocabulary_dialect",
 	"vocabulary_promotions", "changelog_dialect",
@@ -368,7 +370,7 @@ func (s *service) scanRepository(row *sql.Row, what string) (Repository, error) 
 
 func (s *service) listRepositories(ctx context.Context) ([]Repository, error) {
 	rows, err := s.maint.QueryContext(ctx,
-		`SELECT id, username, authority, created_at FROM repositories ORDER BY created_at, id`)
+		`SELECT id, username, authority, created_at, dek FROM repositories ORDER BY created_at, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -376,7 +378,7 @@ func (s *service) listRepositories(ctx context.Context) ([]Repository, error) {
 	var out []Repository
 	for rows.Next() {
 		var r Repository
-		if err := rows.Scan(&r.ID, &r.Username, &r.Authority, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.Username, &r.Authority, &r.CreatedAt, &r.DEK); err != nil {
 			return nil, err
 		}
 		r.CreatedAt = r.CreatedAt.UTC()

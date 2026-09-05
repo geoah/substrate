@@ -112,8 +112,11 @@ func Start(t *testing.T, opts ...Option) *Env {
 	// repository holds core and nothing else, and a test that wants more
 	// installs it the way a user would.
 	svc, err := engine.Open(ctx, dsn, engine.WithKindsFS(kinds.Seed()),
-		// Signing is mandatory; the live-API env runs the keyed shape. The key
-		// is base64 of 32 bytes, minted here rather than committed (ADR 0024).
+		// The data root every repository directory lives under; the blob
+		// bytes default to the fs backend inside it.
+		engine.WithDataRoot(t.TempDir()),
+		// The live-API env runs the keyed shape the server runs. The key is
+		// base64 of 32 bytes, minted here rather than committed (ADR 0024).
 		engine.WithCredentialKey(mintCredentialKey()))
 	if err != nil {
 		t.Fatalf("testenv: open engine: %v", err)

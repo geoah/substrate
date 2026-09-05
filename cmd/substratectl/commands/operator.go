@@ -15,6 +15,7 @@ import (
 	// imported.
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/config"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
@@ -60,34 +61,44 @@ func (a *app) dsn() (string, error) {
 	return "", fmt.Errorf("no database URL: pass --dsn or set %s — the operator commands act on the box's Postgres directly, never over HTTP", dsnEnv)
 }
 
-// openEngineRead opens the substrate engine with whatever credential key the
-// environment holds; its absence is not fatal HERE. Rebuild re-links existing
-// sealed material and never opens it, and reseal enforces its own key
-// requirement in the engine (a keyless reseal writes nothing but markers, so
-// it refuses loudly there). The caller closes it.
-func (a *app) openEngineRead(ctx context.Context) (substrate.Service, error) {
-	return a.openEngineWithKey(ctx, os.Getenv(credentialKeyEnv))
+// openEngineReadOnly opens the engine BESIDE a running server: no boot check,
+// no changelog writer, every write refused (engine.WithDirectoryReadOnly). It
+// is what `repository verify` and `reembed` ride, because both must be safe
+// against a live server and neither appends to a repository. Whatever
+// credential key the environment holds is used; its absence is not fatal
+// here, since nothing sealed is written.
+func (a *app) openEngineReadOnly(ctx context.Context) (substrate.Service, error) {
+	return a.openEngineWithKey(ctx, os.Getenv(credentialKeyEnv), true)
+}
+
+// openEngineExclusive opens the engine the way the server does, as the data
+// root's one writer: the boot check runs and a dataset opens a changelog
+// writer. It is for a command that rewrites a repository (rebuild) and it
+// REFUSES beside a running server, because the server's writer holds the
+// repository's lock (engine.ErrChangelogLocked). The credential key is
+// optional: a rebuild re-links sealed material and never opens it.
+func (a *app) openEngineExclusive(ctx context.Context) (substrate.Service, error) {
+	return a.openEngineWithKey(ctx, os.Getenv(credentialKeyEnv), false)
 }
 
 // openEngineWrite opens the substrate engine for a command that WRITES sealed
-// material (user reset). The credential key is REQUIRED, with no escape: the
-// write appends changelog entries, every entry is signed, and the signing
-// seed only opens under this key, so a keyless engine cannot finish a reset
-// at all. It would also store the password hash and the TOTP seed as a
-// plain-marked payload. The refusal is here, before a password is typed,
-// rather than at the append.
+// material (user reset). The credential key is REQUIRED, with no escape: a
+// keyless engine would store the password hash and the TOTP seed under a
+// plain-marked DEK wrap the server later accepts. The refusal is here, before
+// a password is typed, rather than at the write. Like openEngineExclusive it
+// needs the server stopped.
 func (a *app) openEngineWrite(ctx context.Context) (substrate.Service, error) {
 	credKey := os.Getenv(credentialKeyEnv)
 	if credKey == "" {
 		return nil, fmt.Errorf(
-			"refusing to reset: set %s to the key the server runs with. Changelog signing is mandatory and its seed seals under that key, so a reset without it cannot write",
+			"refusing to reset: set %s to the key the server runs with. The reset writes sealed material, and without the key it would land under a plain-marked wrap",
 			credentialKeyEnv)
 	}
-	return a.openEngineWithKey(ctx, credKey)
+	return a.openEngineWithKey(ctx, credKey, false)
 }
 
-// openEngineWithKey is the shared opener the read/write hats route through.
-func (a *app) openEngineWithKey(ctx context.Context, credKey string) (substrate.Service, error) {
+// openEngineWithKey is the shared opener the three hats route through.
+func (a *app) openEngineWithKey(ctx context.Context, credKey string, readOnly bool) (substrate.Service, error) {
 	// A present key must be key material of the right shape, or the engine
 	// refuses to open under it. Report that here, before the DSN, rather than
 	// wrapped in an open error. An absent key is the read hat's keyless case
@@ -101,19 +112,41 @@ func (a *app) openEngineWithKey(ctx context.Context, credKey string) (substrate.
 	if err != nil {
 		return nil, err
 	}
+	// The data root the server runs with, from the same variable: every
+	// repository's files live under it, and the engine refuses to open
+	// without one.
+	data, err := config.LoadData()
+	if err != nil {
+		return nil, err
+	}
 	// The engine logs its boot at info; an operator command's output is its
 	// own report, so only warnings and worse reach stderr.
 	log := slog.New(slog.NewTextHandler(a.errOut, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	opts := []engine.Option{
 		engine.WithRegistry(vocabulary.NewRegistry()),
+		engine.WithDataRoot(data.Root),
+		engine.WithChangelogSegmentBytes(data.ChangelogSegmentBytes),
 		engine.WithCredentialKey(credKey),
 		engine.WithLogger(log),
 	}
+	if readOnly {
+		opts = append(opts, engine.WithDirectoryReadOnly())
+	}
 	svc, err := engine.Open(ctx, dsn, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("open the substrate database: %w", err)
+		return nil, lockHint(fmt.Errorf("open the substrate database: %w", err))
 	}
 	return svc, nil
+}
+
+// lockHint says what a writer-lock refusal means to the person at the
+// terminal: the server is running, and this command needs it stopped, while
+// the read-only commands do not.
+func lockHint(err error) error {
+	if err == nil || !errors.Is(err, changelogfile.ErrLocked) {
+		return err
+	}
+	return fmt.Errorf("%w\n(a server is running against this data root: `repository inspect` and `repository verify` run beside it; `repository rebuild` and `user reset` need it stopped first)", err)
 }
 
 // controlPlane opens a plain connection for the ONE control-plane table
@@ -228,9 +261,8 @@ func assertScopedAppPrincipal(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-// The operator hat's seams are engine.Resetter, engine.Rebuilder,
-// engine.ForceRebuilder, engine.Resealer and engine.Verifier. All are
-// deliberately OFF substrate.Service — nothing reachable from the network
+// The operator hat's seams are engine.Resetter, engine.Rebuilder and
+// engine.Verifier. All are deliberately OFF substrate.Service — nothing reachable from the network
 // should be able to call them — so substratectl asks for them by shape, and
 // the engine asserts each against *service at compile time.
 

@@ -28,18 +28,23 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      # The credential key the entrypoint mints, kept out of the database it
-      # protects. `docker compose down -v` deletes it with the data.
+      # The data root: one directory per repository with its changelog
+      # segments, sealed files and blob bytes. This volume is the backup unit
+      # (docs/operations.md, "Backups"); the database indexes it and is rebuilt
+      # from it. `docker compose down -v` deletes it with the database.
+      - substrate-data:/var/lib/substrate
+      # The credential key the entrypoint mints, kept apart from the data it
+      # opens. `docker compose down -v` deletes it with the data.
       - substrate-keys:/keys
     # A baked-in default key would be publicly known, so it would seal
     # nothing, and no key at all refuses to boot. The first start mints 32
     # random bytes (base64, what `openssl rand -base64 32` prints) into the
     # volume instead; every start after reads them back. The mint SAYS SO,
-    # because a mint on a database that already holds repositories is a
+    # because a mint on a store that already holds repositories is a
     # different event from a mint on an empty one: the server then refuses to
-    # boot (it checks the key against the seeds the store carries), and that
-    # line is what tells the operator the keys volume, not the database, is
-    # what they lost. 077 because this file opens every repository.
+    # boot (it checks the key against the wrapped DEKs the store carries), and
+    # that line is what tells the operator the keys volume, not the data, is
+    # what they lost. 077 because this file opens every repository's secrets.
     entrypoint:
       - /bin/sh
       - -c
@@ -63,12 +68,17 @@ services:
       # With :- an operator could never close the door from the environment,
       # because empty would fall back to the known default.
       SUBSTRATE_INVITE_CODE: ${SUBSTRATE_INVITE_CODE-let-me-in}
-      # Seals stored provider tokens at rest AND the changelog signing seed.
-      # Signing is mandatory, so a host without a key refuses to boot. Unset,
-      # the entrypoint mints one into the keys volume; set it here to pin
-      # your own, but only ever the SAME key this database was written under:
-      # a different one is refused at boot, because nothing here can be
-      # re-keyed. Back it up. Key rotation is not built.
+      # Where every repository's directory lives: the changelog segments, the
+      # sealed store's files and the blob bytes. Required and absolute; the
+      # substrate-data volume above is mounted here.
+      SUBSTRATE_DATA_ROOT: /var/lib/substrate
+      # Wraps each repository's data-encryption key, which seals every secret
+      # (provider tokens, secret-typed properties, the login credential). A
+      # host without a key refuses to boot. Unset, the entrypoint mints one
+      # into the keys volume; set it here to pin your own, but only ever the
+      # SAME key this store was written under: a different one is refused at
+      # boot, because nothing here can be re-keyed. Back it up, apart from
+      # the data volume. Key rotation is not built.
       SUBSTRATE_CREDENTIAL_KEY: ${SUBSTRATE_CREDENTIAL_KEY:-}
       # The one redirect URI every OAuth provider app registers. Unset, the
       # host OAuth facility refuses to start a flow, so no connector bundle
@@ -86,4 +96,5 @@ services:
 
 volumes:
   substrate-db:
+  substrate-data:
   substrate-keys:

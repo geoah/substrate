@@ -154,7 +154,6 @@ export function RegisterPage() {
   const [confirm, setConfirm] = useState("")
   const [code, setCode] = useState("")
   const [recoveryKey, setRecoveryKey] = useState<string | null>(null)
-  const [signingPublicKey, setSigningPublicKey] = useState<string | null>(null)
   const [enrolled, setEnrolled] = useState<TOTPEnrollment | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isBusy, setBusy] = useState(false)
@@ -239,13 +238,10 @@ export function RegisterPage() {
       // call can produce it: it lands in state BEFORE the fallible session
       // write, so a blocked localStorage cannot take the only showing with it,
       // and the page holds the reader until they carry it off instead of
-      // navigating past it. The signing public key is not a secret and is
-      // readable again from the server; it rides the same card because this is
-      // where somebody is already writing things down.
-      const holdKeys = Boolean(minted.recoveryKey || minted.signingPublicKey)
+      // navigating past it.
+      const holdKeys = Boolean(minted.recoveryKey)
       if (holdKeys) {
         setRecoveryKey(minted.recoveryKey ?? null)
-        setSigningPublicKey(minted.signingPublicKey ?? null)
       }
       saveSession(minted.secret, name, minted.token.id)
       if (holdKeys) return
@@ -275,10 +271,10 @@ export function RegisterPage() {
           </div>
           <span className="text-lg font-semibold">substrate</span>
         </div>
-        {(recoveryKey !== null || signingPublicKey !== null) && (
+        {recoveryKey !== null && (
           <Card>
             <CardHeader>
-              <CardTitle>Your keys</CardTitle>
+              <CardTitle>Your recovery key</CardTitle>
               <CardDescription>
                 The recovery key is shown once and never shown again. Put it in
                 your password manager now.
@@ -309,34 +305,15 @@ export function RegisterPage() {
                       </FieldDescription>
                     </Field>
                   )}
-                  {signingPublicKey !== null && (
-                    <Field>
-                      <FieldLabel htmlFor="signing-public-key">
-                        Signing public key
-                      </FieldLabel>
-                      <KeepKeyField
-                        id="signing-public-key"
-                        label="signing public key"
-                        value={signingPublicKey}
-                      />
-                      <FieldDescription>
-                        Not a secret, but keep it somewhere outside this
-                        substrate: it is what{" "}
-                        <code>repository verify --expect-public-key</code> holds
-                        your changelog to, and a pin read back out of the same
-                        database proves nothing.
-                      </FieldDescription>
-                    </Field>
-                  )}
                   <Field>
-                    <Button type="submit">I saved them — continue</Button>
+                    <Button type="submit">I saved it — continue</Button>
                   </Field>
                 </FieldGroup>
               </form>
             </CardContent>
           </Card>
         )}
-        {recoveryKey === null && signingPublicKey === null && (
+        {recoveryKey === null && (
           <Card>
             <CardHeader>
               <CardTitle>Register</CardTitle>

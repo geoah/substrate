@@ -1,10 +1,11 @@
 package engine
 
 // A sealed payload binds to the address it was written at (ADR 0023): moving a
-// row's ciphertext onto another row fails the open, and the reseal migration
-// leaves an already-bound store byte-identical. These are INTERNAL tests: they
-// reach openSecretValue and rekeySealedStore directly and plant bytes in the
-// sealed table the way an attacker with table write access would.
+// row's ciphertext onto another row fails the open, and the re-key that
+// recovery enrollment runs leaves an already-bound store byte-identical. These
+// are INTERNAL tests: they reach openSecretValue and rekeySealedStore directly
+// and plant bytes in the sealed table the way an attacker with table write
+// access would.
 
 import (
 	"bytes"
@@ -80,10 +81,10 @@ func TestSealedPayloadDoesNotOpenAtAnotherRow(t *testing.T) {
 	}
 }
 
-// TestResealIsIdempotentOnBoundStore re-keys twice: the first pass upgrades a
+// TestRekeyIsIdempotentOnBoundStore re-keys twice: the first pass upgrades a
 // planted unbound legacy row and leaves the rest, the second moves nothing and
 // leaves every payload byte-identical.
-func TestResealIsIdempotentOnBoundStore(t *testing.T) {
+func TestRekeyIsIdempotentOnBoundStore(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
@@ -133,81 +134,6 @@ func TestResealIsIdempotentOnBoundStore(t *testing.T) {
 
 	if got, err := ds.openSecretValue(ctx, refA); err != nil || got != "secret-a" {
 		t.Fatalf("row A does not open after the re-key: got %q err %v", got, err)
-	}
-}
-
-// TestResealRebindsLegacyDEKWrap proves reseal migrates the whole binding, not
-// half: a store whose control-plane DEK wrap is the legacy unbound framing gets
-// an address-bound wrap on reseal, still opens its own secrets, and its wrap
-// moved into another repository's row fails to open.
-func TestResealRebindsLegacyDEKWrap(t *testing.T) {
-	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	ctx := context.Background()
-	ds := openInternalDataset(t)
-	s := ds.svc
-	repoID := ds.scope.Repository
-
-	// A secret to prove the store still opens after the migration.
-	refA := putProviderSecret(t, ds, "a", "secret-a")
-
-	// Wind the DEK wrap back to the unbound 's' framing a pre-binding release
-	// wrote: the same DEK plaintext, host-keyed, with no address binding.
-	hostAEAD, err := newAEAD(s.credKey)
-	if err != nil {
-		t.Fatalf("build host aead: %v", err)
-	}
-	legacyWrap, err := sealWith(hostAEAD, ds.dek, nil)
-	if err != nil {
-		t.Fatalf("seal legacy DEK wrap: %v", err)
-	}
-	if legacyWrap[0] != credSealed {
-		t.Fatalf("legacy DEK wrap is not unbound-framed: %q", legacyWrap)
-	}
-	if _, err := s.maint.ExecContext(ctx, `UPDATE repositories SET dek = $1 WHERE id = $2`, legacyWrap, repoID); err != nil {
-		t.Fatalf("plant legacy DEK wrap: %v", err)
-	}
-
-	if _, err := s.ResealRepository(ctx, "geoah"); err != nil {
-		t.Fatalf("reseal: %v", err)
-	}
-
-	var wrapped []byte
-	if err := s.maint.QueryRowContext(ctx, `SELECT dek FROM repositories WHERE id = $1`, repoID).Scan(&wrapped); err != nil {
-		t.Fatalf("read DEK wrap: %v", err)
-	}
-	if len(wrapped) == 0 || wrapped[0] != credBoundSealed {
-		t.Fatalf("reseal left the DEK wrap unbound: %q", wrapped)
-	}
-
-	// The rebound wrap opens for its own repository, and the store's secrets
-	// still open.
-	if _, err := s.unwrapDEK(wrapped, repoID); err != nil {
-		t.Fatalf("rebound DEK wrap does not open for its own repository: %v", err)
-	}
-	if got, err := ds.openSecretValue(ctx, refA); err != nil || got != "secret-a" {
-		t.Fatalf("secret does not open after reseal: got %q err %v", got, err)
-	}
-
-	// Moved into another repository's dek column it fails: the binding names
-	// the repository.
-	if _, err := s.unwrapDEK(wrapped, repoID+"-other"); err == nil {
-		t.Fatal("the rebound DEK wrap opened under another repository's id")
-	}
-
-	// A second reseal leaves the already-bound wrap byte-identical.
-	before := append([]byte(nil), wrapped...)
-	if _, err := s.ResealRepository(ctx, "geoah"); err != nil {
-		t.Fatalf("second reseal: %v", err)
-	}
-	var after []byte
-	if err := s.maint.QueryRowContext(ctx, `SELECT dek FROM repositories WHERE id = $1`, repoID).Scan(&after); err != nil {
-		t.Fatalf("read DEK wrap after second reseal: %v", err)
-	}
-	if !bytes.Equal(before, after) {
-		t.Fatal("second reseal changed the already-bound DEK wrap")
 	}
 }
 

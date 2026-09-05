@@ -156,16 +156,16 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0006](0006-voluntary-proposals-stay-self-acceptable.md) | Voluntary proposals stay self-acceptable; only gated requests refuse bundle decisions | accepted |
 | [0007](0007-the-audit-lives-on-the-records-it-concerns.md) | The audit lives on the records it concerns, not in an audit kind | accepted |
 | [0008](0008-keep-the-loop-do-not-adopt-adk-go.md) | Keep the agent loop; do not adopt ADK for Go | accepted |
-| [0009](0009-the-chain-hashes-what-postgres-stored.md) | The changelog chain hashes what Postgres stored, with value-exact numbers | accepted |
-| [0010](0010-signing-is-per-repository-ed25519-one-way.md) | Changelog signing is a per-repository Ed25519 key with one-way activation | accepted |
-| [0011](0011-chain-transitions-are-repository-scoped-epochs.md) | Sanctioned chain transitions are recorded as repository-scoped chain epochs | accepted |
+| [0009](0009-the-chain-hashes-what-postgres-stored.md) | The changelog chain hashes what Postgres stored, with value-exact numbers | superseded |
+| [0010](0010-signing-is-per-repository-ed25519-one-way.md) | Changelog signing is a per-repository Ed25519 key with one-way activation | superseded |
+| [0011](0011-chain-transitions-are-repository-scoped-epochs.md) | Sanctioned chain transitions are recorded as repository-scoped chain epochs | superseded |
 | [0012](0012-numbers-are-exact-or-refused.md)   | Numbers are exact or refused: string-carried decimal, safe-integer int, one stored duration grammar | accepted |
 | [0013](0013-state-machines-say-done-and-abandoned.md) | State machines say `done` and `abandoned`; a domain word survives only by decision | superseded |
 | [0014](0014-authorities-widen-only-outside-the-id-alphabet.md) | Authorities may widen only with characters the id alphabet excludes | accepted |
 | [0015](0015-unproven-kinds-stay-out-of-the-stable-set.md) | Unproven kinds stay out of the stable vocabulary set | accepted |
 | [0016](0016-a-kind-titles-itself-from-a-declared-property.md) | A kind titles itself from a declared property, never the built-in slot | accepted |
 | [0017](0017-the-changelog-is-one-writers-total-order.md) | The changelog is one writer's total order per repository | accepted |
-| [0018](0018-reseal-rewrites-history-values-in-place.md) | Reseal rewrites history's values in place, so entry bytes are not identity | accepted |
+| [0018](0018-reseal-rewrites-history-values-in-place.md) | Reseal rewrites history's values in place, so entry bytes are not identity | superseded |
 | [0019](0019-a-lifecycle-is-a-state-machine-only-where-the-substrate-owns-it.md) | A lifecycle is a state machine only where the substrate owns it | accepted |
 | [0020](0020-dialect-keys-are-reserved-not-tolerated.md) | Dialect keys are reserved by name; there is no tolerated `x-` namespace | accepted |
 | [0022](0022-rest-is-frozen-graphql-is-a-projection.md) | REST is the frozen v1 contract; GraphQL is a derived projection | accepted |
@@ -194,3 +194,5 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0047](0047-a-kind-lives-in-a-package.md) | A kind lives in a package, and a package lives in an authority | accepted |
 | [0048](0048-providers-are-published-samples-are-copied.md) | Providers are published packages; samples are copied and owned | accepted |
 | [0049](0049-the-owner-of-a-mappings-target-declares-it.md) | The owner of a mapping's target declares it and pins the subject | accepted |
+| [0050](0050-the-changelog-is-checksummed-segment-files-and-postgres-indexes-it.md) | The changelog is checksummed segment files per repository, and Postgres indexes it | accepted |
+| [0051](0051-a-repository-directory-is-the-backup-unit.md) | A repository directory under the data root is the backup unit | accepted |

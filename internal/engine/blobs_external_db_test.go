@@ -29,21 +29,19 @@ func blobDigestOf(data []byte) string {
 	return substrate.BlobDigestPrefix + hex.EncodeToString(sum[:])
 }
 
-// fsBackedDataset is a repository whose blob bytes live in a directory.
+// fsBackedDataset is a repository whose blob bytes live in its directory under
+// the data root, which is what an engine opened with no WithBlobStore does.
 func fsBackedDataset(t *testing.T) (substrate.Service, substrate.Dataset, string) {
 	t.Helper()
 	root := t.TempDir()
-	backend, err := blobbytes.NewFS(root)
-	if err != nil {
-		t.Fatalf("open the fs backend: %v", err)
-	}
-	svc, ds := newDataset(t, engine.WithBlobStore(backend))
+	svc, ds := newDataset(t, engine.WithDataRoot(root))
 	return svc, ds, root
 }
 
-// objectPath is where the fs backend keeps one repository's blob.
+// objectPath is where the fs backend keeps one repository's blob:
+// <root>/repositories/<id>/blobs/<digest>.
 func objectPath(root string, ds substrate.Dataset, digest string) string {
-	return filepath.Join(root, ds.Repository().ID, digest)
+	return filepath.Join(root, "repositories", ds.Repository().ID, "blobs", digest)
 }
 
 func TestBlobFSRoundTrip(t *testing.T) {
@@ -59,8 +57,8 @@ func TestBlobFSRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
-	// The bytes are on disk under <root>/<repository>/<digest> and nowhere in
-	// the database.
+	// The bytes are on disk under <root>/repositories/<id>/blobs/<digest> and
+	// nowhere in the database.
 	onDisk, err := os.ReadFile(objectPath(root, ds, info.Digest))
 	if err != nil {
 		t.Fatalf("the object is not at its key: %v", err)
@@ -270,9 +268,11 @@ func TestBlobFSGraceSparesAFreshUpload(t *testing.T) {
 	}
 }
 
-// Switching backends with bytes already stored would 404 half the blobs, and a
-// 404 reads like a deletion. The boot refuses instead, in both directions.
-func TestBlobBackendSwitchIsRefused(t *testing.T) {
+// The Postgres `blobs` column is not a store any more. A boot over rows left
+// in it would 404 every blob that did not follow, and a 404 reads like a
+// deletion, so the boot refuses and names the one command that empties the
+// column.
+func TestBootRefusesBytesLeftInThePostgresColumn(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, dsn := newService(t)
@@ -283,36 +283,44 @@ func TestBlobBackendSwitchIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
-	if _, err := blobStoreOf(t, ds).PutBlob(ctx, owner, substrate.BlobUpload{}, []byte("stored in postgres"), ""); err != nil {
-		t.Fatalf("put blob: %v", err)
+	// A row as the retired backend wrote it, through the repository-scoped
+	// pool so the repository column defaults the way it always did.
+	scoped, err := engine.OpenScopedDB(dsn, ds.Repository().ID, engine.RoleApp)
+	if err != nil {
+		t.Fatalf("open the scoped pool: %v", err)
+	}
+	defer func() { _ = scoped.Close() }()
+	data := []byte("bytes an older binary left in the column")
+	if _, err := scoped.ExecContext(ctx,
+		`INSERT INTO blobs (digest, size, bytes) VALUES ($1, $2, $3)`,
+		blobDigestOf(data), len(data), data); err != nil {
+		t.Fatalf("seed the column: %v", err)
+	}
+	if err := svc.Close(); err != nil {
+		t.Fatalf("close: %v", err)
 	}
 
-	fs, err := blobbytes.NewFS(t.TempDir())
-	if err != nil {
-		t.Fatalf("open the fs backend: %v", err)
-	}
-	switched, err := engine.Open(ctx, dsn,
+	reopened, err := engine.Open(ctx, dsn,
+		engine.WithDataRoot(t.TempDir()),
 		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
-		engine.WithCredentialKey(engine.TestCredentialKey),
-		engine.WithBlobStore(fs))
+		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err == nil {
-		_ = switched.Close()
-		t.Fatal("a boot pointed at an empty fs store opened over blobs that are in postgres")
+		_ = reopened.Close()
+		t.Fatal("a boot opened over blob bytes still in the Postgres column")
 	}
-	if !strings.Contains(err.Error(), "blobs migrate") {
-		t.Fatalf("the refusal must name the way across, got: %v", err)
+	if !strings.Contains(err.Error(), "blobs migrate --from postgres") {
+		t.Fatalf("the refusal must name the way out of the column, got: %v", err)
 	}
 }
 
-func TestBlobBackendSwitchBackIsRefused(t *testing.T) {
+// The bytes live in the repository directory, so a service reopened on the
+// same data root reads what the last one stored, with no option beyond the
+// root itself.
+func TestBlobFSReopenOnTheSameRootReadsTheBytes(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
-	fs, err := blobbytes.NewFS(root)
-	if err != nil {
-		t.Fatalf("open the fs backend: %v", err)
-	}
-	svc, dsn := newService(t, engine.WithBlobStore(fs))
+	svc, dsn := newService(t, engine.WithDataRoot(root))
 	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
@@ -320,19 +328,37 @@ func TestBlobBackendSwitchBackIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
-	if _, err := blobStoreOf(t, ds).PutBlob(ctx, owner, substrate.BlobUpload{}, []byte("stored on disk"), ""); err != nil {
+	data := []byte("stored by one process, read by the next")
+	info, err := blobStoreOf(t, ds).PutBlob(ctx, owner, substrate.BlobUpload{}, data, "")
+	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
+	if _, err := os.Stat(objectPath(root, ds, info.Digest)); err != nil {
+		t.Fatalf("the object is not in the repository directory: %v", err)
+	}
+	if err := svc.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
 
-	switched, err := engine.Open(ctx, dsn,
+	again, err := engine.Open(ctx, dsn,
+		engine.WithDataRoot(t.TempDir()),
+		engine.WithDataRoot(root),
 		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithCredentialKey(engine.TestCredentialKey))
-	if err == nil {
-		_ = switched.Close()
-		t.Fatal("a boot on the postgres backend opened over blobs whose bytes are on disk")
+	if err != nil {
+		t.Fatalf("reopen on the same root: %v", err)
 	}
-	if !strings.Contains(err.Error(), "blobs migrate") {
-		t.Fatalf("the refusal must name the way across, got: %v", err)
+	t.Cleanup(func() { _ = again.Close() })
+	ds2, err := again.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("open dataset again: %v", err)
+	}
+	_, read, err := blobStoreOf(t, ds2).GetBlob(ctx, info.Digest)
+	if err != nil {
+		t.Fatalf("get blob after the reopen: %v", err)
+	}
+	if string(read) != string(data) {
+		t.Fatalf("read back %q, stored %q", read, data)
 	}
 }
 

@@ -61,18 +61,14 @@ export interface RegisterInput {
 }
 
 /** What registration hands back beyond the token: the recovery identity
- * (present only when the server minted the pair; shown once, never stored),
- * the enrolled recipient, and the repository's Ed25519 changelog-signing
- * PUBLIC key (hex) — the pin `repository verify --expect-public-key` holds
- * the store to. No private key material rides this response: the signing
- * seed stays sealed server-side, where the only signer keeps it. */
+ * (present only when the server minted the pair; shown once, never stored)
+ * and the enrolled recipient. */
 export interface RegisterResult extends MintedToken {
   /** The authority the repository was created with, echoed so a client that
    * sent none learns the default it got. */
   authority?: string
   recoveryKey?: string
   recoveryPublicKey?: string
-  signingPublicKey?: string
 }
 
 /** Step two: the same code proves the seed, and one transaction creates the

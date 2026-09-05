@@ -4,12 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -99,21 +101,29 @@ type dataset struct {
 	dek   []byte
 	watch *broadcaster
 
+	// dir is the repository's directory under the data root (repodir.go):
+	// the manifest, the changelog segments, the blob bytes and the sealed
+	// mirror.
+	dir string
+	// writer appends committed entries to the changelog segments. It is nil
+	// on the creation dataset, whose directory is written from the tables
+	// once the control-plane row exists. writerMu serializes every use of it
+	// and of the sealed mirror; inTx takes it BEFORE tx.Commit() so file
+	// order is commit order, and after the changelog advisory lock, which is
+	// the order RebuildRepository takes them too.
+	writer   *changelogfile.Writer
+	writerMu sync.Mutex
+	// fileErr, under writerMu, is the latched refusal after a post-commit
+	// append or mirror failed (ErrChangelogFileBehind): the directory is
+	// behind the tables and only the boot check repairs it.
+	fileErr error
+
 	// changelogStamped remembers that this repository's changelog dialect is
 	// COMMITTED at this binary's maximum, so the stamp rides the first
 	// appending transaction and no later one (changelogdialect.go). It is set
 	// after that transaction commits, never before: a rolled-back stamp that
 	// left this true would let a later append land with nothing claiming it.
 	changelogStamped atomic.Bool
-
-	// signState is the repository's changelog-signing state (signing.go),
-	// read through ds.signing(): signedFrom is 0 until activation and never
-	// unset after; key is nil when signing is inactive OR the credential
-	// key cannot open the seed — in the latter case every append refuses
-	// (settleChain) rather than shedding the guarantee. Guarded by mu
-	// because a commit that discovers a CONCURRENT activation (another
-	// process's) upgrades it in place (settleChain).
-	signState datasetSigning
 
 	mu   sync.RWMutex
 	reg  *vocabulary.Registry
@@ -155,6 +165,11 @@ type dataset struct {
 
 func (ds *dataset) close() {
 	ds.watch.close()
+	ds.writerMu.Lock()
+	if ds.writer != nil {
+		_ = ds.writer.Close()
+	}
+	ds.writerMu.Unlock()
 	_ = ds.db.Close()
 }
 
@@ -305,11 +320,15 @@ type txn struct {
 	// thread's reader resolves the delta from the changelog instead of
 	// parsing tool payloads.
 	entries []changeEntry
-	// pending is the same appends as the CHAIN sees them: every preimage
-	// field, with the payload text AS POSTGRES STORED IT (appendChange's
-	// RETURNING). settleChain drains it at commit, after settleFold has made
-	// the last payload final.
-	pending []chainEntry
+	// pending is the same appends as the CHECKSUM sees them: every column
+	// the line carries, with the payload text AS POSTGRES STORED IT
+	// (appendChange's RETURNING). settleChecksums stamps each one at commit,
+	// after settleFold has made the last payload final, and leaves the
+	// encoded lines here for the segment writer that runs after commit.
+	pending []pendingEntry
+	// sealedMirror is every sealed-table write and delete this transaction
+	// made, applied to the repository directory after commit (repodir.go).
+	sealedMirror []sealedMirrorOp
 	// changeSink, when set, receives this transaction's entries AFTER COMMIT
 	// (inTx) — the agent loop's per-dispatch collector. After commit, so a
 	// rolled-back write stamps nothing.
@@ -379,6 +398,17 @@ type txn struct {
 }
 
 func (ds *dataset) inTx(ctx context.Context, actor substrate.Actor, internal bool, fn func(*txn) error) error {
+	// A read-only process is not the directory's writer, so it appends
+	// nothing to the tables either: a row it committed would be one the file
+	// never receives until the server's next boot (repodir.go).
+	if ds.svc.readOnly {
+		return ErrDirectoryReadOnly
+	}
+	// A directory that fell behind the tables refuses every write until a
+	// restart: the boot check is the one repair path (repodir.go).
+	if err := ds.directoryErr(); err != nil {
+		return err
+	}
 	tx, err := ds.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -400,12 +430,12 @@ func (ds *dataset) inTx(ctx context.Context, actor substrate.Actor, internal boo
 		return err
 	}
 	// After settleFold: the last entry's payload is final only once the
-	// transaction's late effects have merged into it, and the hash covers the
-	// payload as stored.
-	if err := t.settleChain(); err != nil {
+	// transaction's late effects have merged into it, and the checksum covers
+	// the payload as stored.
+	if err := t.settleChecksums(); err != nil {
 		return err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := ds.commitAndMirror(tx, t); err != nil {
 		return err
 	}
 	if t.maxSeq > 0 {
@@ -417,6 +447,29 @@ func (ds *dataset) inTx(ctx context.Context, actor substrate.Actor, internal boo
 	for _, fn := range t.afterCommit {
 		fn()
 	}
+	return nil
+}
+
+// commitAndMirror commits the transaction and, when it appended entries or
+// touched the sealed table, writes them into the repository directory under
+// writerMu. The mutex is taken BEFORE the commit: the changelog advisory lock
+// that orders appends is released at commit, so without it two committed
+// transactions could reach the writer in the other order. A dataset with no
+// writer (the creation dataset) commits and mirrors nothing; its directory is
+// written from the tables afterwards.
+func (ds *dataset) commitAndMirror(tx *sql.Tx, t *txn) error {
+	if ds.writer == nil || (len(t.pending) == 0 && len(t.sealedMirror) == 0) {
+		return tx.Commit()
+	}
+	ds.writerMu.Lock()
+	defer ds.writerMu.Unlock()
+	if ds.fileErr != nil {
+		return ds.fileErr
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	ds.mirrorAfterCommit(t)
 	return nil
 }
 
@@ -571,4 +624,27 @@ func metaKeyAllowed(actor substrate.Actor, key string) error {
 		return fmt.Errorf("%w: actor %q may not write key %q", substrate.ErrForbidden, actor, key)
 	}
 	return nil
+}
+
+// inRawTx runs fn in a plain scoped transaction: no actor, no fold, no
+// changelog entry, the shape a re-key or a maintenance read needs. It
+// settles nothing on purpose: fn must not fold.
+func (ds *dataset) inRawTx(ctx context.Context, fn func(*txn) error) error {
+	if ds.svc.readOnly {
+		return ErrDirectoryReadOnly
+	}
+	tx, err := ds.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	t := &txn{ctx: ctx, ds: ds, tx: tx, now: nowUTC(), internal: true}
+	if err := fn(t); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if len(t.folded) > 0 || len(t.pending) > 0 {
+		_ = tx.Rollback()
+		return errors.New("substrate/engine: a raw transaction folded or appended; it may not")
+	}
+	return tx.Commit()
 }

@@ -37,9 +37,11 @@ func newService(t *testing.T, opts ...engine.Option) (substrate.Service, string)
 	dsn := testdb.NewSchema(t)
 	all := []engine.Option{
 		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
-		// Signing is mandatory and its seed seals under this key, so every
-		// test runs the keyed shape: a keyless host cannot create or open a
-		// repository at all.
+		// Every repository's files live under the data root, and the blob
+		// bytes default to the fs backend inside it.
+		engine.WithDataRoot(t.TempDir()),
+		// Every repository's DEK wraps under this key, so every test runs
+		// the keyed shape the server runs.
 		engine.WithCredentialKey(engine.TestCredentialKey),
 	}
 	all = append(all, opts...)

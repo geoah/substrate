@@ -403,13 +403,6 @@ func (f *fakeSubstrate) handleCatalogImport(w http.ResponseWriter, r *http.Reque
 // own: `substrate_tok_<hex>`, and nothing about it names a repository.
 var fakeSecret = "substrate_tok_" + strings.Repeat("a", 40)
 
-// fakeSigningPublicKey is the changelog-signing PIN registration hands back: 32
-// bytes in hex, the shape `repository verify --expect-public-key` takes. Shape,
-// not crypto. There is deliberately no fake SEED beside it — no response carries
-// private key material any more (#217), and a fake that offered one would let
-// the CLI start printing it again with nothing failing.
-var fakeSigningPublicKey = strings.Repeat("cd", 32)
-
 // authFails makes the door refuse: the shared 401 (or a 429 with Retry-After)
 // every unauthenticated auth path answers with.
 func (f *fakeSubstrate) authFails(w http.ResponseWriter) bool {
@@ -485,7 +478,6 @@ func (f *fakeSubstrate) handleRegister(w http.ResponseWriter, r *http.Request) {
 		"secret":            fakeSecret,
 		"authority":         authority,
 		"recoveryPublicKey": recipient,
-		"signingPublicKey":  fakeSigningPublicKey,
 	})
 }
 

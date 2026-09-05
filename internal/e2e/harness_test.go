@@ -79,15 +79,14 @@ func newRun(t *testing.T, base string) *run {
 // report is what a run leaves for the human: which cases ran, what each one
 // tests, every step it took, and how the repository looks afterwards.
 type report struct {
-	Server           string
-	Username         string
-	Password         string
-	TOTPSecret       string // printed only when the server enforces the factor: without it the reviewer cannot sign in
-	SigningPublicKey string
-	Started          time.Time
-	Finished         time.Time
-	Cases            []*caseReport
-	Appendix         []string
+	Server     string
+	Username   string
+	Password   string
+	TOTPSecret string // printed only when the server enforces the factor: without it the reviewer cannot sign in
+	Started    time.Time
+	Finished   time.Time
+	Cases      []*caseReport
+	Appendix   []string
 }
 
 type caseReport struct {
@@ -268,9 +267,6 @@ func (r *run) writeReport() (string, error) {
 		if rep.TOTPSecret != "" {
 			fmt.Fprintf(&b, "| totp seed | `%s` (enroll it to sign in; this server enforces the factor) |\n", rep.TOTPSecret)
 		}
-	}
-	if rep.SigningPublicKey != "" {
-		fmt.Fprintf(&b, "| signing public key | `%s` |\n", rep.SigningPublicKey)
 	}
 	fmt.Fprintf(&b, "| started | %s |\n", rep.Started.UTC().Format(time.RFC3339))
 	fmt.Fprintf(&b, "| finished | %s |\n", rep.Finished.UTC().Format(time.RFC3339))

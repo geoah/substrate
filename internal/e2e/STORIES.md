@@ -178,7 +178,7 @@ passing forever.
    (`function:<authority>:<package>:<name>`) or the story agents
    (`agent:<authority>:<package>:<name>`); writer and judge distinct; nothing wrote as
    `substrate` except registration's own records.
-2. `substratectl repository verify`: every hash, every signature.
+2. `substratectl repository verify`: every entry's checksum, every segment sidecar.
 3. `substratectl repository rebuild`: the refolded records answer STORY-01's
    GraphQL join identically.
 4. The report appendix renders the ecosystem and the full changelog.

@@ -157,18 +157,16 @@ describe("RegisterPage", () => {
     })
   })
 
-  it("holds the reader on the recovery key, and shows the signing pin beside it", async () => {
+  it("holds the reader on the recovery key", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, ENROLLMENT))
     render(<RegisterPage />)
     await enroll()
 
-    const pin = "cd".repeat(32)
     fetchMock.mockResolvedValueOnce(
       jsonResponse(201, {
         ...MINT,
         recoveryKey: "AGE-SECRET-KEY-1TEST",
         recoveryPublicKey: "age1test",
-        signingPublicKey: pin,
       })
     )
     fireEvent.change(screen.getByLabelText("One-time code"), {
@@ -185,13 +183,9 @@ describe("RegisterPage", () => {
       "Recovery key"
     )) as HTMLInputElement
     expect(recovery.value).toBe("AGE-SECRET-KEY-1TEST")
-    const signing = screen.getByLabelText(
-      "Signing public key"
-    ) as HTMLInputElement
-    expect(signing.value).toBe(pin)
     expect(navigate).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole("button", { name: /I saved them/ }))
+    fireEvent.click(screen.getByRole("button", { name: /I saved it/ }))
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({ to: "/", replace: true })
     )

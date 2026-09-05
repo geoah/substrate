@@ -29,6 +29,7 @@ func w2Opener(t *testing.T) (open func() *dataset, closeSvc func()) {
 	imported := false
 	open = func() *dataset {
 		svc, err := Open(ctx, dsn,
+			WithDataRoot(t.TempDir()),
 			WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 		if err != nil {
 			t.Fatalf("open engine: %v", err)

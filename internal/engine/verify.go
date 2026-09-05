@@ -1,29 +1,22 @@
 package engine
 
-// The chain verifier: walk one repository's changelog start to head,
-// recompute every hash from the stored bytes, check every signature the
-// signing state requires, and report either the verified head or every
-// finding by seq and name. It MUTATES NOTHING in the repository it judges —
-// no backfill, no repair — and reads everything inside one read-only
-// repeatable-read transaction, so a concurrent write cannot make it stitch
-// two states into one report.
-//
-// WHAT ANCHORS IT. Everything the verifier reads — entries, signatures, the
-// public key, the activation mark, the epochs — lives in the same mutable
-// database. Unpinned, a database-only attacker can rewrite all of it
-// together and present a self-consistent forgery; the signed activation
-// epoch raises that bar (forging one needs the key), and the PINS close it:
-// an operator who passes the pinned (public key, signed-from, head receipt)
-// makes the comparison the design depends on enforceable instead of manual.
-// The findings are a closed taxonomy, not library errors.
+// The verification walk: the repository directory's changelog files, line by
+// line and sidecar by sidecar (changelogfile.Verify), the changelog table row
+// by row with every checksum recomputed from the stored columns, the two
+// held to each other seq by seq, both heads, and the sealed files against the
+// sealed rows. It MUTATES NOTHING: the files are opened read-only and the
+// table is read inside one repeatable-read transaction, so a concurrent write
+// cannot make it stitch two states into one report.
 
 import (
+	"bytes"
 	"context"
-	"crypto/ed25519"
 	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"time"
+
+	"github.com/geoah/substrate/internal/changelogfile"
 )
 
 // verifyFindingCap bounds the report: after this many findings the walk
@@ -31,95 +24,61 @@ import (
 // story.
 const verifyFindingCap = 20
 
-// VerifyPins is what the caller KNOWS from outside the database: the pair
-// logged at activation, and a head receipt written down earlier. Zero values
-// mean "not pinned"; a pinned value that disagrees with the store is a
-// finding, which is the entire point of pinning.
-type VerifyPins struct {
-	// PublicKey is the hex Ed25519 public key logged at activation.
-	PublicKey string `json:"publicKey,omitempty"`
-	// SignedFrom is the activation seq logged beside it.
-	SignedFrom int64 `json:"signedFrom,omitempty"`
-	// HeadSeq/HeadHash are a remembered receipt: the entry AT HeadSeq must
-	// still carry exactly HeadHash. Later entries may exist (history grows);
-	// an earlier head or a different hash at that seq is a finding — this is
-	// what catches a truncated or rewritten tail.
-	HeadSeq  int64  `json:"headSeq,omitempty"`
-	HeadHash string `json:"headHash,omitempty"`
-}
-
 // VerifyReport is what one verification saw.
 type VerifyReport struct {
 	Repository string `json:"repository"`
 	Username   string `json:"username"`
-	Entries    int64  `json:"entries"`
-	Head       int64  `json:"head"`
-	HeadHash   string `json:"headHash,omitempty"`
-	SignedFrom int64  `json:"signedFrom,omitempty"`
-	PublicKey  string `json:"publicKey,omitempty"`
-	// UnsignedEntries counts entries below SignedFrom carrying the all-zero
-	// signature: history migration 0005 stamped, which nothing sanctioned
-	// can sign after the fact. Each one is also a finding, so a report that
-	// carries any is never OK.
-	UnsignedEntries int64         `json:"unsignedEntries,omitempty"`
-	Epochs          []EpochInfo   `json:"epochs,omitempty"`
-	Findings        []string      `json:"findings,omitempty"`
-	Truncated       bool          `json:"truncated,omitempty"`
-	OK              bool          `json:"ok"`
-	Took            time.Duration `json:"took"`
+	// Entries and Head are the table's: how many rows, and the highest seq.
+	Entries int64 `json:"entries"`
+	Head    int64 `json:"head"`
+	// HeadHash is the head entry's checksum, hex.
+	HeadHash string `json:"headHash,omitempty"`
+	// FileHead, Segments and TruncatedBytes are the changelog files': the
+	// last seq, the number of segment files, and a torn tail left on the
+	// active segment (which the next Open cuts).
+	FileHead       int64 `json:"fileHead"`
+	Segments       int   `json:"segments"`
+	TruncatedBytes int64 `json:"truncatedBytes,omitempty"`
+	// SealedRows and SealedFiles count the sealed table and its mirror.
+	SealedRows  int           `json:"sealedRows"`
+	SealedFiles int           `json:"sealedFiles"`
+	Findings    []string      `json:"findings,omitempty"`
+	Truncated   bool          `json:"truncated,omitempty"`
+	OK          bool          `json:"ok"`
+	Took        time.Duration `json:"took"`
 }
 
-// EpochInfo is one chain epoch as the report renders it.
-type EpochInfo struct {
-	At         time.Time `json:"at"`
-	Reason     string    `json:"reason"`
-	FromSeq    int64     `json:"fromSeq"`
-	OldHead    string    `json:"oldHead,omitempty"`
-	NewHead    string    `json:"newHead,omitempty"`
-	PublicKey  string    `json:"publicKey,omitempty"`
-	SignedFrom int64     `json:"signedFrom,omitempty"`
-	Signed     bool      `json:"signed"`
-	SigOK      *bool     `json:"sigOk,omitempty"`
-}
-
-// Verifier is the operator hat's chain-verification seam, off
-// substrate.Service like Resetter (auth.go) and asserted here for the same
-// reason.
+// Verifier is the operator hat's verification seam, off substrate.Service
+// like Resetter (auth.go) and asserted here for the same reason.
 type Verifier interface {
-	VerifyRepositoryPinned(ctx context.Context, username string, pins VerifyPins) (VerifyReport, error)
+	VerifyRepository(ctx context.Context, username string) (VerifyReport, error)
 }
 
 var _ Verifier = (*service)(nil)
 
-// VerifyRepository walks one repository's whole chain with nothing pinned.
+// VerifyRepository walks one repository's changelog files and table. Findings
+// land in the report, not in the error: the error is for "could not verify"
+// (no such user, no connection), never for "verified and found damage".
 func (s *service) VerifyRepository(ctx context.Context, username string) (VerifyReport, error) {
-	return s.VerifyRepositoryPinned(ctx, username, VerifyPins{})
-}
-
-// VerifyRepositoryPinned walks the chain and additionally holds the store to
-// what the caller pinned outside it. Findings land in the report, not in the
-// error: the error is for "could not verify" (no such user, no connection),
-// never for "verified and found tampering".
-func (s *service) VerifyRepositoryPinned(ctx context.Context, username string, pins VerifyPins) (VerifyReport, error) {
 	started := time.Now()
 	repo, err := s.repositoryByUsername(ctx, username)
 	if err != nil {
 		return VerifyReport{}, err
 	}
-	signing, err := s.loadSigningState(ctx, repo.ID)
+	report := VerifyReport{Repository: repo.ID, Username: repo.Username}
+	found := func(f string) {
+		if len(report.Findings) >= verifyFindingCap {
+			report.Truncated = true
+			return
+		}
+		report.Findings = append(report.Findings, f)
+	}
+	dir, err := changelogfile.RepoDir(s.dataRoot, repo.ID)
 	if err != nil {
-		return VerifyReport{}, err
-	}
-	report := VerifyReport{
-		Repository: repo.ID, Username: repo.Username,
-		SignedFrom: signing.signedFrom,
-	}
-	if len(signing.public) > 0 {
-		report.PublicKey = hex.EncodeToString(signing.public)
+		return report, err
 	}
 	// A bare scoped pool: the RLS-bound shape every request rides, with none
-	// of the open ladder's writes. One read-only repeatable-read transaction
-	// holds the walk and the epoch read to a single database state.
+	// of the open ladder's writes.
 	db, err := openScoped(s.dsn, repo.scope(), s.appRole)
 	if err != nil {
 		return VerifyReport{}, err
@@ -131,155 +90,49 @@ func (s *service) VerifyRepositoryPinned(ctx context.Context, username string, p
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	found := func(f string) {
-		if len(report.Findings) >= verifyFindingCap {
-			report.Truncated = true
-			return
-		}
-		report.Findings = append(report.Findings, f)
+	// The files first, whole: every line's sum, every sidecar, the seq
+	// sequence. A directory that does not open is one finding, and the table
+	// is still walked so the report says what the table holds.
+	fileReport, fileErr := changelogfile.Verify(changelogfile.ChangelogDir(dir))
+	report.FileHead, report.Segments, report.TruncatedBytes = fileReport.Head, fileReport.Segments, fileReport.TruncatedBytes
+	if fileErr != nil {
+		found(fmt.Sprintf("file: %v", fileErr))
 	}
-	res, epochs, err := verifyChainAndEpochs(ctx, tx, repo.ID, signing.signedFrom, signing.public, pins.HeadSeq, found)
-	if err != nil {
-		return report, err
+	if report.TruncatedBytes > 0 {
+		found(fmt.Sprintf("file: the active segment ends in a torn line of %d bytes", report.TruncatedBytes))
 	}
-	report.Entries, report.Head = res.entries, res.head
-	report.UnsignedEntries = res.unsignedEntries
-	if res.headHash != nil {
-		report.HeadHash = hex.EncodeToString(res.headHash)
-	}
-	report.Epochs = epochs
-
-	// Signing is mandatory; a repository with no activation mark has never
-	// signed anything, and no write path can produce that state any more.
-	// Below the mark, an all-zero signature is history migration 0005
-	// stamped: nothing vouches for it, and nothing sanctioned can sign it
-	// now. Both are findings, not tolerated states.
-	switch {
-	case signing.signedFrom == 0 && res.entries > 0:
-		found("changelog signing has never activated on this repository — signing is mandatory, and no entry carries a signature")
-	case res.unsignedEntries > 0:
-		found(fmt.Sprintf("%d entries below seq %d carry no signature (all-zero) — history written before signing, which nothing vouches for", res.unsignedEntries, signing.signedFrom))
-	}
-	if signing.signedFrom > 0 && len(signing.public) == 0 {
-		found("signing is active but the repository stores no public key")
-	}
-	// A mark beyond the head+1 covers nothing and can only have been written
-	// around the engine: every sanctioned activation is head+1 at its moment.
-	if signing.signedFrom > res.head+1 {
-		found(fmt.Sprintf("the activation mark (seq %d) is beyond the head (%d) — signing has been deferred by hand", signing.signedFrom, res.head))
-	}
-
-	// The pins: the caller's out-of-band knowledge, enforced.
-	if pins.PublicKey != "" && pins.PublicKey != report.PublicKey {
-		found(fmt.Sprintf("pinned public key %s does not match the repository's %s — the key has been replaced", pins.PublicKey, report.PublicKey))
-	}
-	if pins.SignedFrom > 0 && pins.SignedFrom != signing.signedFrom {
-		found(fmt.Sprintf("pinned signed-from seq %d does not match the repository's %d — the activation mark has moved", pins.SignedFrom, signing.signedFrom))
-	}
-	if pins.HeadSeq > 0 {
-		switch got := res.hashAt(pins.HeadSeq); {
-		case pins.HeadSeq > res.head:
-			found(fmt.Sprintf("pinned head seq %d is beyond the stored head %d — the tail has been truncated", pins.HeadSeq, res.head))
-		case got == "":
-			found(fmt.Sprintf("pinned head seq %d carries no hash", pins.HeadSeq))
-		case got != pins.HeadHash:
-			// A reseal epoch can EXPLAIN the moved pin, but only an
-			// AUTHENTICATED one: on a signed repository an unsigned reseal
-			// row is exactly the forgery an attacker would plant to bless a
-			// rewrite (confirmation review), and a reseal that started after
-			// the pinned seq could not have moved it.
-			explained := false
-			for _, ep := range epochs {
-				if ep.Reason != epochReseal || ep.OldHead != pins.HeadHash || ep.FromSeq > pins.HeadSeq {
-					continue
-				}
-				if signing.signedFrom > 0 && (!ep.Signed || ep.SigOK == nil || !*ep.SigOK) {
-					continue
-				}
-				explained = true
-			}
-			if explained {
-				// A sanctioned rewrite: the epoch names the old head the pin
-				// remembers. Reported for the operator to re-pin, not a
-				// silent pass.
-				found(fmt.Sprintf("pinned head at seq %d matches a reseal epoch's old head: history was resealed since the pin; re-pin from this report", pins.HeadSeq))
-			} else {
-				found(fmt.Sprintf("pinned head at seq %d does not match the stored hash and no epoch explains it", pins.HeadSeq))
-			}
+	var log *changelogfile.Log
+	if fileErr == nil {
+		if log, err = changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir)); err != nil {
+			found(fmt.Sprintf("file: %v", err))
+			log = nil
 		}
 	}
-	report.OK = len(report.Findings) == 0
-	report.Took = time.Since(started)
-	return report, nil
-}
 
-// chainWalkResult is what one full-chain walk measured.
-type chainWalkResult struct {
-	entries  int64
-	head     int64
-	headHash []byte
-	// unsignedEntries counts entries below signed_from_seq carrying the
-	// all-zero signature: history from before signing, permanent.
-	unsignedEntries int64
-	// boundaryHash is the stored hash at signed_from_seq - 1 — what the
-	// activation epoch's heads must equal; empty when signed_from_seq <= 1.
-	boundaryHash string
-	// pinnedSeq/pinnedHash carry the one extra hash a caller asked about.
-	pinnedSeq  int64
-	pinnedHash string
-}
-
-func (r *chainWalkResult) hashAt(seq int64) string {
-	if seq > 0 && seq == r.pinnedSeq {
-		return r.pinnedHash
-	}
-	return ""
-}
-
-// verifyChainAndEpochs is the whole integrity check the three doors share: the
-// full-chain walk (verifyChainCorePinned) AND the activation-epoch anchor
-// (verifyEpochs) held over the walk's boundaryHash. The core walk alone checks
-// the unsigned prefix (below signed_from_seq, where every entry carries the
-// all-zero signature) only for chain-hash consistency, so a prefix rewritten
-// and re-chained there passes it; the activation epoch's signed head, held
-// against the chain at signed_from_seq-1, is the one check that reaches into
-// that prefix. VerifyRepositoryPinned, reseal's pre-rewrite check and verified
-// rebuild's pre-fold check all run through here so the anchor cannot be
-// present on one door and skipped on another. The returned epochs let a
-// LEGITIMATELY prior-resealed repository still waive the boundary via a signed
-// reseal epoch (verifyEpochs' resealedBelowBoundary), so this refuses
-// tampering without refusing a sanctioned rewrite.
-func verifyChainAndEpochs(ctx context.Context, db dbx, repository string, signedFrom int64, public ed25519.PublicKey, pinSeq int64, found func(string)) (chainWalkResult, []EpochInfo, error) {
-	res, err := verifyChainCorePinned(ctx, db, repository, signedFrom, public, pinSeq, found)
-	if err != nil {
-		return res, nil, err
-	}
-	epochs, err := loadEpochs(ctx, db, repository, public)
-	if err != nil {
-		return res, nil, err
-	}
-	verifyEpochs(epochs, signingState{public: public, signedFrom: signedFrom}, res.boundaryHash, found)
-	return res, epochs, nil
-}
-
-// verifyChainCorePinned walks the WHOLE chain over any pool or transaction,
-// recomputes every hash from the stored bytes, checks every signature the
-// signing state requires, and hands each finding to found. It is the chain
-// half of verifyChainAndEpochs, which is what the three doors call so that
-// "verifies" also means the epoch anchor on all three. pinSeq > 0 additionally
-// captures the stored hash at that seq for the caller's out-of-band pin check.
-func verifyChainCorePinned(ctx context.Context, db dbx, repository string, signedFrom int64, public ed25519.PublicKey, pinSeq int64, found func(string)) (chainWalkResult, error) {
-	var res chainWalkResult
-	res.pinnedSeq = pinSeq
-	prev := zeroHash
+	// The table, row by row, each checksum recomputed and, where the file has
+	// the seq, compared with the line's.
 	expected := int64(1)
 	for {
-		page, err := scanChainPageWithMarks(ctx, db, expected-1, rebuildBatch)
+		page, err := scanChecksumPage(ctx, tx, expected-1, rebuildBatch)
 		if err != nil {
-			return res, err
+			return report, err
 		}
 		if len(page) == 0 {
 			break
+		}
+		fileSums := map[int64][32]byte{}
+		if log != nil {
+			first, last := page[0].entry.Seq, page[len(page)-1].entry.Seq
+			entries, err := log.Read(first-1, int(last-first+1))
+			if err != nil {
+				found(fmt.Sprintf("file: reading seq %d..%d: %v", first, last, err))
+				log = nil
+			}
+			for _, e := range entries {
+				if _, sum, err := changelogfile.Encode(e); err == nil {
+					fileSums[e.Seq] = sum
+				}
+			}
 		}
 		for _, row := range page {
 			if row.entry.Seq != expected {
@@ -287,157 +140,97 @@ func verifyChainCorePinned(ctx context.Context, db dbx, repository string, signe
 				expected = row.entry.Seq
 			}
 			expected++
-			res.entries++
-			res.head = row.entry.Seq
+			report.Entries++
+			report.Head = row.entry.Seq
+			report.HeadHash = ""
 			switch {
 			case row.hash == nil:
-				found(fmt.Sprintf("seq %d: no hash (the backfill has not run, or history was written around the chain)", row.entry.Seq))
+				found(fmt.Sprintf("seq %d: no checksum", row.entry.Seq))
 				continue
 			case len(row.hash) != 32:
-				found(fmt.Sprintf("seq %d: hash is %d bytes, want 32", row.entry.Seq, len(row.hash)))
+				found(fmt.Sprintf("seq %d: checksum is %d bytes, want 32", row.entry.Seq, len(row.hash)))
 				continue
 			}
-			want, err := entryHash(repository, row.entry, prev)
+			report.HeadHash = hex.EncodeToString(row.hash)
+			_, want, err := changelogfile.Encode(row.entry.fileEntry())
 			if err != nil {
 				found(fmt.Sprintf("seq %d: payload does not canonicalize: %v", row.entry.Seq, err))
-				copy(prev[:], row.hash)
 				continue
 			}
-			if !bytesEqual32(want, row.hash) {
-				found(fmt.Sprintf("seq %d: hash mismatch — the entry's stored content is not what was hashed", row.entry.Seq))
+			if want != [32]byte(row.hash) {
+				found(fmt.Sprintf("seq %d: checksum mismatch, the stored row is not what was stamped", row.entry.Seq))
 			}
-			// The next entry chains off the STORED hash, so one bad entry is
-			// one finding, not a cascade.
-			copy(prev[:], row.hash)
-			res.headHash = row.hash
-			if pinSeq > 0 && row.entry.Seq == pinSeq {
-				res.pinnedHash = hex.EncodeToString(row.hash)
+			if log == nil || row.entry.Seq > log.Head() {
+				continue
 			}
-			// The activation boundary: the hash the signed activation epoch
-			// recorded as its head, held against the chain below (adversarial
-			// review, third pass: without this, unsigned history rewrites
-			// under an intact epoch).
-			if signedFrom > 1 && row.entry.Seq == signedFrom-1 {
-				res.boundaryHash = hex.EncodeToString(row.hash)
-			}
-
-			mustSign := signedFrom > 0 && row.entry.Seq >= signedFrom
+			fileSum, ok := fileSums[row.entry.Seq]
 			switch {
-			case len(row.sig) != ed25519.SignatureSize:
-				found(fmt.Sprintf("seq %d: signature is %d bytes, want %d", row.entry.Seq, len(row.sig), ed25519.SignatureSize))
-			case isUnsignedSig(row.sig) && mustSign:
-				found(fmt.Sprintf("seq %d: all-zero signature, but signing is active from seq %d", row.entry.Seq, signedFrom))
-			case isUnsignedSig(row.sig):
-				// Below the activation seq: history migration 0005 stamped,
-				// which nothing sanctioned can sign after the fact. Counted
-				// here rather than named per row, because the count is what
-				// the report turns into its one finding — the core walk is
-				// also rebuild's and reseal's chain check, and those two
-				// judge the CHAIN, which an unsigned prefix does not break.
-				res.unsignedEntries++
-			case len(public) == 0:
-				found(fmt.Sprintf("seq %d: a signature with no public key on the repository", row.entry.Seq))
-			case !ed25519.Verify(public, row.hash, row.sig):
-				found(fmt.Sprintf("seq %d: signature does not verify against the repository's public key", row.entry.Seq))
+			case !ok:
+				found(fmt.Sprintf("seq %d: in the table and not in the file", row.entry.Seq))
+			case !bytes.Equal(fileSum[:], row.hash):
+				found(fmt.Sprintf("seq %d: the file's checksum is not the table's", row.entry.Seq))
 			}
 		}
 	}
-	return res, nil
-}
+	if log != nil && report.FileHead != report.Head {
+		found(fmt.Sprintf("the table's head is %d and the file's is %d", report.Head, report.FileHead))
+	}
 
-// verifyEpochs holds the epoch rows to what they claim to be (adversarial
-// review #2: an epoch nobody checks is scenery). An invalid signature on ANY
-// epoch is a finding; when signing is active, the activation epoch must
-// exist, be signed by the repository's key, and agree with the durable mark
-// — an unsigned or disagreeing `activate` row is exactly what a forgery
-// looks like — and every epoch RECORDED AFTER the valid activation must be
-// signed, because the engine holds the key whenever it writes one from that
-// moment on (confirmation review: gating on from_seq instead let an unsigned
-// row claim an early from_seq and skip the check). Epoch DELETION remains
-// detectable only through a pinned head or receipt: epochs are statements,
-// and the signed activation epoch plus the pins are what make the
-// statements checkable.
-func verifyEpochs(epochs []EpochInfo, signing signingState, boundaryHash string, found func(string)) {
-	publicHex := ""
-	if len(signing.public) > 0 {
-		publicHex = hex.EncodeToString(signing.public)
+	// The sealed mirror against the sealed table, by ref.
+	rows, err := readSealedTable(ctx, tx)
+	if err != nil {
+		return report, err
 	}
-	// A reseal that rewrites below the activation boundary legitimately moves
-	// the hash the activation epoch signed. Only a SIGNED reseal epoch
-	// excuses the mismatch: minting one takes the repository's key, which is
-	// exactly the line between a reseal and a forgery.
-	resealedBelowBoundary := false
-	for _, ep := range epochs {
-		if ep.Reason == epochReseal && ep.Signed && ep.SigOK != nil && *ep.SigOK &&
-			signing.signedFrom > 1 && ep.FromSeq <= signing.signedFrom-1 {
-			resealedBelowBoundary = true
-		}
+	files, err := changelogfile.ReadSealed(dir)
+	if err != nil {
+		found(fmt.Sprintf("sealed: %v", err))
 	}
-	activatedAt := -1
-	for i, ep := range epochs {
-		if ep.SigOK != nil && !*ep.SigOK {
-			found(fmt.Sprintf("epoch (%s, from seq %d): signature does not verify", ep.Reason, ep.FromSeq))
-		}
-		if ep.Reason != epochActivate {
-			continue
-		}
+	report.SealedRows, report.SealedFiles = len(rows), len(files)
+	seen := map[string]bool{}
+	for _, rec := range files {
+		seen[rec.Ref] = true
+		row, ok := rows[rec.Ref]
 		switch {
-		case !ep.Signed || ep.SigOK == nil || !*ep.SigOK:
-			found(fmt.Sprintf("epoch (activate, from seq %d): not signed by the repository's key — an activation is signed by construction", ep.FromSeq))
-		case ep.PublicKey != publicHex:
-			found(fmt.Sprintf("epoch (activate, from seq %d): names a different public key than the repository holds", ep.FromSeq))
-		case ep.SignedFrom != signing.signedFrom || ep.FromSeq != signing.signedFrom:
-			found(fmt.Sprintf("epoch (activate, from seq %d, signed from %d): disagrees with the repository's activation mark (%d)", ep.FromSeq, ep.SignedFrom, signing.signedFrom))
-		case (ep.NewHead != boundaryHash || ep.OldHead != boundaryHash) && !resealedBelowBoundary:
-			// The one anchor the signature reaches BELOW the activation seq:
-			// the epoch signed the head it activated over, so an unsigned
-			// prefix rewritten and re-chained under an intact epoch stops
-			// matching here (adversarial review, third pass).
-			found(fmt.Sprintf("epoch (activate, from seq %d): its signed head does not match the chain at seq %d — unsigned history has been rewritten", ep.FromSeq, ep.FromSeq-1))
-		default:
-			if activatedAt < 0 {
-				activatedAt = i
-			}
+		case !ok:
+			found(fmt.Sprintf("sealed %s: a file with no row", rec.Ref))
+		case !sealedRecordsEqual(rec, row):
+			found(fmt.Sprintf("sealed %s: the file is not the row", rec.Ref))
 		}
 	}
-	if signing.signedFrom == 0 {
-		return
-	}
-	if activatedAt < 0 {
-		found(fmt.Sprintf("signing is active from seq %d but no valid activation epoch is recorded", signing.signedFrom))
-		return
-	}
-	for _, ep := range epochs[activatedAt+1:] {
-		if !ep.Signed || ep.SigOK == nil || !*ep.SigOK {
-			found(fmt.Sprintf("epoch (%s, from seq %d): recorded after activation but not signed by the repository's key", ep.Reason, ep.FromSeq))
+	for _, ref := range sortedKeys(rows) {
+		if !seen[ref] {
+			found(fmt.Sprintf("sealed %s: a row with no file", ref))
 		}
 	}
+	report.OK = len(report.Findings) == 0
+	report.Took = time.Since(started)
+	return report, nil
 }
 
-// chainRow is one stored entry with its integrity marks.
-type chainRow struct {
-	entry chainEntry
+// checksumRow is one stored entry with its stamped checksum.
+type checksumRow struct {
+	entry pendingEntry
 	hash  []byte
-	sig   []byte
 }
 
-// scanChainPageWithMarks reads one page of entries with their stored hash and
-// signature, over any pool.
-func scanChainPageWithMarks(ctx context.Context, db dbx, after int64, limit int) ([]chainRow, error) {
+// scanChecksumPage reads one page of entries with their stored checksum, over
+// any pool: every column the checksum covers, with the payload as stored
+// text.
+func scanChecksumPage(ctx context.Context, db dbx, after int64, limit int) ([]checksumRow, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT seq, ts, actor, principal, op, record_id, kind, payload::text, caused_by, hash, sig FROM changelog
+		SELECT seq, ts, actor, principal, op, record_id, kind, payload::text, caused_by, hash FROM changelog
 		WHERE seq > $1 ORDER BY seq LIMIT $2`, after, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	var out []chainRow
+	var out []checksumRow
 	for rows.Next() {
-		var r chainRow
+		var r checksumRow
 		var ts time.Time
 		var causedBy sql.NullInt64
 		if err := rows.Scan(&r.entry.Seq, &ts, &r.entry.Actor, &r.entry.Principal, &r.entry.Op, &r.entry.RecordID,
-			&r.entry.Kind, &r.entry.PayloadText, &causedBy, &r.hash, &r.sig); err != nil {
+			&r.entry.Kind, &r.entry.PayloadText, &causedBy, &r.hash); err != nil {
 			return nil, err
 		}
 		r.entry.TS = ts.UTC()
@@ -445,58 +238,4 @@ func scanChainPageWithMarks(ctx context.Context, db dbx, after int64, limit int)
 		out = append(out, r)
 	}
 	return out, rows.Err()
-}
-
-// loadEpochs reads the chain epochs in order, verifying each signed one
-// against the repository's public key.
-func loadEpochs(ctx context.Context, db dbx, repository string, public ed25519.PublicKey) ([]EpochInfo, error) {
-	rows, err := db.QueryContext(ctx, `
-		SELECT at, reason, from_seq, old_head, new_head, public_key, signed_from, sig
-		FROM chain_epochs ORDER BY id`)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []EpochInfo
-	for rows.Next() {
-		var ep chainEpoch
-		var at time.Time
-		var signedFrom sql.NullInt64
-		var sig []byte
-		if err := rows.Scan(&at, &ep.Reason, &ep.FromSeq, &ep.OldHead, &ep.NewHead,
-			&ep.PublicKey, &signedFrom, &sig); err != nil {
-			return nil, err
-		}
-		ep.At = at.UTC()
-		if signedFrom.Valid {
-			ep.SignedFrom = signedFrom.Int64
-		}
-		info := EpochInfo{
-			At: ep.At, Reason: ep.Reason, FromSeq: ep.FromSeq,
-			SignedFrom: ep.SignedFrom, Signed: sig != nil,
-		}
-		if ep.OldHead != nil {
-			info.OldHead = hex.EncodeToString(ep.OldHead)
-		}
-		if ep.NewHead != nil {
-			info.NewHead = hex.EncodeToString(ep.NewHead)
-		}
-		if ep.PublicKey != nil {
-			info.PublicKey = hex.EncodeToString(ep.PublicKey)
-		}
-		if sig != nil && len(public) > 0 {
-			h := epochHash(repository, ep)
-			ok := ed25519.Verify(public, h[:], sig)
-			info.SigOK = &ok
-		}
-		out = append(out, info)
-	}
-	return out, rows.Err()
-}
-
-func bytesEqual32(a [32]byte, b []byte) bool {
-	if len(b) != 32 {
-		return false
-	}
-	return a == [32]byte(b)
 }

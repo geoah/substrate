@@ -28,7 +28,7 @@ the rows below into one coherent repository.
 | STORY-03 | a transcript finds its meeting: the `transcriptMatcher` agent decides over a scoring function tool, writes its audit, and an unmatched one attaches to nothing | egress | implemented |
 | STORY-04 | reflection: action items become sourced tasks through the decision loop; a sourceless proposal is refused | egress | implemented |
 | STORY-05 | the quiet window: a transcript with nothing in it proposes nothing, and the absence is asserted | egress | implemented |
-| STORY-06 | the world holds together: attribution audit, chain verify, rebuild refolds identically | dsn | implemented |
+| STORY-06 | the world holds together: attribution audit, checksum verify, rebuild refolds identically | dsn | implemented |
 
 ## Discovery and health
 
@@ -100,7 +100,7 @@ strings, and every list carries them inline.
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
-| LOG-01 | every write is a row: forward read, live watch delivery, resume from a seq, and the operator's chain verify | dsn | slice |
+| LOG-01 | every write is a row: forward read, live watch delivery, resume from a seq, and the operator's checksum verify | dsn | slice |
 | LOG-02 | the backward page (`before`/`first`) walks history newest-first to exhaustion | | implemented |
 | LOG-03 | feed filters: `kinds`, `ops`, `actors` and their excludes; a singular spelling is a 400 naming the plural | | implemented |
 | LOG-04 | the `recordId`+`recordKind` pair narrows to one record's history; either alone is a 400 | | implemented |
@@ -207,7 +207,7 @@ strings, and every list carries them inline.
 | --- | --- | --- | --- |
 | ISO-01 | two registered users: each token reads only its own repository, and neither sees the other's records or changelog | | implemented |
 | ISO-02 | one user's vocabulary install does not appear in the other's collections or catalog `installed` flags | | implemented |
-| DUR-01 | a server restart loses nothing: the records, the changelog head and the signing key are identical before and after | dsn | planned |
+| DUR-01 | a server restart loses nothing: the records, the changelog head in the table and the head in the segment files are identical before and after | dsn | planned |
 
 ## Recurrence and the calendar
 
@@ -233,7 +233,7 @@ them.
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
-| OPR-01 | `repository verify` walks every hash and signature clean after a run | dsn | slice (in LOG-01) |
+| OPR-01 | `repository verify` walks every checksum and sidecar clean after a run | dsn | slice (in LOG-01) |
 | OPR-02 | `repository list` names the run's repository | dsn | planned |
 | OPR-03 | `user reset` re-keys the credential and old tokens die | dsn | planned |
 

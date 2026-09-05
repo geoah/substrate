@@ -37,7 +37,9 @@ boot.
 | `LOG_LEVEL`                    | `info`                                 | `debug`, `info`, `warn`, `error`.                                                                         |
 | `WEB_DIR`                      | —                                      | The built console, served at `/`. Empty disables static serving.                                          |
 | `SUBSTRATE_INVITE_CODE`        | — (unset: registration is off)         | The one way in. See below.                                                                                  |
-| `SUBSTRATE_CREDENTIAL_KEY`     | — (required)                           | Seals the sealed store, which holds every secret-typed property's material (AES-256-GCM), and the per-repository changelog signing seeds. It is key material, not a passphrase: base64 of exactly 32 bytes, the AES-256 key itself. Generate one with `openssl rand -base64 32`; a host whose key is empty or any other shape refuses to boot, naming the variable (ADR [0024](decisions/0024-the-credential-key-is-key-material-not-a-passphrase.md)). Signing is mandatory and the seed may never sit unsealed beside the signatures it mints, so a host without this key refuses to boot, with no exception. A host whose key does not open the signing seeds the database already holds refuses to boot too, naming the repositories: that is a wrong key or a database from somewhere else, and nothing here can be re-keyed. `repository reseal` upgrades unsealed payloads once it is set. |
+| `SUBSTRATE_DATA_ROOT`          | required                               | The directory every repository's files live under: `repositories/<id>/` with the manifest, the changelog segments, the sealed store's files and (on the `fs` blob store) the blob bytes. See [the repository directory](#the-repository-directory). It must be an absolute path, it must outlive the container, and a host without one refuses to boot, naming the variable. |
+| `SUBSTRATE_CHANGELOG_SEGMENT_BYTES` | `268435456`                       | The size past which the active changelog segment rotates: the writer fsyncs, writes the finished file's `.sha256` sidecar and opens the next segment. At least 1 MiB. |
+| `SUBSTRATE_CREDENTIAL_KEY`     | required                               | Wraps each repository's data-encryption key (DEK), which encrypts the sealed store: every secret-typed property's material, the password hash, the TOTP seed and stored provider tokens (AES-256-GCM). It is key material, not a passphrase: base64 of exactly 32 bytes, the AES-256 key itself. Generate one with `openssl rand -base64 32`; a host whose key is empty or any other shape refuses to boot, naming the variable (ADR [0024](decisions/0024-the-credential-key-is-key-material-not-a-passphrase.md)). A host whose key does not open the wrapped DEKs the store already holds refuses to boot too, naming the repositories: that is a wrong key or a store from somewhere else, and nothing here can be re-keyed. |
 | `SUBSTRATE_INSECURE_DISABLE_TOTP` | `false`                             | **Local development only.** Stops verifying the second factor, so a password is the whole credential: see [the local TOTP-off switch](auth.md#the-second-factor-can-be-switched-off-locally). Boots with a warning, and `GET /.well-known/substrate/server.json` says so. |
 | `SUBSTRATE_OAUTH_STATE_KEY`    | —                                      | Signs OAuth flow state. Unset mints a random key per boot, with a warning: flows in progress break on restart. |
 | `SUBSTRATE_OAUTH_CALLBACK_URL` | —                                      | The one redirect URI every provider app registers.                                                        |
@@ -45,8 +47,7 @@ boot.
 | `SUBSTRATE_SANDBOX`            | `best-effort`                          | How hard to confine function bodies: `off`, `best-effort`, or `enforce` (refuse to run a body unconfined). |
 | `SUBSTRATE_SANDBOX_EGRESS_ALLOW` | —                                   | A comma-separated list of CIDRs (or bare addresses) a network body may reach despite the private-range block. A body that declares `permissions.network` reaches the public internet but not the deployment's own loopback, link-local or RFC1918 ranges, so a local provider (a loopback Ollama) needs its address listed here. Empty blocks every private range. |
 | `SUBSTRATE_EGRESS_ALLOW`       | —                                      | A comma-separated list of CIDRs (or bare addresses) the SERVER may dial for a repository-chosen URL despite the private-range block. An `llmprovider` row's `baseURL` is written by the repository owner, so the engine confines its completion and embedding dials to public destinations, refusing the deployment's own loopback, link-local, RFC1918 and CGNAT ranges at connect time (issue #241). A local provider (a loopback Ollama) needs its address listed here. Empty blocks every private range. This is the server's own dials; `SUBSTRATE_SANDBOX_EGRESS_ALLOW` is the separate escape for a function body's dials. |
-| `SUBSTRATE_BLOB_STORE`         | `postgres`                             | Where blob bytes live: `postgres` (the `blobs` column), `fs` (a directory) or `s3` (a bucket). See [the blob store](#the-blob-store). |
-| `SUBSTRATE_BLOB_FS_ROOT`       | —                                      | `fs` only: the root directory, one subdirectory per repository. Must be absolute, and must outlive the container.                    |
+| `SUBSTRATE_BLOB_STORE`         | `fs`                                   | Where blob bytes live: `fs` (under the repository directory in the data root) or `s3` (a bucket). `postgres` is refused at boot. See [the blob store](#the-blob-store). |
 | `SUBSTRATE_BLOB_S3_ENDPOINT`   | —                                      | `s3` only: the service URL, scheme included (`https://s3.us-east-1.amazonaws.com`, or a self-hosted endpoint).                       |
 | `SUBSTRATE_BLOB_S3_BUCKET`     | —                                      | `s3` only: the bucket. It must be PRIVATE — the bytes are stored as they arrived.                                                    |
 | `SUBSTRATE_BLOB_S3_REGION`     | `us-east-1`                            | `s3` only: the region the request is signed for.                                                                                     |
@@ -54,8 +55,53 @@ boot.
 | `SUBSTRATE_BLOB_S3_PREFIX`     | —                                      | `s3` only: a key prefix, for a bucket this substrate shares with something else.                                                     |
 | `SUBSTRATE_BLOB_S3_PATH_STYLE` | `true`                                 | `s3` only: address the bucket as a path segment rather than a subdomain. Self-hosted endpoints want it; AWS accepts it.               |
 
-`SUBSTRATE_CREDENTIAL_KEY` is the one that must be backed up beside the
-database: without it, sealed material is unreadable.
+`SUBSTRATE_CREDENTIAL_KEY` is the one that must be backed up apart from the
+data root: without it, sealed material is unreadable
+([backups](#backups)).
+
+## The repository directory
+
+Every repository owns one directory under the data root, named by its id, and
+that directory is the truth on disk and the unit a backup copies
+([decision 0051](decisions/0051-a-repository-directory-is-the-backup-unit.md)):
+
+```
+$SUBSTRATE_DATA_ROOT/
+  repositories/
+    <repository id>/
+      repository.json               # the manifest: id, username, authority, createdAt, changelogDialect, the wrapped DEK
+      changelog/
+        000000000000001.ndjson      # a segment, named by its first seq; the highest is the active one
+        000000000000001.ndjson.sha256   # the digest of a finished segment
+        000000000482113.ndjson
+      blobs/
+        blob-sha256-<hex>           # the bytes, content addressed (the fs blob store)
+      sealed/
+        secret-<hex>.json           # one file per sealed row: the ref with ':' as '-'
+```
+
+The changelog segments are newline-delimited JSON, one entry per line, each
+line carrying its own SHA-256 checksum
+([the checksum and the segment files](changelog.md#the-checksum-and-the-segment-files)).
+`repository.json` carries the username, so `grep -l '"username": "ada"'
+$SUBSTRATE_DATA_ROOT/repositories/*/repository.json` finds a person's
+directory, and the DEK wrapped under `SUBSTRATE_CREDENTIAL_KEY`, the same
+bytes as the `repositories.dek` column, so a copy restored onto a host with
+the same key opens without anything else. The key itself is never in the
+directory.
+
+Postgres is the commit point and the live index: every write commits to the
+`changelog` table first, and the repository's one writer then appends the same
+entries to the active segment and mirrors the `sealed` table to `sealed/`.
+Blob bytes go straight to `blobs/`. At boot the server compares every
+directory with every `repositories` row ([what happens at boot](#what-happens-at-boot)).
+
+The root is as private as its mode. The server creates directories `0700` and
+files `0600`; give the root to the substrate's user alone, because anything
+that can read it reads every repository's changelog and blobs in the clear
+([0031](decisions/0031-blob-bytes-outside-postgres-are-stored-plaintext.md)).
+Only the sealed files are ciphertext. Encrypt the volume for encryption at
+rest; the substrate does not.
 
 ## There is no LLM configuration
 
@@ -89,36 +135,34 @@ A blob is two halves: a **manifest**, which is an ordinary record keyed by the
 content digest, and the **bytes**. The manifest is always in Postgres and is
 always the truth. `SUBSTRATE_BLOB_STORE` says where the bytes go.
 
-| Backend            | Where the bytes are            | Backup                             |
-| ------------------ | ------------------------------ | ---------------------------------- |
-| `postgres`         | the `blobs` column             | the database dump, and nothing else |
-| `fs`               | `<root>/<repository>/<digest>` | the dump **plus** the root          |
-| `s3`               | `<prefix><repository>/<digest>` in the bucket | the dump **plus** the bucket |
+| Backend            | Where the bytes are                                        | Backup                                  |
+| ------------------ | ---------------------------------------------------------- | --------------------------------------- |
+| `fs`               | `$SUBSTRATE_DATA_ROOT/repositories/<id>/blobs/<digest>`    | the repository directory, and nothing else |
+| `s3`               | `<prefix><repository id>/<digest>` in the bucket           | the directory **plus** the bucket        |
 
-`postgres` is the default and the simplest thing that works: one dump is a
-whole backup, row level security is what separates two repositories, and the
-bytes and the manifest commit in one transaction. What it costs is that every
-uploaded byte goes through WAL and into the backup of a database whose value is
-the changelog, which is why the other two exist.
+`fs` is the default: the bytes sit in the repository directory beside the
+changelog, so one copy of the directory is a whole backup. `s3` is for a
+deployment whose disk cannot hold the attachments, and it makes the backup two
+artifacts. `postgres`, the `blobs` bytea column, is not a runtime store any
+more: a server configured with it refuses to boot, and so does a server whose
+`blobs` table still holds byte rows, naming
+`substratectl blobs migrate --from postgres` as the way out.
 
-**Isolation stops being the database's job.** On `fs` and `s3` the repository
-is half of every key, and it comes from the authenticated token's repository,
-never from the request: a read resolves the manifest first, under row level
-security, and only then fetches bytes. So a caller cannot reach another
-repository's blob by guessing a digest. But anything that can read the root
-directory or the bucket can read every repository's blobs: the store is as
-trusted as the database. Give the fs root to the substrate's user alone (it
-creates directories `0700` and files `0600`), and keep the bucket private, with
-credentials only this substrate holds.
+**Isolation is not the database's job here.** The repository is half of every
+key, and it comes from the authenticated token's repository, never from the
+request: a read resolves the manifest first, under row level security, and only
+then fetches bytes. So a caller cannot reach another repository's blob by
+guessing a digest. But anything that can read the data root or the bucket can
+read every repository's blobs: the store is as trusted as the database. Keep
+the bucket private, with credentials only this substrate holds.
 
 **Blob bytes are never sealed, on any backend.** The sealed store covers
-secret-typed properties; `blobs.bytes`, an object on disk and an object in a
-bucket are all stored exactly as they arrived, and no credential key is
-involved in reading any of them
+secret-typed properties; an object on disk and an object in a bucket are stored
+exactly as they arrived, and no credential key is involved in reading either
 ([0031](decisions/0031-blob-bytes-outside-postgres-are-stored-plaintext.md)).
-Whoever holds the dump, the root or the bucket holds every attachment in the
-clear. For encryption at rest, put it under the store: disk encryption for
-Postgres or the `fs` root, the bucket's own server-side encryption for `s3`.
+Whoever holds the directory or the bucket holds every attachment in the clear.
+For encryption at rest, put it under the store: disk encryption for the data
+root, the bucket's own server-side encryption for `s3`.
 
 **An upload becomes two steps, and a crash between them is cheap.** Outside
 Postgres the bytes cannot commit with the manifest, so the manifest is written
@@ -133,18 +177,19 @@ sweep that lists the store.
 
 **Switching backends is a migration, not a setting.** A server whose configured
 store is not where the bytes actually are refuses to boot, rather than serving
-404s for half the blobs. Move them first, with the server stopped:
+404s for half the blobs. Move them first, with the server stopped. A store
+upgraded from a release that kept bytes in the database runs this once:
 
 ```
-SUBSTRATE_BLOB_STORE=fs SUBSTRATE_BLOB_FS_ROOT=/var/lib/substrate/blobs \
+SUBSTRATE_BLOB_STORE=fs SUBSTRATE_DATA_ROOT=/var/lib/substrate \
   DATABASE_URL=… substratectl blobs migrate --from postgres
 ```
 
 It moves one repository at a time and deletes each object from the source only
 once the target holds it, so an interrupted run is finished by running it
 again. `--dry-run` counts what would move; a username moves that user alone.
-Then start the server with the same `SUBSTRATE_BLOB_STORE`. Going back is the
-same command with `--from` and `--to` swapped.
+Then start the server with the same `SUBSTRATE_BLOB_STORE`. Moving between
+`fs` and `s3` is the same command with `--from` and `--to` naming them.
 
 The 64 MiB cap on one upload and the absence of range reads are the contract,
 not the backend: neither changes with the store.
@@ -186,13 +231,23 @@ on the box, through the DSN.
 - Each repository is opened the first time something touches it. Opening
   rebuilds its kind registry **from its own stored declaration records** —
   nothing on the serving path reads the binary's embedded tree.
-- **The chain backfill runs first**: a repository whose changelog predates
-  entry hashes gets them at its first open, oldest-first, reading the changelog
-  in bounded pages but committing the whole repository's backfill in one
-  transaction, before anything else writes, and the backfill records a
-  `backfill` chain epoch naming where attested history begins
-  ([the chain](changelog.md#the-chain)). A large history takes proportional
-  time, once, and the open logs progress.
+- **The data root is reconciled with the `repositories` table**, directory
+  by directory and row by row, before anything else writes. Five cases: a
+  directory and a row whose heads and last checksums agree open; a table ahead
+  of its file (a crash between commit and append) has the missing entries
+  appended to the file and its sealed files rewritten from the table; a file
+  ahead of its table, or a directory with no row, is **imported**, which
+  creates the row from `repository.json`, loads `sealed/` into the table,
+  inserts the missing entries with their checksums and folds them through
+  `fold.go` (this is the restore path, and the only one); a seq present in
+  both with different checksums, a line whose `sum` does not verify or a
+  finished segment whose sidecar does not match **refuses the boot**, naming
+  the repository and the seq or the file, and repairs nothing (one refusal an
+  operator reads, rather than a repository half-open beside the others); a
+  row with no directory has its directory written out from the tables, once,
+  which is how a store from a release before the data root gets one. A
+  directory with no row and no `repository.json` is logged and left alone:
+  nothing says whose it is, so it is neither imported nor deleted.
 - **Shipped vocabulary is upgraded, per repository, in one transaction**: the
   first open under a new binary appends the version diff to that repository's
   changelog under the `substrate` actor
@@ -209,18 +264,21 @@ row-level-security-bound pool a request uses.
 
 Keep it to **one replica**. The watch signal and the trigger dispatcher are
 in-process, and two dispatchers would serialize on compare-and-swap rather than
-scale. The chain leans on the same shape: one writer process per database, so
-an older binary can never append unhashed entries behind a newer one's back
-(`repository verify` reports exactly that state if it ever happens).
+scale. The segment files lean on the same shape: one writer process per data
+root. The writer holds an exclusive advisory lock on
+`<repository>/changelog/.lock` for as long as the repository is open, so a
+second process that opens a repository for writing is refused with a named
+error instead of appending behind the first one's back.
 
 ## Upgrading the binary
 
-**Snapshot the database before you deploy.** A repository's first open under a
-new binary may promote its stored
+**Take a backup before you deploy** ([backups](#backups): the data root and a
+database dump, together). A repository's first open under a new binary may
+promote its stored
 [vocabulary dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract),
 and the promotion this binary carries rewrites every declaration row the
 repository holds. That is the one step of an upgrade a rollback cannot undo, so
-the dump you take beforehand is the only way back.
+the copy you take beforehand is the only way back.
 
 **A dialect promotion is one transaction, and it is one-way.** Each repository
 carries a monotonic dialect integer. When a binary's maximum is above the stored
@@ -235,7 +293,7 @@ refusal, which the API surfaces as `503 unavailable` with a `Retry-After`, never
 as an invalid token, so a store the binary cannot serve is diagnosable rather
 than mysterious. That refusal is the *good* outcome: it exists because the older
 binary would otherwise misread the migrated rows. Rolling the image back is
-therefore not a fix; restoring the pre-upgrade dump is. Rolling *forward* to a
+therefore not a fix; restoring the pre-upgrade copy is. Rolling *forward* to a
 binary whose maximum covers the stamp still is.
 
 **The changelog carries a dialect of its own, and it refuses the same way.**
@@ -275,7 +333,7 @@ diverges, with both hashes, rather than the first one it meets.
 A released binary never triggers this, because a landed migration is never
 edited. What does trigger it is a database migrated by a build from a branch
 that was still revising its migration. Throw such a database away:
-`mise run dev:wipe` for a development one, a restore from a dump a matching
+`mise run dev:wipe` for a development one, a restore from a backup a matching
 binary wrote for anything else. There is no repair, because two branch
 revisions of one migration can differ in any way at all.
 
@@ -288,77 +346,121 @@ minutes before it merged.
 
 ## Backups
 
-**A backup is the changelog plus blobs plus sealed, as one unit.** Under the
-default `postgres` blob store all three live in the one database, so an
-ordinary consistent dump of that database is a complete backup. The sealed rows
-encrypt under each repository's own
-data-encryption key, which exists in two wraps: the control-plane
-`repositories.dek` column holds it wrapped under `SUBSTRATE_CREDENTIAL_KEY`
-(the host's half), and the repository's `recoverykey` record holds it
-wrapped to the user's age recipient (the user's half). Only the host key has
-a tool that uses it: every operator command opens a repository through
-`SUBSTRATE_CREDENTIAL_KEY`. The `recoverykey` wrap is written at enrollment
-and no shipped command consumes it yet, so opening a backup from the age
-identity alone is not built in v1. Losing the host key leaves the sealed
-rows inert.
+**A backup is the data root plus the credential key, kept apart.** Every
+repository's directory under `$SUBSTRATE_DATA_ROOT/repositories/` holds its
+changelog, its sealed store and (on the `fs` blob store) its blob bytes
+([the repository directory](#the-repository-directory)), and nothing in the
+database is needed to bring it back: the `changelog` table is an index of the
+files, the `records` table is their fold, and both are rebuilt on import. A
+copy of the directory and the key that opens its sealed files is a complete
+backup.
 
-**The host's half is a real wrap on anything this release wrote.** Changelog
-signing is mandatory, so a host without `SUBSTRATE_CREDENTIAL_KEY` refuses to
-boot and cannot create or open a repository at all. A store an earlier,
-keyless build wrote is the exception and the dangerous one: its
-`repositories.dek` holds the key in the clear beside the rows it opens, so
-the dump alone is every secret in that repository, and nothing re-wraps that
-column today ([#230](https://github.com/geoah/substrate/issues/230)).
+**Copy the root at any moment, then verify the copy.** Finished segments and
+blobs never change, the active segment only grows, and the manifest, the
+sidecars and the sealed files are replaced atomically, so a copy taken
+mid-write is usually consistent or short by one torn last line, which the
+importer discards. Two windows remain: a copy that reads a segment while the
+server finishes it can hold the segment with a sidecar that does not match
+yet, and a copy that reads `sealed/` before `changelog/` can hold a line whose
+sealed file it missed. So a copy is a backup once `repository verify` passes
+on it (boot a scratch server over the copy with an empty database, which
+imports it, then verify); one that fails is retaken. A cron running this is
+enough:
 
-**What is sealed is the sealed store, and nothing else.** Blob bytes are stored
-as they arrived on every backend — the `blobs.bytes` column included — so a
-dump of a substrate on the default backend carries every attachment in the
-clear, whatever the credential key is doing. The changelog and the records
-folded from it are plaintext for the same reason. Encrypt the backup itself, or
-the storage under it; the substrate does not.
+```
+rsync -a --delete "$SUBSTRATE_DATA_ROOT"/ backup-host:/srv/substrate-backup/
+```
 
-**On `fs` or `s3` the dump is half the backup.** The blob bytes are outside the
-database, so the second artifact is the fs root or the bucket, and it has to be
-copied with its own step:
+On the compose deployment the root is the `substrate-data` volume mounted at
+`/var/lib/substrate`, so copy it out of the container, or point the volume at a
+host directory the backup already covers:
 
-- **`fs`**: back up the whole root (`rsync`, a snapshot of the volume, a
-  tarball). Objects are immutable and named by their content digest, so an
-  incremental copy is exact and a partially copied file is detectable by
-  hashing it.
-- **`s3`**: the bucket is the artifact. Turn on versioning or replication, or
-  copy the prefix to a second bucket. A provider's durability is not a backup:
-  a delete this substrate issues is a delete.
+```
+docker compose cp substrate:/var/lib/substrate ./substrate-backup
+```
 
-**Take the blob copy FIRST, then the dump.** Bytes settle before the manifest
-does, so a store copied before the dump can hold objects the dump has no
-manifest for, which the sweep collects harmlessly. The other order can leave a
-`stored` manifest whose bytes were never copied, and that is a blob the restore
-cannot serve.
+**Keep `SUBSTRATE_CREDENTIAL_KEY` somewhere the copy is not.** Every
+`repository.json` carries the repository's data-encryption key wrapped under
+it, and every file in `sealed/` is ciphertext under that DEK. The directory
+without the key is every record and every attachment in the clear and no
+secret; the key beside the directory is every secret too. On compose the key
+is the `substrate-keys` volume (`/keys/credential.key`) unless the environment
+sets one. The user's own recovery key wraps the same DEK in the repository's
+`recoverykey` record, but no shipped command opens a backup from it yet
+([#137](https://github.com/geoah/substrate/issues/137)), so losing the host key
+leaves the sealed files inert.
 
-What you do **not** have to back up separately is the fold. The records table
-and its indexes are derived; the changelog is the truth.
+**A database dump is optional, and it is not a restore.** The tables hold
+nothing the directory lacks except runtime state (below). Take one beside the
+copy before an upgrade, because a dump plus the matching directory is the
+fastest way back to a known state, but a fresh database and the directory are
+enough.
+
+**Restore.** Stop the server. Copy the repository directories into a fresh
+server's data root, set the same `SUBSTRATE_CREDENTIAL_KEY`, and boot: a
+directory with no row in `repositories` is imported, which creates the row from
+its manifest, loads `sealed/` into the table, inserts every changelog entry
+with its checksum and folds them through `fold.go`. Then verify each one:
+
+```
+rsync -a ./substrate-backup/repositories/ "$SUBSTRATE_DATA_ROOT"/repositories/
+SUBSTRATE_DATA_ROOT=… SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substrate   # imports at boot
+DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository list
+DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository verify ada     # once per repository
+```
+
+A directory whose files do not verify (a bad `sum`, a sidecar that does not
+match) refuses the boot with the repository and the seq or the file named;
+move that directory out of the root or restore it from an older copy, then
+boot again. A directory whose `repository.json` carries a DEK the host's
+`SUBSTRATE_CREDENTIAL_KEY` does not open refuses the boot the same way, naming
+the repository and the variable, because importing it would create a
+repository no login could open. Under the `s3` blob store the bucket is the
+second artifact: restore it too, or the manifests come back `stored` with no
+bytes behind them.
+
+**What does not come back.** Runtime state is not in the directory: trigger
+cursors, paged cursors, embeddings and OAuth flows in flight. On an import
+into an empty database triggers start at the head, so a delivery that had not
+settled before the copy does not run. On an import of a newer directory over
+an older database dump the cursors the dump holds stay where they were, so
+every entry since the dump is delivered again. Embeddings are re-bought by the
+drain loop; a consent flow in flight is started again. A user's tokens are
+records, so they come back.
+
+**Encrypt the copy.** The changelog and the blobs are plaintext in the
+directory, on the backup host and in the dump alike. The substrate does not
+encrypt the storage under it; do that yourself.
 
 ## Operator recovery
 
 Operator commands (the "operator hat" of
-[substratectl](substratectl.md#two-hats)) speak to Postgres directly over the
-DSN and hold no token. They need `--dsn` (or `DATABASE_URL`), and refuse
-before touching anything without one.
+[substratectl](substratectl.md#two-hats)) speak to Postgres and the data root
+directly and hold no token. They need `--dsn` (or `DATABASE_URL`) and
+`SUBSTRATE_DATA_ROOT`, and refuse before touching anything without them.
+
+**Three of them run beside a live server; two need it stopped.** `repository
+list`, `repository inspect` and `repository verify` read: `verify` opens the
+engine read-only, so it runs no boot check, appends nothing and reports a torn
+tail or a table ahead of its file as a finding instead of repairing it.
+`repository rebuild` and `user reset` write, so each opens the repository as
+its changelog writer, and a running server holds that lock: the command
+refuses, naming the lock, until the server is stopped.
 
 ```
-DATABASE_URL=… substratectl repository list
-DATABASE_URL=… substratectl repository inspect ada
-DATABASE_URL=… substratectl repository verify ada
-DATABASE_URL=… substratectl repository rebuild ada
-SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substratectl repository reseal ada
-SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substratectl user reset ada
+DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository list
+DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository inspect ada
+DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository verify ada
+DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rebuild ada
+SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl user reset ada
 ```
 
 **On the compose deployment, run them inside the container.** Both runtime
 images carry `substratectl` beside the server, because `compose.yaml`
 publishes no Postgres port and the DSN resolves nowhere else. The container
-already holds `DATABASE_URL` and `SUBSTRATE_CREDENTIAL_KEY` in its
-environment, so neither is repeated on the command line:
+already holds `DATABASE_URL`, `SUBSTRATE_DATA_ROOT` and
+`SUBSTRATE_CREDENTIAL_KEY` in its environment, so none is repeated on the
+command line:
 
 ```
 docker compose exec substrate substratectl repository list
@@ -366,64 +468,38 @@ docker compose exec substrate substratectl repository verify ada
 docker compose exec substrate substratectl user reset ada
 ```
 
-`reseal` and `user reset` refuse on a deployment left at the out-of-the-box
-default, because that default sets no `SUBSTRATE_CREDENTIAL_KEY` and both write
-sealed material. Set the key in the environment compose reads, then
-`docker compose up -d`, which recreates the container around the new value.
-Not `docker compose restart`: that restarts the process the container already
-has, with the environment it was created with, so both commands go on refusing
-and nothing says why.
-
 Publishing the Postgres port to reach the same commands from the host is a
 worse trade: it exposes the database to everything that can reach the host, and
 the exec path needs nothing open at all.
 
 - **`repository list`** reads the one control-plane table: one row per user.
 - **`repository inspect <username>`** reports the repository id, the username,
-  when it was created, the changelog head and entry count, live and tombstoned record
-  counts, and the declaration versions per package. It is the first thing to
-  run when something looks wrong.
-- **`repository verify <username>`** walks the whole chain in one read-only
-  snapshot: it recomputes every entry's hash from the stored bytes, checks
-  every signature the signing state requires, checks the chain epochs, and
-  reports either the verified head `(seq, hash)` or every finding by seq and
-  name. An all-zero signature is a finding wherever it sits: at or after the
-  activation seq it is a stripped signature, and below it (history a
-  pre-signing release wrote, which nothing sanctioned can sign after the
-  fact) it gets one line naming the count. A repository that never activated
-  at all is a finding too. It never backfills or repairs the repository it judges (opening the
+  when it was created, the changelog head in the table and the head in the
+  segment files with the segment count, live and tombstoned record counts,
+  and the declaration versions per package. Two heads that differ are the gap
+  the next boot closes. It is the first thing to run when something looks
+  wrong.
+- **`repository verify <username>`** walks the segment files: every line's
+  `sum`, every finished segment's sidecar, the seq order, and both heads
+  against each other. It reports the head `(seq, checksum)` or every finding
+  by seq or file name, never repairs the repository it judges (opening the
   engine still applies pending schema migrations, as every operator command
-  does), and run beside an in-flight first-open backfill it can report
-  transient unhashed entries — re-run once the open settles. **Write the
-  head down somewhere else and pass it back**: `--expect-head seq:hash`,
-  `--expect-public-key` and `--expect-signed-from` turn your out-of-band
-  knowledge into enforced findings, and a pinned head is the only way to
-  catch a truncated tail. Run it before and after a Postgres major upgrade,
-  and on every restored backup. Exits nonzero on any finding.
-- **`repository rebuild <username>`** replays the whole changelog into a fresh fold,
-  in one transaction, under that repository's own lock. It reproduces the fold
-  bit for bit and appends nothing, so it is safe to run on a healthy
-  repository. **It verifies the chain first** and refuses to install history
-  that does not check out; `--force-unverified` overrides that, says so in its
-  output, and is for the day you have decided the bytes are what you have.
-  It does not touch blobs or sealed rows — those were never in the
-  changelog — and it leaves runtime state (trigger cursors, OAuth flows) alone,
-  because a cursor is a consumer's position in the changelog, not a fold of it.
-- **`repository reseal <username>`** moves every legacy secret value into
-  the sealed store and re-points record rows and the changelog's stored
-  payloads at the refs; it also upgrades sealed-store payloads written while
-  the server ran without `SUBSTRATE_CREDENTIAL_KEY`. Run it once after
-  upgrading past the release that moved secrets into the store: the
-  changelog is append-only, so plaintext it already carries can be removed by
-  nothing else. Values-only and idempotent, and it refuses until the server
-  has opened the repository once under the upgraded binary. Because it is the
-  one sanctioned rewrite of history, it VERIFIES THE CHAIN FIRST and refuses
-  over history that does not check out (a reseal would otherwise launder
-  tampering into fresh hashes and signatures), then re-chains (and re-signs)
-  every entry from the first rewritten seq and records a `reseal` chain
-  epoch naming the old head and the new: a head you wrote down before a
-  reseal will not match after, and the epoch is what explains it. On a
-  signed repository it refuses without the signing key.
+  does), and exits nonzero on any finding. It is safe beside a running
+  server; a finding about the heads taken mid-write can be a transaction in
+  flight, so run it twice before believing one. Run it on every restored
+  copy and before and after a Postgres major upgrade. It proves the files
+  are undamaged and agree with the table; it does not prove who wrote them
+  ([the checksum](changelog.md#the-checksum-and-the-segment-files)).
+- **`repository rebuild <username>`** replays the segment files into a fresh
+  fold, in one transaction, under that repository's own lock, after running
+  the same check the boot runs. It reproduces the fold bit for bit and appends
+  nothing, so it is safe to run on a healthy repository, and it is the proof
+  that the directory alone reproduces the records. It does not touch blobs or
+  sealed files, which were never in the changelog, and it leaves runtime
+  state (trigger cursors, OAuth flows) alone, because a cursor is a
+  consumer's position in the changelog, not a fold of it. Stop the server
+  first: it opens the repository as its changelog writer and refuses while
+  the server holds the lock.
 - **`blobs migrate`** moves blob bytes from one store to another, one
   repository at a time, and is the only way across a
   `SUBSTRATE_BLOB_STORE` change: see [the blob store](#the-blob-store). It
@@ -432,7 +508,16 @@ the exec path needs nothing open at all.
 - **`user reset <username>`** is the answer to a user who has lost both
   factors. It writes fresh sealed material and a new credential record and
   prints a fresh TOTP enrollment. The data is untouched; the account gets new
-  keys. There is no self-serve recovery, deliberately.
+  keys. There is no self-serve recovery, deliberately. Like `rebuild` it
+  needs the server stopped, because the credential record is a changelog
+  entry.
+
+`user reset` refuses on a deployment whose `SUBSTRATE_CREDENTIAL_KEY` the
+container was not created with, because it writes sealed material. Set the key
+in the environment compose reads, then `docker compose up -d`, which recreates
+the container around the new value. Not `docker compose restart`: that restarts
+the process the container already has, with the environment it was created
+with, so the command goes on refusing and nothing says why.
 
 **A lost second factor is an operator's job, and only an operator's.** Every
 credential-change endpoint requires the current TOTP code, and no route resets
@@ -441,14 +526,6 @@ data-encryption key, not the login. So `user reset`, run on the box or through
 `docker compose exec`, is the whole of the escape from a lockout in v1. A
 deployment nobody can exec into is a deployment where a lost authenticator is
 permanent.
-
-The signing seed has NO copy outside the database: it is minted server-side,
-sealed under the credential key, and never disclosed. What registration does
-hand the user is the signing PUBLIC key ([the chain](changelog.md#the-chain)),
-which is what `verify --expect-public-key` wants and what makes a backup's
-signatures checkable with no server. A lost credential key still stops writes
-on an activated repository, with nothing to recover from; an operator path
-that re-seals a seed from elsewhere is a possible follow-up, not built.
 
 Two rules keep operator commands honest, and they explain the output: the CLI
 opens the engine with an empty registry, so an operator command can never
@@ -462,9 +539,10 @@ not bind a superuser and an operator DSN usually is one — without that,
 
 No sharing, no second user reading your repository, no cross-repository query.
 No erasure, compaction, or retention policy: the changelog keeps everything, and the
-horizon stays 0. The chain and its signatures are tamper EVIDENCE, not tamper
-proofing, and never evidence against the host operator, who holds the database
-and the credential key alike ([what the chain proves](changelog.md#the-chain)).
+horizon stays 0. No signatures and no hash chain: the per-entry checksum
+catches corruption, and nothing stored is evidence against the host operator,
+who holds the database, the data root and the credential key alike
+([the checksum](changelog.md#the-checksum-and-the-segment-files)).
 Each of those is a deliberate absence, not an oversight.
 
 Next: [the live tests](testing.md), the one suite that talks to real LLM

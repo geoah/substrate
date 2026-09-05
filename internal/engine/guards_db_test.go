@@ -21,6 +21,7 @@ func newDatasetWithDB(t *testing.T, opts ...engine.Option) (substrate.Dataset, *
 	ctx := context.Background()
 	all := []engine.Option{
 		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		engine.WithDataRoot(t.TempDir()),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 	}
 	all = append(all, opts...)

@@ -83,7 +83,7 @@ func (ds *dataset) buildChangeFilter(b *builder, f substrate.ChangeFilter) error
 		// secret's delta value is an opaque ref and a digest is a one-way
 		// comparator, so the searchable bytes are never material. The one
 		// exception is legacy plaintext written before secrets moved into
-		// the store, and `repository reseal` is what removes it.
+		// the store.
 		p := b.arg("%" + escapeLike(f.Q) + "%")
 		b.add(`(kind ILIKE ` + p + ` OR actor ILIKE ` + p +
 			` OR record_id ILIKE ` + p + ` OR payload::text ILIKE ` + p + `)`)

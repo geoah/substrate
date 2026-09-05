@@ -20,7 +20,7 @@ func openCredentialService(t *testing.T) (*service, Repository) {
 	t.Helper()
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
-	svcIface, err := Open(ctx, dsn, WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"))
+	svcIface, err := Open(ctx, dsn, WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestCredentialRewriteStepNeverRegresses(t *testing.T) {
 	// A concurrent login lands a much later code on the same seed, advancing the
 	// stored step under its own row lock.
 	advanced := readStep + 25
-	won, err := s.consumeTOTPStep(ctx, repo.ID, mat.totpRef, advanced)
+	won, err := s.consumeTOTPStep(ctx, repo, mat.totpRef, advanced)
 	if err != nil || !won {
 		t.Fatalf("simulate a concurrent login: won=%v err=%v", won, err)
 	}

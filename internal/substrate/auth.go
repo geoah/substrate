@@ -88,14 +88,6 @@ type RegisterResult struct {
 	// RecoveryPublicKey is the enrolled age recipient, whichever side
 	// generated it.
 	RecoveryPublicKey string
-	// SigningPublicKey is the repository's Ed25519 changelog-signing public
-	// key, hex: the pin `repository verify --expect-public-key` checks the
-	// store against, handed over here so the user holds it from outside the
-	// database that could be rewritten to say something else. The SEED is
-	// never disclosed — the server keeps its only copy sealed under the
-	// credential key and is the only signer — so verifying a signature needs
-	// this key and nothing more.
-	SigningPublicKey string
 }
 
 // LoginInput is BOTH factors presented directly: it authenticates /login and

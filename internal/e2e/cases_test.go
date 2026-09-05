@@ -165,9 +165,8 @@ func caseAuth(c *C) {
 			ID    string `json:"id"`
 			Label string `json:"label"`
 		} `json:"token"`
-		Secret           string `json:"secret"`
-		RecoveryKey      string `json:"recoveryKey"`
-		SigningPublicKey string `json:"signingPublicKey"`
+		Secret      string `json:"secret"`
+		RecoveryKey string `json:"recoveryKey"`
 	}
 	c.paceAuth()
 	// The register, login and mint failure messages carry no body: a 2xx of
@@ -175,11 +174,9 @@ func caseAuth(c *C) {
 	status, raw = c.doAs("", http.MethodPost, "/register", reg, &regOut)
 	c.requiref(status == http.StatusCreated, "register answered %d, want 201%s", status, redacted(status, raw))
 	c.requiref(strings.HasPrefix(regOut.Secret, "substrate_tok_"), "token secret has the wrong shape")
-	c.requiref(regOut.SigningPublicKey != "", "register returned no signing public key")
 	c.requiref(regOut.RecoveryKey != "", "register minted no recovery key (none was supplied)")
 	r.token, r.tokenID = regOut.Secret, regOut.Token.ID
 	r.rep.Username, r.rep.Password = r.username, r.password
-	r.rep.SigningPublicKey = regOut.SigningPublicKey
 	c.stepf("registered `%s`: repository created, first token `%s` minted, recovery key returned once (not kept)", r.username, regOut.Token.ID)
 
 	// The minted token opens the repository; no token opens nothing.
@@ -374,7 +371,7 @@ type changeRow struct {
 }
 
 // caseChangelog reads the feed forward, watches a live write land, resumes
-// from a seq, and (when the operator hat is available) verifies the chain.
+// from a seq, and (when the operator hat is available) verifies the checksums.
 func caseChangelog(c *C) {
 	r := c.r
 
@@ -414,19 +411,17 @@ func caseChangelog(c *C) {
 		"resuming from seq %d replayed %d rows, want exactly the probe row", row.Seq-1, len(resumed))
 	c.stepf("a forward read from seq %d replayed exactly the probe row: resume loses nothing and repeats nothing", row.Seq-1)
 
-	// The operator hat walks the chain: every hash, every signature.
+	// The operator hat walks the changelog: every seq, every checksum.
 	ctl, dsn := os.Getenv(envCtl), os.Getenv(envDSN)
 	if ctl == "" || dsn == "" {
-		c.stepf("SKIPPED the chain verify: %s and %s are not both set", envCtl, envDSN)
+		c.stepf("SKIPPED the checksum verify: %s and %s are not both set", envCtl, envDSN)
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, ctl, "--dsn", dsn, "repository", "verify", r.username).CombinedOutput()
 	c.requiref(err == nil, "substratectl repository verify %s: %v: %s", r.username, err, out)
-	c.requiref(strings.Contains(string(out), r.rep.SigningPublicKey),
-		"the chain verifies under a different public key than /register returned: %s", out)
-	c.stepf("operator verify (`substratectl repository verify %s`): %s; the chain signs under the key /register returned", r.username, verifySummary(string(out)))
+	c.stepf("operator verify (`substratectl repository verify %s`): %s", r.username, verifySummary(string(out)))
 }
 
 // readChangesForward reads the forward feed from a seq (exclusive) to its

@@ -359,10 +359,12 @@ today.
 
 Everything is an environment variable, and every one has a working default
 under `docker compose up`. Three matter before anyone else can reach your
-substrate: `DATABASE_URL` (the one Postgres), `SUBSTRATE_INVITE_CODE` (unset
-means registration is closed), and `SUBSTRATE_CREDENTIAL_KEY` (base64 of
-exactly 32 bytes; it seals every secret and every repository's changelog
-signing seed, and a server without it refuses to boot).
+substrate: `DATABASE_URL` (the one Postgres), `SUBSTRATE_DATA_ROOT` (the
+directory every repository's changelog, sealed store and blobs live under, and
+the thing you back up), `SUBSTRATE_INVITE_CODE` (unset means registration is
+closed), and `SUBSTRATE_CREDENTIAL_KEY` (base64 of exactly 32 bytes; it wraps
+the key every secret is sealed under, and a server without it refuses to
+boot).
 [docs/operations.md](docs/operations.md) has the full table, blob stores and
 egress rules included.
 

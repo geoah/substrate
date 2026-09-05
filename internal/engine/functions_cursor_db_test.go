@@ -132,6 +132,7 @@ func openInternalDataset(t *testing.T, opts ...Option) *dataset {
 	dsn := testdb.NewSchema(t)
 	svc, err := Open(ctx, dsn,
 		append([]Option{
+			WithDataRoot(t.TempDir()),
 			WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 			WithCredentialKey(TestCredentialKey),
 		}, opts...)...)
@@ -164,6 +165,7 @@ func openCoreDataset(t *testing.T, opts ...Option) *dataset {
 	dsn := testdb.NewSchema(t)
 	svc, err := Open(ctx, dsn,
 		append([]Option{
+			WithDataRoot(t.TempDir()),
 			WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 			WithCredentialKey(TestCredentialKey),
 		}, opts...)...)

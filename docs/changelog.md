@@ -25,8 +25,7 @@ One entry, as the wire carries it, for the task created on the
 the caller's own claim; the entry also stores a **principal**
 beside it, the id of the token the door resolved from the bearer secret,
 which no caller can name. Two tokens writing as `api` are one actor and two
-principals. It is hashed with the rest of the entry, so a stored principal
-cannot be edited without breaking the chain, and it is not a secret: it is a
+principals. The entry's checksum covers it, and it is not a secret: it is a
 token record's id, which the repository's own reader can already list. It has
 no field of its own on the wire; a write's recorded effects name it beside
 each property manager they set. A write no token stands behind — the seed, the
@@ -108,84 +107,61 @@ The request's `create` is not the changelog's `put`: accepting one mints the
 record when the id is free and conflicts when a record that does not match the
 proposal already holds it, where a `put` overwrites.
 
-## The chain
+<!-- The anchor keeps decision records 0009, 0010 and 0011 resolving: they link
+#the-chain, and an accepted record's body may not change. -->
+<a id="the-chain"></a>
 
-Every entry carries a SHA-256 **hash** over its own stored content and the
-previous entry's hash, stamped by the writing transaction. An in-place edit, a
-reorder, an insert or a splice of one repository's history into another breaks
-the chain at the first touched seq, and `substratectl repository verify` names
-it. The hash covers what Postgres stored — the verifier recomputes it from the
-same bytes later — with the payload's numbers canonicalized by VALUE, so how a
-Postgres version happens to render a number can never strand a historical
-hash.
+## The checksum and the segment files
 
-Every repository also **signs** every entry — signing is mandatory. Each
-repository mints its own Ed25519 key at its first open (sealed under
-`SUBSTRATE_CREDENTIAL_KEY`, which the server refuses to boot without): a
-brand-new repository is signed from seq 1, and a store upgraded from an
-earlier release activates on its first open after the backfill. Activation is
-durable and one-way: from the activation seq forward, an all-zero or
-invalid signature is a verification failure, and a host that cannot sign
-refuses to append rather than quietly shedding the guarantee. The activation
-moment logs the `(public key, signed_from_seq)` pair — pin it outside the
-database; it is what a verifier ultimately trusts.
+Every entry carries a SHA-256 **checksum** of its own canonical line, stamped
+by the writing transaction into the `changelog.hash` column and returned on the
+wire as `hash`. The checksum covers the entry's own bytes and nothing else: it
+does not chain to the previous entry, and nothing signs it.
+`substratectl repository verify` recomputes every entry's checksum and names
+the first seq whose stored bytes no longer produce it
+([running a substrate](operations.md#operator-recovery)).
 
-Registration hands the repository's signing PUBLIC key to the user, in hex,
-beside the recovery key: `substratectl register` prints it and the console
-shows it. That key is the whole of what verifying a signature needs, and it is
-worth holding outside the database because a pin read back out of the store it
-checks proves nothing — it is what `verify --expect-public-key` compares
-against. No private key material rides any response: the seed stays sealed
-under the credential key, where the only signer keeps it
-([decision 0010](decisions/0010-signing-is-per-repository-ed25519-one-way.md)).
-A lost credential key therefore stops writes on an activated repository with
-nothing to recover from, and an operator path that re-seals a seed from
-somewhere else is a possible follow-up, not built.
+The Postgres `changelog` table is the live index: the change feed, the triggers
+and the causal walk read it. The truth on disk is the repository's directory
+under `SUBSTRATE_DATA_ROOT`
+([the repository directory](operations.md#the-repository-directory)), where
+`changelog/` holds the same entries as newline-delimited JSON segment files,
+one object per line, keys sorted, the checksum in `sum`:
 
-Two values survive from before signing and attribution existed, both hashed
-like any other value, so neither can be edited later without breaking the
-chain. Entries written before signing keep the **all-zero signature** forever
-— an append-only log cannot be signed after the fact — and `verify` reports
-every one of them as a finding, counting the ones below the activation seq in
-a single line (`unsignedEntries`). Entries written before the door threaded
-the **principal** keep the string `invalid`. No write path can produce either
-value now: every entry is signed at append, a host that cannot sign refuses
-the write, and the principal an entry carries is the token id the door
-verified.
+```json
+{"actor":"api","kind":"samples.substrate.reamde.dev/tasks/task","op":"put","payload":{"created":true,"properties":["name","dueAt"],"values":{"…":"…"}},"principal":"k7…","recordId":"kq3v9x2m41pf","seq":4190,"sum":"sha256:5f0c…","ts":"2026-08-04T10:00:00.183742Z"}
+```
 
-What this proves, honestly:
+`sum` is `sha256:` plus the hex digest of the same line with the `sum` key
+absent, and the `hash` column and the wire field hold the same 32 bytes.
+`causedBy` appears only on an entry a delivery caused. A segment is named by
+the seq of its first line (`000000000000001.ndjson`); the highest-numbered one
+is the active segment and grows. When it passes
+`SUBSTRATE_CHANGELOG_SEGMENT_BYTES` (256 MiB by default) the writer finishes
+it with a `.sha256` sidecar holding the digest of the whole file and opens the
+next. A finished segment never changes.
 
-- **The hash chain alone** catches accidental corruption, a botched restore,
-  and casual tampering. It does not stop an attacker with full database write
-  access, who can rewrite an entry and re-chain everything after it: the
-  chain needs no secret. It also cannot see a truncated tail by itself — only
-  a **remembered head** can, which is why `verify` prints the head
-  `(seq, hash)`, the operations doc tells you to write it down, and
-  `verify --expect-head seq:hash` turns the comparison into an enforced
-  finding instead of an eyeballed one.
-- **Signatures** raise the bar to "database access AND the credential key" —
-  PROVIDED the verifier is pinned: everything in the database, the public
-  key included, is rewritable by whoever holds the database, so an unpinned
-  verify proves internal consistency and a pinned one
-  (`--expect-public-key`, `--expect-signed-from`) proves it against what you
-  knew. Whoever holds both the database and the credential key is the host
-  operator, and no in-database scheme defends against the party who runs the
-  database.
-- The `hash` on the wire is a **receipt**, not a proof: the wire payload is
-  redacted, so a consumer cannot recompute it. Checking a receipt means
-  handing it to `repository verify --expect-head`.
+Postgres commits first and the file follows, so a crash can leave the file one
+transaction behind; the server appends the missing entries at the next boot
+([what happens at boot](operations.md#what-happens-at-boot)). A reader accepts
+exactly one kind of damage, a torn final line in the active segment, which it
+discards. A bad `sum`, a seq that does not follow the previous one, or a
+finished segment whose sidecar does not match is a named refusal, not a
+repair.
 
-Three events legitimately move or begin the chain, and each records a **chain
-epoch** the verifier CHECKS as well as lists: the **backfill** that stamps
-history written before the chain existed (at the repository's first open
-under a chain-aware binary, atomically with its hashes), a **reseal**'s
-sanctioned rewrite (which VERIFIES FIRST — a reseal over tampered history
-refuses rather than laundering it — then re-chains and, when signing is on,
-re-signs everything after the first rewritten entry), and signing
-**activation** (whose epoch must be signed and agree with the durable mark,
-or it is a finding). A pinned head that stopped matching either matches a
-reseal epoch's recorded old head — reported, so you re-pin — or it is a
-plain finding.
+What the checksum proves: an entry is undamaged, in the file and in the table,
+and the two agree. What it does not prove: authenticity. Whoever can write the
+database or the directory can rewrite a line and its `sum` together, and no
+checksum sees that
+([decision 0050](decisions/0050-the-changelog-is-checksummed-segment-files-and-postgres-indexes-it.md)).
+The `hash` a consumer reads on the wire is a **receipt** for the entry it
+came with, not a proof: the wire payload is redacted, so the consumer cannot
+recompute it, and checking a receipt means running `repository verify` on the
+repository.
+
+One value survives from before the door threaded the **principal**: entries
+written then keep the string `invalid`. No write path produces it now; the
+principal an entry carries is the token id the door verified.
 
 ## The dialect a changelog is written in
 
@@ -208,14 +184,14 @@ rebuild`, the day the changelog had to be replayable. The changelog dialect is
 1 today, and a repository's stored dialect is never on the wire: what
 [API discovery](api.md#discovery) reports is the binary's maximum.
 
-`repository rebuild` and `repository reseal` read the stamp again, under the
-changelog lock and before they touch anything: one replays every entry and the
-other rewrites their payloads, and a process that opened the repository before
-another raised the stamp would be interpreting entries in a spelling it does
-not know.
+`repository rebuild` reads the stamp again, under the changelog lock and
+before it touches anything: it replays every entry, and a process that opened
+the repository before another raised the stamp would be interpreting entries
+in a spelling it does not know.
 
 A repository written by a newer binary cannot be served by an older one again:
-downgrading means restoring a dump, the same as for a vocabulary promotion
+downgrading means restoring the copy taken before the upgrade, the same as for
+a vocabulary promotion
 ([upgrading the binary](operations.md#upgrading-the-binary)).
 
 ## Watching
@@ -298,8 +274,9 @@ horizon, and the horizon is where policy lives.
   terminal ([substratectl](substratectl.md)). Integrations reconcile from it.
 - **The console's events page** is the same feed, paged backward through
   history and filtered ([web console](console.md)).
-- **`rebuild`** replays it, which is what makes the fold disposable and the changelog
-  the thing you actually back up ([running a substrate](operations.md)).
+- **`rebuild`** replays it from the segment files, which is what makes the
+  fold disposable and the repository directory the thing you back up
+  ([running a substrate](operations.md#backups)).
 
 The to-do list, its GitHub feed, and anything you build next are all consumers
 of one changelog.

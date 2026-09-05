@@ -370,7 +370,6 @@ func caseStory06(c *C) {
 	}
 	out, err := ctlRun(ctl, dsn, "repository", "verify", r.username)
 	c.requiref(err == nil, "repository verify: %v: %s", err, out)
-	c.requiref(strings.Contains(out, r.rep.SigningPublicKey), "the chain verifies under a different key than /register returned")
 	c.stepf("operator verify: %s", verifySummary(out))
 
 	out, err = ctlRun(ctl, dsn, "repository", "rebuild", r.username)

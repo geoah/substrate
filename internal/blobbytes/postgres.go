@@ -10,13 +10,14 @@ import (
 	"time"
 )
 
-// Postgres is the default backend: the bytes stay in the `blobs` bytea column
-// they have always been in, so a deployment that configures nothing keeps
-// today's behavior — one database dump is still a complete backup, and row
-// level security is still what separates two repositories.
+// Postgres reads and writes the `blobs` bytea column, where blob bytes lived
+// before the data root existed. It is NOT a runtime choice: config.Blobs
+// never builds it and the engine refuses to boot while the column holds a
+// row. It survives as the source side of `substratectl blobs migrate --from
+// postgres`, which moves a deployment's bytes into the fs or s3 store.
 type Postgres struct{}
 
-// NewPostgres returns the default backend.
+// NewPostgres returns the migration-source backend over the `blobs` column.
 func NewPostgres() *Postgres { return &Postgres{} }
 
 // Name is BackendPostgres.

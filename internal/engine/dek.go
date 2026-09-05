@@ -7,7 +7,7 @@ package engine
 // planes never mix: nothing host-keyed sits in the repository, and the user
 // plane (changelog + sealed + blobs) is recoverable with the age identity
 // alone. A payload sealed before DEKs existed opens through the host-key
-// fallback until `repository reseal` re-keys it.
+// fallback until the re-key that recovery enrollment runs rebinds it.
 
 import (
 	"bytes"
@@ -130,8 +130,9 @@ func (ds *dataset) sealPayload(raw, aad []byte) ([]byte, error) {
 
 // openPayload opens one sealed-store payload: plain framing as-is (keyless
 // legacy), then the DEK, then the host key (payloads sealed before DEKs). aad
-// is the row's binding, presented only for `credBoundSealed` payloads.
-// `repository reseal` re-keys the stragglers so the fallback goes quiet.
+// is the row's binding, presented only for `credBoundSealed` payloads. The
+// re-key that recovery enrollment runs rebinds the stragglers so the fallback
+// goes quiet.
 func (ds *dataset) openPayload(payload, aad []byte) ([]byte, error) {
 	return openWithFallback(payload, ds.dek, ds.svc.credKey, aad)
 }

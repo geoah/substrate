@@ -17,7 +17,7 @@ func TestSk3MergeSystemTypes(t *testing.T) {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey),
+		svc, err := engine.Open(ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
 			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 		if err != nil {
 			t.Fatalf("open engine: %v", err)

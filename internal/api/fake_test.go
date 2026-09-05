@@ -192,8 +192,6 @@ func (s *fakeService) Register(_ context.Context, in substrate.RegisterInput) (s
 		out.RecoveryKey = "AGE-SECRET-KEY-FAKE"
 		out.RecoveryPublicKey = "age1fake"
 	}
-	// The signing pin registration hands back: shape, not crypto, like the pair.
-	out.SigningPublicKey = strings.Repeat("cd", 32)
 	return out, nil
 }
 

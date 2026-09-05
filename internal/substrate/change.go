@@ -29,11 +29,11 @@ type Change struct {
 	RecordID string         `json:"recordId"`
 	Kind     string         `json:"kind"`
 	Payload  map[string]any `json:"payload,omitempty"`
-	// Hash is the entry's chain hash, hex — a receipt a consumer can write
-	// down and later check against `repository verify` output. It is NOT
+	// Hash is the entry's checksum, hex: the SHA-256 of its canonical line,
+	// the same value the segment file carries in `sum`. It is NOT
 	// independently recomputable from this wire shape: the payload here is
-	// redacted, and the hash covers what is stored. Absent only on an entry
-	// written before the chain existed and not yet backfilled.
+	// redacted, and the checksum covers what is stored. Absent only on an
+	// entry written before checksums existed.
 	Hash string `json:"hash,omitempty"`
 }
 

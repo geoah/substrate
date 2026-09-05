@@ -36,6 +36,22 @@ func mustDecodeTestCredentialKey(key string) []byte {
 	return raw
 }
 
+// DataRootOf is the data root a service was opened with, so a test can find
+// a repository's directory (changelogfile.RepoDir) and damage or copy it.
+func DataRootOf(svc substrate.Service) string { return svc.(*service).dataRoot }
+
+// BreakChangelogWriter closes a dataset's changelog writer under its mutex, so
+// the next commit's append fails the way a full disk would: the tables take
+// the write, the directory does not, and the dataset latches
+// ErrChangelogFileBehind. The closed writer also releases the directory's
+// lock, so a reopened service can take it.
+func BreakChangelogWriter(ds substrate.Dataset) {
+	d := ds.(*dataset)
+	d.writerMu.Lock()
+	defer d.writerMu.Unlock()
+	_ = d.writer.Close()
+}
+
 // SealedAAD builds the additional data a sealed-store row binds to, so a test
 // opens a payload the way the engine does (ADR 0023).
 func SealedAAD(ref, recordKind, recordID string) []byte { return sealedAAD(ref, recordKind, recordID) }

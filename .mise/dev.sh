@@ -10,9 +10,10 @@
 # the tree, not an image.
 #
 # All of its state is disposable and lives in two places: the container plus
-# its volume, and .dev/ (the pid and the log). `wipe` removes both, which is
-# the only way to get a FRESH substrate — registration is one-shot per user and
-# there is no unregister.
+# its volume, and .dev/ (the pid, the log, the credential key and the data
+# root). `wipe` removes both, which is the only way to get a FRESH substrate:
+# registration is one-shot per user and there is no unregister, and a data
+# root that outlives its database is imported at the next boot.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -39,15 +40,22 @@ readonly INVITE="${SUBSTRATE_INVITE_CODE:-let-me-in}"
 # change to the door gets tested.
 # Not readonly: `dev:totp` is this same substrate with the factor put back.
 DISABLE_TOTP="${SUBSTRATE_INSECURE_DISABLE_TOTP:-true}"
-# Changelog signing is mandatory and the signing seed seals under the
-# credential key, so the dev substrate mints a key once and keeps it beside
-# the state it belongs to: `dev:wipe` removes both together. An operator
-# command against this substrate reads the same file (dev:status prints the
-# path). The env var wins where a shell already carries one.
+# The credential key wraps each repository's DEK and a host without one refuses
+# to boot, so the dev substrate mints a key once and keeps it beside the state
+# it belongs to: `dev:wipe` removes both together. An operator command that
+# writes sealed material reads the same file (dev:status prints the path). The
+# env var wins where a shell already carries one.
 #
 # The key is base64 of 32 bytes, what `openssl rand -base64 32` prints and the
 # only shape the server accepts (ADR 0024).
 readonly CREDFILE="${STATE}/credential.key"
+# The data root: one directory per repository holding its changelog segments,
+# sealed files and blob bytes. The server requires an ABSOLUTE path (a relative
+# one would follow whichever directory the server was started from), so it is
+# resolved from the tree root the `cd` above landed in. It lives under .dev so
+# `dev:wipe` removes it with the database it indexes.
+DATA_ROOT="$(pwd)/${STATE}/data"
+readonly DATA_ROOT
 cred_key() {
 	if [ -n "${SUBSTRATE_CREDENTIAL_KEY:-}" ]; then
 		echo "$SUBSTRATE_CREDENTIAL_KEY"
@@ -226,6 +234,7 @@ server_start() {
 		"SUBSTRATE_INVITE_CODE=${INVITE}" \
 		"SUBSTRATE_INSECURE_DISABLE_TOTP=${DISABLE_TOTP}" \
 		"SUBSTRATE_CREDENTIAL_KEY=$(cred_key)" \
+		"SUBSTRATE_DATA_ROOT=${DATA_ROOT}" \
 		"LOG_LEVEL=${LOG_LEVEL:-info}" \
 		"${web[@]}" \
 		"${egress[@]}" \
@@ -286,6 +295,7 @@ cmd_run() {
 		"SUBSTRATE_INVITE_CODE=${INVITE}" \
 		"SUBSTRATE_INSECURE_DISABLE_TOTP=${DISABLE_TOTP}" \
 		"SUBSTRATE_CREDENTIAL_KEY=$(cred_key)" \
+		"SUBSTRATE_DATA_ROOT=${DATA_ROOT}" \
 		"LOG_LEVEL=${LOG_LEVEL:-info}" \
 		"${web[@]}" \
 		"${egress[@]}" \
@@ -327,8 +337,12 @@ cmd_wipe() {
 		return 1
 	fi
 	db_wipe
+	# The data root goes with the database: a repository directory left behind
+	# would be imported into the fresh database at the next boot, and the
+	# substrate would not be fresh.
+	rm -rf "$DATA_ROOT"
 	rm -rf "$STATE"
-	echo "dev: wiped — the next start is a fresh substrate with no users"
+	echo "dev: wiped (database and ${DATA_ROOT}); the next start is a fresh substrate with no users"
 }
 
 cmd_status() {
@@ -353,6 +367,7 @@ cmd_status() {
 	else
 		echo "console:   not built (mise run console:build)"
 	fi
+	echo "data root: ${DATA_ROOT} (export SUBSTRATE_DATA_ROOT=${DATA_ROOT} for operator commands)"
 	if [ -f "$CREDFILE" ]; then
 		echo "credential key: ${CREDFILE} (export SUBSTRATE_CREDENTIAL_KEY=\$(cat ${CREDFILE}) for operator commands)"
 	fi
