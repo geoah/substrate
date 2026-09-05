@@ -1135,7 +1135,7 @@ func TestCandidateResolutionIsTheProjectionsAlone(t *testing.T) {
 		_, err := inst.InstallBundleClosure(ctx, owner, closure, []substrate.PutInput{{
 			Kind: swPackage + "/widget", ID: "from-install",
 			Properties: map[string]any{"name": "ok", "color": "red"},
-		}})
+		}}, substrate.BundleInstall{})
 		wantErr(t, err, substrate.ErrValidation, "an install's data document carrying an undeclared property")
 		// The whole install rolled back with it: no data row, and no closure.
 		if _, err := ds.Get(ctx, swPackage+"/widget", "from-install"); err == nil {
@@ -1149,7 +1149,7 @@ func TestCandidateResolutionIsTheProjectionsAlone(t *testing.T) {
 		if _, err := inst.InstallBundleClosure(ctx, owner, closure, []substrate.PutInput{{
 			Kind: swPackage + "/widget", ID: "from-install",
 			Properties: map[string]any{"name": "ok"},
-		}}); err != nil {
+		}}, substrate.BundleInstall{}); err != nil {
 			t.Fatalf("install: %v", err)
 		}
 		mustGet(t, ds, swPackage+"/widget", "from-install")
@@ -1212,7 +1212,7 @@ func TestBundleUpgradeRefusesARowOfTheKindItRemoves(t *testing.T) {
 	actor := substrate.BundleActor(vocabulary.SplitPackageRef(dkPackage))
 
 	if _, err := inst.InstallBundleClosure(ctx, actor,
-		dkDocs(dkKindDoc("widget", "widgets"), dkKindDoc("gadget", "gadgets")), nil); err != nil {
+		dkDocs(dkKindDoc("widget", "widgets"), dkKindDoc("gadget", "gadgets")), nil, substrate.BundleInstall{}); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	if _, err := ds.KindByRef(ctx, dkPackage+"/widget"); err != nil {
@@ -1224,7 +1224,7 @@ func TestBundleUpgradeRefusesARowOfTheKindItRemoves(t *testing.T) {
 	_, err := inst.InstallBundleClosure(ctx, actor, dkDocs(dkKindDoc("gadget", "gadgets")),
 		[]substrate.PutInput{{
 			Kind: dkPackage + "/widget", ID: "late", Properties: map[string]any{"name": "late"},
-		}})
+		}}, substrate.BundleInstall{})
 	wantErr(t, err, substrate.ErrGuard, "an upgrade that writes a row of the kind it removes")
 	if !strings.Contains(err.Error(), dkPackage+"/widget") {
 		t.Fatalf("the refusal must name the kind: %v", err)
@@ -1240,7 +1240,7 @@ func TestBundleUpgradeRefusesARowOfTheKindItRemoves(t *testing.T) {
 
 	// And the same upgrade WITHOUT the row admits: this is refuse-while-stranded,
 	// not refuse-forever.
-	if _, err := inst.InstallBundleClosure(ctx, actor, dkDocs(dkKindDoc("gadget", "gadgets")), nil); err != nil {
+	if _, err := inst.InstallBundleClosure(ctx, actor, dkDocs(dkKindDoc("gadget", "gadgets")), nil, substrate.BundleInstall{}); err != nil {
 		t.Fatalf("an upgrade that removes an unused kind must admit: %v", err)
 	}
 	if _, err := ds.KindByRef(ctx, dkPackage+"/widget"); err == nil {

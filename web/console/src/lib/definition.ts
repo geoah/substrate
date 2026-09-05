@@ -209,17 +209,21 @@ export function resolveReferenceTarget(
 }
 
 /** The GraphQL type name a kind reference maps to, mirroring the server's
- * `GraphQLName`. A SHIPPED kind keeps its bare singular PascalCased
- * (`substrate.reamde.dev/core/token` → `Token`); an INSTALLED kind is prefixed
- * with its PACKAGE and an underscore (`samples.substrate.reamde.dev/tasks/task`
- * → `Tasks_Task`), because installed kinds share names across packages and the
- * prefix disambiguates. Two authorities installing one package name collide
- * here, which the server resolves over the whole set (`GraphQLNames`); this
- * answers the base name alone. */
+ * `GraphQLName`. A SHIPPED kind, the seed's (`source: builtin`), keeps its bare
+ * singular PascalCased (`substrate.reamde.dev/core/token` → `Token`); every
+ * other kind is prefixed with its PACKAGE and an underscore
+ * (`samples.substrate.reamde.dev/tasks/task` → `Tasks_Task`), because those
+ * kinds share names across packages and the prefix disambiguates. That covers
+ * an installed kind and a published one alike: a provider's declarations are a
+ * copy the repository holds. Two authorities installing one package name
+ * collide here, which the server resolves over the whole set (`GraphQLNames`);
+ * this answers the base name alone. A caller that does not know the source
+ * gets the bare name, since the prefix it cannot spell would be a wrong
+ * answer rather than an approximate one. */
 export function graphqlTypeName(ref: string, source?: string): string {
   const { pkg, name } = splitKind(ref)
   const base = pascal(name)
-  if (!base || source !== "installed") return base
+  if (!base || !source || source === "builtin") return base
   return `${pascal(pkg)}_${base}`
 }
 

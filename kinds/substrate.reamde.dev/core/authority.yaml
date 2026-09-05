@@ -9,7 +9,9 @@ data:
   # actors, the origin and the quarantine mark moved to the `package` row
   # beside it (decision record 0047); what stays is the name and what it is
   # for.
-  version: 16
+  # version 17: `source` gains `published`, the origin a provider install
+  # writes (decision record 0048).
+  version: 17
   description: >-
     One authority whose packages this repository holds, named by its DNS-style
     label. It says who publishes; the packages under it say what, and each
@@ -32,9 +34,11 @@ data:
       type: enum
       values:
         - builtin
+        - published
         - installed
       managed: true
-      description: builtin for the seeded authority, installed for the rest
+      description: builtin for the seeded authority, published for a provider's,
+        installed for the rest
     # Issue 010 runtime state, owned by repository-open, and here for the same
     # reason it is on the package row: an authority document that no longer
     # parses has to be markable, or the repository refuses to open instead of

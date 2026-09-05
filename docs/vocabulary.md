@@ -105,13 +105,26 @@ a package is for. Shipped vocabulary, a package whose stored rows say
 `source: builtin`, is writable only through a substrate path: the seed, an
 upgrade, an install, which is what the actors `substrate` and
 `bundle:<authority>:<package>` name. A generic API write into one is
-`forbidden`, and neither actor form can be claimed by a request. Everything
-else, the kinds the repository declares itself and the packages it installed,
-is the user's to write.
+`forbidden`, and neither actor form can be claimed by a request.
+
+A **provider** package is refused on the same terms. Installing one from the
+catalog's provider tier (`providers.substrate.reamde.dev/google` and the five
+beside it) writes `source: published` on its package row and its declarations,
+and afterwards a `POST …/vocabulary/apply` naming that package is `403`,
+whoever holds the token. The publisher ships each change with a version bump
+and the [upgrade preview](bundles.md#install-and-lifecycle) offers it; the
+RECORDS of a provider's kinds are the repository's as usual, and so is every
+lifecycle verb on its bundle. The same closure applied by hand from the files
+the binary ships carries no tier and lands `installed`, which is the one way to
+hold a provider's declarations open to editing
+([decision 0048](decisions/0048-providers-are-published-samples-are-copied.md)).
+
+Everything else, the kinds the repository declares itself and the sample
+packages it imported, is the user's to write.
 
 Opening a repository rebuilds its registry from the stored declaration
-records, shipped and installed alike, each carrying the source its rows
-record. Nothing consults the embedded tree, and a repository whose rows hold
+records, shipped, published and installed alike, each carrying the source its
+rows record. Nothing consults the embedded tree, and a repository whose rows hold
 no vocabulary at all refuses to open rather than serving a substrate in which
 nothing resolves.
 

@@ -318,4 +318,21 @@ describe("graphqlTypeName", () => {
       )
     ).toBe("Google_Person")
   })
+
+  it("prefixes a published provider kind too", () => {
+    // A provider's declarations are a copy the repository holds, so the server
+    // names them like any other non-seed kind (vocabulary GraphQLName).
+    expect(
+      graphqlTypeName(
+        "providers.substrate.reamde.dev/whoop/account",
+        "published"
+      )
+    ).toBe("Whoop_Account")
+  })
+
+  it("leaves a seeded kind bare", () => {
+    expect(graphqlTypeName("substrate.reamde.dev/core/token", "builtin")).toBe(
+      "Token"
+    )
+  })
 })

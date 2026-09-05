@@ -7,7 +7,10 @@ data:
   package: core
   # version 16: the package is the unit a declaration is versioned, owned and
   # quarantined in. This row is what the authority row used to be.
-  version: 16
+  # version 17: `source` gains `published`. A provider install writes it, and
+  # it is what closes the package to the repository's own token (decision
+  # record 0048).
+  version: 17
   description: >-
     One package whose kinds this repository holds: the group a declaration
     is versioned, owned and quarantined in. The row says who may write under
@@ -47,9 +50,11 @@ data:
       type: enum
       values:
         - builtin
+        - published
         - installed
       managed: true
-      description: builtin for seeded packages, installed for the rest
+      description: builtin for seeded packages, published for an installed
+        provider, installed for the rest
     # Issue 010 runtime state, owned by repository-open: set when a stored
     # closure no longer admits under the current binary — the package is left
     # out of the live registry and the repository opens without it. Re-applying

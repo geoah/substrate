@@ -172,6 +172,19 @@ var integrationFacets = map[string]bool{
 	"samples.substrate.reamde.dev/web":       false,
 }
 
+// providerPackage answers whether a catalog id is a PROVIDER: the tier whose
+// install lands `source: published`, closing that package's declarations to
+// the repository's own token afterwards (decision record 0048). Everything
+// else the catalog serves is a sample, which the repository installs and then
+// owns.
+//
+// It reads the integration facet rather than restating its list, because the
+// two name the same six ids: a provider is exactly the closure whose job is an
+// ongoing connection to an outside publisher, and one curated list cannot
+// disagree with itself. The `Tier` field replaces both, and this function is
+// the seam it lands on.
+func providerPackage(id string) bool { return integrationFacets[id] }
+
 // Catalog is the parsed set of shipped bundles, indexed by id.
 type Catalog struct {
 	bundles []*Bundle
@@ -459,7 +472,16 @@ func (c *Catalog) Install(ctx context.Context, actor substrate.Actor, id string,
 	// the bundle, exactly as the core tree's seed is attributed to
 	// `bundle:core`. The catalog is the source; the changelog is the truth, and
 	// nothing on the serving path reads the catalog again.
-	if _, err := inst.InstallBundleClosure(ctx, substrate.BundleActor(b.Authority, b.Package), b.vocabularyDocs, dataInputs); err != nil {
+	//
+	// A PROVIDER install says so: its packages land `source: published`, which
+	// is what closes them to the repository's token afterwards, and what
+	// promotes a provider an earlier install left `installed`. The same closure
+	// applied by hand (`substratectl apply -f` of these very files) carries no
+	// tier and stays the repository's own, which record 0047 sanctions and
+	// which is the only way to hold a provider's declarations open to
+	// editing.
+	if _, err := inst.InstallBundleClosure(ctx, substrate.BundleActor(b.Authority, b.Package), b.vocabularyDocs, dataInputs,
+		substrate.BundleInstall{Published: providerPackage(b.ID)}); err != nil {
 		return nil, err
 	}
 	return b, nil

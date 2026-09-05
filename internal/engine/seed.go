@@ -43,28 +43,47 @@ import (
 // applyVocabularyBatch, and the unit it decides on is the PACKAGE
 // (decision 0047).
 //
-//   - SHIPPED vocabulary — a package whose stored rows say `source: builtin`,
-//     which is exactly what the creation seed and shipped upgrades write — is
+//   - SHIPPED vocabulary, a package whose stored rows say `source: builtin`,
+//     which is exactly what the creation seed and shipped upgrades write, is
 //     writable only by a SUBSTRATE PATH: the seed, an install or an upgrade,
 //     which is what the actors `substrate` and `bundle:<authority>:<package>`
 //     name. A generic API write into one is refused here; those actors cannot
 //     be claimed by a request (substrate.ReservedActor, checked on the
 //     X-Substrate-Actor header), so "substrate path" means what it says.
-//   - Everything else — the repository's own kinds, and the packages it
-//     installed — belongs to the repository's user, who may write it.
+//   - A PUBLISHED package, a provider the catalog installed (`source:
+//     published`), is refused on the same terms (decision record 0048). Its
+//     publisher ships its declarations and the migrations that follow them, and
+//     a mirror kind edited under the sync that writes it breaks the next sync.
+//     The DATA records of its kinds are untouched by this: they are the
+//     repository's, written under the ordinary bundle-tier rules. The AUTHORITY
+//     row beside such a package is not published, because one authority
+//     document travels with every closure published under it.
+//   - Everything else, the repository's own kinds and the sample packages it
+//     imported, belongs to the repository's user, who may write it.
 //
 // It takes the PACKAGE identity and the registry that currently holds it, so a
 // package nobody has yet (a first declaration) is the user's to create.
 func authorizeDeclarationWrite(actor substrate.Actor, current *vocabulary.Registry, pkg string) error {
 	cur, ok := current.PackageByName(pkg)
-	if !ok || cur.Source != vocabulary.SourceBuiltin {
+	if !ok || isSubstratePath(actor) {
 		return nil
 	}
-	if isSubstratePath(actor) {
-		return nil
+	// An authority row is not a package, and saying so in the refusal is the
+	// difference between a message a reader can act on and one that names a
+	// thing that does not exist.
+	what := "package"
+	if cur.IsAuthority() {
+		what = "authority"
 	}
-	return fmt.Errorf("%w: %s is shipped vocabulary — it changes with the substrate (seed, upgrade, install), not through the API",
-		substrate.ErrForbidden, pkg)
+	switch cur.Source {
+	case vocabulary.SourceBuiltin:
+		return fmt.Errorf("%w: %s is a shipped %s: it changes with the substrate (seed, upgrade, install), not through the API",
+			substrate.ErrForbidden, pkg, what)
+	case vocabulary.SourcePublished:
+		return fmt.Errorf("%w: %s is a published %s: its publisher ships the declarations, so an install or an upgrade changes them, not the API",
+			substrate.ErrForbidden, pkg, what)
+	}
+	return nil
 }
 
 // authorizeNewPackage guards the OTHER half of the chokepoint: a package the

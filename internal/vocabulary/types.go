@@ -587,7 +587,10 @@ type Kind struct {
 	Package  string
 	Identity string
 	Version  int64
-	Source   string // "builtin" | "installed"
+	// Source is the declaring package's origin: SourceBuiltin (the seed),
+	// SourcePublished (a provider install) or SourceInstalled (everything the
+	// repository declared or imported).
+	Source string
 	// Description is what this kind is for, in the author's own words: it
 	// heads the kind's page in the console, so it says what the thing is and
 	// what writes it. A property's description is a tooltip and holds to one

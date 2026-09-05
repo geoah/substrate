@@ -25,7 +25,9 @@ data:
   # number. Additive, so live refinements are untouched.
   # version 8: an admitted value may be marked `deprecated` (issue 110):
   # reserved, stored, and read by no server-side path.
-  version: 9
+  # version 10: `source` gains `published`, the origin a provider install
+  # writes (decision record 0048).
+  version: 10
   names:
     singular: propertytype
   # id = "<authority>/<package>/<name>". A refinement is package-local — a
@@ -41,9 +43,11 @@ data:
       type: enum
       values:
         - builtin
+        - published
         - installed
       managed: true
-      description: builtin for seeded refinements, installed for bundle ones
+      description: builtin for seeded refinements, published for a provider's,
+        installed for bundle ones
     # NOT a reference, and the reason is identity: an authority is what this
     # declaration IS part of, not a record it points at. Pinning it made the
     # stored row spell it as a path while the manifest spelled the name, so one

@@ -212,6 +212,52 @@ func TestManagedPropertiesAreNotDocumentKeys(t *testing.T) {
 	}
 }
 
+// EVERY ORIGIN THE ENGINE WRITES IS A DECLARED VALUE. The projection stamps
+// `source` on a declaration row from the package it is projecting
+// (engine/vocabularywrite.go packageDeclarations), and the row is validated
+// against the declaration it lands under: an origin the enum does not list is
+// a write the engine refuses, so a seed, an install or the provider promotion
+// of decision record 0048 would fail on a kind that fell behind. The three
+// values are the vocabulary package's constants, named here so adding a fourth
+// without declaring it fails in the tree that has to carry it.
+func TestEveryDeclarationKindAdmitsEveryOrigin(t *testing.T) {
+	reg, err := vocabulary.LoadFS(kinds.Seed())
+	if err != nil {
+		t.Fatalf("load the seed: %v", err)
+	}
+	origins := []string{vocabulary.SourceBuiltin, vocabulary.SourcePublished, vocabulary.SourceInstalled}
+	// The declaration kinds that carry an origin at all. A function and an
+	// agent do not: `source` on a function is its BODY, and the projection
+	// stamps neither.
+	carriers := []string{
+		vocabulary.DocAuthority, vocabulary.DocPackage, vocabulary.DocActor, vocabulary.DocKind,
+		vocabulary.DocTrait, vocabulary.DocPropertyType, vocabulary.DocRecordMapping,
+	}
+	for _, short := range carriers {
+		ty, ok := reg.ByIdentity(vocabulary.CoreKind(short))
+		if !ok {
+			t.Fatalf("core declares no %s", short)
+		}
+		p, ok := ty.Props["source"]
+		if !ok {
+			t.Errorf("%s declares no source property, and the projection stamps one on its rows", short)
+			continue
+		}
+		declared := map[string]bool{}
+		for _, v := range p.ValueStrings() {
+			declared[v] = true
+		}
+		for _, origin := range origins {
+			if !declared[origin] {
+				t.Errorf("%s.source does not admit %q: a %s package's projection would be refused", short, origin, origin)
+			}
+		}
+		if len(declared) != len(origins) {
+			t.Errorf("%s.source admits %v, want exactly %v", short, p.ValueStrings(), origins)
+		}
+	}
+}
+
 // A KIND TITLES ITSELF (decision record 0016). The `title` every record
 // carries is one untyped column the engine derives from the kind's
 // displayTemplate; a kind without one stores whatever a writer sent there
