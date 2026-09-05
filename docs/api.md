@@ -526,13 +526,14 @@ Status codes follow the write: a create is `201`, an update or replace is
 
 ## Webhooks
 
-`POST /webhooks/{owner}/{trigger}` is the one route that takes a body and no
-bearer. `owner` is the repository's username and `trigger` the id of a
+`POST /webhooks/{authority}/{trigger}` is the one route that takes a body and
+no bearer. `authority` is the repository's authority (the name it publishes
+under, chosen at registration) and `trigger` the id of a
 `core.substrate.reamde.dev/trigger` record whose source is the `webhook` arm;
 the request becomes the delivery's envelope and the trigger's callable runs in
 the background ([functions](functions.md#the-delivery-envelope)). When the
 trigger declares `source.webhook.key`, the request carries it as a trailing
-path segment (`/webhooks/{owner}/{trigger}/{key}`), as `?key=` or as
+path segment (`/webhooks/{authority}/{trigger}/{key}`), as `?key=` or as
 `Authorization: Bearer <key>`; without one the endpoint is open to whoever can
 reach the server.
 

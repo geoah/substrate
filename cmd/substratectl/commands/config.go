@@ -15,12 +15,16 @@ import (
 // repository, so the whole of a stored credential is the
 // server, the user who logged in and the secret. TokenID is the token
 // record's id, kept so `substratectl logout` can revoke the very token it forgets.
+// Authority is the repository's public name, the one a webhook URL and a
+// delivery envelope carry; `register` records it and `login` carries the
+// stored one forward.
 type Context struct {
-	Name     string `yaml:"name"`
-	Server   string `yaml:"server"`
-	Username string `yaml:"username,omitempty"`
-	Token    string `yaml:"token,omitempty"`
-	TokenID  string `yaml:"tokenId,omitempty"`
+	Name      string `yaml:"name"`
+	Server    string `yaml:"server"`
+	Username  string `yaml:"username,omitempty"`
+	Authority string `yaml:"authority,omitempty"`
+	Token     string `yaml:"token,omitempty"`
+	TokenID   string `yaml:"tokenId,omitempty"`
 }
 
 // Config is the on-disk CLI configuration. The file holds bearer secrets and

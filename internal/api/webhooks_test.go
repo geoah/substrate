@@ -27,14 +27,14 @@ type webhookSvc struct {
 }
 
 type webhookCall struct {
-	owner, trigger, key string
-	req                 substrate.WebhookRequest
+	authority, trigger, key string
+	req                     substrate.WebhookRequest
 }
 
-func (s *webhookSvc) ReceiveWebhook(_ context.Context, owner, trigger, key string, req substrate.WebhookRequest) (string, error) {
+func (s *webhookSvc) ReceiveWebhook(_ context.Context, authority, trigger, key string, req substrate.WebhookRequest) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.calls = append(s.calls, webhookCall{owner, trigger, key, req})
+	s.calls = append(s.calls, webhookCall{authority, trigger, key, req})
 	return s.fid, s.err
 }
 
@@ -72,7 +72,7 @@ func (s *webhookSvc) last(t *testing.T) webhookCall {
 func TestWebhookAcceptsAndHandsOverTheRequest(t *testing.T) {
 	svc, h := webhookHandler("hook-abc", nil)
 	body := []byte(`{"action":"opened","n":1}`)
-	rec := postHook(h, "/webhooks/geoah/gh-issues?a=b&a=c", body, map[string]string{
+	rec := postHook(h, "/webhooks/geoah.example.com/gh-issues?a=b&a=c", body, map[string]string{
 		"Content-Type":   "application/json; charset=utf-8",
 		"X-GitHub-Event": "issues",
 		"Authorization":  "Bearer 0123456789abcdefXYZ",
@@ -86,8 +86,8 @@ func TestWebhookAcceptsAndHandsOverTheRequest(t *testing.T) {
 		t.Fatalf("body = %s", rec.Body.String())
 	}
 	c := svc.last(t)
-	if c.owner != "geoah" || c.trigger != "gh-issues" || c.key != "0123456789abcdefXYZ" {
-		t.Fatalf("addressed (%s, %s, %s)", c.owner, c.trigger, c.key)
+	if c.authority != "geoah.example.com" || c.trigger != "gh-issues" || c.key != "0123456789abcdefXYZ" {
+		t.Fatalf("addressed (%s, %s, %s)", c.authority, c.trigger, c.key)
 	}
 	if c.req.Method != http.MethodPost || c.req.ContentType != "application/json" {
 		t.Fatalf("method/type = %s %s", c.req.Method, c.req.ContentType)
@@ -113,11 +113,11 @@ func TestWebhookAcceptsAndHandsOverTheRequest(t *testing.T) {
 // callable's view of the query.
 func TestWebhookKeyFromPathQueryOrHeader(t *testing.T) {
 	svc, h := webhookHandler("f", nil)
-	postHook(h, "/webhooks/geoah/t/pathkey-0123456789?key=querykey", nil, map[string]string{"Authorization": "Bearer headerkey"})
+	postHook(h, "/webhooks/geoah.example.com/t/pathkey-0123456789?key=querykey", nil, map[string]string{"Authorization": "Bearer headerkey"})
 	if c := svc.last(t); c.key != "pathkey-0123456789" || c.trigger != "t" {
 		t.Fatalf("path key lost: %+v", c)
 	}
-	postHook(h, "/webhooks/geoah/t?key=querykey-0123456789&x=1", nil, map[string]string{"Authorization": "Bearer headerkey"})
+	postHook(h, "/webhooks/geoah.example.com/t?key=querykey-0123456789&x=1", nil, map[string]string{"Authorization": "Bearer headerkey"})
 	c := svc.last(t)
 	if c.key != "querykey-0123456789" {
 		t.Fatalf("query key lost: %+v", c)
@@ -125,11 +125,11 @@ func TestWebhookKeyFromPathQueryOrHeader(t *testing.T) {
 	if _, has := c.req.Query["key"]; has || c.req.Query["x"][0] != "1" {
 		t.Fatalf("query = %v", c.req.Query)
 	}
-	postHook(h, "/webhooks/geoah/t", nil, map[string]string{"Authorization": "bearer headerkey-0123456789"})
+	postHook(h, "/webhooks/geoah.example.com/t", nil, map[string]string{"Authorization": "bearer headerkey-0123456789"})
 	if c := svc.last(t); c.key != "headerkey-0123456789" {
 		t.Fatalf("header key lost: %+v", c)
 	}
-	postHook(h, "/webhooks/geoah/t", nil, nil)
+	postHook(h, "/webhooks/geoah.example.com/t", nil, nil)
 	if c := svc.last(t); c.key != "" || c.req.Body != nil {
 		t.Fatalf("an unkeyed empty POST = %+v", c)
 	}
@@ -138,12 +138,12 @@ func TestWebhookKeyFromPathQueryOrHeader(t *testing.T) {
 // Every service refusal is one 404, and a service without the seam says so.
 func TestWebhookRefusals(t *testing.T) {
 	_, h := webhookHandler("", substrate.ErrNotFound)
-	rec := postHook(h, "/webhooks/geoah/nope", []byte("{}"), nil)
+	rec := postHook(h, "/webhooks/geoah.example.com/nope", []byte("{}"), nil)
 	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "not_found") {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
 	}
 	plain := New(Config{Service: newFakeService()})
-	if rec := postHook(plain, "/webhooks/geoah/nope", []byte("{}"), nil); rec.Code != http.StatusNotImplemented {
+	if rec := postHook(plain, "/webhooks/geoah.example.com/nope", []byte("{}"), nil); rec.Code != http.StatusNotImplemented {
 		t.Fatalf("no seam: status = %d", rec.Code)
 	}
 }
@@ -152,18 +152,18 @@ func TestWebhookRefusals(t *testing.T) {
 // 431, and neither reaches the service.
 func TestWebhookBounds(t *testing.T) {
 	svc, h := webhookHandler("f", nil)
-	rec := postHook(h, "/webhooks/geoah/t", bytes.Repeat([]byte("x"), maxWebhookInline+1), map[string]string{"Content-Type": "text/plain"})
+	rec := postHook(h, "/webhooks/geoah.example.com/t", bytes.Repeat([]byte("x"), maxWebhookInline+1), map[string]string{"Content-Type": "text/plain"})
 	if rec.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("oversize body: status = %d", rec.Code)
 	}
-	rec = postHook(h, "/webhooks/geoah/t", nil, map[string]string{"X-Big": strings.Repeat("h", maxWebhookHeaderBytes)})
+	rec = postHook(h, "/webhooks/geoah.example.com/t", nil, map[string]string{"X-Big": strings.Repeat("h", maxWebhookHeaderBytes)})
 	if rec.Code != http.StatusRequestHeaderFieldsTooLarge {
 		t.Fatalf("oversize headers: status = %d", rec.Code)
 	}
 	if len(svc.calls) != 0 {
 		t.Fatalf("a refused request reached the service: %d calls", len(svc.calls))
 	}
-	if rec := postHook(h, "/webhooks/geoah/t", bytes.Repeat([]byte("x"), maxWebhookInline), map[string]string{"Content-Type": "text/plain"}); rec.Code != http.StatusAccepted {
+	if rec := postHook(h, "/webhooks/geoah.example.com/t", bytes.Repeat([]byte("x"), maxWebhookInline), map[string]string{"Content-Type": "text/plain"}); rec.Code != http.StatusAccepted {
 		t.Fatalf("a body at the cap: status = %d", rec.Code)
 	}
 }
@@ -190,7 +190,7 @@ func TestWebhookMultipartParts(t *testing.T) {
 	_, _ = typed.Write([]byte("inline, despite the media type"))
 	_ = mw.Close()
 
-	rec := postHook(h, "/webhooks/geoah/pebble-webhook", buf.Bytes(), map[string]string{
+	rec := postHook(h, "/webhooks/geoah.example.com/pebble-webhook", buf.Bytes(), map[string]string{
 		"Content-Type": mw.FormDataContentType(), "X-Pebble-Mode": "note",
 	})
 	if rec.Code != http.StatusAccepted {

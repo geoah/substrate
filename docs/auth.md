@@ -61,6 +61,12 @@ shipped vocabulary publishes), unique across the substrate, and permanent
 The repository's own `repository` record carries it, so a client that only
 speaks the record API can read it back.
 
+The authority is the repository's public name: a webhook URL
+(`POST /webhooks/{authority}/{trigger}`) and a delivery envelope's
+`repository.authority` carry it. The username is the login identifier, on
+`/login` and in the envelope's `repository.owner`, and appears in no public
+URL.
+
 A request that names no `recoveryPublicKey` asks the server to mint the
 recovery pair, and the response carries the age identity exactly once,
 beside the token secret: that `recoveryKey` is what opens the repository's

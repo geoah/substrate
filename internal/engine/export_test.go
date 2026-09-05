@@ -92,6 +92,6 @@ func refID(e *substrate.Record, name string) string {
 // ReceiveWebhookSync is the public webhook door with the fire run inline
 // rather than handed to the background supervisor, so a test asserts on what
 // the delivery wrote the moment the call returns.
-func ReceiveWebhookSync(ctx context.Context, svc substrate.Service, owner, trigger, key string, req substrate.WebhookRequest) (string, error) {
-	return svc.(*service).receiveWebhook(ctx, owner, trigger, key, req, true)
+func ReceiveWebhookSync(ctx context.Context, svc substrate.Service, authority, trigger, key string, req substrate.WebhookRequest) (string, error) {
+	return svc.(*service).receiveWebhook(ctx, authority, trigger, key, req, true)
 }

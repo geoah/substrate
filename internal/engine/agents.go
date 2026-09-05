@@ -67,7 +67,7 @@ func (ds *dataset) agentFire(ctx context.Context, tr *trigger, mode, fid string,
 		return nil, 0, err
 	}
 	defer release()
-	user, err := json.Marshal(fireEnvelope(envelope, fid, at, ds.Repository().Name))
+	user, err := json.Marshal(fireEnvelope(envelope, fid, at, ds.Repository().Name, ds.Repository().Authority))
 	if err != nil {
 		return nil, 0, err
 	}

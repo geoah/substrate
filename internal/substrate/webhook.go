@@ -36,10 +36,10 @@ type WebhookPart struct {
 
 // WebhookReceiver is the Service half of public webhook ingress, an optional
 // Service extension (see Service). The request carries no bearer: the path
-// names the repository owner and the trigger, and the trigger's own key, when
-// it declares one, is the credential. Returns the fire id the delivery runs
-// under; every refusal that must not distinguish "no such trigger" from "wrong
-// key" or "disabled" is ErrNotFound.
+// names the repository's AUTHORITY and the trigger, and the trigger's own key,
+// when it declares one, is the credential. Returns the fire id the delivery
+// runs under; every refusal that must not distinguish "no such trigger" from
+// "wrong key" or "disabled" is ErrNotFound.
 type WebhookReceiver interface {
-	ReceiveWebhook(ctx context.Context, owner, trigger, key string, req WebhookRequest) (string, error)
+	ReceiveWebhook(ctx context.Context, authority, trigger, key string, req WebhookRequest) (string, error)
 }

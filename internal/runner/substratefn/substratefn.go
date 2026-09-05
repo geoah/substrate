@@ -160,9 +160,11 @@ type Record struct {
 	Properties map[string]any `json:"properties"`
 }
 
-// Repository carries the repository's owner, for "assigned to me" guards.
+// Repository carries the repository's two names: the owner's username, for
+// "assigned to me" guards, and the authority it publishes under.
 type Repository struct {
-	Owner string `json:"owner"`
+	Owner     string `json:"owner"`
+	Authority string `json:"authority"`
 }
 
 // Budgets mirrors the manifest's `permissions.reads.budgets`.

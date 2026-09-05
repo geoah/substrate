@@ -31,31 +31,43 @@ const webhookFirePrefix = "hook-"
 var errWebhookRefused = fmt.Errorf("%w: no such webhook", substrate.ErrNotFound)
 
 // webhookPath is a webhook trigger's endpoint, relative to the server root.
-func webhookPath(owner, triggerID string) string {
-	return "/webhooks/" + owner + "/" + triggerID
+// The repository is named by its authority: the authority is what the
+// repository publishes under, and the username stays the login identifier.
+func webhookPath(authority, triggerID string) string {
+	return "/webhooks/" + authority + "/" + triggerID
 }
 
 // ReceiveWebhook is the public door (substrate.WebhookReceiver): resolve the
-// repository by its owner, the trigger by id, check the key when the trigger
-// declares one, spool the file parts into the blob store, then hand the fire
-// to the background supervisor and return. The sender gets its answer in
-// milliseconds while an agent callable may run for minutes, and a fire that
-// has STARTED is durable through deliverFire's park.
-func (s *service) ReceiveWebhook(ctx context.Context, owner, triggerID, key string, req substrate.WebhookRequest) (string, error) {
-	return s.receiveWebhook(ctx, owner, triggerID, key, req, false)
+// repository by its authority, the trigger by id, check the key when the
+// trigger declares one, spool the file parts into the blob store, then hand
+// the fire to the background supervisor and return. The sender gets its
+// answer in milliseconds while an agent callable may run for minutes, and a
+// fire that has STARTED is durable through deliverFire's park.
+func (s *service) ReceiveWebhook(ctx context.Context, authority, triggerID, key string, req substrate.WebhookRequest) (string, error) {
+	return s.receiveWebhook(ctx, authority, triggerID, key, req, false)
 }
 
 // receiveWebhook is ReceiveWebhook with the fire either detached (the door)
 // or run inline (tests asserting on what the delivery wrote).
-func (s *service) receiveWebhook(ctx context.Context, owner, triggerID, key string, req substrate.WebhookRequest, inline bool) (string, error) {
-	dsAny, err := s.Dataset(ctx, owner)
+func (s *service) receiveWebhook(ctx context.Context, authority, triggerID, key string, req substrate.WebhookRequest, inline bool) (string, error) {
+	repo, err := s.repositoryByAuthority(ctx, authority)
 	if err != nil {
-		if errors.Is(err, substrate.ErrNotFound) || errors.Is(err, substrate.ErrAuth) {
+		if errors.Is(err, substrate.ErrNotFound) {
 			return "", errWebhookRefused
 		}
 		return "", err
 	}
-	ds := dsAny.(*dataset)
+	ds, err := s.open(ctx, repo)
+	if err != nil {
+		// The authority resolved but the repository will not open (a failed
+		// upgrade, a quarantined vocabulary, a storage fault). The caller is
+		// unauthenticated, so the answer stays the door's one refusal: a 500
+		// here would tell a prober that this authority exists. The operator
+		// gets the reason instead.
+		s.log.Error("substrate: webhook door could not open the repository",
+			"authority", logSafeID(authority), "error", err)
+		return "", errWebhookRefused
+	}
 	tr, fid, at, envelope, err := ds.admitWebhook(ctx, triggerID, key, req)
 	if err != nil {
 		return "", err
@@ -98,7 +110,7 @@ func (ds *dataset) admitWebhook(ctx context.Context, triggerID, key string, req 
 	}
 	fid := webhookFirePrefix + wid
 	at := nowUTC()
-	envelope := runner.FireEnvelope(fid, at, ds.Repository().Name)
+	envelope := runner.FireEnvelope(fid, at, ds.Repository().Name, ds.Repository().Authority)
 	envelope["request"] = webhookRequestEnvelope(req, parts)
 	return tr, fid, at, envelope, nil
 }

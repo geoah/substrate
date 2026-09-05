@@ -12,7 +12,7 @@
 #                                           instruction the assistant acts on
 #
 # The URL is the webhook trigger's (triggers.yaml):
-# POST /webhooks/{owner}/pebble-webhook, open unless the owner sets
+# POST /webhooks/{authority}/pebble-webhook, open unless the owner sets
 # `source.webhook.key`. The host parses the multipart body and stores the
 # audio part in the repository's blob store before the function runs, so the
 # body reads a blob digest, never bytes.

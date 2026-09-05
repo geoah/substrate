@@ -162,9 +162,11 @@ to the same admission. A snippet that opens with `get people` on a fresh
 substrate is wrong, and was.
 
 Config is `~/.config/substratectl/config.yaml` (override with
-`SUBSTRATECTL_CONFIG`): named contexts of `{name, server, username, token,
-tokenId}` — **no repository**, because the token implies it, and the token id
-so `logout` can revoke the very token it forgets. `SUBSTRATE_SERVER` /
+`SUBSTRATECTL_CONFIG`): named contexts of `{name, server, username, authority,
+token, tokenId}` — **no repository**, because the token implies it; the token
+id so `logout` can revoke the very token it forgets, and the authority (the
+repository's public name, written by `register` and carried forward by
+`login`) because a webhook URL is built from it. `SUBSTRATE_SERVER` /
 `SUBSTRATE_TOKEN` are canonical and override the file (`SS_*` is the one
 accepted alias); flags override both. A password is NEVER an argument — every
 prompt has a flag or a `--*-stdin` twin so the same command scripts headlessly.

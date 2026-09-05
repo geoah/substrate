@@ -83,9 +83,14 @@ configure.
 			if contextName == "" {
 				contextName = username
 			}
+			// upsertContext replaces the whole struct, and login learns no
+			// authority: the one `register` stored is carried forward rather
+			// than dropped.
+			prev, _ := cfg.context(contextName)
 			cfg.upsertContext(Context{
 				Name: contextName, Server: server, Username: username,
-				Token: res.Secret, TokenID: res.Token.ID,
+				Authority: prev.Authority,
+				Token:     res.Secret, TokenID: res.Token.ID,
 			})
 			if err := a.saveConfig(cfg); err != nil {
 				return err

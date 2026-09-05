@@ -473,6 +473,36 @@ func TestRegisterEnrollsThenCommitsAndEndsLoggedIn(t *testing.T) {
 	}
 }
 
+// The stored context carries the repository's AUTHORITY, the public name a
+// webhook URL is built from. `register` records the one the server answered
+// with, and `login`, which is told no authority at all, must carry the stored
+// one forward instead of replacing the context without it.
+func TestRegisterStoresTheAuthorityAndLoginKeepsIt(t *testing.T) {
+	h := newHarness(t)
+	h.stdin.WriteString("hunter2\nhunter2\n123456\n")
+	h.mustRun("register", "--server", h.server, "--invite-code", "let-me-in", "--username", "geoah")
+	cfg, err := loadConfig(h.configPath)
+	if err != nil {
+		t.Fatalf("read config after register: %v", err)
+	}
+	if len(cfg.Contexts) != 1 || cfg.Contexts[0].Authority != "geoah.127.0.0.1" {
+		t.Fatalf("register stored %+v, want the authority the server answered", cfg.Contexts)
+	}
+
+	h.stdin.WriteString("hunter2\n")
+	h.mustRun("login", "--server", h.server, "--username", "geoah", "--totp-code", "123456")
+	cfg, err = loadConfig(h.configPath)
+	if err != nil {
+		t.Fatalf("read config after login: %v", err)
+	}
+	if len(cfg.Contexts) != 1 || cfg.Contexts[0].Authority != "geoah.127.0.0.1" {
+		t.Fatalf("login dropped the stored authority: %+v", cfg.Contexts)
+	}
+	if cfg.Contexts[0].Token == "" {
+		t.Fatalf("login stored no token: %+v", cfg.Contexts)
+	}
+}
+
 // --totp-secret brings your own seed, which is what makes an unattended
 // registration possible: no enrollment round trip, nothing to read back.
 func TestRegisterWithOwnSeedSkipsTheEnrollment(t *testing.T) {

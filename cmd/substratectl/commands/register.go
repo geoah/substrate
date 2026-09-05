@@ -166,7 +166,8 @@ substrate names it <username>.<its own host>. It is permanent.`,
 			}
 			cfg.upsertContext(Context{
 				Name: contextName, Server: server, Username: username,
-				Token: res.Secret, TokenID: res.Token.ID,
+				Authority: res.Authority,
+				Token:     res.Secret, TokenID: res.Token.ID,
 			})
 			if err := a.saveConfig(cfg); err != nil {
 				// The registration LANDED: the one-time keys must not die

@@ -7,9 +7,10 @@
 #   schedule: {recurrence: <RRULE>, timezone: <IANA name>, startsAt?: RFC3339}
 #   webhook:  {key?: <16..128 url-safe chars>}   # a public endpoint
 #
-# A webhook arm is reached at POST /webhooks/{owner}/{trigger}. With no key it
-# is open to anyone who can reach the server; with one, the request carries it
-# as a trailing path segment, as `?key=`, or as `Authorization: Bearer`. The
+# A webhook arm is reached at POST /webhooks/{authority}/{trigger}, where the
+# authority is the repository's own. With no key it is open to anyone who can
+# reach the server; with one, the request carries it as a trailing path
+# segment, as `?key=`, or as `Authorization: Bearer`. The
 # callable receives the request (method, headers, query, body or parsed
 # multipart parts) under the envelope's `request` (decision record 0045).
 #
