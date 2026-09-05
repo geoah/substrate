@@ -1,5 +1,6 @@
 ---
-status: accepted
+status: superseded
+superseded-by: 0050
 date: 2026-08-15
 decision-makers: George Antoniadis
 ---
