@@ -282,12 +282,13 @@ func TestImportingTasksWithLinearInstalledLandsTheIssueMapping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get the minted person: %v", err)
 	}
-	// A SHELL, and empty on purpose: the issue mapping carries a `match`
-	// block and no `map` block, because an issue describes work and nothing of
-	// it belongs on the human. So the probe finds nobody, a shell is minted,
-	// and not even the address it matched on is copied onto it. Prominence
-	// stays at its initial `utility` until an address book or the owner
-	// promotes the person.
+	// A SHELL, and empty on purpose. The issue DOES carry an assignee address,
+	// so the probe runs; no person in this repository holds that address yet,
+	// and zero candidates mint rather than guess. What lands is bare, because
+	// the issue mapping carries a `match` block and no `map` block: an issue
+	// describes work, and nothing of it belongs on the human, not even the
+	// address the probe matched on. Prominence stays at its initial `utility`
+	// until an address book or the owner promotes the person.
 	if got := storedStrings(person.Properties["emails"]); len(got) != 0 {
 		t.Errorf("the minted person carries %v; the issue mapping maps nothing", got)
 	}
@@ -361,6 +362,51 @@ func TestASuggestedMappingIsBlockedByAnOlderProvider(t *testing.T) {
 	}
 	if _, err := ds.Get(ctx, mappingKind, landedMapping); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the blocked mapping landed: %v", err)
+	}
+}
+
+// THE VERBATIM DOOR REPORTS WHAT IT WROTE. `install` of a sample lands the
+// closure under the placeholder authority, unrehomed, so the mapping's
+// declaration is there too, and a report naming the rehomed id would name a
+// record nobody wrote. The door's spelling is the door's own.
+func TestTheVerbatimInstallReportsTheShippedSpelling(t *testing.T) {
+	ds := newDataset(t)
+	c := loadCatalog(t)
+	ctx := context.Background()
+	people, ok := c.ByID(peopleSampleID)
+	if !ok {
+		t.Fatalf("no %s in the shipped catalog", peopleSampleID)
+	}
+	shippedMapping := peopleSampleID + "/githubuserperson"
+
+	if _, _, err := c.Install(ctx, substrate.ActorAPI, githubProviderID, ds); err != nil {
+		t.Fatalf("install %s: %v", githubProviderID, err)
+	}
+	_, report, err := c.Install(ctx, substrate.ActorAPI, peopleSampleID, ds)
+	if err != nil {
+		t.Fatalf("install %s verbatim: %v", peopleSampleID, err)
+	}
+	got := reported(t, report, shippedMapping)
+	if got.State != substrate.SuggestedMappingLanded {
+		t.Fatalf("the verbatim install reported %+v, want landed", got)
+	}
+	if got.To != peopleSampleID+"/person" {
+		t.Errorf("to = %q, want the kind this door landed: %s/person", got.To, peopleSampleID)
+	}
+	// The id the report named is the record that exists, and the rehomed one
+	// does not.
+	if _, err := ds.Get(ctx, mappingKind, got.ID); err != nil {
+		t.Fatalf("the reported mapping %s is not a record here: %v", got.ID, err)
+	}
+	if _, err := ds.Get(ctx, mappingKind, homeAuthority+"/people/githubuserperson"); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("a verbatim install wrote a rehomed mapping: %v", err)
+	}
+	// And a READ afterwards agrees, both fields: it prefers the rehomed
+	// spelling, finds neither the kind nor the mapping there, and answers
+	// with what this repository actually holds.
+	state := suggestedState(t, people, ds, shippedMapping)
+	if state.State != substrate.SuggestedMappingLanded || state.To != peopleSampleID+"/person" {
+		t.Fatalf("the read = %+v, want landed onto %s/person", state, peopleSampleID)
 	}
 }
 

@@ -570,11 +570,17 @@ function buildColumns(
                 <UpgradeButton row={row.original} />
               )}
             </div>
-          ) : readySuggestedMappings(mappings(row.original)).length > 0 ? (
+          ) : row.original.tier === "sample" &&
+            readySuggestedMappings(mappings(row.original)).length > 0 ? (
             // A held SAMPLE is never offered an upgrade (decision record
             // 0048), so this is the one action that lands a mapping the first
             // import dropped: re-import the closure, now that the provider it
             // reads is here.
+            //
+            // THE TIER IS PART OF THE GATE. A provider row's mappings are the
+            // INBOUND ones (which samples project onto it), so without this a
+            // held provider with a ready sample mapping would offer to import
+            // ITSELF, and the import door refuses a provider id.
             <div className="flex justify-end">
               <ImportAgainButton
                 row={row.original}

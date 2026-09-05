@@ -127,6 +127,21 @@ function peopleStatus(): BundleStatus {
   }
 }
 
+/** The provider's status once installed: a held provider is what makes the
+ * "Import again" gate reachable on a row that must never offer it. */
+function githubStatus(): BundleStatus {
+  return {
+    id: GITHUB,
+    name: "github",
+    authority: "providers.substrate.reamde.dev",
+    package: "github",
+    installed: true,
+    enabled: true,
+    kinds: 1,
+    liveRecords: 0,
+  }
+}
+
 function renderPage(ui: ReactElement) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -224,8 +239,8 @@ describe("Registry suggested mappings", () => {
     })
     renderPage(<RegistryPage />)
     const detail = expand(await rowOf("people"))
-    const landed = within(detail).getByTitle((title) =>
-      title.includes(`github/user projects onto ${HOME}/people/person: landed.`)
+    const landed = within(detail).getByTitle(
+      new RegExp(`github/user projects onto ${HOME}/people/person: landed\\.`)
     )
     expect(landed.textContent).toContain("user → person")
     expect(landed.textContent).toContain("landed")
@@ -342,13 +357,20 @@ describe("Registry suggested mappings", () => {
 
   it("lists on a provider the samples that carry a mapping onto it", async () => {
     serve({
-      statuses: [peopleStatus()],
+      statuses: [peopleStatus(), githubStatus()],
       catalog: [people([mapping({ state: "ready" })], true), githubEntry],
     })
     renderPage(<RegistryPage />)
-    const detail = expand(await rowOf("github"))
+    const row = await rowOf("github")
+    const detail = expand(row)
     const chip = within(detail).getByTitle(/import people again\./)
     expect(chip.textContent).toContain("people: user → person")
     expect(chip.textContent).toContain("ready")
+    // A PROVIDER IS NEVER RE-IMPORTED. The mappings on this row are the
+    // inbound ones, the people sample's, so offering "Import again" here
+    // would POST a provider id at the import door, which the server refuses.
+    expect(
+      within(row).queryByRole("button", { name: /Import again/ })
+    ).toBeNull()
   })
 })

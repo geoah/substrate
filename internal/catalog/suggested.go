@@ -27,6 +27,28 @@ import (
 // says a projection is running.
 const coreMappingKind = vocabulary.PackageCore + "/" + vocabulary.DocRecordMapping
 
+// suggestedView is WHICH SPELLING a caller is asking about, because a suggested
+// mapping has two identities and they are not interchangeable:
+// `samples.substrate.reamde.dev/people/githubuserperson` as the tree ships it,
+// and `<home>/people/githubuserperson` as an import rehomes it.
+//
+// A door must report the one it WRITES, or it names a declaration that does not
+// exist: Install applies the shipped documents verbatim, Import applies the
+// rehomed ones. A read has no such commitment and asks for both, preferring
+// whichever this repository actually holds.
+type suggestedView int
+
+const (
+	// viewHeld is the read's: prefer the rehomed identity (what an import
+	// would land), but report the shipped one where that is what is here.
+	viewHeld suggestedView = iota
+	// viewShipped is Catalog.Install's: the closure lands verbatim.
+	viewShipped
+	// viewRehomed is Catalog.Import's: the closure lands under this
+	// repository's own authority.
+	viewRehomed
+)
+
 // suggestedResolution is one mapping's answer: what to report, the id the
 // document carries in the tree (what a prune matches on), and whether the
 // document belongs in the batch a door applies.
@@ -49,7 +71,7 @@ type suggestedResolution struct {
 // is a fault and is returned: reporting a database error as "waiting" would
 // tell the reader to install a provider they already have.
 func (b *Bundle) SuggestedMappingStates(ctx context.Context, ds substrate.Dataset) ([]substrate.SuggestedMapping, error) {
-	resolved, err := b.resolveSuggested(ctx, ds)
+	resolved, err := b.resolveSuggested(ctx, ds, viewHeld)
 	if err != nil {
 		return nil, err
 	}
@@ -70,8 +92,8 @@ func (b *Bundle) SuggestedMappingStates(ctx context.Context, ds substrate.Datase
 // that was never in the batch. The opposite race is admission's to refuse: a
 // provider uninstalled between this decision and the commit fails the whole
 // apply, and then there is no report at all.
-func (b *Bundle) admitted(ctx context.Context, ds substrate.Dataset) ([]map[string]any, []substrate.SuggestedMapping, error) {
-	resolved, err := b.resolveSuggested(ctx, ds)
+func (b *Bundle) admitted(ctx context.Context, ds substrate.Dataset, view suggestedView) ([]map[string]any, []substrate.SuggestedMapping, error) {
+	resolved, err := b.resolveSuggested(ctx, ds, view)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -91,14 +113,14 @@ func (b *Bundle) admitted(ctx context.Context, ds substrate.Dataset) ([]map[stri
 }
 
 // resolveSuggested answers every suggested mapping this closure ships.
-func (b *Bundle) resolveSuggested(ctx context.Context, ds substrate.Dataset) ([]suggestedResolution, error) {
+func (b *Bundle) resolveSuggested(ctx context.Context, ds substrate.Dataset, view suggestedView) ([]suggestedResolution, error) {
 	if len(b.suggested) == 0 {
 		return nil, nil
 	}
 	home := ds.Repository().Authority
 	out := make([]suggestedResolution, 0, len(b.suggested))
 	for _, sm := range b.suggested {
-		r, err := b.resolveOne(ctx, ds, sm, home)
+		r, err := b.resolveOne(ctx, ds, sm, home, view)
 		if err != nil {
 			return nil, err
 		}
@@ -116,11 +138,13 @@ func (b *Bundle) resolveSuggested(ctx context.Context, ds substrate.Dataset) ([]
 //  3. it does not fit the source kind this repository holds: BLOCKED, naming
 //     the problems, because keeping it would refuse the whole closure;
 //  4. otherwise READY: importing the sample is what lands it.
-func (b *Bundle) resolveOne(ctx context.Context, ds substrate.Dataset, sm vocabulary.SuggestedMapping, home string) (suggestedResolution, error) {
+func (b *Bundle) resolveOne(ctx context.Context, ds substrate.Dataset, sm vocabulary.SuggestedMapping, home string, view suggestedView) (suggestedResolution, error) {
+	ids := b.spellings(sm.ID, home, view)
+	tos := b.spellings(sm.To, home, view)
 	wire := substrate.SuggestedMapping{
-		ID:      b.landedSpelling(sm.ID, home),
+		ID:      ids[0],
 		From:    sm.From,
-		To:      b.landedSpelling(sm.To, home),
+		To:      tos[0],
 		Package: sm.Package,
 	}
 	from, err := ds.KindByRef(ctx, sm.From)
@@ -131,7 +155,17 @@ func (b *Bundle) resolveOne(ctx context.Context, ds substrate.Dataset, sm vocabu
 	case err != nil:
 		return suggestedResolution{}, err
 	}
-	held, err := b.heldMapping(ctx, ds, sm.ID, home)
+	// The TARGET first, because it settles the spelling both fields report:
+	// where this repository holds the subject kind, the mapping's declaration
+	// is under that same authority.
+	to, err := b.heldKind(ctx, ds, tos)
+	if err != nil {
+		return suggestedResolution{}, err
+	}
+	if to != nil {
+		wire.To = to.Identity
+	}
+	held, err := b.heldMapping(ctx, ds, ids)
 	if err != nil {
 		return suggestedResolution{}, err
 	}
@@ -139,10 +173,6 @@ func (b *Bundle) resolveOne(ctx context.Context, ds substrate.Dataset, sm vocabu
 		wire.ID = held
 		wire.State = substrate.SuggestedMappingLanded
 		return suggestedResolution{wire: wire, shipped: sm.ID, keep: true}, nil
-	}
-	to, err := b.heldKind(ctx, ds, sm.To, home)
-	if err != nil {
-		return suggestedResolution{}, err
 	}
 	if problems := fitProblems(sm, from, to); len(problems) > 0 {
 		wire.State = substrate.SuggestedMappingBlocked
@@ -153,12 +183,10 @@ func (b *Bundle) resolveOne(ctx context.Context, ds substrate.Dataset, sm vocabu
 	return suggestedResolution{wire: wire, shipped: sm.ID, keep: true}, nil
 }
 
-// heldMapping is the id the mapping declaration has HERE, or "" when this
-// repository holds none. Both spellings are asked, for the same reason HeldID
-// asks both: an import lands the rehomed id and a verbatim install lands the
-// shipped one.
-func (b *Bundle) heldMapping(ctx context.Context, ds substrate.Dataset, shipped, home string) (string, error) {
-	for _, id := range b.spellings(shipped, home) {
+// heldMapping is the id the mapping declaration has HERE, out of the
+// candidates the view asked for, or "" when this repository holds none.
+func (b *Bundle) heldMapping(ctx context.Context, ds substrate.Dataset, ids []string) (string, error) {
+	for _, id := range ids {
 		_, err := ds.Get(ctx, coreMappingKind, id)
 		switch {
 		case err == nil:
@@ -172,10 +200,10 @@ func (b *Bundle) heldMapping(ctx context.Context, ds substrate.Dataset, shipped,
 	return "", nil
 }
 
-// heldKind resolves the mapping's TARGET kind, either spelling, or nil where
-// this repository has not taken the sample yet.
-func (b *Bundle) heldKind(ctx context.Context, ds substrate.Dataset, shipped, home string) (*substrate.KindInfo, error) {
-	for _, ref := range b.spellings(shipped, home) {
+// heldKind resolves the mapping's TARGET kind out of the same candidates, or
+// nil where this repository has not taken the sample yet.
+func (b *Bundle) heldKind(ctx context.Context, ds substrate.Dataset, refs []string) (*substrate.KindInfo, error) {
+	for _, ref := range refs {
 		info, err := ds.KindByRef(ctx, ref)
 		switch {
 		case err == nil:
@@ -189,15 +217,23 @@ func (b *Bundle) heldKind(ctx context.Context, ds substrate.Dataset, shipped, ho
 	return nil, nil
 }
 
-// spellings is the rehomed identity and the shipped one, in that order: an
-// import lands the first, a verbatim install the second, and a sample can be
-// held either way.
-func (b *Bundle) spellings(shipped, home string) []string {
+// spellings is the identities this view is about, in preference order. A door
+// gets exactly ONE, the spelling it applies, so its report can never name a
+// declaration it did not write; a read gets both, rehomed first, because an
+// import is the sample door and a verbatim install is the other way a sample
+// can be here.
+func (b *Bundle) spellings(shipped, home string, view suggestedView) []string {
 	landed := b.landedSpelling(shipped, home)
-	if landed == shipped {
+	switch {
+	case view == viewShipped:
 		return []string{shipped}
+	case view == viewRehomed:
+		return []string{landed}
+	case landed == shipped:
+		return []string{shipped}
+	default:
+		return []string{landed, shipped}
 	}
-	return []string{landed, shipped}
 }
 
 // landedSpelling rewrites one of this closure's own identities onto the
@@ -285,9 +321,15 @@ func pathProblem(kindRef string, props map[string]any, raw string) string {
 }
 
 // columnProp names the properties a record carries that no declaration
-// mentions: `title` always, the temporals where a capability binds them. The
-// loader is the authority on which of the three temporals a kind actually
-// carries; this only has to stop reporting them as missing.
+// mentions: `title`, and the three temporals.
+//
+// It is DELIBERATELY LOOSER than the loader, which admits a temporal only
+// where the kind binds it as a hot property (vocabulary's own columnProp asks
+// UsesHot). This one accepts all three unconditionally, and the direction is
+// the safe one: the worst it does is call a mapping ready that the loader then
+// refuses on the path, which is the ordinary refusal a reader would have got
+// anyway. Tightening it would mean the opposite, blocking a mapping that would
+// have admitted.
 func columnProp(name string) bool {
 	switch name {
 	case "title", "at", "endsAt", "dueAt":

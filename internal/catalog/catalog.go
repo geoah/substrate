@@ -405,8 +405,9 @@ func (c *Catalog) Install(ctx context.Context, actor substrate.Actor, id string,
 	opts := substrate.BundleInstall{Published: b.Tier == substrate.TierProvider}
 	// A sample installed VERBATIM takes the same suggested-mapping filter an
 	// import does: the mapping's `from` is a provider package either way, and
-	// admission refuses it either way while that package is absent.
-	vocabularyDocs, report, err := b.admitted(ctx, ds)
+	// admission refuses it either way while that package is absent. The
+	// report is SHIPPED-spelled, because that is what this door applies.
+	vocabularyDocs, report, err := b.admitted(ctx, ds, viewShipped)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -459,7 +460,7 @@ func (c *Catalog) Import(ctx context.Context, actor substrate.Actor, id string, 
 	// documents, and the report that comes back with them is what this door
 	// answers: it names the rehomed ids, because those are the declarations
 	// the apply below writes.
-	kept, report, err := b.admitted(ctx, ds)
+	kept, report, err := b.admitted(ctx, ds, viewRehomed)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -555,7 +556,7 @@ func (c *Catalog) Upgrade(ctx context.Context, id string, ds substrate.Dataset) 
 	// and the version-motion fixtures that load a sample closure as a
 	// provider root are where the difference shows: previewing a dropped
 	// mapping reports it as a blocker and hides the real ones.
-	vocabularyDocs, _, err := b.admitted(ctx, ds)
+	vocabularyDocs, _, err := b.admitted(ctx, ds, viewShipped)
 	if err != nil {
 		return nil, err
 	}
