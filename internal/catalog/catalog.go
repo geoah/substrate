@@ -94,6 +94,55 @@ func (b *Bundle) HeldID(held map[string]bool, homeAuthority string) string {
 	return ""
 }
 
+// SuggestedMappingStates answers this closure's suggested mappings with the
+// state each has in ds's repository: `landed` where the provider package its
+// source kind lives in is installed, `waiting` where it is not (decision
+// record 0049). The ids are the shipped spellings, so a sample's still name
+// the placeholder authority the import rehomes.
+//
+// A read that fails for any reason OTHER than the kind's absence is a fault
+// and is returned: reporting a database error as "waiting" would drop the
+// mapping on the next import and say the provider was missing.
+func (b *Bundle) SuggestedMappingStates(ctx context.Context, ds substrate.Dataset) ([]substrate.SuggestedMapping, error) {
+	if len(b.SuggestedMappings) == 0 {
+		return nil, nil
+	}
+	out := make([]substrate.SuggestedMapping, 0, len(b.SuggestedMappings))
+	for _, sm := range b.SuggestedMappings {
+		_, err := ds.KindByRef(ctx, sm.From)
+		switch {
+		case err == nil:
+			sm.State = substrate.SuggestedMappingLanded
+		case errors.Is(err, substrate.ErrNotFound):
+			sm.State = substrate.SuggestedMappingWaiting
+		default:
+			return nil, err
+		}
+		out = append(out, sm)
+	}
+	return out, nil
+}
+
+// admitted is the closure BOTH doors apply: the schema documents with every
+// waiting suggested mapping dropped, and the state of each one for the
+// response. A mapping naming a kind this repository does not have would be
+// refused by admission, so the door drops it instead of handing the reader a
+// refusal for something they did not ask for; `installs:` is pruned with it,
+// because the closure is the package.
+func (b *Bundle) admitted(ctx context.Context, ds substrate.Dataset) ([]map[string]any, []substrate.SuggestedMapping, error) {
+	states, err := b.SuggestedMappingStates(ctx, ds)
+	if err != nil {
+		return nil, nil, err
+	}
+	drop := map[string]bool{}
+	for _, sm := range states {
+		if sm.State == substrate.SuggestedMappingWaiting {
+			drop[sm.ID] = true
+		}
+	}
+	return vocabulary.WithoutMappings(b.vocabularyDocs, drop), states, nil
+}
+
 // Catalog is the parsed set of shipped bundles, indexed by id.
 type Catalog struct {
 	bundles []*Bundle
@@ -325,6 +374,15 @@ func bundleFromDocs(docs []map[string]any) (*Bundle, error) {
 			b.Closure.Mappings = append(b.Closure.Mappings, id)
 		}
 	}
+	// The SUGGESTED half of that mapping list: the ones whose source kind
+	// lives in another package, which the two doors admit only where this
+	// repository holds it. Read off the documents, because nothing marks one
+	// (decision record 0049).
+	for _, sm := range vocabulary.SuggestedMappings(docs) {
+		b.SuggestedMappings = append(b.SuggestedMappings, substrate.SuggestedMapping{
+			ID: sm.ID, From: sm.From, To: sm.To, Package: sm.Package,
+		})
+	}
 	if !found {
 		return nil, nil
 	}
@@ -365,12 +423,12 @@ func (c *Catalog) Warnings() []string { return c.warnings }
 // the delivery wiring upserts in place.
 //
 // A SAMPLE takes Import instead, which lands the same closure under the
-// repository's own authority. Install still admits one, and that is
-// deliberate for now: the six shipped providers pin sample kinds
-// (`to: samples.substrate.reamde.dev/people/person`) and name sample packages
-// under `requires:`, so a repository that cannot install a sample verbatim
-// cannot install Google, GitHub or Linear at all. The door closes when phase 4
-// of docs/plans/providers-and-samples.md decouples them.
+// repository's own authority. Install still admits one, verbatim under the
+// placeholder: nothing in the tree needs that door now that no provider names
+// a sample package, but a repository that wants the shipped vocabulary under
+// the shipped authority may still ask for it, which is what
+// `authorizeNewPackage` sanctions. It takes the same suggested-mapping filter
+// an import does.
 func (c *Catalog) Install(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset) (*Bundle, error) {
 	b, err := c.installable(actor, id)
 	if err != nil {
@@ -392,7 +450,14 @@ func (c *Catalog) Install(ctx context.Context, actor substrate.Actor, id string,
 	// stays the repository's own, which record 0047 sanctions and which is the
 	// only way to hold a provider's declarations open to editing.
 	opts := substrate.BundleInstall{Published: b.Tier == substrate.TierProvider}
-	if err := install(ctx, ds, substrate.BundleActor(b.Authority, b.Package), b.vocabularyDocs, b.dataDocs, opts); err != nil {
+	// A sample installed VERBATIM takes the same suggested-mapping filter an
+	// import does: the mapping's `from` is a provider package either way, and
+	// admission refuses it either way while that package is absent.
+	vocabularyDocs, _, err := b.admitted(ctx, ds)
+	if err != nil {
+		return nil, err
+	}
+	if err := install(ctx, ds, substrate.BundleActor(b.Authority, b.Package), vocabularyDocs, b.dataDocs, opts); err != nil {
 		return nil, err
 	}
 	return b, nil
@@ -415,6 +480,14 @@ func (c *Catalog) Install(ctx context.Context, actor substrate.Actor, id string,
 // Requirements are not special-cased: the rehomed `requires:` names the
 // repository's own packages, so ordinary admission refuses an import whose
 // sibling sample has not been imported yet, naming what to import first.
+//
+// SUGGESTED MAPPINGS are: a sample ships one per provider it knows, onto a
+// kind of its own, and the import keeps only the ones whose provider this
+// repository holds. The rest are dropped with their `installs:` entries and
+// reported `waiting`, because a mapping naming an absent kind is refused by
+// admission and would cost the reader the whole import. Installing the
+// provider and importing again lands them; that second import REPLACES the
+// package, which is what a re-import always does (decision record 0048).
 func (c *Catalog) Import(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset) (*Bundle, error) {
 	b, err := c.installable(actor, id)
 	if err != nil {
@@ -429,7 +502,13 @@ func (c *Catalog) Import(ctx context.Context, actor substrate.Actor, id string, 
 		return nil, fmt.Errorf("%w: this repository has no authority of its own, so there is nowhere to import %s to",
 			substrate.ErrValidation, b.ID)
 	}
-	vocabularyDocs, err := vocabulary.RehomeAuthority(b.vocabularyDocs, b.Authority, home)
+	// The suggested mappings are filtered BEFORE the rehome, so the ids that
+	// are dropped are the shipped ones the catalog reports.
+	kept, _, err := b.admitted(ctx, ds)
+	if err != nil {
+		return nil, err
+	}
+	vocabularyDocs, err := vocabulary.RehomeAuthority(kept, b.Authority, home)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s: %w", substrate.ErrValidation, b.ID, err)
 	}
@@ -514,7 +593,14 @@ func (c *Catalog) Upgrade(ctx context.Context, id string, ds substrate.Dataset) 
 	if !ok {
 		return nil, nil
 	}
-	plan, err := p.PlanBundleUpgrade(ctx, b.vocabularyDocs)
+	// The preview is of what the DOOR would apply, so it runs over the same
+	// filtered closure: previewing a suggested mapping whose provider is
+	// absent would report the drop as a blocker and hide the real ones.
+	vocabularyDocs, _, err := b.admitted(ctx, ds)
+	if err != nil {
+		return nil, err
+	}
+	plan, err := p.PlanBundleUpgrade(ctx, vocabularyDocs)
 	if err != nil {
 		return nil, err
 	}

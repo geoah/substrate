@@ -423,6 +423,11 @@ func TestShippedCallableActorsAreDistinct(t *testing.T) {
 // into ONE seed registry, through the same BuildPackages+InstallAll pair
 // admission runs (the pair that also refuses a GraphQL name claimed twice),
 // so the whole shipped set has to coexist without a database.
+//
+// PROVIDERS GO FIRST, then the samples in `requires:` order, because a
+// sample's SUGGESTED MAPPINGS name a provider's mirror as their source
+// (decision record 0049): this is the install order in which they all land,
+// and the mapping set at the end is what they projected.
 func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
@@ -442,19 +447,52 @@ func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 		t.Fatalf("load the seed: %v", err)
 	}
 	done := map[string]bool{}
-	for _, b := range cat.Bundles() {
-		if err := installClosure(reg, byPackage, b, done); err != nil {
-			t.Fatal(err)
+	for _, tier := range []string{substrate.TierProvider, substrate.TierSample} {
+		for _, b := range cat.Bundles() {
+			if b.Tier != tier {
+				continue
+			}
+			if err := installClosure(reg, byPackage, b, done); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	// The suggested mappings landed and RESOLVED: five onto the shipped
+	// person, one onto the shipped task. `installs:` is the package both
+	// directions, so a mapping the tree adds without listing it never reaches
+	// here, and a mapping that stops type-checking against a mirror fails the
+	// install above.
+	for _, want := range []struct {
+		to    string
+		count int
+	}{
+		{samples.Authority + "/people/person", 5},
+		{samples.Authority + "/tasks/task", 1},
+	} {
+		if got := reg.MappingsTo(want.to); len(got) != want.count {
+			var ids []string
+			for _, m := range got {
+				ids = append(ids, m.Identity())
+			}
+			t.Errorf("%d mappings onto %s, want %d: %v", len(got), want.to, want.count, ids)
 		}
 	}
 }
 
-// EVERY sample rehomes and then admits, without a database. The import walk
-// touches every string a closure carries, and the samples with functions,
-// agents, triggers and Python sources are where it has the most to reach: an
-// authority left inside a function body is a closure that admits here and
-// fails at the first call. Each is rehomed onto one repository authority, so
-// their `requires:` resolve against each other exactly as an import chain does.
+// EVERY sample rehomes and then admits ON CORE ALONE, without a database. The
+// import walk touches every string a closure carries, and the samples with
+// functions, agents, triggers and Python sources are where it has the most to
+// reach: an authority left inside a function body is a closure that admits
+// here and fails at the first call. Each is rehomed onto one repository
+// authority, so their `requires:` resolve against each other exactly as an
+// import chain does.
+//
+// No provider is installed here, which is the other half of the door: a
+// sample's SUGGESTED MAPPINGS name a provider mirror as their source, and the
+// import DROPS the ones whose provider is absent (decision record 0049). So
+// this is the fresh-repository case, and the filter is what makes it admit:
+// without it every sample carrying one would be refused for vocabulary the
+// reader never asked for.
 func TestEverySampleRehomesOntoARepositoryAuthority(t *testing.T) {
 	const home = "ada.example.com"
 	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
@@ -470,6 +508,7 @@ func TestEverySampleRehomesOntoARepositoryAuthority(t *testing.T) {
 		byPackage[b.ID] = b
 	}
 	done := map[string]bool{}
+	dropped := map[string]bool{}
 	var rehome func(b *catalog.Bundle) error
 	rehome = func(b *catalog.Bundle) error {
 		if done[b.ID] {
@@ -489,6 +528,16 @@ func TestEverySampleRehomesOntoARepositoryAuthority(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		// The door's filter: a suggested mapping whose source kind is absent
+		// is dropped, with its `installs:` entry.
+		drop := map[string]bool{}
+		for _, sm := range vocabulary.SuggestedMappings(maps) {
+			if _, ok := reg.ByIdentity(sm.From); !ok {
+				drop[sm.ID] = true
+				dropped[sm.ID] = true
+			}
+		}
+		maps = vocabulary.WithoutMappings(maps, drop)
 		rehomed, err := vocabulary.RehomeAuthority(maps, samples.Authority, home)
 		if err != nil {
 			return fmt.Errorf("rehome %s: %w", b.ID, err)
@@ -531,6 +580,17 @@ func TestEverySampleRehomesOntoARepositoryAuthority(t *testing.T) {
 	}
 	if _, ok := reg.ByIdentity(samples.Authority + "/tasks/task"); ok {
 		t.Errorf("%s/tasks/task is live after a rehome that should have moved it", samples.Authority)
+	}
+	// The six suggested mappings were the ones dropped, and nothing that
+	// projects onto the repository's own kinds survived: on a repository with
+	// no provider, an import delivers kinds and no projection.
+	if len(dropped) != 6 {
+		t.Errorf("dropped %d suggested mappings, want the 6 the tree ships: %v", len(dropped), dropped)
+	}
+	for _, to := range []string{home + "/people/person", home + "/tasks/task"} {
+		if got := reg.MappingsTo(to); len(got) != 0 {
+			t.Errorf("%d mappings onto %s with no provider installed: %v", len(got), to, got)
+		}
 	}
 }
 

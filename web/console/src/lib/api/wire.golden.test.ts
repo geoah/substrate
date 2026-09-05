@@ -39,6 +39,7 @@ import type {
   PutInput,
   ShippedRecord,
   SubstrateRecord,
+  SuggestedMapping,
 } from "./types"
 
 /** Every key of T, exactly once. `tsc` rejects a missing or an extra one. */
@@ -156,7 +157,16 @@ const catalogBundle: Keys<CatalogBundle> = {
   tier: true,
   inputs: true,
   requires: true,
+  suggestedMappings: true,
   closure: true,
+}
+
+const suggestedMapping: Keys<SuggestedMapping> = {
+  id: true,
+  from: true,
+  to: true,
+  package: true,
+  state: true,
 }
 
 const bundleClosure: Keys<BundleClosure> = {
@@ -189,6 +199,7 @@ const mirrors: Record<string, Record<string, true>> = {
   CatalogBundle: catalogBundle,
   BundleClosure: bundleClosure,
   ShippedRecord: shippedRecord,
+  SuggestedMapping: suggestedMapping,
 }
 
 describe("wire types mirror the Go structs", () => {

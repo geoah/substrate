@@ -55,9 +55,54 @@ type CatalogBundle struct {
 	// core alone), so the console shows this before the button is pressed and
 	// admission refuses while one is absent, naming what to take first.
 	Requires []string `json:"requires,omitempty"`
+	// SuggestedMappings are the mappings this closure declares onto its own
+	// kinds FROM another package's, each with the state it has in this
+	// repository. A sample ships them for the providers it knows and the
+	// import keeps only the ones whose provider is here (decision record
+	// 0049), so a reader can see what an import will and will not deliver.
+	// Empty for every provider: a provider declares no mapping at all.
+	SuggestedMappings []SuggestedMapping `json:"suggestedMappings,omitempty"`
 	// Closure enumerates what taking this bundle lands, for the detail preview.
 	Closure CatalogClosure `json:"closure"`
 }
+
+// SuggestedMapping is one mapping a SAMPLE ships onto a kind of its own from a
+// PROVIDER's mirror kind (decision record 0049): the declaration's id, both
+// ends, the provider package the source lives in, and whether this repository
+// holds that package.
+//
+// It is conditional because its source kind is another package's: a mapping
+// naming an absent kind is refused by admission, so the door drops the
+// document (and its `installs:` entry) rather than offering the reader a
+// refusal. Installing the provider and importing the sample AGAIN is what
+// lands it.
+type SuggestedMapping struct {
+	// ID is the mapping declaration's id, in the spelling the closure ships:
+	// a sample's is the placeholder authority, which the import rehomes with
+	// everything else.
+	ID string `json:"id"`
+	// From is the source kind: a provider mirror this package does not own.
+	From string `json:"from"`
+	// To is the subject kind, always one this package declares.
+	To string `json:"to"`
+	// Package is the PROVIDER package `from` lives in: what has to be
+	// installed for this mapping to land.
+	Package string `json:"package"`
+	// State is SuggestedMappingLanded or SuggestedMappingWaiting.
+	State string `json:"state"`
+}
+
+// SuggestedMapping.State values, read against one repository:
+//
+//   - SuggestedMappingLanded: the provider package is here, so the mapping is
+//     part of the closure this door admits (and part of what an earlier import
+//     already admitted).
+//   - SuggestedMappingWaiting: the provider package is absent, so the mapping
+//     is dropped. Install that provider and import the sample again.
+const (
+	SuggestedMappingLanded  = "landed"
+	SuggestedMappingWaiting = "waiting"
+)
 
 // CatalogClosure is what installing or importing a bundle lands, by kind: the
 // detail preview the console shows first. EVERY member of it is a record: a

@@ -97,11 +97,15 @@ import {
   presentPackages,
   requirementsOf,
   requiresHint,
+  samplesMappingOnto,
+  suggestedMappingHint,
+  suggestedMappingsOf,
   upgradeAvailable,
   upgradeBlocked,
   upgradeMotion,
   type BundleRow,
   type Requirement,
+  type SuggestedMappingRow,
 } from "@/lib/bundles"
 
 /** A row's counts: the live status when imported, else the catalog closure's
@@ -496,10 +500,15 @@ const RECORD_KINDS = [
 function BundleDisclosure({
   row,
   requirements,
+  mappings,
   kinds,
 }: {
   row: BundleRow
   requirements: Requirement[]
+  /** The suggested mappings this row is about, from whichever side it sits on:
+   * a sample's own, or the samples that carry one onto this provider
+   * (decision record 0049). */
+  mappings: SuggestedMappingRow[]
   kinds: KindInfo[]
 }) {
   const catalog = row.catalog
@@ -599,6 +608,28 @@ function BundleDisclosure({
             ))}
           </Line>
         )}
+        {mappings.length > 0 && (
+          <Line label="mappings">
+            {mappings.map((m) => (
+              <span
+                key={`${m.sample}:${m.mapping.id}`}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 data",
+                  m.landed
+                    ? "bg-background text-muted-foreground"
+                    : "border-warning/40 text-warning"
+                )}
+                title={m.title}
+              >
+                <BoxesIcon className="size-3 shrink-0" />
+                {row.tier === "provider"
+                  ? `${m.sampleWord}: ${m.label}`
+                  : m.label}
+                <span>{m.landed ? "landed" : "waiting"}</span>
+              </span>
+            ))}
+          </Line>
+        )}
         <Line label="kinds">
           {kindRows.length ? (
             kindRows.map((k) => {
@@ -692,6 +723,9 @@ function BundleDisclosure({
       {missing.length > 0 && (
         <p className="text-warning">{requiresHint(missing)}</p>
       )}
+      {suggestedMappingHint(mappings) && (
+        <p className="text-warning">{suggestedMappingHint(mappings)}</p>
+      )}
       {(row.upgrade?.blockers?.length ?? 0) > 0 && (
         <div className="space-y-1 text-warning">
           <p>
@@ -739,6 +773,7 @@ function BundleSection({
   emptyTitle,
   emptyDescription,
   requirements,
+  mappings,
   kinds,
   onOpen,
 }: {
@@ -749,6 +784,7 @@ function BundleSection({
   emptyTitle: string
   emptyDescription: string
   requirements: (row: BundleRow) => Requirement[]
+  mappings: (row: BundleRow) => SuggestedMappingRow[]
   kinds: KindInfo[]
   onOpen: (row: BundleRow) => void
 }) {
@@ -781,6 +817,7 @@ function BundleSection({
           <BundleDisclosure
             row={row}
             requirements={requirements(row)}
+            mappings={mappings(row)}
             kinds={kinds}
           />
         )}
@@ -830,6 +867,22 @@ export function RegistryPage() {
     for (const row of allRows) byId.set(row.id, requirementsOf(row, present))
     return (row: BundleRow) => byId.get(row.id) ?? []
   }, [allRows, present])
+  // The suggested mappings, from whichever side a row sits on: a sample's own
+  // (what an import would project, and what is waiting), a provider's inbound
+  // (which samples are waiting for exactly this install). Computed over EVERY
+  // row, because the two sides are in the two different sections.
+  const mappings = useMemo(() => {
+    const byId = new Map<string, SuggestedMappingRow[]>()
+    for (const row of allRows) {
+      byId.set(
+        row.id,
+        row.tier === "provider"
+          ? samplesMappingOnto(row, allRows)
+          : suggestedMappingsOf(row)
+      )
+    }
+    return (row: BundleRow) => byId.get(row.id) ?? []
+  }, [allRows])
   const sections = useMemo(() => bundleSections(allRows), [allRows])
   const heldCount = allRows.filter((r) => r.installed).length
 
@@ -907,6 +960,7 @@ export function RegistryPage() {
           emptyTitle="No providers"
           emptyDescription="This binary ships no provider packages."
           requirements={requirements}
+          mappings={mappings}
           kinds={kinds}
           onOpen={open}
         />
@@ -922,6 +976,7 @@ export function RegistryPage() {
           emptyTitle="No samples"
           emptyDescription="This binary ships no sample packages."
           requirements={requirements}
+          mappings={mappings}
           kinds={kinds}
           onOpen={open}
         />
@@ -934,6 +989,7 @@ export function RegistryPage() {
             emptyTitle="Nothing applied directly"
             emptyDescription="Every bundle here came from the shipped catalog."
             requirements={requirements}
+            mappings={mappings}
             kinds={kinds}
             onOpen={open}
           />

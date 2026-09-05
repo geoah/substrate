@@ -366,9 +366,33 @@ func (f *fakeSubstrate) handleCatalogImport(w http.ResponseWriter, r *http.Reque
 	if _, after, ok := strings.Cut(id, "/"); ok {
 		pkg = after
 	}
-	writeJSON(w, http.StatusOK, substrate.BundleStatus{
-		ID: "geoah.example.com/" + pkg, Name: pkg, Authority: "geoah.example.com",
-		Package: pkg, Installed: true, Enabled: true, Kinds: 3,
+	// The response carries the SUGGESTED MAPPINGS the door decided on: one
+	// landed, one waiting, so the printed report has both lines to show
+	// (decision record 0049).
+	writeJSON(w, http.StatusOK, struct {
+		substrate.BundleStatus
+		SuggestedMappings []substrate.SuggestedMapping `json:"suggestedMappings"`
+	}{
+		BundleStatus: substrate.BundleStatus{
+			ID: "geoah.example.com/" + pkg, Name: pkg, Authority: "geoah.example.com",
+			Package: pkg, Installed: true, Enabled: true, Kinds: 3,
+		},
+		SuggestedMappings: []substrate.SuggestedMapping{
+			{
+				ID:      "samples.substrate.reamde.dev/" + pkg + "/githubuserperson",
+				From:    "providers.substrate.reamde.dev/github/user",
+				To:      "samples.substrate.reamde.dev/" + pkg + "/person",
+				Package: "providers.substrate.reamde.dev/github",
+				State:   substrate.SuggestedMappingLanded,
+			},
+			{
+				ID:      "samples.substrate.reamde.dev/" + pkg + "/linearissuetask",
+				From:    "providers.substrate.reamde.dev/linear/issue",
+				To:      "samples.substrate.reamde.dev/" + pkg + "/task",
+				Package: "providers.substrate.reamde.dev/linear",
+				State:   substrate.SuggestedMappingWaiting,
+			},
+		},
 	})
 }
 

@@ -520,8 +520,38 @@ export interface CatalogBundle {
    * import while one of them is absent from the repository, naming what to
    * import first, so the console shows them before the button is pressed. */
   requires?: string[]
+  /** The mappings this closure declares onto its OWN kinds from another
+   * package's, each with the state it has in this repository. A sample ships
+   * one per provider it knows and the import keeps only the ones whose
+   * provider is here, so this is what says which projections an import will
+   * and will not deliver. Absent for every provider: a provider declares no
+   * mapping at all. */
+  suggestedMappings?: SuggestedMapping[]
   closure: BundleClosure
 }
+
+/** One mapping a SAMPLE ships onto a kind of its own from a PROVIDER's mirror
+ * kind (substrate.SuggestedMapping, decision record 0049). It is conditional:
+ * a mapping naming a kind this repository does not have is refused by
+ * admission, so the door drops it and reports it `waiting` instead. Installing
+ * the provider and importing the sample AGAIN is what lands it. */
+export interface SuggestedMapping {
+  /** The mapping declaration's id, in the spelling the closure ships: a
+   * sample's names the placeholder authority, which the import rehomes. */
+  id: string
+  /** The source kind: a provider mirror the declaring package does not own. */
+  from: string
+  /** The subject kind, always one the declaring package owns. */
+  to: string
+  /** The PROVIDER package `from` lives in: what has to be installed. */
+  package: string
+  state: SuggestedMappingState
+}
+
+/** `landed`: the provider is here, so the mapping is part of what the door
+ * admits (or already admitted). `waiting`: the provider is absent, so the
+ * mapping is dropped until it is installed and the sample imported again. */
+export type SuggestedMappingState = "landed" | "waiting"
 
 /** One catalog entry as the API serves it: the shipped bundle plus whether
  * THIS repository has it and, for an installed provider whose closure moved,

@@ -85,6 +85,15 @@ func TestImportCallsTheSampleDoor(t *testing.T) {
 	if !strings.Contains(stdout, "geoah.example.com/tasks imported") {
 		t.Errorf("import does not report where the sample landed: %s", stdout)
 	}
+	// AND what its suggested mappings did (decision record 0049): a reader who
+	// installs Linear tomorrow has to be told that importing again is what
+	// lands the rest.
+	if !strings.Contains(stdout, "providers.substrate.reamde.dev/github/user -> samples.substrate.reamde.dev/tasks/person: landed") {
+		t.Errorf("import does not report the mapping that landed: %s", stdout)
+	}
+	if !strings.Contains(stdout, "waiting for providers.substrate.reamde.dev/linear; install it, then import again") {
+		t.Errorf("import does not report what the waiting mapping waits for: %s", stdout)
+	}
 }
 
 func contains(hay []string, needle string) bool {

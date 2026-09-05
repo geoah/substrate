@@ -606,4 +606,67 @@ describe("RegistryPage", () => {
       expect(within(google).queryByText(/update 1/)).toBeNull()
     })
   })
+  describe("suggested mappings (decision record 0049)", () => {
+    /** The people sample as it ships: one mapping onto its own person from a
+     * provider this repository HAS, one from a provider it does not. */
+    const PEOPLE_MAPPED: CatalogItem = {
+      ...PEOPLE,
+      suggestedMappings: [
+        {
+          id: "samples.substrate.reamde.dev/people/githubuserperson",
+          from: "providers.substrate.reamde.dev/github/user",
+          to: "samples.substrate.reamde.dev/people/person",
+          package: "providers.substrate.reamde.dev/github",
+          state: "landed",
+        },
+        {
+          id: "samples.substrate.reamde.dev/people/googlecontactperson",
+          from: "providers.substrate.reamde.dev/google/contact",
+          to: "samples.substrate.reamde.dev/people/person",
+          package: "providers.substrate.reamde.dev/google",
+          state: "waiting",
+        },
+      ],
+    }
+
+    it("lists a sample's suggested mappings with the state each has here", async () => {
+      serve({ catalog: [PEOPLE_MAPPED, GOOGLE] })
+      renderPage(<RegistryPage />)
+      const detail = expand(await rowOf("people"))
+      // Both projections are named, source kind to subject kind, and each
+      // carries its own state rather than one summary for the pair.
+      const landed = within(detail).getByTitle(
+        /github\/user projects onto .*\/people\/person: landed\./
+      )
+      expect(landed.textContent).toContain("user → person")
+      expect(landed.textContent).toContain("landed")
+      const waiting = within(detail).getByTitle(
+        /google\/contact projects onto .*\/people\/person: install google to enable, then import people again\./
+      )
+      expect(waiting.textContent).toContain("contact → person")
+      expect(waiting.textContent).toContain("waiting")
+      // And the way out is stated once, in the row's own copy: the re-import
+      // is what lands a mapping the first one dropped.
+      expect(
+        within(detail).getByText(
+          "Install google to enable this mapping, then import people again."
+        )
+      ).toBeTruthy()
+    })
+
+    it("lists on a provider the samples that carry a mapping onto it", async () => {
+      serve({ catalog: [PEOPLE_MAPPED, GOOGLE] })
+      renderPage(<RegistryPage />)
+      const detail = expand(await rowOf("google"))
+      // The provider's own card answers "what would installing me deliver":
+      // the sample waiting on it, named, with the kind it would project onto.
+      const chip = within(detail).getByTitle(
+        /google\/contact projects onto .*\/people\/person: install google to enable, then import people again\./
+      )
+      expect(chip.textContent).toContain("people: contact → person")
+      // The github mapping is another provider's business and is not listed
+      // here.
+      expect(within(detail).queryByText(/user → person/)).toBeNull()
+    })
+  })
 })

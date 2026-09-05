@@ -38,6 +38,14 @@ the vocabulary you import.
 | `organization` | An org a person belongs to: employer, workspace, publisher.                                                                             |
 | `team`         | A working group finer than an organization: members, leads, and nesting through `parent`.                                               |
 
+This sample also ships five **suggested mappings** onto its own `person`, from
+GitHub's `user`, Google's `contact` and `emailaddress`, and Linear's `user` and
+an issue's `assignee`. Each is admitted only where you already hold the
+provider it reads, and reported `waiting` otherwise
+([suggested mappings](bundles.md#suggested-mappings)); with one installed, a
+GitHub identity and the same human's address-book contact converge on one
+record of yours.
+
 `person` carries a two-state `prominence` machine: `utility` at birth, `known`
 once something promotes it (an address-book sync, or you). Search ranks
 `utility` people below every `known` match
@@ -70,6 +78,12 @@ value says so and falls back to they/them.
 | `task`    | Something to do, with priority and an optional repeat rule seeded off `dueAt`. |
 | `project` | What tasks group under: a name, a lifecycle, a summary.                       |
 | `tasklog` | The done-or-skipped mark against one occurrence of a recurring task.          |
+
+It ships one **suggested mapping** too, from Linear's `issue` onto its own
+`task`: matched on the issue's URL, carrying the heading and the link, leaving
+`status` to you. Like every suggested mapping it lands only where the Linear
+provider is already installed
+([suggested mappings](bundles.md#suggested-mappings)).
 
 Seven further vocabulary bundles are ported from mneme v4. The recurring
 kinds share one stance: a schedule stores an RFC 5545 RRULE the substrate

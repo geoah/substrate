@@ -16,7 +16,12 @@
 import type { BundleStatus, InputStatus, SetupItem } from "@/lib/api/bundles"
 import { landedCatalog, landedId, type CatalogItem } from "@/lib/api/catalog"
 import { CORE_PACKAGE } from "@/lib/api/http"
-import type { BundleUpgrade, CatalogTier, KindInfo } from "@/lib/api/types"
+import type {
+  BundleUpgrade,
+  CatalogTier,
+  KindInfo,
+  SuggestedMapping,
+} from "@/lib/api/types"
 import { kindByIdentity, kindPackage, splitKind } from "@/lib/definition"
 
 /** One bundle row: the installed status (when the lifecycle knows it) and the
@@ -228,6 +233,100 @@ export function requiresHint(missing: Requirement[]): string {
   return missing.length === 1
     ? `Import ${names} first — this bundle declares against it.`
     : `Import ${names} first — this bundle declares against them.`
+}
+
+// ── suggested mappings (decision record 0049) ──────────────────────────────
+
+/** One suggested mapping as a row renders it: the mapping itself, the sample
+ * that declares it, and one sentence saying what it did.
+ *
+ * A sample ships one mapping per provider it knows, onto a kind of its own,
+ * and the import keeps only the ones whose provider this repository holds.
+ * Both sections show them, from the two directions: a sample's card lists what
+ * it would project and what is waiting; a provider's lists the samples waiting
+ * on it, which is a reason to install it. */
+export interface SuggestedMappingRow {
+  mapping: SuggestedMapping
+  /** The sample package that declares it: the bundle to import again. */
+  sample: string
+  /** That package's own word ("people"), which is how a row names it. */
+  sampleWord: string
+  landed: boolean
+  /** The chip's label: source kind name to subject kind name. */
+  label: string
+  /** The hover, one sentence: what it projects, and what to do about it. */
+  title: string
+}
+
+/** The package's own word, the last segment of a package identity. */
+function packageWord(pkg: string): string {
+  const parts = pkg.split("/")
+  return parts[parts.length - 1] ?? pkg
+}
+
+function suggestedRow(
+  mapping: SuggestedMapping,
+  sample: string
+): SuggestedMappingRow {
+  const landed = mapping.state === "landed"
+  const projects = `${mapping.from} projects onto ${mapping.to}`
+  return {
+    mapping,
+    sample,
+    sampleWord: packageWord(sample),
+    landed,
+    label: `${splitKind(mapping.from).name} → ${splitKind(mapping.to).name}`,
+    title: landed
+      ? `${projects}: landed.`
+      : `${projects}: install ${packageWord(mapping.package)} to enable, then import ${packageWord(sample)} again.`,
+  }
+}
+
+/** A SAMPLE row's own suggested mappings, in the order the closure ships
+ * them. Empty for a provider (it declares none) and for a bundle with no
+ * catalog entry. */
+export function suggestedMappingsOf(row: BundleRow): SuggestedMappingRow[] {
+  const catalog = row.catalog
+  if (!catalog?.suggestedMappings) return []
+  return catalog.suggestedMappings.map((m) => suggestedRow(m, catalog.id))
+}
+
+/** A PROVIDER row's inbound suggested mappings: every sample that carries one
+ * onto this provider's kinds, and whether it landed or is waiting for exactly
+ * this install. Read over EVERY row, because the samples are in the other
+ * section. */
+export function samplesMappingOnto(
+  row: BundleRow,
+  rows: BundleRow[]
+): SuggestedMappingRow[] {
+  if (row.tier !== "provider") return []
+  const out: SuggestedMappingRow[] = []
+  for (const other of rows) {
+    const catalog = other.catalog
+    if (other.tier !== "sample" || !catalog?.suggestedMappings) continue
+    for (const m of catalog.suggestedMappings) {
+      if (m.package === row.id) out.push(suggestedRow(m, catalog.id))
+    }
+  }
+  return out
+}
+
+/** What to do about the waiting ones, in one sentence: which providers to
+ * install and which samples to import again afterwards, because a re-import
+ * is what lands a mapping the first one dropped (decision records 0048 and
+ * 0049). Empty string when nothing is waiting. */
+export function suggestedMappingHint(rows: SuggestedMappingRow[]): string {
+  const waiting = rows.filter((r) => !r.landed)
+  if (!waiting.length) return ""
+  const providers = andList([
+    ...new Set(waiting.map((r) => packageWord(r.mapping.package))),
+  ])
+  const samples = andList([
+    ...new Set(waiting.map((r) => packageWord(r.sample))),
+  ])
+  const what =
+    waiting.length === 1 ? "this mapping" : `these ${waiting.length} mappings`
+  return `Install ${providers} to enable ${what}, then import ${samples} again.`
 }
 
 /** The server's OWN words for a refused import. Admission answers with a

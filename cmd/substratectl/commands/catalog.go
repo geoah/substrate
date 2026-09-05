@@ -27,13 +27,37 @@ func (a *app) takeBundle(cmd *cobra.Command, id, verb, past string) error {
 	if err != nil {
 		return err
 	}
-	var st substrate.BundleStatus
-	if err := cl.do(cmd.Context(), http.MethodPost, catalogPath(id, verb), nil, nil, &st); err != nil {
+	var taken bundleTaken
+	if err := cl.do(cmd.Context(), http.MethodPost, catalogPath(id, verb), nil, nil, &taken); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.out, "%s %s\n", st.ID, past)
-	printBundleStatus(a, st)
+	fmt.Fprintf(a.out, "%s %s\n", taken.ID, past)
+	printBundleStatus(a, taken.BundleStatus)
+	printSuggestedMappings(a, taken.SuggestedMappings)
 	return nil
+}
+
+// bundleTaken is the two doors' response: the landed bundle's computed status,
+// plus what each SUGGESTED MAPPING the closure carries did.
+type bundleTaken struct {
+	substrate.BundleStatus
+	SuggestedMappings []substrate.SuggestedMapping `json:"suggestedMappings,omitempty"`
+}
+
+// printSuggestedMappings says what the closure's suggested mappings did
+// (decision record 0049). A sample ships one per provider it knows, onto a
+// kind of its own, and the door admits only the ones whose provider this
+// repository holds, so a reader who installs Linear tomorrow has to be told
+// that importing this sample again is what lands the rest.
+func printSuggestedMappings(a *app, mappings []substrate.SuggestedMapping) {
+	for _, m := range mappings {
+		if m.State == substrate.SuggestedMappingLanded {
+			fmt.Fprintf(a.out, "mapping:     %s -> %s: landed\n", m.From, m.To)
+			continue
+		}
+		fmt.Fprintf(a.out, "mapping:     %s -> %s: waiting for %s; install it, then import again\n",
+			m.From, m.To, m.Package)
+	}
 }
 
 // importCommand is the SAMPLE door (decision record 0048). A sample is

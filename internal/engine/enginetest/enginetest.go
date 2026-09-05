@@ -109,7 +109,11 @@ func ImportVocabulary(ctx context.Context, ds substrate.Dataset, names ...string
 				return err
 			}
 		}
-		if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.BundleActor(SampleAuthority, name), docs); err != nil {
+		held := func(kind string) bool {
+			_, err := ds.KindByRef(ctx, kind)
+			return err == nil
+		}
+		if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.BundleActor(SampleAuthority, name), WithoutAbsentMappings(docs, held)); err != nil {
 			return fmt.Errorf("enginetest: import %s: %w", name, err)
 		}
 		return nil
@@ -120,6 +124,25 @@ func ImportVocabulary(ctx context.Context, ds substrate.Dataset, names ...string
 		}
 	}
 	return nil
+}
+
+// WithoutAbsentMappings drops the SUGGESTED MAPPINGS a closure carries whose
+// source kind `has` does not answer for, and their `installs:` entries with
+// them: the filter both catalog doors apply (internal/catalog), so a helper
+// that installs a sample verbatim admits what an import would.
+//
+// A sample declares a mapping onto its own kinds from a provider's mirror
+// (decision record 0049), and a mapping naming an absent kind is refused, so a
+// test that wants people alone would otherwise be refused for not having
+// installed GitHub.
+func WithoutAbsentMappings(docs []map[string]any, has func(kind string) bool) []map[string]any {
+	drop := map[string]bool{}
+	for _, sm := range vocabulary.SuggestedMappings(docs) {
+		if !has(sm.From) {
+			drop[sm.ID] = true
+		}
+	}
+	return vocabulary.WithoutMappings(docs, drop)
 }
 
 // ShelfPackage is the fixture vocabulary InstallShelf brings: the shapes the
@@ -275,6 +298,13 @@ func SeededRegistry(kindsDir string, names ...string) (*vocabulary.Registry, err
 		if err != nil {
 			return nil, err
 		}
+		// The suggested mappings go with the providers this registry does not
+		// hold: it is built from the SAMPLES tree alone, so a mapping from a
+		// provider mirror has no source kind here.
+		raws = WithoutAbsentMappings(raws, func(kind string) bool {
+			_, ok := reg.ByIdentity(kind)
+			return ok
+		})
 		for _, raw := range raws {
 			d, err := vocabulary.DocumentFromMap(raw)
 			if err != nil {
@@ -455,6 +485,13 @@ func DeclareMappings(ctx context.Context, ds substrate.Dataset, mappings ...map[
 	if err != nil {
 		return err
 	}
+	// The sample's OWN suggested mappings go first, exactly as the door drops
+	// them: their sources are provider mirrors a test that declares its own
+	// mapping has no reason to hold.
+	docs = WithoutAbsentMappings(docs, func(kind string) bool {
+		_, err := ds.KindByRef(ctx, kind)
+		return err == nil
+	})
 	var installs []any
 	for _, m := range mappings {
 		meta, _ := m["metadata"].(map[string]any)

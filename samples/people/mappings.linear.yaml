@@ -1,0 +1,56 @@
+# TWO SUGGESTED MAPPINGS: Linear's user mirror and an issue's assignee onto
+# this package's person. Both are dropped by the import while
+# providers.substrate.reamde.dev/linear is absent, and land on the next import
+# once it is installed (docs/decisions/0049).
+#
+# user → person: match probes the login address against people's emails,
+# exactly one live match links it and zero-or-many mints a person shell. map
+# copies the names and unions the address onto the person (machine-managed,
+# yielding to any owner edit).
+kind: substrate.reamde.dev/core/recordmapping
+metadata:
+  id: samples.substrate.reamde.dev/people/linearuserperson
+data:
+  authority: samples.substrate.reamde.dev
+  package: people
+  description: >-
+    Converges a Linear workspace member onto the person it belongs to, matched
+    on the login address.
+  from: providers.substrate.reamde.dev/linear/user
+  to: samples.substrate.reamde.dev/people/person
+  property: person
+  match:
+    - from: email
+      to: emails
+  map:
+    name:
+      path: name
+    displayName:
+      path: displayName
+    emails:
+      path: email
+      merge: union
+---
+# issue.assignee → person: match the assignee's address against people's
+# emails (the viewer's own user mirror has usually minted the person already,
+# so this resolves to the same human). No map block: an issue describes work,
+# not the person, and nothing of it belongs on the human.
+#
+# The issue's OTHER subject slot, `task`, is the tasks sample's to map: one
+# mirror kind reaches two of the repository's kinds through two slots, one
+# mapping each (docs/decisions/0049).
+kind: substrate.reamde.dev/core/recordmapping
+metadata:
+  id: samples.substrate.reamde.dev/people/linearissueperson
+data:
+  authority: samples.substrate.reamde.dev
+  package: people
+  description: >-
+    Points a Linear issue's assignee slot at the person it belongs to, matched
+    on the assignee's login address.
+  from: providers.substrate.reamde.dev/linear/issue
+  to: samples.substrate.reamde.dev/people/person
+  property: assignee
+  match:
+    - from: assigneeEmail
+      to: emails

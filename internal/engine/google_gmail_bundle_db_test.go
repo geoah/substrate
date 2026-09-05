@@ -514,7 +514,7 @@ func googleMillisAgo(d time.Duration) string {
 
 // googleInstallRewired installs the shipped closure with the two sync bodies
 // pointed at the loopback fakes.
-func googleInstallRewired(t *testing.T, ds *dataset, rewire func([]map[string]any), extra ...map[string]any) {
+func googleInstallRewired(t *testing.T, ds *dataset, rewire func([]map[string]any)) {
 	t.Helper()
 	docs := loadYAMLDocs(t, googleExampleDir+"/bundle.yaml")
 	rewire(docs)
@@ -526,42 +526,11 @@ func googleInstallRewired(t *testing.T, ds *dataset, rewire func([]map[string]an
 	}
 	// The closure ships NO mapping and writes no kind it does not own
 	// (record 49), so the shipped default is what a test gets: mirrors, with
-	// every subject slot empty. A test that wants the mint, the projection or
-	// the one-hop resolution passes the mappings the REPOSITORY would declare,
-	// and they land in ONE apply, because a mapping is part of the people
-	// closure and re-applying that closure replaces it whole.
-	if len(extra) == 0 {
-		return
-	}
-	if err := enginetest.DeclareMappings(context.Background(), ds, extra...); err != nil {
-		t.Fatalf("declare the google mappings: %v", err)
-	}
-}
-
-// googleAddressMapping and googleContactMapping are the repository's own
-// declarations onto person, the two the shipped closure used to carry.
-func googleAddressMapping() map[string]any {
-	return enginetest.PeopleMapping("emailaddressperson", map[string]any{
-		"from": googleAddressType, "property": "person",
-		"match": []any{map[string]any{"from": "address", "to": "emails"}},
-		"map": map[string]any{
-			"name":   map[string]any{"path": "displayName"},
-			"emails": map[string]any{"path": "address", "merge": "union"},
-		},
-	})
-}
-
-func googleContactMapping() map[string]any {
-	return enginetest.PeopleMapping("contactperson", map[string]any{
-		"from": googleContactType, "property": "person",
-		"match": []any{map[string]any{"from": "emails[].value", "to": "emails"}},
-		"map": map[string]any{
-			"name":        map[string]any{"path": "name.displayName"},
-			"displayName": map[string]any{"path": "name.displayName"},
-			"emails":      map[string]any{"path": "emails[].value", "merge": "union"},
-			"phones":      map[string]any{"path": "phones[].value", "merge": "union"},
-		},
-	})
+	// every subject slot empty. The mappings onto `person` are the PEOPLE
+	// sample's, dropped when it was imported before this provider existed; a
+	// test that wants the mint, the projection or the one-hop resolution
+	// re-applies that closure afterwards (enginetest.DeclareMappings), which
+	// is the re-import that lands them.
 }
 
 // googleStepper drives one sync body page by page through the runner — no
@@ -1178,8 +1147,15 @@ func TestGoogleGmailAddressConverges(t *testing.T) {
 	}
 	ctx := context.Background()
 	ds := openInternalDataset(t)
-	googleInstallRewired(t, ds, func([]map[string]any) {},
-		googleAddressMapping(), googleContactMapping())
+	googleInstallRewired(t, ds, func([]map[string]any) {})
+	// The PEOPLE SAMPLE ships the two mappings this test needs, onto `contact`
+	// and `emailaddress` (record 49). They were dropped when people was
+	// imported, because this provider was absent; re-applying that closure
+	// now that it is installed is what lands them, which is the re-import the
+	// console asks a reader for.
+	if err := enginetest.DeclareMappings(ctx, ds); err != nil {
+		t.Fatalf("land the people sample's google mappings: %v", err)
+	}
 
 	// A contact the address book already synced: its mapping minted a person.
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{

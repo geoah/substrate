@@ -17,6 +17,7 @@
     "tier",
     "inputs",
     "requires",
+    "suggestedMappings",
     "closure"
   ],
   "Change": [
@@ -102,5 +103,12 @@
     "deletedAt",
     "finalizers",
     "propertyMeta"
+  ],
+  "SuggestedMapping": [
+    "id",
+    "from",
+    "to",
+    "package",
+    "state"
   ]
 }

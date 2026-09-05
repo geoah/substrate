@@ -607,24 +607,13 @@ func TestLinearBundleFakeSyncMirrors(t *testing.T) {
 		t.Fatalf("install the linear bundle: %v", err)
 	}
 	// The closure ships no mapping (record 49): the repository declares how
-	// linear's mirrors reach the person kind it owns, and this test wants that
-	// identity resolution, so it declares both.
-	if err := enginetest.DeclareMappings(ctx, ds,
-		enginetest.PeopleMapping("linearuserperson", map[string]any{
-			"from": linearUserType, "property": "person",
-			"match": []any{map[string]any{"from": "email", "to": "emails"}},
-			"map": map[string]any{
-				"name":        map[string]any{"path": "name"},
-				"displayName": map[string]any{"path": "displayName"},
-				"emails":      map[string]any{"path": "email", "merge": "union"},
-			},
-		}),
-		enginetest.PeopleMapping("linearissueperson", map[string]any{
-			"from": linearIssueType, "property": "assignee",
-			"match": []any{map[string]any{"from": "assigneeEmail", "to": "emails"}},
-		}),
-	); err != nil {
-		t.Fatalf("declare the linear mappings: %v", err)
+	// linear's mirrors reach the person kind it owns, and the PEOPLE SAMPLE
+	// already carries those two declarations as suggested mappings. They were
+	// dropped when people was imported above, because this provider was not
+	// installed yet; re-applying that closure now is what lands them, which
+	// is exactly the re-import the console asks a reader for.
+	if err := enginetest.DeclareMappings(ctx, ds); err != nil {
+		t.Fatalf("land the people sample's linear mappings: %v", err)
 	}
 	for _, m := range loadYAMLDocs(t, linearExampleDir+"/triggers.yaml") {
 		putDataDoc(t, ds, m)

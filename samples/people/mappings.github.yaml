@@ -1,0 +1,39 @@
+# A SUGGESTED MAPPING: GitHub's user mirror onto this package's person.
+#
+# A mapping onto a kind is declared by the package that owns that kind
+# (docs/decisions/0049), so this file lives here and not in the github
+# provider: the provider ships `user` with an empty `person` slot, and this is
+# what fills it. `from` names a package this repository may not hold, so the
+# import DROPS this document (and its `installs:` entry) while
+# providers.substrate.reamde.dev/github is absent, and lands it on the next
+# import once the provider is installed.
+#
+# match probes the profile's PUBLIC email against people's emails: exactly one
+# live match links it, zero-or-many mints a person shell (a bare author stub
+# carries no email, so its probe extracts nothing and a shell is minted, and
+# prominence stays `utility` until an address book or the owner promotes it).
+# map copies the name, prefers the login as the friendly name, and unions the
+# email onto the person (machine-managed, yielding to any owner edit).
+kind: substrate.reamde.dev/core/recordmapping
+metadata:
+  id: samples.substrate.reamde.dev/people/githubuserperson
+data:
+  authority: samples.substrate.reamde.dev
+  package: people
+  description: >-
+    Converges a GitHub identity onto the person it belongs to, matched on
+    the profile's public email.
+  from: providers.substrate.reamde.dev/github/user
+  to: samples.substrate.reamde.dev/people/person
+  property: person
+  match:
+    - from: email
+      to: emails
+  map:
+    name:
+      path: name
+    displayName:
+      path: login
+    emails:
+      path: email
+      merge: union

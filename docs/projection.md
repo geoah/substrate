@@ -23,7 +23,10 @@ kind is refused, whichever end the declaring package owns.
 
 Three rules follow. **`from` may name a kind in any package**, and it resolves
 when the mapping is installed, so a mapping naming a provider that is absent
-fails on that document.
+fails on that document. That is why a sample's shipped mappings are
+conditional: the two catalog doors drop the ones whose provider this repository
+does not hold rather than refuse the whole import
+([suggested mappings](bundles.md#suggested-mappings)).
 
 **One mapping per (source kind, subject property), and one per (source kind,
 target kind).** The first is the record's rule: one mirror kind reaches two
@@ -43,9 +46,10 @@ batch, and the admission sees the end state rather than the gap. A change to a
 source kind that a mapping's paths no longer type-check against is refused the
 same way, on the mapping that stopped fitting.
 
-A repository that imported the [people sample](bundles-catalog.md) and
-installed the GitHub [integration](bundles-catalog.md#github) writes this
-mapping to say that GitHub's `user` mirror describes a `person`:
+This is the mapping that says GitHub's `user` mirror describes a `person`. You
+do not have to write it: the people sample SHIPS it, and five more like it, as
+[suggested mappings](bundles.md#suggested-mappings) the import admits once the
+provider they read is installed.
 
 ```yaml
 kind: substrate.reamde.dev/core/recordmapping
