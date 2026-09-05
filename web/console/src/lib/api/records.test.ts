@@ -16,7 +16,8 @@ describe("listPath", () => {
     // The server's own keyset token — a JSON blob, base64url — resent as-is.
     const cursor = "eyJrIjpbIjIwMjYtMDgtMDYiXSwiaWQiOiJhYmMifQ"
     const path = listPath({
-      authority: "people.substrate.reamde.dev",
+      authority: "samples.substrate.reamde.dev",
+      package: "people",
       name: "person",
       first: 50,
       after: cursor,
@@ -24,7 +25,9 @@ describe("listPath", () => {
       orderBy: "updatedAt:desc",
     })
     const url = new URL(path, "http://x")
-    expect(url.pathname).toBe("/api/v1/people.substrate.reamde.dev/person")
+    expect(url.pathname).toBe(
+      "/api/v1/samples.substrate.reamde.dev/people/person"
+    )
     expect(url.searchParams.get("first")).toBe("50")
     expect(url.searchParams.get("after")).toBe(cursor)
     expect(JSON.parse(url.searchParams.get("filter")!)).toEqual({
@@ -36,17 +39,27 @@ describe("listPath", () => {
     expect(url.searchParams.has("withEdges")).toBe(false)
   })
 
-  it("addresses a collection by its authority and kind name", () => {
+  it("addresses a collection by its authority, package and kind name", () => {
     const url = new URL(
-      listPath({ authority: "tasks.substrate.reamde.dev", name: "task" }),
+      listPath({
+        authority: "samples.substrate.reamde.dev",
+        package: "tasks",
+        name: "task",
+      }),
       "http://x"
     )
-    expect(url.pathname).toBe("/api/v1/tasks.substrate.reamde.dev/task")
+    expect(url.pathname).toBe("/api/v1/samples.substrate.reamde.dev/tasks/task")
   })
 
   it("omits what is not asked: no cursor at page one, no empty filter", () => {
     const url = new URL(
-      listPath({ authority: "g", name: "p", first: 25, filter: {} }),
+      listPath({
+        authority: "g",
+        package: "k",
+        name: "p",
+        first: 25,
+        filter: {},
+      }),
       "http://x"
     )
     expect(url.searchParams.has("after")).toBe(false)
@@ -59,8 +72,8 @@ describe("recordIdSegment", () => {
   it("percent-encodes a `/` so a slash-bearing id is one segment (%2F)", () => {
     // A declaration record's id IS a kind reference; the API decodes once.
     expect(recordIdSegment("a/b")).toBe("a%2Fb")
-    expect(recordIdSegment("people.substrate.reamde.dev/person")).toBe(
-      "people.substrate.reamde.dev%2Fperson"
+    expect(recordIdSegment("samples.substrate.reamde.dev/people/person")).toBe(
+      "samples.substrate.reamde.dev%2Fpeople%2Fperson"
     )
   })
 
@@ -91,7 +104,7 @@ describe("record writes (integrations flow)", () => {
         status: 201,
       })
     )
-    await createRecord("google.bundles.substrate.reamde.dev", "accounts", {
+    await createRecord("providers.substrate.reamde.dev", "google", "accounts", {
       properties: {
         email: "alice@example.com",
         enabledContacts: true,
@@ -100,7 +113,7 @@ describe("record writes (integrations flow)", () => {
     })
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toBe(
-      "/api/v1/google.bundles.substrate.reamde.dev/accounts"
+      "/api/v1/providers.substrate.reamde.dev/google/accounts"
     )
     expect(init?.method).toBe("POST")
     expect(JSON.parse(String(init?.body))).toEqual({
@@ -119,7 +132,8 @@ describe("record writes (integrations flow)", () => {
       })
     )
     await patchRecord(
-      "google.bundles.substrate.reamde.dev",
+      "providers.substrate.reamde.dev",
+      "google",
       "accounts",
       "abc",
       {
@@ -128,7 +142,7 @@ describe("record writes (integrations flow)", () => {
     )
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toBe(
-      "/api/v1/google.bundles.substrate.reamde.dev/accounts/abc"
+      "/api/v1/providers.substrate.reamde.dev/google/accounts/abc"
     )
     expect(init?.method).toBe("PATCH")
     expect(JSON.parse(String(init?.body))).toEqual({
@@ -159,7 +173,7 @@ describe("countRecords (bounded keyset walk)", () => {
     fetchMock
       .mockResolvedValueOnce(page(500, "CUR1"))
       .mockResolvedValueOnce(page(120))
-    const count = await countRecords("g.dev", "things", undefined)
+    const count = await countRecords("g.dev", "k", "things", undefined)
     expect(count).toEqual({ value: 620, capped: false })
     // Page one asks with no cursor; page two resends the returned one verbatim.
     expect(String(fetchMock.mock.calls[0][0])).not.toContain("after=")
@@ -168,7 +182,7 @@ describe("countRecords (bounded keyset walk)", () => {
 
   it("answers a single cursorless page exactly", async () => {
     fetchMock.mockResolvedValueOnce(page(7))
-    expect(await countRecords("g.dev", "things", undefined)).toEqual({
+    expect(await countRecords("g.dev", "k", "things", undefined)).toEqual({
       value: 7,
       capped: false,
     })
@@ -178,7 +192,7 @@ describe("countRecords (bounded keyset walk)", () => {
   it("caps a collection that outruns the ceiling", async () => {
     // Every page returns a cursor, so the walk hits its 20-page ceiling.
     fetchMock.mockImplementation(async () => page(500, "MORE"))
-    const count = await countRecords("g.dev", "things", undefined)
+    const count = await countRecords("g.dev", "k", "things", undefined)
     expect(count.capped).toBe(true)
     expect(count.value).toBe(500 * 20)
     expect(fetchMock).toHaveBeenCalledTimes(20)
@@ -204,15 +218,15 @@ describe("groupIncoming", () => {
 
   it("folds rows into property × kind buckets, kind then property", () => {
     const groups = groupIncoming([
-      row("author", "github.bundles.substrate.reamde.dev/pr", "1"),
-      row("author", "github.bundles.substrate.reamde.dev/pr", "2"),
-      row("author", "github.bundles.substrate.reamde.dev/issue", "3"),
-      row("subject", "google.bundles.substrate.reamde.dev/contact", "4"),
+      row("author", "providers.substrate.reamde.dev/github/pr", "1"),
+      row("author", "providers.substrate.reamde.dev/github/pr", "2"),
+      row("author", "providers.substrate.reamde.dev/github/issue", "3"),
+      row("subject", "providers.substrate.reamde.dev/google/contact", "4"),
     ])
     expect(groups.map((g) => [g.property, g.kind, g.rows.length])).toEqual([
-      ["author", "github.bundles.substrate.reamde.dev/issue", 1],
-      ["author", "github.bundles.substrate.reamde.dev/pr", 2],
-      ["subject", "google.bundles.substrate.reamde.dev/contact", 1],
+      ["author", "providers.substrate.reamde.dev/github/issue", 1],
+      ["author", "providers.substrate.reamde.dev/github/pr", 2],
+      ["subject", "providers.substrate.reamde.dev/google/contact", 1],
     ])
   })
 
@@ -221,10 +235,10 @@ describe("groupIncoming", () => {
     // properties come back adjacent and the two sources of one property do
     // not. An adjacency fold would emit `author` twice.
     const groups = groupIncoming([
-      row("author", "github.bundles.substrate.reamde.dev/pr", "1"),
-      row("reviewer", "github.bundles.substrate.reamde.dev/pr", "1"),
-      row("author", "github.bundles.substrate.reamde.dev/pr", "2"),
-      row("reviewer", "github.bundles.substrate.reamde.dev/pr", "2"),
+      row("author", "providers.substrate.reamde.dev/github/pr", "1"),
+      row("reviewer", "providers.substrate.reamde.dev/github/pr", "1"),
+      row("author", "providers.substrate.reamde.dev/github/pr", "2"),
+      row("reviewer", "providers.substrate.reamde.dev/github/pr", "2"),
     ])
     expect(groups.map((g) => [g.property, g.rows.length])).toEqual([
       ["author", 2],
@@ -234,10 +248,10 @@ describe("groupIncoming", () => {
 
   it("keeps buckets whole across page concatenation", () => {
     const pageOne = [
-      row("author", "github.bundles.substrate.reamde.dev/pr", "1"),
+      row("author", "providers.substrate.reamde.dev/github/pr", "1"),
     ]
     const pageTwo = [
-      row("author", "github.bundles.substrate.reamde.dev/pr", "2"),
+      row("author", "providers.substrate.reamde.dev/github/pr", "2"),
     ]
     const groups = groupIncoming([...pageOne, ...pageTwo])
     expect(groups).toHaveLength(1)

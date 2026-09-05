@@ -49,17 +49,19 @@ func (ds *dataset) PlantDeclarationRow(ctx context.Context, kindIdent, id string
 // declaration only by leaving it out of a closure. It is the one shape that can
 // write a declaration row of a category the same batch stops declaring, which is
 // what the final dropped-kind guard is there for. removeShort is the manifest
-// short name ("kind"), as deleteVocabularyRecord builds it.
-func (ds *dataset) ApplyVocabularyWithRemoval(ctx context.Context, actor substrate.Actor, docs []map[string]any, removeShort, removeID, removeAuthority string) error {
+// short name ("kind"), as deleteVocabularyRecord builds it, and removePackage
+// the package identity the removed declaration lives in.
+func (ds *dataset) ApplyVocabularyWithRemoval(ctx context.Context, actor substrate.Actor, docs []map[string]any, removeShort, removeID, removePackage string) error {
 	parsed, err := parseVocabularyDocs(docs)
 	if err != nil {
 		return err
 	}
+	authority, name := vocabulary.SplitPackageRef(removePackage)
 	_, err = ds.applyVocabularyBatch(ctx, actor, vocabularyBatch{
 		docs: parsed,
 		deletes: []vocabulary.Document{{
 			Kind: removeShort, ID: removeID,
-			Data: map[string]any{"authority": removeAuthority},
+			Data: map[string]any{"authority": authority, "package": name},
 		}},
 	})
 	return err

@@ -1,0 +1,31 @@
+# Shipped vocabulary ported from mneme v4: what gets cooked and
+# eaten. A recipe is the instructions; a meal is one sitting on the
+# timeline, optionally pointing at the recipe it came from. Nutrition
+# numbers are not modeled here: a macro worth tracking is a health
+# observationlog whose subject reference points at the meal.
+#
+# no new actors: writes arrive under the actor of whatever runs.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: samples.substrate.reamde.dev/food
+data:
+  authority: samples.substrate.reamde.dev
+  package: food
+  # version 3: `meal.recipe` is a reference property, carrying
+  # `mustExist: true`.
+  version: 3
+---
+# ---- the bundle document: the import unit -----------------------------------
+# A SAMPLE bundle: kinds only, imported from the registry.
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: samples.substrate.reamde.dev/food
+data:
+  authority: samples.substrate.reamde.dev
+  package: food
+  description: >-
+    What gets cooked and eaten: recipes with typed durations, and meals on
+    the timeline pointing at the recipe they came from.
+  installs:
+    - samples.substrate.reamde.dev/food/meal
+    - samples.substrate.reamde.dev/food/recipe

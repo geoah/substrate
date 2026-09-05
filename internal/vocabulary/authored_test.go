@@ -19,28 +19,31 @@ import (
 // mappings, a property type refining an enum, an index, a mapping rule, a
 // trait's variants, and a function's flat arguments.
 const authoredStream = `
-kind: core.substrate.reamde.dev/authority
-metadata: {id: a.example.com}
-data: {version: 1}
+kind: substrate.reamde.dev/core/package
+metadata: {id: a.example.com/a}
+data: {authority: a.example.com, package: a, version: 1}
 ---
-kind: core.substrate.reamde.dev/propertytype
-metadata: {id: a.example.com/grade}
+kind: substrate.reamde.dev/core/propertytype
+metadata: {id: a.example.com/a/grade}
 data:
   authority: a.example.com
+  package: a
   base: enum
   values: [good, bad]
 ---
-kind: core.substrate.reamde.dev/trait
-metadata: {id: a.example.com/spanned}
+kind: substrate.reamde.dev/core/trait
+metadata: {id: a.example.com/a/spanned}
 data:
   authority: a.example.com
+  package: a
   oneOf:
     - {name: point, properties: {at: datetime}}
 ---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: a.example.com/widget}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: a.example.com/a/widget}
 data:
   authority: a.example.com
+  package: a
   names: {singular: widget, plural: widgets}
   indices: [{properties: [status]}]
   properties:
@@ -61,10 +64,11 @@ data:
       fields:
         label: {type: string}
 ---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: a.example.com/row}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: a.example.com/a/row}
 data:
   authority: a.example.com
+  package: a
   names: {singular: row, plural: rows}
   properties:
     label: {type: string}
@@ -75,27 +79,29 @@ data:
       mustExist: true
       subject: true
 ---
-kind: core.substrate.reamde.dev/recordmapping
-metadata: {id: a.example.com/rowwidget}
+kind: substrate.reamde.dev/core/recordmapping
+metadata: {id: a.example.com/a/rowwidget}
 data:
   authority: a.example.com
-  from: a.example.com/row
-  to: a.example.com/widget
+  package: a
+  from: a.example.com/a/row
+  to: a.example.com/a/widget
   property: widget
   map:
     status: {path: label}
 ---
-kind: core.substrate.reamde.dev/function
-metadata: {id: a.example.com/fn}
+kind: substrate.reamde.dev/core/function
+metadata: {id: a.example.com/a/fn}
 data:
   authority: a.example.com
+  package: a
   description: does a thing
   runtime: python
   source: "def main(input, host): return {}"
   arguments:
     - {name: url, type: string, required: true}
   permissions:
-    writes: [a.example.com/widget]
+    writes: [a.example.com/a/widget]
 `
 
 // TestTheParseNeverMutatesTheDocument is the invariant itself: build the
@@ -107,7 +113,7 @@ func TestTheParseNeverMutatesTheDocument(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse the stream: %v", err)
 	}
-	if _, err := vocabulary.BuildAuthorities(built, vocabulary.SourceInstalled); err != nil {
+	if _, err := vocabulary.BuildPackages(built, vocabulary.SourceInstalled); err != nil {
 		t.Fatalf("build: %v", err)
 	}
 	untouched, err := vocabulary.ParseStream([]byte(authoredStream))
@@ -142,7 +148,7 @@ func TestADeclarationIsTheAuthoredMap(t *testing.T) {
 	for _, d := range docs {
 		authored[d.ID] = d.Data
 	}
-	authorities, err := vocabulary.BuildAuthorities(docs, vocabulary.SourceInstalled)
+	authorities, err := vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -199,11 +205,11 @@ func TestADeclarationIsTheAuthoredMap(t *testing.T) {
 		t.Fatalf("re-parse: %v", err)
 	}
 	for i, d := range again {
-		if d.ID == "a.example.com/grade" {
+		if d.ID == "a.example.com/a/grade" {
 			again[i].Data["values"] = ptVals
 		}
 	}
-	round, err := vocabulary.BuildAuthorities(again, vocabulary.SourceInstalled)
+	round, err := vocabulary.BuildPackages(again, vocabulary.SourceInstalled)
 	if err != nil {
 		t.Fatalf("the stored form does not load: %v", err)
 	}

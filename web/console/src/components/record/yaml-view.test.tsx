@@ -17,7 +17,7 @@ vi.mock("@tanstack/react-router", () => ({
 import { YamlView } from "./yaml-view"
 import type { KeyDocs } from "@/lib/yaml-annotations"
 
-const SOURCE = `kind: core.substrate.reamde.dev/llmprovider
+const SOURCE = `kind: substrate.reamde.dev/core/llmprovider
 metadata:
   id: default
 data:
@@ -39,8 +39,8 @@ const DOCS: KeyDocs = {
 const TARGETS = {
   ids: {},
   kinds: {
-    "core.substrate.reamde.dev/llmprovider":
-      "/data/core.substrate.reamde.dev/llmproviders",
+    "substrate.reamde.dev/core/llmprovider":
+      "/data/substrate.reamde.dev/core/llmproviders",
   },
 }
 
@@ -122,8 +122,8 @@ describe("YamlView", () => {
     })
     const link = container.querySelector("a")
     expect(link?.getAttribute("href")).toBe(
-      "/data/core.substrate.reamde.dev/llmproviders"
+      "/data/substrate.reamde.dev/core/llmproviders"
     )
-    expect(link?.textContent).toBe("core.substrate.reamde.dev/llmprovider")
+    expect(link?.textContent).toBe("substrate.reamde.dev/core/llmprovider")
   })
 })

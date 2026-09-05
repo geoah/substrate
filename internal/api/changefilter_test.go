@@ -15,18 +15,18 @@ func TestParseChangeFilterAcceptsRepeatedAndCommaLists(t *testing.T) {
 	// recordId now REQUIRES its recordKind companion: the pair is
 	// prepended to Types, then the explicit kinds= list follows.
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/changes"+
-		"?kinds=tasks.substrate.reamde.dev/task,messaging.substrate.reamde.dev/conversationmessage"+
+		"?kinds=samples.substrate.reamde.dev/tasks/task,samples.substrate.reamde.dev/messaging/conversationmessage"+
 		"&actors=api&actors=connector:gmail"+
 		"&ops=put,patch&ops=delete"+
-		"&excludeKinds=google.connectors.substrate.reamde.dev/syncrun"+
+		"&excludeKinds=google.connectors.substrate.reamde.dev/google/syncrun"+
 		"&excludeActors=system&excludeOps=gc,merge"+
-		"&recordId=person-1&recordKind=people.substrate.reamde.dev/person", nil)
+		"&recordId=person-1&recordKind=samples.substrate.reamde.dev/people/person", nil)
 	f, err := parseChangeFilter(req)
 	if err != nil {
 		t.Fatalf("parseChangeFilter: %v", err)
 	}
 
-	wantTypes := []string{"people.substrate.reamde.dev/person", "tasks.substrate.reamde.dev/task", "messaging.substrate.reamde.dev/conversationmessage"}
+	wantTypes := []string{"samples.substrate.reamde.dev/people/person", "samples.substrate.reamde.dev/tasks/task", "samples.substrate.reamde.dev/messaging/conversationmessage"}
 	if len(f.Kinds) != len(wantTypes) {
 		t.Fatalf("types = %v, want %v", f.Kinds, wantTypes)
 	}
@@ -41,7 +41,7 @@ func TestParseChangeFilterAcceptsRepeatedAndCommaLists(t *testing.T) {
 	if len(f.Ops) != 3 || f.Ops[0] != substrate.OpPut || f.Ops[2] != substrate.OpDelete {
 		t.Fatalf("ops = %v", f.Ops)
 	}
-	if len(f.ExcludeKinds) != 1 || f.ExcludeKinds[0] != "google.connectors.substrate.reamde.dev/syncrun" {
+	if len(f.ExcludeKinds) != 1 || f.ExcludeKinds[0] != "google.connectors.substrate.reamde.dev/google/syncrun" {
 		t.Fatalf("exclude types = %v", f.ExcludeKinds)
 	}
 	if len(f.ExcludeActors) != 1 || f.ExcludeActors[0] != "system" {
@@ -59,7 +59,7 @@ func TestChangesHonorsRepeatedTypeParams(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
 	ds := env.svc.datasets["geoah"]
-	for _, typ := range []string{"people.substrate.reamde.dev/person", "messaging.substrate.reamde.dev/conversationmessage", "tasks.substrate.reamde.dev/task"} {
+	for _, typ := range []string{"samples.substrate.reamde.dev/people/person", "samples.substrate.reamde.dev/messaging/conversationmessage", "samples.substrate.reamde.dev/tasks/task"} {
 		ds.commit(substrate.Change{
 			TS: time.Unix(1, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
 			RecordID: "e-" + typ, Kind: typ,
@@ -67,7 +67,7 @@ func TestChangesHonorsRepeatedTypeParams(t *testing.T) {
 	}
 
 	rec := env.do(t, http.MethodGet, "/api/v1/changes"+
-		"?kinds=people.substrate.reamde.dev/person&kinds=messaging.substrate.reamde.dev/conversationmessage", tok, nil)
+		"?kinds=samples.substrate.reamde.dev/people/person&kinds=samples.substrate.reamde.dev/messaging/conversationmessage", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 
 	lines := 0
@@ -92,18 +92,18 @@ func TestParseChangeFilterRequiresKindCompanion(t *testing.T) {
 	}
 
 	typeOnly := httptest.NewRequest(http.MethodGet,
-		"/api/v1/changes?recordKind=people.substrate.reamde.dev/person", nil)
+		"/api/v1/changes?recordKind=samples.substrate.reamde.dev/people/person", nil)
 	if _, err := parseChangeFilter(typeOnly); err == nil {
 		t.Fatal("recordKind without recordId must be an error")
 	}
 
 	both := httptest.NewRequest(http.MethodGet,
-		"/api/v1/changes?recordId=e-1&recordKind=people.substrate.reamde.dev/person", nil)
+		"/api/v1/changes?recordId=e-1&recordKind=samples.substrate.reamde.dev/people/person", nil)
 	f, err := parseChangeFilter(both)
 	if err != nil {
 		t.Fatalf("recordId+recordKind must parse: %v", err)
 	}
-	if f.RecordID != "e-1" || len(f.Kinds) != 1 || f.Kinds[0] != "people.substrate.reamde.dev/person" {
+	if f.RecordID != "e-1" || len(f.Kinds) != 1 || f.Kinds[0] != "samples.substrate.reamde.dev/people/person" {
 		t.Fatalf("recordId+recordKind must AND into (id, type): id=%q kinds=%v", f.RecordID, f.Kinds)
 	}
 }
@@ -125,18 +125,18 @@ func TestChangesRecordIdPlusKindScopesToOneRecord(t *testing.T) {
 	// The same id under two types — exactly the A9 collision.
 	ds.commit(substrate.Change{
 		TS: time.Unix(1, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
-		RecordID: "shared", Kind: "people.substrate.reamde.dev/person",
+		RecordID: "shared", Kind: "samples.substrate.reamde.dev/people/person",
 	})
 	ds.commit(substrate.Change{
 		TS: time.Unix(2, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
-		RecordID: "shared", Kind: "tasks.substrate.reamde.dev/task",
+		RecordID: "shared", Kind: "samples.substrate.reamde.dev/tasks/task",
 	})
 
 	rec := env.do(t, http.MethodGet,
-		"/api/v1/changes?recordId=shared&recordKind=people.substrate.reamde.dev/person", tok, nil)
+		"/api/v1/changes?recordId=shared&recordKind=samples.substrate.reamde.dev/people/person", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	types := changeTypesFromNDJSON(t, rec)
-	if len(types) != 1 || types[0] != "people.substrate.reamde.dev/person" {
+	if len(types) != 1 || types[0] != "samples.substrate.reamde.dev/people/person" {
 		t.Fatalf("feed types = %v, want only the person row — the pair must not conflate id-sharing records", types)
 	}
 }
@@ -171,7 +171,7 @@ func TestHeadSeqFindsTheTrueHeadOfALargeChangelog(t *testing.T) {
 	for i := 1; i <= n; i++ {
 		ds.changes = append(ds.changes, substrate.Change{
 			Seq: int64(i), TS: time.Unix(int64(i), 0).UTC(), Actor: substrate.ActorAPI,
-			Op: substrate.OpPut, RecordID: "c1", Kind: "people.substrate.reamde.dev/person",
+			Op: substrate.OpPut, RecordID: "c1", Kind: "samples.substrate.reamde.dev/people/person",
 		})
 	}
 	got, err := headSeq(t.Context(), ds)

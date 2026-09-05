@@ -10,9 +10,10 @@ import type { KindInfo } from "@/lib/api/types"
 import { completionsAt, pathAt, writtenProperties } from "./yaml-completion"
 
 const taskKind: KindInfo = {
-  identity: "tasks.substrate.reamde.dev/task",
+  identity: "samples.substrate.reamde.dev/tasks/task",
   name: "task",
-  authority: "tasks.substrate.reamde.dev",
+  authority: "samples.substrate.reamde.dev",
+  package: "tasks",
   version: 0,
   plural: "tasks",
   source: "installed",
@@ -46,7 +47,7 @@ const taskKind: KindInfo = {
       },
       assignee: {
         type: "reference",
-        kind: "people.substrate.reamde.dev/person",
+        kind: "samples.substrate.reamde.dev/people/person",
         mustExist: true,
         description: "who is on it",
       },
@@ -54,7 +55,7 @@ const taskKind: KindInfo = {
   },
 }
 
-const DOC = `kind: tasks.substrate.reamde.dev/task
+const DOC = `kind: samples.substrate.reamde.dev/tasks/task
 metadata:
   id: t1
 data:
@@ -146,21 +147,23 @@ describe("completionsAt", () => {
   })
 
   it("offers this collection's kind after the envelope's `kind:`", () => {
-    expect(labels("kind: ")).toEqual(["tasks.substrate.reamde.dev/task"])
+    expect(labels("kind: ")).toEqual([
+      "samples.substrate.reamde.dev/tasks/task",
+    ])
   })
 
   it("offers a reference alongside every other declared property", () => {
     const found = at("data:\n  properties:\n    a")
     const assignee = found?.options.find((o) => o.label === "assignee")
     expect(assignee?.detail).toBe(
-      "reference → people.substrate.reamde.dev/person"
+      "reference → samples.substrate.reamde.dev/people/person"
     )
     expect(assignee?.info).toBe("who is on it")
   })
 
   it("offers a worked path after a reference's key", () => {
     expect(labels("data:\n  properties:\n    assignee: ")).toEqual([
-      "people.substrate.reamde.dev/person/some-id",
+      "samples.substrate.reamde.dev/people/person/some-id",
     ])
   })
 

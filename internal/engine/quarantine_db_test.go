@@ -28,7 +28,7 @@ func TestIncompatibleClosureQuarantinesInsteadOfBricking(t *testing.T) {
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
 		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -59,7 +59,7 @@ func TestIncompatibleClosureQuarantinesInsteadOfBricking(t *testing.T) {
 	// admission refuses the closure — the prod landmine. A declaration row's
 	// PROPERTIES are the declaration, so the corruption is a property away.
 	if _, err := raw.ExecContext(ctx,
-		`UPDATE records SET props = props - 'inputs' WHERE id = $1`, mbBundleRow); err != nil {
+		`UPDATE records SET props = props - 'inputs' WHERE id = $1`, mbPackage); err != nil {
 		t.Fatalf("corrupt stored closure: %v", err)
 	}
 	_ = svc.Close()
@@ -73,7 +73,7 @@ func TestIncompatibleClosureQuarantinesInsteadOfBricking(t *testing.T) {
 	ops2 := bundler(t, ds2)
 
 	// The bad bundle is quarantined, its reason names the admission failure.
-	st := bundleStatusFor(t, ops2, mbAuthority)
+	st := bundleStatusFor(t, ops2, mbPackage)
 	if !st.Quarantined {
 		t.Fatalf("mail bundle should be quarantined: %+v", st)
 	}
@@ -97,7 +97,7 @@ func TestIncompatibleClosureQuarantinesInsteadOfBricking(t *testing.T) {
 	if _, err := applier(t, ds2).ApplyVocabularyDocuments(ctx, owner, mbStandardDocs()); err != nil {
 		t.Fatalf("re-install valid closure: %v", err)
 	}
-	st = bundleStatusFor(t, ops2, mbAuthority)
+	st = bundleStatusFor(t, ops2, mbPackage)
 	if st.Quarantined {
 		t.Fatalf("re-install must clear the quarantine: %+v", st)
 	}
@@ -115,25 +115,26 @@ func TestIncompatibleClosureQuarantinesInsteadOfBricking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen after re-install: %v", err)
 	}
-	st = bundleStatusFor(t, bundler(t, ds3), mbAuthority)
+	st = bundleStatusFor(t, bundler(t, ds3), mbPackage)
 	if st.Quarantined || !st.Enabled {
 		t.Fatalf("a healthy closure must open live: %+v", st)
 	}
 }
 
-// bundleStatusFor finds one authority's status in the full listing, failing the
-// test on the query error or a missing authority.
-func bundleStatusFor(t *testing.T, ops bundleOps, authority string) substrate.BundleStatus {
+// bundleStatusFor finds one package's status in the full listing, failing the
+// test on the query error or a missing package. A bundle's status is keyed by
+// its id, which IS the package identity.
+func bundleStatusFor(t *testing.T, ops bundleOps, pkg string) substrate.BundleStatus {
 	t.Helper()
 	statuses, err := ops.BundleStatuses(context.Background())
 	if err != nil {
 		t.Fatalf("bundle statuses: %v", err)
 	}
 	for _, s := range statuses {
-		if s.Authority == authority {
+		if s.ID == pkg {
 			return s
 		}
 	}
-	t.Fatalf("bundle status for %s not found in %+v", authority, statuses)
+	t.Fatalf("bundle status for %s not found in %+v", pkg, statuses)
 	return substrate.BundleStatus{}
 }

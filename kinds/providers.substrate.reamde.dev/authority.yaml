@@ -1,0 +1,11 @@
+# The authority the shipped PROVIDER packages publish under: google, github,
+# linear, notion, whoop and beeper, one package each. A provider mirrors an
+# external service into the graph and its publisher ships the migration, so the
+# packages upgrade independently of one another under this one name.
+kind: substrate.reamde.dev/core/authority
+metadata:
+  id: providers.substrate.reamde.dev
+data:
+  description: >-
+    The shipped provider packages: an external service's own kinds, its sync
+    functions and its OAuth metadata.

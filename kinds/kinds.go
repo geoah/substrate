@@ -1,17 +1,20 @@
 // Package kinds carries the shipped vocabulary and nothing else: one directory
-// per authority, named for the authority, holding that authority's manifests as
-// files. A deploy is a git diff.
+// per authority, named for the authority, holding one directory per PACKAGE it
+// publishes and the authority's own manifest beside them. A deploy is a git
+// diff.
 //
-// The tree is embedded whole, and the two views of it are the two roles a
-// directory can play. [Seed] is the substrate's own machinery — the authority
-// repository creation writes into a new repository's changelog. [Bundles] is
-// everything else: the vocabulary a repository imports and the bundles a
-// console lists as available.
+// The tree is embedded whole, and the two views of it are the two roles an
+// authority can play. [Seed] is the substrate's own machinery — the core
+// package repository creation writes into a new repository's changelog.
+// [Bundles] is everything else: the provider packages a repository installs and
+// a console lists as available. The shipped SAMPLES are a second tree with its
+// own embed (the samples package), because a sample is vocabulary to copy
+// rather than vocabulary the substrate runs.
 //
-// The split is by NAME rather than by directory so that adding an authority is
-// adding a directory. A layout that nested the two roles would let a new bundle
-// land in the wrong half and go unnoticed; here the only way to be the seed is
-// to be the seed.
+// The split is by NAME rather than by nesting so that adding an authority is
+// adding a directory. A layout that nested the two roles would let a new
+// package land in the wrong half and go unnoticed; here the only way to be the
+// seed is to be the seed.
 package kinds
 
 import (
@@ -19,24 +22,30 @@ import (
 	"io/fs"
 )
 
-// SeedAuthority is the one authority that is the seed.
-const SeedAuthority = "core.substrate.reamde.dev"
+// SeedAuthority is the one authority whose packages are the seed, and
+// SeedPackage the single package it publishes.
+const (
+	SeedAuthority = "substrate.reamde.dev"
+	SeedPackage   = SeedAuthority + "/core"
+)
 
 // The pattern is part of the contract: an authority directory it misses is a
 // vocabulary that silently stops existing in production while every other test
 // still passes. kinds_test.go holds it to the tree on disk.
 //
-//go:embed all:*.substrate.reamde.dev
+//go:embed all:substrate.reamde.dev all:providers.substrate.reamde.dev
 var files embed.FS
 
-// Seed is the seed authority alone, as a filesystem whose root holds that one
-// directory — the shape the schema loader walks.
+// Seed is the seed authority alone — its core package and its own authority
+// manifest — as a filesystem whose root holds that one directory, the shape
+// the schema loader walks.
 func Seed() fs.FS {
 	return authorities(func(name string) bool { return name == SeedAuthority })
 }
 
-// Bundles is every authority that is not the seed, as a filesystem whose root
-// holds one directory per bundle closure — the shape the catalog reads.
+// Bundles is every authority that is not the seed, as a filesystem holding one
+// directory per authority with one directory per package inside it — the shape
+// the catalog reads.
 func Bundles() fs.FS {
 	return authorities(func(name string) bool { return name != SeedAuthority })
 }

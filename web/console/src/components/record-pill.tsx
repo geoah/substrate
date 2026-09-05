@@ -16,14 +16,14 @@ export function RecordPill({
   title,
   className,
 }: {
-  /** The record's kind reference, `<authority>/<name>`. */
+  /** The record's kind reference, `<authority>/<package>/<name>`. */
   kind: string
   id: string
   /** The record's display title; the id stands in when absent. */
   title?: string
   className?: string
 }) {
-  const { authority, name } = splitKind(kind)
+  const { authority, pkg, name } = splitKind(kind)
   const label = title || id
   const pill = cn(
     "inline-flex max-w-full items-center gap-1 rounded-full border bg-muted/40 px-2 py-0.5",
@@ -32,9 +32,10 @@ export function RecordPill({
     "outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
     className
   )
-  // A kind reference without its one slash names nothing routable; the pill
-  // still renders, inert, rather than minting a broken link.
-  if (!authority || !name) {
+  // A kind reference that is not authority- and package-qualified names
+  // nothing routable; the pill still renders, inert, rather than minting a
+  // broken link.
+  if (!authority || !pkg || !name) {
     return (
       <span className={pill}>
         <Box aria-hidden className="size-3 shrink-0 text-muted-foreground" />
@@ -44,8 +45,8 @@ export function RecordPill({
   }
   return (
     <Link
-      to="/data/$authority/$name/$id"
-      params={{ authority, name, id }}
+      to="/data/$authority/$pkg/$name/$id"
+      params={{ authority, pkg, name, id }}
       className={pill}
       title={`${kind}/${id}`}
     >

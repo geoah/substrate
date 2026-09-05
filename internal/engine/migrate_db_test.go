@@ -66,7 +66,7 @@ func TestOpenHealsADatabaseTheBranchBuildMigrated(t *testing.T) {
 	}
 
 	svc, err := engine.Open(context.Background(), dsn,
-		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {
 		t.Fatalf("a database this repository's own branch build migrated was refused: %v", err)
@@ -100,7 +100,7 @@ func TestTheCatchUpMigrationIsANoOpWhereTheConstraintStands(t *testing.T) {
 		t.Fatal("the landed 0005 did not leave the constraint")
 	}
 	svc, err := engine.Open(context.Background(), dsn,
-		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {
 		t.Fatalf("re-applying 0007 over an existing constraint failed: %v", err)
@@ -118,7 +118,7 @@ func TestOpenRefusesAnUnknownEditedMigration(t *testing.T) {
 		t.Fatalf("edit the recorded hash: %v", err)
 	}
 	_, err := engine.Open(context.Background(), dsn,
-		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err == nil {
 		t.Fatal("a database whose 0005 nothing recognizes was opened")

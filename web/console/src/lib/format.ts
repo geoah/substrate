@@ -153,7 +153,7 @@ export function recordTitle(properties: Record<string, unknown>): string {
   return typeof title === "string" ? title : ""
 }
 
-/** Initials for an actor chip: `people.google.connectors.substrate.reamde.dev` → `PG`,
+/** Initials for an actor chip: `providers.substrate.reamde.dev` → `PS`,
  * `owner` → `OW`. */
 export function actorInitials(actor: string): string {
   const parts = actor.split(".").filter(Boolean)
@@ -161,8 +161,8 @@ export function actorInitials(actor: string): string {
   return actor.slice(0, 2).toUpperCase()
 }
 
-/** A connector actor's short voice: the first two labels
- * (`people.google.connectors.substrate.reamde.dev` → `people.google`); short names pass
+/** A machine actor's short voice: the first two labels
+ * (`providers.substrate.reamde.dev` → `providers.substrate`); short names pass
  * through whole. */
 export function actorShortName(actor: string): string {
   const parts = actor.split(".")

@@ -17,14 +17,15 @@ import (
 func declarationRow() *substrate.Record {
 	at := time.Unix(1_700_000_000, 0).UTC()
 	return &substrate.Record{
-		ID:        "mine.example.com/widget",
-		Kind:      "core.substrate.reamde.dev/kind",
+		ID:        "mine.example.com/mine/widget",
+		Kind:      "substrate.reamde.dev/core/kind",
 		Title:     "widget",
 		Version:   1,
 		CreatedAt: at,
 		UpdatedAt: at,
 		Properties: map[string]any{
 			"authority":       "mine.example.com",
+			"package":         "mine",
 			"version":         int64(3),
 			"displayTemplate": "{label}",
 			"names":           map[string]any{"singular": "widget", "plural": "widgets"},
@@ -57,7 +58,7 @@ func TestDeclarationRendersInItsAuthoredShape(t *testing.T) {
 	if err := yaml.Unmarshal(b, &got); err != nil {
 		t.Fatalf("parse: %v\n%s", err, b)
 	}
-	if got.Kind != "core.substrate.reamde.dev/kind" || got.Metadata.ID != "mine.example.com/widget" {
+	if got.Kind != "substrate.reamde.dev/core/kind" || got.Metadata.ID != "mine.example.com/mine/widget" {
 		t.Fatalf("envelope: %+v\n%s", got, b)
 	}
 	// The authored keys sit directly under data.
@@ -141,7 +142,7 @@ func TestDeclarationOutputParsesBackAsADeclaration(t *testing.T) {
 func TestOrdinaryRecordStillNestsItsProperties(t *testing.T) {
 	at := time.Unix(1_700_000_000, 0).UTC()
 	e := &substrate.Record{
-		ID: "p1", Kind: "people.substrate.reamde.dev/person",
+		ID: "p1", Kind: "samples.substrate.reamde.dev/people/person",
 		Version: 1, CreatedAt: at, UpdatedAt: at,
 		Properties: map[string]any{"name": "Ada"},
 	}
@@ -165,15 +166,15 @@ func TestEveryMetaKindTakesTheDeclarationPath(t *testing.T) {
 		"kind", "authority", "trait", "propertytype",
 		"function", "agent", "bundle", "recordmapping", "actor",
 	} {
-		ref := "core.substrate.reamde.dev/" + short
+		ref := "substrate.reamde.dev/core/" + short
 		if _, ok := declarationKindOf(ref); !ok {
 			t.Errorf("%s is not recognized as a declaration", ref)
 		}
 	}
 	for _, ref := range []string{
-		"people.substrate.reamde.dev/person",
-		"core.substrate.reamde.dev/token",
-		"core.substrate.reamde.dev/run",
+		"samples.substrate.reamde.dev/people/person",
+		"substrate.reamde.dev/core/token",
+		"substrate.reamde.dev/core/run",
 		"task",
 	} {
 		if _, ok := declarationKindOf(ref); ok {

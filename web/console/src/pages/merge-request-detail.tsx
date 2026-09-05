@@ -84,7 +84,7 @@ import {
   type DiffRow,
   type MergeVerdict,
 } from "@/lib/mergerequests"
-import { splitKind, kindByIdentity } from "@/lib/definition"
+import { kindByIdentity } from "@/lib/definition"
 import { cn } from "@/lib/utils"
 import { EvidenceChips } from "@/components/merge-request"
 import { mergeRequestDetailRoute } from "@/router"
@@ -496,11 +496,15 @@ function useSideQuery(
   enabled: boolean
 ) {
   const type = ref ? kindByIdentity(types, ref.kind) : undefined
-  const authority = ref ? splitKind(ref.kind).authority : ""
   return {
     type,
     query: useQuery({
-      ...recordQueryOptions(authority, type?.name ?? "", ref?.id ?? ""),
+      ...recordQueryOptions(
+        type?.authority ?? "",
+        type?.package ?? "",
+        type?.name ?? "",
+        ref?.id ?? ""
+      ),
       enabled: enabled && Boolean(ref && type),
     }),
   }
@@ -619,7 +623,7 @@ export function MergeRequestDetailPage() {
             {winnerTitle}
           </h1>
           <p className="data text-xs text-muted-foreground">
-            core.substrate.reamde.dev/recordmergerequests/{request.id}
+            substrate.reamde.dev/core/recordmergerequests/{request.id}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2 pt-0.5">

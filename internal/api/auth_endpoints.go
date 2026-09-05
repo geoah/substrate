@@ -434,7 +434,7 @@ func (h *handler) getTokens(w http.ResponseWriter, r *http.Request) {
 
 // deleteToken revokes: it deletes the token record, which is the same write
 // the ordinary record surface performs at
-// DELETE /api/v1/core.substrate.reamde.dev/tokens/{id}. No row means no access — there
+// DELETE /api/v1/substrate.reamde.dev/core/tokens/{id}. No row means no access — there
 // is no revocation list and nothing to expire.
 func (h *handler) deleteToken(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -448,4 +448,4 @@ func (h *handler) deleteToken(w http.ResponseWriter, r *http.Request) {
 
 // tokenType is the token kind's reference — the one place the HTTP layer
 // names it, for the revoke path.
-const tokenType = coreAuthority + "/token"
+const tokenType = corePackage + "/token"

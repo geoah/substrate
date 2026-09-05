@@ -41,7 +41,7 @@ const (
 )
 
 // agentBuiltinByIdentity maps a host function's IDENTITY onto the built-in the
-// loop dispatches. It is what makes `{function: core.substrate.reamde.dev/query}`
+// loop dispatches. It is what makes `{function: substrate.reamde.dev/core/query}`
 // carry the same grant check and the same dispatch as the retired `{builtin:
 // query}` arm: the four are ordinary function records the registry ships, so
 // they resolve like any callable, and this is the only place that knows which of
@@ -68,16 +68,16 @@ var AgentParamKeys = []string{AgentParamMaxTokens, AgentParamTemperature}
 
 // KindRecordPatchRequest is the request type `propose` emits — the one
 // `*request` vocabulary the built-in speaks in this build.
-const KindRecordPatchRequest = "core.substrate.reamde.dev/recordpatchrequest"
+const KindRecordPatchRequest = "substrate.reamde.dev/core/recordpatchrequest"
 
 // KindLLMThread is the thread kind a `notifies:` transition reports into.
-const KindLLMThread = "core.substrate.reamde.dev/llmthread"
+const KindLLMThread = "substrate.reamde.dev/core/llmthread"
 
 // KindLLMInteraction is the batch-of-questions kind the `ask` built-in emits.
-const KindLLMInteraction = "core.substrate.reamde.dev/llminteraction"
+const KindLLMInteraction = "substrate.reamde.dev/core/llminteraction"
 
 // KindRecordPatchPolicy is the owner's door rules for agent writes.
-const KindRecordPatchPolicy = "core.substrate.reamde.dev/recordpatchpolicy"
+const KindRecordPatchPolicy = "substrate.reamde.dev/core/recordpatchpolicy"
 
 // The declared `resume:` values: whether a resolution resumes the agent's
 // thread. Absent means always.
@@ -103,8 +103,9 @@ const (
 
 // Agent is one parsed agent: the loop's declaration, nothing more.
 type Agent struct {
-	Name      string
-	Authority string
+	Name string
+	// Package is the identity of the package that declares it.
+	Package string
 	// Description is model-facing and REQUIRED: the agent is its own tool
 	// card wherever it appears as a sub-agent.
 	Description string
@@ -181,15 +182,18 @@ type AgentBudgets struct {
 	Depth           int
 }
 
-// Identity is "<authority>/<name>".
-func (a *Agent) Identity() string { return KindRef(a.Authority, a.Name) }
+// Identity is "<authority>/<package>/<name>".
+func (a *Agent) Identity() string { return a.Package + "/" + a.Name }
 
 // Actor is the agent's own writing hand: `agent:<authority>:<name>`, the
 // actor its writes are attributed to and the one trigger self-exclusion keys
 // on. It carries the declaring authority, so two bundles declaring an agent of
 // one name stay two actors, and it carries its own prefix, so an agent and a
 // function of one name under one authority do too (record 0025).
-func (a *Agent) Actor() string { return string(substrate.AgentActor(a.Authority, a.Name)) }
+func (a *Agent) Actor() string {
+	authority, pkg := SplitPackageRef(a.Package)
+	return string(substrate.AgentActor(authority, pkg, a.Name))
+}
 
 // EmitAllows reports whether the agent's write allowlist names a type.
 func (a *Agent) EmitAllows(ident string) bool {
@@ -208,7 +212,7 @@ var reToolName = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,63}$`)
 // --- the loader's half ---------------------------------------------------------
 
 var agentDataKeys = map[string]bool{
-	"authority": true, "description": true, "prompt": true,
+	"authority": true, "package": true, "description": true, "prompt": true,
 	"provider": true, "model": true, "params": true,
 	"tools": true, "subagents": true, "budgets": true, "permissions": true,
 	"hiddenFromChat": true, "resume": true,
@@ -254,9 +258,9 @@ var agentBuiltinIdentities = []string{
 	HostFunctionQuery, HostFunctionPropose, HostFunctionGraphQL, HostFunctionMutate,
 }
 
-// buildAuthorityAgents parses one authority's agent documents — load.go's one-line
+// buildPackageAgents parses one authority's agent documents — load.go's one-line
 // seam, kept here with the kind it builds.
-func (l *loader) buildAuthorityAgents(gd *authorityDocs, g *Authority) {
+func (l *loader) buildPackageAgents(gd *packageDocs, g *Package) {
 	sortDocs(gd.agents)
 	for _, d := range gd.agents {
 		a := l.parseAgent(d)
@@ -278,7 +282,7 @@ func (l *loader) buildAuthorityAgents(gd *authorityDocs, g *Authority) {
 // function's grant; the provider reference is a DATA row and resolves at
 // dispatch instead.
 func (l *loader) parseAgent(d Document) *Agent {
-	g := l.authority
+	g := l.pkg
 	where := DocAgent + " " + d.ID
 	for k := range d.Data {
 		if replacement, gone := deletedAgentKeys[k]; gone {
@@ -287,12 +291,12 @@ func (l *loader) parseAgent(d Document) *Agent {
 		}
 	}
 	l.checkKeys(where, d.Data, agentDataKeys)
-	local, ok := l.localName(where, d.ID, g.Name)
+	local, ok := l.localName(where, d.ID, g.Identity)
 	if !ok {
 		return nil
 	}
 	a := &Agent{
-		Name: local, Authority: g.Name,
+		Name: local, Package: g.Identity,
 		Description: l.parseDescription(where+": data", d.Data),
 		Definition:  d.Data,
 	}
@@ -311,7 +315,7 @@ func (l *loader) parseAgent(d Document) *Agent {
 	}
 	// `provider` is a REFERENCE at llmprovider: a manifest authors the bare
 	// record id and the row stores the full path, and the loop resolves the id.
-	a.Provider = ReferentID(d.Data["provider"], KindRef(AuthorityCore, "llmprovider"))
+	a.Provider = ReferentID(d.Data["provider"], CoreKind("llmprovider"))
 	if a.Provider == "" {
 		l.errf("%s: data.provider is required — an llmprovider record id (default, or a custom row)", where)
 		return nil
@@ -345,7 +349,7 @@ func (l *loader) parseAgent(d Document) *Agent {
 	for _, t := range a.Tools {
 		toolNames[t.Name] = true
 	}
-	for i, ident := range ReferentIDs(mslice(d.Data, "subagents"), KindRef(AuthorityCore, DocAgent)) {
+	for i, ident := range ReferentIDs(mslice(d.Data, "subagents"), CoreKind(DocAgent)) {
 		if !Qualified(ident) || strings.Contains(ident, "*") {
 			l.errf("%s: data.subagents[%d]: %q — sub-agents are full agent identities, no globs", where, i, ident)
 			continue
@@ -366,7 +370,7 @@ func (l *loader) parseAgent(d Document) *Agent {
 	if !ok {
 		return nil
 	}
-	for i, t := range ReferentIDs(mslice(perms, "writes"), KindRef(AuthorityCore, DocKind)) {
+	for i, t := range ReferentIDs(mslice(perms, "writes"), CoreKind(DocKind)) {
 		if !Qualified(t) || strings.Contains(t, "*") {
 			l.errf("%s: data.permissions.writes[%d]: %q is not a full type identity; writes names them, no globs", where, i, t)
 			continue
@@ -482,7 +486,7 @@ func (l *loader) parseAgentParams(where string, data map[string]any, a *Agent) b
 // parseAgentTools reads the `tools:` list. An entry names ONE tool, ONE way:
 // `function:` plus a function identity, optionally aliased for this agent's
 // prompt context with `name`/`description`. The four built-ins are function
-// records like any other (`core.substrate.reamde.dev/query`, …), so they are
+// records like any other (`substrate.reamde.dev/core/query`, …), so they are
 // named here exactly like a bundle's function is.
 //
 // THREE OLDER SPELLINGS ARE REFUSED, each naming what replaced it. A bare STRING
@@ -532,7 +536,7 @@ func (l *loader) parseAgentTools(where string, data map[string]any, a *Agent) bo
 				}
 			}
 			l.checkKeys(twhere, entry, agentToolKeys)
-			fnIdent := ReferentID(entry["function"], KindRef(AuthorityCore, DocFunction))
+			fnIdent := ReferentID(entry["function"], CoreKind(DocFunction))
 			if fnIdent == "" {
 				l.errf("%s: no function — an entry names one function identity (a built-in is one of %s)",
 					twhere, strings.Join(agentBuiltinIdentities, ", "))
@@ -600,11 +604,11 @@ func (l *loader) parseAgentBudgets(where string, data map[string]any, a *Agent) 
 	return true
 }
 
-// resolveAuthorityAgents validates an authority's agents against the loaded registry:
+// resolvePackageAgents validates an authority's agents against the loaded registry:
 // every written and read type must exist, every tool must name a
 // registered function, and every sub-agent must be a registered agent —
 // same-batch installs count, like a function's call targets.
-func (r *Registry) resolveAuthorityAgents(g *Authority) []string {
+func (r *Registry) resolvePackageAgents(g *Package) []string {
 	var problems []string
 	for _, an := range g.AgentOrder {
 		a := g.Agents[an]
@@ -643,7 +647,7 @@ func (r *Registry) resolveAuthorityAgents(g *Authority) []string {
 // Agents lists every loaded agent, ordered by identity.
 func (r *Registry) Agents() []*Agent {
 	var out []*Agent
-	for _, g := range r.AuthorityList() {
+	for _, g := range r.PackageList() {
 		for _, n := range g.AgentOrder {
 			out = append(out, g.Agents[n])
 		}
@@ -679,15 +683,16 @@ func (r *Registry) ResolveAgent(nameOrIdentity string) (*Agent, error) {
 }
 
 // AgentManifest renders an agent document: the identity derives from the name
-// and the authority so a caller cannot spell them inconsistently.
-func AgentManifest(authority, name string, data map[string]any) map[string]any {
-	full := map[string]any{"authority": authority}
+// and the package so a caller cannot spell them inconsistently.
+func AgentManifest(pkg, name string, data map[string]any) map[string]any {
+	authority, pkgName := SplitPackageRef(pkg)
+	full := map[string]any{"authority": authority, "package": pkgName}
 	for _, k := range sortedKeys(data) {
 		full[k] = data[k]
 	}
 	return map[string]any{
 		"kind":     CoreKind(DocAgent),
-		"metadata": map[string]any{"id": KindRef(authority, name)},
+		"metadata": map[string]any{"id": pkg + "/" + name},
 		"data":     full,
 	}
 }

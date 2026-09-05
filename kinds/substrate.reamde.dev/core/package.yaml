@@ -1,0 +1,74 @@
+# one package of kinds, id = "<authority>/<package>" (decision record 0047)
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/package
+data:
+  authority: substrate.reamde.dev
+  package: core
+  # version 16: the package is the unit a declaration is versioned, owned and
+  # quarantined in. This row is what the authority row used to be.
+  version: 16
+  description: >-
+    One package whose kinds this repository holds: the group a declaration
+    is versioned, owned and quarantined in. The row says who may write under
+    it and where its declarations came from, and carries the quarantine mark
+    set when a stored closure no longer admits.
+  names:
+    singular: package
+  displayTemplate: "{localName}"
+  properties:
+    # The authority that publishes the package, and the package's own word.
+    # Both are segments of the id; they are declared so a reader can filter and
+    # group by either without splitting the reference.
+    authority:
+      type: string
+      required: true
+      description: the authority this package publishes under
+    package:
+      type: string
+      required: true
+      description: the package's own name, the middle segment of every kind
+        it declares
+    description:
+      type: markdown
+      description: what this package is for, in its own words
+    version:
+      type: int
+      managed: true
+      description: the closure's incremental version, maintained by the engine
+    # The package's actors are read off the actor documents it declares, so
+    # the engine writes this list; nothing authors it on the header itself.
+    actors:
+      type: string
+      repeated: true
+      managed: true
+      description: the actors declared under this package
+    source:
+      type: enum
+      values:
+        - builtin
+        - installed
+      managed: true
+      description: builtin for seeded packages, installed for the rest
+    # Issue 010 runtime state, owned by repository-open: set when a stored
+    # closure no longer admits under the current binary — the package is left
+    # out of the live registry and the repository opens without it. Re-applying
+    # a valid closure re-projects this row and clears both, and so does the
+    # next open under a binary that admits the stored one again. Never part of
+    # a declaration.
+    #
+    # It lives HERE and not on the bundle row because admission is
+    # package-scoped: a repository-local package — a user's own kinds, declared
+    # through the API with no bundle document — can fail admission too, and has
+    # no bundle row to carry the mark.
+    quarantined:
+      type: bool
+      managed: true
+      description: set at repository-open when the package's stored closure
+        fails admission; cleared by re-applying a valid closure, or by an
+        open that admits the stored one
+    quarantineReason:
+      type: string
+      managed: true
+      description: the admission error that quarantined the package
+    # No sourceYAML (record 61): declaration rows store parsed facts only.

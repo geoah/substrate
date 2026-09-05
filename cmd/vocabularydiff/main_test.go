@@ -7,30 +7,33 @@ import (
 	"testing"
 )
 
-const baseBundle = `kind: core.substrate.reamde.dev/authority
-metadata: {id: t.example.com}
-data: {version: 1}
+const baseBundle = `kind: substrate.reamde.dev/core/package
+metadata: {id: t.example.com/t}
+data: {authority: t.example.com, package: t, version: 1}
 ---
-kind: core.substrate.reamde.dev/bundle
+kind: substrate.reamde.dev/core/bundle
 metadata: {id: t.example.com/t}
 data:
   authority: t.example.com
-  installs: [t.example.com/thing, t.example.com/other]
+  package: t
+  installs: [t.example.com/t/thing, t.example.com/t/other]
 `
 
-const baseThing = `kind: core.substrate.reamde.dev/kind
-metadata: {id: t.example.com/thing}
+const baseThing = `kind: substrate.reamde.dev/core/kind
+metadata: {id: t.example.com/t/thing}
 data:
   authority: t.example.com
+  package: t
   names: {singular: thing, plural: things}
   properties:
     label: {type: string}
 `
 
-const baseOther = `kind: core.substrate.reamde.dev/kind
-metadata: {id: t.example.com/other}
+const baseOther = `kind: substrate.reamde.dev/core/kind
+metadata: {id: t.example.com/t/other}
 data:
   authority: t.example.com
+  package: t
   names: {singular: other, plural: others}
 `
 
@@ -55,9 +58,9 @@ func writeTree(t *testing.T, files map[string]string) *tree {
 
 func baseFiles() map[string]string {
 	return map[string]string{
-		"t.example.com/bundle.yaml": baseBundle,
-		"t.example.com/thing.yaml":  baseThing,
-		"t.example.com/other.yaml":  baseOther,
+		"t.example.com/t/bundle.yaml": baseBundle,
+		"t.example.com/t/thing.yaml":  baseThing,
+		"t.example.com/t/other.yaml":  baseOther,
 	}
 }
 
@@ -69,49 +72,50 @@ func TestUnchangedTreePasses(t *testing.T) {
 
 func TestChangedKindNeedsABump(t *testing.T) {
 	head := baseFiles()
-	head["t.example.com/thing.yaml"] = strings.Replace(baseThing,
+	head["t.example.com/t/thing.yaml"] = strings.Replace(baseThing,
 		"    label: {type: string}", "    label: {type: string}\n    extra: {type: string}", 1)
 	got := diffTrees(writeTree(t, baseFiles()), writeTree(t, head))
-	if len(got) != 1 || !strings.Contains(got[0], "t.example.com/thing") {
+	if len(got) != 1 || !strings.Contains(got[0], "t.example.com/t/thing") {
 		t.Fatalf("a changed kind under an unmoved version passes: %v", got)
 	}
 
 	// The kind's own version bump admits the same change.
-	head["t.example.com/thing.yaml"] = strings.Replace(head["t.example.com/thing.yaml"],
+	head["t.example.com/t/thing.yaml"] = strings.Replace(head["t.example.com/t/thing.yaml"],
 		"  authority: t.example.com", "  authority: t.example.com\n  version: 2", 1)
 	if got := diffTrees(writeTree(t, baseFiles()), writeTree(t, head)); len(got) != 0 {
 		t.Fatalf("a bumped kind still violates: %v", got)
 	}
 }
 
-func TestAuthorityBumpCoversItsDeclarations(t *testing.T) {
+func TestPackageBumpCoversItsDeclarations(t *testing.T) {
 	head := baseFiles()
-	head["t.example.com/thing.yaml"] = strings.Replace(baseThing,
+	head["t.example.com/t/thing.yaml"] = strings.Replace(baseThing,
 		"    label: {type: string}", "    label: {type: string}\n    extra: {type: string}", 1)
-	head["t.example.com/bundle.yaml"] = strings.Replace(baseBundle, "version: 1", "version: 2", 1)
+	head["t.example.com/t/bundle.yaml"] = strings.Replace(baseBundle, "version: 1", "version: 2", 1)
 	if got := diffTrees(writeTree(t, baseFiles()), writeTree(t, head)); len(got) != 0 {
-		t.Fatalf("an authority bump does not cover its kinds: %v", got)
+		t.Fatalf("a package bump does not cover its kinds: %v", got)
 	}
 }
 
-func TestRemovedDeclarationNeedsAnAuthorityBump(t *testing.T) {
+func TestRemovedDeclarationNeedsAPackageBump(t *testing.T) {
 	head := baseFiles()
-	delete(head, "t.example.com/other.yaml")
+	delete(head, "t.example.com/t/other.yaml")
 	got := diffTrees(writeTree(t, baseFiles()), writeTree(t, head))
-	if len(got) != 1 || !strings.Contains(got[0], "t.example.com/other") {
-		t.Fatalf("a pruned declaration under an unmoved authority passes: %v", got)
+	if len(got) != 1 || !strings.Contains(got[0], "t.example.com/t/other") {
+		t.Fatalf("a pruned declaration under an unmoved package passes: %v", got)
 	}
 
-	head["t.example.com/bundle.yaml"] = strings.Replace(baseBundle, "version: 1", "version: 2", 1)
+	head["t.example.com/t/bundle.yaml"] = strings.Replace(baseBundle, "version: 1", "version: 2", 1)
 	if got := diffTrees(writeTree(t, baseFiles()), writeTree(t, head)); len(got) != 0 {
-		t.Fatalf("a pruned declaration under a bumped authority violates: %v", got)
+		t.Fatalf("a pruned declaration under a bumped package violates: %v", got)
 	}
 }
 
-const freshKind = `kind: core.substrate.reamde.dev/kind
-metadata: {id: t.example.com/fresh}
+const freshKind = `kind: substrate.reamde.dev/core/kind
+metadata: {id: t.example.com/t/fresh}
 data:
   authority: t.example.com
+  package: t
   names: {singular: fresh, plural: freshes}
 `
 
@@ -122,8 +126,8 @@ func TestAddedDeclarationNeedsNoBump(t *testing.T) {
 	//
 	// The rule those two enforce is "no repository is ever offered the change".
 	// It does not apply here: both upgrade paths carry an added declaration on
-	// its ABSENCE, not on a version. seed.go's boot upgrade writes the
-	// authority when any declaration `!exists`, and PlanBundleUpgrade lists the
+	// its ABSENCE, not on a version. seed.go's boot upgrade writes the package
+	// when any declaration `!exists`, and PlanBundleUpgrade lists the
 	// same declaration as a change with no `from` and sets Available. Delivery
 	// wiring has no such arm, which is exactly why it needs the bump and this
 	// does not.
@@ -133,7 +137,7 @@ func TestAddedDeclarationNeedsNoBump(t *testing.T) {
 	// would be a rule the machinery does not need, so what this pins is that
 	// the diff stays quiet — the check has been read as a bug twice.
 	head := baseFiles()
-	head["t.example.com/fresh.yaml"] = freshKind
+	head["t.example.com/t/fresh.yaml"] = freshKind
 	if got := diffTrees(writeTree(t, baseFiles()), writeTree(t, head)); len(got) != 0 {
 		t.Fatalf("an added declaration demands a bump it does not need: %v", got)
 	}
@@ -146,62 +150,62 @@ func TestAddedDeclarationInInstallsStillNeedsTheBundleBump(t *testing.T) {
 	// the rule that was always there, naming the document that actually
 	// changed.
 	head := baseFiles()
-	head["t.example.com/fresh.yaml"] = freshKind
-	head["t.example.com/bundle.yaml"] = strings.Replace(baseBundle,
-		"installs: [t.example.com/thing, t.example.com/other]",
-		"installs: [t.example.com/thing, t.example.com/other, t.example.com/fresh]", 1)
+	head["t.example.com/t/fresh.yaml"] = freshKind
+	head["t.example.com/t/bundle.yaml"] = strings.Replace(baseBundle,
+		"installs: [t.example.com/t/thing, t.example.com/t/other]",
+		"installs: [t.example.com/t/thing, t.example.com/t/other, t.example.com/t/fresh]", 1)
 	got := diffTrees(writeTree(t, baseFiles()), writeTree(t, head))
 	if len(got) != 1 || !strings.Contains(got[0], "bundle t.example.com/t") {
 		t.Fatalf("a changed installs list under an unmoved version passes: %v", got)
 	}
 }
 
-func TestRemovedBundleDirectoryPasses(t *testing.T) {
+func TestRemovedPackageDirectoryPasses(t *testing.T) {
 	if got := diffTrees(writeTree(t, baseFiles()), writeTree(t, map[string]string{})); len(got) != 0 {
-		t.Fatalf("a bundle leaving the tree whole violates: %v", got)
+		t.Fatalf("a package leaving the tree whole violates: %v", got)
 	}
 }
 
-const baseTriggers = `kind: core.substrate.reamde.dev/trigger
-metadata: {id: t.example.com/onthing}
+const baseTriggers = `kind: substrate.reamde.dev/core/trigger
+metadata: {id: t.example.com/t/onthing}
 data:
   properties:
-    callable: {kind: core.substrate.reamde.dev/function, id: t.example.com/f}
-    kinds: [t.example.com/thing]
+    callable: {kind: substrate.reamde.dev/core/function, id: t.example.com/t/f}
+    kinds: [t.example.com/t/thing]
 `
 
-func TestChangedDeliveryWiringNeedsAnAuthorityBump(t *testing.T) {
+func TestChangedDeliveryWiringNeedsAPackageBump(t *testing.T) {
 	base := baseFiles()
-	base["t.example.com/triggers.yaml"] = baseTriggers
+	base["t.example.com/t/triggers.yaml"] = baseTriggers
 	head := baseFiles()
-	head["t.example.com/triggers.yaml"] = strings.Replace(baseTriggers,
-		"    kinds: [t.example.com/thing]", "    kinds: [t.example.com/other]", 1)
+	head["t.example.com/t/triggers.yaml"] = strings.Replace(baseTriggers,
+		"    kinds: [t.example.com/t/thing]", "    kinds: [t.example.com/t/other]", 1)
 	got := diffTrees(writeTree(t, base), writeTree(t, head))
 	if len(got) != 1 || !strings.Contains(got[0], "delivery wiring") {
-		t.Fatalf("a changed trigger under an unmoved authority passes: %v", got)
+		t.Fatalf("a changed trigger under an unmoved package passes: %v", got)
 	}
 
-	head["t.example.com/bundle.yaml"] = strings.Replace(baseBundle, "version: 1", "version: 2", 1)
+	head["t.example.com/t/bundle.yaml"] = strings.Replace(baseBundle, "version: 1", "version: 2", 1)
 	if got := diffTrees(writeTree(t, base), writeTree(t, head)); len(got) != 0 {
-		t.Fatalf("a bumped authority does not cover its wiring: %v", got)
+		t.Fatalf("a bumped package does not cover its wiring: %v", got)
 	}
 }
 
 func TestAddedAndRemovedWiringCountToo(t *testing.T) {
 	base := baseFiles()
 	head := baseFiles()
-	head["t.example.com/triggers.yaml"] = baseTriggers
+	head["t.example.com/t/triggers.yaml"] = baseTriggers
 	if got := diffTrees(writeTree(t, base), writeTree(t, head)); len(got) != 1 {
-		t.Fatalf("added wiring under an unmoved authority passes: %v", got)
+		t.Fatalf("added wiring under an unmoved package passes: %v", got)
 	}
 	if got := diffTrees(writeTree(t, head), writeTree(t, base)); len(got) != 1 {
-		t.Fatalf("removed wiring under an unmoved authority passes: %v", got)
+		t.Fatalf("removed wiring under an unmoved package passes: %v", got)
 	}
 }
 
 func TestUnchangedWiringPasses(t *testing.T) {
 	files := baseFiles()
-	files["t.example.com/triggers.yaml"] = baseTriggers
+	files["t.example.com/t/triggers.yaml"] = baseTriggers
 	if got := diffTrees(writeTree(t, files), writeTree(t, files)); len(got) != 0 {
 		t.Fatalf("unchanged wiring violates: %v", got)
 	}
@@ -209,7 +213,7 @@ func TestUnchangedWiringPasses(t *testing.T) {
 
 func TestVersionNeverMovesBackward(t *testing.T) {
 	head := baseFiles()
-	head["t.example.com/bundle.yaml"] = strings.Replace(baseBundle, "version: 1", "version: 2", 1)
+	head["t.example.com/t/bundle.yaml"] = strings.Replace(baseBundle, "version: 1", "version: 2", 1)
 	got := diffTrees(writeTree(t, head), writeTree(t, baseFiles()))
 	if len(got) == 0 {
 		t.Fatal("a downgraded tree passes")

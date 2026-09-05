@@ -1,5 +1,5 @@
 /** The actor grammar's data side. Actors are records: the engine mirrors one
- * `core.substrate.reamde.dev/actor` record per declared actor (its id IS the actor name)
+ * `substrate.reamde.dev/core/actor` record per declared actor (its id IS the actor name)
  * — EXCEPT a single-writer bundle whose actor shares its authority's name
  * (record 60): that name's one record is the `authority` mirror. So an actor id
  * resolves against `actors` first, then `authorities`; a name in neither is
@@ -20,9 +20,9 @@ const AUTHORITIES = "authority"
 const MIRROR_PAGE = 500
 
 export interface ActorMirrors {
-  /** `core.substrate.reamde.dev/actor` rows, id = actor name. */
+  /** `substrate.reamde.dev/core/actor` rows, id = actor name. */
   actors: SubstrateRecord[]
-  /** `core.substrate.reamde.dev/authority` rows — authority-named actors live here. */
+  /** `substrate.reamde.dev/core/authority` rows — authority-named actors live here. */
   authorities: SubstrateRecord[]
 }
 

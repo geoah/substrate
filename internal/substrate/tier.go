@@ -24,7 +24,7 @@ const (
 	TierBundle Tier = "bundle"
 	// TierMachine is the engine and the sync machinery: recompute's own
 	// rows (whatever actor they credit), ActorSystem, and every
-	// authority-declared `bundle:<authority>` actor (the actor document's
+	// package-declared `bundle:<authority>:<package>` actor (the actor document's
 	// default tier). Machine-held properties are recompute's to overwrite.
 	TierMachine Tier = "machine"
 )

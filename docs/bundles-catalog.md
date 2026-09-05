@@ -17,18 +17,19 @@ one accepts that. Every integration syncs from the provider into the
 repository; none writes back to the provider, and each ships a README stating
 its limits.
 
-This is the map. The source of truth is each bundle's own manifests under
-`kinds/`, and everything an install will add — the declarations and the records
-it writes beside them — is previewable through
+This is the map. The source of truth is each bundle's own manifests, under
+`kinds/<authority>/<package>/` for the providers and `samples/<package>/` for
+the samples, and everything an install will add — the declarations and the
+records it writes beside them — is previewable through
 `GET …/catalog/{id}`.
 
-Kinds, functions, agents, and mappings are named `<authority>/<name>`; each
-section's first line gives the authority, and its lists give the name. The
-authority carries the provider, so no name repeats it — GitHub's issue mirror
-is `github.bundles.substrate.reamde.dev/issue`, Linear's is
-`linear.bundles.substrate.reamde.dev/issue`, and one record of either is addressed as
-`<authority>/<kind>/<id>`. What a closure declares is exactly what its
-`installs:` lists. Beside that closure every bundle may ship **ordinary
+Kinds, functions, agents, and mappings are named `<authority>/<package>/<name>`;
+each section's first line gives the package, and its lists give the name. The
+package carries the provider, so no name repeats it — GitHub's issue mirror
+is `providers.substrate.reamde.dev/github/issue`, Linear's is
+`providers.substrate.reamde.dev/linear/issue`, and one record of either is
+addressed as `<authority>/<package>/<kind>/<id>`. What a closure declares is
+exactly what its `installs:` lists. Beside that closure every bundle may ship **ordinary
 records**, written by the same install: an integration's triggers (the
 delivery wiring, in
 `triggers.yaml`) and the LLM example's two provider rows are the same kind of
@@ -49,7 +50,7 @@ thing, and the Records column counts them.
 
 ## LLM (example)
 
-Authority `llm.examples.substrate.reamde.dev`. Install this bundle first if
+Package `samples.substrate.reamde.dev/llm`. Install this bundle first if
 you want to run an agent at all. A fresh substrate seeds no `llmprovider` row,
 so this bundle ships the two an agent can name (`anthropic` and `openai`),
 correctly shaped for their wires and deliberately keyless, plus a `scratchpad`
@@ -80,14 +81,14 @@ pricing.
 
 ## Notes (example)
 
-Authority `notes.bundles.substrate.reamde.dev`. The smallest bundle that shows
+Package `samples.substrate.reamde.dev/notes`. The smallest bundle that shows
 an agent calling functions as tools and delegating to a sub-agent, and the one
 to read first. It needs no network, no credentials and no other bundle's
 vocabulary, so it installs on a fresh substrate and is driven by hand in one
 command, and its two functions stand on their own with no model at all:
 
 ```bash
-substratectl apply -f kinds/notes.bundles.substrate.reamde.dev/bundle.yaml
+substratectl apply -f samples/notes/bundle.yaml
 substratectl function call stats --input '{"text": "hello world"}'
 ```
 
@@ -105,14 +106,14 @@ above ships `anthropic` and `openai` rather than `default`. Calling an agent is
 an API call, not a CLI verb:
 
 ```bash
-curl -s -X POST "$SUBSTRATE_SERVER/api/v1/core.substrate.reamde.dev/agent/notekeeper/call" \
+curl -s -X POST "$SUBSTRATE_SERVER/api/v1/substrate.reamde.dev/core/agent/notekeeper/call" \
   -H "Authorization: Bearer $SUBSTRATE_TOKEN" -H 'Content-Type: application/json' \
   -d '{"input": {"text": "id: my-note\n\nSomething worth keeping."}}'
 ```
 
 ## Google
 
-Authority `google.bundles.substrate.reamde.dev`. An OAuth integration that syncs a Google
+Package `providers.substrate.reamde.dev/google`. An OAuth integration that syncs a Google
 account's address book, mail, and calendars into the repository and folds them
 onto your people.
 
@@ -131,10 +132,10 @@ whichever stream finishes stamps them.
 - **Functions (4)**: `contactssync` pages `people/me/connections`, emits
   `contact` records, and stores the People sync token for incremental runs;
   `gmailsync` drains Gmail history (or a bounded backfill window) into thread
-  and message mirrors plus core `messaging.substrate.reamde.dev/emailthread` and
+  and message mirrors plus core `samples.substrate.reamde.dev/messaging/emailthread` and
   `emailmessage` rows; `calendarsync` drains each calendar's events on that
   calendar's own sync token into event mirrors plus core
-  `calendar.substrate.reamde.dev/calendar`, `calendarevent` and
+  `samples.substrate.reamde.dev/calendar/calendar`, `calendarevent` and
   `calendareventseries` rows; `contactsidmigration`
   is a bounded, trigger-less callable that re-keys older ad-hoc contact ids onto
   the deterministic external-id scheme.
@@ -143,7 +144,7 @@ whichever stream finishes stamps them.
   connected account carries that toggle; `google-contacts-scheduled`,
   `google-gmail-scheduled`, and `google-calendar-scheduled` fire them hourly.
 - **Mappings (2)**: `contactperson` folds `contact` onto
-  `people.substrate.reamde.dev/person`, matching on email and mapping name plus the union
+  `samples.substrate.reamde.dev/people/person`, matching on email and mapping name plus the union
   of emails and phones; `emailaddressperson` folds `emailaddress` onto the same
   person, matching on the address and contributing the header name plus that
   address.
@@ -183,7 +184,7 @@ strings), and no writeback.
 
 ## GitHub
 
-Authority `github.bundles.substrate.reamde.dev`. An OAuth integration that mirrors the
+Package `providers.substrate.reamde.dev/github`. An OAuth integration that mirrors the
 code work you are involved in.
 
 - **Kinds (6)**: `config`, `account`, and the mirrors `user`, `repository`,
@@ -193,7 +194,7 @@ code work you are involved in.
   review-requested on, one REST page per invocation with per-stage watermarks.
 - **Triggers (2)**: `github-on-connect` fires `githubsync` once an account is
   connected and has a feature toggle on; `github-scheduled` fires it hourly.
-- **Mapping (1)**: `userperson` folds `user` onto `people.substrate.reamde.dev/person`,
+- **Mapping (1)**: `userperson` folds `user` onto `samples.substrate.reamde.dev/people/person`,
   matching on the public email and mapping name, login as the display name, and
   the union of emails.
 
@@ -206,29 +207,29 @@ from GitHub's settings.
 
 ## Linear
 
-Authority `linear.bundles.substrate.reamde.dev`. An OAuth integration that mirrors the
+Package `providers.substrate.reamde.dev/linear`. An OAuth integration that mirrors the
 issues assigned to you and projects them onto jointly-owned tasks.
 
 - **Kinds (5)**: `config`, `account`, and the mirrors `user`, `team`, `issue`.
 - **Functions (2)**: `issuessync` pages the viewer's assigned issues and
   mirrors the viewer, teams, and issues; `taskprojection` projects one `issue`
-  onto a `tasks.substrate.reamde.dev/task` row, minting open tasks and patching the
+  onto a `samples.substrate.reamde.dev/tasks/task` row, minting open tasks and patching the
   Linear-owned keys under a version check, moving status only on a real
   upstream transition.
 - **Triggers (3)**: `linear-issues-on-connect` and `linear-issues-scheduled`
   drive `issuessync` (on connect and hourly); `linear-task-projection` fires
   `taskprojection` on every `issue` change.
-- **Mappings (2)**: `userperson` folds `user` onto `people.substrate.reamde.dev/person`
+- **Mappings (2)**: `userperson` folds `user` onto `samples.substrate.reamde.dev/people/person`
   (match on email, map names and emails), and `issueperson` resolves an issue's
   `assignee` reference onto a person by the assignee's email.
 
 This is the one integration that both mirrors a provider and projects into the
-shipped `tasks.substrate.reamde.dev` vocabulary, so a Linear issue and a hand-written task
-live side by side.
+shipped `samples.substrate.reamde.dev/tasks` vocabulary, so a Linear issue and a
+hand-written task live side by side.
 
 ## WHOOP
 
-Authority `whoop.bundles.substrate.reamde.dev`. An OAuth integration that mirrors a WHOOP
+Package `providers.substrate.reamde.dev/whoop`. An OAuth integration that mirrors a WHOOP
 wearable's daily physiology.
 
 - **Kinds (5)**: `config`, `account`, and the mirrors `recovery`, `sleep`,
@@ -248,7 +249,7 @@ revocation is manual.
 
 ## Notion
 
-Authority `notion.bundles.substrate.reamde.dev`. An integration that mirrors the Notion
+Package `providers.substrate.reamde.dev/notion`. An integration that mirrors the Notion
 pages and data sources shared with an internal integration. It is authorized by
 an internal-integration token rather than OAuth, because Notion authenticates
 its token exchange with HTTP Basic and the host facility declares one auth
@@ -269,7 +270,7 @@ row is stamped `syncStatus: ignored: duplicate account`.
 
 ## Beeper
 
-Authority `beeper.bundles.substrate.reamde.dev`. A non-OAuth integration: it connects a
+Package `providers.substrate.reamde.dev/beeper`. A non-OAuth integration: it connects a
 Beeper (Matrix) homeserver with a pasted access token and mirrors bridged rooms
 and messages (WhatsApp, Telegram, Signal, iMessage, and the rest). Read only,
 it never sends.
@@ -290,7 +291,7 @@ row is stamped `syncStatus: ignored: duplicate account`.
 
 ## Firecrawl
 
-Authority `firecrawl.bundles.substrate.reamde.dev`. Not an integration: no
+Package `samples.substrate.reamde.dev/firecrawl`. Not an integration: no
 provider account is connected and nothing syncs. It is web search and page
 scraping over the Firecrawl API, exposed as two callables an agent binds as
 tools, behind an API key.
@@ -310,7 +311,7 @@ owner-editable `baseUrl` can never redirect the key.
 
 ## Web harvester
 
-Authority `web.bundles.substrate.reamde.dev`. The substrate's
+Package `samples.substrate.reamde.dev/web`. The substrate's
 shipped end-to-end conformance example: it proves that `bundle`, `kind`,
 `function`, `agent`, and `trigger` declarations compose into a real
 feature (harvest URLs from a message, fetch and classify each page, propose
@@ -332,7 +333,7 @@ the running example these pages build on.
 - **Agents (3)**: `pageclassifier` classifies a page and delegates to
   `readinglistagent`, which proposes reading-list notes; `weeklyrollup` queries
   the week's pages and proposes a digest. Both proposals travel as
-  `core.substrate.reamde.dev/recordpatchrequest` records for the owner to accept. All
+  `substrate.reamde.dev/core/recordpatchrequest` records for the owner to accept. All
   three name `provider: default`, a row nothing seeds (the owner writes and
   keys it before they can run), and each names its own `model` —
   what the agent does is what picks the model, not a tier.

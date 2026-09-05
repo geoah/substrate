@@ -58,7 +58,7 @@ the rows below into one coherent repository.
 | --- | --- | --- | --- |
 | TOK-01 | mint via `POST /tokens`, list, revoke; the revoked secret is a 401, the others survive | | slice (in AUTH-01) |
 | TOK-02 | a token with `expiresAt` in the past is refused at authenticate | | implemented |
-| TOK-03 | tokens are records: `DELETE /api/v1/core.substrate.reamde.dev/token/{id}` revokes the same as `DELETE /tokens/{id}` | | implemented |
+| TOK-03 | tokens are records: `DELETE /api/v1/substrate.reamde.dev/core/token/{id}` revokes the same as `DELETE /tokens/{id}` | | implemented |
 | TOK-04 | a garbage bearer is 401; a missing header is 401; the `X-Substrate-Actor` reserved spellings are 403 | | implemented |
 
 ## Records

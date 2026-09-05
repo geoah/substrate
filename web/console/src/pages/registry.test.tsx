@@ -4,10 +4,10 @@
  *
  * What is asserted here: the disclosure (a row opens onto its closure — kinds,
  * functions, triggers, requirements — before anything is imported), the GATE
- * (Import is refused client-side while a `requires:` authority is missing, in
- * the same words the server would use), the two catalog facets (Vocabulary vs
- * Integration), and the refusal path (a server problem rides the toast
- * verbatim, never flattened into "the import failed"). */
+ * (Import is refused client-side while a `requires:` package is missing, in
+ * the same words the server would use), the Integration facet, and the refusal
+ * path (a server problem rides the toast verbatim, never flattened into "the
+ * import failed"). */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { NuqsTestingAdapter } from "nuqs/adapters/testing"
@@ -48,7 +48,7 @@ vi.mock("@tanstack/react-router", () => ({
 import { RegistryPage } from "./registry"
 
 const CATALOG_PATH = "/api/v1/catalog"
-const STATUS_PATH = "/api/v1/core.substrate.reamde.dev/bundle/status"
+const STATUS_PATH = "/api/v1/substrate.reamde.dev/core/bundle/status"
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(body === undefined ? null : JSON.stringify(body), {
@@ -58,9 +58,10 @@ function jsonResponse(status: number, body: unknown): Response {
 
 function bundle(over: Partial<CatalogBundle>): CatalogBundle {
   return {
-    id: "x.bundles.substrate.reamde.dev/x",
+    id: "x.example.com/x",
     name: "x",
-    authority: "x.bundles.substrate.reamde.dev",
+    authority: "x.example.com",
+    package: "x",
     description: "",
     version: 1,
     closure: {},
@@ -71,65 +72,68 @@ function bundle(over: Partial<CatalogBundle>): CatalogBundle {
 
 /** The shipped registry, trimmed to what these assertions need: one vocabulary
  * bundle that declares against nothing, and one integration that declares
- * against three authorities a fresh repository does not have. */
+ * against three packages a fresh repository does not have. */
 const PEOPLE = bundle({
-  id: "people.substrate.reamde.dev/person",
+  id: "samples.substrate.reamde.dev/people",
   name: "people",
-  authority: "people.substrate.reamde.dev",
+  authority: "samples.substrate.reamde.dev",
+  package: "people",
   description: "The shipped vocabulary for humans.",
   version: 1,
-  vocabulary: true,
   closure: {
     kinds: [
-      "people.substrate.reamde.dev/person",
-      "people.substrate.reamde.dev/personmerge",
+      "samples.substrate.reamde.dev/people/person",
+      "samples.substrate.reamde.dev/people/personmerge",
     ],
   },
 })
 
 const GOOGLE = bundle({
-  id: "google.bundles.substrate.reamde.dev/google",
+  id: "providers.substrate.reamde.dev/google",
   name: "google",
-  authority: "google.bundles.substrate.reamde.dev",
+  authority: "providers.substrate.reamde.dev",
+  package: "google",
   description: "Connects a Google account — contacts, gmail and calendar.",
   inputs: {
     client: {
-      kind: "google.bundles.substrate.reamde.dev/config",
+      kind: "providers.substrate.reamde.dev/google/config",
       description: "The OAuth client record.",
     },
   },
   integration: true,
   requires: [
-    "people.substrate.reamde.dev",
-    "messaging.substrate.reamde.dev",
-    "calendar.substrate.reamde.dev",
+    "samples.substrate.reamde.dev/people",
+    "samples.substrate.reamde.dev/messaging",
+    "samples.substrate.reamde.dev/calendar",
   ],
   closure: {
     kinds: [
-      "google.bundles.substrate.reamde.dev/config",
-      "google.bundles.substrate.reamde.dev/account",
-      "google.bundles.substrate.reamde.dev/contact",
+      "providers.substrate.reamde.dev/google/config",
+      "providers.substrate.reamde.dev/google/account",
+      "providers.substrate.reamde.dev/google/contact",
     ],
-    functions: ["google.bundles.substrate.reamde.dev/syncgoogle"],
+    functions: ["providers.substrate.reamde.dev/google/syncgoogle"],
     records: [
-      { kind: "core.substrate.reamde.dev/trigger", id: "ongooglesync" },
+      { kind: "substrate.reamde.dev/core/trigger", id: "ongooglesync" },
     ],
   },
 })
 
 const CORE_KIND: KindInfo = {
-  identity: "core.substrate.reamde.dev/bundle",
+  identity: "substrate.reamde.dev/core/bundle",
   name: "bundle",
-  authority: "core.substrate.reamde.dev",
+  authority: "substrate.reamde.dev",
+  package: "core",
   version: 1,
   plural: "bundles",
   source: "builtin",
 }
 
 const PERSON_KIND: KindInfo = {
-  identity: "people.substrate.reamde.dev/person",
+  identity: "samples.substrate.reamde.dev/people/person",
   name: "person",
-  authority: "people.substrate.reamde.dev",
+  authority: "samples.substrate.reamde.dev",
+  package: "people",
   version: 1,
   plural: "persons",
   source: "builtin",
@@ -139,7 +143,8 @@ function peopleStatus(): BundleStatus {
   return {
     id: PEOPLE.id,
     name: "people",
-    authority: "people.substrate.reamde.dev",
+    authority: "samples.substrate.reamde.dev",
+    package: "people",
     installed: true,
     enabled: true,
     kinds: 2,
@@ -177,7 +182,7 @@ describe("RegistryPage", () => {
       if (path === STATUS_PATH) {
         return jsonResponse(200, { items: wire.statuses ?? [] })
       }
-      if (path.startsWith("/api/v1/core.substrate.reamde.dev/kind")) {
+      if (path.startsWith("/api/v1/substrate.reamde.dev/core/kind")) {
         return jsonResponse(200, { kinds: wire.kinds ?? [CORE_KIND] })
       }
       if (path === CATALOG_PATH) {
@@ -192,7 +197,8 @@ describe("RegistryPage", () => {
           jsonResponse(200, {
             id,
             name: "people",
-            authority: "people.substrate.reamde.dev",
+            authority: "samples.substrate.reamde.dev",
+            package: "people",
             installed: true,
             enabled: true,
           })
@@ -237,20 +243,21 @@ describe("RegistryPage", () => {
         {
           id: GOOGLE.id,
           name: "google",
-          authority: "google.bundles.substrate.reamde.dev",
+          authority: "providers.substrate.reamde.dev",
+          package: "google",
           installed: true,
           enabled: true,
           inputs: [
             {
               name: "client",
-              kind: "google.bundles.substrate.reamde.dev/config",
+              kind: "providers.substrate.reamde.dev/google/config",
             },
           ],
           setup: [
             {
               code: "missing",
               input: "client",
-              kind: "google.bundles.substrate.reamde.dev/config",
+              kind: "providers.substrate.reamde.dev/google/config",
               message: "no config record exists yet",
             },
           ],
@@ -268,14 +275,12 @@ describe("RegistryPage", () => {
     expect(within(people).queryByText(/setup step/)).toBeNull()
   })
 
-  it("tells vocabulary and integration apart on the row", async () => {
+  it("wears the Integration badge only on the integration row", async () => {
     renderPage(<RegistryPage />)
     const people = await rowOf("people")
     const google = await rowOf("google")
-    expect(within(people).getByText("Vocabulary")).toBeTruthy()
     expect(within(people).queryByText("Integration")).toBeNull()
     expect(within(google).getByText("Integration")).toBeTruthy()
-    expect(within(google).queryByText("Vocabulary")).toBeNull()
   })
 
   it("discloses the closure in place — kinds, functions, triggers, requirements", async () => {
@@ -293,7 +298,7 @@ describe("RegistryPage", () => {
     ).toBeTruthy()
     expect(
       within(detail).getByTitle(
-        "people.substrate.reamde.dev is not imported — the import is refused until it is"
+        "samples.substrate.reamde.dev/people is not imported — the import is refused until it is"
       )
     ).toBeTruthy()
   })
@@ -306,7 +311,7 @@ describe("RegistryPage", () => {
     // link anywhere.
     expect(person.tagName).toBe("SPAN")
     expect(person.getAttribute("title")).toBe(
-      "people.substrate.reamde.dev/person"
+      "samples.substrate.reamde.dev/people/person"
     )
   })
 
@@ -317,12 +322,12 @@ describe("RegistryPage", () => {
     expect(button.hasAttribute("disabled")).toBe(true)
     expect(
       within(google).getByText(
-        "Import people.substrate.reamde.dev, messaging.substrate.reamde.dev and calendar.substrate.reamde.dev first — this bundle declares against them."
+        "Import samples.substrate.reamde.dev/people, samples.substrate.reamde.dev/messaging and samples.substrate.reamde.dev/calendar first — this bundle declares against them."
       )
     ).toBeTruthy()
     // …and the row itself says what is missing, without opening anything.
     expect(
-      within(google).getByText(/needs people.substrate.reamde.dev/)
+      within(google).getByText(/needs samples\.substrate\.reamde\.dev\/people/)
     ).toBeTruthy()
   })
 
@@ -337,7 +342,7 @@ describe("RegistryPage", () => {
         fetchMock.mock.calls.some(
           ([url, init]) =>
             String(url) ===
-              `${CATALOG_PATH}/people.substrate.reamde.dev%2Fperson/install` &&
+              `${CATALOG_PATH}/samples.substrate.reamde.dev%2Fpeople/install` &&
             (init as RequestInit).method === "POST"
         )
       ).toBe(true)
@@ -346,7 +351,7 @@ describe("RegistryPage", () => {
 
   it("surfaces a server refusal in the server's own words", async () => {
     const problem =
-      "bundle people.substrate.reamde.dev: data.requires names core.substrate.reamde.dev, which this repository does not have — import that authority's bundle first"
+      "bundle samples.substrate.reamde.dev/people: data.requires names substrate.reamde.dev/core, which this repository does not have — import that authority's bundle first"
     serve({
       install: () =>
         jsonResponse(422, {
@@ -372,17 +377,17 @@ describe("RegistryPage", () => {
           { ...PEOPLE, installed: true },
           GOOGLE,
           bundle({
-            id: "messaging.substrate.reamde.dev/messaging",
+            id: "samples.substrate.reamde.dev/messaging",
             name: "messaging",
-            authority: "messaging.substrate.reamde.dev",
-            vocabulary: true,
+            authority: "samples.substrate.reamde.dev",
+            package: "messaging",
             installed: true,
           }),
           bundle({
-            id: "calendar.substrate.reamde.dev/calendar",
+            id: "samples.substrate.reamde.dev/calendar",
             name: "calendar",
-            authority: "calendar.substrate.reamde.dev",
-            vocabulary: true,
+            authority: "samples.substrate.reamde.dev",
+            package: "calendar",
             installed: true,
           }),
         ],
@@ -394,9 +399,10 @@ describe("RegistryPage", () => {
       const detail = expand(await rowOf("people"))
       const person = within(detail).getByText("person")
       expect(person.tagName).toBe("A")
-      expect(person.getAttribute("data-to")).toBe("/data/$authority/$name")
+      expect(person.getAttribute("data-to")).toBe("/data/$authority/$pkg/$name")
       expect(JSON.parse(person.getAttribute("data-params")!)).toEqual({
-        authority: "people.substrate.reamde.dev",
+        authority: "samples.substrate.reamde.dev",
+        pkg: "people",
         name: "person",
       })
     })
@@ -412,7 +418,9 @@ describe("RegistryPage", () => {
       expect(within(google).queryByText(/needs /)).toBeNull()
       const detail = expand(google)
       expect(
-        within(detail).getByTitle("people.substrate.reamde.dev is imported")
+        within(detail).getByTitle(
+          "samples.substrate.reamde.dev/people is imported"
+        )
       ).toBeTruthy()
     })
   })
@@ -428,7 +436,7 @@ describe("RegistryPage", () => {
         changes: [
           {
             kind: "kind",
-            id: "people.substrate.reamde.dev/person",
+            id: "samples.substrate.reamde.dev/people/person",
             from: 1,
             to: 2,
           },
@@ -463,7 +471,7 @@ describe("RegistryPage", () => {
             upgrade: {
               ...MOVED.upgrade,
               blockers: [
-                'type people.substrate.reamde.dev/person: property "middleName" dropped while 3 live records still carry it — null it on them first',
+                'type samples.substrate.reamde.dev/people/person: property "middleName" dropped while 3 live records still carry it — null it on them first',
               ],
             },
           },

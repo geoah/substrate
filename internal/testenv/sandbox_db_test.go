@@ -14,41 +14,53 @@ import (
 // single package can establish on its own: the runner confines what it is
 // handed, the engine decides what to hand it, and the API decides who may ask.
 
-const probeAuthority = "probe.bundles.substrate.reamde.dev"
+const (
+	probeAuthority = "probe.bundles.substrate.reamde.dev"
+	probePackage   = "probe"
+	// probeRef is the package identity every probe declaration lives in: the
+	// first two segments of each kind reference the bundle installs.
+	probeRef = probeAuthority + "/" + probePackage
+)
 
 // probeBundle assembles a one-kind, N-function bundle around the given bodies.
-// It is written the way a real bundle is written: an authority header, a
+// It is written the way a real bundle is written: a package header, a
 // bundle document whose `installs` names every member, a kind, then the
 // functions: because the point of these tests is that a function arriving the
 // ORDINARY way is confined.
 func probeBundle(fns ...probeFn) []string {
-	installs := []string{probeAuthority + "/note"}
-	docs := []string{
-		"kind: core.substrate.reamde.dev/authority\nmetadata: {id: " + probeAuthority + "}\ndata:\n  version: 1\n",
-	}
+	installs := []string{probeRef + "/note"}
+	docs := []string{fmt.Sprintf(`kind: substrate.reamde.dev/core/package
+metadata: {id: %s}
+data:
+  authority: %s
+  package: %s
+  version: 1
+`, probeRef, probeAuthority, probePackage)}
 	// No inputs: these probes read no configuration, so the bundle declares
 	// none and nothing anywhere implies any.
-	body := []string{fmt.Sprintf(`kind: core.substrate.reamde.dev/kind
+	body := []string{fmt.Sprintf(`kind: substrate.reamde.dev/core/kind
 metadata: {id: %s/note}
 data:
   authority: %s
+  package: %s
   names: {singular: note, plural: notes}
   properties:
     note: {type: string, description: what a probe would emit if it emitted}
-`, probeAuthority, probeAuthority)}
+`, probeRef, probeAuthority, probePackage)}
 
 	for _, fn := range fns {
-		installs = append(installs, probeAuthority+"/"+fn.name)
+		installs = append(installs, probeRef+"/"+fn.name)
 		body = append(body, fn.document())
 	}
-	bundle := fmt.Sprintf(`kind: core.substrate.reamde.dev/bundle
-metadata: {id: %s/probe}
+	bundle := fmt.Sprintf(`kind: substrate.reamde.dev/core/bundle
+metadata: {id: %s}
 data:
   authority: %s
+  package: %s
   description: sandbox probes, installed the way a bundle installs
   installs:
 %s
-`, probeAuthority, probeAuthority, indent(installs, "    - "))
+`, probeRef, probeAuthority, probePackage, indent(installs, "    - "))
 	return append(append(docs, bundle), body...)
 }
 
@@ -64,10 +76,11 @@ func (f probeFn) document() string {
 	if len(f.network) > 0 {
 		net = "\n    network:\n" + indent(f.network, "      - ")
 	}
-	return fmt.Sprintf(`kind: core.substrate.reamde.dev/function
+	return fmt.Sprintf(`kind: substrate.reamde.dev/core/function
 metadata: {id: %s/%s}
 data:
   authority: %s
+  package: %s
   description: a sandbox probe
   runtime: python
   timeout: PT20S
@@ -75,7 +88,7 @@ data:
     writes: [%s/note]%s
   source: |
 %s
-`, probeAuthority, f.name, probeAuthority, probeAuthority, net, blockScalar(f.source))
+`, probeRef, f.name, probeAuthority, probePackage, probeRef, net, blockScalar(f.source))
 }
 
 // blockScalar indents a python body into a YAML literal block.
@@ -220,13 +233,13 @@ func TestEnvironmentStartsAndAuthenticates(t *testing.T) {
 	if status, body := env.Do("GET", "/healthz", nil); status != 200 {
 		t.Fatalf("healthz: %d %s", status, body)
 	}
-	if status, _ := env.Do("GET", "/api/v1/core.substrate.reamde.dev/kind", nil); status != 200 {
+	if status, _ := env.Do("GET", "/api/v1/substrate.reamde.dev/core/kind", nil); status != 200 {
 		t.Fatalf("authenticated kinds listing: %d", status)
 	}
 	// The token is real: the same request without it is refused.
 	token := env.Token
 	env.Token = ""
-	if status, _ := env.Do("GET", "/api/v1/core.substrate.reamde.dev/kind", nil); status != 401 {
+	if status, _ := env.Do("GET", "/api/v1/substrate.reamde.dev/core/kind", nil); status != 401 {
 		t.Fatalf("unauthenticated kinds listing: %d, want 401", status)
 	}
 	env.Token = token

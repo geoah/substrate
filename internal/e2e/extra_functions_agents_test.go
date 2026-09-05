@@ -15,22 +15,24 @@ import (
 // scripted stub.
 const (
 	xfAuthority = "extras.e2e.example"
+	xfPackage   = "extras"
+	xfPkg       = xfAuthority + "/" + xfPackage
 
-	xfParkKind       = xfAuthority + "/triggerbait"
+	xfParkKind       = xfPkg + "/triggerbait"
 	xfParkCollection = "/api/v1/" + xfParkKind
 
-	xfFunctionPath = "/api/v1/core.substrate.reamde.dev/function/"
-	xfAgentPath    = "/api/v1/core.substrate.reamde.dev/agent/"
+	xfFunctionPath = "/api/v1/substrate.reamde.dev/core/function/"
+	xfAgentPath    = "/api/v1/substrate.reamde.dev/core/agent/"
 
-	xfThreadCollection  = "/api/v1/core.substrate.reamde.dev/llmthread"
-	xfMessageCollection = "/api/v1/core.substrate.reamde.dev/llmmessage"
+	xfThreadCollection  = "/api/v1/substrate.reamde.dev/core/llmthread"
+	xfMessageCollection = "/api/v1/substrate.reamde.dev/core/llmmessage"
 
 	// The host functions answer their FULL identity and never a bare name:
 	// ResolveFunction keeps a built-in out of the bare-name candidates, so
 	// these travel percent-encoded through the one {name} path segment.
-	xfHostQuery   = "core.substrate.reamde.dev/query"
-	xfHostPropose = "core.substrate.reamde.dev/propose"
-	xfHostMutate  = "core.substrate.reamde.dev/mutate"
+	xfHostQuery   = "substrate.reamde.dev/core/query"
+	xfHostPropose = "substrate.reamde.dev/core/propose"
+	xfHostMutate  = "substrate.reamde.dev/core/mutate"
 
 	// The trigger TRG-03 poisons and TRG-04 replays, and the record it fires on.
 	xfParkTrigger = "x-park"
@@ -115,20 +117,22 @@ func xfDoc(kind, id string, data map[string]any) map[string]any {
 	return map[string]any{"kind": kind, "metadata": map[string]any{"id": id}, "data": data}
 }
 
-// xfFunctionDoc declares one python function under the extras authority.
+// xfFunctionDoc declares one python function under the extras package.
 func xfFunctionDoc(name string, data map[string]any) map[string]any {
 	data["authority"] = xfAuthority
+	data["package"] = xfPackage
 	data["runtime"] = "python"
 	data["timeout"] = "PT10S"
-	return xfDoc("core.substrate.reamde.dev/function", xfAuthority+"/"+name, data)
+	return xfDoc("substrate.reamde.dev/core/function", xfPkg+"/"+name, data)
 }
 
 // xfAgentDoc declares one toolless agent: it answers in a single turn, so the
 // budgets name the smallest loop the validator accepts (maxToolCalls has a
 // declared minimum of 1 even for an agent that dispatches none).
 func xfAgentDoc(name, provider, model, description, prompt string) map[string]any {
-	return xfDoc("core.substrate.reamde.dev/agent", xfAuthority+"/"+name, map[string]any{
+	return xfDoc("substrate.reamde.dev/core/agent", xfPkg+"/"+name, map[string]any{
 		"authority":   xfAuthority,
+		"package":     xfPackage,
 		"description": description,
 		"prompt":      prompt,
 		"provider":    provider,
@@ -140,8 +144,9 @@ func xfAgentDoc(name, provider, model, description, prompt string) map[string]an
 // xfTriggerBaitKind is the kind TRG-03's trigger fires on: a name to write and a
 // stamp for the function to put back.
 func xfTriggerBaitKind() map[string]any {
-	return xfDoc("core.substrate.reamde.dev/kind", xfParkKind, map[string]any{
+	return xfDoc("substrate.reamde.dev/core/kind", xfParkKind, map[string]any{
 		"authority":       xfAuthority,
+		"package":         xfPackage,
 		"names":           map[string]any{"singular": "triggerbait"},
 		"description":     "A record whose only job is to make a trigger fire.",
 		"displayTemplate": "{name}",
@@ -152,16 +157,18 @@ func xfTriggerBaitKind() map[string]any {
 	})
 }
 
-// xfApply admits the extras authority and whatever documents one case needs.
+// xfApply admits the extras package and whatever documents one case needs.
 // An apply is additive (it never prunes a declaration the batch omits), so
 // each case declares only its own and the cases stay independent.
 func xfApply(c *C, docs ...map[string]any) {
 	c.t.Helper()
 	batch := append([]map[string]any{
-		xfDoc("core.substrate.reamde.dev/authority", xfAuthority, map[string]any{"version": 1}),
+		xfDoc("substrate.reamde.dev/core/package", xfPkg, map[string]any{
+			"authority": xfAuthority, "package": xfPackage, "version": 1,
+		}),
 	}, docs...)
 	status, raw := c.do(http.MethodPost, "/api/v1/vocabulary/apply", map[string]any{"documents": batch}, nil)
-	c.requiref(status == http.StatusOK, "vocabulary/apply of %s answered %d: %s", xfAuthority, status, raw)
+	c.requiref(status == http.StatusOK, "vocabulary/apply of %s answered %d: %s", xfPkg, status, raw)
 }
 
 // --- the shared readers -------------------------------------------------
@@ -263,7 +270,7 @@ type xfChatEvent struct {
 // equality like any other string.
 func xfThreadMessages(c *C, thread string) []record {
 	c.t.Helper()
-	filter := url.QueryEscape(`{"properties":{"thread":{"eq":"core.substrate.reamde.dev/llmthread/` + thread + `"}}}`)
+	filter := url.QueryEscape(`{"properties":{"thread":{"eq":"substrate.reamde.dev/core/llmthread/` + thread + `"}}}`)
 	var page struct {
 		Records []record `json:"records"`
 	}
@@ -285,7 +292,7 @@ func xfCaseFunctionCall(c *C) {
 		},
 		"source": xfWordCountSource,
 	}))
-	c.stepf("declared the python function `%s/wordcount` through `vocabulary/apply`", xfAuthority)
+	c.stepf("declared the python function `%s/wordcount` through `vocabulary/apply`", xfPkg)
 
 	var out xfCallOut
 	status, raw := xfCall(c, "wordcount", map[string]any{"text": "one two three"}, &out)
@@ -298,11 +305,11 @@ func xfCaseFunctionCall(c *C) {
 	// The same function under its full identity: one path segment, the slash
 	// percent-encoded, which is how an ambiguous name is disambiguated.
 	out = xfCallOut{}
-	status, raw = xfCall(c, xfAuthority+"/wordcount", map[string]any{"text": "four five"}, &out)
+	status, raw = xfCall(c, xfPkg+"/wordcount", map[string]any{"text": "four five"}, &out)
 	c.requiref(status == http.StatusOK, "the call by full identity answered %d: %s", status, raw)
 	words, _ = out.Output["words"].(float64)
 	c.requiref(words == 2, "the call by full identity answered words=%v, want 2: %s", out.Output["words"], raw)
-	c.stepf("`%s/wordcount`, percent-encoded into the one name segment, answers the same call", xfAuthority)
+	c.stepf("`%s/wordcount`, percent-encoded into the one name segment, answers the same call", xfPkg)
 }
 
 // --- FN-02 --------------------------------------------------------------
@@ -312,7 +319,7 @@ func xfCaseFunctionFault(c *C) {
 		"description": "A body that raises unconditionally.",
 		"source":      xfAlwaysFailsSource,
 	}))
-	runsBefore := xfRunsFor(c, xfAuthority+"/alwaysfails")
+	runsBefore := xfRunsFor(c, xfPkg+"/alwaysfails")
 
 	status, raw := xfCall(c, "alwaysfails", map[string]any{}, nil)
 	c.requiref(status == http.StatusInternalServerError,
@@ -331,7 +338,7 @@ func xfCaseFunctionFault(c *C) {
 	// documented as "no cursor motion, no run row", and a direct call is not a
 	// delivery. There is nothing to read, and this asserts that rather than
 	// skipping it.
-	c.requiref(xfRunsFor(c, xfAuthority+"/alwaysfails") == runsBefore,
+	c.requiref(xfRunsFor(c, xfPkg+"/alwaysfails") == runsBefore,
 		"the direct call wrote a run record; the call API records no delivery")
 	c.stepf("the failed call left NO run record behind: a direct call is not a delivery, and only a trigger delivery writes the run ledger")
 }
@@ -398,7 +405,7 @@ func xfCaseTriggerPark(c *C) {
 		"source": map[string]any{"record": map[string]any{
 			"kinds": []string{xfParkKind}, "ops": []string{"create"},
 		}},
-		"callable": "core.substrate.reamde.dev/function/" + xfAuthority + "/importbomb",
+		"callable": "substrate.reamde.dev/core/function/" + xfPkg + "/importbomb",
 	})
 	c.putRec(xfParkCollection, xfBaitID, map[string]any{"name": "The bait the bomb goes off on"})
 
@@ -433,7 +440,7 @@ func xfCaseTriggerPark(c *C) {
 		"permissions": map[string]any{"writes": []string{xfParkKind}},
 		"source":      xfStampSource,
 	}))
-	c.stepf("re-applied `%s/importbomb` with a body that stamps instead of raising", xfAuthority)
+	c.stepf("re-applied `%s/importbomb` with a body that stamps instead of raising", xfPkg)
 
 	var retried struct {
 		Ran int `json:"ran"`

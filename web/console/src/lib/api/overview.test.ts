@@ -81,7 +81,7 @@ function rowsBelow(belowSeq: number, n: number): ChangeRow[] {
       actor: `actor-${i % 5}`,
       op: "put",
       recordId: `e${seq}`,
-      kind: "tasks.substrate.reamde.dev/task",
+      kind: "samples.substrate.reamde.dev/tasks/task",
     }
   })
 }
@@ -121,11 +121,12 @@ describe("recentChangesQueryOptions", () => {
   })
 })
 
-function kindInfo(name: string, authority: string): KindInfo {
+function kindInfo(name: string, authority: string, pkg = "data"): KindInfo {
   return {
-    identity: `${authority}/${name}`,
+    identity: `${authority}/${pkg}/${name}`,
     name,
     authority,
+    package: pkg,
     version: 0,
     plural: `${name}s`,
     source: "schema",
@@ -144,7 +145,7 @@ describe("authorityCountsQueryOptions", () => {
       "overview",
       "counts",
       "acme.dev",
-      ["person", "task"],
+      ["data/person", "data/task"],
     ])
   })
 

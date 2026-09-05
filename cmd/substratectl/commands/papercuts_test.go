@@ -16,7 +16,7 @@ func TestIntegerPropertiesRenderAsIntegers(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.fake.seed(&substrate.Record{
-		ID: "t9", Kind: "tasks.substrate.reamde.dev/task",
+		ID: "t9", Kind: "samples.substrate.reamde.dev/tasks/task",
 		Properties: map[string]any{
 			"title": "a task",
 			// The repository row's counter that exposed this, and a value past
@@ -52,7 +52,7 @@ func TestIntegerPropertiesRenderAsIntegersInJSON(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.fake.seed(&substrate.Record{
-		ID: "t9", Kind: "tasks.substrate.reamde.dev/task",
+		ID: "t9", Kind: "samples.substrate.reamde.dev/tasks/task",
 		// A value past float64's exact-integer range: the float round trip
 		// mangles it into 1.7860800001234568e+18, digits and all.
 		Properties: map[string]any{"totpStep": int64(59545831), "nanos": int64(1786080000123456789)},
@@ -85,13 +85,13 @@ func TestGuardHintsBranchOnWhatFailed(t *testing.T) {
 		unwantedWords: []string{"transition"},
 	}, {
 		name:          "bundle lifecycle",
-		err:           &apiError{Status: 403, Code: "guard", Path: apiPrefix + "/" + coreAuthority + "/bundle/whoop.bundles.substrate.reamde.dev", Method: "PATCH"},
+		err:           &apiError{Status: 403, Code: "guard", Path: apiPrefix + "/" + corePackage + "/bundle/providers.substrate.reamde.dev/whoop", Method: "PATCH"},
 		wantHeadline:  "bundle's state",
 		wantHint:      "substratectl bundle status",
 		unwantedWords: []string{"transition"},
 	}, {
 		name:         "record write keeps the transition advice",
-		err:          &apiError{Status: 403, Code: "guard", Path: apiPrefix + "/tasks.substrate.reamde.dev/task/t9", Method: "PATCH"},
+		err:          &apiError{Status: 403, Code: "guard", Path: apiPrefix + "/samples.substrate.reamde.dev/tasks/task/t9", Method: "PATCH"},
 		wantHeadline: "transition",
 		wantHint:     "state transition guards",
 	}, {
@@ -99,7 +99,7 @@ func TestGuardHintsBranchOnWhatFailed(t *testing.T) {
 		// forbidden is never about the token's reach. It is the write itself
 		// being refused on principle.
 		name:          "forbidden is about the write, not the token's reach",
-		err:           &apiError{Status: 403, Code: "forbidden", Path: apiPrefix + "/core.substrate.reamde.dev/tokens", Method: "POST"},
+		err:           &apiError{Status: 403, Code: "forbidden", Path: apiPrefix + "/substrate.reamde.dev/core/tokens", Method: "POST"},
 		wantHeadline:  "forbidden",
 		wantHint:      "refused on principle",
 		unwantedWords: []string{"transition", "scope"},

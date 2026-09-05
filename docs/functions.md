@@ -15,14 +15,15 @@ read and write. Here is one shaped like the URL harvester's, which turns a
 freshly minted `page` record into fetched markdown:
 
 ```yaml
-kind: core.substrate.reamde.dev/function
-metadata: {id: web.bundles.substrate.reamde.dev/fetchpage}
+kind: substrate.reamde.dev/core/function
+metadata: {id: samples.substrate.reamde.dev/web/fetchpage}
 data:
-  authority: web.bundles.substrate.reamde.dev
+  authority: samples.substrate.reamde.dev
+  package: web
   description: Fetch one pending page as markdown and mark it fetched.
   runtime: python
   permissions:
-    writes: [web.bundles.substrate.reamde.dev/page]
+    writes: [samples.substrate.reamde.dev/web/page]
   source: |
     def main(input, host):
         env = input.get("envelope") or {}
@@ -32,7 +33,7 @@ data:
         title = slug.replace("-", " ").strip() or url
         markdown = "# " + title + "\n\nfetched from " + url
         host.effects.patch(
-            "web.bundles.substrate.reamde.dev/page", page.get("id"),
+            "samples.substrate.reamde.dev/web/page", page.get("id"),
             properties={"title": title, "content": markdown,
                         "fetch": "fetched"})
         return {"output": {"page": page.get("id")}}
@@ -40,15 +41,15 @@ data:
 
 The manifest wears the ordinary four-key
 [envelope](data-model.md#the-envelope), and its `metadata.id` is the reference
-this declaration is known by, `<authority>/<name>`: the string a trigger, a
-host call and the call API all address it with.
+this declaration is known by, `<authority>/<package>/<name>`: the string a
+trigger, a host call and the call API all address it with.
 
 ## The manifest
 
 `data` carries the whole callable:
 
-- **`authority`** is the authority that declares it, matching the authority
-  half of `metadata.id`.
+- **`authority`** and **`package`** are where it is declared, and together
+  they must match the two segments in front of the name in `metadata.id`.
 - **`description`** is model-facing and required: the function is its own tool
   card wherever it appears as a callable.
 - **`runtime`** is `python`, `go`, or [`host`](#host-functions).
@@ -68,14 +69,14 @@ host call and the call API all address it with.
 permissions:
   reads:                           # which kinds it may read, and how much
     kinds:
-      - people.substrate.reamde.dev/person
+      - samples.substrate.reamde.dev/people/person
     budgets:
       calls: 16
       rows: 500
   writes:                          # which kinds it may create or change
-    - tasks.substrate.reamde.dev/task
+    - samples.substrate.reamde.dev/tasks/task
   call:                            # which other functions its code may invoke
-    - web.bundles.substrate.reamde.dev/setclass
+    - samples.substrate.reamde.dev/web/setclass
   network:                         # the hosts it may reach; any entry grants egress
     - api.example.com
   mutations:                       # the identity-changing operations: merge, split
@@ -99,8 +100,8 @@ target must be a registered function. `permissions.network` is enforced as a
 sandbox, while the host patterns themselves are still only documentation (see
 [the sandbox](#the-sandbox)). `permissions.mutations` gates the `merge` and
 `split` effects, which are refused without it. Every entry in `writes`,
-`reads.kinds` and `call` is a full reference, `<authority>/<name>`, and none of
-them admit globs.
+`reads.kinds` and `call` is a full reference, `<authority>/<package>/<name>`,
+and none of them admit globs.
 
 The body's entrypoint is `main(input, host)` in Python
 (`Main(in, host)` in Go), and it returns `{effects, output}`. `input` names
@@ -183,11 +184,11 @@ body. Core ships five of them, and they are the agent
 
 | Reference | What it does |
 | --- | --- |
-| `core.substrate.reamde.dev/query` | the capability-scoped read |
-| `core.substrate.reamde.dev/graphql` | the whole-repository read-only GraphQL surface |
-| `core.substrate.reamde.dev/mutate` | GraphQL mutations, bounded by the calling agent's emit |
-| `core.substrate.reamde.dev/propose` | lands one reviewed `recordpatchrequest` |
-| `core.substrate.reamde.dev/ask` | lands one `llminteraction` carrying a batch of at most eight questions for the user; it returns the record id, not the answer, which arrives in a later turn |
+| `substrate.reamde.dev/core/query` | the capability-scoped read |
+| `substrate.reamde.dev/core/graphql` | the whole-repository read-only GraphQL surface |
+| `substrate.reamde.dev/core/mutate` | GraphQL mutations, bounded by the calling agent's emit |
+| `substrate.reamde.dev/core/propose` | lands one reviewed `recordpatchrequest` |
+| `substrate.reamde.dev/core/ask` | lands one `llminteraction` carrying a batch of at most eight questions for the user; it returns the record id, not the answer, which arrives in a later turn |
 
 They are **ordinary function records**: seeded into every new repository,
 delivered to an existing one by the [boot upgrade](vocabulary.md), listed in the
@@ -238,14 +239,14 @@ A record-triggered delivery arrives as `input["envelope"]`, three keys:
 change:
   seq: 412
   op: update
-  kind: github.bundles.substrate.reamde.dev/account
+  kind: providers.substrate.reamde.dev/github/account
   id: gh-acct-1
-  actor: bundle:github.bundles.substrate.reamde.dev
+  actor: bundle:providers.substrate.reamde.dev:github
   changed:
     - tokenStatus
 record:
   id: gh-acct-1
-  kind: github.bundles.substrate.reamde.dev/account
+  kind: providers.substrate.reamde.dev/github/account
   properties:
     tokenStatus: connected
 repository:
@@ -302,10 +303,11 @@ a part in the blob store when it declares a filename or a media type outside
 rides inline; a multipart request may total 32 MiB. An authenticated wake
 (`POST …/trigger/{id}/wake`) carries no `request`.
 
-**One `kind`, everywhere.** A kind is named by a reference: `<authority>/<name>`
-(`tasks.substrate.reamde.dev/task`, `web.bundles.substrate.reamde.dev/page`), and
-every kind carries an authority
-([decision 0042](decisions/0042-every-kind-carries-an-authority.md)). The
+**One `kind`, everywhere.** A kind is named by a reference:
+`<authority>/<package>/<name>` (`samples.substrate.reamde.dev/tasks/task`,
+`samples.substrate.reamde.dev/web/page`), and every kind carries both
+([decision 0042](decisions/0042-every-kind-carries-an-authority.md),
+[decision 0047](decisions/0047-a-kind-lives-in-a-package.md)). The
 envelope, the SDK's reads, the SDK's writes and an explicit
 `effects` list all spell a kind exactly that one way, so an envelope's
 `change` copies straight into a record reference:
@@ -320,7 +322,7 @@ value: a reference property holds the path `<kind>/<id>` under `ref`, and the
 `{kind, id}` pair is the retired shape a write refuses by name.
 
 ```python
-PAGE = "web.bundles.substrate.reamde.dev/page"
+PAGE = "samples.substrate.reamde.dev/web/page"
 
 def main(input, host):
     record = (input.get("envelope") or {}).get("record") or {}
@@ -331,11 +333,12 @@ def main(input, host):
 ```
 
 The manifest's allowlists are the one place a bare name is refused: `writes`,
-`reads.kinds` and `call` all take full references, so a capability always
-names an authority. A body may ask for either spelling — every gate runs on
-what the reference resolves to, so `host.records.list(["task"])` against a
-capability declaring `tasks.substrate.reamde.dev/task` is the same read, and a name the
-registry cannot place is refused exactly as an undeclared kind is.
+`reads.kinds` and `call` all take full references, so a capability always names
+an authority and a package. A body may ask for either spelling — every gate runs
+on what the reference resolves to, so `host.records.list(["task"])` against a
+capability declaring `samples.substrate.reamde.dev/tasks/task` is the same read,
+and a name the registry cannot place is refused exactly as an undeclared kind
+is.
 
 ## How the body runs
 
@@ -534,7 +537,7 @@ stays authoritative for the emit ceiling and kind admission.
 target_id, diff?, op?, rationale?)` (`host.Effects.Propose(substratefn.ProposeEffect{…})`
 in Go) stages a change the **owner** decides on rather than one that lands: the
 effect is an ordinary put of a
-`core.substrate.reamde.dev/recordpatchrequest`, and accepting it is what applies
+`substrate.reamde.dev/core/recordpatchrequest`, and accepting it is what applies
 the change. `id` is the request's own id, so a replayed delivery re-proposes the
 same request instead of a second one; `op` is `patch` (the default), `create` or
 `delete`; `target_kind`/`target_id` name the record the change is about — the
@@ -575,9 +578,9 @@ backfill of any length runs at constant depth and a crash mid-drain resumes
 from the last committed page.
 
 **Configuration and connected accounts.** `host.config()` (`host.Config()` in
-Go) returns the callable's resolved configuration: the owning `bundle`
-authority, the bundle's `inject: functions` inputs each resolved to one
-record under `inputs` (keyed by input name; an unresolved input's key is
+Go) returns the callable's resolved configuration: the owning `bundle`, which
+is its package identity, the bundle's `inject: functions` inputs each resolved
+to one record under `inputs` (keyed by input name; an unresolved input's key is
 absent), and every [connection](bundles.md#connections) the bundle declares
 under `accounts`, each flattened to its id, kind and stored properties. For an OAuth
 bundle the host resolves each account's credential itself and hands the body
@@ -617,22 +620,22 @@ it.
 ## Triggers
 
 A function does not watch anything. A **trigger** is a data record of
-`core.substrate.reamde.dev/trigger`, console-editable and `substratectl apply`-able like
+`substrate.reamde.dev/core/trigger`, console-editable and `substratectl apply`-able like
 any other, that binds one source to one callable and owns the delivery. Here
 is the trigger that drives the function above:
 
 ```yaml
-kind: core.substrate.reamde.dev/trigger
+kind: substrate.reamde.dev/core/trigger
 metadata: {id: web-fetch-on-page}
 data:
   properties:
     enabled: true
     source:
       record:
-        kinds: [web.bundles.substrate.reamde.dev/page]
+        kinds: [samples.substrate.reamde.dev/web/page]
         ops: [create]              # create | update | delete
         when: 'record != null && record.properties.fetch == "pending"'
-    callable: core.substrate.reamde.dev/function/web.bundles.substrate.reamde.dev/fetchpage
+    callable: substrate.reamde.dev/core/function/samples.substrate.reamde.dev/web/fetchpage
 ```
 
 `source` takes exactly one arm:
@@ -640,9 +643,9 @@ data:
 - A **`record`** arm subscribes to the [changelog](changelog.md): the trigger owns
   a cursor and, for every committed change to a matched kind and op whose
   `when:` guard passes, delivers the callable the record's **current** state.
-  Each entry in `kinds:` is a kind reference, `<authority>/*` for everything
-  one authority publishes, or `*` for everything; those three spellings are
-  the whole glob grammar. `ops:` omitted means all three, and its three words
+  Each entry in `kinds:` is a kind reference, `<authority>/<package>/*` for one
+  package, `<authority>/*` for every package an authority publishes, or `*` for
+  everything; those four spellings are the whole glob grammar. `ops:` omitted means all three, and its three words
   are change classes rather than write verbs: a `put` that created the row is
   a `create`, a `put` over a live row is an `update`
   ([change verbs](changelog.md#change-verbs)). Optional
@@ -663,8 +666,8 @@ data:
   ([decision 0045](decisions/0045-a-webhook-trigger-is-a-public-endpoint-with-an-optional-key.md)).
 
 `callable` is a [reference](data-model.md#property-types) naming the function
-or [agent](agents.md) to run: its `kind` is `core.substrate.reamde.dev/function` or
-`core.substrate.reamde.dev/agent`, and its `id` is that callable's own reference.
+or [agent](agents.md) to run: its `kind` is `substrate.reamde.dev/core/function` or
+`substrate.reamde.dev/core/agent`, and its `id` is that callable's own reference.
 `enabled` defaults to true, and setting it false stops delivery without losing
 the cursor's position. Every trigger write is admitted: the guard must
 compile, the recurrence and timezone must parse, and the callable must resolve
@@ -686,9 +689,9 @@ is the function body.
   at-least-once floor, made safe by the same id composition.
 - **No loops.** Every function-authored write records the change that caused
   it, and a trigger never delivers writes carrying its own callable's actor.
-  That actor is `function:<authority>:<name>` (an agent's is
-  `agent:<authority>:<name>`), so two bundles declaring a callable of one name
-  are two actors and neither reads as the other's echo. A causal chain deeper
+  That actor is `function:<authority>:<package>:<name>` (an agent's is
+  `agent:<authority>:<package>:<name>`), so two packages declaring a callable of
+  one name are two actors and neither reads as the other's echo. A causal chain deeper
   than the engine's cap (16) parks instead of spinning.
 - **No wedging.** A delivery that keeps failing is parked (3 attempts with
   backoff; a deterministic trip like an allowlist or budget violation parks on
@@ -699,7 +702,7 @@ is the function body.
 
 Delivery bookkeeping lives on the trigger, not on the function, and the verbs
 that drive it live at the trigger resource, under
-`/api/v1/core.substrate.reamde.dev/trigger/…` (a resource's verbs live at the
+`/api/v1/substrate.reamde.dev/core/trigger/…` (a resource's verbs live at the
 resource). No path carries a repository segment: the bearer token implies the
 repository.
 
@@ -723,7 +726,7 @@ repository.
 
 `replay` answers the cursor it set; `run`, `wake` and `retry` answer
 `{"ran": n}`, the number of deliveries that applied effects. Every settled
-dispatched delivery writes a `core.substrate.reamde.dev/run` row under the
+dispatched delivery writes a `substrate.reamde.dev/core/run` row under the
 `substrate` actor: the trigger, the callable, the mode, the seq or fire id,
 the status (`ok`, `skipped` or `parked`), the attempt count and the
 applied-effects summary. Parked runs are kept; the newest twenty non-parked
@@ -733,7 +736,7 @@ manual run, a parked retry, a host call, the call API — mint nothing.
 `substratectl function call <name> --input <json>` invokes one function directly,
 applies its effects under the function's actor, and prints the effect count
 beside the output. Over HTTP that is
-`POST /api/v1/core.substrate.reamde.dev/function/{name}/call` with `{"input": …}`,
+`POST /api/v1/substrate.reamde.dev/core/function/{name}/call` with `{"input": …}`,
 answering `{"output": …, "effects": n}`; what you send arrives at the body as
 `input["args"]`. A call moves no cursor, and its effects land under the
 function's actor as a fresh causal root. The trigger rows are ordinary

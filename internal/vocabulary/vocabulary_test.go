@@ -29,40 +29,46 @@ import (
 // coreDocs is a miniature core: the authority, its actors, the temporal
 // capability every other authority binds across the boundary, and one type.
 const coreDocs = `# the substrate's own machinery
-kind: core.substrate.reamde.dev/authority
+kind: substrate.reamde.dev/core/package
 metadata:
-  id: core.example.com
+  id: core.example.com/core
 data:
+  authority: core.example.com
+  package: core
   version: 1
 ---
-kind: core.substrate.reamde.dev/actor
+kind: substrate.reamde.dev/core/actor
 metadata:
   id: owner
 data:
   authority: core.example.com
+  package: core
 ---
-kind: core.substrate.reamde.dev/actor
+kind: substrate.reamde.dev/core/actor
 metadata:
   id: engram
 data:
   authority: core.example.com
+  package: core
 ---
 # when a thing sits on the timeline — an instant, or a span
-kind: core.substrate.reamde.dev/trait
+kind: substrate.reamde.dev/core/trait
 metadata:
-  id: core.example.com/temporal
+  id: core.example.com/core/temporal
 data:
   authority: core.example.com
+  package: core
   # backed by the physical at/ends_at/due_at columns every record row carries
   oneOf:
     - {name: point, properties: {at: datetime}}
     - {name: range, properties: {at: datetime, endsAt: datetime}}
 ---
-kind: core.substrate.reamde.dev/kind
+kind: substrate.reamde.dev/core/kind
 metadata:
-  id: core.example.com/account
+  id: core.example.com/core/account
 data:
   authority: core.example.com
+  package: core
   names: {singular: account, plural: accounts}
 status:
   # server-set, ignored on input, so get -o yaml output is apply-able
@@ -72,35 +78,40 @@ status:
 // vocabDocs is a vocabulary authority: refinements, cross-authority references, a bound
 // capability with a hot-property remap, a source record with its mapping,
 // object properties and a machine.
-const vocabDocs = `kind: core.substrate.reamde.dev/authority
+const vocabDocs = `kind: substrate.reamde.dev/core/package
 metadata:
-  id: vocab.example.com
+  id: vocab.example.com/vocab
 data:
+  authority: vocab.example.com
+  package: vocab
   version: 1
 ---
 # the connector-style actor whose authority maps onto contact: the machine tier
-kind: core.substrate.reamde.dev/actor
+kind: substrate.reamde.dev/core/actor
 metadata:
   id: connector:google
 data:
   authority: vocab.example.com
+  package: vocab
 ---
 # Amazon's audiobook identifier: the one durable key a library row carries
-kind: core.substrate.reamde.dev/propertytype
+kind: substrate.reamde.dev/core/propertytype
 metadata:
-  id: vocab.example.com/asin
+  id: vocab.example.com/vocab/asin
 data:
   authority: vocab.example.com
+  package: vocab
   base: string
   pattern: "^B0[A-Z0-9]{8}$"
 ---
 # one person; nothing matches on their addresses, so two contacts holding one
 # email stay two contacts until an owner merges them
-kind: core.substrate.reamde.dev/kind
+kind: substrate.reamde.dev/core/kind
 metadata:
-  id: vocab.example.com/contact
+  id: vocab.example.com/vocab/contact
 data:
   authority: vocab.example.com
+  package: vocab
   names: {singular: contact, plural: contacts}
   properties:
     name: {type: string}
@@ -109,11 +120,12 @@ data:
 ---
 # one source's record of a contact: a subject reference points at the contact,
 # and the mapping beside it says how these properties reach it (§6.1)
-kind: core.substrate.reamde.dev/kind
+kind: substrate.reamde.dev/core/kind
 metadata:
-  id: vocab.example.com/googlecontact
+  id: vocab.example.com/vocab/googlecontact
 data:
   authority: vocab.example.com
+  package: vocab
   names: {singular: googlecontact, plural: googlecontacts}
   properties:
     # what the provider actually sends, declared (record 49) — never json
@@ -135,13 +147,14 @@ data:
       subject: true
 ---
 # how googlecontact's properties reach the contact (record 50)
-kind: core.substrate.reamde.dev/recordmapping
+kind: substrate.reamde.dev/core/recordmapping
 metadata:
-  id: vocab.example.com/googlecontactcontact
+  id: vocab.example.com/vocab/googlecontactcontact
 data:
   authority: vocab.example.com
-  from: vocab.example.com/googlecontact
-  to: vocab.example.com/contact
+  package: vocab
+  from: vocab.example.com/vocab/googlecontact
+  to: vocab.example.com/vocab/contact
   property: contact
   match:
     - {from: "emails[].value", to: emails}
@@ -150,11 +163,12 @@ data:
     emails: {path: "emails[].value", merge: union}
 ---
 # one book, in whatever formats you hold it
-kind: core.substrate.reamde.dev/kind
+kind: substrate.reamde.dev/core/kind
 metadata:
-  id: vocab.example.com/book
+  id: vocab.example.com/vocab/book
 data:
   authority: vocab.example.com
+  package: vocab
   names: {singular: book, plural: books}
   displayTemplate: "{title}"
   properties:
@@ -171,11 +185,12 @@ data:
       onDelete: cascade
 ---
 # one task; temporal(point: dueAt) remaps the capability's hot property
-kind: core.substrate.reamde.dev/kind
+kind: substrate.reamde.dev/core/kind
 metadata:
-  id: vocab.example.com/task
+  id: vocab.example.com/vocab/task
 data:
   authority: vocab.example.com
+  package: vocab
   names: {singular: task, plural: tasks}
   traits: ["temporal(point: dueAt)"]
   indices: [{properties: [status, dueAt]}]
@@ -211,30 +226,32 @@ func loadVocab(t *testing.T) *vocabulary.Registry {
 	// Split across a directory tree, in the file layout FORMAT.md §5 pins:
 	// the unit is the document, not the file, and the loader recurses.
 	return loadFixture(t, map[string]string{
-		"core.example.com/authority.yaml":  coreDocs,
-		"vocab.example.com/authority.yaml": vocabDocs,
-		"vocab.example.com/extra.yaml":     extraDocs,
-		"vocab.example.com/notyaml.txt":    "ignored",
+		"core.example.com/core/authority.yaml":   coreDocs,
+		"vocab.example.com/vocab/authority.yaml": vocabDocs,
+		"vocab.example.com/vocab/extra.yaml":     extraDocs,
+		"vocab.example.com/vocab/notyaml.txt":    "ignored",
 	})
 }
 
 // extraDocs proves an authority's manifests may live in any file under the tree.
-const extraDocs = `kind: core.substrate.reamde.dev/kind
+const extraDocs = `kind: substrate.reamde.dev/core/kind
 metadata:
-  id: vocab.example.com/note
+  id: vocab.example.com/vocab/note
 data:
   authority: vocab.example.com
+  package: vocab
   names: {singular: note, plural: notes}
   traits: [temporal(range)]
   properties:
     notes: {type: text}
 ---
 # a DECLARED stamp target: the author spells the property the transition writes
-kind: core.substrate.reamde.dev/kind
+kind: substrate.reamde.dev/core/kind
 metadata:
-  id: vocab.example.com/shipment
+  id: vocab.example.com/vocab/shipment
 data:
   authority: vocab.example.com
+  package: vocab
   names: {singular: shipment, plural: shipments}
   properties:
     sentAt: {type: datetime, managed: true}
@@ -251,11 +268,11 @@ data:
 func TestLoadManifestStream(t *testing.T) {
 	r := loadVocab(t)
 
-	book, ok := r.ByIdentity("vocab.example.com/book")
+	book, ok := r.ByIdentity("vocab.example.com/vocab/book")
 	if !ok {
 		t.Fatal("book type missing")
 	}
-	if book.Name != "book" || book.Authority != "vocab.example.com" {
+	if book.Name != "book" || book.Package != "vocab.example.com/vocab" {
 		t.Fatalf("book = %+v", book)
 	}
 	if book.Version != 1 {
@@ -263,11 +280,11 @@ func TestLoadManifestStream(t *testing.T) {
 	}
 	// Reference pins: an in-authority short name, and a cross-authority one.
 	author, _ := book.Prop("author")
-	if author.To != "vocab.example.com/contact" || !author.Repeated || !author.MustExist {
+	if author.To != "vocab.example.com/vocab/contact" || !author.Repeated || !author.MustExist {
 		t.Fatalf("book.author = %+v", author)
 	}
 	acct, _ := book.Prop("account")
-	if acct.To != "core.example.com/account" || !acct.Required || !acct.Cascades() {
+	if acct.To != "core.example.com/core/account" || !acct.Required || !acct.Cascades() {
 		t.Fatalf("book.account = %+v", acct)
 	}
 	// Refinements survive the property that names them.
@@ -284,13 +301,13 @@ func TestLoadManifestStream(t *testing.T) {
 		t.Fatalf("secret property = %+v", p)
 	}
 	// A list is `repeated: true` on the property, never a bracketed type.
-	contact, _ := r.ByIdentity("vocab.example.com/contact")
+	contact, _ := r.ByIdentity("vocab.example.com/vocab/contact")
 	if p, _ := contact.Prop("emails"); !p.Repeated || p.Datatype != vocabulary.DatatypeEmail {
 		t.Fatalf("contact.emails = %+v", p)
 	}
 
 	// A document in a second file joins the same authority.
-	note, ok := r.ByIdentity("vocab.example.com/note")
+	note, ok := r.ByIdentity("vocab.example.com/vocab/note")
 	if !ok {
 		t.Fatal("note type missing: documents, not files, are the unit")
 	}
@@ -300,7 +317,7 @@ func TestLoadManifestStream(t *testing.T) {
 
 	// temporal lives in core, so this binding crosses an authority boundary, and
 	// the hot-property remap survives the crossing.
-	task, _ := r.ByIdentity("vocab.example.com/task")
+	task, _ := r.ByIdentity("vocab.example.com/vocab/task")
 	if !task.UsesHot("dueAt") || task.UsesHot("at") {
 		t.Fatalf("task hot properties = %v", task.HotColumns)
 	}
@@ -319,7 +336,7 @@ func TestLoadManifestStream(t *testing.T) {
 	}
 	// A DECLARED stamp target keeps its declaration: the authored property,
 	// not a synthesized one, so `managed` and the description survive.
-	shipment, _ := r.ByIdentity("vocab.example.com/shipment")
+	shipment, _ := r.ByIdentity("vocab.example.com/vocab/shipment")
 	if p, ok := shipment.Prop("sentAt"); !ok || p.Datatype != vocabulary.DatatypeDatetime ||
 		p.Implicit || !p.Managed {
 		t.Fatalf("declared stamp target sentAt = %+v", p)
@@ -333,7 +350,7 @@ func TestLoadManifestStream(t *testing.T) {
 
 	// Object properties: fields declared inline, one level deep,
 	// a bare kind as shorthand — and never FTS, never embed.
-	gc, _ := r.ByIdentity("vocab.example.com/googlecontact")
+	gc, _ := r.ByIdentity("vocab.example.com/vocab/googlecontact")
 	name, _ := gc.Prop("name")
 	if name.Datatype != vocabulary.DatatypeObject || name.Repeated || name.FTS || name.Embed {
 		t.Fatalf("googlecontact.name = %+v", name)
@@ -348,11 +365,11 @@ func TestLoadManifestStream(t *testing.T) {
 		emails.Fields["primary"].Datatype != vocabulary.DatatypeBool {
 		t.Fatalf("googlecontact.emails = %+v", emails)
 	}
-	if g, ok := r.ActorAuthority("engram"); !ok || g != "core.example.com" {
-		t.Fatalf("actor authority = %q", g)
+	if g, ok := r.ActorPackage("engram"); !ok || g != "core.example.com/core" {
+		t.Fatalf("actor package = %q", g)
 	}
-	if g, _ := r.AuthorityByName("core.example.com"); len(g.Actors) != 2 {
-		t.Fatalf("authority actors = %v", g.Actors)
+	if g, _ := r.PackageByName("core.example.com/core"); len(g.Actors) != 2 {
+		t.Fatalf("package actors = %v", g.Actors)
 	}
 }
 
@@ -363,14 +380,15 @@ func TestLoadManifestStream(t *testing.T) {
 // the console reads is canonicalized to the labeled wire form whichever way the
 // manifest authored it.
 func TestEnumValueLabels(t *testing.T) {
-	const src = `kind: core.substrate.reamde.dev/authority
-metadata: {id: vocab.example.com}
-data: {version: 1}
+	const src = `kind: substrate.reamde.dev/core/package
+metadata: {id: vocab.example.com/vocab}
+data: {authority: vocab.example.com, package: vocab, version: 1}
 ---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: vocab.example.com/account}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: vocab.example.com/vocab/account}
 data:
   authority: vocab.example.com
+  package: vocab
   names: {singular: account, plural: accounts}
   properties:
     backfillDepth:
@@ -380,8 +398,8 @@ data:
         - {value: last30d, label: "Last 30 days"}
         - all
 `
-	r := loadFixture(t, map[string]string{"vocab.example.com/g.yaml": src})
-	acct, ok := r.ByIdentity("vocab.example.com/account")
+	r := loadFixture(t, map[string]string{"vocab.example.com/vocab/g.yaml": src})
+	acct, ok := r.ByIdentity("vocab.example.com/vocab/account")
 	if !ok {
 		t.Fatal("account type missing")
 	}
@@ -426,7 +444,7 @@ data:
 // manifest's data map, spelled exactly as it was authored.
 func TestDefinitionIsTheData(t *testing.T) {
 	r := loadVocab(t)
-	task, _ := r.ByIdentity("vocab.example.com/task")
+	task, _ := r.ByIdentity("vocab.example.com/vocab/task")
 	if task.Definition["authority"] != "vocab.example.com" {
 		t.Fatalf("definition = %v", task.Definition)
 	}
@@ -449,17 +467,20 @@ func TestDefinitionIsTheData(t *testing.T) {
 // hover tooltips — serve it without parsing comments.
 func TestDescriptions(t *testing.T) {
 	mk := func(body string) map[string]string {
-		return map[string]string{"d.example.com/authority.yaml": `kind: core.substrate.reamde.dev/authority
+		return map[string]string{"d.example.com/d/authority.yaml": `kind: substrate.reamde.dev/core/package
 metadata:
-  id: d.example.com
-data:
-  version: 1
----
-kind: core.substrate.reamde.dev/kind
-metadata:
-  id: d.example.com/widget
+  id: d.example.com/d
 data:
   authority: d.example.com
+  package: d
+  version: 1
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: d.example.com/d/widget
+data:
+  authority: d.example.com
+  package: d
   names: {singular: widget, plural: widgets}
   properties:
 ` + body}
@@ -481,7 +502,7 @@ data:
         height: int
     parent: {type: reference, kind: widget, description: "the widget this one hangs off"}
 `))
-	w, _ := r.ByIdentity("d.example.com/widget")
+	w, _ := r.ByIdentity("d.example.com/d/widget")
 	if p, _ := w.Prop("name"); p.Description != "what the widget is called" {
 		t.Errorf("name description = %q", p.Description)
 	}
@@ -538,17 +559,20 @@ data:
 // on one line — and it is carried structurally, not left in the data map.
 func TestKindDescription(t *testing.T) {
 	mk := func(desc string) map[string]string {
-		return map[string]string{"d.example.com/authority.yaml": `kind: core.substrate.reamde.dev/authority
+		return map[string]string{"d.example.com/d/authority.yaml": `kind: substrate.reamde.dev/core/package
 metadata:
-  id: d.example.com
-data:
-  version: 1
----
-kind: core.substrate.reamde.dev/kind
-metadata:
-  id: d.example.com/widget
+  id: d.example.com/d
 data:
   authority: d.example.com
+  package: d
+  version: 1
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: d.example.com/d/widget
+data:
+  authority: d.example.com
+  package: d
   description: "` + desc + `"
   names: {singular: widget, plural: widgets}
   properties:
@@ -559,14 +583,14 @@ data:
 	// Two sentences, longer than a property's 200-char tooltip bound.
 	two := "One widget, the thing on the shelf. " + strings.Repeat("x", 200)
 	r := loadFixture(t, mk(two))
-	w, _ := r.ByIdentity("d.example.com/widget")
+	w, _ := r.ByIdentity("d.example.com/d/widget")
 	if w.Description != two {
 		t.Errorf("kind description = %q", w.Description)
 	}
 	// The bound is CHARACTERS, not bytes: a description of em dashes is held
 	// to the same length as one of ASCII, and 400 of them is admitted.
 	dashes := strings.Repeat("—", 400)
-	if got, _ := loadFixture(t, mk(dashes)).ByIdentity("d.example.com/widget"); got.Description != dashes {
+	if got, _ := loadFixture(t, mk(dashes)).ByIdentity("d.example.com/d/widget"); got.Description != dashes {
 		t.Errorf("400 non-ASCII chars refused; the bound counts bytes")
 	}
 	// The mirror shape: the definition IS the data map, so a console reading
@@ -601,14 +625,15 @@ func TestSourceYAMLIsTheDocument(t *testing.T) {
 	// A type's source is its whole manifest, envelope included, with the
 	// comment above it that says what it is for — and nothing of its
 	// neighbors, in either direction.
-	book, _ := r.ByIdentity("vocab.example.com/book")
+	book, _ := r.ByIdentity("vocab.example.com/vocab/book")
 	wantHead := strings.Join([]string{
 		`# one book, in whatever formats you hold it`,
-		`kind: core.substrate.reamde.dev/kind`,
+		`kind: substrate.reamde.dev/core/kind`,
 		`metadata:`,
-		`  id: vocab.example.com/book`,
+		`  id: vocab.example.com/vocab/book`,
 		`data:`,
 		`  authority: vocab.example.com`,
+		`  package: vocab`,
 		`  names: {singular: book, plural: books}`,
 	}, "\n")
 	if !strings.HasPrefix(book.SourceYAML, wantHead) {
@@ -623,28 +648,30 @@ func TestSourceYAMLIsTheDocument(t *testing.T) {
 		}
 	}
 
-	// A authority's source is its authority manifest, carrying the file's own
+	// A package's source is its package manifest, carrying the file's own
 	// opening comment.
-	g, ok := r.AuthorityByName("core.example.com")
+	g, ok := r.PackageByName("core.example.com/core")
 	if !ok {
-		t.Fatal("core authority missing")
+		t.Fatal("core package missing")
 	}
 	wantAuthority := strings.Join([]string{
 		`# the substrate's own machinery`,
-		`kind: core.substrate.reamde.dev/authority`,
+		`kind: substrate.reamde.dev/core/package`,
 		`metadata:`,
-		`  id: core.example.com`,
+		`  id: core.example.com/core`,
 		`data:`,
+		`  authority: core.example.com`,
+		`  package: core`,
 		`  version: 1`,
 	}, "\n")
 	if g.SourceYAML != wantAuthority {
-		t.Fatalf("authority source:\n%s\nwant:\n%s", g.SourceYAML, wantAuthority)
+		t.Fatalf("package source:\n%s\nwant:\n%s", g.SourceYAML, wantAuthority)
 	}
 
 	// Traits and custom property types are manifests too, so their
 	// text is exact rather than sliced.
 	temporal := g.Traits["temporal"]
-	if temporal.Identity() != "core.example.com/temporal" {
+	if temporal.Identity() != "core.example.com/core/temporal" {
 		t.Fatalf("capability identity = %q", temporal.Identity())
 	}
 	if !strings.HasPrefix(temporal.SourceYAML, "# when a thing sits on the timeline") ||
@@ -656,9 +683,9 @@ func TestSourceYAMLIsTheDocument(t *testing.T) {
 		t.Fatalf("capability definition = %v", temporal.Definition)
 	}
 
-	vocab, _ := r.AuthorityByName("vocab.example.com")
+	vocab, _ := r.PackageByName("vocab.example.com/vocab")
 	asin := vocab.PropertyTypes["asin"]
-	if asin.Base != vocabulary.DatatypeString || asin.Identity() != "vocab.example.com/asin" {
+	if asin.Base != vocabulary.DatatypeString || asin.Identity() != "vocab.example.com/vocab/asin" {
 		t.Fatalf("asin datatype = %+v", asin)
 	}
 	if !strings.HasPrefix(asin.SourceYAML, "# Amazon's audiobook identifier") ||
@@ -668,11 +695,11 @@ func TestSourceYAMLIsTheDocument(t *testing.T) {
 
 	// Registry listings are by identity, across authorities.
 	caps := r.Traits()
-	if len(caps) != 1 || caps[0].Identity() != "core.example.com/temporal" {
+	if len(caps) != 1 || caps[0].Identity() != "core.example.com/core/temporal" {
 		t.Fatalf("capabilities = %+v", caps)
 	}
 	dts := r.PropertyTypes()
-	if len(dts) != 1 || dts[0].Identity() != "vocab.example.com/asin" {
+	if len(dts) != 1 || dts[0].Identity() != "vocab.example.com/vocab/asin" {
 		t.Fatalf("datatypes = %+v", dts)
 	}
 }
@@ -692,12 +719,13 @@ func TestSourceYAMLForInstalledManifests(t *testing.T) {
 		`    names:`,
 		`        plural: cursors`,
 		`        singular: cursor`,
+		`    package: gmail`,
 		`    properties:`,
 		`        pageToken:`,
 		`            type: string`,
-		`kind: core.substrate.reamde.dev/kind`,
+		`kind: substrate.reamde.dev/core/kind`,
 		`metadata:`,
-		`    id: gmail.connectors.example.com/cursor`,
+		`    id: gmail.connectors.example.com/gmail/cursor`,
 	}, "\n")
 	if got != want {
 		t.Fatalf("installed source:\n%s\nwant:\n%s", got, want)
@@ -709,18 +737,18 @@ func TestSourceYAMLForInstalledManifests(t *testing.T) {
 	if again.Kinds["cursor"].SourceYAML != got {
 		t.Fatal("derived source must be deterministic, or projections churn")
 	}
-	if again.SourceYAML == "" || !strings.Contains(again.SourceYAML, "kind: core.substrate.reamde.dev/authority") {
-		t.Fatalf("installed authority source:\n%s", again.SourceYAML)
+	if again.SourceYAML == "" || !strings.Contains(again.SourceYAML, "kind: substrate.reamde.dev/core/package") {
+		t.Fatalf("installed package source:\n%s", again.SourceYAML)
 	}
 }
 
 func gmailManifest() vocabulary.Manifest {
-	const authority = "gmail.connectors.example.com"
+	const authority = "gmail.connectors.example.com/gmail"
 	return vocabulary.Manifest{
 		Name:      "google.gmail",
 		Authority: authority,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(authority, 1),
+			vocabulary.PackageManifest(authority, 1),
 			vocabulary.ActorManifest(authority, "connector:gmail"),
 			vocabulary.KindManifest(authority,
 				map[string]any{"singular": "cursor", "plural": "cursors"},
@@ -731,6 +759,16 @@ func gmailManifest() vocabulary.Manifest {
 	}
 }
 
+// packageHeader renders the package document a fixture authority publishes:
+// one package per authority, named for the authority's first label.
+func packageHeader(authority string) string {
+	pkg := packageOf(authority)
+	return `kind: substrate.reamde.dev/core/package
+metadata: {id: ` + authority + `/` + pkg + `}
+data: {authority: ` + authority + `, package: ` + pkg + `, version: 1}
+`
+}
+
 // --- resolution rules ----------------------------------------------------
 
 // A reference's `kind:` pin resolves in-authority first, then uniquely across
@@ -738,17 +776,16 @@ func gmailManifest() vocabulary.Manifest {
 // arbitrary pick.
 func TestReferencePinResolutionRules(t *testing.T) {
 	authority := func(name string) string {
-		return `kind: core.substrate.reamde.dev/authority
-metadata: {id: ` + name + `}
-data: {version: 1}
-`
+		return packageHeader(name)
 	}
 	typ := func(authority, name, data string) string {
+		pkg := packageOf(authority)
 		return `---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: ` + authority + `/` + name + `}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: ` + authority + `/` + pkg + `/` + name + `}
 data:
   authority: ` + authority + `
+  package: ` + pkg + `
   names: {singular: ` + name + `, plural: ` + name + `s}
 ` + data
 	}
@@ -760,9 +797,9 @@ data:
 			"b.yaml": authority("b.example.com") +
 				typ("b.example.com", "beta", "  properties:\n    target: {type: reference, kind: alpha}\n"),
 		})
-		beta, _ := r.ByIdentity("b.example.com/beta")
+		beta, _ := r.ByIdentity("b.example.com/b/beta")
 		target, _ := beta.Prop("target")
-		if target.To != "a.example.com/alpha" {
+		if target.To != "a.example.com/a/alpha" {
 			t.Fatalf("reference pin = %q", target.To)
 		}
 	})
@@ -789,17 +826,17 @@ data:
 		}
 		r := install(t, authority("b.example.com")+typ("b.example.com", "alpha", "")+
 			typ("b.example.com", "beta", "  properties:\n    target: {type: reference, kind: alpha}\n"))
-		beta, _ := r.ByIdentity("b.example.com/beta")
+		beta, _ := r.ByIdentity("b.example.com/b/beta")
 		target, _ := beta.Prop("target")
-		if target.To != "b.example.com/alpha" {
+		if target.To != "b.example.com/b/alpha" {
 			t.Fatalf("reference pin = %q, want the in-authority alpha", target.To)
 		}
 		// The full reference always addresses the other authority's kind.
 		r2 := install(t, authority("b.example.com")+typ("b.example.com", "alpha", "")+
-			typ("b.example.com", "beta", "  properties:\n    target: {type: reference, kind: a.example.com/alpha}\n"))
-		beta2, _ := r2.ByIdentity("b.example.com/beta")
+			typ("b.example.com", "beta", "  properties:\n    target: {type: reference, kind: a.example.com/a/alpha}\n"))
+		beta2, _ := r2.ByIdentity("b.example.com/b/beta")
 		target2, _ := beta2.Prop("target")
-		if target2.To != "a.example.com/alpha" {
+		if target2.To != "a.example.com/a/alpha" {
 			t.Fatalf("qualified reference pin = %q", target2.To)
 		}
 	})
@@ -815,7 +852,7 @@ data:
 			t.Fatal("expected an ambiguity error")
 		}
 		if !strings.Contains(err.Error(), "ambiguous type") ||
-			!strings.Contains(err.Error(), "a.example.com/alpha") {
+			!strings.Contains(err.Error(), "a.example.com/a/alpha") {
 			t.Fatalf("error = %v", err)
 		}
 		if !errors.Is(err, substrate.ErrValidation) {
@@ -827,7 +864,7 @@ data:
 		_, err := vocabulary.LoadFS(fstest.MapFS{
 			"a.yaml": {Data: []byte(alpha)},
 			"c.yaml": {Data: []byte(authority("c.example.com") +
-				typ("c.example.com", "gamma", "  properties:\n    target: {type: reference, kind: a.example.com/nosuch}\n"))},
+				typ("c.example.com", "gamma", "  properties:\n    target: {type: reference, kind: a.example.com/a/nosuch}\n"))},
 		})
 		if err == nil || !strings.Contains(err.Error(), "unknown referent kind") {
 			t.Fatalf("error = %v", err)
@@ -859,18 +896,15 @@ data:
 // full identity, `kind: any` and absent leave it unconstrained, and an unknown
 // pin is a load error.
 func TestReferencePropertyType(t *testing.T) {
-	authority := func(name string) string {
-		return `kind: core.substrate.reamde.dev/authority
-metadata: {id: ` + name + `}
-data: {version: 1}
-`
-	}
+	authority := packageHeader
 	typ := func(g, name, data string) string {
+		pkg := packageOf(g)
 		return `---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: ` + g + `/` + name + `}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: ` + g + `/` + pkg + `/` + name + `}
 data:
   authority: ` + g + `
+  package: ` + pkg + `
   names: {singular: ` + name + `, plural: ` + name + `s}
 ` + data
 	}
@@ -882,12 +916,12 @@ data:
 			"b.yaml": authority("b.example.com") +
 				typ("b.example.com", "beta", "  properties:\n    ptr: {type: reference, kind: alpha}\n"),
 		})
-		beta, _ := r.ByIdentity("b.example.com/beta")
+		beta, _ := r.ByIdentity("b.example.com/b/beta")
 		p := beta.Props["ptr"]
 		if p.Datatype != vocabulary.DatatypeReference {
 			t.Fatalf("kind = %q", p.Datatype)
 		}
-		if p.To != "a.example.com/alpha" {
+		if p.To != "a.example.com/a/alpha" {
 			t.Fatalf("to = %q", p.To)
 		}
 	})
@@ -897,7 +931,7 @@ data:
 			"b.yaml": authority("b.example.com") +
 				typ("b.example.com", "beta", "  properties:\n    ptr: {type: reference, kind: any}\n"),
 		})
-		beta, _ := r.ByIdentity("b.example.com/beta")
+		beta, _ := r.ByIdentity("b.example.com/b/beta")
 		if got := beta.Props["ptr"].To; got != vocabulary.ToAny {
 			t.Fatalf("to = %q, want any", got)
 		}
@@ -908,7 +942,7 @@ data:
 			"b.yaml": authority("b.example.com") +
 				typ("b.example.com", "beta", "  properties:\n    ptr: {type: reference}\n"),
 		})
-		beta, _ := r.ByIdentity("b.example.com/beta")
+		beta, _ := r.ByIdentity("b.example.com/b/beta")
 		if got := beta.Props["ptr"].To; got != "" {
 			t.Fatalf("to = %q, want empty", got)
 		}
@@ -920,7 +954,7 @@ data:
 			"b.yaml": authority("b.example.com") +
 				typ("b.example.com", "beta", "  properties:\n    ptrs: {type: reference, kind: alpha, repeated: true}\n"),
 		})
-		beta, _ := r.ByIdentity("b.example.com/beta")
+		beta, _ := r.ByIdentity("b.example.com/b/beta")
 		if !beta.Props["ptrs"].Repeated {
 			t.Fatal("expected repeated")
 		}
@@ -942,26 +976,26 @@ data:
 // other.
 func TestCapabilityResolutionRules(t *testing.T) {
 	capAuthority := func(authority string) string {
-		return `kind: core.substrate.reamde.dev/authority
-metadata: {id: ` + authority + `}
-data: {version: 1}
----
-kind: core.substrate.reamde.dev/trait
-metadata: {id: ` + authority + `/ranked}
+		pkg := packageOf(authority)
+		return packageHeader(authority) + `---
+kind: substrate.reamde.dev/core/trait
+metadata: {id: ` + authority + `/` + pkg + `/ranked}
 data:
   authority: ` + authority + `
+  package: ` + pkg + `
   properties: {score: int, label: string}
 `
 	}
 	binder := func(props string) string {
-		return `kind: core.substrate.reamde.dev/authority
-metadata: {id: a.example.com}
-data: {version: 1}
+		return `kind: substrate.reamde.dev/core/package
+metadata: {id: a.example.com/a}
+data: {authority: a.example.com, package: a, version: 1}
 ---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: a.example.com/thing}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: a.example.com/a/thing}
 data:
   authority: a.example.com
+  package: a
   names: {singular: thing, plural: things}
   traits: [ranked]
   properties:
@@ -985,7 +1019,7 @@ data:
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}
-		thing, _ := r.ByIdentity("a.example.com/thing")
+		thing, _ := r.ByIdentity("a.example.com/a/thing")
 		if !thing.Implements("Ranked") {
 			t.Fatalf("capabilities = %+v", thing.Traits)
 		}
@@ -1008,11 +1042,11 @@ data:
 // A capability no authority declares is a load error, not a silent no-op.
 func TestUnknownCapabilityRejected(t *testing.T) {
 	r := loadVocab(t)
-	const authority = "x.connectors.example.com"
+	const authority = "x.connectors.example.com/x"
 	g, err := vocabulary.ParseManifest(vocabulary.Manifest{
 		Name: "x", Authority: authority,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(authority, 1),
+			vocabulary.PackageManifest(authority, 1),
 			vocabulary.KindManifest(authority,
 				map[string]any{"singular": "thing", "plural": "things"},
 				map[string]any{"traits": []any{"nosuchcapability"}}),
@@ -1027,7 +1061,7 @@ func TestUnknownCapabilityRejected(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 	if _, ok := r.ByIdentity(authority + "/thing"); ok {
-		t.Fatal("a failed install must not leave the authority behind")
+		t.Fatal("a failed install must not leave the package behind")
 	}
 }
 
@@ -1035,13 +1069,13 @@ func TestUnknownCapabilityRejected(t *testing.T) {
 // install time, and its variant is validated the same way a file's is.
 func TestInstalledGroupBindsLoadedCapability(t *testing.T) {
 	r := loadVocab(t)
-	const authority = "media.connectors.example.com"
-	mk := func(binding string) *vocabulary.Authority {
+	const authority = "media.connectors.example.com/media"
+	mk := func(binding string) *vocabulary.Package {
 		t.Helper()
 		g, err := vocabulary.ParseManifest(vocabulary.Manifest{
 			Name: "media", Authority: authority,
 			Manifests: []map[string]any{
-				vocabulary.AuthorityManifest(authority, 1),
+				vocabulary.PackageManifest(authority, 1),
 				vocabulary.KindManifest(authority,
 					map[string]any{"singular": "clip", "plural": "clips"},
 					map[string]any{
@@ -1079,7 +1113,7 @@ func TestInstallBumpsVersion(t *testing.T) {
 	r := loadVocab(t)
 	before := r.Version()
 	m := gmailManifest()
-	// Its one type reaches into another authority for its owner.
+	// Its one type reaches into another package for its owner.
 	m.Manifests = append(m.Manifests, vocabulary.KindManifest(m.Authority,
 		map[string]any{"singular": "label", "plural": "labels"},
 		map[string]any{"properties": map[string]any{
@@ -1098,7 +1132,7 @@ func TestInstallBumpsVersion(t *testing.T) {
 	if r.Version() <= before {
 		t.Fatal("install must bump the registry version")
 	}
-	ty, ok := r.ByIdentity("gmail.connectors.example.com/label")
+	ty, ok := r.ByIdentity("gmail.connectors.example.com/gmail/label")
 	if !ok {
 		t.Fatal("installed type missing")
 	}
@@ -1106,13 +1140,13 @@ func TestInstallBumpsVersion(t *testing.T) {
 		t.Fatalf("source = %q", ty.Source)
 	}
 	account, _ := ty.Prop("account")
-	if account.To != "core.example.com/account" || !account.Cascades() {
+	if account.To != "core.example.com/core/account" || !account.Cascades() {
 		t.Fatalf("cross-authority reference = %+v", account)
 	}
 	if !contains(r.Actors(), "connector:gmail") {
 		t.Fatal("installed actor missing")
 	}
-	if g, ok := r.ActorAuthority("connector:gmail"); !ok || g != "gmail.connectors.example.com" {
+	if g, ok := r.ActorPackage("connector:gmail"); !ok || g != "gmail.connectors.example.com/gmail" {
 		t.Fatalf("actor authority = %q", g)
 	}
 }
@@ -1122,13 +1156,13 @@ func TestInstallBumpsVersion(t *testing.T) {
 // loader does — the registry-wide rules included.
 func TestInstalledMapping(t *testing.T) {
 	r := loadVocab(t)
-	const authority = "slack.connectors.example.com"
-	mk := func(mapping map[string]any) *vocabulary.Authority {
+	const authority = "slack.connectors.example.com/slack"
+	mk := func(mapping map[string]any) *vocabulary.Package {
 		t.Helper()
 		g, err := vocabulary.ParseManifest(vocabulary.Manifest{
 			Name: "slack", Authority: authority,
 			Manifests: []map[string]any{
-				vocabulary.AuthorityManifest(authority, 1),
+				vocabulary.PackageManifest(authority, 1),
 				vocabulary.ActorManifest(authority, "connector:slack"),
 				vocabulary.KindManifest(authority,
 					map[string]any{"singular": "slackuser", "plural": "slackusers"},
@@ -1137,7 +1171,7 @@ func TestInstalledMapping(t *testing.T) {
 							"realName": map[string]any{"type": "string"},
 							"email":    map[string]any{"type": "email"},
 							"person": map[string]any{
-								"type": "reference", "kind": "vocab.example.com/contact",
+								"type": "reference", "kind": "vocab.example.com/vocab/contact",
 								"required": true, "mustExist": true, "subject": true,
 							},
 						},
@@ -1152,7 +1186,7 @@ func TestInstalledMapping(t *testing.T) {
 	}
 	good := vocabulary.MappingManifest(authority, "slackusercontact", map[string]any{
 		"from":     authority + "/slackuser",
-		"to":       "vocab.example.com/contact",
+		"to":       "vocab.example.com/vocab/contact",
 		"property": "person",
 		"match": []any{
 			map[string]any{"from": "email", "to": "emails"},
@@ -1167,18 +1201,18 @@ func TestInstalledMapping(t *testing.T) {
 		t.Fatalf("install: %v", err)
 	}
 	m, ok := r.MappingFor(authority + "/slackuser")
-	if !ok || m.To != "vocab.example.com/contact" {
+	if !ok || m.To != "vocab.example.com/vocab/contact" {
 		t.Fatalf("installed mapping = %+v", m)
 	}
 	// Two authorities now map onto contact: both declared actors are authority
 	// actors (the machine tier's connector half, primitives §6), and
 	// MappingsTo orders by identity.
 	for _, a := range []string{"connector:google", "connector:slack"} {
-		if _, ok := r.ActorAuthority(a); !ok {
+		if _, ok := r.ActorPackage(a); !ok {
 			t.Fatalf("%s is not a declared authority actor", a)
 		}
 	}
-	tos := r.MappingsTo("vocab.example.com/contact")
+	tos := r.MappingsTo("vocab.example.com/vocab/contact")
 	// Ordered by identity, which is now "<authority>/<name>": the slack
 	// authority sorts before vocab's.
 	if len(tos) != 2 || tos[0].Name != "slackusercontact" || tos[1].Name != "googlecontactcontact" {
@@ -1191,20 +1225,20 @@ func TestInstalledMapping(t *testing.T) {
 
 	// A mapping onto a source type violates the bipartite rule at INSTALL:
 	// googlecontact is already a mapping's from.
-	bad := vocabulary.MappingManifest("bad.connectors.example.com", "usergooglecontact", map[string]any{
-		"from":     "bad.connectors.example.com/user",
-		"to":       "vocab.example.com/googlecontact",
+	bad := vocabulary.MappingManifest("bad.connectors.example.com/bad", "usergooglecontact", map[string]any{
+		"from":     "bad.connectors.example.com/bad/user",
+		"to":       "vocab.example.com/vocab/googlecontact",
 		"property": "record",
 	})
 	g, err := vocabulary.ParseManifest(vocabulary.Manifest{
-		Name: "bad", Authority: "bad.connectors.example.com",
+		Name: "bad", Authority: "bad.connectors.example.com/bad",
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest("bad.connectors.example.com", 1),
-			vocabulary.KindManifest("bad.connectors.example.com",
+			vocabulary.PackageManifest("bad.connectors.example.com/bad", 1),
+			vocabulary.KindManifest("bad.connectors.example.com/bad",
 				map[string]any{"singular": "user", "plural": "users"},
 				map[string]any{"properties": map[string]any{
 					"record": map[string]any{
-						"type": "reference", "kind": "vocab.example.com/googlecontact",
+						"type": "reference", "kind": "vocab.example.com/vocab/googlecontact",
 						"required": true, "mustExist": true, "subject": true,
 					},
 				}}),
@@ -1219,7 +1253,7 @@ func TestInstalledMapping(t *testing.T) {
 	} else if !strings.Contains(err.Error(), "bipartite") {
 		t.Fatalf("error = %v", err)
 	}
-	if _, ok := r.AuthorityByName("bad.connectors.example.com"); ok {
+	if _, ok := r.PackageByName("bad.connectors.example.com/bad"); ok {
 		t.Fatal("a failed install must not leave the authority behind")
 	}
 }
@@ -1227,17 +1261,17 @@ func TestInstalledMapping(t *testing.T) {
 // A manifest is one authority's worth of documents; anything else is a mistake
 // the loader must not paper over.
 func TestManifestShapeRejected(t *testing.T) {
-	const authority = "x.connectors.example.com"
+	const authority = "x.connectors.example.com/x"
 	for name, m := range map[string]vocabulary.Manifest{
 		"no authority manifest": {Name: "x", Authority: authority, Manifests: []map[string]any{
 			vocabulary.KindManifest(authority, map[string]any{"singular": "thing", "plural": "things"}, nil),
 		}},
 		"two authorities": {Name: "x", Authority: authority, Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(authority, 1),
-			vocabulary.AuthorityManifest("y.connectors.example.com", 1),
+			vocabulary.PackageManifest(authority, 1),
+			vocabulary.PackageManifest("y.connectors.example.com/y", 1),
 		}},
 		"authority mismatch": {Name: "x", Authority: authority, Manifests: []map[string]any{
-			vocabulary.AuthorityManifest("y.connectors.example.com", 1),
+			vocabulary.PackageManifest("y.connectors.example.com/y", 1),
 		}},
 		"empty": {Name: "x", Authority: authority},
 	} {
@@ -1261,10 +1295,10 @@ func TestCloneIsolatesInstalls(t *testing.T) {
 	if err := clone.Install(g); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := base.ByIdentity("gmail.connectors.example.com/cursor"); ok {
+	if _, ok := base.ByIdentity("gmail.connectors.example.com/gmail/cursor"); ok {
 		t.Fatal("install leaked into the base registry")
 	}
-	if _, ok := clone.ByIdentity("gmail.connectors.example.com/cursor"); !ok {
+	if _, ok := clone.ByIdentity("gmail.connectors.example.com/gmail/cursor"); !ok {
 		t.Fatal("install missing from the clone")
 	}
 }
@@ -1272,17 +1306,17 @@ func TestCloneIsolatesInstalls(t *testing.T) {
 func TestResolveAmbiguity(t *testing.T) {
 	r := loadVocab(t)
 	ty, err := r.Resolve("contact")
-	if err != nil || ty.Identity != "vocab.example.com/contact" {
+	if err != nil || ty.Identity != "vocab.example.com/vocab/contact" {
 		t.Fatalf("resolve short name: %v %v", ty, err)
 	}
 	if _, err := r.Resolve("nosuch"); err == nil {
 		t.Fatal("expected unknown type error")
 	}
-	const authority = "dup.connectors.example.com"
+	const authority = "dup.connectors.example.com/dup"
 	g, err := vocabulary.ParseManifest(vocabulary.Manifest{
 		Name: "dup", Authority: authority,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(authority, 1),
+			vocabulary.PackageManifest(authority, 1),
 			vocabulary.KindManifest(authority, map[string]any{"singular": "contact", "plural": "contacts"}, nil),
 		},
 	})
@@ -1305,18 +1339,18 @@ func TestInterfacesAndMachines(t *testing.T) {
 	for _, ty := range r.Implementing("Temporal") {
 		temporal[ty.Identity] = true
 	}
-	if !temporal["vocab.example.com/task"] || !temporal["vocab.example.com/note"] {
+	if !temporal["vocab.example.com/vocab/task"] || !temporal["vocab.example.com/vocab/note"] {
 		t.Fatalf("Temporal implementors = %v", temporal)
 	}
-	if temporal["vocab.example.com/contact"] {
+	if temporal["vocab.example.com/vocab/contact"] {
 		t.Fatal("contact should not implement Temporal")
 	}
 	status := r.Implementing("HasStatus")
-	if len(status) != 1 || status[0].Identity != "vocab.example.com/task" {
+	if len(status) != 1 || status[0].Identity != "vocab.example.com/vocab/task" {
 		t.Fatalf("HasStatus = %v", status)
 	}
 
-	task, _ := r.ByIdentity("vocab.example.com/task")
+	task, _ := r.ByIdentity("vocab.example.com/vocab/task")
 	m := task.Machines["status"]
 	// `initial` is ONE declared state: the per-actor map died with the guards.
 	if m.Initial != "open" {
@@ -1339,14 +1373,14 @@ func TestInterfacesAndMachines(t *testing.T) {
 // machine tier's connector half (§6.1, records 50–51, primitives §6).
 func TestMappings(t *testing.T) {
 	r := loadVocab(t)
-	c, _ := r.ByIdentity("vocab.example.com/contact")
-	g, _ := r.ByIdentity("vocab.example.com/googlecontact")
+	c, _ := r.ByIdentity("vocab.example.com/vocab/contact")
+	g, _ := r.ByIdentity("vocab.example.com/vocab/googlecontact")
 
 	m, ok := r.MappingFor(g.Identity)
 	if !ok {
 		t.Fatal("googlecontact carries a mapping")
 	}
-	if m.Identity() != "vocab.example.com/googlecontactcontact" ||
+	if m.Identity() != "vocab.example.com/vocab/googlecontactcontact" ||
 		m.From != g.Identity || m.To != c.Identity || m.Property != "contact" {
 		t.Fatalf("mapping = %+v", m)
 	}
@@ -1385,13 +1419,13 @@ func TestMappings(t *testing.T) {
 	if len(r.MappingsTo(g.Identity)) != 0 {
 		t.Fatal("a source record is managed by nothing")
 	}
-	// The mapping authority's declared actor is an authority actor — the machine
-	// tier's connector half (primitives §6); a stranger is not.
-	if grp, ok := r.ActorAuthority("connector:google"); !ok || grp != "vocab.example.com" {
-		t.Fatalf("ActorAuthority(google.connectors.substrate.reamde.dev) = %q, %v", grp, ok)
+	// The mapping package's declared actor is a package actor — the machine
+	// tier's sync half; a stranger is not.
+	if grp, ok := r.ActorPackage("connector:google"); !ok || grp != "vocab.example.com/vocab" {
+		t.Fatalf("ActorPackage(connector:google) = %q, %v", grp, ok)
 	}
-	if _, ok := r.ActorAuthority("stranger.example.com"); ok {
-		t.Fatal("an undeclared actor is nobody's authority actor")
+	if _, ok := r.ActorPackage("stranger.example.com"); ok {
+		t.Fatal("an undeclared actor is nobody's package actor")
 	}
 
 	// The path type-checker the engine reuses.
@@ -1446,14 +1480,15 @@ func TestParsePath(t *testing.T) {
 // path against both declared kinds, one mapping per source kind, and the
 // registry-wide bipartite rule.
 func TestMappingRules(t *testing.T) {
-	head := `kind: core.substrate.reamde.dev/authority
-metadata: {id: x.example.com}
-data: {version: 1}
+	head := `kind: substrate.reamde.dev/core/package
+metadata: {id: x.example.com/x}
+data: {authority: x.example.com, package: x, version: 1}
 ---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: x.example.com/person}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/person}
 data:
   authority: x.example.com
+  package: x
   names: {singular: person, plural: people}
   properties:
     name: {type: string}
@@ -1466,10 +1501,11 @@ data:
       initial: utility
       transitions: [{from: utility, to: known}]
 ---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: x.example.com/rec}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/rec}
 data:
   authority: x.example.com
+  package: x
   names: {singular: rec, plural: recs}
   properties:
     name:
@@ -1491,53 +1527,54 @@ data:
 `
 	mapping := func(name, body string) string {
 		return head + `---
-kind: core.substrate.reamde.dev/recordmapping
-metadata: {id: x.example.com/` + name + `}
+kind: substrate.reamde.dev/core/recordmapping
+metadata: {id: x.example.com/x/` + name + `}
 data:
   authority: x.example.com
+  package: x
 ` + body
 	}
 	recperson := func(rules string) string {
-		return mapping("recperson", `  from: x.example.com/rec
-  to: x.example.com/person
+		return mapping("recperson", `  from: x.example.com/x/rec
+  to: x.example.com/x/person
   property: person
 `+rules)
 	}
 	bad := map[string]string{
-		"missing property": mapping("recperson", `  from: x.example.com/rec
-  to: x.example.com/person
+		"missing property": mapping("recperson", `  from: x.example.com/x/rec
+  to: x.example.com/x/person
   property: nosuch
 `),
 		// `other` points at person, but the mapping's property must be the one
 		// the data.to names AND carry the subject shape.
-		"optional property": mapping("recperson", `  from: x.example.com/rec
-  to: x.example.com/person
+		"optional property": mapping("recperson", `  from: x.example.com/x/rec
+  to: x.example.com/x/person
   property: other
 `),
 		// The marker is what the write path reads, so a subject-shaped
 		// reference that does not declare it is still refused.
-		"subject marker missing": mapping("recperson", `  from: x.example.com/rec
-  to: x.example.com/person
+		"subject marker missing": mapping("recperson", `  from: x.example.com/x/rec
+  to: x.example.com/x/person
   property: unmarked
 `),
-		"wrong referent kind": mapping("recperson", `  from: x.example.com/rec
-  to: x.example.com/rec
+		"wrong referent kind": mapping("recperson", `  from: x.example.com/x/rec
+  to: x.example.com/x/rec
   property: person
 `),
-		"from not in authority": mapping("recperson", `  from: x.example.com/nosuch
-  to: x.example.com/person
+		"from not in authority": mapping("recperson", `  from: x.example.com/x/nosuch
+  to: x.example.com/x/person
   property: person
 `),
 		"from must be full": mapping("recperson", `  from: rec
-  to: x.example.com/person
+  to: x.example.com/x/person
   property: person
 `),
-		"to must be full": mapping("recperson", `  from: x.example.com/rec
+		"to must be full": mapping("recperson", `  from: x.example.com/x/rec
   to: person
   property: person
 `),
-		"unknown to type": mapping("recperson", `  from: x.example.com/rec
-  to: y.example.com/nosuch
+		"unknown to type": mapping("recperson", `  from: x.example.com/x/rec
+  to: y.example.com/y/nosuch
   property: person
 `),
 		"union onto scalar": recperson(`  map:
@@ -1576,39 +1613,43 @@ data:
     - {from: count, to: emails}
 `),
 		"two mappings for one from-type": recperson("") + `---
-kind: core.substrate.reamde.dev/recordmapping
-metadata: {id: x.example.com/recperson2}
+kind: substrate.reamde.dev/core/recordmapping
+metadata: {id: x.example.com/x/recperson2}
 data:
   authority: x.example.com
-  from: x.example.com/rec
-  to: x.example.com/person
+  package: x
+  from: x.example.com/x/rec
+  to: x.example.com/x/person
   property: person
 `,
 		// person is recperson's `to` AND personorg's `from`: the
 		// source→subject graph stays bipartite.
 		"bipartite violation": recperson("") + `---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: x.example.com/org}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/org}
 data:
   authority: x.example.com
+  package: x
   names: {singular: org, plural: orgs}
   properties: {name: {type: string}}
 ---
-kind: core.substrate.reamde.dev/recordmapping
-metadata: {id: x.example.com/personorg}
+kind: substrate.reamde.dev/core/recordmapping
+metadata: {id: x.example.com/x/personorg}
 data:
   authority: x.example.com
-  from: x.example.com/person
-  to: x.example.com/org
+  package: x
+  from: x.example.com/x/person
+  to: x.example.com/x/org
   property: employer
 `,
 		// No reference anywhere may name a mapped source kind: resolution
 		// stays one hop deep (§6.2).
 		"reference onto a source record": recperson("") + `---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: x.example.com/note}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/note}
 data:
   authority: x.example.com
+  package: x
   names: {singular: note, plural: notes}
   properties: {about: {type: reference, kind: rec}}
 `,
@@ -1617,7 +1658,7 @@ data:
 	}
 	for name, src := range bad {
 		t.Run(name, func(t *testing.T) {
-			fsys := fstest.MapFS{"x.example.com/all.yaml": &fstest.MapFile{Data: []byte(src)}}
+			fsys := fstest.MapFS{"x.example.com/x/all.yaml": &fstest.MapFile{Data: []byte(src)}}
 			if _, err := vocabulary.LoadFS(fsys); err == nil {
 				t.Fatal("expected a load error")
 			} else if !errors.Is(err, substrate.ErrValidation) {
@@ -1630,14 +1671,15 @@ data:
 	// replacement rather than treating the key as unknown.
 	t.Run("projects is deleted", func(t *testing.T) {
 		src := head + `---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: x.example.com/two}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/two}
 data:
   authority: x.example.com
+  package: x
   names: {singular: two, plural: twos}
   properties: {person: {type: reference, kind: person, projects: true}}
 `
-		fsys := fstest.MapFS{"x.example.com/all.yaml": &fstest.MapFile{Data: []byte(src)}}
+		fsys := fstest.MapFS{"x.example.com/x/all.yaml": &fstest.MapFile{Data: []byte(src)}}
 		_, err := vocabulary.LoadFS(fsys)
 		if err == nil {
 			t.Fatal("expected a load error")
@@ -1651,12 +1693,12 @@ data:
 	// Empty match and map are legal: a link-only mapping (bookedition→book)
 	// still makes the from a source record and pins the subject reference.
 	t.Run("link-only mapping", func(t *testing.T) {
-		fsys := fstest.MapFS{"x.example.com/all.yaml": &fstest.MapFile{Data: []byte(recperson(""))}}
+		fsys := fstest.MapFS{"x.example.com/x/all.yaml": &fstest.MapFile{Data: []byte(recperson(""))}}
 		r, err := vocabulary.LoadFS(fsys)
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}
-		m, ok := r.MappingFor("x.example.com/rec")
+		m, ok := r.MappingFor("x.example.com/x/rec")
 		if !ok || len(m.Match) != 0 || len(m.Map) != 0 {
 			t.Fatalf("link-only mapping = %+v", m)
 		}
@@ -1711,14 +1753,15 @@ func TestTemplates(t *testing.T) {
 // on the manifest, not as an empty title.
 func TestTemplateTokensValidate(t *testing.T) {
 	typ := func(template string) string {
-		return `kind: core.substrate.reamde.dev/authority
-metadata: {id: x.example.com}
-data: {version: 1}
+		return `kind: substrate.reamde.dev/core/package
+metadata: {id: x.example.com/x}
+data: {authority: x.example.com, package: x, version: 1}
 ---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: x.example.com/card}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/card}
 data:
   authority: x.example.com
+  package: x
   names: {singular: card, plural: cards}
   displayTemplate: "` + template + `"
   properties:
@@ -1731,7 +1774,7 @@ data:
 `
 	}
 	load := func(src string) error {
-		fsys := fstest.MapFS{"x.example.com/all.yaml": &fstest.MapFile{Data: []byte(src)}}
+		fsys := fstest.MapFS{"x.example.com/x/all.yaml": &fstest.MapFile{Data: []byte(src)}}
 		_, err := vocabulary.LoadFS(fsys)
 		return err
 	}
@@ -1804,125 +1847,139 @@ func (r testResolver) Reference(name, prop string) string {
 // Unknown keys, unknown property types and mis-spelled identities are hard
 // errors: a manifest the loader half-understands is a schema nobody can trust.
 func TestManifestValidationRejected(t *testing.T) {
-	const head = `kind: core.substrate.reamde.dev/authority
-metadata: {id: x.example.com}
-data: {version: 1}
+	const head = `kind: substrate.reamde.dev/core/package
+metadata: {id: x.example.com/x}
+data: {authority: x.example.com, package: x, version: 1}
 ---
 `
 	typ := func(data string) string {
-		return head + `kind: core.substrate.reamde.dev/kind
-metadata: {id: x.example.com/contact}
+		return head + `kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/contact}
 data:
   authority: x.example.com
+  package: x
 ` + data
 	}
 	cases := map[string]string{
 		// the envelope
-		"unknown type": head + `kind: core.substrate.reamde.dev/schemawidget
-metadata: {id: x.example.com/w}
+		"unknown type": head + `kind: substrate.reamde.dev/core/schemawidget
+metadata: {id: x.example.com/x/w}
 data: {authority: x.example.com}
 `,
-		"wrong authority": head + `kind: x.example.com/kind
-metadata: {id: x.example.com/contact}
+		"wrong authority": head + `kind: x.example.com/x/kind
+metadata: {id: x.example.com/x/contact}
 data:
   authority: x.example.com
+  package: x
   names: {singular: contact, plural: contacts}
 `,
-		"unknown envelope key": head + `kind: core.substrate.reamde.dev/kind
-metadata: {id: x.example.com/contact}
+		"unknown envelope key": head + `kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/contact}
 extra: nope
 data:
   authority: x.example.com
+  package: x
   names: {singular: contact, plural: contacts}
 `,
 		// The Kubernetes envelope is DELETED, and each key names what took
 		// its job rather than reading as an unknown key.
-		"apiVersion is deleted": head + `apiVersion: core.substrate.reamde.dev/v1alpha1
+		"apiVersion is deleted": head + `apiVersion: substrate.reamde.dev/core/v1alpha1
 type: kind
-metadata: {id: x.example.com/contact}
+metadata: {id: x.example.com/x/contact}
 data:
   authority: x.example.com
+  package: x
   names: {singular: contact, plural: contacts}
 `,
-		"group is deleted": head + `group: core.substrate.reamde.dev
-kind: core.substrate.reamde.dev/kind
-metadata: {id: x.example.com/contact}
+		"group is deleted": head + `group: substrate.reamde.dev/core
+kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/contact}
 data:
   authority: x.example.com
+  package: x
   names: {singular: contact, plural: contacts}
 `,
 		"type is deleted": head + `type: kind
-metadata: {id: x.example.com/contact}
+metadata: {id: x.example.com/x/contact}
 data:
   authority: x.example.com
+  package: x
   names: {singular: contact, plural: contacts}
 `,
-		"spec is deleted": head + `kind: core.substrate.reamde.dev/kind
-metadata: {id: x.example.com/contact}
+		"spec is deleted": head + `kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/contact}
 spec:
   authority: x.example.com
+  package: x
   names: {singular: contact, plural: contacts}
 `,
-		"metadata.name is deleted": head + `kind: core.substrate.reamde.dev/kind
-metadata: {name: x.example.com/contact}
+		"metadata.name is deleted": head + `kind: substrate.reamde.dev/core/kind
+metadata: {name: x.example.com/x/contact}
 data:
   authority: x.example.com
+  package: x
   names: {singular: contact, plural: contacts}
 `,
-		"no metadata.id": head + `kind: core.substrate.reamde.dev/kind
+		"no metadata.id": head + `kind: substrate.reamde.dev/core/kind
 data:
   authority: x.example.com
+  package: x
   names: {singular: contact, plural: contacts}
 `,
-		"unnamespaced label": head + `kind: core.substrate.reamde.dev/kind
+		"unnamespaced label": head + `kind: substrate.reamde.dev/core/kind
 metadata:
-  id: x.example.com/contact
+  id: x.example.com/x/contact
   labels: {owner: me}
 data:
   authority: x.example.com
+  package: x
   names: {singular: contact, plural: contacts}
 `,
-		"orphan document": `kind: core.substrate.reamde.dev/kind
-metadata: {id: y.example.com/contact}
+		"orphan document": `kind: substrate.reamde.dev/core/kind
+metadata: {id: y.example.com/y/contact}
 data:
   authority: y.example.com
+  package: y
   names: {singular: contact, plural: contacts}
 `,
-		"identity mismatch": head + `kind: core.substrate.reamde.dev/kind
-metadata: {id: x.example.com/contacts}
+		"identity mismatch": head + `kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/contacts}
 data:
   authority: x.example.com
+  package: x
   names: {singular: contact, plural: contacts}
 `,
-		"duplicate type": head + `kind: core.substrate.reamde.dev/kind
-metadata: {id: x.example.com/contact}
+		"duplicate type": head + `kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/contact}
 data:
   authority: x.example.com
+  package: x
   names: {singular: contact, plural: contacts}
 ---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: x.example.com/contact}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: x.example.com/x/contact}
 data:
   authority: x.example.com
+  package: x
   names: {singular: contact, plural: contacts}
 `,
-		"duplicate authority": head + `kind: core.substrate.reamde.dev/authority
-metadata: {id: x.example.com}
-data: {version: 1}
+		"duplicate authority": head + `kind: substrate.reamde.dev/core/package
+metadata: {id: x.example.com/x}
+data: {authority: x.example.com, package: x, version: 1}
 `,
-		"duplicate actor": head + `kind: core.substrate.reamde.dev/actor
+		"duplicate actor": head + `kind: substrate.reamde.dev/core/actor
 metadata: {id: owner}
 data: {authority: x.example.com}
 ---
-kind: core.substrate.reamde.dev/actor
+kind: substrate.reamde.dev/core/actor
 metadata: {id: owner}
 data: {authority: x.example.com}
 `,
-		"bad authority name": `kind: core.substrate.reamde.dev/authority
+		"bad authority name": `kind: substrate.reamde.dev/core/authority
 metadata: {id: Vocab}
 data: {version: 1}
 `,
-		"snake actor": head + `kind: core.substrate.reamde.dev/actor
+		"snake actor": head + `kind: substrate.reamde.dev/core/actor
 metadata: {id: my_actor}
 data: {authority: x.example.com}
 `,
@@ -1943,10 +2000,11 @@ data: {authority: x.example.com}
 		"snake stamp": typ(`  names: {singular: contact, plural: contacts}
   properties: {m: {type: state, states: [a, b], transitions: [{from: a, to: b, stamps: {done_at: now}}]}}
 `),
-		"snake capability property": head + `kind: core.substrate.reamde.dev/trait
-metadata: {id: x.example.com/ranked}
+		"snake capability property": head + `kind: substrate.reamde.dev/core/trait
+metadata: {id: x.example.com/x/ranked}
 data:
   authority: x.example.com
+  package: x
   properties: {top_score: int}
 `,
 		// Enum and state VALUES stay lowercase words — they are data.
@@ -2135,10 +2193,11 @@ data:
 		"managed on a field": typ(`  names: {singular: contact, plural: contacts}
   properties: {spec: {type: object, fields: {version: {type: string, managed: true}}}}
 `),
-		"object refinement base": head + `kind: core.substrate.reamde.dev/propertytype
-metadata: {id: x.example.com/shape}
+		"object refinement base": head + `kind: substrate.reamde.dev/core/propertytype
+metadata: {id: x.example.com/x/shape}
 data:
   authority: x.example.com
+  package: x
   base: object
 `,
 		// The column-backed `title` and temporal properties may not be
@@ -2186,14 +2245,15 @@ data:
 		"props is gone": typ(`  names: {singular: contact, plural: contacts}
   props: {a: {type: string}}
 `),
-		"old one_of": `kind: core.substrate.reamde.dev/authority
-metadata: {id: x.example.com}
-data: {version: 1}
+		"old one_of": `kind: substrate.reamde.dev/core/package
+metadata: {id: x.example.com/x}
+data: {authority: x.example.com, package: x, version: 1}
 ---
-kind: core.substrate.reamde.dev/trait
-metadata: {id: x.example.com/ranked}
+kind: substrate.reamde.dev/core/trait
+metadata: {id: x.example.com/x/ranked}
 data:
   authority: x.example.com
+  package: x
   one_of: {point: {at: datetime}}
 `,
 		"enum values": typ(`  names: {singular: contact, plural: contacts}
@@ -2222,7 +2282,7 @@ data:
 // carries (a DECLARATION's id IS a kind reference).
 func TestValidID(t *testing.T) {
 	for _, ok := range []string{
-		"9f2k", "calendar.substrate.reamde.dev/calendarevent", "people-c123", "people/c123",
+		"9f2k", "samples.substrate.reamde.dev/calendar/calendarevent", "people-c123", "people/c123",
 		"gcal-abc_work", "T01:C01", "ada@example.com", "A~b",
 	} {
 		if !vocabulary.ValidID(ok) {
@@ -2240,16 +2300,16 @@ func TestValidID(t *testing.T) {
 }
 
 // The actor grammar admits the closed domain's flat words and the machine
-// hands, which carry the full authority (record 0025). It still admits the
-// retired `connector:<label>` spelling, because an actor DECLARATION carrying
-// it is stored in every repository written before the rename and has to keep
-// loading.
+// hands, which carry the full authority AND the package (records 0025 and
+// 0047). It still admits the retired `connector:<label>` spelling, because an
+// actor DECLARATION carrying it is stored in every repository written before
+// the rename and has to keep loading.
 func TestValidActor(t *testing.T) {
 	for _, ok := range []string{
 		"api", "console", "substratectl", "substrate",
-		"bundle:core", "bundle:web.bundles.substrate.reamde.dev",
-		"function:web.bundles.substrate.reamde.dev:harvestUrls",
-		"agent:web.bundles.substrate.reamde.dev:librarian",
+		"bundle:core", "bundle:samples.substrate.reamde.dev:web",
+		"function:samples.substrate.reamde.dev:web:harvestUrls",
+		"agent:samples.substrate.reamde.dev:web:librarian",
 		"connector:gmail",
 	} {
 		if !vocabulary.ValidActor(ok) {
@@ -2257,8 +2317,8 @@ func TestValidActor(t *testing.T) {
 		}
 	}
 	for _, bad := range []string{
-		"", "Bundle:web", "bundle:web/harvest", "function:web.example.com:Harvest",
-		"substrate.oauth", "bundle:", "a:b:c:d", "bundle:web bundles",
+		"", "Bundle:web", "bundle:web/harvest", "function:web.example.com:Web:harvest",
+		"substrate.oauth", "bundle:", "a:b:c:d:e", "bundle:web bundles",
 	} {
 		if vocabulary.ValidActor(bad) {
 			t.Errorf("%q should not be a legal actor", bad)
@@ -2270,22 +2330,25 @@ func TestValidActor(t *testing.T) {
 // declaration naming a dispatch hand is refused, so no authority can set the
 // tier another authority's callable writes at.
 func TestActorsCarryTheFullAuthority(t *testing.T) {
-	authority := "fn.example.com"
-	if got := vocabulary.AuthorityActor(authority); got != "bundle:fn.example.com" {
+	authority := "fn.example.com/fn"
+	if got := vocabulary.PackageActor(authority); got != "bundle:fn.example.com:fn" {
 		t.Fatalf("authority actor %q", got)
 	}
 	_, err := vocabulary.LoadFS(fstest.MapFS{"a.yaml": &fstest.MapFile{Data: []byte(
-		`kind: core.substrate.reamde.dev/authority
+		`kind: substrate.reamde.dev/core/package
 metadata:
   id: ` + authority + `
 data:
+  authority: fn.example.com
+  package: fn
   version: 1
 ---
-kind: core.substrate.reamde.dev/actor
+kind: substrate.reamde.dev/core/actor
 metadata:
-  id: function:` + authority + `:mirror
+  id: function:fn.example.com:fn:mirror
 data:
-  authority: ` + authority + `
+  authority: fn.example.com
+  package: fn
   tier: owner
 `)}})
 	if err == nil || !strings.Contains(err.Error(), "minted at dispatch") {
@@ -2293,55 +2356,59 @@ data:
 	}
 }
 
-// actorDeclaration renders one authority declaring one actor at one tier —
-// the shape a bundle would ship to claim a hand.
-func actorDeclaration(authority, actor, tier string) []byte {
-	return []byte(`kind: core.substrate.reamde.dev/authority
+// actorDeclaration renders one package declaring one actor at one tier — the
+// shape a bundle would ship to claim a hand.
+func actorDeclaration(pkg, actor, tier string) []byte {
+	authority, name, _ := strings.Cut(pkg, "/")
+	return []byte(`kind: substrate.reamde.dev/core/package
 metadata:
-  id: ` + authority + `
+  id: ` + pkg + `
 data:
+  authority: ` + authority + `
+  package: ` + name + `
   version: 1
 ---
-kind: core.substrate.reamde.dev/actor
+kind: substrate.reamde.dev/core/actor
 metadata:
   id: ` + actor + `
 data:
   authority: ` + authority + `
+  package: ` + name + `
   tier: ` + tier + `
 `)
 }
 
-// A DECLARED BUNDLE ACTOR IS ITS OWN AUTHORITY'S. A tier is declared data and
+// A DECLARED BUNDLE ACTOR IS ITS OWN PACKAGE'S. A tier is declared data and
 // the registry answers with it before the engine's reserved-name fallback, so
-// an authority that could declare `bundle:<somebody else>` would decide the
-// tier that bundle's install and mapping writes stand at — owner tier pins
-// against the owner's own recompute. The declarer and the named authority must
-// be the same.
+// a package that could declare `bundle:<somebody else>` would decide the tier
+// that bundle's install and mapping writes stand at — owner tier pins against
+// the owner's own recompute. The declarer and the named package must be the
+// same.
 func TestADeclaredBundleActorBelongsToItsAuthority(t *testing.T) {
-	const evil, victim = "evil.example.com", "victim.bundles.example.com"
+	const evil, victim = "evil.example.com/evil", "victim.example.com/victim"
 
 	_, err := vocabulary.LoadFS(fstest.MapFS{"a.yaml": &fstest.MapFile{
-		Data: actorDeclaration(evil, vocabulary.AuthorityActor(victim), "owner"),
+		Data: actorDeclaration(evil, vocabulary.PackageActor(victim), "owner"),
 	}})
-	if err == nil || !strings.Contains(err.Error(), "belongs to the authority it names") {
-		t.Fatalf("one authority declared another's bundle hand: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "belongs to the package it names") {
+		t.Fatalf("one package declared another's bundle hand: %v", err)
 	}
 
 	// Its own hand is the legal declaration, and the tier it declares is the
 	// tier the registry answers with.
 	r, err := vocabulary.LoadFS(fstest.MapFS{"a.yaml": &fstest.MapFile{
-		Data: actorDeclaration(evil, vocabulary.AuthorityActor(evil), "machine"),
+		Data: actorDeclaration(evil, vocabulary.PackageActor(evil), "machine"),
 	}})
 	if err != nil {
 		t.Fatalf("an authority must be able to declare its own hand: %v", err)
 	}
-	tier, ok := r.ActorTier(vocabulary.AuthorityActor(evil))
+	tier, ok := r.ActorTier(vocabulary.PackageActor(evil))
 	if !ok || tier != substrate.TierMachine {
 		t.Fatalf("actor tier %q (%v), want machine", tier, ok)
 	}
 	// And it cannot answer for the hand it does not own, at any tier.
-	if _, ok := r.ActorTier(vocabulary.AuthorityActor(victim)); ok {
-		t.Fatal("the registry answers for an authority it never loaded")
+	if _, ok := r.ActorTier(vocabulary.PackageActor(victim)); ok {
+		t.Fatal("the registry answers for a package it never loaded")
 	}
 }
 
@@ -2351,18 +2418,18 @@ func TestADeclaredBundleActorBelongsToItsAuthority(t *testing.T) {
 // Everything else about the vocabulary is editorial and belongs in the files'
 // own review, not in the loader's suite.
 func TestShippedSchemaLoads(t *testing.T) {
-	r, err := vocabulary.LoadDir("../../kinds/core.substrate.reamde.dev")
+	r, err := vocabulary.LoadDir("../../kinds/substrate.reamde.dev/core")
 	if err != nil {
 		t.Fatalf("load shipped schema: %v", err)
 	}
 	for _, ident := range []string{
 		// The meta-model the projections write, and the machinery the engine
 		// addresses by name.
-		"core.substrate.reamde.dev/kind", "core.substrate.reamde.dev/authority",
-		"core.substrate.reamde.dev/trait", "core.substrate.reamde.dev/propertytype",
-		"core.substrate.reamde.dev/recordmapping",
-		"core.substrate.reamde.dev/actor", "core.substrate.reamde.dev/repository", "core.substrate.reamde.dev/token",
-		"core.substrate.reamde.dev/recordmerge", "core.substrate.reamde.dev/recordsplit",
+		"substrate.reamde.dev/core/kind", "substrate.reamde.dev/core/authority",
+		"substrate.reamde.dev/core/trait", "substrate.reamde.dev/core/propertytype",
+		"substrate.reamde.dev/core/recordmapping",
+		"substrate.reamde.dev/core/actor", "substrate.reamde.dev/core/repository", "substrate.reamde.dev/core/token",
+		"substrate.reamde.dev/core/recordmerge", "substrate.reamde.dev/core/recordsplit",
 	} {
 		if _, ok := r.ByIdentity(ident); !ok {
 			t.Errorf("%s missing", ident)
@@ -2371,31 +2438,35 @@ func TestShippedSchemaLoads(t *testing.T) {
 	// `projectionpolicy` does not exist in this build:
 	// projection is a same-named copy with latest-write-wins, and nothing
 	// ranks sources.
-	if _, ok := r.ByIdentity("core.substrate.reamde.dev/projectionpolicy"); ok {
-		t.Error("core.substrate.reamde.dev/projectionpolicy is not part of this build")
+	if _, ok := r.ByIdentity("substrate.reamde.dev/core/projectionpolicy"); ok {
+		t.Error("substrate.reamde.dev/core/projectionpolicy is not part of this build")
 	}
-	if _, err := r.ResolveTrait("core.substrate.reamde.dev", "temporal"); err != nil {
+	if _, err := r.ResolveTrait("substrate.reamde.dev/core", "temporal"); err != nil {
 		t.Errorf("temporal capability: %v", err)
 	}
 	// The runtime the substrate maintains is core's too (2026-08-12): the
 	// delivery plumbing and the agent loop's data, folded out of the former
 	// automation.substrate.reamde.dev / ai.substrate.reamde.dev authorities.
 	for _, ident := range []string{
-		"core.substrate.reamde.dev/trigger", "core.substrate.reamde.dev/run",
-		"core.substrate.reamde.dev/llmprovider", "core.substrate.reamde.dev/llmthread", "core.substrate.reamde.dev/llmmessage",
-		"core.substrate.reamde.dev/agent", "core.substrate.reamde.dev/function", "core.substrate.reamde.dev/bundle",
+		"substrate.reamde.dev/core/trigger", "substrate.reamde.dev/core/run",
+		"substrate.reamde.dev/core/llmprovider", "substrate.reamde.dev/core/llmthread", "substrate.reamde.dev/core/llmmessage",
+		"substrate.reamde.dev/core/agent", "substrate.reamde.dev/core/function", "substrate.reamde.dev/core/bundle",
 	} {
 		if _, ok := r.ByIdentity(ident); !ok {
 			t.Errorf("%s missing", ident)
 		}
 	}
-	// THE SHIPPED TREE IS CORE ALONE. Every other authority is a registry
-	// bundle a repository imports; a domain authority reappearing here would
-	// silently go back to being seeded into every new repository.
-	for _, g := range r.AuthorityList() {
-		if g.Name != vocabulary.AuthorityCore {
-			t.Errorf("the shipped tree declares %s — only %s is seeded; vocabulary ships as an importable bundle under kinds/",
-				g.Name, vocabulary.AuthorityCore)
+	// THE SEEDED TREE IS THE CORE PACKAGE ALONE, beside the authority row that
+	// owns it. Every other package is one a repository installs; a domain
+	// package reappearing here would silently go back to being seeded into
+	// every new repository.
+	for _, g := range r.PackageList() {
+		if g.IsAuthority() {
+			continue
+		}
+		if g.Identity != vocabulary.PackageCore {
+			t.Errorf("the seeded tree declares %s — only %s is seeded; vocabulary ships as an installable package",
+				g.Identity, vocabulary.PackageCore)
 		}
 	}
 	// The actor domain is closed and flat: the three doors
@@ -2405,10 +2476,10 @@ func TestShippedSchemaLoads(t *testing.T) {
 			t.Errorf("actor %q missing", a)
 		}
 	}
-	// Identity is the kind reference <authority>/<name>, everywhere.
+	// Identity is the kind reference <authority>/<package>/<name>, everywhere.
 	for _, ty := range r.Kinds() {
-		if ty.Identity != vocabulary.KindRef(ty.Authority, ty.Name) {
-			t.Errorf("identity %q is not %s/%s", ty.Identity, ty.Authority, ty.Name)
+		if ty.Identity != ty.Package+"/"+ty.Name {
+			t.Errorf("identity %q is not %s/%s", ty.Identity, ty.Package, ty.Name)
 		}
 		if ty.SourceYAML == "" {
 			t.Errorf("%s carries no source", ty.Identity)
@@ -2422,7 +2493,7 @@ func TestShippedSchemaLoads(t *testing.T) {
 			}
 		}
 	}
-	for _, g := range r.AuthorityList() {
+	for _, g := range r.PackageList() {
 		if g.SourceYAML == "" {
 			t.Errorf("authority %s carries no manifest text", g.Name)
 		}
@@ -2475,7 +2546,7 @@ func TestShippedSchemaUsesBlockStyle(t *testing.T) {
 	}
 	// The seeded tree and the shipped VOCABULARY bundles — the same manifests
 	// the tree used to hold, moved to the catalog and held to the same rule.
-	roots := append([]string{"../../kinds/core.substrate.reamde.dev"}, shippedVocabularyDirs...)
+	roots := append([]string{"../../kinds/substrate.reamde.dev/core"}, shippedVocabularyDirs...)
 	for _, root := range roots {
 		if err := walk(root); err != nil {
 			t.Fatalf("walk %s: %v", root, err)
@@ -2486,25 +2557,24 @@ func TestShippedSchemaUsesBlockStyle(t *testing.T) {
 	}
 }
 
-// shippedVocabularyDirs are the VOCABULARY bundles the binary ships and a
-// repository IMPORTS — the authorities the creation seed used to write and no
+// shippedVocabularyDirs are the SAMPLE packages the binary ships and a
+// repository installs — the vocabulary the creation seed used to write and no
 // longer does. `scheduling` is the traits calendar and tasks bind, so it
 // admits alongside them.
 var shippedVocabularyDirs = []string{
-	"../../kinds/calendar.substrate.reamde.dev",
-	"../../kinds/messaging.substrate.reamde.dev",
-	"../../kinds/people.substrate.reamde.dev",
-	"../../kinds/scheduling.substrate.reamde.dev",
-	"../../kinds/tasks.substrate.reamde.dev",
+	"../../samples/calendar",
+	"../../samples/messaging",
+	"../../samples/people",
+	"../../samples/scheduling",
+	"../../samples/tasks",
 }
 
 // The shipped vocabulary is no longer seeded, so its manifests are held to the
 // same bar where they now live: they admit TOGETHER (messaging and calendar
-// point at people), they carry the shape a vocabulary bundle has —
-// a bare authority, no config type, no callables — and they stay SHIPPED
-// (`source: builtin`) even when built on an install path, which is what keeps
-// `Person` from becoming `People_Person` in GraphQL just because the delivery
-// changed.
+// point at people) and they carry the shape a sample package has — kinds, no
+// inputs, no callables. They install as the repository's own
+// (`source: installed`), which is what makes their GraphQL names
+// `People_Person` and `Tasks_Task`.
 func TestShippedVocabularyBundles(t *testing.T) {
 	var docs []vocabulary.Document
 	for _, dir := range shippedVocabularyDirs {
@@ -2530,13 +2600,13 @@ func TestShippedVocabularyBundles(t *testing.T) {
 	// SourceInstalled is the install path's answer; a vocabulary bundle
 	// overrides it, because the binary publishes this vocabulary however it
 	// was delivered.
-	authorities, err := vocabulary.BuildAuthorities(docs, vocabulary.SourceInstalled)
+	authorities, err := vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
 	if err != nil {
 		t.Fatalf("build the shipped vocabulary: %v", err)
 	}
 	// Into a repository that holds core and nothing else, all four at once —
 	// the import order a fresh repository actually faces.
-	r, err := vocabulary.LoadDir("../../kinds/core.substrate.reamde.dev")
+	r, err := vocabulary.LoadDir("../../kinds/substrate.reamde.dev/core")
 	if err != nil {
 		t.Fatalf("load the seeded tree: %v", err)
 	}
@@ -2544,50 +2614,53 @@ func TestShippedVocabularyBundles(t *testing.T) {
 		t.Fatalf("import the shipped vocabulary: %v", err)
 	}
 	want := map[string]string{
-		"calendar.substrate.reamde.dev":   "calendar.substrate.reamde.dev/calendar",
-		"messaging.substrate.reamde.dev":  "messaging.substrate.reamde.dev/messaging",
-		"people.substrate.reamde.dev":     "people.substrate.reamde.dev/people",
-		"scheduling.substrate.reamde.dev": "scheduling.substrate.reamde.dev/scheduling",
-		"tasks.substrate.reamde.dev":      "tasks.substrate.reamde.dev/tasks",
+		"samples.substrate.reamde.dev/calendar":   "samples.substrate.reamde.dev/calendar",
+		"samples.substrate.reamde.dev/messaging":  "samples.substrate.reamde.dev/messaging",
+		"samples.substrate.reamde.dev/people":     "samples.substrate.reamde.dev/people",
+		"samples.substrate.reamde.dev/scheduling": "samples.substrate.reamde.dev/scheduling",
+		"samples.substrate.reamde.dev/tasks":      "samples.substrate.reamde.dev/tasks",
 	}
 	for _, g := range authorities {
-		id, ok := want[g.Name]
+		id, ok := want[g.Identity]
 		if !ok {
-			t.Errorf("unexpected authority %s", g.Name)
+			if g.IsAuthority() {
+				continue // the authority row travels with every closure
+			}
+			t.Errorf("unexpected package %s", g.Identity)
 			continue
 		}
 		if g.Bundle == nil {
-			t.Errorf("%s ships no bundle document — it would not be importable", g.Name)
+			t.Errorf("%s ships no bundle document — it would not be importable", g.Identity)
 			continue
 		}
-		if !g.Bundle.Vocabulary || len(g.Bundle.Inputs) != 0 {
-			t.Errorf("%s: vocabulary=%v inputs=%d", g.Name, g.Bundle.Vocabulary, len(g.Bundle.Inputs))
+		if len(g.Bundle.Inputs) != 0 {
+			t.Errorf("%s: a sample package configures nothing, got %d inputs", g.Identity, len(g.Bundle.Inputs))
 		}
 		if g.Bundle.Identity() != id {
-			t.Errorf("%s bundle id = %q, want %q", g.Name, g.Bundle.Identity(), id)
+			t.Errorf("%s bundle id = %q, want %q", g.Identity, g.Bundle.Identity(), id)
 		}
-		if g.Source != vocabulary.SourceBuiltin {
-			t.Errorf("%s source = %q — shipped vocabulary stays builtin however it is delivered", g.Name, g.Source)
+		if g.Source != vocabulary.SourceInstalled {
+			t.Errorf("%s source = %q — an installed package is the repository's", g.Identity, g.Source)
 		}
 		if len(g.Functions) != 0 || len(g.Agents) != 0 {
-			t.Errorf("%s ships callables — a vocabulary bundle is kinds and nothing else", g.Name)
+			t.Errorf("%s ships callables — these sample packages are kinds and nothing else", g.Identity)
 		}
 	}
 	// Everything that maps onto people says so, so an import into a
 	// core-only repository is refused with a legible reason.
-	for _, name := range []string{"calendar.substrate.reamde.dev", "messaging.substrate.reamde.dev"} {
-		g, ok := r.AuthorityByName(name)
-		if !ok || !contains(g.Bundle.Requires, "people.substrate.reamde.dev") {
-			t.Errorf("%s does not require people.substrate.reamde.dev", name)
+	for _, name := range []string{"samples.substrate.reamde.dev/calendar", "samples.substrate.reamde.dev/messaging"} {
+		g, ok := r.PackageByName(name)
+		if !ok || !contains(g.Bundle.Requires, "samples.substrate.reamde.dev/people") {
+			t.Errorf("%s does not require samples.substrate.reamde.dev/people", name)
 		}
 	}
 	// Person carries no structured name parts (owner ruling): the full name
 	// and the friendly one, nothing else name-shaped. Pronouns exist by a
 	// later ruling (the mneme unification), free text with empty meaning
 	// unknown, and never an enum.
-	person, ok := r.ByIdentity("people.substrate.reamde.dev/person")
+	person, ok := r.ByIdentity("samples.substrate.reamde.dev/people/person")
 	if !ok {
-		t.Fatal("people.substrate.reamde.dev/person missing")
+		t.Fatal("samples.substrate.reamde.dev/people/person missing")
 	}
 	for _, p := range []string{"name", "displayName", "pronouns"} {
 		if prop, ok := person.Prop(p); !ok || prop.Datatype != vocabulary.DatatypeString {
@@ -2599,10 +2672,10 @@ func TestShippedVocabularyBundles(t *testing.T) {
 			t.Errorf("person.%s must not exist", p)
 		}
 	}
-	// GraphQL names stay bare: shipped vocabulary is shipped whichever door it
-	// came through.
-	if got := vocabulary.GraphQLName("people.substrate.reamde.dev/person", person.Source); got != "Person" {
-		t.Errorf("GraphQL name = %q, want Person", got)
+	// An installed kind carries its PACKAGE in GraphQL, so two packages may
+	// declare a `person` without either renaming the other.
+	if got := vocabulary.GraphQLName("samples.substrate.reamde.dev/people/person", person.Source); got != "People_Person" {
+		t.Errorf("GraphQL name = %q, want People_Person", got)
 	}
 }
 
@@ -2622,14 +2695,15 @@ func contains(ss []string, s string) bool {
 // itself, never a still-declared sibling, never a built-in, never a field.
 func TestRenamedFromReserved(t *testing.T) {
 	mk := func(props string) fstest.MapFS {
-		return fstest.MapFS{"g.yaml": &fstest.MapFile{Data: []byte(`kind: core.substrate.reamde.dev/authority
-metadata: {id: g.example.com}
-data: {version: 1}
+		return fstest.MapFS{"g.yaml": &fstest.MapFile{Data: []byte(`kind: substrate.reamde.dev/core/package
+metadata: {id: g.example.com/g}
+data: {authority: g.example.com, package: g, version: 1}
 ---
-kind: core.substrate.reamde.dev/kind
-metadata: {id: g.example.com/thing}
+kind: substrate.reamde.dev/core/kind
+metadata: {id: g.example.com/g/thing}
 data:
   authority: g.example.com
+  package: g
   names: {singular: thing, plural: things}
   properties:
 ` + props)}}
@@ -2640,7 +2714,7 @@ data:
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}
-		thing, _ := r.ByIdentity("g.example.com/thing")
+		thing, _ := r.ByIdentity("g.example.com/g/thing")
 		if got := thing.Props["label"].RenamedFrom; got != "caption" {
 			t.Fatalf("RenamedFrom = %q", got)
 		}

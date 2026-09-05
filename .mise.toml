@@ -5,7 +5,7 @@ go = "1.26.6"
 node = "26.2.0"
 pnpm = "9.14.2"
 golangci-lint = "2.12.2"
-# The YAML formatter. The vocabulary IS YAML — `kinds/` is the contract as
+# The YAML formatter. The vocabulary IS YAML — `kinds/` and `samples/` are the contract as
 # files — so its shape is reviewed as often as Go is, and `fmt:check` fails on
 # it the same way. Config is .yamlfmt.
 yamlfmt = "0.21.0"
@@ -315,7 +315,7 @@ exit $status
 # base, not the files, so it is only meaningful where there is a change to
 # judge. `ci:lint` names it; a laptop runs it when it wants that answer.
 [tasks."kinds:check"]
-description = "Refuse a kinds/ change that does not bump a declaration version"
+description = "Refuse a kinds/ or samples/ change that does not bump a declaration version"
 run = ".mise/kindscheck.sh"
 
 # `frozen:check` is the same shape as `kinds:check` and not in `lint` for the

@@ -29,7 +29,7 @@ import type {
   SubstrateRecord,
 } from "@/lib/api/types"
 
-const params = { id: "people.substrate.reamde.dev/people" }
+const params = { id: "samples.substrate.reamde.dev/people/people" }
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
@@ -64,9 +64,10 @@ function jsonResponse(status: number, body: unknown): Response {
 
 function bundle(over: Partial<CatalogBundle>): CatalogBundle {
   return {
-    id: "x.bundles.substrate.reamde.dev/x",
+    id: "x.example.com/x",
     name: "x",
-    authority: "x.bundles.substrate.reamde.dev",
+    authority: "x.example.com",
+    package: "x",
     description: "",
     version: 1,
     closure: {},
@@ -76,42 +77,47 @@ function bundle(over: Partial<CatalogBundle>): CatalogBundle {
 }
 
 const PEOPLE = bundle({
-  id: "people.substrate.reamde.dev/people",
+  id: "samples.substrate.reamde.dev/people",
   name: "people",
-  authority: "people.substrate.reamde.dev",
+  authority: "samples.substrate.reamde.dev",
+  package: "people",
   description: "The shipped vocabulary for humans.",
   version: 1,
-  vocabulary: true,
-  closure: { kinds: ["people.substrate.reamde.dev/person"] },
+  closure: { kinds: ["samples.substrate.reamde.dev/people/person"] },
 })
 
 const GOOGLE = bundle({
-  id: "google.bundles.substrate.reamde.dev/google",
+  id: "providers.substrate.reamde.dev/google",
   name: "google",
-  authority: "google.bundles.substrate.reamde.dev",
+  authority: "providers.substrate.reamde.dev",
+  package: "google",
   description: "Connects a Google account.",
   inputs: {
     client: {
-      kind: "google.bundles.substrate.reamde.dev/config",
+      kind: "providers.substrate.reamde.dev/google/config",
       description: "The OAuth client record.",
     },
   },
   integration: true,
-  requires: ["people.substrate.reamde.dev", "messaging.substrate.reamde.dev"],
+  requires: [
+    "samples.substrate.reamde.dev/people",
+    "samples.substrate.reamde.dev/messaging",
+  ],
   closure: {
     kinds: [
-      "google.bundles.substrate.reamde.dev/config",
-      "google.bundles.substrate.reamde.dev/contact",
+      "providers.substrate.reamde.dev/google/config",
+      "providers.substrate.reamde.dev/google/contact",
     ],
-    functions: ["google.bundles.substrate.reamde.dev/syncgoogle"],
+    functions: ["providers.substrate.reamde.dev/google/syncgoogle"],
   },
 })
 
 function kind(over: Partial<KindInfo>): KindInfo {
   return {
-    identity: "people.substrate.reamde.dev/person",
+    identity: "samples.substrate.reamde.dev/people/person",
     name: "person",
-    authority: "people.substrate.reamde.dev",
+    authority: "samples.substrate.reamde.dev",
+    package: "people",
     version: 1,
     plural: "persons",
     source: "builtin",
@@ -122,16 +128,18 @@ function kind(over: Partial<KindInfo>): KindInfo {
 const KINDS: KindInfo[] = [
   kind({}),
   kind({
-    identity: "google.bundles.substrate.reamde.dev/config",
+    identity: "providers.substrate.reamde.dev/google/config",
     name: "config",
-    authority: "google.bundles.substrate.reamde.dev",
+    authority: "providers.substrate.reamde.dev",
+    package: "google",
     plural: "configs",
     definition: { traits: ["oauth2"] },
   }),
   kind({
-    identity: "google.bundles.substrate.reamde.dev/contact",
+    identity: "providers.substrate.reamde.dev/google/contact",
     name: "contact",
-    authority: "google.bundles.substrate.reamde.dev",
+    authority: "providers.substrate.reamde.dev",
+    package: "google",
     plural: "contacts",
   }),
 ]
@@ -140,7 +148,8 @@ function status(over: Partial<BundleStatus>): BundleStatus {
   return {
     id: PEOPLE.id,
     name: "people",
-    authority: "people.substrate.reamde.dev",
+    authority: "samples.substrate.reamde.dev",
+    package: "people",
     installed: true,
     enabled: true,
     kinds: 1,
@@ -163,7 +172,7 @@ function renderPage(ui: ReactElement) {
 function configRecord(id: string): SubstrateRecord {
   return {
     id,
-    kind: "google.bundles.substrate.reamde.dev/config",
+    kind: "providers.substrate.reamde.dev/google/config",
     properties: { title: `client ${id}` },
     labels: {},
     version: 1,
@@ -192,14 +201,14 @@ describe("BundleDetailPage", () => {
       ) {
         return jsonResponse(200, bundleStatus)
       }
-      if (path.startsWith("/api/v1/core.substrate.reamde.dev/kind")) {
+      if (path.startsWith("/api/v1/substrate.reamde.dev/core/kind")) {
         return jsonResponse(200, { kinds: KINDS })
       }
       if (path === CATALOG_PATH) {
         return jsonResponse(200, { items: [PEOPLE, GOOGLE] })
       }
       if (
-        path.startsWith("/api/v1/google.bundles.substrate.reamde.dev/config")
+        path.startsWith("/api/v1/providers.substrate.reamde.dev/google/config")
       ) {
         return jsonResponse(200, { records: opts.configs ?? [] })
       }
@@ -223,7 +232,6 @@ describe("BundleDetailPage", () => {
     it("declares no inputs and has no setup, so NO setup UI and NO warning chip", async () => {
       renderPage(<BundleDetailPage />)
       await screen.findByText("people")
-      expect(screen.getByText("Vocabulary")).toBeTruthy()
       expect(screen.getByText("· 1")).toBeTruthy()
       expect(
         screen.getByText("The shipped vocabulary for humans.")
@@ -238,9 +246,10 @@ describe("BundleDetailPage", () => {
       renderPage(<BundleDetailPage />)
       const person = await screen.findByText("person")
       const link = person.closest("a")!
-      expect(link.getAttribute("data-to")).toBe("/data/$authority/$name")
+      expect(link.getAttribute("data-to")).toBe("/data/$authority/$pkg/$name")
       expect(JSON.parse(link.getAttribute("data-params")!)).toEqual({
-        authority: "people.substrate.reamde.dev",
+        authority: "samples.substrate.reamde.dev",
+        pkg: "people",
         name: "person",
       })
     })
@@ -257,11 +266,12 @@ describe("BundleDetailPage", () => {
       return status({
         id: GOOGLE.id,
         name: "google",
-        authority: "google.bundles.substrate.reamde.dev",
+        authority: "providers.substrate.reamde.dev",
+        package: "google",
         inputs: [
           {
             name: "client",
-            kind: "google.bundles.substrate.reamde.dev/config",
+            kind: "providers.substrate.reamde.dev/google/config",
             description: "The OAuth client record.",
           },
         ],
@@ -269,7 +279,7 @@ describe("BundleDetailPage", () => {
           {
             code: "missing",
             input: "client",
-            kind: "google.bundles.substrate.reamde.dev/config",
+            kind: "providers.substrate.reamde.dev/google/config",
             message: "no config record exists yet",
           },
         ],
@@ -290,16 +300,18 @@ describe("BundleDetailPage", () => {
       const note = screen.getByText("Requires").closest("div") as HTMLElement
       // people is reconciled in the kind registry; messaging is not.
       expect(
-        within(note).getByTitle("people.substrate.reamde.dev is imported")
+        within(note).getByTitle(
+          "samples.substrate.reamde.dev/people is imported"
+        )
       ).toBeTruthy()
       expect(
         within(note).getByTitle(
-          "messaging.substrate.reamde.dev is not imported"
+          "samples.substrate.reamde.dev/messaging is not imported"
         )
       ).toBeTruthy()
       expect(
         screen.getByText(
-          /Not in this repository: messaging.substrate.reamde.dev/
+          /Not in this repository: samples\.substrate\.reamde\.dev\/messaging/
         )
       ).toBeTruthy()
     })
@@ -319,7 +331,9 @@ describe("BundleDetailPage", () => {
         .closest("section") as HTMLElement
       expect(within(section).getByText("client")).toBeTruthy()
       expect(
-        within(section).getByText("google.bundles.substrate.reamde.dev/config")
+        within(section).getByText(
+          "providers.substrate.reamde.dev/google/config"
+        )
       ).toBeTruthy()
       expect(
         within(section).getByText("no config record exists yet")
@@ -332,7 +346,7 @@ describe("BundleDetailPage", () => {
           inputs: [
             {
               name: "client",
-              kind: "google.bundles.substrate.reamde.dev/config",
+              kind: "providers.substrate.reamde.dev/google/config",
               record: "default",
               via: "default",
             },
@@ -366,7 +380,7 @@ describe("BundleDetailPage", () => {
             const req = init as RequestInit | undefined
             return (
               String(url) ===
-                "/api/v1/core.substrate.reamde.dev/bundle/google.bundles.substrate.reamde.dev%2Fgoogle/bind" &&
+                "/api/v1/substrate.reamde.dev/core/bundle/providers.substrate.reamde.dev%2Fgoogle/bind" &&
               req?.method === "POST" &&
               JSON.parse(String(req.body)) !== null &&
               JSON.parse(String(req.body)).input === "client" &&
@@ -383,7 +397,7 @@ describe("BundleDetailPage", () => {
           inputs: [
             {
               name: "client",
-              kind: "google.bundles.substrate.reamde.dev/config",
+              kind: "providers.substrate.reamde.dev/google/config",
               record: "cfg-1",
               via: "bound",
             },
@@ -419,7 +433,7 @@ describe("BundleDetailPage", () => {
           setup: [
             {
               code: "provider",
-              kind: "core.substrate.reamde.dev/llmprovider",
+              kind: "substrate.reamde.dev/core/llmprovider",
               record: "openai",
               message: "llmprovider openai has no key",
             },
@@ -433,9 +447,12 @@ describe("BundleDetailPage", () => {
         .getByText("llmprovider openai has no key")
         .closest("div") as HTMLElement
       const link = within(row).getByText("openai").closest("a")!
-      expect(link.getAttribute("data-to")).toBe("/data/$authority/$name/$id")
+      expect(link.getAttribute("data-to")).toBe(
+        "/data/$authority/$pkg/$name/$id"
+      )
       expect(JSON.parse(link.getAttribute("data-params")!)).toEqual({
-        authority: "core.substrate.reamde.dev",
+        authority: "substrate.reamde.dev",
+        pkg: "core",
         name: "llmprovider",
         id: "openai",
       })

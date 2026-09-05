@@ -262,7 +262,7 @@ type changeEntry struct {
 }
 
 // changeProps renders entries as the llmmessage `changes` property stores
-// them (kinds/core.substrate.reamde.dev/llmmessage.yaml).
+// them (kinds/substrate.reamde.dev/core/llmmessage.yaml).
 func changeProps(entries []changeEntry) []any {
 	out := make([]any, 0, len(entries))
 	for _, e := range entries {

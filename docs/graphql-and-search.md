@@ -16,13 +16,13 @@ The whole read/write surface also serves at one endpoint,
 ```graphql
 query ($f: JSON) {
   records(filter: $f, first: 20) {
-    nodes { id kind title ... on Task { status } }
+    nodes { id kind title ... on Tasks_Task { status } }
     cursor
     head
   }
 }
 # variables:
-# {"f": {"kinds": ["tasks.substrate.reamde.dev/task"],
+# {"f": {"kinds": ["samples.substrate.reamde.dev/tasks/task"],
 #        "properties": {"status": {"eq": "open"}}}}
 ```
 
@@ -41,13 +41,13 @@ resumes forward from a transparent `seq` (the arg is `from`, not an opaque
 cursor), returns `{changes, from}`, and echoes the last seq back as `from`.
 
 Every declared kind gets a generated GraphQL type with its properties as
-fields; interfaces span authorities (`Temporal`, `HasStatus`: everything with
+fields; interfaces span packages (`Temporal`, `HasStatus`: everything with
 that [trait](traits.md) or that state, so "everything with a
 status, anywhere" is one query). Single-record lookups are ref-addressed:
 identity is the (kind, id) pair, so `record` takes both:
 
 ```graphql
-query { record(kind: "tasks.substrate.reamde.dev/task", id: "kq3v9x2m41pf") { id title } }
+query { record(kind: "samples.substrate.reamde.dev/tasks/task", id: "kq3v9x2m41pf") { id title } }
 ```
 
 Mutations are the five: `put patch delete merge split`. `put`
@@ -58,7 +58,7 @@ the id:
 mutation ($k: String!, $id: ID!, $in: JSON!) {
   patch(kind: $k, id: $id, input: $in) { id version }
 }
-# {"k": "tasks.substrate.reamde.dev/task", "id": "kq3v9x2m41pf",
+# {"k": "samples.substrate.reamde.dev/tasks/task", "id": "kq3v9x2m41pf",
 #  "in": {"properties": {"status": "done"}}}
 ```
 
@@ -70,18 +70,23 @@ record's id.
 ## Generated names and scalars
 
 A GraphQL type name is a pure function of the kind's reference and where the
-kind came from, never of which other kinds happen to be installed, so the
-schema is deterministic and installing one bundle can never rename another
-kind. The rule has two arms. A **shipped kind keeps its bare singular**:
-`people.substrate.reamde.dev/person` is `Person`, `calendar.substrate.reamde.dev/calendarevent` is
-`Calendarevent`. An **installed kind is always authority-prefixed**: the
-leading label of its authority, TitleCased, an underscore, then the singular.
-Two bundles may declare the same singular and stay distinct, because the
-full reference separates them: `notion.bundles.substrate.reamde.dev/page` is
-`Notion_Page` and `web.bundles.substrate.reamde.dev/page` is `Web_Page`, and the
-underscore keeps both out of reach of any shipped name. Interfaces follow the
-same determinism: one per trait that carries properties (a pure marker
-trait adds none), and one per distinct state-property name
+kind came from, so the schema is deterministic and installing one bundle can
+never rename another kind. The rule has two arms. A **seeded kind keeps its
+bare singular**: `substrate.reamde.dev/core/token` is `Token`. That is the core
+package alone, because creation seeds core and nothing else — every sample a
+repository imports, `people` and `tasks` included, installs as the repository's
+own. An **installed kind is package-prefixed**: the package's word, TitleCased,
+an underscore, then the singular. Two packages may declare the same singular
+and stay distinct: `providers.substrate.reamde.dev/notion/page` is `Notion_Page`
+and `samples.substrate.reamde.dev/web/page` is `Web_Page`, and the underscore
+keeps both out of reach of any seeded name. Two AUTHORITIES publishing a
+package of one word are the one ambiguity left, and there the authority's
+leading label joins the front for every kind of both packages
+(`Acme_Tasks_Task`, `Samples_Tasks_Task`), so a kind's name never depends on
+which of its neighbours are installed
+([decision 0047](decisions/0047-a-kind-lives-in-a-package.md)). Interfaces
+follow the same determinism: one per trait that carries properties (a pure
+marker trait adds none), and one per distinct state-property name
 (`HasStatus`, `HasProminence`).
 
 Two kinds that still resolve to one name are **refused when the second is

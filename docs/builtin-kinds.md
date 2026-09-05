@@ -1,28 +1,28 @@
 # Built-in kinds
 
-Every repository is seeded at creation with **`core.substrate.reamde.dev` and nothing
+Every repository is seeded at creation with **`substrate.reamde.dev/core` and nothing
 else** — the substrate's own machinery, including the delivery plumbing and the
 agent runtime's data. Everything else is a **vocabulary bundle you import**:
 people, tasks, messaging, calendar, and the mneme-ported health, fitness,
 routines, journal, places, food and commerce. Each ships in the binary and
 installs on request, exactly the way a [bundle](bundles.md) does, under the
-same `bundle:<authority>` actor. So a brand-new repository has no `person` kind
-until you ask for one.
+same `bundle:<authority>:<package>` actor. So a brand-new repository has no
+`person` kind until you ask for one.
 
 Importing is one action per bundle, and a bundle that maps onto another
-authority says so in its `requires:` — installing `google` before `people`
+package says so in its `requires:` — installing `google` before `people`
 is refused, naming what to import first. Nothing installed ever redefines a
 shipped kind. Every declaration is queryable in your own repository
-(`substratectl kinds`, or `GET …/core.substrate.reamde.dev/kind`), descriptions included,
+(`substratectl kinds`, or `GET …/substrate.reamde.dev/core/kind`), descriptions included,
 so this page is the map, not the source of truth.
 
-Kinds are named `<authority>/<name>`. The tables below give the name; the
-heading gives the authority.
+Kinds are named `<authority>/<package>/<name>`. The tables below give the
+name; the heading gives the authority and the package.
 
-The tables for core are [below](#coresubstratereamdedev); what follows first is the
-vocabulary you import.
+The tables for core are [below](#substratereamdedevcore); what follows first is
+the vocabulary you import.
 
-## people.substrate.reamde.dev — imported
+## samples.substrate.reamde.dev/people — imported
 
 | Kind           | What it is                                                                                                                              |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
@@ -37,7 +37,7 @@ once something promotes it (an address-book sync, or you). Search ranks
 an enum, and empty means unknown: a surface rendering a person without a
 value says so and falls back to they/them.
 
-## messaging.substrate.reamde.dev — imported
+## samples.substrate.reamde.dev/messaging — imported
 
 | Kind                  | What it is                                                             |
 | --------------------- | ---------------------------------------------------------------------- |
@@ -46,7 +46,7 @@ value says so and falls back to they/them.
 | `emailthread`         | One mail thread.                                                       |
 | `emailmessage`        | One mail message in a thread.                                          |
 
-## calendar.substrate.reamde.dev — imported
+## samples.substrate.reamde.dev/calendar — imported
 
 | Kind                  | What it is                                                              |
 | --------------------- | ----------------------------------------------------------------------- |
@@ -55,7 +55,7 @@ value says so and falls back to they/them.
 | `calendareventseries` | The recurring definition, RRULE and exceptions, never on the timeline.  |
 | `transcript`          | A meeting transcript, pointed at the occurrence that actually happened. |
 
-## tasks.substrate.reamde.dev — imported
+## samples.substrate.reamde.dev/tasks — imported
 
 | Kind      | What it is                                                                  |
 | --------- | ---------------------------------------------------------------------------- |
@@ -68,7 +68,7 @@ kinds share one stance: a schedule stores an RFC 5545 RRULE the substrate
 never expands, an occurrence exists only when a log records it, and "missed"
 is computed from absence, never stored.
 
-## health.substrate.reamde.dev — imported
+## samples.substrate.reamde.dev/health — imported
 
 | Kind                    | What it is                                                                    |
 | ----------------------- | ----------------------------------------------------------------------------- |
@@ -79,7 +79,7 @@ is computed from absence, never stored.
 | `medicationschedulelog` | One dose, done or skipped; absence in the logs is what missed means.          |
 | `bloodtest`             | One blood draw; markers worth tracking are observationlogs pointing at it.    |
 
-## fitness.substrate.reamde.dev — imported
+## samples.substrate.reamde.dev/fitness — imported
 
 | Kind              | What it is                                                              |
 | ----------------- | ------------------------------------------------------------------------ |
@@ -89,34 +89,34 @@ is computed from absence, never stored.
 | `workouttemplate` | A reusable session plan built from the catalog.                          |
 | `workoutlog`      | The done-or-skipped mark against a recurring workout's occurrence.       |
 
-## routines.substrate.reamde.dev — imported
+## samples.substrate.reamde.dev/routines — imported
 
 | Kind         | What it is                                                                  |
 | ------------ | ---------------------------------------------------------------------------- |
 | `routine`    | The generic recurring obligation, with a window for how literally its time-of-day is meant. |
 | `routinelog` | One occurrence, done or skipped.                                             |
 
-## journal.substrate.reamde.dev — imported
+## samples.substrate.reamde.dev/journal — imported
 
 | Kind           | What it is                                                              |
 | -------------- | ------------------------------------------------------------------------ |
 | `journalentry` | One day's reflection; its timeline anchor is the day written about.      |
 | `note`         | Anything else written down; `audience` declares who it is for, `status` its handled lifecycle. |
 
-## places.substrate.reamde.dev — imported
+## samples.substrate.reamde.dev/places — imported
 
 | Kind    | What it is                                                          |
 | ------- | -------------------------------------------------------------------- |
 | `place` | Somewhere worth remembering; what happened there points at it.       |
 
-## food.substrate.reamde.dev — imported
+## samples.substrate.reamde.dev/food — imported
 
 | Kind     | What it is                                                            |
 | -------- | ---------------------------------------------------------------------- |
 | `recipe` | Instructions for one dish; cooking it is a meal pointing here.         |
 | `meal`   | One sitting on the timeline; nutrition numbers are observationlogs whose `derivedFrom` is the meal. |
 
-## commerce.substrate.reamde.dev — imported
+## samples.substrate.reamde.dev/commerce — imported
 
 | Kind        | What it is                                                            |
 | ----------- | ---------------------------------------------------------------------- |
@@ -124,7 +124,7 @@ is computed from absence, never stored.
 | `orderitem` | One line inside an order; the order owns it.                           |
 | `currency`  | A property type: an ISO 4217 code, kept separate from the amount.      |
 
-## core.substrate.reamde.dev
+## substrate.reamde.dev/core
 
 The substrate's own machinery, declared as kinds so it lists, reads, and
 filters exactly like vocabulary. This is the whole of what a fresh repository
@@ -164,9 +164,9 @@ preview, unfrozen at v1 and not part of the frozen core:
 | `llmmessage`     | One turn in a thread, with its tool-call audit.                                                  |
 | `llminteraction` | One batch of questions an agent asked the user, waiting in the thread it came from; answering or dismissing it is one reviewed owner transition that resumes the agent. Landed by the `ask` built-in. |
 
-The nine [declarable kinds](vocabulary.md#the-declarable-kinds) — `authority`,
-`kind`, `propertytype`, `trait`, `recordmapping`, `function`, `agent`,
-`bundle`, `actor` — live in core too, and so do the three shipped traits:
+The ten [declarable kinds](vocabulary.md#the-declarable-kinds) — `authority`,
+`package`, `kind`, `propertytype`, `trait`, `recordmapping`, `function`,
+`agent`, `bundle`, `actor` — live in core too, and so do the three shipped traits:
 `temporal`, which puts a record on the timeline, and the `accountconfig` and
 `oauth2` interfaces the OAuth facility recognizes.
 

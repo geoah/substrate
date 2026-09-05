@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/kinds"
+	"github.com/geoah/substrate/samples"
 
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/engine"
@@ -38,16 +39,17 @@ var credKey = func() string {
 const operatorOTP = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
 
 const (
-	webBundleAuthority = "web.bundles.substrate.reamde.dev"
-	webBundleID        = webBundleAuthority + "/web"
+	webBundleAuthority = "samples.substrate.reamde.dev"
+	webBundlePackage   = "web"
+	webBundleID        = webBundleAuthority + "/" + webBundlePackage
 )
 
-// The VOCABULARY bundles the web closure declares against. Repository creation
-// seeds core alone now, so a closure that subscribes to
-// messaging.substrate.reamde.dev/conversationmessage needs that authority imported first
-// — and messaging itself needs people. Importing them is the same verb an
-// bundle install is.
-var webRequires = []string{"people.substrate.reamde.dev/people", "messaging.substrate.reamde.dev/messaging"}
+// The packages the web closure declares against. Repository creation seeds
+// core alone now, so a closure that subscribes to
+// samples.substrate.reamde.dev/messaging/conversationmessage needs that
+// package imported first, and messaging itself needs people. Importing them is
+// the same verb a bundle install is.
+var webRequires = []string{"samples.substrate.reamde.dev/people", "samples.substrate.reamde.dev/messaging"}
 
 func importVocabulary(t *testing.T, c *catalog.Catalog, ds substrate.Dataset, ids ...string) {
 	t.Helper()
@@ -68,7 +70,7 @@ func newDataset(t *testing.T) substrate.Dataset {
 	t.Helper()
 	dsn := testdb.NewSchema(t)
 	svc, err := engine.Open(context.Background(), dsn,
-		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithCredentialKey(credKey),
 	)
 	if err != nil {
@@ -88,25 +90,25 @@ func newDataset(t *testing.T) substrate.Dataset {
 
 func loadCatalog(t *testing.T) *catalog.Catalog {
 	t.Helper()
-	c, err := catalog.Load(kinds.Bundles())
+	c, err := catalog.Load(kinds.Bundles(), samples.Samples())
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
 	return c
 }
 
-// Every shipped VOCABULARY bundle installs into one repository, requires
-// first: the whole set has to coexist, so a GraphQL-name collision or an
-// unresolvable edge between two vocabulary authorities surfaces here rather
-// than on a user's substrate.
-func TestVocabularyBundlesInstall(t *testing.T) {
+// Every shipped bundle installs into ONE repository, requires first: the whole
+// set has to coexist, so a GraphQL-name collision or an unresolvable edge
+// between two shipped packages surfaces here rather than on a user's
+// substrate.
+func TestShippedBundlesInstall(t *testing.T) {
 	ds := newDataset(t)
 	c := loadCatalog(t)
 	ctx := context.Background()
 
-	byAuthority := map[string]*catalog.Bundle{}
+	byID := map[string]*catalog.Bundle{}
 	for _, b := range c.Bundles() {
-		byAuthority[b.Authority] = b
+		byID[b.ID] = b
 	}
 	installed := map[string]bool{}
 	var install func(b *catalog.Bundle)
@@ -116,7 +118,7 @@ func TestVocabularyBundlesInstall(t *testing.T) {
 		}
 		installed[b.ID] = true
 		for _, req := range b.Requires {
-			rb, ok := byAuthority[req]
+			rb, ok := byID[req]
 			if !ok {
 				t.Fatalf("%s requires %s, which no shipped bundle owns", b.ID, req)
 			}
@@ -127,15 +129,9 @@ func TestVocabularyBundlesInstall(t *testing.T) {
 		}
 	}
 	for _, b := range c.Bundles() {
-		if !b.Vocabulary {
-			continue
-		}
 		install(b)
 	}
 	for _, b := range c.Bundles() {
-		if !b.Vocabulary {
-			continue
-		}
 		st, err := ds.(bundleStatuser).BundleStatus(ctx, b.ID)
 		if err != nil {
 			t.Fatalf("bundle status %s: %v", b.ID, err)
@@ -160,7 +156,7 @@ func TestInstallLandsClosureAndIsIdempotent(t *testing.T) {
 	if err == nil {
 		t.Fatal("installed a closure whose required vocabulary is absent")
 	}
-	if !strings.Contains(err.Error(), "messaging.substrate.reamde.dev") {
+	if !strings.Contains(err.Error(), "samples.substrate.reamde.dev/messaging") {
 		t.Errorf("refusal does not name the missing authority: %v", err)
 	}
 	importVocabulary(t, c, ds, webRequires...)
@@ -175,8 +171,8 @@ func TestInstallLandsClosureAndIsIdempotent(t *testing.T) {
 
 	// The types are present after install.
 	for _, ident := range []string{
-		"web.bundles.substrate.reamde.dev/config",
-		"web.bundles.substrate.reamde.dev/page",
+		"samples.substrate.reamde.dev/web/config",
+		"samples.substrate.reamde.dev/web/page",
 	} {
 		if _, err := ds.KindByRef(ctx, ident); err != nil {
 			t.Errorf("type %s absent after install: %v", ident, err)
@@ -201,7 +197,7 @@ func TestInstallLandsClosureAndIsIdempotent(t *testing.T) {
 
 	// The delivery wiring landed as ordinary data records.
 	page, err := ds.List(ctx, substrate.Query{
-		Filter: substrate.Filter{Kinds: []string{"core.substrate.reamde.dev/trigger"}},
+		Filter: substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/trigger"}},
 		First:  50,
 	})
 	if err != nil {
@@ -213,12 +209,12 @@ func TestInstallLandsClosureAndIsIdempotent(t *testing.T) {
 
 	// INSTALL IS A COPY: the manifests landed in the repository's own
 	// changelog as entries attributed to the BUNDLE —
-	// `bundle:web.bundles.substrate.reamde.dev`, the full authority (record
-	// 0025) — not to the owner who asked for them and not to the catalog,
+	// `bundle:samples.substrate.reamde.dev:web`, the full authority and the
+	// package (records 0025 and 0047), not to the owner who asked for them and not to the catalog,
 	// which is a source and never an authority.
 	changes, err := ds.Changes(ctx, 0, substrate.ChangeFilter{
-		Actors: []substrate.Actor{substrate.BundleActor(webBundleAuthority)},
-		Kinds:  []string{"core.substrate.reamde.dev/kind"},
+		Actors: []substrate.Actor{substrate.BundleActor(webBundleAuthority, webBundlePackage)},
+		Kinds:  []string{"substrate.reamde.dev/core/kind"},
 	}, 100)
 	if err != nil {
 		t.Fatalf("changes: %v", err)
@@ -240,7 +236,7 @@ func TestInstallLandsClosureAndIsIdempotent(t *testing.T) {
 		t.Errorf("re-install changed the closure: %+v -> %+v", st, st2)
 	}
 	page2, err := ds.List(ctx, substrate.Query{
-		Filter: substrate.Filter{Kinds: []string{"core.substrate.reamde.dev/trigger"}},
+		Filter: substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/trigger"}},
 		First:  50,
 	})
 	if err != nil {
@@ -262,39 +258,44 @@ func TestInstallRollsBackOnBrokenDeliveryWiring(t *testing.T) {
 
 	// The real web closure, copied out with one EXTRA trigger whose callable
 	// resolves to nothing — admission fails inside the install transaction.
+	// The copy mirrors the samples root: the authority manifest at the root,
+	// one package directory beside it, which is the shape the loader reads.
 	dir := t.TempDir()
-	bundleDir := filepath.Join(dir, "web.bundles.substrate.reamde.dev")
+	bundleDir := filepath.Join(dir, webBundlePackage)
 	if err := os.MkdirAll(bundleDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	srcDir := "../../kinds/web.bundles.substrate.reamde.dev"
-	entries, err := os.ReadDir(srcDir)
-	if err != nil {
-		t.Fatalf("read example dir: %v", err)
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		raw, err := os.ReadFile(filepath.Join(srcDir, e.Name()))
+	copyManifests := func(srcDir, dstDir string) {
+		t.Helper()
+		entries, err := os.ReadDir(srcDir)
 		if err != nil {
-			t.Fatalf("read %s: %v", e.Name(), err)
+			t.Fatalf("read %s: %v", srcDir, err)
 		}
-		if err := os.WriteFile(filepath.Join(bundleDir, e.Name()), raw, 0o644); err != nil {
-			t.Fatalf("write %s: %v", e.Name(), err)
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
+				continue
+			}
+			raw, err := os.ReadFile(filepath.Join(srcDir, e.Name()))
+			if err != nil {
+				t.Fatalf("read %s: %v", e.Name(), err)
+			}
+			if err := os.WriteFile(filepath.Join(dstDir, e.Name()), raw, 0o644); err != nil {
+				t.Fatalf("write %s: %v", e.Name(), err)
+			}
 		}
 	}
-	broken := "authority: core.substrate.reamde.dev\n" +
-		"type: trigger\n" +
+	copyManifests("../../samples", dir)
+	copyManifests("../../samples/web", bundleDir)
+	broken := "kind: substrate.reamde.dev/core/trigger\n" +
 		"metadata: {id: web-broken-on-message}\n" +
 		"data:\n" +
 		"  properties:\n" +
 		"    enabled: true\n" +
 		"    source:\n" +
 		"      record:\n" +
-		"        types: [messaging.substrate.reamde.dev/conversationmessage]\n" +
+		"        kinds: [samples.substrate.reamde.dev/messaging/conversationmessage]\n" +
 		"        ops: [create]\n" +
-		"    callable: {kind: core.substrate.reamde.dev/function, id: web.bundles.substrate.reamde.dev/doesnotexist}\n"
+		"    callable: substrate.reamde.dev/core/function/samples.substrate.reamde.dev/web/doesnotexist\n"
 	if err := os.WriteFile(filepath.Join(bundleDir, "zz-broken.yaml"), []byte(broken), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -310,8 +311,8 @@ func TestInstallRollsBackOnBrokenDeliveryWiring(t *testing.T) {
 
 	// Rolled back: the closure's types never landed — no live half-install.
 	for _, ident := range []string{
-		"web.bundles.substrate.reamde.dev/config",
-		"web.bundles.substrate.reamde.dev/page",
+		"samples.substrate.reamde.dev/web/config",
+		"samples.substrate.reamde.dev/web/page",
 	} {
 		if _, err := ds.KindByRef(ctx, ident); !errors.Is(err, substrate.ErrNotFound) {
 			t.Errorf("type %s present after a rolled-back install: %v", ident, err)
@@ -319,7 +320,7 @@ func TestInstallRollsBackOnBrokenDeliveryWiring(t *testing.T) {
 	}
 	// And none of the delivery wiring — good triggers included — committed.
 	page, err := ds.List(ctx, substrate.Query{
-		Filter: substrate.Filter{Kinds: []string{"core.substrate.reamde.dev/trigger"}},
+		Filter: substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/trigger"}},
 		First:  50,
 	})
 	if err != nil {
@@ -335,12 +336,12 @@ func TestInstallRefusesNonOwner(t *testing.T) {
 	c := loadCatalog(t)
 	ctx := context.Background()
 
-	_, err := c.Install(ctx, substrate.FunctionActor("reader.bundles.example.com", "sync"), webBundleID, ds)
+	_, err := c.Install(ctx, substrate.FunctionActor("reader.example.com", "reader", "sync"), webBundleID, ds)
 	if !errors.Is(err, substrate.ErrForbidden) {
 		t.Fatalf("non-owner install error = %v, want ErrForbidden", err)
 	}
 	// Refused before anything is touched: the closure's types never appeared.
-	if _, err := ds.KindByRef(ctx, "web.bundles.substrate.reamde.dev/config"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.KindByRef(ctx, "samples.substrate.reamde.dev/web/config"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Errorf("type present after a refused install: %v", err)
 	}
 }

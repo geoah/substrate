@@ -16,21 +16,22 @@ import (
 
 const apiPrefix = "/api/v1"
 
-// The core authority and the collections in it the CLI addresses by name. Every
+// The core package and the collections in it the CLI addresses by name. Every
 // other collection is resolved from the registry, so these are the only
 // literal names the client carries.
 //
-// The registry collection is `kinds`: the meta-kind is `core.substrate.reamde.dev/kind`,
+// The registry collection is `kinds`: the meta-kind is `substrate.reamde.dev/core/kind`,
 // self-describing the way a CRD is, so its collection needs no prefix.
 const (
-	// coreAuthority publishes the substrate's own machinery kinds — the
-	// trigger/run vocabulary among them, so the trigger records AND (a
-	// resource's operational verbs live at the resource, ruling A8) the
-	// trigger delivery verbs hang off it.
-	coreAuthority = "core.substrate.reamde.dev"
+	// corePackage is the package identity publishing the substrate's own
+	// machinery kinds — the trigger/run vocabulary among them, so the trigger
+	// records AND (a resource's operational verbs live at the resource, ruling
+	// A8) the trigger delivery verbs hang off it. It is two segments, an
+	// authority and a package, because a collection path is three.
+	corePackage = "substrate.reamde.dev/core"
 
 	// nameKind is the registry collection, the `kind` kind's own name; the
-	// meta-kind is core.substrate.reamde.dev/kind, self-describing the way a
+	// meta-kind is substrate.reamde.dev/core/kind, self-describing the way a
 	// CRD is, so its collection needs no prefix.
 	nameKind = "kind"
 )
@@ -77,14 +78,15 @@ func newClient(server, token string, hc *http.Client) *client {
 }
 
 // collectionPath is the kind reference AS a path:
-// /api/v1/{authority}/{kind} for a published kind, /api/v1/{kind} for a
-// repository-local one — the same two forms the reference itself has. Every id
-// segment is escaped, so a record id carrying a slash arrives as %2F rather
-// than as another path segment.
-func collectionPath(authority, kind string, id ...string) string {
+// /api/v1/{authority}/{package}/{kind}, where pkg is the package IDENTITY
+// (`{authority}/{package}`, decision 0047) and so already carries its own
+// separator. An empty pkg leaves /api/v1/{kind}. Every id segment is escaped,
+// so a record id carrying a slash (a declaration's id IS a kind reference)
+// arrives percent-encoded rather than as more path segments.
+func collectionPath(pkg, kind string, id ...string) string {
 	p := apiPrefix
-	if authority != "" {
-		p += "/" + authority
+	if pkg != "" {
+		p += "/" + pkg
 	}
 	p += "/" + kind
 	for _, seg := range id {
@@ -235,9 +237,9 @@ type recordPage struct {
 	Cursor  string              `json:"cursor,omitempty"`
 }
 
-func (c *client) list(ctx context.Context, authority, kind string, q url.Values) (*recordPage, error) {
+func (c *client) list(ctx context.Context, pkg, kind string, q url.Values) (*recordPage, error) {
 	var page recordPage
-	if err := c.do(ctx, http.MethodGet, collectionPath(authority, kind), q, nil, &page); err != nil {
+	if err := c.do(ctx, http.MethodGet, collectionPath(pkg, kind), q, nil, &page); err != nil {
 		return nil, err
 	}
 	return &page, nil
@@ -253,18 +255,18 @@ type recordRead struct {
 	PropertyMeta map[string]statusProperty `json:"propertyMeta"`
 }
 
-func (c *client) get(ctx context.Context, authority, kind, id string) (*substrate.Record, map[string]statusProperty, error) {
+func (c *client) get(ctx context.Context, pkg, kind, id string) (*substrate.Record, map[string]statusProperty, error) {
 	var e recordRead
-	if err := c.do(ctx, http.MethodGet, collectionPath(authority, kind, id), nil, nil, &e); err != nil {
+	if err := c.do(ctx, http.MethodGet, collectionPath(pkg, kind, id), nil, nil, &e); err != nil {
 		return nil, nil, err
 	}
 	return &e.Record, e.PropertyMeta, nil
 }
 
-func (c *client) put(ctx context.Context, authority, kind, id string, in substrate.PutInput) (*substrate.Record, error) {
-	method, path := http.MethodPost, collectionPath(authority, kind)
+func (c *client) put(ctx context.Context, pkg, kind, id string, in substrate.PutInput) (*substrate.Record, error) {
+	method, path := http.MethodPost, collectionPath(pkg, kind)
 	if id != "" {
-		method, path = http.MethodPut, collectionPath(authority, kind, id)
+		method, path = http.MethodPut, collectionPath(pkg, kind, id)
 	}
 	var e substrate.Record
 	if err := c.do(ctx, method, path, nil, in, &e); err != nil {
@@ -273,17 +275,17 @@ func (c *client) put(ctx context.Context, authority, kind, id string, in substra
 	return &e, nil
 }
 
-func (c *client) patch(ctx context.Context, authority, kind, id string, in substrate.PatchInput) (*substrate.Record, error) {
+func (c *client) patch(ctx context.Context, pkg, kind, id string, in substrate.PatchInput) (*substrate.Record, error) {
 	var e substrate.Record
-	if err := c.do(ctx, http.MethodPatch, collectionPath(authority, kind, id), nil, in, &e); err != nil {
+	if err := c.do(ctx, http.MethodPatch, collectionPath(pkg, kind, id), nil, in, &e); err != nil {
 		return nil, err
 	}
 	return &e, nil
 }
 
-func (c *client) delete(ctx context.Context, authority, kind, id string) (*substrate.Record, error) {
+func (c *client) delete(ctx context.Context, pkg, kind, id string) (*substrate.Record, error) {
 	var e substrate.Record
-	if err := c.do(ctx, http.MethodDelete, collectionPath(authority, kind, id), nil, nil, &e); err != nil {
+	if err := c.do(ctx, http.MethodDelete, collectionPath(pkg, kind, id), nil, nil, &e); err != nil {
 		return nil, err
 	}
 	return &e, nil

@@ -2,7 +2,7 @@ package engine
 
 // The Firecrawl bundle — a CAPABILITY BUNDLE (web search + scraping as
 // callable agent tools), not an account integration. Two proofs, from the
-// shipped closure at ../../kinds/firecrawl.bundles.substrate.reamde.dev:
+// shipped closure at ../../samples/firecrawl:
 //
 //  1. TestFirecrawlBundleAdmitsSchema — the closure ADMITS through the schema
 //     loader: the bundle declares one `connector` input injected into its
@@ -41,13 +41,12 @@ import (
 )
 
 const (
-	firecrawlExampleDir = "../../kinds/firecrawl.bundles.substrate.reamde.dev"
-	firecrawlAuthority  = "firecrawl.bundles.substrate.reamde.dev"
-	firecrawlBundleRow  = firecrawlAuthority + "/firecrawl"
-	firecrawlConfigType = firecrawlAuthority + "/config"
-	firecrawlDocType    = firecrawlAuthority + "/webdocument"
-	firecrawlSearchFn   = firecrawlAuthority + "/websearch"
-	firecrawlScrapeFn   = firecrawlAuthority + "/scrapepage"
+	firecrawlExampleDir = "../../samples/firecrawl"
+	firecrawlPackage    = "samples.substrate.reamde.dev/firecrawl"
+	firecrawlConfigType = firecrawlPackage + "/config"
+	firecrawlDocType    = firecrawlPackage + "/webdocument"
+	firecrawlSearchFn   = firecrawlPackage + "/websearch"
+	firecrawlScrapeFn   = firecrawlPackage + "/scrapepage"
 
 	firecrawlTestKey = "fc-unit-test-key"
 	firecrawlPageURL = "https://blog.example.com/how-substrates-compose"
@@ -63,7 +62,7 @@ func TestFirecrawlBundleAdmitsSchema(t *testing.T) {
 	// alone) plus the shipped VOCABULARY bundles this repository imported —
 	// what a closure declaring onto people/tasks/messaging/calendar/media
 	// needs present, and what `requires:` names.
-	reg, err := enginetest.SeededRegistry("../../kinds/core.substrate.reamde.dev")
+	reg, err := enginetest.SeededRegistry("../../kinds/substrate.reamde.dev/core")
 	if err != nil {
 		t.Fatalf("build the repository registry: %v", err)
 	}
@@ -75,7 +74,7 @@ func TestFirecrawlBundleAdmitsSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse bundle.yaml: %v", err)
 	}
-	authorities, err := vocabulary.BuildAuthorities(docs, vocabulary.SourceInstalled)
+	authorities, err := vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
 	if err != nil {
 		t.Fatalf("build the bundle authority: %v", err)
 	}
@@ -86,9 +85,9 @@ func TestFirecrawlBundleAdmitsSchema(t *testing.T) {
 	// The bundle exists, it declares the one `connector` input injected into
 	// its functions, and it ships no oauth2 manifest block — a capability
 	// bundle, not an integration.
-	b, ok := reg.BundleOf(firecrawlAuthority)
+	b, ok := reg.BundleOf(firecrawlPackage)
 	if !ok {
-		t.Fatalf("no bundle owns %s after install", firecrawlAuthority)
+		t.Fatalf("no bundle owns %s after install", firecrawlPackage)
 	}
 	in, ok := b.Inputs["connector"]
 	if !ok {
@@ -254,11 +253,11 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 		t.Fatalf("install the firecrawl bundle: %v", err)
 	}
 	for id, wantType := range map[string]string{
-		firecrawlBundleRow:  "core.substrate.reamde.dev/bundle",
-		firecrawlConfigType: "core.substrate.reamde.dev/kind",
-		firecrawlDocType:    "core.substrate.reamde.dev/kind",
-		firecrawlSearchFn:   "core.substrate.reamde.dev/function",
-		firecrawlScrapeFn:   "core.substrate.reamde.dev/function",
+		firecrawlPackage:    "substrate.reamde.dev/core/bundle",
+		firecrawlConfigType: "substrate.reamde.dev/core/kind",
+		firecrawlDocType:    "substrate.reamde.dev/core/kind",
+		firecrawlSearchFn:   "substrate.reamde.dev/core/function",
+		firecrawlScrapeFn:   "substrate.reamde.dev/core/function",
 	} {
 		row, err := ds.Get(ctx, wantType, id)
 		if err != nil {
@@ -268,7 +267,7 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 			t.Fatalf("member %s is a %s, want %s", id, row.Kind, wantType)
 		}
 	}
-	st, err := ds.BundleStatus(ctx, firecrawlAuthority)
+	st, err := ds.BundleStatus(ctx, firecrawlPackage)
 	if err != nil {
 		t.Fatalf("bundle status: %v", err)
 	}
@@ -297,7 +296,7 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create the firecrawl config: %v", err)
 	}
-	if st, err = ds.BundleStatus(ctx, firecrawlAuthority); err != nil {
+	if st, err = ds.BundleStatus(ctx, firecrawlPackage); err != nil {
 		t.Fatalf("bundle status after the config record: %v", err)
 	}
 	if len(st.Inputs) != 1 || st.Inputs[0].Record != "firecrawl" || st.Inputs[0].Via != substrate.InputViaSole {
@@ -333,10 +332,10 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 	// scrapepage validates its url INPUT before hashing or dialing: only an
 	// absolute https URL with a hostname and no embedded credentials passes.
 	for url, wantErr := range map[string]string{
-		"blog.example.com/how":                   "https",
-		"http://blog.example.com/how":            "https",
-		"https://":                               "hostname",
-		"https://user:pass@blog.example.com/how": "credentials",
+		"blog.example.com/blog/how":                   "https",
+		"http://blog.example.com/how":                 "https",
+		"https://":                                    "hostname",
+		"https://user:pass@blog.example.com/blog/how": "credentials",
 	} {
 		_, applied, err := ds.CallFunction(ctx, firecrawlScrapeFn, map[string]any{"url": url})
 		if err == nil || !strings.Contains(err.Error(), wantErr) {

@@ -8,10 +8,12 @@ import "context"
 // A bundle that needs nothing carries empty Inputs and Setup, and reads as
 // simply enabled.
 type BundleStatus struct {
-	// ID is the bundle's record id — its owned authority.
+	// ID is the bundle's record id — the package it is named for.
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Authority string `json:"authority"`
+	// Package is the owned package's own word, the same as Name.
+	Package string `json:"package"`
 	// Installed is true for a bundle in the live registry, and false only for a
 	// quarantined one surfaced from its stored rows. An uninstalled
 	// bundle has no status: uninstall tears its rows down, so it
@@ -33,7 +35,7 @@ type BundleStatus struct {
 	Accounts  int `json:"accounts"`
 	Functions int `json:"functions"`
 	Kinds     int `json:"kinds"`
-	// LiveRecords counts live data rows across the owned authority's types —
+	// LiveRecords counts live data rows across the owned package's kinds —
 	// what a purge would tombstone.
 	LiveRecords int64 `json:"liveRecords"`
 	// Quarantined reports the bundle's stored closure failed admission at
@@ -49,7 +51,7 @@ type BundleStatus struct {
 // BundleUpgrade is what re-installing a bundle's SHIPPED closure over this
 // repository's stored declarations would do, computed on read and stored
 // nowhere. The install verb is already the upgrade (a bundle document
-// replaces its authority whole, breakage refused); this is that verb's
+// replaces its package whole, breakage refused); this is that verb's
 // preview, so the console can offer the upgrade, or explain why it would be
 // refused, before anyone asks for it.
 type BundleUpgrade struct {
@@ -59,8 +61,8 @@ type BundleUpgrade struct {
 	// re-install prunes).
 	Available bool `json:"available"`
 	// From and To are the stored and shipped versions of the bundle's owned
-	// authority. Zero is the absent version: From is 0 (and omitted) when the
-	// stored authority row carries none.
+	// package. Zero is the absent version: From is 0 (and omitted) when the
+	// stored package row carries none.
 	From int64 `json:"from,omitempty"`
 	To   int64 `json:"to,omitempty"`
 	// Changes lists each declaration the upgrade would move.
@@ -73,7 +75,7 @@ type BundleUpgrade struct {
 
 // BundleUpgradeChange is one declaration an upgrade would move.
 type BundleUpgradeChange struct {
-	// Kind is the declaration's manifest kind: "kind", "function", "authority"…
+	// Kind is the declaration's manifest kind: "kind", "function", "package"…
 	Kind string `json:"kind"`
 	// ID is the declaration's record id.
 	ID string `json:"id"`
@@ -148,15 +150,15 @@ const (
 
 // BundleOps is the bundle-lifecycle seam, an optional Dataset extension (see
 // Dataset). Status is computed; disable/enable and uninstall are reversible
-// runtime state; purge tombstones the owned authority's data through the
+// runtime state; purge tombstones the owned package's data through the
 // finalizer flow; StartOAuth begins the host connect flow for one account
 // record. A dataset without it has no bundle verbs.
 type BundleOps interface {
 	BundleStatuses(ctx context.Context) ([]BundleStatus, error)
 	BundleStatus(ctx context.Context, id string) (BundleStatus, error)
-	// BundleAuthority resolves a bundle's owned authority (from the live
-	// registry or stored rows) for the lifecycle scope gate.
-	BundleAuthority(ctx context.Context, id string) (string, error)
+	// BundlePackage resolves the package a bundle owns (from the live registry
+	// or stored rows) for the lifecycle scope gate.
+	BundlePackage(ctx context.Context, id string) (string, error)
 	DisableBundle(ctx context.Context, id string) error
 	EnableBundle(ctx context.Context, id string) error
 	// BindBundleInput points a bundle's input at a chosen record (empty

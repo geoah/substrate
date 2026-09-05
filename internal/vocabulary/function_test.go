@@ -12,39 +12,44 @@ import (
 // fnAuthority renders a minimal authority with two types and one function whose
 // data is the given YAML block (indented under data:).
 func fnAuthority(fnData string) string {
-	return `kind: core.substrate.reamde.dev/authority
+	return `kind: substrate.reamde.dev/core/package
 metadata:
-  id: fn.example.com
-data:
-  version: 1
----
-kind: core.substrate.reamde.dev/kind
-metadata:
-  id: fn.example.com/widget
+  id: fn.example.com/fn
 data:
   authority: fn.example.com
+  package: fn
+  version: 1
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: fn.example.com/fn/widget
+data:
+  authority: fn.example.com
+  package: fn
   names: {singular: widget, plural: widgets}
   properties:
     name: {type: string}
 ---
-kind: core.substrate.reamde.dev/kind
+kind: substrate.reamde.dev/core/kind
 metadata:
-  id: fn.example.com/gadget
+  id: fn.example.com/fn/gadget
 data:
   authority: fn.example.com
+  package: fn
   names: {singular: gadget, plural: gadgets}
 ---
-kind: core.substrate.reamde.dev/function
+kind: substrate.reamde.dev/core/function
 metadata:
-  id: fn.example.com/mirror
+  id: fn.example.com/fn/mirror
 data:
   authority: fn.example.com
+  package: fn
 ` + fnData
 }
 
 func loadFnAuthority(t *testing.T, fnData string) (*vocabulary.Registry, error) {
 	t.Helper()
-	fsys := fstest.MapFS{"fn.example.com/all.yaml": &fstest.MapFile{Data: []byte(fnAuthority(fnData))}}
+	fsys := fstest.MapFS{"fn.example.com/fn/all.yaml": &fstest.MapFile{Data: []byte(fnAuthority(fnData))}}
 	return vocabulary.LoadFS(fsys)
 }
 
@@ -91,7 +96,7 @@ func TestNetworkEntryGrammar(t *testing.T) {
 
 	bad := map[string]string{
 		`"https://api.example.com"`: "is a URL",
-		`"api.example.com/v1"`:      "is neither a host, a host:port nor a CIDR",
+		`"api.example.com/api/v1"`:  "is neither a host, a host:port nor a CIDR",
 		`"*.example.com"`:           "carries a glob",
 		`"api.example.com:70000"`:   "port outside 1..65535",
 		`""`:                        "is empty",          // an empty entry
@@ -119,11 +124,11 @@ func TestFunctionLoads(t *testing.T) {
   returns:
     - {name: ok, type: bool}
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
     reads:
-      kinds: [fn.example.com/widget]
+      kinds: [fn.example.com/fn/widget]
       budgets: {calls: 4}
-    call: [fn.example.com/mirror]
+    call: [fn.example.com/fn/mirror]
     network: ["api.example.com"]
     mutations: [merge]
   source: |
@@ -137,10 +142,10 @@ func TestFunctionLoads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if fn.Identity() != "fn.example.com/mirror" {
+	if fn.Identity() != "fn.example.com/fn/mirror" {
 		t.Fatalf("identity: %s", fn.Identity())
 	}
-	if fn.Actor() != "function:fn.example.com:mirror" {
+	if fn.Actor() != "function:fn.example.com:fn:mirror" {
 		t.Fatalf("actor: %s", fn.Actor())
 	}
 	if fn.Description == "" {
@@ -156,13 +161,13 @@ func TestFunctionLoads(t *testing.T) {
 		t.Fatal("input/output schemas lost")
 	}
 	// The grant, all five arms.
-	if len(fn.Caps.Emit) != 1 || fn.Caps.Emit[0] != "fn.example.com/gadget" {
+	if len(fn.Caps.Emit) != 1 || fn.Caps.Emit[0] != "fn.example.com/fn/gadget" {
 		t.Fatalf("emit: %v", fn.Caps.Emit)
 	}
 	if fn.Caps.Reads == nil || fn.Caps.Reads.Calls != 4 || fn.Caps.Reads.Rows != vocabulary.DefaultReadRows {
 		t.Fatalf("reads: %+v", fn.Caps.Reads)
 	}
-	if !fn.Caps.AllowsCall("fn.example.com/mirror") || fn.Caps.AllowsCall("fn.example.com/other") {
+	if !fn.Caps.AllowsCall("fn.example.com/fn/mirror") || fn.Caps.AllowsCall("fn.example.com/fn/other") {
 		t.Fatalf("call: %v", fn.Caps.Call)
 	}
 	if len(fn.Caps.Network) != 1 {
@@ -221,7 +226,7 @@ func TestCheckValueEmptyPropertiesClosesTheObject(t *testing.T) {
 const minimalFn = `  description: mirrors widgets
   runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
   source: "def main(input, host): return {}"
 `
 
@@ -233,7 +238,7 @@ func TestFunctionLoadErrors(t *testing.T) {
 		"description is required": {
 			data: `  runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
   source: "def main(input, host): return {}"
 `,
 			want: "data.description is required",
@@ -241,7 +246,7 @@ func TestFunctionLoadErrors(t *testing.T) {
 		"runtime is required": {
 			data: `  description: d
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
   source: "def main(input, host): return {}"
 `,
 			want: "data.runtime",
@@ -250,7 +255,7 @@ func TestFunctionLoadErrors(t *testing.T) {
 			data: `  description: d
   runtime: cel
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
   source: "def main(input, host): return {}"
 `,
 			want: "python, go, host",
@@ -259,14 +264,14 @@ func TestFunctionLoadErrors(t *testing.T) {
 			data: `  description: d
   runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
 `,
 			want: "data.source is required",
 		},
 		"the run arm is deleted": {
 			data: `  description: d
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
   run: {cel: "[]"}
 `,
 			want: "key \"run\" is deleted",
@@ -276,7 +281,7 @@ func TestFunctionLoadErrors(t *testing.T) {
   on: {types: ["*"]}
   runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
   source: "def main(input, host): return {}"
 `,
 			want: "trigger record",
@@ -286,7 +291,7 @@ func TestFunctionLoadErrors(t *testing.T) {
   when: record != null
   runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
   source: "def main(input, host): return {}"
 `,
 			want: "trigger source.record.when",
@@ -296,7 +301,7 @@ func TestFunctionLoadErrors(t *testing.T) {
   coalesce: true
   runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
   source: "def main(input, host): return {}"
 `,
 			want: "trigger source.record.coalesce",
@@ -306,7 +311,7 @@ func TestFunctionLoadErrors(t *testing.T) {
   runtime: python
   timeout: PT10M
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
   source: "def main(input, host): return {}"
 `,
 			want: "data.timeout",
@@ -316,7 +321,7 @@ func TestFunctionLoadErrors(t *testing.T) {
   runtime: python
   timeout: PT0.0005S
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
   source: "def main(input, host): return {}"
 `,
 			want: "sub-millisecond",
@@ -325,7 +330,7 @@ func TestFunctionLoadErrors(t *testing.T) {
 			data: `  description: d
   runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
     reads: {budgets: {calls: 4}}
   source: "def main(input, host): return {}"
 `,
@@ -335,7 +340,7 @@ func TestFunctionLoadErrors(t *testing.T) {
 			data: `  description: d
   runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
     reads: {kinds: ["fn.example.com/*"]}
   source: "def main(input, host): return {}"
 `,
@@ -345,8 +350,8 @@ func TestFunctionLoadErrors(t *testing.T) {
 			data: `  description: d
   runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
-    reads: {kinds: [fn.example.com/nothing]}
+    writes: [fn.example.com/fn/gadget]
+    reads: {kinds: [fn.example.com/fn/nothing]}
   source: "def main(input, host): return {}"
 `,
 			want: "data.permissions.reads.kinds: unknown type",
@@ -355,8 +360,8 @@ func TestFunctionLoadErrors(t *testing.T) {
 			data: `  description: d
   runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
-    reads: {kinds: [fn.example.com/widget], budgets: {rows: 999999}}
+    writes: [fn.example.com/fn/gadget]
+    reads: {kinds: [fn.example.com/fn/widget], budgets: {rows: 999999}}
   source: "def main(input, host): return {}"
 `,
 			want: "budgets.rows",
@@ -365,7 +370,7 @@ func TestFunctionLoadErrors(t *testing.T) {
 			data: `  description: d
   runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
     mutations: [delete]
   source: "def main(input, host): return {}"
 `,
@@ -373,10 +378,10 @@ func TestFunctionLoadErrors(t *testing.T) {
 		},
 		"after is reserved unimplemented": {
 			data: `  description: d
-  after: fn.example.com/other
+  after: fn.example.com/fn/other
   runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
   source: "def main(input, host): return {}"
 `,
 			want: "data.after is reserved",
@@ -385,7 +390,7 @@ func TestFunctionLoadErrors(t *testing.T) {
 			data: `  description: d
   runtime: python
   permissions:
-    writes: [fn.example.com/nothing]
+    writes: [fn.example.com/fn/nothing]
   source: "def main(input, host): return {}"
 `,
 			want: "data.permissions.writes: unknown type",
@@ -394,7 +399,7 @@ func TestFunctionLoadErrors(t *testing.T) {
 			data: `  description: d
   runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
     call: ["fn.example.com/*"]
   source: "def main(input, host): return {}"
 `,
@@ -404,8 +409,8 @@ func TestFunctionLoadErrors(t *testing.T) {
 			data: `  description: d
   runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
-    call: [fn.example.com/nothing]
+    writes: [fn.example.com/fn/gadget]
+    call: [fn.example.com/fn/nothing]
   source: "def main(input, host): return {}"
 `,
 			want: "data.permissions.call: unknown function",
@@ -416,7 +421,7 @@ func TestFunctionLoadErrors(t *testing.T) {
   runtime: python
   input: {type: object, properties: {name: {type: string}}}
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
   source: "def main(input, host): return {}"
 `,
 			want: `key "input" is deleted — arguments`,
@@ -426,7 +431,7 @@ func TestFunctionLoadErrors(t *testing.T) {
   runtime: python
   output: {type: object}
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
   source: "def main(input, host): return {}"
 `,
 			want: `key "output" is deleted — returns`,
@@ -434,7 +439,7 @@ func TestFunctionLoadErrors(t *testing.T) {
 		"the capability wrapper is deleted": {
 			data: `  description: d
   runtime: python
-  capabilities: {emit: [fn.example.com/gadget]}
+  capabilities: {emit: [fn.example.com/fn/gadget]}
   source: "def main(input, host): return {}"
 `,
 			want: `key "capabilities" is deleted — permissions`,
@@ -443,7 +448,7 @@ func TestFunctionLoadErrors(t *testing.T) {
 		"the hoisted emit is deleted": {
 			data: `  description: d
   runtime: python
-  emit: [fn.example.com/gadget]
+  emit: [fn.example.com/fn/gadget]
   source: "def main(input, host): return {}"
 `,
 			want: `key "emit" is deleted — permissions.writes`,
@@ -451,7 +456,7 @@ func TestFunctionLoadErrors(t *testing.T) {
 		"the hoisted reads is deleted": {
 			data: `  description: d
   runtime: python
-  reads: {kinds: [fn.example.com/widget]}
+  reads: {kinds: [fn.example.com/fn/widget]}
   source: "def main(input, host): return {}"
 `,
 			want: `key "reads" is deleted — permissions.reads`,
@@ -459,7 +464,7 @@ func TestFunctionLoadErrors(t *testing.T) {
 		"the hoisted call is deleted": {
 			data: `  description: d
   runtime: python
-  call: [fn.example.com/mirror]
+  call: [fn.example.com/fn/mirror]
   source: "def main(input, host): return {}"
 `,
 			want: `key "call" is deleted — permissions.call`,
@@ -491,7 +496,7 @@ func TestFunctionLoadErrors(t *testing.T) {
 		"a grant outside the set is refused": {
 			data: `  description: d
   runtime: python
-  permissions: {writes: [fn.example.com/gadget], emit: [fn.example.com/gadget]}
+  permissions: {writes: [fn.example.com/fn/gadget], emit: [fn.example.com/fn/gadget]}
   source: "def main(input, host): return {}"
 `,
 			want: "data.permissions: unknown key",
@@ -515,7 +520,7 @@ func TestFunctionSourceSizeCap(t *testing.T) {
 	_, err := loadFnAuthority(t, `  description: d
   runtime: python
   permissions:
-    writes: [fn.example.com/gadget]
+    writes: [fn.example.com/fn/gadget]
   source: |
 `+"    def main(input, host): return {}\n    "+strings.ReplaceAll(big, "\n", "\n    ")+"\n")
 	if err == nil || !strings.Contains(err.Error(), "the inline cap is") {
@@ -528,7 +533,7 @@ func TestFunctionDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	fn, err := r.ResolveFunction("fn.example.com/mirror")
+	fn, err := r.ResolveFunction("fn.example.com/fn/mirror")
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -546,21 +551,33 @@ func TestFunctionDefaults(t *testing.T) {
 func TestTriggerGlobHelpers(t *testing.T) {
 	// The glob vocabulary trigger sources use, exported for the engine's
 	// trigger admission.
-	for _, ok := range []string{"*", "fn.example.com/*", "fn.example.com/widget", "widget"} {
+	// Four spellings: everything, one authority, one PACKAGE inside it, and a
+	// kind reference (qualified or the bare name of a kind in the declaring
+	// package).
+	for _, ok := range []string{
+		"*", "fn.example.com/*", "fn.example.com/fn/*",
+		"fn.example.com/fn/widget", "widget",
+	} {
 		if !vocabulary.ValidTypeGlob(ok) {
 			t.Fatalf("%q must be a valid glob", ok)
 		}
 	}
-	for _, bad := range []string{"Widget", "wid*fn.example.com/get", "*."} {
+	for _, bad := range []string{"Widget", "wid*fn.example.com/fn/get", "*.", "fn.example.com/Fn/*"} {
 		if vocabulary.ValidTypeGlob(bad) {
 			t.Fatalf("%q must not be a valid glob", bad)
 		}
 	}
 	if !vocabulary.MatchTypeGlob("*", "anything.at.all") ||
-		!vocabulary.MatchTypeGlob("fn.example.com/*", "fn.example.com/widget") ||
-		vocabulary.MatchTypeGlob("fn.example.com/*", "tasks.substrate.reamde.dev/task") ||
-		!vocabulary.MatchTypeGlob("fn.example.com/widget", "fn.example.com/widget") {
+		!vocabulary.MatchTypeGlob("fn.example.com/*", "fn.example.com/fn/widget") ||
+		vocabulary.MatchTypeGlob("fn.example.com/*", "samples.substrate.reamde.dev/tasks/task") ||
+		!vocabulary.MatchTypeGlob("fn.example.com/fn/widget", "fn.example.com/fn/widget") {
 		t.Fatal("glob matching broke")
+	}
+	// A PACKAGE glob matches its own package and nothing beside it, which is
+	// the narrowing a trigger reaches for when one authority publishes several.
+	if !vocabulary.MatchTypeGlob("fn.example.com/fn/*", "fn.example.com/fn/widget") ||
+		vocabulary.MatchTypeGlob("fn.example.com/fn/*", "fn.example.com/other/widget") {
+		t.Fatal("a package glob must match its own package alone")
 	}
 	for _, op := range []string{"create", "update", "delete"} {
 		if !vocabulary.ValidFunctionOp(op) {
@@ -573,17 +590,17 @@ func TestTriggerGlobHelpers(t *testing.T) {
 }
 
 func TestFunctionManifestRenders(t *testing.T) {
-	m := vocabulary.FunctionManifest("fn.example.com", "mirror", map[string]any{
+	m := vocabulary.FunctionManifest("fn.example.com/fn", "mirror", map[string]any{
 		"description": "mirrors",
 		"runtime":     vocabulary.RuntimePython,
-		"permissions": map[string]any{"writes": []any{"fn.example.com/gadget"}},
+		"permissions": map[string]any{"writes": []any{"fn.example.com/fn/gadget"}},
 		"source":      "def main(input, host): return {}",
 	})
 	if m["kind"] != vocabulary.CoreKind(vocabulary.DocFunction) {
 		t.Fatalf("kind: %v", m["kind"])
 	}
 	meta := m["metadata"].(map[string]any)
-	if meta["id"] != "fn.example.com/mirror" {
+	if meta["id"] != "fn.example.com/fn/mirror" {
 		t.Fatalf("id: %v", meta["id"])
 	}
 	data := m["data"].(map[string]any)

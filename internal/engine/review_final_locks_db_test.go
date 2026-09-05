@@ -120,10 +120,10 @@ func TestEffectFormerIDFoldsCanonicalIntoLockOrder(t *testing.T) {
 }
 
 const (
-	csrcAuthority = "csrc.connectors.substrate.reamde.dev"
-	csrcContact   = csrcAuthority + "/contact"
-	csrcActor     = substrate.Actor(csrcAuthority)
-	subjPerson    = "people.substrate.reamde.dev/person"
+	csrcPackage = "csrc.connectors.substrate.reamde.dev/csrc"
+	csrcContact = csrcPackage + "/contact"
+	csrcActor   = substrate.Actor(csrcPackage)
+	subjPerson  = "samples.substrate.reamde.dev/people/person"
 )
 
 // installContactSource registers a minimal mapping-source connector: a contact
@@ -131,11 +131,11 @@ const (
 func installContactSource(t *testing.T, ds *dataset) {
 	t.Helper()
 	if err := enginetest.Install(context.Background(), ds, substrate.ActorSystem, enginetest.Manifest{
-		Name: "csrc", Authority: csrcAuthority,
+		Name: "csrc", Authority: csrcPackage,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(csrcAuthority, 1),
-			vocabulary.ActorManifest(csrcAuthority, vocabulary.AuthorityActor(csrcAuthority)),
-			vocabulary.KindManifest(csrcAuthority,
+			vocabulary.PackageManifest(csrcPackage, 1),
+			vocabulary.ActorManifest(csrcPackage, vocabulary.PackageActor(csrcPackage)),
+			vocabulary.KindManifest(csrcPackage,
 				map[string]any{"singular": "contact", "plural": "contacts"},
 				map[string]any{
 					"properties": map[string]any{
@@ -147,7 +147,7 @@ func installContactSource(t *testing.T, ds *dataset) {
 						},
 					},
 				}),
-			vocabulary.MappingManifest(csrcAuthority, "contactperson", map[string]any{
+			vocabulary.MappingManifest(csrcPackage, "contactperson", map[string]any{
 				"from": csrcContact, "to": subjPerson, "property": "person",
 				"match": []any{map[string]any{"from": "email", "to": "emails"}},
 				"map": map[string]any{
@@ -331,11 +331,11 @@ func TestOwnerTriggerTakesRegistryDepBeforeRecord(t *testing.T) {
 		t.Fatalf("register: %v", err)
 	}
 
-	const trigID = w2Group + "/owntrig"
+	const trigID = w2Package + "/owntrig"
 	props := map[string]any{
 		"enabled":  true,
 		"source":   map[string]any{"record": map[string]any{"kinds": []any{w2Widget}, "ops": []any{"create", "update"}}},
-		"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", w2Mirror),
+		"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", w2Mirror),
 	}
 
 	// The barrier: hold the registry-dep lock EXCLUSIVE, as a schema batch /
@@ -363,7 +363,7 @@ func TestOwnerTriggerTakesRegistryDepBeforeRecord(t *testing.T) {
 	// record lock and be waiting on the dep lock inside apply — the exact
 	// deadlock against a registration that holds the dep lock and wants the
 	// record.
-	if !tryLockFree(t, ds, "record|core.substrate.reamde.dev/trigger|"+trigID) {
+	if !tryLockFree(t, ds, "record|substrate.reamde.dev/core/trigger|"+trigID) {
 		t.Fatal("the owner trigger write locked the trigger record before the registry-dep lock — the registration cycle is back")
 	}
 	select {

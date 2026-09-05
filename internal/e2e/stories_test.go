@@ -12,20 +12,20 @@ import (
 // every later story (and every scripted agent turn) can name records
 // exactly.
 const (
-	orgCollection     = "/api/v1/people.substrate.reamde.dev/organization"
-	personCollection  = "/api/v1/people.substrate.reamde.dev/person"
-	teamCollection    = "/api/v1/people.substrate.reamde.dev/team"
-	projectCollection = "/api/v1/tasks.substrate.reamde.dev/project"
+	orgCollection     = "/api/v1/samples.substrate.reamde.dev/people/organization"
+	personCollection  = "/api/v1/samples.substrate.reamde.dev/people/person"
+	teamCollection    = "/api/v1/samples.substrate.reamde.dev/people/team"
+	projectCollection = "/api/v1/samples.substrate.reamde.dev/tasks/project"
 
-	calendarCollection   = "/api/v1/calendar.substrate.reamde.dev/calendar"
-	eventCollection      = "/api/v1/calendar.substrate.reamde.dev/calendarevent"
-	transcriptCollection = "/api/v1/calendar.substrate.reamde.dev/transcript"
+	calendarCollection   = "/api/v1/samples.substrate.reamde.dev/calendar/calendar"
+	eventCollection      = "/api/v1/samples.substrate.reamde.dev/calendar/calendarevent"
+	transcriptCollection = "/api/v1/samples.substrate.reamde.dev/calendar/transcript"
 
-	personKind   = "people.substrate.reamde.dev/person"
-	teamKind     = "people.substrate.reamde.dev/team"
-	orgKind      = "people.substrate.reamde.dev/organization"
-	projectKind  = "tasks.substrate.reamde.dev/project"
-	calendarKind = "calendar.substrate.reamde.dev/calendar"
+	personKind   = "samples.substrate.reamde.dev/people/person"
+	teamKind     = "samples.substrate.reamde.dev/people/team"
+	orgKind      = "samples.substrate.reamde.dev/people/organization"
+	projectKind  = "samples.substrate.reamde.dev/tasks/project"
+	calendarKind = "samples.substrate.reamde.dev/calendar/calendar"
 )
 
 // recPath renders a reference value: the canonical `<kind>/<id>` path. A
@@ -146,7 +146,7 @@ func caseStory01(c *C) {
 		Installed bool `json:"installed"`
 	}
 	status, raw := c.do(http.MethodPost,
-		"/api/v1/catalog/"+url.PathEscape("calendar.substrate.reamde.dev/calendar")+"/install", nil, &bundle)
+		"/api/v1/catalog/"+url.PathEscape("samples.substrate.reamde.dev/calendar")+"/install", nil, &bundle)
 	c.requiref(status == http.StatusOK && bundle.Installed, "installing calendar answered %d: %s", status, raw)
 
 	// The organizations, and the people with their emails, pronouns and org

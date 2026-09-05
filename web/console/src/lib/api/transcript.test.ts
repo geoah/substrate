@@ -24,7 +24,7 @@ function row(properties: Record<string, unknown>): SubstrateRecord {
   seq++
   return {
     id: `m${seq}`,
-    kind: "core.substrate.reamde.dev/llmmessage",
+    kind: "substrate.reamde.dev/core/llmmessage",
     properties,
     labels: {},
     version: 1,
@@ -224,10 +224,10 @@ describe("system turns and engine-stamped changes", () => {
           stamp(
             7,
             "patch",
-            "core.substrate.reamde.dev/recordpatchrequest",
+            "substrate.reamde.dev/core/recordpatchrequest",
             "r1"
           ),
-          stamp(8, "patch", "people.substrate.reamde.dev/person", "p1"),
+          stamp(8, "patch", "samples.substrate.reamde.dev/people/person", "p1"),
         ],
       }),
     ])
@@ -292,7 +292,7 @@ describe("requestIdOf", () => {
           {
             seq: 4,
             op: "put",
-            kind: "core.substrate.reamde.dev/recordpatchrequest",
+            kind: "substrate.reamde.dev/core/recordpatchrequest",
             id: "r-stamped",
           },
         ],
@@ -331,13 +331,13 @@ describe("deliveryNoticeOf", () => {
     change: {
       actor: "agent:stories.e2e.example:matcher",
       id: "tr-chitchat",
-      kind: "calendar.substrate.reamde.dev/transcript",
+      kind: "samples.substrate.reamde.dev/calendar/transcript",
       op: "update",
       seq: 216,
     },
     record: {
       id: "tr-chitchat",
-      kind: "calendar.substrate.reamde.dev/transcript",
+      kind: "samples.substrate.reamde.dev/calendar/transcript",
       properties: { title: "Billing migration sync" },
     },
     repository: { owner: "e2e" },
@@ -348,13 +348,13 @@ describe("deliveryNoticeOf", () => {
     expect(notice).toEqual({
       change: {
         op: "update",
-        kind: "calendar.substrate.reamde.dev/transcript",
+        kind: "samples.substrate.reamde.dev/calendar/transcript",
         id: "tr-chitchat",
         seq: 216,
         actor: "agent:stories.e2e.example:matcher",
       },
       record: {
-        kind: "calendar.substrate.reamde.dev/transcript",
+        kind: "samples.substrate.reamde.dev/calendar/transcript",
         id: "tr-chitchat",
         title: "Billing migration sync",
       },
@@ -425,10 +425,10 @@ describe("decisionNoticeOf", () => {
       system(
         JSON.stringify({
           event: "proposalDecision",
-          request: "core.substrate.reamde.dev/recordpatchrequest/r1",
+          request: "substrate.reamde.dev/core/recordpatchrequest/r1",
           decision: "accepted",
           op: "patch",
-          target: "people.substrate.reamde.dev/person/p1",
+          target: "samples.substrate.reamde.dev/people/person/p1",
           version: 4,
         })
       )
@@ -437,7 +437,7 @@ describe("decisionNoticeOf", () => {
       requestId: "r1",
       decision: "accepted",
       op: "patch",
-      target: "people.substrate.reamde.dev/person/p1",
+      target: "samples.substrate.reamde.dev/people/person/p1",
       version: 4,
       deleted: undefined,
     })
@@ -461,7 +461,7 @@ describe("interactions", () => {
         {
           seq: 9,
           op: "put",
-          kind: "core.substrate.reamde.dev/llminteraction",
+          kind: "substrate.reamde.dev/core/llminteraction",
           id: "iabcdefghijk",
         },
       ],
@@ -477,7 +477,7 @@ describe("interactions", () => {
       tools: [],
       content: JSON.stringify({
         event: "interactionAnswered",
-        interaction: "core.substrate.reamde.dev/llminteraction/iabcdefghijk",
+        interaction: "substrate.reamde.dev/core/llminteraction/iabcdefghijk",
         answers: [{ question: "color", selected: ["red"] }],
       }),
     })
@@ -495,7 +495,7 @@ describe("interactions", () => {
       tools: [],
       content: JSON.stringify({
         event: "interactionDismissed",
-        interaction: "core.substrate.reamde.dev/llminteraction/iabcdefghijk",
+        interaction: "substrate.reamde.dev/core/llminteraction/iabcdefghijk",
       }),
     })
     expect(dismissed?.event).toBe("interactionDismissed")

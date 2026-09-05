@@ -40,3 +40,7 @@ dist/
 # ever committed.
 .envrc
 .env
+
+# Python bytecode: host.py is imported by a test probe, never installed.
+__pycache__/
+/substrated

@@ -24,19 +24,19 @@ func TestAgentLoopKindsResolveInCore(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	for _, id := range []string{"core.substrate.reamde.dev/llmprovider", "core.substrate.reamde.dev/llmthread", "core.substrate.reamde.dev/llmmessage"} {
+	for _, id := range []string{"substrate.reamde.dev/core/llmprovider", "substrate.reamde.dev/core/llmthread", "substrate.reamde.dev/core/llmmessage"} {
 		ti, err := ds.KindByRef(ctx, id)
 		if err != nil {
 			t.Fatalf("agent-loop kind %s does not resolve: %v", id, err)
 		}
-		if ti.Authority != "core.substrate.reamde.dev" {
-			t.Fatalf("agent-loop kind %s is in authority %q, want core.substrate.reamde.dev", id, ti.Authority)
+		if ti.Authority != "substrate.reamde.dev" || ti.Package != "core" {
+			t.Fatalf("agent-loop kind %s is in %q/%q, want substrate.reamde.dev/core", id, ti.Authority, ti.Package)
 		}
 	}
 	// The old authorities are gone.
 	for _, id := range []string{
-		"agents.substrate.reamde.dev/llm", "agents.substrate.reamde.dev/thread", "agents.substrate.reamde.dev/message",
-		"ai.substrate.reamde.dev/llm", "ai.substrate.reamde.dev/thread", "ai.substrate.reamde.dev/message",
+		"agents.substrate.reamde.dev/agents/llm", "agents.substrate.reamde.dev/agents/thread", "agents.substrate.reamde.dev/agents/message",
+		"ai.substrate.reamde.dev/ai/llm", "ai.substrate.reamde.dev/ai/thread", "ai.substrate.reamde.dev/ai/message",
 	} {
 		if _, err := ds.KindByRef(ctx, id); err == nil {
 			t.Fatalf("the retired type %s still resolves", id)
@@ -45,10 +45,10 @@ func TestAgentLoopKindsResolveInCore(t *testing.T) {
 	// A provider row is DATA of a core kind, written by its owner — the kind
 	// resolves on a fresh repository, and no row of it exists there.
 	row := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/llmprovider", ID: "openai",
+		Kind: "substrate.reamde.dev/core/llmprovider", ID: "openai",
 		Properties: map[string]any{"label": "openai", "wire": "openai"},
 	})
-	if row.Kind != "core.substrate.reamde.dev/llmprovider" {
+	if row.Kind != "substrate.reamde.dev/core/llmprovider" {
 		t.Fatalf("llmprovider row kind = %q", row.Kind)
 	}
 }
@@ -59,7 +59,7 @@ func TestConnectorKindsRemoved(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	for _, typ := range []string{"core.substrate.reamde.dev/connector", "core.substrate.reamde.dev/connectoraccount"} {
+	for _, typ := range []string{"substrate.reamde.dev/core/connector", "substrate.reamde.dev/core/connectoraccount"} {
 		if _, err := ds.KindByRef(ctx, typ); err == nil {
 			t.Fatalf("%s still resolves as a type", typ)
 		}

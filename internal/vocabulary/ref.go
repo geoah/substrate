@@ -10,21 +10,23 @@ import (
 //
 // A stored, addressable kind is named by a qualified reference:
 //
-//	<authority>/<name>   "tasks.substrate.reamde.dev/task"
+//	<authority>/<package>/<name>   "samples.substrate.reamde.dev/tasks/task"
 //
-// Every kind carries an authority (decision 0042): the authority is a DNS name
-// and therefore always carries a dot, the name never does, and neither part can
-// carry a "/". A bare name (`task`) is not a stored identity but load-time
-// SHORTHAND — a reference `kind:` pin, a trigger source, a permission allowlist
-// entry — that resolves against the declaring authority to a qualified identity before
-// it is stored or addressed. The helpers below still render and split the bare
-// form because that shorthand relies on them; nothing stores it.
+// Every kind carries an authority and a package (decisions 0042, 0047): the
+// authority is a DNS name and therefore always carries a dot, the package and
+// the name never do, and none of the three can carry a "/". A bare name
+// (`task`) is not a stored identity but load-time SHORTHAND — a reference
+// `kind:` pin, a trigger source, a permission allowlist entry — that resolves
+// against the declaring PACKAGE to a qualified identity before it is stored or
+// addressed. The helpers below still render and split the bare form because
+// that shorthand relies on them; nothing stores it.
 //
 // A RECORD PATH is the qualified kind reference plus the id:
-// "<authority>/<kind>/<id>". It is what a `reference` property points with, and
-// it sits under ReferenceValueKey inside the object that IS the stored value
-// (decision 0044). A bare path string is accepted at the write as shorthand and
-// normalized to that object; nothing stores it and nothing serves it.
+// "<authority>/<package>/<kind>/<id>". It is what a `reference` property
+// points with, and it sits under ReferenceValueKey inside the object that IS
+// the stored value (decision 0044). A bare path string is accepted at the
+// write as shorthand and normalized to that object; nothing stores it and
+// nothing serves it.
 
 // ReferenceValueKey is the one reserved key of a reference value: `ref` holds
 // the referent's record path and every other key is a declared link property.
@@ -40,42 +42,76 @@ const ReferenceValueKey = "ref"
 // refused in the declaration, where the author can rename it.
 const ReferenceTargetField = "target"
 
-// KindRef renders a kind reference from its parts. An empty authority renders
-// the bare shorthand form — there is no `local/` prefix.
-func KindRef(authority, name string) string {
-	if authority == "" {
+// KindRef renders a kind reference from its parts. An empty authority and
+// package render the bare shorthand form — there is no `local/` prefix.
+func KindRef(authority, pkg, name string) string {
+	if authority == "" && pkg == "" {
 		return name
 	}
-	return authority + "/" + name
+	return authority + "/" + pkg + "/" + name
 }
 
-// SplitKindRef splits a kind reference into its authority and its local name.
-// A bare shorthand reference answers an empty authority.
-func SplitKindRef(ref string) (authority, name string) {
-	if a, n, ok := strings.Cut(ref, "/"); ok {
-		return a, n
+// PackageRef renders a package identity, "<authority>/<package>" — the id of a
+// package declaration, the group a declaration is owned, versioned and
+// quarantined in, and what a bundle's `requires:` names.
+func PackageRef(authority, pkg string) string { return authority + "/" + pkg }
+
+// SplitKindRef splits a kind reference into its authority, its package and its
+// local name. A bare shorthand reference answers an empty authority and
+// package.
+func SplitKindRef(ref string) (authority, pkg, name string) {
+	a, rest, ok := strings.Cut(ref, "/")
+	if !ok {
+		return "", "", ref
 	}
-	return "", ref
+	p, n, ok := strings.Cut(rest, "/")
+	if !ok {
+		return "", "", ref
+	}
+	return a, p, n
+}
+
+// SplitPackageRef splits a package identity into its authority and its package
+// name. A string that is not two non-empty segments answers two empty strings.
+func SplitPackageRef(ref string) (authority, pkg string) {
+	a, p, ok := strings.Cut(ref, "/")
+	if !ok || a == "" || p == "" || strings.Contains(p, "/") {
+		return "", ""
+	}
+	return a, p
 }
 
 // KindName is the local name of a kind reference — "task" for both
-// "tasks.substrate.reamde.dev/task" and "task".
+// "samples.substrate.reamde.dev/tasks/task" and "task".
 func KindName(ref string) string {
-	_, name := SplitKindRef(ref)
+	_, _, name := SplitKindRef(ref)
 	return name
 }
 
 // KindAuthority is the authority of a kind reference, "" when it is bare.
 func KindAuthority(ref string) string {
-	authority, _ := SplitKindRef(ref)
+	authority, _, _ := SplitKindRef(ref)
 	return authority
 }
 
-// Qualified reports whether a kind reference names an authority.
-func Qualified(ref string) bool { return strings.Contains(ref, "/") }
+// KindPackage is the package identity a kind reference lives in
+// ("samples.substrate.reamde.dev/tasks"), "" when the reference is bare.
+func KindPackage(ref string) string {
+	authority, pkg, _ := SplitKindRef(ref)
+	if authority == "" {
+		return ""
+	}
+	return PackageRef(authority, pkg)
+}
+
+// Qualified reports whether a kind reference names an authority and a package.
+func Qualified(ref string) bool {
+	authority, _, _ := SplitKindRef(ref)
+	return authority != ""
+}
 
 // ValidKindReference reports whether a string is a kind REFERENCE — bare
-// (`task`) or authority-qualified (`tasks.substrate.reamde.dev/task`) — and not a glob.
+// (`task`) or authority-qualified (`samples.substrate.reamde.dev/tasks/task`) — and not a glob.
 // It is ValidTypeGlob's non-glob half on purpose: a trigger source and a
 // capability allowlist admit exactly the same spellings, so a repository-local
 // kind can be watched and written by the same declaration. Both sides resolve
@@ -89,38 +125,43 @@ func ValidKindReference(ref string) bool {
 func RecordPath(kind, id string) string { return kind + "/" + id }
 
 // SplitRecordPath splits a STORED record path into its kind reference and its
-// id. Every kind carries an authority (decision 0042), so a stored reference
-// value is always "<authority>/<kind>/<id>".
+// id. Every kind carries an authority and a package (decisions 0042, 0047), so
+// a stored reference value is always "<authority>/<package>/<kind>/<id>".
 //
 // The split rests on the KIND GRAMMAR above and on nothing else, so it is
 // deterministic WITHOUT a registry: an authority always carries a dot
-// (naming.go's authorityRE requires at least one dotted label) and a kind NAME
-// never does (wordRE admits letters and digits only). So the FIRST segment is
-// the authority, the kind is segments one and two, and a dotless first segment
-// is no path at all.
+// (naming.go's authorityRE requires at least one dotted label) and a package
+// and a kind NAME never do (wordRE admits letters and digits only). So the
+// FIRST segment is the authority, the kind is segments one through three, and
+// a dotless first segment is no path at all.
 //
-// The id is EVERYTHING after the kind, slashes included: a DECLARATION record's
-// id is itself a kind reference, so
-// "core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev/task" is one
-// four-segment path naming one record, not a malformed three-segment one.
+// The id is EVERYTHING after the kind, slashes included: a DECLARATION
+// record's id is itself a kind reference, so
+// "substrate.reamde.dev/core/kind/samples.substrate.reamde.dev/tasks/task" is
+// one six-segment path naming one record, not a malformed four-segment one.
 //
 // A string that is not a full path answers ok=false, which is how an AUTHORED
 // bare id is told from a stored path: a declaration id like
-// "tasks.substrate.reamde.dev/task" has a dotted first segment and nothing left
-// after its kind, so it fails here and the reader completes it from the pin.
+// "samples.substrate.reamde.dev/tasks/task" has a dotted first segment and
+// nothing left after its kind, so it fails here and the reader completes it
+// from the pin.
 func SplitRecordPath(path string) (kind, id string, ok bool) {
-	first, rest, split := strings.Cut(path, "/")
-	if !split || first == "" || rest == "" {
+	authority, rest, split := strings.Cut(path, "/")
+	if !split || authority == "" || rest == "" {
 		return "", "", false
 	}
-	if !strings.Contains(first, ".") {
+	if !strings.Contains(authority, ".") {
+		return "", "", false
+	}
+	pkg, rest, split := strings.Cut(rest, "/")
+	if !split || pkg == "" || rest == "" {
 		return "", "", false
 	}
 	name, remainder, split := strings.Cut(rest, "/")
 	if !split || name == "" || remainder == "" {
 		return "", "", false
 	}
-	return first + "/" + name, remainder, true
+	return authority + "/" + pkg + "/" + name, remainder, true
 }
 
 // ReferentID reads a reference property's value as the referent's own id.
@@ -167,25 +208,27 @@ func ReferentIDs(values []any, pin string) []string {
 	return out
 }
 
-// CoreKind renders a core-authority kind reference: the manifest envelope's
-// own kinds all live there ("core.substrate.reamde.dev/kind").
-func CoreKind(name string) string { return KindRef(AuthorityCore, name) }
+// CoreKind renders a core-package kind reference: the manifest envelope's own
+// kinds all live there ("substrate.reamde.dev/core/kind").
+func CoreKind(name string) string { return PackageCore + "/" + name }
 
-// GraphQLName is the GraphQL object name a kind resolves to, and the ONE place
-// the rule lives. The common case stays a readable name:
+// GraphQLName is the GraphQL object name a kind resolves to WITHOUT
+// disambiguation, and the ONE place that base rule lives:
 //
-//   - a SHIPPED kind keeps its bare singular — "people.substrate.reamde.dev/person" ->
-//     Person;
-//   - an INSTALLED (bundle) kind is authority-prefixed with the leading
-//     label of its authority — "google.bundles.substrate.reamde.dev/person" ->
-//     Google_Person.
+//   - a SHIPPED kind keeps its bare singular —
+//     "substrate.reamde.dev/core/token" -> Token;
+//   - an INSTALLED kind is PACKAGE-prefixed —
+//     "samples.substrate.reamde.dev/tasks/task" -> Tasks_Task.
 //
-// The underscore keeps installed names in a namespace disjoint from the shipped
-// ones, so a bundle can never rename a shipped kind's GraphQL name by
-// colliding with it. Two kinds that still resolve to one name are refused at
-// DECLARATION time (engine), not silently renamed.
+// The underscore keeps installed names in a namespace disjoint from the
+// shipped ones, so a bundle can never rename a shipped kind's GraphQL name by
+// colliding with it. Two authorities installing the SAME package name would
+// still collide here, which GraphQLNames resolves over the whole set; a
+// collision it cannot resolve is refused where a declaration lands
+// (graphqlNameProblems, run by Finalize, Install and InstallAll alike), never
+// silently renamed.
 func GraphQLName(ref, source string) string {
-	authority, name := SplitKindRef(ref)
+	_, pkg, name := SplitKindRef(ref)
 	base := titleCase(name)
 	if base == "" {
 		return ""
@@ -193,14 +236,61 @@ func GraphQLName(ref, source string) string {
 	if source != SourceInstalled {
 		return base
 	}
-	return titleCase(sanitizeName(leadingLabel(authority))) + "_" + base
+	return titleCase(sanitizeName(pkg)) + "_" + base
 }
 
-// leadingLabel is an authority's first DNS label ("google" in
-// "google.bundles.substrate.reamde.dev").
-func leadingLabel(authority string) string {
-	label, _, _ := strings.Cut(authority, ".")
-	return label
+// GraphQLKind is one kind as the naming rule sees it: its identity and where
+// its declaration came from.
+type GraphQLKind struct {
+	Identity string
+	Source   string
+}
+
+// GraphQLNames is the naming rule over a WHOLE SET of kinds, and it is what
+// both readers ask: the GraphQL schema builder (internal/gql) and the
+// declaration-time collision check (load.go). Asking one function keeps the
+// schema and the refusal from being two spellings of one rule.
+//
+// The base name is GraphQLName above. Its one ambiguity is two AUTHORITIES
+// installing the same package name: "acme.example.com/tasks/task" and
+// "samples.substrate.reamde.dev/tasks/task" both want Tasks_Task. There the
+// FULL authority joins the name, dots folded to underscores, for EVERY kind of
+// both packages (Acme_example_com_Tasks_Task), so a kind's name does not
+// depend on which of its neighbors exist inside its own package. The result is
+// order independent: the input is a set.
+//
+// The full authority and not its first label, because two authorities can
+// share a label ("acme.example.com" and "acme.example.org"), and a tie-break
+// that ties again is a name claimed twice. It is also what decision 0014
+// reserved: no identifier is derived from a first label.
+func GraphQLNames(kinds []GraphQLKind) map[string]string {
+	authoritiesOf := map[string]map[string]bool{}
+	for _, k := range kinds {
+		if k.Source != SourceInstalled {
+			continue
+		}
+		authority, pkg, _ := SplitKindRef(k.Identity)
+		if authority == "" {
+			continue
+		}
+		if authoritiesOf[pkg] == nil {
+			authoritiesOf[pkg] = map[string]bool{}
+		}
+		authoritiesOf[pkg][authority] = true
+	}
+	out := make(map[string]string, len(kinds))
+	for _, k := range kinds {
+		name := GraphQLName(k.Identity, k.Source)
+		if name == "" {
+			continue
+		}
+		authority, pkg, _ := SplitKindRef(k.Identity)
+		if k.Source == SourceInstalled && len(authoritiesOf[pkg]) > 1 {
+			name = titleCase(sanitizeName(strings.ReplaceAll(authority, ".", "_"))) + "_" + name
+		}
+		out[k.Identity] = name
+	}
+	return out
 }
 
 // titleCase upper-cases the first rune and leaves the rest as declared, so a
@@ -213,24 +303,24 @@ func titleCase(s string) string {
 }
 
 // sanitizeName drops every character a GraphQL name may not carry, leaving
-// letters and digits.
+// letters, digits and the underscore an authority's folded dots become.
 func sanitizeName(s string) string {
 	var out strings.Builder
 	for _, r := range s {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
 			out.WriteRune(r)
 		}
 	}
 	return out.String()
 }
 
-// AuthorityActor is the writing hand an AUTHORITY's own installed code
-// carries: `bundle:<authority>`, the same hand an install writes its
-// declarations under. An authority declares it as an actor document so its
-// tier and its mapping precedence are legible, but the string is derived here
-// and never authored: two authorities sharing a first label shared this actor
-// until record 0025, and with it their attribution and their trigger
-// self-exclusion.
-func AuthorityActor(authority string) string {
-	return string(substrate.BundleActor(authority))
+// PackageActor is the writing hand a PACKAGE's own installed code carries:
+// `bundle:<authority>:<package>`, the same hand an install writes its
+// declarations under. A package declares it as an actor document so its tier
+// and its mapping precedence are legible, but the string is derived here and
+// never authored: two closures sharing an actor would share their attribution
+// and their trigger self-exclusion (record 0025, amended by 0047).
+func PackageActor(pkg string) string {
+	authority, name := SplitPackageRef(pkg)
+	return string(substrate.BundleActor(authority, name))
 }

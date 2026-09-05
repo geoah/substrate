@@ -5,12 +5,12 @@ package engine
 // A user is a `repositories` row, and everything else about them is a RECORD
 // in the repository they own:
 //
-//   - `core.substrate.reamde.dev/credential`, singleton id `self` — the username plus
+//   - `substrate.reamde.dev/core/credential`, singleton id `self` — the username plus
 //     two refs into the sealed store. The material itself (an argon2id
 //     password hash, a TOTP seed) is NEVER in the changelog and never in a record's
 //     data, so the changelog carries an audit trail — "the credential changed at T"
 //     — and nothing crackable.
-//   - `core.substrate.reamde.dev/token`, one per token — a label, the SHA-256 of the
+//   - `substrate.reamde.dev/core/token`, one per token — a label, the SHA-256 of the
 //     secret and an optional expiry. Nothing records use, so authenticating
 //     writes nothing. Sessions ARE these records; login mints one and hands
 //     back its secret once.
@@ -46,12 +46,12 @@ import (
 const (
 	// kindCredential is the singleton auth record and credentialID its only
 	// id: one repository, one user, one credential.
-	kindCredential = "core.substrate.reamde.dev/credential"
+	kindCredential = "substrate.reamde.dev/core/credential"
 	credentialID   = "self"
 
 	// kindRecoveryKey is the singleton recovery record: the age recipient the
 	// user enrolled and the repository's DEK wrapped to it.
-	kindRecoveryKey = "core.substrate.reamde.dev/recoverykey"
+	kindRecoveryKey = "substrate.reamde.dev/core/recoverykey"
 	recoveryKeyID   = "self"
 
 	// The sealed-store refs the credential record points at are namespaced so

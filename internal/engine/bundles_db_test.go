@@ -21,14 +21,13 @@ import (
 )
 
 const (
-	mbAuthority   = "mail.bundles.substrate.reamde.dev"
-	mbConfigType  = mbAuthority + "/mailconfig"
-	mbAccountType = mbAuthority + "/mailaccount"
-	mbItemType    = mbAuthority + "/mailitem"
-	mbMessageType = mbAuthority + "/mailmessage"
-	mbMarkFn      = mbAuthority + "/mark"
-	mbEchoFn      = mbAuthority + "/echo"
-	mbBundleRow   = mbAuthority + "/mail" // "<first label>.<owned authority>"
+	mbPackage     = "mail.bundles.substrate.reamde.dev/mail"
+	mbConfigType  = mbPackage + "/mailconfig"
+	mbAccountType = mbPackage + "/mailaccount"
+	mbItemType    = mbPackage + "/mailitem"
+	mbMessageType = mbPackage + "/mailmessage"
+	mbMarkFn      = mbPackage + "/mark"
+	mbEchoFn      = mbPackage + "/echo"
 )
 
 // bundleOps is what these tests reach for: the bundle verbs the HTTP layer
@@ -51,7 +50,7 @@ func bundler(t *testing.T, ds substrate.Dataset) bundleOps {
 // the standard client fields. Records of it are ordinary — any number may
 // exist; the bundle's `client` input resolves one.
 func mbConfigTypeDoc() map[string]any {
-	return vocabulary.KindManifest(mbAuthority,
+	return vocabulary.KindManifest(mbPackage,
 		map[string]any{"singular": "mailconfig", "plural": "mailconfigs"},
 		map[string]any{
 			"traits": []any{"oauth2"},
@@ -67,7 +66,7 @@ func mbConfigTypeDoc() map[string]any {
 }
 
 func mbAccountTypeDoc() map[string]any {
-	return vocabulary.KindManifest(mbAuthority,
+	return vocabulary.KindManifest(mbPackage,
 		map[string]any{"singular": "mailaccount", "plural": "mailaccounts"},
 		map[string]any{
 			"traits": []any{"accountconfig"},
@@ -85,19 +84,19 @@ func mbAccountTypeDoc() map[string]any {
 }
 
 func mbItemTypeDoc() map[string]any {
-	return vocabulary.KindManifest(mbAuthority,
+	return vocabulary.KindManifest(mbPackage,
 		map[string]any{"singular": "mailitem", "plural": "mailitems"},
 		map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}})
 }
 
 func mbMessageTypeDoc() map[string]any {
-	return vocabulary.KindManifest(mbAuthority,
+	return vocabulary.KindManifest(mbPackage,
 		map[string]any{"singular": "mailmessage", "plural": "mailmessages"},
 		map[string]any{"properties": map[string]any{"subject": map[string]any{"type": "string"}}})
 }
 
 func mbFnDoc(name, source string) map[string]any {
-	return vocabulary.FunctionManifest(mbAuthority, name, map[string]any{
+	return vocabulary.FunctionManifest(mbPackage, name, map[string]any{
 		"description": "test function " + name,
 		"runtime":     vocabulary.RuntimePython,
 		"source":      source,
@@ -108,7 +107,7 @@ func mbFnDoc(name, source string) map[string]any {
 const mbMarkSource = `
 def main(input, host):
     c = input["envelope"]["change"]
-    return {"effects": [{"action": "put", "kind": "mail.bundles.substrate.reamde.dev/mailmessage",
+    return {"effects": [{"action": "put", "kind": "mail.bundles.substrate.reamde.dev/mail/mailmessage",
                          "id": "m-" + c["id"], "properties": {"subject": "marked"}}]}
 `
 
@@ -131,9 +130,9 @@ func mbDocs(installs []string, members ...map[string]any) []map[string]any {
 		list = append(list, id)
 	}
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(mbAuthority, 0),
-		vocabulary.ActorManifest(mbAuthority, vocabulary.AuthorityActor(mbAuthority)),
-		vocabulary.BundleManifest(mbAuthority, map[string]any{
+		vocabulary.PackageManifest(mbPackage, 0),
+		vocabulary.ActorManifest(mbPackage, vocabulary.PackageActor(mbPackage)),
+		vocabulary.BundleManifest(mbPackage, map[string]any{
 			"description": "the mail bundle",
 			"inputs": map[string]any{
 				// Injected on purpose: the oauth tests assert clientId
@@ -223,11 +222,11 @@ func installMailBundle(t *testing.T) (substrate.Dataset, bundleOps) {
 func mbTrigger(t *testing.T, ds substrate.Dataset) *substrate.Record {
 	t.Helper()
 	return mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/trigger", ID: "on-mark-mail",
+		Kind: "substrate.reamde.dev/core/trigger", ID: "on-mark-mail",
 		Properties: map[string]any{
 			"enabled":  true,
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{mbItemType}, "ops": []any{"create"}}},
-			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", mbMarkFn),
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", mbMarkFn),
 		},
 	})
 }
@@ -239,11 +238,11 @@ func TestBundleInstallAtomic(t *testing.T) {
 	ctx := context.Background()
 	ds, ops := installMailBundle(t)
 
-	row := mustGet(t, ds, "core.substrate.reamde.dev/bundle", mbBundleRow)
-	if row.Kind != "core.substrate.reamde.dev/bundle" {
+	row := mustGet(t, ds, "substrate.reamde.dev/core/bundle", mbPackage)
+	if row.Kind != "substrate.reamde.dev/core/bundle" {
 		t.Fatalf("bundle row type: %s", row.Kind)
 	}
-	st, err := ops.BundleStatus(ctx, mbAuthority)
+	st, err := ops.BundleStatus(ctx, mbPackage)
 	if err != nil {
 		t.Fatalf("status: %v", err)
 	}
@@ -263,7 +262,7 @@ func TestBundleInstallAtomic(t *testing.T) {
 	}
 
 	// Traits are queryable interfaces: the client kind answers oauth2.
-	types, err := ops.TypesImplementing(ctx, "core.substrate.reamde.dev/oauth2")
+	types, err := ops.TypesImplementing(ctx, "substrate.reamde.dev/core/oauth2")
 	if err != nil {
 		t.Fatalf("implementors: %v", err)
 	}
@@ -278,9 +277,8 @@ func TestBundleInstallAtomic(t *testing.T) {
 	}
 }
 
-// The loader refuses an install whose members and installs disagree, whose
-// authority is uncategorized, or whose oauth2 clientInput names a
-// non-oauth2 kind.
+// The loader refuses an install whose declared members and `installs:`
+// disagree, or whose oauth2 clientInput names a non-oauth2 kind.
 func TestBundleInstallClosureRefusals(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -292,28 +290,30 @@ func TestBundleInstallClosureRefusals(t *testing.T) {
 		mbConfigTypeDoc(), mbAccountTypeDoc(), mbItemTypeDoc(), mbMessageTypeDoc(),
 		mbFnDoc("mark", mbMarkSource), mbFnDoc("echo", mbEchoSource))
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, short); err == nil ||
-		!strings.Contains(err.Error(), "closure is the authority") {
+		!strings.Contains(err.Error(), "closure is the package") {
 		t.Fatalf("undeclared member must refuse: %v", err)
 	}
 
-	// installs naming a member the authority does not declare.
-	extra := mbDocs([]string{mbConfigType, mbAccountType, mbItemType, mbMessageType, mbMarkFn, mbEchoFn, mbAuthority + "/ghost"},
+	// installs naming a member the package does not declare.
+	extra := mbDocs([]string{mbConfigType, mbAccountType, mbItemType, mbMessageType, mbMarkFn, mbEchoFn, mbPackage + "/ghost"},
 		mbConfigTypeDoc(), mbAccountTypeDoc(), mbItemTypeDoc(), mbMessageTypeDoc(),
 		mbFnDoc("mark", mbMarkSource), mbFnDoc("echo", mbEchoSource))
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, extra); err == nil ||
-		!strings.Contains(err.Error(), "closure is the authority") {
+		!strings.Contains(err.Error(), "closure is the package") {
 		t.Fatalf("phantom install must refuse: %v", err)
 	}
 
-	// A bundle-suffixed authority without a bundle document.
+	// A package with members and NO bundle document installs: the `.bundles.`
+	// authority suffix was a typo-catcher over the retired vocabulary/extension
+	// split, and record 0047 dropped it. A bundle names its package, not the
+	// other way round.
 	headless := []map[string]any{
-		vocabulary.AuthorityManifest(mbAuthority, 0),
-		vocabulary.ActorManifest(mbAuthority, vocabulary.AuthorityActor(mbAuthority)),
+		vocabulary.PackageManifest(mbPackage, 0),
+		vocabulary.ActorManifest(mbPackage, vocabulary.PackageActor(mbPackage)),
 		mbMessageTypeDoc(),
 	}
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, headless); err == nil ||
-		!strings.Contains(err.Error(), "must declare a bundle document") {
-		t.Fatalf("headless bundle authority must refuse: %v", err)
+	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, headless); err != nil {
+		t.Fatalf("a package without a bundle document must install: %v", err)
 	}
 
 	// The oauth2 clientInput must name an input whose kind implements oauth2.
@@ -354,7 +354,7 @@ func TestBundleInputResolution(t *testing.T) {
 	ds, ops := installMailBundle(t)
 
 	first := mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
-	st, err := ops.BundleStatus(ctx, mbAuthority)
+	st, err := ops.BundleStatus(ctx, mbPackage)
 	if err != nil || len(st.Setup) != 0 {
 		t.Fatalf("sole record must resolve: %+v %v", st, err)
 	}
@@ -365,7 +365,7 @@ func TestBundleInputResolution(t *testing.T) {
 	// A second record is an ordinary create — no cardinality is enforced —
 	// and the input turns ambiguous until one is chosen.
 	second := mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
-	st, err = ops.BundleStatus(ctx, mbAuthority)
+	st, err = ops.BundleStatus(ctx, mbPackage)
 	if err != nil || len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupAmbiguous {
 		t.Fatalf("two records must read ambiguous: %+v %v", st, err)
 	}
@@ -373,10 +373,10 @@ func TestBundleInputResolution(t *testing.T) {
 	// Bind is the explicit choice, and beats everything.
 	if err := ds.(interface {
 		BindBundleInput(ctx context.Context, id, input, record string) error
-	}).BindBundleInput(ctx, mbBundleRow, "client", second.ID); err != nil {
+	}).BindBundleInput(ctx, mbPackage, "client", second.ID); err != nil {
 		t.Fatalf("bind: %v", err)
 	}
-	st, err = ops.BundleStatus(ctx, mbAuthority)
+	st, err = ops.BundleStatus(ctx, mbPackage)
 	if err != nil || len(st.Setup) != 0 || st.Inputs[0].Record != second.ID || st.Inputs[0].Via != substrate.InputViaBound {
 		t.Fatalf("bound resolution: %+v %v", st, err)
 	}
@@ -386,7 +386,7 @@ func TestBundleInputResolution(t *testing.T) {
 	if _, err := ds.Delete(ctx, owner, second.Kind, second.ID); err != nil {
 		t.Fatalf("delete bound: %v", err)
 	}
-	st, err = ops.BundleStatus(ctx, mbAuthority)
+	st, err = ops.BundleStatus(ctx, mbPackage)
 	if err != nil || len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupDangling {
 		t.Fatalf("dangling binding must surface: %+v %v", st, err)
 	}
@@ -394,17 +394,17 @@ func TestBundleInputResolution(t *testing.T) {
 	// Unbind returns resolution to the default rules: the sole survivor.
 	if err := ds.(interface {
 		BindBundleInput(ctx context.Context, id, input, record string) error
-	}).BindBundleInput(ctx, mbBundleRow, "client", ""); err != nil {
+	}).BindBundleInput(ctx, mbPackage, "client", ""); err != nil {
 		t.Fatalf("unbind: %v", err)
 	}
-	st, err = ops.BundleStatus(ctx, mbAuthority)
+	st, err = ops.BundleStatus(ctx, mbPackage)
 	if err != nil || len(st.Setup) != 0 || st.Inputs[0].Record != first.ID || st.Inputs[0].Via != substrate.InputViaSole {
 		t.Fatalf("post-unbind resolution: %+v %v", st, err)
 	}
 
 	// The well-known id "default" beats the sole rule the moment it exists.
 	mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, ID: "default", Properties: mbConfigProps()})
-	st, err = ops.BundleStatus(ctx, mbAuthority)
+	st, err = ops.BundleStatus(ctx, mbPackage)
 	if err != nil || len(st.Setup) != 0 || st.Inputs[0].Record != "default" || st.Inputs[0].Via != substrate.InputViaDefault {
 		t.Fatalf("default-id resolution: %+v %v", st, err)
 	}
@@ -432,14 +432,14 @@ func TestBundleInputBoundToAMergedRecordResolvesToTheWinner(t *testing.T) {
 	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
 	if err := ds.(interface {
 		BindBundleInput(ctx context.Context, id, input, record string) error
-	}).BindBundleInput(ctx, mbBundleRow, "client", loser.ID); err != nil {
+	}).BindBundleInput(ctx, mbPackage, "client", loser.ID); err != nil {
 		t.Fatalf("bind: %v", err)
 	}
 	if _, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 
-	st, err := ops.BundleStatus(ctx, mbAuthority)
+	st, err := ops.BundleStatus(ctx, mbPackage)
 	if err != nil || len(st.Setup) != 0 {
 		t.Fatalf("the merged binding must still resolve: %+v %v", st, err)
 	}
@@ -453,7 +453,7 @@ func TestBundleInputBoundToAMergedRecordResolvesToTheWinner(t *testing.T) {
 	if _, err := ds.Delete(ctx, owner, winner.Kind, winner.ID); err != nil {
 		t.Fatalf("delete the winner: %v", err)
 	}
-	st, err = ops.BundleStatus(ctx, mbAuthority)
+	st, err = ops.BundleStatus(ctx, mbPackage)
 	if err != nil || len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupDangling {
 		t.Fatalf("a deleted winner must dangle: %+v %v", st, err)
 	}
@@ -479,7 +479,7 @@ func TestBundleInputBindSurvivesRebuild(t *testing.T) {
 	chosen := mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
 	if err := ds.(interface {
 		BindBundleInput(ctx context.Context, id, input, record string) error
-	}).BindBundleInput(ctx, mbBundleRow, "client", chosen.ID); err != nil {
+	}).BindBundleInput(ctx, mbPackage, "client", chosen.ID); err != nil {
 		t.Fatalf("bind: %v", err)
 	}
 	rb, ok := svc.(interface {
@@ -491,7 +491,7 @@ func TestBundleInputBindSurvivesRebuild(t *testing.T) {
 	if _, err := rb.RebuildRepository(ctx, "geoah"); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
-	st, err := ops.BundleStatus(ctx, mbAuthority)
+	st, err := ops.BundleStatus(ctx, mbPackage)
 	if err != nil || len(st.Setup) != 0 {
 		t.Fatalf("post-rebuild status: %+v %v", st, err)
 	}
@@ -507,12 +507,12 @@ func TestBundleInputBindFrozenWhileDisabled(t *testing.T) {
 	ctx := context.Background()
 	ds, ops := installMailBundle(t)
 	row := mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
-	if err := ops.DisableBundle(ctx, mbAuthority); err != nil {
+	if err := ops.DisableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
 	err := ds.(interface {
 		BindBundleInput(ctx context.Context, id, input, record string) error
-	}).BindBundleInput(ctx, mbAuthority, "client", row.ID)
+	}).BindBundleInput(ctx, mbPackage, "client", row.ID)
 	wantErr(t, err, substrate.ErrGuard, "bind while disabled")
 }
 
@@ -531,7 +531,7 @@ func TestBundleDisableStopsDelivery(t *testing.T) {
 		t.Fatalf("delivery before disable: %+v", got.Properties)
 	}
 
-	if err := ops.DisableBundle(ctx, mbAuthority); err != nil {
+	if err := ops.DisableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
 	two := mustPut(t, ds, owner, substrate.PutInput{Kind: mbItemType, Properties: map[string]any{"name": "two"}})
@@ -551,7 +551,7 @@ func TestBundleDisableStopsDelivery(t *testing.T) {
 	mustPut(t, ds, owner, substrate.PutInput{Kind: mbItemType, Properties: map[string]any{"name": "three"}})
 
 	// Enable: the backlog delivers — the cursor never moved past it.
-	if err := ops.EnableBundle(ctx, mbAuthority); err != nil {
+	if err := ops.EnableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
 	process(t, fops)
@@ -645,7 +645,7 @@ func TestBundleUninstallTearsDownAuthority(t *testing.T) {
 		t.Fatalf("delete message: %v", err)
 	}
 
-	if err := ops.UninstallBundle(ctx, mbAuthority); err != nil {
+	if err := ops.UninstallBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
 
@@ -665,14 +665,14 @@ func TestBundleUninstallTearsDownAuthority(t *testing.T) {
 		t.Fatal("a write resolved a torn-down type")
 	}
 	// The kind's own schema row was pruned (tombstoned).
-	if row, err := ds.Get(ctx, "core.substrate.reamde.dev/kind", mbItemType); err != nil || row.DeletedAt == nil {
+	if row, err := ds.Get(ctx, "substrate.reamde.dev/core/kind", mbItemType); err != nil || row.DeletedAt == nil {
 		t.Fatalf("mailitem schema row not pruned: %+v %v", row, err)
 	}
 	// The callable is gone, and the trigger row went with it — it cannot fire.
 	if _, _, err := fops.CallFunction(ctx, mbEchoFn, map[string]any{}); err == nil {
 		t.Fatal("a torn-down bundle's function ran")
 	}
-	if row, err := ds.Get(ctx, "core.substrate.reamde.dev/trigger", "on-mark-mail"); err != nil || row.DeletedAt == nil {
+	if row, err := ds.Get(ctx, "substrate.reamde.dev/core/trigger", "on-mark-mail"); err != nil || row.DeletedAt == nil {
 		t.Fatalf("the trigger was not torn down: %+v %v", row, err)
 	}
 	// The bundle stops being listed, and its row is pruned.
@@ -681,11 +681,11 @@ func TestBundleUninstallTearsDownAuthority(t *testing.T) {
 		t.Fatalf("statuses: %v", err)
 	}
 	for _, s := range statuses {
-		if s.Authority == mbAuthority {
+		if s.ID == mbPackage {
 			t.Fatalf("uninstalled bundle still listed: %+v", s)
 		}
 	}
-	if row, err := ds.Get(ctx, "core.substrate.reamde.dev/bundle", mbBundleRow); err != nil || row.DeletedAt == nil {
+	if row, err := ds.Get(ctx, "substrate.reamde.dev/core/bundle", mbPackage); err != nil || row.DeletedAt == nil {
 		t.Fatalf("the bundle row was not pruned: %+v %v", row, err)
 	}
 
@@ -709,7 +709,7 @@ func TestBundleUninstallGuardsLiveData(t *testing.T) {
 	item := mustPut(t, ds, owner, substrate.PutInput{Kind: mbItemType, Properties: map[string]any{"name": "kept"}})
 
 	// The live instance refuses the uninstall, with the count.
-	err := ops.UninstallBundle(ctx, mbAuthority)
+	err := ops.UninstallBundle(ctx, mbPackage)
 	wantErr(t, err, substrate.ErrGuard, "uninstall with a live instance")
 	if !strings.Contains(err.Error(), "live records") {
 		t.Fatalf("refusal must carry the count: %v", err)
@@ -718,24 +718,24 @@ func TestBundleUninstallGuardsLiveData(t *testing.T) {
 	if got := mustGet(t, ds, item.Kind, item.ID); got.Properties["name"] != "kept" {
 		t.Fatalf("data lost to a refused uninstall: %+v", got.Properties)
 	}
-	if _, err := ds.Get(ctx, "core.substrate.reamde.dev/trigger", "on-mark-mail"); err != nil {
+	if _, err := ds.Get(ctx, "substrate.reamde.dev/core/trigger", "on-mark-mail"); err != nil {
 		t.Fatalf("the trigger was torn down by a refused uninstall: %v", err)
 	}
 
 	// Purge (after disable) clears the data; then the uninstall proceeds.
-	if err := ops.DisableBundle(ctx, mbAuthority); err != nil {
+	if err := ops.DisableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
-	if _, err := ops.PurgeBundle(ctx, mbAuthority); err != nil {
+	if _, err := ops.PurgeBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("purge: %v", err)
 	}
-	if err := ops.UninstallBundle(ctx, mbAuthority); err != nil {
+	if err := ops.UninstallBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("uninstall after purge: %v", err)
 	}
 	if _, err := ds.KindByRef(ctx, mbItemType); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("mailitem still resolves after uninstall: %v", err)
 	}
-	if row, err := ds.Get(ctx, "core.substrate.reamde.dev/trigger", "on-mark-mail"); err != nil || row.DeletedAt == nil {
+	if row, err := ds.Get(ctx, "substrate.reamde.dev/core/trigger", "on-mark-mail"); err != nil || row.DeletedAt == nil {
 		t.Fatalf("the trigger was not torn down: %+v %v", row, err)
 	}
 }
@@ -750,20 +750,20 @@ func TestBundlePurgeDeletesData(t *testing.T) {
 	mustPut(t, ds, owner, substrate.PutInput{Kind: mbItemType, Properties: map[string]any{"name": "one"}})
 	mustPut(t, ds, owner, substrate.PutInput{Kind: mbItemType, Properties: map[string]any{"name": "two"}})
 
-	if _, err := ops.PurgeBundle(ctx, mbAuthority); err == nil {
+	if _, err := ops.PurgeBundle(ctx, mbPackage); err == nil {
 		t.Fatal("purging a live bundle must refuse")
 	}
-	if err := ops.DisableBundle(ctx, mbAuthority); err != nil {
+	if err := ops.DisableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
-	purged, err := ops.PurgeBundle(ctx, mbAuthority)
+	purged, err := ops.PurgeBundle(ctx, mbPackage)
 	if err != nil {
 		t.Fatalf("purge: %v", err)
 	}
 	if purged != 3 {
 		t.Fatalf("purged %d, want 3", purged)
 	}
-	st, err := ops.BundleStatus(ctx, mbAuthority)
+	st, err := ops.BundleStatus(ctx, mbPackage)
 	if err != nil || st.LiveRecords != 0 || len(st.Setup) == 0 {
 		t.Fatalf("post-purge status: %+v %v", st, err)
 	}
@@ -772,7 +772,7 @@ func TestBundlePurgeDeletesData(t *testing.T) {
 		t.Fatalf("gc: %v", err)
 	}
 	// Idempotent: nothing left to purge.
-	if again, err := ops.PurgeBundle(ctx, mbAuthority); err != nil || again != 0 {
+	if again, err := ops.PurgeBundle(ctx, mbPackage); err != nil || again != 0 {
 		t.Fatalf("re-purge: %d %v", again, err)
 	}
 }

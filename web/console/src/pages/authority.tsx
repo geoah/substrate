@@ -1,9 +1,10 @@
-/** Authority page (`/data/:authority`): the authority's kinds at a glance on
- * THE table system — name, description where the schema carries one, live
- * record count (a bounded keyset-walk count, capped collections read as N+),
- * each row a door into that kind's browse. Reached from the breadcrumb's
- * authority segment. Bounded registry data (a handful of rows), so no
- * pagination seam. */
+/** Authority page (`/data/:authority`) and package page
+ * (`/data/:authority/:package`): the kinds under one authority, or under one of
+ * its packages, at a glance on THE table system — package, name, description
+ * where the declaration carries one, live record count (a bounded keyset-walk
+ * count, capped collections read as N+), each row a door into that kind's
+ * browse. Reached from the breadcrumb's authority and package segments. Bounded
+ * registry data (a handful of rows), so no pagination seam. */
 
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -25,7 +26,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { recordCountQueryOptions, formatCount } from "@/lib/api/records"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import type { KindInfo } from "@/lib/api/types"
-import { authorityRoute } from "@/router"
+import { authorityRoute, packageRoute } from "@/router"
 
 /** The one-liner a kind carries: its reconciled `definition.description` when
  * one exists. There is no `sourceYAML` on the wire (record 61) — the parsed
@@ -39,7 +40,9 @@ function kindDescription(k: KindInfo): string | undefined {
 }
 
 function CountCell({ kind }: { kind: KindInfo }) {
-  const count = useQuery(recordCountQueryOptions(kind.authority, kind.name))
+  const count = useQuery(
+    recordCountQueryOptions(kind.authority, kind.package, kind.name)
+  )
   if (count.isPending) {
     return <Skeleton className="ml-auto h-3.5 w-10" />
   }
@@ -51,8 +54,20 @@ function CountCell({ kind }: { kind: KindInfo }) {
   )
 }
 
-function buildColumns(authority: string): DataTableColumn<KindInfo>[] {
+function buildColumns(): DataTableColumn<KindInfo>[] {
   return [
+    {
+      id: "package",
+      accessorFn: (k) => k.package,
+      enableSorting: false,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="package" />
+      ),
+      cell: ({ row }) => (
+        <span className="block truncate data">{row.original.package}</span>
+      ),
+      meta: { label: "package", width: 140 },
+    },
     {
       id: "kind",
       accessorFn: (k) => k.name,
@@ -63,8 +78,12 @@ function buildColumns(authority: string): DataTableColumn<KindInfo>[] {
       ),
       cell: ({ row }) => (
         <Link
-          to="/data/$authority/$name"
-          params={{ authority: authority, name: row.original.name }}
+          to="/data/$authority/$pkg/$name"
+          params={{
+            authority: row.original.authority,
+            pkg: row.original.package,
+            name: row.original.name,
+          }}
           className="block truncate data underline-offset-4 hover:underline"
           onClick={(e) => e.stopPropagation()}
         >
@@ -110,28 +129,32 @@ function buildColumns(authority: string): DataTableColumn<KindInfo>[] {
   ]
 }
 
-export function AuthorityPage() {
-  // The route path still spells `$authority`; a data root is an authority.
-  const { authority } = authorityRoute.useParams()
+/** The kinds table both data-root pages render: one heading, one table, one
+ * empty state. `scope` is what the reader asked for and what the empty state
+ * names; `title` is the heading. */
+function KindsTable({
+  scope,
+  kinds,
+  prefsKey,
+  pending,
+  error,
+}: {
+  scope: string
+  kinds: KindInfo[]
+  prefsKey: string
+  pending: boolean
+  error?: Error | null
+}) {
   const navigate = useNavigate()
-  const registry = useQuery(kindsQueryOptions)
-  const kinds = useMemo(
-    () =>
-      (registry.data ?? [])
-        .filter((k) => k.authority === authority)
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [registry.data, authority]
-  )
-
-  const columns = useMemo(() => buildColumns(authority), [authority])
+  const columns = useMemo(() => buildColumns(), [])
   const table = useDataTable({
     columns,
     data: kinds,
     getRowId: (k) => k.identity,
-    prefsKey: "authority-kinds",
+    prefsKey,
   })
 
-  if (registry.isPending) {
+  if (pending) {
     return (
       <div className="flex flex-col gap-3 px-6 pt-5">
         <Skeleton className="h-6 w-56" />
@@ -145,7 +168,7 @@ export function AuthorityPage() {
     )
   }
 
-  if (registry.isError || !kinds.length) {
+  if (error || !kinds.length) {
     return (
       <div className="flex flex-1 p-6">
         <Empty>
@@ -154,16 +177,14 @@ export function AuthorityPage() {
               <FileCode2Icon />
             </EmptyMedia>
             <EmptyTitle>
-              {registry.isError
-                ? "The registry didn't load"
-                : "No such authority"}
+              {error ? "The registry didn't load" : "Nothing declared here"}
             </EmptyTitle>
             <EmptyDescription>
-              {registry.isError ? (
-                registry.error.message
+              {error ? (
+                error.message
               ) : (
                 <>
-                  <span className="data">{authority}</span> declares no kinds.
+                  <span className="data">{scope}</span> declares no kinds.
                 </>
               )}
             </EmptyDescription>
@@ -177,7 +198,7 @@ export function AuthorityPage() {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-end justify-between gap-3 px-6 pt-5 pb-2">
         <div>
-          <h1 className="data text-lg font-semibold">{authority}</h1>
+          <h1 className="data text-lg font-semibold">{scope}</h1>
           <p className="text-xs text-muted-foreground">
             {kinds.length} {kinds.length === 1 ? "kind" : "kinds"}
           </p>
@@ -189,12 +210,60 @@ export function AuthorityPage() {
           table={table}
           onRowClick={(k) =>
             void navigate({
-              to: "/data/$authority/$name",
-              params: { authority: authority, name: k.name },
+              to: "/data/$authority/$pkg/$name",
+              params: { authority: k.authority, pkg: k.package, name: k.name },
             })
           }
         />
       </div>
     </div>
+  )
+}
+
+/** Every kind one authority publishes, across its packages. */
+export function AuthorityPage() {
+  const { authority } = authorityRoute.useParams()
+  const registry = useQuery(kindsQueryOptions)
+  const kinds = useMemo(
+    () =>
+      (registry.data ?? [])
+        .filter((k) => k.authority === authority)
+        .sort(
+          (a, b) =>
+            a.package.localeCompare(b.package) || a.name.localeCompare(b.name)
+        ),
+    [registry.data, authority]
+  )
+  return (
+    <KindsTable
+      scope={authority}
+      kinds={kinds}
+      prefsKey="authority-kinds"
+      pending={registry.isPending}
+      error={registry.isError ? registry.error : null}
+    />
+  )
+}
+
+/** The kinds of ONE package, the group a declaration is versioned and
+ * quarantined in (decision 0047). */
+export function PackagePage() {
+  const { authority, pkg } = packageRoute.useParams()
+  const registry = useQuery(kindsQueryOptions)
+  const kinds = useMemo(
+    () =>
+      (registry.data ?? [])
+        .filter((k) => k.authority === authority && k.package === pkg)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [registry.data, authority, pkg]
+  )
+  return (
+    <KindsTable
+      scope={`${authority}/${pkg}`}
+      kinds={kinds}
+      prefsKey="package-kinds"
+      pending={registry.isPending}
+      error={registry.isError ? registry.error : null}
+    />
   )
 }

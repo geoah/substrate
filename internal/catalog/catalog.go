@@ -1,27 +1,21 @@
 // Package catalog is the substrate's read model over the bundle closures
 // SHIPPED in the binary — the registry a repository imports from. A catalog
-// entry is one embedded bundle directory (kinds/<authority>/): its identity, the
-// schema CLOSURE (the core schema documents — the atomic install unit) and the
-// DATA RECORDS it ships beside them (an extension's triggers, the llm example's
-// provider rows).
+// entry is one embedded PACKAGE directory: its identity, the schema CLOSURE
+// (the core schema documents — the atomic install unit) and the DATA RECORDS
+// it ships beside them (a provider's triggers, the llm sample's provider
+// rows).
 //
-// TWO KINDS OF ENTRY, one install path. A BUNDLE owns any authority that is not
-// a bare org-domain label (`google.bundles.substrate.reamde.dev`), configures
-// through its declared inputs and may ship callables. A VOCABULARY bundle owns a bare authority
-// (`people.substrate.reamde.dev`, `tasks.substrate.reamde.dev`) and ships kinds and nothing else —
-// it is the substrate's own vocabulary, which repository creation no longer
-// seeds: a fresh repository holds core alone and imports the rest from here.
-// A closure that declares ONTO another authority names it in `requires:`, and
-// admission refuses the install while that authority is absent (schema
+// A closure that declares ONTO another package names it in `requires:`, and
+// admission refuses the install while that package is absent (vocabulary
 // resolveBundle), naming what to import first.
 //
 // Install is a THIN wrapper over the existing admission path, not a parallel
-// one: the closure rides ApplyVocabularyDocuments (one transaction, every document
-// admitted or none, refuse-breakage on commit) exactly as an explicit
-// `schema/apply` does, and the delivery wiring is PUT afterward the same way
-// `substratectl apply` routes a non-schema document. Re-install is the bundle's
-// own upgrade/refuse-breakage semantics — the whole-authority re-apply — so it is
-// idempotent by construction.
+// one: the closure rides ApplyVocabularyDocuments (one transaction, every
+// document admitted or none, refuse-breakage on commit) exactly as an explicit
+// `/vocabulary/apply` does, and the delivery wiring is PUT afterward the same
+// way `substratectl apply` routes a non-schema document. Re-install is the
+// bundle's own upgrade/refuse-breakage semantics — the whole-package re-apply
+// — so it is idempotent by construction.
 //
 // The catalog is the set of closures baked in today; remote-URL / versioned
 // install is ticket 011, out of scope.
@@ -46,34 +40,33 @@ import (
 // Bundle is one installable catalog entry: the shipped closure and the
 // metadata the console previews before installing it.
 type Bundle struct {
-	// ID is the bundle's record id — its owned authority carried as
-	// "<authority>/<name>", matching substrate.BundleStatus.ID once installed.
+	// ID is the bundle's record id — the PACKAGE it is named for
+	// ("providers.substrate.reamde.dev/google"), matching
+	// substrate.BundleStatus.ID once installed.
 	ID string `json:"id"`
-	// Name is the categorized authority's first label ("web" of
-	// "web.bundles.substrate.reamde.dev").
+	// Name is the owned package's own word ("google").
 	Name string `json:"name"`
-	// Authority is the owned authority the closure installs.
+	// Authority is the authority the closure publishes under.
 	Authority string `json:"authority"`
+	// Package is the owned package's name, the same word as Name: the console
+	// groups the catalog by authority, then by package.
+	Package string `json:"package"`
 	// Description is the bundle document's description.
 	Description string `json:"description"`
-	// Version is the bundle authority's authority version (the closure's
-	// version; a per-bundle semver is future — ticket 011). Zero means the
-	// closure declares none.
+	// Version is the owned package's version (the closure's version; a
+	// per-bundle semver is future — ticket 011). Zero means the closure
+	// declares none.
 	Version int64 `json:"version"`
 	// Inputs are the bundle's declared configuration needs, verbatim from
 	// the manifest: input name → {kind, inject?, description?}. A bundle
 	// with no needs carries none, and the console previews nothing.
 	Inputs map[string]any `json:"inputs,omitempty"`
-	// Requires names the AUTHORITIES this bundle's closure declares against —
-	// the vocabulary its mappings, edges and trigger subscriptions point at.
+	// Requires names the PACKAGES this bundle's closure declares against — the
+	// vocabulary its mappings, references and trigger subscriptions point at.
 	// Vocabulary is IMPORTED now rather than seeded (repository creation seeds
 	// core alone), so the console shows this before an install and admission
 	// refuses the install when one is absent, naming what to import first.
 	Requires []string `json:"requires,omitempty"`
-	// Vocabulary marks a pure-vocabulary bundle: a bare authority the
-	// substrate publishes, shipping kinds and nothing else. It is what the
-	// creation seed used to write.
-	Vocabulary bool `json:"vocabulary"`
 	// Example is the curated catalog facet marking a bundle that exists to be
 	// READ and run once: a worked demonstration of a substrate mechanism,
 	// self-contained and safe to install on a fresh repository. It is
@@ -153,30 +146,30 @@ type ShippedRecord struct {
 var exampleFacets = map[string]bool{
 	// The two provider rows a substrate needs before an agent can run, plus an
 	// agent chain to prove them.
-	"llm.examples.substrate.reamde.dev/llm": true,
+	"samples.substrate.reamde.dev/llm": true,
 	// The smallest bundle showing an agent calling functions as tools and
 	// delegating to a sub-agent.
-	"notes.bundles.substrate.reamde.dev/notes": true,
+	"samples.substrate.reamde.dev/notes": true,
 	// The URL harvester: triggers, a sub-agent chain, and a change request an
 	// owner accepts. A bigger read than the others.
-	"web.bundles.substrate.reamde.dev/web": true,
+	"samples.substrate.reamde.dev/web": true,
 	// Voice capture from the Pebble ring over a public webhook: a
 	// webhook-sourced trigger, header routing, and an agent that writes tasks.
-	"pebble.bundles.substrate.reamde.dev/pebble": true,
+	"samples.substrate.reamde.dev/pebble": true,
 }
 
 var integrationFacets = map[string]bool{
-	"google.bundles.substrate.reamde.dev/google": true,
-	"github.bundles.substrate.reamde.dev/github": true,
-	"linear.bundles.substrate.reamde.dev/linear": true,
-	"notion.bundles.substrate.reamde.dev/notion": true,
-	"whoop.bundles.substrate.reamde.dev/whoop":   true,
-	"beeper.bundles.substrate.reamde.dev/beeper": true,
+	"providers.substrate.reamde.dev/google": true,
+	"providers.substrate.reamde.dev/github": true,
+	"providers.substrate.reamde.dev/linear": true,
+	"providers.substrate.reamde.dev/notion": true,
+	"providers.substrate.reamde.dev/whoop":  true,
+	"providers.substrate.reamde.dev/beeper": true,
 	// firecrawl is a capability bundle (callable web-search/scrape tools
 	// behind an API key) — no provider account is connected and nothing syncs
 	// from the provider, so like the web harvester it is not an integration.
-	"firecrawl.bundles.substrate.reamde.dev/firecrawl": false,
-	"web.bundles.substrate.reamde.dev/web":             false,
+	"samples.substrate.reamde.dev/firecrawl": false,
+	"samples.substrate.reamde.dev/web":       false,
 }
 
 // Catalog is the parsed set of shipped bundles, indexed by id.
@@ -189,32 +182,69 @@ type Catalog struct {
 	warnings []string
 }
 
-// Load parses every shipped bundle directory in fsys (each a top-level
-// directory of manifests). A directory that carries no bundle document is not
-// a bundle and is skipped; a directory that fails to parse is dropped with a
-// recorded warning rather than failing the whole catalog — a broken neighbor
-// never bricks the shipped set.
-func Load(fsys fs.FS) (*Catalog, error) {
-	entries, err := fs.ReadDir(fsys, ".")
+// Load parses every shipped PACKAGE directory in the given roots. A package
+// directory is any directory holding .yaml manifests, at whatever depth the
+// root nests them: the shipped tree is kinds/<authority>/<package>/ and the
+// samples are samples/<package>/, and both are read the same way. A directory
+// that carries no bundle document is not a bundle and is skipped; one that
+// fails to parse is dropped with a recorded warning rather than failing the
+// whole catalog — a broken neighbor never bricks the shipped set.
+func Load(roots ...fs.FS) (*Catalog, error) {
+	c := &Catalog{byID: map[string]*Bundle{}}
+	for _, fsys := range roots {
+		dirs, err := packageDirs(fsys)
+		if err != nil {
+			return nil, err
+		}
+		for _, dir := range dirs {
+			if err := c.load(fsys, dir); err != nil {
+				return nil, err
+			}
+		}
+	}
+	sort.Slice(c.bundles, func(i, j int) bool { return c.bundles[i].ID < c.bundles[j].ID })
+	return c, nil
+}
+
+// packageDirs lists the directories holding manifests, in lexical order.
+func packageDirs(fsys fs.FS) ([]string, error) {
+	seen := map[string]bool{}
+	var out []string
+	err := fs.WalkDir(fsys, ".", func(name string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(name, ".yaml") {
+			return nil
+		}
+		dir := path.Dir(name)
+		if dir == "." || seen[dir] {
+			return nil
+		}
+		seen[dir] = true
+		out = append(out, dir)
+		return nil
+	})
 	if err != nil {
 		return nil, fmt.Errorf("catalog: read root: %w", err)
 	}
-	c := &Catalog{byID: map[string]*Bundle{}}
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		b, err := loadBundle(fsys, e.Name())
+	sort.Strings(out)
+	return out, nil
+}
+
+func (c *Catalog) load(fsys fs.FS, dir string) error {
+	{
+		b, err := loadBundle(fsys, dir)
 		if err != nil {
-			c.warnings = append(c.warnings, fmt.Sprintf("%s: %v", e.Name(), err))
-			continue
+			c.warnings = append(c.warnings, fmt.Sprintf("%s: %v", dir, err))
+			return nil
 		}
 		if b == nil {
-			continue // not a bundle directory
+			return nil // not a bundle directory
 		}
 		if _, dup := c.byID[b.ID]; dup {
-			c.warnings = append(c.warnings, fmt.Sprintf("%s: duplicate bundle id %s", e.Name(), b.ID))
-			continue
+			c.warnings = append(c.warnings, fmt.Sprintf("%s: duplicate bundle id %s", dir, b.ID))
+			return nil
 		}
 		// The integration facet is curated catalog presentation metadata,
 		// applied by id AFTER the closure parses — it is not read from the
@@ -225,13 +255,43 @@ func Load(fsys fs.FS) (*Catalog, error) {
 		c.bundles = append(c.bundles, b)
 		c.byID[b.ID] = b
 	}
-	sort.Slice(c.bundles, func(i, j int) bool { return c.bundles[i].ID < c.bundles[j].ID })
-	return c, nil
+	return nil
 }
 
-// loadBundle reads one directory's manifests into a Bundle, or nil when the
-// directory holds no bundle document.
+// loadBundle reads one package directory's manifests into a Bundle, or nil
+// when the directory holds no bundle document.
+//
+// A closure is the package's own directory PLUS the documents in the
+// directories above it, which is where an authority document sits: one
+// `authority` manifest per authority, beside the packages it owns, so
+// installing a package also lands the row that says what its authority is
+// without a copy of that document in every package.
 func loadBundle(fsys fs.FS, dir string) (*Bundle, error) {
+	var docs []map[string]any
+	for _, d := range append(ancestors(dir), dir) {
+		fileDocs, err := dirDocs(fsys, d)
+		if err != nil {
+			return nil, err
+		}
+		docs = append(docs, fileDocs...)
+	}
+	return bundleFromDocs(docs)
+}
+
+// ancestors lists dir's parent directories inside the root, outermost first.
+func ancestors(dir string) []string {
+	var out []string
+	for d := path.Dir(dir); ; d = path.Dir(d) {
+		out = append([]string{d}, out...)
+		if d == "." {
+			break
+		}
+	}
+	return out
+}
+
+// dirDocs decodes every manifest directly in one directory.
+func dirDocs(fsys fs.FS, dir string) ([]map[string]any, error) {
 	files, err := fs.ReadDir(fsys, dir)
 	if err != nil {
 		return nil, err
@@ -251,7 +311,7 @@ func loadBundle(fsys fs.FS, dir string) (*Bundle, error) {
 		}
 		docs = append(docs, fileDocs...)
 	}
-	return bundleFromDocs(docs)
+	return docs, nil
 }
 
 // decodeDocs splits a `---`-separated manifest into raw envelope maps,
@@ -285,10 +345,11 @@ func bundleFromDocs(docs []map[string]any) (*Bundle, error) {
 	var version int64
 	found := false
 	for _, d := range docs {
-		authority, typ := vocabulary.SplitKindRef(mstr(d, "kind"))
+		ref := mstr(d, "kind")
+		typ := vocabulary.KindName(ref)
 		id := docID(d)
 		switch {
-		case isSchemaDoc(authority, typ):
+		case isSchemaDoc(vocabulary.KindPackage(ref), typ):
 			b.vocabularyDocs = append(b.vocabularyDocs, d)
 		default:
 			// EVERY data document, not the trigger alone: whatever the install
@@ -304,13 +365,13 @@ func bundleFromDocs(docs []map[string]any) (*Bundle, error) {
 			found = true
 			b.ID = id
 			b.Authority = mstr(data, "authority")
+			b.Package = mstr(data, "package")
 			b.Description = mstr(data, "description")
 			b.Inputs = mmap(data, "inputs")
 			for _, rv := range mslice(data, "requires") {
 				b.Requires = append(b.Requires, fmt.Sprint(rv))
 			}
-			b.Vocabulary = vocabulary.ValidVocabularyAuthority(b.Authority)
-		case vocabulary.DocAuthority:
+		case vocabulary.DocPackage:
 			if v := mversion(data, "version"); v > 0 {
 				version = v
 			}
@@ -333,18 +394,18 @@ func bundleFromDocs(docs []map[string]any) (*Bundle, error) {
 	if !found {
 		return nil, nil
 	}
-	if b.Authority == "" {
-		return nil, errors.New("bundle document names no authority")
+	if b.Authority == "" || b.Package == "" {
+		return nil, errors.New("bundle document names no package")
 	}
-	b.Name = vocabulary.KindName(b.ID)
+	b.Name = b.Package
 	b.Version = version
 	return b, nil
 }
 
 // isSchemaDoc mirrors the loader's split (and substratectl's): a schema document IS a
 // record of one of the core meta-kinds; everything else is a data record.
-func isSchemaDoc(authority, name string) bool {
-	return authority == vocabulary.AuthorityCore && vocabulary.VocabularyDocumentKind(name)
+func isSchemaDoc(pkg, name string) bool {
+	return pkg == vocabulary.PackageCore && vocabulary.VocabularyDocumentKind(name)
 }
 
 // Bundles lists the shipped bundles, id-ordered.
@@ -398,7 +459,7 @@ func (c *Catalog) Install(ctx context.Context, actor substrate.Actor, id string,
 	// the bundle, exactly as the core tree's seed is attributed to
 	// `bundle:core`. The catalog is the source; the changelog is the truth, and
 	// nothing on the serving path reads the catalog again.
-	if _, err := inst.InstallBundleClosure(ctx, substrate.BundleActor(b.Authority), b.vocabularyDocs, dataInputs); err != nil {
+	if _, err := inst.InstallBundleClosure(ctx, substrate.BundleActor(b.Authority, b.Package), b.vocabularyDocs, dataInputs); err != nil {
 		return nil, err
 	}
 	return b, nil

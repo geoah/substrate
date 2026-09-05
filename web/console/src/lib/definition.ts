@@ -7,11 +7,18 @@
 import { splitKind } from "@/lib/api/http"
 import { parseEnumValues, type EnumValue, type KindInfo } from "@/lib/api/types"
 
-/** A kind reference split into `{authority, name}`: `people.substrate.reamde.dev/person`
- * → `{authority: "people.substrate.reamde.dev", name: "person"}`; a bare `task` →
- * `{authority: "", name: "task"}`. Re-exported from the addressing layer so a
- * page has one import for the grammar. */
+/** A kind reference split into `{authority, pkg, name}`:
+ * `samples.substrate.reamde.dev/people/person` →
+ * `{authority: "samples.substrate.reamde.dev", pkg: "people", name: "person"}`;
+ * a bare `task` → `{authority: "", pkg: "", name: "task"}`. Re-exported from
+ * the addressing layer so a page has one import for the grammar. */
 export { splitKind }
+
+/** The package IDENTITY a kind lives in, `<authority>/<package>`. Empty for a
+ * repository-local kind, which carries neither. */
+export function kindPackage(k: KindInfo): string {
+  return k.authority ? `${k.authority}/${k.package}` : ""
+}
 
 export interface DeclaredProperty {
   name: string
@@ -172,13 +179,16 @@ export function kindByIdentity(
 export function kindByCollection(
   kinds: KindInfo[],
   authority: string,
+  pkg: string,
   name: string
 ): KindInfo | undefined {
-  return kinds.find((k) => k.authority === authority && k.name === name)
+  return kinds.find(
+    (k) => k.authority === authority && k.package === pkg && k.name === name
+  )
 }
 
 /** Resolve a reference declaration's `kind:` pin. A bare singular (`person`)
- * resolves inside the declaring kind's authority first, then anywhere it is
+ * resolves inside the declaring kind's PACKAGE first, then anywhere it is
  * unambiguous; a full kind reference (with a `/`) resolves directly. */
 export function resolveReferenceTarget(
   kinds: KindInfo[],
@@ -187,31 +197,30 @@ export function resolveReferenceTarget(
 ): KindInfo | undefined {
   if (!to) return undefined
   if (to.includes("/")) return kindByIdentity(kinds, to)
-  const sameAuthority = kinds.find(
-    (k) => k.authority === from.authority && k.name === to
+  const samePackage = kinds.find(
+    (k) =>
+      k.authority === from.authority &&
+      k.package === from.package &&
+      k.name === to
   )
-  if (sameAuthority) return sameAuthority
+  if (samePackage) return samePackage
   const named = kinds.filter((k) => k.name === to)
   return named.length === 1 ? named[0] : undefined
 }
 
 /** The GraphQL type name a kind reference maps to, mirroring the server's
- * `GraphQLName`. A shipped authority's kind is its name PascalCased
- * (`people.substrate.reamde.dev/person` → `Person`); an INSTALLED bundle kind is
- * prefixed with the bundle's name and an underscore
- * (`google.bundles.substrate.reamde.dev/person` → `Google_Person`), because installed
- * kinds share names across bundles and the prefix disambiguates. A bare
- * shorthand name (no authority) PascalCases the same way the server does. */
-export function graphqlTypeName(ref: string): string {
-  const { authority, name } = splitKind(ref)
+ * `GraphQLName`. A SHIPPED kind keeps its bare singular PascalCased
+ * (`substrate.reamde.dev/core/token` → `Token`); an INSTALLED kind is prefixed
+ * with its PACKAGE and an underscore (`samples.substrate.reamde.dev/tasks/task`
+ * → `Tasks_Task`), because installed kinds share names across packages and the
+ * prefix disambiguates. Two authorities installing one package name collide
+ * here, which the server resolves over the whole set (`GraphQLNames`); this
+ * answers the base name alone. */
+export function graphqlTypeName(ref: string, source?: string): string {
+  const { pkg, name } = splitKind(ref)
   const base = pascal(name)
-  if (!authority) return base
-  const labels = authority.split(".")
-  // `<bundle>.bundles.<domain>` — an installed bundle's owned authority.
-  if (labels.length > 1 && labels[1] === "bundles" && labels[0]) {
-    return `${pascal(labels[0])}_${base}`
-  }
-  return base
+  if (!base || source !== "installed") return base
+  return `${pascal(pkg)}_${base}`
 }
 
 function pascal(word: string): string {

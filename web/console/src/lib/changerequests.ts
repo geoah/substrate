@@ -3,7 +3,7 @@
  * target's live values, the drift between the version the accept will CAS
  * against and the target's current one, and the decision patch.
  *
- * Wire facts (kinds/core.substrate.reamde.dev/recordpatchrequest.yaml,
+ * Wire facts (kinds/substrate.reamde.dev/core/recordpatchrequest.yaml,
  * internal/engine/write.go): `op` is create|patch|delete and ABSENT MEANS
  * PATCH (an older request stores no op, so back-compat is by omission);
  * `targetKind`/`targetId` name a create's record, which nothing can point at

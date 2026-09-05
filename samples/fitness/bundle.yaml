@@ -1,0 +1,47 @@
+# Shipped vocabulary ported from mneme v4: training. The exercise
+# catalog, workout templates built from it, workouts on the timeline with
+# their sets, and the log that marks a recurring workout done or skipped.
+#
+# A workout doubles as the planned recurring session (it carries an RRULE)
+# and the session that happened (it carries sets and tracker numbers); the
+# workoutlog is only the done-or-skipped mark against the recurrence.
+#
+# no new actors: writes arrive under the actor of whatever runs.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: samples.substrate.reamde.dev/fitness
+data:
+  authority: samples.substrate.reamde.dev
+  package: fitness
+  # version 2: the settled state vocabulary (decision record 0013). The
+  # workoutlog's `completed` is `done`, the one success word for the
+  # occurrence logs.
+  # version 3: `workout` binds `recurring` and `workoutlog` binds
+  # `occurrencelog`, replacing the copied properties (#122).
+  # version 5: `workoutset`'s float property `weight` is `weightKg` (#125).
+  # version 6: `rdates` lands with the `recurring` trait's move.
+  # version 7: every declared link in this closure is a reference property,
+  # carrying `mustExist: true` and `onDelete: cascade` where the referent
+  # owns the record.
+  version: 7
+---
+# ---- the bundle document: the import unit -----------------------------------
+# A SAMPLE bundle: kinds only, imported from the registry.
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: samples.substrate.reamde.dev/fitness
+data:
+  authority: samples.substrate.reamde.dev
+  package: fitness
+  description: >-
+    Training: the exercise catalog, workout templates, workouts with their
+    sets and tracker numbers, and the done-or-skipped log against a recurring
+    workout.
+  requires:
+    - samples.substrate.reamde.dev/scheduling
+  installs:
+    - samples.substrate.reamde.dev/fitness/exercise
+    - samples.substrate.reamde.dev/fitness/workout
+    - samples.substrate.reamde.dev/fitness/workoutlog
+    - samples.substrate.reamde.dev/fitness/workoutset
+    - samples.substrate.reamde.dev/fitness/workouttemplate

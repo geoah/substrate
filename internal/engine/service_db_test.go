@@ -20,7 +20,7 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
 		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -56,7 +56,7 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 	if len(repos) != 1 || repos[0].Name != "geoah" || repos[0].ID != info.ID {
 		t.Fatalf("repositories = %+v", repos)
 	}
-	self, err := ds.Get(ctx, "core.substrate.reamde.dev/repository", info.ID)
+	self, err := ds.Get(ctx, "substrate.reamde.dev/core/repository", info.ID)
 	if err != nil {
 		t.Fatalf("the repository's own description: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 	}
 	// Type and actor projections are records in every dataset.
 	types, err := ds.List(ctx, substrate.Query{
-		Filter: substrate.Filter{Kinds: []string{"core.substrate.reamde.dev/kind"}}, First: 200,
+		Filter: substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/kind"}}, First: 200,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -75,12 +75,13 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 	if len(types.Records) < 20 {
 		t.Fatalf("type projections = %d", len(types.Records))
 	}
-	msgType, err := ds.Get(ctx, "core.substrate.reamde.dev/kind", "messaging.substrate.reamde.dev/conversationmessage")
+	msgType, err := ds.Get(ctx, "substrate.reamde.dev/core/kind", "samples.substrate.reamde.dev/messaging/conversationmessage")
 	if err != nil {
 		t.Fatalf("type record by identity: %v", err)
 	}
 	names, _ := msgType.Properties["names"].(map[string]any)
-	if names["singular"] != "conversationmessage" || msgType.Properties["source"] != "builtin" {
+	// A sample package INSTALLS: only the seeded core package is builtin.
+	if names["singular"] != "conversationmessage" || msgType.Properties["source"] != "installed" {
 		t.Fatalf("kind projection = %v", msgType.Properties)
 	}
 	// The row's properties ARE the declaration: no blob beside them.
@@ -88,7 +89,7 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 		t.Fatalf("kind projection is not the typed shape: %v", msgType.Properties)
 	}
 	actors, err := ds.List(ctx, substrate.Query{
-		Filter: substrate.Filter{Kinds: []string{"core.substrate.reamde.dev/actor"}}, First: 50,
+		Filter: substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/actor"}}, First: 50,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -99,8 +100,8 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 	if len(actors.Records) != 4 {
 		t.Fatalf("actor projections = %v", ids(actors.Records))
 	}
-	ti, err := ds.KindByRef(ctx, "calendar.substrate.reamde.dev/calendarevent")
-	if err != nil || ti.Identity != "calendar.substrate.reamde.dev/calendarevent" {
+	ti, err := ds.KindByRef(ctx, "samples.substrate.reamde.dev/calendar/calendarevent")
+	if err != nil || ti.Identity != "samples.substrate.reamde.dev/calendar/calendarevent" {
 		t.Fatalf("KindByRef = %+v %v", ti, err)
 	}
 
@@ -144,7 +145,7 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 		t.Fatal("expected an auth error")
 	}
 	// Revoking IS deleting the record, through the ordinary surface.
-	if _, err := ds2.Delete(ctx, owner, "core.substrate.reamde.dev/token", tok.ID); err != nil {
+	if _, err := ds2.Delete(ctx, owner, "substrate.reamde.dev/core/token", tok.ID); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
 	if _, _, err := svc2.Authenticate(ctx, secret); err == nil {
@@ -189,7 +190,7 @@ func TestSchemaRowsStoreNoSourceYAML(t *testing.T) {
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
 		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -204,7 +205,7 @@ func TestSchemaRowsStoreNoSourceYAML(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A builtin projection carries the parsed declaration and no verbatim text.
-	req, err := ds.Get(ctx, "core.substrate.reamde.dev/kind", "core.substrate.reamde.dev/recordpatchrequest")
+	req, err := ds.Get(ctx, "substrate.reamde.dev/core/kind", "substrate.reamde.dev/core/recordpatchrequest")
 	if err != nil {
 		t.Fatalf("kind projection: %v", err)
 	}
@@ -215,19 +216,19 @@ func TestSchemaRowsStoreNoSourceYAML(t *testing.T) {
 		t.Fatalf("builtin projection stores sourceYAML (record 61 removed it): %v", req.Properties["sourceYAML"])
 	}
 
-	// An installed authority's rows store none either.
-	const authority = "srcless.example.substrate.reamde.dev"
+	// An installed pkg's rows store none either.
+	const pkg = "srcless.example.substrate.reamde.dev/srcless"
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(authority, 0),
-		vocabulary.KindManifest(authority,
+		vocabulary.PackageManifest(pkg, 0),
+		vocabulary.KindManifest(pkg,
 			map[string]any{"singular": "widget", "plural": "widgets"},
 			map[string]any{"properties": map[string]any{
 				"label": map[string]any{"type": "string"},
 			}}),
 	}); err != nil {
-		t.Fatalf("install authority: %v", err)
+		t.Fatalf("install pkg: %v", err)
 	}
-	widget := mustGet(t, ds, "core.substrate.reamde.dev/kind", authority+"/widget")
+	widget := mustGet(t, ds, "substrate.reamde.dev/core/kind", pkg+"/widget")
 	if _, has := widget.Properties["sourceYAML"]; has {
 		t.Fatal("installed projection stores sourceYAML (record 61 removed it)")
 	}
@@ -235,15 +236,15 @@ func TestSchemaRowsStoreNoSourceYAML(t *testing.T) {
 	// A generic write smuggling the retired property is REFUSED, not ignored: a
 	// dropped edit is a write that reads as obeyed.
 	_, err = ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/kind", ID: authority + "/widget",
+		Kind: "substrate.reamde.dev/core/kind", ID: pkg + "/widget",
 		Properties: map[string]any{
-			"authority": authority, "names": widget.Properties["names"],
+			"pkg": pkg, "names": widget.Properties["names"],
 			"properties": widget.Properties["properties"],
 			"sourceYAML": "# smuggled bytes",
 		},
 	})
 	wantErr(t, err, substrate.ErrValidation, "retired property")
-	if _, has := mustGet(t, ds, "core.substrate.reamde.dev/kind", authority+"/widget").Properties["sourceYAML"]; has {
+	if _, has := mustGet(t, ds, "substrate.reamde.dev/core/kind", pkg+"/widget").Properties["sourceYAML"]; has {
 		t.Fatal("a write-supplied sourceYAML was stored")
 	}
 }
@@ -262,41 +263,43 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 	// The shelf fixture brings the meta-model members the shipped vocabulary
 	// no longer carries: custom property types and a record mapping.
 	installShelf(t, ds)
-	const shelf = enginetest.ShelfAuthority
+	const shelf = enginetest.ShelfPackage
 
-	authority, err := ds.Get(ctx, "core.substrate.reamde.dev/authority", "people.substrate.reamde.dev")
+	pkg, err := ds.Get(ctx, "substrate.reamde.dev/core/package", "samples.substrate.reamde.dev/people")
 	if err != nil {
-		t.Fatalf("authority projection: %v", err)
+		t.Fatalf("package projection: %v", err)
 	}
-	if authority.Kind != "core.substrate.reamde.dev/authority" {
-		t.Fatalf("authority projection type = %q", authority.Kind)
+	if pkg.Kind != "substrate.reamde.dev/core/package" {
+		t.Fatalf("package projection type = %q", pkg.Kind)
 	}
-	if v, _ := vocabulary.VersionValue(authority.Properties["version"]); v != 3 || authority.Properties["source"] != "builtin" {
-		t.Fatalf("authority projection = %v", authority.Properties)
+	// A sample package INSTALLS: only the seeded core package is builtin.
+	if v, _ := vocabulary.VersionValue(pkg.Properties["version"]); v != 3 || pkg.Properties["source"] != "installed" {
+		t.Fatalf("package projection = %v", pkg.Properties)
 	}
-	// A vocabulary authority declares no actors of its own; core's three are the
+	// A vocabulary package declares no actors of its own; core's four are the
 	// shipped set, connector actors install with their connector.
-	if actors, _ := authority.Properties["actors"].([]any); len(actors) != 0 {
-		t.Fatalf("authority actors = %v", authority.Properties["actors"])
+	if actors, _ := pkg.Properties["actors"].([]any); len(actors) != 0 {
+		t.Fatalf("package actors = %v", pkg.Properties["actors"])
 	}
-	core, err := ds.Get(ctx, "core.substrate.reamde.dev/authority", "core.substrate.reamde.dev")
+	core, err := ds.Get(ctx, "substrate.reamde.dev/core/package", "substrate.reamde.dev/core")
 	if err != nil {
-		t.Fatalf("core authority projection: %v", err)
+		t.Fatalf("core package projection: %v", err)
 	}
 	if actors, _ := core.Properties["actors"].([]any); len(actors) != 4 {
 		t.Fatalf("core actors = %v", core.Properties["actors"])
 	}
 	// No schema row stores verbatim text: the parsed facts are
 	// the row, and the source view re-renders the definition.
-	if _, has := authority.Properties["sourceYAML"]; has {
-		t.Fatalf("authority projection stores sourceYAML (record 61 removed it): %v", authority.Properties)
+	if _, has := pkg.Properties["sourceYAML"]; has {
+		t.Fatalf("package projection stores sourceYAML (record 61 removed it): %v", pkg.Properties)
 	}
 
-	capa, err := ds.Get(ctx, "core.substrate.reamde.dev/trait", "core.substrate.reamde.dev/temporal")
+	capa, err := ds.Get(ctx, "substrate.reamde.dev/core/trait", "substrate.reamde.dev/core/temporal")
 	if err != nil {
 		t.Fatalf("capability projection: %v", err)
 	}
-	if capa.Kind != "core.substrate.reamde.dev/trait" || capa.Properties["authority"] != "core.substrate.reamde.dev" {
+	if capa.Kind != "substrate.reamde.dev/core/trait" ||
+		capa.Properties["authority"] != "substrate.reamde.dev" || capa.Properties["package"] != "core" {
 		t.Fatalf("capability projection = %v", capa.Properties)
 	}
 	if _, has := capa.Properties["sourceYAML"]; has {
@@ -306,11 +309,11 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 		t.Fatalf("the trait's variants are not the declared list: %v", capa.Properties)
 	}
 
-	dt, err := ds.Get(ctx, "core.substrate.reamde.dev/propertytype", shelf+"/asin")
+	dt, err := ds.Get(ctx, "substrate.reamde.dev/core/propertytype", shelf+"/asin")
 	if err != nil {
 		t.Fatalf("datatype projection: %v", err)
 	}
-	if dt.Kind != "core.substrate.reamde.dev/propertytype" || dt.Properties["base"] != "string" {
+	if dt.Kind != "substrate.reamde.dev/core/propertytype" || dt.Properties["base"] != "string" {
 		t.Fatalf("datatype projection = %v", dt.Properties)
 	}
 	if _, has := dt.Properties["sourceYAML"]; has {
@@ -323,13 +326,13 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 	// Mappings mirror like the rest of the meta-model: one
 	// record per loaded mapping, reachable through the ordinary collection
 	// machinery.
-	mp, err := ds.Get(ctx, "core.substrate.reamde.dev/recordmapping", shelf+"/bookeditionwork")
+	mp, err := ds.Get(ctx, "substrate.reamde.dev/core/recordmapping", shelf+"/bookeditionwork")
 	if err != nil {
 		t.Fatalf("mapping projection: %v", err)
 	}
-	if mp.Kind != "core.substrate.reamde.dev/recordmapping" ||
-		refPathValue(mp, "from") != vocabulary.RecordPath("core.substrate.reamde.dev/kind", shelf+"/bookedition") ||
-		refPathValue(mp, "to") != vocabulary.RecordPath("core.substrate.reamde.dev/kind", shelf+"/book") ||
+	if mp.Kind != "substrate.reamde.dev/core/recordmapping" ||
+		refPathValue(mp, "from") != vocabulary.RecordPath("substrate.reamde.dev/core/kind", shelf+"/bookedition") ||
+		refPathValue(mp, "to") != vocabulary.RecordPath("substrate.reamde.dev/core/kind", shelf+"/book") ||
 		mp.Properties["property"] != "work" {
 		t.Fatalf("mapping projection = %v", mp.Properties)
 	}
@@ -339,12 +342,12 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 	if _, has := mp.Properties["sourceYAML"]; has {
 		t.Fatalf("mapping projection carries sourceYAML; records 58/61 removed it")
 	}
-	if ti, err := ds.KindByRef(ctx, "core.substrate.reamde.dev/recordmapping"); err != nil ||
-		ti.Identity != "core.substrate.reamde.dev/recordmapping" {
+	if ti, err := ds.KindByRef(ctx, "substrate.reamde.dev/core/recordmapping"); err != nil ||
+		ti.Identity != "substrate.reamde.dev/core/recordmapping" {
 		t.Fatalf("recordmapping collection = %+v %v", ti, err)
 	}
 	page, err := ds.List(ctx, substrate.Query{
-		Filter: substrate.Filter{Kinds: []string{"core.substrate.reamde.dev/recordmapping"}}, First: 50,
+		Filter: substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/recordmapping"}}, First: 50,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -357,8 +360,8 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 	// write reaches them only through admission: a shapeless put — no
 	// identity, no declaration — is refused, never stored.
 	for _, ty := range []string{
-		"core.substrate.reamde.dev/authority", "core.substrate.reamde.dev/trait",
-		"core.substrate.reamde.dev/propertytype", "core.substrate.reamde.dev/recordmapping",
+		"substrate.reamde.dev/core/package", "substrate.reamde.dev/core/trait",
+		"substrate.reamde.dev/core/propertytype", "substrate.reamde.dev/core/recordmapping",
 	} {
 		if _, err := ds.Put(ctx, owner, substrate.PutInput{
 			Kind: ty, Properties: map[string]any{"name": "evil"},

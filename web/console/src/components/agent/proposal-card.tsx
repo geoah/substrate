@@ -21,7 +21,7 @@ import {
   changeRequestQueryOptions,
   submitDecision,
 } from "@/lib/api/changerequests"
-import { CORE_AUTHORITY } from "@/lib/api/http"
+import { CORE_AUTHORITY, CORE_PACKAGE_NAME } from "@/lib/api/http"
 import { putRecord, recordQueryOptions } from "@/lib/api/records"
 import type { SubstrateRecord } from "@/lib/api/types"
 import {
@@ -35,7 +35,7 @@ import {
   type Verdict,
 } from "@/lib/changerequests"
 import { kindsQueryOptions } from "@/lib/api/kinds"
-import { kindByIdentity, splitKind } from "@/lib/definition"
+import { kindByIdentity } from "@/lib/definition"
 import { cn } from "@/lib/utils"
 
 export function ProposalCard({ id }: { id: string }) {
@@ -53,7 +53,12 @@ export function ProposalCard({ id }: { id: string }) {
   const threadId = threadPath.slice(threadPath.lastIndexOf("/") + 1)
   const gated = typeof request.data?.properties.policy === "string"
   const thread = useQuery({
-    ...recordQueryOptions(CORE_AUTHORITY, "llmthread", threadId),
+    ...recordQueryOptions(
+      CORE_AUTHORITY,
+      CORE_PACKAGE_NAME,
+      "llmthread",
+      threadId
+    ),
     enabled: gated && Boolean(threadId),
   })
   // The card shows WHAT would change, not a link to find out: for a patch,
@@ -71,7 +76,8 @@ export function ProposalCard({ id }: { id: string }) {
       : undefined
   const targetRecord = useQuery({
     ...recordQueryOptions(
-      pendingTarget ? splitKind(pendingTarget.kind).authority : "",
+      targetKindInfo?.authority ?? "",
+      targetKindInfo?.package ?? "",
       targetKindInfo?.name ?? "",
       pendingTarget?.id ?? ""
     ),
@@ -138,12 +144,18 @@ export function ProposalCard({ id }: { id: string }) {
     setSubmitting("accepted")
     setError(null)
     try {
-      await putRecord(CORE_AUTHORITY, "recordpatchpolicy", `allow-${id}`, {
-        properties: remedyRule,
-        annotations: {
-          "owner/provenance": `minted from the gate card of recordpatchrequest ${id}`,
-        },
-      })
+      await putRecord(
+        CORE_AUTHORITY,
+        CORE_PACKAGE_NAME,
+        "recordpatchpolicy",
+        `allow-${id}`,
+        {
+          properties: remedyRule,
+          annotations: {
+            "owner/provenance": `minted from the gate card of recordpatchrequest ${id}`,
+          },
+        }
+      )
       await submitDecision(id, "accepted", record.version)
       await client.invalidateQueries()
       setTimeout(() => void client.invalidateQueries(), 4000)

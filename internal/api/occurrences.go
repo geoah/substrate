@@ -21,8 +21,8 @@ import (
 // entry.
 
 const (
-	traitRecurring     = "scheduling.substrate.reamde.dev/recurring"
-	traitOccurrencelog = "scheduling.substrate.reamde.dev/occurrencelog"
+	traitRecurring     = "samples.substrate.reamde.dev/scheduling/recurring"
+	traitOccurrencelog = "samples.substrate.reamde.dev/scheduling/occurrencelog"
 )
 
 var occurrenceParams = []string{"from", "to", "limit"}

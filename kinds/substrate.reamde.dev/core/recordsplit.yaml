@@ -1,0 +1,28 @@
+# the undo of one merge, likewise performed on creation
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/recordsplit
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    The undo of one merge, performed on creation exactly as the merge was.
+    It names the recordmerge it reverses and reads that merge's recorded moves
+    to put every property back where it came from.
+  names:
+    singular: recordsplit
+  # A random-id row reads as the merge it undoes instead of its opaque id.
+  displayTemplate: "{merge}"
+  properties:
+    result:
+      type: json
+      required: true
+      description: what the split put back where
+    # pinned, not polymorphic: a split undoes exactly one recorded merge, and
+    # that merge's `moved` set is what tells it where each value goes back to.
+    merge:
+      type: reference
+      kind: recordmerge
+      required: true
+      mustExist: true
+      description: the recorded merge this split undoes

@@ -90,9 +90,10 @@ describe("sameValue", () => {
 // ── diff derivation ─────────────────────────────────────────────────────────
 
 const personType: KindInfo = {
-  identity: "people.substrate.reamde.dev/person",
+  identity: "samples.substrate.reamde.dev/people/person",
   name: "person",
-  authority: "people.substrate.reamde.dev",
+  authority: "samples.substrate.reamde.dev",
+  package: "people",
   version: 0,
   plural: "people",
   source: "installed",
@@ -119,7 +120,7 @@ function person(
 ): SubstrateRecord {
   return {
     id,
-    kind: "people.substrate.reamde.dev/person",
+    kind: "samples.substrate.reamde.dev/people/person",
     properties,
     labels: {},
     version: 1,
@@ -139,7 +140,7 @@ function person(
 describe("mergePair", () => {
   const request = (properties: Record<string, unknown>): SubstrateRecord => ({
     id: "mr-1",
-    kind: "core.substrate.reamde.dev/recordmergerequest",
+    kind: "substrate.reamde.dev/core/recordmergerequest",
     properties,
     labels: {},
     version: 1,
@@ -151,13 +152,13 @@ describe("mergePair", () => {
     expect(
       mergePair(
         request({
-          winner: { ref: "people.substrate.reamde.dev/person/w" },
-          loser: { ref: "people.substrate.reamde.dev/person/l" },
+          winner: { ref: "samples.substrate.reamde.dev/people/person/w" },
+          loser: { ref: "samples.substrate.reamde.dev/people/person/l" },
         })
       )
     ).toEqual({
-      winner: { kind: "people.substrate.reamde.dev/person", id: "w" },
-      loser: { kind: "people.substrate.reamde.dev/person", id: "l" },
+      winner: { kind: "samples.substrate.reamde.dev/people/person", id: "w" },
+      loser: { kind: "samples.substrate.reamde.dev/people/person", id: "l" },
     })
   })
 
@@ -230,12 +231,12 @@ describe("deriveDiff", () => {
     // there is nothing left that "moves to the survivor", because a reference
     // at the loser resolves through the former-id trail untouched.
     const winner = person("w", {
-      memberOf: ["people.substrate.reamde.dev/organization/org1"],
+      memberOf: ["samples.substrate.reamde.dev/people/organization/org1"],
     })
     const loser = person("l", {
       memberOf: [
-        "people.substrate.reamde.dev/organization/org1",
-        "people.substrate.reamde.dev/organization/org2",
+        "samples.substrate.reamde.dev/people/organization/org1",
+        "samples.substrate.reamde.dev/people/organization/org2",
       ],
     })
     const rows = deriveDiff(winner, loser, personType)
@@ -252,7 +253,7 @@ describe("deriveDiff", () => {
         name: "A",
         emails: ["a@x.gr"],
         prominence: "known",
-        memberOf: ["people.substrate.reamde.dev/organization/org1"],
+        memberOf: ["samples.substrate.reamde.dev/people/organization/org1"],
       },
       { name: "owner" }
     )
@@ -260,7 +261,7 @@ describe("deriveDiff", () => {
       name: "B",
       emails: ["b@x.gr"],
       prominence: "known",
-      memberOf: ["people.substrate.reamde.dev/organization/org2"],
+      memberOf: ["samples.substrate.reamde.dev/people/organization/org2"],
     })
     const rows = deriveDiff(winner, loser, personType)
     expect(rows.map((r) => r.posture)).toEqual([

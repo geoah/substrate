@@ -1,7 +1,7 @@
 package engine
 
 // The Beeper bundle — the substrate's first NON-OAUTH connector. Proofs, from
-// the shipped closure at ../../kinds/beeper.bundles.substrate.reamde.dev:
+// the shipped closure at ../../kinds/providers.substrate.reamde.dev/beeper:
 //
 //  1. TestBeeperBundleAdmitsSchema — the closure ADMITS through the schema
 //     loader with the non-OAuth shapes intact: the bundle declares one
@@ -56,14 +56,13 @@ import (
 )
 
 const (
-	beeperExampleDir  = "../../kinds/beeper.bundles.substrate.reamde.dev"
-	beeperAuthority   = "beeper.bundles.substrate.reamde.dev"
-	beeperBundleRow   = beeperAuthority + "/beeper"
-	beeperConfigType  = beeperAuthority + "/config"
-	beeperAccountType = beeperAuthority + "/account"
-	beeperRoomType    = beeperAuthority + "/room"
-	beeperMessageType = beeperAuthority + "/message"
-	beeperSyncFn      = beeperAuthority + "/messagessync"
+	beeperExampleDir  = "../../kinds/providers.substrate.reamde.dev/beeper"
+	beeperPackage     = "providers.substrate.reamde.dev/beeper"
+	beeperConfigType  = beeperPackage + "/config"
+	beeperAccountType = beeperPackage + "/account"
+	beeperRoomType    = beeperPackage + "/room"
+	beeperMessageType = beeperPackage + "/message"
+	beeperSyncFn      = beeperPackage + "/messagessync"
 
 	beeperFakeToken = "syt_test_beeper_access_token_1"
 
@@ -88,7 +87,7 @@ func TestBeeperBundleAdmitsSchema(t *testing.T) {
 	// alone) plus the shipped VOCABULARY bundles this repository imported —
 	// what a closure declaring onto people/tasks/messaging/calendar/media
 	// needs present, and what `requires:` names.
-	reg, err := enginetest.SeededRegistry("../../kinds/core.substrate.reamde.dev")
+	reg, err := enginetest.SeededRegistry("../../kinds/substrate.reamde.dev/core")
 	if err != nil {
 		t.Fatalf("build the repository registry: %v", err)
 	}
@@ -100,7 +99,7 @@ func TestBeeperBundleAdmitsSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse bundle.yaml: %v", err)
 	}
-	authorities, err := vocabulary.BuildAuthorities(docs, vocabulary.SourceInstalled)
+	authorities, err := vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
 	if err != nil {
 		t.Fatalf("build the bundle authority: %v", err)
 	}
@@ -111,9 +110,9 @@ func TestBeeperBundleAdmitsSchema(t *testing.T) {
 	// The bundle exists, declares the one `connector` input injected into its
 	// functions, and carries NO oauth2 manifest block — a Matrix access token
 	// is pasted, never exchanged.
-	b, ok := reg.BundleOf(beeperAuthority)
+	b, ok := reg.BundleOf(beeperPackage)
 	if !ok {
-		t.Fatalf("no bundle owns %s after install", beeperAuthority)
+		t.Fatalf("no bundle owns %s after install", beeperPackage)
 	}
 	in, ok := b.Inputs["connector"]
 	if !ok {
@@ -429,7 +428,7 @@ func beeperInstall(t *testing.T, ds *dataset) {
 // stored syncToken.
 func beeperResync(t *testing.T, ds *dataset, accountID string) {
 	t.Helper()
-	actor := substrate.Actor("function.testresync." + beeperAuthority)
+	actor := substrate.Actor("function.testresync." + beeperPackage)
 	if err := ds.inTx(context.Background(), actor, false, func(tx *txn) error {
 		tx.tier = substrate.TierBundle // the dispatch write context
 		_, err := tx.patch(eref{Kind: beeperAccountType, ID: accountID}, substrate.PatchInput{
@@ -487,12 +486,12 @@ func TestBeeperBundleInstallsAndSyncs(t *testing.T) {
 
 	// The bundle row and every schema member landed as its own record.
 	for id, wantType := range map[string]string{
-		beeperBundleRow:   "core.substrate.reamde.dev/bundle",
-		beeperConfigType:  "core.substrate.reamde.dev/kind",
-		beeperAccountType: "core.substrate.reamde.dev/kind",
-		beeperRoomType:    "core.substrate.reamde.dev/kind",
-		beeperMessageType: "core.substrate.reamde.dev/kind",
-		beeperSyncFn:      "core.substrate.reamde.dev/function",
+		beeperPackage:     "substrate.reamde.dev/core/bundle",
+		beeperConfigType:  "substrate.reamde.dev/core/kind",
+		beeperAccountType: "substrate.reamde.dev/core/kind",
+		beeperRoomType:    "substrate.reamde.dev/core/kind",
+		beeperMessageType: "substrate.reamde.dev/core/kind",
+		beeperSyncFn:      "substrate.reamde.dev/core/function",
 	} {
 		row, err := ds.Get(ctx, wantType, id)
 		if err != nil {
@@ -506,7 +505,7 @@ func TestBeeperBundleInstallsAndSyncs(t *testing.T) {
 	// Computed status: installed, enabled, the connector input unresolved
 	// (surfaced as a missing setup item) until a config row exists, one
 	// function.
-	st, err := ds.BundleStatus(ctx, beeperAuthority)
+	st, err := ds.BundleStatus(ctx, beeperPackage)
 	if err != nil {
 		t.Fatalf("bundle status: %v", err)
 	}

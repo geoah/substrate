@@ -84,14 +84,14 @@ export function toolOK(record: SubstrateRecord): boolean {
 
 /** The model-facing name of the `propose` host function: the name a `tools:`
  * entry takes when it aliases nothing (`vocabulary.AgentToolPropose`, the local
- * segment of `core.substrate.reamde.dev/propose`). */
+ * segment of `substrate.reamde.dev/core/propose`). */
 const PROPOSE_TOOL = "propose"
 
 /** The change-request kind, as a `changes` stamp spells it. */
-const REQUEST_KIND = "core.substrate.reamde.dev/recordpatchrequest"
+const REQUEST_KIND = "substrate.reamde.dev/core/recordpatchrequest"
 
 /** The interaction kind — a batch of questions the `ask` built-in landed. */
-const INTERACTION_KIND = "core.substrate.reamde.dev/llminteraction"
+const INTERACTION_KIND = "substrate.reamde.dev/core/llminteraction"
 
 /** The interaction a settled ask landed, from the engine-stamped changes. */
 export function interactionIdOf(call: ToolCallView): string | undefined {

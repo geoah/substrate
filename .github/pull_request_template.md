@@ -22,9 +22,9 @@
 <!-- Tick what applies; ignore the rest. Each of these is a check that fails
      late and confusingly if it is missed. -->
 
-- [ ] **A declaration under `kinds/` changed** — its version is bumped (the
-      kind's own for a one-kind change, the authority's for a closure-wide one
-      or a removal). `mise run kinds:check` is the guard.
+- [ ] **A declaration under `kinds/` or `samples/` changed** — its version is
+      bumped (the kind's own for a one-kind change, the package's for a
+      closure-wide one or a removal). `mise run kinds:check` is the guard.
 - [ ] **A Go wire struct changed** — `wire.golden.json` is regenerated and
       `types.ts` follows it (see [testing](../docs/testing.md#the-wire-drift-guard)).
 - [ ] **The API surface changed** — it is additive, or the break is stated

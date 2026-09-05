@@ -1,0 +1,47 @@
+# The provider rows, as DATA — ordinary records the install PUTs after the
+# closure lands, editable and deletable like anything else.
+#
+# Both ship WITHOUT a key. `apiKey` is secret-typed: it reads back redacted
+# from every API and never appears in a changelog payload, so the only way one
+# arrives is you writing it. Until then an agent naming the row refuses at
+# dispatch, saying which row it wanted.
+kind: substrate.reamde.dev/core/llmprovider
+metadata:
+  id: anthropic
+data:
+  properties:
+    label: anthropic
+    wire: anthropic
+    pricing:
+      - model: claude-opus-5
+        inputPer1M: "5"
+        outputPer1M: "25"
+      - model: claude-sonnet-5
+        inputPer1M: "3"
+        outputPer1M: "15"
+      - model: claude-haiku-4-5
+        inputPer1M: "1"
+        outputPer1M: "5"
+---
+# The openai wire has no endpoint of its own, so this row names one: OpenAI's.
+# Point `baseURL` at anything else that speaks the OpenAI wire (OpenRouter,
+# LiteLLM, Together, Groq, a local Ollama) and the row still works.
+#
+# Adding `embedModel: text-embedding-3-small` here makes this the repository's
+# embeddings provider, which is what turns semantic search on. One row per
+# repository may declare it.
+kind: substrate.reamde.dev/core/llmprovider
+metadata:
+  id: openai
+data:
+  properties:
+    label: openai
+    wire: openai
+    baseURL: https://api.openai.com/v1
+    pricing:
+      - model: gpt-5
+        inputPer1M: "1.25"
+        outputPer1M: "10"
+      - model: gpt-5-mini
+        inputPer1M: "0.25"
+        outputPer1M: "2"

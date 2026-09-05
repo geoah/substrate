@@ -23,7 +23,7 @@ func (a *app) applyCommand() *cobra.Command {
 
 Every document wears the envelope — kind, metadata, data:
 
-  kind: tasks.substrate.reamde.dev/task             # the kind reference; bare for a
+  kind: samples.substrate.reamde.dev/tasks/task             # the kind reference; bare for a
                                          # repository-local kind (kind: task)
   metadata:
     id: t9                               # the record id; omit to create
@@ -34,7 +34,7 @@ Every document wears the envelope — kind, metadata, data:
       name: Send rack layout to Alex
       dueAt: 2026-08-08T00:00:00Z
       detail: "rack layout"
-      source: calendar.substrate.reamde.dev/transcript/f81k
+      source: samples.substrate.reamde.dev/calendar/transcript/f81k
 
 A qualified kind resolves outright; a bare one resolves against the kind
 registry, and a name several authorities declare (every bundle installs a
@@ -149,7 +149,7 @@ func (a *app) readDocuments(files []string) ([]*document, []map[string]any, erro
 }
 
 // isSchemaDocument recognizes a schema manifest by its envelope: a record of
-// one of the nine core meta-kinds.
+// one of the core meta-kinds.
 func isSchemaDocument(node *yaml.Node) bool {
 	var probe struct {
 		Kind string `yaml:"kind"`
@@ -157,8 +157,8 @@ func isSchemaDocument(node *yaml.Node) bool {
 	if err := node.Decode(&probe); err != nil {
 		return false
 	}
-	authority, name := vocabulary.SplitKindRef(probe.Kind)
-	return authority == vocabulary.AuthorityCore && vocabulary.VocabularyDocumentKind(name)
+	return vocabulary.KindPackage(probe.Kind) == vocabulary.PackageCore &&
+		vocabulary.VocabularyDocumentKind(vocabulary.KindName(probe.Kind))
 }
 
 // applySchemaDocuments sends one schema batch and prints what landed.
@@ -195,7 +195,7 @@ func (a *app) applyDocument(ctx context.Context, cl *client, d *document) error 
 	var prior *substrate.Record
 	if id != "" {
 		in.ID = id
-		prior, _, err = cl.get(ctx, col.Authority, col.Name, id)
+		prior, _, err = cl.get(ctx, col.pkg(), col.Name, id)
 		if err != nil {
 			var ae *apiError
 			if !errors.As(err, &ae) || ae.Status != 404 {
@@ -204,7 +204,7 @@ func (a *app) applyDocument(ctx context.Context, cl *client, d *document) error 
 			prior = nil
 		}
 	}
-	e, err := cl.put(ctx, col.Authority, col.Name, id, in)
+	e, err := cl.put(ctx, col.pkg(), col.Name, id, in)
 	if err != nil {
 		return err
 	}

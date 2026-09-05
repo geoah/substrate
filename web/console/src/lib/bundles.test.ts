@@ -1,7 +1,7 @@
 /** The bundles page folds two reads — the installed bundles' runtime status
  * and the shipped catalog — into one id-keyed row set. Installed wins the
  * counts, available closures surface first (they invite an action), and a
- * bundle present in both carries both. The Integrations and Vocabulary facets
+ * bundle present in both carries both. The Integrations and Examples facets
  * come from the backend flags; the provider-copy gate reads the bundle's own
  * declared traits. The requirement fold answers the one question the reader has
  * before importing into a fresh (core-only) repository: is anything this
@@ -22,7 +22,7 @@ import {
   mergeBundles,
   missingRequirements,
   oauthConnectBlocked,
-  presentAuthorities,
+  presentPackages,
   requirementsOf,
   requiresHint,
   upgradableBundleCount,
@@ -32,15 +32,16 @@ import {
 
 function status(over: Partial<BundleStatus> = {}): BundleStatus {
   return {
-    id: "google.bundles.substrate.reamde.dev",
+    id: "providers.substrate.reamde.dev/google",
     name: "google",
-    authority: "google.bundles.substrate.reamde.dev",
+    authority: "providers.substrate.reamde.dev",
+    package: "google",
     installed: true,
     enabled: true,
     inputs: [
       {
         name: "client",
-        kind: "google.bundles.substrate.reamde.dev/config",
+        kind: "providers.substrate.reamde.dev/google/config",
         record: "default",
         via: "default",
       },
@@ -55,13 +56,14 @@ function status(over: Partial<BundleStatus> = {}): BundleStatus {
 
 function catalog(over: Partial<CatalogItem> = {}): CatalogItem {
   return {
-    id: "google.bundles.substrate.reamde.dev",
+    id: "providers.substrate.reamde.dev/google",
     name: "google",
-    authority: "google.bundles.substrate.reamde.dev",
+    authority: "providers.substrate.reamde.dev",
+    package: "google",
     description: "Connects a Google account.",
     version: 1,
     inputs: {
-      client: { kind: "google.bundles.substrate.reamde.dev/config" },
+      client: { kind: "providers.substrate.reamde.dev/google/config" },
     },
     closure: { kinds: ["a", "b"], functions: ["c"] },
     installed: false,
@@ -72,9 +74,10 @@ function catalog(over: Partial<CatalogItem> = {}): CatalogItem {
 
 function kindInfo(over: Partial<KindInfo> = {}): KindInfo {
   return {
-    identity: "people.substrate.reamde.dev/person",
+    identity: "samples.substrate.reamde.dev/people/person",
     name: "person",
-    authority: "people.substrate.reamde.dev",
+    authority: "samples.substrate.reamde.dev",
+    package: "people",
     version: 0,
     plural: "persons",
     source: "builtin",
@@ -89,24 +92,25 @@ describe("mergeBundles", () => {
     expect(rows[0].status?.liveRecords).toBe(42)
     expect(rows[0].catalog?.description).toBe("Connects a Google account.")
     expect(rows[0].installed).toBe(true)
-    expect(rows[0].authority).toBe("google.bundles.substrate.reamde.dev")
+    expect(rows[0].authority).toBe("providers.substrate.reamde.dev")
+    expect(rows[0].package).toBe("google")
   })
 
   it("keeps available closures and installed-not-in-catalog bundles both", () => {
     const rows = mergeBundles(
-      [status({ id: "custom.bundles.substrate.reamde.dev", name: "custom" })],
-      [catalog({ id: "slack.bundles.substrate.reamde.dev", name: "slack" })]
+      [status({ id: "custom.example.com/custom", name: "custom" })],
+      [catalog({ id: "slack.example.com/slack", name: "slack" })]
     )
     const byId = Object.fromEntries(rows.map((r) => [r.id, r]))
-    expect(byId["custom.bundles.substrate.reamde.dev"].installed).toBe(true)
-    expect(byId["slack.bundles.substrate.reamde.dev"].installed).toBe(false)
-    expect(byId["slack.bundles.substrate.reamde.dev"].status).toBeUndefined()
+    expect(byId["custom.example.com/custom"].installed).toBe(true)
+    expect(byId["slack.example.com/slack"].installed).toBe(false)
+    expect(byId["slack.example.com/slack"].status).toBeUndefined()
   })
 
   it("orders available before installed", () => {
     const rows = mergeBundles(
-      [status({ id: "b.bundles.substrate.reamde.dev" })],
-      [catalog({ id: "a.bundles.substrate.reamde.dev", installed: false })]
+      [status({ id: "b.example.com/b" })],
+      [catalog({ id: "a.example.com/a", installed: false })]
     )
     expect(rows.map((r) => r.installed)).toEqual([false, true])
   })
@@ -116,28 +120,25 @@ describe("mergeBundles", () => {
       [],
       [
         catalog({
-          id: "google.bundles.substrate.reamde.dev",
+          id: "providers.substrate.reamde.dev/google",
           integration: true,
         }),
         catalog({
-          id: "urlharvester.bundles.substrate.reamde.dev",
+          id: "urlharvester.example.com/urlharvester",
           name: "urlharvester",
           integration: false,
         }),
       ]
     )
     const byId = Object.fromEntries(rows.map((r) => [r.id, r]))
-    expect(byId["google.bundles.substrate.reamde.dev"].integration).toBe(true)
-    expect(byId["urlharvester.bundles.substrate.reamde.dev"].integration).toBe(
+    expect(byId["providers.substrate.reamde.dev/google"].integration).toBe(true)
+    expect(byId["urlharvester.example.com/urlharvester"].integration).toBe(
       false
     )
   })
 
   it("an installed-only bundle (no catalog entry) is non-integration", () => {
-    const rows = mergeBundles(
-      [status({ id: "x.bundles.substrate.reamde.dev" })],
-      []
-    )
+    const rows = mergeBundles([status({ id: "x.example.com/x" })], [])
     expect(rows[0].integration).toBe(false)
   })
 
@@ -151,32 +152,30 @@ describe("mergeBundles", () => {
 })
 
 describe("mergeBundles — the closure facets", () => {
-  it("carries the vocabulary flag and the requires list off the catalog entry", () => {
+  it("carries the requires list off the catalog entry", () => {
     const rows = mergeBundles(
       [],
       [
         catalog({
-          id: "people.substrate.reamde.dev/people",
+          id: "samples.substrate.reamde.dev/people",
           name: "people",
-          authority: "people.substrate.reamde.dev",
+          authority: "samples.substrate.reamde.dev",
+          package: "people",
           integration: false,
-          vocabulary: true,
         }),
         catalog({
           requires: [
-            "people.substrate.reamde.dev",
-            "messaging.substrate.reamde.dev",
+            "samples.substrate.reamde.dev/people",
+            "samples.substrate.reamde.dev/messaging",
           ],
         }),
       ]
     )
     const byId = Object.fromEntries(rows.map((r) => [r.id, r]))
-    expect(byId["people.substrate.reamde.dev/people"].vocabulary).toBe(true)
-    expect(byId["people.substrate.reamde.dev/people"].requires).toEqual([])
-    expect(byId["google.bundles.substrate.reamde.dev"].vocabulary).toBe(false)
-    expect(byId["google.bundles.substrate.reamde.dev"].requires).toEqual([
-      "people.substrate.reamde.dev",
-      "messaging.substrate.reamde.dev",
+    expect(byId["samples.substrate.reamde.dev/people"].requires).toEqual([])
+    expect(byId["providers.substrate.reamde.dev/google"].requires).toEqual([
+      "samples.substrate.reamde.dev/people",
+      "samples.substrate.reamde.dev/messaging",
     ])
   })
 
@@ -184,30 +183,29 @@ describe("mergeBundles — the closure facets", () => {
     const rows = mergeBundles(
       [
         status({
-          id: "people.substrate.reamde.dev/people",
-          authority: "people.substrate.reamde.dev",
+          id: "samples.substrate.reamde.dev/people",
+          authority: "samples.substrate.reamde.dev",
+          package: "people",
         }),
       ],
       [
         catalog({
-          id: "people.substrate.reamde.dev/people",
-          authority: "people.substrate.reamde.dev",
-          vocabulary: true,
-          requires: ["core.substrate.reamde.dev"],
+          id: "samples.substrate.reamde.dev/people",
+          authority: "samples.substrate.reamde.dev",
+          package: "people",
+          integration: true,
+          requires: ["substrate.reamde.dev/core"],
           installed: true,
         }),
       ]
     )
-    expect(rows[0].vocabulary).toBe(true)
-    expect(rows[0].requires).toEqual(["core.substrate.reamde.dev"])
+    expect(rows[0].integration).toBe(true)
+    expect(rows[0].requires).toEqual(["substrate.reamde.dev/core"])
   })
 
-  it("an applied-only bundle claims neither facet — the catalog states them, nothing derives them", () => {
-    const rows = mergeBundles(
-      [status({ id: "x.bundles.substrate.reamde.dev" })],
-      []
-    )
-    expect(rows[0].vocabulary).toBe(false)
+  it("an applied-only bundle claims no facet — the catalog states them, nothing derives them", () => {
+    const rows = mergeBundles([status({ id: "x.example.com/x" })], [])
+    expect(rows[0].integration).toBe(false)
     expect(rows[0].requires).toEqual([])
   })
 })
@@ -216,18 +214,21 @@ describe("filterBundles", () => {
   const rows = mergeBundles(
     [],
     [
-      catalog({ id: "google.bundles.substrate.reamde.dev", integration: true }),
       catalog({
-        id: "urlharvester.bundles.substrate.reamde.dev",
+        id: "providers.substrate.reamde.dev/google",
+        integration: true,
+      }),
+      catalog({
+        id: "urlharvester.example.com/urlharvester",
         name: "urlharvester",
         integration: false,
       }),
       catalog({
-        id: "people.substrate.reamde.dev/people",
+        id: "samples.substrate.reamde.dev/people",
         name: "people",
-        authority: "people.substrate.reamde.dev",
+        authority: "samples.substrate.reamde.dev",
+        package: "people",
         integration: false,
-        vocabulary: true,
       }),
     ]
   )
@@ -239,14 +240,7 @@ describe("filterBundles", () => {
   it("integrations narrows to the integration rows", () => {
     const only = filterBundles(rows, "integrations")
     expect(only.map((r) => r.id)).toEqual([
-      "google.bundles.substrate.reamde.dev",
-    ])
-  })
-
-  it("vocabulary narrows to the pure-vocabulary bundles", () => {
-    const only = filterBundles(rows, "vocabulary")
-    expect(only.map((r) => r.id)).toEqual([
-      "people.substrate.reamde.dev/people",
+      "providers.substrate.reamde.dev/google",
     ])
   })
 
@@ -255,12 +249,12 @@ describe("filterBundles", () => {
       [],
       [
         catalog({
-          id: "a.bundles.substrate.reamde.dev/a",
+          id: "a.example.com/a",
           name: "a",
           installed: true,
         }),
         catalog({
-          id: "b.bundles.substrate.reamde.dev/b",
+          id: "b.example.com/b",
           name: "b",
           installed: true,
           upgrade: { available: true, from: 1, to: 2 },
@@ -268,7 +262,7 @@ describe("filterBundles", () => {
       ]
     )
     expect(filterBundles(moved, "upgrades").map((r) => r.id)).toEqual([
-      "b.bundles.substrate.reamde.dev/b",
+      "b.example.com/b",
     ])
   })
 })
@@ -326,75 +320,78 @@ describe("presentAuthorities — what this repository already holds", () => {
     const rows = mergeBundles(
       [
         status({
-          id: "people.substrate.reamde.dev/people",
-          authority: "people.substrate.reamde.dev",
+          id: "samples.substrate.reamde.dev/people",
+          authority: "samples.substrate.reamde.dev",
+          package: "people",
         }),
       ],
       [
         catalog({
-          id: "people.substrate.reamde.dev/people",
-          authority: "people.substrate.reamde.dev",
+          id: "samples.substrate.reamde.dev/people",
+          authority: "samples.substrate.reamde.dev",
+          package: "people",
           installed: true,
-          vocabulary: true,
         }),
         catalog({
-          id: "google.bundles.substrate.reamde.dev",
+          id: "providers.substrate.reamde.dev/google",
           installed: false,
         }),
       ]
     )
-    const present = presentAuthorities(rows, [
+    const present = presentPackages(rows, [
       kindInfo({
-        identity: "core.substrate.reamde.dev/bundle",
-        authority: "core.substrate.reamde.dev",
+        identity: "substrate.reamde.dev/core/bundle",
+        authority: "substrate.reamde.dev",
+        package: "core",
       }),
     ])
-    expect(present.has("people.substrate.reamde.dev")).toBe(true)
-    expect(present.has("core.substrate.reamde.dev")).toBe(true)
+    expect(present.has("samples.substrate.reamde.dev/people")).toBe(true)
+    expect(present.has("substrate.reamde.dev/core")).toBe(true)
     // Shipped in the catalog but never imported — the schema is not there.
-    expect(present.has("google.bundles.substrate.reamde.dev")).toBe(false)
+    expect(present.has("providers.substrate.reamde.dev/google")).toBe(false)
   })
 
-  it("does not count an uninstalled or quarantined bundle's authority", () => {
+  it("does not count an uninstalled or quarantined bundle's package", () => {
     const rows = mergeBundles(
       [
         status({
-          id: "people.substrate.reamde.dev/people",
-          authority: "people.substrate.reamde.dev",
+          id: "samples.substrate.reamde.dev/people",
+          authority: "samples.substrate.reamde.dev",
+          package: "people",
           installed: false,
           enabled: false,
         }),
       ],
       []
     )
-    expect(presentAuthorities(rows).has("people.substrate.reamde.dev")).toBe(
-      false
-    )
+    expect(
+      presentPackages(rows).has("samples.substrate.reamde.dev/people")
+    ).toBe(false)
   })
 })
 
 describe("requirementsOf / requiresHint — what to import first", () => {
   const present = new Set([
-    "people.substrate.reamde.dev",
-    "core.substrate.reamde.dev",
+    "samples.substrate.reamde.dev/people",
+    "substrate.reamde.dev/core",
   ])
 
-  it("marks each declared authority present or missing, in declaration order", () => {
+  it("marks each declared package present or missing, in declaration order", () => {
     const reqs = requirementsOf(
       {
         requires: [
-          "people.substrate.reamde.dev",
-          "messaging.substrate.reamde.dev",
+          "samples.substrate.reamde.dev/people",
+          "samples.substrate.reamde.dev/messaging",
         ],
       },
       present
     )
     expect(reqs).toEqual([
-      { authority: "people.substrate.reamde.dev", present: true },
-      { authority: "messaging.substrate.reamde.dev", present: false },
+      { package: "samples.substrate.reamde.dev/people", present: true },
+      { package: "samples.substrate.reamde.dev/messaging", present: false },
     ])
-    expect(missingRequirements(reqs).map((r) => r.authority)).toEqual([
-      "messaging.substrate.reamde.dev",
+    expect(missingRequirements(reqs).map((r) => r.package)).toEqual([
+      "samples.substrate.reamde.dev/messaging",
     ])
   })
 
@@ -403,15 +400,18 @@ describe("requirementsOf / requiresHint — what to import first", () => {
     expect(requiresHint([])).toBe("")
   })
 
-  it("names one missing authority, then several, the way the server names them", () => {
+  it("names one missing package, then several, the way the server names them", () => {
     expect(
       requiresHint(
         missingRequirements(
-          requirementsOf({ requires: ["tasks.substrate.reamde.dev"] }, present)
+          requirementsOf(
+            { requires: ["samples.substrate.reamde.dev/tasks"] },
+            present
+          )
         )
       )
     ).toBe(
-      "Import tasks.substrate.reamde.dev first — this bundle declares against it."
+      "Import samples.substrate.reamde.dev/tasks first — this bundle declares against it."
     )
     expect(
       requiresHint(
@@ -419,9 +419,9 @@ describe("requirementsOf / requiresHint — what to import first", () => {
           requirementsOf(
             {
               requires: [
-                "people.substrate.reamde.dev",
-                "messaging.substrate.reamde.dev",
-                "calendar.substrate.reamde.dev",
+                "samples.substrate.reamde.dev/people",
+                "samples.substrate.reamde.dev/messaging",
+                "samples.substrate.reamde.dev/calendar",
               ],
             },
             present
@@ -429,7 +429,7 @@ describe("requirementsOf / requiresHint — what to import first", () => {
         )
       )
     ).toBe(
-      "Import messaging.substrate.reamde.dev and calendar.substrate.reamde.dev first — this bundle declares against them."
+      "Import samples.substrate.reamde.dev/messaging and samples.substrate.reamde.dev/calendar first — this bundle declares against them."
     )
   })
 })
@@ -438,14 +438,14 @@ describe("importFailureText — the server's refusal, verbatim", () => {
   it("shows the admission problems, which name what to import first", () => {
     const error = new ApiError(
       "validation",
-      "validation error: [bundle google.bundles.substrate.reamde.dev: …]",
+      "validation error: [bundle providers.substrate.reamde.dev/google: …]",
       422,
       [
-        "bundle google.bundles.substrate.reamde.dev: data.requires names people.substrate.reamde.dev, which this repository does not have — import that authority's bundle first",
+        "bundle providers.substrate.reamde.dev/google: data.requires names samples.substrate.reamde.dev/people, which this repository does not have — import that authority's bundle first",
       ]
     )
     expect(importFailureText(error)).toBe(
-      "bundle google.bundles.substrate.reamde.dev: data.requires names people.substrate.reamde.dev, which this repository does not have — import that authority's bundle first"
+      "bundle providers.substrate.reamde.dev/google: data.requires names samples.substrate.reamde.dev/people, which this repository does not have — import that authority's bundle first"
     )
   })
 
@@ -468,23 +468,26 @@ describe("importFailureText — the server's refusal, verbatim", () => {
 
 describe("installedKindRows — the Kinds table", () => {
   const configKind = kindInfo({
-    identity: "google.bundles.substrate.reamde.dev/config",
+    identity: "providers.substrate.reamde.dev/google/config",
     name: "config",
-    authority: "google.bundles.substrate.reamde.dev",
+    authority: "providers.substrate.reamde.dev",
+    package: "google",
     plural: "configs",
     definition: { traits: ["oauth2"] },
   })
   const accountKind = kindInfo({
-    identity: "google.bundles.substrate.reamde.dev/account",
+    identity: "providers.substrate.reamde.dev/google/account",
     name: "account",
-    authority: "google.bundles.substrate.reamde.dev",
+    authority: "providers.substrate.reamde.dev",
+    package: "google",
     plural: "accounts",
     definition: { traits: ["accountconfig"] },
   })
   const contactKind = kindInfo({
-    identity: "google.bundles.substrate.reamde.dev/contact",
+    identity: "providers.substrate.reamde.dev/google/contact",
     name: "contact",
-    authority: "google.bundles.substrate.reamde.dev",
+    authority: "providers.substrate.reamde.dev",
+    package: "google",
     plural: "contacts",
   })
   const registry = [configKind, accountKind, contactKind]
@@ -503,7 +506,8 @@ describe("installedKindRows — the Kinds table", () => {
       contactKind.identity,
     ])
     const contact = rows.find((r) => r.identity === contactKind.identity)!
-    expect(contact.authority).toBe("google.bundles.substrate.reamde.dev")
+    expect(contact.authority).toBe("providers.substrate.reamde.dev")
+    expect(contact.package).toBe("google")
     expect(contact.name).toBe("contact")
   })
 
@@ -523,7 +527,7 @@ describe("installedKindRows — the Kinds table", () => {
 
   it("marks an input's kind from the catalog declaration alone (not yet imported)", () => {
     const rows = installedKindRows(
-      { authority: "google.bundles.substrate.reamde.dev", inputs: undefined },
+      { id: "providers.substrate.reamde.dev/google", inputs: undefined },
       registry,
       catalog({ closure: { kinds: registry.map((k) => k.identity) } })
     )
@@ -531,7 +535,7 @@ describe("installedKindRows — the Kinds table", () => {
     expect(byId[configKind.identity].role).toBe("input")
   })
 
-  it("falls back to the registry's owned-authority kinds when there is no catalog entry", () => {
+  it("falls back to the registry's owned-package kinds when there is no catalog entry", () => {
     const rows = installedKindRows(status(), registry, undefined)
     expect(rows.map((r) => r.identity).sort()).toEqual(
       registry.map((k) => k.identity).sort()
@@ -571,7 +575,7 @@ describe("installedKindRows — the Kinds table", () => {
       status(),
       registry,
       catalog({
-        closure: { kinds: ["google.bundles.substrate.reamde.dev/ghost"] },
+        closure: { kinds: ["providers.substrate.reamde.dev/google/ghost"] },
       })
     )
     expect(rows).toHaveLength(1)
@@ -585,21 +589,21 @@ describe("bundleRecordRows — the Records table", () => {
     const rows = bundleRecordRows(
       catalog({
         closure: {
-          kinds: ["google.bundles.substrate.reamde.dev/t"],
-          functions: ["google.bundles.substrate.reamde.dev/syncgoogle"],
-          agents: ["google.bundles.substrate.reamde.dev/summarize"],
+          kinds: ["providers.substrate.reamde.dev/google/t"],
+          functions: ["providers.substrate.reamde.dev/google/syncgoogle"],
+          agents: ["providers.substrate.reamde.dev/google/summarize"],
         },
       })
     )
     expect(rows).toEqual([
       {
-        kind: "core.substrate.reamde.dev/function",
-        id: "google.bundles.substrate.reamde.dev/syncgoogle",
+        kind: "substrate.reamde.dev/core/function",
+        id: "providers.substrate.reamde.dev/google/syncgoogle",
         name: "syncgoogle",
       },
       {
-        kind: "core.substrate.reamde.dev/agent",
-        id: "google.bundles.substrate.reamde.dev/summarize",
+        kind: "substrate.reamde.dev/core/agent",
+        id: "providers.substrate.reamde.dev/google/summarize",
         name: "summarize",
       },
     ])
@@ -614,20 +618,20 @@ describe("bundleRecordRows — the Records table", () => {
         closure: {
           kinds: [],
           records: [
-            { kind: "core.substrate.reamde.dev/trigger", id: "ongooglesync" },
-            { kind: "core.substrate.reamde.dev/llmprovider", id: "anthropic" },
+            { kind: "substrate.reamde.dev/core/trigger", id: "ongooglesync" },
+            { kind: "substrate.reamde.dev/core/llmprovider", id: "anthropic" },
           ],
         },
       })
     )
     expect(rows).toEqual([
       {
-        kind: "core.substrate.reamde.dev/trigger",
+        kind: "substrate.reamde.dev/core/trigger",
         id: "ongooglesync",
         name: "ongooglesync",
       },
       {
-        kind: "core.substrate.reamde.dev/llmprovider",
+        kind: "substrate.reamde.dev/core/llmprovider",
         id: "anthropic",
         name: "anthropic",
       },
@@ -639,14 +643,14 @@ describe("bundleRecordRows — the Records table", () => {
       catalog({
         closure: {
           kinds: [],
-          mappings: ["google.bundles.substrate.reamde.dev/m"],
+          mappings: ["providers.substrate.reamde.dev/google/m"],
         },
       })
     )
     expect(withMappings).toEqual([
       {
-        kind: "core.substrate.reamde.dev/recordmapping",
-        id: "google.bundles.substrate.reamde.dev/m",
+        kind: "substrate.reamde.dev/core/recordmapping",
+        id: "providers.substrate.reamde.dev/google/m",
         name: "m",
       },
     ])
@@ -660,27 +664,29 @@ describe("bundleRecordRows — the Records table", () => {
 
 describe("declaresProviderInterfaces", () => {
   const accountKind = kindInfo({
-    identity: "google.bundles.substrate.reamde.dev/account",
+    identity: "providers.substrate.reamde.dev/google/account",
     name: "account",
-    authority: "google.bundles.substrate.reamde.dev",
+    authority: "providers.substrate.reamde.dev",
+    package: "google",
     plural: "accounts",
     definition: { traits: ["accountconfig"] },
   })
   const clientKind = kindInfo({
-    identity: "google.bundles.substrate.reamde.dev/config",
+    identity: "providers.substrate.reamde.dev/google/config",
     name: "config",
-    authority: "google.bundles.substrate.reamde.dev",
+    authority: "providers.substrate.reamde.dev",
+    package: "google",
     plural: "configs",
     definition: { traits: ["oauth2"] },
   })
 
-  it("is true when the bundle authority ships an accountconfig account kind", () => {
+  it("is true when the bundle package ships an accountconfig account kind", () => {
     expect(
-      accountKindOf([accountKind], "google.bundles.substrate.reamde.dev")
+      accountKindOf([accountKind], "providers.substrate.reamde.dev/google")
     ).toBe(accountKind)
     expect(
       declaresProviderInterfaces(
-        { authority: "google.bundles.substrate.reamde.dev", inputs: [] },
+        { id: "providers.substrate.reamde.dev/google", inputs: [] },
         [accountKind]
       )
     ).toBe(true)
@@ -690,11 +696,11 @@ describe("declaresProviderInterfaces", () => {
     expect(
       declaresProviderInterfaces(
         {
-          authority: "google.bundles.substrate.reamde.dev",
+          id: "providers.substrate.reamde.dev/google",
           inputs: [
             {
               name: "client",
-              kind: "google.bundles.substrate.reamde.dev/config",
+              kind: "providers.substrate.reamde.dev/google/config",
             },
           ],
         },
@@ -705,19 +711,20 @@ describe("declaresProviderInterfaces", () => {
 
   it("is false for a non-provider bundle (no account kind, no oauth2 input)", () => {
     const connectorKind = kindInfo({
-      identity: "web.bundles.substrate.reamde.dev/config",
+      identity: "samples.substrate.reamde.dev/web/config",
       name: "config",
-      authority: "web.bundles.substrate.reamde.dev",
+      authority: "samples.substrate.reamde.dev",
+      package: "web",
       plural: "configs",
     })
     expect(
       declaresProviderInterfaces(
         {
-          authority: "web.bundles.substrate.reamde.dev",
+          id: "samples.substrate.reamde.dev/web",
           inputs: [
             {
               name: "connector",
-              kind: "web.bundles.substrate.reamde.dev/config",
+              kind: "samples.substrate.reamde.dev/web/config",
             },
           ],
         },
@@ -729,14 +736,15 @@ describe("declaresProviderInterfaces", () => {
 
 describe("oauthConnectBlocked, the connect gate", () => {
   const clientKind = kindInfo({
-    identity: "google.bundles.substrate.reamde.dev/config",
+    identity: "providers.substrate.reamde.dev/google/config",
     name: "config",
-    authority: "google.bundles.substrate.reamde.dev",
+    authority: "providers.substrate.reamde.dev",
+    package: "google",
     plural: "configs",
     definition: { traits: ["oauth2"] },
   })
   const inputs = [
-    { name: "client", kind: "google.bundles.substrate.reamde.dev/config" },
+    { name: "client", kind: "providers.substrate.reamde.dev/google/config" },
   ]
 
   it("does not block while nothing stands", () => {
@@ -774,7 +782,10 @@ describe("oauthConnectBlocked, the connect gate", () => {
   it("does not block on an unrelated input's step or a provider step", () => {
     const both = [
       ...inputs,
-      { name: "connector", kind: "google.bundles.substrate.reamde.dev/other" },
+      {
+        name: "connector",
+        kind: "providers.substrate.reamde.dev/google/other",
+      },
     ]
     expect(
       oauthConnectBlocked(

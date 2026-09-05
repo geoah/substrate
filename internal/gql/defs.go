@@ -173,8 +173,8 @@ func linkProperties(pd map[string]any) []string {
 // property), so the name never depends on which OTHER kinds are in the
 // registry, and it is reserved against kind names for the same reason every
 // structural name is.
-func referenceObjectName(t substrate.KindInfo, prop string) string {
-	return graphqlTypeName(t) + titleCase(prop) + "Reference"
+func (b *schemaBuilder) referenceObjectName(t substrate.KindInfo, prop string) string {
+	return b.typeName(t) + titleCase(prop) + "Reference"
 }
 
 // referenceType is a reference property's output type: ALWAYS a generated
@@ -193,7 +193,7 @@ func referenceObjectName(t substrate.KindInfo, prop string) string {
 // before it gets here, and keying by name would have handed the second pair the
 // first one's fields instead.
 func (b *schemaBuilder) referenceType(t substrate.KindInfo, prop string, pd map[string]any) graphql.Output {
-	name := referenceObjectName(t, prop)
+	name := b.referenceObjectName(t, prop)
 	owner := t.Identity + "." + prop
 	if obj, built := b.refObjects[owner]; built {
 		return obj

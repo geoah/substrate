@@ -54,8 +54,12 @@ function AuthorityCard({ nav, armed }: { nav: AuthorityNav; armed: boolean }) {
             return (
               <span key={k.identity} className="contents">
                 <Link
-                  to="/data/$authority/$name"
-                  params={{ authority: k.authority, name: k.name }}
+                  to="/data/$authority/$pkg/$name"
+                  params={{
+                    authority: k.authority,
+                    pkg: k.package,
+                    name: k.name,
+                  }}
                   className="truncate data text-xs underline-offset-4 hover:underline"
                 >
                   {k.name}

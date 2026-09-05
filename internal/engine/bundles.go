@@ -2,7 +2,7 @@ package engine
 
 // The bundle lifecycle (substrate-primitives §4, ticket 034): a bundle
 // installs as one atomic schema apply of its whole closure (schemawrite.go
-// replaces the owned authority whenever a batch carries a bundle document). Three
+// replaces the owned package whenever a batch carries a bundle document). Three
 // verbs act on it afterwards:
 //
 //   - `disable` — execution stops, fully reversible: its triggers stop
@@ -11,10 +11,10 @@ package engine
 //     the DATA both stay — its types keep appearing in `types` and their rows
 //     stay readable and writable. Recorded as `disabled: true` on the bundle
 //     row; `enable` clears it and the backlog delivers.
-//   - `uninstall` — the bundle goes: the owned authority's SCHEMA rows (the
+//   - `uninstall` — the bundle goes: the owned package's SCHEMA rows (the
 //     bundle row, its record types, functions, agents, actors, traits,
 //     property types and mappings) are torn down through the SAME schema-write
-//     admission an apply uses (a whole-authority replace with an empty incoming
+//     admission an apply uses (a whole-package replace with an empty incoming
 //     set), and the wiring — every trigger referencing the authority's callables —
 //     goes with them in the same transaction. The registry rebuild then drops
 //     the authority: its types stop appearing in `types`, its callables stop
@@ -68,10 +68,11 @@ type bundleState struct {
 func (s bundleState) blocked() bool { return s.Disabled }
 
 // bundleStates reads every bundle row's lifecycle in one query, keyed by the
-// owned authority (= the row id). Authorities without a row read as the zero state.
+// owned PACKAGE identity, which is the row id (record 0047). A package without
+// a row reads as the zero state.
 func (ds *dataset) bundleStates(ctx context.Context) (map[string]bundleState, error) {
 	rows, err := ds.db.QueryContext(ctx, `
-		SELECT COALESCE(props->>'authority', ''), COALESCE(props->>$2, ''), COALESCE(props->>$3, '')
+		SELECT id, COALESCE(props->>$2, ''), COALESCE(props->>$3, '')
 		FROM records WHERE kind = $1 AND deleted_at IS NULL`,
 		kindBundle, propBundleDisabled, propBundlePurging)
 	if err != nil {
@@ -90,12 +91,14 @@ func (ds *dataset) bundleStates(ctx context.Context) (map[string]bundleState, er
 }
 
 // bundleStateOf reads one bundle's lifecycle outside a transaction.
-func (ds *dataset) bundleStateOf(ctx context.Context, authority string) (bundleState, error) {
+func (ds *dataset) bundleStateOf(ctx context.Context, pkg string) (bundleState, error) {
 	var disabled, purging string
+	// A bundle row's id IS the package identity (record 0047), so the lookup is
+	// the primary key and never a property scan.
 	err := ds.db.QueryRowContext(ctx, `
 		SELECT COALESCE(props->>$3, ''), COALESCE(props->>$4, '')
-		FROM records WHERE kind = $2 AND props->>'authority' = $1 AND deleted_at IS NULL`,
-		authority, kindBundle, propBundleDisabled, propBundlePurging).Scan(&disabled, &purging)
+		FROM records WHERE kind = $2 AND id = $1 AND deleted_at IS NULL`,
+		pkg, kindBundle, propBundleDisabled, propBundlePurging).Scan(&disabled, &purging)
 	if errors.Is(err, sql.ErrNoRows) {
 		return bundleState{}, nil
 	}
@@ -106,12 +109,12 @@ func (ds *dataset) bundleStateOf(ctx context.Context, authority string) (bundleS
 }
 
 // bundleStateTx is bundleStateOf inside the caller's transaction.
-func (t *txn) bundleStateTx(authority string) (bundleState, error) {
+func (t *txn) bundleStateTx(pkg string) (bundleState, error) {
 	var disabled, purging string
 	err := t.row(`
 		SELECT COALESCE(props->>$3, ''), COALESCE(props->>$4, '')
-		FROM records WHERE kind = $2 AND props->>'authority' = $1 AND deleted_at IS NULL`,
-		authority, kindBundle, propBundleDisabled, propBundlePurging).Scan(&disabled, &purging)
+		FROM records WHERE kind = $2 AND id = $1 AND deleted_at IS NULL`,
+		pkg, kindBundle, propBundleDisabled, propBundlePurging).Scan(&disabled, &purging)
 	if errors.Is(err, sql.ErrNoRows) {
 		return bundleState{}, nil
 	}
@@ -180,17 +183,17 @@ func (t *txn) checkBundleWrite(ty *vocabulary.Kind, id string, create bool) erro
 	if t.internal {
 		return nil
 	}
-	b, ok := t.ds.registry().BundleOf(ty.Authority)
+	b, ok := t.ds.registry().BundleOf(ty.Package)
 	if !ok {
 		return nil
 	}
-	st, err := t.bundleStateTx(b.Authority)
+	st, err := t.bundleStateTx(b.Package)
 	if err != nil {
 		return err
 	}
 	if st.Disabled && (bundleInputKind(b, ty.Identity) || ty.Implements(vocabulary.TraitAccountConfigCore)) {
 		return fmt.Errorf("%w: bundle %s is disabled — its configuration and accounts are frozen",
-			substrate.ErrGuard, b.Authority)
+			substrate.ErrGuard, b.Package)
 	}
 	return nil
 }
@@ -212,17 +215,17 @@ func (t *txn) checkBundleDelete(ty *vocabulary.Kind) error {
 	if t.internal {
 		return nil
 	}
-	b, ok := t.ds.registry().BundleOf(ty.Authority)
+	b, ok := t.ds.registry().BundleOf(ty.Package)
 	if !ok {
 		return nil
 	}
-	st, err := t.bundleStateTx(b.Authority)
+	st, err := t.bundleStateTx(b.Package)
 	if err != nil {
 		return err
 	}
 	if st.Disabled && (bundleInputKind(b, ty.Identity) || ty.Implements(vocabulary.TraitAccountConfigCore)) {
 		return fmt.Errorf("%w: bundle %s is disabled — its configuration and accounts are frozen",
-			substrate.ErrGuard, b.Authority)
+			substrate.ErrGuard, b.Package)
 	}
 	return nil
 }
@@ -238,12 +241,12 @@ func (ds *dataset) callableGroupBlocked(ctx context.Context, authority, identity
 	if !ok {
 		return nil
 	}
-	st, err := ds.bundleStateOf(ctx, b.Authority)
+	st, err := ds.bundleStateOf(ctx, b.Package)
 	if err != nil {
 		return err
 	}
 	if st.Disabled {
-		return fmt.Errorf("%w: bundle %s is disabled — %s refuses invocation", substrate.ErrGuard, b.Authority, identity)
+		return fmt.Errorf("%w: bundle %s is disabled — %s refuses invocation", substrate.ErrGuard, b.Package, identity)
 	}
 	return nil
 }
@@ -258,9 +261,9 @@ func (ds *dataset) blockBundledCallable(t *trigger, states map[string]bundleStat
 	var authority string
 	switch {
 	case t.Callable != nil:
-		authority = t.Callable.Authority
+		authority = t.Callable.Package
 	case t.Agent != nil:
-		authority = t.Agent.Authority
+		authority = t.Agent.Package
 	default:
 		return
 	}
@@ -289,11 +292,11 @@ type droppedCallable struct {
 func droppedBundleCallables(current, candidate *vocabulary.Registry, touched map[string]bool) []droppedCallable {
 	var out []droppedCallable
 	for aname := range touched {
-		cur, _ := current.AuthorityByName(aname)
+		cur, _ := current.PackageByName(aname)
 		if cur == nil || cur.Bundle == nil {
 			continue
 		}
-		cand, _ := candidate.AuthorityByName(aname)
+		cand, _ := candidate.PackageByName(aname)
 		for _, fname := range cur.FunctionOrder {
 			if cand == nil || cand.Functions[fname] == nil {
 				out = append(out, droppedCallable{callableKindFunction, cur.Functions[fname].Identity()})
@@ -408,7 +411,8 @@ func (t *txn) checkTriggerCallableRow(tr *trigger) error {
 
 // --- the lifecycle verbs ------------------------------------------------------------
 
-// bundleByID resolves a bundle by its record id ("<authority>/<name>") or by its
+// bundleByID resolves a bundle by its record id (the package it owns,
+// "<authority>/<package>") or by its
 // owned authority — the two spellings a caller reasonably has in hand.
 func (ds *dataset) bundleByID(id string) (*vocabulary.Bundle, error) {
 	if b, ok := ds.registry().BundleOf(id); ok {
@@ -451,13 +455,13 @@ func (ds *dataset) EnableBundle(ctx context.Context, id string) error {
 	}
 	ds.lifecycleFence.Lock()
 	defer ds.lifecycleFence.Unlock()
-	st, err := ds.bundleStateOf(ctx, b.Authority)
+	st, err := ds.bundleStateOf(ctx, b.Package)
 	if err != nil {
 		return err
 	}
 	if st.Purging {
 		return fmt.Errorf("%w: bundle %s is purging — a purge is running or was interrupted; run purge to completion before enabling",
-			substrate.ErrGuard, b.Authority)
+			substrate.ErrGuard, b.Package)
 	}
 	_, err = ds.patchInternal(ctx, substrate.ActorSystem, kindBundle, b.Identity(), substrate.PatchInput{
 		Properties: map[string]any{propBundleDisabled: nil},
@@ -465,41 +469,42 @@ func (ds *dataset) EnableBundle(ctx context.Context, id string) error {
 	return err
 }
 
-// BundleAuthority resolves a bundle's owned authority from its record id or authority, for
+// BundlePackage resolves a bundle's owned authority from its record id or authority, for
 // the API's bundle-lifecycle scope gate (codex regress #1): the minimal
 // authorization needs the authority before it runs the verb. It resolves a
 // quarantined bundle too (the store fallback), so an uninstall of one is gated
 // consistently.
-func (ds *dataset) BundleAuthority(ctx context.Context, id string) (string, error) {
-	return ds.bundleGroupOf(ctx, id)
+func (ds *dataset) BundlePackage(ctx context.Context, id string) (string, error) {
+	return ds.bundlePackageOf(ctx, id)
 }
 
-// bundleGroupOf resolves the owned authority of a bundle addressed by its record
-// id or its authority — from the live registry first, then from the stored rows.
-// The store fallback is what makes a QUARANTINED bundle (issue 010: its authority
-// is absent from the live registry) still uninstallable.
-func (ds *dataset) bundleGroupOf(ctx context.Context, id string) (string, error) {
+// bundlePackageOf resolves the owned PACKAGE identity of a bundle addressed by
+// its record id or by the authority it publishes under — from the live registry
+// first, then from the stored rows. The store fallback is what makes a
+// QUARANTINED bundle (issue 010: its package is absent from the live registry)
+// still uninstallable.
+func (ds *dataset) bundlePackageOf(ctx context.Context, id string) (string, error) {
 	if b, err := ds.bundleByID(id); err == nil {
-		return b.Authority, nil
+		return b.Package, nil
 	}
-	var authority string
+	var pkg string
 	err := ds.db.QueryRowContext(ctx, `
-		SELECT COALESCE(props->>'authority', '') FROM records
+		SELECT id FROM records
 		WHERE kind = $1 AND deleted_at IS NULL AND (id = $2 OR props->>'authority' = $2)
-		LIMIT 1`, kindBundle, id).Scan(&authority)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && authority == "") {
+		LIMIT 1`, kindBundle, id).Scan(&pkg)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && pkg == "") {
 		return "", fmt.Errorf("%w: bundle %s", substrate.ErrNotFound, id)
 	}
 	if err != nil {
 		return "", err
 	}
-	return authority, nil
+	return pkg, nil
 }
 
-// UninstallBundle tears the bundle down: the owned authority's SCHEMA rows (the
+// UninstallBundle tears the bundle down: the owned package's SCHEMA rows (the
 // bundle row, its types, functions, agents, actors, traits, property types and
 // mappings) go through the SAME schema-write admission an apply uses — a
-// whole-authority replace with an empty incoming set — and the delivery wiring
+// whole-package replace with an empty incoming set — and the delivery wiring
 // (every trigger referencing the authority's callables) goes with them in the same
 // transaction, BEFORE the dropped-callable guard, so a full teardown never
 // refuses on its own triggers. The registry rebuild then drops the authority: its
@@ -515,18 +520,18 @@ func (ds *dataset) bundleGroupOf(ctx context.Context, id string) (string, error)
 // reconcile (inside the schema apply) never kills a process an admitted
 // invocation is inside.
 func (ds *dataset) UninstallBundle(ctx context.Context, id string) error {
-	authority, err := ds.bundleGroupOf(ctx, id)
+	pkg, err := ds.bundlePackageOf(ctx, id)
 	if err != nil {
 		return err
 	}
 	ds.lifecycleFence.Lock()
 	defer ds.lifecycleFence.Unlock()
-	callables, err := ds.groupCallableIdentities(ctx, authority)
+	callables, err := ds.packageCallableIdentities(ctx, pkg)
 	if err != nil {
 		return err
 	}
 	_, err = ds.applyVocabularyBatch(ctx, substrate.ActorSystem, vocabularyBatch{
-		replaceAuthorities: []string{authority},
+		replacePackages: []string{pkg},
 		beforeGuards: func(t *txn) error {
 			return t.tearDownCallableTriggers(callables)
 		},
@@ -534,15 +539,17 @@ func (ds *dataset) UninstallBundle(ctx context.Context, id string) error {
 	return err
 }
 
-// groupCallableIdentities lists the identities of an authority's functions and
+// packageCallableIdentities lists the identities of a package's functions and
 // agents from the stored schema rows — the callables whose triggers the
 // uninstall tears down. Reading from rows (not the registry) covers a
-// quarantined authority too, whose callables never registered.
-func (ds *dataset) groupCallableIdentities(ctx context.Context, authority string) (map[string]bool, error) {
+// quarantined package too, whose callables never registered.
+func (ds *dataset) packageCallableIdentities(ctx context.Context, pkg string) (map[string]bool, error) {
+	authority, name := vocabulary.SplitPackageRef(pkg)
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT id FROM records
-		WHERE kind IN ($1, $2) AND deleted_at IS NULL AND props->>'authority' = $3`,
-		kindFunction, kindAgent, authority)
+		WHERE kind IN ($1, $2) AND deleted_at IS NULL
+		  AND props->>'authority' = $3 AND props->>'package' = $4`,
+		kindFunction, kindAgent, authority, name)
 	if err != nil {
 		return nil, err
 	}
@@ -625,17 +632,17 @@ func (ds *dataset) PurgeBundle(ctx context.Context, id string) (int, error) {
 	}
 	ds.lifecycleFence.Lock()
 	defer ds.lifecycleFence.Unlock()
-	st, err := ds.bundleStateOf(ctx, b.Authority)
+	st, err := ds.bundleStateOf(ctx, b.Package)
 	if err != nil {
 		return 0, err
 	}
 	if !st.blocked() {
 		return 0, fmt.Errorf("%w: bundle %s is live — disable or uninstall it before purging its data",
-			substrate.ErrGuard, b.Authority)
+			substrate.ErrGuard, b.Package)
 	}
-	g, ok := ds.registry().AuthorityByName(b.Authority)
+	g, ok := ds.registry().PackageByName(b.Package)
 	if !ok {
-		return 0, fmt.Errorf("%w: bundle authority %s", substrate.ErrNotFound, b.Authority)
+		return 0, fmt.Errorf("%w: bundle authority %s", substrate.ErrNotFound, b.Package)
 	}
 	if _, err := ds.patchInternal(ctx, substrate.ActorSystem, kindBundle, b.Identity(), substrate.PatchInput{
 		Properties: map[string]any{propBundlePurging: true},
@@ -766,33 +773,31 @@ func (ds *dataset) BundleStatuses(ctx context.Context) ([]substrate.BundleStatus
 }
 
 // quarantinedBundleStatuses reads the bundles whose stored closure was
-// quarantined at repository-open straight from the authority row and
-// bundle rows — a quarantined authority is absent from the live registry, so its
-// status comes from the store.
+// quarantined at repository-open straight from the package row and its bundle
+// row — a quarantined package is absent from the live registry, so its status
+// comes from the store. A bundle row's id IS the package identity (record
+// 0047), so the two rows join on the id and nothing has to parse a property.
 func (ds *dataset) quarantinedBundleStatuses(ctx context.Context) ([]substrate.BundleStatus, error) {
 	rows, err := ds.db.QueryContext(ctx, `
-		SELECT b.id, g.id, COALESCE(g.props->>$3, '')
+		SELECT b.id, COALESCE(g.props->>$3, '')
 		FROM records g
-		JOIN records b ON b.kind = $2 AND b.deleted_at IS NULL AND b.props->>'authority' = g.id
+		JOIN records b ON b.kind = $2 AND b.deleted_at IS NULL AND b.id = g.id
 		WHERE g.kind = $1 AND g.deleted_at IS NULL AND (g.props ? $4) AND g.props->>$4 = 'true'
 		ORDER BY g.id`,
-		kindAuthority, kindBundle, propAuthorityQuarantineReason, propAuthorityQuarantined)
+		kindPackage, kindBundle, propPackageQuarantineReason, propPackageQuarantined)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 	var out []substrate.BundleStatus
 	for rows.Next() {
-		var id, authority, reason string
-		if err := rows.Scan(&id, &authority, &reason); err != nil {
+		var id, reason string
+		if err := rows.Scan(&id, &reason); err != nil {
 			return nil, err
 		}
-		// The bundle's NAME is its id's last segment (vocabulary.BundleName is
-		// the same answer from the authority): a declaration row carries no
-		// id-derived name property to read it off.
-		name := vocabulary.KindName(id)
+		authority, name := vocabulary.SplitPackageRef(id)
 		out = append(out, substrate.BundleStatus{
-			ID: id, Name: name, Authority: authority,
+			ID: id, Name: name, Authority: authority, Package: name,
 			Installed: false, Enabled: false,
 			Quarantined: true, QuarantineReason: reason,
 		})
@@ -810,11 +815,12 @@ func (ds *dataset) BundleStatus(ctx context.Context, id string) (substrate.Bundl
 }
 
 func (ds *dataset) bundleStatus(ctx context.Context, b *vocabulary.Bundle) (substrate.BundleStatus, error) {
+	authority, _ := vocabulary.SplitPackageRef(b.Package)
 	st := substrate.BundleStatus{
-		ID: b.Identity(), Name: b.Name, Authority: b.Authority,
+		ID: b.Identity(), Name: b.Name, Authority: authority, Package: b.Name,
 		Installed: true, Enabled: true,
 	}
-	state, err := ds.bundleStateOf(ctx, b.Authority)
+	state, err := ds.bundleStateOf(ctx, b.Package)
 	if err != nil {
 		return st, err
 	}
@@ -823,9 +829,9 @@ func (ds *dataset) bundleStatus(ctx context.Context, b *vocabulary.Bundle) (subs
 	// 034), and BundleStatuses simply stops listing it.
 	st.Installed = true
 	st.Enabled = !state.Disabled
-	g, ok := ds.registry().AuthorityByName(b.Authority)
+	g, ok := ds.registry().PackageByName(b.Package)
 	if !ok {
-		return st, fmt.Errorf("%w: bundle authority %s", substrate.ErrNotFound, b.Authority)
+		return st, fmt.Errorf("%w: bundle authority %s", substrate.ErrNotFound, b.Package)
 	}
 	st.Functions = len(g.FunctionOrder)
 	st.Kinds = len(g.KindOrder)

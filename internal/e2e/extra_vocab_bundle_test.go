@@ -18,37 +18,42 @@ import (
 // people, scheduling, tasks and calendar are only ever read.
 const (
 	xvAuthority        = "upgrades.e2e.example"
-	xvWidgetKind       = xvAuthority + "/widget"
-	xvWidgetCollection = "/api/v1/" + xvAuthority + "/widget"
-	// The GraphQL type name the widget kind generates: the authority's FIRST
-	// LABEL is the prefix (the one place kind identity is still keyed on it),
-	// so a rename of that keying fails here loudly.
+	xvPackage          = "upgrades"
+	xvPkg              = xvAuthority + "/" + xvPackage
+	xvWidgetKind       = xvPkg + "/widget"
+	xvWidgetCollection = "/api/v1/" + xvPkg + "/widget"
+	// The GraphQL type name the widget kind generates: the PACKAGE is the
+	// prefix (decision 0047), and the authority joins it only when two
+	// authorities install a package of one name, so a rename of that keying
+	// fails here loudly.
 	xvWidgetGraphQLType = "Upgrades_Widget"
 
-	// The authority VOC-04 tries to admit with a key the dialect does not
+	// The package VOC-04 tries to admit with a key the dialect does not
 	// know. It must never exist afterwards.
 	xvSparkleAuthority = "sparkles.e2e.example"
+	xvSparklePackage   = "sparkles"
+	xvSparklePkg       = xvSparkleAuthority + "/" + xvSparklePackage
 
-	xvNotesBundle    = "notes.bundles.substrate.reamde.dev/notes"
-	xvNoteCollection = "/api/v1/notes.bundles.substrate.reamde.dev/note"
-	xvStatsFunction  = "notes.bundles.substrate.reamde.dev/stats"
-	xvNoteKind       = "notes.bundles.substrate.reamde.dev/note"
+	xvNotesBundle    = "samples.substrate.reamde.dev/notes"
+	xvNoteCollection = "/api/v1/samples.substrate.reamde.dev/notes/note"
+	xvStatsFunction  = "samples.substrate.reamde.dev/notes/stats"
+	xvNoteKind       = "samples.substrate.reamde.dev/notes/note"
 
-	xvFirecrawlBundle     = "firecrawl.bundles.substrate.reamde.dev/firecrawl"
-	xvFirecrawlConfigKind = "firecrawl.bundles.substrate.reamde.dev/config"
-	xvFirecrawlConfigs    = "/api/v1/firecrawl.bundles.substrate.reamde.dev/config"
+	xvFirecrawlBundle     = "samples.substrate.reamde.dev/firecrawl"
+	xvFirecrawlConfigKind = "samples.substrate.reamde.dev/firecrawl/config"
+	xvFirecrawlConfigs    = "/api/v1/samples.substrate.reamde.dev/firecrawl/config"
 
-	xvTemporalTrait = "core.substrate.reamde.dev/temporal"
+	xvTemporalTrait = "substrate.reamde.dev/core/temporal"
 
-	xvKindCollection      = "/api/v1/core.substrate.reamde.dev/kind"
-	xvAuthorityCollection = "/api/v1/core.substrate.reamde.dev/authority"
-	xvBundleCollection    = "/api/v1/core.substrate.reamde.dev/bundle"
-	xvTraitCollection     = "/api/v1/core.substrate.reamde.dev/trait"
+	xvKindCollection    = "/api/v1/substrate.reamde.dev/core/kind"
+	xvPackageCollection = "/api/v1/substrate.reamde.dev/core/package"
+	xvBundleCollection  = "/api/v1/substrate.reamde.dev/core/bundle"
+	xvTraitCollection   = "/api/v1/substrate.reamde.dev/core/trait"
 )
 
 func init() {
 	registerCase(400, "VOC-02", "An additive vocabulary upgrade lands",
-		"A new authority is applied, a record written under it, and a second apply adds an optional "+
+		"A new package is applied, a record written under it, and a second apply adds an optional "+
 			"property and an enum value: both were refused before the upgrade and both write after it, "+
 			"the declarations' versions move, and the record written under the old shape reads unchanged.",
 		xvCaseAdditiveUpgrade)
@@ -156,15 +161,18 @@ func (c *C) xvRefused(raw []byte) xvRefusal {
 func xvClosure(version int, properties map[string]any) []map[string]any {
 	return []map[string]any{
 		{
-			"kind":     "core.substrate.reamde.dev/authority",
-			"metadata": map[string]any{"id": xvAuthority},
-			"data":     map[string]any{"version": version},
+			"kind":     "substrate.reamde.dev/core/package",
+			"metadata": map[string]any{"id": xvPkg},
+			"data": map[string]any{
+				"authority": xvAuthority, "package": xvPackage, "version": version,
+			},
 		},
 		{
-			"kind":     "core.substrate.reamde.dev/kind",
+			"kind":     "substrate.reamde.dev/core/kind",
 			"metadata": map[string]any{"id": xvWidgetKind},
 			"data": map[string]any{
 				"authority":       xvAuthority,
+				"package":         xvPackage,
 				"names":           map[string]any{"singular": "widget"},
 				"description":     "A thing the vocabulary cases move: one heading and one size.",
 				"displayTemplate": "{name}",
@@ -216,7 +224,7 @@ func (c *C) xvDeclarationVersion(collection, id string) int64 {
 func xvCaseAdditiveUpgrade(c *C) {
 	status, raw := c.xvApply(xvClosure(1, xvPropertiesV1()))
 	c.requiref(status == http.StatusOK, "applying `%s` version 1 answered %d: %s", xvAuthority, status, raw)
-	c.requiref(c.xvDeclarationVersion(xvAuthorityCollection, xvAuthority) == 1,
+	c.requiref(c.xvDeclarationVersion(xvPackageCollection, xvPkg) == 1,
 		"the fresh authority did not store version 1")
 	c.requiref(c.xvDeclarationVersion(xvKindCollection, xvWidgetKind) == 1,
 		"the fresh widget kind did not store version 1")
@@ -246,7 +254,7 @@ func xvCaseAdditiveUpgrade(c *C) {
 
 	status, raw = c.xvApply(xvClosure(2, xvPropertiesV2()))
 	c.requiref(status == http.StatusOK, "the additive upgrade answered %d, want 200: %s", status, raw)
-	c.requiref(c.xvDeclarationVersion(xvAuthorityCollection, xvAuthority) == 2,
+	c.requiref(c.xvDeclarationVersion(xvPackageCollection, xvPkg) == 2,
 		"the authority's stored version did not move to 2")
 	kindRec := c.getRec(xvKindCollection, xvWidgetKind)
 	c.requiref(kindRec.Version == 2, "the widget declaration record's version is %d, want 2", kindRec.Version)
@@ -312,7 +320,7 @@ func xvCaseNarrowingRefused(c *C) {
 
 	// Nothing moved: the stored declaration is still version 2, and a record
 	// still writes with the enum value the second narrowing tried to remove.
-	c.requiref(c.xvDeclarationVersion(xvAuthorityCollection, xvAuthority) == 2,
+	c.requiref(c.xvDeclarationVersion(xvPackageCollection, xvPkg) == 2,
 		"a refused narrowing moved the authority's stored version off 2")
 	c.requiref(c.xvDeclarationVersion(xvKindCollection, xvWidgetKind) == 2,
 		"a refused narrowing moved the widget declaration's stored version off 2")
@@ -328,6 +336,7 @@ func xvSparkleClosure(onProperty bool) []map[string]any {
 	name := map[string]any{"type": "string", "description": "the heading"}
 	data := map[string]any{
 		"authority":       xvSparkleAuthority,
+		"package":         xvSparklePackage,
 		"names":           map[string]any{"singular": "gadget"},
 		"description":     "A kind carrying a key the dialect does not know.",
 		"displayTemplate": "{name}",
@@ -340,13 +349,15 @@ func xvSparkleClosure(onProperty bool) []map[string]any {
 	}
 	return []map[string]any{
 		{
-			"kind":     "core.substrate.reamde.dev/authority",
-			"metadata": map[string]any{"id": xvSparkleAuthority},
-			"data":     map[string]any{"version": 1},
+			"kind":     "substrate.reamde.dev/core/package",
+			"metadata": map[string]any{"id": xvSparklePkg},
+			"data": map[string]any{
+				"authority": xvSparkleAuthority, "package": xvSparklePackage, "version": 1,
+			},
 		},
 		{
-			"kind":     "core.substrate.reamde.dev/kind",
-			"metadata": map[string]any{"id": xvSparkleAuthority + "/gadget"},
+			"kind":     "substrate.reamde.dev/core/kind",
+			"metadata": map[string]any{"id": xvSparklePkg + "/gadget"},
 			"data":     data,
 		},
 	}
@@ -374,11 +385,11 @@ func xvCaseUnknownDialectKey(c *C) {
 	c.stepf("the same key on the kind document itself is refused the same way: a declaration's key set is closed at every level")
 
 	// Nothing was stored, so there is nothing to quarantine.
-	status, raw = c.do(http.MethodGet, xvAuthorityCollection+"/"+url.PathEscape(xvSparkleAuthority), nil, nil)
-	c.requiref(status == http.StatusNotFound, "the refused authority exists: GET answered %d: %s", status, raw)
-	status, _ = c.do(http.MethodGet, "/api/v1/"+xvSparkleAuthority+"/gadget", nil, nil)
+	status, raw = c.do(http.MethodGet, xvPackageCollection+"/"+url.PathEscape(xvSparklePkg), nil, nil)
+	c.requiref(status == http.StatusNotFound, "the refused package exists: GET answered %d: %s", status, raw)
+	status, _ = c.do(http.MethodGet, "/api/v1/"+xvSparklePkg+"/gadget", nil, nil)
 	c.requiref(status == http.StatusNotFound, "the refused kind has a collection: GET answered %d", status)
-	c.stepf("nothing was stored: the authority record and the collection both 404. Over the live door an unknown " +
+	c.stepf("nothing was stored: the package record and the collection both 404. Over the live door an unknown " +
 		"declaration key is REFUSED, never quarantined; the quarantine in decision 0020 is the repository-open " +
 		"path, where a closure ALREADY STORED meets a binary that does not know one of its keys, which no API call can reach")
 }
@@ -393,12 +404,13 @@ func xvCaseKindReferenceID(c *C) {
 	c.requiref(status == http.StatusOK, "the percent-encoded kind GET answered %d: %s", status, raw)
 	c.requiref(declaration.ID == taskKind,
 		"the declaration's id is %q, want the kind reference %q", declaration.ID, taskKind)
-	c.requiref(declaration.Kind == "core.substrate.reamde.dev/kind",
+	c.requiref(declaration.Kind == "substrate.reamde.dev/core/kind",
 		"the declaration's kind is %q", declaration.Kind)
-	c.requiref(declaration.Properties["properties"] != nil && declaration.prop("authority") == "tasks.substrate.reamde.dev",
+	c.requiref(declaration.Properties["properties"] != nil &&
+		declaration.prop("authority") == "samples.substrate.reamde.dev" && declaration.prop("package") == "tasks",
 		"the declaration record does not carry the kind's definition: %v", declaration.Properties)
-	c.stepf("`GET %s` answered the declaration of `%s`: authority `%s`, its declared properties on the record",
-		encoded, declaration.ID, declaration.prop("authority"))
+	c.stepf("`GET %s` answered the declaration of `%s`: authority `%s`, package `%s`, its declared properties on the record",
+		encoded, declaration.ID, declaration.prop("authority"), declaration.prop("package"))
 
 	// The id round-trips: re-encoding what came back addresses the same
 	// record, so a client can page the collection and follow its own ids.
@@ -525,7 +537,7 @@ func (c *C) xvInstall(id string) xvBundleStatus {
 func (c *C) xvCallStats(text string) (int, []byte) {
 	c.t.Helper()
 	return c.do(http.MethodPost,
-		"/api/v1/core.substrate.reamde.dev/function/"+url.PathEscape(xvStatsFunction)+"/call",
+		"/api/v1/substrate.reamde.dev/core/function/"+url.PathEscape(xvStatsFunction)+"/call",
 		map[string]any{"input": map[string]any{"text": text}}, nil)
 }
 
@@ -771,7 +783,7 @@ func xvCaseTraitEndpoints(c *C) {
 
 	// An unknown trait implements nothing; it is not an error.
 	implementors.Items = nil
-	status, raw = c.do(http.MethodGet, xvTraitCollection+"/"+url.PathEscape("core.substrate.reamde.dev/nosuchtrait")+"/implementors", nil, &implementors)
+	status, raw = c.do(http.MethodGet, xvTraitCollection+"/"+url.PathEscape("substrate.reamde.dev/core/nosuchtrait")+"/implementors", nil, &implementors)
 	c.requiref(status == http.StatusOK && len(implementors.Items) == 0,
 		"an unknown trait answered %d with %d implementors: %s", status, len(implementors.Items), raw)
 	c.stepf("an unknown trait answers 200 with an empty list: nothing implements it, which is an answer rather than a refusal")

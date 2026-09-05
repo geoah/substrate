@@ -62,7 +62,7 @@ func oldPolicyTree(t *testing.T) string {
 		}
 		return strings.Replace(doc, "\n  version: 16\n", "\n", 1)
 	})
-	bumpGroupVersion(t, tree, coreAuthority, "9")
+	bumpPackageVersion(t, tree, corePackage, "9")
 	return tree
 }
 
@@ -142,7 +142,7 @@ func TestPolicySelectorOpsUpgradeToTheEnum(t *testing.T) {
 	}
 	// The rest of core rode the same upgrade: `trigger` was unpinned in the
 	// old tree (oldPolicyTree), and the shipped tree lands it at its own pin.
-	if v := kindVersion(t, ds, coreAuthority+"/trigger"); v != 16 {
+	if v := kindVersion(t, ds, corePackage+"/trigger"); v != 16 {
 		t.Fatalf("trigger is at version %d, want 16", v)
 	}
 	rec, err := ds.Get(ctx, vocabulary.KindRecordPatchPolicy, "gate-puts")
@@ -199,7 +199,7 @@ func TestPolicySelectorOpsUpgradeRefusedByAStrandedSelector(t *testing.T) {
 	// per kind, so core's other version-12 declarations do not land either.
 	// An owner reading the log needs the blast radius to be the authority,
 	// and a narrower skip is a change this assertion sees.
-	if v := kindVersion(t, ds, coreAuthority+"/trigger"); v != 9 {
+	if v := kindVersion(t, ds, corePackage+"/trigger"); v != 9 {
 		t.Fatalf("trigger is at version %d; the refusal withholds all of core, not one kind", v)
 	}
 }

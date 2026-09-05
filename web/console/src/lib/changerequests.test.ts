@@ -20,12 +20,13 @@ import {
   targetDrift,
 } from "@/lib/changerequests"
 
-const TASK_KIND = "tasks.substrate.reamde.dev/task"
+const TASK_KIND = "samples.substrate.reamde.dev/tasks/task"
 
 const taskKind: KindInfo = {
   identity: TASK_KIND,
   name: "task",
-  authority: "tasks.substrate.reamde.dev",
+  authority: "samples.substrate.reamde.dev",
+  package: "tasks",
   version: 1,
   plural: "tasks",
   source: "installed",
@@ -54,7 +55,7 @@ function requestRecord(
 ): SubstrateRecord {
   return {
     id: "cr-1",
-    kind: "core.substrate.reamde.dev/recordpatchrequest",
+    kind: "substrate.reamde.dev/core/recordpatchrequest",
     properties,
     labels: {},
     annotations: opts.annotations,
@@ -179,14 +180,14 @@ describe("proposedDiff", () => {
         diff: {
           properties: {
             summary: "Write it down",
-            assignee: "people.substrate.reamde.dev/person/p1",
+            assignee: "samples.substrate.reamde.dev/people/person/p1",
           },
         },
       })
     )
     expect(diff.properties).toEqual({
       summary: "Write it down",
-      assignee: "people.substrate.reamde.dev/person/p1",
+      assignee: "samples.substrate.reamde.dev/people/person/p1",
     })
     expect(diff.refused).toEqual([])
     expect(diff.unreadable).toBe(false)

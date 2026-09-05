@@ -392,7 +392,7 @@ func (ds *dataset) deliver(ctx context.Context, tr *trigger, ch substrate.Change
 		// settlement and cursor advance in deliverToAgent — a trigger loaded
 		// before a disable cannot begin (or finish) its agent after the verb
 		// returns.
-		lctx, release, err := ds.admitCallable(ctx, tr.Agent.Authority, tr.Agent.Identity())
+		lctx, release, err := ds.admitCallable(ctx, tr.Agent.Package, tr.Agent.Identity())
 		if err != nil {
 			return res, err
 		}
@@ -405,7 +405,7 @@ func (ds *dataset) deliver(ctx context.Context, tr *trigger, ch substrate.Change
 	// cursor together — BEFORE the verb returns, and nothing admits after it
 	// (bundles.go, review #2). The leased context flows into runCallable so
 	// nested host Calls inherit the lease instead of re-locking.
-	ctx, release, err := ds.admitCallable(ctx, tr.Callable.Authority, tr.Callable.Identity())
+	ctx, release, err := ds.admitCallable(ctx, tr.Callable.Package, tr.Callable.Identity())
 	if err != nil {
 		return res, err
 	}
@@ -689,7 +689,7 @@ func fireEnvelopePayload(envelope map[string]any) (any, error) {
 func (ds *dataset) functionFire(ctx context.Context, tr *trigger, mode, fid string, at time.Time, lastFire *time.Time, envelope map[string]any) (map[string]int, int, error) {
 	// The lifecycle fence's shared side, admission through effect + fire-state
 	// commit (bundles.go, review #2).
-	ctx, release, err := ds.admitCallable(ctx, tr.Callable.Authority, tr.Callable.Identity())
+	ctx, release, err := ds.admitCallable(ctx, tr.Callable.Package, tr.Callable.Identity())
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1200,7 +1200,7 @@ func (ds *dataset) sweepPagedCursors(ctx context.Context) error {
 		DELETE FROM paged_cursors pc
 		WHERE NOT EXISTS (
 			SELECT 1 FROM records e
-			WHERE e.kind = 'core.substrate.reamde.dev/trigger' AND e.id = pc.trigger_id AND e.deleted_at IS NULL)
+			WHERE e.kind = 'substrate.reamde.dev/core/trigger' AND e.id = pc.trigger_id AND e.deleted_at IS NULL)
 		   OR (pc.updated_at < $1
 		       AND NOT EXISTS (
 			SELECT 1 FROM trigger_failures f
@@ -1607,7 +1607,7 @@ func (ds *dataset) retryFire(ctx context.Context, tr *trigger, fid string, envel
 	}
 	// The lifecycle fence's shared side, admission through effect commit
 	// (bundles.go, review #2).
-	ctx, release, err := ds.admitCallable(ctx, tr.Callable.Authority, tr.Callable.Identity())
+	ctx, release, err := ds.admitCallable(ctx, tr.Callable.Package, tr.Callable.Identity())
 	if err != nil {
 		return 0, err
 	}

@@ -1,4 +1,4 @@
-/** Record detail (`/data/:authority/:plural/:id`): the views are TOP TABS
+/** Record detail (`/data/:authority/:package/:kind/:id`): the views are TOP TABS
  * (owner ruling, 2026-08-08), no scrolling past one to reach another.
  * **Properties** leads and is the default (issue #38: a clicked row shows its
  * data field by field, not a YAML dump); **Manifest** is the document itself
@@ -61,14 +61,14 @@ const tabParser = parseAsStringLiteral(TABS)
 export function RecordPage() {
   // The route param is `$name` (the kind name is the collection segment),
   // aliased to a local `plural` so the rest of this file reads unchanged.
-  const { authority, name: plural, id } = recordRoute.useParams()
+  const { authority, pkg, name: plural, id } = recordRoute.useParams()
   const [tab, setTab] = useQueryState("tab", tabParser)
 
   const registry = useQuery(kindsQueryOptions)
   const kindInfo = registry.data
-    ? kindByCollection(registry.data, authority, plural)
+    ? kindByCollection(registry.data, authority, pkg, plural)
     : undefined
-  const record = useQuery(recordQueryOptions(authority, plural, id))
+  const record = useQuery(recordQueryOptions(authority, pkg, plural, id))
 
   // The hover vocabulary comes off the kinds query the page already holds —
   // one registry read backs every property tooltip on the manifest.
@@ -156,8 +156,13 @@ export function RecordPage() {
             className="ml-1 gap-1.5"
             render={
               <Link
-                to="/data/$authority/$name/$id/edit"
-                params={{ authority: authority, name: plural, id: e.id }}
+                to="/data/$authority/$pkg/$name/$id/edit"
+                params={{
+                  authority: authority,
+                  pkg: pkg,
+                  name: plural,
+                  id: e.id,
+                }}
               />
             }
           >
@@ -193,6 +198,7 @@ export function RecordPage() {
           <ScrollArea className="h-full">
             <GraphRail
               authority={authority}
+              pkg={pkg}
               plural={plural}
               record={e}
               kinds={registry.data ?? []}

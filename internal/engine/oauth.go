@@ -121,17 +121,17 @@ func (ds *dataset) oauthAccountOf(ctx context.Context, account eref) (*erow, *vo
 		return nil, nil, fmt.Errorf("%w: %s is not an %s-trait account record",
 			substrate.ErrValidation, recordID, vocabulary.TraitAccountConfigCore)
 	}
-	b, ok := ds.registry().BundleOf(ty.Authority)
+	b, ok := ds.registry().BundleOf(ty.Package)
 	if !ok {
 		return nil, nil, fmt.Errorf("%w: %s belongs to no bundle", substrate.ErrValidation, recordID)
 	}
-	st, err := ds.bundleStateOf(ctx, b.Authority)
+	st, err := ds.bundleStateOf(ctx, b.Package)
 	if err != nil {
 		return nil, nil, err
 	}
 	if st.blocked() {
 		return nil, nil, fmt.Errorf("%w: bundle %s is not live — enable it before connecting accounts",
-			substrate.ErrGuard, b.Authority)
+			substrate.ErrGuard, b.Package)
 	}
 	return row, b, nil
 }
@@ -140,7 +140,7 @@ func (ds *dataset) oauthAccountOf(ctx context.Context, account eref) (*erow, *vo
 // when the bundle declares no oauth2 flow. Endpoints ONLY ever come from here.
 func bundleOAuthMeta(b *vocabulary.Bundle) (*vocabulary.BundleOAuth2, error) {
 	if b.OAuth2 == nil {
-		return nil, fmt.Errorf("%w: bundle %s declares no oauth2 provider metadata", substrate.ErrGuard, b.Authority)
+		return nil, fmt.Errorf("%w: bundle %s declares no oauth2 provider metadata", substrate.ErrGuard, b.Package)
 	}
 	return b.OAuth2, nil
 }
@@ -152,7 +152,7 @@ func bundleOAuthMeta(b *vocabulary.Bundle) (*vocabulary.BundleOAuth2, error) {
 // the plaintext.
 func (ds *dataset) oauthClientOf(ctx context.Context, b *vocabulary.Bundle) (clientID, clientSecret string, err error) {
 	if b.OAuth2 == nil {
-		return "", "", fmt.Errorf("%w: bundle %s declares no oauth2 block", substrate.ErrGuard, b.Authority)
+		return "", "", fmt.Errorf("%w: bundle %s declares no oauth2 block", substrate.ErrGuard, b.Package)
 	}
 	ri, err := ds.resolveBundleInput(ctx, b, b.OAuth2.ClientInput)
 	if err != nil {
@@ -160,7 +160,7 @@ func (ds *dataset) oauthClientOf(ctx context.Context, b *vocabulary.Bundle) (cli
 	}
 	if ri.Row == nil {
 		return "", "", fmt.Errorf("%w: bundle %s's %q input does not resolve (%s) — the OAuth client record carries clientId and clientSecret",
-			substrate.ErrGuard, b.Authority, b.OAuth2.ClientInput, ri.Detail)
+			substrate.ErrGuard, b.Package, b.OAuth2.ClientInput, ri.Detail)
 	}
 	clientID = propString(ri.Row, "clientId")
 	clientSecret, err = ds.openSecretValue(ctx, propString(ri.Row, "clientSecret"))
@@ -169,7 +169,7 @@ func (ds *dataset) oauthClientOf(ctx context.Context, b *vocabulary.Bundle) (cli
 	}
 	if clientID == "" || clientSecret == "" {
 		return "", "", fmt.Errorf("%w: bundle %s's client record %s/%s is missing clientId or clientSecret",
-			substrate.ErrGuard, b.Authority, ri.Input.Kind, ri.Row.ID)
+			substrate.ErrGuard, b.Package, ri.Input.Kind, ri.Row.ID)
 	}
 	return clientID, clientSecret, nil
 }
@@ -518,18 +518,18 @@ func (ds *dataset) RefreshOAuthTokens(ctx context.Context) (int, error) {
 		if err != nil {
 			continue // an orphaned (uninstalled) type refreshes after re-install
 		}
-		b, ok := ds.registry().BundleOf(ty.Authority)
-		if !ok || states[b.Authority].blocked() {
+		b, ok := ds.registry().BundleOf(ty.Package)
+		if !ok || states[b.Package].blocked() {
 			continue
 		}
 		meta, err := bundleOAuthMeta(b)
 		if err != nil {
-			ds.svc.log.Warn("substrate: oauth refresh: bundle metadata", "bundle", b.Authority, "error", err)
+			ds.svc.log.Warn("substrate: oauth refresh: bundle metadata", "bundle", b.Package, "error", err)
 			continue
 		}
 		clientID, clientSecret, err := ds.oauthClientOf(ctx, b)
 		if err != nil {
-			ds.svc.log.Warn("substrate: oauth refresh: bundle configuration", "bundle", b.Authority, "error", err)
+			ds.svc.log.Warn("substrate: oauth refresh: bundle configuration", "bundle", b.Package, "error", err)
 			continue
 		}
 		ep := oauthEndpointsFor(meta, clientID, clientSecret, nil)
@@ -621,7 +621,7 @@ func (ds *dataset) revokeAccountGrants(ctx context.Context, recordID, typeIdent 
 	if !ok {
 		return
 	}
-	b, ok := ds.registry().BundleOf(ty.Authority)
+	b, ok := ds.registry().BundleOf(ty.Package)
 	if !ok || b.OAuth2 == nil {
 		return
 	}

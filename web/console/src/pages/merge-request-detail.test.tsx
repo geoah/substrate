@@ -36,15 +36,16 @@ vi.mock("@/router", () => ({
 
 import { MergeRequestDetailPage } from "./merge-request-detail"
 
-const PERSON_KIND = "people.substrate.reamde.dev/person"
-const TASK_KIND = "tasks.substrate.reamde.dev/task"
-const MR_PATH = "/api/v1/core.substrate.reamde.dev/recordmergerequest/mr-1"
+const PERSON_KIND = "samples.substrate.reamde.dev/people/person"
+const TASK_KIND = "samples.substrate.reamde.dev/tasks/task"
+const MR_PATH = "/api/v1/substrate.reamde.dev/core/recordmergerequest/mr-1"
 
 const KINDS: KindInfo[] = [
   {
     identity: PERSON_KIND,
     name: "person",
-    authority: "people.substrate.reamde.dev",
+    authority: "samples.substrate.reamde.dev",
+    package: "people",
     version: 1,
     // A REAL plural, deliberately unequal to the name: the page must route by
     // the kind name (decision 0033), and a fixture where the two match would
@@ -62,7 +63,8 @@ const KINDS: KindInfo[] = [
   {
     identity: TASK_KIND,
     name: "task",
-    authority: "tasks.substrate.reamde.dev",
+    authority: "samples.substrate.reamde.dev",
+    package: "tasks",
     version: 1,
     plural: "tasks",
     source: "installed",
@@ -90,7 +92,7 @@ function person(id: string, properties: Record<string, unknown>) {
 
 const mergeRequest: SubstrateRecord = {
   id: "mr-1",
-  kind: "core.substrate.reamde.dev/recordmergerequest",
+  kind: "substrate.reamde.dev/core/recordmergerequest",
   properties: {
     decision: "proposed",
     rationale: "Same email on both.",
@@ -133,16 +135,16 @@ describe("MergeRequestDetailPage", () => {
     vi.stubGlobal("fetch", fetchMock)
     fetchMock.mockImplementation(async (url) => {
       const path = String(url)
-      if (path.startsWith("/api/v1/core.substrate.reamde.dev/kind")) {
+      if (path.startsWith("/api/v1/substrate.reamde.dev/core/kind")) {
         return jsonResponse(200, { kinds: KINDS })
       }
       if (path === MR_PATH) return jsonResponse(200, mergeRequest)
       // The two sides answer ONLY at the kind-name segment, so a page that
       // routed by the plural would render neither.
-      if (path === "/api/v1/people.substrate.reamde.dev/person/p1") {
+      if (path === "/api/v1/samples.substrate.reamde.dev/people/person/p1") {
         return jsonResponse(200, winner)
       }
-      if (path === "/api/v1/people.substrate.reamde.dev/person/p2") {
+      if (path === "/api/v1/samples.substrate.reamde.dev/people/person/p2") {
         return jsonResponse(200, loser)
       }
       return jsonResponse(200, { records: [] })
@@ -162,7 +164,8 @@ describe("MergeRequestDetailPage", () => {
     const pill = await screen.findByText("task-42")
     expect(pill.closest("a")?.getAttribute("data-params")).toBe(
       JSON.stringify({
-        authority: "tasks.substrate.reamde.dev",
+        authority: "samples.substrate.reamde.dev",
+        pkg: "tasks",
         name: "task",
         id: "task-42",
       })

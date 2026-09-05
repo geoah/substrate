@@ -167,17 +167,19 @@ describe("browse prefs persistence", () => {
   beforeEach(() => localStorage.clear())
 
   it("round-trips filters and sort per collection", () => {
-    saveBrowsePrefs("people.substrate.reamde.dev", "people", {
+    saveBrowsePrefs("samples.substrate.reamde.dev/people", "people", {
       filter: ["prominence~eq~known"],
       sort: "name:asc",
     })
-    expect(loadBrowsePrefs("people.substrate.reamde.dev", "people")).toEqual({
+    expect(
+      loadBrowsePrefs("samples.substrate.reamde.dev/people", "people")
+    ).toEqual({
       filter: ["prominence~eq~known"],
       sort: "name:asc",
     })
     // another collection sees nothing
     expect(
-      loadBrowsePrefs("people.substrate.reamde.dev", "organizations")
+      loadBrowsePrefs("samples.substrate.reamde.dev/people", "organizations")
     ).toBeNull()
   })
 

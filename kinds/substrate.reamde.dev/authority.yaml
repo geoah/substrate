@@ -1,0 +1,14 @@
+# The authority the substrate's own vocabulary publishes under. It owns the
+# packages beneath it and declares no members of its own: the version, the
+# ownership and the quarantine all sit on the PACKAGE (decision record 0047).
+#
+# The name is a PLACEHOLDER for a name the publisher controls; a repository may
+# never claim an authority under it (engine validRepositoryAuthority), so
+# nothing a user declares can be mistaken for shipped vocabulary.
+kind: substrate.reamde.dev/core/authority
+metadata:
+  id: substrate.reamde.dev
+data:
+  description: >-
+    The substrate's own vocabulary: the core package every repository is seeded
+    with.

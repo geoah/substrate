@@ -44,10 +44,10 @@ describe("the feed column set", () => {
   const row: ChangeRow = {
     seq: 9,
     ts: "2026-08-06T12:00:00Z",
-    actor: "github.bundles.substrate.reamde.dev",
+    actor: "providers.substrate.reamde.dev/github",
     op: "put",
     recordId: "issue-1",
-    kind: "github.bundles.substrate.reamde.dev/issue",
+    kind: "providers.substrate.reamde.dev/github/issue",
   }
 
   it("stamps stable ids and dropdown labels", () => {
@@ -83,7 +83,7 @@ describe("the feed column set", () => {
     expect(accessor(changeOpColumn())).toBe("updated")
     expect(accessor(changeKindColumn())).toBe("issue")
     expect(accessor(changeAuthorityColumn())).toBe(
-      "github.bundles.substrate.reamde.dev"
+      "providers.substrate.reamde.dev"
     )
     expect(accessor(timeColumn<ChangeRow>({ id: "t", iso: (r) => r.ts }))).toBe(
       row.ts

@@ -18,8 +18,8 @@ import (
 // this-and-following split, each followed by the range queries a calendar
 // client would make. OCC-01 is the computed half beside them.
 const (
-	seriesCollection = "/api/v1/calendar.substrate.reamde.dev/calendareventseries"
-	seriesKind       = "calendar.substrate.reamde.dev/calendareventseries"
+	seriesCollection = "/api/v1/samples.substrate.reamde.dev/calendar/calendareventseries"
+	seriesKind       = "samples.substrate.reamde.dev/calendar/calendareventseries"
 )
 
 func init() {
@@ -175,7 +175,7 @@ func xcCaseRuleMatrix(c *C) {
 			"properties": map[string]any{
 				"enabled":  false,
 				"source":   map[string]any{"schedule": map[string]any{"recurrence": rule, "timezone": "Europe/London"}},
-				"callable": "core.substrate.reamde.dev/function/" + storyAuthority + "/resolveattendees",
+				"callable": "substrate.reamde.dev/core/function/" + storyPkg + "/resolveattendees",
 			},
 		}, nil)
 		return status, string(raw)
@@ -489,10 +489,10 @@ func xcCaseSeriesSplit(c *C) {
 // --- OCC-01 ----------------------------------------------------------------
 
 const (
-	medCollection         = "/api/v1/health.substrate.reamde.dev/medication"
-	medScheduleCollection = "/api/v1/health.substrate.reamde.dev/medicationschedule"
-	medScheduleKind       = "health.substrate.reamde.dev/medicationschedule"
-	medLogCollection      = "/api/v1/health.substrate.reamde.dev/medicationschedulelog"
+	medCollection         = "/api/v1/samples.substrate.reamde.dev/health/medication"
+	medScheduleCollection = "/api/v1/samples.substrate.reamde.dev/health/medicationschedule"
+	medScheduleKind       = "samples.substrate.reamde.dev/health/medicationschedule"
+	medLogCollection      = "/api/v1/samples.substrate.reamde.dev/health/medicationschedulelog"
 )
 
 // xoList mirrors substrate.OccurrenceList, the computed half of an agenda.
@@ -542,7 +542,7 @@ func xoDoses(list xoList, id string) []string {
 }
 
 func xoCaseMedicationWeek(c *C) {
-	c.xvInstall("health.substrate.reamde.dev/health")
+	c.xvInstall("samples.substrate.reamde.dev/health")
 	base := xcMonday(c.r).Truncate(24 * time.Hour) // the block's Monday, 00:00Z
 	dose := base.Add(6 * time.Hour)                // 09:00 Athens in summer
 	week2, week3, week4 := base.AddDate(0, 0, 7), base.AddDate(0, 0, 14), base.AddDate(0, 0, 21)
@@ -553,7 +553,7 @@ func xoCaseMedicationWeek(c *C) {
 		"recurrence": "RRULE:FREQ=DAILY",
 		"timezone":   "Europe/Athens",
 		"at":         dose.Format(time.RFC3339), // the anchor: temporal(range)'s own start
-		"medication": "health.substrate.reamde.dev/medication/levothyroxine",
+		"medication": "samples.substrate.reamde.dev/health/medication/levothyroxine",
 	})
 	c.stepf("one schedule record holds the forever-daily rule, anchored %s", dose.Format(time.RFC3339))
 
@@ -587,7 +587,7 @@ func xoCaseMedicationWeek(c *C) {
 	c.putRec(medLogCollection, "x-occ-dose-tue", map[string]any{
 		"at":          tue.Add(20 * time.Minute).Format(time.RFC3339),
 		"scheduledAt": tue.Format(time.RFC3339),
-		"schedule":    "health.substrate.reamde.dev/medicationschedule/levothyroxine-daily",
+		"schedule":    "samples.substrate.reamde.dev/health/medicationschedule/levothyroxine-daily",
 	})
 	occs = xoRead(c, base, week2)
 	marked := 0

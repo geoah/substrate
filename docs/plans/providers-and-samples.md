@@ -71,7 +71,7 @@ six call sites read it that way, so they move to a (source kind, subject
 property) key with the rule.
 
 The word **bundle** stays for the mechanism. Both a provider install and a
-sample import land as a `core.substrate.reamde.dev/bundle` record with the
+sample import land as a `substrate.reamde.dev/core/bundle` record with the
 lifecycle verbs it already has. "Provider" and "sample" are the two catalog
 tiers, replacing the three curated facets `vocabulary`, `integration` and
 `example`.
@@ -80,13 +80,9 @@ tiers, replacing the three curated facets `vocabulary`, `integration` and
 
 ```
 kinds/
-  core.substrate.reamde.dev/          the seed, unchanged
-  google.bundles.substrate.reamde.dev/   providers stay: one directory per authority
-  github.bundles.substrate.reamde.dev/
-  linear.bundles.substrate.reamde.dev/
-  notion.bundles.substrate.reamde.dev/
-  whoop.bundles.substrate.reamde.dev/
-  beeper.bundles.substrate.reamde.dev/
+  substrate.reamde.dev/core/          the seed, unchanged
+  providers.substrate.reamde.dev/     providers stay: one directory per package
+    google/  github/  linear/  notion/  whoop/  beeper/
 samples/
   people/     tasks/     calendar/   messaging/  scheduling/
   commerce/   fitness/   food/       health/     journal/

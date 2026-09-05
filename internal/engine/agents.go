@@ -62,7 +62,7 @@ func (ds *dataset) deliverToAgent(ctx context.Context, tr *trigger, ch substrate
 func (ds *dataset) agentFire(ctx context.Context, tr *trigger, mode, fid string, at time.Time, lastFire *time.Time, envelope map[string]any) (map[string]int, int, error) {
 	// Admission under the lifecycle fence, held through the loop's writes and
 	// the fire-state CAS below (bundles.go, review #2).
-	ctx, release, err := ds.admitCallable(ctx, tr.Agent.Authority, tr.Agent.Identity())
+	ctx, release, err := ds.admitCallable(ctx, tr.Agent.Package, tr.Agent.Identity())
 	if err != nil {
 		return nil, 0, err
 	}
@@ -114,7 +114,7 @@ func (ds *dataset) CallAgent(ctx context.Context, name string, input any) (*subs
 	// Admission under the lifecycle fence, held through the whole loop's writes
 	// (thread, every message, settlement) — a disable draining this call waits
 	// for the thread to settle before it returns (bundles.go, review #2).
-	ctx, release, err := ds.admitCallable(ctx, ag.Authority, ag.Identity())
+	ctx, release, err := ds.admitCallable(ctx, ag.Package, ag.Identity())
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +161,7 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name, t
 	}
 	// Admission under the lifecycle fence, held through the whole chat turn's
 	// writes (thread claim/mint, every message, settlement) — review #2.
-	ctx, release, err := ds.admitCallable(ctx, ag.Authority, ag.Identity())
+	ctx, release, err := ds.admitCallable(ctx, ag.Package, ag.Identity())
 	if err != nil {
 		return nil, err
 	}

@@ -19,21 +19,21 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-const dwAuthority = "dialect.example.substrate.reamde.dev"
+const dwPackage = "dialect.example.substrate.reamde.dev/dialect"
 
 // dwDocs declares a target kind for the references plus a holder carrying one
 // property per widening.
 func dwDocs(holderProps map[string]any) []map[string]any {
 	return []map[string]any{
-		vocabulary.AuthorityManifest(dwAuthority, 0),
-		vocabulary.KindManifest(dwAuthority,
+		vocabulary.PackageManifest(dwPackage, 0),
+		vocabulary.KindManifest(dwPackage,
 			map[string]any{"singular": "target", "plural": "targets"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 		// A second referent, so a nested reference has somewhere else to be
 		// narrowed to (dialect_narrowing_db_test.go).
-		vocabulary.KindManifest(dwAuthority,
+		vocabulary.KindManifest(dwPackage,
 			map[string]any{"singular": "other", "plural": "others"}, map[string]any{}),
-		vocabulary.KindManifest(dwAuthority,
+		vocabulary.KindManifest(dwPackage,
 			map[string]any{"singular": "holder", "plural": "holders"},
 			map[string]any{"properties": holderProps}),
 	}
@@ -114,11 +114,11 @@ func TestDialectWideningsRoundTrip(t *testing.T) {
 		t.Fatalf("install the dialect authority: %v", err)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwAuthority + "/target", ID: "a", Properties: map[string]any{"name": "Ada"},
+		Kind: dwPackage + "/target", ID: "a", Properties: map[string]any{"name": "Ada"},
 	})
 
 	row := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwAuthority + "/holder", ID: "h1",
+		Kind: dwPackage + "/holder", ID: "h1",
 		Properties: map[string]any{
 			"grant": map[string]any{"scopes": []any{"read", "write"}, "subject": "ada"},
 			"spec": map[string]any{"limits": map[string]any{
@@ -130,9 +130,9 @@ func TestDialectWideningsRoundTrip(t *testing.T) {
 			"pinned":  "a",
 			"installs": map[string]any{
 				"task": map[string]any{"version": "v1", "source": "a"},
-				"tasks.example.com/task": map[string]any{
+				"tasks.example.com/tasks/task": map[string]any{
 					"version": "v2",
-					"source":  vocabulary.RecordPath(dwAuthority+"/target", "a"),
+					"source":  vocabulary.RecordPath(dwPackage+"/target", "a"),
 				},
 			},
 			"tools": []any{
@@ -143,7 +143,7 @@ func TestDialectWideningsRoundTrip(t *testing.T) {
 	})
 
 	// Everything below reads the STORED row back, not the write's echo.
-	read := mustGet(t, ds, dwAuthority+"/holder", row.ID)
+	read := mustGet(t, ds, dwPackage+"/holder", row.ID)
 	props := read.Properties
 
 	grant := props["grant"].(map[string]any)
@@ -161,7 +161,7 @@ func TestDialectWideningsRoundTrip(t *testing.T) {
 	if d, ok := limits["depth"].(float64); !ok || d != 3 {
 		t.Fatalf("spec.limits.depth = %#v, want float64(3)", limits["depth"])
 	}
-	wantRef := vocabulary.RecordPath(dwAuthority+"/target", "a")
+	wantRef := vocabulary.RecordPath(dwPackage+"/target", "a")
 	assertRef(t, "spec.limits.ref", limits["ref"], wantRef)
 	assertRef(t, "pinned", props["pinned"], wantRef)
 
@@ -182,7 +182,7 @@ func TestDialectWideningsRoundTrip(t *testing.T) {
 	}
 	// Both key spellings a kindRef contract admits, and the reference under each
 	// canonical whichever form the writer sent.
-	for _, key := range []string{"task", "tasks.example.com/task"} {
+	for _, key := range []string{"task", "tasks.example.com/tasks/task"} {
 		entry, ok := installs[key].(map[string]any)
 		if !ok {
 			t.Fatalf("installs[%q] = %#v", key, installs[key])
@@ -219,7 +219,7 @@ func TestDialectWideningsRefuseBadValues(t *testing.T) {
 		t.Fatalf("install the dialect authority: %v", err)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwAuthority + "/target", ID: "a", Properties: map[string]any{"name": "Ada"},
+		Kind: dwPackage + "/target", ID: "a", Properties: map[string]any{"name": "Ada"},
 	})
 
 	cases := map[string]struct {
@@ -259,21 +259,21 @@ func TestDialectWideningsRefuseBadValues(t *testing.T) {
 		// declaration pins, so the writer can tell which of the two to change.
 		"nested reference points at the wrong kind": {
 			props: map[string]any{"tools": []any{map[string]any{
-				"callable": vocabulary.RecordPath(dwAuthority+"/holder", "h1"),
+				"callable": vocabulary.RecordPath(dwPackage+"/holder", "h1"),
 			}}},
-			says: "the declaration pins " + dwAuthority + "/target",
+			says: "the declaration pins " + dwPackage + "/target",
 		},
 		// Unknown-kind is reachable only where nothing is pinned: under a pin, a
 		// path naming another kind is refused as ambiguous first.
 		"an unconstrained reference names an unknown kind": {
-			props: map[string]any{"keyedRefs": map[string]any{"primary": "nosuch.example.com/thing/x"}},
+			props: map[string]any{"keyedRefs": map[string]any{"primary": "nosuch.example.com/nosuch/thing/x"}},
 			says:  "is unknown",
 		},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			_, err := ds.Put(ctx, owner, substrate.PutInput{
-				Kind: dwAuthority + "/holder", Properties: c.props,
+				Kind: dwPackage + "/holder", Properties: c.props,
 			})
 			wantErr(t, err, substrate.ErrValidation, name)
 			if !strings.Contains(err.Error(), c.says) {
@@ -294,7 +294,7 @@ func TestContainersStayOutOfSearch(t *testing.T) {
 		t.Fatalf("install the dialect authority: %v", err)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwAuthority + "/holder", ID: "h1",
+		Kind: dwPackage + "/holder", ID: "h1",
 		Properties: map[string]any{
 			"grant": map[string]any{"scopes": []any{"zorionak"}, "subject": "bezperatan"},
 			"notes": map[string]any{"greeting": "urtebetetzez"},
@@ -315,7 +315,7 @@ func TestContainersStayOutOfSearch(t *testing.T) {
 	// declared path INTO a container to compare against. A keyed map added no
 	// filter surface, which is the point.
 	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
-		Kinds:      []string{dwAuthority + "/holder"},
+		Kinds:      []string{dwPackage + "/holder"},
 		Properties: map[string]substrate.Cond{"notes": {Eq: "urtebetetzez"}},
 	}})
 	if err != nil {
@@ -333,16 +333,16 @@ func TestDerivedTitleTokens(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(dtAuthority, 0),
-		vocabulary.KindManifest(dtAuthority,
+		vocabulary.PackageManifest(dtPackage, 0),
+		vocabulary.KindManifest(dtPackage,
 			map[string]any{"singular": "leaf", "plural": "leaves"},
 			map[string]any{"displayTemplate": "{localName}"}),
-		vocabulary.KindManifest(dtAuthority,
+		vocabulary.KindManifest(dtPackage,
 			map[string]any{"singular": "whole", "plural": "wholes"},
 			map[string]any{"displayTemplate": "{localName} ({id})"}),
 		// A kind that declares a REAL property of the token's name: the
 		// declaration wins, and the token is only the fallback.
-		vocabulary.KindManifest(dtAuthority,
+		vocabulary.KindManifest(dtPackage,
 			map[string]any{"singular": "claimer", "plural": "claimers"},
 			map[string]any{
 				"displayTemplate": "{localName}",
@@ -351,13 +351,13 @@ func TestDerivedTitleTokens(t *testing.T) {
 		// And a kind whose REFERENCE takes the name. One name is one pointer, so
 		// the token means that reference here, the same thing the bare form would
 		// mean.
-		vocabulary.KindManifest(dtAuthority,
+		vocabulary.KindManifest(dtPackage,
 			map[string]any{"singular": "named", "plural": "nameds"},
 			map[string]any{
 				"displayTemplate": "{name}",
 				"properties":      map[string]any{"name": map[string]any{"type": "string"}},
 			}),
-		vocabulary.KindManifest(dtAuthority,
+		vocabulary.KindManifest(dtPackage,
 			map[string]any{"singular": "refclaimer", "plural": "refclaimers"},
 			map[string]any{
 				"displayTemplate": "{localName}",
@@ -371,33 +371,33 @@ func TestDerivedTitleTokens(t *testing.T) {
 	}
 
 	slashed := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dtAuthority + "/leaf", ID: "people.example.com/person",
+		Kind: dtPackage + "/leaf", ID: "people.example.com/people/person",
 	})
 	if slashed.Title != "person" {
 		t.Fatalf("{localName} of a slashed id = %q, want the last segment", slashed.Title)
 	}
-	slashless := mustPut(t, ds, owner, substrate.PutInput{Kind: dtAuthority + "/leaf", ID: "person"})
+	slashless := mustPut(t, ds, owner, substrate.PutInput{Kind: dtPackage + "/leaf", ID: "person"})
 	if slashless.Title != "person" {
 		t.Fatalf("{localName} of a slashless id = %q, want the whole id", slashless.Title)
 	}
 	both := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dtAuthority + "/whole", ID: "people.example.com/person",
+		Kind: dtPackage + "/whole", ID: "people.example.com/people/person",
 	})
-	if both.Title != "person (people.example.com/person)" {
+	if both.Title != "person (people.example.com/people/person)" {
 		t.Fatalf("{localName} ({id}) = %q", both.Title)
 	}
 	// A trailing slash is legal in the id alphabet. The last NON-EMPTY segment is
 	// the local name, because rendering nothing for a row that has an id would be
 	// a title lost to punctuation.
 	trailing := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dtAuthority + "/leaf", ID: "people.example.com/person/",
+		Kind: dtPackage + "/leaf", ID: "people.example.com/people/person/",
 	})
 	if trailing.Title != "person" {
 		t.Fatalf("{localName} of a trailing-slash id = %q, want the last non-empty segment", trailing.Title)
 	}
 
 	declared := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dtAuthority + "/claimer", ID: "people.example.com/person",
+		Kind: dtPackage + "/claimer", ID: "people.example.com/people/person",
 		Properties: map[string]any{"localName": "the declared one"},
 	})
 	if declared.Title != "the declared one" {
@@ -408,7 +408,7 @@ func TestDerivedTitleTokens(t *testing.T) {
 	// would make an unfilled property look filled, and the two rows above would
 	// be indistinguishable in a list.
 	empty := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dtAuthority + "/claimer", ID: "people.example.com/other",
+		Kind: dtPackage + "/claimer", ID: "people.example.com/people/other",
 	})
 	if empty.Title != "" {
 		t.Fatalf("a declared-but-empty property must not fall back to the derived value, got %q", empty.Title)
@@ -418,12 +418,12 @@ func TestDerivedTitleTokens(t *testing.T) {
 	// token would: the target's title. Rendering the id's last segment here would
 	// say the record's own name where the model points at another record's.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dtAuthority + "/named", ID: "n1", Properties: map[string]any{"name": "Ada"},
+		Kind: dtPackage + "/named", ID: "n1", Properties: map[string]any{"name": "Ada"},
 	})
 	viaRef := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dtAuthority + "/refclaimer", ID: "people.example.com/person",
+		Kind: dtPackage + "/refclaimer", ID: "people.example.com/people/person",
 		Properties: map[string]any{
-			"localName": vocabulary.RecordPath(dtAuthority+"/named", "n1"),
+			"localName": vocabulary.RecordPath(dtPackage+"/named", "n1"),
 		},
 	})
 	if viaRef.Title != "Ada" {
@@ -433,14 +433,14 @@ func TestDerivedTitleTokens(t *testing.T) {
 	// property does: the declaration decides the meaning, the row decides the
 	// value.
 	noRef := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dtAuthority + "/refclaimer", ID: "people.example.com/other",
+		Kind: dtPackage + "/refclaimer", ID: "people.example.com/people/other",
 	})
 	if noRef.Title != "" {
 		t.Fatalf("an unset declared reference must not fall back to the derived value, got %q", noRef.Title)
 	}
 }
 
-const dtAuthority = "dtemplate.example.substrate.reamde.dev"
+const dtPackage = "dtemplate.example.substrate.reamde.dev/dtemplate"
 
 // core/llmthread's own title, against the SHIPPED declarations: `{agent}` is a
 // bare token on a reference, so it follows the pointer to the referent's title,
@@ -452,16 +452,16 @@ func TestLLMThreadTitleFollowsItsAgent(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	const authority = "titlecrew.example.substrate.reamde.dev"
+	const pkg = "titlecrew.example.substrate.reamde.dev/titlecrew"
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/llmprovider", ID: "default",
+		Kind: "substrate.reamde.dev/core/llmprovider", ID: "default",
 		Properties: map[string]any{"wire": "openai", "baseURL": "https://llm.example.com/v1"},
 	}); err != nil {
 		t.Fatalf("put the llmprovider row: %v", err)
 	}
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(authority, 0),
-		vocabulary.AgentManifest(authority, "scribe", map[string]any{
+		vocabulary.PackageManifest(pkg, 0),
+		vocabulary.AgentManifest(pkg, "scribe", map[string]any{
 			"description": "writes things down",
 			"prompt":      "You write things down.",
 			"provider":    "default",
@@ -472,9 +472,9 @@ func TestLLMThreadTitleFollowsItsAgent(t *testing.T) {
 		t.Fatalf("install the agent: %v", err)
 	}
 	thread := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/llmthread", ID: "t1",
+		Kind: "substrate.reamde.dev/core/llmthread", ID: "t1",
 		Properties: map[string]any{
-			"agent":      vocabulary.RecordPath("core.substrate.reamde.dev/agent", authority+"/scribe"),
+			"agent":      vocabulary.RecordPath("substrate.reamde.dev/core/agent", pkg+"/scribe"),
 			"status":     "running",
 			"mode":       "chat",
 			"provider":   "default",
@@ -505,12 +505,12 @@ func TestStoredNestedReferenceDeclarationSurvivesAReopen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
-	const authority = "stored.example.substrate.reamde.dev"
+	const pkg = "stored.example.substrate.reamde.dev/stored"
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(authority, 0),
-		vocabulary.KindManifest(authority,
+		vocabulary.PackageManifest(pkg, 0),
+		vocabulary.KindManifest(pkg,
 			map[string]any{"singular": "target", "plural": "targets"}, map[string]any{}),
-		vocabulary.KindManifest(authority,
+		vocabulary.KindManifest(pkg,
 			map[string]any{"singular": "holder", "plural": "holders"},
 			map[string]any{"properties": map[string]any{
 				"pinned": map[string]any{"type": "reference", "kind": "target", "inverse": "holders"},
@@ -527,17 +527,17 @@ func TestStoredNestedReferenceDeclarationSurvivesAReopen(t *testing.T) {
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
 		t.Fatalf("admit the declaration: %v", err)
 	}
-	mustPut(t, ds, owner, substrate.PutInput{Kind: authority + "/target", ID: "a"})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: pkg + "/target", ID: "a"})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: authority + "/holder", ID: "h1",
+		Kind: pkg + "/holder", ID: "h1",
 		Properties: map[string]any{"pinned": "a", "tools": []any{map[string]any{"callable": "a"}}},
 	})
 	_ = svc.Close()
 
 	// A second binary opening the same store rebuilds the registry from those
 	// rows. The kind has to come back LIVE, not quarantined, which a write to it
-	// proves: a quarantined authority's kinds are not in the registry at all.
-	svc2, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+	// proves: a quarantined pkg's kinds are not in the registry at all.
+	svc2, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 	if err != nil {
 		t.Fatalf("reopen the service: %v", err)
 	}
@@ -547,12 +547,12 @@ func TestStoredNestedReferenceDeclarationSurvivesAReopen(t *testing.T) {
 		t.Fatalf("a stored declaration with a nested reference must still open: %v", err)
 	}
 	mustPut(t, ds2, owner, substrate.PutInput{
-		Kind: authority + "/holder", ID: "h2",
+		Kind: pkg + "/holder", ID: "h2",
 		Properties: map[string]any{"tools": []any{map[string]any{"callable": "a"}}},
 	})
 	// And the stored value is still canonical after the rebuild.
-	read := mustGet(t, ds2, authority+"/holder", "h1")
+	read := mustGet(t, ds2, pkg+"/holder", "h1")
 	tools := read.Properties["tools"].([]any)
 	assertRef(t, "tools[].callable", tools[0].(map[string]any)["callable"],
-		vocabulary.RecordPath(authority+"/target", "a"))
+		vocabulary.RecordPath(pkg+"/target", "a"))
 }

@@ -21,8 +21,8 @@ func TestTriggerStatusResolvesAgentCallables(t *testing.T) {
 	agentTrigger, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
-			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewAuthority + "/widget"}, "ops": []any{"create"}}},
-			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/agent", crewAuthority+"/classifier"),
+			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/agent", crewPackage+"/classifier"),
 		},
 	})
 	if err != nil {
@@ -31,8 +31,8 @@ func TestTriggerStatusResolvesAgentCallables(t *testing.T) {
 	functionTrigger, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
-			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewAuthority + "/widget"}, "ops": []any{"create"}}},
-			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", crewAuthority+"/annotate"),
+			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", crewPackage+"/annotate"),
 		},
 	})
 	if err != nil {
@@ -64,7 +64,7 @@ func TestTriggerStatusResolvesAgentCallables(t *testing.T) {
 	if _, err := ds.db.ExecContext(ctx,
 		`UPDATE records SET props = jsonb_set(props, '{callable}', to_jsonb($3::text))
 		 WHERE kind = $1 AND id = $2`, typeTrigger, agentTrigger.ID,
-		vocabulary.RecordPath(kindAgent, "crew.test.dev/ghost")); err != nil {
+		vocabulary.RecordPath(kindAgent, "crew.test.dev/crew/ghost")); err != nil {
 		t.Fatalf("strand the callable: %v", err)
 	}
 	statuses, err = ds.TriggerStatuses(ctx)

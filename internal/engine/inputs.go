@@ -67,7 +67,7 @@ func (ds *dataset) resolveBundleInputs(ctx context.Context, b *vocabulary.Bundle
 func (ds *dataset) resolveBundleInput(ctx context.Context, b *vocabulary.Bundle, name string) (resolvedInput, error) {
 	in, ok := b.Inputs[name]
 	if !ok {
-		return resolvedInput{}, fmt.Errorf("%w: bundle %s declares no input %q", substrate.ErrNotFound, b.Authority, name)
+		return resolvedInput{}, fmt.Errorf("%w: bundle %s declares no input %q", substrate.ErrNotFound, b.Package, name)
 	}
 	ri := resolvedInput{Name: name, Input: in}
 
@@ -215,13 +215,13 @@ func (ds *dataset) BindBundleInput(ctx context.Context, bundleID, input, recordI
 	if !ok {
 		return fmt.Errorf("%w: bundle %s declares no input %q", substrate.ErrNotFound, bundleID, input)
 	}
-	state, err := ds.bundleStateOf(ctx, b.Authority)
+	state, err := ds.bundleStateOf(ctx, b.Package)
 	if err != nil {
 		return err
 	}
 	if state.Disabled {
 		return fmt.Errorf("%w: bundle %s is disabled — its configuration and accounts are frozen",
-			substrate.ErrGuard, b.Authority)
+			substrate.ErrGuard, b.Package)
 	}
 	src := eref{Kind: kindBundle, ID: b.Identity()}
 	if recordID == "" {

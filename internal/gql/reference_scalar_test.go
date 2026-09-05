@@ -13,7 +13,7 @@ import (
 // unrewritten row carries, and consulting it would answer null for a pointer
 // that is plainly there.
 func TestReferenceScalarReadsBothStoredShapes(t *testing.T) {
-	const path = "people.substrate.reamde.dev/person/p1"
+	const path = "samples.substrate.reamde.dev/people/person/p1"
 	for name, tc := range map[string]struct {
 		value any
 		want  any

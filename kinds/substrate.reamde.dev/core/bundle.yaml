@@ -1,0 +1,163 @@
+# one installed bundle: the install unit (substrate-primitives §4). The id
+# IS the owned package ("samples.substrate.reamde.dev/web"); the declaration names its
+# inputs and the exact closure it ships, and a batch carrying a bundle
+# document REPLACES the owned package whole — install and upgrade are one
+# atomic apply, breakage refused. `disabled`/`uninstalled`/`purging` are runtime
+# state the lifecycle verbs own, never part of the declaration, which is what
+# `managed` says about them.
+#
+# THE PROPERTIES ARE THE DECLARATION: no `definition` blob. `inputs`, `modules`
+# and the OAuth feature scopes stay MAPS in the authored form, declared `keyed`.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/bundle
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    One installed bundle, the install unit. Its id IS the package the bundle
+    owns, it names the exact closure it ships — kinds, record mappings, functions,
+    agents and triggers — and it carries the runtime state the lifecycle verbs
+    own: disabled, uninstalled, purging.
+  names:
+    singular: bundle
+  displayTemplate: "{localName}"
+  properties:
+    # Every declaration carries its own version: the declaring package's,
+    # unless the declaration overrides it. It is what the boot-time upgrade
+    # diffs a repository's shipped vocabulary against, so the engine writes it
+    # on every declaration row, which is what `managed` says.
+    version:
+      type: int
+      managed: true
+      description: this declaration's incremental version, maintained by the
+        engine
+    # NOT a reference, and the reason is identity: an authority is what this
+    # declaration IS part of, not a record it points at. Pinning it made the
+    # stored row spell it as a path while the manifest spelled the name, so one
+    # declaration had two Definitions — the authored one and the one that came
+    # back after a restart.
+    authority:
+      type: string
+      required: true
+      description: the authority of the package the bundle owns
+    package:
+      type: string
+      description: the package it is declared in, the middle segment of its
+        id
+    description:
+      type: string
+      description: what the bundle is for, read above its card
+    # A MAP in the authored form: the key is the input's name, and the value
+    # follows these fields.
+    inputs:
+      type: object
+      keyed: true
+      keyPattern: camel
+      description: the bundle's named configuration needs, each naming a kind
+      fields:
+        kind:
+          type: reference
+          kind: substrate.reamde.dev/core/kind
+          required: true
+          description: the kind whose records satisfy this input
+        inject:
+          type: enum
+          values:
+            - functions
+          description: the consumer the resolved record is handed to; absent
+            means a host facility reads it
+        description:
+          type: string
+          description: what the input is for
+    # NOT a reference, and the one honest exception: a member is a kind, a
+    # trait, a property type, a mapping, a function or an agent, so there is no
+    # single kind to pin these at.
+    installs:
+      type: string
+      repeated: true
+      required: true
+      description: the exact identities the bundle ships into its package
+    # NOT a reference either: these are PACKAGE identities, read while the closure
+    # is still being bucketed — before any registry exists to resolve a pin
+    # against.
+    requires:
+      type: string
+      repeated: true
+      description: the packages this closure declares against; an install
+        refuses while one is absent
+    # Filename → inline source. The key contract is unrestricted on purpose: a
+    # filename is not a declared name, and the loader holds it to the bare
+    # `.py`/`.go` base-name rule instead.
+    modules:
+      type: text
+      keyed: true
+      description: the shared library modules the bundle's functions import
+    oauth2:
+      type: object
+      description: the bundle's trusted OAuth provider metadata, immutable
+        at runtime
+      fields:
+        clientInput:
+          type: string
+          required: true
+          description: the input whose resolved record carries the OAuth client
+            credentials
+        authorizationEndpoint:
+          type: url
+          required: true
+          description: where the user is sent to consent
+        tokenEndpoint:
+          type: url
+          required: true
+          description: where a code and a refresh are exchanged
+        revocationEndpoint:
+          type: url
+          description: where a credential is revoked on teardown, best effort
+        emailEndpoint:
+          type: url
+          description: where the connected account's own address is read,
+            right after the exchange
+        emailProperty:
+          type: string
+          description: the account property the derived address lands in
+        # A MAP of feature toggle → the scopes enabling it requests. The scopes
+        # take a field because `keyed` and `repeated` are the two containers and
+        # a declaration is one or the other.
+        featureScopes:
+          type: object
+          keyed: true
+          keyPattern: camel
+          description: which OAuth scopes each account toggle asks for
+          fields:
+            scopes:
+              type: string
+              repeated: true
+              required: true
+              description: the scopes the toggle requests
+    disabled:
+      type: bool
+      managed: true
+      description: set by the disable verb — execution stopped, reversible
+    uninstalled:
+      type: bool
+      managed: true
+      description: set by the uninstall verb — runtime registration removed,
+        data stays; cleared by re-applying the closure
+    purging:
+      type: bool
+      managed: true
+      description: set while a purge runs — enable refuses it; an interrupted
+        purge leaves it standing until a purge completes
+    # The owner's explicit choice per input, keyed by the input's name. It is
+    # runtime state the bind verb owns, not part of the declaration, which is
+    # what `managed` says: an install that rewrites this row leaves the choices
+    # alone. Unpinned, because an input names any kind, so each value is a full
+    # "<kind>/<id>" path.
+    bindings:
+      type: reference
+      keyed: true
+      keyPattern: camel
+      managed: true
+      description: the record chosen for each input, keyed by the input's
+        name; written by the bind verb

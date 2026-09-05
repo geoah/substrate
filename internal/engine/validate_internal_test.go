@@ -187,7 +187,7 @@ func TestCoerceDatetimeStaysInPostgresRange(t *testing.T) {
 	// The whole properties map answers with a ValidationError naming the
 	// property, which is what the API turns into a 422 with problems.
 	_, err := coerceProps(&vocabulary.Kind{
-		Identity: "example.com/thing",
+		Identity: "example.com/example/thing",
 		Props:    map[string]*vocabulary.Property{"at": dt},
 	}, map[string]any{"at": "0000-01-01T00:00:00Z"})
 	var ve *substrate.ValidationError

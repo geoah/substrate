@@ -1,0 +1,115 @@
+# one custom property type: a refinement of a base type, e.g. asin
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/propertytype
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    One custom property type: a built-in datatype refined by a pattern, a
+    range or a value set (`isbn`, `asin`). Package-local — only the package
+    that declares it may use it — so a shape is stated once instead of repeated
+    on every property that wants it.
+  # version 2: the display template dropped the authority. A declaration's
+  # identity is `<authority>/<package>/<name>` and the dotted composite it used
+  # to render names nothing — the bump is what carries the new template into
+  # repositories that already stored the old one.
+  # version 3: the declaration gained a `description` — the bump is what
+  # carries it into repositories that already stored the version 2 one.
+  # version 4: TYPED. `definition` and `name` are gone; the refinement — the
+  # base, the pattern, the range and the value set — is properties, and the base
+  # is the closed set of built-in datatypes rather than free text.
+  # version 6: the declaration's own `version` became an incremental
+  # integer, maintained by the engine.
+  # version 7: the base set gained `decimal`, the exact string-carried
+  # number. Additive, so live refinements are untouched.
+  # version 8: an admitted value may be marked `deprecated` (issue 110):
+  # reserved, stored, and read by no server-side path.
+  version: 9
+  names:
+    singular: propertytype
+  # id = "<authority>/<package>/<name>". A refinement is package-local — a
+  # property type is only usable inside the package that declares it.
+  displayTemplate: "{localName}"
+  properties:
+    version:
+      type: int
+      managed: true
+      description: this declaration's incremental version, maintained by the
+        engine
+    source:
+      type: enum
+      values:
+        - builtin
+        - installed
+      managed: true
+      description: builtin for seeded refinements, installed for bundle ones
+    # NOT a reference, and the reason is identity: an authority is what this
+    # declaration IS part of, not a record it points at. Pinning it made the
+    # stored row spell it as a path while the manifest spelled the name, so one
+    # declaration had two Definitions — the authored one and the one that came
+    # back after a restart.
+    authority:
+      type: string
+      required: true
+      description: the authority that publishes the package it is usable in
+    package:
+      type: string
+      description: the package it is declared in, the middle segment of its
+        id
+    description:
+      type: string
+      description: what the refinement is for
+    # The closed set of BUILT-IN datatypes a refinement may narrow — the same set
+    # the loader admits as a base. `object` and `reference` are not in it: each
+    # owns its own key set and neither is a refinement base.
+    base:
+      type: enum
+      required: true
+      values:
+        - string
+        - text
+        - markdown
+        - int
+        - float
+        - decimal
+        - bool
+        - datetime
+        - date
+        - duration
+        - email
+        - url
+        - phone
+        - timezone
+        - recurrence
+        - enum
+        - json
+        - secret
+        - digest
+        - state
+        - blobref
+      description: the built-in datatype it refines
+    pattern:
+      type: string
+      description: the regular expression a value matches
+    min:
+      type: float
+      description: the lowest admitted number
+    max:
+      type: float
+      description: the highest admitted number
+    values:
+      type: object
+      repeated: true
+      description: the admitted values, in render order
+      fields:
+        value:
+          type: string
+          required: true
+          description: the stored value
+        label:
+          type: string
+          description: the human label a client renders beside it
+        deprecated:
+          type: bool
+          description: clients should stop offering this value

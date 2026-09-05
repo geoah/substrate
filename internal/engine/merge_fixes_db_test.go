@@ -46,7 +46,7 @@ func TestMergeRejectsTombstonedAndAlreadyMerged(t *testing.T) {
 	_, err = ds.Merge(ctx, owner, d.Kind, d.ID, c.ID)
 	wantErr(t, err, substrate.ErrConflict, "merging a loser into a third record")
 
-	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{"core.substrate.reamde.dev/recordmerge"}}})
+	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/recordmerge"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,9 +132,9 @@ func TestMergeRejectsSystemTypes(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	_, err := ds.Merge(ctx, owner, "core.substrate.reamde.dev/kind", "people.substrate.reamde.dev/person", "people.substrate.reamde.dev/organization")
+	_, err := ds.Merge(ctx, owner, "substrate.reamde.dev/core/kind", "samples.substrate.reamde.dev/people/person", "samples.substrate.reamde.dev/people/organization")
 	wantErr(t, err, substrate.ErrForbidden, "merging two type projections")
-	if ty := mustGet(t, ds, "core.substrate.reamde.dev/kind", "people.substrate.reamde.dev/organization"); ty.DeletedAt != nil {
+	if ty := mustGet(t, ds, "substrate.reamde.dev/core/kind", "samples.substrate.reamde.dev/people/organization"); ty.DeletedAt != nil {
 		t.Fatal("a type projection was tombstoned by merge")
 	}
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{Kind: "organization", Properties: map[string]any{"name": "still works"}}); err != nil {
@@ -216,13 +216,13 @@ func TestMergeSplitKeepsThePairInternalReference(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	const authority = "peers.connectors.substrate.reamde.dev"
+	const pkg = "peers.connectors.substrate.reamde.dev/peers"
 	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, enginetest.Manifest{
-		Name: "peers", Authority: authority,
+		Name: "peers", Authority: pkg,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(authority, 1),
-			vocabulary.ActorManifest(authority, "connector:peers"),
-			vocabulary.KindManifest(authority,
+			vocabulary.PackageManifest(pkg, 1),
+			vocabulary.ActorManifest(pkg, "connector:peers"),
+			vocabulary.KindManifest(pkg,
 				map[string]any{"singular": "node", "plural": "nodes"},
 				map[string]any{
 					"displayTemplate": "{label}",
@@ -244,7 +244,7 @@ func TestMergeSplitKeepsThePairInternalReference(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("register connector: %v", err)
 	}
-	const nodeType = "peers.connectors.substrate.reamde.dev/node"
+	const nodeType = "peers.connectors.substrate.reamde.dev/peers/node"
 	winner := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: nodeType, Properties: map[string]any{"label": "w"},
 	})

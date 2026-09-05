@@ -1,0 +1,57 @@
+# The shipped vocabulary, subsystem 1: who. Shipped, but not SEEDED — this is
+# a SAMPLE BUNDLE a repository imports from the registry (the bundle
+# document is at the foot of this file). Kubernetes' API groups are the
+# model — split by subsystem, not by abstraction level — so there is no
+# `primitives` tier here; a person is no more primitive than a conversation.
+#
+# This package holds the human and nothing source-shaped. `person` is one record
+# per human, with a server-assigned id, and every vocabulary reference that means
+# "a human" lands on it. What one source holds about a person —
+# `providers.substrate.reamde.dev/google/contact` — lives in the provider
+# package that installs it, carries the provider's own key as its id, and points
+# at a person through an ordinary reference. The provider's recordmapping names
+# that reference and says how the record's properties reach the person. Nothing
+# in this package is single-writer; everything in a provider package is.
+#
+# Emails and phones are ordinary properties. Nothing indexes or fuses on them:
+# two people holding one address is legal and inert, and joining them is a
+# manual merge (§6.4).
+#
+# Two types and no more: a role (author, narrator, attendee, speaker) is a
+# property of the RELATION, never a second kind of person, so every reference
+# that means "a human" lands on `person`. References from messaging, calendar
+# and tasks all cross into this one; packages namespace names, never the
+# graph.
+#
+# no new actors: the doors and the substrate ship with core; an installed
+# package's writes arrive under the actor of whatever runs — a bundle function
+# writes as `function:<authority>:<package>:<name>` — so nothing here declares
+# an actor.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: samples.substrate.reamde.dev/people
+data:
+  authority: samples.substrate.reamde.dev
+  package: people
+  # version 3: every link is a `type: reference` property carrying
+  # `mustExist: true`.
+  version: 3
+---
+# ---- the bundle document: the import unit -------------------------------------
+# A SAMPLE bundle: a bare package the substrate publishes, delivered
+# through the registry instead of the creation seed. It ships kinds and
+# nothing else — no inputs, no functions, no agents, no OAuth, no
+# triggers — so `installs:` is exactly the package's declared members.
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: samples.substrate.reamde.dev/people
+data:
+  authority: samples.substrate.reamde.dev
+  package: people
+  description: >-
+    People, organizations and teams — one record per human, the target every
+    connector's contact, attendee, author and sender maps onto.
+  installs:
+    - samples.substrate.reamde.dev/people/organization
+    - samples.substrate.reamde.dev/people/person
+    - samples.substrate.reamde.dev/people/team

@@ -43,7 +43,7 @@ export const TO_ANY = "any"
 const KEY_PATTERNS: Record<string, RegExp> = {
   camel: /^[a-z][a-zA-Z0-9]*$/,
   kindRef:
-    /^([a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\/)?[a-z][a-z0-9]*$/,
+    /^([a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\/[a-z][a-z0-9]*\/)?[a-z][a-z0-9]*$/,
 }
 
 /** What each contract says when it refuses, in the author's terms rather than

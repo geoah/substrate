@@ -9,13 +9,13 @@ import (
 
 func TestAuthMissingBearer(t *testing.T) {
 	env := newTestEnv(t)
-	rec := env.do(t, http.MethodGet, "/api/v1/people.substrate.reamde.dev/person", "", nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/samples.substrate.reamde.dev/people/person", "", nil)
 	wantErrorCode(t, rec, http.StatusUnauthorized, codeAuth)
 }
 
 func TestAuthUnknownToken(t *testing.T) {
 	env := newTestEnv(t)
-	rec := env.do(t, http.MethodGet, "/api/v1/people.substrate.reamde.dev/person", "substrate_tok_nope", nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/samples.substrate.reamde.dev/people/person", "substrate_tok_nope", nil)
 	wantErrorCode(t, rec, http.StatusUnauthorized, codeAuth)
 }
 
@@ -26,14 +26,14 @@ func TestActorDefaultsToOwnerAndHeaderNamesTheWriter(t *testing.T) {
 	tok := env.svc.token("geoah")
 	ds := env.svc.datasets["geoah"]
 
-	rec := env.do(t, http.MethodPost, "/api/v1/people.substrate.reamde.dev/person", tok,
+	rec := env.do(t, http.MethodPost, "/api/v1/samples.substrate.reamde.dev/people/person", tok,
 		map[string]any{"properties": map[string]any{"name": "Ada"}})
 	wantStatus(t, rec, http.StatusCreated)
 	if ds.lastActor != substrate.ActorAPI {
 		t.Fatalf("default actor = %q, want owner", ds.lastActor)
 	}
 
-	rec = env.do(t, http.MethodPost, "/api/v1/people.substrate.reamde.dev/person", tok,
+	rec = env.do(t, http.MethodPost, "/api/v1/samples.substrate.reamde.dev/people/person", tok,
 		map[string]any{"properties": map[string]any{"name": "Grace"}},
 		actorHeader, "gmail.google.connectors.substrate.reamde.dev")
 	wantStatus(t, rec, http.StatusCreated)
@@ -53,7 +53,7 @@ func TestWriteCarriesTheResolvedTokenID(t *testing.T) {
 	second := env.svc.token("geoah")
 	ds := env.svc.datasets["geoah"]
 
-	rec := env.do(t, http.MethodPost, "/api/v1/people.substrate.reamde.dev/person", first,
+	rec := env.do(t, http.MethodPost, "/api/v1/samples.substrate.reamde.dev/people/person", first,
 		map[string]any{"properties": map[string]any{"name": "Ada"}})
 	wantStatus(t, rec, http.StatusCreated)
 	if ds.lastPrincipal != env.svc.tokens[first].info.ID {
@@ -62,7 +62,7 @@ func TestWriteCarriesTheResolvedTokenID(t *testing.T) {
 
 	// A different token, the same asserted actor: the principal moves, the
 	// actor does not.
-	rec = env.do(t, http.MethodPost, "/api/v1/people.substrate.reamde.dev/person", second,
+	rec = env.do(t, http.MethodPost, "/api/v1/samples.substrate.reamde.dev/people/person", second,
 		map[string]any{"properties": map[string]any{"name": "Grace"}},
 		actorHeader, string(substrate.ActorConsole))
 	wantStatus(t, rec, http.StatusCreated)
@@ -87,13 +87,13 @@ func TestActorHeaderRefusesTheHostNamespace(t *testing.T) {
 		"substrate.engine",   // the engine's own
 		"substrate.anything", // anything else under it
 	} {
-		rec := env.do(t, http.MethodPost, "/api/v1/people.substrate.reamde.dev/person", tok,
+		rec := env.do(t, http.MethodPost, "/api/v1/samples.substrate.reamde.dev/people/person", tok,
 			map[string]any{"properties": map[string]any{"name": "forged"}},
 			actorHeader, actor)
 		wantErrorCode(t, rec, http.StatusForbidden, codeForbidden)
 	}
 	// A name that merely RESEMBLES the namespace is ordinary.
-	rec := env.do(t, http.MethodPost, "/api/v1/people.substrate.reamde.dev/person", tok,
+	rec := env.do(t, http.MethodPost, "/api/v1/samples.substrate.reamde.dev/people/person", tok,
 		map[string]any{"properties": map[string]any{"name": "fine"}},
 		actorHeader, "substrateish.example.com")
 	wantStatus(t, rec, http.StatusCreated)

@@ -365,7 +365,7 @@ func newFakeDataset(name string) *fakeDataset {
 func testTypes() []substrate.KindInfo {
 	return []substrate.KindInfo{
 		{
-			Identity: "people.substrate.reamde.dev/person", Name: "person", Authority: "people.substrate.reamde.dev",
+			Identity: "samples.substrate.reamde.dev/people/person", Name: "person", Authority: "samples.substrate.reamde.dev", Package: "people",
 			Version: 1, Plural: "people", Source: "builtin",
 			Definition: map[string]any{
 				"plural": "people",
@@ -380,7 +380,7 @@ func testTypes() []substrate.KindInfo {
 			},
 		},
 		{
-			Identity: "tasks.substrate.reamde.dev/task", Name: "task", Authority: "tasks.substrate.reamde.dev",
+			Identity: "samples.substrate.reamde.dev/tasks/task", Name: "task", Authority: "samples.substrate.reamde.dev", Package: "tasks",
 			Version: 1, Plural: "tasks", Source: "builtin",
 			Definition: map[string]any{
 				"plural": "tasks",
@@ -398,9 +398,9 @@ func testTypes() []substrate.KindInfo {
 			},
 		},
 		{
-			Identity: "messaging.substrate.reamde.dev/conversationmessage", Name: "conversationmessage",
-			Authority: "messaging.substrate.reamde.dev",
-			Version:   1, Plural: "conversationmessages", Source: "builtin",
+			Identity: "samples.substrate.reamde.dev/messaging/conversationmessage", Name: "conversationmessage",
+			Authority: "samples.substrate.reamde.dev", Package: "messaging",
+			Version: 1, Plural: "conversationmessages", Source: "builtin",
 			Definition: map[string]any{
 				"plural": "conversationmessages",
 				"traits": []any{"temporal(point)"},
@@ -411,7 +411,7 @@ func testTypes() []substrate.KindInfo {
 					// generated object type, `{ref, since, target}`.
 					"author": map[string]any{
 						"type":      "reference",
-						"kind":      "people.substrate.reamde.dev/person",
+						"kind":      "samples.substrate.reamde.dev/people/person",
 						"mustExist": true,
 						"properties": map[string]any{
 							"since": map[string]any{"type": "int"},
@@ -421,7 +421,7 @@ func testTypes() []substrate.KindInfo {
 			},
 		},
 		{
-			Identity: "library.substrate.reamde.dev/book", Name: "book",
+			Identity: "library.substrate.reamde.dev/library/book", Name: "book",
 			Authority: "library.substrate.reamde.dev",
 			Version:   1, Plural: "books", Source: "builtin",
 			Definition: map[string]any{
@@ -433,7 +433,7 @@ func testTypes() []substrate.KindInfo {
 			},
 		},
 		{
-			Identity: "core.substrate.reamde.dev/repository", Name: "repository", Authority: coreAuthority,
+			Identity: "substrate.reamde.dev/core/repository", Name: "repository", Authority: coreAuthorityName, Package: "core",
 			Version: 1, Plural: "repositories", Source: "builtin",
 			Definition: map[string]any{
 				"plural":     "repositories",
@@ -441,7 +441,7 @@ func testTypes() []substrate.KindInfo {
 			},
 		},
 		{
-			Identity: "core.substrate.reamde.dev/connector", Name: "connector", Authority: coreAuthority,
+			Identity: "substrate.reamde.dev/core/connector", Name: "connector", Authority: coreAuthorityName, Package: "core",
 			Version: 1, Plural: "connectors", Source: "builtin",
 			Definition: map[string]any{
 				"plural":     "connectors",
@@ -449,7 +449,7 @@ func testTypes() []substrate.KindInfo {
 			},
 		},
 		{
-			Identity: "core.substrate.reamde.dev/token", Name: "token", Authority: coreAuthority,
+			Identity: "substrate.reamde.dev/core/token", Name: "token", Authority: coreAuthorityName, Package: "core",
 			Version: 1, Plural: "tokens", Source: "builtin",
 			Definition: map[string]any{
 				"plural":     "tokens",
@@ -460,7 +460,7 @@ func testTypes() []substrate.KindInfo {
 			// The bundle kind: a PATCH of one of its records runs the lifecycle
 			// transition (disable/enable/uninstall/purge), so the fake carries
 			// it for the collection to resolve.
-			Identity: kindBundleIdentity, Name: "bundle", Authority: coreAuthority,
+			Identity: kindBundleIdentity, Name: "bundle", Authority: coreAuthorityName, Package: "core",
 			Version: 1, Plural: "bundles", Source: "builtin",
 			Definition: map[string]any{
 				"plural":     "bundles",
@@ -615,7 +615,7 @@ func (d *fakeDataset) Merge(_ context.Context, _ substrate.Actor, typ, winner, l
 	// object holding the winner's and the loser's full record path under `ref`,
 	// exactly as the engine writes them (decision 0044).
 	return &substrate.Record{
-		ID: "merge1", Kind: coreAuthority + "/recordmerge",
+		ID: "merge1", Kind: corePackage + "/recordmerge",
 		Properties: map[string]any{
 			"winner": map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(typ, winner)},
 			"loser":  map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(typ, loser)},
@@ -628,10 +628,10 @@ func (d *fakeDataset) Split(_ context.Context, _ substrate.Actor, mergeID string
 		return nil, err
 	}
 	return &substrate.Record{
-		ID: "split1", Kind: coreAuthority + "/recordsplit",
+		ID: "split1", Kind: corePackage + "/recordsplit",
 		Properties: map[string]any{
 			"merge": map[string]any{
-				vocabulary.ReferenceValueKey: vocabulary.RecordPath(coreAuthority+"/recordmerge", mergeID),
+				vocabulary.ReferenceValueKey: vocabulary.RecordPath(corePackage+"/recordmerge", mergeID),
 			},
 		},
 	}, nil

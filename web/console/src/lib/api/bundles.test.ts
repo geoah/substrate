@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
+  ACCOUNT_CONFIG_TRAIT,
   bindBundleInput,
   bundleState,
   parseSubstrateOAuthMessage,
@@ -13,20 +14,22 @@ import {
   setupCount,
   startOAuth,
   SUBSTRATE_OAUTH_SOURCE,
+  traitRecordsQueryOptions,
   type BundleStatus,
 } from "./bundles"
 
 function status(over: Partial<BundleStatus> = {}): BundleStatus {
   return {
-    id: "web.bundles.substrate.reamde.dev",
+    id: "samples.substrate.reamde.dev/web",
     name: "web",
-    authority: "web.bundles.substrate.reamde.dev",
+    authority: "samples.substrate.reamde.dev",
+    package: "web",
     installed: true,
     enabled: true,
     inputs: [
       {
         name: "connector",
-        kind: "web.bundles.substrate.reamde.dev/config",
+        kind: "samples.substrate.reamde.dev/web/config",
         record: "default",
         via: "default",
       },
@@ -57,7 +60,7 @@ describe("bundleState", () => {
             {
               code: "missing",
               input: "connector",
-              kind: "web.bundles.substrate.reamde.dev/config",
+              kind: "samples.substrate.reamde.dev/web/config",
               message: "no config record exists yet",
             },
           ],
@@ -98,10 +101,10 @@ describe("lifecycle verbs", () => {
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify(status({ enabled: false })), { status: 200 })
     )
-    await runBundleVerb("web.bundles.substrate.reamde.dev", "disable")
+    await runBundleVerb("samples.substrate.reamde.dev/web", "disable")
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toBe(
-      "/api/v1/core.substrate.reamde.dev/bundle/web.bundles.substrate.reamde.dev"
+      "/api/v1/substrate.reamde.dev/core/bundle/samples.substrate.reamde.dev%2Fweb"
     )
     expect(init?.method).toBe("PATCH")
     expect(JSON.parse(String(init?.body))).toEqual({
@@ -113,10 +116,10 @@ describe("lifecycle verbs", () => {
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ purged: 12 }), { status: 200 })
     )
-    const res = await purgeBundle("web.bundles.substrate.reamde.dev")
+    const res = await purgeBundle("samples.substrate.reamde.dev/web")
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toBe(
-      "/api/v1/core.substrate.reamde.dev/bundle/web.bundles.substrate.reamde.dev"
+      "/api/v1/substrate.reamde.dev/core/bundle/samples.substrate.reamde.dev%2Fweb"
     )
     expect(init?.method).toBe("PATCH")
     expect(JSON.parse(String(init?.body))).toEqual({
@@ -130,27 +133,27 @@ describe("lifecycle verbs", () => {
       new Response(JSON.stringify(status()), { status: 200 })
     )
     const res = await bindBundleInput(
-      "web.bundles.substrate.reamde.dev",
+      "samples.substrate.reamde.dev/web",
       "connector",
       "rec-1"
     )
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toBe(
-      "/api/v1/core.substrate.reamde.dev/bundle/web.bundles.substrate.reamde.dev/bind"
+      "/api/v1/substrate.reamde.dev/core/bundle/samples.substrate.reamde.dev%2Fweb/bind"
     )
     expect(init?.method).toBe("POST")
     expect(JSON.parse(String(init?.body))).toEqual({
       input: "connector",
       record: "rec-1",
     })
-    expect(res.id).toBe("web.bundles.substrate.reamde.dev")
+    expect(res.id).toBe("samples.substrate.reamde.dev/web")
   })
 
   it("bind with an empty record is the unbind", async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify(status()), { status: 200 })
     )
-    await bindBundleInput("web.bundles.substrate.reamde.dev", "connector", "")
+    await bindBundleInput("samples.substrate.reamde.dev/web", "connector", "")
     const [, init] = fetchMock.mock.calls[0]
     expect(JSON.parse(String(init?.body))).toEqual({
       input: "connector",
@@ -167,6 +170,32 @@ describe("lifecycle verbs", () => {
     expect(String(url)).toBe("/api/v1/oauth/start")
     expect(JSON.parse(String(init?.body))).toEqual({ record: "acct-1" })
     expect(res.url).toBe("https://consent")
+  })
+})
+
+describe("the account-config trait read", () => {
+  const fetchMock = vi.fn<typeof fetch>()
+  beforeEach(() => vi.stubGlobal("fetch", fetchMock))
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+  })
+
+  // The trait is a KIND REFERENCE, and the Accounts section reads it through
+  // the core package's trait sub-path. A spelling the server does not
+  // recognize is a 404 nobody sees until the section is opened, so the
+  // identity and the URL it produces are pinned here together.
+  it("reads the host trait by its identity, under the core package", async () => {
+    expect(ACCOUNT_CONFIG_TRAIT).toBe("substrate.reamde.dev/core/accountconfig")
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ records: [] }), { status: 200 })
+    )
+    await traitRecordsQueryOptions(ACCOUNT_CONFIG_TRAIT).queryFn?.({
+      signal: undefined,
+    } as never)
+    expect(String(fetchMock.mock.calls[0][0])).toBe(
+      "/api/v1/substrate.reamde.dev/core/trait/substrate.reamde.dev%2Fcore%2Faccountconfig/records?first=200"
+    )
   })
 })
 

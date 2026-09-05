@@ -848,8 +848,8 @@ func referenceFilterPath(name string, p *vocabulary.Property, v any) (string, er
 }
 
 // referenceValue renders one path as the containment probes for a reference
-// property: `{"agent": "core.substrate.reamde.dev/agent/x"}` and
-// `{"agent": {"ref": "core.substrate.reamde.dev/agent/x"}}`, each wrapped in an
+// property: `{"agent": "substrate.reamde.dev/core/agent/x"}` and
+// `{"agent": {"ref": "substrate.reamde.dev/core/agent/x"}}`, each wrapped in an
 // array when the property is repeated (containment reaches inside an array, so
 // one shape answers "holds this reference" for both). jsonb containment is
 // recursive over objects, so a probe names the pointer and says nothing about

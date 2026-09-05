@@ -18,13 +18,14 @@ The GitHub [integration](bundles-catalog.md#github) ships a `user` kind
 the shipped `person`:
 
 ```yaml
-kind: core.substrate.reamde.dev/recordmapping
+kind: substrate.reamde.dev/core/recordmapping
 metadata:
-  id: github.bundles.substrate.reamde.dev/userperson
+  id: providers.substrate.reamde.dev/github/userperson
 data:
-  authority: github.bundles.substrate.reamde.dev
-  from: github.bundles.substrate.reamde.dev/user
-  to: people.substrate.reamde.dev/person
+  authority: providers.substrate.reamde.dev
+  package: github
+  from: providers.substrate.reamde.dev/github/user
+  to: samples.substrate.reamde.dev/people/person
   property: person                 # the source's `subject: true` reference
   match:                           # first-link probes: how a new record
     - from: email                  #   finds an existing person
@@ -75,7 +76,7 @@ substrate always knows, per record per property, who holds the current value.
 Beside the actor it records a **tier**, the manager's standing against
 recompute. There are three:
 
-- **machine**: the sync machinery. Authority-declared machine actors and
+- **machine**: the sync machinery. Package-declared machine actors and
   the engine's own hand write here, and everything recompute writes is
   machine-held whatever actor it credits. Machine-held values are recompute's
   to replace.
@@ -89,7 +90,7 @@ recompute. There are three:
 **The tier is an explicit attribute of the write context, never an inference
 from the actor's spelling.** A declared actor may carry
 `tier: owner|bundle|machine` on its [actor document](api.md#actors)
-(machine is the default for an authority-declared actor), and function and
+(machine is the default for a package-declared actor), and function and
 agent dispatch stamps the bundle tier on its own writes. An actor no
 declaration knows falls one of two ways. A name a request may assert holds at
 the owner tier: a token has full access to its repository, so a stranger's
@@ -140,7 +141,8 @@ source value that differs from the stored one:
     "manager": "owner",
     "tier": "owner",
     "alternatives": [
-      {"actor": "function:githubsync", "value": "ada"}
+      {"actor": "function:providers.substrate.reamde.dev:github:githubsync",
+       "value": "ada"}
     ]
   }
 }
@@ -166,11 +168,12 @@ selection as every provider's, and they release by omission when your records
 go. A minimal contribution:
 
 ```yaml
-kind: core.substrate.reamde.dev/kind
+kind: substrate.reamde.dev/core/kind
 metadata:
-  id: enrich.example.com/enrichment
+  id: enrich.example.com/crm/enrichment
 data:
   authority: enrich.example.com
+  package: crm
   names:
     singular: enrichment
   properties:
@@ -180,18 +183,19 @@ data:
       type: email
     person:
       type: reference
-      kind: people.substrate.reamde.dev/person
+      kind: samples.substrate.reamde.dev/people/person
       required: true
       mustExist: true
       subject: true
 ---
-kind: core.substrate.reamde.dev/recordmapping
+kind: substrate.reamde.dev/core/recordmapping
 metadata:
-  id: enrich.example.com/enrichmentperson
+  id: enrich.example.com/crm/enrichmentperson
 data:
   authority: enrich.example.com
-  from: enrich.example.com/enrichment
-  to: people.substrate.reamde.dev/person
+  package: crm
+  from: enrich.example.com/crm/enrichment
+  to: samples.substrate.reamde.dev/people/person
   property: person
   match:
     - from: email
@@ -290,7 +294,7 @@ duplicate detector would write it, proposing that a second record of Ada is
 the same person:
 
 ```yaml
-kind: core.substrate.reamde.dev/recordmergerequest
+kind: substrate.reamde.dev/core/recordmergerequest
 metadata:
   id: dupe-9f2k-x41c              # deterministic: the pair, sorted
 data:
@@ -302,8 +306,8 @@ data:
           value: ada@example.com
     decision: proposed            # a state: proposed, accepted, rejected
     # the record that survives, and the one merged away into it
-    winner: people.substrate.reamde.dev/person/9f2k
-    loser: people.substrate.reamde.dev/person/x41c
+    winner: samples.substrate.reamde.dev/people/person/9f2k
+    loser: samples.substrate.reamde.dev/people/person/x41c
 ```
 
 The `decision` state is the whole lifecycle: `proposed` until somebody
@@ -312,7 +316,7 @@ Accepting is an ordinary
 [state transition](data-model.md#validation-and-state-machines), a patch:
 
 ```http
-PATCH /api/v1/core.substrate.reamde.dev/recordmergerequest/dupe-9f2k-x41c
+PATCH /api/v1/substrate.reamde.dev/core/recordmergerequest/dupe-9f2k-x41c
 {"properties": {"decision": "accepted"}}
 ```
 
@@ -340,7 +344,7 @@ and the two ids:
 
 ```http
 POST /api/v1/merge
-{"kind": "people.substrate.reamde.dev/person", "winner": "9f2k", "loser": "x41c"}
+{"kind": "samples.substrate.reamde.dev/people/person", "winner": "9f2k", "loser": "x41c"}
 ```
 
 ### The patch request sibling

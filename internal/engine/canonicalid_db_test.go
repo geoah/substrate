@@ -150,7 +150,7 @@ func TestCanonicalIDMergeRepointsNothing(t *testing.T) {
 		switch in.From.Kind {
 		case book.Kind:
 			books++
-		case "core.substrate.reamde.dev/recordmerge":
+		case "substrate.reamde.dev/core/recordmerge":
 			merges++
 		}
 	}
@@ -166,7 +166,7 @@ func TestCanonicalIDMergeRepointsNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantMember := []any{map[string]any{
-		vocabulary.ReferenceValueKey: vocabulary.RecordPath("people.substrate.reamde.dev/organization", org.ID),
+		vocabulary.ReferenceValueKey: vocabulary.RecordPath("samples.substrate.reamde.dev/people/organization", org.ID),
 	}}
 	if len(dead.Records) != 1 || !reflect.DeepEqual(dead.Records[0].Properties["memberOf"], wantMember) {
 		t.Fatalf("the loser's own pointer did not stay on its tombstone: %+v", dead.Records)
@@ -325,7 +325,7 @@ func TestCanonicalIDReferenceWriteAtFormerIDs(t *testing.T) {
 		t.Fatalf("patch at a former id: %v", err)
 	}
 	want := []any{map[string]any{
-		vocabulary.ReferenceValueKey: vocabulary.RecordPath("people.substrate.reamde.dev/organization", orgLoser.ID),
+		vocabulary.ReferenceValueKey: vocabulary.RecordPath("samples.substrate.reamde.dev/people/organization", orgLoser.ID),
 	}}
 	got := mustGet(t, ds, winner.Kind, winner.ID).Properties["memberOf"]
 	if !reflect.DeepEqual(got, want) {
@@ -433,7 +433,7 @@ func TestRekeyFormerIDTrailIsPerType(t *testing.T) {
 	if tk.ID != loser.ID || tk.CanonicalID != "" {
 		t.Fatalf("the task should hold the id plainly: id=%s canonicalId=%q", tk.ID, tk.CanonicalID)
 	}
-	if got := mustGet(t, ds, "task", loser.ID); got.Kind != "tasks.substrate.reamde.dev/task" || got.ID != loser.ID {
+	if got := mustGet(t, ds, "task", loser.ID); got.Kind != "samples.substrate.reamde.dev/tasks/task" || got.ID != loser.ID {
 		t.Fatalf("get(task, %s) = %s %s", loser.ID, got.Kind, got.ID)
 	}
 	// And the person read still resolves through the trail, unshaken.

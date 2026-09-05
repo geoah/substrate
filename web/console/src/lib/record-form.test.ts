@@ -20,9 +20,10 @@ function typeWith(
   properties: Record<string, Record<string, unknown>>
 ): KindInfo {
   return {
-    identity: "google.bundles.substrate.reamde.dev/account",
+    identity: "providers.substrate.reamde.dev/google/account",
     name: "account",
-    authority: "google.bundles.substrate.reamde.dev",
+    authority: "providers.substrate.reamde.dev",
+    package: "google",
     version: 0,
     plural: "accounts",
     source: "installed",
@@ -412,7 +413,10 @@ describe("toProperties explicit clear", () => {
  * `<kind>/<id>`. These hold the join, both directions. */
 describe("reference fields", () => {
   const pointerKind = typeWith({
-    owner: { type: "reference", kind: "people.substrate.reamde.dev/person" },
+    owner: {
+      type: "reference",
+      kind: "samples.substrate.reamde.dev/people/person",
+    },
     callable: { type: "reference", kind: "any" },
   })
   const fieldsOf = () => buildFormFields(pointerKind)
@@ -424,11 +428,11 @@ describe("reference fields", () => {
   it("seeds a served reference object back into the kind and the id it joins", () => {
     const record = {
       properties: {
-        owner: { ref: "people.substrate.reamde.dev/person/alice" },
+        owner: { ref: "samples.substrate.reamde.dev/people/person/alice" },
       },
     } as unknown as SubstrateRecord
     expect(initialValues(fieldsOf(), record).owner).toEqual({
-      kind: "people.substrate.reamde.dev/person",
+      kind: "samples.substrate.reamde.dev/people/person",
       id: "alice",
     })
   })
@@ -437,13 +441,13 @@ describe("reference fields", () => {
     const record = {
       properties: {
         owner: {
-          ref: "people.substrate.reamde.dev/person/alice",
+          ref: "samples.substrate.reamde.dev/people/person/alice",
           role: "lead",
         },
       },
     } as unknown as SubstrateRecord
     expect(initialValues(fieldsOf(), record).owner).toEqual({
-      kind: "people.substrate.reamde.dev/person",
+      kind: "samples.substrate.reamde.dev/people/person",
       id: "alice",
     })
   })
@@ -452,10 +456,10 @@ describe("reference fields", () => {
   // seeds; the server is what normalizes it.
   it("seeds the bare path shorthand a hand-authored document may carry", () => {
     const record = {
-      properties: { owner: "people.substrate.reamde.dev/person/alice" },
+      properties: { owner: "samples.substrate.reamde.dev/people/person/alice" },
     } as unknown as SubstrateRecord
     expect(initialValues(fieldsOf(), record).owner).toEqual({
-      kind: "people.substrate.reamde.dev/person",
+      kind: "samples.substrate.reamde.dev/people/person",
       id: "alice",
     })
   })
@@ -465,7 +469,7 @@ describe("reference fields", () => {
       properties: { owner: { ref: "alice" } },
     } as unknown as SubstrateRecord
     expect(initialValues(fieldsOf(), record).owner).toEqual({
-      kind: "people.substrate.reamde.dev/person",
+      kind: "samples.substrate.reamde.dev/people/person",
       id: "alice",
     })
   })
@@ -477,64 +481,70 @@ describe("reference fields", () => {
     const fields = fieldsOf()
     const values = initialValues(fields)
     values.owner = {
-      kind: "people.substrate.reamde.dev/person",
-      id: "foo.bar/baz/qux",
+      kind: "samples.substrate.reamde.dev/people/person",
+      id: "foo.bar/baz/qux/quux",
     }
     const errors = validate(fields, values, "create")
     expect(errors.map((e) => e.name)).toEqual(["owner"])
     expect(errors[0].message).toContain("ambiguous")
-    expect(errors[0].message).toContain("foo.bar/baz")
+    expect(errors[0].message).toContain("foo.bar/baz/qux")
     expect(toProperties(fields, values)).not.toHaveProperty("owner")
   })
 
   it("refuses an id of nothing, and keeps a slash-bearing short form", () => {
     const fields = fieldsOf()
     const values = initialValues(fields)
-    values.owner = { kind: "people.substrate.reamde.dev/person", id: "target/" }
+    values.owner = {
+      kind: "samples.substrate.reamde.dev/people/person",
+      id: "target/",
+    }
     expect(validate(fields, values, "create")[0].message).toMatch(
       /has an empty segment/
     )
     // A slash-bearing value that parses as NO path is the ordinary short form,
     // and the pin completes it. This is what a tool entry writes.
     values.owner = {
-      kind: "people.substrate.reamde.dev/person",
+      kind: "samples.substrate.reamde.dev/people/person",
       id: "web.example.com/page",
     }
     expect(validate(fields, values, "create")).toEqual([])
     expect(toProperties(fields, values).owner).toBe(
-      "people.substrate.reamde.dev/person/web.example.com/page"
+      "samples.substrate.reamde.dev/people/person/web.example.com/page"
     )
   })
 
   it("submits the two halves as ONE path, and a pasted path unchanged", () => {
     const fields = fieldsOf()
     const values = initialValues(fields)
-    values.owner = { kind: "people.substrate.reamde.dev/person", id: "alice" }
+    values.owner = {
+      kind: "samples.substrate.reamde.dev/people/person",
+      id: "alice",
+    }
     values.callable = {
       kind: "",
-      id: "core.substrate.reamde.dev/function/f",
+      id: "substrate.reamde.dev/core/function/f",
     }
     expect(toProperties(fields, values)).toEqual({
-      owner: "people.substrate.reamde.dev/person/alice",
+      owner: "samples.substrate.reamde.dev/people/person/alice",
       // A whole path typed into the record box is already the value; the kind
       // box has nothing left to add to it.
-      callable: "core.substrate.reamde.dev/function/f",
+      callable: "substrate.reamde.dev/core/function/f",
     })
   })
 
   it("keeps a declaration id whole: the kind joins in front of its slash", () => {
     const fields = buildFormFields(
       typeWith({
-        of: { type: "reference", kind: "core.substrate.reamde.dev/kind" },
+        of: { type: "reference", kind: "substrate.reamde.dev/core/kind" },
       })
     )
     const values = initialValues(fields)
     values.of = {
-      kind: "core.substrate.reamde.dev/kind",
-      id: "tasks.substrate.reamde.dev/task",
+      kind: "substrate.reamde.dev/core/kind",
+      id: "samples.substrate.reamde.dev/tasks/task",
     }
     expect(toProperties(fields, values).of).toBe(
-      "core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev/task"
+      "substrate.reamde.dev/core/kind/samples.substrate.reamde.dev/tasks/task"
     )
   })
 

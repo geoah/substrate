@@ -16,9 +16,10 @@ import { RecordConfigForm } from "./record-config-form"
 // OAuth facility's (writer: oauth), the toggles/cadence/backfill are the
 // owner's, and syncFrequency is an enum with a displayName.
 const accountKind: KindInfo = {
-  identity: "google.bundles.substrate.reamde.dev/account",
+  identity: "providers.substrate.reamde.dev/google/account",
   name: "account",
-  authority: "google.bundles.substrate.reamde.dev",
+  authority: "providers.substrate.reamde.dev",
+  package: "google",
   version: 0,
   plural: "accounts",
   source: "installed",

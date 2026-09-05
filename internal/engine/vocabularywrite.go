@@ -44,6 +44,7 @@ import (
 // vocabularyRecordKinds maps the schema kinds' record type identities to their
 // manifest short names — the types whose writes route through admission.
 var vocabularyRecordKinds = map[string]string{
+	kindPackage:       vocabulary.DocPackage,
 	kindAuthority:     vocabulary.DocAuthority,
 	kindKind:          vocabulary.DocKind,
 	kindTrait:         vocabulary.DocTrait,
@@ -60,7 +61,7 @@ var vocabularyRecordKinds = map[string]string{
 const kindActorLocal = vocabulary.DocActor
 
 // schemaKindRef resolves a manifest kind's SHORT name ("kind")
-// back to its full type identity ("core.substrate.reamde.dev/kind").
+// back to its full type identity ("substrate.reamde.dev/core/kind").
 func schemaKindRef(short string) (string, bool) {
 	for ident, s := range vocabularyRecordKinds {
 		if s == short {
@@ -92,15 +93,15 @@ type vocabularyDocMeta struct {
 // vocabularyBatch is one admission unit: documents to upsert, documents to
 // remove, and authorities replaced wholesale (their absent declarations prune).
 type vocabularyBatch struct {
-	docs               []vocabulary.Document
-	deletes            []vocabulary.Document
-	replaceAuthorities []string
-	meta               map[string]vocabularyDocMeta // keyed by docKey
+	docs            []vocabulary.Document
+	deletes         []vocabulary.Document
+	replacePackages []string
+	meta            map[string]vocabularyDocMeta // keyed by docKey
 	// beforeGuards runs INSIDE the batch transaction, right after the
 	// registry-dependency lock and BEFORE the refuse-breakage guards: a bundle
 	// uninstall tears its delivery wiring (triggers referencing the owned
 	// authority's callables) down here, so the dropped-callable guard sees them
-	// already gone and the whole-authority teardown never refuses on its own
+	// already gone and the whole-package teardown never refuses on its own
 	// triggers. A guard that fires afterwards rolls this back with the batch.
 	beforeGuards func(t *txn) error
 	// extra runs INSIDE the batch transaction, after the projection, against
@@ -138,7 +139,7 @@ func parseVocabularyDocs(raw []map[string]any) ([]vocabulary.Document, error) {
 
 // ApplyVocabularyDocuments is the batch apply verb: every document admitted or
 // none, one transaction, activation on commit. Documents wear the same
-// authority/type/metadata/data envelope the loader has always parsed.
+// kind/metadata/data envelope the loader has always parsed.
 func (ds *dataset) ApplyVocabularyDocuments(ctx context.Context, actor substrate.Actor, raw []map[string]any) ([]*substrate.Record, error) {
 	if len(raw) == 0 {
 		return nil, fmt.Errorf("%w: no documents", substrate.ErrValidation)
@@ -234,13 +235,13 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 	// validation.
 	var prepare []*vocabulary.Function
 	for _, aname := range sortedKeys(touched) {
-		cand, _ := candidate.AuthorityByName(aname)
+		cand, _ := candidate.PackageByName(aname)
 		if cand == nil {
 			continue
 		}
-		cur, _ := current.AuthorityByName(aname)
+		cur, _ := current.PackageByName(aname)
 		// A re-install after an uninstall is a FRESH install: uninstall tears
-		// the owned authority down whole (bundles.go), so `cur` is nil here and
+		// the owned package down whole (bundles.go), so `cur` is nil here and
 		// every body prepares — the retired runner registrations warm again.
 		for _, fname := range cand.FunctionOrder {
 			f := cand.Functions[fname]
@@ -284,7 +285,7 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		if err := t.lockKey(registryDepKey(ds)); err != nil {
 			return err
 		}
-		// A whole-authority teardown (bundle uninstall) removes the owned authority's
+		// A whole-package teardown (bundle uninstall) removes the owned package's
 		// delivery wiring first — under the same lock, before the guards below —
 		// so dropping every callable never strands its own triggers. If a guard
 		// then refuses (live data instances), this rolls back with the batch.
@@ -316,7 +317,7 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		if err := t.checkSchemaCAS(b.meta); err != nil {
 			return err
 		}
-		got, err := t.projectAuthorities(candidate, touched, projectOpts{meta: b.meta, prune: true})
+		got, err := t.projectPackages(candidate, touched, projectOpts{meta: b.meta, prune: true})
 		if err != nil {
 			return err
 		}
@@ -400,32 +401,32 @@ type vocabularyStage struct {
 
 // stageVocabularyBatch builds the batch's candidate registry and classifies
 // what admitting it would break. actor is the writing hand, checked at the
-// authority chokepoint; nil means the caller is only ASKING (the upgrade
+// ownership chokepoint; nil means the caller is only ASKING (the upgrade
 // preview), and a read needs no license to write: nothing here writes.
 func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary.Registry, actor *substrate.Actor, b vocabularyBatch) (*vocabularyStage, error) {
-	// A batch carrying a bundle document is a whole-authority apply: the closure
+	// A batch carrying a bundle document is a whole-package apply: the closure
 	// the document lists IS the authority, so install and upgrade both REPLACE it
 	// — one atomic re-apply, absent declarations pruned, breakage refused
 	// below. (This is the connector-registration transaction, generalized.)
 	for _, d := range b.docs {
 		if d.Kind == vocabulary.DocBundle {
-			b.replaceAuthorities = append(b.replaceAuthorities, d.DeclaredAuthority())
+			b.replacePackages = append(b.replacePackages, d.DeclaredPackage())
 		}
 	}
 
-	// The touched authorities: every authority a document declares into, plus the
+	// The touched authorities: every package a document declares into, plus the
 	// wholesale replacements.
 	touched := map[string]bool{}
 	var problems []string
 	for _, d := range append(append([]vocabulary.Document(nil), b.docs...), b.deletes...) {
-		g := d.DeclaredAuthority()
+		g := d.DeclaredPackage()
 		if g == "" {
-			problems = append(problems, fmt.Sprintf("%s %s: data.authority is required", d.Kind, d.ID))
+			problems = append(problems, fmt.Sprintf("%s %s: data.authority and data.package are required", d.Kind, d.ID))
 			continue
 		}
 		touched[g] = true
 	}
-	for _, g := range b.replaceAuthorities {
+	for _, g := range b.replacePackages {
 		touched[g] = true
 	}
 	if len(problems) > 0 {
@@ -435,22 +436,25 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		return nil, fmt.Errorf("%w: no documents", substrate.ErrValidation)
 	}
 	if actor != nil {
-		// THE AUTHORITY CHECK, at the one chokepoint (seed.go): who may write a
-		// kind DECLARATION into each touched authority.
+		// THE OWNERSHIP CHECK, at the one chokepoint (seed.go): who may write a
+		// kind DECLARATION into each touched package.
 		for _, g := range sortedKeys(touched) {
 			if err := authorizeDeclarationWrite(*actor, current, g); err != nil {
+				return nil, err
+			}
+			if err := authorizeNewPackage(*actor, current, g); err != nil {
 				return nil, err
 			}
 		}
 		// An actor's id does not embed its authority (alone among the kinds), so a
 		// document can CLAIM any authority. Check by the actor declaration's CURRENT
-		// authority too: a shipped actor redeclared into an installed authority would
-		// otherwise overwrite the shipped row from outside its authority.
+		// authority too: a shipped actor redeclared into an installed package would
+		// otherwise overwrite the shipped row from outside its package.
 		for _, d := range append(append([]vocabulary.Document(nil), b.docs...), b.deletes...) {
 			if d.Kind != kindActorLocal {
 				continue
 			}
-			g, ok := current.ActorAuthority(d.ID)
+			g, ok := current.ActorPackage(d.ID)
 			if !ok {
 				continue
 			}
@@ -461,11 +465,11 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	}
 
 	replaced := map[string]bool{}
-	for _, g := range b.replaceAuthorities {
+	for _, g := range b.replacePackages {
 		replaced[g] = true
 	}
 
-	// Current documents of the touched authorities, from their record rows.
+	// Current documents of the touched packages, from their record rows.
 	existing, err := ds.vocabularyDocumentRows(ctx, touched)
 	if err != nil {
 		return nil, err
@@ -473,7 +477,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	resolveDeclarationVersions(&b, existing)
 	merged := map[string]vocabulary.Document{}
 	for k, d := range existing {
-		if replaced[d.DeclaredAuthority()] {
+		if replaced[d.DeclaredPackage()] {
 			continue // a replacement starts from the incoming set alone
 		}
 		merged[k] = d
@@ -485,33 +489,33 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		delete(merged, docKey(d))
 	}
 
-	// The candidate: current registry minus the touched authorities, plus their
+	// The candidate: current registry minus the touched packages, plus their
 	// rebuilt replacements — compiled whole (CEL guards, templates) before the
 	// transaction opens. Every problem in every document reports at once.
 	candidate := current.Clone()
 	for g := range touched {
 		candidate.Remove(g)
 	}
-	byAuthority := map[string][]vocabulary.Document{}
+	byPackage := map[string][]vocabulary.Document{}
 	for _, d := range merged {
-		g := d.DeclaredAuthority()
-		byAuthority[g] = append(byAuthority[g], d)
+		g := d.DeclaredPackage()
+		byPackage[g] = append(byPackage[g], d)
 	}
-	var rebuilt []*vocabulary.Authority
-	for _, aname := range sortedKeys(byAuthority) {
+	var rebuilt []*vocabulary.Package
+	for _, aname := range sortedKeys(byPackage) {
 		// An authority is rebuilt with the ORIGIN ITS STORED ROWS CLAIM, exactly as
-		// storedAuthorities builds it at open. Two things read the origin — the row
+		// storedPackages builds it at open. Two things read the origin — the row
 		// the projection writes back, and the one loader rule keyed on it
 		// (`runtime: host`, which only a shipped declaration may name) — so
 		// rebuilding shipped vocabulary as `installed` would both re-stamp its
 		// authority row and refuse core's own host functions the moment any batch
-		// touched core. An authority nobody has yet is the writer's, hence
+		// touched core. A package nobody has yet is the writer's, hence
 		// installed.
 		source := vocabulary.SourceInstalled
-		if cur, ok := current.AuthorityByName(aname); ok && cur.Source == vocabulary.SourceBuiltin {
+		if cur, ok := current.PackageByName(aname); ok && cur.Source == vocabulary.SourceBuiltin {
 			source = vocabulary.SourceBuiltin
 		}
-		gs, err := vocabulary.BuildAuthorities(byAuthority[aname], source)
+		gs, err := vocabulary.BuildPackages(byPackage[aname], source)
 		if err != nil {
 			var ve *substrate.ValidationError
 			if errors.As(err, &ve) {
@@ -541,8 +545,8 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	// no longer resolves, loudly, without moving its cursor).
 	var droppedTypes []string
 	for aname := range touched {
-		cur, _ := current.AuthorityByName(aname)
-		cand, _ := candidate.AuthorityByName(aname)
+		cur, _ := current.PackageByName(aname)
+		cand, _ := candidate.PackageByName(aname)
 		if cur != nil {
 			for _, tn := range cur.KindOrder {
 				if cand == nil || cand.Kinds[tn] == nil {
@@ -584,7 +588,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 //
 // A declaration that cannot carry a version of its own — a trait, a
 // function, everything but a kind — moves its AUTHORITY forward instead when
-// it changes, since an authority's version is a statement about the closure
+// it changes, since a package's version is a statement about the closure
 // it ships; a delete moves it too, so the prune reads as an upgrade.
 //
 // Documents are stamped COPY-ON-WRITE: a bundle's closure documents are the
@@ -601,26 +605,26 @@ func resolveDeclarationVersions(b *vocabularyBatch, existing map[string]vocabula
 	// whatever its version says.)
 	needsBump := map[string]bool{}
 	for _, d := range b.docs {
-		if d.Kind == vocabulary.DocKind || d.Kind == vocabulary.DocAuthority {
-			continue
+		if d.Kind == vocabulary.DocKind || d.Kind == vocabulary.DocPackage || d.Kind == vocabulary.DocAuthority {
+			continue // each carries a version of its own to move
 		}
 		if stored, has := existing[docKey(d)]; has && !declarationDataEqual(d.Data, stored.Data) {
-			needsBump[d.DeclaredAuthority()] = true
+			needsBump[d.DeclaredPackage()] = true
 		}
 	}
 	for _, d := range b.deletes {
-		needsBump[d.DeclaredAuthority()] = true
+		needsBump[d.DeclaredPackage()] = true
 	}
 
 	// The authorities first: they are the kinds' cascade fallback below.
 	authorityVersion := map[string]int64{}
 	seenAuthority := map[string]bool{}
 	for i, d := range b.docs {
-		if d.Kind != vocabulary.DocAuthority {
+		if d.Kind != vocabulary.DocPackage {
 			continue
 		}
 		seenAuthority[d.ID] = true
-		stored := storedVersionOf(vocabulary.DocAuthority, d.ID)
+		stored := storedVersionOf(vocabulary.DocPackage, d.ID)
 		explicit, _ := vocabulary.VersionValue(d.Data["version"])
 		v := explicit
 		switch {
@@ -632,7 +636,7 @@ func resolveDeclarationVersions(b *vocabularyBatch, existing map[string]vocabula
 			v = stored
 		}
 		if v == 0 {
-			// A brand-new authority declaring nothing: the loader defaults it.
+			// A brand-new package declaring nothing: the loader defaults it.
 			authorityVersion[d.ID] = vocabulary.DefaultVersion
 			continue
 		}
@@ -641,7 +645,7 @@ func resolveDeclarationVersions(b *vocabularyBatch, existing map[string]vocabula
 		}
 		authorityVersion[d.ID] = v
 	}
-	// An authority that must move but is not in the batch: bring it in, at
+	// A package that must move but is not in the batch: bring it in, at
 	// stored+1, so the bump lands with the change that demands it. (A fresh
 	// authority has nothing stored to move past; its own document is
 	// mandatory in that batch and was handled above.)
@@ -649,30 +653,31 @@ func resolveDeclarationVersions(b *vocabularyBatch, existing map[string]vocabula
 		if seenAuthority[g] {
 			continue
 		}
-		stored := storedVersionOf(vocabulary.DocAuthority, g)
+		stored := storedVersionOf(vocabulary.DocPackage, g)
 		if stored == 0 {
 			continue
 		}
+		authority, name := vocabulary.SplitPackageRef(g)
 		b.docs = append(b.docs, vocabulary.Document{
-			Kind: vocabulary.DocAuthority, ID: g,
-			Data: map[string]any{"version": stored + 1},
+			Kind: vocabulary.DocPackage, ID: g,
+			Data: map[string]any{"authority": authority, "package": name, "version": stored + 1},
 		})
 		authorityVersion[g] = stored + 1
 	}
 
-	// The kinds: each against its own stored row, with the authority's
+	// The kinds: each against its own stored row, with the package's
 	// version as the effective fallback exactly as the loader cascades it.
 	cascade := func(g string) int64 {
 		if v, ok := authorityVersion[g]; ok {
 			return v
 		}
-		if v := storedVersionOf(vocabulary.DocAuthority, g); v != 0 {
+		if v := storedVersionOf(vocabulary.DocPackage, g); v != 0 {
 			return v
 		}
 		return vocabulary.DefaultVersion
 	}
 	for i, d := range b.docs {
-		if d.Kind != vocabulary.DocKind {
+		if d.Kind != vocabulary.DocKind && d.Kind != vocabulary.DocAuthority {
 			continue
 		}
 		stored, has := existing[docKey(d)]
@@ -686,10 +691,10 @@ func resolveDeclarationVersions(b *vocabularyBatch, existing map[string]vocabula
 		}
 		effective := explicit
 		if effective == 0 {
-			effective = cascade(d.DeclaredAuthority())
+			effective = cascade(d.DeclaredPackage())
 		}
 		if effective > storedV {
-			continue // the authority's own move carries it (the boot/bundle ride)
+			continue // the package's own move carries it (the boot/bundle ride)
 		}
 		v := storedV
 		if !declarationDataEqual(d.Data, stored.Data) {
@@ -775,20 +780,20 @@ type projectOpts struct {
 	// boot-time upgrade uses it for the never-downgrade rule (seed.go); nil
 	// projects everything.
 	skip func(key string) bool
-	// prune tombstones the touched authorities' declarations the registry no
-	// longer declares — what a whole-authority re-apply (install, upgrade,
+	// prune tombstones the touched packages' declarations the registry no
+	// longer declares — what a whole-package re-apply (install, upgrade,
 	// uninstall) needs. THE SEED AND THE SHIPPED-VOCABULARY UPGRADE NEVER
 	// PRUNE: the embedded tree is a source, the repository's own
 	// changelog is the truth, and re-assert-and-prune is dead.
 	prune bool
 }
 
-// projectAuthorities writes the touched authorities' declarations as record rows
+// projectPackages writes the touched packages' declarations as record rows
 // from the candidate registry — no-op suppressed, so unchanged declarations
 // stay changelog-silent — and, when asked, tombstones rows of those authorities the
 // candidate stopped declaring. It returns every written (or unchanged) record
 // keyed by kind+id.
-func (t *txn) projectAuthorities(reg *vocabulary.Registry, authorities map[string]bool, opts projectOpts) (map[string]*substrate.Record, error) {
+func (t *txn) projectPackages(reg *vocabulary.Registry, authorities map[string]bool, opts projectOpts) (map[string]*substrate.Record, error) {
 	out := map[string]*substrate.Record{}
 	live := map[string]bool{}
 
@@ -803,11 +808,11 @@ func (t *txn) projectAuthorities(reg *vocabulary.Registry, authorities map[strin
 	var passes [][]declaration
 	projecting := map[string]bool{}
 	for _, aname := range names {
-		g, ok := reg.AuthorityByName(aname)
+		g, ok := reg.PackageByName(aname)
 		if !ok {
 			continue // the authority is being removed whole; prune takes its rows
 		}
-		decls, err := authorityDeclarations(g)
+		decls, err := packageDeclarations(g)
 		if err != nil {
 			return nil, err
 		}
@@ -828,7 +833,7 @@ func (t *txn) projectAuthorities(reg *vocabulary.Registry, authorities map[strin
 	t.writeReg = reg
 	defer func() { t.writeReg = prevReg }()
 	for _, decls := range passes {
-		if err := t.projectAuthority(reg, projecting, decls, live, opts, out); err != nil {
+		if err := t.projectPackage(reg, projecting, decls, live, opts, out); err != nil {
 			return nil, err
 		}
 	}
@@ -862,11 +867,11 @@ func (d declaration) version() int64 {
 	return v
 }
 
-// projectAuthority writes one authority's declarations: the header, its actors, and
+// projectPackage writes one authority's declarations: the header, its actors, and
 // every property type, trait, record type, mapping, function, agent and
 // bundle. `projecting` is the whole pass's set of kinds whose own declaration
 // this projection writes, which is what projectionKind reads.
-func (t *txn) projectAuthority(reg *vocabulary.Registry, projecting map[string]bool, decls []declaration, live map[string]bool, opts projectOpts, out map[string]*substrate.Record) error {
+func (t *txn) projectPackage(reg *vocabulary.Registry, projecting map[string]bool, decls []declaration, live map[string]bool, opts projectOpts, out map[string]*substrate.Record) error {
 	for _, d := range decls {
 		if opts.skip != nil && opts.skip(d.key()) {
 			continue
@@ -955,7 +960,7 @@ func (t *txn) projectionKind(reg *vocabulary.Registry, projecting map[string]boo
 	return t.ds.resolveType(typeIdent)
 }
 
-// authorityDeclarations renders every declaration an authority stores as rows, in one
+// packageDeclarations renders every declaration an authority stores as rows, in one
 // stable order. It is the ONE enumeration of an authority's contents: the
 // projection writes it, and the boot-time upgrade diffs versions across it
 // (seed.go), so the writer and the differ can never disagree about what a
@@ -975,7 +980,7 @@ func (t *txn) projectionKind(reg *vocabulary.Registry, projecting map[string]boo
 // `version:` wins where it declares one; every other kind takes the declaring
 // authority's, which is the cheapest consistent rule — an authority's version is a
 // statement about the declarations it ships.
-func authorityDeclarations(g *vocabulary.Authority) ([]declaration, error) {
+func packageDeclarations(g *vocabulary.Package) ([]declaration, error) {
 	var decls []declaration
 	var missing []string
 	// add takes the declaration's own data map and the properties the engine
@@ -1014,22 +1019,40 @@ func authorityDeclarations(g *vocabulary.Authority) ([]declaration, error) {
 	for _, a := range g.Actors {
 		actors = append(actors, a)
 	}
+	// An AUTHORITY row owns packages and declares nothing else, so its
+	// projection is the row and it is done.
+	if g.IsAuthority() {
+		data := map[string]any{"version": g.Version}
+		if g.Description != "" {
+			data["description"] = g.Description
+		}
+		if err := add(vocabulary.DocAuthority, kindAuthority, g.Identity, data,
+			map[string]any{"source": g.Source}); err != nil {
+			return nil, err
+		}
+		return decls, nil
+	}
 	// The explicit quarantined/quarantineReason nulls CLEAR any issue-010
-	// marker: a re-projection of the authority (a catalog re-install producing a
+	// marker: a re-projection of the package (a catalog re-install producing a
 	// valid closure) is what lifts the quarantine. Null against an absent
-	// property is a no-op, so a healthy authority's re-projection writes nothing.
-	if err := add(vocabulary.DocAuthority, kindAuthority, g.Name,
-		map[string]any{"version": g.Version},
+	// property is a no-op, so a healthy package's re-projection writes nothing.
+	header := map[string]any{
+		"authority": g.Authority, "package": g.Name, "version": g.Version,
+	}
+	if g.Description != "" {
+		header["description"] = g.Description
+	}
+	if err := add(vocabulary.DocPackage, kindPackage, g.Identity, header,
 		map[string]any{
 			"actors": actors, "source": g.Source,
-			propAuthorityQuarantined: nil, propAuthorityQuarantineReason: nil,
+			propPackageQuarantined: nil, propPackageQuarantineReason: nil,
 		}); err != nil {
 		return nil, err
 	}
 	for _, a := range g.Actors {
-		// An actor named for its authority has no row of its own: the
-		// authority row above already holds that id and lists the actor.
-		if a == g.Name {
+		// An actor named for its package has no row of its own: the package
+		// row above already holds that id and lists the actor.
+		if a == g.Identity {
 			continue
 		}
 		// The tier is the actor's explicit attribute: projected
@@ -1040,7 +1063,7 @@ func authorityDeclarations(g *vocabulary.Authority) ([]declaration, error) {
 			tier = string(declared)
 		}
 		if err := add(kindActorLocal, kindActor, a,
-			map[string]any{"authority": g.Name, "tier": tier},
+			map[string]any{"authority": g.Authority, "package": g.Name, "tier": tier},
 			map[string]any{"source": g.Source}); err != nil {
 			return nil, err
 		}
@@ -1095,7 +1118,7 @@ func authorityDeclarations(g *vocabulary.Authority) ([]declaration, error) {
 		// `disabled` and `purging` are deliberately untouched: an upgrade of a
 		// disabled bundle stays disabled. The explicit `uninstalled` null clears
 		// the retired reversible-uninstall marker off any legacy row a
-		// pre-teardown binary wrote — uninstall is a whole-authority teardown now
+		// pre-teardown binary wrote — uninstall is a whole-package teardown now
 		// (bundles.go), so no live bundle row ever carries it, and the null is a
 		// no-op otherwise.
 		if err := add(vocabulary.DocBundle, kindBundle, b.Identity(),
@@ -1151,7 +1174,7 @@ func retiredDeclarationProps(short string) map[string]bool {
 
 // propDeclarationVersion is the version EVERY declaration row carries: the
 // property a boot-time upgrade diffs on, stamped by the projection when the
-// declaration pinned none (authorityDeclarations) and therefore not part of the
+// declaration pinned none (packageDeclarations) and therefore not part of the
 // authored declaration a read surface renders (dataset.go authoredKindData).
 const propDeclarationVersion = "version"
 
@@ -1164,7 +1187,7 @@ func engineOwned(short, prop string) bool {
 		!columnBackedProp[prop]
 }
 
-// pruneSchemaRows tombstones schema record rows of the touched authorities the
+// pruneSchemaRows tombstones schema record rows of the touched packages the
 // candidate registry stopped declaring. Without it a removed declaration
 // would be listed forever, since projection only ever writes rows.
 //
@@ -1181,27 +1204,21 @@ func (t *txn) pruneSchemaRows(authorities, live map[string]bool) error {
 		ph = append(ph, "$"+strconv.Itoa(i+1))
 	}
 	rows, err := t.query(`
-		SELECT id, kind, props->>'authority' FROM records
+		SELECT id, kind, props->>'authority', props->>'package' FROM records
 		WHERE kind IN (`+strings.Join(ph, ", ")+`) AND deleted_at IS NULL`, args...)
 	if err != nil {
 		return err
 	}
-	type srow struct{ id, typ, authority string }
+	type srow struct{ id, typ, pkg string }
 	var all []srow
 	for rows.Next() {
 		var id, typ string
-		var authority *string
-		if err := rows.Scan(&id, &typ, &authority); err != nil {
+		var authority, pkg *string
+		if err := rows.Scan(&id, &typ, &authority, &pkg); err != nil {
 			_ = rows.Close()
 			return err
 		}
-		g := ""
-		if typ == kindAuthority {
-			g = id
-		} else if authority != nil {
-			g = *authority
-		}
-		all = append(all, srow{id, typ, g})
+		all = append(all, srow{id, typ, rowPackage(typ, id, authority, pkg)})
 	}
 	if err := rows.Err(); err != nil {
 		_ = rows.Close()
@@ -1211,7 +1228,7 @@ func (t *txn) pruneSchemaRows(authorities, live map[string]bool) error {
 	type stale struct{ id, typ string }
 	var gone []stale
 	for _, s := range all {
-		if !authorities[s.authority] || live[s.typ+"\x00"+s.id] {
+		if !authorities[s.pkg] || live[s.typ+"\x00"+s.id] {
 			continue
 		}
 		gone = append(gone, stale{s.id, s.typ})
@@ -1242,9 +1259,23 @@ func (t *txn) pruneSchemaRows(authorities, live map[string]bool) error {
 	return nil
 }
 
+// rowPackage is the GROUP a stored declaration row belongs to, and the one
+// spelling of that rule on the SQL side (vocabulary.Document.DeclaredPackage is
+// the same rule on the document side): a package row and an authority row are
+// their own group, everything else names its authority and its package.
+func rowPackage(typeIdent, id string, authority, pkg *string) string {
+	if typeIdent == kindPackage || typeIdent == kindAuthority {
+		return id
+	}
+	if authority == nil || pkg == nil || *authority == "" || *pkg == "" {
+		return ""
+	}
+	return vocabulary.PackageRef(*authority, *pkg)
+}
+
 // --- rows back into documents -------------------------------------------------
 
-// vocabularyDocumentRows reads the touched authorities' schema record rows back as
+// vocabularyDocumentRows reads the touched packages' schema record rows back as
 // loader documents — the store is the source the candidate rebuilds from.
 func (ds *dataset) vocabularyDocumentRows(ctx context.Context, authorities map[string]bool) (map[string]vocabulary.Document, error) {
 	args := make([]any, 0, len(vocabularyKindRefs))
@@ -1279,10 +1310,10 @@ func (ds *dataset) vocabularyDocumentRows(ctx context.Context, authorities map[s
 		if derr != nil {
 			return nil, derr
 		}
-		if !ok || !authorities[d.DeclaredAuthority()] {
+		if !ok || !authorities[d.DeclaredPackage()] {
 			continue
 		}
-		if typ == kindAuthority {
+		if typ == kindPackage {
 			authorityActors[id] = append(authorityActors[id], anyStrings(props["actors"])...)
 		}
 		out[docKey(d)] = d
@@ -1290,11 +1321,11 @@ func (ds *dataset) vocabularyDocumentRows(ctx context.Context, authorities map[s
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	// Record 60: an authority-named actor has no row of its own — the authority
-	// row is it. Synthesize its document so the rebuilt authority keeps the actor.
+	// Record 60: a package-named actor has no row of its own — the package row
+	// is it. Synthesize its document so the rebuilt package keeps the actor.
 	for aname, actors := range authorityActors {
 		for _, a := range actors {
-			if a != vocabulary.AuthorityActor(aname) {
+			if a != vocabulary.PackageActor(aname) {
 				continue
 			}
 			d, err := vocabulary.DocumentFromMap(vocabulary.ActorManifest(aname, a))
@@ -1336,18 +1367,13 @@ func rowDocument(id, typeIdent string, props map[string]any) (vocabulary.Documen
 			ErrDeclarationUntranslated, typeIdent, id, propDeclarationBlob)
 	}
 	switch short {
-	case vocabulary.DocAuthority:
-		data := map[string]any{}
-		if v, _ := vocabulary.VersionValue(props["version"]); v > 0 {
-			data["version"] = v
-		}
-		d.Data = data
 	case kindActorLocal:
-		g, _ := props["authority"].(string)
-		if g == "" {
+		authority, _ := props["authority"].(string)
+		pkg, _ := props["package"].(string)
+		if authority == "" || pkg == "" {
 			return vocabulary.Document{}, false, nil // a pre-promotion mirror row; the seed rewrites it
 		}
-		d.Data = map[string]any{"authority": g}
+		d.Data = map[string]any{"authority": authority, "package": pkg}
 		// machine is the parse default, so the rebuilt document omits it —
 		// the boot no-op comparison stays parsed projection against parsed
 		// projection.
@@ -1385,7 +1411,7 @@ func rowDocument(id, typeIdent string, props map[string]any) (vocabulary.Documen
 
 // declarationData is one declaration row's DOCUMENT data: the properties the
 // loader admits for that kind, and nothing else. It is the read half of the
-// projection's write (authorityDeclarations), and it is a WHITELIST rather than
+// projection's write (packageDeclarations), and it is a WHITELIST rather than
 // a list of exclusions on purpose — see engineDeclarationProps.
 func declarationData(short string, props map[string]any) map[string]any {
 	keys := vocabulary.DeclarationDataKeys(short)
@@ -1426,24 +1452,24 @@ func anyStrings(v any) []string {
 // upgrade entries (seed.go). What open does is read the repository's own rows
 // back — they are the whole of its vocabulary.
 
-// The authority-level quarantine markers, on the authority row. A
-// stored closure that no longer admits under the current binary is marked
-// here and left OUT of the live registry, so its one bundle is disabled
-// instead of the whole repository bricking; a re-install (which projects a valid
-// closure, clearing the marker) is how it clears.
+// The package-level quarantine markers, on the package row. A stored closure
+// that no longer admits under the current binary is marked here and left OUT of
+// the live registry, so its one bundle is disabled instead of the whole
+// repository bricking; a re-install (which projects a valid closure, clearing
+// the marker) is how it clears.
 const (
-	propAuthorityQuarantined      = "quarantined"
-	propAuthorityQuarantineReason = "quarantineReason"
+	propPackageQuarantined      = "quarantined"
+	propPackageQuarantineReason = "quarantineReason"
 	// quarantineReasonMax bounds the stored admission-error text so a huge
-	// problem list can never bloat the authority row.
+	// problem list can never bloat the package row.
 	quarantineReasonMax = 2000
 )
 
-// quarantinedAuthority pairs a stored authority that could not join the live
+// quarantinedPackage pairs a stored authority that could not join the live
 // registry with the reason. It carries the NAME, not a built authority: a
 // closure that fails to PARSE never produces one, and the name is all the
 // marker needs.
-type quarantinedAuthority struct {
+type quarantinedPackage struct {
 	name   string
 	reason string
 }
@@ -1471,10 +1497,10 @@ func cappedQuarantineReason(reason string) string {
 // logged, marked on its authority row (a state the console/status shows),
 // and left out of the live registry — so the repository opens with the rest. A
 // re-install of the offending bundle clears the mark. The same holds one step
-// earlier, for a closure that no longer PARSES (storedAuthorities): both
+// earlier, for a closure that no longer PARSES (storedPackages): both
 // failures arrive here as quarantine candidates and are marked identically.
 func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
-	built, unparsed, err := ds.storedAuthorities(ctx, nil)
+	built, unparsed, err := ds.storedPackages(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -1492,7 +1518,7 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 		// Slow path: install the admissible subset and quarantine the rest. The
 		// failed InstallAll removed everything it added, so ds.reg is clean
 		// again.
-		var inadmissible []quarantinedAuthority
+		var inadmissible []quarantinedPackage
 		good, inadmissible = ds.admissibleSubset(built)
 		quarantined = append(quarantined, inadmissible...)
 	}
@@ -1500,8 +1526,11 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 		return err
 	}
 	for _, q := range quarantined {
+		// Every value here came off a stored row, so each one passes the log
+		// filters first: the two ids by the id grammar, the reason as repaired
+		// prose (triggers.go). A crafted declaration cannot forge a log line.
 		ds.svc.log.Error("substrate: quarantining a stored closure that no longer loads under this binary — the repository opens WITHOUT it; re-install the bundle to clear",
-			"repository", ds.info.Name, "authority", q.name, "reason", q.reason)
+			"repository", logSafeID(ds.info.Name), "package", logSafeID(q.name), "reason", logSafeText(q.reason))
 		if err := ds.markGroupQuarantined(ctx, q.name, q.reason); err != nil {
 			return err
 		}
@@ -1509,17 +1538,17 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 	return nil
 }
 
-// admissibleSubset installs the maximal subset of built authorities that admits
+// admissibleSubset installs the maximal subset of built packages that admits
 // into ds.reg and returns the rest as quarantined, with each one's admission
-// error. It is a fixpoint over single-authority Install: an authority that depends on a
-// sibling admits once that sibling is in, and Install self-removes an authority
-// that fails — so ds.reg is left holding exactly the admissible subset. n
-// (installed bundle authorities) is small, so the O(n^2) worst case is fine.
-func (ds *dataset) admissibleSubset(built []*vocabulary.Authority) (good []*vocabulary.Authority, quarantined []quarantinedAuthority) {
-	remaining := append([]*vocabulary.Authority(nil), built...)
+// error. It is a fixpoint over single-package Install: a package that depends
+// on a sibling admits once that sibling is in, and Install self-removes a
+// package that fails, so ds.reg is left holding exactly the admissible subset.
+// n (installed packages) is small, so the O(n^2) worst case is fine.
+func (ds *dataset) admissibleSubset(built []*vocabulary.Package) (good []*vocabulary.Package, quarantined []quarantinedPackage) {
+	remaining := append([]*vocabulary.Package(nil), built...)
 	for {
 		progressed := false
-		var next []*vocabulary.Authority
+		var next []*vocabulary.Package
 		for _, g := range remaining {
 			if err := ds.reg.Install(g); err == nil {
 				good = append(good, g)
@@ -1541,34 +1570,45 @@ func (ds *dataset) admissibleSubset(built []*vocabulary.Authority) (good []*voca
 		if err := ds.reg.Install(g); err != nil {
 			reason = err.Error()
 		}
-		quarantined = append(quarantined, quarantinedAuthority{name: g.Name, reason: cappedQuarantineReason(reason)})
+		quarantined = append(quarantined, quarantinedPackage{name: g.Identity, reason: cappedQuarantineReason(reason)})
 	}
 	return good, quarantined
 }
 
-// markGroupQuarantined records the quarantine state on the authority's authority
-// row, so BundleStatuses can surface it and a later re-install (which
-// re-projects the row, clearing these props) lifts it.
-func (ds *dataset) markGroupQuarantined(ctx context.Context, authority, reason string) error {
-	_, err := ds.patchInternal(ctx, substrate.ActorSystem, kindAuthority, authority, substrate.PatchInput{
+// markGroupQuarantined records the quarantine state on the package's own row,
+// so BundleStatuses can surface it and a later re-install (which re-projects
+// the row, clearing these props) lifts it.
+func (ds *dataset) markGroupQuarantined(ctx context.Context, group, reason string) error {
+	_, err := ds.patchInternal(ctx, substrate.ActorSystem, groupKind(group), group, substrate.PatchInput{
 		Properties: map[string]any{
-			propAuthorityQuarantined:      true,
-			propAuthorityQuarantineReason: reason,
+			propPackageQuarantined:      true,
+			propPackageQuarantineReason: reason,
 		},
 	})
 	return err
 }
 
-// clearGroupQuarantine lifts the quarantine marker off any of the given authorities
-// whose authority row still carries it — the open-time twin of the
+// groupKind is the meta-kind a declaration GROUP stores as: a package row for a
+// package, the authority row for an authority. The mark has to land on the row
+// that exists, or an authority document this binary cannot parse could never be
+// quarantined and the repository would refuse to open instead.
+func groupKind(group string) string {
+	if authority, _ := vocabulary.SplitPackageRef(group); authority == "" {
+		return kindAuthority
+	}
+	return kindPackage
+}
+
+// clearGroupQuarantine lifts the quarantine marker off any of the given
+// packages whose package row still carries it — the open-time twin of the
 // projection clear, for a binary that relaxed a contract so the closure admits
 // again without a re-install.
-func (ds *dataset) clearGroupQuarantine(ctx context.Context, authorities []*vocabulary.Authority) error {
+func (ds *dataset) clearGroupQuarantine(ctx context.Context, authorities []*vocabulary.Package) error {
 	for _, g := range authorities {
 		var flagged bool
 		err := ds.db.QueryRowContext(ctx,
 			`SELECT props ? $2 FROM records WHERE id = $1 AND kind = $3 AND deleted_at IS NULL`,
-			g.Name, propAuthorityQuarantined, kindAuthority).Scan(&flagged)
+			g.Identity, propPackageQuarantined, groupKind(g.Identity)).Scan(&flagged)
 		if errors.Is(err, sql.ErrNoRows) {
 			continue
 		}
@@ -1578,8 +1618,8 @@ func (ds *dataset) clearGroupQuarantine(ctx context.Context, authorities []*voca
 		if !flagged {
 			continue
 		}
-		if _, err := ds.patchInternal(ctx, substrate.ActorSystem, kindAuthority, g.Name, substrate.PatchInput{
-			Properties: map[string]any{propAuthorityQuarantined: nil, propAuthorityQuarantineReason: nil},
+		if _, err := ds.patchInternal(ctx, substrate.ActorSystem, groupKind(g.Identity), g.Identity, substrate.PatchInput{
+			Properties: map[string]any{propPackageQuarantined: nil, propPackageQuarantineReason: nil},
 		}); err != nil {
 			return err
 		}
@@ -1587,19 +1627,19 @@ func (ds *dataset) clearGroupQuarantine(ctx context.Context, authorities []*voca
 	return nil
 }
 
-// storedAuthorities rebuilds every authority the repository stores FROM its schema
-// record rows, skipping the names the caller already accounts for. Each authority
-// keeps the `source` its authority row records — `builtin` for what the
-// creation seed (or a shipped upgrade) wrote, `installed` for everything a
-// user or a bundle declared — so authority reads the same answer at open
-// as it did at the write. It parses and returns the authorities without installing
-// them anywhere, alongside the ones that no longer parse under this binary —
-// quarantine candidates for the caller to mark.
-func (ds *dataset) storedAuthorities(ctx context.Context, skip func(string) bool) ([]*vocabulary.Authority, []quarantinedAuthority, error) {
+// storedPackages rebuilds every package the repository stores FROM its schema
+// record rows, skipping the identities the caller already accounts for. Each
+// package keeps the `source` its own row records: `builtin` for what the
+// creation seed (or a shipped upgrade) wrote, `installed` for everything a user
+// or a bundle declared, so ownership reads the same answer at open as it did at
+// the write. It parses and returns the packages without installing them
+// anywhere, alongside the ones that no longer parse under this binary, which
+// are the quarantine candidates for the caller to mark.
+func (ds *dataset) storedPackages(ctx context.Context, skip func(string) bool) ([]*vocabulary.Package, []quarantinedPackage, error) {
 	rows, err := ds.db.QueryContext(ctx, `
-		SELECT id, COALESCE(props->>'source', $2) FROM records
-		WHERE kind = $1 AND deleted_at IS NULL
-		ORDER BY created_at, id`, kindAuthority, vocabulary.SourceInstalled)
+		SELECT id, COALESCE(props->>'source', $3) FROM records
+		WHERE kind IN ($1, $2) AND deleted_at IS NULL
+		ORDER BY created_at, id`, kindPackage, kindAuthority, vocabulary.SourceInstalled)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1637,8 +1677,8 @@ func (ds *dataset) storedAuthorities(ctx context.Context, skip func(string) bool
 	}
 	// One BuildAuthorities pass per source: an authority is built with the origin its
 	// own row claims, and the rebuilt types carry it (`Type.Source`).
-	var built []*vocabulary.Authority
-	var unparsed []quarantinedAuthority
+	var built []*vocabulary.Package
+	var unparsed []quarantinedPackage
 	for _, source := range []string{vocabulary.SourceBuiltin, vocabulary.SourceInstalled} {
 		names := bySource[source]
 		if len(names) == 0 {
@@ -1646,11 +1686,11 @@ func (ds *dataset) storedAuthorities(ctx context.Context, skip func(string) bool
 		}
 		all := make([]vocabulary.Document, 0, len(docs))
 		for _, key := range sortedKeys(docs) {
-			if d := docs[key]; names[d.DeclaredAuthority()] {
+			if d := docs[key]; names[d.DeclaredPackage()] {
 				all = append(all, d)
 			}
 		}
-		gs, err := vocabulary.BuildAuthorities(all, source)
+		gs, err := vocabulary.BuildPackages(all, source)
 		if err == nil {
 			built = append(built, gs...)
 			continue
@@ -1661,7 +1701,7 @@ func (ds *dataset) storedAuthorities(ctx context.Context, skip func(string) bool
 		// every authority that shares its source — and with it the repository's
 		// open. Issue 010's quarantine, one step earlier: rebuild per
 		// authority, keep the ones that still parse.
-		good, bad, cerr := buildAuthoritiesSeparately(all, source)
+		good, bad, cerr := buildPackagesSeparately(all, source)
 		if cerr != nil {
 			return nil, nil, fmt.Errorf("substrate/engine: rebuild stored schema: %w", cerr)
 		}
@@ -1671,33 +1711,33 @@ func (ds *dataset) storedAuthorities(ctx context.Context, skip func(string) bool
 	return built, unparsed, nil
 }
 
-// buildAuthoritiesSeparately rebuilds a source's documents ONE AUTHORITY AT A
+// buildPackagesSeparately rebuilds a source's documents ONE AUTHORITY AT A
 // TIME — every authority is bucketed and built independently anyway, so this
 // changes nothing but the blast radius of a failure. Core is the exception it
 // returns an error for: a repository whose own meta-kinds do not parse
 // resolves nothing, so quarantining core would be a lie dressed as a recovery.
-func buildAuthoritiesSeparately(docs []vocabulary.Document, source string) ([]*vocabulary.Authority, []quarantinedAuthority, error) {
-	byAuthority := map[string][]vocabulary.Document{}
+func buildPackagesSeparately(docs []vocabulary.Document, source string) ([]*vocabulary.Package, []quarantinedPackage, error) {
+	byPackage := map[string][]vocabulary.Document{}
 	var order []string
 	for _, d := range docs {
-		name := d.DeclaredAuthority()
-		if _, seen := byAuthority[name]; !seen {
+		name := d.DeclaredPackage()
+		if _, seen := byPackage[name]; !seen {
 			order = append(order, name)
 		}
-		byAuthority[name] = append(byAuthority[name], d)
+		byPackage[name] = append(byPackage[name], d)
 	}
-	var built []*vocabulary.Authority
-	var unparsed []quarantinedAuthority
+	var built []*vocabulary.Package
+	var unparsed []quarantinedPackage
 	for _, name := range order {
-		gs, err := vocabulary.BuildAuthorities(byAuthority[name], source)
+		gs, err := vocabulary.BuildPackages(byPackage[name], source)
 		if err == nil {
 			built = append(built, gs...)
 			continue
 		}
-		if name == vocabulary.AuthorityCore {
+		if name == vocabulary.PackageCore {
 			return nil, nil, err
 		}
-		unparsed = append(unparsed, quarantinedAuthority{name: name, reason: cappedQuarantineReason(err.Error())})
+		unparsed = append(unparsed, quarantinedPackage{name: name, reason: cappedQuarantineReason(err.Error())})
 	}
 	return built, unparsed, nil
 }
@@ -1795,10 +1835,13 @@ func (ds *dataset) deleteVocabularyRecord(ctx context.Context, actor substrate.A
 		return nil, err
 	}
 	if !ok {
-		// A row too old to rebuild still names its authority and kind.
+		// A row too old to rebuild still names its package and kind.
 		doc = vocabulary.Document{
 			Kind: vocabularyRecordKinds[existing.Kind], ID: existing.ID,
-			Data: map[string]any{"authority": fmt.Sprint(existing.Properties["authority"])},
+			Data: map[string]any{
+				"authority": fmt.Sprint(existing.Properties["authority"]),
+				"package":   fmt.Sprint(existing.Properties["package"]),
+			},
 		}
 	}
 	if _, err := ds.applyVocabularyBatch(ctx, actor, vocabularyBatch{deletes: []vocabulary.Document{doc}}); err != nil {
@@ -1821,17 +1864,25 @@ func documentFromProps(short, id string, props map[string]any) (vocabulary.Docum
 	d := vocabulary.Document{Kind: short, ID: id}
 	switch short {
 	case vocabulary.DocAuthority:
+		// An authority row owns the packages published under it and says what
+		// it is; a closure's ownership and quarantine sit on the PACKAGE
+		// (record 0047), so the row's own version and description are the whole
+		// of what a write may carry.
 		data := map[string]any{}
 		if v, ok := vocabulary.VersionValue(props["version"]); ok && v > 0 {
 			data["version"] = v
 		}
+		if desc, _ := props["description"].(string); desc != "" {
+			data["description"] = desc
+		}
 		d.Data = data
 	case kindActorLocal:
-		g, _ := props["authority"].(string)
-		if g == "" {
-			return d, fmt.Errorf("%w: an actor record carries `authority` — the authority that declares it", substrate.ErrValidation)
+		authority, _ := props["authority"].(string)
+		pkg, _ := props["package"].(string)
+		if authority == "" || pkg == "" {
+			return d, fmt.Errorf("%w: an actor record carries `authority` and `package` — the package that declares it", substrate.ErrValidation)
 		}
-		d.Data = map[string]any{"authority": g}
+		d.Data = map[string]any{"authority": authority, "package": pkg}
 		if tier, _ := props["tier"].(string); tier != "" && tier != string(substrate.TierMachine) {
 			d.Data["tier"] = tier
 		}
@@ -1921,7 +1972,7 @@ func checkDeclarationWrite(ty *vocabulary.Kind, short string, existing *substrat
 	return nil
 }
 
-// reprojectedKinds lists the touched authorities' kinds whose reference
+// reprojectedKinds lists the touched packages' kinds whose reference
 // declarations differ between the stored closure and the candidate — added,
 // dropped, re-shaped or given link data. A kind the candidate drops entirely is
 // in the list too: its records' rows must go with the declaration that
@@ -1942,7 +1993,7 @@ func reprojectedKinds(current, candidate *vocabulary.Registry, touched map[strin
 	var out []string
 	for aname := range touched {
 		for _, reg := range []*vocabulary.Registry{current, candidate} {
-			g, ok := reg.AuthorityByName(aname)
+			g, ok := reg.PackageByName(aname)
 			if !ok || g == nil {
 				continue
 			}

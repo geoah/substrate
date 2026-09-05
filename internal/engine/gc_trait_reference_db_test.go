@@ -7,6 +7,7 @@ import (
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // A shared kind (calendar, conversation, emailthread) owns its account through a
@@ -16,7 +17,10 @@ import (
 // refuses a referent whose kind does not implement the trait, and the GC cascade
 // collects the shared record when the account it names is collected.
 
-const traitMirrorAuthority = "traitmirror.example.com"
+const (
+	traitMirrorAuthority = "traitmirror.example.com"
+	traitMirrorPackage   = traitMirrorAuthority + "/traitmirror"
+)
 
 // traitMirrorManifest declares a `connected` trait, two account kinds that
 // implement it (two providers), a `session` kind whose account is a trait-pinned
@@ -26,6 +30,7 @@ func traitMirrorManifest() enginetest.Manifest {
 	kind := func(id string, extra map[string]any) map[string]any {
 		data := map[string]any{
 			"authority":       traitMirrorAuthority,
+			"package":         "traitmirror",
 			"names":           map[string]any{"singular": last(id), "plural": last(id) + "s"},
 			"displayTemplate": "{label}",
 			"properties": map[string]any{
@@ -36,7 +41,7 @@ func traitMirrorManifest() enginetest.Manifest {
 			data[k] = v
 		}
 		return map[string]any{
-			"kind":     "core.substrate.reamde.dev/kind",
+			"kind":     "substrate.reamde.dev/core/kind",
 			"metadata": map[string]any{"id": id},
 			"data":     data,
 		}
@@ -47,10 +52,11 @@ func traitMirrorManifest() enginetest.Manifest {
 	}
 	account := func(id string) map[string]any {
 		return map[string]any{
-			"kind":     "core.substrate.reamde.dev/kind",
+			"kind":     "substrate.reamde.dev/core/kind",
 			"metadata": map[string]any{"id": id},
 			"data": map[string]any{
 				"authority":       traitMirrorAuthority,
+				"package":         "traitmirror",
 				"names":           map[string]any{"singular": last(id), "plural": last(id) + "s"},
 				"displayTemplate": "{label}",
 				"traits":          []any{"connected"},
@@ -62,23 +68,20 @@ func traitMirrorManifest() enginetest.Manifest {
 		Name:      "traitmirror",
 		Authority: traitMirrorAuthority,
 		Manifests: []map[string]any{
+			vocabulary.PackageManifest(traitMirrorPackage, 1),
 			{
-				"kind":     "core.substrate.reamde.dev/authority",
-				"metadata": map[string]any{"id": traitMirrorAuthority},
-				"data":     map[string]any{"version": 1},
-			},
-			{
-				"kind":     "core.substrate.reamde.dev/trait",
-				"metadata": map[string]any{"id": traitMirrorAuthority + "/connected"},
+				"kind":     "substrate.reamde.dev/core/trait",
+				"metadata": map[string]any{"id": traitMirrorPackage + "/connected"},
 				"data": map[string]any{
 					"authority":  traitMirrorAuthority,
+					"package":    "traitmirror",
 					"properties": map[string]any{"connRef": "secret"},
 				},
 			},
-			account(traitMirrorAuthority + "/providera"),
-			account(traitMirrorAuthority + "/providerb"),
+			account(traitMirrorPackage + "/providera"),
+			account(traitMirrorPackage + "/providerb"),
 			// The owner pointer under test: any kind that implements `connected`.
-			kind(traitMirrorAuthority+"/session", map[string]any{
+			kind(traitMirrorPackage+"/session", map[string]any{
 				"properties": map[string]any{
 					"label": map[string]any{"type": "string"},
 					"account": map[string]any{
@@ -87,7 +90,7 @@ func traitMirrorManifest() enginetest.Manifest {
 				},
 			}),
 			// Same trait pin, no `onDelete:`: the sweep must leave it alone.
-			kind(traitMirrorAuthority+"/pointer", map[string]any{
+			kind(traitMirrorPackage+"/pointer", map[string]any{
 				"properties": map[string]any{
 					"label": map[string]any{"type": "string"},
 					"account": map[string]any{
@@ -96,7 +99,7 @@ func traitMirrorManifest() enginetest.Manifest {
 				},
 			}),
 			// Implements nothing: a session may not point here.
-			kind(traitMirrorAuthority+"/stranger", nil),
+			kind(traitMirrorPackage+"/stranger", nil),
 		},
 	}
 }
@@ -110,36 +113,36 @@ func TestOwnerRefTraitReferenceCascade(t *testing.T) {
 	}
 
 	accA := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: traitMirrorAuthority + "/providera", ID: "acct-a",
+		Kind: traitMirrorPackage + "/providera", ID: "acct-a",
 		Properties: map[string]any{"label": "A"},
 	})
 	accB := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: traitMirrorAuthority + "/providerb", ID: "acct-b",
+		Kind: traitMirrorPackage + "/providerb", ID: "acct-b",
 		Properties: map[string]any{"label": "B"},
 	})
 
 	// A trait pin supplies no kind for a bare id, so the value is a full path.
 	synced := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: traitMirrorAuthority + "/session", ID: "sess-a",
+		Kind: traitMirrorPackage + "/session", ID: "sess-a",
 		Properties: map[string]any{"label": "on A", "account": accA.Kind + "/" + accA.ID},
 	})
 	elsewhere := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: traitMirrorAuthority + "/session", ID: "sess-b",
+		Kind: traitMirrorPackage + "/session", ID: "sess-b",
 		Properties: map[string]any{"label": "on B", "account": accB.Kind + "/" + accB.ID},
 	})
 	provenance := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: traitMirrorAuthority + "/pointer", ID: "ptr-a",
+		Kind: traitMirrorPackage + "/pointer", ID: "ptr-a",
 		Properties: map[string]any{"label": "not an owner", "account": accA.Kind + "/" + accA.ID},
 	})
 
 	// A referent whose kind does not implement the trait is refused: the write
 	// path checks the pin, not only the shape.
 	stranger := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: traitMirrorAuthority + "/stranger", ID: "str-1",
+		Kind: traitMirrorPackage + "/stranger", ID: "str-1",
 		Properties: map[string]any{"label": "no trait"},
 	})
 	_, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: traitMirrorAuthority + "/session", ID: "sess-bad",
+		Kind: traitMirrorPackage + "/session", ID: "sess-bad",
 		Properties: map[string]any{"label": "bad", "account": stranger.Kind + "/" + stranger.ID},
 	})
 	if err == nil || !strings.Contains(err.Error(), "does not implement the pinned trait") {
@@ -178,11 +181,11 @@ func TestIncomingOverTraitReference(t *testing.T) {
 		t.Fatalf("install trait mirror types: %v", err)
 	}
 	accA := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: traitMirrorAuthority + "/providera", ID: "acct-a",
+		Kind: traitMirrorPackage + "/providera", ID: "acct-a",
 		Properties: map[string]any{"label": "A"},
 	})
 	sess := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: traitMirrorAuthority + "/session", ID: "sess-a",
+		Kind: traitMirrorPackage + "/session", ID: "sess-a",
 		Properties: map[string]any{"label": "on A", "account": accA.Kind + "/" + accA.ID},
 	})
 	page, err := ds.Incoming(ctx, accA.Kind, accA.ID, substrate.IncomingOptions{})

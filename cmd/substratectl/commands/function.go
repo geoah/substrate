@@ -17,7 +17,7 @@ func (a *app) triggerCommand() *cobra.Command {
 		Use:     "trigger",
 		Short:   "Inspect and drive substrate triggers",
 		Aliases: []string{"triggers"},
-		Long: `Triggers are data records (core.substrate.reamde.dev) binding one source —
+		Long: `Triggers are data records (substrate.reamde.dev/core) binding one source —
 a record subscription, an RRULE schedule, or a webhook wake — to one
 callable. Each record-sourced trigger owns a changelog cursor; status
 shows where every trigger sits, replay rewinds a cursor, run synthesizes
@@ -101,9 +101,9 @@ callable, without moving the cursor.
 A record is addressed by (kind, id) — an id alone names no record, since two
 kinds may share one — so the delivery takes BOTH. The kind may be the plural or
 singular the registry knows ("tasks", "task") or the full reference
-("tasks.substrate.reamde.dev/task").`,
+("samples.substrate.reamde.dev/tasks/task").`,
 		Example: `  substratectl trigger run classify-page task t9
-  substratectl trigger run classify-page tasks.substrate.reamde.dev/task t9`,
+  substratectl trigger run classify-page samples.substrate.reamde.dev/tasks/task t9`,
 		Args: cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -217,12 +217,12 @@ func fetchParked(ctx context.Context, cl *client, id string) ([]substrate.Trigge
 	return res.Items, nil
 }
 
-// triggersPath is /api/v1/core.substrate.reamde.dev/trigger/{segments…}. A
+// triggersPath is /api/v1/substrate.reamde.dev/core/trigger/{segments…}. A
 // resource's operational verbs live AT the resource and trigger records are
 // core's (the substrate maintains its own delivery plumbing, so it publishes
 // it), which makes this the one spelling.
 func triggersPath(segments ...string) string {
-	return collectionPath(coreAuthority, "trigger", segments...)
+	return collectionPath(corePackage, "trigger", segments...)
 }
 
 func (a *app) functionCommand() *cobra.Command {
@@ -262,7 +262,7 @@ func (a *app) functionCallCommand() *cobra.Command {
 				Effects int `json:"effects"`
 			}
 			if err := cl.do(cmd.Context(), http.MethodPost,
-				collectionPath(coreAuthority, "function", args[0], "call"), nil,
+				collectionPath(corePackage, "function", args[0], "call"), nil,
 				map[string]any{"input": input}, &res); err != nil {
 				return err
 			}

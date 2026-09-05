@@ -19,7 +19,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// Triggers are DATA RECORDS (core.substrate.reamde.dev): one source bound to one
+// Triggers are DATA RECORDS (substrate.reamde.dev/core): one source bound to one
 // callable, console-editable, changelog-visible. The engine's half is here —
 // write-time admission (a trigger row that cannot dispatch never lands), the
 // parse the dispatcher runs on, and the compiled-guard cache. The cursors,
@@ -27,8 +27,8 @@ import (
 // records, so no `*` subscription can match the bookkeeping.
 
 const (
-	typeTrigger = "core.substrate.reamde.dev/trigger"
-	typeRun     = "core.substrate.reamde.dev/run"
+	typeTrigger = "substrate.reamde.dev/core/trigger"
+	typeRun     = "substrate.reamde.dev/core/run"
 )
 
 // The callable kinds a trigger may name. The property is an open string on
@@ -98,7 +98,7 @@ func (t *trigger) resolveCallable(reg *vocabulary.Registry) {
 // resolveKinds canonicalizes an record source's kind patterns against the
 // repository's own vocabulary — the same resolve-at-the-gate the runner's
 // reads allowlist gets. A kind has two spellings, `task` and
-// `tasks.substrate.reamde.dev/task`, and the changelog rows the matcher compares against
+// `samples.substrate.reamde.dev/tasks/task`, and the changelog rows the matcher compares against
 // carry the IDENTITY, so a source declared in the bare spelling would validate
 // and then never fire. A glob is left alone (it is not a reference), and so is
 // a name the registry does not know: it matches nothing, which is exactly what
@@ -231,7 +231,7 @@ func parseTrigger(id string, props map[string]any) (*trigger, error) {
 	}
 
 	// callable is a reference: ONE record path naming a
-	// core.substrate.reamde.dev/function or core.substrate.reamde.dev/agent.
+	// substrate.reamde.dev/core/function or substrate.reamde.dev/core/agent.
 	// Dispatch keys on the LOCAL name of that kind — `function` or `agent` —
 	// beside the id.
 	callable := storedReferencePath(props["callable"])
@@ -245,7 +245,7 @@ func parseTrigger(id string, props map[string]any) (*trigger, error) {
 	t.CallableKind = vocabulary.KindName(callableRef)
 	t.CallableID = callableID
 	if t.CallableKind != callableKindFunction && t.CallableKind != callableKindAgent {
-		return nil, fmt.Errorf("callable kind %q is not dispatchable — core.substrate.reamde.dev/function or core.substrate.reamde.dev/agent", callableRef)
+		return nil, fmt.Errorf("callable kind %q is not dispatchable — substrate.reamde.dev/core/function or substrate.reamde.dev/core/agent", callableRef)
 	}
 
 	source, ok := props["source"].(map[string]any)
@@ -452,6 +452,27 @@ func (ds *dataset) warnDiscardedOutput(t *trigger, fn *vocabulary.Function) {
 	// scanner taints every props-map read alike — reaches the log.
 	ds.svc.log.Warn("substrate: trigger fires a function whose output is discarded — it declares no emit, no call and no network, so a delivery can change nothing; call it instead, or give it the grant it needs",
 		"repository", logSafeID(ds.Repository().Name), "trigger", logSafeID(t.ID), "function", logSafeID(fn.Identity()))
+}
+
+// logSafeText is logSafeID for PROSE: an admission error or a quarantine
+// reason carries text a declaration supplied, so a control character in it
+// would end the log line and start a second one. The text is repaired rather
+// than discarded, because it is the whole diagnostic an operator has, and
+// capped, so one stored value cannot flood the log.
+func logSafeText(s string) string {
+	const maxLen = 2000
+	var b strings.Builder
+	for _, r := range s {
+		if b.Len() >= maxLen {
+			break
+		}
+		if r < 0x20 || r == 0x7f {
+			b.WriteRune(' ')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // logSafeID admits a value into a log line only when the id grammar does: a

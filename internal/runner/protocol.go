@@ -160,7 +160,7 @@ type Continuation struct {
 // delivery (the engine gates depth, recursion and input shape; the runner
 // gates the allowlist and budget) and returns its output.
 // ResolveKind turns a kind REFERENCE — bare (`task`) or authority-qualified
-// (`tasks.substrate.reamde.dev/task`) — into the identity the store and the reads
+// (`samples.substrate.reamde.dev/tasks/task`) — into the identity the store and the reads
 // allowlist are written in. It is the one thing the runner cannot answer for
 // itself: the registry lives on the other side of this interface, and without
 // it a reads capability declared in one spelling would refuse a body that asks
@@ -264,10 +264,4 @@ func OpOf(ch substrate.Change) string {
 	default:
 		return vocabulary.FunctionOpUpdate
 	}
-}
-
-// SplitIdentity splits a kind reference into its authority and local name.
-func SplitIdentity(ident string) (local, authority string) {
-	authority, local = vocabulary.SplitKindRef(ident)
-	return local, authority
 }

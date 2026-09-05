@@ -238,7 +238,7 @@ func (t *txn) duplicateRefs(list []any, where string) ([]string, error) {
 // normalizeReference resolves ONE reference value: its referent kind against the
 // registry, the declaration's pin, the one admitted mapping hop, and
 // `mustExist:`. It returns the value in THE stored shape: the object, with the
-// canonical record path "<authority>/<kind>/<id>" under `ref` and any link data
+// canonical record path "<authority>/<package>/<kind>/<id>" under `ref` and any link data
 // beside it, whether or not the declaration declares link properties (0044).
 // Coercion already produced a qualified path (a full path, or a pin-completed
 // bare id) inside that object, so the stored path is spelled one way whatever

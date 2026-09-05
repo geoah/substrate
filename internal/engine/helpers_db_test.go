@@ -36,7 +36,7 @@ func newService(t *testing.T, opts ...engine.Option) (substrate.Service, string)
 	t.Helper()
 	dsn := testdb.NewSchema(t)
 	all := []engine.Option{
-		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		// Signing is mandatory and its seed seals under this key, so every
 		// test runs the keyed shape: a keyless host cannot create or open a
 		// repository at all.
@@ -250,7 +250,7 @@ func ids(records []*substrate.Record) []string {
 
 // typeProvider is the llmprovider kind reference, spelled out here because
 // these tests are outside the engine package and the constant is not exported.
-const typeProvider = "core.substrate.reamde.dev/llmprovider"
+const typeProvider = "substrate.reamde.dev/core/llmprovider"
 
 // fakeEmbedServer is an OpenAI-wire embeddings endpoint over httptest. The
 // embedder is no longer injectable — a repository resolves it from its own
@@ -379,7 +379,7 @@ func installEmbedProvider(t *testing.T, ds substrate.Dataset, id, baseURL, model
 }
 
 // storedRefPath reads one STORED reference value as the record path it names.
-// A reference is stored as the object `{ref: "<authority>/<kind>/<id>", …}`
+// A reference is stored as the object `{ref: "<authority>/<package>/<kind>/<id>", …}`
 // whatever its declaration says (decision 0044); the string arm is the pre-0044
 // spelling a reader never stops accepting. It takes a value rather than a
 // record so a reference nested in an object or a list answers here too.

@@ -20,21 +20,21 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-const firstClassAuthority = "firstclass.example.substrate.reamde.dev"
+const firstClassPackage = "firstclass.example.substrate.reamde.dev/firstclass"
 
 // refVocabulary declares a target kind and two pointers at it: one single,
 // one repeated, plus a display template that reads THROUGH the pointer.
 func firstClassVocabulary(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(firstClassAuthority, 0),
-		vocabulary.KindManifest(firstClassAuthority,
+		vocabulary.PackageManifest(firstClassPackage, 0),
+		vocabulary.KindManifest(firstClassPackage,
 			map[string]any{"singular": "target", "plural": "targets"},
 			map[string]any{
 				"displayTemplate": "{name}",
 				"properties":      map[string]any{"name": map[string]any{"type": "string"}},
 			}),
-		vocabulary.KindManifest(firstClassAuthority,
+		vocabulary.KindManifest(firstClassPackage,
 			map[string]any{"singular": "pointer", "plural": "pointers"},
 			map[string]any{
 				// The template reads the referent's own property: without a
@@ -45,44 +45,44 @@ func firstClassVocabulary(t *testing.T, ds substrate.Dataset) {
 				"properties": map[string]any{
 					"note": map[string]any{"type": "string"},
 					"target": map[string]any{
-						"type": "reference", "kind": firstClassAuthority + "/target",
+						"type": "reference", "kind": firstClassPackage + "/target",
 						"inverse":            "pointers",
 						"inverseDescription": "the rows that name this target",
 					},
 					"alsoSeen": map[string]any{
-						"type": "reference", "kind": firstClassAuthority + "/target",
+						"type": "reference", "kind": firstClassPackage + "/target",
 						"repeated": true, "inverse": "seenBy",
 					},
 				},
 			}),
 		// A BARE reference token: renders the referent's title, and the id it
 		// holds when there is no referent to read.
-		vocabulary.KindManifest(firstClassAuthority,
+		vocabulary.KindManifest(firstClassPackage,
 			map[string]any{"singular": "tag", "plural": "tags"},
 			map[string]any{
 				"displayTemplate": "{target}",
 				"properties": map[string]any{
 					"target": map[string]any{
-						"type": "reference", "kind": firstClassAuthority + "/target",
+						"type": "reference", "kind": firstClassPackage + "/target",
 					},
 				},
 			}),
-		vocabulary.KindManifest(firstClassAuthority,
+		vocabulary.KindManifest(firstClassPackage,
 			map[string]any{"singular": "roster", "plural": "rosters"},
 			map[string]any{
 				"properties": map[string]any{
 					"targets": map[string]any{
-						"type": "reference", "kind": firstClassAuthority + "/target",
+						"type": "reference", "kind": firstClassPackage + "/target",
 						"repeated": true, "required": true,
 					},
 				},
 			}),
-		vocabulary.KindManifest(firstClassAuthority,
+		vocabulary.KindManifest(firstClassPackage,
 			map[string]any{"singular": "strict", "plural": "stricts"},
 			map[string]any{
 				"properties": map[string]any{
 					"target": map[string]any{
-						"type": "reference", "kind": firstClassAuthority + "/target",
+						"type": "reference", "kind": firstClassPackage + "/target",
 						"required": true,
 					},
 				},
@@ -100,27 +100,27 @@ func TestReferenceFilterFindsWhatPointsAtARecord(t *testing.T) {
 	firstClassVocabulary(t, ds)
 
 	a := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassAuthority + "/target", ID: "a",
+		Kind: firstClassPackage + "/target", ID: "a",
 		Properties: map[string]any{"name": "Ada"},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassAuthority + "/target", ID: "b",
+		Kind: firstClassPackage + "/target", ID: "b",
 		Properties: map[string]any{"name": "Bea"},
 	})
 	// A bare id is admitted where a write admits one: `to:` pins the kind.
 	at := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassAuthority + "/pointer", ID: "p1",
+		Kind: firstClassPackage + "/pointer", ID: "p1",
 		Properties: map[string]any{"note": "first", "target": a.ID},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassAuthority + "/pointer", ID: "p2",
+		Kind: firstClassPackage + "/pointer", ID: "p2",
 		Properties: map[string]any{"note": "second", "target": "b"},
 	})
 
 	list := func(value any) []string {
 		t.Helper()
 		page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
-			Kinds:      []string{firstClassAuthority + "/pointer"},
+			Kinds:      []string{firstClassPackage + "/pointer"},
 			Properties: map[string]substrate.Cond{"target": {Eq: value}},
 		}})
 		if err != nil {
@@ -137,7 +137,7 @@ func TestReferenceFilterFindsWhatPointsAtARecord(t *testing.T) {
 		t.Fatalf("a bare id must find the rows pointing at it, got %v", got)
 	}
 	// The canonical PATH answers identically to the bare id the pin completes.
-	if got := list(vocabulary.RecordPath(firstClassAuthority+"/target", "a")); len(got) != 1 {
+	if got := list(vocabulary.RecordPath(firstClassPackage+"/target", "a")); len(got) != 1 {
 		t.Fatalf("the full path must find the same row, got %v", got)
 	}
 	if got := list("b"); len(got) != 1 || got[0] != "p2" {
@@ -156,21 +156,21 @@ func TestReferenceFilterReachesIntoARepeatedPointer(t *testing.T) {
 
 	for _, id := range []string{"a", "b", "c"} {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: firstClassAuthority + "/target", ID: id,
+			Kind: firstClassPackage + "/target", ID: id,
 			Properties: map[string]any{"name": id},
 		})
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassAuthority + "/pointer", ID: "p1",
+		Kind: firstClassPackage + "/pointer", ID: "p1",
 		Properties: map[string]any{"target": "a", "alsoSeen": []any{"b", "c"}},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassAuthority + "/pointer", ID: "p2",
+		Kind: firstClassPackage + "/pointer", ID: "p2",
 		Properties: map[string]any{"target": "a", "alsoSeen": []any{"c"}},
 	})
 
 	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
-		Kinds:      []string{firstClassAuthority + "/pointer"},
+		Kinds:      []string{firstClassPackage + "/pointer"},
 		Properties: map[string]substrate.Cond{"alsoSeen": {Eq: "b"}},
 	}})
 	if err != nil {
@@ -189,22 +189,22 @@ func TestReferenceFilterMembershipAndPresence(t *testing.T) {
 
 	for _, id := range []string{"a", "b"} {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: firstClassAuthority + "/target", ID: id,
+			Kind: firstClassPackage + "/target", ID: id,
 			Properties: map[string]any{"name": id},
 		})
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassAuthority + "/pointer", ID: "p1", Properties: map[string]any{"target": "a"},
+		Kind: firstClassPackage + "/pointer", ID: "p1", Properties: map[string]any{"target": "a"},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassAuthority + "/pointer", ID: "p2", Properties: map[string]any{"target": "b"},
+		Kind: firstClassPackage + "/pointer", ID: "p2", Properties: map[string]any{"target": "b"},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassAuthority + "/pointer", ID: "p3", Properties: map[string]any{"note": "points nowhere"},
+		Kind: firstClassPackage + "/pointer", ID: "p3", Properties: map[string]any{"note": "points nowhere"},
 	})
 
 	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
-		Kinds:      []string{firstClassAuthority + "/pointer"},
+		Kinds:      []string{firstClassPackage + "/pointer"},
 		Properties: map[string]substrate.Cond{"target": {In: []any{"a", "b"}}},
 	}})
 	if err != nil {
@@ -216,7 +216,7 @@ func TestReferenceFilterMembershipAndPresence(t *testing.T) {
 
 	no := false
 	page, err = ds.List(ctx, substrate.Query{Filter: substrate.Filter{
-		Kinds:      []string{firstClassAuthority + "/pointer"},
+		Kinds:      []string{firstClassPackage + "/pointer"},
 		Properties: map[string]substrate.Cond{"target": {Exists: &no}},
 	}})
 	if err != nil {
@@ -237,7 +237,7 @@ func TestReferenceFilterRefusesAnOrdering(t *testing.T) {
 	// their spelling, not the things. Refused, rather than silently answering
 	// with whatever the text comparison happened to do.
 	_, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
-		Kinds:      []string{firstClassAuthority + "/pointer"},
+		Kinds:      []string{firstClassPackage + "/pointer"},
 		Properties: map[string]substrate.Cond{"target": {Gt: "a"}},
 	}})
 	wantErr(t, err, substrate.ErrValidation, "reference")
@@ -252,11 +252,11 @@ func TestReferenceRendersInADisplayTemplate(t *testing.T) {
 	firstClassVocabulary(t, ds)
 
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassAuthority + "/target", ID: "a",
+		Kind: firstClassPackage + "/target", ID: "a",
 		Properties: map[string]any{"name": "Ada"},
 	})
 	row := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassAuthority + "/pointer", ID: "p1",
+		Kind: firstClassPackage + "/pointer", ID: "p1",
 		Properties: map[string]any{"note": "first", "target": "a"},
 	})
 	if row.Title != "Ada: first" {
@@ -265,7 +265,7 @@ func TestReferenceRendersInADisplayTemplate(t *testing.T) {
 
 	// A BARE token renders the referent's title.
 	tag := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassAuthority + "/tag", ID: "t1",
+		Kind: firstClassPackage + "/tag", ID: "t1",
 		Properties: map[string]any{"target": "a"},
 	})
 	if tag.Title != "Ada" {
@@ -276,9 +276,9 @@ func TestReferenceRendersInADisplayTemplate(t *testing.T) {
 	// difference from an edge. A bare token then falls back to the id it
 	// holds: a dangling pointer still NAMES something, and rendering nothing
 	// would throw away the only identifier the row had.
-	ghost := vocabulary.RecordPath(firstClassAuthority+"/target", "ghost")
+	ghost := vocabulary.RecordPath(firstClassPackage+"/target", "ghost")
 	dangling := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassAuthority + "/tag", ID: "t2",
+		Kind: firstClassPackage + "/tag", ID: "t2",
 		Properties: map[string]any{"target": ghost},
 	})
 	if dangling.Title != "ghost" {
@@ -289,7 +289,7 @@ func TestReferenceRendersInADisplayTemplate(t *testing.T) {
 	// referent is not there to be asked, and answering with the id would claim
 	// the id was its `name`.
 	unread := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassAuthority + "/pointer", ID: "p2",
+		Kind: firstClassPackage + "/pointer", ID: "p2",
 		Properties: map[string]any{"note": "second", "target": ghost},
 	})
 	if unread.Title != ": second" {
@@ -307,26 +307,26 @@ func TestReferenceRendersInADisplayTemplate(t *testing.T) {
 func TestReferenceDotSkipsASensitiveReferentProperty(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
-	const auth = "sensitiveref.example.substrate.reamde.dev"
+	const pkg = "sensitiveref.example.substrate.reamde.dev/sensitiveref"
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(auth, 0),
+		vocabulary.PackageManifest(pkg, 0),
 		// The referent declares a digest property: Sensitive() is true, and a
 		// digest stores its value verbatim in the fold (unlike a secret, which
 		// seals to a ref), so a leak would be the material itself.
-		vocabulary.KindManifest(auth,
+		vocabulary.KindManifest(pkg,
 			map[string]any{"singular": "holder", "plural": "holders"},
 			map[string]any{"properties": map[string]any{
 				"fingerprint": map[string]any{"type": "digest"},
 			}}),
 		// The referencing kind hops the pointer to that digest. The loader
 		// admits this because `fingerprint` is another kind's property.
-		vocabulary.KindManifest(auth,
+		vocabulary.KindManifest(pkg,
 			map[string]any{"singular": "viewer", "plural": "viewers"},
 			map[string]any{
 				"displayTemplate": "{holder.fingerprint}",
 				"properties": map[string]any{
 					"holder": map[string]any{
-						"type": "reference", "kind": auth + "/holder",
+						"type": "reference", "kind": pkg + "/holder",
 					},
 				},
 			}),
@@ -337,11 +337,11 @@ func TestReferenceDotSkipsASensitiveReferentProperty(t *testing.T) {
 
 	sum := strings.Repeat("ab", 32)
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: auth + "/holder", ID: "h1",
+		Kind: pkg + "/holder", ID: "h1",
 		Properties: map[string]any{"fingerprint": sum},
 	})
 	row := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: auth + "/viewer", ID: "v1",
+		Kind: pkg + "/viewer", ID: "v1",
 		Properties: map[string]any{"holder": "h1"},
 	})
 	// The referent's digest sits verbatim in its fold, so without the skip the
@@ -365,15 +365,15 @@ func TestRequiredReferenceIsEnforcedAtBirth(t *testing.T) {
 	// moves from an edge to a reference must not quietly turn that into a
 	// suggestion.
 	_, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: firstClassAuthority + "/strict", ID: "s1",
+		Kind: firstClassPackage + "/strict", ID: "s1",
 	})
 	wantErr(t, err, substrate.ErrValidation, "requires reference target")
 
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassAuthority + "/target", ID: "a", Properties: map[string]any{"name": "Ada"},
+		Kind: firstClassPackage + "/target", ID: "a", Properties: map[string]any{"name": "Ada"},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassAuthority + "/strict", ID: "s1", Properties: map[string]any{"target": "a"},
+		Kind: firstClassPackage + "/strict", ID: "s1", Properties: map[string]any{"target": "a"},
 	})
 }
 
@@ -384,25 +384,25 @@ func TestReferenceFilterAsksEachKindInItsOwnShape(t *testing.T) {
 	firstClassVocabulary(t, ds)
 
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassAuthority + "/target", ID: "a", Properties: map[string]any{"name": "Ada"},
+		Kind: firstClassPackage + "/target", ID: "a", Properties: map[string]any{"name": "Ada"},
 	})
 	// `target` is declared TWICE across these kinds: scalar on `pointer`,
 	// scalar on `strict`. `alsoSeen` is the repeated one. A filter naming
 	// several kinds must probe each in the shape that kind declares, or the
 	// first declaration it happens to find answers for all of them.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassAuthority + "/pointer", ID: "p1",
+		Kind: firstClassPackage + "/pointer", ID: "p1",
 		Properties: map[string]any{"target": "a", "alsoSeen": []any{"a"}},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassAuthority + "/strict", ID: "s1",
+		Kind: firstClassPackage + "/strict", ID: "s1",
 		Properties: map[string]any{"target": "a"},
 	})
 
 	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
 		Kinds: []string{
-			firstClassAuthority + "/pointer",
-			firstClassAuthority + "/strict",
+			firstClassPackage + "/pointer",
+			firstClassPackage + "/strict",
 		},
 		Properties: map[string]substrate.Cond{"target": {Eq: "a"}},
 	}})
@@ -422,7 +422,7 @@ func TestRequiredRepeatedReferenceRefusesAnEmptyList(t *testing.T) {
 
 	// An empty list names nothing, so it is as absent as no key at all.
 	_, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: firstClassAuthority + "/roster", ID: "s1",
+		Kind: firstClassPackage + "/roster", ID: "s1",
 		Properties: map[string]any{"targets": []any{}},
 	})
 	wantErr(t, err, substrate.ErrValidation, "requires reference targets")

@@ -218,8 +218,11 @@ done
 # OAuth redirect URI, which an operator registers with a provider and only finds
 # wrong when a consent flow fails. So the shapes are grepped here, over a WIDER
 # scope than `files`: a bundle README prints the callback URL, the console
-# README prints its route table.
-url_files=(docs/*.md README.md web/console/README.md kinds/*/README.md)
+# README prints its route table. The shipped READMEs sit one directory per
+# package: `kinds/<authority>/<package>/` for the providers, `samples/<package>/`
+# for the samples (decision 0047).
+url_files=(docs/*.md README.md web/console/README.md
+  kinds/*/*/README.md samples/*/README.md)
 
 grep_urls() {
   grep "$@" "${url_files[@]}"
@@ -232,10 +235,15 @@ grep_urls() {
 # declared plural, under ANY authority, closed and checkable: each addressed a
 # collection before 0033 and addresses nothing now. `calendareventseries` is
 # left out because its plural equals its singular, so it is a live name, not a
-# retired plural. `blobs` matches only under an authority — the top-level
+# retired plural. `blobs` matches only under a package — the top-level
 # `/api/v1/blobs` byte store is a different path and stays.
+#
+# The plural is matched in the KIND slot, the third segment (decision 0047):
+# `<authority>/<package>/<kind>`. Matching it straight after the authority
+# would now fire on every package whose name is a plural word (`tasks`,
+# `people`, `notes`), which is what a package is called.
 shipped_plurals='accounts|actors|agents|authorities|blobs|bloodtests|bundles|calendarevents|calendars|configs|contacts|conversationmessages|conversations|credentials|databases|emailaddresses|emailmessages|emailthreads|events|exercises|functions|issues|journalentries|kinds|llminteractions|llmmessages|llmproviders|llmthreads|meals|medications|medicationschedulelogs|medicationschedules|messages|notes|observationlogs|observations|orderitems|orders|organizations|pages|people|places|projects|propertytypes|pullrequests|recipes|recordmappings|recordmergerequests|recordmerges|recordpatchpolicies|recordpatchrequests|recordsplits|recoveries|recoverykeys|repositories|rooms|routinelogs|routines|runs|scratchpads|sleeps|tasklogs|tasks|teams|threads|tokens|traits|transcripts|triggers|users|webdocuments|workoutlogs|workouts|workoutsets|workouttemplates'
-if grep_urls -rnE "[a-z0-9-]+(\.[a-z0-9-]+)*\.reamde\.dev/(${shipped_plurals})\b"; then
+if grep_urls -rnE "[a-z0-9-]+(\.[a-z0-9-]+)*\.reamde\.dev/[a-z][a-z0-9]*/(${shipped_plurals})\b"; then
   flag "a documented collection is addressed by its plural; the segment is the kind's name (decision 0033)"
 fi
 
@@ -245,10 +253,10 @@ if grep_urls -rnE "substratectl (get|patch|delete|link|unlink) (${shipped_plural
   flag "a CLI example addresses a collection by its plural; the argument is the kind's name (decision 0033)"
 fi
 
-# The non-record endpoints hang off the version root, never off an authority.
+# The non-record endpoints hang off the version root, never off a package.
 repo_endpoints='vocabulary/apply|oauth/start|oauth/callback|catalog|changes|embeddings|recordmerges|recordsplits'
-if grep_urls -rnE "(/api/v[0-9]+|…)/core\.substrate\.reamde\.dev/(${repo_endpoints})\b"; then
-  flag "a documented repository endpoint is under an authority; it sits at the /api/v1 root (decision 0033)"
+if grep_urls -rnE "(/api/v[0-9]+|…)/substrate\.reamde\.dev/core/(${repo_endpoints})\b"; then
+  flag "a documented repository endpoint is under a package; it sits at the /api/v1 root (decision 0033)"
 fi
 
 # A bundle's lifecycle is a PATCH of its record's state, so disable/enable/

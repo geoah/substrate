@@ -18,19 +18,19 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-const graphAuthority = "graph.example.substrate.reamde.dev"
+const graphPackage = "graph.example.substrate.reamde.dev/graph"
 
 // graphVocabulary declares a hub and four kinds pointing at it: pinned,
 // unpinned, repeated, and one whose pointer sits inside an object.
 func graphVocabulary(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
-	hub := graphAuthority + "/hub"
+	hub := graphPackage + "/hub"
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(graphAuthority, 0),
-		vocabulary.KindManifest(graphAuthority,
+		vocabulary.PackageManifest(graphPackage, 0),
+		vocabulary.KindManifest(graphPackage,
 			map[string]any{"singular": "hub", "plural": "hubs"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
-		vocabulary.KindManifest(graphAuthority,
+		vocabulary.KindManifest(graphPackage,
 			map[string]any{"singular": "spoke", "plural": "spokes"},
 			map[string]any{"properties": map[string]any{
 				"hub": map[string]any{"type": "reference", "kind": hub, "inverse": "spokes"},
@@ -39,12 +39,12 @@ func graphVocabulary(t *testing.T, ds substrate.Dataset) {
 		// not see one: it named no target kind, so the registry could not say it
 		// pointed here without reading every row of every kind. The index is
 		// keyed on the target, so there is nothing to enumerate.
-		vocabulary.KindManifest(graphAuthority,
+		vocabulary.KindManifest(graphPackage,
 			map[string]any{"singular": "loose", "plural": "looses"},
 			map[string]any{"properties": map[string]any{
 				"anything": map[string]any{"type": "reference", "kind": "any"},
 			}}),
-		vocabulary.KindManifest(graphAuthority,
+		vocabulary.KindManifest(graphPackage,
 			map[string]any{"singular": "fan", "plural": "fans"},
 			map[string]any{"properties": map[string]any{
 				"hubs": map[string]any{"type": "reference", "kind": hub, "repeated": true},
@@ -52,7 +52,7 @@ func graphVocabulary(t *testing.T, ds substrate.Dataset) {
 		// A pointer INSIDE an object: the reverse row names the property and the
 		// path to the site, so a nested pointer does not read as a second
 		// property of the same name.
-		vocabulary.KindManifest(graphAuthority,
+		vocabulary.KindManifest(graphPackage,
 			map[string]any{"singular": "nester", "plural": "nesters"},
 			map[string]any{"properties": map[string]any{
 				"tool": map[string]any{
@@ -70,7 +70,7 @@ func graphVocabulary(t *testing.T, ds substrate.Dataset) {
 
 func incoming(t *testing.T, ds substrate.Dataset, id string, opts substrate.IncomingOptions) *substrate.IncomingPage {
 	t.Helper()
-	page, err := ds.Incoming(context.Background(), graphAuthority+"/hub", id, opts)
+	page, err := ds.Incoming(context.Background(), graphPackage+"/hub", id, opts)
 	if err != nil {
 		t.Fatalf("incoming: %v", err)
 	}
@@ -81,31 +81,31 @@ func TestIncomingReadsEveryReferenceShape(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
 	graphVocabulary(t, ds)
-	hub := graphAuthority + "/hub"
+	hub := graphPackage + "/hub"
 
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: hub, ID: "h1", Properties: map[string]any{"name": "Hub"},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphAuthority + "/spoke", ID: "s1", Properties: map[string]any{"hub": "h1"},
+		Kind: graphPackage + "/spoke", ID: "s1", Properties: map[string]any{"hub": "h1"},
 	})
 	// Points at a DIFFERENT hub: the reverse read must not gather it.
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: hub, ID: "h2", Properties: map[string]any{"name": "Other"},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphAuthority + "/spoke", ID: "s2", Properties: map[string]any{"hub": "h2"},
+		Kind: graphPackage + "/spoke", ID: "s2", Properties: map[string]any{"hub": "h2"},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphAuthority + "/loose", ID: "x1",
+		Kind: graphPackage + "/loose", ID: "x1",
 		Properties: map[string]any{"anything": vocabulary.RecordPath(hub, "h1")},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphAuthority + "/fan", ID: "f1",
+		Kind: graphPackage + "/fan", ID: "f1",
 		Properties: map[string]any{"hubs": []any{"h2", "h1"}},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphAuthority + "/nester", ID: "n1",
+		Kind: graphPackage + "/nester", ID: "n1",
 		Properties: map[string]any{"tool": map[string]any{"callable": "h1"}},
 	})
 
@@ -138,24 +138,24 @@ func TestIncomingNarrowsToOneGroup(t *testing.T) {
 	_, ds := newDataset(t)
 	graphVocabulary(t, ds)
 
-	mustPut(t, ds, owner, substrate.PutInput{Kind: graphAuthority + "/hub", ID: "h1"})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: graphPackage + "/hub", ID: "h1"})
 	for _, id := range []string{"s1", "s2"} {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: graphAuthority + "/spoke", ID: id, Properties: map[string]any{"hub": "h1"},
+			Kind: graphPackage + "/spoke", ID: id, Properties: map[string]any{"hub": "h1"},
 		})
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphAuthority + "/fan", ID: "f1", Properties: map[string]any{"hubs": []any{"h1"}},
+		Kind: graphPackage + "/fan", ID: "f1", Properties: map[string]any{"hubs": []any{"h1"}},
 	})
 
 	// A drill-down expands ONE group: the total is that group's, not the
 	// record's, or the pager would promise rows the page cannot show.
-	page := incoming(t, ds, "h1", substrate.IncomingOptions{FromKind: graphAuthority + "/spoke"})
+	page := incoming(t, ds, "h1", substrate.IncomingOptions{FromKind: graphPackage + "/spoke"})
 	if page.Total != 2 || len(page.Incoming) != 2 {
 		t.Fatalf("fromKind must narrow to the spokes, got total=%d rows=%d", page.Total, len(page.Incoming))
 	}
 	for _, row := range page.Incoming {
-		if row.From.Kind != graphAuthority+"/spoke" {
+		if row.From.Kind != graphPackage+"/spoke" {
 			t.Fatalf("fromKind leaked %s", row.From.Kind)
 		}
 	}
@@ -173,14 +173,14 @@ func TestIncomingExcludesADeletedSource(t *testing.T) {
 	_, ds := newDataset(t)
 	graphVocabulary(t, ds)
 
-	mustPut(t, ds, owner, substrate.PutInput{Kind: graphAuthority + "/hub", ID: "h1"})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: graphPackage + "/hub", ID: "h1"})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphAuthority + "/spoke", ID: "s1", Properties: map[string]any{"hub": "h1"},
+		Kind: graphPackage + "/spoke", ID: "s1", Properties: map[string]any{"hub": "h1"},
 	})
 	if page := incoming(t, ds, "h1", substrate.IncomingOptions{}); page.Total != 1 {
 		t.Fatalf("incoming before the delete = %+v", page)
 	}
-	if _, err := ds.Delete(ctx, owner, graphAuthority+"/spoke", "s1"); err != nil {
+	if _, err := ds.Delete(ctx, owner, graphPackage+"/spoke", "s1"); err != nil {
 		t.Fatalf("delete the source: %v", err)
 	}
 	// The tombstone keeps its rows in the index (a delete touches `records`
@@ -198,16 +198,16 @@ func TestIncomingFindsAPointerWrittenUnderAFormerID(t *testing.T) {
 	graphVocabulary(t, ds)
 
 	winner := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphAuthority + "/hub", ID: "h1", Properties: map[string]any{"name": "Winner"},
+		Kind: graphPackage + "/hub", ID: "h1", Properties: map[string]any{"name": "Winner"},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphAuthority + "/hub", ID: "h2", Properties: map[string]any{"name": "Loser"},
+		Kind: graphPackage + "/hub", ID: "h2", Properties: map[string]any{"name": "Loser"},
 	})
 	// Written while h2 was still a record of its own.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphAuthority + "/spoke", ID: "s1", Properties: map[string]any{"hub": "h2"},
+		Kind: graphPackage + "/spoke", ID: "s1", Properties: map[string]any{"hub": "h2"},
 	})
-	if _, err := ds.Merge(ctx, owner, graphAuthority+"/hub", winner.ID, "h2"); err != nil {
+	if _, err := ds.Merge(ctx, owner, graphPackage+"/hub", winner.ID, "h2"); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 
@@ -232,8 +232,8 @@ func TestIncomingFindsAPointerWrittenUnderAFormerID(t *testing.T) {
 		t.Fatalf("the recovered pointer reads %+v", *found)
 	}
 	// And the stored value still spells the loser's id: nothing rewrote it.
-	if got := refPathValue(mustGet(t, ds, graphAuthority+"/spoke", "s1"), "hub"); got !=
-		vocabulary.RecordPath(graphAuthority+"/hub", "h2") {
+	if got := refPathValue(mustGet(t, ds, graphPackage+"/spoke", "s1"), "hub"); got !=
+		vocabulary.RecordPath(graphPackage+"/hub", "h2") {
 		t.Fatalf("the merge rewrote a reference value: hub = %q", got)
 	}
 }
@@ -243,13 +243,13 @@ func TestIncomingPagesCleanlyAcrossEveryTie(t *testing.T) {
 	_, ds := newDataset(t)
 	graphVocabulary(t, ds)
 
-	mustPut(t, ds, owner, substrate.PutInput{Kind: graphAuthority + "/hub", ID: "h1"})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: graphPackage + "/hub", ID: "h1"})
 	// Five spokes of one kind under one property: the leading components of the
 	// key tie for all of them, so the boundary rests on `src` alone.
 	want := map[string]int{}
 	for _, id := range []string{"s1", "s2", "s3", "s4", "s5"} {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: graphAuthority + "/spoke", ID: id, Properties: map[string]any{"hub": "h1"},
+			Kind: graphPackage + "/spoke", ID: id, Properties: map[string]any{"hub": "h1"},
 		})
 		want[id]++
 	}
@@ -257,13 +257,13 @@ func TestIncomingPagesCleanlyAcrossEveryTie(t *testing.T) {
 	// separates them, and a boundary that read only the source would collapse
 	// the pair into one row.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphAuthority + "/nester", ID: "n1",
+		Kind: graphPackage + "/nester", ID: "n1",
 		Properties: map[string]any{"tool": map[string]any{"callable": "h1"}},
 	})
 	want["n1"]++
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphAuthority + "/loose", ID: "x1",
-		Properties: map[string]any{"anything": vocabulary.RecordPath(graphAuthority+"/hub", "h1")},
+		Kind: graphPackage + "/loose", ID: "x1",
+		Properties: map[string]any{"anything": vocabulary.RecordPath(graphPackage+"/hub", "h1")},
 	})
 	want["x1"]++
 
@@ -305,16 +305,16 @@ func TestIncomingOrdersByTheIndexKey(t *testing.T) {
 	_, ds := newDataset(t)
 	graphVocabulary(t, ds)
 
-	mustPut(t, ds, owner, substrate.PutInput{Kind: graphAuthority + "/hub", ID: "h1"})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: graphPackage + "/hub", ID: "h1"})
 	// Written out of id order, so the ordering under test is the index's and
 	// not the writing order's.
 	for _, id := range []string{"s3", "s1", "s2"} {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: graphAuthority + "/spoke", ID: id, Properties: map[string]any{"hub": "h1"},
+			Kind: graphPackage + "/spoke", ID: id, Properties: map[string]any{"hub": "h1"},
 		})
 	}
 
-	page := incoming(t, ds, "h1", substrate.IncomingOptions{FromKind: graphAuthority + "/spoke"})
+	page := incoming(t, ds, "h1", substrate.IncomingOptions{FromKind: graphPackage + "/spoke"})
 	var got []string
 	for _, row := range page.Incoming {
 		got = append(got, row.From.ID)
@@ -328,12 +328,12 @@ func TestIncomingRefusesACursorFromAnotherOrder(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
 	graphVocabulary(t, ds)
-	mustPut(t, ds, owner, substrate.PutInput{Kind: graphAuthority + "/hub", ID: "h1"})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: graphPackage + "/hub", ID: "h1"})
 
 	// The order is the refs index's key now, so a token minted under any other
 	// signature describes a different sort. Refused, because replaying it would
 	// silently mis-page.
-	_, err := ds.Incoming(context.Background(), graphAuthority+"/hub", "h1",
+	_, err := ds.Incoming(context.Background(), graphPackage+"/hub", "h1",
 		substrate.IncomingOptions{After: "not-a-cursor"})
 	wantErr(t, err, substrate.ErrValidation, "cursor")
 }
@@ -351,49 +351,49 @@ func TestIncomingRefusesACursorReplayedWithAnotherNarrowing(t *testing.T) {
 	ctx := context.Background()
 
 	for _, id := range []string{"h1", "h2"} {
-		mustPut(t, ds, owner, substrate.PutInput{Kind: graphAuthority + "/hub", ID: id})
+		mustPut(t, ds, owner, substrate.PutInput{Kind: graphPackage + "/hub", ID: id})
 	}
 	for _, id := range []string{"s1", "s2", "s3"} {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: graphAuthority + "/spoke", ID: id, Properties: map[string]any{"hub": "h1"},
+			Kind: graphPackage + "/spoke", ID: id, Properties: map[string]any{"hub": "h1"},
 		})
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphAuthority + "/loose", ID: "x1",
-		Properties: map[string]any{"anything": vocabulary.RecordPath(graphAuthority+"/hub", "h1")},
+		Kind: graphPackage + "/loose", ID: "x1",
+		Properties: map[string]any{"anything": vocabulary.RecordPath(graphPackage+"/hub", "h1")},
 	})
 
 	minted := incoming(t, ds, "h1", substrate.IncomingOptions{
-		First: 1, Property: "hub", FromKind: graphAuthority + "/spoke",
+		First: 1, Property: "hub", FromKind: graphPackage + "/spoke",
 	})
 	if minted.Cursor == "" {
 		t.Fatal("the first page minted no cursor")
 	}
 	// The same cursor, still good for the read it came from.
 	next := incoming(t, ds, "h1", substrate.IncomingOptions{
-		First: 1, Property: "hub", FromKind: graphAuthority + "/spoke", After: minted.Cursor,
+		First: 1, Property: "hub", FromKind: graphPackage + "/spoke", After: minted.Cursor,
 	})
 	if len(next.Incoming) != 1 || next.Incoming[0].From.ID != "s2" {
 		t.Fatalf("the second page of the same read = %+v", next.Incoming)
 	}
 
 	for name, opts := range map[string]substrate.IncomingOptions{
-		"another property": {First: 1, Property: "anything", FromKind: graphAuthority + "/spoke"},
+		"another property": {First: 1, Property: "anything", FromKind: graphPackage + "/spoke"},
 		"another source kind": {
-			First: 1, Property: "hub", FromKind: graphAuthority + "/loose",
+			First: 1, Property: "hub", FromKind: graphPackage + "/loose",
 		},
 		"no narrowing at all": {First: 1},
 	} {
 		opts.After = minted.Cursor
-		if _, err := ds.Incoming(ctx, graphAuthority+"/hub", "h1", opts); err == nil {
+		if _, err := ds.Incoming(ctx, graphPackage+"/hub", "h1", opts); err == nil {
 			t.Fatalf("%s replayed the cursor instead of refusing it", name)
 		} else {
 			wantErr(t, err, substrate.ErrValidation, "cursor")
 		}
 	}
 	// And a cursor minted at one target says nothing about another.
-	_, err := ds.Incoming(ctx, graphAuthority+"/hub", "h2", substrate.IncomingOptions{
-		First: 1, Property: "hub", FromKind: graphAuthority + "/spoke", After: minted.Cursor,
+	_, err := ds.Incoming(ctx, graphPackage+"/hub", "h2", substrate.IncomingOptions{
+		First: 1, Property: "hub", FromKind: graphPackage + "/spoke", After: minted.Cursor,
 	})
 	wantErr(t, err, substrate.ErrValidation, "cursor")
 }
@@ -411,17 +411,17 @@ func TestIncomingRefusesACursorAfterAMergeIntoTheTarget(t *testing.T) {
 	ctx := context.Background()
 
 	for _, id := range []string{"h1", "h2"} {
-		mustPut(t, ds, owner, substrate.PutInput{Kind: graphAuthority + "/hub", ID: id})
+		mustPut(t, ds, owner, substrate.PutInput{Kind: graphPackage + "/hub", ID: id})
 	}
 	// s2 and s3 point at the winner; s1 points at the hub about to lose the
 	// merge, and sorts FIRST — the row a cursor minted before the merge would
 	// carry the walk straight past.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphAuthority + "/spoke", ID: "s1", Properties: map[string]any{"hub": "h2"},
+		Kind: graphPackage + "/spoke", ID: "s1", Properties: map[string]any{"hub": "h2"},
 	})
 	for _, id := range []string{"s2", "s3"} {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: graphAuthority + "/spoke", ID: id, Properties: map[string]any{"hub": "h1"},
+			Kind: graphPackage + "/spoke", ID: id, Properties: map[string]any{"hub": "h1"},
 		})
 	}
 
@@ -430,10 +430,10 @@ func TestIncomingRefusesACursorAfterAMergeIntoTheTarget(t *testing.T) {
 		t.Fatalf("the first page = %+v", minted.Incoming)
 	}
 
-	if _, err := ds.Merge(ctx, owner, graphAuthority+"/hub", "h1", "h2"); err != nil {
+	if _, err := ds.Merge(ctx, owner, graphPackage+"/hub", "h1", "h2"); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
-	_, err := ds.Incoming(ctx, graphAuthority+"/hub", "h1",
+	_, err := ds.Incoming(ctx, graphPackage+"/hub", "h1",
 		substrate.IncomingOptions{First: 1, After: minted.Cursor})
 	wantErr(t, err, substrate.ErrValidation, "cursor")
 

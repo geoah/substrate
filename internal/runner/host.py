@@ -171,13 +171,13 @@ _MAX_ID_LEN = 128
 # reID: a record id is RFC 3986 unreserved plus ":" "@" and "/" (a
 # the two extra pchars ":" and "@" — schema.ValidID.
 _RE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._~:@/-]*$")
-# A full type identity: `name.group`, dotted lowercase.
-_RE_KIND = re.compile(r"^(?:[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+/)?[a-z][a-z0-9]*$")
+# A full kind reference: "<authority>/<package>/<name>", or the bare name.
+_RE_KIND = re.compile(r"^(?:[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+/[a-z][a-z0-9]*/)?[a-z][a-z0-9]*$")
 # A relation / declared name: camelCase — schema.ValidCamel.
 _RE_IDENT = re.compile(r"^[a-z][a-zA-Z0-9]*$")
 
 # The kind a proposal lands as: effects.propose stages an ordinary put of one.
-_KIND_RECORDPATCHREQUEST = "core.substrate.reamde.dev/recordpatchrequest"
+_KIND_RECORDPATCHREQUEST = "substrate.reamde.dev/core/recordpatchrequest"
 
 
 def _slugify(s):
@@ -313,7 +313,7 @@ def _need_kind(action, value):
     if not isinstance(value, str) or value == "":
         raise ValueError("effects.%s: kind is required" % action)
     if not _RE_KIND.match(value):
-        raise ValueError("effects.%s: %r is not a kind reference (<authority>/<name>)" % (action, value))
+        raise ValueError("effects.%s: %r is not a kind reference (<authority>/<package>/<name>)" % (action, value))
     return value
 
 

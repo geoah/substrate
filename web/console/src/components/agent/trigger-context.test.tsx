@@ -29,15 +29,15 @@ import { Transcript } from "./transcript"
 
 const envelope = JSON.stringify({
   change: {
-    actor: "agent:stories.e2e.example:matcher",
+    actor: "agent:stories.e2e.example:e2e:matcher",
     id: "tr-chitchat",
-    kind: "calendar.substrate.reamde.dev/transcript",
+    kind: "samples.substrate.reamde.dev/calendar/transcript",
     op: "update",
     seq: 216,
   },
   record: {
     id: "tr-chitchat",
-    kind: "calendar.substrate.reamde.dev/transcript",
+    kind: "samples.substrate.reamde.dev/calendar/transcript",
     properties: { title: "Billing migration sync" },
   },
   repository: { owner: "e2e" },
@@ -67,18 +67,21 @@ describe("the trigger context", () => {
     expect(screen.getByText("update")).toBeTruthy()
     expect(
       screen.getByText(
-        /calendar\.substrate\.reamde\.dev\/transcript\/tr-chitchat/
+        /samples\.substrate\.reamde\.dev\/calendar\/transcript\/tr-chitchat/
       )
     ).toBeTruthy()
     expect(screen.getByText(/changelog seq 216/)).toBeTruthy()
-    expect(screen.getByText(/agent:stories\.e2e\.example:matcher/)).toBeTruthy()
+    expect(
+      screen.getByText(/agent:stories\.e2e\.example:e2e:matcher/)
+    ).toBeTruthy()
     // The delivered record, as a pill linking to it, titled off the snapshot.
     const pill = container.querySelector(
-      'a[data-to="/data/$authority/$name/$id"]'
+      'a[data-to="/data/$authority/$pkg/$name/$id"]'
     )
     expect(pill?.textContent).toContain("Billing migration sync")
     expect(JSON.parse(pill?.getAttribute("data-params") ?? "{}")).toEqual({
-      authority: "calendar.substrate.reamde.dev",
+      authority: "samples.substrate.reamde.dev",
+      pkg: "calendar",
       name: "transcript",
       id: "tr-chitchat",
     })

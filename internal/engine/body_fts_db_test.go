@@ -19,27 +19,27 @@ func TestDeclaredBodyAndPerPropertyFTS(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	const authority = "reader.connectors.substrate.reamde.dev"
+	const pkg = "reader.connectors.substrate.reamde.dev/reader"
 	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, enginetest.Manifest{
-		Name: "reader", Authority: authority,
+		Name: "reader", Authority: pkg,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(authority, 1),
-			vocabulary.ActorManifest(authority, "connector:reader"),
+			vocabulary.PackageManifest(pkg, 1),
+			vocabulary.ActorManifest(pkg, "connector:reader"),
 			// A declared body, fts defaulting true for text: indexed.
-			vocabulary.KindManifest(authority,
+			vocabulary.KindManifest(pkg,
 				map[string]any{"singular": "article", "plural": "articles"},
 				map[string]any{"properties": map[string]any{
 					"body": map[string]any{"type": "text"},
 				}}),
 			// A declared body opting out of the index: stored and served, never
 			// searched.
-			vocabulary.KindManifest(authority,
+			vocabulary.KindManifest(pkg,
 				map[string]any{"singular": "memo", "plural": "memos"},
 				map[string]any{"properties": map[string]any{
 					"body": map[string]any{"type": "text", "fts": false},
 				}}),
 			// No body declared: a body write is refused like any undeclared name.
-			vocabulary.KindManifest(authority,
+			vocabulary.KindManifest(pkg,
 				map[string]any{"singular": "tag", "plural": "tags"},
 				map[string]any{"properties": map[string]any{
 					"label": map[string]any{"type": "string"},
@@ -53,11 +53,11 @@ func TestDeclaredBodyAndPerPropertyFTS(t *testing.T) {
 	// (b) A default-fts body indexes: the article is found by a word only its
 	// body holds.
 	article := mustPut(t, ds, act, substrate.PutInput{
-		Kind: authority + "/article", ID: "a1",
+		Kind: pkg + "/article", ID: "a1",
 		Properties: map[string]any{"body": "the peregrine falcon dives"},
 	})
 	hits, err := ds.Search(ctx, substrate.SearchInput{
-		Q: "peregrine", Mode: substrate.SearchLexical, Kinds: []string{authority + "/article"},
+		Q: "peregrine", Mode: substrate.SearchLexical, Kinds: []string{pkg + "/article"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -68,7 +68,7 @@ func TestDeclaredBodyAndPerPropertyFTS(t *testing.T) {
 
 	// (a) `fts: false` stores and serves the body but never indexes it.
 	memo := mustPut(t, ds, act, substrate.PutInput{
-		Kind: authority + "/memo", ID: "m1",
+		Kind: pkg + "/memo", ID: "m1",
 		Properties: map[string]any{"body": "the peregrine falcon dives"},
 	})
 	full := mustGet(t, ds, memo.Kind, memo.ID)
@@ -76,7 +76,7 @@ func TestDeclaredBodyAndPerPropertyFTS(t *testing.T) {
 		t.Fatalf("fts:false body not served: body=%q props=%v", full.Body, full.Properties["body"])
 	}
 	hits, err = ds.Search(ctx, substrate.SearchInput{
-		Q: "peregrine", Mode: substrate.SearchLexical, Kinds: []string{authority + "/memo"},
+		Q: "peregrine", Mode: substrate.SearchLexical, Kinds: []string{pkg + "/memo"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +87,7 @@ func TestDeclaredBodyAndPerPropertyFTS(t *testing.T) {
 
 	// (c) A kind that declares no body refuses a body write.
 	if _, err := ds.Put(ctx, act, substrate.PutInput{
-		Kind: authority + "/tag", ID: "t1",
+		Kind: pkg + "/tag", ID: "t1",
 		Properties: map[string]any{"label": "x", "body": "nope"},
 	}); err == nil {
 		t.Fatal("body on a kind that declares none must be refused")

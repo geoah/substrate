@@ -10,7 +10,7 @@
  * request proposed, and lands the server's account on it as
  * `substrate/conflict`, so a rejected call means re-read, never retry. */
 
-import { CORE_AUTHORITY } from "./http"
+import { CORE_AUTHORITY, CORE_PACKAGE, CORE_PACKAGE_NAME } from "./http"
 import {
   patchRecord,
   recordCountQueryOptions,
@@ -25,7 +25,7 @@ import {
 } from "@/lib/changerequests"
 
 export const CR_NAME = "recordpatchrequest"
-export const CR_KIND = `${CORE_AUTHORITY}/recordpatchrequest`
+export const CR_KIND = `${CORE_PACKAGE}/recordpatchrequest`
 
 /** `decision` is a state property; states filter through `properties` like any
  * other, one value as `eq` and several as `in`. No decision = the whole queue,
@@ -52,6 +52,7 @@ export function changeRequestsQueryOptions(opts: {
 }) {
   return recordsQueryOptions({
     authority: CORE_AUTHORITY,
+    package: CORE_PACKAGE_NAME,
     name: CR_NAME,
     first: opts.first,
     after: opts.after,
@@ -67,6 +68,7 @@ export function changeRequestCountQueryOptions(
 ) {
   return recordCountQueryOptions(
     CORE_AUTHORITY,
+    CORE_PACKAGE_NAME,
     CR_NAME,
     decisionFilter(decision)
   )
@@ -80,7 +82,7 @@ export function pendingChangeCountQueryOptions() {
  * `propertyMeta` (who proposed, who decided) and `annotations` (the note, and
  * the server's conflict record after a refused apply). */
 export function changeRequestQueryOptions(id: string) {
-  return recordQueryOptions(CORE_AUTHORITY, CR_NAME, id)
+  return recordQueryOptions(CORE_AUTHORITY, CORE_PACKAGE_NAME, CR_NAME, id)
 }
 
 /** The single atomic submit. `version` is the request AS LOADED: the write path
@@ -96,6 +98,7 @@ export function submitDecision(
 ): Promise<SubstrateRecord> {
   return patchRecord(
     CORE_AUTHORITY,
+    CORE_PACKAGE_NAME,
     CR_NAME,
     id,
     decisionPatch(verdict, version, note)

@@ -49,7 +49,7 @@ func TestResealAndRebuildDoNotRefuseAPriorReseal(t *testing.T) {
 		t.Fatalf("wind the signing state back: %v", err)
 	}
 	_ = svc.Close()
-	svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+	svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {
 		t.Fatalf("reopen: %v", err)

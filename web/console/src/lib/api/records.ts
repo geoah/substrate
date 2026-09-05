@@ -4,8 +4,8 @@
  * change feed filtered to one record.
  *
  * A collection path IS the kind reference split into segments —
- * `/{authority}/{name}`, and every kind carries an authority (decision 0042,
- * `collectionPath`). The PUT/POST body carries the
+ * `/{authority}/{package}/{name}`, and every kind carries all three (decisions
+ * 0042 and 0047, `collectionPath`). The PUT/POST body carries the
  * authored envelope only (`{properties, labels, annotations}`); the kind
  * is settled by the path, so the body never repeats it.
  *
@@ -37,6 +37,8 @@ export const recordIdSegment = (id: string): string => seg(id)
 export interface ListParams {
   /** The publishing authority; every kind carries one. */
   authority: string
+  /** The package's own word; every kind carries one. */
+  package: string
   name: string
   first?: number
   /** The opaque keyset cursor a previous page returned, resent VERBATIM. */
@@ -61,7 +63,7 @@ export function listPath(p: ListParams): string {
   if (p.after) q.set("after", p.after)
   if (hasFilter(p.filter)) q.set("filter", JSON.stringify(p.filter))
   if (p.orderBy) q.set("orderBy", p.orderBy)
-  return `${collectionPath(p.authority, p.name)}?${q}`
+  return `${collectionPath(p.authority, p.package, p.name)}?${q}`
 }
 
 export function recordsQueryOptions(p: ListParams) {
@@ -69,6 +71,7 @@ export function recordsQueryOptions(p: ListParams) {
     queryKey: [
       "records",
       p.authority,
+      p.package,
       p.name,
       {
         first: p.first ?? 50,
@@ -103,6 +106,7 @@ const COUNT_MAX_PAGES = 20
 /** Count a collection by walking the opaque cursor, bounded by the ceiling. */
 export async function countRecords(
   authority: string,
+  pkg: string,
   name: string,
   filter: RecordFilter | undefined,
   signal?: AbortSignal
@@ -112,7 +116,14 @@ export async function countRecords(
   for (let page = 0; page < COUNT_MAX_PAGES; page++) {
     const res = await request<Page>(
       "GET",
-      listPath({ authority, name, first: COUNT_PAGE, after, filter }),
+      listPath({
+        authority,
+        package: pkg,
+        name,
+        first: COUNT_PAGE,
+        after,
+        filter,
+      }),
       undefined,
       { signal }
     )
@@ -125,6 +136,7 @@ export async function countRecords(
 
 export function recordCountQueryOptions(
   authority: string,
+  pkg: string,
   name: string,
   filter?: RecordFilter
 ) {
@@ -132,10 +144,11 @@ export function recordCountQueryOptions(
     queryKey: [
       "records-count",
       authority,
+      pkg,
       name,
       hasFilter(filter) ? filter : null,
     ],
-    queryFn: ({ signal }) => countRecords(authority, name, filter, signal),
+    queryFn: ({ signal }) => countRecords(authority, pkg, name, filter, signal),
     staleTime: 60_000,
   })
 }
@@ -149,15 +162,16 @@ export function formatCount(count: RecordCount): string {
 
 export function recordQueryOptions(
   authority: string,
+  pkg: string,
   name: string,
   id: string
 ) {
   return queryOptions({
-    queryKey: ["record", authority, name, id],
+    queryKey: ["record", authority, pkg, name, id],
     queryFn: ({ signal }) =>
       request<SubstrateRecord>(
         "GET",
-        `${collectionPath(authority, name)}/${seg(id)}`,
+        `${collectionPath(authority, pkg, name)}/${seg(id)}`,
         undefined,
         { signal }
       ),
@@ -178,33 +192,36 @@ export interface RecordWrite {
   ifVersion?: number
 }
 
-/** Create one record in a collection: `POST /{authority}/{name}`. The kind is
- * settled by the URL; the body carries authored properties (and an optional
- * id — omit it and the substrate mints one). */
+/** Create one record in a collection: `POST /{authority}/{package}/{name}`.
+ * The kind is settled by the URL; the body carries authored properties (and an
+ * optional id — omit it and the substrate mints one). */
 export function createRecord(
   authority: string,
+  pkg: string,
   name: string,
   input: RecordWrite
 ): Promise<SubstrateRecord> {
   return request<SubstrateRecord>(
     "POST",
-    collectionPath(authority, name),
+    collectionPath(authority, pkg, name),
     input
   )
 }
 
-/** Upsert one record by id: `PUT /{authority}/{name}/{id}`. A full-document
- * apply — the write replaces the authored envelope wholesale (unlike PATCH's
- * key-wise merge), the natural semantic for the YAML editor's Edit flow. */
+/** Upsert one record by id: `PUT /{authority}/{package}/{name}/{id}`. A
+ * full-document apply — the write replaces the authored envelope wholesale
+ * (unlike PATCH's key-wise merge), the natural semantic for the YAML editor's
+ * Edit flow. */
 export function putRecord(
   authority: string,
+  pkg: string,
   name: string,
   id: string,
   input: RecordWrite
 ): Promise<SubstrateRecord> {
   return request<SubstrateRecord>(
     "PUT",
-    `${collectionPath(authority, name)}/${seg(id)}`,
+    `${collectionPath(authority, pkg, name)}/${seg(id)}`,
     input
   )
 }
@@ -220,28 +237,33 @@ export interface RecordPatch {
   ifVersion?: number
 }
 
-/** Patch one record in place: `PATCH /{authority}/{name}/{id}`. Maps merge
- * key-wise (a null value deletes the key); omitted fields are untouched — so a
- * blank secret input simply isn't sent and the sealed value stands. */
+/** Patch one record in place: `PATCH /{authority}/{package}/{name}/{id}`. Maps
+ * merge key-wise (a null value deletes the key); omitted fields are untouched —
+ * so a blank secret input simply isn't sent and the sealed value stands. */
 export function patchRecord(
   authority: string,
+  pkg: string,
   name: string,
   id: string,
   patch: RecordPatch
 ): Promise<SubstrateRecord> {
   return request<SubstrateRecord>(
     "PATCH",
-    `${collectionPath(authority, name)}/${seg(id)}`,
+    `${collectionPath(authority, pkg, name)}/${seg(id)}`,
     patch
   )
 }
 
 export async function deleteRecord(
   authority: string,
+  pkg: string,
   name: string,
   id: string
 ): Promise<void> {
-  await request<void>("DELETE", `${collectionPath(authority, name)}/${seg(id)}`)
+  await request<void>(
+    "DELETE",
+    `${collectionPath(authority, pkg, name)}/${seg(id)}`
+  )
 }
 
 // ── incoming references (record 57) ─────────────────────────────────────────
@@ -252,6 +274,7 @@ export async function deleteRecord(
  * record's. */
 export function incomingInfiniteOptions(
   authority: string,
+  pkg: string,
   name: string,
   id: string,
   first = 50,
@@ -261,6 +284,7 @@ export function incomingInfiniteOptions(
     queryKey: [
       "incoming",
       authority,
+      pkg,
       name,
       id,
       {
@@ -276,7 +300,7 @@ export function incomingInfiniteOptions(
       if (narrow.fromKind) q.set("fromKind", narrow.fromKind)
       return request<IncomingPage>(
         "GET",
-        `${collectionPath(authority, name)}/${seg(id)}/incoming?${q}`,
+        `${collectionPath(authority, pkg, name)}/${seg(id)}/incoming?${q}`,
         undefined,
         { signal }
       )

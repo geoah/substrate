@@ -15,7 +15,7 @@ import (
 
 // document is one manifest in the pinned envelope
 // : kind, metadata, data,
-// status. `kind` is the kind REFERENCE — "tasks.substrate.reamde.dev/task", or a bare
+// status. `kind` is the kind REFERENCE — "samples.substrate.reamde.dev/tasks/task", or a bare
 // "task" for a repository-local kind. `status` holds server-set data on output
 // and is ignored on input, which keeps `get -o yaml` output directly
 // apply-able.
@@ -166,8 +166,8 @@ func documentOf(e *substrate.Record, meta map[string]statusProperty) any {
 // to /vocabulary/apply, so the reader and the writer agree on what a
 // declaration is by construction.
 func declarationKindOf(kind string) (string, bool) {
-	authority, name := vocabulary.SplitKindRef(kind)
-	if authority != vocabulary.AuthorityCore || !vocabulary.VocabularyDocumentKind(name) {
+	name := vocabulary.KindName(kind)
+	if vocabulary.KindPackage(kind) != vocabulary.PackageCore || !vocabulary.VocabularyDocumentKind(name) {
 		return "", false
 	}
 	return name, true
@@ -389,11 +389,11 @@ func nodeDocument(node *yaml.Node, where string) (*document, error) {
 func renamedKeyError(where string, node *yaml.Node, p *envelopeProbe) error {
 	if hasKey(node, "apiVersion") {
 		return fmt.Errorf("%s writes `apiVersion`, which is gone — the version left the envelope entirely;\n"+
-			"there is one served version and nothing routes on it, so write `kind: <authority>/<name>`", where)
+			"there is one served version and nothing routes on it, so write `kind: <authority>/<package>/<name>`", where)
 	}
 	if hasKey(node, "group") || hasKey(node, "type") {
 		return fmt.Errorf("%s writes `group`/`type`, which are one key now: `kind`, the kind reference\n"+
-			"(`kind: tasks.substrate.reamde.dev/task`, or a bare `kind: task` for a repository-local kind)", where)
+			"(`kind: samples.substrate.reamde.dev/tasks/task`, or a bare `kind: task` for a repository-local kind)", where)
 	}
 	if hasKey(node, "spec") {
 		return fmt.Errorf("%s writes `spec`, which is `data` — and everything authored is a property,\n"+
@@ -459,12 +459,18 @@ func emptyNode(node *yaml.Node) bool {
 // is a hard error, not a silent fallback, and the message shows the same
 // document in the shape it now needs.
 func envelopeError(where string, p envelopeProbe) error {
-	kind := p.Type
-	if p.Authority != "" {
-		kind = p.Authority + "/" + p.Type
-	}
-	if kind == "" {
-		kind = "<authority>/<name>"
+	// The legacy pair is an authority and a bare type, which is a kind
+	// reference one segment short: a package cannot be guessed from it, and
+	// minting `<authority>/<name>` would hand back a reference the loader
+	// refuses. So the message names the segment that is missing instead.
+	var kind string
+	switch {
+	case p.Authority != "" && p.Type != "":
+		kind = p.Authority + "/<package>/" + p.Type
+	case p.Type != "":
+		kind = "<authority>/<package>/" + p.Type
+	default:
+		kind = "<authority>/<package>/<name>"
 	}
 	id := p.ID
 	if id == "" {

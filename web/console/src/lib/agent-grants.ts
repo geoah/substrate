@@ -18,17 +18,17 @@
  * problems panel read one answer. */
 
 /** The four `runtime: host` function records, by identity. The source of truth
- * is `kinds/core.substrate.reamde.dev/hostfunctions.yaml`; a tool entry names
+ * is `kinds/substrate.reamde.dev/core/hostfunctions.yaml`; a tool entry names
  * one of them under `function:` exactly as it names any other function. */
-export const HOST_FUNCTION_QUERY = "core.substrate.reamde.dev/query"
-export const HOST_FUNCTION_GRAPHQL = "core.substrate.reamde.dev/graphql"
-export const HOST_FUNCTION_MUTATE = "core.substrate.reamde.dev/mutate"
-export const HOST_FUNCTION_PROPOSE = "core.substrate.reamde.dev/propose"
+export const HOST_FUNCTION_QUERY = "substrate.reamde.dev/core/query"
+export const HOST_FUNCTION_GRAPHQL = "substrate.reamde.dev/core/graphql"
+export const HOST_FUNCTION_MUTATE = "substrate.reamde.dev/core/mutate"
+export const HOST_FUNCTION_PROPOSE = "substrate.reamde.dev/core/propose"
 
 /** The request kind `propose` lands, and the one an agent's write permission
  * must name before it may call the tool (`vocabulary.KindRecordPatchRequest`). */
 export const RECORD_PATCH_REQUEST_KIND =
-  "core.substrate.reamde.dev/recordpatchrequest"
+  "substrate.reamde.dev/core/recordpatchrequest"
 
 /** The field one `tools:` entry names its function under. Not `callable`: an
  * entry admits only a function (a sub-agent is named on `subagents:`), and
@@ -60,12 +60,12 @@ export interface GrantHint {
 
 /** The kind a grant's entries point at. Both grants name KINDS: which ones may
  * be written, and which ones may be read. */
-const KIND_KIND = "core.substrate.reamde.dev/kind"
+const KIND_KIND = "substrate.reamde.dev/core/kind"
 
 /** The record ONE grant entry names, whichever way it is spelled.
  *
  * A grant's entries are pointers, so each is the flat path
- * `core.substrate.reamde.dev/kind/<identity>`; the pin supplies the prefix, so
+ * `substrate.reamde.dev/core/kind/<identity>`; the pin supplies the prefix, so
  * an entry the author typed short arrives short and the server canonicalizes
  * it. BOTH spellings name one kind, and this is the only place that knows it. */
 export function valueIdentity(value: unknown): string | undefined {
@@ -105,9 +105,9 @@ export function hostToolsOf(properties: Record<string, unknown>): string[] {
     const held = (entry as Record<string, unknown>)[TOOL_FUNCTION_FIELD]
     if (typeof held !== "string") continue
     // The entry is a POINTER at a function, so it is the flat path
-    // `core.substrate.reamde.dev/function/<identity>`; a short form the
+    // `substrate.reamde.dev/core/function/<identity>`; a short form the
     // server has not canonicalized yet names the same function.
-    const prefix = "core.substrate.reamde.dev/function/"
+    const prefix = "substrate.reamde.dev/core/function/"
     const named = held.startsWith(prefix) ? held.slice(prefix.length) : held
     if (!known.includes(named) || out.includes(named)) continue
     out.push(named)

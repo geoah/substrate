@@ -2,7 +2,7 @@ package engine
 
 // The build's conformance gate (substrate-primitives §8): the URL-harvester
 // bundle, installed as a REAL closure from the shipped example manifests
-// (../../../kinds/web.bundles.substrate.reamde.dev), driven end to end through the one
+// (../../samples/web), driven end to end through the one
 // delivery mechanism, and held to the two properties the throwaway prototype
 // proved — put-if-absent re-mints nothing, replay-from-zero is quiet in the
 // data — at a causal depth well under the cap. Nothing here composes from a
@@ -28,11 +28,10 @@ import (
 )
 
 const (
-	webAuthority  = "web.bundles.substrate.reamde.dev"
-	webBundleRow  = webAuthority + "/web"
-	webConfigType = webAuthority + "/config"
-	webPageType   = webAuthority + "/page"
-	convMsgType   = "messaging.substrate.reamde.dev/conversationmessage"
+	webPackage    = "samples.substrate.reamde.dev/web"
+	webConfigType = webPackage + "/config"
+	webPageType   = webPackage + "/page"
+	convMsgType   = "samples.substrate.reamde.dev/messaging/conversationmessage"
 
 	// The models the shipped agents name on the `default` provider row:
 	// distinct, so one fake server drives the whole chain by model.
@@ -40,7 +39,7 @@ const (
 	modelMid    = "anthropic/claude-sonnet-5"  // readinglistagent
 	modelCheap  = "anthropic/claude-haiku-4-5" // weeklyrollup
 
-	exampleDir = "../../kinds/web.bundles.substrate.reamde.dev"
+	exampleDir = "../../samples/web"
 
 	blogURL    = "https://blog.example.com/how-substrates-compose"
 	trackerURL = "https://tracker.example/evil"
@@ -219,8 +218,8 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, vocabularyDocs); err != nil {
 		t.Fatalf("install the harvester bundle: %v", err)
 	}
-	row, err := ds.Get(ctx, "core.substrate.reamde.dev/bundle", webBundleRow)
-	if err != nil || row.Kind != "core.substrate.reamde.dev/bundle" {
+	row, err := ds.Get(ctx, "substrate.reamde.dev/core/bundle", webPackage)
+	if err != nil || row.Kind != "substrate.reamde.dev/core/bundle" {
 		t.Fatalf("bundle row: %+v %v", row, err)
 	}
 	// The wiring: the four trigger data records, applied as ordinary puts.
@@ -252,15 +251,15 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		// must refuse and nothing may land. THEN it makes the proposal, which
 		// survives because recordpatchrequest is in both.
 		fakeTurn{calls: []fakeCall{{"stampconfig", fmt.Sprintf(`{"id":%q}`, cfg.ID)}}},
-		fakeTurn{calls: []fakeCall{{"propose", fmt.Sprintf(`{"kind":"web.bundles.substrate.reamde.dev/page","target":%q,"diff":{"properties":{"saved":true}},"rationale":"worth reading"}`, blogPage)}}},
+		fakeTurn{calls: []fakeCall{{"propose", fmt.Sprintf(`{"kind":"samples.substrate.reamde.dev/web/page","target":%q,"diff":{"properties":{"saved":true}},"rationale":"worth reading"}`, blogPage)}}},
 		fakeTurn{content: "proposed the reading-list add."},
 	)
 
 	// --- feed one message carrying two URLs, one deny-listed ---------------
-	person := mustPutInternal(t, ds, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", ID: "p-alice", Properties: map[string]any{"name": "Alice"}})
+	person := mustPutInternal(t, ds, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", ID: "p-alice", Properties: map[string]any{"name": "Alice"}})
 	acct := mustPutInternal(t, ds, substrate.PutInput{Kind: enginetest.AccountType, ID: "acct-test", Properties: map[string]any{"provider": "test", "label": "test inbox"}})
 	conv := mustPutInternal(t, ds, substrate.PutInput{
-		Kind: "messaging.substrate.reamde.dev/conversation", ID: "conv-1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: "conv-1",
 		Properties: map[string]any{"category": "direct", "name": "reading chat", "account": enginetest.AccountType + "/" + acct.ID},
 	})
 	feedMessage(t, ds, "msg-1", person.ID, conv.ID,
@@ -330,7 +329,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		blogPage).Scan(&classActor); err != nil {
 		t.Fatalf("the class-patch changelog row: %v", err)
 	}
-	if classActor != "agent:"+webAuthority+":pageclassifier" {
+	if substrate.Actor(classActor) != substrate.AgentActor(vocabulary.SplitKindRef(webPackage+"/pageclassifier")) {
 		t.Fatalf("class patched by %q, not the classifier agent", classActor)
 	}
 
@@ -344,7 +343,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		ORDER BY c.seq LIMIT 1`, vocabulary.KindRecordPatchRequest).Scan(&reqID, &reqActor); err != nil {
 		t.Fatalf("the reading-list proposal: %v", err)
 	}
-	if reqActor != "agent:"+webAuthority+":readinglistagent" {
+	if substrate.Actor(reqActor) != substrate.AgentActor(vocabulary.SplitKindRef(webPackage+"/readinglistagent")) {
 		t.Fatalf("proposal authored by %q, not the reading-list agent", reqActor)
 	}
 	var target string
@@ -358,10 +357,10 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 
 	// Threads: one classifier (trigger) root, one reading-list child with the
 	// parent edge — the sub-agent hop.
-	if n := threadCountOf(t, ds, webAuthority+"/pageclassifier"); n != 1 {
+	if n := threadCountOf(t, ds, webPackage+"/pageclassifier"); n != 1 {
 		t.Fatalf("classifier threads: %d", n)
 	}
-	if n := threadCountOf(t, ds, webAuthority+"/readinglistagent"); n != 1 {
+	if n := threadCountOf(t, ds, webPackage+"/readinglistagent"); n != 1 {
 		t.Fatalf("reading-list threads: %d", n)
 	}
 
@@ -375,7 +374,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	if err := ds.db.QueryRowContext(ctx, `
 		SELECT id FROM records WHERE kind = $1 AND deleted_at IS NULL AND `+referencePathSQL("props", "agent")+` = $2
 		ORDER BY created_at DESC, id DESC LIMIT 1`,
-		typeThread, vocabulary.RecordPath(kindAgent, webAuthority+"/readinglistagent")).Scan(&childThread); err != nil {
+		typeThread, vocabulary.RecordPath(kindAgent, webPackage+"/readinglistagent")).Scan(&childThread); err != nil {
 		t.Fatalf("the reading-list child thread: %v", err)
 	}
 	var refused bool
@@ -392,7 +391,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	var childConfigWrites int
 	if err := ds.db.QueryRowContext(ctx, `
 		SELECT count(*) FROM changelog WHERE record_id = $1 AND actor = $2`,
-		cfg.ID, "agent:"+webAuthority+":readinglistagent").Scan(&childConfigWrites); err != nil {
+		cfg.ID, string(substrate.AgentActor(vocabulary.SplitKindRef(webPackage+"/readinglistagent")))).Scan(&childConfigWrites); err != nil {
 		t.Fatal(err)
 	}
 	if childConfigWrites != 0 {
@@ -546,7 +545,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 
 	// --- the schedule tick produces a rollup proposal ----------------------
 	fake.script(modelCheap, // weeklyrollup
-		fakeTurn{calls: []fakeCall{{"propose", fmt.Sprintf(`{"kind":"web.bundles.substrate.reamde.dev/config","target":%q,"diff":{"properties":{"lastDigest":"1 page harvested this week"}},"rationale":"weekly digest"}`, cfg.ID)}}},
+		fakeTurn{calls: []fakeCall{{"propose", fmt.Sprintf(`{"kind":"samples.substrate.reamde.dev/web/config","target":%q,"diff":{"properties":{"lastDigest":"1 page harvested this week"}},"rationale":"weekly digest"}`, cfg.ID)}}},
 		fakeTurn{content: "digest proposed."},
 	)
 	// Make the weekly occurrence overdue, then tick.

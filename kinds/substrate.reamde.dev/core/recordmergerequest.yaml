@@ -1,0 +1,78 @@
+# a proposed merge of two records, performed when its decision is accepted
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/recordmergerequest
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    A proposed merge of two records, waiting for the owner. A duplicate detector
+    or an app writes one and accepting the decision is what performs the merge;
+    the row is also the rejection memory, since an existing request suppresses
+    re-suggesting the pair.
+  # The declaration inherited the package's version before this pin.
+  # version 10: `decidedAt` is a declared property (datetime, managed). The
+  # decision transitions stamped it as an undeclared string before.
+  # version 11: a display template, so a random-id request reads as the
+  # decision and the pair it proposes instead of its opaque id.
+  # version 13: `winner` and `loser` are unpinned `type: reference` properties
+  # with `mustExist: true`, so a request names two records of any one kind.
+  version: 13
+  names:
+    singular: recordmergerequest
+  displayTemplate: "{decision}: {winner} + {loser}"
+  # recordpatchrequest's sibling: the envelope a suggested merge travels in
+  # before anyone has agreed to it. A function (the dupe detector) or an app
+  # writes one, the owner decides, and accepting it is what performs the
+  # merge. NOT a systemType: functions and clients create them, and a writer
+  # may compose a deterministic id — that id is the suggestion dedupe AND the
+  # rejection memory (an existing request in any state suppresses
+  # re-suggesting the pair).
+  properties:
+    rationale:
+      type: string
+      description: why the writer proposes this merge, one human sentence
+    evidence:
+      type: json
+      description: the signals that matched and their scores
+    # Stamped by the decision transitions below; managed because nothing else
+    # writes it.
+    decidedAt:
+      type: datetime
+      managed: true
+      description: when the decision was made, stamped by the transition
+    # accepting is what performs the merge: the transition runs `applyMerge`,
+    # which re-runs Merge's own guards in the same transaction — a stale
+    # request (already merged, deleted, kind mismatch) fails the transition
+    # whole and annotates the request.
+    decision:
+      type: state
+      description: "proposed until somebody decides; accepting is what performs
+        the merge"
+      states:
+        - proposed
+        - accepted
+        - rejected
+      initial: proposed
+      transitions:
+        - from: proposed
+          to: accepted
+          onEnter: applyMerge
+          stamps:
+            decidedAt: now
+        - from: proposed
+          to: rejected
+          stamps:
+            decidedAt: now
+    # Unpinned on both: anything mergeable may be named, and Merge itself
+    # guards same-kind (and refuses core/system kinds) at apply.
+    winner:
+      type: reference
+      required: true
+      mustExist: true
+      description: the record that survives the merge
+    loser:
+      type: reference
+      required: true
+      mustExist: true
+      description: the record merged away into the winner

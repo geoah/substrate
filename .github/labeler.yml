@@ -33,6 +33,7 @@ area/vocabulary:
   - changed-files:
       - any-glob-to-any-file:
           - kinds/**
+          - samples/**
           - internal/vocabulary/**
           - cmd/vocabularydiff/**
 

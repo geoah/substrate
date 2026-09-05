@@ -142,7 +142,7 @@ type RequestPart struct {
 type Change struct {
 	Seq int64  `json:"seq"`
 	Op  string `json:"op"` // create | update | delete
-	// Kind is the record's kind REFERENCE: "tasks.substrate.reamde.dev/task", or a bare
+	// Kind is the record's kind REFERENCE: "samples.substrate.reamde.dev/tasks/task", or a bare
 	// "task" for a repository-local kind.
 	Kind  string `json:"kind"`
 	ID    string `json:"id"`
@@ -565,7 +565,7 @@ const maxIDLen = 128
 
 var (
 	reID   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._~:@/-]*$`)
-	reKind = regexp.MustCompile(`^(?:[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+/)?[a-z][a-z0-9]*$`)
+	reKind = regexp.MustCompile(`^(?:[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+/[a-z][a-z0-9]*/)?[a-z][a-z0-9]*$`)
 )
 
 // Effects is the buffered-effects builder. Each method APPENDS a staged effect
@@ -703,7 +703,7 @@ func (e *Effects) Split(kind, mergeID string) *Staged {
 // KindRecordPatchRequest is the kind a proposal lands as. Spelled out here
 // because this file is embedded into a stdlib-only module and cannot import the
 // vocabulary package that declares it.
-const KindRecordPatchRequest = "core.substrate.reamde.dev/recordpatchrequest"
+const KindRecordPatchRequest = "substrate.reamde.dev/core/recordpatchrequest"
 
 // ProposeEffect stages a REVIEWED change instead of writing one: Op is patch
 // (the default when empty), create or delete; TargetKind/TargetID name the
@@ -789,7 +789,7 @@ func validKind(action, s string) error {
 		return fmt.Errorf("effects.%s: kind is required", action)
 	}
 	if !reKind.MatchString(s) {
-		return fmt.Errorf("effects.%s: %q is not a kind reference (<authority>/<name>)", action, s)
+		return fmt.Errorf("effects.%s: %q is not a kind reference (<authority>/<package>/<name>)", action, s)
 	}
 	return nil
 }

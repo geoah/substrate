@@ -1,0 +1,140 @@
+# one place completions are bought: pure data naming a WIRE, an endpoint and
+# a key. `wire` is the protocol the adapter speaks — openai, anthropic or
+# azure — NEVER a company: OpenRouter, LiteLLM, Together, Groq and
+# a local Ollama are all `wire: openai` rows differing only in baseURL, so
+# adding one of them is a record, never code. New code is only ever needed for
+# a new wire.
+#
+# EVERY row carries its own endpoint and its own key. There is no host gateway
+# and no host key to fall back to, so no host-wide bearer can reach a
+# repository-chosen endpoint by construction. Only the anthropic wire has an
+# endpoint of its own to leave baseURL empty against.
+#
+# An agent references a row by id (`provider: default`) and names its model as
+# a plain string, so re-pointing every agent on `default` is one patch here.
+#
+# Embeddings resolve the same way, without an agent to name the row: the ONE
+# row that declares `embedModel` is the repository's embeddings provider, and
+# a second row declaring it refuses at the write.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/llmprovider
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    One place completions are bought: the wire an adapter speaks, the endpoint,
+    the key that reaches it, and what its models cost. An agent names a provider
+    and a model, so re-pointing every agent on a provider is one patch to
+    this row.
+  # version 3: wire became an enum, and headers/defaults/pricing became declared
+  # objects instead of json. The bump is what carries the shapes into
+  # repositories that already stored the version 2 declaration — and what makes
+  # the upgrade guard speak up there, naming the rows that still hold the old
+  # shape instead of leaving the kind quietly behind.
+  # version 4: pricing moved from float to decimal, the exact string-carried
+  # number, taken now rather than after stored rows make the retype a
+  # migration. A repository whose provider rows still hold float prices keeps
+  # version 3, loudly, until the rows are rewritten.
+  # version 5: embedModel arrived, and the host gateway left. An empty baseURL
+  # on an openai row used to mean "the host's configured gateway"; it now means
+  # the row names no endpoint, and refuses. Every stored openai row must be
+  # given its own baseURL and apiKey.
+  # version 6: `wire` is required. A row names no default wire, and dispatch
+  # refuses one without it, so the requirement moves to the write.
+  # version 8: the human label property is `label`, where it was `name`. A
+  # provider row's id is its reference, so the free-text field is a label, not
+  # the local name that a kind, task or person derives its title from.
+  version: 8
+  names:
+    singular: llmprovider
+  displayTemplate: "{label|localName} ({wire})"
+  properties:
+    label:
+      type: string
+      description: a human label for the row (the id is the reference)
+    # The wire set is CLOSED: internal/llm's wirePolicies table is the same
+    # three, and a row naming anything else refuses at dispatch. Declaring it
+    # as an enum moves that refusal to the write, and gives every client the
+    # set without reading prose.
+    wire:
+      type: enum
+      required: true
+      values:
+        - value: openai
+          label: OpenAI
+        - value: anthropic
+          label: Anthropic
+        - value: azure
+          label: Azure OpenAI
+      description: the wire protocol the adapter speaks; a gateway that speaks
+        OpenAI's wire is an openai row
+    baseURL:
+      type: url
+      description: the endpoint; only anthropic may leave it empty, for its
+        official endpoint, and openai and azure both require it
+    apiKey:
+      type: secret
+      description: bearer for the endpoint; every row carries its own, because
+        there is no host key to fall back to
+    # Naming a model here is what makes this row the repository's embeddings
+    # provider — there is no agent to name one, so the declaration IS the
+    # selection. One row per repository may carry it; a second refuses at the
+    # write, as does a model whose width is not the stored 1536 (decision
+    # record 0026) and any wire but openai, the only one with an embeddings
+    # endpoint.
+    embedModel:
+      type: string
+      description: the embeddings model this row's endpoint serves; naming
+        it makes this the repository's embeddings provider, and only one row
+        may name one
+    # A header is a name and a value, so it is declared as one: a repeated
+    # object, not a json blob whose shape nothing checks. The substrate has no
+    # map datatype — a keyed table is a list whose key is a declared field.
+    headers:
+      type: object
+      repeated: true
+      description: extra request headers, e.g. a gateway's attribution headers
+      fields:
+        name:
+          type: string
+          description: the header name, sent as written
+        value:
+          type: string
+          description: the header value
+    # The request knobs are exactly the two llm.Params carries, so the object
+    # declares both and nothing else: a knob the loop would drop is refused at
+    # the write instead of at the first dispatch.
+    defaults:
+      type: object
+      description: "request params the agent's own merge OVER"
+      fields:
+        temperature:
+          type: float
+          min: 0
+          max: 2
+          description: sampling temperature
+        maxTokens:
+          type: int
+          min: 1
+          description: the completion ceiling in tokens
+    # data-driven cost estimation: USD per 1M tokens per model id; a model
+    # absent from the table means the thread's costUSD stays 0 and only the
+    # token tally is authoritative. One row per model, keyed by the id AS SENT
+    # — a later row for the same model wins, so the table stays a table.
+    pricing:
+      type: object
+      repeated: true
+      description: approximate USD per 1M tokens, one row per model
+      fields:
+        model:
+          type: string
+          description: the model id as sent to this provider
+        inputPer1M:
+          type: decimal
+          min: 0
+          description: USD per 1M input tokens, exact digits as a string
+        outputPer1M:
+          type: decimal
+          min: 0
+          description: USD per 1M output tokens, exact digits as a string

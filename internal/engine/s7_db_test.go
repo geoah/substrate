@@ -17,7 +17,7 @@ func TestPatchNullDeleteAndStateTransition_S7(t *testing.T) {
 	_, ds := newDataset(t)
 
 	created := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "tasks.substrate.reamde.dev/task",
+		Kind: "samples.substrate.reamde.dev/tasks/task",
 		Properties: map[string]any{
 			"title":       "ship it",
 			"description": "wire the last handler",
@@ -31,7 +31,7 @@ func TestPatchNullDeleteAndStateTransition_S7(t *testing.T) {
 	}
 
 	// null DELETES the property — it must not read back as a stored null.
-	patched, err := ds.Patch(ctx, owner, "tasks.substrate.reamde.dev/task", created.ID, substrate.PatchInput{
+	patched, err := ds.Patch(ctx, owner, "samples.substrate.reamde.dev/tasks/task", created.ID, substrate.PatchInput{
 		Properties: map[string]any{"description": nil},
 	})
 	if err != nil {
@@ -43,7 +43,7 @@ func TestPatchNullDeleteAndStateTransition_S7(t *testing.T) {
 
 	// A state value among the properties is a TRANSITION (open → done), and the
 	// declared stamp lands.
-	done, err := ds.Patch(ctx, owner, "tasks.substrate.reamde.dev/task", created.ID, substrate.PatchInput{
+	done, err := ds.Patch(ctx, owner, "samples.substrate.reamde.dev/tasks/task", created.ID, substrate.PatchInput{
 		Properties: map[string]any{"status": "done"},
 	})
 	if err != nil {
@@ -84,7 +84,7 @@ func TestTokenExpiry_S7(t *testing.T) {
 	if got.Label != "scripted" {
 		t.Fatalf("authenticated label = %q", got.Label)
 	}
-	row := mustGet(t, ds, "core.substrate.reamde.dev/token", info.ID)
+	row := mustGet(t, ds, "substrate.reamde.dev/core/token", info.ID)
 	if row.Properties["expiresAt"] == nil {
 		t.Fatalf("token row missing expiresAt: %v", row.Properties)
 	}

@@ -6,20 +6,26 @@
  *
  * The whole agent-loop vocabulary lives in CORE: core absorbed the runtime
  * kinds, so `llmprovider`, `llmthread` and `llmmessage` sit beside `agent`
- * under `core.substrate.reamde.dev` — there is no separate runtime authority
+ * under `substrate.reamde.dev/core` — there is no separate runtime authority
  * to seed. */
 
 import { queryOptions } from "@tanstack/react-query"
 
 import { recordsQueryOptions } from "./records"
-import { corePath, CORE_AUTHORITY, envelopeError } from "./http"
+import {
+  corePath,
+  CORE_AUTHORITY,
+  CORE_PACKAGE_NAME,
+  envelopeError,
+} from "./http"
 import { getToken, sessionExpired } from "./session"
 import { ApiError, type SubstrateRecord } from "./types"
 
-/** The agent rows — declared agents, one per `core.substrate.reamde.dev/agent` record. */
+/** The agent rows — declared agents, one per `substrate.reamde.dev/core/agent` record. */
 export function agentsQueryOptions() {
   return recordsQueryOptions({
     authority: CORE_AUTHORITY,
+    package: CORE_PACKAGE_NAME,
     name: "agent",
     first: 200,
     orderBy: "createdAt:desc",
@@ -31,6 +37,7 @@ export function agentsQueryOptions() {
 export function providersQueryOptions() {
   return recordsQueryOptions({
     authority: CORE_AUTHORITY,
+    package: CORE_PACKAGE_NAME,
     name: "llmprovider",
     first: 200,
     orderBy: "createdAt:desc",
@@ -65,6 +72,7 @@ export function providerHasKey(record: SubstrateRecord): boolean {
 export function agentThreadsQueryOptions(agent: string, first = 50) {
   return recordsQueryOptions({
     authority: CORE_AUTHORITY,
+    package: CORE_PACKAGE_NAME,
     name: "llmthread",
     first,
     // `agent` is a REFERENCE: the filter names the record it points at, and
@@ -81,6 +89,7 @@ export function threadMessagesQueryOptions(threadId: string) {
   return queryOptions({
     ...recordsQueryOptions({
       authority: CORE_AUTHORITY,
+      package: CORE_PACKAGE_NAME,
       name: "llmmessage",
       first: TRANSCRIPT_WINDOW,
       // `thread` is a REFERENCE property on the message.

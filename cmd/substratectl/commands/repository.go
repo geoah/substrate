@@ -194,9 +194,9 @@ This command only reads.`,
 			}
 			fmt.Fprintf(a.out, "  vocabulary: %d kinds\n", len(kinds))
 			tw := newTable(a.out)
-			fmt.Fprintln(tw, "    AUTHORITY\tKINDS\tVERSIONS")
-			for _, g := range groupByAuthority(kinds) {
-				fmt.Fprintf(tw, "    %s\t%d\t%s\n", g.authority, g.count, strings.Join(g.versions, ","))
+			fmt.Fprintln(tw, "    PACKAGE\tKINDS\tVERSIONS")
+			for _, g := range groupByPackage(kinds) {
+				fmt.Fprintf(tw, "    %s\t%d\t%s\n", g.pkg, g.count, strings.Join(g.versions, ","))
 			}
 			return tw.Flush()
 		},
@@ -469,49 +469,50 @@ func declaredKinds(ctx context.Context, db *sql.DB) ([]declaredKind, error) {
 }
 
 // kindKind is the meta-kind every kind declaration is a record of.
-const kindKind = coreAuthority + "/kind"
+const kindKind = corePackage + "/kind"
 
-// localAuthority labels the repository-local kinds in a report. Bare names
-// have no authority by design, so the label
-// is the report's word and never a reference.
-const localAuthority = "(repository-local)"
+// localPackage labels a declaration whose reference names no package in a
+// report. Every stored kind carries one, so this is the report's word for a row
+// that should not exist, never a reference.
+const localPackage = "(no package)"
 
-type authorityGroup struct {
-	authority string
-	count     int
-	versions  []string
+type packageGroup struct {
+	pkg      string
+	count    int
+	versions []string
 }
 
-// groupByAuthority folds the declarations into one row per authority: how many
-// kinds it publishes here, and which declaration versions are live. More than
-// one version under an authority means a partial upgrade — exactly the thing an
-// operator opens this command to see.
-func groupByAuthority(kinds []declaredKind) []authorityGroup {
-	byAuthority := map[string]*authorityGroup{}
+// groupByPackage folds the declarations into one row per PACKAGE: how many
+// kinds it declares here, and which declaration versions are live. The package
+// is the version unit (decision record 0047), so more than one version under
+// one package means a partial upgrade — exactly the thing an operator opens
+// this command to see.
+func groupByPackage(kinds []declaredKind) []packageGroup {
+	byPackage := map[string]*packageGroup{}
 	seen := map[string]map[string]bool{}
 	for _, k := range kinds {
-		authority := vocabulary.KindAuthority(k.ref)
-		if authority == "" {
-			authority = localAuthority
+		pkg := vocabulary.KindPackage(k.ref)
+		if pkg == "" {
+			pkg = localPackage
 		}
-		g, ok := byAuthority[authority]
+		g, ok := byPackage[pkg]
 		if !ok {
-			g = &authorityGroup{authority: authority}
-			byAuthority[authority] = g
-			seen[authority] = map[string]bool{}
+			g = &packageGroup{pkg: pkg}
+			byPackage[pkg] = g
+			seen[pkg] = map[string]bool{}
 		}
 		g.count++
 		version := k.version
 		if version == "" {
 			version = "(unversioned)"
 		}
-		if !seen[authority][version] {
-			seen[authority][version] = true
+		if !seen[pkg][version] {
+			seen[pkg][version] = true
 			g.versions = append(g.versions, version)
 		}
 	}
-	out := make([]authorityGroup, 0, len(byAuthority))
-	for _, g := range byAuthority {
+	out := make([]packageGroup, 0, len(byPackage))
+	for _, g := range byPackage {
 		// Versions are incremental integers, so the honest order is numeric;
 		// the non-numeric labels (a legacy spelling, "(unversioned)") sort
 		// after the numbers, lexically among themselves.
@@ -531,6 +532,6 @@ func groupByAuthority(kinds []declaredKind) []authorityGroup {
 		})
 		out = append(out, *g)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].authority < out[j].authority })
+	sort.Slice(out, func(i, j int) bool { return out[i].pkg < out[j].pkg })
 	return out
 }

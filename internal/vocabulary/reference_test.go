@@ -14,26 +14,30 @@ import (
 // refDocs is one authority holding a person kind and a membership kind whose
 // `person` property is filled in per case.
 func refDocs(person string) string {
-	return `kind: core.substrate.reamde.dev/authority
+	return `kind: substrate.reamde.dev/core/package
 metadata:
-  id: ref.example.com
-data:
-  version: 1
----
-kind: core.substrate.reamde.dev/kind
-metadata:
-  id: ref.example.com/person
+  id: ref.example.com/ref
 data:
   authority: ref.example.com
+  package: ref
+  version: 1
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: ref.example.com/ref/person
+data:
+  authority: ref.example.com
+  package: ref
   names: {singular: person, plural: people}
   properties:
     label: {type: string}
 ---
-kind: core.substrate.reamde.dev/kind
+kind: substrate.reamde.dev/core/kind
 metadata:
-  id: ref.example.com/membership
+  id: ref.example.com/ref/membership
 data:
   authority: ref.example.com
+  package: ref
   names: {singular: membership, plural: memberships}
   properties:
     person:
@@ -60,7 +64,7 @@ func TestMustExistOnEveryShape(t *testing.T) {
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}
-			m, _ := r.ByIdentity("ref.example.com/membership")
+			m, _ := r.ByIdentity("ref.example.com/ref/membership")
 			p, _ := m.Prop("person")
 			if !p.MustExist {
 				t.Fatal("mustExist did not survive the parse")
@@ -82,7 +86,7 @@ func TestReferenceLinkProperties(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	m, _ := r.ByIdentity("ref.example.com/membership")
+	m, _ := r.ByIdentity("ref.example.com/ref/membership")
 	p, _ := m.Prop("person")
 	if got := p.PropertyOrder; len(got) != 2 || got[0] != "role" || got[1] != "since" {
 		t.Fatalf("link property order = %v", got)
@@ -180,7 +184,7 @@ func TestSubjectReferenceShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	m, _ := r.ByIdentity("ref.example.com/membership")
+	m, _ := r.ByIdentity("ref.example.com/ref/membership")
 	p, _ := m.Prop("person")
 	if !p.Subject {
 		t.Fatal("subject did not survive the parse")

@@ -1,0 +1,1226 @@
+# The GitHub bundle — the substrate's second real integration, SYNC-ONLY.
+#
+# It connects a GitHub account over the host OAuth facility and mirrors what
+# GitHub holds about the owner into the graph: the connected user, the
+# repositories they can reach, and every issue and pull request they are
+# involved in (author / assignee / mentioned / commenter / review-requested —
+# the owner's own work, never the firehose of every item in every repo;
+# `involves:` does NOT cover review
+# requests, so those ride a third `review-requested:` search). Mirrors only:
+# nothing here writes BACK to GitHub — no closing issues, no comments. The
+# outbound outbox (issue 009) does not exist yet; when it does, writeback
+# arrives as a separate slice on these same mirror types.
+#
+# Install:  substratectl apply -f bundle.yaml -f triggers.yaml
+# Configure: create a config record — ONLY the GitHub OAuth app's client
+#   id + secret; the `client` input resolves it (sole record, the one named
+#   `default`, or a bound one). The provider ENDPOINTS and the feature→scope
+#   mapping are TRUSTED bundle-manifest metadata (the `oauth2:` block below),
+#   never config-record properties (review-google #1).
+# Connect:  create an account, then run the host OAuth flow against it —
+#   the callback URL registered on the GitHub OAuth app is the host's
+#   GET …/api/v1/oauth/callback (see README).
+#
+# This file is the SCHEMA closure (the atomic install unit). The delivery
+# wiring lives beside it in triggers.yaml as ordinary data records.
+# ---- the owned package --------------------------------------------------------
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: providers.substrate.reamde.dev/github
+data:
+  authority: providers.substrate.reamde.dev
+  package: github
+  # version 2: THE TYPED CORE SWEEP. Declarations in this closure moved to the
+  # declared spellings — whichever of them they used: a tool entry naming its arm,
+  # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
+  # naming its properties. THE PACKAGE IS VERSIONED AS A UNIT, so this bump
+  # carries the closure whole rather than saying every declaration in it moved.
+  # version 3: the grants group under one `permissions:` object, and the permission
+  # to write is `writes:` inside it. This closure's functions and agents
+  # follow core's declaration.
+  # version 5: `account` on every mirror kind is a pinned owner
+  # reference instead of a string, so disconnecting an account collects
+  # the rows it synced (docs/decisions/0032).
+  # version 7: issue and pullrequest DECLARE `body` (type text) instead of
+  # riding the former built-in column, which stops being reserved (#68,
+  # docs/decisions/0041). An additive property, so the upgrade is clean.
+  # version 8: the inline functions' `timeoutMs` (int ms) is `timeout`, the
+  # duration datatype (ISO 8601); the retype rides core's function kind bump.
+  # version 9: every link is a `type: reference` property. `user.person` is a
+  # `subject: true` reference the mapping names with `property:`, the issue
+  # and pullrequest `repository` references carry `mustExist: true`, and every
+  # account reference carries `onDelete: cascade`.
+  version: 9
+---
+# ---- the bundle document: the install unit --------------------------------
+# `installs:` names EXACTLY the package's schema members (every kind but the
+# package header and the bundle itself): the two config types, the four mirror
+# types, the sync function, and the user→person mapping.
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: providers.substrate.reamde.dev/github
+data:
+  authority: providers.substrate.reamde.dev
+  package: github
+  description: >-
+    Connects a GitHub account and mirrors the owner's code work — the connected
+    user, their repositories, and every issue and pull request they are involved
+    in — as mirror records, sync-only.
+  # The one declared input: the OAuth client record. NO inject: the host
+  # OAuth facility reads it (oauth2.clientInput below); no function body ever
+  # sees the client credentials.
+  inputs:
+    client:
+      kind: providers.substrate.reamde.dev/github/config
+      description: the GitHub OAuth app the host exchanges codes through
+  # The vocabulary this bundle maps ONTO (see google): import it first.
+  requires:
+    - samples.substrate.reamde.dev/people
+  # TRUSTED provider metadata (review-google #1): the host reads endpoints and
+  # the feature→scope mapping ONLY from here — the immutable install artifact —
+  # never from the mutable config record, so a config edit can never redirect
+  # a token exchange. GitHub's classic OAuth scopes are COARSE: there is no
+  # read-only repository grant, so issues / pull requests / repos on private
+  # repositories all ride the one `repo` scope (public-only would be
+  # `public_repo`). The sync
+  # itself only ever reads.
+  oauth2:
+    clientInput: client
+    authorizationEndpoint: https://github.com/login/oauth/authorize
+    tokenEndpoint: https://github.com/login/oauth/access_token
+    # No revocationEndpoint: GitHub revokes app grants over a Basic-auth
+    # DELETE /applications/{client_id}/grant, not an RFC 7009 endpoint the
+    # facility can POST a token at. Disconnect still deletes the stored
+    # credential; the grant is revoked from GitHub's settings page.
+    # After the exchange the facility reads the connected account's own
+    # address off GET /user (its top-level `email` — the user's PUBLIC email;
+    # a profile with no public email yields a blank, and the account then
+    # displays its login instead). The bundle deliberately does NOT request
+    # `user:email` (review-fleet-codex #15): that scope grants the private
+    # /user/emails list this bundle never reads, so consent would overstate
+    # what the sync uses. `read:user` rides EVERY toggle (whoop's pattern,
+    # review-fleet-claude #17) so an issues-only account still derives its
+    # email/login off /user.
+    emailEndpoint: https://api.github.com/user
+    emailProperty: email
+    featureScopes:
+      enabledUser:
+        scopes:
+          - read:user
+      enabledRepos:
+        scopes:
+          - read:user
+          - repo
+      enabledIssues:
+        scopes:
+          - read:user
+          - repo
+      enabledPullRequests:
+        scopes:
+          - read:user
+          - repo
+  installs:
+    - providers.substrate.reamde.dev/github/config
+    - providers.substrate.reamde.dev/github/account
+    - providers.substrate.reamde.dev/github/user
+    - providers.substrate.reamde.dev/github/repository
+    - providers.substrate.reamde.dev/github/issue
+    - providers.substrate.reamde.dev/github/pullrequest
+    - providers.substrate.reamde.dev/github/githubsync
+    - providers.substrate.reamde.dev/github/userperson
+---
+# ---- the config type: the `client` input's kind ----------------------------
+# oauth2 (the OAuth CLIENT credentials the facility uses to exchange codes):
+# the GitHub OAuth app the owner registers — ONLY its clientId and
+# secret-typed clientSecret. Endpoints and scopes are manifest metadata above.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/github/config
+data:
+  authority: providers.substrate.reamde.dev
+  package: github
+  description: >-
+    The GitHub OAuth app this bundle authenticates through — its client id
+    and a sealed client secret, and nothing else. The record the bundle's
+    client input resolves; endpoints and scopes are manifest metadata rather
+    than editable rows.
+  names:
+    singular: config
+  traits: [oauth2]
+  displayTemplate: "GitHub app {clientId}"
+  properties:
+    clientId:
+      type: string
+      displayName: Client ID
+      description: the GitHub OAuth app's client id (from github.com/settings/developers)
+    clientSecret:
+      type: secret
+      displayName: Client secret
+      description: the GitHub OAuth app's client secret — sealed at rest,
+        never read back
+---
+# ---- the account type: one connected GitHub account ------------------------
+# accountconfig (its records ARE the bundle's connected accounts; the host
+# writes tokenRef + tokenStatus + grantedScopes over the OAuth facility). NOT
+# oauth2: the client creds bind on the CONFIG type, the provider endpoints are
+# manifest metadata, and StartOAuth derives the requested scope union from
+# THIS account's enabled toggles (engine/oauth.go). Every property carries a
+# `writer:` role so only its rightful hand may set it (review-google #2).
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/github/account
+data:
+  authority: providers.substrate.reamde.dev
+  package: github
+  description: >-
+    One connected GitHub account: these records ARE the bundle's connections.
+    The OAuth facility writes the credential reference and the connection
+    status, the owner flips the feature toggles, and the scopes asked for
+    are derived from them.
+  names:
+    singular: account
+  traits: [accountconfig]
+  # The public email when GitHub exposes one, else the connector-stamped
+  # login — a private-email account never renders as a blank row
+  # (review-fleet-claude #17).
+  displayTemplate: "{email|login}"
+  properties:
+    # The OAuth facility's hands on the account (writer: oauth — only the
+    # facility's actor may set them).
+    tokenRef:
+      type: secret
+      writer: oauth
+      displayName: Token reference
+      description: the credential-store reference the OAuth facility writes;
+        never a raw token
+    tokenStatus:
+      type: string
+      writer: oauth
+      displayName: Connection status
+      description: "the connection state the facility last reported (pending
+        | connected | erroring)"
+    grantedScopes:
+      type: string
+      repeated: true
+      writer: oauth
+      displayName: Granted scopes
+      description: the OAuth scopes the last consent was granted for; drives
+        reconnect-on-new-feature
+    # The connected account's address (writer: oauth — the facility sets it
+    # from GET /user after the consent; the user never types it). GitHub only
+    # exposes the PUBLIC profile email there — a private-email account gets a
+    # blank, and the display falls back to `login` below.
+    email:
+      type: email
+      writer: oauth
+      displayName: Email
+      description: the connected GitHub account's public email, set by the
+        OAuth facility from the grant
+    login:
+      type: string
+      writer: connector
+      displayName: Login
+      description: the connected account's GitHub login, stamped by the sync
+        — the display fallback when no public email exists
+    # The feature toggles the console surfaces — each maps to scopes through
+    # the manifest's featureScopes and gates a stage of the sync.
+    enabledUser:
+      type: bool
+      writer: owner
+      displayName: Profile
+      description: mirror the connected user's own profile into a user record
+    enabledRepos:
+      type: bool
+      writer: owner
+      displayName: Repositories
+      description: mirror the repositories this account can reach
+    enabledIssues:
+      type: bool
+      writer: owner
+      displayName: Issues
+      description: mirror every issue the connected user is involved in
+    enabledPullRequests:
+      type: bool
+      writer: owner
+      displayName: Pull requests
+      description: mirror every pull request the connected user is involved
+        in or review-requested on
+    # How often the scheduled tick should re-sync this account. An enum so the
+    # console renders a fixed choice; required with a default so the select
+    # never offers an empty "— none —". The sync body honors it against
+    # lastSyncedAt.
+    syncFrequency:
+      type: enum
+      values:
+        - value: off
+          label: Off
+        - value: hourly
+          label: "Every hour"
+        - value: daily
+          label: "Once a day"
+      required: true
+      default: daily
+      writer: owner
+      displayName: Sync frequency
+      description: "the scheduled sync cadence for this account (default daily)"
+    # How far back the FIRST issue / pull-request sync reaches (the search
+    # window's `updated:>=` floor). The fleet-wide mapping: none → from
+    # connect time, forward-only; last30d/90d/1y → now − Δ; all → epoch
+    # (unbounded). After the first sync the per-stage watermarks (syncCursor)
+    # take over and every run is incremental.
+    backfillDepth:
+      type: enum
+      values:
+        - value: none
+          label: "Don't backfill"
+        - value: last30d
+          label: "Last 30 days"
+        - value: last90d
+          label: "Last 90 days"
+        - value: last1y
+          label: "Last year"
+        - value: all
+          label: Everything
+      required: true
+      default: last30d
+      writer: owner
+      displayName: Backfill depth
+      description: "how far back the first issues / pull-requests sync reaches
+        (none = from connect time forward; default 30 days)"
+    # Connector STATE the sync body owns (writer: connector — only installed
+    # bundle code, the sync function, may set these).
+    syncCursor:
+      type: string
+      writer: connector
+      displayName: Sync cursor
+      description: >-
+        per-stage incremental floors as JSON ({"issues": …, "pulls": …, "pullsReview":
+        …}, RFC 3339 run-start watermarks) — one stage hitting a search cap
+        never advances another's tail
+    lastSyncedAt:
+      type: datetime
+      writer: connector
+      displayName: Last synced
+      description: when the last sync attempt finished (ok or erroring) —
+        the cadence anchor and completion marker
+    syncStatus:
+      type: string
+      writer: connector
+      displayName: Sync status
+      description: "the last sync outcome (ok | ok (partial: …) | ok (capped:
+        …) | erroring: <reason>)"
+---
+# ---- mirror: what GitHub holds about one user ------------------------------
+# One user per (account, login), in GitHub's own shape. The connected user's
+# row is written whole off GET /user; issue and PR authors land as create-only
+# stubs (login + profile URL) so the graph knows who wrote what. The `person`
+# subject reference is left EMPTY on write; the mapping below matches a person
+# on the public email or mints a shell in the same transaction.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/github/user
+data:
+  authority: providers.substrate.reamde.dev
+  package: github
+  description: >-
+    What GitHub holds about one user, in GitHub's own shape: login, name,
+    public email and profile URL. It points at a person, so a GitHub identity
+    and the same human's address-book contact converge on one record.
+  names:
+    singular: user
+  displayTemplate: "{name|login}"
+  properties:
+    # NOT a reference, and every `account:` in this closure reads the same way:
+    # the connector writes it as provenance on synced rows, and retyping a live
+    # string property to a reference is a NARROWING the boot upgrade refuses
+    # while rows hold the old shape — it would strand every released store.
+    account:
+      type: reference
+      kind: account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this user was synced through
+    login:
+      type: string
+      displayName: Login
+      description: the GitHub login, the provider's stable handle
+    name:
+      type: string
+      displayName: Name
+      description: the profile's full name, as GitHub returns it
+    email:
+      type: email
+      displayName: Email
+      description: the profile's PUBLIC email — the identity probe the person
+        mapping matches on
+    htmlURL:
+      type: url
+      displayName: Profile URL
+      description: the profile page, https://github.com/<login>
+    createdAt:
+      type: datetime
+      displayName: Created
+      description: when the GitHub account was created
+    raw:
+      type: json
+      displayName: Raw payload
+      description: the raw /user payload as fetched, for provenance
+    # The subject reference (§6.1): required, single, never cascading, pointing
+    # at person — left empty on write so the substrate resolves it. NOTE the
+    # bipartite rule (record 50): because user is a mapped source type,
+    # no other reference anywhere may point at it — issues and pull requests
+    # carry authorLogin as a property and reach the human THROUGH this record.
+    person:
+      type: reference
+      kind: samples.substrate.reamde.dev/people/person
+      displayName: Person
+      required: true
+      mustExist: true
+      subject: true
+      description: the human this GitHub profile describes
+---
+# ---- mirror: one repository -------------------------------------------------
+# Written whole off GET /user/repos when enabledRepos; issues and PRs also
+# mint create-only stubs for repositories the repo listing did not cover
+# (a PR in someone else's repo), so the required parent reference always
+# resolves.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/github/repository
+data:
+  authority: providers.substrate.reamde.dev
+  package: github
+  description: >-
+    One GitHub repository as GitHub describes it — full name, visibility,
+    default branch, page URL. Issues and pull requests hang off it, and a
+    stub is minted for repositories the listing never covered, so that reference
+    always resolves.
+  names:
+    singular: repository
+  displayTemplate: "{fullName}"
+  properties:
+    account:
+      type: reference
+      kind: account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this repository was synced through
+    fullName:
+      type: string
+      displayName: Full name
+      description: "the owner/name pair, GitHub's stable key (e.g. geoah/substrate)"
+    name:
+      type: string
+      displayName: Name
+      description: the repository's bare name
+    description:
+      type: string
+      displayName: Description
+      description: the repository's description
+    private:
+      type: bool
+      displayName: Private
+      description: whether the repository is private
+    archived:
+      type: bool
+      displayName: Archived
+      description: whether the repository is archived
+    defaultBranch:
+      type: string
+      displayName: Default branch
+      description: the default branch name
+    htmlURL:
+      type: url
+      displayName: Repository URL
+      description: the repository page, https://github.com/<owner>/<name>
+    createdAt:
+      type: datetime
+      displayName: Created
+      description: when the repository was created
+    raw:
+      type: json
+      displayName: Raw payload
+      description: the raw repository payload as fetched, for provenance
+---
+# ---- mirror: one issue -------------------------------------------------------
+# The provider's shape, plainly: `state` is a plain string ("open" | "closed"),
+# never a state machine — GitHub owns the lifecycle, the mirror just reports
+# it. `title` rides the built-in derived column; `body` is a declared,
+# column-backed text property (#68), FTS-indexed as it always was. The raw
+# payload drops the body so one page of mirrors stays inside the frame cap
+# (the sync truncates the stored body at 4000 chars).
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/github/issue
+data:
+  authority: providers.substrate.reamde.dev
+  package: github
+  description: >-
+    One GitHub issue, mirrored plainly: number, state, labels, author login
+    and the timestamps the sync watermarks on. GitHub owns the lifecycle,
+    so the state is a plain string — the mirror reports it and never decides
+    it.
+  names:
+    singular: issue
+  properties:
+    account:
+      type: reference
+      kind: account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this issue was synced through
+    number:
+      type: int
+      displayName: Number
+      description: the issue number within its repository
+    state:
+      type: string
+      displayName: State
+      description: "the provider's state, plainly (open | closed)"
+    body:
+      type: text
+      displayName: Body
+      description: the issue description, truncated, FTS-indexed
+    authorLogin:
+      type: string
+      displayName: Author
+      description: the author's GitHub login — the human is reached through
+        the user mirror
+    labels:
+      type: string
+      repeated: true
+      displayName: Labels
+      description: the issue's label names
+    htmlURL:
+      type: url
+      displayName: Issue URL
+      description: the issue page on GitHub
+    createdAt:
+      type: datetime
+      displayName: Opened
+      description: when the issue was opened
+    updatedAt:
+      type: datetime
+      displayName: Updated
+      description: when the issue last changed — the sync watermark's source
+    closedAt:
+      type: datetime
+      displayName: Closed
+      description: when the issue was closed, absent while open
+    raw:
+      type: json
+      displayName: Raw payload
+      description: the raw search item as fetched (body omitted), for provenance
+    repository:
+      type: reference
+      displayName: Repository
+      kind: providers.substrate.reamde.dev/github/repository
+      required: true
+      mustExist: true
+      description: the repository this issue belongs to
+---
+# ---- mirror: one pull request ------------------------------------------------
+# Same posture as issue (`title` rides the built-in column, `body` is a declared
+# text property, #68); `state` folds GitHub's split fields (merged beats closed
+# beats draft beats open), still a plain string.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/github/pullrequest
+data:
+  authority: providers.substrate.reamde.dev
+  package: github
+  description: >-
+    One GitHub pull request, mirrored like an issue with the merge facts added.
+    Its state folds GitHub's separate fields into one word — merged beats
+    closed beats draft beats open — and stays a plain string GitHub owns.
+  names:
+    singular: pullrequest
+  properties:
+    account:
+      type: reference
+      kind: account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this pull request was synced through
+    number:
+      type: int
+      displayName: Number
+      description: the pull request number within its repository
+    state:
+      type: string
+      displayName: State
+      description: "the folded provider state, plainly (open | draft | merged
+        | closed)"
+    body:
+      type: text
+      displayName: Body
+      description: the pull request description, truncated, FTS-indexed
+    authorLogin:
+      type: string
+      displayName: Author
+      description: the author's GitHub login — the human is reached through
+        the user mirror
+    labels:
+      type: string
+      repeated: true
+      displayName: Labels
+      description: the pull request's label names
+    htmlURL:
+      type: url
+      displayName: Pull request URL
+      description: the pull request page on GitHub
+    createdAt:
+      type: datetime
+      displayName: Opened
+      description: when the pull request was opened
+    updatedAt:
+      type: datetime
+      displayName: Updated
+      description: when the pull request last changed — the sync watermark's
+        source
+    closedAt:
+      type: datetime
+      displayName: Closed
+      description: when the pull request was closed, absent while open
+    mergedAt:
+      type: datetime
+      displayName: Merged
+      description: when the pull request was merged, absent unless merged
+    raw:
+      type: json
+      displayName: Raw payload
+      description: the raw search item as fetched (body omitted), for provenance
+    repository:
+      type: reference
+      displayName: Repository
+      kind: providers.substrate.reamde.dev/github/repository
+      required: true
+      mustExist: true
+      description: the repository this pull request belongs to
+---
+# ---- the sync function: mirrors, one REST page per invocation ---------------
+# A PEP 723 Python body (requests through uv). It reads the account's
+# host-resolved OAuth access token off the injected bundle config, walks the
+# stages PINNED at queue-head — /user, /user/repos, then THREE searches
+# (issues involves:, PRs involves:, PRs review-requested:) — and drains OFF
+# THE CAUSAL CHAIN through the paged-checkpoint more/resume contract: one
+# GitHub page per invocation, at constant causal depth. Ids are
+# host.ids.external("github", account, provider key), so re-syncing upserts
+# the same rows; author and repo stubs are put-if-absent so they never
+# clobber a fuller row. Each search stage owns its own watermark (one stage
+# hitting the 1,000-result search ceiling can never seal a gap in another's
+# tail); the final stage stamps the account (per-stage syncCursor JSON +
+# login + lastSyncedAt + syncStatus, the writer: connector properties) —
+# which drops the on-connect trigger's guard for good. One erroring account
+# stamps ITS syncStatus and the queue moves on — it never parks the chain
+# for the accounts behind it.
+#
+# No real GitHub call runs against the production API in tests — the DB tests
+# drive the body against a LOOPBACK fake; the body itself refuses to send the
+# token anywhere but https://api.github.com or loopback (the bundle-side
+# origin pin, review-fleet-codex #1).
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/github/githubsync
+data:
+  authority: providers.substrate.reamde.dev
+  package: github
+  description: >-
+    Sync a GitHub account: mirror the connected user, their repositories,
+    and every involved or review-requested issue and pull request — one REST
+    page per invocation, never writing back to GitHub.
+  runtime: python
+  timeout: PT30S
+  permissions:
+    writes:
+      - providers.substrate.reamde.dev/github/user
+      - providers.substrate.reamde.dev/github/repository
+      - providers.substrate.reamde.dev/github/issue
+      - providers.substrate.reamde.dev/github/pullrequest
+      - providers.substrate.reamde.dev/github/account
+    network:
+      - "api.github.com"
+      - "github.com"
+  source: |
+    # /// script
+    # requires-python = ">=3.11"
+    # dependencies = [
+    #   "requests==2.32.4",
+    # ]
+    # ///
+    """GitHub sync — one REST page per invocation, mirrors only.
+
+    The account's live access token arrives injected on the bundle config
+    (`config.accounts[].token`, host-resolved); this body never sees a client
+    secret or a credential ref, and it refuses to send the token anywhere but
+    https://api.github.com or loopback (the test seam). Large accounts drain
+    off the causal chain via the paged-checkpoint `more`/`resume` contract:
+    the cursor carries the account queue, the stage list PINNED at queue-head
+    (a toggle flipped mid-drain can neither crash the walk nor shift it), the
+    provider page number, and one floor + one watermark PER SEARCH STAGE —
+    issues, PRs-involved and PRs-review-requested each own their incremental
+    window, so one stage hitting the search API's 1,000-result ceiling can
+    never advance another's tail. A completed stage stamps the RUN-START
+    watermark (never the local completion clock — items updated mid-drain
+    stay inside the next window), queried back with a 120s overlap; a partial
+    response (`incomplete_results`) refuses to advance its stage's watermark
+    at all. One erroring account stamps ITS `syncStatus: "erroring: …"` and
+    the queue moves on. Deletes are NOT reconciled: GitHub's search feed
+    carries no tombstones, so a deleted issue simply stops updating (a
+    mark-and-sweep is a later slice, mirrored off the google bundle's).
+    """
+    import datetime as _dt
+    import json as _json
+    from urllib.parse import urlparse
+
+    import requests
+
+    AUTHORITY = "providers.substrate.reamde.dev/github"
+    USER_TYPE = AUTHORITY + "/user"
+    REPO_TYPE = AUTHORITY + "/repository"
+    ISSUE_TYPE = AUTHORITY + "/issue"
+    PULL_TYPE = AUTHORITY + "/pullrequest"
+    ACCOUNT_TYPE = AUTHORITY + "/account"
+
+    API = "https://api.github.com"
+    API_HOST = "api.github.com"  # the ONLY non-loopback origin the token may reach
+    LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+    PAGE_SIZE = 100
+    MAX_SEARCH_PAGES = 10  # the search API serves at most 1000 results per query
+    BODY_MAX = 4000  # v4's githubPRBodyMaxLen, same reason
+    OVERLAP_SECONDS = 120  # re-query window behind a stored watermark
+    BACKFILL_DAYS = {"last30d": 30, "last90d": 90, "last1y": 365}
+    TOGGLES = ("enabledUser", "enabledRepos", "enabledIssues", "enabledPullRequests")
+    # Each search stage owns its floor and watermark. `involves:` covers
+    # author / assignee / mentioned / commenter but NOT review requests —
+    # those need the separate `review-requested:` qualifier (review-fleet-
+    # codex #11). A PR both searches return lands at the SAME deterministic
+    # id, so the second put is an idempotent upsert, never a duplicate.
+    SEARCH_STAGES = ("issues", "pulls", "pullsReview")
+    SEARCH_QUERY = {
+        "issues": "type:issue involves:",
+        "pulls": "type:pr involves:",
+        "pullsReview": "type:pr review-requested:",
+    }
+
+
+    def _wants(acct):
+        props = acct.get("properties") or {}
+        return any(props.get(t) for t in TOGGLES)
+
+
+    def _due(props):
+        freq = (props.get("syncFrequency") or "daily").lower()
+        if freq == "off":
+            return False
+        last = props.get("lastSyncedAt")
+        if not last:
+            return True
+        try:
+            seen = _dt.datetime.fromisoformat(str(last).replace("Z", "+00:00"))
+        except ValueError:
+            return True
+        hours = 1 if freq == "hourly" else 24
+        return _dt.datetime.now(_dt.timezone.utc) - seen >= _dt.timedelta(hours=hours)
+
+
+    def _stages(props):
+        # The account's enabled stages, in walk order. `user` always runs (the
+        # searches need the login and it costs one call); the user mirror
+        # itself is only emitted under enabledUser. The list is PINNED into the
+        # cursor at queue-head, so a toggle flipped mid-drain cannot crash the
+        # resumed walk (review-fleet-claude #11).
+        out = ["user"]
+        if props.get("enabledRepos"):
+            out.append("repos")
+        if props.get("enabledIssues"):
+            out.append("issues")
+        if props.get("enabledPullRequests"):
+            out.append("pulls")
+            out.append("pullsReview")
+        return out
+
+
+    def _fresh(queue):
+        return {"queue": queue, "stages": [], "stage": "user", "page": 1,
+                "login": "", "runStart": "", "floors": {}, "cursors": {},
+                "pfloor": "", "partial": [], "stalled": []}
+
+
+    def _now():
+        return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+    def _minus_overlap(ts):
+        if not ts:
+            return ""
+        try:
+            t = _dt.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        except ValueError:
+            return str(ts)
+        return (t - _dt.timedelta(seconds=OVERLAP_SECONDS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+    def _check_origin(url):
+        # The bundle-side origin pin (review-fleet-codex #1): a request that
+        # would carry the injected token may reach ONLY the pinned production
+        # host over HTTPS, or loopback (the test seam). The engine's `network`
+        # capability is declared-but-unenforced, so this refusal is the
+        # defense until host-side egress enforcement exists.
+        u = urlparse(url)
+        host = (u.hostname or "").lower()
+        if host in LOOPBACK_HOSTS:
+            return
+        if u.scheme == "https" and host == API_HOST:
+            return
+        raise RuntimeError(
+            "github: refusing to send credentials to %s://%s — only "
+            "https://api.github.com or loopback" % (u.scheme, host or "?"))
+
+
+    def _get(token, url, params=None):
+        _check_origin(url)
+        resp = requests.get(url, params=params or {}, headers={
+            "Authorization": "Bearer " + token,
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }, timeout=20)
+        resp.raise_for_status()
+        return resp.json()
+
+
+    def _err_msg(e):
+        if isinstance(e, requests.HTTPError) and e.response is not None:
+            code = e.response.status_code
+            if code == 401:
+                # GitHub OAuth tokens do not expire, so a revoked-at-GitHub
+                # grant keeps "refreshing" fine and only fails HERE.
+                # tokenStatus belongs to the OAuth facility (writer: oauth) —
+                # syncStatus carries the auth failure instead.
+                return "unauthorized (was the token revoked at GitHub?)"
+            return "github returned HTTP %d" % code
+        return str(e) or type(e).__name__
+
+
+    def _user_id(host, aid, login):
+        return host.ids.external("github", aid, "user/" + login.lower())
+
+
+    def _repo_id(host, aid, full):
+        return host.ids.external("github", aid, "repo/" + full.lower())
+
+
+    def _item_id(host, aid, kind, full, number):
+        return host.ids.external(
+            "github", aid, kind + "/" + full.lower() + "#" + str(number))
+
+
+    def _repo_full(repository_url):
+        # ".../repos/owner/name" -> "owner/name" (v4's githubRepoFullName).
+        marker = "/repos/"
+        i = repository_url.find(marker)
+        if i < 0:
+            return ""
+        full = repository_url[i + len(marker):]
+        return full if full.count("/") == 1 and "" not in full.split("/") else ""
+
+
+    def _put_if(props, key, value):
+        if value:
+            props[key] = value
+
+
+    def _user_props(aid, me):
+        props = {"account": aid, "login": me.get("login") or ""}
+        _put_if(props, "name", me.get("name"))
+        _put_if(props, "email", me.get("email"))
+        _put_if(props, "htmlURL", me.get("html_url"))
+        _put_if(props, "createdAt", me.get("created_at"))
+        props["raw"] = me
+        return props
+
+
+    def _repo_props(aid, r):
+        full = r.get("full_name") or ""
+        props = {"account": aid, "fullName": full,
+                 "name": r.get("name") or full.split("/")[-1],
+                 "private": bool(r.get("private")),
+                 "archived": bool(r.get("archived"))}
+        _put_if(props, "description", r.get("description"))
+        _put_if(props, "defaultBranch", r.get("default_branch"))
+        _put_if(props, "htmlURL", r.get("html_url"))
+        _put_if(props, "createdAt", r.get("created_at"))
+        props["raw"] = r
+        return props
+
+
+    def _pr_state(it):
+        # v4's githubPRState: merged beats closed beats draft beats open.
+        if (it.get("pull_request") or {}).get("merged_at"):
+            return "merged"
+        if (it.get("state") or "") == "closed":
+            return "closed"
+        if it.get("draft"):
+            return "draft"
+        return "open"
+
+
+    def _item_props(aid, full, it, pull):
+        # The raw payload drops the body: the kind declares a `body` property
+        # (mapped to the body column, truncated) instead, so a 100-item page
+        # stays inside the frame cap.
+        raw = dict(it)
+        raw.pop("body", None)
+        props = {"account": aid, "number": it.get("number"),
+                 "state": _pr_state(it) if pull else (it.get("state") or ""),
+                 "title": (it.get("title") or "").strip(), "raw": raw}
+        body = it.get("body") or ""
+        if body:
+            props["body"] = body[:BODY_MAX]
+        _put_if(props, "authorLogin", (it.get("user") or {}).get("login"))
+        labels = [l.get("name") for l in (it.get("labels") or []) if l.get("name")]
+        if labels:
+            props["labels"] = labels
+        _put_if(props, "htmlURL", it.get("html_url"))
+        _put_if(props, "createdAt", it.get("created_at"))
+        _put_if(props, "updatedAt", it.get("updated_at"))
+        _put_if(props, "closedAt", it.get("closed_at"))
+        if pull:
+            _put_if(props, "mergedAt", (it.get("pull_request") or {}).get("merged_at"))
+        return props
+
+
+    def _backfill_since(props, run_start):
+        depth = props.get("backfillDepth") or "last30d"
+        if depth == "all":
+            return ""
+        if depth == "none":
+            # The fleet-wide mapping: "don't backfill" is FROM CONNECT TIME,
+            # FORWARD-ONLY — the first run's floor is its own start, and the
+            # stamp below persists it even when the window comes back empty,
+            # so the account ratchets forward instead of recomputing
+            # since=now on every run and ingesting nothing, ever.
+            return run_start
+        days = BACKFILL_DAYS.get(depth, 30)
+        now = _dt.datetime.now(_dt.timezone.utc)
+        return (now - _dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+    def _stored_cursors(props):
+        # The stored per-stage watermarks: a JSON object keyed by stage. A
+        # legacy plain-RFC-3339 value (the old single shared watermark) reads
+        # as every stage's floor, so an upgrade never re-backfills.
+        raw = props.get("syncCursor") or ""
+        if not raw:
+            return {}
+        try:
+            val = _json.loads(raw)
+        except ValueError:
+            val = None
+        if isinstance(val, dict):
+            return {k: v for k, v in val.items() if isinstance(v, str) and v}
+        return {s: str(raw) for s in SEARCH_STAGES}
+
+
+    def _more(host, cur, **overrides):
+        nxt = dict(cur)
+        nxt.update(overrides)
+        return {"more": host.page.more(nxt)}
+
+
+    def _stamp(host, acct, aid, cur, error):
+        # The connector stamp — the writer: connector properties. EVERY path
+        # writes syncStatus (a declared status value that never lands is a
+        # state machine that does not exist, review-fleet-claude #10), and
+        # lastSyncedAt marks the attempt finished either way: it anchors the
+        # cadence AND drops the on-connect trigger's guard, so an erroring
+        # stamp can never re-fire the first backfill in a loop.
+        patch = {"lastSyncedAt": _now()}
+        if error is not None:
+            patch["syncStatus"] = ("erroring: " + error)[:400]
+        else:
+            notes = []
+            if cur.get("partial"):
+                notes.append("partial: " + ", ".join(cur["partial"]))
+            if cur.get("stalled"):
+                notes.append("capped: " + ", ".join(cur["stalled"]))
+            patch["syncStatus"] = "ok" if not notes else "ok (" + "; ".join(notes) + ")"
+            cursors = cur.get("cursors") or {}
+            if cursors:
+                patch["syncCursor"] = _json.dumps(cursors, sort_keys=True)
+            if cur.get("login"):
+                patch["login"] = cur["login"]
+        host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), aid, properties=patch)
+
+
+    def _advance(host, acct, aid, cur, queue):
+        # The current stage is done: move to the next PINNED stage, or stamp
+        # the account and move to the next queued account. The stage list was
+        # pinned at queue-head; a stage a stale cursor names that the pinned
+        # list lacks finishes the account rather than crashing the chain.
+        order = list(cur.get("stages") or ["user"])
+        stage = cur.get("stage") or "user"
+        i = order.index(stage) if stage in order else len(order) - 1
+        if i + 1 < len(order):
+            nxt = order[i + 1]
+            pfloor = ""
+            if nxt in SEARCH_STAGES:
+                # The query floor: the stage's stored watermark (or backfill
+                # window), stepped back by the overlap so items updated during
+                # the previous drain can never fall behind the floor forever.
+                pfloor = _minus_overlap((cur.get("floors") or {}).get(nxt) or "")
+            return _more(host, cur, stage=nxt, page=1, pfloor=pfloor)
+        _stamp(host, acct, aid, cur, error=None)
+        rest = queue[1:]
+        if rest:
+            return {"more": host.page.more(_fresh(rest))}
+        return {"output": {"account": aid}}
+
+
+    def _ingest(host, aid, pull, items):
+        # Mirror one search page. Returns the newest updated_at seen — the
+        # partition boundary when the stage hits the 1,000-result ceiling.
+        newest = ""
+        seen_nodes = set()
+        seen_stubs = set()
+        for it in items:
+            node = it.get("node_id") or ""
+            if node:
+                if node in seen_nodes:
+                    continue
+                seen_nodes.add(node)
+            full = _repo_full(it.get("repository_url") or "")
+            number = it.get("number")
+            if not full or number is None:
+                continue
+            # The parent repository: a create-only stub, so it never clobbers
+            # the fuller row the repos stage (or an earlier page) wrote.
+            rid = _repo_id(host, aid, full)
+            if rid not in seen_stubs:
+                seen_stubs.add(rid)
+                host.effects.put(REPO_TYPE, rid, properties={
+                    "account": aid, "fullName": full,
+                    "name": full.split("/")[-1],
+                    "htmlURL": "https://github.com/" + full,
+                }, if_absent=True)
+            # The author: a create-only user stub; the recordmapping
+            # matches or mints its person in the same transaction.
+            author = (it.get("user") or {}).get("login") or ""
+            if author:
+                uid = _user_id(host, aid, author)
+                if uid not in seen_stubs:
+                    seen_stubs.add(uid)
+                    stub = {"account": aid, "login": author}
+                    _put_if(stub, "htmlURL", (it.get("user") or {}).get("html_url"))
+                    host.effects.put(USER_TYPE, uid, properties=stub, if_absent=True)
+            # The mirror row itself: a plain put at the deterministic provider
+            # id — re-syncing the same item (or the same PR arriving over both
+            # the involves: and review-requested: searches) upserts, never
+            # duplicates.
+            props = _item_props(aid, full, it, pull)
+            props["repository"] = rid
+            host.effects.put(
+                PULL_TYPE if pull else ISSUE_TYPE,
+                _item_id(host, aid, "pull" if pull else "issue", full, number),
+                properties=props)
+            updated = it.get("updated_at") or ""
+            if updated > newest:
+                newest = updated
+        return newest
+
+
+    def _sync_account(host, acct, aid, props, token, cur, queue):
+        stage = cur.get("stage") or "user"
+        page = int(cur.get("page") or 1)
+
+        if stage == "user":
+            me = _get(token, API + "/user")
+            login = me.get("login") or ""
+            if not login:
+                raise RuntimeError("github: /user returned no login for " + aid)
+            if props.get("enabledUser"):
+                # The connected user's row is authoritative: a plain put, so a
+                # re-sync refreshes name/email over any earlier author stub.
+                host.effects.put(USER_TYPE, _user_id(host, aid, login),
+                                 properties=_user_props(aid, me))
+            # Pin THIS run's shape into the cursor: the stage list, the
+            # run-start watermark every completed stage will stamp, and each
+            # search stage's floor (its stored watermark, else the backfill
+            # window). Computed ONCE, here — a toggle or an owner edit
+            # mid-drain can neither crash the walk nor shift the windows.
+            run_start = _now()
+            stages = _stages(props)
+            stored = _stored_cursors(props)
+            floors = {s: stored.get(s) or _backfill_since(props, run_start)
+                      for s in stages if s in SEARCH_STAGES}
+            # Watermarks start from what is already stored, so a stage NOT in
+            # this run's walk (its toggle off) keeps its stamped floor.
+            cursors = {s: v for s, v in stored.items() if s in SEARCH_STAGES}
+            cur.update(login=login, runStart=run_start, stages=stages,
+                       floors=floors, cursors=cursors)
+            return _advance(host, acct, aid, cur, queue)
+
+        if stage == "repos":
+            rows = _get(token, API + "/user/repos",
+                        {"per_page": PAGE_SIZE, "page": page, "sort": "full_name"})
+            for r in rows:
+                if r.get("full_name"):
+                    host.effects.put(REPO_TYPE, _repo_id(host, aid, r["full_name"]),
+                                     properties=_repo_props(aid, r))
+            if len(rows) == PAGE_SIZE:
+                return _more(host, cur, page=page + 1)
+            return _advance(host, acct, aid, cur, queue)
+
+        # issues | pulls | pullsReview: the three searches. Ascending by
+        # update time, so a partition boundary is the page's newest item.
+        pull = stage != "issues"
+        q = SEARCH_QUERY[stage] + (cur.get("login") or "")
+        pfloor = cur.get("pfloor") or ""
+        if pfloor:
+            q += " updated:>=" + pfloor
+        resp = _get(token, API + "/search/issues",
+                    {"q": q, "per_page": PAGE_SIZE, "page": page,
+                     "sort": "updated", "order": "asc"})
+        items = resp.get("items") or []
+        boundary = _ingest(host, aid, pull, items)
+        cursors = dict(cur.get("cursors") or {})
+        if resp.get("incomplete_results"):
+            # A PARTIAL response (the search timed out provider-side): what
+            # arrived still upserts, but the stage's watermark must NOT
+            # advance — items the partial response omitted would fall behind
+            # it forever. The floor stands; the next run retries the window.
+            if stage not in (cur.get("partial") or []):
+                cur["partial"] = list(cur.get("partial") or []) + [stage]
+            floor = (cur.get("floors") or {}).get(stage) or ""
+            if floor:
+                cursors[stage] = floor
+            else:
+                cursors.pop(stage, None)
+            cur["cursors"] = cursors
+            return _advance(host, acct, aid, cur, queue)
+        if len(items) == PAGE_SIZE:
+            if page < MAX_SEARCH_PAGES:
+                return _more(host, cur, page=page + 1)
+            # The 1,000-result ceiling: partition by updated-range — restart
+            # the SAME stage at page one with the drained boundary as the new
+            # floor (inclusive, so items sharing the boundary instant are
+            # re-fetched and upserted, never skipped).
+            if boundary and boundary > pfloor:
+                return _more(host, cur, page=1, pfloor=boundary)
+            # No progress: more than 1,000 results share one updated instant.
+            # Stamp the boundary (everything before it drained), surface the
+            # cap, and never advance past the un-drained instant.
+            if stage not in (cur.get("stalled") or []):
+                cur["stalled"] = list(cur.get("stalled") or []) + [stage]
+            if boundary:
+                cursors[stage] = boundary
+                cur["cursors"] = cursors
+            return _advance(host, acct, aid, cur, queue)
+        # Drained: the stage's new watermark is the RUN-START time — never
+        # the local completion clock, never another stage's tail — so items
+        # updated while this drain ran stay inside the next window.
+        cursors[stage] = cur.get("runStart") or _now()
+        cur["cursors"] = cursors
+        return _advance(host, acct, aid, cur, queue)
+
+
+    def main(input, host):
+        cfg = input.get("config") or {}
+        accounts = {a.get("id"): a for a in (cfg.get("accounts") or [])}
+        cur = host.page.resume() or None
+        if cur is None:
+            record = (input.get("envelope") or {}).get("record") or {}
+            # The envelope SPLITS identity: `type` is the bare local name and
+            # `authority` the authority, so the full identity (ruling A9) has to be
+            # recomposed. Comparing the local name alone would match any
+            # authority's `account`.
+            etype = (record.get("kind") or "")
+            if etype == ACCOUNT_TYPE:
+                # Record-triggered: sync just this account (a connect or edit).
+                queue = [record.get("id")]
+            else:
+                # Schedule-triggered: every connected account with a feature
+                # enabled that is due by its own cadence.
+                queue = [aid for aid, a in accounts.items()
+                         if _wants(a) and _due(a.get("properties") or {})]
+            cur = _fresh(queue)
+
+        queue = list(cur.get("queue") or [])
+        # Advance past accounts we cannot or should not sync (no token, a dead
+        # grant, no feature enabled, or gone from the config). A dead grant is
+        # surfaced where the owner looks — syncStatus, stamped only when it
+        # changes so the skip can never churn the changelog.
+        while queue:
+            acct = accounts.get(queue[0])
+            if acct is None or not _wants(acct):
+                queue = queue[1:]
+                cur = _fresh(queue)
+                continue
+            props = acct.get("properties") or {}
+            terr = acct.get("tokenError")
+            if terr or not acct.get("token"):
+                if terr:
+                    host.log("github: skip %s: %s" % (queue[0], terr))
+                    want = ("erroring: " + str(terr))[:400]
+                    if (props.get("syncStatus") or "") != want:
+                        host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), queue[0],
+                                           properties={"syncStatus": want})
+                queue = queue[1:]
+                cur = _fresh(queue)
+                continue
+            break
+        if not queue:
+            return {"output": {"synced": 0}}
+
+        aid = queue[0]
+        acct = accounts[aid]
+        props = acct.get("properties") or {}
+        cur["queue"] = queue
+        try:
+            return _sync_account(host, acct, aid, props, acct["token"], cur, queue)
+        except Exception as e:  # noqa: BLE001 — per-account isolation
+            # One account's provider failure (401 on a revoked token, a 403,
+            # a timeout, the origin-pin refusal) stamps ITS syncStatus and the
+            # queue moves on — it never parks the chain for the accounts
+            # behind it (review-fleet-claude #9).
+            msg = _err_msg(e)
+            host.log("github: account %s failed: %s" % (aid, msg))
+            _stamp(host, acct, aid, cur, error=msg)
+            rest = queue[1:]
+            if rest:
+                return {"more": host.page.more(_fresh(rest))}
+            return {"output": {"account": aid, "error": msg}}
+---
+# ---- the mapping: user → person ---------------------------------------------
+# The record's `person` reference, and how its properties reach the human (§6.1/
+# §7.1). match probes the profile's PUBLIC email against people's emails:
+# exactly one live match links it, zero-or-many mints a person shell (a bare
+# author stub carries no email, so its probe extracts nothing and a shell is
+# minted — prominence stays `utility` until an address book or the owner
+# promotes it). map copies the name, prefers the login as the friendly name,
+# and unions the email onto the person (machine-managed, yielding to any
+# owner edit).
+kind: substrate.reamde.dev/core/recordmapping
+metadata:
+  id: providers.substrate.reamde.dev/github/userperson
+data:
+  authority: providers.substrate.reamde.dev
+  package: github
+  from: providers.substrate.reamde.dev/github/user
+  to: samples.substrate.reamde.dev/people/person
+  property: person
+  match:
+    - from: email
+      to: emails
+  map:
+    name:
+      path: name
+    displayName:
+      path: login
+    emails:
+      path: email
+      merge: union

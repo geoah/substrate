@@ -14,7 +14,7 @@ import (
 // decision machine, applyMerge in the transition's transaction, and the
 // diffConflict rollback+annotation pattern on a stale request.
 
-const requestType = "core.substrate.reamde.dev/recordmergerequest"
+const requestType = "substrate.reamde.dev/core/recordmergerequest"
 
 // mergeRequest writes one request under a deterministic id — the legality of
 // caller-composed ids on this type is itself part of the contract (the pair
@@ -45,10 +45,10 @@ func TestMergeRequestAcceptMerges(t *testing.T) {
 	ctx := context.Background()
 
 	winner := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "Alexandra Chen"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Alexandra Chen"},
 	})
 	loser := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "Alex Chen"},
+		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Alex Chen"},
 	})
 	req := mergeRequest(t, ds, "dupe-"+winner.ID+"-"+loser.ID, winner.ID, loser.ID)
 
@@ -70,7 +70,7 @@ func TestMergeRequestAcceptMerges(t *testing.T) {
 		t.Fatalf("loser id did not canonicalize: %+v", got)
 	}
 	// The command record exists: split stays possible.
-	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{"core.substrate.reamde.dev/recordmerge"}}})
+	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/recordmerge"}}})
 	if err != nil {
 		t.Fatalf("list merges: %v", err)
 	}
@@ -83,8 +83,8 @@ func TestMergeRequestRejectStamps(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
 
-	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "A"}})
-	b := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "B"}})
+	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "A"}})
+	b := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "B"}})
 	req := mergeRequest(t, ds, "dupe-"+a.ID+"-"+b.ID, a.ID, b.ID)
 
 	rejected, err := decide(ds, req.ID, "rejected")
@@ -109,8 +109,8 @@ func TestManagedStampIsEngineWritten(t *testing.T) {
 	_, ds := newDataset(t)
 	ctx := context.Background()
 
-	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "A"}})
-	b := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "B"}})
+	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "A"}})
+	b := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "B"}})
 
 	// A creating write may not supply the stamp.
 	_, err := ds.Put(ctx, owner, substrate.PutInput{
@@ -160,9 +160,9 @@ func TestMergeRequestStaleFailsWholeAndAnnotates(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
 
-	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "A"}})
-	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "B"}})
-	other := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "C"}})
+	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "A"}})
+	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "B"}})
+	other := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "C"}})
 	first := mergeRequest(t, ds, "req-first", winner.ID, loser.ID)
 	second := mergeRequest(t, ds, "req-second", other.ID, loser.ID)
 
@@ -198,7 +198,7 @@ func TestMergeRequestRefusesDifferentTypes(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
 
-	person := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "A"}})
+	person := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "A"}})
 	task := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"name": "t"}})
 	req := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: requestType,

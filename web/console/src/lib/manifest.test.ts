@@ -12,7 +12,7 @@ import {
 
 const record: SubstrateRecord = {
   id: "32llel6yd5bs",
-  kind: "people.substrate.reamde.dev/person",
+  kind: "samples.substrate.reamde.dev/people/person",
   properties: {
     name: "Tasos Aggelis",
     phones: ["+306973328908"],
@@ -22,7 +22,7 @@ const record: SubstrateRecord = {
     // properties beside it.
     memberOf: [
       {
-        ref: "people.substrate.reamde.dev/organization/org1",
+        ref: "samples.substrate.reamde.dev/people/organization/org1",
         role: "founder",
       },
     ],
@@ -33,7 +33,7 @@ const record: SubstrateRecord = {
   updatedAt: "2026-08-05T16:26:27.310967Z",
   propertyMeta: {
     name: {
-      manager: "people.google.bundles.substrate.reamde.dev",
+      manager: "people.providers.substrate.reamde.dev/google",
       tier: "machine",
       updatedAt: "2026-08-05T16:26:27.161544Z",
     },
@@ -44,7 +44,7 @@ describe("manifestOf", () => {
   it("folds the wire record back into the v1 document envelope", () => {
     const m = manifestOf(record)
     expect(Object.keys(m)).toEqual(["kind", "metadata", "data", "status"])
-    expect(m.kind).toBe("people.substrate.reamde.dev/person")
+    expect(m.kind).toBe("samples.substrate.reamde.dev/people/person")
     expect(m.metadata).toEqual({ id: "32llel6yd5bs" })
   })
 
@@ -54,7 +54,7 @@ describe("manifestOf", () => {
     const properties = data.properties as Record<string, unknown>
     expect(properties.memberOf).toEqual([
       {
-        ref: "people.substrate.reamde.dev/organization/org1",
+        ref: "samples.substrate.reamde.dev/people/organization/org1",
         role: "founder",
       },
     ])
@@ -79,37 +79,40 @@ describe("manifestYAML", () => {
   it("serializes the envelope in document order", () => {
     const yaml = manifestYAML(record)
     const lines = yaml.split("\n")
-    expect(lines[0]).toBe("kind: people.substrate.reamde.dev/person")
+    expect(lines[0]).toBe("kind: samples.substrate.reamde.dev/people/person")
     expect(yaml.indexOf("metadata:")).toBeLessThan(yaml.indexOf("data:"))
     expect(yaml.indexOf("data:")).toBeLessThan(yaml.indexOf("status:"))
     expect(yaml).toContain("prominence: known")
     expect(yaml).toContain(
-      "manager: people.google.bundles.substrate.reamde.dev"
+      "manager: people.providers.substrate.reamde.dev/google"
     )
   })
 })
 
 const registry: KindInfo[] = [
   {
-    identity: "people.substrate.reamde.dev/person",
+    identity: "samples.substrate.reamde.dev/people/person",
     name: "person",
-    authority: "people.substrate.reamde.dev",
+    authority: "samples.substrate.reamde.dev",
+    package: "people",
     version: 0,
     plural: "people",
     source: "builtin",
   },
   {
-    identity: "people.substrate.reamde.dev/organization",
+    identity: "samples.substrate.reamde.dev/people/organization",
     name: "organization",
-    authority: "people.substrate.reamde.dev",
+    authority: "samples.substrate.reamde.dev",
+    package: "people",
     version: 0,
     plural: "organizations",
     source: "builtin",
   },
   {
-    identity: "calendar.substrate.reamde.dev/calendarevent",
+    identity: "samples.substrate.reamde.dev/calendar/calendarevent",
     name: "calendarevent",
-    authority: "calendar.substrate.reamde.dev",
+    authority: "samples.substrate.reamde.dev",
+    package: "calendar",
     version: 0,
     plural: "calendarevents",
     source: "builtin",
@@ -119,11 +122,11 @@ const registry: KindInfo[] = [
 describe("linkTargetsOf", () => {
   it("maps every registry kind by its reference", () => {
     const t = linkTargetsOf(record, registry)
-    expect(t.kinds["people.substrate.reamde.dev/organization"]).toBe(
-      "/data/people.substrate.reamde.dev/organization"
+    expect(t.kinds["samples.substrate.reamde.dev/people/organization"]).toBe(
+      "/data/samples.substrate.reamde.dev/people/organization"
     )
-    expect(t.kinds["people.substrate.reamde.dev/person"]).toBe(
-      "/data/people.substrate.reamde.dev/person"
+    expect(t.kinds["samples.substrate.reamde.dev/people/person"]).toBe(
+      "/data/samples.substrate.reamde.dev/people/person"
     )
     // The bare id is never in the document — a reference carries the whole
     // path — so nothing links it.
@@ -135,16 +138,18 @@ describe("linkTargetsOf", () => {
       { ...record, canonicalId: "canon1", formerIds: ["old-a@x.io"] },
       registry
     )
-    expect(t.ids.canon1).toBe("/data/people.substrate.reamde.dev/person/canon1")
+    expect(t.ids.canon1).toBe(
+      "/data/samples.substrate.reamde.dev/people/person/canon1"
+    )
     expect(t.ids["old-a@x.io"]).toBe(
-      "/data/people.substrate.reamde.dev/person/old-a@x.io"
+      "/data/samples.substrate.reamde.dev/people/person/old-a@x.io"
     )
   })
 
   it("knows every registry kind by its reference", () => {
     const t = linkTargetsOf(record, registry)
-    expect(t.kinds["calendar.substrate.reamde.dev/calendarevent"]).toBe(
-      "/data/calendar.substrate.reamde.dev/calendarevent"
+    expect(t.kinds["samples.substrate.reamde.dev/calendar/calendarevent"]).toBe(
+      "/data/samples.substrate.reamde.dev/calendar/calendarevent"
     )
   })
 
@@ -156,7 +161,7 @@ describe("linkTargetsOf", () => {
           properties: {
             manager: {
               type: "reference",
-              kind: "people.substrate.reamde.dev/person",
+              kind: "samples.substrate.reamde.dev/people/person",
             },
           },
         },
@@ -167,12 +172,12 @@ describe("linkTargetsOf", () => {
       ...record,
       properties: {
         ...record.properties,
-        manager: "people.substrate.reamde.dev/person/boss1",
+        manager: "samples.substrate.reamde.dev/people/person/boss1",
       },
     }
     const t = linkTargetsOf(pointing, withPointer)
-    expect(t.ids["people.substrate.reamde.dev/person/boss1"]).toBe(
-      "/data/people.substrate.reamde.dev/person/boss1"
+    expect(t.ids["samples.substrate.reamde.dev/people/person/boss1"]).toBe(
+      "/data/samples.substrate.reamde.dev/people/person/boss1"
     )
     // The id alone never appears in the document, so it is not a target.
     expect(t.ids.boss1).toBeUndefined()
@@ -186,7 +191,7 @@ describe("linkTargetsOf", () => {
           properties: {
             memberOf: {
               type: "reference",
-              kind: "people.substrate.reamde.dev/organization",
+              kind: "samples.substrate.reamde.dev/people/organization",
               repeated: true,
               properties: { role: { type: "string" } },
             },
@@ -196,8 +201,8 @@ describe("linkTargetsOf", () => {
       ...registry.slice(1),
     ]
     const t = linkTargetsOf(record, withPointer)
-    expect(t.ids["people.substrate.reamde.dev/organization/org1"]).toBe(
-      "/data/people.substrate.reamde.dev/organization/org1"
+    expect(t.ids["samples.substrate.reamde.dev/people/organization/org1"]).toBe(
+      "/data/samples.substrate.reamde.dev/people/organization/org1"
     )
   })
 
@@ -229,9 +234,10 @@ describe("linkTargetsOf", () => {
  * the meta-kind on top and the declaration as `data` — what a schema file
  * authors, re-rendered from the stored (key-order-less) definition. */
 const llmprovider: KindInfo = {
-  identity: "core.substrate.reamde.dev/llmprovider",
+  identity: "substrate.reamde.dev/core/llmprovider",
   name: "llmprovider",
-  authority: "core.substrate.reamde.dev",
+  authority: "substrate.reamde.dev",
+  package: "core",
   version: 1,
   plural: "llmproviders",
   source: "builtin",
@@ -240,7 +246,8 @@ const llmprovider: KindInfo = {
     properties: { wire: { type: "string" } },
     names: { singular: "llmprovider", plural: "llmproviders" },
     displayTemplate: "{name}",
-    authority: "core.substrate.reamde.dev",
+    authority: "substrate.reamde.dev",
+    package: "core",
     zzExtra: true,
   },
 }
@@ -249,14 +256,15 @@ describe("kindManifestOf", () => {
   it("wraps the declaration in the meta-kind envelope, id = the reference", () => {
     const m = kindManifestOf(llmprovider)
     expect(Object.keys(m)).toEqual(["kind", "metadata", "data"])
-    expect(m.kind).toBe("core.substrate.reamde.dev/kind")
-    expect(m.metadata).toEqual({ id: "core.substrate.reamde.dev/llmprovider" })
+    expect(m.kind).toBe("substrate.reamde.dev/core/kind")
+    expect(m.metadata).toEqual({ id: "substrate.reamde.dev/core/llmprovider" })
   })
 
   it("re-imposes the authored reading order, unknown keys last", () => {
     const data = kindManifestOf(llmprovider).data as Record<string, unknown>
     expect(Object.keys(data)).toEqual([
       "authority",
+      "package",
       "names",
       "displayTemplate",
       "properties",
@@ -273,8 +281,8 @@ describe("kindManifestOf", () => {
 describe("kindManifestYAML", () => {
   it("serializes the declaration in document order", () => {
     const yaml = kindManifestYAML(llmprovider)
-    expect(yaml.split("\n")[0]).toBe("kind: core.substrate.reamde.dev/kind")
-    expect(yaml).toContain("id: core.substrate.reamde.dev/llmprovider")
+    expect(yaml.split("\n")[0]).toBe("kind: substrate.reamde.dev/core/kind")
+    expect(yaml).toContain("id: substrate.reamde.dev/core/llmprovider")
     expect(yaml.indexOf("authority:")).toBeLessThan(yaml.indexOf("properties:"))
     expect(yaml).toContain("    type: string")
   })
@@ -283,11 +291,11 @@ describe("kindManifestYAML", () => {
 describe("kindLinkTargets", () => {
   it("knows every registry kind and claims no record ids", () => {
     const t = kindLinkTargets(registry)
-    expect(t.kinds["people.substrate.reamde.dev/person"]).toBe(
-      "/data/people.substrate.reamde.dev/person"
+    expect(t.kinds["samples.substrate.reamde.dev/people/person"]).toBe(
+      "/data/samples.substrate.reamde.dev/people/person"
     )
-    expect(t.kinds["calendar.substrate.reamde.dev/calendarevent"]).toBe(
-      "/data/calendar.substrate.reamde.dev/calendarevent"
+    expect(t.kinds["samples.substrate.reamde.dev/calendar/calendarevent"]).toBe(
+      "/data/samples.substrate.reamde.dev/calendar/calendarevent"
     )
     expect(t.ids).toEqual({})
   })

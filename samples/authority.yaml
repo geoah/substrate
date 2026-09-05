@@ -1,0 +1,11 @@
+# The authority the shipped SAMPLE packages are authored under. A sample is
+# vocabulary to copy, not vocabulary to depend on: it is read, installed and
+# then owned by the repository that installed it (docs/plans/providers-and-
+# samples.md has where that is going).
+kind: substrate.reamde.dev/core/authority
+metadata:
+  id: samples.substrate.reamde.dev
+data:
+  description: >-
+    The shipped sample packages: worked vocabulary a repository copies — people,
+    tasks, calendar and the rest.

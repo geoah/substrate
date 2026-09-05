@@ -37,18 +37,19 @@ vi.mock("@tanstack/react-router", () => ({
 
 import { ProposalCard } from "./proposal-card"
 
-const TASK_KIND = "tasks.substrate.reamde.dev/task"
-const REQUEST_PATH = "/api/v1/core.substrate.reamde.dev/recordpatchrequest/cr-1"
-const THREAD_PATH = "/api/v1/core.substrate.reamde.dev/llmthread/th-1"
-const TARGET_PATH = "/api/v1/tasks.substrate.reamde.dev/task/task-1"
+const TASK_KIND = "samples.substrate.reamde.dev/tasks/task"
+const REQUEST_PATH = "/api/v1/substrate.reamde.dev/core/recordpatchrequest/cr-1"
+const THREAD_PATH = "/api/v1/substrate.reamde.dev/core/llmthread/th-1"
+const TARGET_PATH = "/api/v1/samples.substrate.reamde.dev/tasks/task/task-1"
 const POLICY_PATH =
-  "/api/v1/core.substrate.reamde.dev/recordpatchpolicy/allow-cr-1"
+  "/api/v1/substrate.reamde.dev/core/recordpatchpolicy/allow-cr-1"
 
 const KINDS: KindInfo[] = [
   {
     identity: TASK_KIND,
     name: "task",
-    authority: "tasks.substrate.reamde.dev",
+    authority: "samples.substrate.reamde.dev",
+    package: "tasks",
     version: 1,
     plural: "tasks",
     source: "installed",
@@ -71,21 +72,21 @@ function record(over: Partial<SubstrateRecord>): SubstrateRecord {
 
 const gatedRequest = record({
   id: "cr-1",
-  kind: "core.substrate.reamde.dev/recordpatchrequest",
+  kind: "substrate.reamde.dev/core/recordpatchrequest",
   version: 4,
   properties: {
     rationale: "The summary moved in the source.",
     target: { ref: `${TASK_KIND}/task-1` },
     diff: { properties: { summary: "New summary" } },
-    policy: "core.substrate.reamde.dev/recordpatchpolicy/gate-1",
-    thread: "core.substrate.reamde.dev/llmthread/th-1",
+    policy: "substrate.reamde.dev/core/recordpatchpolicy/gate-1",
+    thread: "substrate.reamde.dev/core/llmthread/th-1",
   },
 })
 
 const thread = record({
   id: "th-1",
-  kind: "core.substrate.reamde.dev/llmthread",
-  properties: { agent: "core.substrate.reamde.dev/agent/scribe" },
+  kind: "substrate.reamde.dev/core/llmthread",
+  properties: { agent: "substrate.reamde.dev/core/agent/scribe" },
 })
 
 const target = record({
@@ -120,7 +121,7 @@ describe("ProposalCard", () => {
     fetchMock.mockImplementation(async (url, init) => {
       const method = (init as RequestInit | undefined)?.method ?? "GET"
       const path = String(url)
-      if (path.startsWith("/api/v1/core.substrate.reamde.dev/kind")) {
+      if (path.startsWith("/api/v1/substrate.reamde.dev/core/kind")) {
         return jsonResponse(200, { kinds: KINDS })
       }
       if (path === REQUEST_PATH) return jsonResponse(200, gatedRequest)

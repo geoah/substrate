@@ -44,7 +44,7 @@ func TestAskLandsAnInteractionAndTheAnswerResumes(t *testing.T) {
 		fakeTurn{content: "asked."},
 		fakeTurn{content: "noted: red, and yes."},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/poller", "pick a color for me")
+	res, err := ds.CallAgent(ctx, crewPackage+"/poller", "pick a color for me")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestAskDismissalReportsBack(t *testing.T) {
 		fakeTurn{content: "asked."},
 		fakeTurn{content: "understood, moving on."},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/poller", "pick a color for me")
+	res, err := ds.CallAgent(ctx, crewPackage+"/poller", "pick a color for me")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestInteractionAdmissionAndGuards(t *testing.T) {
 	}
 	turns = append(turns, fakeTurn{content: "gave up."})
 	fake.script("askm", turns...)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/poller", "ask badly")
+	res, err := ds.CallAgent(ctx, crewPackage+"/poller", "ask badly")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestOnlyTheOwnerResolvesAnInteraction(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"ask", askArgs}}},
 		fakeTurn{content: "asked."},
 	)
-	if _, err := ds.CallAgent(ctx, crewAuthority+"/poller", "ask away"); err != nil {
+	if _, err := ds.CallAgent(ctx, crewPackage+"/poller", "ask away"); err != nil {
 		t.Fatalf("call: %v", err)
 	}
 	interaction := onlyInteraction(t, ds)
@@ -254,7 +254,7 @@ func TestOnlyTheOwnerResolvesAnInteraction(t *testing.T) {
 	fake.script("med",
 		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
 			"query": `mutation Meddle($id: ID!, $input: JSON!) {
-  patch(kind: "core.substrate.reamde.dev/llminteraction", id: $id, input: $input) { id }
+  patch(kind: "substrate.reamde.dev/core/llminteraction", id: $id, input: $input) { id }
 }`,
 			"variables": map[string]any{"id": interaction.ID, "input": map[string]any{
 				"properties": map[string]any{
@@ -268,7 +268,7 @@ func TestOnlyTheOwnerResolvesAnInteraction(t *testing.T) {
 		})}}},
 		fakeTurn{content: "tried."},
 	)
-	mres, err := ds.CallAgent(ctx, crewAuthority+"/meddler", "answer it yourself")
+	mres, err := ds.CallAgent(ctx, crewPackage+"/meddler", "answer it yourself")
 	if err != nil {
 		t.Fatalf("meddler call: %v", err)
 	}

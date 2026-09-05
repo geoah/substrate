@@ -1,0 +1,52 @@
+# The Beeper bundle's delivery wiring — ordinary DATA records of core's
+# `trigger` kind. Two triggers drive the one sync function:
+#
+#   account(messages on, never synced)  --messagessync-->
+#       room + message mirrors  (+ the syncToken / lastSyncedAt stamp)
+#   hourly schedule  --messagessync-->  every enabled, due account
+#
+# There is NO tokenStatus gate here — nothing OAuth ever writes one for this
+# bundle (the accountconfig trait's tokenRef/tokenStatus/grantedScopes are
+# declared but dormant). The connect signal is the OWNER's own toggle: an
+# account created (or edited) with enabledMessages true that has never synced.
+# The guard drops the moment the sync stamps lastSyncedAt, so the account's
+# own completion patch cannot re-fire it; steady-state re-syncs come from the
+# schedule, which honors each account's syncFrequency. Whether the pasted
+# token EXISTS is the body's check, not the guard's: the token lives on the
+# connector input's config record, not on this trigger's record.
+# The first backfill: an account that wants messages and has never synced.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: beeper-messages-on-connect
+data:
+  properties:
+    enabled: true
+    source:
+      record:
+        kinds: [providers.substrate.reamde.dev/beeper/account]
+        ops: [create, update]
+        # Optional properties read through the `in` idiom: enabledMessages is
+        # ABSENT until the owner flips it and lastSyncedAt until the first
+        # drain stamps it, and CEL map-indexing an absent key throws — the
+        # short-circuit && proves each key present before its value is read.
+        when: >-
+          record != null && "enabledMessages" in record.properties && record.properties.enabledMessages
+          == true && !("lastSyncedAt" in record.properties)
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/beeper/messagessync
+---
+# The steady-state re-sync: an hourly tick fires the same function with no
+# envelope record, so the body iterates every enabled account and syncs the
+# ones due by their own syncFrequency.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: beeper-messages-scheduled
+data:
+  properties:
+    enabled: true
+    source:
+      schedule:
+        recurrence: "FREQ=HOURLY"
+        timezone: Europe/London
+        # A fixed past anchor, so every occurrence since is well-defined.
+        startsAt: "2025-01-06T09:00:00Z"
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/beeper/messagessync

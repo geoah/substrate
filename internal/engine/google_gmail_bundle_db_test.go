@@ -1,7 +1,7 @@
 package engine
 
 // The Google bundle's GMAIL stream. Two kinds of proof, both
-// from the shipped closure at ../../kinds/google.bundles.substrate.reamde.dev:
+// from the shipped closure at ../../kinds/providers.substrate.reamde.dev/google:
 //
 //  1. TestGoogleGmailBundleAdmitsSchema — pure schema admission (no DB, no
 //     uv): the gmail feature toggle now maps to a real scope, the two mirror
@@ -52,7 +52,7 @@ func googleRegistry(t *testing.T) *vocabulary.Registry {
 	// alone) plus the shipped VOCABULARY bundles this repository imported —
 	// what a closure declaring onto people/tasks/messaging/calendar/media
 	// needs present, and what `requires:` names.
-	reg, err := enginetest.SeededRegistry("../../kinds/core.substrate.reamde.dev")
+	reg, err := enginetest.SeededRegistry("../../kinds/substrate.reamde.dev/core")
 	if err != nil {
 		t.Fatalf("build the repository registry: %v", err)
 	}
@@ -64,7 +64,7 @@ func googleRegistry(t *testing.T) *vocabulary.Registry {
 	if err != nil {
 		t.Fatalf("parse bundle.yaml: %v", err)
 	}
-	authorities, err := vocabulary.BuildAuthorities(docs, vocabulary.SourceInstalled)
+	authorities, err := vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
 	if err != nil {
 		t.Fatalf("build the bundle authority: %v", err)
 	}
@@ -124,9 +124,9 @@ func TestGoogleGmailBundleAdmitsSchema(t *testing.T) {
 	// The gmail toggle maps to a REAL scope now: review-google #1's gate was
 	// "an unwired feature requests nothing", so this asserts the opposite is
 	// now deliberate rather than accidental.
-	b, ok := reg.BundleOf(googleAuthority)
+	b, ok := reg.BundleOf(googlePackage)
 	if !ok {
-		t.Fatalf("no bundle owns %s", googleAuthority)
+		t.Fatalf("no bundle owns %s", googlePackage)
 	}
 	scopes := b.OAuth2.FeatureScopes["enabledGmail"]
 	if len(scopes) != 1 || scopes[0] != "https://www.googleapis.com/auth/gmail.readonly" {

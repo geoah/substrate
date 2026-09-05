@@ -89,9 +89,17 @@ export function authorityCountsQueryOptions(
 ) {
   const sorted = kinds
     .filter((k) => k.authority === authority)
-    .sort((a, b) => a.name.localeCompare(b.name))
+    .sort(
+      (a, b) =>
+        a.package.localeCompare(b.package) || a.name.localeCompare(b.name)
+    )
   return queryOptions({
-    queryKey: ["overview", "counts", authority, sorted.map((k) => k.name)],
+    queryKey: [
+      "overview",
+      "counts",
+      authority,
+      sorted.map((k) => `${k.package}/${k.name}`),
+    ],
     queryFn: ({ signal }) =>
       Promise.all(
         sorted.map(async (k): Promise<KindCount> => {
@@ -99,7 +107,7 @@ export function authorityCountsQueryOptions(
             return {
               kind: k,
               count: await gate.run(() =>
-                countRecords(k.authority, k.name, undefined, signal)
+                countRecords(k.authority, k.package, k.name, undefined, signal)
               ),
             }
           } catch (cause) {

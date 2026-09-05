@@ -62,7 +62,7 @@ func hookTrigger(id string, source map[string]any, fn string, enabled bool) engi
 		Properties: map[string]any{
 			"enabled":  enabled,
 			"source":   source,
-			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", fnAuthority+"/"+fn),
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", fnPackage+"/"+fn),
 		},
 	}
 }
@@ -203,7 +203,7 @@ func TestWebhookDelivery(t *testing.T) {
 		if string(data) != string(audio) {
 			t.Fatal("spooled bytes differ from the part")
 		}
-		manifest, err := ds.Get(ctx, "core.substrate.reamde.dev/blob", digest)
+		manifest, err := ds.Get(ctx, "substrate.reamde.dev/core/blob", digest)
 		if err != nil {
 			t.Fatalf("manifest: %v", err)
 		}
@@ -254,14 +254,14 @@ func TestWebhookDelivery(t *testing.T) {
 	})
 
 	t.Run("a bad key is refused at write time", func(t *testing.T) {
-		callable := vocabulary.RecordPath("core.substrate.reamde.dev/function", fnAuthority+"/hookecho")
+		callable := vocabulary.RecordPath("substrate.reamde.dev/core/function", fnPackage+"/hookecho")
 		for name, arm := range map[string]map[string]any{
 			"short key":     {"key": "tooshort"},
 			"bad alphabet":  {"key": "0123456789abcdef/../etc"},
 			"unknown field": {"secret": hookKey},
 		} {
 			_, err := ds.Put(ctx, owner, substrate.PutInput{
-				Kind: "core.substrate.reamde.dev/trigger",
+				Kind: "substrate.reamde.dev/core/trigger",
 				Properties: map[string]any{
 					"source":   map[string]any{"webhook": arm},
 					"callable": callable,
@@ -357,7 +357,7 @@ func TestWebhookParkedRetryReplaysRequest(t *testing.T) {
 func listBlobDigests(t *testing.T, ds substrate.Dataset) []string {
 	t.Helper()
 	page, err := ds.List(context.Background(), substrate.Query{
-		Filter: substrate.Filter{Kinds: []string{"core.substrate.reamde.dev/blob"}}, First: 50,
+		Filter: substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/blob"}}, First: 50,
 	})
 	if err != nil {
 		t.Fatalf("list blobs: %v", err)

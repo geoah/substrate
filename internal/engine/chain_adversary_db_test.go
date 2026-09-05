@@ -28,7 +28,7 @@ func upgradedRepository(t *testing.T) (*service, string, *sql.DB, string) {
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"name": "old world"},
+		Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "old world"},
 	}); err != nil {
 		t.Fatalf("put: %v", err)
 	}
@@ -49,7 +49,7 @@ func upgradedRepository(t *testing.T) (*service, string, *sql.DB, string) {
 	}
 	_ = ds.svc.Close()
 	svc2, err := Open(ctx, dsn,
-		WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		WithCredentialKey(TestCredentialKey))
 	if err != nil {
 		t.Fatalf("reopen keyed: %v", err)
@@ -123,7 +123,7 @@ func TestVerifyNamesARewrittenUnsignedPrefix(t *testing.T) {
 	// is repaired, and verify keeps naming the rewrite after a reopen.
 	_ = svc.Close()
 	svc2, err := Open(ctx, dsn,
-		WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		WithCredentialKey(TestCredentialKey))
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
@@ -157,7 +157,7 @@ func TestVerifyNamesAMovedActivationMarkAndRepairRefuses(t *testing.T) {
 	// disagrees, so the repair must refuse rather than sign the moved mark.
 	_ = svc.Close()
 	svc2, err := Open(ctx, dsn,
-		WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		WithCredentialKey(TestCredentialKey))
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
@@ -191,7 +191,7 @@ func TestAnActivatedRepositoryRefusesToAppendWithoutItsKey(t *testing.T) {
 	// The key gone, the durable mark untouched.
 	ds.setSigning(datasetSigning{public: st.public, signedFrom: st.signedFrom})
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"name": "must refuse"},
+		Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "must refuse"},
 	}); err == nil || !strings.Contains(err.Error(), "signing key is unavailable") {
 		t.Fatalf("a dataset that cannot sign appended anyway: %v", err)
 	}

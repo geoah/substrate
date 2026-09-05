@@ -89,13 +89,13 @@ func TestLiveAgentChainAcrossWires(t *testing.T) {
 	// as prescriptive as it gets: the test is about the wiring, so the model
 	// is given no room to be creative about the procedure.
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(crewAuthority, 0),
-		vocabulary.FunctionManifest(crewAuthority, "add", map[string]any{
+		vocabulary.PackageManifest(crewPackage, 0),
+		vocabulary.FunctionManifest(crewPackage, "add", map[string]any{
 			"description": "Adds two integers. Always use this for arithmetic.",
 			"runtime":     vocabulary.RuntimePython,
 			// The envelope is required even for a function that writes
 			// nothing; this one returns output and emits no effects at all.
-			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
+			"permissions": map[string]any{"writes": []any{"samples.substrate.reamde.dev/tasks/task"}},
 			// The argument list is BOTH the function's input contract and the
 			// model-facing tool card, which is what the flat spelling buys.
 			"arguments": []any{
@@ -108,14 +108,14 @@ def main(input, host):
     return {"output": {"sum": args["a"] + args["b"]}}
 `,
 		}),
-		vocabulary.AgentManifest(crewAuthority, "speller", map[string]any{
+		vocabulary.AgentManifest(crewPackage, "speller", map[string]any{
 			"provider":    "liveopenai",
 			"model":       openaiModel,
 			"description": "Spells a number in English words.",
 			"prompt":      "You are given a number. Reply with only that number spelled in English words. Nothing else.",
 			"budgets":     map[string]any{"maxTurns": 2, "deadlineSeconds": 60},
 		}),
-		vocabulary.AgentManifest(crewAuthority, "conductor", map[string]any{
+		vocabulary.AgentManifest(crewPackage, "conductor", map[string]any{
 			"provider":    "liveanthropic",
 			"model":       anthropicModel,
 			"description": "Adds two numbers and has the result spelled out.",
@@ -126,8 +126,8 @@ def main(input, host):
 				"Step 3: reply with DONE followed by the speller tool's answer, and nothing else.",
 				"Never do the arithmetic or the spelling yourself.",
 			}, "\n"),
-			"tools":     []any{map[string]any{"function": crewAuthority + "/add"}},
-			"subagents": []any{crewAuthority + "/speller"},
+			"tools":     []any{map[string]any{"function": crewPackage + "/add"}},
+			"subagents": []any{crewPackage + "/speller"},
 			"budgets":   map[string]any{"maxTurns": 6, "maxToolCalls": 4, "depth": 3, "deadlineSeconds": 120},
 		}),
 	}
@@ -135,7 +135,7 @@ def main(input, host):
 		t.Fatalf("install the live crew: %v", err)
 	}
 
-	res, err := ds.CallAgent(ctx, crewAuthority+"/conductor", "Run the procedure.")
+	res, err := ds.CallAgent(ctx, crewPackage+"/conductor", "Run the procedure.")
 	if err != nil {
 		t.Fatalf("call the conductor: %v", err)
 	}

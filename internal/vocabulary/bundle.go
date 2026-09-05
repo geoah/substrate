@@ -7,46 +7,24 @@ import (
 	"strings"
 )
 
-// A bundle is the install unit (substrate-primitives §4, record 63): one
-// document declaring the authority it owns, the INPUTS it configures
-// through (each naming a kind), and the exact identities of everything it ships
-// into that authority. Install, upgrade and teardown are whole-authority applies —
-// the closure the document lists IS the authority, so the loader refuses any
-// authority whose declared members and `installs:` disagree. Lifecycle state
-// (disable, uninstall) is runtime state on the bundle's record row, never
-// part of this declaration.
+// A bundle is the install unit (record 63): one document declaring the PACKAGE
+// it is named for, the INPUTS it configures through (each naming a kind), and
+// the exact identities of everything it ships into that package. Install,
+// upgrade and teardown are whole-package applies — the closure the document
+// lists IS the package, so the loader refuses any package whose declared
+// members and `installs:` disagree. Lifecycle state (disable, uninstall) is
+// runtime state on the bundle's record row, never part of this declaration.
 //
-// TWO SHAPES, and only ONE of them is a name rule: a VOCABULARY bundle owns a
-// BARE org-domain authority (`people.substrate.reamde.dev`) and ships kinds and
-// nothing else; an EXTENSION owns ANY OTHER legal authority and may carry
-// inputs, callables and a provider flow. The vocabulary shape is checked
-// because it GRANTS something — such an authority is built `source: builtin`
-// whichever door it came through (load.go), which keeps its GraphQL names bare
-// and its declarations behind the authority chokepoint. It exists because
-// repository creation seeds core alone: the substrate's own vocabulary is
-// delivered through the registry rather than the seed, and stays SHIPPED
-// either way. Nothing is granted by an extension's name, so nothing is checked
-// there — `web.bundles.substrate.reamde.dev` is the convention the shipped tree
-// keeps, not a rule the loader enforces.
+// A bundle owns at least one package: the one it is declared in, whose
+// identity is its `metadata.id` (decision 0047). Whether a bundle may span two
+// packages is open, and nothing in the tree needs it.
 //
-// What the fixed `.bundles.` suffix used to guarantee BY CONSTRUCTION is that
-// an authority's first label was unique: the label is the bundle's name, its
-// `metadata.id` suffix and the prefix every installed kind's GraphQL name
-// carries (ref.go). The suffix is free now, so two authorities may share a
-// label: an install writes under `bundle:<authority>`, which cannot collide,
-// and a GraphQL name claimed twice is refused by name (load.go,
+// A bundle's name is its PACKAGE name, and that is the name its installed
+// kinds carry in GraphQL (ref.go). Two authorities publishing a package of one
+// name is legal — an install writes under `bundle:<authority>:<package>`,
+// which cannot collide, and the GraphQL names disambiguate by authority — and
+// a GraphQL name claimed twice is refused by name (load.go,
 // graphqlNameProblems).
-
-// BundleAuthoritySuffix is the CONVENTIONAL category the shipped tree's
-// extension authorities carry. It is not admission: an extension authority may
-// be spelled any legal way. The loader reads it for one typo-catcher alone — an
-// authority wearing the convention with no bundle document beside it.
-const BundleAuthoritySuffix = ".bundles.substrate.reamde.dev"
-
-// OrgDomainSuffix is the organization's domain — the namespace a SHIPPED
-// authority is bare under ("people.substrate.reamde.dev"). It is never the name of the
-// system, only the namespace.
-const OrgDomainSuffix = ".substrate.reamde.dev"
 
 // The host-recognized trait interfaces: traits
 // the loader and the engine key behavior on, shipped in core.
@@ -64,20 +42,18 @@ const (
 // bare names above, and its types would satisfy a bare-name check; the
 // resolved binding identity is the only thing a local trait cannot spoof.
 const (
-	TraitAccountConfigCore = AuthorityCore + "/" + TraitAccountConfig
-	TraitOAuth2Core        = AuthorityCore + "/" + TraitOAuth2
+	TraitAccountConfigCore = PackageCore + "/" + TraitAccountConfig
+	TraitOAuth2Core        = PackageCore + "/" + TraitOAuth2
 )
 
 // Bundle is one parsed bundle document.
 type Bundle struct {
-	// Name is the owned authority's first label ("web" of
-	// "web.bundles.substrate.reamde.dev"). It is unique across the registry,
-	// which Finalize checks rather than the authority's spelling implying it.
+	// Name is the owned package's own word ("google", "tasks").
 	Name string
-	// Authority is the owned authority. The document's id is "<authority>/<name>" like
-	// every member kind's — the authority name itself is the authority
-	// header's id, and ids are one namespace.
-	Authority   string
+	// Package is the owned package's identity
+	// ("providers.substrate.reamde.dev/google"), which is also the bundle
+	// document's id.
+	Package     string
 	Description string
 	// Inputs are the bundle's declared configuration needs, by name: each
 	// names a KIND whose records satisfy it, and the engine resolves one
@@ -95,21 +71,14 @@ type Bundle struct {
 	// its types, traits, property types, mappings, functions and agents.
 	// The loader holds it equal to the authority's declared members.
 	Installs []string
-	// Requires names the AUTHORITIES this bundle's closure declares against —
-	// the vocabulary its mappings, references and trigger subscriptions point at.
-	// Vocabulary is imported now rather than seeded, so a bundle that maps
-	// google contacts onto `people.substrate.reamde.dev/person` cannot assume people is
-	// there. resolveBundle refuses the install when one is absent, naming what
-	// to import first, instead of letting the closure fail on an unresolvable
-	// reference pin.
+	// Requires names the PACKAGES this bundle's closure declares against — the
+	// vocabulary its mappings, references and trigger subscriptions point at.
+	// Vocabulary is imported rather than seeded, so a bundle that maps Google
+	// contacts onto `samples.substrate.reamde.dev/people/person` cannot assume
+	// people is there. resolveBundle refuses the install when one is absent,
+	// naming what to import first, instead of letting the closure fail on an
+	// unresolvable reference pin.
 	Requires []string
-	// Vocabulary marks a VOCABULARY bundle: one that owns a BARE authority
-	// under the org domain ("people.substrate.reamde.dev") and ships kinds and nothing
-	// else — no inputs, no functions, no agents, no OAuth. It is the
-	// substrate's own vocabulary, delivered through the registry instead of
-	// the creation seed, so its declarations stay SHIPPED (`source: builtin`)
-	// and only a substrate path may write them.
-	Vocabulary bool
 	// Modules are the bundle's SHARED library modules, filename → inline
 	// source, that its functions import to dedup helpers (a shared http
 	// client, provider auth, normalizers) instead of each ≤256 KiB body
@@ -187,14 +156,13 @@ type BundleOAuth2 struct {
 	EmailProperty string
 }
 
-// Identity is "<authority>/<name>" — the bundle's record id ("web" owning
-// web.bundles.substrate.reamde.dev is web.bundles.substrate.reamde.dev/web; the bare authority name is
-// the authority header's id).
-func (b *Bundle) Identity() string { return KindRef(b.Authority, b.Name) }
+// Identity is the bundle's record id: the package it is named for
+// ("providers.substrate.reamde.dev/google").
+func (b *Bundle) Identity() string { return b.Package }
 
 var bundleDataKeys = map[string]bool{
-	"authority": true, "description": true, "inputs": true, "installs": true,
-	"modules": true, "oauth2": true, "requires": true,
+	"authority": true, "package": true, "description": true, "inputs": true,
+	"installs": true, "modules": true, "oauth2": true, "requires": true,
 }
 
 // featureScopeKeys is one feature toggle's entry: the scopes enabling it
@@ -239,112 +207,36 @@ var stdlibPyModules = func() map[string]bool {
 	return m
 }()
 
-// ValidBundleAuthority reports whether an authority name is a legal owned
-// EXTENSION authority: any legal DNS-style authority that is not the bare
-// org-domain label a vocabulary bundle owns. The two shapes stay disjoint, so a
-// bundle document is still always exactly one of the two — but which one is
-// decided by the shape that grants (vocabulary), never by a category label.
-//
-// The first label must be a plain word: it becomes the bundle's name, its
-// actor and its GraphQL prefix, none of which admit a hyphen.
-func ValidBundleAuthority(authority string) bool {
-	return ValidAuthority(authority) && !ValidVocabularyAuthority(authority) &&
-		ValidName(leadingLabel(authority))
-}
-
-// ValidVocabularyAuthority reports whether an authority name is a legal owned
-// VOCABULARY authority: one bare lowercase label under the org domain —
-// "people.substrate.reamde.dev", "tasks.substrate.reamde.dev". This is the one
-// authority shape the loader checks, because it is the one that grants: an
-// authority passing it is built `builtin`. Any extra label fails it
-// ("google.bundles" is not one label), so the two owned-authority shapes are
-// disjoint and a bundle document is always exactly one of the two.
-func ValidVocabularyAuthority(authority string) bool {
-	label, ok := strings.CutSuffix(authority, OrgDomainSuffix)
-	return ok && ValidName(label)
-}
-
-// BundleName is the bundle name an owned authority implies — its FIRST LABEL
-// ("google" of "google.bundles.substrate.reamde.dev", "llm" of
-// "llm.examples.substrate.reamde.dev", "people" of "people.substrate.reamde.dev").
-// It is the bundle's `metadata.id` suffix and the prefix its installed kinds
-// carry in GraphQL. It is NOT the actor an install writes under: that is
-// `bundle:<authority>`, so two bundles sharing a first label stay two writers
-// (record 0025).
-func BundleName(authority string) string {
-	return leadingLabel(authority)
-}
-
-// VocabularyBundleAuthorities names the authorities in a document stream that
-// a VOCABULARY bundle owns — a bundle document on a bare org-domain authority.
-// The source an authority is BUILT with follows from it (load.go): shipped
-// vocabulary stays `builtin` however it was delivered, so importing
-// people.substrate.reamde.dev rather than seeding it does not rename `Person` in GraphQL
-// or hand its declarations to a generic API write.
-func VocabularyBundleAuthorities(docs []Document) map[string]bool {
-	out := map[string]bool{}
-	for _, d := range docs {
-		if d.Kind != DocBundle {
-			continue
-		}
-		authority := d.DeclaredAuthority()
-		if ValidVocabularyAuthority(authority) {
-			out[authority] = true
-		}
-	}
-	return out
-}
-
-// buildBundle parses an authority's bundle document (at most one) and checks the
-// install closure: `installs:` must name exactly the authority's declared members
-// — every kind but the authority header, its actors and the bundle itself. Runs
-// after the member kinds parse, inside buildAuthority.
-func (l *loader) buildBundle(gd *authorityDocs) {
-	g := l.authority
+// buildBundle parses a package's bundle document (at most one) and checks the
+// install closure: `installs:` must name exactly the package's declared
+// members — every kind but the package header, its actors and the bundle
+// itself. Runs after the member kinds parse, inside buildPackage.
+func (l *loader) buildBundle(gd *packageDocs) {
+	g := l.pkg
 	if len(gd.bundles) == 0 {
-		// A TYPO-CATCHER, not the rule: an authority may be spelled any legal
-		// way, but one wearing the shipped tree's convention with no bundle
-		// document beside it is a closure with no owner, and far more likely a
-		// forgotten document than a deliberate name.
-		if strings.HasSuffix(g.Name, BundleAuthoritySuffix) {
-			l.errf("authority %s: a %q authority is a bundle's owned authority — it must declare a bundle document",
-				g.Name, "*"+BundleAuthoritySuffix)
-		}
 		return
 	}
 	if len(gd.bundles) > 1 {
-		l.errf("%s %s: declared twice", DocBundle, g.Name)
+		l.errf("%s %s: declared twice", DocBundle, g.Identity)
 		return
 	}
 	d := gd.bundles[0]
 	where := DocBundle + " " + d.ID
 	l.checkKeys(where, d.Data, bundleDataKeys)
-	// TWO owned-authority shapes, disjoint by construction: a VOCABULARY
-	// bundle owns a bare org-domain authority and ships kinds alone; an
-	// EXTENSION owns anything else and may configure, call and connect. Only
-	// the first is a name rule — the second is every remaining legal authority,
-	// so what is refused here is a malformed authority or a first label that
-	// cannot be a bundle name, never a category.
-	vocabulary := ValidVocabularyAuthority(g.Name)
-	if !ValidBundleAuthority(g.Name) && !vocabulary {
-		l.errf("%s: data.authority %q: an authority is DNS-style labels and its FIRST label is the bundle's name, so that label must be one lowercase word",
-			where, g.Name)
-		return
-	}
-	name := BundleName(g.Name)
-	if d.ID != KindRef(g.Name, name) {
-		l.errf("%s: metadata.id must be %q — the authority, then its first label", where, KindRef(g.Name, name))
+	// A bundle IS its package: the id is the package identity, so a closure
+	// and the thing that installs it can never be spelled apart.
+	if d.ID != g.Identity {
+		l.errf("%s: metadata.id must be %q — the package the bundle is named for", where, g.Identity)
 		return
 	}
 	b := &Bundle{
-		Name:        name,
-		Authority:   g.Name,
+		Name:        g.Name,
+		Package:     g.Identity,
 		Description: l.parseDescription(where+": data", d.Data),
-		Vocabulary:  vocabulary,
 		Definition:  d.Data,
 	}
 	l.parseBundleInputs(where, b, d.Data)
-	b.Requires = l.parseBundleRequires(where, g.Name, d.Data)
+	b.Requires = l.parseBundleRequires(where, g.Identity, d.Data)
 	for i, iv := range mslice(d.Data, "installs") {
 		id := fmt.Sprint(iv)
 		if !Qualified(id) {
@@ -359,18 +251,7 @@ func (l *loader) buildBundle(gd *authorityDocs) {
 	}
 	b.Modules = l.parseBundleModules(where, d.Data)
 	b.OAuth2 = l.parseBundleOAuth2(where, d.Data)
-	if vocabulary {
-		// Pure vocabulary: kinds, property types, traits and mappings. A
-		// callable or a provider flow here would run behind the `builtin`
-		// source a bare authority is granted, which is exactly what the
-		// bare/extension split exists to prevent.
-		if len(b.Inputs) > 0 || len(b.Modules) > 0 || b.OAuth2 != nil || len(g.Functions) > 0 || len(g.Agents) > 0 {
-			l.errf("%s: a vocabulary bundle ships kinds and nothing else — no inputs, functions, agents, shared modules or oauth2 block; ship those from an authority carrying a second label, %q",
-				where, "<name>"+BundleAuthoritySuffix)
-			return
-		}
-	}
-	// The closure: installs and the authority's declared members are the same
+	// The closure: installs and the package's declared members are the same
 	// set, both directions, so an install can never smuggle or orphan a
 	// declaration.
 	declared := map[string]bool{}
@@ -384,12 +265,12 @@ func (l *loader) buildBundle(gd *authorityDocs) {
 		}
 		listed[id] = true
 		if !declared[id] {
-			l.errf("%s: data.installs names %q, which the authority does not declare — the closure is the authority", where, id)
+			l.errf("%s: data.installs names %q, which the package does not declare — the closure is the package", where, id)
 		}
 	}
 	for _, id := range sortedStrings(gd.memberIDs) {
 		if !listed[id] {
-			l.errf("%s: the authority declares %q, which data.installs does not list — the closure is the authority", where, id)
+			l.errf("%s: the package declares %q, which data.installs does not list — the closure is the package", where, id)
 		}
 	}
 	g.Bundle = b
@@ -433,7 +314,7 @@ func (l *loader) parseBundleInputs(where string, b *Bundle, data map[string]any)
 		}
 		l.checkKeys(w, im, bundleInputKeys)
 		in := BundleInput{
-			Kind:        ReferentID(im["kind"], KindRef(AuthorityCore, DocKind)),
+			Kind:        ReferentID(im["kind"], CoreKind(DocKind)),
 			Inject:      mstr(im, "inject"),
 			Description: l.parseDescription(w, im),
 		}
@@ -454,10 +335,11 @@ func (l *loader) parseBundleInputs(where string, b *Bundle, data map[string]any)
 	}
 }
 
-// parseBundleRequires reads the optional `requires:` list — the AUTHORITIES a
-// bundle's closure declares against. Every entry is a DNS authority name, not
-// the bundle's own, listed once. The list is intent on the manifest; the
-// enforcement is resolveBundle, against the registry the install admits into.
+// parseBundleRequires reads the optional `requires:` list — the PACKAGES a
+// bundle's closure declares against. Every entry is a package identity
+// ("<authority>/<package>"), not the bundle's own, listed once. The list is
+// intent on the manifest; the enforcement is resolveBundle, against the
+// registry the install admits into.
 func (l *loader) parseBundleRequires(where, own string, data map[string]any) []string {
 	raw, has := data["requires"]
 	if !has {
@@ -465,27 +347,28 @@ func (l *loader) parseBundleRequires(where, own string, data map[string]any) []s
 	}
 	values, isList := raw.([]any)
 	if !isList {
-		l.errf("%s: data.requires must be a list of authority names", where)
+		l.errf("%s: data.requires must be a list of package identities", where)
 		return nil
 	}
 	if len(values) == 0 {
-		l.errf("%s: data.requires is present but empty — omit it or name at least one authority", where)
+		l.errf("%s: data.requires is present but empty — omit it or name at least one package", where)
 		return nil
 	}
 	seen := map[string]bool{}
 	var out []string
 	for i, rv := range values {
-		authority := strings.TrimSpace(fmt.Sprint(rv))
+		pkg := strings.TrimSpace(fmt.Sprint(rv))
+		authority, name := SplitPackageRef(pkg)
 		switch {
-		case !ValidAuthority(authority):
-			l.errf("%s: data.requires[%d]: %q must be an authority — a dotted lowercase DNS name, not a kind reference", where, i, authority)
-		case authority == own:
-			l.errf("%s: data.requires[%d]: %q is the bundle's own authority", where, i, authority)
-		case seen[authority]:
-			l.errf("%s: data.requires[%d]: %q listed twice", where, i, authority)
+		case !ValidAuthority(authority) || !ValidPackage(name):
+			l.errf("%s: data.requires[%d]: %q must be a package identity — an authority and a package, not a kind reference", where, i, pkg)
+		case pkg == own:
+			l.errf("%s: data.requires[%d]: %q is the bundle's own package", where, i, pkg)
+		case seen[pkg]:
+			l.errf("%s: data.requires[%d]: %q listed twice", where, i, pkg)
 		default:
-			seen[authority] = true
-			out = append(out, authority)
+			seen[pkg] = true
+			out = append(out, pkg)
 		}
 	}
 	return out
@@ -669,29 +552,29 @@ func isLoopbackHost(host string) bool {
 
 // resolveBundle validates a bundle against the loaded registry, after trait
 // bindings resolve: every input's kind exists and is reachable (the bundle's
-// own authority, core, or a required one), an injected input's kind is the
-// bundle's own (another authority's secrets never cross into its functions),
+// own package, core, or a required one), an injected input's kind is the
+// bundle's own (another package's secrets never cross into its functions),
 // and the oauth2 block's clientInput names an oauth2-trait input.
-func (r *Registry) resolveBundle(g *Authority) []string {
+func (r *Registry) resolveBundle(g *Package) []string {
 	b := g.Bundle
 	if b == nil {
 		return nil
 	}
 	var problems []string
-	where := DocBundle + " " + b.Authority
+	where := DocBundle + " " + b.Package
 	// THE REQUIRES CHECK. Vocabulary is imported, not seeded, so a closure
-	// that declares against another authority says so and is refused here when
-	// that authority is absent — one legible problem naming what to import
+	// that declares against another package says so and is refused here when
+	// that package is absent — one legible problem naming what to import
 	// first, instead of an unresolvable reference pin or mapping `to:` deeper in
 	// the same admission.
 	for _, req := range b.Requires {
-		if _, ok := r.AuthorityByName(req); !ok {
+		if _, ok := r.PackageByName(req); !ok {
 			problems = append(problems, fmt.Sprintf(
-				"%s: data.requires names %s, which this repository does not have — import that authority's bundle first",
+				"%s: data.requires names %s, which this repository does not have — import that package's bundle first",
 				where, req))
 		}
 	}
-	required := map[string]bool{AuthorityCore: true, g.Name: true}
+	required := map[string]bool{PackageCore: true, g.Identity: true}
 	for _, req := range b.Requires {
 		required[req] = true
 	}
@@ -703,17 +586,17 @@ func (r *Registry) resolveBundle(g *Authority) []string {
 		case !ok:
 			problems = append(problems, fmt.Sprintf("%s.kind: unknown kind %q", w, in.Kind))
 			continue
-		case !required[ik.Authority]:
-			problems = append(problems, fmt.Sprintf("%s.kind: %q is declared in %s — an input's kind lives in the bundle's own authority, core, or an authority the bundle requires",
-				w, in.Kind, ik.Authority))
+		case !required[ik.Package]:
+			problems = append(problems, fmt.Sprintf("%s.kind: %q is declared in %s — an input's kind lives in the bundle's own package, core, or a package the bundle requires",
+				w, in.Kind, ik.Package))
 		}
 		// An injected input's records cross into the bundle's function
 		// invocations, secrets resolved. Only the bundle's own records may:
-		// injecting another authority's kind would hand this bundle's
-		// functions secrets their owner never addressed to it.
-		if in.Inject == BundleInputInjectFunctions && ik.Authority != g.Name {
+		// injecting another package's kind would hand this bundle's functions
+		// secrets their owner never addressed to it.
+		if in.Inject == BundleInputInjectFunctions && ik.Package != g.Identity {
 			problems = append(problems, fmt.Sprintf("%s: an injected input's kind must be the bundle's own — %q is declared in %s",
-				w, in.Kind, ik.Authority))
+				w, in.Kind, ik.Package))
 		}
 	}
 	// The oauth2 trait and the oauth2 block travel together, both directions:
@@ -751,9 +634,9 @@ func (r *Registry) resolveBundle(g *Authority) []string {
 		switch {
 		case !ok:
 			problems = append(problems, fmt.Sprintf("%s: data.oauth2.clientInput %q names no declared input", where, b.OAuth2.ClientInput))
-		case ckExists && ck.Authority != g.Name:
+		case ckExists && ck.Package != g.Identity:
 			problems = append(problems, fmt.Sprintf("%s: data.oauth2.clientInput %q: its kind %q is declared in %s — the client kind is the bundle's own, so one bundle's flow can never open another's client secret",
-				where, b.OAuth2.ClientInput, ci.Kind, ck.Authority))
+				where, b.OAuth2.ClientInput, ci.Kind, ck.Package))
 		case ckExists && !ck.Implements(TraitOAuth2Core):
 			problems = append(problems, fmt.Sprintf("%s: data.oauth2.clientInput %q: its kind %q does not implement the %s trait (%s — a same-named local trait does not count)",
 				where, b.OAuth2.ClientInput, ci.Kind, TraitOAuth2, TraitOAuth2Core))
@@ -786,7 +669,7 @@ func (r *Registry) resolveBundle(g *Authority) []string {
 
 // hasBoolToggle reports whether some type in the authority declares name as a bool
 // property — the feature toggle StartOAuth reads off the account row.
-func (g *Authority) hasBoolToggle(name string) bool {
+func (g *Package) hasBoolToggle(name string) bool {
 	for _, tn := range g.KindOrder {
 		if p, ok := g.Kinds[tn].Prop(name); ok && p.Datatype == DatatypeBool {
 			return true
@@ -798,7 +681,7 @@ func (g *Authority) hasBoolToggle(name string) bool {
 // hasOAuthWritableProp reports whether some type in the authority declares name as
 // a `writer: oauth` property — the slot the facility writes the derived email
 // into, unreachable to the owner.
-func (g *Authority) hasOAuthWritableProp(name string) bool {
+func (g *Package) hasOAuthWritableProp(name string) bool {
 	for _, tn := range g.KindOrder {
 		if p, ok := g.Kinds[tn].Prop(name); ok && p.Writer == WriterOAuth {
 			return true
@@ -815,21 +698,21 @@ func mapKeys(m map[string][]string) []string {
 	return out
 }
 
-// Bundles lists every loaded bundle, ordered by authority.
+// Bundles lists every loaded bundle, ordered by the package it owns.
 func (r *Registry) Bundles() []*Bundle {
 	var out []*Bundle
-	for _, g := range r.AuthorityList() {
+	for _, g := range r.PackageList() {
 		if g.Bundle != nil {
 			out = append(out, g.Bundle)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Authority < out[j].Authority })
+	sort.Slice(out, func(i, j int) bool { return out[i].Package < out[j].Package })
 	return out
 }
 
-// BundleOf returns the bundle owning an authority, if the authority is a bundle's.
-func (r *Registry) BundleOf(authority string) (*Bundle, bool) {
-	g, ok := r.AuthorityByName(authority)
+// BundleOf returns the bundle owning a package, if the package is a bundle's.
+func (r *Registry) BundleOf(pkg string) (*Bundle, bool) {
+	g, ok := r.PackageByName(pkg)
 	if !ok || g.Bundle == nil {
 		return nil, false
 	}

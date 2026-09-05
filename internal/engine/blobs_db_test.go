@@ -24,7 +24,7 @@ func blobStoreOf(t *testing.T, ds substrate.Dataset) substrate.BlobStore {
 	return bs
 }
 
-const blobAuthority = "attachments.example.substrate.reamde.dev"
+const blobPackage = "attachments.example.substrate.reamde.dev/attachments"
 
 // blobDocType declares a type carrying a blob-ref property (scalar or repeated).
 func blobDocDocs(prop string, repeated bool) []map[string]any {
@@ -33,8 +33,8 @@ func blobDocDocs(prop string, repeated bool) []map[string]any {
 		pdef["repeated"] = true
 	}
 	return []map[string]any{
-		vocabulary.AuthorityManifest(blobAuthority, 0),
-		vocabulary.KindManifest(blobAuthority,
+		vocabulary.PackageManifest(blobPackage, 0),
+		vocabulary.KindManifest(blobPackage,
 			map[string]any{"singular": "doc", "plural": "docs"},
 			map[string]any{"properties": map[string]any{prop: pdef}}),
 	}
@@ -62,8 +62,8 @@ func TestBlobPutStoresMintsAndStreams(t *testing.T) {
 	}
 
 	// The manifest is an ordinary record, id == digest, status stored.
-	ent := mustGet(t, ds, "core.substrate.reamde.dev/blob", info.Digest)
-	if ent.Kind != "core.substrate.reamde.dev/blob" {
+	ent := mustGet(t, ds, "substrate.reamde.dev/core/blob", info.Digest)
+	if ent.Kind != "substrate.reamde.dev/core/blob" {
 		t.Fatalf("manifest type = %q", ent.Kind)
 	}
 	if ent.Properties["status"] != "stored" {
@@ -135,7 +135,7 @@ func TestBlobRefRendersManifestNotBytes(t *testing.T) {
 	}
 
 	doc := mustPut(t, ds, owner, substrate.PutInput{
-		Kind:       blobAuthority + "/doc",
+		Kind:       blobPackage + "/doc",
 		Properties: map[string]any{"attachment": info.Digest},
 	})
 
@@ -167,7 +167,7 @@ func TestBlobRefUnknownDigestRefused(t *testing.T) {
 		t.Fatalf("install doc type: %v", err)
 	}
 	_, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: blobAuthority + "/doc",
+		Kind: blobPackage + "/doc",
 		Properties: map[string]any{
 			"attachment": substrate.BlobDigestPrefix + "1111111111111111111111111111111111111111111111111111111111111111",
 		},
@@ -221,7 +221,7 @@ func TestBlobGCCollectsUnreferenced(t *testing.T) {
 	}
 	// Only `kept` is referenced by a live record.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind:       blobAuthority + "/doc",
+		Kind:       blobPackage + "/doc",
 		Properties: map[string]any{"attachment": kept.Digest},
 	})
 
@@ -233,7 +233,7 @@ func TestBlobGCCollectsUnreferenced(t *testing.T) {
 	if _, _, err := bs.GetBlob(ctx, kept.Digest); err != nil {
 		t.Fatalf("referenced blob collected: %v", err)
 	}
-	if _, err := ds.Get(ctx, "core.substrate.reamde.dev/blob", kept.Digest); err != nil {
+	if _, err := ds.Get(ctx, "substrate.reamde.dev/core/blob", kept.Digest); err != nil {
 		t.Fatalf("referenced manifest collected: %v", err)
 	}
 	// The orphan's bytes are hard-deleted at once; its manifest is TOMBSTONED,
@@ -241,7 +241,7 @@ func TestBlobGCCollectsUnreferenced(t *testing.T) {
 	if _, _, err := bs.GetBlob(ctx, orphan.Digest); err == nil {
 		t.Fatal("orphan bytes survived gc")
 	}
-	orphanManifest, err := ds.Get(ctx, "core.substrate.reamde.dev/blob", orphan.Digest)
+	orphanManifest, err := ds.Get(ctx, "substrate.reamde.dev/core/blob", orphan.Digest)
 	if err != nil {
 		t.Fatalf("orphan manifest should be tombstoned, not vanished: %v", err)
 	}
@@ -251,7 +251,7 @@ func TestBlobGCCollectsUnreferenced(t *testing.T) {
 	if _, err := ds.RunGC(ctx); err != nil {
 		t.Fatalf("second gc: %v", err)
 	}
-	if _, err := ds.Get(ctx, "core.substrate.reamde.dev/blob", orphan.Digest); err == nil {
+	if _, err := ds.Get(ctx, "substrate.reamde.dev/core/blob", orphan.Digest); err == nil {
 		t.Fatal("tombstoned orphan manifest survived a later gc")
 	}
 }
@@ -278,7 +278,7 @@ func TestBlobNameIsDescriptiveAndFirstWins(t *testing.T) {
 	if info.Name != "invoice.pdf" {
 		t.Fatalf("name = %q, want invoice.pdf", info.Name)
 	}
-	ent := mustGet(t, ds, "core.substrate.reamde.dev/blob", info.Digest)
+	ent := mustGet(t, ds, "substrate.reamde.dev/core/blob", info.Digest)
 	if ent.Properties["name"] != "invoice.pdf" {
 		t.Fatalf("manifest name = %v", ent.Properties["name"])
 	}
@@ -296,7 +296,7 @@ func TestBlobNameIsDescriptiveAndFirstWins(t *testing.T) {
 
 	// A blob-ref resolves the name with the rest of the manifest.
 	doc := mustPut(t, ds, owner, substrate.PutInput{
-		Kind:       blobAuthority + "/doc",
+		Kind:       blobPackage + "/doc",
 		Properties: map[string]any{"attachment": info.Digest},
 	})
 	got := mustGet(t, ds, doc.Kind, doc.ID)
@@ -333,7 +333,7 @@ func TestBlobNameAndMediaTypeAreOptional(t *testing.T) {
 	if info.Name != "" || info.MediaType != "" {
 		t.Fatalf("unnamed blob = %+v", info)
 	}
-	ent := mustGet(t, ds, "core.substrate.reamde.dev/blob", info.Digest)
+	ent := mustGet(t, ds, "substrate.reamde.dev/core/blob", info.Digest)
 	if _, ok := ent.Properties["name"]; ok {
 		t.Fatalf("manifest claims a name: %v", ent.Properties["name"])
 	}

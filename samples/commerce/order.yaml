@@ -1,0 +1,98 @@
+# one purchase and its delivery lifecycle
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: samples.substrate.reamde.dev/commerce/order
+data:
+  authority: samples.substrate.reamde.dev
+  package: commerce
+  description: >-
+    One purchase: who sold it, what it cost, and where it is between placed
+    and delivered. A transition stamps shippedAt or deliveredAt by itself;
+    an importer creating a record already shipped supplies its own times.
+    What was in the box lives on its orderitems.
+  # The declaration inherited the package's version before this pin.
+  # version 4: `shippedAt` and `deliveredAt` are declared properties
+  # (datetime). The transitions stamped them as undeclared strings before.
+  # version 6: `source` is an unpinned reference property, carrying
+  # `mustExist: true`.
+  version: 6
+  names:
+    singular: order
+  displayTemplate: "{name}"
+  # `at` is when the order was placed.
+  traits:
+    - temporal(point)
+  indices:
+    - properties:
+        - status
+  properties:
+    name:
+      type: string
+      required: true
+      description: what the order is, one line
+    vendor:
+      type: string
+      description: who sold it
+    # `canceled` is a decision, not drift: task and project say `abandoned`,
+    # but either party cancels an order (abandoning is only the buyer's),
+    # and the domain word is kept on purpose.
+    status:
+      type: state
+      description: "placed until it ships, shipped until it lands; stamps
+        itself"
+      states:
+        - placed
+        - shipped
+        - delivered
+        - canceled
+        - returned
+      initial: placed
+      transitions:
+        - from: placed
+          to: shipped
+          stamps:
+            shippedAt: now
+        - from: shipped
+          to: delivered
+          stamps:
+            deliveredAt: now
+        - from: placed
+          to: canceled
+        - from: shipped
+          to: canceled
+        - from: delivered
+          to: returned
+    # Stamped by the transitions above. Not managed: an importer creating a
+    # record already shipped supplies its own times, as the description says.
+    shippedAt:
+      type: datetime
+      description: when it shipped, stamped by the transition
+    deliveredAt:
+      type: datetime
+      description: when it landed, stamped by the transition
+    totalAmount:
+      type: decimal
+      min: 0
+      description: the order total, in the currency beside it
+    currency:
+      type: currency
+      description: the ISO 4217 code totalAmount is denominated in
+    orderNumber:
+      type: string
+      description: the vendor's own order number, as printed
+    carrier:
+      type: string
+      description: who is delivering it
+    trackingURL:
+      type: url
+      description: the carrier's tracking page
+    details:
+      type: markdown
+      description: anything worth saying about the purchase, as prose
+    # unpinned on purpose: an order is usually first seen in an email or a
+    # message, and naming each source would couple this package to every
+    # other one.
+    source:
+      type: reference
+      mustExist: true
+      description: the email or message the order was seen in

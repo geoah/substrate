@@ -63,7 +63,7 @@ func TestTheDetachedSitesGoThroughSpawn(t *testing.T) {
 		reg: registryWithOneFunction(t), watch: newBroadcaster(),
 	}
 
-	ds.maybeJudge("request1", &policyRule{id: "policy1", judge: "judge.test.dev/reviewer"})
+	ds.maybeJudge("request1", &policyRule{id: "policy1", judge: "judge.test.dev/judge/reviewer"})
 	ds.resumeNotifiedThread("thread1", "")
 	ds.warmFunctions()
 
@@ -96,8 +96,8 @@ func registryWithOneFunction(t *testing.T) *vocabulary.Registry {
 	t.Helper()
 	fsys := fstest.MapFS{}
 	for name, doc := range map[string]map[string]any{
-		"authority.yaml": vocabulary.AuthorityManifest("warm.test.dev", 0),
-		"function.yaml": vocabulary.FunctionManifest("warm.test.dev", "prepared", map[string]any{
+		"authority.yaml": vocabulary.PackageManifest("warm.test.dev/warm", 0),
+		"function.yaml": vocabulary.FunctionManifest("warm.test.dev/warm", "prepared", map[string]any{
 			"description": "a body warmFunctions would prepare",
 			"runtime":     vocabulary.RuntimePython,
 			"source":      "def main(input, host): return {\"output\": {}}",

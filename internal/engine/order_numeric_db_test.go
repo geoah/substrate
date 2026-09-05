@@ -14,15 +14,15 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-const orderAuthority = "order.example.substrate.reamde.dev"
+const orderPackage = "order.example.substrate.reamde.dev/order"
 
 func TestOrderByAnIntPropertySortsNumerically(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(orderAuthority, 0),
-		vocabulary.KindManifest(orderAuthority,
+		vocabulary.PackageManifest(orderPackage, 0),
+		vocabulary.KindManifest(orderPackage,
 			map[string]any{"singular": "step", "plural": "steps"},
 			map[string]any{"properties": map[string]any{
 				"turn": map[string]any{"type": "int"},
@@ -35,7 +35,7 @@ func TestOrderByAnIntPropertySortsNumerically(t *testing.T) {
 	// Deliberately spanning the boundary a text sort gets wrong.
 	for _, n := range []int{0, 1, 2, 9, 10, 11, 20, 100} {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: orderAuthority + "/step",
+			Kind: orderPackage + "/step",
 			Properties: map[string]any{
 				"turn": n, "name": "step",
 			},
@@ -43,7 +43,7 @@ func TestOrderByAnIntPropertySortsNumerically(t *testing.T) {
 	}
 
 	page, err := ds.List(ctx, substrate.Query{
-		Filter:  substrate.Filter{Kinds: []string{orderAuthority + "/step"}},
+		Filter:  substrate.Filter{Kinds: []string{orderPackage + "/step"}},
 		OrderBy: []substrate.Order{{Property: "turn"}},
 		First:   50,
 	})
@@ -74,8 +74,8 @@ func TestOrderAndFilterByADecimalPropertyCompareNumerically(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(orderAuthority, 0),
-		vocabulary.KindManifest(orderAuthority,
+		vocabulary.PackageManifest(orderPackage, 0),
+		vocabulary.KindManifest(orderPackage,
 			map[string]any{"singular": "price", "plural": "prices"},
 			map[string]any{"properties": map[string]any{
 				"amount": map[string]any{"type": "decimal"},
@@ -85,12 +85,12 @@ func TestOrderAndFilterByADecimalPropertyCompareNumerically(t *testing.T) {
 	}
 	for _, amount := range []string{"10.05", "0.99", "100.1", "9.50", "2"} {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind:       orderAuthority + "/price",
+			Kind:       orderPackage + "/price",
 			Properties: map[string]any{"amount": amount},
 		})
 	}
 	page, err := ds.List(ctx, substrate.Query{
-		Filter:  substrate.Filter{Kinds: []string{orderAuthority + "/price"}},
+		Filter:  substrate.Filter{Kinds: []string{orderPackage + "/price"}},
 		OrderBy: []substrate.Order{{Property: "amount"}},
 		First:   50,
 	})
@@ -113,7 +113,7 @@ func TestOrderAndFilterByADecimalPropertyCompareNumerically(t *testing.T) {
 	}
 	filtered, err := ds.List(ctx, substrate.Query{
 		Filter: substrate.Filter{
-			Kinds:      []string{orderAuthority + "/price"},
+			Kinds:      []string{orderPackage + "/price"},
 			Properties: map[string]substrate.Cond{"amount": {Gt: "9.50", Lte: "100.10"}},
 		},
 		OrderBy: []substrate.Order{{Property: "amount"}},
@@ -143,8 +143,8 @@ func TestOrderByAStringPropertyStaysTextual(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(orderAuthority, 0),
-		vocabulary.KindManifest(orderAuthority,
+		vocabulary.PackageManifest(orderPackage, 0),
+		vocabulary.KindManifest(orderPackage,
 			map[string]any{"singular": "step", "plural": "steps"},
 			map[string]any{"properties": map[string]any{
 				"turn": map[string]any{"type": "int"},
@@ -157,12 +157,12 @@ func TestOrderByAStringPropertyStaysTextual(t *testing.T) {
 	// silent reinterpretation, in the other direction.
 	for _, name := range []string{"10", "9", "2"} {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind:       orderAuthority + "/step",
+			Kind:       orderPackage + "/step",
 			Properties: map[string]any{"name": name},
 		})
 	}
 	page, err := ds.List(ctx, substrate.Query{
-		Filter:  substrate.Filter{Kinds: []string{orderAuthority + "/step"}},
+		Filter:  substrate.Filter{Kinds: []string{orderPackage + "/step"}},
 		OrderBy: []substrate.Order{{Property: "name"}},
 		First:   50,
 	})

@@ -31,23 +31,23 @@ import { ChangeDetail } from "./row-detail"
 const ROW: ChangeRow = {
   seq: 42,
   ts: "2026-08-12T01:10:32Z",
-  actor: "github.bundles.substrate.reamde.dev",
+  actor: "providers.substrate.reamde.dev/github",
   op: "put",
   recordId: "p1",
-  kind: "people.substrate.reamde.dev/person",
+  kind: "samples.substrate.reamde.dev/people/person",
   payload: {
     created: true,
     properties: ["name", "email"],
     fold: [
       {
         kind: "record",
-        ref: "people.substrate.reamde.dev/person",
+        ref: "samples.substrate.reamde.dev/people/person",
         id: "p1",
         delta: { created: true, set: { name: "Ada" }, del: ["nickname"] },
       },
       {
         kind: "tombstone",
-        ref: "people.substrate.reamde.dev/person",
+        ref: "samples.substrate.reamde.dev/people/person",
         id: "p2",
         finalizer: "merge",
       },
@@ -79,7 +79,7 @@ describe("ChangeDetail", () => {
   it("attributes the write to its actor", () => {
     render(<ChangeDetail row={ROW} />)
     expect(
-      screen.getByTitle("github.bundles.substrate.reamde.dev")
+      screen.getByTitle("providers.substrate.reamde.dev/github")
     ).toBeTruthy()
   })
 

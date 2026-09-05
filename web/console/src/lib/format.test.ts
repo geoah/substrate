@@ -68,16 +68,18 @@ describe("referenceID / referenceCell", () => {
     // The served shape: the path under `ref`, whether or not the declaration
     // hangs link properties off it.
     expect(
-      referenceID({ ref: "core.substrate.reamde.dev/llmprovider/claude" })
+      referenceID({ ref: "substrate.reamde.dev/core/llmprovider/claude" })
     ).toBe("claude")
-    expect(referenceID({ ref: "tasks.example.com/task/abc123" })).toBe("abc123")
-    expect(referenceID({ ref: "tasks.example.com/task/p1", round: 2 })).toBe(
-      "p1"
+    expect(referenceID({ ref: "tasks.example.com/tasks/task/abc123" })).toBe(
+      "abc123"
     )
     expect(
+      referenceID({ ref: "tasks.example.com/tasks/task/p1", round: 2 })
+    ).toBe("p1")
+    expect(
       referenceCell([
-        { ref: "tasks.example.com/task/a" },
-        { ref: "tasks.example.com/task/b" },
+        { ref: "tasks.example.com/tasks/task/a" },
+        { ref: "tasks.example.com/tasks/task/b" },
       ])
     ).toBe("a, b")
   })
@@ -85,9 +87,12 @@ describe("referenceID / referenceCell", () => {
   it("still reads the bare path, the write-time shorthand", () => {
     // A path string reaches these functions from an authored document the
     // console has not sent yet; the server serves the object.
-    expect(referenceID("tasks.example.com/task/abc123")).toBe("abc123")
+    expect(referenceID("tasks.example.com/tasks/task/abc123")).toBe("abc123")
     expect(
-      referenceCell(["tasks.example.com/task/a", "tasks.example.com/task/b"])
+      referenceCell([
+        "tasks.example.com/tasks/task/a",
+        "tasks.example.com/tasks/task/b",
+      ])
     ).toBe("a, b")
   })
 
@@ -105,23 +110,23 @@ describe("referenceID / referenceCell", () => {
 
 describe("referenceObjects", () => {
   it("reads the served object, one or repeated", () => {
-    const one = { ref: "tasks.example.com/task/a" }
+    const one = { ref: "tasks.example.com/tasks/task/a" }
     expect(referenceObjects(one)).toEqual([one])
-    const link = { ref: "tasks.example.com/task/a", round: 2 }
+    const link = { ref: "tasks.example.com/tasks/task/a", round: 2 }
     expect(referenceObjects(link)).toEqual([link])
     expect(referenceObjects([one, link])).toEqual([one, link])
   })
 
   it("refuses everything a declaration would have had to vouch for", () => {
     // A bare path string: undeclared, it is a string with slashes in it.
-    expect(referenceObjects("tasks.example.com/task/a")).toBeUndefined()
+    expect(referenceObjects("tasks.example.com/tasks/task/a")).toBeUndefined()
     // An object that names no path, and a `ref` that is not one.
     expect(referenceObjects({ kind: "task", id: "a" })).toBeUndefined()
     expect(referenceObjects({ ref: "claude" })).toBeUndefined()
     // One non-reference element disqualifies the whole list: half a column of
     // pills and half of JSON would read as two different datatypes.
     expect(
-      referenceObjects([{ ref: "tasks.example.com/task/a" }, { n: 1 }])
+      referenceObjects([{ ref: "tasks.example.com/tasks/task/a" }, { n: 1 }])
     ).toBeUndefined()
     expect(referenceObjects([])).toBeUndefined()
     expect(referenceObjects(null)).toBeUndefined()

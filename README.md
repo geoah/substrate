@@ -74,23 +74,27 @@ bin/substratectl register --server http://localhost:8080
 ```
 
 A fresh repository holds the core vocabulary and nothing else. Teach it
-yours: kinds are declared in YAML under an authority you name, and a
-declaration is itself a record write. One file declares a project and a
-task, with typed properties, a state machine, and a reference between them:
+yours: kinds are declared in YAML in a package under an authority you name,
+and a declaration is itself a record write. One file declares a package and,
+in it, a project and a task, with typed properties, a state machine, and a
+reference between them:
 
 ```yaml
 # chores.yaml
-kind: core.substrate.reamde.dev/authority
+kind: substrate.reamde.dev/core/package
 metadata:
-  id: geoah.me
-data:
-  version: 1
----
-kind: core.substrate.reamde.dev/kind
-metadata:
-  id: geoah.me/project
+  id: geoah.me/chores
 data:
   authority: geoah.me
+  package: chores
+  version: 1
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: geoah.me/chores/project
+data:
+  authority: geoah.me
+  package: chores
   description: A group of tasks with one goal.
   names:
     singular: project
@@ -100,11 +104,12 @@ data:
       type: string
       description: what the project is called
 ---
-kind: core.substrate.reamde.dev/kind
+kind: substrate.reamde.dev/core/kind
 metadata:
-  id: geoah.me/task
+  id: geoah.me/chores/task
 data:
   authority: geoah.me
+  package: chores
   description: One thing to do, grouped under a project.
   names:
     singular: task
@@ -155,30 +160,30 @@ declared transitions:
 bin/substratectl apply -f chores.yaml
 
 cat <<'EOF' | bin/substratectl apply -f -
-kind: geoah.me/project
+kind: geoah.me/chores/project
 metadata:
   id: home
 data:
   properties:
     name: Home
 ---
-kind: geoah.me/task
+kind: geoah.me/chores/task
 metadata:
   id: milk
 data:
   properties:
     name: Buy milk
     dueAt: 2026-08-30T09:00:00Z
-    project: geoah.me/project/home
+    project: geoah.me/chores/project/home
 ---
-kind: geoah.me/task
+kind: geoah.me/chores/task
 metadata:
   id: plants
 data:
   properties:
     name: Water the plants
     dueAt: 2026-08-29T09:00:00Z
-    project: geoah.me/project/home
+    project: geoah.me/chores/project/home
 EOF
 
 bin/substratectl get task
@@ -192,7 +197,7 @@ bin/substratectl patch task milk --state status=done  # stamps completedAt
 bin/substratectl watch --from 1
 ```
 
-The same records answer on REST at `/api/v1/geoah.me/task`, on
+The same records answer on REST at `/api/v1/geoah.me/chores/task`, on
 GraphQL at `/graphql`, and in full-text and semantic search:
 [docs/api.md](docs/api.md) and
 [docs/graphql-and-search.md](docs/graphql-and-search.md).
@@ -207,41 +212,43 @@ with tools), each scoped to exactly the kinds it may touch:
 
 ```yaml
 ---
-kind: core.substrate.reamde.dev/function
+kind: substrate.reamde.dev/core/function
 metadata:
-  id: geoah.me/triage
+  id: geoah.me/chores/triage
 data:
   authority: geoah.me
+  package: chores
   description: Raise every open task past its due date to urgent.
   runtime: python
   permissions:
     reads:
       kinds:
-        - geoah.me/task
+        - geoah.me/chores/task
     writes:
-      - geoah.me/task
+      - geoah.me/chores/task
   source: |
     from datetime import datetime, timezone
 
     def main(input, host):
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        page = host.records.list(["geoah.me/task"],
+        page = host.records.list(["geoah.me/chores/task"],
                                  where={"status": {"eq": "open"}})
         raised = 0
         for task in page.get("records") or []:
             props = task.get("properties") or {}
             due = props.get("dueAt")
             if due and due < now and props.get("priority") != "urgent":
-                host.effects.patch("geoah.me/task", task["id"],
+                host.effects.patch("geoah.me/chores/task", task["id"],
                                    properties={"priority": "urgent"})
                 raised += 1
         return {"output": {"raised": raised}}
 ---
-kind: core.substrate.reamde.dev/agent
+kind: substrate.reamde.dev/core/agent
 metadata:
-  id: geoah.me/assistant
+  id: geoah.me/chores/assistant
 data:
   authority: geoah.me
+  package: chores
   description: Reads and updates my projects and tasks on request.
   prompt: |
     You manage the user's projects and tasks. Read them with the query
@@ -250,19 +257,19 @@ data:
   provider: anthropic
   model: claude-opus-5
   tools:
-    - function: core.substrate.reamde.dev/query
-    - function: core.substrate.reamde.dev/mutate
+    - function: substrate.reamde.dev/core/query
+    - function: substrate.reamde.dev/core/mutate
   budgets:
     maxTurns: 8
     maxToolCalls: 16
   permissions:
     reads:
       kinds:
-        - geoah.me/task
-        - geoah.me/project
+        - geoah.me/chores/task
+        - geoah.me/chores/project
     writes:
-      - geoah.me/task
-      - geoah.me/project
+      - geoah.me/chores/task
+      - geoah.me/chores/project
 ```
 
 Apply the file again (re-applying a closure is how it evolves; the engine
@@ -271,7 +278,7 @@ open and past due, so it comes back urgent:
 
 ```bash
 bin/substratectl apply -f chores.yaml
-bin/substratectl function call geoah.me/triage
+bin/substratectl function call geoah.me/chores/triage
 bin/substratectl get task plants -o yaml
 ```
 
@@ -280,7 +287,7 @@ What usually runs it is a **trigger**, an ordinary record binding a source
 
 ```bash
 cat <<'EOF' | bin/substratectl apply -f -
-kind: core.substrate.reamde.dev/trigger
+kind: substrate.reamde.dev/core/trigger
 metadata:
   id: chores-triage-daily
 data:
@@ -291,7 +298,7 @@ data:
         recurrence: "FREQ=DAILY"
         timezone: Europe/London
         startsAt: "2026-01-01T07:00:00Z"
-    callable: core.substrate.reamde.dev/function/geoah.me/triage
+    callable: substrate.reamde.dev/core/function/geoah.me/chores/triage
 EOF
 ```
 
@@ -301,9 +308,9 @@ request (headers, query, body or parsed multipart parts, file parts stored
 as blobs) on its envelope. The endpoint is open unless the trigger sets
 `source.webhook.key`; GitHub-style signatures verify inside the function,
 which gets the raw body. The shipped `pebble` bundle
-([kinds/pebble.bundles.substrate.reamde.dev](kinds/pebble.bundles.substrate.reamde.dev))
-is a worked example: a voice-recorder ring POSTs each capture to one URL,
-and a header decides whether it lands as a note or is handed to an agent.
+([samples/pebble](samples/pebble)) is a worked example: a voice-recorder ring
+POSTs each capture to one URL, and a header decides whether it lands as a note
+or is handed to an agent.
 
 [docs/functions.md](docs/functions.md) is the whole contract: the host SDK,
 permissions, triggers, webhooks and the sandbox.
@@ -317,12 +324,12 @@ provider key. Providers are `llmprovider` records, and the catalog ships a
 **bundle** with two keyless rows (`anthropic`, `openai`) and example agents
 beside them. A bundle is the install unit: a closure like `chores.yaml`,
 installed and removed as one thing, from the console's Registry page or
-from the files under [kinds/](kinds):
+from the files under [samples/](samples):
 
 ```bash
 bin/substratectl apply \
-  -f kinds/llm.examples.substrate.reamde.dev/bundle.yaml \
-  -f kinds/llm.examples.substrate.reamde.dev/providers.yaml
+  -f samples/llm/bundle.yaml \
+  -f samples/llm/providers.yaml
 ```
 
 Then put a key on the row `assistant` names. It is an ordinary record
@@ -330,7 +337,7 @@ write, and `apiKey` is secret-typed, so it reads back redacted ever after:
 
 ```bash
 cat <<'EOF' | bin/substratectl apply -f -
-kind: core.substrate.reamde.dev/llmprovider
+kind: substrate.reamde.dev/core/llmprovider
 metadata:
   id: anthropic
 data:
@@ -391,7 +398,7 @@ rules. [docs/testing.md](docs/testing.md) maps the test suites.
 | [docs/api.md](docs/api.md)                           | REST, filters, mutations, errors                                  |
 | [docs/terms.md](docs/terms.md)                       | one word per thing, and the dead words each replaced              |
 | [docs/decisions](docs/decisions/README.md)           | the decision records: one short, dated page per choice            |
-| [kinds/](kinds)                                      | the shipped vocabulary, as YAML                                   |
+| [kinds/](kinds), [samples/](samples)                 | the shipped vocabulary and the sample packages, as YAML           |
 | [AGENTS.md](AGENTS.md)                               | how to work on this code                                          |
 | [SECURITY.md](SECURITY.md)                           | how to report a vulnerability                                     |
 | [CHANGELOG.md](CHANGELOG.md)                         | released versions                                                 |

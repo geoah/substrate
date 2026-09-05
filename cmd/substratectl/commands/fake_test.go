@@ -163,11 +163,11 @@ func (f *fakeSubstrate) handler() http.Handler {
 	mux.HandleFunc("PATCH "+tasksPath+"/{id}", f.handlePatch)
 	mux.HandleFunc("DELETE "+tasksPath+"/{id}", f.handleDelete)
 	// The shipped-example apply test writes triggers as ordinary data records
-	// in core.substrate.reamde.dev; a generic collection store answers those puts.
+	// in substrate.reamde.dev/core; a generic collection store answers those puts.
 	mux.HandleFunc("GET "+triggerColPath+"/{id}", f.handleTriggerGet)
 	mux.HandleFunc("PUT "+triggerColPath+"/{id}", f.handleTriggerPut)
 	// The trigger DELIVERY verbs, at the resource: they hang off
-	// core.substrate.reamde.dev and NOWHERE else here, so a client still riding the
+	// substrate.reamde.dev/core and NOWHERE else here, so a client still riding the
 	// retired automation.substrate.reamde.dev spelling falls through to the 404 catch-all
 	// rather than passing quietly.
 	mux.HandleFunc("GET "+triggerColPath+"/status", f.handleTriggerStatus)
@@ -194,38 +194,42 @@ func writeError(w http.ResponseWriter, status int, code, msg string, problems []
 
 // The two paths the tests spell out: the registry is `kinds` (naming
 // scheme R4 — `type` is a column on every record), and the one data collection
-// lives in `tasks.substrate.reamde.dev`, since the shipped vocabulary is split by subject
+// lives in `samples.substrate.reamde.dev/tasks`, since the shipped vocabulary is split by subject
 // domain rather than gathered under a single `vocab` authority.
 // The collection segment is the kind NAME (decision 0033): the registry is the
 // `kind` kind, the one data collection is `task`, and the trigger records and
 // their delivery verbs hang off `trigger`.
 const (
-	typesPath      = "/api/v1/core.substrate.reamde.dev/kind"
-	tasksPath      = "/api/v1/tasks.substrate.reamde.dev/task"
-	triggerColPath = "/api/v1/core.substrate.reamde.dev/trigger"
+	typesPath      = "/api/v1/substrate.reamde.dev/core/kind"
+	tasksPath      = "/api/v1/samples.substrate.reamde.dev/tasks/task"
+	triggerColPath = "/api/v1/substrate.reamde.dev/core/trigger"
 )
 
-func typeRecord(name, authority, plural, source string, definition map[string]any) map[string]any {
+// typeRecord builds one registry row. `pkg` is the PACKAGE IDENTITY
+// (`{authority}/{package}`): a row carries the two apart, and its id is the
+// kind reference, which is the package identity plus the name.
+func typeRecord(name, pkg, plural, source string, definition map[string]any) map[string]any {
+	authority, pkgName := vocabulary.SplitPackageRef(pkg)
 	properties := map[string]any{
-		"name": name, "authority": authority, "plural": plural,
+		"name": name, "authority": authority, "package": pkgName, "plural": plural,
 		"version": 1, "source": source,
 	}
 	if definition != nil {
 		properties["definition"] = definition
 	}
 	return map[string]any{
-		"id":         authority + "/" + name,
-		"kind":       "core.substrate.reamde.dev/kind",
+		"id":         pkg + "/" + name,
+		"kind":       "substrate.reamde.dev/core/kind",
 		"properties": properties,
 	}
 }
 
-func builtin(name, authority, plural string) map[string]any {
-	return typeRecord(name, authority, plural, "builtin", nil)
+func builtin(name, pkg, plural string) map[string]any {
+	return typeRecord(name, pkg, plural, "builtin", nil)
 }
 
-func installed(name, authority, plural string) map[string]any {
-	return typeRecord(name, authority, plural, "installed", nil)
+func installed(name, pkg, plural string) map[string]any {
+	return typeRecord(name, pkg, plural, "installed", nil)
 }
 
 // taskDefinition is the one declaration the fake registry carries, because the
@@ -258,27 +262,27 @@ var fakeRegistry = []map[string]any{
 	// The `connector`/`connectoraccount` core mirrors were removed at the v1
 	// freeze — a connection is an accountconfig-trait
 	// record now, so the fake registry no longer advertises those kinds.
-	builtin("recordmerge", "core.substrate.reamde.dev", "recordmerges"),
-	builtin("recordsplit", "core.substrate.reamde.dev", "recordsplits"),
-	builtin("kind", "core.substrate.reamde.dev", "kinds"),
-	builtin("token", "core.substrate.reamde.dev", "tokens"),
-	builtin("person", "people.substrate.reamde.dev", "people"),
-	builtin("organization", "people.substrate.reamde.dev", "organizations"),
-	builtin("conversationmessage", "messaging.substrate.reamde.dev", "conversationmessages"),
-	builtin("calendarevent", "calendar.substrate.reamde.dev", "calendarevents"),
-	builtin("calendareventseries", "calendar.substrate.reamde.dev", "calendareventseries"),
-	typeRecord("task", "tasks.substrate.reamde.dev", "tasks", "builtin", taskDefinition),
+	builtin("recordmerge", "substrate.reamde.dev/core", "recordmerges"),
+	builtin("recordsplit", "substrate.reamde.dev/core", "recordsplits"),
+	builtin("kind", "substrate.reamde.dev/core", "kinds"),
+	builtin("token", "substrate.reamde.dev/core", "tokens"),
+	builtin("person", "samples.substrate.reamde.dev/people", "people"),
+	builtin("organization", "samples.substrate.reamde.dev/people", "organizations"),
+	builtin("conversationmessage", "samples.substrate.reamde.dev/messaging", "conversationmessages"),
+	builtin("calendarevent", "samples.substrate.reamde.dev/calendar", "calendarevents"),
+	builtin("calendareventseries", "samples.substrate.reamde.dev/calendar", "calendareventseries"),
+	typeRecord("task", "samples.substrate.reamde.dev/tasks", "tasks", "builtin", taskDefinition),
 	// `library` is the fake's own vocabulary authority (nothing shipped by that
 	// name); its five types cover both plural shapes — `books`/`movies`/
 	// `podcasts`, whose plural is a word of its own, and `bookseries`/
 	// `tvseries`, whose plural is its singular.
-	builtin("book", "library.substrate.reamde.dev", "books"),
-	builtin("bookseries", "library.substrate.reamde.dev", "bookseries"),
-	builtin("movie", "library.substrate.reamde.dev", "movies"),
-	builtin("podcast", "library.substrate.reamde.dev", "podcasts"),
-	builtin("tvseries", "library.substrate.reamde.dev", "tvseries"),
-	installed("syncrun", "google.connectors.substrate.reamde.dev", "syncruns"),
-	installed("syncrun", "slack.connectors.substrate.reamde.dev", "syncruns"),
+	builtin("book", "library.substrate.reamde.dev/library", "books"),
+	builtin("bookseries", "library.substrate.reamde.dev/library", "bookseries"),
+	builtin("movie", "library.substrate.reamde.dev/library", "movies"),
+	builtin("podcast", "library.substrate.reamde.dev/library", "podcasts"),
+	builtin("tvseries", "library.substrate.reamde.dev/library", "tvseries"),
+	installed("syncrun", "google.connectors.substrate.reamde.dev/google", "syncruns"),
+	installed("syncrun", "slack.connectors.substrate.reamde.dev/slack", "syncruns"),
 }
 
 // fakeTypesPageSize and fakeTypesMaxPage mirror the engine's defaultPageSize
@@ -678,7 +682,7 @@ func (f *fakeSubstrate) handlePut(w http.ResponseWriter, r *http.Request) {
 	e, ok := f.records[id]
 	if !ok {
 		e = &substrate.Record{
-			ID: id, Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{},
+			ID: id, Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{},
 			Labels: map[string]any{}, Version: 1,
 			CreatedAt: testNow.Add(-time.Hour), UpdatedAt: testNow.Add(-time.Hour),
 		}
@@ -734,7 +738,7 @@ func (f *fakeSubstrate) handlePost(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 	id := fmt.Sprintf("gen%02d", len(f.records)+1)
 	e := &substrate.Record{
-		ID: id, Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{},
+		ID: id, Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{},
 		Labels: map[string]any{}, Version: 1, CreatedAt: testNow, UpdatedAt: testNow,
 	}
 	if title, ok := putTitle(in); ok {
@@ -774,7 +778,7 @@ func (f *fakeSubstrate) handleTriggerPut(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	e := &substrate.Record{
-		ID: id, Kind: "core.substrate.reamde.dev/trigger", Properties: in.Properties,
+		ID: id, Kind: "substrate.reamde.dev/core/trigger", Properties: in.Properties,
 		Labels: map[string]any{}, Version: 1, CreatedAt: testNow, UpdatedAt: testNow,
 	}
 	f.records[id] = e
@@ -786,7 +790,7 @@ func (f *fakeSubstrate) handleTriggerStatus(w http.ResponseWriter, r *http.Reque
 	f.noteRequest(r)
 	writeJSON(w, http.StatusOK, map[string]any{"items": []substrate.TriggerStatus{{
 		ID: "classify-page", Kind: substrate.TriggerKindRecord,
-		Callable: "web.substrate.reamde.dev/classify", Enabled: true, Cursor: 41, Head: 41,
+		Callable: "web.substrate.reamde.dev/web/classify", Enabled: true, Cursor: 41, Head: 41,
 	}}})
 }
 
@@ -831,7 +835,7 @@ func (f *fakeSubstrate) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	del := testNow
 	e.DeletedAt = &del
-	e.Finalizers = []string{"gmail.google.connectors.substrate.reamde.dev/unsend"}
+	e.Finalizers = []string{"gmail.google.connectors.substrate.reamde.dev/gmail/unsend"}
 	writeJSON(w, http.StatusOK, e)
 }
 

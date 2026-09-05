@@ -15,7 +15,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-const bindingProviderKind = "core.substrate.reamde.dev/llmprovider"
+const bindingProviderKind = "substrate.reamde.dev/core/llmprovider"
 
 // putProviderSecret writes one llmprovider row with a secret apiKey and returns
 // the sealed-store ref the property now holds.

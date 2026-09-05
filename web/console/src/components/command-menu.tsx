@@ -95,14 +95,15 @@ export function CommandMenu({
                 {a.kinds.map((k) => (
                   <CommandItem
                     key={k.identity}
-                    value={`${k.name} ${k.identity}`}
+                    value={`${k.name} ${k.package} ${k.identity}`}
                     onSelect={() =>
                       go(
                         () =>
                           void navigate({
-                            to: "/data/$authority/$name",
+                            to: "/data/$authority/$pkg/$name",
                             params: {
                               authority: a.authority,
+                              pkg: k.package,
                               name: k.name,
                             },
                           })
@@ -111,7 +112,7 @@ export function CommandMenu({
                   >
                     {k.name}
                     <span className="ml-auto data text-xs text-muted-foreground">
-                      {a.authority}
+                      {a.authority}/{k.package}
                     </span>
                   </CommandItem>
                 ))}

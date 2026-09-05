@@ -20,7 +20,8 @@ account behind the session menu.
 
 The home page is an **Overview**: recent activity, anything waiting on you, and
 a count per kind that doubles as the way in. Following one opens that kind's
-collection at `/data/{authority}/{kind}`.
+collection at `/data/{authority}/{package}/{kind}`: a data address is the kind
+reference, segment for segment.
 
 A kind opens on two tabs — its **Records**, a filterable and pageable
 collection, and its **Definition**, the declaration rendered as the manifest it
@@ -77,8 +78,9 @@ A record opens on five tabs:
   [tier](terms.md#truth-and-derivation).
 
 A merged-away record says so and points at its canonical winner; a tombstoned
-one says so too. An authority also has a page of its own, listing every record
-of every kind it declares in one table.
+one says so too. The two segments above a kind each have a page of their own:
+`/data/{authority}` tables every kind that authority publishes, package by
+package, and `/data/{authority}/{package}` tables the one package's kinds.
 
 ## Changelog
 
@@ -90,7 +92,7 @@ because there is only one changelog.
 ## Merge requests
 
 A proposed [merge](projection.md#merge-requests) is an ordinary record, so the
-queue is its collection — `core.substrate.reamde.dev/recordmergerequest` in
+queue is its collection — `substrate.reamde.dev/core/recordmergerequest` in
 the data nav, with the pending pile also on the overview. Opening one shows the
 matcher's evidence, a field-by-field comparison of the two records, and accept
 or reject. Accepting is an ordinary state transition, and performing the merge
@@ -99,7 +101,7 @@ is what that transition does.
 ## Change requests
 
 A [gated](agents.md#the-policy-door) agent write lands as a
-`core.substrate.reamde.dev/recordpatchrequest` instead of applying, and its
+`substrate.reamde.dev/core/recordpatchrequest` instead of applying, and its
 queue is that collection in the data nav, with the pending pile also on the
 overview. Opening one at `/change-requests/{id}` shows the proposed create,
 patch or delete and its rationale, and accept or reject; accepting is the state
@@ -138,12 +140,12 @@ cards fill in live and are replaced by the stored rows when it settles.
 
 The [`llmprovider`](agents.md#providers) rows are **not** on this page: an agent
 names a provider by id, and that pointer reads on the agent's own record.
-They live under Data → `core.substrate.reamde.dev` → llmproviders, and
+They live under Data → `substrate.reamde.dev/core` → llmproviders, and
 [setting a key](agents.md#setting-or-rotating-the-key) is an ordinary record
 edit.
 
 [Triggers](functions.md#triggers) have no section of their own: they are
-ordinary records, so `core.substrate.reamde.dev/trigger` in the data nav is
+ordinary records, so `substrate.reamde.dev/core/trigger` in the data nav is
 the list, and one trigger's record page is the trigger.
 
 ## Account

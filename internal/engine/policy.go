@@ -119,7 +119,7 @@ func (ds *dataset) warnActionless(id string) {
 // resolveSelectorKinds canonicalizes a selector's exact patterns against the
 // repository's own vocabulary, the same resolve-at-the-gate a trigger source
 // gets (triggers.go resolveKinds). A kind has two spellings, `task` and
-// `tasks.substrate.reamde.dev/task`, and the door compares against the
+// `samples.substrate.reamde.dev/tasks/task`, and the door compares against the
 // IDENTITY, so a selector written in the bare spelling would admit and then
 // never match. A glob is not a reference and is left alone; so is a name the
 // registry does not know, which matches nothing, which is what an undeclared
@@ -196,7 +196,7 @@ func stringList(v any) []string {
 //
 // The kinds dimension is the trigger source's grammar, matched by the trigger
 // source's matcher (vocabulary.MatchTypeGlob): a kind reference, every kind
-// one authority publishes (`tasks.substrate.reamde.dev/*`), or every kind
+// one authority publishes (`samples.substrate.reamde.dev/tasks/*`), or every kind
 // (`*`). Ops and agents stay exact — an agent identity has no authority half
 // to cut on, and the three ops are a closed enum where an empty list already
 // says "all of them".

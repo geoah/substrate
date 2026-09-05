@@ -1,0 +1,41 @@
+# Shipped vocabulary ported from mneme v4: the things done on a
+# schedule that are not calendar events. A routine is the generic recurring
+# obligation (a chore, a habit, hygiene, taking out the bins); when it wraps
+# something richer (a medication, a workout template, a project) the unpinned
+# `subject` reference points at it without coupling this package to those.
+#
+# The recurrence stance is the substrate's: the RRULE is stored and never
+# expanded, and an occurrence exists only when a routinelog marks it.
+#
+# no new actors: writes arrive under the actor of whatever runs.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: samples.substrate.reamde.dev/routines
+data:
+  authority: samples.substrate.reamde.dev
+  package: routines
+  # version 2: `routine` binds `recurring` and `routinelog` binds
+  # `occurrencelog`, replacing the copied properties (#122).
+  # version 4: `routine`'s enum property `kind` is `category` (#125).
+  # version 5: `rdates` lands with the `recurring` trait's move.
+  # version 6: every link is a `type: reference` property carrying
+  # `mustExist: true`, and an owning one carries `onDelete: cascade`.
+  version: 6
+---
+# ---- the bundle document: the import unit -----------------------------------
+# A SAMPLE bundle: kinds only, imported from the registry.
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: samples.substrate.reamde.dev/routines
+data:
+  authority: samples.substrate.reamde.dev
+  package: routines
+  description: >-
+    The generic recurring obligation: routines with an RRULE and a time-of-day
+    window, and the done-or-skipped log against each occurrence. Missed is
+    computed from absence, never stored.
+  requires:
+    - samples.substrate.reamde.dev/scheduling
+  installs:
+    - samples.substrate.reamde.dev/routines/routine
+    - samples.substrate.reamde.dev/routines/routinelog

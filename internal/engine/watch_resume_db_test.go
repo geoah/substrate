@@ -20,7 +20,7 @@ func TestWatchResumesGaplesslyAcrossARestart(t *testing.T) {
 	dsn := testdb.NewSchema(t)
 	open := func() (substrate.Service, substrate.Dataset) {
 		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 		if err != nil {
 			t.Fatalf("open engine: %v", err)
 		}
@@ -32,7 +32,7 @@ func TestWatchResumesGaplesslyAcrossARestart(t *testing.T) {
 	}
 
 	svc1, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey),
-		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestWatchResumesGaplesslyAcrossARestart(t *testing.T) {
 	}
 	importVocabulary(t, ds1, "tasks")
 	mustPut(t, ds1, owner, substrate.PutInput{
-		Kind:       "tasks.substrate.reamde.dev/task",
+		Kind:       "samples.substrate.reamde.dev/tasks/task",
 		Properties: map[string]any{"name": "before the restart"},
 	})
 	// What a consumer remembers: the last seq it saw.
@@ -60,11 +60,11 @@ func TestWatchResumesGaplesslyAcrossARestart(t *testing.T) {
 	svc2, ds2 := open()
 	t.Cleanup(func() { _ = svc2.Close() })
 	mustPut(t, ds2, owner, substrate.PutInput{
-		Kind:       "tasks.substrate.reamde.dev/task",
+		Kind:       "samples.substrate.reamde.dev/tasks/task",
 		Properties: map[string]any{"name": "after the restart"},
 	})
 	mustPut(t, ds2, owner, substrate.PutInput{
-		Kind:       "tasks.substrate.reamde.dev/task",
+		Kind:       "samples.substrate.reamde.dev/tasks/task",
 		Properties: map[string]any{"name": "and one more"},
 	})
 

@@ -13,9 +13,9 @@ import (
 // silent, problems named instead of dropped.
 
 const (
-	kindMedSchedule = "health.substrate.reamde.dev/medicationschedule"
-	kindMedLog      = "health.substrate.reamde.dev/medicationschedulelog"
-	kindSeries      = "calendar.substrate.reamde.dev/calendareventseries"
+	kindMedSchedule = "samples.substrate.reamde.dev/health/medicationschedule"
+	kindMedLog      = "samples.substrate.reamde.dev/health/medicationschedulelog"
+	kindSeries      = "samples.substrate.reamde.dev/calendar/calendareventseries"
 )
 
 func seedRecurring(ds *fakeDataset) {

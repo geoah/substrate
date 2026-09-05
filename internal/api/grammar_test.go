@@ -65,7 +65,7 @@ func TestRecordURLIsItsReference(t *testing.T) {
 	tok := env.svc.token("geoah")
 	ds := env.svc.datasets["geoah"]
 
-	const kind = "people.substrate.reamde.dev/person"
+	const kind = "samples.substrate.reamde.dev/people/person"
 	const id = "r1"
 	ds.put(&substrate.Record{ID: id, Kind: kind, Version: 1})
 	path := "/api/" + APIVersion + "/" + vocabulary.RecordPath(kind, id)
@@ -84,10 +84,10 @@ func TestShadowedCollectionsAreReachable(t *testing.T) {
 	tok := env.svc.token("geoah")
 	ds := env.svc.datasets["geoah"]
 	ds.types = append(ds.types, substrate.KindInfo{
-		Identity: "core.substrate.reamde.dev/recordmerge", Name: "recordmerge",
-		Authority: coreAuthority, Version: 1, Plural: "recordmerges", Source: "builtin",
+		Identity: "substrate.reamde.dev/core/recordmerge", Name: "recordmerge",
+		Authority: coreAuthorityName, Package: "core", Version: 1, Plural: "recordmerges", Source: "builtin",
 	})
-	rec := env.do(t, http.MethodGet, "/api/v1/"+coreAuthority+"/recordmerge", tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/"+corePackage+"/recordmerge", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 }
 
@@ -115,14 +115,18 @@ func TestReservedRecordIdsRefuseBothDirections(t *testing.T) {
 	wantErrorCode(t, del, http.StatusBadRequest, codeBadRequest)
 }
 
-// A one-segment path names no kind: every kind carries an authority, so the
-// old authority-less collection shape (`/api/v1/note`) is gone and answers 404
-// rather than the console's index.html (decision 0042).
-func TestOneSegmentPathIs404(t *testing.T) {
+// A path shorter than a kind reference names no kind: every kind carries an
+// authority AND a package (decisions 0042, 0047), so both the old
+// authority-less shape (`/api/v1/note`) and the old two-segment collection
+// (`/api/v1/example.com/note`) are gone and answer 404 rather than the
+// console's index.html.
+func TestShortPathIs404(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
-	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
-		rec := env.do(t, method, "/api/v1/note", tok, map[string]any{})
-		wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
+	for _, path := range []string{"/api/v1/note", "/api/v1/example.com/note"} {
+		for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+			rec := env.do(t, method, path, tok, map[string]any{})
+			wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
+		}
 	}
 }

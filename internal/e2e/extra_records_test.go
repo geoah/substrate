@@ -91,9 +91,9 @@ const (
 	xrDupLoser    = "x-dup-b"
 	xrDupTask     = "x-dup-task"
 
-	xrMergeCollection = "/api/v1/core.substrate.reamde.dev/recordmerge"
-	xrMergeKind       = "core.substrate.reamde.dev/recordmerge"
-	xrSplitKind       = "core.substrate.reamde.dev/recordsplit"
+	xrMergeCollection = "/api/v1/substrate.reamde.dev/core/recordmerge"
+	xrMergeKind       = "substrate.reamde.dev/core/recordmerge"
+	xrSplitKind       = "substrate.reamde.dev/core/recordsplit"
 )
 
 // xrRecord is the read shape these cases assert on: the harness `record`

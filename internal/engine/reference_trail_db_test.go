@@ -19,7 +19,8 @@ import (
 
 const (
 	noteAuthority = "refnotes.example.com"
-	typeNote      = noteAuthority + "/note"
+	notePackage   = noteAuthority + "/refnotes"
+	typeNote      = notePackage + "/note"
 )
 
 // noteManifest is one kind pointing at people three ways: a cascading owner
@@ -34,16 +35,13 @@ func noteManifest(version int, linkProps bool) enginetest.Manifest {
 	return enginetest.Manifest{
 		Name: "refnotes", Authority: noteAuthority,
 		Manifests: []map[string]any{
+			vocabulary.PackageManifest(notePackage, int64(version)),
 			{
-				"kind":     "core.substrate.reamde.dev/authority",
-				"metadata": map[string]any{"id": noteAuthority},
-				"data":     map[string]any{"version": version},
-			},
-			{
-				"kind":     "core.substrate.reamde.dev/kind",
+				"kind":     "substrate.reamde.dev/core/kind",
 				"metadata": map[string]any{"id": typeNote},
 				"data": map[string]any{
 					"authority":       noteAuthority,
+					"package":         "refnotes",
 					"names":           map[string]any{"singular": "note", "plural": "notes"},
 					"displayTemplate": "{label}",
 					"properties": map[string]any{

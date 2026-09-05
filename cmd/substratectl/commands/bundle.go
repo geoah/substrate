@@ -9,10 +9,10 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// bundlePath is /api/v1/core.substrate.reamde.dev/bundle/{segments…} — the
+// bundlePath is /api/v1/substrate.reamde.dev/core/bundle/{segments…} — the
 // bundle kind's collection and its records (decision 0033).
 func bundlePath(segments ...string) string {
-	return collectionPath(coreAuthority, "bundle", segments...)
+	return collectionPath(corePackage, "bundle", segments...)
 }
 
 // patchBundleState PATCHes the bundle record with one runtime-state transition
@@ -173,8 +173,8 @@ func (a *app) bundlePurgeCommand() *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "purge <id>",
-		Short: "DELETE the bundle's authority data (soft delete + finalizers + GC); requires --yes",
-		Long: `Purge tombstones every live data record in the bundle's owned authority. It runs
+		Short: "DELETE the bundle's package data (soft delete + finalizers + GC); requires --yes",
+		Long: `Purge tombstones every live data record in the bundle's owned package. It runs
 BEFORE uninstall — uninstall is refused while data lives — and is separately
 confirmed with --yes, refused while the bundle is still running (disable it
 first). Provider tokens are revoked through the finalizer flow before GC

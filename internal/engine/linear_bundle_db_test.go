@@ -2,7 +2,7 @@ package engine
 
 // The Linear bundle — sync-only issue mirroring with a jointly-owned task
 // projection. Three proofs, from the shipped closure at.
-// ./../kinds/linear.bundles.substrate.reamde.dev:
+// ./../kinds/providers.substrate.reamde.dev/linear:
 //
 //  1. TestLinearBundleAdmitsSchema — the closure ADMITS through the schema
 //     loader: the bundle declares the `client` input (facility-read, never
@@ -57,21 +57,20 @@ import (
 )
 
 const (
-	linearExampleDir   = "../../kinds/linear.bundles.substrate.reamde.dev"
-	linearAuthority    = "linear.bundles.substrate.reamde.dev"
-	linearBundleRow    = linearAuthority + "/linear"
-	linearConfigType   = linearAuthority + "/config"
-	linearAccountType  = linearAuthority + "/account"
-	linearUserType     = linearAuthority + "/user"
-	linearTeamType     = linearAuthority + "/team"
-	linearIssueType    = linearAuthority + "/issue"
-	linearSyncFn       = linearAuthority + "/issuessync"
-	linearProjFn       = linearAuthority + "/taskprojection"
-	linearUserMapping  = linearAuthority + "/userperson"
-	linearIssueMapping = linearAuthority + "/issueperson"
+	linearExampleDir   = "../../kinds/providers.substrate.reamde.dev/linear"
+	linearPackage      = "providers.substrate.reamde.dev/linear"
+	linearConfigType   = linearPackage + "/config"
+	linearAccountType  = linearPackage + "/account"
+	linearUserType     = linearPackage + "/user"
+	linearTeamType     = linearPackage + "/team"
+	linearIssueType    = linearPackage + "/issue"
+	linearSyncFn       = linearPackage + "/issuessync"
+	linearProjFn       = linearPackage + "/taskprojection"
+	linearUserMapping  = linearPackage + "/userperson"
+	linearIssueMapping = linearPackage + "/issueperson"
 
-	linearPersonType = "people.substrate.reamde.dev/person"
-	linearTaskType   = "tasks.substrate.reamde.dev/task"
+	linearPersonType = "samples.substrate.reamde.dev/people/person"
+	linearTaskType   = "samples.substrate.reamde.dev/tasks/task"
 
 	// The sync body's live GraphQL endpoint — the exact string the fake-API
 	// fixture substitutes for its loopback stub.
@@ -90,7 +89,7 @@ func TestLinearBundleAdmitsSchema(t *testing.T) {
 	// alone) plus the shipped VOCABULARY bundles this repository imported —
 	// what a closure declaring onto people/tasks/messaging/calendar/media
 	// needs present, and what `requires:` names.
-	reg, err := enginetest.SeededRegistry("../../kinds/core.substrate.reamde.dev")
+	reg, err := enginetest.SeededRegistry("../../kinds/substrate.reamde.dev/core")
 	if err != nil {
 		t.Fatalf("build the repository registry: %v", err)
 	}
@@ -102,7 +101,7 @@ func TestLinearBundleAdmitsSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse bundle.yaml: %v", err)
 	}
-	authorities, err := vocabulary.BuildAuthorities(docs, vocabulary.SourceInstalled)
+	authorities, err := vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
 	if err != nil {
 		t.Fatalf("build the bundle authority: %v", err)
 	}
@@ -114,9 +113,9 @@ func TestLinearBundleAdmitsSchema(t *testing.T) {
 	// (facility-read, never injected), and carries the TRUSTED
 	// oauth2 provider metadata: Linear's endpoints and the
 	// enabledIssues→read scope map live on the immutable install artifact.
-	b, ok := reg.BundleOf(linearAuthority)
+	b, ok := reg.BundleOf(linearPackage)
 	if !ok {
-		t.Fatalf("no bundle owns %s after install", linearAuthority)
+		t.Fatalf("no bundle owns %s after install", linearPackage)
 	}
 	in, ok := b.Inputs["client"]
 	if !ok {
@@ -233,16 +232,16 @@ func TestLinearBundleInstalls(t *testing.T) {
 
 	// The bundle row and every schema member landed as its own record.
 	for id, wantType := range map[string]string{
-		linearBundleRow:    "core.substrate.reamde.dev/bundle",
-		linearConfigType:   "core.substrate.reamde.dev/kind",
-		linearAccountType:  "core.substrate.reamde.dev/kind",
-		linearUserType:     "core.substrate.reamde.dev/kind",
-		linearTeamType:     "core.substrate.reamde.dev/kind",
-		linearIssueType:    "core.substrate.reamde.dev/kind",
-		linearSyncFn:       "core.substrate.reamde.dev/function",
-		linearProjFn:       "core.substrate.reamde.dev/function",
-		linearUserMapping:  "core.substrate.reamde.dev/recordmapping",
-		linearIssueMapping: "core.substrate.reamde.dev/recordmapping",
+		linearPackage:      "substrate.reamde.dev/core/bundle",
+		linearConfigType:   "substrate.reamde.dev/core/kind",
+		linearAccountType:  "substrate.reamde.dev/core/kind",
+		linearUserType:     "substrate.reamde.dev/core/kind",
+		linearTeamType:     "substrate.reamde.dev/core/kind",
+		linearIssueType:    "substrate.reamde.dev/core/kind",
+		linearSyncFn:       "substrate.reamde.dev/core/function",
+		linearProjFn:       "substrate.reamde.dev/core/function",
+		linearUserMapping:  "substrate.reamde.dev/core/recordmapping",
+		linearIssueMapping: "substrate.reamde.dev/core/recordmapping",
 	} {
 		row, err := ds.Get(ctx, wantType, id)
 		if err != nil {
@@ -254,7 +253,7 @@ func TestLinearBundleInstalls(t *testing.T) {
 	}
 
 	// Computed status: installed, enabled, unconfigured, both functions.
-	st, err := ds.BundleStatus(ctx, linearAuthority)
+	st, err := ds.BundleStatus(ctx, linearPackage)
 	if err != nil {
 		t.Fatalf("bundle status: %v", err)
 	}
@@ -466,8 +465,8 @@ func linearOpenDataset(t *testing.T, client *http.Client) (*service, *dataset) {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	svc, err := Open(ctx, dsn,
-		WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/core.substrate.reamde.dev"),
-		WithOAuth("test-state-key", "https://substrate.example/api/v1/core.substrate.reamde.dev/oauth/callback", client),
+		WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		WithOAuth("test-state-key", "https://substrate.example/api/v1/substrate.reamde.dev/core/oauth/callback", client),
 		WithCredentialKey(TestCredentialKey))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
@@ -545,7 +544,7 @@ func linearGet(t *testing.T, ds *dataset, typ, id string) *substrate.Record {
 // stamped as the sync's own actor would be skipped, not delivered.
 func linearResync(t *testing.T, ds *dataset, accountID string) {
 	t.Helper()
-	syncActor := substrate.FunctionActor(linearAuthority, vocabulary.KindName(linearProjFn))
+	syncActor := substrate.FunctionActor(vocabulary.SplitKindRef(linearProjFn))
 	if _, err := ds.Patch(context.Background(), syncActor, linearAccountType, accountID, substrate.PatchInput{
 		Properties: map[string]any{"lastSyncedAt": nil},
 	}); err != nil {

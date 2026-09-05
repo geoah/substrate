@@ -51,7 +51,7 @@ func TestRegistrationCreatesTheUserAndNothingBefore(t *testing.T) {
 	}
 	// The repository's self-description carries the authority it owns, so a
 	// client that only speaks the record API can learn where its kinds live.
-	self, err := ds.Get(ctx, "core.substrate.reamde.dev/repository", ds.Repository().ID)
+	self, err := ds.Get(ctx, "substrate.reamde.dev/core/repository", ds.Repository().ID)
 	if err != nil {
 		t.Fatalf("the repository record: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestRegistrationCreatesTheUserAndNothingBefore(t *testing.T) {
 	}
 
 	// The credential is a singleton record holding REFS, never material.
-	cred, err := ds.Get(ctx, "core.substrate.reamde.dev/credential", "self")
+	cred, err := ds.Get(ctx, "substrate.reamde.dev/core/credential", "self")
 	if err != nil {
 		t.Fatalf("the credential record: %v", err)
 	}
@@ -402,28 +402,28 @@ func TestAuthKindsRefuseGenericWrites(t *testing.T) {
 	}
 
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/credential", ID: "self",
+		Kind: "substrate.reamde.dev/core/credential", ID: "self",
 		Properties: map[string]any{"username": "geoah", "passwordRef": "forged"},
 	}); err == nil {
 		t.Fatal("the credential was forged through the generic surface")
 	} else {
 		wantErr(t, err, substrate.ErrForbidden, "credential put")
 	}
-	if _, err := ds.Patch(ctx, owner, "core.substrate.reamde.dev/credential", "self", substrate.PatchInput{
+	if _, err := ds.Patch(ctx, owner, "substrate.reamde.dev/core/credential", "self", substrate.PatchInput{
 		Properties: map[string]any{"passwordRef": "forged"},
 	}); err == nil {
 		t.Fatal("the credential was repointed through the generic surface")
 	}
-	if _, err := ds.Delete(ctx, owner, "core.substrate.reamde.dev/credential", "self"); err == nil {
+	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/credential", "self"); err == nil {
 		t.Fatal("the credential was deleted through the generic surface")
 	}
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/token", Properties: map[string]any{"label": "forged", "hash": "x"},
+		Kind: "substrate.reamde.dev/core/token", Properties: map[string]any{"label": "forged", "hash": "x"},
 	}); err == nil {
 		t.Fatal("a token was forged through the generic surface")
 	}
 	// Reading and listing both kinds stays ordinary.
-	if _, err := ds.Get(ctx, "core.substrate.reamde.dev/credential", "self"); err != nil {
+	if _, err := ds.Get(ctx, "substrate.reamde.dev/core/credential", "self"); err != nil {
 		t.Fatalf("the credential must stay readable: %v", err)
 	}
 }
@@ -553,7 +553,7 @@ func TestInsecureDisableTOTPTakesThePasswordAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("authenticate the registration token: %v", err)
 	}
-	cred, err := ds.Get(ctx, "core.substrate.reamde.dev/credential", "self")
+	cred, err := ds.Get(ctx, "substrate.reamde.dev/core/credential", "self")
 	if err != nil {
 		t.Fatalf("the credential record: %v", err)
 	}

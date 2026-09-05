@@ -10,23 +10,25 @@
  * schema/API term and `installed` stays the wire field the status carries. An
  * bundle that connects an external provider is an INTEGRATION — a catalog
  * FACET carried by the backend `integration` flag, never derived from OAuth or
- * account shape here. A VOCABULARY bundle is the other catalog facet
- * (backend `vocabulary`): a bare authority shipping kinds and nothing else,
- * which a fresh repository must import before anything can map onto it. */
+ * account shape here. A bundle owns exactly one PACKAGE (decision 0047), and
+ * its id IS that package identity. */
 
 import type { BundleStatus, InputStatus, SetupItem } from "@/lib/api/bundles"
 import type { CatalogItem } from "@/lib/api/catalog"
-import { CORE_AUTHORITY } from "@/lib/api/http"
+import { CORE_PACKAGE } from "@/lib/api/http"
 import type { BundleUpgrade, KindInfo } from "@/lib/api/types"
-import { kindByIdentity, splitKind } from "@/lib/definition"
+import { kindByIdentity, kindPackage, splitKind } from "@/lib/definition"
 
 /** One bundle row: the installed status (when the lifecycle knows it) and
  * the catalog entry (when it is a shipped closure) folded by bundle id. The
  * `integration` facet comes from the catalog metadata (backend flag). */
 export interface BundleRow {
+  /** The bundle's id — the package identity it owns. */
   id: string
   name: string
   authority: string
+  /** The owned package's own word. */
+  package: string
   status?: BundleStatus
   catalog?: CatalogItem
   installed: boolean
@@ -35,9 +37,7 @@ export interface BundleRow {
   /** Catalog facet: a worked example — installable, readable, safe to run on
    * a fresh repository. */
   example: boolean
-  /** Catalog facet: a pure-vocabulary bundle — kinds and nothing else. */
-  vocabulary: boolean
-  /** The authorities this closure declares against; the server refuses the
+  /** The packages this closure declares against; the server refuses the
    * import while one of them is missing (catalog.Bundle.requires). */
   requires: string[]
   /** The upgrade preview, present only when the shipped closure moved past
@@ -58,11 +58,11 @@ export function mergeBundles(
       id: item.id,
       name: item.name,
       authority: item.authority,
+      package: item.package,
       catalog: item,
       installed: item.installed,
       integration: Boolean(item.integration),
       example: Boolean(item.example),
-      vocabulary: Boolean(item.vocabulary),
       requires: item.requires ?? [],
       upgrade: item.upgrade,
     })
@@ -73,16 +73,16 @@ export function mergeBundles(
       id: status.id,
       name: status.name,
       authority: status.authority,
+      package: status.package,
       status,
       catalog: existing?.catalog,
       installed: status.installed,
-      integration: existing?.integration ?? false,
-      example: existing?.example ?? false,
       // The closure facets are the CATALOG's to state; a bundle applied
       // outside the shipped registry carries neither, and guessing one from
-      // its authority's shape would be the derivation the backend refuses to
+      // its package's shape would be the derivation the backend refuses to
       // make.
-      vocabulary: existing?.vocabulary ?? false,
+      integration: existing?.integration ?? false,
+      example: existing?.example ?? false,
       requires: existing?.requires ?? [],
       upgrade: existing?.upgrade,
     })
@@ -95,14 +95,11 @@ export function mergeBundles(
 }
 
 /** The catalog-list facet, orthogonal to whether a row is imported: `all` shows
- * every bundle, `vocabulary` narrows to the pure-vocabulary bundles (what a
- * fresh repository imports first), `integrations` to provider integrations,
- * `examples` to the worked demonstrations — which is where a substrate with no
- * llmprovider row of its own is pointed — and `upgrades` to the imported
- * bundles whose shipped closure moved past what is stored (the sidebar badge's
- * set). */
-export type BundleFacet =
-  "all" | "vocabulary" | "integrations" | "examples" | "upgrades"
+ * every bundle, `integrations` narrows to provider integrations, `examples` to
+ * the worked demonstrations — which is where a substrate with no llmprovider
+ * row of its own is pointed — and `upgrades` to the imported bundles whose
+ * shipped closure moved past what is stored (the sidebar badge's set). */
+export type BundleFacet = "all" | "integrations" | "examples" | "upgrades"
 
 export function filterBundles(
   rows: BundleRow[],
@@ -113,8 +110,6 @@ export function filterBundles(
       return rows.filter((r) => r.integration)
     case "examples":
       return rows.filter((r) => r.example)
-    case "vocabulary":
-      return rows.filter((r) => r.vocabulary)
     case "upgrades":
       return rows.filter((r) => upgradeAvailable(r))
     default:
@@ -163,29 +158,32 @@ export function upgradeMotion(upgrade: BundleUpgrade): string {
 
 // ── requirements: what must be imported first ───────────────────────────────
 
-/** One entry of a closure's `requires:` — an AUTHORITY it declares against —
+/** One entry of a closure's `requires:` — a PACKAGE it declares against —
  * resolved against what this repository already holds. */
 export interface Requirement {
-  /** The required authority, exactly as the closure names it. */
-  authority: string
+  /** The required package identity, exactly as the closure names it. */
+  package: string
   /** This repository already has it, so admission will not refuse for it. */
   present: boolean
 }
 
-/** The authorities this repository HOLDS, from the two reads the registry
- * page already makes: every imported bundle's owned authority, and every
- * authority the kind registry has reconciled (which covers core and anything
- * applied outside the shipped catalog). This is the console's read of the
- * check `schema.resolveBundle` runs server-side — a bundle whose status says
+/** The packages this repository HOLDS, from the two reads the registry page
+ * already makes: every imported bundle's owned package, and every package the
+ * kind registry has reconciled (which covers core and anything applied outside
+ * the shipped catalog). This is the console's read of the check
+ * `schema.resolveBundle` runs server-side — a bundle whose status says
  * `installed: false` (uninstalled or quarantined) is NOT in the live registry,
- * so its authority does not count. */
-export function presentAuthorities(
+ * so its package does not count. */
+export function presentPackages(
   rows: BundleRow[],
   kinds: KindInfo[] = []
 ): Set<string> {
   const out = new Set<string>()
-  for (const row of rows) if (row.installed) out.add(row.authority)
-  for (const kind of kinds) if (kind.authority) out.add(kind.authority)
+  for (const row of rows) if (row.installed) out.add(row.id)
+  for (const kind of kinds) {
+    const identity = kindPackage(kind)
+    if (identity) out.add(identity)
+  }
   return out
 }
 
@@ -194,9 +192,9 @@ export function requirementsOf(
   row: Pick<BundleRow, "requires">,
   present: ReadonlySet<string>
 ): Requirement[] {
-  return row.requires.map((authority) => ({
-    authority,
-    present: present.has(authority),
+  return row.requires.map((identity) => ({
+    package: identity,
+    present: present.has(identity),
   }))
 }
 
@@ -206,18 +204,18 @@ export function missingRequirements(
   return requirements.filter((r) => !r.present)
 }
 
-/** "people.substrate.reamde.dev", "people.substrate.reamde.dev and tasks.substrate.reamde.dev", "a, b and c". */
+/** "samples.substrate.reamde.dev/people", "samples.substrate.reamde.dev/people and samples.substrate.reamde.dev/tasks", "a, b and c". */
 function andList(names: string[]): string {
   if (names.length <= 1) return names[0] ?? ""
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`
 }
 
 /** The refusal stated BEFORE the server states it: what to import first, named
- * the way the server names it (authorities, not bundle ids). Empty string when
- * nothing is missing — the caller shows no hint at all. */
+ * the way the server names it (packages, which are also the bundle ids). Empty
+ * string when nothing is missing — the caller shows no hint at all. */
 export function requiresHint(missing: Requirement[]): string {
   if (!missing.length) return ""
-  const names = andList(missing.map((r) => r.authority))
+  const names = andList(missing.map((r) => r.package))
   return missing.length === 1
     ? `Import ${names} first — this bundle declares against it.`
     : `Import ${names} first — this bundle declares against them.`
@@ -247,16 +245,16 @@ export function hasTrait(kind: KindInfo, trait: string): boolean {
   return Array.isArray(traits) && traits.includes(trait)
 }
 
-/** The bundle's account-config kind: the kind in its owned authority that
+/** The bundle's account-config kind: the kind in its owned package that
  * implements the `accountconfig` trait (the host writes tokens onto its
  * records). Its presence is the signal that the bundle has provider
  * accounts to connect. */
 export function accountKindOf(
   kinds: KindInfo[],
-  bundleAuthority: string
+  bundlePackage: string
 ): KindInfo | undefined {
   return kinds.find(
-    (k) => k.authority === bundleAuthority && hasTrait(k, "accountconfig")
+    (k) => kindPackage(k) === bundlePackage && hasTrait(k, "accountconfig")
   )
 }
 
@@ -272,6 +270,8 @@ export interface KindRow {
   identity: string
   name: string
   authority?: string
+  /** The package's own word; absent with the authority. */
+  package?: string
   role?: "input" | "account"
   /** The kind's declared description: a chip says what it is on hover. From
    * the registry once the bundle is imported, and from the catalog's own
@@ -297,7 +297,7 @@ export function inputKindsOf(
  * entry; otherwise from the registry itself — every reconciled kind in the
  * bundle's owned authority. Sorted by display name. */
 export function installedKindRows(
-  bundle: Pick<BundleStatus, "authority" | "inputs">,
+  bundle: Pick<BundleStatus, "id" | "inputs">,
   kinds: KindInfo[],
   catalog?: CatalogItem
 ): KindRow[] {
@@ -305,10 +305,8 @@ export function installedKindRows(
   const identities =
     fromCatalog.length > 0
       ? fromCatalog
-      : kinds
-          .filter((k) => k.authority === bundle.authority)
-          .map((k) => k.identity)
-  const accountKind = accountKindOf(kinds, bundle.authority)
+      : kinds.filter((k) => kindPackage(k) === bundle.id).map((k) => k.identity)
+  const accountKind = accountKindOf(kinds, bundle.id)
   const inputKinds = inputKindsOf(bundle.inputs, catalog)
   // A bundle the repository has NOT imported has no registry entry for any of
   // its kinds, so the closure's own descriptions are the only ones there are.
@@ -324,6 +322,7 @@ export function installedKindRows(
       identity,
       name: k?.name ?? splitKind(identity).name,
       authority: k?.authority,
+      package: k?.package,
       role,
       description: k?.description || described[identity],
     }
@@ -348,9 +347,9 @@ export interface ShippedRecordRow {
 }
 
 const CORE_DECLARATION_KINDS = {
-  function: `${CORE_AUTHORITY}/function`,
-  agent: `${CORE_AUTHORITY}/agent`,
-  mapping: `${CORE_AUTHORITY}/recordmapping`,
+  function: `${CORE_PACKAGE}/function`,
+  agent: `${CORE_PACKAGE}/agent`,
+  mapping: `${CORE_PACKAGE}/recordmapping`,
 } as const
 
 export function bundleRecordRows(catalog?: CatalogItem): ShippedRecordRow[] {
@@ -375,15 +374,15 @@ export function bundleRecordRows(catalog?: CatalogItem): ShippedRecordRow[] {
 
 /** Whether the bundle actually declares the provider interfaces that earn
  * the OAuth/callback/connect copy on its detail page. True when it ships an
- * `accountconfig` account kind in its owned authority, or one of its declared
+ * `accountconfig` account kind in its owned package, or one of its declared
  * inputs resolves records of an `oauth2`-trait kind (the OAuth client input).
- * Derived from the bundle's own declared traits, never from names or authority
+ * Derived from the bundle's own declared traits, never from names or package
  * suffixes. */
 export function declaresProviderInterfaces(
-  bundle: Pick<BundleStatus, "authority" | "inputs">,
+  bundle: Pick<BundleStatus, "id" | "inputs">,
   kinds: KindInfo[]
 ): boolean {
-  if (accountKindOf(kinds, bundle.authority)) return true
+  if (accountKindOf(kinds, bundle.id)) return true
   return Boolean(oauthClientInput(bundle, kinds))
 }
 

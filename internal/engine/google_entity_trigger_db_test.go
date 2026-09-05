@@ -61,10 +61,10 @@ func TestGoogleRecordTriggerSyncsOnlyTheNamedAccount(t *testing.T) {
 	envelope := map[string]any{
 		"change": map[string]any{
 			"seq": int64(1), "op": "update", "id": "acct-named",
-			"kind": googleAuthority + "/account",
+			"kind": googlePackage + "/account",
 		},
 		"record": map[string]any{
-			"id": "acct-named", "kind": googleAuthority + "/account",
+			"id": "acct-named", "kind": googlePackage + "/account",
 			"properties": gmailStepProps(nil),
 		},
 		"repository": map[string]any{"owner": "test"},

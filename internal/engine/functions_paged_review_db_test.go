@@ -59,7 +59,7 @@ func TestPagedCursorOwnershipCAS(t *testing.T) {
 	t.Parallel()
 	ds := openInternalDataset(t)
 	ctx := context.Background()
-	chain := "owner.test.dev/on-cas/1"
+	chain := "owner.test.dev/owner/on-cas/1"
 	owner := pagedOwner{triggerID: "on-cas", kind: pagedKindRecord, identity: "1"}
 
 	claim := func() error {
@@ -124,17 +124,17 @@ func TestPagedDrainBudgetSpansRetries(t *testing.T) {
 	source := `
 def main(input, host):
     page = input.get("resume") or 0
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "p-%d" % page, "properties": {"name": "x"}}],
             "more": {"cursor": page + 1}}
 `
-	ds, triggerID := openPagedDataset(t, "pagedbudget.test.dev", source)
+	ds, triggerID := openPagedDataset(t, "pagedbudget.test.dev/pagedbudget", source)
 	ctx := context.Background()
 	actor := substrate.Actor("connector:pagedbudget")
 
 	defer withMaxDrainEffects(3)()
 
-	w, err := ds.Put(ctx, actor, substrate.PutInput{Kind: "pagedbudget.test.dev/widget", Properties: map[string]any{"name": "runaway"}})
+	w, err := ds.Put(ctx, actor, substrate.PutInput{Kind: "pagedbudget.test.dev/pagedbudget/widget", Properties: map[string]any{"name": "runaway"}})
 	if err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -149,11 +149,11 @@ def main(input, host):
 	chain := chainKey(ds, triggerID, wch.Seq)
 	// The budget allowed exactly three effects; the fourth page never committed.
 	for page := range 3 {
-		if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", fmt.Sprintf("p-%d", page)); err != nil {
+		if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", fmt.Sprintf("p-%d", page)); err != nil {
 			t.Fatalf("page %d missing under the budget: %v", page, err)
 		}
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "p-3"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "p-3"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("page 3 committed past the effect budget")
 	}
 	failures, err := ds.TriggerFailures(ctx, triggerID)
@@ -170,7 +170,7 @@ def main(input, host):
 	if _, err := ds.RetryTriggerFailure(ctx, triggerID, failures[0].ID); err == nil {
 		t.Fatalf("retry of a budget-exhausted chain succeeded, want a re-park")
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "p-3"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "p-3"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the retry reset the budget and committed page 3")
 	}
 	if cur, ok := pagedCursor(t, ds, chain); !ok || cur != 3 {
@@ -184,11 +184,11 @@ def main(input, host):
 // from the last committed page instead of replaying page zero.
 func TestPagedRedispatchResumesFromCursor(t *testing.T) {
 	t.Parallel()
-	ds, triggerID := openPagedDataset(t, "pagedredispatch.test.dev", pagedBody(5))
+	ds, triggerID := openPagedDataset(t, "pagedredispatch.test.dev/pagedredispatch", pagedBody(5))
 	ctx := context.Background()
 	actor := substrate.Actor("connector:pagedredispatch")
 
-	w, err := ds.Put(ctx, actor, substrate.PutInput{Kind: "pagedredispatch.test.dev/widget", Properties: map[string]any{"name": "crashed"}})
+	w, err := ds.Put(ctx, actor, substrate.PutInput{Kind: "pagedredispatch.test.dev/pagedredispatch/widget", Properties: map[string]any{"name": "crashed"}})
 	if err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -232,8 +232,8 @@ func TestPagedRedispatchResumesFromCursor(t *testing.T) {
 }
 
 const (
-	pagedSecretAuthority = "pagedsecret.bundles.substrate.reamde.dev"
-	pagedSecretValue     = "sk-paged-continuation-secret-77"
+	pagedSecretPackage = "pagedsecret.bundles.substrate.reamde.dev/pagedsecret"
+	pagedSecretValue   = "sk-paged-continuation-secret-77"
 )
 
 // installPagedSecretBundle stands up a bundle whose config carries a secret and
@@ -244,37 +244,37 @@ func installPagedSecretBundle(t *testing.T, ds *dataset) string {
 	ctx := context.Background()
 	triggerID := "on-pagedsecret"
 	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
-		Name: "pagedsecret", Authority: pagedSecretAuthority,
+		Name: "pagedsecret", Authority: pagedSecretPackage,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(pagedSecretAuthority, 0),
-			vocabulary.ActorManifest(pagedSecretAuthority, vocabulary.AuthorityActor(pagedSecretAuthority)),
-			vocabulary.BundleManifest(pagedSecretAuthority, map[string]any{
+			vocabulary.PackageManifest(pagedSecretPackage, 0),
+			vocabulary.ActorManifest(pagedSecretPackage, vocabulary.PackageActor(pagedSecretPackage)),
+			vocabulary.BundleManifest(pagedSecretPackage, map[string]any{
 				"description": "the paged secret bundle",
 				"inputs": map[string]any{
-					"connector": map[string]any{"kind": pagedSecretAuthority + "/sconfig", "inject": "functions"},
+					"connector": map[string]any{"kind": pagedSecretPackage + "/sconfig", "inject": "functions"},
 				},
 				"installs": []any{
-					pagedSecretAuthority + "/sconfig", pagedSecretAuthority + "/widget",
-					pagedSecretAuthority + "/pnote", pagedSecretAuthority + "/leakpage",
+					pagedSecretPackage + "/sconfig", pagedSecretPackage + "/widget",
+					pagedSecretPackage + "/pnote", pagedSecretPackage + "/leakpage",
 				},
 			}),
-			vocabulary.KindManifest(pagedSecretAuthority,
+			vocabulary.KindManifest(pagedSecretPackage,
 				map[string]any{"singular": "sconfig", "plural": "sconfigs"},
 				map[string]any{"properties": map[string]any{
 					"apiToken": map[string]any{"type": "secret"},
 				}}),
-			vocabulary.KindManifest(pagedSecretAuthority, map[string]any{"singular": "widget", "plural": "widgets"},
+			vocabulary.KindManifest(pagedSecretPackage, map[string]any{"singular": "widget", "plural": "widgets"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
-			vocabulary.KindManifest(pagedSecretAuthority, map[string]any{"singular": "pnote", "plural": "pnotes"},
+			vocabulary.KindManifest(pagedSecretPackage, map[string]any{"singular": "pnote", "plural": "pnotes"},
 				map[string]any{"properties": map[string]any{"text": map[string]any{"type": "string"}}}),
-			vocabulary.FunctionManifest(pagedSecretAuthority, "leakpage", map[string]any{
+			vocabulary.FunctionManifest(pagedSecretPackage, "leakpage", map[string]any{
 				"description": "leaks the config secret into the paged continuation cursor",
 				"runtime":     vocabulary.RuntimePython,
-				"permissions": map[string]any{"writes": []any{pagedSecretAuthority + "/pnote"}},
+				"permissions": map[string]any{"writes": []any{pagedSecretPackage + "/pnote"}},
 				"source": `
 def main(input, host):
     tok = input["config"]["inputs"]["connector"]["properties"]["apiToken"]
-    return {"effects": [{"action": "put", "kind": "pagedsecret.bundles.substrate.reamde.dev/pnote",
+    return {"effects": [{"action": "put", "kind": "pagedsecret.bundles.substrate.reamde.dev/pagedsecret/pnote",
                          "id": "pn-1", "properties": {"text": "hi"}}],
             "more": {"cursor": tok}}
 `,
@@ -284,15 +284,15 @@ def main(input, host):
 			ID: triggerID,
 			Properties: map[string]any{
 				"enabled":  true,
-				"source":   map[string]any{"record": map[string]any{"kinds": []any{pagedSecretAuthority + "/widget"}}},
-				"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", pagedSecretAuthority+"/leakpage"),
+				"source":   map[string]any{"record": map[string]any{"kinds": []any{pagedSecretPackage + "/widget"}}},
+				"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", pagedSecretPackage+"/leakpage"),
 			},
 		}},
 	}); err != nil {
 		t.Fatalf("register paged secret bundle: %v", err)
 	}
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: pagedSecretAuthority + "/sconfig", ID: "ps-cfg",
+		Kind: pagedSecretPackage + "/sconfig", ID: "ps-cfg",
 		Properties: map[string]any{"apiToken": pagedSecretValue},
 	}); err != nil {
 		t.Fatalf("put config: %v", err)
@@ -311,7 +311,7 @@ func TestPagedContinuationSecretRejected(t *testing.T) {
 	triggerID := installPagedSecretBundle(t, ds)
 
 	w, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: pagedSecretAuthority + "/widget", Properties: map[string]any{"name": "trip"},
+		Kind: pagedSecretPackage + "/widget", Properties: map[string]any{"name": "trip"},
 	})
 	if err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -335,7 +335,7 @@ func TestPagedContinuationSecretRejected(t *testing.T) {
 	if !strings.Contains(failures[0].LastError, "secret") {
 		t.Fatalf("the park reason does not name the secret rejection: %s", failures[0].LastError)
 	}
-	if _, err := ds.Get(ctx, pagedSecretAuthority+"/pnote", "pn-1"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, pagedSecretPackage+"/pnote", "pn-1"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the page effect committed even though the continuation was rejected")
 	}
 	if _, ok := pagedCursor(t, ds, chainKey(ds, triggerID, wch.Seq)); ok {
@@ -347,13 +347,13 @@ func TestPagedContinuationSecretRejected(t *testing.T) {
 // trigger is deleted, and the sweep collects a row whose trigger no longer lives
 // (and a stale, unreferenced row).
 func TestPagedCursorLifecycleDropAndSweep(t *testing.T) {
-	ds, triggerID := openPagedDataset(t, "pagedlifecycle.test.dev", pagedBody(5))
+	ds, triggerID := openPagedDataset(t, "pagedlifecycle.test.dev/pagedlifecycle", pagedBody(5))
 	ctx := context.Background()
 	actor := substrate.Actor("connector:pagedlifecycle")
 
 	restore := withMaxPages(2)
 
-	w, err := ds.Put(ctx, actor, substrate.PutInput{Kind: "pagedlifecycle.test.dev/widget", Properties: map[string]any{"name": "leaky"}})
+	w, err := ds.Put(ctx, actor, substrate.PutInput{Kind: "pagedlifecycle.test.dev/pagedlifecycle/widget", Properties: map[string]any{"name": "leaky"}})
 	if err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -380,7 +380,7 @@ func TestPagedCursorLifecycleDropAndSweep(t *testing.T) {
 	}
 
 	// A row whose trigger never existed is orphaned; the sweep collects it.
-	orphan := "pagedlifecycle.test.dev/on-ghost/9"
+	orphan := "pagedlifecycle.test.dev/pagedlifecycle/on-ghost/9"
 	if _, err := ds.db.ExecContext(ctx, `
 		INSERT INTO paged_cursors (chain, cursor, pages, version, effects, bytes, started_at, trigger_id, kind, identity, updated_at)
 		VALUES ($1, '0'::jsonb, 1, 1, 1, 1, $2, 'on-ghost', 'record', '9', $2)`,

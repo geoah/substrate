@@ -17,7 +17,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-const datetimeAuthority = "when.example.substrate.reamde.dev"
+const datetimePackage = "when.example.substrate.reamde.dev/when"
 
 // firedAtChronological is the chronological order of the fixture set, which
 // differs from its text order (.25Z, .5Z, 00Z, 01Z) at the whole-second row.
@@ -32,8 +32,8 @@ func installPings(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
 	ctx := context.Background()
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(datetimeAuthority, 0),
-		vocabulary.KindManifest(datetimeAuthority,
+		vocabulary.PackageManifest(datetimePackage, 0),
+		vocabulary.KindManifest(datetimePackage,
 			map[string]any{"singular": "ping", "plural": "pings"},
 			map[string]any{"properties": map[string]any{
 				"firedAt": map[string]any{"type": "datetime"},
@@ -48,7 +48,7 @@ func installPings(t *testing.T, ds substrate.Dataset) {
 		firedAtChronological[3], firedAtChronological[1],
 	} {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind:       datetimeAuthority + "/ping",
+			Kind:       datetimePackage + "/ping",
 			Properties: map[string]any{"firedAt": at},
 		})
 	}
@@ -61,7 +61,7 @@ func TestOrderByADatetimePropertySortsChronologically(t *testing.T) {
 	installPings(t, ds)
 
 	page, err := ds.List(ctx, substrate.Query{
-		Filter:  substrate.Filter{Kinds: []string{datetimeAuthority + "/ping"}},
+		Filter:  substrate.Filter{Kinds: []string{datetimePackage + "/ping"}},
 		OrderBy: []substrate.Order{{Property: "firedAt"}},
 		First:   50,
 	})
@@ -102,7 +102,7 @@ func TestKeysetWalkOverADatetimeOrderPagesAcrossPrecision(t *testing.T) {
 			t.Fatal("walk did not terminate")
 		}
 		page, err := ds.List(ctx, substrate.Query{
-			Filter:  substrate.Filter{Kinds: []string{datetimeAuthority + "/ping"}},
+			Filter:  substrate.Filter{Kinds: []string{datetimePackage + "/ping"}},
 			OrderBy: []substrate.Order{{Property: "firedAt"}},
 			First:   1,
 			After:   after,

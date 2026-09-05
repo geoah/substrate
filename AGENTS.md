@@ -66,8 +66,8 @@ database what is known today: green this morning, red this afternoon, same
 commit. It also needs the network, and `lint` is something a laptop can run on
 a plane. It has its own CI job for the same reason.
 
-**The YAML is formatted too.** `kinds/` is the contract as files, so its shape
-is held the way Go's is: `mise run fmt` writes it, `mise run fmt:check` fails
+**The YAML is formatted too.** `kinds/` and `samples/` are the contract as
+files, so their shape is held the way Go's is: `mise run fmt` writes it, `mise run fmt:check` fails
 on it, and the `lint` job runs both. Two rules are worth knowing before you
 write a document by hand. Block mappings only — `metadata: {id: x}` is refused
 by `lint:yaml`, `metadata:` with `id:` under it is the form; flow SEQUENCES
@@ -153,13 +153,14 @@ bin/substratectl --dsn "$DATABASE_URL" repository reseal <username>  # migrate l
 bin/substratectl --dsn "$DATABASE_URL" user reset <username>   # needs SUBSTRATE_CREDENTIAL_KEY
 ```
 
-**Registration seeds `core` and nothing else.** `tasks` above is a vocabulary
-bundle the repository imports, so a walkthrough that reaches for any non-core
-collection installs one first — `apply -f` of the closure's files, the
-console's Registry page, or `POST
-/api/v1/core.substrate.reamde.dev/catalog/{id}/install`, which are three doors
-to the same admission. A snippet that opens with `get people` on a fresh
-substrate is wrong, and was.
+**Registration seeds the `core` package and nothing else.** `tasks` above is a
+sample package the repository installs, so a walkthrough that reaches for any
+non-core collection installs one first: `apply -f` of the closure's files, the
+console's Registry page, or `POST /api/v1/catalog/{id}/install` (the id is the
+package, so its slash is percent-encoded:
+`samples.substrate.reamde.dev%2Ftasks`), which are three doors to the same
+admission. A snippet that opens with `get people` on a fresh substrate is
+wrong, and was.
 
 Config is `~/.config/substratectl/config.yaml` (override with
 `SUBSTRATECTL_CONFIG`): named contexts of `{name, server, username, authority,
@@ -175,8 +176,8 @@ prompt has a flag or a `--*-stdin` twin so the same command scripts headlessly.
 
 Everything — vocabulary declarations and data records alike — is one YAML document
 with **four** keys, `kind` / `metadata` / `data` / `status`. `kind` is the
-record's kind REFERENCE (`people.substrate.reamde.dev/person`; every kind
-carries an authority), `metadata.id` the record id,
+record's kind REFERENCE (`samples.substrate.reamde.dev/people/person`; every
+kind carries an authority and a package), `metadata.id` the record id,
 `data.properties` the declared properties with `data.edges` beside them —
 properties are NOT written straight onto `data`, and the CLI refuses a document
 that tries — and `status` is server-owned, ignored on input, so
@@ -195,12 +196,13 @@ words, and what each one replaced:
 | Word          | Is                                                        | Not          |
 | ------------- | --------------------------------------------------------- | ------------ |
 | **record**    | the thing stored; `record_kind`/`record_id` in every table | entity       |
-| **kind**      | what a record is; `{authority}/{name}`                     | type, schema |
-| **authority** | who publishes a kind; one DNS-style label                  | group        |
+| **kind**      | what a record is; `{authority}/{package}/{name}`           | type, schema |
+| **package**   | the kinds one authority versions, owns and quarantines together | namespace, module |
+| **authority** | who publishes a package; one DNS-style name                | group        |
 | **trait**     | a contract a kind implements                               | capability   |
 | **vocabulary**| kinds, traits and property types together; `/vocabulary/apply` | schema   |
 | **changelog** | the append-only sequence of deltas; the `changelog` table  | log          |
-| **bundle**    | the install unit; `/bundles`, and the `bundle` tier         | extension    |
+| **bundle**    | the install unit, named for the package it ships; `/bundles`, and the `bundle` tier | extension |
 | **input**     | a bundle's named configuration need; one record resolves per input (bound edge, the id `default`, then the sole record) | config, configType, singleton |
 | **edge**      | a named (`rel`), directed link between records              | relationship |
 
@@ -214,25 +216,37 @@ one. Anywhere else, each of them is a bug.
 
 ## Kind identity
 
-A kind reference is `{authority}/{name}`: the authority is a single
-dot-separated DNS-style label and the name never contains a slash, so the
-reference splits on its one slash. The authority is one path segment in
-`/api/v1/{authority}/{kind}` — the same shape Kubernetes uses to keep
-`networking.k8s.io` addressable.
+A kind reference is `{authority}/{package}/{name}`
+([0047](docs/decisions/0047-a-kind-lives-in-a-package.md)): the authority is a
+dot-separated DNS-style name, the package and the name are single lowercase
+words, so the reference splits on its two slashes without a registry: the
+authority is the one segment carrying a dot. A stored reference value is that
+plus the id, and a REST path is the reference under `/api/v1/`: three segments
+address a collection, four a record.
+
+The **package** is the unit. A kind may pin its own `version`, else it takes
+its package's; a stored closure the loader refuses parks its package; and
+`authorizeDeclarationWrite` reads the package row's `source`, so the seeded
+`substrate.reamde.dev/core` is the one closure a repository's token may not
+write. A bundle owns at least one package and its id IS that package.
 
 `substrate.reamde.dev` is a **placeholder**. Moving kind identity to URLs (so
 anyone can publish kinds from a git repo without owning DNS) is real design
 work and it has not happened. Do not half-do it. Its character budget is
 reserved
 ([0014](docs/decisions/0014-authorities-widen-only-outside-the-id-alphabet.md)):
-the record id alphabet is frozen and never gains `%`, an authority widens
-only with characters the id alphabet excludes and never gains a raw `/`, and
-first-label keying moves to the full authority or a hash of it before the
-grammar widens. The actors moved
-([0025](docs/decisions/0025-an-actor-carries-the-full-authority.md)):
-`bundle:<authority>`, `function:<authority>:<name>`,
-`agent:<authority>:<name>`, derived by the engine and never declared, with
-`connector:` retired. The GraphQL prefix is the one keying left.
+the record id alphabet is frozen and never gains `%`, and an authority widens
+only with characters the id alphabet excludes and never gains a raw `/`. 0047
+amends that record's third-job sentence, because the package segment is a third
+job for `/`; the rest of it stands, first-label reservation included. The
+actors are `bundle:<authority>:<package>`,
+`function:<authority>:<package>:<name>` and
+`agent:<authority>:<package>:<name>`, derived by the engine and never declared
+([0025](docs/decisions/0025-an-actor-carries-the-full-authority.md)). An
+installed kind's GraphQL name is `<Package>_<Kind>`, and the FULL authority
+joins it, dots folded to underscores, only to break a tie between two
+authorities publishing a package of one name. Nothing keys on a first label any
+more, which is 0014's last reservation discharged.
 
 ## House rules
 
@@ -244,24 +258,26 @@ grammar widens. The actors moved
   consumer builds against is `internal/substrate`; the engine is one
   implementation of it, and the API is tested entirely against a hand-written
   fake (`internal/api/fake_test.go`).
-- **The top level stays empty.** Every package is under `internal/` (or
-  `cmd/`); `kinds/` is the vocabulary as files, with the one Go file that
-  embeds it. No package is named for a language construct — no `types.go`, no
-  `iface.go`, no `utils`. An interface lives with the subject it describes.
+- **The top level stays empty.** Every Go package is under `internal/` (or
+  `cmd/`), and the two exceptions are the vocabulary as files: `kinds/` (the
+  seeded `core` package and the shipped providers) and `samples/` (the sample
+  packages a repository copies), each with the one Go file that embeds it. No
+  package is named for a language construct: no `types.go`, no `iface.go`, no
+  `utils`. An interface lives with the subject it describes.
 - **The changelog is the truth.** `internal/engine/fold.go` is the one path from changelog to
   `records`, so a live write and `RebuildRepository` cannot drift. Anything
   that writes `records` directly is wrong.
 - **A changed declaration ships a changed version.** Every document under
-  `kinds/` projects with a `version`, an incremental integer (a kind's own
-  `data.version` where it pins one, else its authority's, else 1). The boot
+  `kinds/` and `samples/` projects with a `version`, an incremental integer (a
+  kind's own `data.version` where it pins one, else its package's, else 1). The boot
   upgrade, the catalog's upgrade preview and the console's upgrade offer all
   key on it, so editing a declaration without bumping is an upgrade no
   repository ever receives. Through the API the engine maintains the version
   itself (a changed definition lands at stored+1), so hand-bumping is only
   for this tree, where the boot upgrade needs one total order across
-  binaries. Bump the kind's own version for a one-kind change,
-  the authority's (in its `bundle.yaml`) for a closure-wide one, and the
-  authority's when a declaration is removed, so the prune reads as an upgrade.
+  binaries. Bump the kind's own version for a one-kind change, the package's
+  (in its `bundle.yaml`) for a closure-wide one, and the package's when a
+  declaration is removed, so the prune reads as an upgrade.
   Additive changes (new kind, new optional property, new enum value, new
   state) upgrade cleanly; narrowings (drop, retype, remove a value, add
   `required`) are refused while live records hold the old shape, so prefer

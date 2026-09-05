@@ -18,9 +18,9 @@
 //     the shipped `account` reference (now unpinned) at.
 //
 //   - ImportVocabulary / SeededRegistry stand in for the creation seed's lost
-//     half: repository creation seeds CORE ALONE now, and the shipped
-//     vocabulary (people, tasks, messaging, calendar) is a set of
-//     vocabulary bundles a repository imports.
+//     half: repository creation seeds the CORE PACKAGE ALONE now, and the
+//     shipped vocabulary (people, tasks, messaging, calendar) is a set of
+//     sample packages a repository installs.
 //
 // It imports only substrate and schema, so both engine and engine_test may
 // import it without a cycle.
@@ -42,25 +42,40 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-const typeTrigger = "core.substrate.reamde.dev/trigger"
+const typeTrigger = "substrate.reamde.dev/core/trigger"
 
 // --- the shipped vocabulary, imported ------------------------------------------
 
-// CatalogDir is where the shipped bundles live, relative to the engine package.
-const CatalogDir = "../../kinds"
+// The two shipped trees, relative to the engine package: the provider packages
+// under kinds/, the sample packages under samples/.
+const (
+	CatalogDir = "../../kinds/" + providerAuthority
+	SamplesDir = "../../samples"
+)
 
-// Vocabulary names the shipped VOCABULARY bundles — the authorities repository
-// creation used to seed and no longer does (a fresh repository holds core
-// alone). Order follows the requires: people and scheduling come before the
-// authorities that declare against them (messaging and calendar map onto
-// people; tasks and calendar bind scheduling's traits).
+// The two shipped authorities a test installs from.
+const (
+	providerAuthority = "providers.substrate.reamde.dev"
+	// SampleAuthority is the authority every shipped sample is authored under.
+	SampleAuthority = "samples.substrate.reamde.dev"
+)
+
+// SamplePackage is a sample's package identity, from its bare name.
+func SamplePackage(name string) string { return SampleAuthority + "/" + name }
+
+// Vocabulary names the shipped SAMPLE packages a repository creation used to
+// seed and no longer does (a fresh repository holds the core package alone).
+// Order follows the requires: people and scheduling come before the packages
+// that declare against them (messaging and calendar map onto people; tasks and
+// calendar bind scheduling's traits).
 var Vocabulary = []string{"people", "scheduling", "tasks", "messaging", "calendar"}
 
-// ImportVocabulary imports shipped vocabulary bundles by their bare label
+// ImportVocabulary installs shipped sample packages by their bare name
 // ("people", "calendar") through the ONE install path — the schema-apply batch
 // verb, under the bundle's own actor, exactly as a catalog install does. A test
-// that reads or writes `people.substrate.reamde.dev/person` calls this first, because the
-// creation seed no longer writes that vocabulary into the repository.
+// that reads or writes `samples.substrate.reamde.dev/people/person` calls this
+// first, because the creation seed no longer writes that vocabulary into the
+// repository.
 func ImportVocabulary(ctx context.Context, ds substrate.Dataset, names ...string) error {
 	if len(names) == 0 {
 		names = Vocabulary
@@ -79,23 +94,22 @@ func ImportVocabulary(ctx context.Context, ds substrate.Dataset, names ...string
 			return nil
 		}
 		done[name] = true
-		docs, err := readBundleDir(filepath.Join(CatalogDir, name+".substrate.reamde.dev"))
+		docs, err := readBundleDir(filepath.Join(SamplesDir, name))
 		if err != nil {
 			return err
 		}
 		for _, req := range bundleRequires(docs) {
-			label, ok := strings.CutSuffix(req, ".substrate.reamde.dev")
-			// only a BARE label is a vocabulary bundle this helper can
-			// import; a categorized requirement ("google.bundles") is not
-			// one, and importing it here would be the catalog's job.
-			if !ok || strings.Contains(label, ".") {
+			// only a SAMPLE package is one this helper can install; a
+			// provider requirement is the catalog's job.
+			label, ok := strings.CutPrefix(req, SampleAuthority+"/")
+			if !ok {
 				continue
 			}
 			if err := importOne(label); err != nil {
 				return err
 			}
 		}
-		if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.BundleActor(name+".substrate.reamde.dev"), docs); err != nil {
+		if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.BundleActor(SampleAuthority, name), docs); err != nil {
 			return fmt.Errorf("enginetest: import %s: %w", name, err)
 		}
 		return nil
@@ -108,14 +122,17 @@ func ImportVocabulary(ctx context.Context, ds substrate.Dataset, names ...string
 	return nil
 }
 
-// ShelfAuthority is the fixture vocabulary InstallShelf brings: the shapes the
+// ShelfPackage is the fixture vocabulary InstallShelf brings: the shapes the
 // engine suite exercises that no shipped vocabulary carries any more (the
 // media bundle used to, until decision record 0015 held it out of the tree).
 // `book` is a mapping target, so its id is server-assigned and pointers into it
 // resolve canonically; `bookedition` carries the refinement-typed asin/isbn
 // pair, an enum and the writer's own id; `description` is the one embeddable
 // property.
-const ShelfAuthority = "shelf.test.dev"
+const (
+	ShelfAuthority = "shelf.test.dev"
+	ShelfPackage   = ShelfAuthority + "/shelf"
+)
 
 // InstallShelf installs the shelf fixture vocabulary through the same batch
 // apply an import rides, under its own bundle actor. It requires people:
@@ -126,40 +143,42 @@ func InstallShelf(ctx context.Context, ds substrate.Dataset) error {
 		return errors.New("enginetest: dataset does not support ApplyVocabularyDocuments")
 	}
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(ShelfAuthority, 1),
+		vocabulary.PackageManifest(ShelfPackage, 1),
 		{
-			"kind":     "core.substrate.reamde.dev/propertytype",
-			"metadata": map[string]any{"id": ShelfAuthority + "/asin"},
+			"kind":     "substrate.reamde.dev/core/propertytype",
+			"metadata": map[string]any{"id": ShelfPackage + "/asin"},
 			"data": map[string]any{
 				"authority":   ShelfAuthority,
+				"package":     "shelf",
 				"description": "Amazon's audiobook identifier",
 				"base":        "string",
 				"pattern":     "^B0[A-Z0-9]{8}$",
 			},
 		},
 		{
-			"kind":     "core.substrate.reamde.dev/propertytype",
-			"metadata": map[string]any{"id": ShelfAuthority + "/isbn"},
+			"kind":     "substrate.reamde.dev/core/propertytype",
+			"metadata": map[string]any{"id": ShelfPackage + "/isbn"},
 			"data": map[string]any{
 				"authority":   ShelfAuthority,
+				"package":     "shelf",
 				"description": "ISBN-10 or ISBN-13, normalized and hyphen-free",
 				"base":        "string",
 				"pattern":     "^(97[89])?[0-9]{9}[0-9X]$",
 			},
 		},
-		vocabulary.KindManifest(ShelfAuthority,
+		vocabulary.KindManifest(ShelfPackage,
 			map[string]any{"singular": "book", "plural": "books"},
 			map[string]any{
 				"properties": map[string]any{
 					"subtitle":    map[string]any{"type": "string"},
 					"description": map[string]any{"type": "markdown", "embed": true},
 					"author": map[string]any{
-						"type": "reference", "kind": "people.substrate.reamde.dev/person",
+						"type": "reference", "kind": "samples.substrate.reamde.dev/people/person",
 						"repeated": true, "mustExist": true,
 					},
 				},
 			}),
-		vocabulary.KindManifest(ShelfAuthority,
+		vocabulary.KindManifest(ShelfPackage,
 			map[string]any{"singular": "bookedition", "plural": "bookeditions"},
 			map[string]any{
 				"properties": map[string]any{
@@ -172,36 +191,35 @@ func InstallShelf(ctx context.Context, ds substrate.Dataset) error {
 					// The mapping's subject: single, required, and the referent
 					// must exist, which is what a mapping source promises.
 					"work": map[string]any{
-						"type": "reference", "kind": ShelfAuthority + "/book",
+						"type": "reference", "kind": ShelfPackage + "/book",
 						"required": true, "mustExist": true, "subject": true,
 					},
 					"narrator": map[string]any{
-						"type": "reference", "kind": "people.substrate.reamde.dev/person",
+						"type": "reference", "kind": "samples.substrate.reamde.dev/people/person",
 						"mustExist": true,
 					},
 				},
 			}),
-		vocabulary.MappingManifest(ShelfAuthority, "bookeditionwork", map[string]any{
-			"from": ShelfAuthority + "/bookedition", "to": ShelfAuthority + "/book", "property": "work",
+		vocabulary.MappingManifest(ShelfPackage, "bookeditionwork", map[string]any{
+			"from": ShelfPackage + "/bookedition", "to": ShelfPackage + "/book", "property": "work",
 		}),
 	}
-	if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.BundleActor(ShelfAuthority), docs); err != nil {
+	if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.BundleActor(ShelfAuthority, "shelf"), docs); err != nil {
 		return fmt.Errorf("enginetest: install the shelf fixture: %w", err)
 	}
 	return nil
 }
 
-// InstallBundle installs one shipped EXTENSION bundle by its bare label
+// InstallBundle installs one shipped sample package that ships callables
 // ("web", "firecrawl") through the ordinary batch apply, under the bundle's own
 // actor — the closure a catalog install carries, minus the catalog. A test that
-// needs function, agent and bundle declaration rows calls this; the vocabulary
-// bundles ImportVocabulary handles ship kinds alone.
+// needs function, agent and bundle declaration rows calls this.
 func InstallBundle(ctx context.Context, ds substrate.Dataset, name string) error {
 	sa, ok := ds.(substrate.VocabularyApplier)
 	if !ok {
 		return errors.New("enginetest: dataset does not support ApplyVocabularyDocuments")
 	}
-	all, err := readBundleDir(filepath.Join(CatalogDir, name+".bundles.substrate.reamde.dev"))
+	all, err := readBundleDir(filepath.Join(SamplesDir, name))
 	if err != nil {
 		return err
 	}
@@ -215,16 +233,16 @@ func InstallBundle(ctx context.Context, ds substrate.Dataset, name string) error
 			docs = append(docs, d)
 		}
 	}
-	if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.BundleActor(name+".bundles.substrate.reamde.dev"), docs); err != nil {
+	if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.BundleActor(SampleAuthority, name), docs); err != nil {
 		return fmt.Errorf("enginetest: install %s: %w", name, err)
 	}
 	return nil
 }
 
-// bundleRequires reads the authorities a bundle document declares against.
+// bundleRequires reads the packages a bundle document declares against.
 func bundleRequires(docs []map[string]any) []string {
 	for _, d := range docs {
-		if kind, _ := d["kind"].(string); kind != "core.substrate.reamde.dev/bundle" {
+		if kind, _ := d["kind"].(string); kind != "substrate.reamde.dev/core/bundle" {
 			continue
 		}
 		data, _ := d["data"].(map[string]any)
@@ -239,10 +257,10 @@ func bundleRequires(docs []map[string]any) []string {
 }
 
 // SeededRegistry is the registry a repository holds right after creation plus
-// the shipped vocabulary bundles it imported: the seeded tree (core alone) with
-// the named vocabulary installed on top, exactly as the changelog would hold it. It
-// is the registry half of ImportVocabulary, for the admission tests that never
-// open a database.
+// the shipped sample packages it installed: the seeded tree (the core package
+// alone) with the named vocabulary installed on top, exactly as the changelog
+// would hold it. It is the registry half of ImportVocabulary, for the
+// admission tests that never open a database.
 func SeededRegistry(kindsDir string, names ...string) (*vocabulary.Registry, error) {
 	reg, err := vocabulary.LoadDir(kindsDir)
 	if err != nil {
@@ -253,7 +271,7 @@ func SeededRegistry(kindsDir string, names ...string) (*vocabulary.Registry, err
 	}
 	var docs []vocabulary.Document
 	for _, name := range names {
-		raws, err := readBundleDir(filepath.Join(CatalogDir, name+".substrate.reamde.dev"))
+		raws, err := readBundleDir(filepath.Join(SamplesDir, name))
 		if err != nil {
 			return nil, err
 		}
@@ -265,7 +283,7 @@ func SeededRegistry(kindsDir string, names ...string) (*vocabulary.Registry, err
 			docs = append(docs, d)
 		}
 	}
-	authorities, err := vocabulary.BuildAuthorities(docs, vocabulary.SourceInstalled)
+	authorities, err := vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
 	if err != nil {
 		return nil, fmt.Errorf("enginetest: build the shipped vocabulary: %w", err)
 	}
@@ -360,7 +378,8 @@ func Install(ctx context.Context, ds substrate.Dataset, actor substrate.Actor, m
 // reference is unpinned now, so it points here fine.
 const (
 	AccountAuthority = "testacct.example.com"
-	AccountType      = "testacct.example.com/account"
+	AccountPackage   = AccountAuthority + "/testacct"
+	AccountType      = AccountPackage + "/account"
 )
 
 // AccountManifest is the installable account type (provider/label/status, the
@@ -374,16 +393,13 @@ func AccountManifest() Manifest {
 		Name:      "testacct",
 		Authority: AccountAuthority,
 		Manifests: []map[string]any{
+			vocabulary.PackageManifest(AccountPackage, 1),
 			{
-				"kind":     "core.substrate.reamde.dev/authority",
-				"metadata": map[string]any{"id": AccountAuthority},
-				"data":     map[string]any{"version": 1},
-			},
-			{
-				"kind":     "core.substrate.reamde.dev/kind",
+				"kind":     "substrate.reamde.dev/core/kind",
 				"metadata": map[string]any{"id": AccountType},
 				"data": map[string]any{
 					"authority":       AccountAuthority,
+					"package":         "testacct",
 					"names":           map[string]any{"singular": "account", "plural": "accounts"},
 					"displayTemplate": "{label}",
 					"traits":          []any{"accountconfig"},

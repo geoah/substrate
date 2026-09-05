@@ -20,16 +20,18 @@ import (
 )
 
 const (
-	tasksBundleID  = "tasks.substrate.reamde.dev/tasks"
-	tasksAuthority = "tasks.substrate.reamde.dev"
+	tasksBundleID = "samples.substrate.reamde.dev/tasks"
+	// tasksPackage is the package's own word, which is also its directory in
+	// the samples root.
+	tasksPackage = "tasks"
 )
 
 // tasksRequires is what the tasks closure declares against: its assignee edge
 // lands on person and its task/tasklog bind the scheduling traits, so people
 // and scheduling are imported first, exactly as the console would have to.
 var tasksRequires = []string{
-	"people.substrate.reamde.dev/people",
-	"scheduling.substrate.reamde.dev/scheduling",
+	"samples.substrate.reamde.dev/people",
+	"samples.substrate.reamde.dev/scheduling",
 }
 
 // movedTasksCatalog loads a catalog whose tasks closure is the shipped one
@@ -37,29 +39,39 @@ var tasksRequires = []string{
 // binary N installed into.
 func movedTasksCatalog(t *testing.T, mutate map[string]func(string) string) *catalog.Catalog {
 	t.Helper()
-	src := filepath.Join("..", "..", "kinds", tasksAuthority)
+	// The copy mirrors the samples root: the authority manifest at the root,
+	// the tasks package directory beside it.
+	samplesRoot := filepath.Join("..", "..", "samples")
 	root := t.TempDir()
-	dst := filepath.Join(root, tasksAuthority)
+	dst := filepath.Join(root, tasksPackage)
 	if err := os.MkdirAll(dst, 0o750); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		t.Fatalf("read %s: %v", src, err)
-	}
-	for _, e := range entries {
-		raw, err := os.ReadFile(filepath.Join(src, e.Name()))
+	copyManifests := func(src, dstDir string) {
+		t.Helper()
+		entries, err := os.ReadDir(src)
 		if err != nil {
-			t.Fatalf("read %s: %v", e.Name(), err)
+			t.Fatalf("read %s: %v", src, err)
 		}
-		doc := string(raw)
-		if m, ok := mutate[e.Name()]; ok {
-			doc = m(doc)
-		}
-		if err := os.WriteFile(filepath.Join(dst, e.Name()), []byte(doc), 0o600); err != nil {
-			t.Fatalf("write %s: %v", e.Name(), err)
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
+				continue
+			}
+			raw, err := os.ReadFile(filepath.Join(src, e.Name()))
+			if err != nil {
+				t.Fatalf("read %s: %v", e.Name(), err)
+			}
+			doc := string(raw)
+			if m, ok := mutate[e.Name()]; ok {
+				doc = m(doc)
+			}
+			if err := os.WriteFile(filepath.Join(dstDir, e.Name()), []byte(doc), 0o600); err != nil {
+				t.Fatalf("write %s: %v", e.Name(), err)
+			}
 		}
 	}
+	copyManifests(samplesRoot, root)
+	copyManifests(filepath.Join(samplesRoot, tasksPackage), dst)
 	c, err := catalog.Load(os.DirFS(root))
 	if err != nil {
 		t.Fatalf("load moved catalog: %v", err)
@@ -78,7 +90,7 @@ func mustReplace(t *testing.T, doc, from, to string) string {
 	return strings.Replace(doc, from, to, 1)
 }
 
-// shippedVersion is the tasks authority's version in the tree right now: the
+// shippedVersion is the tasks package's version in the tree right now: the
 // tests bump PAST whatever it stands at, so a future bump of the shipped
 // closure never turns these into a puzzle.
 func shippedVersion(t *testing.T, c *catalog.Catalog) int64 {
@@ -88,7 +100,7 @@ func shippedVersion(t *testing.T, c *catalog.Catalog) int64 {
 		t.Fatal("the shipped catalog no longer carries the tasks bundle")
 	}
 	if b.Version == 0 {
-		t.Fatal("the shipped tasks authority declares no version")
+		t.Fatal("the shipped tasks package declares no version")
 	}
 	return b.Version
 }
@@ -113,7 +125,9 @@ func bumpTaskPin(t *testing.T, doc string) string {
 	return taskPin.ReplaceAllString(doc, "  version: "+strconv.FormatInt(movedVersion, 10))
 }
 
-func bumpTasksAuthority(t *testing.T, from int64, doc string) string {
+// bumpTasksPackage moves the version on the package document heading the
+// tasks closure, which is the closure-wide version the preview reads.
+func bumpTasksPackage(t *testing.T, from int64, doc string) string {
 	t.Helper()
 	return mustReplace(t, doc,
 		"version: "+strconv.FormatInt(from, 10),
@@ -145,13 +159,13 @@ func TestUpgradePreview(t *testing.T) {
 		t.Fatalf("an up-to-date bundle previews an upgrade: %+v", up)
 	}
 
-	// Binary N+1 ships the authority a version ahead with a new optional
+	// Binary N+1 ships the package a version ahead with a new optional
 	// property: an additive move, offered with no blockers.
 	shipped := shippedVersion(t, c)
 	moved := movedTasksCatalog(t, map[string]func(string) string{
-		"bundle.yaml": func(doc string) string { return bumpTasksAuthority(t, shipped, doc) },
+		"bundle.yaml": func(doc string) string { return bumpTasksPackage(t, shipped, doc) },
 		"task.yaml": func(doc string) string {
-			// The kind pins its own version, so the authority bump alone
+			// The kind pins its own version, so the package bump alone
 			// would not move it: the pin moves with the change.
 			doc = bumpTaskPin(t, doc)
 			return mustReplace(t, doc, "    status:",
@@ -166,7 +180,7 @@ func TestUpgradePreview(t *testing.T) {
 		t.Fatalf("a moved closure previews no upgrade: %+v", up)
 	}
 	if up.From != shipped || up.To != movedVersion {
-		t.Errorf("authority motion reads %d -> %d, want %d -> %d", up.From, up.To, shipped, movedVersion)
+		t.Errorf("package motion reads %d -> %d, want %d -> %d", up.From, up.To, shipped, movedVersion)
 	}
 	if len(up.Blockers) != 0 {
 		t.Errorf("an additive upgrade carries blockers: %v", up.Blockers)
@@ -177,7 +191,7 @@ func TestUpgradePreview(t *testing.T) {
 			movedKinds[ch.ID] = true
 		}
 	}
-	if !movedKinds["tasks.substrate.reamde.dev/task"] {
+	if !movedKinds["samples.substrate.reamde.dev/tasks/task"] {
 		t.Errorf("the changed kind is not among the moves: %+v", up.Changes)
 	}
 
@@ -203,7 +217,7 @@ func TestUpgradePreviewReportsBlockers(t *testing.T) {
 
 	// A live row holding the very property binary N+1 drops.
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: "tasks.substrate.reamde.dev/task", ID: "guarded",
+		Kind: "samples.substrate.reamde.dev/tasks/task", ID: "guarded",
 		Properties: map[string]any{"url": "https://example.com/issue/1"},
 	}); err != nil {
 		t.Fatalf("put the live task row: %v", err)
@@ -211,7 +225,7 @@ func TestUpgradePreviewReportsBlockers(t *testing.T) {
 
 	shipped := shippedVersion(t, c)
 	moved := movedTasksCatalog(t, map[string]func(string) string{
-		"bundle.yaml": func(doc string) string { return bumpTasksAuthority(t, shipped, doc) },
+		"bundle.yaml": func(doc string) string { return bumpTasksPackage(t, shipped, doc) },
 		"task.yaml": func(doc string) string {
 			doc = bumpTaskPin(t, doc)
 			return mustReplace(t, doc,

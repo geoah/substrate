@@ -12,7 +12,7 @@ runs yours, they hand you the address and the code.
 
 One **invite code**, configured on the service, admits people. Registering
 with it creates a **user** and, in the same transaction, that user's one
-**repository**, seeded with the core vocabulary — `core.substrate.reamde.dev`
+**repository**, seeded with the core vocabulary — `substrate.reamde.dev/core`
 alone. Everything else, including the task kinds used below, is a
 [vocabulary bundle you import](builtin-kinds.md). With no invite code
 configured, registration is closed;
@@ -36,8 +36,8 @@ the seed for your authenticator, and takes back one code along with the
 password you choose. Only that second call writes anything, so an abandoned
 registration leaves nothing behind. Registration ends logged in: `substratectl` stores
 the minted token as a context in `~/.config/substratectl/config.yaml`. The
-repository it created owns an **authority**, a hostname every kind you
-declare lives under: any name you control through `--authority`
+repository it created owns an **authority**, a hostname every package you
+declare kinds in lives under: any name you control through `--authority`
 (`ada.example.com`), else your username under the server's host.
 
 Unattended, bring your own seed and skip the prompts:
@@ -77,16 +77,17 @@ There is no session object beside it: a session **is** a token record, and
 
 Registration seeded the core vocabulary only, so the task kinds are not there
 yet. Install the bundle that ships them from the catalog built into the binary,
-and the collection exists. A catalog id is `{authority}/{name}`, so the slash in
-it is percent-encoded to stay one path segment. Tasks name an assignee, so
-`people` is admitted first — a bundle whose `requires:` is not met is refused:
+and the collection exists. A catalog id is a package identity,
+`{authority}/{package}`, so the slash in it is percent-encoded to stay one path
+segment. Tasks name an assignee, so `people` is admitted first — a bundle whose
+`requires:` is not met is refused:
 
 ```bash
 curl -X POST -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/v1/catalog/people.substrate.reamde.dev%2Fpeople/install
+  http://localhost:8080/api/v1/catalog/samples.substrate.reamde.dev%2Fpeople/install
 
 curl -X POST -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/v1/catalog/tasks.substrate.reamde.dev%2Ftasks/install
+  http://localhost:8080/api/v1/catalog/samples.substrate.reamde.dev%2Ftasks/install
 
 substratectl get task                     # empty, but the collection is there
 ```
@@ -100,11 +101,11 @@ Add a task. The collection path names the kind, so the body is only the
 properties:
 
 ```http
-POST /api/v1/tasks.substrate.reamde.dev/task
+POST /api/v1/samples.substrate.reamde.dev/tasks/task
 Authorization: Bearer substrate_tok_…
 {"properties": {"name": "Buy milk", "dueAt": "2026-08-13T09:00:00Z"}}
 
-→ 201 {"id": "kq3v9x2m41pf", "kind": "tasks.substrate.reamde.dev/task",
+→ 201 {"id": "kq3v9x2m41pf", "kind": "samples.substrate.reamde.dev/tasks/task",
        "properties": {"name": "Buy milk", "title": "Buy milk", "status": "open",
                       "dueAt": "2026-08-13T09:00:00Z"},
        "version": 1,
@@ -117,7 +118,7 @@ The server assigned the id, the `status` state started at its declared
 `substratectl apply` takes:
 
 ```yaml
-kind: tasks.substrate.reamde.dev/task
+kind: samples.substrate.reamde.dev/tasks/task
 data:
   properties:
     name: Buy milk
@@ -147,7 +148,7 @@ GET /api/v1/changes?watch=1
 
 {"bookmark": 412}
 {"seq": 413, "ts": "2026-08-12T10:00:00.183742Z", "actor": "api", "op": "put",
- "kind": "tasks.substrate.reamde.dev/task", "recordId": "kq3v9x2m41pf",
+ "kind": "samples.substrate.reamde.dev/tasks/task", "recordId": "kq3v9x2m41pf",
  "payload": {"created": true, "properties": ["name", "dueAt"]}}
 ```
 

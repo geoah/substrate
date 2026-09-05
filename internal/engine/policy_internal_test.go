@@ -20,18 +20,18 @@ func TestPolicySelectorKindsTakeTheTriggerGlob(t *testing.T) {
 		kind string
 		want bool
 	}{
-		{nil, "tasks.substrate.reamde.dev/task", true},
-		{[]string{"*"}, "tasks.substrate.reamde.dev/task", true},
-		{[]string{"tasks.substrate.reamde.dev/*"}, "tasks.substrate.reamde.dev/task", true},
-		{[]string{"tasks.substrate.reamde.dev/*"}, "tasks.substrate.reamde.dev/project", true},
-		{[]string{"tasks.substrate.reamde.dev/*"}, "people.substrate.reamde.dev/person", false},
-		{[]string{"tasks.substrate.reamde.dev/task"}, "tasks.substrate.reamde.dev/task", true},
-		{[]string{"tasks.substrate.reamde.dev/task"}, "tasks.substrate.reamde.dev/project", false},
-		{[]string{"people.substrate.reamde.dev/person", "tasks.substrate.reamde.dev/*"}, "tasks.substrate.reamde.dev/task", true},
+		{nil, "samples.substrate.reamde.dev/tasks/task", true},
+		{[]string{"*"}, "samples.substrate.reamde.dev/tasks/task", true},
+		{[]string{"samples.substrate.reamde.dev/tasks/*"}, "samples.substrate.reamde.dev/tasks/task", true},
+		{[]string{"samples.substrate.reamde.dev/tasks/*"}, "samples.substrate.reamde.dev/tasks/project", true},
+		{[]string{"samples.substrate.reamde.dev/tasks/*"}, "samples.substrate.reamde.dev/people/person", false},
+		{[]string{"samples.substrate.reamde.dev/tasks/task"}, "samples.substrate.reamde.dev/tasks/task", true},
+		{[]string{"samples.substrate.reamde.dev/tasks/task"}, "samples.substrate.reamde.dev/tasks/project", false},
+		{[]string{"samples.substrate.reamde.dev/people/person", "samples.substrate.reamde.dev/tasks/*"}, "samples.substrate.reamde.dev/tasks/task", true},
 		// The glob cuts on the authority boundary, never on a prefix of it:
-		// `tasks.substrate.reamde.dev/*` does not reach
-		// `tasks.substrate.reamde.dev.evil`.
-		{[]string{"tasks.substrate.reamde.dev/*"}, "tasks.substrate.reamde.dev.evil/task", false},
+		// `samples.substrate.reamde.dev/tasks/*` does not reach
+		// `samples.substrate.reamde.dev/tasks.evil`.
+		{[]string{"samples.substrate.reamde.dev/tasks/*"}, "samples.substrate.reamde.dev/tasks.evil/task", false},
 	}
 	for _, c := range cases {
 		rule := policyRule{kinds: c.pats, action: policyGate}
@@ -47,7 +47,7 @@ func TestPolicySelectorKindsTakeTheTriggerGlob(t *testing.T) {
 func TestPolicySelectorOpsAndAgentsStayExact(t *testing.T) {
 	t.Parallel()
 	rule := policyRule{ops: []string{"*"}, agents: []string{"*"}, action: policyGate}
-	if rule.matches("k", policyOpPut, "crew.test.dev/editor") {
+	if rule.matches("k", policyOpPut, "crew.test.dev/crew/editor") {
 		t.Fatal("a literal * matched an op and an agent")
 	}
 }
@@ -61,9 +61,9 @@ func TestValidatePolicyRowRefusesARuleTheDoorCannotAct(t *testing.T) {
 		return map[string]any{"kinds": kinds}
 	}
 	bad := []map[string]any{
-		{"selector": sel("tasks.substrate.reamde.dev/task")},
+		{"selector": sel("samples.substrate.reamde.dev/tasks/task")},
 		{"action": "gate", "selector": sel("tasks.*")},
-		{"action": "gate", "selector": sel("tasks.substrate.reamde.dev/*", "*task*")},
+		{"action": "gate", "selector": sel("samples.substrate.reamde.dev/tasks/*", "*task*")},
 		{"action": "gate", "selector": sel("**")},
 	}
 	for _, props := range bad {
@@ -74,7 +74,7 @@ func TestValidatePolicyRowRefusesARuleTheDoorCannotAct(t *testing.T) {
 	good := []map[string]any{
 		{"action": "gate"},
 		{"action": "refuse", "selector": sel("*")},
-		{"action": "allow", "selector": sel("tasks.substrate.reamde.dev/*", "task")},
+		{"action": "allow", "selector": sel("samples.substrate.reamde.dev/tasks/*", "task")},
 	}
 	for _, props := range good {
 		if err := validatePolicyRow(nil, props); err != nil {

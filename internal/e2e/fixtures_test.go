@@ -4,29 +4,31 @@ import (
 	"net/http"
 )
 
-// The story-local authority: the import kind an "importer" writes, the match
+// The story-local package: the import kind an "importer" writes, the match
 // audit kind, the deterministic functions, and the three agents. Applied
 // through the same vocabulary door a user's own declarations would use;
 // none of this ships in kinds/.
 const (
 	storyAuthority = "stories.e2e.example"
+	storyPackage   = "stories"
+	storyPkg       = storyAuthority + "/" + storyPackage
 
-	importCollection  = "/api/v1/" + storyAuthority + "/eventimport"
-	verdictCollection = "/api/v1/" + storyAuthority + "/matchverdict"
+	importCollection  = "/api/v1/" + storyPkg + "/eventimport"
+	verdictCollection = "/api/v1/" + storyPkg + "/matchverdict"
 
-	triggerCollection  = "/api/v1/core.substrate.reamde.dev/trigger"
-	providerCollection = "/api/v1/core.substrate.reamde.dev/llmprovider"
-	requestCollection  = "/api/v1/core.substrate.reamde.dev/recordpatchrequest"
-	runCollection      = "/api/v1/core.substrate.reamde.dev/run"
+	triggerCollection  = "/api/v1/substrate.reamde.dev/core/trigger"
+	providerCollection = "/api/v1/substrate.reamde.dev/core/llmprovider"
+	requestCollection  = "/api/v1/substrate.reamde.dev/core/recordpatchrequest"
+	runCollection      = "/api/v1/substrate.reamde.dev/core/run"
 
-	transcriptKind = "calendar.substrate.reamde.dev/transcript"
-	eventKind      = "calendar.substrate.reamde.dev/calendarevent"
-	taskKind       = "tasks.substrate.reamde.dev/task"
+	transcriptKind = "samples.substrate.reamde.dev/calendar/transcript"
+	eventKind      = "samples.substrate.reamde.dev/calendar/calendarevent"
+	taskKind       = "samples.substrate.reamde.dev/tasks/task"
 
-	actorResolver   = "function:" + storyAuthority + ":resolveattendees"
-	actorMatcher    = "agent:" + storyAuthority + ":transcriptMatcher"
-	actorReflection = "agent:" + storyAuthority + ":actionItemExtractor"
-	actorArbiter    = "agent:" + storyAuthority + ":changeRequestReviewer"
+	actorResolver   = "function:" + storyAuthority + ":" + storyPackage + ":resolveattendees"
+	actorMatcher    = "agent:" + storyAuthority + ":" + storyPackage + ":transcriptMatcher"
+	actorReflection = "agent:" + storyAuthority + ":" + storyPackage + ":actionItemExtractor"
+	actorArbiter    = "agent:" + storyAuthority + ":" + storyPackage + ":changeRequestReviewer"
 )
 
 // resolveAttendeesSource mirrors what a calendar importer's linker does:
@@ -48,12 +50,12 @@ def main(input, host):
 
     # The two lists together stay under the function's default 500-row read
     # budget; the fixture world is dozens of records, not hundreds.
-    people = host.records.list(["people.substrate.reamde.dev/person"], first=300) or {}
+    people = host.records.list(["samples.substrate.reamde.dev/people/person"], first=300) or {}
     by_email = {}
     for p in people.get("records") or []:
         for e in (p.get("properties") or {}).get("emails") or []:
             by_email[e.lower()] = p["id"]
-    orgs = host.records.list(["people.substrate.reamde.dev/organization"], first=100) or {}
+    orgs = host.records.list(["samples.substrate.reamde.dev/people/organization"], first=100) or {}
     by_domain = {}
     for o in orgs.get("records") or []:
         d = ((o.get("properties") or {}).get("domain") or "").lower()
@@ -75,9 +77,9 @@ def main(input, host):
             org = by_domain.get(email.split("@", 1)[-1])
             if org:
                 # memberOf carries link data, so the org sits under "ref".
-                person["memberOf"] = [{"ref": "people.substrate.reamde.dev/organization/" + org}]
+                person["memberOf"] = [{"ref": "samples.substrate.reamde.dev/people/organization/" + org}]
             host.effects.put(
-                "people.substrate.reamde.dev/person", pid,
+                "samples.substrate.reamde.dev/people/person", pid,
                 properties=person, if_absent=True)
             by_email[email] = pid
         if pid not in attendees:
@@ -87,13 +89,13 @@ def main(input, host):
         "summary": props.get("summary") or "",
         "at": props.get("at"),
         "endsAt": props.get("endsAt"),
-        "calendar": "calendar.substrate.reamde.dev/calendar/work",
-        "attendees": ["people.substrate.reamde.dev/person/" + p for p in attendees],
+        "calendar": "samples.substrate.reamde.dev/calendar/calendar/work",
+        "attendees": ["samples.substrate.reamde.dev/people/person/" + p for p in attendees],
     }
     organizer = (props.get("organizerEmail") or "").strip().lower()
     if organizer and not automated(organizer) and by_email.get(organizer):
-        event["organizer"] = "people.substrate.reamde.dev/person/" + by_email[organizer]
-    host.effects.put("calendar.substrate.reamde.dev/calendarevent", event_id, properties=event)
+        event["organizer"] = "samples.substrate.reamde.dev/people/person/" + by_email[organizer]
+    host.effects.put("samples.substrate.reamde.dev/calendar/calendarevent", event_id, properties=event)
     return {"output": {"event": event_id, "attendees": len(attendees)}}
 `
 
@@ -124,12 +126,12 @@ def tokens(s):
 def main(input, host):
     args = input.get("args") or {}
     tid = args["transcript"]
-    tr = host.records.get("calendar.substrate.reamde.dev/transcript", tid) or {}
+    tr = host.records.get("samples.substrate.reamde.dev/calendar/transcript", tid) or {}
     tp = tr.get("properties") or {}
     t_at = parse(tp.get("at"))
     t_title = tokens(tp.get("name"))
 
-    events = (host.records.list(["calendar.substrate.reamde.dev/calendarevent"], first=200) or {}).get("records") or []
+    events = (host.records.list(["samples.substrate.reamde.dev/calendar/calendarevent"], first=200) or {}).get("records") or []
     out = []
     for ev in events:
         ep = ev.get("properties") or {}
@@ -157,12 +159,15 @@ func storyDocuments(providerID string) []map[string]any {
 	}
 	kindDoc := func(name string, data map[string]any) map[string]any {
 		data["authority"] = storyAuthority
+		data["package"] = storyPackage
 		data["names"] = map[string]any{"singular": name}
-		return doc("core.substrate.reamde.dev/kind", storyAuthority+"/"+name, data)
+		return doc("substrate.reamde.dev/core/kind", storyPkg+"/"+name, data)
 	}
 	return []map[string]any{
-		doc("core.substrate.reamde.dev/authority", storyAuthority, map[string]any{
-			"version": 1,
+		doc("substrate.reamde.dev/core/package", storyPkg, map[string]any{
+			"authority": storyAuthority,
+			"package":   storyPackage,
+			"version":   1,
 		}),
 		kindDoc("eventimport", map[string]any{
 			"description":     "A calendar event as an importer delivers it: raw emails, nothing resolved yet.",
@@ -191,22 +196,24 @@ func storyDocuments(providerID string) []map[string]any {
 				},
 			},
 		}),
-		doc("core.substrate.reamde.dev/function", storyAuthority+"/resolveattendees", map[string]any{
+		doc("substrate.reamde.dev/core/function", storyPkg+"/resolveattendees", map[string]any{
 			"authority":   storyAuthority,
+			"package":     storyPackage,
 			"description": "Resolve an imported event's raw attendee emails into linked people; mint strangers, never rooms.",
 			"runtime":     "python",
 			"timeout":     "PT10S",
 			"permissions": map[string]any{
-				"reads": map[string]any{"kinds": []string{"people.substrate.reamde.dev/person", "people.substrate.reamde.dev/organization"}},
+				"reads": map[string]any{"kinds": []string{"samples.substrate.reamde.dev/people/person", "samples.substrate.reamde.dev/people/organization"}},
 				"writes": []string{
-					"calendar.substrate.reamde.dev/calendarevent",
-					"people.substrate.reamde.dev/person",
+					"samples.substrate.reamde.dev/calendar/calendarevent",
+					"samples.substrate.reamde.dev/people/person",
 				},
 			},
 			"source": resolveAttendeesSource,
 		}),
-		doc("core.substrate.reamde.dev/function", storyAuthority+"/scorecandidates", map[string]any{
+		doc("substrate.reamde.dev/core/function", storyPkg+"/scorecandidates", map[string]any{
 			"authority":   storyAuthority,
+			"package":     storyPackage,
 			"description": "Score every calendar event within 90 minutes of a transcript on time proximity and title overlap.",
 			"runtime":     "python",
 			"timeout":     "PT10S",
@@ -222,8 +229,9 @@ func storyDocuments(providerID string) []map[string]any {
 			},
 			"source": scoreCandidatesSource,
 		}),
-		doc("core.substrate.reamde.dev/agent", storyAuthority+"/transcriptMatcher", map[string]any{
+		doc("substrate.reamde.dev/core/agent", storyPkg+"/transcriptMatcher", map[string]any{
 			"authority":   storyAuthority,
+			"package":     storyPackage,
 			"description": "Attaches a transcript to the meeting that actually happened, or declines and says why.",
 			"prompt": "You attach one transcript per run. Call scorecandidates, pick the clear winner above the " +
 				"floor, link meeting and speakers with mutate, and write a matchverdict either way. " +
@@ -231,17 +239,18 @@ func storyDocuments(providerID string) []map[string]any {
 			"provider": providerID,
 			"model":    "transcriptMatcher",
 			"tools": []map[string]any{
-				{"function": "core.substrate.reamde.dev/graphql"},
-				{"function": "core.substrate.reamde.dev/mutate"},
-				{"function": storyAuthority + "/scorecandidates"},
+				{"function": "substrate.reamde.dev/core/graphql"},
+				{"function": "substrate.reamde.dev/core/mutate"},
+				{"function": storyPkg + "/scorecandidates"},
 			},
 			"permissions": map[string]any{
-				"writes": []string{transcriptKind, storyAuthority + "/matchverdict"},
+				"writes": []string{transcriptKind, storyPkg + "/matchverdict"},
 			},
 			"budgets": map[string]any{"maxTurns": 8, "maxToolCalls": 12, "deadlineSeconds": 120},
 		}),
-		doc("core.substrate.reamde.dev/agent", storyAuthority+"/actionItemExtractor", map[string]any{
+		doc("substrate.reamde.dev/core/agent", storyPkg+"/actionItemExtractor", map[string]any{
 			"authority":   storyAuthority,
+			"package":     storyPackage,
 			"description": "Reads a matched transcript and proposes the work it implies; writes nothing directly.",
 			"prompt": "You read one matched transcript per run and propose tasks for concrete action items only, " +
 				"every one naming the transcript it came from in `source`. Never guess an assignee, never " +
@@ -255,16 +264,17 @@ func storyDocuments(providerID string) []map[string]any {
 			// stories assert exact proposal counts.
 			"resume": "never",
 			"tools": []map[string]any{
-				{"function": "core.substrate.reamde.dev/graphql"},
-				{"function": "core.substrate.reamde.dev/propose"},
+				{"function": "substrate.reamde.dev/core/graphql"},
+				{"function": "substrate.reamde.dev/core/propose"},
 			},
 			"permissions": map[string]any{
-				"writes": []string{"core.substrate.reamde.dev/recordpatchrequest"},
+				"writes": []string{"substrate.reamde.dev/core/recordpatchrequest"},
 			},
 			"budgets": map[string]any{"maxTurns": 10, "maxToolCalls": 12, "deadlineSeconds": 120},
 		}),
-		doc("core.substrate.reamde.dev/agent", storyAuthority+"/changeRequestReviewer", map[string]any{
+		doc("substrate.reamde.dev/core/agent", storyPkg+"/changeRequestReviewer", map[string]any{
 			"authority":   storyAuthority,
+			"package":     storyPackage,
 			"description": "Decides one change request per run: work without provenance is rejected.",
 			"prompt": "You decide one recordpatchrequest per run, delivered in the envelope. Accept a proposal " +
 				"whose diff carries its source, reject one that carries none, with one mutate call patching " +
@@ -272,24 +282,24 @@ func storyDocuments(providerID string) []map[string]any {
 			"provider": providerID,
 			"model":    "changeRequestReviewer",
 			"tools": []map[string]any{
-				{"function": "core.substrate.reamde.dev/graphql"},
-				{"function": "core.substrate.reamde.dev/mutate"},
+				{"function": "substrate.reamde.dev/core/graphql"},
+				{"function": "substrate.reamde.dev/core/mutate"},
 			},
 			"permissions": map[string]any{
-				"writes": []string{"core.substrate.reamde.dev/recordpatchrequest", taskKind},
+				"writes": []string{"substrate.reamde.dev/core/recordpatchrequest", taskKind},
 			},
 			"budgets": map[string]any{"maxTurns": 6, "maxToolCalls": 4, "deadlineSeconds": 120},
 		}),
 	}
 }
 
-// applyStoryVocabulary admits the story authority in one batch.
+// applyStoryVocabulary admits the story package in one batch.
 func (c *C) applyStoryVocabulary(providerID string) {
 	c.t.Helper()
 	status, raw := c.do(http.MethodPost, "/api/v1/vocabulary/apply",
 		map[string]any{"documents": storyDocuments(providerID)}, nil)
-	c.requiref(status == http.StatusOK, "vocabulary/apply of the story authority answered %d: %s", status, raw)
-	c.stepf("applied the story authority `%s`: 2 kinds, 2 python functions, 3 agents", storyAuthority)
+	c.requiref(status == http.StatusOK, "vocabulary/apply of the story package answered %d: %s", status, raw)
+	c.stepf("applied the story package `%s`: 2 kinds, 2 python functions, 3 agents", storyPkg)
 }
 
 // putTrigger writes one trigger record and requires it to land.

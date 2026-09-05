@@ -14,9 +14,9 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-const lpAuthority = "linkprop.example.substrate.reamde.dev"
+const lpPackage = "linkprop.example.substrate.reamde.dev/linkprop"
 
-const lpNode = lpAuthority + "/node"
+const lpNode = lpPackage + "/node"
 
 // lpBaseProps is the declaration the subtests write against and diff from:
 // `peer` carries four flat link properties, `plain` declares none at all.
@@ -39,8 +39,8 @@ func lpBaseProps() map[string]any {
 func lpApply(t *testing.T, ds substrate.Dataset, props map[string]any) error {
 	t.Helper()
 	_, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, []map[string]any{
-		vocabulary.AuthorityManifest(lpAuthority, 0),
-		vocabulary.KindManifest(lpAuthority,
+		vocabulary.PackageManifest(lpPackage, 0),
+		vocabulary.KindManifest(lpPackage,
 			map[string]any{"singular": "node", "plural": "nodes"},
 			map[string]any{"displayTemplate": "{label}", "properties": props}),
 	})
@@ -307,7 +307,7 @@ func TestReferenceNarrowingRefused(t *testing.T) {
 		if err := lpApply(t, ds, props); err != nil {
 			t.Fatalf("widening a pin to unconstrained is additive: %v", err)
 		}
-		props["peer"].(map[string]any)["kind"] = "core.substrate.reamde.dev/kind"
+		props["peer"].(map[string]any)["kind"] = "substrate.reamde.dev/core/kind"
 		wantNarrowingGuard(t, lpApply(t, ds, props),
 			`reference "peer" narrows its target`, "1 live records")
 		// Put the declaration back, so the link-property subtests diff from the

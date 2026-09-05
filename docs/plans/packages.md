@@ -1,13 +1,16 @@
 # Plan: a kind lives in a package, and a package lives in an authority
 
-Status: design settled with the owner, 2026-09-02; not started. It is a plan,
-not a contract: the code that lands is the contract.
+Status: design settled with the owner 2026-09-02, landed as
+[decision record 0047](../decisions/0047-a-kind-lives-in-a-package.md). Sample
+import (phase 2 of [the samples plan](providers-and-samples.md)) is still
+future work: the samples install as ordinary bundles. It is a plan, not a
+contract: the code that landed is the contract.
 
 ## The problem
 
 A kind reference is `{authority}/{name}`, and the only way to group kinds is
 to give each group its own authority. The shipped vocabulary does exactly that
-with 25 subdomains of one placeholder (`tasks.substrate.reamde.dev`,
+with 24 directories under one placeholder (`tasks.substrate.reamde.dev`,
 `google.bundles.substrate.reamde.dev`), so grouping, ownership, versioning and
 the DNS name are one knob. A repository that owns one authority
 ([0046](../decisions/0046-a-repository-owns-one-authority-chosen-at-registration.md))
@@ -46,7 +49,10 @@ data:
   rest of 0014 (no raw `/` in an authority, `%` never in an id).
 - A REST path routes by segment count, shifted by one: three segments
   (`/api/v1/{authority}/{package}/{kind}`) is a collection, four is a record.
-  The core verbs move with core: `/api/v1/substrate.reamde.dev/core/catalog`.
+  The core RECORD paths move with core: a trigger sits at
+  `/api/v1/substrate.reamde.dev/core/trigger/{id}`. The repository-wide
+  endpoints stay at the version root, where 0033 put them: `/api/v1/catalog`,
+  `/api/v1/vocabulary/apply`, `/api/v1/changes`.
 - A bare name in a declaration still resolves against the declaring package
   (`kind: account` inside `providers.substrate.reamde.dev/google` means
   `providers.substrate.reamde.dev/google/account`); the shorthand of 0042
@@ -83,6 +89,7 @@ data:
 - The **authority document** stays as the owner of packages and the thing a
   repository is born with; a registration creates the repository's authority
   record and no package until the user declares or imports one.
+  (Landed without the registration half: see Open.)
 
 ### Actors and GraphQL
 
@@ -120,8 +127,10 @@ user ends up with `ada.example.com/tasks/task` and
 - URL: `/api/v1/ada.example.com/tasks/task/t1`
 - Console: sidebar grouped authority, then package, then kind; the route is
   `/data/ada.example.com/tasks/task`.
-- `substratectl get task t1` resolves `task` against the repository's own
-  packages first and refuses an ambiguous bare name, naming the two.
+- `substratectl get task t1` resolves `task` against every package the
+  repository holds and refuses an ambiguous bare name, naming each one it
+  found; `--package` picks between them. (What landed has no
+  own-packages-first preference: any ambiguity is an error.)
 - Envelope: `record.kind` is the full reference; nothing else changes shape.
 - A webhook URL is `/webhooks/{authority}/{trigger}` (the hostname as the
   repository's outward name, item B of the tidy-up), unchanged by packages.
@@ -175,6 +184,12 @@ the import rewrites kind ids of the final shape once.
 ## Open
 
 - The exact GraphQL disambiguation rule when two authorities install one
-  package name.
+  package name. What landed reads the FULL authority, dots folded to
+  underscores, rather than the first label this page sketched: two authorities
+  can share a label, and 0014 reserves first-label keying.
+- Writing the repository's own authority row at registration. The `authority`
+  document kind exists and the shipped tree declares one per authority, but
+  registration still records the authority on the repository row alone; the
+  row is 0046 follow-up.
 - Whether the `core/bundle` kind keeps its name or becomes `core/package`
   outright once a bundle owns one package in practice.

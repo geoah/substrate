@@ -49,15 +49,15 @@ func TestResumeNeverWithholdsTheContinuation(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewAuthority + "/widget", ID: "w-stoic", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: "w-stoic", Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	fake.script("stoic",
-		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/widget","target":"w-stoic","diff":{"properties":{"name":"better"}}}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-stoic","diff":{"properties":{"name":"better"}}}`}}},
 		fakeTurn{content: "proposed."},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/stoic", "change the widget")
+	res, err := ds.CallAgent(ctx, crewPackage+"/stoic", "change the widget")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -84,13 +84,13 @@ func TestSelfResolutionDoesNotResumeOwnThread(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewAuthority + "/widget", ID: "w-selfish", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: "w-selfish", Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	// Run 1 mints the thread the request will point at.
 	fake.script("self", fakeTurn{content: "standing by."})
-	first, err := ds.CallAgent(ctx, crewAuthority+"/selfjudge", "stand by")
+	first, err := ds.CallAgent(ctx, crewPackage+"/selfjudge", "stand by")
 	if err != nil {
 		t.Fatalf("first call: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestSelfResolutionDoesNotResumeOwnThread(t *testing.T) {
 		Properties: map[string]any{
 			"diff":   map[string]any{"properties": map[string]any{"name": "better"}},
 			"thread": first.Thread,
-			"target": vocabulary.RecordPath(crewAuthority+"/widget", "w-selfish"),
+			"target": vocabulary.RecordPath(crewPackage+"/widget", "w-selfish"),
 		},
 	}); err != nil {
 		t.Fatalf("put request: %v", err)
@@ -112,10 +112,10 @@ func TestSelfResolutionDoesNotResumeOwnThread(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"mutate", decideArgs(t, "req-self", "accepted")}}},
 		fakeTurn{content: "accepted it."},
 	)
-	if _, err := ds.CallAgent(ctx, crewAuthority+"/selfjudge", "work the inbox"); err != nil {
+	if _, err := ds.CallAgent(ctx, crewPackage+"/selfjudge", "work the inbox"); err != nil {
 		t.Fatalf("second call: %v", err)
 	}
-	if got, err := ds.Get(ctx, crewAuthority+"/widget", "w-selfish"); err != nil || got.Properties["name"] != "better" {
+	if got, err := ds.Get(ctx, crewPackage+"/widget", "w-selfish"); err != nil || got.Properties["name"] != "better" {
 		t.Fatalf("the accept did not land: %+v %v", got, err)
 	}
 	if len(systemMessages(t, ds, first.Thread)) != 1 {
@@ -131,14 +131,14 @@ func TestSettleRecheckConsumesMidTurnResolutions(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewAuthority + "/widget", ID: "w-mid", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: "w-mid", Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	arrived := make(chan struct{})
 	release := make(chan struct{})
 	fake.script("root",
-		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/widget","target":"w-mid","diff":{"properties":{"name":"better"}}}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-mid","diff":{"properties":{"name":"better"}}}`}}},
 		// The barrier turn: the loop is MID-RUN (lease held) while the test
 		// accepts the proposal, so the accept's resume loses the lease.
 		fakeTurn{content: "still thinking.", arrived: arrived, release: release},
@@ -147,7 +147,7 @@ func TestSettleRecheckConsumesMidTurnResolutions(t *testing.T) {
 	)
 	done := make(chan error, 1)
 	go func() {
-		_, err := ds.CallAgent(ctx, crewAuthority+"/classifier", "change the widget")
+		_, err := ds.CallAgent(ctx, crewPackage+"/classifier", "change the widget")
 		done <- err
 	}()
 	<-arrived
@@ -181,7 +181,7 @@ func TestSweepResumesDroppedResolutions(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	fake.script("chat", fakeTurn{content: "hello."})
-	res, err := ds.CallAgent(ctx, crewAuthority+"/chatter", "say hello")
+	res, err := ds.CallAgent(ctx, crewPackage+"/chatter", "say hello")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -225,23 +225,23 @@ func TestConflictedAcceptReportsBack(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewAuthority + "/widget", ID: "w-moved", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: "w-moved", Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	fake.script("root",
-		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/widget","target":"w-moved","diff":{"properties":{"name":"better"}}}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-moved","diff":{"properties":{"name":"better"}}}`}}},
 		fakeTurn{content: "proposed."},
 		// The conflict notification resumes the thread too: the agent should
 		// hear that its held write can no longer land as reviewed.
 		fakeTurn{content: "understood, re-reading."},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/classifier", "change the widget")
+	res, err := ds.CallAgent(ctx, crewPackage+"/classifier", "change the widget")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
 	// The target moves under the pending request, so the accept's CAS fails.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, crewAuthority+"/widget", "w-moved", substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorAPI, crewPackage+"/widget", "w-moved", substrate.PatchInput{
 		Properties: map[string]any{"name": "owner-took-it"},
 	}); err != nil {
 		t.Fatal(err)

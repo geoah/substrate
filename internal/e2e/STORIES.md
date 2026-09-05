@@ -83,7 +83,7 @@ anywhere. The function folds it into the real `calendarevent`.
 
 Asserted: the four attendees and the organizer; the minted `jordan` record's
 exact shape; no record whose email is the resource address; idempotent
-re-delivery; changelog attribution to `function:<authority>:<name>`.
+re-delivery; changelog attribution to `function:<authority>:<package>:<name>`.
 
 ## STORY-03: a transcript finds its meeting, or honestly does not
 
@@ -175,8 +175,8 @@ passing forever.
 
 1. Attribution audit over the whole changelog: every row's actor is exactly
    the user's token actor, a bundle actor, the story functions
-   (`function:<authority>:<name>`) or the story agents
-   (`agent:<authority>:<name>`); writer and judge distinct; nothing wrote as
+   (`function:<authority>:<package>:<name>`) or the story agents
+   (`agent:<authority>:<package>:<name>`); writer and judge distinct; nothing wrote as
    `substrate` except registration's own records.
 2. `substratectl repository verify`: every hash, every signature.
 3. `substratectl repository rebuild`: the refolded records answer STORY-01's
@@ -213,7 +213,7 @@ say; each is a candidate for vocabulary work, not a test to force:
 - The story-local declarations (the STORY-02 resolver function, the
   `scorecandidates` tool, and the three agents (`transcriptMatcher`,
   `actionItemExtractor`, `changeRequestReviewer`)) live in one
-  story-local authority, applied via `POST /api/v1/vocabulary/apply` as test
+  story-local package, applied via `POST /api/v1/vocabulary/apply` as test
   fixtures; they are not `kinds/` additions.
 - The fake LLM (stories 03, 04, 05) is one stub serving
   `POST /chat/completions`, answered by per-model RESPONDERS: deterministic

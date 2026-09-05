@@ -1,0 +1,136 @@
+# one turn of a thread: the transcript and the tool-call audit as ordinary
+# rows, written by the loop as it runs. `role` follows the chat wire —
+# system prompts are on the agent row and are not persisted per thread; a
+# `user` row is the envelope (triggered runs) or the human's message (chat);
+# an `assistant` row carries prose and/or its tool calls; a `tool` row is one
+# dispatched call's result, keyed back by toolCallId; a `system` row is the
+# substrate's own turn (a proposal decision), written by the engine and
+# replayed to the model as context.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/llmmessage
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    One turn of an agent thread — the transcript and the tool-call audit,
+    written by the loop as it runs. A user turn is the envelope or the human's
+    message, an assistant turn its prose and tool calls, a tool turn one dispatched
+    call's result.
+  # version 3: `thread` became a REFERENCE and tool rows gained `ok`. The
+  # declaration carried no version of its own before this, inheriting the
+  # package's — and an unbumped edit is a no-op to the upgrade, so this key
+  # is what carries the change into repositories that already hold the row.
+  # version 4: `toolCalls` is typed — a repeated {id, name, arguments} object
+  # instead of a json blob; the arguments stay the verbatim wire string.
+  # version 5: the thread pointer pins with `kind:`, the reference property's
+  # own word.
+  # version 6: rows carry `changes` — the changelog entries their dispatch
+  # wrote, stamped by the engine — and `system` joins the roles: the
+  # substrate's own turns (a proposal decision), so a reader of the thread
+  # needs nothing but the rows to see what happened.
+  # version 7: `role` and `changes.op` become enums. `op` declares every op
+  # the effect applier can stamp, merge and split included (effects.go), not
+  # just the five the prose named: a stamped op outside the declared set
+  # would refuse the loop's own message write.
+  # version 8: `changes.op` says on the property that it carries the changelog
+  # op verbatim, so a reader does not take it for a trigger's change class.
+  # version 9: the constructor invariants. Every row the loop writes carries a
+  # `role` and a `turn`, so both are required, and a turn counts from 0, so it
+  # carries `min: 0`.
+  # version 11: a tool row names the tool it answers for in `name`, where the
+  # property was `tool`; the word matches `toolCalls.name`, the same tool name
+  # on the assistant turn that dispatched the call.
+  # version 12: `changes.op` declares the ops the changelog carries: put,
+  # patch, delete, merge and split. `link` and `unlink` are retired verbs, and
+  # no changelog a binary will replay stamps them.
+  version: 12
+  names:
+    singular: llmmessage
+  displayTemplate: "{role} #{turn}"
+  properties:
+    role:
+      type: enum
+      required: true
+      values:
+        - user
+        - assistant
+        - tool
+        - system
+      description: whose turn the row is, following the chat wire
+    content:
+      type: text
+      description: the turn's text; a tool row's result payload
+    turn:
+      type: int
+      required: true
+      min: 0
+      description: the loop iteration this row belongs to, for ordering
+    # The arguments ride as the VERBATIM wire string: they are the model's own
+    # JSON, echoed back on the tool result, and re-encoding them would change
+    # the bytes the provider matched a call by.
+    toolCalls:
+      type: object
+      repeated: true
+      description: an assistant turn's dispatched calls
+      fields:
+        id:
+          type: string
+          description: the provider's call id, which a tool row answers by
+        name:
+          type: string
+          description: the tool the model called
+        arguments:
+          type: text
+          fts: false
+          description: the call's arguments, as the provider wrote them
+    toolCallId:
+      type: string
+      description: the assistant tool call a tool row answers
+    name:
+      type: string
+      description: the tool name a tool row answers for
+    ok:
+      type: bool
+      description: whether the dispatch a tool row answers for succeeded
+    # Stamped by the ENGINE, never authored by the model: the changelog
+    # entries a tool row's dispatch wrote (a mutate's writes, a propose's
+    # request row, a function tool's applied effects), or the entries a
+    # decision wrote on a system row. The seq addresses the delta in the
+    # changelog; kind and id address the record it moved — so any reader of
+    # the thread can show WHAT changed without parsing tool payloads.
+    changes:
+      type: object
+      repeated: true
+      description: the changelog entries this turn's dispatch wrote, stamped
+        by the engine
+      fields:
+        seq:
+          type: int
+          description: the changelog seq of the entry, which addresses its
+            delta
+        # THE CHANGELOG'S OWN OP, verbatim (substrate.Op): what the entry
+        # landed as, never a trigger's change class and never the request op a
+        # propose wrote. docs/changelog.md#change-verbs holds the mapping.
+        op:
+          type: enum
+          values:
+            - put
+            - patch
+            - delete
+            - merge
+            - split
+          description: the changelog op the entry landed as, verbatim
+        kind:
+          type: string
+          description: the written record's kind
+        id:
+          type: string
+          description: the written record's id
+    thread:
+      type: reference
+      kind: substrate.reamde.dev/core/llmthread
+      required: true
+      inverse: messages
+      inverseDescription: the turns of this thread, in loop order
+      description: the thread this turn belongs to

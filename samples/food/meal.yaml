@@ -1,0 +1,38 @@
+# one sitting: what was eaten, when
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: samples.substrate.reamde.dev/food/meal
+data:
+  authority: samples.substrate.reamde.dev
+  package: food
+  description: >-
+    One sitting on the timeline: what was eaten and when. Nutrition numbers
+    worth tracking are health observationlogs whose subject reference points
+    at the meal, so this record stays a diary line.
+  names:
+    singular: meal
+  displayTemplate: "{name}"
+  # `at` is when it was eaten.
+  traits:
+    - temporal(point)
+  properties:
+    name:
+      type: string
+      required: true
+      description: what was eaten, one line
+    mealType:
+      type: enum
+      description: which meal of the day it was
+      values:
+        - breakfast
+        - lunch
+        - dinner
+        - snack
+    details:
+      type: markdown
+      description: anything worth saying about this sitting, as prose
+    recipe:
+      type: reference
+      kind: recipe
+      mustExist: true
+      description: the recipe it was cooked from, when there is one

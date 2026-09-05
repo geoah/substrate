@@ -38,9 +38,9 @@ func TestUnmatchedAPIPathsAreJSONNotFound(t *testing.T) {
 		"/api/nope",
 		"/api/v1/nope",
 		"/api/v1/nope",
-		"/api/v1/core.substrate.reamde.dev/nope",
+		"/api/v1/substrate.reamde.dev/core/nope",
 		"/api/v1/changes/nope",
-		"/api/v1/people.substrate.reamde.dev/person/9f2k/nope",
+		"/api/v1/samples.substrate.reamde.dev/people/person/9f2k/nope",
 	} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.Header.Set("Authorization", "Bearer "+tok)
@@ -64,7 +64,7 @@ func TestUnmatchedAPIPathsAreJSONNotFound(t *testing.T) {
 	// A console route is still the console's: the SPA fallback is why the
 	// deep links work at all.
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/types/people.people.substrate.reamde.dev", nil))
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/types/people.samples.substrate.reamde.dev/people", nil))
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "console") {
 		t.Fatalf("console route: status = %d, body = %q", rec.Code, rec.Body.String())
 	}
@@ -86,11 +86,11 @@ func TestUnmatchedAPIPathsAreJSONWithoutAWebDir(t *testing.T) {
 	// already — so it is the router's fallback that has to answer well.
 	wantErrorCode(t, env.do(t, http.MethodGet, "/api/v1/nope", tok, nil),
 		http.StatusNotFound, codeNotFound)
-	wantErrorCode(t, env.do(t, http.MethodGet, "/api/v1/core.substrate.reamde.dev/nope", tok, nil),
+	wantErrorCode(t, env.do(t, http.MethodGet, "/api/v1/substrate.reamde.dev/core/nope", tok, nil),
 		http.StatusNotFound, codeNotFound)
 	// An unauthenticated one is refused before the path is considered at all,
 	// which is a JSON problem object too — never HTML with a 200.
-	wantErrorCode(t, env.do(t, http.MethodGet, "/api/v1/core.substrate.reamde.dev/nope", "", nil),
+	wantErrorCode(t, env.do(t, http.MethodGet, "/api/v1/substrate.reamde.dev/core/nope", "", nil),
 		http.StatusUnauthorized, codeAuth)
 }
 
@@ -174,7 +174,7 @@ func TestUnknownChangeParamsAreRefused(t *testing.T) {
 	seedChanges(env.svc.datasets["geoah"], 3)
 
 	for query, want := range map[string]string{
-		"?kind=people.substrate.reamde.dev/person": "kinds",
+		"?kind=samples.substrate.reamde.dev/people/person": "kinds",
 		"?op=put":      "ops",
 		"?actor=owner": "actors",
 		"?bogus=1":     "",
@@ -199,15 +199,15 @@ func TestSupportedChangeParamsStillWork(t *testing.T) {
 		"?from=0",
 		"?first=2",
 		"?first=2&before=3",
-		"?kinds=people.substrate.reamde.dev/person&ops=put&actors=owner",
-		"?excludeKinds=tasks.substrate.reamde.dev/task&excludeOps=delete&excludeActors=machine",
-		"?recordId=e1&recordKind=people.substrate.reamde.dev/person",
+		"?kinds=samples.substrate.reamde.dev/people/person&ops=put&actors=owner",
+		"?excludeKinds=samples.substrate.reamde.dev/tasks/task&excludeOps=delete&excludeActors=machine",
+		"?recordId=e1&recordKind=samples.substrate.reamde.dev/people/person",
 		"?q=ada",
 	} {
 		rec := env.do(t, http.MethodGet, changesPath+query, tok, nil)
 		wantStatus(t, rec, http.StatusOK)
 	}
-	wantNotRefused(t, env, changesPath+"?watch=1&from=3&kinds=people.substrate.reamde.dev/person", tok)
+	wantNotRefused(t, env, changesPath+"?watch=1&from=3&kinds=samples.substrate.reamde.dev/people/person", tok)
 }
 
 // --- discovery's schema note ------------------------------------------------

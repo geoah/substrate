@@ -849,7 +849,7 @@ func validRepositoryAuthority(authority string) error {
 }
 
 // publisherAuthority is the suffix every shipped authority carries
-// (`core.substrate.reamde.dev`, `google.bundles.substrate.reamde.dev`), and
+// (`substrate.reamde.dev/core`, `providers.substrate.reamde.dev/google`), and
 // so the one no repository may claim.
 const publisherAuthority = "substrate.reamde.dev"
 

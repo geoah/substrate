@@ -31,7 +31,7 @@ func TestRebuildRefusesARetiredLinkOp(t *testing.T) {
 			}
 			importVocabulary(t, ds)
 			kept := mustPut(t, ds, owner, substrate.PutInput{
-				Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "Ada Lovelace"},
+				Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Ada Lovelace"},
 			})
 
 			// One entry as the old binary spelled it. Raw SQL because no writer

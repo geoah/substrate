@@ -6,18 +6,25 @@
  *
  * There is NO repository segment anywhere — the token implies the repository —
  * and no tenant. A collection path IS the kind reference split into segments:
- * `/{authority}/{kind}` for a published kind, `/{kind}` for a
- * repository-local one — the collection segment is the kind name. */
+ * `/{authority}/{package}/{kind}`, three segments, and the last of them is the
+ * kind name. */
 
 import { getToken, sessionExpired } from "./session"
 import { ApiError, type ErrorCode, type ProblemDetail } from "./types"
 
 export const API_BASE = "/api/v1"
 
-/** The substrate's own authority, whose meta-model collections
- * (`kinds`, `catalog`, `bundles`, `changes`, …) the console addresses by
- * name. Every other collection comes out of the registry. */
-export const CORE_AUTHORITY = "core.substrate.reamde.dev"
+/** The authority the substrate publishes its own vocabulary under. */
+export const CORE_AUTHORITY = "substrate.reamde.dev"
+
+/** The core package's own word — the middle segment of every core kind
+ * reference. */
+export const CORE_PACKAGE_NAME = "core"
+
+/** The core package IDENTITY, `<authority>/<package>`: the package whose
+ * meta-model collections (`kind`, `bundle`, `agent`, …) the console addresses
+ * by name. Every other collection comes out of the registry. */
+export const CORE_PACKAGE = `${CORE_AUTHORITY}/${CORE_PACKAGE_NAME}`
 
 /** The console names which door a write came through: `X-Substrate-Actor` is
  * ATTRIBUTION, not authorization. */
@@ -152,35 +159,54 @@ export async function request<T>(
  * record's id into `%2F`, which the API decodes exactly once (`pathParam`). */
 export const seg = encodeURIComponent
 
-/** A kind reference split into its two parts. A stored kind is always
- * authority-qualified (decision 0042); the empty-authority answer only ever
- * comes back for a bare shorthand name, which mirrors the server's
+/** A kind reference split into its three parts. A stored kind is always
+ * authority- and package-qualified (decisions 0042, 0047); the empty answer
+ * only ever comes back for a bare shorthand name, which mirrors the server's
  * `SplitKindRef`. */
-export function splitKind(ref: string): { authority: string; name: string } {
-  const slash = ref.indexOf("/")
-  return slash < 0
-    ? { authority: "", name: ref }
-    : { authority: ref.slice(0, slash), name: ref.slice(slash + 1) }
+export function splitKind(ref: string): {
+  authority: string
+  pkg: string
+  name: string
+} {
+  const first = ref.indexOf("/")
+  if (first < 0) return { authority: "", pkg: "", name: ref }
+  const second = ref.indexOf("/", first + 1)
+  if (second < 0) return { authority: "", pkg: "", name: ref }
+  return {
+    authority: ref.slice(0, first),
+    pkg: ref.slice(first + 1, second),
+    name: ref.slice(second + 1),
+  }
 }
 
 /** A kind reference from its parts — the inverse of `splitKind`. */
-export function joinKind(authority: string, name: string): string {
-  return authority ? `${authority}/${name}` : name
+export function joinKind(authority: string, pkg: string, name: string): string {
+  return authority ? `${authority}/${pkg}/${name}` : name
 }
 
-/** The collection path of a declared kind: the authority and the collection
- * segment are both path segments, and every kind carries an authority
- * (decision 0042). The collection segment IS the kind's NAME (decision 0033),
- * so everything after `/api/v1/` is the kind reference and a record's path is
- * the value a `reference` property stores. */
-export function collectionPath(authority: string, name: string): string {
-  return `${API_BASE}/${seg(authority)}/${seg(name)}`
+/** The package's own path prefix: the authority and the package, each its own
+ * segment. */
+function packagePath(authority: string, pkg: string): string {
+  return `${API_BASE}/${seg(authority)}/${seg(pkg)}`
 }
 
-/** The core meta-model's own collections, addressed the same way (the segment
+/** The collection path of a declared kind: the authority, the package and the
+ * collection segment are three path segments, and every kind carries all three
+ * (decisions 0042, 0047). The collection segment IS the kind's NAME (decision
+ * 0033), so everything after `/api/v1/` is the kind reference and a record's
+ * path is the value a `reference` property stores. */
+export function collectionPath(
+  authority: string,
+  pkg: string,
+  name: string
+): string {
+  return `${packagePath(authority, pkg)}/${seg(name)}`
+}
+
+/** The core package's own collections, addressed the same way (the segment
  * is the kind name). */
 export function corePath(name: string, id?: string): string {
-  const base = `${API_BASE}/${CORE_AUTHORITY}/${seg(name)}`
+  const base = collectionPath(CORE_AUTHORITY, CORE_PACKAGE_NAME, name)
   return id === undefined ? base : `${base}/${seg(id)}`
 }
 
@@ -198,9 +224,10 @@ export function rootPath(...segments: string[]): string {
  * them (`.../{id}/incoming`, `.../{name}/call`). */
 export function recordSubPath(
   authority: string,
+  pkg: string,
   name: string,
   id: string,
   ...sub: string[]
 ): string {
-  return `${collectionPath(authority, name)}/${seg(id)}/${sub.map(seg).join("/")}`
+  return `${collectionPath(authority, pkg, name)}/${seg(id)}/${sub.map(seg).join("/")}`
 }

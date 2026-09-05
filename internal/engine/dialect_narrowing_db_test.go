@@ -42,10 +42,10 @@ func dnBaseProps() map[string]any {
 func dnRow(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwAuthority + "/target", ID: "a", Properties: map[string]any{"name": "Ada"},
+		Kind: dwPackage + "/target", ID: "a", Properties: map[string]any{"name": "Ada"},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwAuthority + "/holder", ID: "h1",
+		Kind: dwPackage + "/holder", ID: "h1",
 		Properties: map[string]any{
 			"grant": map[string]any{"scopes": []any{"read"}, "subject": "ada"},
 			"spec": map[string]any{
@@ -157,19 +157,19 @@ func dnCases() map[string]struct {
 			mutate: func(props map[string]any) {
 				props["tools"].(map[string]any)["fields"].(map[string]any)["callable"] = map[string]any{"type": "reference", "kind": "other"}
 			},
-			says: `object "tools" reference "callable" narrows its target to ` + dwAuthority + `/other`,
+			says: `object "tools" reference "callable" narrows its target to ` + dwPackage + `/other`,
 		},
 		"reference inside a keyed map narrows": {
 			mutate: func(props map[string]any) {
 				props["installs"].(map[string]any)["fields"].(map[string]any)["source"] = map[string]any{"type": "reference", "kind": "other"}
 			},
-			says: `object "installs" reference "source" narrows its target to ` + dwAuthority + `/other`,
+			says: `object "installs" reference "source" narrows its target to ` + dwPackage + `/other`,
 		},
 		"reference at level 3 narrows": {
 			mutate: func(props map[string]any) {
 				limitFields(props)["ref"] = map[string]any{"type": "reference", "kind": "other"}
 			},
-			says: `object "spec.limits" reference "ref" narrows its target to ` + dwAuthority + `/other`,
+			says: `object "spec.limits" reference "ref" narrows its target to ` + dwPackage + `/other`,
 		},
 		// A string retyped to enum counts by VALUE: the held value is outside
 		// the declared set here, so both arms refuse; without rows the same
@@ -305,11 +305,11 @@ func TestNarrowingAdmitsWhatTheDataAlreadySatisfies(t *testing.T) {
 		t.Fatalf("install the base authority: %v", err)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwAuthority + "/target", ID: "a", Properties: map[string]any{"name": "Ada"},
+		Kind: dwPackage + "/target", ID: "a", Properties: map[string]any{"name": "Ada"},
 	})
-	target := vocabulary.RecordPath(dwAuthority+"/target", "a")
+	target := vocabulary.RecordPath(dwPackage+"/target", "a")
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwAuthority + "/holder", ID: "conforms",
+		Kind: dwPackage + "/holder", ID: "conforms",
 		Properties: map[string]any{
 			// The object is present and its optional reference is not.
 			"loose": map[string]any{"note": "no pointer here"},
@@ -322,7 +322,7 @@ func TestNarrowingAdmitsWhatTheDataAlreadySatisfies(t *testing.T) {
 	})
 	// An EMPTY keyed map is still a stored value, and it points nowhere.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwAuthority + "/holder", ID: "empties",
+		Kind: dwPackage + "/holder", ID: "empties",
 		Properties: map[string]any{"keyedRefs": map[string]any{}, "notes": map[string]any{}},
 	})
 
@@ -385,10 +385,10 @@ func TestNarrowingAdmitsWhatTheDataAlreadySatisfies(t *testing.T) {
 	// The same three diffs, one row later. Nothing about the declarations
 	// changed: the answers move with the DATA, which is the whole contract.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwAuthority + "/holder", ID: "strays",
+		Kind: dwPackage + "/holder", ID: "strays",
 		Properties: map[string]any{
-			"loose":     map[string]any{"ref": vocabulary.RecordPath(dwAuthority+"/other", "o1")},
-			"keyedRefs": map[string]any{"primary": vocabulary.RecordPath(dwAuthority+"/other", "o1")},
+			"loose":     map[string]any{"ref": vocabulary.RecordPath(dwPackage+"/other", "o1")},
+			"keyedRefs": map[string]any{"primary": vocabulary.RecordPath(dwPackage+"/other", "o1")},
 			"notes":     map[string]any{"not a camel key": "x"},
 		},
 	})
@@ -427,7 +427,7 @@ func TestNestedNarrowingCountsOnlyTheRowsThatCarryTheValue(t *testing.T) {
 	}
 	// Two rows, one of them carrying nothing at the narrowed path.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwAuthority + "/holder", ID: "empty", Properties: map[string]any{"plain": "text"},
+		Kind: dwPackage + "/holder", ID: "empty", Properties: map[string]any{"plain": "text"},
 	})
 	props := dnBaseProps()
 	delete(props["spec"].(map[string]any)["fields"].(map[string]any)["limits"].(map[string]any)["fields"].(map[string]any), "depth")
@@ -442,7 +442,7 @@ func TestNestedNarrowingCountsOnlyTheRowsThatCarryTheValue(t *testing.T) {
 		t.Fatalf("restore the base declaration: %v", err)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwAuthority + "/holder", ID: "carrier",
+		Kind: dwPackage + "/holder", ID: "carrier",
 		Properties: map[string]any{"spec": map[string]any{"limits": map[string]any{"depth": 1}}},
 	})
 	wantNarrowingGuard(t, dwApply(t, ds, props), `drops field "depth"`, "1 live records")

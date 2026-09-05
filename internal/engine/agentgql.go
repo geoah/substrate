@@ -32,7 +32,7 @@ const agentGQLMaxBytes = 64 << 10
 
 // The card shape of the graphql and mutate built-ins — v4's two-field contract,
 // a document plus its variables — is no longer a literal here: it is the
-// `arguments:` of the `core.substrate.reamde.dev/graphql` and `…/mutate`
+// `arguments:` of the `substrate.reamde.dev/core/graphql` and `…/mutate`
 // declarations, compiled by the loader like any other function's.
 
 // dispatchGraphQL runs the read-only built-in.
@@ -63,7 +63,7 @@ func (l *agentLoop) execGraphQL(ctx context.Context, args map[string]any, mutate
 // `actor` is the hand a write would be attributed to.
 //
 // It is a dataset method rather than a loop one because
-// `core.substrate.reamde.dev/graphql` is callable directly too, where the caller
+// `substrate.reamde.dev/core/graphql` is callable directly too, where the caller
 // is a token that owns the repository and there is no loop.
 func (ds *dataset) runGraphQLTool(ctx context.Context, actor substrate.Actor, target substrate.Dataset, args map[string]any, mutate bool) (string, bool) {
 	query, _ := args["query"].(string)

@@ -34,7 +34,7 @@ def main(input, host):
 	ctx := context.Background()
 
 	// Valid input, faulting body: the run reached the body and it raised.
-	_, _, err := ops.CallFunction(ctx, fnAuthority+"/boom", map[string]any{"title": "ok"})
+	_, _, err := ops.CallFunction(ctx, fnPackage+"/boom", map[string]any{"title": "ok"})
 	if err == nil {
 		t.Fatal("a raising body returned no error")
 	}
@@ -46,7 +46,7 @@ def main(input, host):
 	}
 
 	// Missing the required argument refuses BEFORE the body runs, as validation.
-	_, _, err = ops.CallFunction(ctx, fnAuthority+"/boom", map[string]any{})
+	_, _, err = ops.CallFunction(ctx, fnPackage+"/boom", map[string]any{})
 	if !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("missing required input is %v, want ErrValidation", err)
 	}
@@ -67,7 +67,7 @@ func adderFn() map[string]any {
 def main(input, host):
     title = input["args"]["title"]
     tid = "call-" + title.replace(" ", "-")
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": tid, "properties": {"name": title}}],
             "output": {"id": tid}}
 `)
@@ -80,7 +80,7 @@ func TestCallModeValidatesAndApplies(t *testing.T) {
 
 	// A valid call: input passes the schema, effects apply under the
 	// function's actor, the output comes back shaped.
-	out, effects, err := ops.CallFunction(ctx, fnAuthority+"/adder", map[string]any{"title": "from a call"})
+	out, effects, err := ops.CallFunction(ctx, fnPackage+"/adder", map[string]any{"title": "from a call"})
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestCallModeValidatesAndApplies(t *testing.T) {
 	if got := mustGet(t, ds, taskType, id); got.Title != "from a call" {
 		t.Fatalf("call effect: %+v", got)
 	}
-	rows := actorChanges(t, ds, fnAuthority+"/adder")
+	rows := actorChanges(t, ds, fnPackage+"/adder")
 	if len(rows) != 1 || rows[0].RecordID != id {
 		t.Fatalf("call attribution: %+v", rows)
 	}
@@ -108,7 +108,7 @@ func TestCallModeValidatesAndApplies(t *testing.T) {
 		"undeclared key":   map[string]any{"title": "x", "extra": true},
 		"not an object":    "just a string",
 	} {
-		if _, _, err := ops.CallFunction(ctx, fnAuthority+"/adder", args); err == nil {
+		if _, _, err := ops.CallFunction(ctx, fnPackage+"/adder", args); err == nil {
 			t.Fatalf("%s: invalid input accepted", name)
 		}
 	}
@@ -123,18 +123,18 @@ func TestHostCallGatingAndCallerTransaction(t *testing.T) {
 	outer := func(name string, granted bool, ownEffect string) map[string]any {
 		data := map[string]any{}
 		if granted {
-			fnPermissions(data)["call"] = []any{fnAuthority + "/adder"}
+			fnPermissions(data)["call"] = []any{fnPackage + "/adder"}
 		}
 		return pyFn(name, data, []any{taskType}, `
 def main(input, host):
     e = input["envelope"]["record"]
-    out = host.call("`+fnAuthority+`/adder", {"title": e["properties"]["name"]})
+    out = host.call("`+fnPackage+`/adder", {"title": e["properties"]["name"]})
     return {"effects": [`+ownEffect+`], "output": out}
 `)
 	}
-	ownOK := `{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+	ownOK := `{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                "id": "own-" + e["id"], "properties": {"name": "own " + out["id"]}}`
-	ownBroken := `{"action": "patch", "kind": "tasks.substrate.reamde.dev/task",
+	ownBroken := `{"action": "patch", "kind": "samples.substrate.reamde.dev/tasks/task",
                    "id": "missing-" + e["id"], "properties": {"name": "x"}}`
 
 	ds, ops := newFnDataset(t,
@@ -200,45 +200,45 @@ func TestFailedCalleeLeavesNoDescendantEffects(t *testing.T) {
 	t.Parallel()
 	leaf := pyFn("leaf", map[string]any{}, []any{taskType}, `
 def main(input, host):
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "c-effect", "properties": {"name": "from c"}}]}
 `)
 	mid := func(name, after string) map[string]any {
 		return pyFn(name, map[string]any{
-			"permissions": map[string]any{"call": []any{fnAuthority + "/leaf"}},
+			"permissions": map[string]any{"call": []any{fnPackage + "/leaf"}},
 			"returns":     []any{map[string]any{"name": "ok", "type": "bool"}},
 		}, []any{taskType}, `
 def main(input, host):
-    host.call("`+fnAuthority+`/leaf", None)
+    host.call("`+fnPackage+`/leaf", None)
     `+after+`
 `)
 	}
 	caller := pyFn("catcher", map[string]any{
 		"permissions": map[string]any{"call": []any{
-			fnAuthority + "/raiser", fnAuthority + "/badeffect", fnAuthority + "/badoutput",
+			fnPackage + "/raiser", fnPackage + "/badeffect", fnPackage + "/badoutput",
 		}},
 		"arguments": []any{map[string]any{"name": "mid", "type": "string"}},
 	}, []any{taskType}, `
 def main(input, host):
     mid = input["args"]["mid"]
     try:
-        host.call("`+fnAuthority+`/" + mid, None)
+        host.call("`+fnPackage+`/" + mid, None)
     except Exception:
         pass
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "a-" + mid, "properties": {"name": "a survived " + mid}}]}
 `)
 	ds, ops := newFnDataset(t, nil,
 		leaf,
 		mid("raiser", `raise Exception("b explodes")`),
-		mid("badeffect", `return {"effects": [{"action": "conjure", "kind": "tasks.substrate.reamde.dev/task", "id": "x"}], "output": {"ok": True}}`),
+		mid("badeffect", `return {"effects": [{"action": "conjure", "kind": "samples.substrate.reamde.dev/tasks/task", "id": "x"}], "output": {"ok": True}}`),
 		mid("badoutput", `return {"output": "not the declared object"}`),
 		caller,
 	)
 	ctx := context.Background()
 
 	for _, mid := range []string{"raiser", "badeffect", "badoutput"} {
-		if _, _, err := ops.CallFunction(ctx, fnAuthority+"/catcher", map[string]any{"mid": mid}); err != nil {
+		if _, _, err := ops.CallFunction(ctx, fnPackage+"/catcher", map[string]any{"mid": mid}); err != nil {
 			t.Fatalf("%s: the catching caller failed: %v", mid, err)
 		}
 		if _, err := ds.Get(ctx, taskType, "a-"+mid); err != nil {
@@ -258,7 +258,7 @@ func TestDeclaredOutputRefusesNil(t *testing.T) {
 	shaped := []any{map[string]any{"name": "id", "type": "string", "required": true}}
 	silent := pyFn("silent", map[string]any{"returns": shaped}, []any{taskType}, `
 def main(input, host):
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "silent-effect", "properties": {"name": "x"}}]}
 `)
 	nuller := pyFn("nuller", map[string]any{"returns": shaped}, []any{taskType}, `
@@ -272,33 +272,33 @@ def main(input, host):
     return {}
 `)
 	nestCaller := pyFn("nestcaller", map[string]any{
-		"permissions": map[string]any{"call": []any{fnAuthority + "/silent"}},
+		"permissions": map[string]any{"call": []any{fnPackage + "/silent"}},
 	}, []any{taskType}, `
 def main(input, host):
-    out = host.call("`+fnAuthority+`/silent", None)
+    out = host.call("`+fnPackage+`/silent", None)
     return {"output": out}
 `)
 	ds, ops := newFnDataset(t, nil, silent, nuller, anyOut, nestCaller)
 	ctx := context.Background()
 
 	// Top level: omitted and explicit-null both refuse, and no effects land.
-	if _, _, err := ops.CallFunction(ctx, fnAuthority+"/silent", nil); err == nil ||
+	if _, _, err := ops.CallFunction(ctx, fnPackage+"/silent", nil); err == nil ||
 		!strings.Contains(err.Error(), "output") {
 		t.Fatalf("an omitted output passed the declared shape: %v", err)
 	}
 	if _, err := ds.Get(ctx, taskType, "silent-effect"); err == nil {
 		t.Fatal("effects applied under a refused output")
 	}
-	if _, _, err := ops.CallFunction(ctx, fnAuthority+"/nuller", nil); err == nil ||
+	if _, _, err := ops.CallFunction(ctx, fnPackage+"/nuller", nil); err == nil ||
 		!strings.Contains(err.Error(), "output") {
 		t.Fatalf("an explicit null passed the declared shape: %v", err)
 	}
 	// An undeclared result side stays open.
-	if _, _, err := ops.CallFunction(ctx, fnAuthority+"/anyout", nil); err != nil {
+	if _, _, err := ops.CallFunction(ctx, fnPackage+"/anyout", nil); err != nil {
 		t.Fatalf("any refused nil: %v", err)
 	}
 	// Nested: the host Call surfaces the same violation to the caller.
-	if _, _, err := ops.CallFunction(ctx, fnAuthority+"/nestcaller", nil); err == nil ||
+	if _, _, err := ops.CallFunction(ctx, fnPackage+"/nestcaller", nil); err == nil ||
 		!strings.Contains(err.Error(), "output") {
 		t.Fatalf("a nested omitted output passed: %v", err)
 	}
@@ -317,15 +317,15 @@ def main(input, host):
     return {"output": input["idempotencyKey"]}
 `)
 	twice := pyFn("twice", map[string]any{
-		"permissions": map[string]any{"call": []any{fnAuthority + "/echo"}},
+		"permissions": map[string]any{"call": []any{fnPackage + "/echo"}},
 	}, []any{taskType}, `
 def main(input, host):
-    k1 = host.call("`+fnAuthority+`/echo", {"n": 1})
-    k2 = host.call("`+fnAuthority+`/echo", {"n": 2})
+    k1 = host.call("`+fnPackage+`/echo", {"n": 1})
+    k2 = host.call("`+fnPackage+`/echo", {"n": 2})
     return {"output": [k1, k2]}
 `)
 	_, ops := newFnDataset(t, nil, echo, twice)
-	out, _, err := ops.CallFunction(context.Background(), fnAuthority+"/twice", nil)
+	out, _, err := ops.CallFunction(context.Background(), fnPackage+"/twice", nil)
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -338,7 +338,7 @@ def main(input, host):
 	if k1 == k2 {
 		t.Fatalf("two calls to one callee share the key %q", k1)
 	}
-	if !strings.Contains(k1, "/call/1/"+fnAuthority+"/echo") || !strings.Contains(k2, "/call/2/"+fnAuthority+"/echo") {
+	if !strings.Contains(k1, "/call/1/"+fnPackage+"/echo") || !strings.Contains(k2, "/call/2/"+fnPackage+"/echo") {
 		t.Fatalf("keys lack the stack path + ordinal: %q %q", k1, k2)
 	}
 }

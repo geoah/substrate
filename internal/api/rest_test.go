@@ -15,12 +15,12 @@ import (
 
 // The collection segment is the kind NAME, not a plural (decision 0033), so a
 // person's collection is /person and a record's URL equals its reference.
-const peoplePath = "/api/v1/people.substrate.reamde.dev/person"
+const peoplePath = "/api/v1/samples.substrate.reamde.dev/people/person"
 
 func TestRESTUnknownCollectionIs404(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
-	rec := env.do(t, http.MethodGet, "/api/v1/people.substrate.reamde.dev/widgets", tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/samples.substrate.reamde.dev/people/widgets", tok, nil)
 	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
 }
 
@@ -34,10 +34,10 @@ func TestRESTCRUD(t *testing.T) {
 	})
 	wantStatus(t, rec, http.StatusCreated)
 	created := decodeJSON[substrate.Record](t, rec)
-	if created.Kind != "people.substrate.reamde.dev/person" {
+	if created.Kind != "samples.substrate.reamde.dev/people/person" {
 		t.Fatalf("POST must stamp the collection's type, got %q", created.Kind)
 	}
-	if ds.lastPut.Kind != "people.substrate.reamde.dev/person" {
+	if ds.lastPut.Kind != "samples.substrate.reamde.dev/people/person" {
 		t.Fatalf("put input type = %q", ds.lastPut.Kind)
 	}
 
@@ -82,12 +82,12 @@ func TestRESTGetOneCarriesPropertyMeta(t *testing.T) {
 
 	at := time.Unix(1_700_000_000, 0).UTC()
 	ds.records["p1"] = &substrate.Record{
-		ID: "p1", Kind: "people.substrate.reamde.dev/person",
+		ID: "p1", Kind: "samples.substrate.reamde.dev/people/person",
 		Properties: map[string]any{"name": "Sam"},
 	}
 	ds.meta["p1"] = map[string]substrate.PropertyMeta{
 		"name": {Manager: "owner", UpdatedAt: at, Alternatives: []substrate.PropertyAlternative{
-			{Actor: "google.connectors.substrate.reamde.dev/people", Value: "Samuel Jones", UpdatedAt: at},
+			{Actor: "google.connectors.substrate.reamde.dev/google/people", Value: "Samuel Jones", UpdatedAt: at},
 		}},
 	}
 
@@ -125,15 +125,15 @@ func TestRESTIncomingIsSeparateAndPaged(t *testing.T) {
 	ds := env.svc.datasets["geoah"]
 
 	ds.records["p1"] = &substrate.Record{
-		ID: "p1", Kind: "people.substrate.reamde.dev/person",
+		ID: "p1", Kind: "samples.substrate.reamde.dev/people/person",
 		Properties: map[string]any{"name": "Sam"},
 	}
 	ds.incoming["p1"] = []substrate.IncomingReference{
 		{Property: "person", From: substrate.IncomingSource{
-			ID: "people-c1001", Kind: "google.connectors.substrate.reamde.dev/contact", Title: "Samuel Jones",
+			ID: "people-c1001", Kind: "google.connectors.substrate.reamde.dev/google/contact", Title: "Samuel Jones",
 		}},
 		{Property: "manager", From: substrate.IncomingSource{
-			ID: "p2", Kind: "people.substrate.reamde.dev/person", Title: "Ada",
+			ID: "p2", Kind: "samples.substrate.reamde.dev/people/person", Title: "Ada",
 		}},
 	}
 
@@ -188,7 +188,7 @@ func TestRESTListForcesTheCollectionType(t *testing.T) {
 	wantStatus(t, rec, http.StatusOK)
 
 	q := ds.lastQuery
-	if len(q.Filter.Kinds) != 1 || q.Filter.Kinds[0] != "people.substrate.reamde.dev/person" {
+	if len(q.Filter.Kinds) != 1 || q.Filter.Kinds[0] != "samples.substrate.reamde.dev/people/person" {
 		t.Fatalf("filter types = %v, want the collection's type", q.Filter.Kinds)
 	}
 	if q.Filter.Properties["company"].Eq != "Analytical" {
@@ -209,7 +209,7 @@ func TestRESTListForcesTheCollectionType(t *testing.T) {
 func TestRESTListRejectsConflictingFilterTypes(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
-	filter := substrate.Filter{Kinds: []string{"messaging.substrate.reamde.dev/conversationmessage"}}
+	filter := substrate.Filter{Kinds: []string{"samples.substrate.reamde.dev/messaging/conversationmessage"}}
 	raw, err := json.Marshal(filter)
 	if err != nil {
 		t.Fatal(err)

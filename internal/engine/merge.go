@@ -12,8 +12,8 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// groupCore names the substrate's own machinery: none of it merges (§6).
-const groupCore = "core.substrate.reamde.dev"
+// corePackage names the substrate's own machinery: none of it merges (§6).
+const corePackage = "substrate.reamde.dev/core"
 
 // Merge and split, the two manual verbs. Nothing fuses by
 // value: two people holding one email address are two records until an owner
@@ -251,7 +251,7 @@ func (t *txn) mergeRecord(winnerRef, loserRef eref) (*substrate.Record, error) {
 // guardMergeType keeps the substrate's own state out of the generic merge
 // surface: a repository is not merged into another repository.
 func guardMergeType(ty *vocabulary.Kind) error {
-	if systemKinds[ty.Identity] || ty.Authority == groupCore {
+	if systemKinds[ty.Identity] || ty.Package == corePackage {
 		return fmt.Errorf("%w: %s records are managed by the substrate, not the generic merge surface",
 			substrate.ErrForbidden, ty.Identity)
 	}

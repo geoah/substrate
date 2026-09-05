@@ -2,7 +2,7 @@ package engine
 
 // The Google contacts bundle — the substrate's first real connector (ticket
 // 010). Two proofs, from the shipped closure at.
-// ./../kinds/google.bundles.substrate.reamde.dev:
+// ./../kinds/providers.substrate.reamde.dev/google:
 //
 //  1. TestGoogleContactsBundleAdmitsSchema — the closure ADMITS through the
 //     schema loader: the bundle declares the `client` input (facility-read,
@@ -37,32 +37,31 @@ import (
 )
 
 const (
-	googleExampleDir  = "../../kinds/google.bundles.substrate.reamde.dev"
-	googleAuthority   = "google.bundles.substrate.reamde.dev"
-	googleBundleRow   = googleAuthority + "/google"
-	googleConfigType  = googleAuthority + "/config"
-	googleAccountType = googleAuthority + "/account"
-	googleContactType = googleAuthority + "/contact"
-	googleSyncFn      = googleAuthority + "/contactssync"
-	googleMigrationFn = googleAuthority + "/contactsidmigration"
-	googleMapping     = googleAuthority + "/contactperson"
-	googlePersonType  = "people.substrate.reamde.dev/person"
+	googleExampleDir  = "../../kinds/providers.substrate.reamde.dev/google"
+	googlePackage     = "providers.substrate.reamde.dev/google"
+	googleConfigType  = googlePackage + "/config"
+	googleAccountType = googlePackage + "/account"
+	googleContactType = googlePackage + "/contact"
+	googleSyncFn      = googlePackage + "/contactssync"
+	googleMigrationFn = googlePackage + "/contactsidmigration"
+	googleMapping     = googlePackage + "/contactperson"
+	googlePersonType  = "samples.substrate.reamde.dev/people/person"
 
 	// The gmail + calendar half of the same closure.
-	googleAddressType  = googleAuthority + "/emailaddress"
-	googleThreadType   = googleAuthority + "/thread"
-	googleMessageType  = googleAuthority + "/message"
-	googleCalendarType = googleAuthority + "/calendar"
-	googleEventType    = googleAuthority + "/event"
-	googleGmailFn      = googleAuthority + "/gmailsync"
-	googleCalendarFn   = googleAuthority + "/calendarsync"
-	googleAddressMap   = googleAuthority + "/emailaddressperson"
+	googleAddressType  = googlePackage + "/emailaddress"
+	googleThreadType   = googlePackage + "/thread"
+	googleMessageType  = googlePackage + "/message"
+	googleCalendarType = googlePackage + "/calendar"
+	googleEventType    = googlePackage + "/event"
+	googleGmailFn      = googlePackage + "/gmailsync"
+	googleCalendarFn   = googlePackage + "/calendarsync"
+	googleAddressMap   = googlePackage + "/emailaddressperson"
 
-	coreThreadType   = "messaging.substrate.reamde.dev/emailthread"
-	coreMessageType  = "messaging.substrate.reamde.dev/emailmessage"
-	coreCalendarType = "calendar.substrate.reamde.dev/calendar"
-	coreEventType    = "calendar.substrate.reamde.dev/calendarevent"
-	coreSeriesType   = "calendar.substrate.reamde.dev/calendareventseries"
+	coreThreadType   = "samples.substrate.reamde.dev/messaging/emailthread"
+	coreMessageType  = "samples.substrate.reamde.dev/messaging/emailmessage"
+	coreCalendarType = "samples.substrate.reamde.dev/calendar/calendar"
+	coreEventType    = "samples.substrate.reamde.dev/calendar/calendarevent"
+	coreSeriesType   = "samples.substrate.reamde.dev/calendar/calendareventseries"
 )
 
 // TestGoogleContactsBundleAdmitsSchema loads the builtin schema, then installs
@@ -75,7 +74,7 @@ func TestGoogleContactsBundleAdmitsSchema(t *testing.T) {
 	// alone) plus the shipped VOCABULARY bundles this repository imported —
 	// what a closure declaring onto people/tasks/messaging/calendar/media
 	// needs present, and what `requires:` names.
-	reg, err := enginetest.SeededRegistry("../../kinds/core.substrate.reamde.dev")
+	reg, err := enginetest.SeededRegistry("../../kinds/substrate.reamde.dev/core")
 	if err != nil {
 		t.Fatalf("build the repository registry: %v", err)
 	}
@@ -87,7 +86,7 @@ func TestGoogleContactsBundleAdmitsSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse bundle.yaml: %v", err)
 	}
-	authorities, err := vocabulary.BuildAuthorities(docs, vocabulary.SourceInstalled)
+	authorities, err := vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
 	if err != nil {
 		t.Fatalf("build the bundle authority: %v", err)
 	}
@@ -97,9 +96,9 @@ func TestGoogleContactsBundleAdmitsSchema(t *testing.T) {
 
 	// The bundle exists and declares the `client` input the oauth2 block
 	// names: facility-read, so it must NOT inject.
-	b, ok := reg.BundleOf(googleAuthority)
+	b, ok := reg.BundleOf(googlePackage)
 	if !ok {
-		t.Fatalf("no bundle owns %s after install", googleAuthority)
+		t.Fatalf("no bundle owns %s after install", googlePackage)
 	}
 	in, ok := b.Inputs["client"]
 	if !ok {
@@ -148,7 +147,7 @@ func TestGoogleContactsBundleAdmitsSchema(t *testing.T) {
 	if !ok {
 		t.Fatalf("contact declares no `person` edge")
 	}
-	if ed.To != "people.substrate.reamde.dev/person" || !ed.Required || ed.Repeated {
+	if ed.To != "samples.substrate.reamde.dev/people/person" || !ed.Required || ed.Repeated {
 		t.Fatalf("person edge shape wrong: to=%q required=%v many=%v", ed.To, ed.Required, ed.Repeated)
 	}
 
@@ -157,7 +156,7 @@ func TestGoogleContactsBundleAdmitsSchema(t *testing.T) {
 	if !ok {
 		t.Fatalf("no mapping registered from %s", googleContactType)
 	}
-	if m.To != "people.substrate.reamde.dev/person" || m.Property != "person" {
+	if m.To != "samples.substrate.reamde.dev/people/person" || m.Property != "person" {
 		t.Fatalf("mapping resolves wrong: to=%q edge=%q", m.To, m.Property)
 	}
 	if len(m.Match) == 0 {
@@ -255,24 +254,24 @@ func TestGoogleContactsBundleInstalls(t *testing.T) {
 
 	// The bundle row and every schema member landed as its own record.
 	for id, wantType := range map[string]string{
-		googleBundleRow:   "core.substrate.reamde.dev/bundle",
-		googleConfigType:  "core.substrate.reamde.dev/kind",
-		googleAccountType: "core.substrate.reamde.dev/kind",
-		googleContactType: "core.substrate.reamde.dev/kind",
-		googleSyncFn:      "core.substrate.reamde.dev/function",
-		googleMigrationFn: "core.substrate.reamde.dev/function",
-		googleMapping:     "core.substrate.reamde.dev/recordmapping",
+		googlePackage:     "substrate.reamde.dev/core/bundle",
+		googleConfigType:  "substrate.reamde.dev/core/kind",
+		googleAccountType: "substrate.reamde.dev/core/kind",
+		googleContactType: "substrate.reamde.dev/core/kind",
+		googleSyncFn:      "substrate.reamde.dev/core/function",
+		googleMigrationFn: "substrate.reamde.dev/core/function",
+		googleMapping:     "substrate.reamde.dev/core/recordmapping",
 		// The gmail and calendar closure installs from the same
 		// atomic manifest: four mirror types, the shared address source, two
 		// sync functions and the address mapping.
-		googleAddressType:  "core.substrate.reamde.dev/kind",
-		googleThreadType:   "core.substrate.reamde.dev/kind",
-		googleMessageType:  "core.substrate.reamde.dev/kind",
-		googleCalendarType: "core.substrate.reamde.dev/kind",
-		googleEventType:    "core.substrate.reamde.dev/kind",
-		googleGmailFn:      "core.substrate.reamde.dev/function",
-		googleCalendarFn:   "core.substrate.reamde.dev/function",
-		googleAddressMap:   "core.substrate.reamde.dev/recordmapping",
+		googleAddressType:  "substrate.reamde.dev/core/kind",
+		googleThreadType:   "substrate.reamde.dev/core/kind",
+		googleMessageType:  "substrate.reamde.dev/core/kind",
+		googleCalendarType: "substrate.reamde.dev/core/kind",
+		googleEventType:    "substrate.reamde.dev/core/kind",
+		googleGmailFn:      "substrate.reamde.dev/core/function",
+		googleCalendarFn:   "substrate.reamde.dev/core/function",
+		googleAddressMap:   "substrate.reamde.dev/core/recordmapping",
 	} {
 		row, err := ds.Get(ctx, wantType, id)
 		if err != nil {
@@ -284,7 +283,7 @@ func TestGoogleContactsBundleInstalls(t *testing.T) {
 	}
 
 	// Computed status: installed, enabled, and the closure's member counts.
-	st, err := ds.BundleStatus(ctx, googleAuthority)
+	st, err := ds.BundleStatus(ctx, googlePackage)
 	if err != nil {
 		t.Fatalf("bundle status: %v", err)
 	}

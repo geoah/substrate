@@ -21,7 +21,7 @@ import (
 // + `source:`) — with a model-facing `description`, optional `arguments:` and
 // `returns:` shapes, and a `permissions:` grant (reads, writes, call, network,
 // mutations). A function has NO subscription:
-// what fires it is a `trigger` data record (core.substrate.reamde.dev), which
+// what fires it is a `trigger` data record (substrate.reamde.dev/core), which
 // owns the cursor, retries, parking and replay. The body executes in the
 // shared runner child process (functions/runner) and returns effects the
 // engine applies plus an output value for callers; CEL survives ONLY as the
@@ -37,7 +37,7 @@ const (
 	// the implementation. A host function's declaration is its whole
 	// card — the description, `arguments:` and `returns:` — and it never reaches
 	// the child-process runner. It is admissible ONLY in a builtin build
-	// (BuildAuthorities' SourceBuiltin), because the engine can only implement
+	// (BuildPackages' SourceBuiltin), because the engine can only implement
 	// what the engine ships: a bundle or an owner declaring one would name a
 	// body nothing has.
 	RuntimeHost = "host"
@@ -64,11 +64,11 @@ const (
 	FunctionConfirmPolicy      = "policy"
 	FunctionConfirmAlways      = "always"
 
-	HostFunctionQuery   = AuthorityCore + "/query"
-	HostFunctionPropose = AuthorityCore + "/propose"
-	HostFunctionGraphQL = AuthorityCore + "/graphql"
-	HostFunctionMutate  = AuthorityCore + "/mutate"
-	HostFunctionAsk     = AuthorityCore + "/ask"
+	HostFunctionQuery   = PackageCore + "/query"
+	HostFunctionPropose = PackageCore + "/propose"
+	HostFunctionGraphQL = PackageCore + "/graphql"
+	HostFunctionMutate  = PackageCore + "/mutate"
+	HostFunctionAsk     = PackageCore + "/ask"
 )
 
 // The capability-gated identity mutations (`permissions.mutations`). The
@@ -100,8 +100,9 @@ func ValidFunctionOp(op string) bool { return functionOps[op] }
 
 // Function is one parsed function: the callable and nothing more.
 type Function struct {
-	Name      string
-	Authority string
+	Name string
+	// Package is the identity of the package that declares it.
+	Package string
 	// Description is model-facing and REQUIRED: the function is its own tool
 	// card.
 	Description string
@@ -209,8 +210,8 @@ const (
 	MaxReadRows       = 10000
 )
 
-// Identity is "<authority>/<name>".
-func (f *Function) Identity() string { return KindRef(f.Authority, f.Name) }
+// Identity is "<authority>/<package>/<name>".
+func (f *Function) Identity() string { return f.Package + "/" + f.Name }
 
 // IsHost reports whether the engine is this function's body. Every runner path
 // asks before it reaches for a spec: there is nothing to compile, register,
@@ -226,7 +227,10 @@ func (f *Function) IsHost() bool { return f.Runtime == RuntimeHost }
 // so each one's trigger excluded the other's writes as its own echo and
 // dropped them silently (record 0025). The colon is the separator because
 // `<actor>/<name>` metadata keys reserve the slash.
-func (f *Function) Actor() string { return string(substrate.FunctionActor(f.Authority, f.Name)) }
+func (f *Function) Actor() string {
+	authority, pkg := SplitPackageRef(f.Package)
+	return string(substrate.FunctionActor(authority, pkg, f.Name))
+}
 
 // MatchTypeGlob matches one trigger `source.record.kinds` pattern against a
 // kind reference: `*` matches every kind, `<authority>/*` every kind that
@@ -242,20 +246,27 @@ func MatchTypeGlob(pat, ident string) bool {
 	}
 }
 
-// ValidTypeGlob accepts the three trigger-source spellings: `*`,
-// `<authority>/*`, or a kind reference — qualified, or the bare name of a
-// repository-local kind.
+// ValidTypeGlob accepts the trigger-source spellings: `*`, `<authority>/*`,
+// `<authority>/<package>/*`, or a kind reference — qualified, or the bare name
+// of a kind in the declaring package.
 func ValidTypeGlob(pat string) bool {
 	switch {
 	case pat == "*":
 		return true
 	case strings.HasSuffix(pat, "/*"):
-		return ValidAuthority(pat[:len(pat)-2])
+		// Two globs, both prefixes of a kind reference: a whole AUTHORITY
+		// ("providers.substrate.reamde.dev/*") or one PACKAGE inside it
+		// ("providers.substrate.reamde.dev/google/*").
+		head := pat[:len(pat)-2]
+		if authority, pkg := SplitPackageRef(head); authority != "" {
+			return ValidAuthority(authority) && ValidPackage(pkg)
+		}
+		return ValidAuthority(head)
 	case strings.Contains(pat, "*"):
 		return false
 	default:
-		authority, name := SplitKindRef(pat)
-		if authority != "" && !ValidAuthority(authority) {
+		authority, pkg, name := SplitKindRef(pat)
+		if authority != "" && (!ValidAuthority(authority) || !ValidPackage(pkg)) {
 			return false
 		}
 		return ValidName(name)
@@ -561,7 +572,7 @@ func checkValue(path string, schema map[string]any, v any) error {
 // --- the loader's half -------------------------------------------------------
 
 var functionDataKeys = map[string]bool{
-	"authority": true, "description": true, "runtime": true, "source": true,
+	"authority": true, "package": true, "description": true, "runtime": true, "source": true,
 	"timeout": true,
 	// The IO shapes are `data`'s own; the grant is ONE key beside them, holding
 	// the five of functionPermissionKeys.
@@ -580,7 +591,7 @@ var functionDataKeys = map[string]bool{
 // first release (#217), so the store it comes from is refused at open.
 var deletedFunctionKeys = map[string]string{
 	"run":          "runtime + source — the CEL and wasm run arms are removed; CEL survives only as the trigger's when: guard",
-	"on":           "a trigger record (core.substrate.reamde.dev) — the subscription lives on the trigger, the function is a pure callable",
+	"on":           "a trigger record (substrate.reamde.dev/core) — the subscription lives on the trigger, the function is a pure callable",
 	"when":         "trigger source.record.when — the guard lives on the trigger record",
 	"coalesce":     "trigger source.record.coalesce — coalescing lives on the trigger record",
 	"capabilities": "permissions: the grant is one object, and its keys are reads, writes, call, network and mutations",
@@ -607,7 +618,7 @@ var functionBudgetKeys = map[string]bool{"calls": true, "rows": true}
 // parseFunction parses one function document. Emit, reads and call targets
 // resolve against the registry in Finalize/Install, like a reference pin.
 func (l *loader) parseFunction(d Document) *Function {
-	g := l.authority
+	g := l.pkg
 	where := DocFunction + " " + d.ID
 	for k := range d.Data {
 		if replacement, gone := deletedFunctionKeys[k]; gone {
@@ -620,12 +631,12 @@ func (l *loader) parseFunction(d Document) *Function {
 		l.errf("%s: data.after is reserved and unimplemented — order is never implied, and nothing declares a dependency yet", where)
 		return nil
 	}
-	local, ok := l.localName(where, d.ID, g.Name)
+	local, ok := l.localName(where, d.ID, g.Identity)
 	if !ok {
 		return nil
 	}
 	fn := &Function{
-		Name: local, Authority: g.Name,
+		Name: local, Package: g.Identity,
 		Description: l.parseDescriptionMax(where+": data", d.Data, maxCallableDescription),
 		Definition:  d.Data,
 	}
@@ -733,14 +744,14 @@ func (l *loader) parseFunctionCaps(where string, data map[string]any, fn *Functi
 		l.errf("%s: data.permissions.writes: a LIST of full type identities", where)
 		return nil
 	}
-	for i, t := range ReferentIDs(mslice(perms, "writes"), KindRef(AuthorityCore, DocKind)) {
+	for i, t := range ReferentIDs(mslice(perms, "writes"), CoreKind(DocKind)) {
 		if !ValidKindReference(t) {
 			l.errf("%s: data.permissions.writes[%d]: %q is not a kind; writes names them, bare or authority-qualified, no globs", where, i, t)
 			continue
 		}
 		fn.Caps.Emit = append(fn.Caps.Emit, t)
 	}
-	for i, ident := range ReferentIDs(mslice(perms, "call"), KindRef(AuthorityCore, DocFunction)) {
+	for i, ident := range ReferentIDs(mslice(perms, "call"), CoreKind(DocFunction)) {
 		if !Qualified(ident) || strings.Contains(ident, "*") {
 			l.errf("%s: data.permissions.call[%d]: %q is not a full function identity; call names them, no globs", where, i, ident)
 			continue
@@ -864,7 +875,7 @@ func (l *loader) parseReads(where string, perms map[string]any, fn *Function) bo
 	r := asMap(rv)
 	l.checkKeys(where+": "+path, r, functionReadsKeys)
 	reads := &FunctionReads{}
-	for i, t := range ReferentIDs(mslice(r, "kinds"), KindRef(AuthorityCore, DocKind)) {
+	for i, t := range ReferentIDs(mslice(r, "kinds"), CoreKind(DocKind)) {
 		if !ValidKindReference(t) {
 			l.errf("%s: %s.kinds[%d]: %q — reads names kinds, bare or authority-qualified, no globs", where, path, i, t)
 			continue
@@ -995,7 +1006,7 @@ func (r *Registry) resolveFunction(f *Function) []string {
 // Functions lists every loaded function, ordered by identity.
 func (r *Registry) Functions() []*Function {
 	var out []*Function
-	for _, g := range r.AuthorityList() {
+	for _, g := range r.PackageList() {
 		for _, n := range g.FunctionOrder {
 			out = append(out, g.Functions[n])
 		}

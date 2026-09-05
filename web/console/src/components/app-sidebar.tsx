@@ -65,6 +65,7 @@ import {
   buildKindNav,
   kindsQueryOptions,
   type AuthorityNav,
+  type PackageNav,
 } from "@/lib/api/kinds"
 import { getToken, getUsername, maskedToken } from "@/lib/api/session"
 import { upgradableBundleCount } from "@/lib/bundles"
@@ -104,13 +105,7 @@ function RegistryUpgradeBadge() {
  * by padding alone. */
 const fullWidthSub = "mx-0 translate-x-0 border-l-0 px-0 pb-1.5"
 
-function KindLinks({
-  nav,
-  className,
-}: {
-  nav: AuthorityNav
-  className: string
-}) {
+function KindLinks({ nav, className }: { nav: PackageNav; className: string }) {
   const params = useParams({ strict: false })
   return (
     <>
@@ -118,13 +113,19 @@ function KindLinks({
         <SidebarMenuSubItem key={k.identity}>
           <SidebarMenuSubButton
             isActive={
-              params.authority === nav.authority && params.name === k.name
+              params.authority === nav.authority &&
+              params.pkg === nav.package &&
+              params.name === k.name
             }
             className={className}
             render={
               <Link
-                to="/data/$authority/$name"
-                params={{ authority: nav.authority, name: k.name }}
+                to="/data/$authority/$pkg/$name"
+                params={{
+                  authority: nav.authority,
+                  pkg: nav.package,
+                  name: k.name,
+                }}
               />
             }
           >
@@ -136,9 +137,39 @@ function KindLinks({
   )
 }
 
-/** One authority's kinds, collapsible. In v1 authorities replace the old group
- * concept, and every kind carries one (decision 0042); the `"local"` fallback
- * is defensive against a malformed row with no authority. */
+/** One package's kinds under its authority: the package's own word links to
+ * its page, the kinds sit under it. */
+function PackageGroup({ nav }: { nav: PackageNav }) {
+  const params = useParams({ strict: false })
+  return (
+    <>
+      <SidebarMenuSubItem>
+        <SidebarMenuSubButton
+          isActive={
+            params.authority === nav.authority &&
+            params.pkg === nav.package &&
+            !params.name
+          }
+          className="pl-9 text-sidebar-foreground/70"
+          render={
+            <Link
+              to="/data/$authority/$pkg"
+              params={{ authority: nav.authority, pkg: nav.package }}
+            />
+          }
+        >
+          <span className="truncate">{nav.package || "local"}</span>
+        </SidebarMenuSubButton>
+      </SidebarMenuSubItem>
+      <KindLinks nav={nav} className="pl-12" />
+    </>
+  )
+}
+
+/** One authority's packages, collapsible. In v1 authorities replace the old
+ * group concept, and every kind carries an authority and a package (decisions
+ * 0042 and 0047); the `"local"` fallback is defensive against a malformed row
+ * with no authority. */
 function AuthorityGroup({ nav }: { nav: AuthorityNav }) {
   const label = nav.authority || "local"
   return (
@@ -158,7 +189,9 @@ function AuthorityGroup({ nav }: { nav: AuthorityNav }) {
       </CollapsibleTrigger>
       <CollapsibleContent>
         <SidebarMenuSub className={fullWidthSub}>
-          <KindLinks nav={nav} className="pl-12" />
+          {nav.packages.map((p) => (
+            <PackageGroup key={p.identity} nav={p} />
+          ))}
         </SidebarMenuSub>
       </CollapsibleContent>
     </Collapsible>

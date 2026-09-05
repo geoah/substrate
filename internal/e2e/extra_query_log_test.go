@@ -21,7 +21,7 @@ import (
 // write only under the `x-` prefix, so nothing a story asserts on moves.
 
 const (
-	xqTaskKind = "tasks.substrate.reamde.dev/task"
+	xqTaskKind = "samples.substrate.reamde.dev/tasks/task"
 	xqChanges  = "/api/v1/changes"
 	// xqBlobPrefix is the wire's one digest spelling: the hash function is
 	// named in the id, so a second algorithm would be a second prefix.

@@ -30,17 +30,20 @@ func loadProblems(t *testing.T, files map[string]string) string {
 
 func TestNotifiesRefusedOutsideCore(t *testing.T) {
 	problems := loadProblems(t, map[string]string{
-		"ops.example.com/authority.yaml": `kind: core.substrate.reamde.dev/authority
+		"ops.example.com/ops/authority.yaml": `kind: substrate.reamde.dev/core/package
 metadata:
-  id: ops.example.com
-data:
-  version: 1
----
-kind: core.substrate.reamde.dev/kind
-metadata:
-  id: ops.example.com/deployrequest
+  id: ops.example.com/ops
 data:
   authority: ops.example.com
+  package: ops
+  version: 1
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: ops.example.com/ops/deployrequest
+data:
+  authority: ops.example.com
+  package: ops
   names:
     singular: deployrequest
     plural: deployrequests
@@ -59,17 +62,20 @@ data:
 
 func TestNotifiesDemandsAThreadReference(t *testing.T) {
 	problems := loadProblems(t, map[string]string{
-		"core.substrate.reamde.dev/authority.yaml": `kind: core.substrate.reamde.dev/authority
+		"substrate.reamde.dev/core/authority.yaml": `kind: substrate.reamde.dev/core/package
 metadata:
-  id: core.substrate.reamde.dev
+  id: substrate.reamde.dev/core
 data:
+  authority: substrate.reamde.dev
+  package: core
   version: 1
 ---
-kind: core.substrate.reamde.dev/kind
+kind: substrate.reamde.dev/core/kind
 metadata:
-  id: core.substrate.reamde.dev/llmthread
+  id: substrate.reamde.dev/core/llmthread
 data:
-  authority: core.substrate.reamde.dev
+  authority: substrate.reamde.dev
+  package: core
   names:
     singular: llmthread
     plural: llmthreads
@@ -77,11 +83,12 @@ data:
     status:
       type: string
 ---
-kind: core.substrate.reamde.dev/kind
+kind: substrate.reamde.dev/core/kind
 metadata:
-  id: core.substrate.reamde.dev/gadgetrequest
+  id: substrate.reamde.dev/core/gadgetrequest
 data:
-  authority: core.substrate.reamde.dev
+  authority: substrate.reamde.dev
+  package: core
   names:
     singular: gadgetrequest
     plural: gadgetrequests
@@ -96,7 +103,7 @@ data:
         - {from: pending, to: done, notifies: thread}
 `,
 	})
-	if !strings.Contains(problems, "must be a reference property pinned to core.substrate.reamde.dev/llmthread") {
+	if !strings.Contains(problems, "must be a reference property pinned to substrate.reamde.dev/core/llmthread") {
 		t.Fatalf("the refusal does not name the reference contract: %s", problems)
 	}
 }

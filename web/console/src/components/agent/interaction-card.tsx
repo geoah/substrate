@@ -17,7 +17,7 @@ import { MessageCircleQuestionIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
-import { CORE_AUTHORITY } from "@/lib/api/http"
+import { CORE_AUTHORITY, CORE_PACKAGE_NAME } from "@/lib/api/http"
 import { patchRecord, recordQueryOptions } from "@/lib/api/records"
 import type { SubstrateRecord } from "@/lib/api/types"
 import { cn } from "@/lib/utils"
@@ -85,7 +85,12 @@ function answersOf(record: SubstrateRecord): Map<string, string[]> {
 export function InteractionCard({ id }: { id: string }) {
   const client = useQueryClient()
   const interaction = useQuery(
-    recordQueryOptions(CORE_AUTHORITY, INTERACTION_PLURAL, id)
+    recordQueryOptions(
+      CORE_AUTHORITY,
+      CORE_PACKAGE_NAME,
+      INTERACTION_PLURAL,
+      id
+    )
   )
   const [picked, setPicked] = useState<Map<string, string[]>>(new Map())
   const [submitting, setSubmitting] = useState<"answer" | "dismiss" | null>(
@@ -133,19 +138,25 @@ export function InteractionCard({ id }: { id: string }) {
     setSubmitting(kind)
     setError(null)
     try {
-      await patchRecord(CORE_AUTHORITY, INTERACTION_PLURAL, id, {
-        properties:
-          kind === "answer"
-            ? {
-                state: "answered",
-                answers: questions.map((q) => ({
-                  question: q.id,
-                  selected: picked.get(q.id) ?? [],
-                })),
-              }
-            : { state: "dismissed" },
-        ifVersion: record.version,
-      })
+      await patchRecord(
+        CORE_AUTHORITY,
+        CORE_PACKAGE_NAME,
+        INTERACTION_PLURAL,
+        id,
+        {
+          properties:
+            kind === "answer"
+              ? {
+                  state: "answered",
+                  answers: questions.map((q) => ({
+                    question: q.id,
+                    selected: picked.get(q.id) ?? [],
+                  })),
+                }
+              : { state: "dismissed" },
+          ifVersion: record.version,
+        }
+      )
       // The resolution wrote a system turn into THIS thread and resumed the
       // agent; one more sweep catches the reply without polling forever.
       await client.invalidateQueries()

@@ -2,8 +2,8 @@
  * v1 document envelope the console and the CLI both speak (`kind`, `metadata`,
  * `data`, `status`) and serialized as YAML.
  *
- * `kind` is the record's kind REFERENCE — one key names the authority and the
- * name. `metadata` carries the id and the two authored key/value blocks
+ * `kind` is the record's kind REFERENCE — one key names the authority, the
+ * package and the name. `metadata` carries the id and the two authored key/value blocks
  * (`labels`, `annotations`); `data` is everything authored (`properties`);
  * `status` is server-owned — version, stamps, and the §7.1 property
  * provenance (`status.properties`: manager + offers). A pointer at another
@@ -12,7 +12,7 @@
 
 import { stringify } from "yaml"
 
-import { CORE_AUTHORITY, joinKind } from "@/lib/api/http"
+import { CORE_AUTHORITY, CORE_PACKAGE_NAME, joinKind } from "@/lib/api/http"
 import {
   readReference,
   type SubstrateRecord,
@@ -23,7 +23,7 @@ import { splitRecordPath } from "@/lib/record-path"
 import type { YamlLinkTargets } from "@/lib/yaml-annotations"
 
 /** The meta-kind every declaration is a record of. */
-const KIND_META_KIND = joinKind(CORE_AUTHORITY, "kind")
+const KIND_META_KIND = joinKind(CORE_AUTHORITY, CORE_PACKAGE_NAME, "kind")
 
 /** Order-preserving object build: yaml serializes insertion order. */
 export function manifestOf(record: SubstrateRecord): Record<string, unknown> {
@@ -71,6 +71,7 @@ export function manifestYAML(record: SubstrateRecord): string {
  * substrate grows later falls in after, alphabetically. */
 const DECLARATION_ORDER = [
   "authority",
+  "package",
   "names",
   "version",
   "displayTemplate",
@@ -80,8 +81,8 @@ const DECLARATION_ORDER = [
 
 /** The kind's declaration folded back into the document that declared it —
  * the same v1 envelope as the record manifest, with the meta-kind on top and
- * the kind REFERENCE as the id, exactly as `schema/<authority>/<name>.yaml`
- * authors it. Comments are gone by design (record 61: the parsed definition is
+ * the kind REFERENCE as the id, exactly as
+ * `kinds/<authority>/<package>/<name>.yaml` authors it. Comments are gone by design (record 61: the parsed definition is
  * the document, not its source text). */
 export function kindManifestOf(kind: KindInfo): Record<string, unknown> {
   const definition = kind.definition ?? {}
@@ -104,10 +105,10 @@ export function kindManifestYAML(kind: KindInfo): string {
 }
 
 /** A kind's browse collection address. The console's data routes mirror the
- * API's collection paths — `/data/{authority}/{kind}`, and every kind carries
- * an authority (decision 0042). */
+ * API's collection paths — `/data/{authority}/{package}/{kind}`, and every
+ * kind carries all three (decisions 0042 and 0047). */
 function collectionHref(kind: KindInfo): string {
-  return `/data/${kind.authority}/${kind.name}`
+  return `/data/${kind.authority}/${kind.package}/${kind.name}`
 }
 
 /** Every registry kind by its reference, so any `kind:` a document carries

@@ -1,5 +1,8 @@
 # Plan: thread interactions: asks, gates, and policy
 
+*Written before decision record 0047; kind references here are in the old
+two-segment grammar (`{authority}/{name}`).*
+
 Status: IMPLEMENTED (PRs #78, #80, #81, #83), after two adversarial reviews
 whose surviving findings are integrated below. The binding choices live as
 decision records 0003 through 0008 in

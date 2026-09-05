@@ -18,14 +18,16 @@ import {
 
 /** A faithful slice of the live person kind (record 56 shapes). */
 const person: KindInfo = {
-  identity: "people.substrate.reamde.dev/person",
+  identity: "samples.substrate.reamde.dev/people/person",
   name: "person",
-  authority: "people.substrate.reamde.dev",
+  authority: "samples.substrate.reamde.dev",
+  package: "people",
   version: 0,
   plural: "people",
   source: "builtin",
   definition: {
-    authority: "people.substrate.reamde.dev",
+    authority: "samples.substrate.reamde.dev",
+    package: "people",
     names: { singular: "person", plural: "people" },
     displayTemplate: "{displayName|name}",
     properties: {
@@ -58,9 +60,10 @@ const person: KindInfo = {
 }
 
 const event: KindInfo = {
-  identity: "calendar.substrate.reamde.dev/calendarevent",
+  identity: "samples.substrate.reamde.dev/calendar/calendarevent",
   name: "calendarevent",
-  authority: "calendar.substrate.reamde.dev",
+  authority: "samples.substrate.reamde.dev",
+  package: "calendar",
   version: 0,
   plural: "calendarevents",
   source: "builtin",
@@ -148,39 +151,50 @@ describe("state and descriptions", () => {
 
 describe("kind resolution", () => {
   const org: KindInfo = {
-    identity: "people.substrate.reamde.dev/organization",
+    identity: "samples.substrate.reamde.dev/people/organization",
     name: "organization",
-    authority: "people.substrate.reamde.dev",
+    authority: "samples.substrate.reamde.dev",
+    package: "people",
     version: 0,
     plural: "organizations",
     source: "builtin",
   }
   const kinds = [person, org, event]
 
-  it("splits a kind reference at the slash — authority first", () => {
-    expect(splitKind("people.substrate.reamde.dev/person")).toEqual({
-      authority: "people.substrate.reamde.dev",
+  it("splits a kind reference into authority, package and name", () => {
+    expect(splitKind("samples.substrate.reamde.dev/people/person")).toEqual({
+      authority: "samples.substrate.reamde.dev",
+      pkg: "people",
       name: "person",
     })
-    expect(splitKind("task")).toEqual({ authority: "", name: "task" })
+    expect(splitKind("task")).toEqual({
+      authority: "",
+      pkg: "",
+      name: "task",
+    })
   })
 
-  it("routes authority+plural back to the kind", () => {
+  it("routes authority+package+name back to the kind", () => {
     expect(
-      kindByCollection(kinds, "people.substrate.reamde.dev", "person")
+      kindByCollection(
+        kinds,
+        "samples.substrate.reamde.dev",
+        "people",
+        "person"
+      )
     ).toBe(person)
     expect(
-      kindByCollection(kinds, "people.substrate.reamde.dev", "nope")
+      kindByCollection(kinds, "samples.substrate.reamde.dev", "people", "nope")
     ).toBeUndefined()
   })
 
-  it("resolves a bare reference pin inside the declaring authority first", () => {
+  it("resolves a bare reference pin inside the declaring package first", () => {
     expect(resolveReferenceTarget(kinds, person, "organization")).toBe(org)
     expect(
       resolveReferenceTarget(
         kinds,
         person,
-        "people.substrate.reamde.dev/organization"
+        "samples.substrate.reamde.dev/people/organization"
       )
     ).toBe(org)
     expect(resolveReferenceTarget(kinds, person, "missing")).toBeUndefined()
@@ -210,9 +224,10 @@ describe("kind resolution", () => {
  * verbatim — `required`, an enum's admitted set, a pointer's referent. */
 describe("declaration detail", () => {
   const config: KindInfo = {
-    identity: "github.bundles.substrate.reamde.dev/config",
+    identity: "providers.substrate.reamde.dev/github/config",
     name: "config",
-    authority: "github.bundles.substrate.reamde.dev",
+    authority: "providers.substrate.reamde.dev",
+    package: "github",
     version: 0,
     plural: "configs",
     source: "installed",
@@ -228,7 +243,7 @@ describe("declaration detail", () => {
         },
         owner: {
           type: "reference",
-          kind: "people.substrate.reamde.dev/person",
+          kind: "samples.substrate.reamde.dev/people/person",
         },
         plain: { type: "string" },
         subject: {
@@ -252,7 +267,7 @@ describe("declaration detail", () => {
       { value: "daily", label: "" },
     ])
     expect(by("plain").values).toBeUndefined()
-    expect(by("owner").to).toBe("people.substrate.reamde.dev/person")
+    expect(by("owner").to).toBe("samples.substrate.reamde.dev/people/person")
     // A mapping's subject is a reference like any other, marked `subject`.
     expect(by("subject")).toMatchObject({
       required: true,
@@ -290,12 +305,17 @@ describe("graphqlTypeName", () => {
   })
 
   it("PascalCases a shipped authority's kind name, no prefix", () => {
-    expect(graphqlTypeName("people.substrate.reamde.dev/person")).toBe("Person")
+    expect(graphqlTypeName("samples.substrate.reamde.dev/people/person")).toBe(
+      "Person"
+    )
   })
 
   it("prefixes an installed bundle kind with the bundle name", () => {
-    expect(graphqlTypeName("google.bundles.substrate.reamde.dev/person")).toBe(
-      "Google_Person"
-    )
+    expect(
+      graphqlTypeName(
+        "providers.substrate.reamde.dev/google/person",
+        "installed"
+      )
+    ).toBe("Google_Person")
   })
 })

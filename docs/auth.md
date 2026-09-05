@@ -51,9 +51,9 @@ POST /register
 ```
 
 `authority` is the hostname the repository owns, any DNS name its user
-controls (`ada.example.com`, `geoah.me`): the home of every kind they
-declare, and what a sample import rewrites a copied closure onto. Omitted,
-it defaults to the username under the host the request reached
+controls (`ada.example.com`, `geoah.me`): the home of every package its user
+declares kinds in. Omitted, it defaults to the username under the host the
+request reached
 (`ada.substrate.example` for a request to `substrate.example`), and the
 response says what it got. It is lowercase DNS labels with at least one dot,
 within the DNS length limits, never under `substrate.reamde.dev` (where the
@@ -117,7 +117,7 @@ work on all three so timing is not an oracle either.
 
 ## Tokens
 
-A token is a record of kind `core.substrate.reamde.dev/token` carrying a `label`, an
+A token is a record of kind `substrate.reamde.dev/core/token` carrying a `label`, an
 optional `expiresAt`, and the SHA-256 of its secret. Nothing on it records
 use: authentication is a read, so a busy token never appends to the changelog.
 The secret itself is `substrate_tok_` followed by 40 hex characters, shown
@@ -141,12 +141,12 @@ Four things follow from a token being a record:
   _is_ the request's scope.
 - **Revoking is deleting the record.** No row means no access. The same write
   reaches from `DELETE /tokens/{id}`, from the generic record delete at
-  `DELETE /api/v1/core.substrate.reamde.dev/token/{id}`, from the console, or from
+  `DELETE /api/v1/substrate.reamde.dev/core/token/{id}`, from the console, or from
   `substratectl token revoke`.
 - **Expiry is optional and server-enforced.** A token past its `expiresAt`
   fails authentication with an `auth` error, no revoke step needed. A token
   without one lives until it is deleted.
-- **They list and read like anything else.** `GET …/core.substrate.reamde.dev/token` is
+- **They list and read like anything else.** `GET …/substrate.reamde.dev/core/token` is
   an ordinary collection read, and every mint and revocation is a row in the
   [changelog](changelog.md).
 
@@ -159,7 +159,7 @@ Authorization: Bearer substrate_tok_…
 ## The credential, and the password-factor rule
 
 The user's own auth material is one record,
-`core.substrate.reamde.dev/credential` at id `self`. It carries the username and two
+`substrate.reamde.dev/core/credential` at id `self`. It carries the username and two
 secret-typed references into the repository's sealed store — one for the
 password hash (argon2id), one for the TOTP seed and its replay counter. **The
 material itself never enters the changelog or a record's data**, so the changelog shows

@@ -91,17 +91,17 @@ func TestListHeadIsFirstPageHeadAcrossWalk(t *testing.T) {
 	}
 }
 
-const evoRefAuthority = "evoref.example.substrate.reamde.dev"
+const evoRefPackage = "evoref.example.substrate.reamde.dev/evoref"
 
 // evoRefDocs builds the authority with two referent types and a holder carrying a
 // reference and an object property whose fields drive the object-narrowing
 // checks.
 func evoRefDocs(holderProps map[string]any) []map[string]any {
 	return []map[string]any{
-		vocabulary.AuthorityManifest(evoRefAuthority, 0),
-		vocabulary.KindManifest(evoRefAuthority, map[string]any{"singular": "widget", "plural": "widgets"}, map[string]any{}),
-		vocabulary.KindManifest(evoRefAuthority, map[string]any{"singular": "gadget", "plural": "gadgets"}, map[string]any{}),
-		vocabulary.KindManifest(evoRefAuthority, map[string]any{"singular": "holder", "plural": "holders"},
+		vocabulary.PackageManifest(evoRefPackage, 0),
+		vocabulary.KindManifest(evoRefPackage, map[string]any{"singular": "widget", "plural": "widgets"}, map[string]any{}),
+		vocabulary.KindManifest(evoRefPackage, map[string]any{"singular": "gadget", "plural": "gadgets"}, map[string]any{}),
+		vocabulary.KindManifest(evoRefPackage, map[string]any{"singular": "holder", "plural": "holders"},
 			map[string]any{"properties": holderProps}),
 	}
 }
@@ -134,9 +134,9 @@ func TestSchemaEvolutionRefusesReferenceAndObjectNarrowing(t *testing.T) {
 	}
 	// One holder: its reference points at widget, its object carries both fields.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: evoRefAuthority + "/holder",
+		Kind: evoRefPackage + "/holder",
 		Properties: map[string]any{
-			"ref":  vocabulary.RecordPath(evoRefAuthority+"/widget", "w1"),
+			"ref":  vocabulary.RecordPath(evoRefPackage+"/widget", "w1"),
 			"spec": map[string]any{"a": "x", "b": 5},
 		},
 	})
@@ -145,7 +145,7 @@ func TestSchemaEvolutionRefusesReferenceAndObjectNarrowing(t *testing.T) {
 		props := evoRefBaseProps()
 		props["ref"] = map[string]any{"type": "reference", "kind": "gadget"}
 		wantNarrowingGuard(t, evoRefApply(t, ds, props),
-			`reference "ref" narrows its target to `+evoRefAuthority+`/gadget`, "1 live records")
+			`reference "ref" narrows its target to `+evoRefPackage+`/gadget`, "1 live records")
 	})
 
 	t.Run("object field dropped", func(t *testing.T) {

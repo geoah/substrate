@@ -5,9 +5,10 @@ import type { KindInfo } from "./types"
 
 function kindInfo(overrides: Partial<KindInfo>): KindInfo {
   return {
-    identity: "people.substrate.reamde.dev/person",
+    identity: "samples.substrate.reamde.dev/people/person",
     name: "person",
-    authority: "people.substrate.reamde.dev",
+    authority: "samples.substrate.reamde.dev",
+    package: "people",
     version: 0,
     plural: "persons",
     source: "builtin",
@@ -20,15 +21,17 @@ describe("normalizeKinds", () => {
     const payload = {
       records: [
         {
-          id: "people.substrate.reamde.dev/person",
-          kind: "core.substrate.reamde.dev/kind",
+          id: "samples.substrate.reamde.dev/people/person",
+          kind: "substrate.reamde.dev/core/kind",
           properties: {
             name: "person",
-            authority: "people.substrate.reamde.dev",
+            authority: "samples.substrate.reamde.dev",
+            package: "people",
             plural: "persons",
             source: "builtin",
             definition: {
-              authority: "people.substrate.reamde.dev",
+              authority: "samples.substrate.reamde.dev",
+              package: "people",
               description: "One human, one record.",
             },
           },
@@ -38,15 +41,17 @@ describe("normalizeKinds", () => {
     }
     expect(normalizeKinds(payload)).toEqual([
       {
-        identity: "people.substrate.reamde.dev/person",
+        identity: "samples.substrate.reamde.dev/people/person",
         name: "person",
-        authority: "people.substrate.reamde.dev",
+        authority: "samples.substrate.reamde.dev",
+        package: "people",
         version: 0,
         plural: "persons",
         source: "builtin",
         description: "One human, one record.",
         definition: {
-          authority: "people.substrate.reamde.dev",
+          authority: "samples.substrate.reamde.dev",
+          package: "people",
           description: "One human, one record.",
         },
       },
@@ -59,7 +64,7 @@ describe("normalizeKinds", () => {
     const [k] = normalizeKinds({
       records: [
         {
-          id: "tasks.substrate.reamde.dev/task",
+          id: "samples.substrate.reamde.dev/tasks/task",
           properties: { definition: { description: "Something to do." } },
         },
       ],
@@ -74,12 +79,15 @@ describe("normalizeKinds", () => {
 
   it("derives name and authority from the id when properties are sparse", () => {
     const [k] = normalizeKinds({
-      records: [{ id: "tasks.substrate.reamde.dev/task", properties: {} }],
+      records: [
+        { id: "samples.substrate.reamde.dev/tasks/task", properties: {} },
+      ],
     })
     expect(k).toMatchObject({
-      identity: "tasks.substrate.reamde.dev/task",
+      identity: "samples.substrate.reamde.dev/tasks/task",
       name: "task",
-      authority: "tasks.substrate.reamde.dev",
+      authority: "samples.substrate.reamde.dev",
+      package: "tasks",
       plural: "task",
     })
   })
@@ -97,7 +105,10 @@ describe("normalizeKinds", () => {
     const read = (version?: unknown) =>
       normalizeKinds({
         records: [
-          { id: "tasks.substrate.reamde.dev/task", properties: { version } },
+          {
+            id: "samples.substrate.reamde.dev/tasks/task",
+            properties: { version },
+          },
         ],
       })[0]?.version
     expect(read(3)).toBe(3)
@@ -110,36 +121,40 @@ describe("normalizeKinds", () => {
 
 describe("buildKindNav", () => {
   const kinds: KindInfo[] = [
-    kindInfo({ identity: "people.substrate.reamde.dev/person" }),
+    kindInfo({ identity: "samples.substrate.reamde.dev/people/person" }),
     kindInfo({
-      identity: "people.substrate.reamde.dev/organization",
+      identity: "samples.substrate.reamde.dev/people/organization",
       name: "organization",
       plural: "organizations",
     }),
     kindInfo({
-      identity: "tasks.substrate.reamde.dev/task",
+      identity: "samples.substrate.reamde.dev/tasks/task",
       name: "task",
-      authority: "tasks.substrate.reamde.dev",
+      authority: "samples.substrate.reamde.dev",
+      package: "tasks",
       plural: "tasks",
     }),
     kindInfo({
-      identity: "core.substrate.reamde.dev/kind",
+      identity: "substrate.reamde.dev/core/kind",
       name: "kind",
-      authority: "core.substrate.reamde.dev",
+      authority: "substrate.reamde.dev",
+      package: "core",
       plural: "kinds",
       source: "builtin",
     }),
     kindInfo({
-      identity: "google.bundles.substrate.reamde.dev/contact",
+      identity: "providers.substrate.reamde.dev/google/contact",
       name: "contact",
-      authority: "google.bundles.substrate.reamde.dev",
+      authority: "providers.substrate.reamde.dev",
+      package: "google",
       plural: "contacts",
       source: "installed",
     }),
     kindInfo({
-      identity: "google.bundles.substrate.reamde.dev/syncrun",
+      identity: "providers.substrate.reamde.dev/google/syncrun",
       name: "syncrun",
-      authority: "google.bundles.substrate.reamde.dev",
+      authority: "providers.substrate.reamde.dev",
+      package: "google",
       plural: "syncruns",
       source: "installed",
     }),
@@ -148,69 +163,85 @@ describe("buildKindNav", () => {
   it("lists every authority flat at one level — repository authorities first, machinery last", () => {
     const nav = buildKindNav(kinds)
     expect(nav.authorities.map((a) => a.authority)).toEqual([
-      "people.substrate.reamde.dev",
-      "tasks.substrate.reamde.dev",
-      "core.substrate.reamde.dev",
-      "google.bundles.substrate.reamde.dev",
+      "samples.substrate.reamde.dev",
+      "substrate.reamde.dev",
+      "providers.substrate.reamde.dev",
+    ])
+  })
+
+  it("holds each authority's packages, package-name sorted", () => {
+    const nav = buildKindNav(kinds)
+    const samples = nav.authorities.find(
+      (a) => a.authority === "samples.substrate.reamde.dev"
+    )
+    expect(samples?.packages.map((p) => p.package)).toEqual(["people", "tasks"])
+    expect(samples?.packages.map((p) => p.identity)).toEqual([
+      "samples.substrate.reamde.dev/people",
+      "samples.substrate.reamde.dev/tasks",
     ])
   })
 
   it("keeps core first among machinery authorities even out of alphabet", () => {
     const nav = buildKindNav([
       kindInfo({
-        identity: "beeper.bundles.substrate.reamde.dev/beeperuser",
+        identity: "providers.substrate.reamde.dev/beeper/beeperuser",
         name: "beeperuser",
-        authority: "beeper.bundles.substrate.reamde.dev",
+        authority: "providers.substrate.reamde.dev",
+        package: "beeper",
         plural: "beeperusers",
         source: "installed",
       }),
       kindInfo({
-        identity: "core.substrate.reamde.dev/kind",
+        identity: "substrate.reamde.dev/core/kind",
         name: "kind",
-        authority: "core.substrate.reamde.dev",
+        authority: "substrate.reamde.dev",
+        package: "core",
         plural: "kinds",
       }),
     ])
     expect(nav.authorities.map((a) => a.authority)).toEqual([
-      "core.substrate.reamde.dev",
-      "beeper.bundles.substrate.reamde.dev",
+      "substrate.reamde.dev",
+      "providers.substrate.reamde.dev",
     ])
   })
 
-  it("sorts kinds inside an authority by name", () => {
+  it("sorts kinds inside a package by name", () => {
     const nav = buildKindNav(kinds)
-    const people = nav.authorities.find(
-      (a) => a.authority === "people.substrate.reamde.dev"
-    )
+    const people = nav.authorities
+      .find((a) => a.authority === "samples.substrate.reamde.dev")
+      ?.packages.find((p) => p.package === "people")
     expect(people?.kinds.map((k) => k.name)).toEqual(["organization", "person"])
   })
 
   it("an authority with any schema-declared kind sorts ahead of machinery", () => {
     const nav = buildKindNav([
       kindInfo({
-        identity: "acme.substrate.reamde.dev/custom",
+        identity: "acme.substrate.reamde.dev/acme/custom",
         name: "custom",
         authority: "acme.substrate.reamde.dev",
+        package: "acme",
         plural: "customs",
         source: "schema",
       }),
       kindInfo({
-        identity: "acme.substrate.reamde.dev/installedtoo",
+        identity: "acme.substrate.reamde.dev/acme/installedtoo",
         name: "installedtoo",
         authority: "acme.substrate.reamde.dev",
+        package: "acme",
         plural: "installedtoos",
         source: "installed",
       }),
       kindInfo({
-        identity: "core.substrate.reamde.dev/kind",
+        identity: "substrate.reamde.dev/core/kind",
         name: "kind",
-        authority: "core.substrate.reamde.dev",
+        authority: "substrate.reamde.dev",
+        package: "core",
         plural: "kinds",
       }),
     ])
     expect(nav.authorities.map((a) => a.authority)).toEqual([
       "acme.substrate.reamde.dev",
-      "core.substrate.reamde.dev",
+      "substrate.reamde.dev",
     ])
   })
 })

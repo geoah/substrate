@@ -7,7 +7,9 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -15,36 +17,45 @@ import (
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/vocabulary"
 	"github.com/geoah/substrate/kinds"
+	"github.com/geoah/substrate/samples"
 )
 
 // The binary ships the vocabulary, so the embed pattern is part of the
 // contract: a directory the pattern misses is an authority that silently stops
 // existing in production while every other test still passes.
 func TestEveryManifestOnDiskIsEmbedded(t *testing.T) {
-	var want []string
-	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || filepath.Ext(path) != ".yaml" {
-			return err
+	for _, tree := range []struct {
+		dir  string
+		fsys fs.FS
+	}{
+		{".", kinds.All()},
+		{"../samples", samples.Samples()},
+	} {
+		var want []string
+		err := filepath.WalkDir(tree.dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || filepath.Ext(path) != ".yaml" {
+				return err
+			}
+			want = append(want, filepath.ToSlash(path))
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walk %s on disk: %v", tree.dir, err)
 		}
-		want = append(want, filepath.ToSlash(path))
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walk the tree on disk: %v", err)
-	}
-	var got []string
-	err = fs.WalkDir(kinds.All(), ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || filepath.Ext(path) != ".yaml" {
-			return err
+		var got []string
+		err = fs.WalkDir(tree.fsys, ".", func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || filepath.Ext(path) != ".yaml" {
+				return err
+			}
+			got = append(got, path)
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walk the embedded %s: %v", tree.dir, err)
 		}
-		got = append(got, path)
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walk the embedded tree: %v", err)
-	}
-	if len(got) != len(want) {
-		t.Fatalf("embedded %d manifests, %d on disk", len(got), len(want))
+		if len(got) != len(want) {
+			t.Fatalf("%s: embedded %d manifests, %d on disk", tree.dir, len(got), len(want))
+		}
 	}
 }
 
@@ -88,10 +99,10 @@ func TestBothViewsLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load the seed: %v", err)
 	}
-	if len(r.Authorities()) == 0 || len(r.Kinds()) == 0 {
-		t.Fatalf("the seed registry is empty: %v", r.Authorities())
+	if len(r.Packages()) == 0 || len(r.Kinds()) == 0 {
+		t.Fatalf("the seed registry is empty: %v", r.Packages())
 	}
-	cat, err := catalog.Load(kinds.Bundles())
+	cat, err := catalog.Load(kinds.Bundles(), samples.Samples())
 	if err != nil {
 		t.Fatalf("load the shipped catalog: %v", err)
 	}
@@ -177,14 +188,15 @@ func TestManagedPropertiesAreNotDocumentKeys(t *testing.T) {
 	// The two deliberate duals: stamped when absent, authored when present.
 	dual := map[string]bool{
 		"kind.version":      true,
+		"package.version":   true,
 		"authority.version": true,
 	}
 	for _, short := range []string{
-		vocabulary.DocAuthority, vocabulary.DocActor, vocabulary.DocKind, vocabulary.DocTrait,
+		vocabulary.DocAuthority, vocabulary.DocPackage, vocabulary.DocActor, vocabulary.DocKind, vocabulary.DocTrait,
 		vocabulary.DocPropertyType, vocabulary.DocRecordMapping, vocabulary.DocFunction,
 		vocabulary.DocAgent, vocabulary.DocBundle,
 	} {
-		ty, ok := reg.ByIdentity(vocabulary.KindRef(vocabulary.AuthorityCore, short))
+		ty, ok := reg.ByIdentity(vocabulary.CoreKind(short))
 		if !ok {
 			t.Fatalf("core declares no %s", short)
 		}
@@ -213,15 +225,15 @@ func TestEveryKindDeclaresADisplayTemplate(t *testing.T) {
 	// carry the provider's own title and move with the built-in slot's
 	// retirement (issue 68).
 	onTheSlot := map[string]bool{
-		"firecrawl.bundles.substrate.reamde.dev/webdocument": true,
-		"github.bundles.substrate.reamde.dev/issue":          true,
-		"github.bundles.substrate.reamde.dev/pullrequest":    true,
-		"linear.bundles.substrate.reamde.dev/issue":          true,
-		"notes.bundles.substrate.reamde.dev/note":            true,
-		"notion.bundles.substrate.reamde.dev/database":       true,
-		"notion.bundles.substrate.reamde.dev/page":           true,
-		"web.bundles.substrate.reamde.dev/config":            true,
-		"web.bundles.substrate.reamde.dev/page":              true,
+		"samples.substrate.reamde.dev/firecrawl/webdocument": true,
+		"providers.substrate.reamde.dev/github/issue":        true,
+		"providers.substrate.reamde.dev/github/pullrequest":  true,
+		"providers.substrate.reamde.dev/linear/issue":        true,
+		"samples.substrate.reamde.dev/notes/note":            true,
+		"providers.substrate.reamde.dev/notion/database":     true,
+		"providers.substrate.reamde.dev/notion/page":         true,
+		"samples.substrate.reamde.dev/web/config":            true,
+		"samples.substrate.reamde.dev/web/page":              true,
 	}
 	declared := map[string]bool{}
 	for _, d := range readTreeDocuments(t) {
@@ -294,25 +306,31 @@ func TestEveryStampTargetIsADeclaredDatetime(t *testing.T) {
 func readTreeDocuments(t *testing.T) []vocabulary.Document {
 	t.Helper()
 	var docs []vocabulary.Document
-	err := fs.WalkDir(kinds.All(), ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || filepath.Ext(path) != ".yaml" {
-			return err
-		}
-		raw, err := fs.ReadFile(kinds.All(), path)
-		if err != nil {
-			return err
-		}
-		parsed, err := vocabulary.ParseStream(raw)
-		if err != nil {
-			// A bundle's delivery wiring (trigger records) sits in the same tree
-			// and is not a declaration: those files parse nowhere near here.
+	// BOTH SHIPPED TREES: the kinds/ tree and the samples/ tree are one
+	// vocabulary as far as these rules go, and a rule that read only one of
+	// them would stop covering seventeen packages the day they moved.
+	for _, fsys := range []fs.FS{kinds.All(), samples.Samples()} {
+		err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || filepath.Ext(path) != ".yaml" {
+				return err
+			}
+			raw, err := fs.ReadFile(fsys, path)
+			if err != nil {
+				return err
+			}
+			parsed, err := vocabulary.ParseStream(raw)
+			if err != nil {
+				// A bundle's delivery wiring (trigger records) sits in the same
+				// tree and is not a declaration: those files parse nowhere near
+				// here.
+				return nil
+			}
+			docs = append(docs, parsed...)
 			return nil
+		})
+		if err != nil {
+			t.Fatalf("read the tree: %v", err)
 		}
-		docs = append(docs, parsed...)
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("read the tree: %v", err)
 	}
 	if len(docs) == 0 {
 		t.Fatal("the tree holds no documents")
@@ -331,7 +349,7 @@ func asMapping(v any) map[string]any {
 }
 
 func TestShippedCallableActorsAreDistinct(t *testing.T) {
-	cat, err := catalog.Load(kinds.Bundles())
+	cat, err := catalog.Load(kinds.Bundles(), samples.Samples())
 	if err != nil {
 		t.Fatalf("load the shipped catalog: %v", err)
 	}
@@ -351,16 +369,15 @@ func TestShippedCallableActorsAreDistinct(t *testing.T) {
 
 // A bundle's closure is validated at INSTALL time: catalog.Load only buckets
 // decoded YAML, so a broken declaration would ship as nothing more than a
-// warning TestBothViewsLoad never reads. EVERY shipped bundle installs here,
-// extensions included — an extension's declarations are refused by the same
-// loader as a vocabulary bundle's (a hyphen in a callable's name, an authority
-// its first label cannot name), and skipping them is how a shipped example
-// reached a release refusing to install. Requires go first, into ONE seed
-// registry, through the same BuildAuthorities+InstallAll pair admission runs,
-// so the whole shipped set also has to coexist (GraphQL names, bundle names,
-// cross-authority references) without a database.
+// warning TestBothViewsLoad never reads. EVERY shipped package installs here,
+// providers and samples alike — the same loader refuses both (a hyphen in a
+// callable's name, an id that is not its package), and skipping them is how a
+// shipped example reached a release refusing to install. Requires go first,
+// into ONE seed registry, through the same BuildPackages+InstallAll pair
+// admission runs (the pair that also refuses a GraphQL name claimed twice),
+// so the whole shipped set has to coexist without a database.
 func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
-	cat, err := catalog.Load(kinds.Bundles())
+	cat, err := catalog.Load(kinds.Bundles(), samples.Samples())
 	if err != nil {
 		t.Fatalf("load the shipped catalog: %v", err)
 	}
@@ -369,9 +386,9 @@ func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 	if ws := cat.Warnings(); len(ws) != 0 {
 		t.Fatalf("the shipped catalog carries warnings: %v", ws)
 	}
-	byAuthority := map[string]*catalog.Bundle{}
+	byPackage := map[string]*catalog.Bundle{}
 	for _, b := range cat.Bundles() {
-		byAuthority[b.Authority] = b
+		byPackage[b.ID] = b
 	}
 	reg, err := vocabulary.LoadFS(kinds.Seed())
 	if err != nil {
@@ -379,73 +396,101 @@ func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 	}
 	done := map[string]bool{}
 	for _, b := range cat.Bundles() {
-		if err := installClosure(reg, byAuthority, b, done); err != nil {
+		if err := installClosure(reg, byPackage, b, done); err != nil {
 			t.Fatal(err)
 		}
 	}
 }
 
-func installClosure(reg *vocabulary.Registry, byAuthority map[string]*catalog.Bundle, b *catalog.Bundle, done map[string]bool) error {
-	if done[b.Authority] {
+func installClosure(reg *vocabulary.Registry, byPackage map[string]*catalog.Bundle, b *catalog.Bundle, done map[string]bool) error {
+	if done[b.ID] {
 		return nil
 	}
-	done[b.Authority] = true
+	done[b.ID] = true
 	for _, req := range b.Requires {
-		rb, ok := byAuthority[req]
+		rb, ok := byPackage[req]
 		if !ok {
 			return fmt.Errorf("%s requires %s, which no shipped bundle owns", b.ID, req)
 		}
-		if err := installClosure(reg, byAuthority, rb, done); err != nil {
+		if err := installClosure(reg, byPackage, rb, done); err != nil {
 			return err
 		}
 	}
-	docs, err := schemaDocs(b.Authority)
+	docs, err := schemaDocs(b.ID)
 	if err != nil {
 		return err
 	}
-	authorities, err := vocabulary.BuildAuthorities(docs, vocabulary.SourceInstalled)
+	packages, err := vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
 	if err != nil {
 		return fmt.Errorf("build %s: %w", b.ID, err)
 	}
-	if err := reg.InstallAll(authorities); err != nil {
+	// The authority row travels with every closure published under it, so the
+	// second package under one authority re-declares it: an install replaces
+	// the group it touches, and so does this.
+	for _, g := range packages {
+		reg.Remove(g.Identity)
+	}
+	if err := reg.InstallAll(packages); err != nil {
 		return fmt.Errorf("install %s: %w", b.ID, err)
 	}
 	return nil
 }
 
-// schemaDocs decodes an authority directory's schema documents, skipping the
-// data plane (an extension's triggers) exactly as the install seam splits it.
-func schemaDocs(authority string) ([]vocabulary.Document, error) {
-	entries, err := fs.ReadDir(kinds.All(), authority)
-	if err != nil {
-		return nil, err
+// treeFor answers the filesystem a package identity's directory lives in, and
+// that directory: the shipped tree nests kinds/<authority>/<package>/, the
+// samples tree samples/<package>/.
+func treeFor(pkg string) (fs.FS, string) {
+	if strings.HasPrefix(pkg, samples.Authority+"/") {
+		return samples.Samples(), strings.TrimPrefix(pkg, samples.Authority+"/")
 	}
+	return kinds.All(), pkg
+}
+
+// schemaDocs decodes a package directory's schema documents — and the
+// authority manifest above it, exactly as a closure carries it — skipping the
+// data plane (a provider's triggers) as the install seam splits it.
+func schemaDocs(pkg string) ([]vocabulary.Document, error) {
+	fsys, dir := treeFor(pkg)
 	var docs []vocabulary.Document
-	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".yaml" {
-			continue
+	dirs := []string{dir}
+	for d := path.Dir(dir); ; d = path.Dir(d) {
+		dirs = append([]string{d}, dirs...)
+		if d == "." {
+			break
 		}
-		raw, err := fs.ReadFile(kinds.All(), authority+"/"+e.Name())
+	}
+	for _, d := range dirs {
+		entries, err := fs.ReadDir(fsys, d)
 		if err != nil {
 			return nil, err
 		}
-		dec := yaml.NewDecoder(bytes.NewReader(raw))
-		for {
-			var m map[string]any
-			if err := dec.Decode(&m); errors.Is(err, io.EOF) {
-				break
-			} else if err != nil {
-				return nil, fmt.Errorf("%s/%s: %w", authority, e.Name(), err)
-			}
-			kindAuthority, name := vocabulary.SplitKindRef(fmt.Sprint(m["kind"]))
-			if kindAuthority != vocabulary.AuthorityCore || !vocabulary.VocabularyDocumentKind(name) {
+		for _, e := range entries {
+			if e.IsDir() || filepath.Ext(e.Name()) != ".yaml" {
 				continue
 			}
-			d, err := vocabulary.DocumentFromMap(m)
+			raw, err := fs.ReadFile(fsys, path.Join(d, e.Name()))
 			if err != nil {
-				return nil, fmt.Errorf("%s/%s: %w", authority, e.Name(), err)
+				return nil, err
 			}
-			docs = append(docs, d)
+			dec := yaml.NewDecoder(bytes.NewReader(raw))
+			for {
+				var m map[string]any
+				if err := dec.Decode(&m); errors.Is(err, io.EOF) {
+					break
+				} else if err != nil {
+					return nil, fmt.Errorf("%s/%s: %w", d, e.Name(), err)
+				}
+				ref := fmt.Sprint(m["kind"])
+				if vocabulary.KindPackage(ref) != vocabulary.PackageCore ||
+					!vocabulary.VocabularyDocumentKind(vocabulary.KindName(ref)) {
+					continue
+				}
+				doc, err := vocabulary.DocumentFromMap(m)
+				if err != nil {
+					return nil, fmt.Errorf("%s/%s: %w", d, e.Name(), err)
+				}
+				docs = append(docs, doc)
+			}
 		}
 	}
 	return docs, nil

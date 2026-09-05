@@ -1,0 +1,59 @@
+# Shipped vocabulary ported from mneme v4: what was bought. An
+# order's lifecycle is a state machine that stamps its own shipped and
+# delivered times, so a status flip is never accompanied by a forgotten
+# timestamp. The amount and its currency stay two properties: a joined
+# "12.99 USD" string would be unfilterable and unsummable.
+#
+# `source` is the one unpinned reference: an order is usually seen in
+# an email or a message, and naming each would couple this package to
+# every other one.
+#
+# no new actors: writes arrive under the actor of whatever runs.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: samples.substrate.reamde.dev/commerce
+data:
+  authority: samples.substrate.reamde.dev
+  package: commerce
+  # version 2: THE TYPED CORE SWEEP. Declarations in this closure moved to the
+  # declared spellings — whichever of them they used: a tool entry naming its arm,
+  # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
+  # naming its properties. THE PACKAGE IS VERSIONED AS A UNIT, so this bump
+  # carries the closure whole rather than saying every declaration in it moved.
+  # version 3: MONEY IS EXACT. totalAmount and unitPrice moved from float to
+  # decimal, the exact string-carried number, before stored rows made the
+  # move a migration. A repository that already holds float rows keeps the
+  # version 2 declarations (the boot upgrade refuses the retype, loudly)
+  # until the rows are rewritten or deleted.
+  # version 5: every declared link in this closure is a reference property,
+  # carrying `mustExist: true` and `onDelete: cascade` where the referent
+  # owns the record.
+  version: 5
+---
+# ---- the currency code, refined once and used by every money property -------
+kind: substrate.reamde.dev/core/propertytype
+metadata:
+  id: samples.substrate.reamde.dev/commerce/currency
+data:
+  authority: samples.substrate.reamde.dev
+  package: commerce
+  description: "an ISO 4217 currency code, three uppercase letters"
+  base: string
+  pattern: "^[A-Z]{3}$"
+---
+# ---- the bundle document: the import unit -----------------------------------
+# A SAMPLE bundle: kinds only, imported from the registry.
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: samples.substrate.reamde.dev/commerce
+data:
+  authority: samples.substrate.reamde.dev
+  package: commerce
+  description: >-
+    What was bought: orders whose lifecycle stamps its own shipped and delivered
+    times, the items inside them, and an ISO 4217 currency type kept separate
+    from the amount.
+  installs:
+    - samples.substrate.reamde.dev/commerce/currency
+    - samples.substrate.reamde.dev/commerce/order
+    - samples.substrate.reamde.dev/commerce/orderitem

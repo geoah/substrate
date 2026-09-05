@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	tasksBundleID   = "tasks.substrate.reamde.dev/tasks"
-	tasksCollection = "/api/v1/tasks.substrate.reamde.dev/task"
+	tasksBundleID   = "samples.substrate.reamde.dev/tasks"
+	tasksCollection = "/api/v1/samples.substrate.reamde.dev/tasks/task"
 )
 
 func TestE2E(t *testing.T) {
@@ -276,8 +276,8 @@ func caseRecords(c *C) {
 	// installing it first is refused naming exactly what is missing.
 	status, raw = c.do(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(tasksBundleID)+"/install", nil, nil)
 	c.requiref(status == http.StatusUnprocessableEntity &&
-		strings.Contains(string(raw), "people.substrate.reamde.dev") &&
-		strings.Contains(string(raw), "scheduling.substrate.reamde.dev"),
+		strings.Contains(string(raw), "samples.substrate.reamde.dev/people") &&
+		strings.Contains(string(raw), "samples.substrate.reamde.dev/scheduling"),
 		"an out-of-order install answered %d, want a 422 naming the missing requirements: %s", status, raw)
 	c.stepf("installing `%s` before its requirements was refused naming `people` and `scheduling`", tasksBundleID)
 
@@ -287,8 +287,8 @@ func caseRecords(c *C) {
 	}
 	var bundle bundleStatus
 	for _, id := range []string{
-		"people.substrate.reamde.dev/people",
-		"scheduling.substrate.reamde.dev/scheduling",
+		"samples.substrate.reamde.dev/people",
+		"samples.substrate.reamde.dev/scheduling",
 		tasksBundleID,
 	} {
 		bundle = bundleStatus{}
@@ -388,7 +388,7 @@ func caseChangelog(c *C) {
 	}
 	taskWrites := 0
 	for _, row := range rows {
-		if row.Kind == "tasks.substrate.reamde.dev/task" {
+		if row.Kind == "samples.substrate.reamde.dev/tasks/task" {
 			taskWrites++
 		}
 	}
@@ -560,7 +560,7 @@ func (r *run) appendix() {
 	var repo struct {
 		Records []record `json:"records"`
 	}
-	if err := r.fetch("/api/v1/core.substrate.reamde.dev/repository", &repo); err != nil {
+	if err := r.fetch("/api/v1/substrate.reamde.dev/core/repository", &repo); err != nil {
 		fmt.Fprintf(&b, "Reading the repository record failed: %v\n\n", err)
 	} else if len(repo.Records) == 1 {
 		fmt.Fprintf(&b, "Repository record `%s`.\n\n", repo.Records[0].ID)
@@ -588,7 +588,7 @@ func (r *run) appendix() {
 	if err := r.fetch(tasksCollection, &tasks); err != nil {
 		fmt.Fprintf(&b, "Reading the tasks failed: %v\n\n", err)
 	} else {
-		b.WriteString("### Tasks (`tasks.substrate.reamde.dev/task`)\n\n")
+		b.WriteString("### Tasks (`samples.substrate.reamde.dev/tasks/task`)\n\n")
 		b.WriteString("| id | name | status | version |\n| --- | --- | --- | --- |\n")
 		for _, rec := range tasks.Records {
 			fmt.Fprintf(&b, "| `%s` | %s | %s | %d |\n", rec.ID, rec.prop("name"), rec.prop("status"), rec.Version)

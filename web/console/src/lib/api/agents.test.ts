@@ -133,7 +133,7 @@ describe("streamChat post-200 failures", () => {
 describe("lastAssistantReply", () => {
   const msg = (role: string, content: string): SubstrateRecord => ({
     id: `${role}-${content}`,
-    kind: "core.substrate.reamde.dev/message",
+    kind: "substrate.reamde.dev/core/message",
     properties: { role, content },
     labels: {},
     version: 1,
@@ -158,7 +158,7 @@ describe("lastAssistantReply", () => {
 describe("provider rows", () => {
   const provider = (properties: Record<string, unknown>): SubstrateRecord => ({
     id: "default",
-    kind: "core.substrate.reamde.dev/llmprovider",
+    kind: "substrate.reamde.dev/core/llmprovider",
     properties,
     labels: {},
     version: 1,

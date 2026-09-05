@@ -20,28 +20,28 @@ import (
 )
 
 const (
-	lqAuthority  = "legacy.bundles.substrate.reamde.dev"
-	lqAgent      = lqAuthority + "/summarizer"
-	lqConfigType = lqAuthority + "/legacyconfig"
-	kindAgentID  = "core.substrate.reamde.dev/agent"
+	lqPackage    = "legacy.bundles.substrate.reamde.dev/legacy"
+	lqAgent      = lqPackage + "/summarizer"
+	lqConfigType = lqPackage + "/legacyconfig"
+	kindAgentID  = "substrate.reamde.dev/core/agent"
 )
 
 // lqDocs is a minimal bundle closure carrying one agent, so a test can age
 // its stored definition into a shape the loader refuses.
 func lqDocs() []map[string]any {
 	return []map[string]any{
-		vocabulary.AuthorityManifest(lqAuthority, 0),
-		vocabulary.ActorManifest(lqAuthority, vocabulary.AuthorityActor(lqAuthority)),
-		vocabulary.BundleManifest(lqAuthority, map[string]any{
+		vocabulary.PackageManifest(lqPackage, 0),
+		vocabulary.ActorManifest(lqPackage, vocabulary.PackageActor(lqPackage)),
+		vocabulary.BundleManifest(lqPackage, map[string]any{
 			"description": "a bundle carrying one agent",
 			"installs":    []any{lqConfigType, lqAgent},
 		}),
-		vocabulary.KindManifest(lqAuthority,
+		vocabulary.KindManifest(lqPackage,
 			map[string]any{"singular": "legacyconfig", "plural": "legacyconfigs"},
 			map[string]any{
 				"properties": map[string]any{"note": map[string]any{"type": "string"}},
 			}),
-		vocabulary.AgentManifest(lqAuthority, "summarizer", map[string]any{
+		vocabulary.AgentManifest(lqPackage, "summarizer", map[string]any{
 			"description": "summarizes what it is handed",
 			"prompt":      "You summarize.",
 			"provider":    "default",
@@ -62,7 +62,7 @@ func TestUnparseableStoredAgentQuarantinesInsteadOfBricking(t *testing.T) {
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
 		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -111,7 +111,7 @@ func TestUnparseableStoredAgentQuarantinesInsteadOfBricking(t *testing.T) {
 	}
 	ops2 := bundler(t, ds2)
 
-	st := bundleStatusFor(t, ops2, lqAuthority)
+	st := bundleStatusFor(t, ops2, lqPackage)
 	if !st.Quarantined {
 		t.Fatalf("the legacy bundle should be quarantined: %+v", st)
 	}
@@ -130,7 +130,7 @@ func TestUnparseableStoredAgentQuarantinesInsteadOfBricking(t *testing.T) {
 
 	// The sibling INSTALLED bundle is untouched — the parse failure was
 	// isolated to its own authority.
-	sibling := bundleStatusFor(t, ops2, mbAuthority)
+	sibling := bundleStatusFor(t, ops2, mbPackage)
 	if sibling.Quarantined || !sibling.Installed || !sibling.Enabled {
 		t.Fatalf("the sibling bundle must stay live: %+v", sibling)
 	}
@@ -143,7 +143,7 @@ func TestUnparseableStoredAgentQuarantinesInsteadOfBricking(t *testing.T) {
 	if _, err := applier(t, ds2).ApplyVocabularyDocuments(ctx, owner, lqDocs()); err != nil {
 		t.Fatalf("re-apply the corrected manifest: %v", err)
 	}
-	st = bundleStatusFor(t, ops2, lqAuthority)
+	st = bundleStatusFor(t, ops2, lqPackage)
 	if st.Quarantined {
 		t.Fatalf("re-applying the corrected manifest must clear the quarantine: %+v", st)
 	}
@@ -159,7 +159,7 @@ func TestUnparseableStoredAgentQuarantinesInsteadOfBricking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen after the correction: %v", err)
 	}
-	st = bundleStatusFor(t, bundler(t, ds3), lqAuthority)
+	st = bundleStatusFor(t, bundler(t, ds3), lqPackage)
 	if st.Quarantined || !st.Enabled {
 		t.Fatalf("a healthy closure must open live: %+v", st)
 	}

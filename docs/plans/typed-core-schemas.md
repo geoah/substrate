@@ -1,6 +1,8 @@
 # Typed core declarations: the target schemas
 
-*Predates decision 0044: edges have since been replaced by reference properties.*
+*Predates decision 0044: edges have since been replaced by reference
+properties. Written before decision record 0047, so kind references here are in
+the old two-segment grammar (`{authority}/{name}`).*
 
 Companion to [typed-core.md](typed-core.md). These are the settled property
 declarations the flip writes into `kinds/core.substrate.reamde.dev/`. Sketches,

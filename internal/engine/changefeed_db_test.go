@@ -119,7 +119,7 @@ func TestChangeTriggersStates(t *testing.T) {
 		pyFn("mirror", map[string]any{}, []any{taskType}, mirrorSource))
 	feed := feedOf(t, ds)
 	ctx := context.Background()
-	const mirror = fnAuthority + "/mirror"
+	const mirror = fnPackage + "/mirror"
 
 	processed := mustPut(t, ds, owner, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "fine"}})
 	poisoned := mustPut(t, ds, owner, substrate.PutInput{Kind: widgetType})
@@ -165,7 +165,7 @@ func TestChangeTriggersStates(t *testing.T) {
 	}
 	// The callable's own task write matches the source by type but is its
 	// own echo: self-actor exclusion drops the chip.
-	if ct, ok := chipOf("t-"+processed.ID, substrate.FunctionActor(fnAuthority, vocabulary.KindName(mirror))); ok {
+	if ct, ok := chipOf("t-"+processed.ID, substrate.FunctionActor(vocabulary.SplitKindRef(mirror))); ok {
 		t.Fatalf("self write carries a chip: %+v", ct)
 	}
 }

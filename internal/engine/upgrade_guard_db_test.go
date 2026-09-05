@@ -28,11 +28,11 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-const coreAuthority = "core.substrate.reamde.dev"
+const corePackage = "substrate.reamde.dev/core"
 
 // coreKind is one shipped core declaration inside a copied tree.
 func coreKind(tree, file string) string {
-	return filepath.Join(tree, coreAuthority, file)
+	return filepath.Join(tree, corePackage, file)
 }
 
 func patchShipped(t *testing.T, path string, replace func(string) string) {
@@ -90,7 +90,7 @@ func seededRepository(t *testing.T) (dsn string) {
 		t.Fatalf("open dataset: %v", err)
 	}
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/llmprovider", ID: "guarded",
+		Kind: "substrate.reamde.dev/core/llmprovider", ID: "guarded",
 		Properties: map[string]any{"label": "a label", "wire": "openai"},
 	}); err != nil {
 		t.Fatalf("put the live provider row: %v", err)
@@ -102,7 +102,7 @@ func seededRepository(t *testing.T) (dsn string) {
 // and returns what the upgrade said.
 func openMoved(t *testing.T, dsn, tree string) error {
 	t.Helper()
-	bumpGroupVersion(t, tree, coreAuthority, "99")
+	bumpPackageVersion(t, tree, corePackage, "99")
 	svc, err := engine.Open(context.Background(), dsn, engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(tree))
 	if err != nil {
 		return err
@@ -148,7 +148,7 @@ func stillSpeaksTheOldShape(t *testing.T, dsn string) {
 		t.Fatalf("dataset: %v", err)
 	}
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/llmprovider", ID: "another",
+		Kind: "substrate.reamde.dev/core/llmprovider", ID: "another",
 		Properties: map[string]any{"label": "still a string", "wire": "openai"},
 	}); err != nil {
 		t.Fatalf("the old shape must still be writable — the narrowing landed anyway: %v", err)
@@ -221,14 +221,14 @@ func TestBootUpgradeRefusesAnUnstorableDefault(t *testing.T) {
 		t.Fatalf("dataset: %v", err)
 	}
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/llmprovider", ID: "after",
+		Kind: "substrate.reamde.dev/core/llmprovider", ID: "after",
 		Properties: map[string]any{"label": "still writable", "wire": "openai", "region": "eu-west"},
 	}); err == nil {
 		t.Fatal("the declaration carrying the unstorable default must not have landed")
 	}
 	// …and the repository still works under the declaration it stored.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/llmprovider", ID: "after",
+		Kind: "substrate.reamde.dev/core/llmprovider", ID: "after",
 		Properties: map[string]any{"label": "still writable", "wire": "openai"},
 	})
 }

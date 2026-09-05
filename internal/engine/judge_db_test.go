@@ -39,9 +39,9 @@ func judgedAnnotation(t *testing.T, ds *dataset, requestID string) map[string]an
 func gatePolicyWithJudge(t *testing.T, ds *dataset, id string, extra map[string]any) *substrate.Record {
 	t.Helper()
 	props := map[string]any{
-		"selector": map[string]any{"kinds": []any{crewAuthority + "/widget"}},
+		"selector": map[string]any{"kinds": []any{crewPackage + "/widget"}},
 		"action":   "gate",
-		"judge":    crewAuthority + "/verdictor",
+		"judge":    crewPackage + "/verdictor",
 		"criteria": "small honest changes yes, deletions never",
 		"mode":     "enforce",
 	}
@@ -61,7 +61,7 @@ func TestJudgeAcceptsWithinThresholds(t *testing.T) {
 	})
 	fake.script("mut",
 		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "crew.test.dev/widget", id: "w-judged", properties: {name: "wanted"}}) { id } }`,
+			"query": `mutation { put(input: {kind: "crew.test.dev/crew/widget", id: "w-judged", properties: {name: "wanted"}}) { id } }`,
 		})}}},
 		fakeTurn{content: "held, waiting on the judge."},
 		fakeTurn{content: "the judge let it through."},
@@ -69,7 +69,7 @@ func TestJudgeAcceptsWithinThresholds(t *testing.T) {
 	fake.script("vjudge",
 		fakeTurn{content: `{"verdict":"accept","confidence":0.97,"rationale":"small and honest"}`},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/editor", "make a widget")
+	res, err := ds.CallAgent(ctx, crewPackage+"/editor", "make a widget")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestJudgeAcceptsWithinThresholds(t *testing.T) {
 	}
 	// The held write landed, decided by the POLICY's actor.
 	waitUntil(t, "the judged accept landing", func() bool {
-		got, err := ds.Get(ctx, crewAuthority+"/widget", "w-judged")
+		got, err := ds.Get(ctx, crewPackage+"/widget", "w-judged")
 		return err == nil && got.Properties["name"] == "wanted"
 	})
 	changes, err := ds.Changes(ctx, 0, substrate.ChangeFilter{RecordID: req.ID, Ops: []substrate.Op{substrate.OpPatch}}, 10)
@@ -126,14 +126,14 @@ func TestJudgeEscalatesBelowThresholdAndTheOwnerDecides(t *testing.T) {
 	gatePolicyWithJudge(t, ds, "wary-widgets", map[string]any{"autoAccept": 0.9, "autoRefuse": 0.9})
 	fake.script("mut",
 		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "crew.test.dev/widget", id: "w-wary", properties: {name: "wanted"}}) { id } }`,
+			"query": `mutation { put(input: {kind: "crew.test.dev/crew/widget", id: "w-wary", properties: {name: "wanted"}}) { id } }`,
 		})}}},
 		fakeTurn{content: "held."},
 	)
 	fake.script("vjudge",
 		fakeTurn{content: `{"verdict":"accept","confidence":0.55,"rationale":"probably fine"}`},
 	)
-	if _, err := ds.CallAgent(ctx, crewAuthority+"/editor", "make a widget"); err != nil {
+	if _, err := ds.CallAgent(ctx, crewPackage+"/editor", "make a widget"); err != nil {
 		t.Fatalf("call: %v", err)
 	}
 	req := onlyPatchRequest(t, ds)
@@ -164,14 +164,14 @@ func TestJudgeAdvisesWhenAskedTo(t *testing.T) {
 	})
 	fake.script("mut",
 		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "crew.test.dev/widget", id: "w-advised", properties: {name: "wanted"}}) { id } }`,
+			"query": `mutation { put(input: {kind: "crew.test.dev/crew/widget", id: "w-advised", properties: {name: "wanted"}}) { id } }`,
 		})}}},
 		fakeTurn{content: "held."},
 	)
 	fake.script("vjudge",
 		fakeTurn{content: `{"verdict":"accept","confidence":0.99,"rationale":"looks perfect"}`},
 	)
-	if _, err := ds.CallAgent(ctx, crewAuthority+"/editor", "make a widget"); err != nil {
+	if _, err := ds.CallAgent(ctx, crewPackage+"/editor", "make a widget"); err != nil {
 		t.Fatalf("call: %v", err)
 	}
 	req := onlyPatchRequest(t, ds)
@@ -182,7 +182,7 @@ func TestJudgeAdvisesWhenAskedTo(t *testing.T) {
 	if fresh, err := ds.Get(ctx, vocabulary.KindRecordPatchRequest, req.ID); err != nil || fresh.Properties["decision"] != "proposed" {
 		t.Fatalf("request after advice: %+v %v", fresh.Properties, err)
 	}
-	if _, err := ds.Get(ctx, crewAuthority+"/widget", "w-advised"); err == nil {
+	if _, err := ds.Get(ctx, crewPackage+"/widget", "w-advised"); err == nil {
 		t.Fatal("an advised write landed")
 	}
 }
@@ -194,7 +194,7 @@ func TestJudgeFailuresFailClosed(t *testing.T) {
 	gatePolicyWithJudge(t, ds, "sloppy-widgets", map[string]any{"autoAccept": 0.5})
 	fake.script("mut",
 		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "crew.test.dev/widget", id: "w-sloppy", properties: {name: "wanted"}}) { id } }`,
+			"query": `mutation { put(input: {kind: "crew.test.dev/crew/widget", id: "w-sloppy", properties: {name: "wanted"}}) { id } }`,
 		})}}},
 		fakeTurn{content: "held."},
 	)
@@ -203,7 +203,7 @@ func TestJudgeFailuresFailClosed(t *testing.T) {
 	fake.script("vjudge",
 		fakeTurn{content: `Sure! Here is my verdict: {"verdict":"accept","confidence":0.99}`},
 	)
-	if _, err := ds.CallAgent(ctx, crewAuthority+"/editor", "make a widget"); err != nil {
+	if _, err := ds.CallAgent(ctx, crewPackage+"/editor", "make a widget"); err != nil {
 		t.Fatalf("call: %v", err)
 	}
 	req := onlyPatchRequest(t, ds)
@@ -214,7 +214,7 @@ func TestJudgeFailuresFailClosed(t *testing.T) {
 	if note, _ := audit["note"].(string); !strings.Contains(note, "not the verdict object") {
 		t.Fatalf("the audit does not say what broke: %v", audit["note"])
 	}
-	if _, err := ds.Get(ctx, crewAuthority+"/widget", "w-sloppy"); err == nil {
+	if _, err := ds.Get(ctx, crewPackage+"/widget", "w-sloppy"); err == nil {
 		t.Fatal("a write landed on a broken judge")
 	}
 }
@@ -225,19 +225,19 @@ func TestJudgesWithHandsAreRefused(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	// The arbiter carries mutate: naming it as a judge fails closed.
 	putPolicy(t, ds, "armed-judge", map[string]any{
-		"selector":   map[string]any{"kinds": []any{crewAuthority + "/widget"}},
+		"selector":   map[string]any{"kinds": []any{crewPackage + "/widget"}},
 		"action":     "gate",
-		"judge":      crewAuthority + "/arbiter",
+		"judge":      crewPackage + "/arbiter",
 		"mode":       "enforce",
 		"autoAccept": 0.1,
 	})
 	fake.script("mut",
 		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "crew.test.dev/widget", id: "w-armed", properties: {name: "wanted"}}) { id } }`,
+			"query": `mutation { put(input: {kind: "crew.test.dev/crew/widget", id: "w-armed", properties: {name: "wanted"}}) { id } }`,
 		})}}},
 		fakeTurn{content: "held."},
 	)
-	if _, err := ds.CallAgent(ctx, crewAuthority+"/editor", "make a widget"); err != nil {
+	if _, err := ds.CallAgent(ctx, crewPackage+"/editor", "make a widget"); err != nil {
 		t.Fatalf("call: %v", err)
 	}
 	req := onlyPatchRequest(t, ds)
@@ -255,20 +255,20 @@ func TestVoluntaryProposalsAreJudgedWhenThePolicyMatches(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewAuthority + "/widget", ID: "w-polite", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: "w-polite", Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	gatePolicyWithJudge(t, ds, "judge-widgets", map[string]any{"autoAccept": 0.9})
 	fake.script("root",
-		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/widget","target":"w-polite","diff":{"properties":{"name":"better"}}}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-polite","diff":{"properties":{"name":"better"}}}`}}},
 		fakeTurn{content: "proposed."},
 		fakeTurn{content: "the judge accepted my proposal."},
 	)
 	fake.script("vjudge",
 		fakeTurn{content: `{"verdict":"accept","confidence":0.95,"rationale":"a small honest change"}`},
 	)
-	res, err := ds.CallAgent(ctx, crewAuthority+"/classifier", "tidy the widget politely")
+	res, err := ds.CallAgent(ctx, crewPackage+"/classifier", "tidy the widget politely")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -278,7 +278,7 @@ func TestVoluntaryProposalsAreJudgedWhenThePolicyMatches(t *testing.T) {
 		t.Fatalf("audit: %+v", audit)
 	}
 	waitUntil(t, "the judged proposal landing", func() bool {
-		got, err := ds.Get(ctx, crewAuthority+"/widget", "w-polite")
+		got, err := ds.Get(ctx, crewPackage+"/widget", "w-polite")
 		return err == nil && got.Properties["name"] == "better"
 	})
 	waitUntil(t, "the proposer's resume", func() bool {
