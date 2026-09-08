@@ -683,11 +683,14 @@ func (d *fakeDataset) Delete(ctx context.Context, _ substrate.Actor, typ, id str
 	if err := fakeCAS(e, in.IfVersion); err != nil {
 		return nil, err
 	}
-	now := time.Unix(10, 0).UTC()
-	e.DeletedAt = &now
 	// The tombstone moves the version, as the engine's does (rows.go), so a
-	// retried conditioned delete meets the same conflict here.
-	e.Version++
+	// retried conditioned delete meets the same conflict here; a delete of a
+	// tombstone is the engine's no-op and moves nothing.
+	if e.DeletedAt == nil {
+		now := time.Unix(10, 0).UTC()
+		e.DeletedAt = &now
+		e.Version++
+	}
 	return e, nil
 }
 
