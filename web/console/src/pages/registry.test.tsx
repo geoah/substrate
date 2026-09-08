@@ -605,9 +605,9 @@ describe("RegistryPage", () => {
     })
 
     it("a preview the server could not run is stated as blocked", async () => {
-      // The server attaches the failure as one blocker line with the error
-      // text and no motion (api catalogItemFor). It reads as a blocked
-      // upgrade, never as an entry with nothing to say.
+      // The server attaches the failure as one fixed blocker line and no
+      // motion (api catalogItemFor). It reads as a blocked upgrade, never as
+      // an entry with nothing to say.
       serve({
         statuses: [googleStatus()],
         catalog: [
@@ -616,7 +616,7 @@ describe("RegistryPage", () => {
             installed: true,
             upgrade: {
               available: false,
-              blockers: ["the upgrade preview failed: boom"],
+              blockers: ["the upgrade preview failed; see the server log"],
             },
           },
           PEOPLE,
@@ -630,8 +630,13 @@ describe("RegistryPage", () => {
       ).toBeNull()
       const detail = expand(google)
       expect(
-        within(detail).getByText("the upgrade preview failed: boom")
+        within(detail).getByText(
+          "the upgrade preview failed; see the server log"
+        )
       ).toBeTruthy()
+      // The lead says the preview failed, not that live records block it.
+      expect(within(detail).getByText(/could not be previewed/)).toBeTruthy()
+      expect(within(detail).queryByText(/live records still hold/)).toBeNull()
     })
 
     it("a refused core boot upgrade is stated above the sections", async () => {

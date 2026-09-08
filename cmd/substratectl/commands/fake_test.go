@@ -67,7 +67,7 @@ type fakeSubstrate struct {
 	// catalog is GET /api/v1/catalog's items, and shipped is GET
 	// /api/v1/vocabulary/upgrade's. shippedStatus, when non-zero, fails the
 	// shipped read with it: the server that previews no boot upgrade.
-	catalog       []catalogEntry
+	catalog       []substrate.CatalogItem
 	shipped       []substrate.ShippedUpgrade
 	shippedStatus int
 

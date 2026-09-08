@@ -28,6 +28,7 @@ import type {
   BundleUpgrade,
   BundleUpgradeChange,
   CatalogBundle,
+  CatalogItem,
   Change,
   IncomingReference,
   IncomingSource,
@@ -156,9 +157,9 @@ const occurrenceList: Keys<OccurrenceList> = {
   problems: true,
 }
 
-/** The catalog entry, and the two shapes nested in it. `installed` and
- * `upgrade` are NOT here: the API adds them around the bundle, and the
- * console carries them on CatalogItem. */
+/** The shipped bundle, and the two shapes nested in it. `installed` and
+ * `upgrade` are NOT here: the API adds them around the bundle on CatalogItem,
+ * held below with the bundle's keys promoted. */
 const catalogBundle: Keys<CatalogBundle> = {
   id: true,
   name: true,
@@ -174,6 +175,15 @@ const catalogBundle: Keys<CatalogBundle> = {
   originVersion: true,
   modified: true,
   closure: true,
+}
+
+/** The entry as served: every bundle key, then the two the API adds. The
+ * golden lists them flattened, the way encoding/json writes an embedded
+ * struct, so the TypeScript `extends` and the Go embedding meet here. */
+const catalogItem: Keys<CatalogItem> = {
+  ...catalogBundle,
+  installed: true,
+  upgrade: true,
 }
 
 const suggestedMapping: Keys<SuggestedMapping> = {
@@ -235,6 +245,7 @@ const mirrors: Record<string, Record<string, true>> = {
   OccurrenceProblem: occurrenceProblem,
   OccurrenceList: occurrenceList,
   CatalogBundle: catalogBundle,
+  CatalogItem: catalogItem,
   BundleUpgrade: bundleUpgrade,
   BundleUpgradeChange: bundleUpgradeChange,
   ShippedUpgrade: shippedUpgrade,

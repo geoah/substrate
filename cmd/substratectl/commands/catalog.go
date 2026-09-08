@@ -135,14 +135,6 @@ your own authority.`,
 	}
 }
 
-// catalogEntry is one entry of GET /api/v1/catalog: the shipped bundle, whether
-// this repository holds it, and the upgrade preview the server attached.
-type catalogEntry struct {
-	substrate.CatalogBundle
-	Installed bool                     `json:"installed"`
-	Upgrade   *substrate.BundleUpgrade `json:"upgrade,omitempty"`
-}
-
 // catalogRow is one line of `substratectl catalog`: a package the binary ships,
 // from either read, in one shape.
 type catalogRow struct {
@@ -201,10 +193,16 @@ offered an upgrade: what it landed is yours.`,
 				return err
 			}
 			ctx := cmd.Context()
-			var rows []catalogRow
-			// The seeded package first. A server that previews no shipped
-			// upgrade (an older binary, or a dataset without the seam) has
-			// no core row; the catalog still lists.
+			// Never nil: `-o json` prints `[]` for a server with nothing
+			// shipped, not `null`.
+			rows := []catalogRow{}
+			// The seeded package first. The shipped read is optional: a
+			// server that previews no boot upgrade (an older binary, a
+			// dataset without the seam) answers 404 or 501 and has no core
+			// row, and any other refusal costs the core row alone, because
+			// the catalog read still serves and is the reason the command
+			// was run. A refusal that is not one of the two expected ones
+			// is said once, on stderr.
 			var shipped substrate.OperationalList[substrate.ShippedUpgrade]
 			err = cl.do(ctx, http.MethodGet, apiPrefix+"/vocabulary/upgrade", nil, nil, &shipped)
 			var ae *apiError
@@ -214,11 +212,14 @@ offered an upgrade: what it landed is yours.`,
 					up := s.Upgrade
 					rows = append(rows, catalogRow{ID: s.Package, Tier: tierSeed, Installed: true, Version: up.To, Upgrade: &up})
 				}
-			case errors.As(err, &ae) && (ae.Status == http.StatusNotFound || ae.Status == http.StatusNotImplemented):
+			case errors.As(err, &ae):
+				if ae.Status != http.StatusNotFound && ae.Status != http.StatusNotImplemented {
+					fmt.Fprintf(a.errOut, "note: the shipped upgrade preview answered %d (%s); core is not listed\n", ae.Status, ae.Error())
+				}
 			default:
 				return err
 			}
-			var cat substrate.OperationalList[catalogEntry]
+			var cat substrate.OperationalList[substrate.CatalogItem]
 			if err := cl.do(ctx, http.MethodGet, apiPrefix+"/catalog", nil, nil, &cat); err != nil {
 				return err
 			}
@@ -268,16 +269,23 @@ func printCatalogTable(w io.Writer, rows []catalogRow) error {
 // a third state a catalog tier does not: admitted with nothing to block it,
 // which still lands only when the server starts again, so it says so rather
 // than reading like a provider's one-command upgrade.
+//
+// The motion is printed only when the upgrade is AVAILABLE. A repository ahead
+// of its binary (a rollback) previews core as not available with the stored
+// version above the shipped one, and "18 -> 17" would read as a downgrade the
+// boot never performs.
 func upgradeCell(tier string, up *substrate.BundleUpgrade) string {
 	if up == nil {
 		return ""
 	}
 	var motion string
-	switch {
-	case up.From != 0 && up.To != 0 && up.From != up.To:
-		motion = fmt.Sprintf("%d -> %d", up.From, up.To)
-	case up.Available && up.To != 0:
-		motion = fmt.Sprintf("%d", up.To)
+	if up.Available {
+		switch {
+		case up.From != 0 && up.To != 0 && up.From != up.To:
+			motion = fmt.Sprintf("%d -> %d", up.From, up.To)
+		case up.To != 0:
+			motion = fmt.Sprintf("%d", up.To)
+		}
 	}
 	switch {
 	case len(up.Blockers) > 0 && motion == "":

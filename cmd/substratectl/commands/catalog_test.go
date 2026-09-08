@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -22,7 +23,7 @@ func TestCatalogPrintsUpgradesAndBlockersForCoreAndProviders(t *testing.T) {
 		Package: "substrate.reamde.dev/core",
 		Upgrade: substrate.BundleUpgrade{Available: true, From: 16, To: 17, Blockers: []string{labelGuard}},
 	}}
-	h.fake.catalog = []catalogEntry{
+	h.fake.catalog = []substrate.CatalogItem{
 		{
 			CatalogBundle: substrate.CatalogBundle{
 				ID: "providers.substrate.reamde.dev/google", Name: "google", Authority: "providers.substrate.reamde.dev",
@@ -89,22 +90,63 @@ func TestCatalogPrintsUpgradesAndBlockersForCoreAndProviders(t *testing.T) {
 
 // A server that previews no shipped upgrade (an older binary, or a dataset
 // without the seam) still lists its catalog: the core row is simply absent.
+// So does one whose preview fails outright: the catalog read is the reason
+// the command was run, and the core row is the extra. The unexpected status
+// is said once, on stderr.
 func TestCatalogListsWithoutAShippedPreview(t *testing.T) {
+	for _, status := range []int{404, 501, 500} {
+		h := newHarness(t)
+		h.writeConfig()
+		h.fake.shippedStatus = status
+		h.fake.catalog = []substrate.CatalogItem{{
+			CatalogBundle: substrate.CatalogBundle{
+				ID: "samples.substrate.reamde.dev/tasks", Name: "tasks", Authority: "samples.substrate.reamde.dev",
+				Package: "tasks", Version: 8, Tier: substrate.TierSample,
+			},
+		}}
+		stdout, stderr, err := h.run("catalog")
+		if err != nil {
+			t.Fatalf("shipped read answering %d aborted the listing: %v", status, err)
+		}
+		if !strings.Contains(stdout, "samples.substrate.reamde.dev/tasks") {
+			t.Fatalf("%d: the catalog is not listed:\n%s", status, stdout)
+		}
+		if strings.Contains(stdout, "substrate.reamde.dev/core") {
+			t.Fatalf("%d: a core row was invented without a preview:\n%s", status, stdout)
+		}
+		if noted := strings.Contains(stderr, "answered 500"); noted != (status == 500) {
+			t.Fatalf("%d: stderr = %q; only an unexpected status is noted", status, stderr)
+		}
+	}
+}
+
+// A repository ahead of its binary (a rollback) previews core as not
+// available with the stored version above the shipped one. No motion is
+// printed: "18 -> 17" would read as a downgrade the boot never performs.
+func TestCatalogPrintsNoMotionForAnUnavailableUpgrade(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.fake.shipped = []substrate.ShippedUpgrade{{
+		Package: "substrate.reamde.dev/core",
+		Upgrade: substrate.BundleUpgrade{Available: false, From: 18, To: 17},
+	}}
+	stdout, _ := h.mustRun("catalog")
+	if strings.Contains(stdout, "18 -> 17") || strings.Contains(stdout, "restart") {
+		t.Fatalf("an unavailable upgrade prints a motion:\n%s", stdout)
+	}
+	if !regexp.MustCompile(`(?m)^substrate\.reamde\.dev/core\s+seed\s+true\s+17\s*$`).MatchString(stdout) {
+		t.Fatalf("the core row is not listed at the shipped version with an empty UPGRADE cell:\n%s", stdout)
+	}
+}
+
+// `-o json` on a server with nothing shipped prints an empty list, not null.
+func TestCatalogJSONIsAListWhenEmpty(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.fake.shippedStatus = 501
-	h.fake.catalog = []catalogEntry{{
-		CatalogBundle: substrate.CatalogBundle{
-			ID: "samples.substrate.reamde.dev/tasks", Name: "tasks", Authority: "samples.substrate.reamde.dev",
-			Package: "tasks", Version: 8, Tier: substrate.TierSample,
-		},
-	}}
-	stdout, _ := h.mustRun("catalog")
-	if !strings.Contains(stdout, "samples.substrate.reamde.dev/tasks") {
-		t.Fatalf("the catalog is not listed:\n%s", stdout)
-	}
-	if strings.Contains(stdout, "substrate.reamde.dev/core") {
-		t.Fatalf("a core row was invented without a preview:\n%s", stdout)
+	stdout, _ := h.mustRun("catalog", "-o", "json")
+	if strings.TrimSpace(stdout) != "[]" {
+		t.Fatalf("catalog json = %q, want []", stdout)
 	}
 }
 

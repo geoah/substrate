@@ -23,6 +23,8 @@ import {
   missingRequirements,
   oauthConnectBlocked,
   presentPackages,
+  previewFailed,
+  FAILED_PREVIEW_BLOCKER,
   requirementsOf,
   requiresHint,
   upgradableBundleCount,
@@ -286,8 +288,27 @@ describe("the upgrade preview helpers", () => {
           installed: true,
           upgrade: { available: true, to: 2, blockers: ["live rows"] },
         }),
+        // A preview the server could not run: blocked without a motion. It
+        // shows a chip on the row, so the badge counts it too.
+        catalog({
+          id: "e",
+          installed: true,
+          upgrade: { available: false, blockers: [FAILED_PREVIEW_BLOCKER] },
+        }),
       ])
-    ).toBe(2)
+    ).toBe(3)
+  })
+
+  it("a failed preview is keyed on its one fixed line", () => {
+    expect(previewFailed({ upgrade: undefined })).toBe(false)
+    expect(
+      previewFailed({ upgrade: { available: true, blockers: ["live rows"] } })
+    ).toBe(false)
+    expect(
+      previewFailed({
+        upgrade: { available: false, blockers: [FAILED_PREVIEW_BLOCKER] },
+      })
+    ).toBe(true)
   })
 
   it("blocked means the server named blockers", () => {
@@ -302,10 +323,7 @@ describe("the upgrade preview helpers", () => {
     // text. Stated as blocked, never dropped.
     expect(
       upgradeBlocked({
-        upgrade: {
-          available: false,
-          blockers: ["the upgrade preview failed: boom"],
-        },
+        upgrade: { available: false, blockers: [FAILED_PREVIEW_BLOCKER] },
       })
     ).toBe(true)
   })

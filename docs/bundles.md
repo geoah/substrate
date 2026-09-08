@@ -133,8 +133,9 @@ the boot upgrade runs for core, engine `PlanBundleUpgrade`) and attaches the
 result to the catalog read as `upgrade`, with the same refuse-breakage guard
 lines the install would refuse on as `blockers`. A preview that cannot run at
 all (a database fault, a closure this repository cannot admit) still leaves
-the entry in the listing, with one blocker line carrying the error text and
-no version motion. The console's Registry counts
+the entry in the listing, with one fixed blocker line ("the upgrade preview
+failed; see the server log") and no version motion; the error itself goes to
+the server log, never to a repository token. The console's Registry counts
 these on the sidebar badge, offers Upgrade where nothing blocks, and states
 the guard lines where something does; the button is the install verb,
 unchanged. Of the two catalog tiers only a PROVIDER is previewed: a sample's

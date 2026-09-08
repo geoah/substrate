@@ -192,8 +192,10 @@ func newUpgradeErrEnv(t *testing.T) *testEnv {
 // A preview that fails costs that entry its upgrade offer and NOTHING else:
 // the listing still answers 200, because the console reads it on every page.
 // The failure is not swallowed with the offer, though. It rides the entry as
-// one blocker line carrying the error text, so the owner sees an upgrade
-// nobody can take instead of an entry with nothing to say.
+// one fixed blocker line, so the owner sees an upgrade nobody can take
+// instead of an entry with nothing to say. The error text stays in the server
+// log: a driver error names the deployment, and a repository token's 200 body
+// is not where that goes.
 func TestCatalogListSurvivesAFailedUpgradePreview(t *testing.T) {
 	env := newUpgradeErrEnv(t)
 	tok := env.svc.token("geoah")
@@ -221,8 +223,11 @@ func TestCatalogListSurvivesAFailedUpgradePreview(t *testing.T) {
 		if item.Upgrade.Available {
 			t.Errorf("bundle %s offers an upgrade its preview could not compute", item.ID)
 		}
-		if len(item.Upgrade.Blockers) != 1 || !strings.Contains(item.Upgrade.Blockers[0], errBoom.Error()) {
-			t.Errorf("bundle %s blockers = %q, want one line carrying %q", item.ID, item.Upgrade.Blockers, errBoom.Error())
+		if len(item.Upgrade.Blockers) != 1 || item.Upgrade.Blockers[0] != failedPreviewBlocker {
+			t.Errorf("bundle %s blockers = %q, want exactly %q", item.ID, item.Upgrade.Blockers, failedPreviewBlocker)
+		}
+		if strings.Contains(strings.Join(item.Upgrade.Blockers, ";"), errBoom.Error()) {
+			t.Errorf("bundle %s serves the preview's error text to a repository token: %q", item.ID, item.Upgrade.Blockers)
 		}
 	}
 	var found bool
@@ -363,7 +368,7 @@ func TestCatalogDetailPreviewsTheClosure(t *testing.T) {
 	tok := env.svc.token("geoah")
 	rec := env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape(webBundleID), tok, nil)
 	wantStatus(t, rec, http.StatusOK)
-	item := decodeJSON[catalogItem](t, rec)
+	item := decodeJSON[substrate.CatalogItem](t, rec)
 	if len(item.Closure.Functions) != 4 || len(item.Closure.Records) != 4 {
 		t.Errorf("closure = %+v", item.Closure)
 	}

@@ -36,6 +36,24 @@
     "modified",
     "closure"
   ],
+  "CatalogItem": [
+    "id",
+    "name",
+    "authority",
+    "package",
+    "description",
+    "version",
+    "tier",
+    "inputs",
+    "requires",
+    "suggestedMappings",
+    "origin",
+    "originVersion",
+    "modified",
+    "closure",
+    "installed",
+    "upgrade"
+  ],
   "Change": [
     "seq",
     "ts",

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"sort"
 
@@ -9,28 +10,11 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// catalogItem is one catalog entry on the wire: the shipped bundle plus
-// whether THIS repository already installed it, and (for an installed one the
-// shipped closure has moved past) what re-installing would do. The bundle's
-// closure documents are unexported, so only the preview metadata marshals.
-type catalogItem struct {
-	// The shipped bundle by VALUE, not by pointer: the catalog holds one
-	// parsed copy of each closure and serves every repository from it, and
-	// `suggestedMappings` carries a per-repository state, so the entry a
-	// request answers with is a copy whose list this handler replaces.
-	substrate.CatalogBundle
-	Installed bool `json:"installed"`
-	// Upgrade is present only when the shipped closure moves something here:
-	// the version motion and the guard lines an install would refuse on. The
-	// upgrade itself is the existing install verb, unchanged.
-	Upgrade *substrate.BundleUpgrade `json:"upgrade,omitempty"`
-}
-
 // getCatalog lists the installable bundle closures shipped in the binary, each
 // flagged with whether this repository has it installed and whether the
 // shipped closure would upgrade it.
 func (h *handler) getCatalog(w http.ResponseWriter, r *http.Request) {
-	items := []catalogItem{}
+	items := []substrate.CatalogItem{}
 	if h.catalog != nil {
 		installed, err := h.installedBundles(r.Context())
 		if err != nil {
@@ -117,12 +101,14 @@ func (s installedSet) copyOf(b *catalog.Bundle, home string) *substrate.BundleSt
 // every page) reads, so one unpreviewable closure must not blank it — the
 // same reason catalog.Load drops a broken directory instead of bricking the
 // shipped set. The offer is an extra; the listing is the promise. The failure
-// itself is not dropped: it rides the entry as one blocker line carrying the
-// error text, so a database fault or an unadmittable closure reads as an
-// upgrade nobody can take, not as an entry with nothing to offer.
-func (h *handler) catalogItemFor(ctx context.Context, b *catalog.Bundle, held *substrate.BundleStatus) catalogItem {
+// itself is not dropped: it rides the entry as one fixed blocker line, so a
+// database fault reads as an upgrade nobody can take, not as an entry with
+// nothing to offer. The error goes to the server log alone: a driver error
+// names a host or a table, and a 200 body for a repository token is not where
+// the deployment is described (never leak the deployment).
+func (h *handler) catalogItemFor(ctx context.Context, b *catalog.Bundle, held *substrate.BundleStatus) substrate.CatalogItem {
 	installed := held != nil
-	item := catalogItem{CatalogBundle: b.CatalogBundle, Installed: installed}
+	item := substrate.CatalogItem{CatalogBundle: b.CatalogBundle, Installed: installed}
 	// The held copy's provenance, when it has one: which shipped id it was
 	// imported from, at which version, and whether it has been edited since.
 	// The status computed it; the entry only carries it to the console.
@@ -145,10 +131,15 @@ func (h *handler) catalogItemFor(ctx context.Context, b *catalog.Bundle, held *s
 	}
 	up, err := h.catalog.Upgrade(ctx, b.ID, DatasetFrom(ctx))
 	if err != nil {
-		item.Upgrade = &substrate.BundleUpgrade{Blockers: []string{failedPreviewBlocker(err)}}
+		slog.Error("catalog: upgrade preview failed", "bundle", b.ID, "error", err)
+		item.Upgrade = &substrate.BundleUpgrade{Blockers: []string{failedPreviewBlocker}}
 		return item
 	}
-	if up == nil || !up.Available {
+	// A preview with nothing to move and nothing to say is no offer. One that
+	// could not even build the shipped closure answers not-available WITH
+	// blockers (engine PlanBundleUpgrade), and those are kept: they are the
+	// reason the upgrade cannot be taken.
+	if up == nil || (!up.Available && len(up.Blockers) == 0) {
 		return item
 	}
 	item.Upgrade = up
@@ -156,11 +147,10 @@ func (h *handler) catalogItemFor(ctx context.Context, b *catalog.Bundle, held *s
 }
 
 // failedPreviewBlocker is the one guard line a preview that could not run
-// leaves on its entry. The error text is the substrate's own, the same one the
-// read would have failed with.
-func failedPreviewBlocker(err error) string {
-	return "the upgrade preview failed: " + err.Error()
-}
+// leaves on its entry. Fixed text: the error itself is logged, never served.
+// The console keys on this exact line to say the preview failed rather than
+// that live rows block it (web/console/src/lib/bundles.ts).
+const failedPreviewBlocker = "the upgrade preview failed; see the server log"
 
 // postCatalogInstall applies a shipped bundle's closure into the caller's
 // repository through the same schema/apply admission path an explicit apply uses —

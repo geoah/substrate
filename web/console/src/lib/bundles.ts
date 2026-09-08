@@ -145,10 +145,21 @@ export function upgradeAvailable(row: Pick<BundleRow, "upgrade">): boolean {
 /** A blocked upgrade: the server named blockers, so the console shows the
  * guard lines and no button. Usually the refuse-breakage guards on a moved
  * closure (`available` too); a preview the server could not run is the other
- * case, one line with the error text and no motion, and it is stated the same
- * way rather than dropped. */
+ * case, one fixed line and no motion, and it is stated the same way rather
+ * than dropped. */
 export function upgradeBlocked(row: Pick<BundleRow, "upgrade">): boolean {
   return Boolean(row.upgrade?.blockers?.length)
+}
+
+/** The one blocker line the server leaves when the preview itself failed
+ * (api `failedPreviewBlocker`, fixed text so no error names the deployment).
+ * Keyed on verbatim: the disclosure must not say live records block an
+ * upgrade nobody could preview. */
+export const FAILED_PREVIEW_BLOCKER =
+  "the upgrade preview failed; see the server log"
+
+export function previewFailed(row: Pick<BundleRow, "upgrade">): boolean {
+  return row.upgrade?.blockers?.includes(FAILED_PREVIEW_BLOCKER) ?? false
 }
 
 /** The shipped packages whose upgrade has not landed here: what the Registry
@@ -165,12 +176,15 @@ export function pendingShippedUpgrades(
   return items.filter((item) => item.upgrade.available)
 }
 
-/** The sidebar badge's number: installed bundles whose shipped closure moved,
- * computed straight off the catalog read so the sidebar needs no second
- * endpoint. */
+/** The sidebar badge's number: installed bundles whose shipped closure moved
+ * or whose upgrade the server blocks, computed straight off the catalog read
+ * so the sidebar needs no second endpoint. A blocked entry counts whether or
+ * not it is `available`, so the badge and the row's chip agree. */
 export function upgradableBundleCount(catalog: CatalogItem[]): number {
-  return catalog.filter((item) => item.installed && item.upgrade?.available)
-    .length
+  return catalog.filter(
+    (item) =>
+      item.installed && (item.upgrade?.available || upgradeBlocked(item))
+  ).length
 }
 
 /** "2 → 3", or just the one version when there is no motion to show: the

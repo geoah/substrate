@@ -105,6 +105,7 @@ import {
   mergeBundles,
   missingRequirements,
   presentPackages,
+  previewFailed,
   requirementsOf,
   readySuggestedMappings,
   REIMPORT_WARNING,
@@ -882,8 +883,9 @@ function BundleDisclosure({
       {(row.upgrade?.blockers?.length ?? 0) > 0 && (
         <div className="space-y-1 text-warning">
           <p>
-            The upgrade is blocked: live records still hold the shape it would
-            drop, and the server refuses to strand them.
+            {previewFailed(row)
+              ? "The upgrade could not be previewed: the server's preview failed, and its log says why. Nothing is offered until it runs."
+              : "The upgrade is blocked: live records still hold the shape it would drop, and the server refuses to strand them."}
           </p>
           {row.upgrade?.blockers?.map((b) => (
             <p key={b} className="data text-xs">
