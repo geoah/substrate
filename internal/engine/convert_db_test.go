@@ -108,6 +108,23 @@ func TestBackfillWritesTheDefaultOntoEveryRecordLackingAValue(t *testing.T) {
 	}
 	wantNarrowingGuard(t, cvApply(t, ds, props), `property "mood" becomes required`, "2 live records", "declare a default")
 
+	// A default `required` itself refuses is not a backfill: the declaration
+	// is refused, or every backfilled record would refuse its next write.
+	for _, empty := range []map[string]any{
+		{"type": "string", "embed": true, "required": true, "default": ""},
+		{"type": "json", "required": true, "default": []any{}},
+		{"type": "json", "required": true, "default": map[string]any{}},
+	} {
+		props["mood"] = empty
+		err := cvApply(t, ds, props)
+		if err == nil || !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "is what having none means") {
+			t.Fatalf("a required property with an empty default %v must refuse at admission, got: %v", empty["default"], err)
+		}
+	}
+	if got := mustGet(t, ds, cvWidget, lacks.ID); got.Version != lacks.Version {
+		t.Fatalf("a refused empty default touched a record: %+v", got)
+	}
+
 	// With one, the apply lands and writes it.
 	props["mood"] = map[string]any{"type": "string", "embed": true, "required": true, "default": "neutral"}
 	if err := cvApply(t, ds, props); err != nil {
@@ -250,6 +267,89 @@ func TestRemapRewritesEveryRecordHoldingTheOldValue(t *testing.T) {
 	// The old spelling is undeclared afterwards.
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"status": "active"}}); err == nil {
 		t.Fatal("the old spelling must be refused once the remap landed")
+	}
+	cvReplays(t, svc, ds)
+}
+
+// cvMappedClosure is the widget beside a source kind describing it: the source
+// carries a `status` value set and a subject reference, and the mapping
+// projects its status onto the widget's. values is the status set both kinds
+// declare.
+func cvMappedClosure(values []any) []map[string]any {
+	const source = cvPackage + "/widgetsource"
+	return []map[string]any{
+		vocabulary.PackageManifest(cvPackage, 0),
+		vocabulary.KindManifest(cvPackage, map[string]any{"singular": "widget", "plural": "widgets"},
+			map[string]any{"properties": map[string]any{
+				"status": map[string]any{"type": "enum", "values": values},
+			}}),
+		vocabulary.KindManifest(cvPackage, map[string]any{"singular": "widgetsource", "plural": "widgetsources"},
+			map[string]any{"properties": map[string]any{
+				"status": map[string]any{"type": "enum", "values": values},
+				"widget": map[string]any{
+					"type": "reference", "kind": cvWidget,
+					"required": true, "mustExist": true, "subject": true,
+				},
+			}}),
+		vocabulary.MappingManifest(cvPackage, "widgetsourcewidget", map[string]any{
+			"from": source, "to": cvWidget, "property": "widget",
+			"map": map[string]any{"status": map[string]any{"path": "status"}},
+		}),
+	}
+}
+
+// A converted record is a source write like any other: its subjects recompute
+// in the same transaction, so a mapped target and its offer rows read the new
+// spelling, a rebuild (which derives the offers from the sources) agrees with
+// the live fold, and a later source write is not refused for projecting a
+// value the declaration dropped.
+func TestRemapRecomputesTheSubjectsOfAMappedSource(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds, dsn := newDatasetWithDSN(t)
+	const source = cvPackage + "/widgetsource"
+	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, cvMappedClosure([]any{"open", "active"})); err != nil {
+		t.Fatalf("install the package: %v", err)
+	}
+	lib := substrate.Actor("connector:library")
+	src := mustPut(t, ds, lib, substrate.PutInput{Kind: source, ID: "src:1", Properties: map[string]any{"status": "active"}})
+	targetKind, targetID, _ := vocabulary.SplitRecordPath(refPathValue(mustGet(t, ds, source, src.ID), "widget"))
+	if targetKind != cvWidget || mustGet(t, ds, cvWidget, targetID).Properties["status"] != "active" {
+		t.Fatalf("the mapping did not project the source's status onto a widget")
+	}
+	db := rawDB(t, dsn)
+	offerValue := func() string {
+		t.Helper()
+		var raw string
+		if err := db.QueryRow(`SELECT value::text FROM property_offers WHERE record_kind = $1 AND record_id = $2 AND property = 'status'`,
+			cvWidget, targetID).Scan(&raw); err != nil {
+			t.Fatalf("read the offer row: %v", err)
+		}
+		return raw
+	}
+	if got := offerValue(); got != `"active"` {
+		t.Fatalf("offer before the remap = %s", got)
+	}
+
+	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, cvMappedClosure([]any{
+		"open", map[string]any{"value": "working", "renamedFrom": "active"},
+	})); err != nil {
+		t.Fatalf("the remap must land: %v", err)
+	}
+	if got := mustGet(t, ds, source, src.ID); got.Properties["status"] != "working" {
+		t.Fatalf("the source did not move: %v", got.Properties)
+	}
+	if got := mustGet(t, ds, cvWidget, targetID); got.Properties["status"] != "working" {
+		t.Fatalf("the mapped target did not follow its source: %v", got.Properties)
+	}
+	if got := offerValue(); got != `"working"` {
+		t.Fatalf("offer after the remap = %s, want the new spelling", got)
+	}
+	// The source keeps working under the new declaration, and its target
+	// follows as before.
+	mustPut(t, ds, lib, substrate.PutInput{Kind: source, ID: "src:1", Properties: map[string]any{"status": "open"}})
+	if got := mustGet(t, ds, cvWidget, targetID); got.Properties["status"] != "open" {
+		t.Fatalf("a later source write did not project: %v", got.Properties)
 	}
 	cvReplays(t, svc, ds)
 }

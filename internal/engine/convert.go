@@ -31,10 +31,13 @@ package engine
 // declaration, so its manager row is that actor at the transaction's tier, as
 // a create that fell back to the default would record. A renamed value keeps
 // its manager (rename.go moveManager), and a remapped one keeps its manager
-// too: the value's spelling moved, not who last wrote it. Offer rows describe
-// what a mapping's SOURCE would write, so a remap and a backfill leave them
-// alone (a rebuild derives them again from the sources); a rename rekeys them
-// because they are keyed by the renamed property.
+// too: the value's spelling moved, not who last wrote it. A converted record
+// is a source write like any other, so its subjects recompute after its entry
+// (recomputeSubjectsOf, as afterTombstone does): a mapped target and its offer
+// rows follow a remapped or backfilled source value, and a rebuild, which
+// derives the offers from the sources again, agrees with the live table. A
+// rename rekeys the offer rows of the renamed kind itself, because they are
+// keyed by the renamed property.
 //
 // What is refused: a remap onto a value the stored declaration still admits
 // (the live records holding either spelling would become one set), because
@@ -162,11 +165,14 @@ func classifyConversions(current, candidate *vocabulary.Registry, touched, skip 
 
 // backfillable reports whether admitting p as required strands nothing because
 // the apply writes its default onto every row lacking a value. A property with
-// no default keeps the count. The hot-column arm mirrors missingValueCount: no
+// no default keeps the count, and so does one whose default is a value
+// `required` itself refuses (emptyValue): the loader refuses that pair
+// (parseDefault), and were one ever stored, backfilling it would commit rows
+// every later write refuses. The hot-column arm mirrors missingValueCount: no
 // declaration reaches it today (a trait-bound property cannot declare a
 // default), and the two must not drift if one ever does.
 func backfillable(ty *vocabulary.Kind, p *vocabulary.Property) bool {
-	if p.Default == nil {
+	if p.Default == nil || emptyValue(p.Default) {
 		return false
 	}
 	if _, hot := hotColumns[p.Name]; hot && ty.UsesHot(p.Name) {
@@ -458,7 +464,15 @@ func (t *txn) convertRecord(kc *kindConversion, ref eref) (bool, error) {
 	}
 	// One entry per record, as a patch: the record's properties changed, and
 	// the step keys say the apply moved them rather than a writer.
-	return true, t.appendChange(t.actor, substrate.OpPatch, ref.ID, ref.Kind, payload)
+	if err := t.appendChange(t.actor, substrate.OpPatch, ref.ID, ref.Kind, payload); err != nil {
+		return false, err
+	}
+	// The record's subjects, after its entry so the recompute's own patch
+	// rides its own: a mapping from this kind projects the converted value
+	// onto its target, and the target's offer rows follow. Left alone, the
+	// target would hold a value the candidate no longer admits, and a rebuild
+	// (which derives from the sources) would disagree with the live fold.
+	return true, t.recomputeSubjectsOf(ref)
 }
 
 // remapValue rewrites one stored value's old spelling to the new one in the
