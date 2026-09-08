@@ -58,9 +58,13 @@ concurrently. A `*_db_test.go` failure that looks arbitrary usually is, so
 confirm it alone before believing it:
 
 ```bash
-mise run test:db:engine                # ~4 minutes, and the answer you can trust
+mise run test:db:engine                # 2 to 8 minutes by machine; the answer you can trust
 go test ./internal/engine/ -run TestFold -v
 ```
+
+The engine package is 825 top-level tests: about two minutes of wall time on a
+16 core machine and six to eight on a 4 vCPU CI runner (measured 2026-09-08),
+so the budget in the comment above is the spread, not a promise.
 
 `test:db:engine` is the engine package with `test:db`'s flags, and it is also
 the task CI shards: with `SHARD` and `SHARDS` in the environment it runs one
