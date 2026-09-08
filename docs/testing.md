@@ -326,6 +326,7 @@ pipeline is reproducible on a laptop:
 | changes | `ci:changes` | reads the diff against the base branch and answers `go=true` or `go=false`: does any changed file reach a Go test? | always |
 | go test | `ci:go` | the short suite, then every database package but the engine (`test:db:rest`) | when `go=true` |
 | engine 1/8 to 8/8 | `ci:engine` | one shard of the engine package each (`test:db:engine` with `SHARD` and `SHARDS`) | when `go=true` |
+| go gate | (in the workflow) | the one check to require: red unless `changes` succeeded and `go test` and every shard succeeded or were skipped by its answer | always |
 | coverage | `ci:coverage` | the whole suite, unsharded, with the coverage profile kept as an artifact | push to `main` |
 | race | `ci:race` | the short suite under `-race` | always |
 | audit | `ci:audit` | govulncheck and pnpm audit | always |
@@ -360,11 +361,32 @@ changed file matches a pattern nothing a Go test reads: `docs/`,
 `web/console/`, `.github/` other than `ci.yml`, `*.md`, and the root linter,
 release and image configs. `kinds/` and `samples/` are embedded whole, so any
 file under them counts, and an unmatched file counts, because a needless run
-is cheaper than a red test merged green. `go test` and the engine shards carry
-`if: needs.changes.outputs.go == 'true'`; a job skipped that way reports
-`skipped`, which GitHub counts as passing for a required check, so a docs-only
-PR's merge gate is satisfied without the suite. A push to `main` answers
-`true` without diffing, and runs `coverage` besides.
+is cheaper than a red test merged green. The diff is read with `--no-renames`,
+so a Go file moved onto an inert path is seen on both sides, and a base the
+script cannot resolve fails the job rather than answering `false`. `go test`
+and the engine shards carry `if: needs.changes.outputs.go == 'true'`. A push
+to `main` answers `true` without diffing, and runs `coverage` besides.
+
+`go gate` is the check to require. GitHub counts a skipped job as passing for
+a required check, the gated jobs are skipped both when `changes` answers
+`false` and when `changes` itself fails, and a skipped matrix is one `engine`
+job rather than eight named shards, so a ruleset naming `go test` or a shard
+would let a PR whose gate crashed merge untested. `go gate` runs after all of
+them with `if: always()` and fails unless `changes` succeeded and `go test`
+and the engine matrix each succeeded or were skipped. On a docs-only PR it is
+green with no suite run; on a Go PR it is the suite's verdict.
+
+A shard runs under `-timeout 12m` inside a 15 minute job, so a hang dies by
+Go's timeout with a goroutine dump rather than by the runner's with nothing.
+The script also refuses to run if a package under `internal/engine/` has
+grown tests of its own, since the shards run only the root package and
+`test:db` runs the tree.
+
+`mise run lint:ci` (`.mise/cicheck.sh`, part of `lint`) holds both scripts:
+each path-gate scenario is a throwaway git repository with the verdict it
+must give, including the unresolvable base that must fail, and the shard
+partition (`.mise/shardselect.sh`) is run over a fixed list that the eight
+shards together must reproduce exactly once.
 
 `mise run test`, `test:db` and `test:coverage` are untouched by the cut: each
 is still the whole suite, sequential, on one machine, and `mise run ci` runs

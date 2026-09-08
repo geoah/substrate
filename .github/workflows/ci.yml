@@ -16,11 +16,21 @@
 # and answers one question through .mise/changescheck.sh: does the diff touch
 # anything a Go test reads? On a docs-only, console-only or linter-config PR
 # the answer is no, and `go test` and the engine shards are skipped by their
-# `if:`. A job skipped by `if:` reports a `skipped` conclusion, which GitHub
-# counts as passing for a required check, so the merge gate is satisfied
-# without a gate job of its own; a workflow-level `paths:` filter would never
-# create the check at all and would leave a required one pending forever. A
-# push to main runs everything.
+# `if:` (the matrix `if:` is evaluated before it expands, so that run shows
+# one skipped `engine` job, not eight `engine k/8`). A workflow-level `paths:`
+# filter would never create those checks at all and would leave a required
+# one pending forever. A push to main runs everything.
+#
+# `go gate` is the ONE name a ruleset should require for the Go suite. The
+# shard names exist only on a run that needed them, GitHub counts a skipped
+# job as passing for a required check, and `go test` and the shards are
+# skipped both when `changes` said no AND when `changes` itself failed, so
+# requiring any of them would let a PR whose gate crashed merge with no
+# database test run. `go gate` always runs: it fails unless `changes`
+# succeeded and every gated job either succeeded or was skipped by its
+# answer. It is also the one job whose step is written here and not in
+# .mise.toml, because what it reads is GitHub's `needs` results, which have
+# no laptop equivalent; `mise run ci` runs the suite itself instead.
 #
 # The engine package is 380 to 500 seconds on the runner on its own and has
 # passed Go's 10 minute default under contention, so it runs as a matrix of
@@ -222,6 +232,31 @@ jobs:
           key: ${{ runner.os }}-go-engine-${{ hashFiles('go.sum') }}
           restore-keys: ${{ runner.os }}-go-engine-
       - run: mise run ci:engine
+
+  gate:
+    name: go gate
+    needs: [changes, go, engine]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CHANGES: ${{ needs.changes.result }}
+      GO: ${{ needs.go.result }}
+      ENGINE: ${{ needs.engine.result }}
+    steps:
+      # `needs.engine.result` is the matrix as a whole: `failure` if any shard
+      # failed (fail-fast is off, so every shard still reports). A gated job
+      # may be `skipped` only because `changes` succeeded with go=false; a
+      # failed or cancelled `changes` fails this job first.
+      - run: |
+          echo "changes=$CHANGES go=$GO engine=$ENGINE"
+          [ "$CHANGES" = success ] || { echo "the changes job did not succeed, so nothing was gated"; exit 1; }
+          for result in "$GO" "$ENGINE"; do
+            case "$result" in
+              success | skipped) ;;
+              *) echo "a gated job ended $result"; exit 1 ;;
+            esac
+          done
 
   coverage:
     name: coverage

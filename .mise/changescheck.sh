@@ -14,10 +14,21 @@
 # because the two mistakes are not symmetric: a missed inert pattern costs one
 # needless test run, a missed relevant pattern is a red test that merged
 # green. kinds/ and samples/ are checked first because they are embedded into
-# the binary whole, so a README under them IS an input.
+# the binary whole, so a README under them IS an input, and four files that
+# LOOK inert are read by a test across package lines: internal/build reads
+# the Dockerfile and .goreleaser.yaml, internal/substrate the console's
+# wire.golden.json, internal/vocabulary the console's record-schema.ts. The
+# inert list is held against
+#   grep -rn '"\.\./' --include='*_test.go' .
+# which names every path a test reads outside its own package; a new hit there
+# that an inert pattern matches goes on the relevant line first.
 #
 # A push (to main, the only branch the workflow watches) has no base to diff
 # against and is where the coverage profile comes from, so every job runs.
+#
+# Every failure here is a non-zero exit and no `go=` line, never `go=false`:
+# a base this cannot resolve or a diff git refuses is a change nobody looked
+# at, and the workflow's `go gate` turns the missing answer into a red check.
 #
 # Output: `go=true` or `go=false` on stdout, and the same line appended to
 # $GITHUB_OUTPUT when the runner provides one, which is how the workflow reads
@@ -68,24 +79,34 @@ fi
 inert() {
   case "$1" in
   kinds/* | samples/* | .github/workflows/ci.yml) return 1 ;;
+  Dockerfile | .goreleaser.yaml) return 1 ;;
+  web/console/src/lib/api/wire.golden.json | web/console/src/lib/record-schema.ts) return 1 ;;
   docs/* | web/console/* | .github/* | *.md) return 0 ;;
   LICENSE | .gitignore | .gitattributes | .editorconfig | .dockerignore) return 0 ;;
-  .yamlfmt | .yamllint | .lychee.toml | .ruff.toml | .golangci.yml | .goreleaser.yaml) return 0 ;;
-  Dockerfile | Dockerfile.release | compose.yaml) return 0 ;;
+  .yamlfmt | .yamllint | .lychee.toml | .ruff.toml | .golangci.yml) return 0 ;;
+  Dockerfile.release | compose.yaml) return 0 ;;
   *) return 1 ;;
   esac
 }
 
-# The diff against the working tree, plus the untracked files a laptop has
-# and a CI checkout never does, so a hand run sees the file just created.
+# The diff against the working tree, captured so a git failure (a base that
+# names no commit) is this script's failure and not a silently empty list.
+# --no-renames: a detected rename reports only its destination, so moving a
+# Go file onto an inert path would otherwise read as an inert change; both
+# sides must be seen. Then the untracked files a laptop has and a CI checkout
+# never does, so a hand run sees the file just created.
+if ! changed="$(git diff --name-only --no-renames "$base_commit")"; then
+  echo "ci:changes: git diff against ${base_commit} failed; refusing to skip the suite" >&2
+  exit 1
+fi
+untracked="$(git ls-files --others --exclude-standard)"
+
 while IFS= read -r path; do
+  [ -n "$path" ] || continue
   if ! inert "$path"; then
     emit true "${path} can change a Go result"
     exit 0
   fi
-done < <(
-  git diff --name-only "$base_commit"
-  git ls-files --others --exclude-standard
-)
+done <<<"${changed}"$'\n'"${untracked}"
 
 emit false "no changed file since ${base_commit} is read by a Go test"

@@ -133,7 +133,8 @@ run = "go test -count=1 -p 1 -timeout 30m -skip '^TestLive' ./internal/engine/..
 # run AGENTS.md recommends when working in the engine.
 [tasks."test:db:engine"]
 description = "The engine suite alone, or one shard of it: SHARD and SHARDS from the environment"
-# The shard cut lives in the script: `go test -list`, sorted, round robin.
+# `go test -list` in the script, the cut itself in .mise/shardselect.sh
+# (sorted, round robin), which `lint:ci` holds to disjoint and complete.
 run = ".mise/engineshard.sh"
 
 [tasks."test:db:rest"]
@@ -230,7 +231,7 @@ run = [
 # eslint from `lint` would drag pnpm into the lint job and run it twice.
 
 [tasks.lint]
-description = "Every linter: Go, YAML, shell, Python, the docs, the migrations, the toolchain pins and the sandbox gate"
+description = "Every linter: Go, YAML, shell, Python, the docs, the migrations, the toolchain pins, the sandbox gate and the CI scripts"
 depends = [
   "lint:go",
   "lint:yaml",
@@ -240,6 +241,7 @@ depends = [
   "lint:migrations",
   "lint:sandboxgate",
   "lint:toolchain",
+  "lint:ci",
 ]
 
 [tasks."lint:go"]
@@ -296,6 +298,17 @@ description = "The CI tasks still set SUBSTRATE_TEST_REQUIRE_SANDBOX, and still 
 # themselves on a kernel that lost Landlock, with nothing to see. Same class of
 # problem as the tests it protects, one level up.
 run = ".mise/sandboxgatecheck.sh"
+
+[tasks."lint:ci"]
+description = "The CI scripts' own tests: the path gate's verdicts and the shard partition"
+# .mise/changescheck.sh decides whether the database suite runs at all and
+# .mise/shardselect.sh decides which tests each engine shard runs, so a wrong
+# answer from either is a green build that tested nothing, and nothing else
+# would see it. Each gate scenario is a throwaway git repository with the
+# verdict it must give (an unresolvable base must FAIL, never answer false);
+# the partition runs over a fixed list that the shards together must
+# reproduce exactly once. No Go is compiled, so it is cheap enough for `lint`.
+run = ".mise/cicheck.sh"
 
 [tasks."lint:toolchain"]
 description = "The version pins written twice: .mise.toml against the Dockerfiles"
