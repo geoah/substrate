@@ -339,6 +339,14 @@ func (t *txn) foldFTS(row *erow) [3]string {
 			return ftsBands(ty, row)
 		}
 	}
+	// The fall-through reads the LIVE registry, where reprojectFTS reads the
+	// candidate alone, so the two would disagree on a row of a kind the
+	// candidate lacks and the live registry still holds: a kind the batch
+	// drops. No fold reaches here for such a row inside a vocabulary apply:
+	// droppedTypeGuards refuses the batch while the kind has live rows, a
+	// data document of a dropped kind is refused as unknown before it folds,
+	// and beforeGuards runs before any row moves. The branch exists for a
+	// transaction with no candidate at all, whose writeReg is nil. Keep it so.
 	return ftsBandsUnder(t.ds.registry(), row)
 }
 
