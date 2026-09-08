@@ -283,16 +283,17 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 	if err := ds.prepareFunctions(ctx, candidate, prepare); err != nil {
 		return nil, err
 	}
-	// The declared indexes, BEFORE the transaction: an index the engine cannot
-	// build (a name that is not a column, a statement Postgres refuses) is an
-	// admission failure, and an admission failure must land nothing. It ran
-	// after the commit once, so a refused index came back as an error from an
-	// apply that had already published. CREATE INDEX cannot run inside the
-	// transaction either: it takes a SHARE lock on `records` that the
-	// transaction's own row writes conflict with. An index built for a batch
-	// the guards below then refuse is harmless: IF NOT EXISTS finds it next
-	// time, and nothing reads it until its kind lands.
-	if err := ensureIndices(ctx, ds.svc.admin, candidate.Kinds()); err != nil {
+	// The touched packages' declared indexes, BEFORE the transaction: a
+	// statement Postgres refuses is an admission failure, and an admission
+	// failure must land nothing (the definitions themselves were checked at
+	// staging). It ran after the commit once, so a refused index came back as
+	// an error from an apply that had already published. CREATE INDEX cannot
+	// run inside the transaction either: it runs on the admin pool, and it
+	// takes a SHARE lock on `records` that the transaction's own row writes
+	// conflict with. An index built for a batch the guards below then refuse
+	// is harmless: IF NOT EXISTS finds it next time, and nothing reads it
+	// until its kind lands.
+	if err := ensureIndices(ctx, ds.svc.admin, touchedKinds(candidate, touched)); err != nil {
 		return nil, err
 	}
 
@@ -384,14 +385,12 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 				substrate.ErrGuard, strings.Join(final, "; "))
 		}
 		// Publish: the commit is the activation and the pointer swap is how it
-		// is seen. It runs after the commit and before the head signal, so a
-		// watcher woken by the kind's entry resolves the kind. A crash between
-		// the two is healed by the rebuild-from-records at repository open.
-		t.publish = append(t.publish, func() {
-			ds.mu.Lock()
-			ds.reg = candidate
-			ds.mu.Unlock()
-		})
+		// is seen. commitAndPublish swaps it under ds.mu held across the
+		// commit, so a data write the commit wakes at the registry-dependency
+		// lock and a watcher the head signal wakes both resolve the candidate.
+		// A crash between the two is healed by the rebuild-from-records at
+		// repository open.
+		t.publishReg = candidate
 		return nil
 	})
 	if err != nil {
@@ -402,6 +401,23 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 	// processes) that no live installation references anymore.
 	ds.reconcileRunner(ctx)
 	return written, nil
+}
+
+// touchedKinds lists the kinds the candidate declares in the packages a batch
+// touches, in package then declaration order: the kinds whose indexes the
+// batch materializes.
+func touchedKinds(candidate *vocabulary.Registry, touched map[string]bool) []*vocabulary.Kind {
+	var kinds []*vocabulary.Kind
+	for _, aname := range sortedKeys(touched) {
+		g, ok := candidate.PackageByName(aname)
+		if !ok {
+			continue
+		}
+		for _, tn := range g.KindOrder {
+			kinds = append(kinds, g.Kinds[tn])
+		}
+	}
+	return kinds
 }
 
 // vocabularyStage is one batch's admission work, done before any transaction:
@@ -606,6 +622,13 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		}
 	}
 	sort.Strings(droppedTypes)
+
+	// An index the engine cannot build is refused here, where the upgrade
+	// preview looks too, so the preview never admits a closure the install
+	// then refuses (indices.go).
+	if _, err := indexStatements(touchedKinds(candidate, touched)); err != nil {
+		return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+	}
 
 	return &vocabularyStage{
 		candidate: candidate,

@@ -20,20 +20,48 @@ import (
 // under the row level security predicate — so a second repository declaring
 // the same type finds it already there.
 //
-// WHERE it runs from matters: a plain `CREATE INDEX` locks the shared
-// table for every repository, so it is taken exactly twice — ONCE PER PROCESS
-// at Open, over the binary's shipped vocabulary, and on the schema-write path
-// that admits a kind the process has not seen (a bundle install), before that
-// path's transaction opens (vocabularywrite.go). It is NOT on the
-// repository-open path: opening a repository declares nothing.
+// WHERE it runs from matters: each `CREATE INDEX` takes a SHARE lock on the
+// records table, which every repository shares and every in-flight write
+// holds ROW EXCLUSIVE on, so the statement waits for those writes and they
+// wait for it. It runs ONCE PER PROCESS at Open, over the binary's shipped
+// vocabulary, and on every schema write over the kinds of the packages that
+// write touches, before its transaction opens (vocabularywrite.go). It is
+// NOT on the repository-open path: opening a repository declares nothing.
 func ensureIndices(ctx context.Context, admin *sql.DB, types []*vocabulary.Kind) error {
+	stmts, err := indexStatements(types)
+	if err != nil {
+		return err
+	}
+	for _, s := range stmts {
+		if _, err := admin.ExecContext(ctx, s.stmt); err != nil {
+			return fmt.Errorf("substrate/engine: create index for %s: %w", s.kind, err)
+		}
+	}
+	return nil
+}
+
+type indexStmt struct {
+	kind, stmt string
+}
+
+// indexStatements renders every declared index as its CREATE INDEX statement
+// without running any. It is pure, so the schema write's staging step runs it
+// too (stageVocabularyBatch): an index the engine cannot build is then an
+// admission failure the upgrade preview reports and the install refuses
+// alike, and the execution above starts only once every definition rendered,
+// so a refused definition leaves no index behind. Half of a kind's indexes
+// created under a refusal would otherwise stay, and since the name is the
+// declaration's ordinal, a corrected retry that changed the surviving
+// ordinal's definition would find its stale index "already there".
+func indexStatements(types []*vocabulary.Kind) ([]indexStmt, error) {
+	var stmts []indexStmt
 	for _, t := range types {
 		for i, cols := range t.Indices {
 			exprs := make([]string, 0, len(cols))
 			for _, c := range cols {
 				expr, err := indexExpr(t, c)
 				if err != nil {
-					return fmt.Errorf("substrate/engine: %s indices: %w", t.Identity, err)
+					return nil, fmt.Errorf("substrate/engine: %s indices: %w", t.Identity, err)
 				}
 				exprs = append(exprs, expr)
 			}
@@ -41,14 +69,11 @@ func ensureIndices(ctx context.Context, admin *sql.DB, types []*vocabulary.Kind)
 				continue
 			}
 			name := "idx_" + derivedID(t.Identity, strconv.Itoa(i))
-			stmt := `CREATE INDEX IF NOT EXISTS ` + name + ` ON records (repository, ` + strings.Join(exprs, ", ") +
-				`) WHERE kind = ` + sqlLiteral(t.Identity)
-			if _, err := admin.ExecContext(ctx, stmt); err != nil {
-				return fmt.Errorf("substrate/engine: create index for %s: %w", t.Identity, err)
-			}
+			stmts = append(stmts, indexStmt{kind: t.Identity, stmt: `CREATE INDEX IF NOT EXISTS ` + name +
+				` ON records (repository, ` + strings.Join(exprs, ", ") + `) WHERE kind = ` + sqlLiteral(t.Identity)})
 		}
 	}
-	return nil
+	return stmts, nil
 }
 
 func indexExpr(t *vocabulary.Kind, name string) (string, error) {
