@@ -85,11 +85,12 @@ type rowDelta struct {
 	EndsAt *string `json:"endsAt,omitempty"`
 	DueAt  *string `json:"dueAt,omitempty"`
 
-	// The three whole-column maps are POINTERS so that `omitempty` cannot
-	// erase a clear: a bare map that emptied encodes as nothing at all, and the
-	// fold reads an absent key as "unchanged", so the last label of a record
-	// would come back on every rebuild. A pointer to the empty map encodes as
-	// `{}`, which is the cleared form; an absent key stays "unchanged".
+	// The two whole-column maps are POINTERS, like the slice beside them, so
+	// that `omitempty` cannot erase a clear: a bare map that emptied encodes as
+	// nothing at all, and the fold reads an absent key as "unchanged", so the
+	// last label of a record would come back on every rebuild. A pointer to the
+	// empty map encodes as `{}`, which is the cleared form; an absent key stays
+	// "unchanged".
 	States     *map[string]string `json:"states,omitempty"`
 	Labels     *map[string]any    `json:"labels,omitempty"`
 	Finalizers *[]string          `json:"finalizers,omitempty"`

@@ -519,13 +519,16 @@ the exec path needs nothing open at all.
   the same check the boot runs. It reproduces the fold bit for bit and appends
   nothing, so it is safe to run on a healthy repository, and it is the proof
   that the directory alone reproduces the records. One exception is already
-  written: v0.46.0 and v0.47.0 stored the removal of a record's last label as
-  an empty delta, so replaying such an entry brings that label back and skips
-  the `version` bump the live write made. Nothing reconstructs the clear from
-  the changelog alone; remove the label again after the rebuild. It does not
-  touch blobs or sealed files, which were never in the changelog, and it
-  leaves runtime state (trigger cursors, OAuth flows) alone, because a cursor
-  is a consumer's position in the changelog, not a fold of it. Stop the server
+  written: every release before this fix, v0.1.0 through v0.47.0, stored the
+  removal of a record's last label with no `labels` key in the delta, so
+  replaying such an entry brings that label back whatever else the write
+  changed. When that write changed nothing else in the row, the entry's delta
+  is `{}` and the replay also skips the `version` bump the live write made.
+  Nothing reconstructs the clear from the changelog alone; remove the label
+  again after the rebuild. It does not touch blobs or sealed files, which were
+  never in the changelog, and it leaves runtime state (trigger cursors, OAuth
+  flows) alone, because a cursor is a consumer's position in the changelog,
+  not a fold of it. Stop the server
   first: it opens the repository as its changelog writer and refuses while
   the server holds the lock.
 - **`blobs migrate`** moves blob bytes from one store to another, one
