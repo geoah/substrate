@@ -72,6 +72,7 @@ $SUBSTRATE_DATA_ROOT/
   repositories/
     ada.example.com/                # one per repository, named by its authority
       repository.json               # the manifest: format, authority, username, createdAt, changelogDialect, vocabularyDialect, the wrapped DEK, dekKeyId, sealedDekOnly
+      snapshot.json                 # only in a snapshot, or a directory restored from one: the head seq and checksum the copy holds, and the blobs it needs
       changelog/
         000000000000001.ndjson      # a segment, named by its first seq; the highest is the active one
         000000000000001.ndjson.sha256   # the digest of a finished segment
@@ -475,12 +476,20 @@ mid-write is usually consistent or short by its last transaction, which the
 importer cuts whole (every line names the seq its transaction ends at, so a
 prefix of one is never taken for history, and a transaction still missing its
 final newline, like a `.pending` file under `sealed/`, is a write the
-directory has not committed, which the importer ignores). Two windows remain: a copy that reads a segment while the
+directory has not committed, which the importer ignores). Three windows remain: a copy that reads a segment while the
 server finishes it can hold the segment with a sidecar that does not match
-yet, and a copy that reads `sealed/` before `changelog/` can hold a line whose
-sealed file it missed. So a copy is a backup once `repository verify` passes
+yet; a copy that reads `sealed/` before `changelog/` can hold a line whose
+sealed file it missed; and a copy that reads `blobs/` before `changelog/`
+can hold a blob manifest marked `stored` whose bytes it missed, because an
+upload writes the bytes first and the `stored` manifest after
+([the blob store](#the-blob-store)), and `rsync` reads `blobs/` before
+`changelog/`. So a copy is a backup once `repository verify` passes
 on it (boot a scratch server over the copy with an empty database, which
-imports it, then verify); one that fails is retaken. Verify proves the files
+imports it, then verify with `SUBSTRATE_CREDENTIAL_KEY` set); one that fails is
+retaken. Verify reads every `stored` blob's bytes and hashes them, holds every
+live record's secret reference to a sealed file and opens every sealed file
+under the key, so a copy that missed one of those files fails after the
+import, where the files alone could not tell. It proves the files
 are undamaged, not that their replay is the fold they came from: an entry
 written before this fix that removed a record's last label replays with the
 label back, on import as on rebuild ([the caveat under `repository
@@ -489,6 +498,53 @@ rebuild`](#operator-recovery)). A cron running this is enough:
 ```
 rsync -a --delete "$SUBSTRATE_DATA_ROOT"/ backup-host:/srv/substrate-backup/
 ```
+
+**A snapshot is a copy with a recorded point, taken with the server stopped.**
+`repository snapshot <username> <destination root>` writes
+`<destination root>/repositories/<authority>/`, the layout a data root has,
+verified before and after: it takes the repository's writer lock (a running
+server refuses it), runs the whole `repository verify` including the blob
+hashes and the sealed files opened under `SUBSTRATE_CREDENTIAL_KEY` (which it
+requires), refuses on any finding, copies the manifest, every segment and
+sidecar, every committed sealed file and, on the `fs` blob store, the bytes
+of every `stored` blob, each hashed against its digest on the way, verifies
+the copy's changelog and sealed files, and writes `snapshot.json` last. That
+file names the point: the head seq, that entry's checksum and when the copy
+was taken, plus the blob store, the digests the copy needs and, under `s3`,
+where they are. A directory carrying one is a copy that finished; the boot
+ignores the file, and `repository verify` on the restored repository prints
+the point and checks that the entry it names is in the files with that
+checksum ([decision 0065](decisions/0065-a-snapshot-is-a-stopped-server-copy-that-records-its-head.md)).
+A destination that already holds a directory for the repository is refused;
+a snapshot is a fresh copy, never a merge over an older one. The copy is
+built under a dot-prefixed temporary directory beside `repositories/` and
+renamed into place once `snapshot.json` is on disk, so a snapshot that fails
+leaves nothing at the destination and the same destination takes the retry.
+The copy holds what the fold needs and nothing else: a pending upload, a
+tombstoned blob's bytes and a staged sealed file are not copied. Run it with
+the binary the server runs, as with `rebuild`: it opens the repository the
+way the server does, so a newer `substratectl` stamps the source with its own
+dialects and the older server then refuses the repository. The lock it takes
+is the changelog writer's, held from the server's first open of the
+repository until it exits, so a snapshot cannot slip between two
+transactions of a running server; a server that has not opened the
+repository yet holds nothing, and its first open fails with the lock named
+until the snapshot finishes.
+
+```
+SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository snapshot ada /srv/substrate-backup/2026-09-08
+```
+
+**Under the `s3` blob store the objects are the second half of the snapshot.**
+The bytes stay in the bucket, and `snapshot.json` lists them: `blobLocation`
+is the repository's object prefix (`s3://<bucket>/<prefix><authority>/`) and
+`blobs` every digest a `stored` manifest names, so each object is the
+location plus a digest. Copy them with the directory, with the bucket's own
+tooling, and copy them back into the bucket the restored server is configured
+with before the boot that imports the directory; `repository verify` then
+reads each one out of the bucket and hashes it, and names every object that
+is missing or is not its digest's bytes. Under `fs` the bytes are in the
+copy's `blobs/` and `blobLocation` is empty.
 
 On the compose deployment the root is the `substrate-data` volume mounted at
 `/var/lib/substrate`, so copy it out of the container, or point the volume at a
@@ -522,13 +578,16 @@ directory with no row in `repositories` is imported, which creates the row from
 its manifest, loads `sealed/` into the table, inserts every changelog entry
 with its checksum and folds them through `fold.go`. The import is the same
 replay `repository rebuild` runs, so a label clear an old entry lost comes
-back here too (the caveat below). Then verify each one:
+back here too (the caveat below). Then verify each one, with the key in the
+environment so every sealed file is opened; a directory that came from a
+snapshot prints the recorded point (`recovery point: seq N, checksum …`) and
+the head it came back at is that seq:
 
 ```
 rsync -a ./substrate-backup/repositories/ "$SUBSTRATE_DATA_ROOT"/repositories/
 SUBSTRATE_DATA_ROOT=… SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substrate   # imports at boot
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository list
-DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository verify ada     # once per repository
+SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository verify ada     # once per repository
 ```
 
 **Restoring a dump takes one more step.** A change cursor is a seq under the
@@ -577,8 +636,9 @@ boot again. A directory whose `repository.json` carries a DEK the host's
 `SUBSTRATE_CREDENTIAL_KEY` does not open refuses the boot the same way, naming
 the repository and the variable, because importing it would create a
 repository no login could open. Under the `s3` blob store the bucket is the
-second artifact: restore it too, or the manifests come back `stored` with no
-bytes behind them.
+second artifact: copy the objects `snapshot.json` lists back into the bucket
+(above), or the manifests come back `stored` with no bytes behind them, which
+`repository verify` names one blob at a time.
 
 ### Restore without the credential key
 
@@ -670,21 +730,22 @@ Operator commands (the "operator hat" of
 directly and hold no token. They need `--dsn` (or `DATABASE_URL`) and
 `SUBSTRATE_DATA_ROOT`, and refuse before touching anything without them.
 
-**Three of them run beside a live server; three need it stopped; one takes no
+**Three of them run beside a live server; four need it stopped; one takes no
 database.** `repository list`, `repository inspect` and `repository verify`
 read: `verify` opens the engine read-only, so it runs no boot check, appends
 nothing and reports an unfinished final transaction or a table ahead of its file
-as a finding instead of repairing it. `repository rebuild`, `repository rotate-generation`
-and `user reset` write, so each opens the repository as its changelog writer,
-and a running server holds that lock: the command refuses, naming the lock,
-until the server is stopped. `repository rewrap` acts on a copied directory
+as a finding instead of repairing it. `repository rebuild`, `repository rotate-generation`,
+`repository snapshot` and `user reset` open the repository as its changelog
+writer, and a running server holds that lock: the command refuses, naming the
+lock, until the server is stopped. `repository rewrap` acts on a copied directory
 before any boot has imported it, so it needs `SUBSTRATE_CREDENTIAL_KEY` and
 the directory, and no DSN.
 
 ```
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository list
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository inspect ada
-DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository verify ada
+SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository verify ada
+SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository snapshot ada /srv/substrate-backup/2026-09-08
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rebuild ada
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rotate-generation ada
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl user reset ada
@@ -717,15 +778,41 @@ the exec path needs nothing open at all.
   wrong.
 - **`repository verify <username>`** walks the segment files: every line's
   `sum`, every finished segment's sidecar, the seq order, and both heads
-  against each other. It reports the head `(seq, checksum)` or every finding
-  by seq or file name, never repairs the repository it judges (opening the
-  engine still applies pending schema migrations, as every operator command
-  does), and exits nonzero on any finding. It is safe beside a running
-  server; a finding about the heads taken mid-write can be a transaction in
-  flight, so run it twice before believing one. Run it on every restored
-  copy and before and after a Postgres major upgrade. It proves the files
-  are undamaged and agree with the table; it does not prove who wrote them
+  against each other. It then holds the side stores to the fold: every blob
+  whose manifest says `stored` is read out of the configured blob store and
+  hashed against its digest, every secret reference a live record holds
+  (by the repository's own declarations, as a replay loads them, so the
+  records of a package the loader parked are not walked) must have its
+  sealed file, and with
+  `SUBSTRATE_CREDENTIAL_KEY` in the environment every sealed file is opened
+  under the repository's key; without the key the files are compared with
+  the rows and the report says nothing was opened. A directory that is a
+  snapshot, or was restored from one, carries `snapshot.json`: the recorded
+  point is printed and the entry it names must be in the files with the
+  recorded checksum. It reports the head `(seq, checksum)` or every finding
+  by seq, digest, ref or file name, never repairs the repository it judges
+  (opening the engine still applies pending schema migrations, as every
+  operator command does), and exits nonzero on any finding. It is safe beside
+  a running server; a finding about the heads taken mid-write can be a
+  transaction in flight, and one about a blob can be an upload the sweep
+  just collected, so run it twice before believing one. Run it on every
+  restored copy and before and after a Postgres major upgrade. It proves the
+  files are undamaged, agree with the table and hold what the fold needs; it
+  does not prove who wrote them
   ([the checksum](changelog.md#the-checksum-and-the-segment-files)).
+- **`repository snapshot <username> <destination root>`** writes a verified
+  copy of the repository directory at
+  `<destination root>/repositories/<authority>/` with `snapshot.json`
+  recording the head seq and checksum the copy holds
+  ([backups](#backups)). It needs `SUBSTRATE_CREDENTIAL_KEY`, runs the whole
+  `verify` first and refuses on any finding, refuses a destination that
+  already holds the repository, and refuses beside a running server, because
+  it opens the repository as its changelog writer so nothing lands while it
+  copies (and a server that opens the repository first while it runs meets
+  the same lock). The copy is built beside the destination and renamed into
+  place last, so a failed snapshot leaves nothing there. Run it with the
+  server's binary, as with `rebuild`. Under `s3` it lists the objects the
+  copy needs instead of copying them.
 - **`repository rebuild <username>`** replays the segment files into a fresh
   fold, in one transaction, under that repository's own lock, after running
   the same check the boot runs. It reproduces the fold bit for bit and appends

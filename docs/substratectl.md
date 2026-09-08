@@ -28,8 +28,9 @@ run anywhere.
 
 **The operator's hat** speaks to the box's Postgres directly and holds no token
 at all: `user reset`, `repository list`, `repository inspect`,
-`repository verify`, `repository rebuild`, `repository rotate-generation`,
-`repository reembed`, `blobs migrate`. It needs `--dsn` (or `DATABASE_URL`) and
+`repository verify`, `repository snapshot`, `repository rebuild`,
+`repository rotate-generation`, `repository reembed`, `blobs migrate`. It needs
+`--dsn` (or `DATABASE_URL`) and
 `SUBSTRATE_DATA_ROOT`, and without them every operator command refuses before
 touching anything. The one exception is `repository rewrap`, which opens a
 copied repository directory with the user's recovery key for a new

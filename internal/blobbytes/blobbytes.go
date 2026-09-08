@@ -138,6 +138,16 @@ type LegacyRepositoryLister interface {
 	ListLegacyRepository(ctx context.Context, id string, limit int) ([]Object, error)
 }
 
+// Locator is implemented by a backend whose objects live outside the
+// repository directory (the s3 backend), for the snapshot that has to name
+// where a repository's bytes are so a restore can copy them.
+type Locator interface {
+	// Location is the prefix every object of the repository sits under, as a
+	// URL a person can act on: `s3://<bucket>/<prefix><repository>/`. An
+	// object is that plus its digest.
+	Location(repository string) (string, error)
+}
+
 // InTransaction is implemented by a backend whose bytes settle inside the
 // caller's database transaction, which is the postgres backend and only the
 // postgres backend. The engine keeps the one-transaction settle wherever it is
