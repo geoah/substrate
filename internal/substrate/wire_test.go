@@ -71,6 +71,9 @@ var wireTypes = map[string]any{
 	"ChangeTrigger": ChangeTrigger{},
 	"ChangeRow":     ChangeRow{},
 	"ChangePage":    ChangePage{},
+	// The public change event nested in a Change (decision 0061): the console
+	// renders it in place of the replay effects it used to decode.
+	"AffectedRecord": AffectedRecord{},
 	// The list envelope: the console hands its `head` and `generation` to the
 	// watch, so a field that moves here moves that handoff.
 	"Page":              Page{},

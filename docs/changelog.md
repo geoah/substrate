@@ -18,6 +18,7 @@ One entry, as the wire carries it, for the task created on the
  "kind": "samples.substrate.reamde.dev/tasks/task",
  "recordId": "kq3v9x2m41pf",
  "payload": {"created": true, "properties": ["name", "dueAt"]},
+ "affected": [{"kind": "samples.substrate.reamde.dev/tasks/task", "id": "kq3v9x2m41pf", "version": 1}],
  "hash": "5f0c…64 hex chars…9a1d"}
 ```
 
@@ -33,18 +34,62 @@ boot upgrade, a background worker, registration and login — carries an empty
 principal. `op` is the mutation
 that made the row (`put`, `patch`, `delete`, `merge`, `split`, plus the
 engine's own housekeeping), and
-`kind` plus `recordId` are the record's full identity. The readable half of
-`payload` names what changed rather than repeating it: `created` on first
-write, `restored` on an undelete, the list of accepted `properties`, the
-resulting `states` when a transition moved one.
+`kind` plus `recordId` are the record's full identity. `payload` names what
+changed rather than repeating it: `created` on first write, `restored` on an
+undelete, the list of accepted `properties`, the resulting `states` when a
+transition moved one, `winner` and `loser` on a merge or a split. `affected`
+is the change event ([below](#the-change-event)).
 
-Beneath that readable half, the stored payload also carries the write's
-**values**, which is what makes the changelog replayable rather than merely
-informative: `substratectl repository rebuild` replays the changelog through
-the same fold code ([running a substrate](operations.md#operator-recovery)). A secret-typed value never reaches the changelog at
-all: the delta carries an opaque ref into the sealed store, the material lives
-there encrypted, and every read surface — REST, GraphQL, and this feed —
-renders the property `<redacted>`.
+Beneath the wire row, the stored entry also carries the write's **values** as
+the fold effects it applied, under the payload key `fold`, which is what makes
+the changelog replayable rather than merely informative: `substratectl
+repository rebuild` replays the changelog through the same fold code
+([running a substrate](operations.md#operator-recovery)). The effects never
+reach the wire: no REST or GraphQL response carries `fold`, so a change to how
+the fold spells an effect is a storage change and not an API change. A
+secret-typed value never reaches the changelog at all: the effect carries an
+opaque ref into the sealed store, the material lives there encrypted, and a
+read of the record renders the property `<redacted>`.
+
+## The change event
+
+A row's `affected` list is the public event: every record the entry moved,
+one element per record, in the order the entry touched them.
+
+```json
+{"seq": 4207, "op": "merge", "kind": "samples.substrate.reamde.dev/people/person", "recordId": "p1",
+ "payload": {"winner": "p1", "loser": "p2", "moved": ["email"]},
+ "affected": [
+   {"kind": "samples.substrate.reamde.dev/people/person", "id": "p1", "version": 6},
+   {"kind": "samples.substrate.reamde.dev/people/person", "id": "p2", "version": 3, "deleted": true}]}
+```
+
+- `kind` and `id` are the record's full identity, the same pair a `GET
+  /api/v1/{kind}/{id}` takes.
+- `version` is the version the record reached in this entry, the number a
+  read of the record returns until its next change. It is absent on a purge
+  (a `gc` entry: the record has no version afterwards) and on an entry written
+  before the effects recorded one (v0.47.0 and earlier).
+- `deleted` is `true` when the entry tombstoned or purged the record. A read
+  of a tombstoned record still answers, with `deletedAt` set; a purged one is
+  `not_found`.
+
+The list holds the addressed record and any other the entry moved: a `merge`
+names the winner and the tombstoned loser, a `split` the loser and the
+rewritten winner, a `gc` entry the record it purged and, under
+`reason: owner_collected`, each record the cascade tombstoned. An entry that
+recorded no record effect names its addressed `(kind, recordId)` with no
+version.
+
+What the event promises: a client that fetches each affected record as the
+stream names it, and drops the ones the stream says are deleted, holds a
+current copy of the repository, and a copy already at the named version or
+past it need not fetch. What it does not promise: the values a change wrote,
+or a record's history. A property value is read off the record, never off the
+stream, and a past version cannot be reconstructed from public rows
+([decision 0061](decisions/0061-a-change-event-names-the-affected-records-and-clients-fetch-them.md)).
+The [trigger envelope](functions.md#triggers) makes the same promise in the
+same way: it ships the record's current state beside the change.
 
 Two guarantees consumers may lean on:
 
@@ -58,8 +103,9 @@ Two guarantees consumers may lean on:
 - **Causal chains are finite.** Every delivery-authored entry records the seq
   that caused it, always strictly smaller, so a chain cannot loop, and the
   engine parks a chain deeper than its cap (16) rather than spinning. The link is stored, not published: a change on the wire
-  carries `seq`, `ts`, `actor`, `op`, `kind`, `recordId`, `payload`, and the
-  entry's `hash` (below), and nothing else.
+  carries `seq`, `ts`, `actor`, `op`, `kind`, `recordId`, `payload`,
+  `affected` and the entry's `hash` (below); a row of `/changes` adds
+  `triggers` ([watching](#watching)).
 
 ## Change verbs
 
@@ -135,7 +181,7 @@ under `SUBSTRATE_DATA_ROOT`
 one object per line, keys sorted, the checksum in `sum`:
 
 ```json
-{"actor":"api","kind":"samples.substrate.reamde.dev/tasks/task","op":"put","payload":{"created":true,"properties":["name","dueAt"],"values":{"…":"…"}},"principal":"k7…","recordId":"kq3v9x2m41pf","seq":4190,"sum":"sha256:5f0c…","ts":"2026-08-04T10:00:00.183742Z","txn":4191}
+{"actor":"api","kind":"samples.substrate.reamde.dev/tasks/task","op":"put","payload":{"created":true,"fold":[{"…":"…"}],"properties":["name","dueAt"]},"principal":"k7…","recordId":"kq3v9x2m41pf","seq":4190,"sum":"sha256:5f0c…","ts":"2026-08-04T10:00:00.183742Z","txn":4191}
 ```
 
 `sum` is `sha256:` plus the hex digest of the same line with the `sum` key
@@ -189,7 +235,9 @@ principal an entry carries is the token id the door verified.
 ## The dialect a changelog is written in
 
 Each repository carries a **changelog dialect**: a monotonic integer naming the
-ops and fold effects a binary must understand to replay its entries. The claim
+ops and fold effects a binary must understand to replay its entries. The
+effects are storage ([the change event](#the-change-event) is what a reader
+gets), so the dialect names what a binary replays, never what a client parses. The claim
 rides the append: the first transaction a binary appends with writes the stamp
 alongside its entries, so the stamp covers every entry and no store is barred
 over entries nobody wrote. Opening only reads it, and a binary whose maximum is
@@ -213,11 +261,12 @@ and 4 the `record` delta that carries `kindVersion`, the kind declaration
 version that wrote the row
 ([decision 0060](decisions/0060-a-record-carries-the-kind-version-that-last-wrote-it.md)),
 which a dialect 3 binary would drop at replay, folding every record to 0 with
-nothing refusing. A repository's stored dialect is never on the wire: what
-[API discovery](api.md#discovery) reports is the binary's maximum. It is in
-the repository directory, as `changelogDialect` in `repository.json`, which
-the transaction that records the claim rewrites before it appends, so a copy
-of the directory never holds segments its manifest understates
+nothing refusing. A repository's stored dialect is not on the wire, and
+neither are the entries written in it: what
+[API discovery](api.md#discovery) reports is the binary's maximum. The dialect
+is in the repository directory, as `changelogDialect` in `repository.json`,
+which the transaction that records the claim rewrites before it appends, so a
+copy of the directory never holds segments its manifest understates
 ([the repository directory](operations.md#the-repository-directory)).
 
 `repository rebuild` reads the stamp again, under the changelog lock and
@@ -241,7 +290,8 @@ GET /api/v1/changes?from=4189&generation=7f3a0c2e9b1d4e6f&watch=1
 
 {"bookmark": 4189, "generation": "7f3a0c2e9b1d4e6f"}
 {"seq": 4190, "op": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
- "recordId": "kq3v9x2m41pf", "actor": "api"}
+ "recordId": "kq3v9x2m41pf", "actor": "api",
+ "affected": [{"kind": "samples.substrate.reamde.dev/tasks/task", "id": "kq3v9x2m41pf", "version": 1}]}
 ```
 
 Without `from`, the stream opens at the current head and tails forward; the
@@ -272,8 +322,8 @@ text. Scoping the feed to one record takes **both** `recordId` and
 other is a `bad_request`. The scope also returns a `merge` or `split` entry
 whose payload names the id as `winner` or `loser`. Such a row's own `recordId`
 is the other side of the pair (the winner on a `merge`, the loser on a
-`split`), so a client that re-fetches by `(kind, recordId)` must read
-`payload.winner` and `payload.loser` to know which record the row is about. The
+`split`), and the row's `affected` list names both, so a client re-fetches
+each record the list names rather than the row's `(kind, recordId)` alone. The
 scope does not follow the winner's later writes under a merged-away id. A
 singular guess (`kind=`, `op=`, `actor=`) is
 refused naming the plural rather than silently answering with the whole

@@ -20,7 +20,10 @@ const (
 // Change is one changelog row — the ordered, resumable record of every
 // committed write. Payload carries op-specific detail (the diff for a
 // patch, the moved sets for a merge, the dropped write for a precedence
-// rejection).
+// rejection). Affected is the public event: every record the entry moved,
+// with the version each reached, so a client keeps a current copy by
+// fetching each one (decision 0061). The stored replay effects never reach
+// the wire: a storage spelling is not a contract.
 type Change struct {
 	Seq      int64          `json:"seq"`
 	TS       time.Time      `json:"ts"`
@@ -29,6 +32,11 @@ type Change struct {
 	RecordID string         `json:"recordId"`
 	Kind     string         `json:"kind"`
 	Payload  map[string]any `json:"payload,omitempty"`
+	// Affected names each record the entry changed, at least the addressed
+	// one: one element per (kind, id), in the order the entry first touched
+	// them. A merge lists the winner and the tombstoned loser, a collector's
+	// pass every record it purged.
+	Affected []AffectedRecord `json:"affected,omitempty"`
 	// Hash is the entry's checksum, hex: the SHA-256 of its canonical line,
 	// the same value the segment file carries in `sum`. It is NOT
 	// independently recomputable from this wire shape: the payload here is
@@ -57,6 +65,21 @@ type ChangePage struct {
 	Cursor     int64       `json:"cursor,omitempty"`
 	Head       int64       `json:"head"`
 	Generation string      `json:"generation"`
+}
+
+// AffectedRecord is one record a change moved, as the public event names it.
+// Version is the version the record reached in this entry, the same number a
+// read of the record returns until its next change, so a client whose copy
+// already carries it or a later one need not fetch; it is absent on a purge
+// (the record has no version afterwards) and on an entry written before the
+// effects recorded one. Deleted is true when the entry tombstoned or purged
+// the record; a fetch then answers the tombstone or `not_found`, and a client
+// keeping a copy drops it either way.
+type AffectedRecord struct {
+	Kind    string `json:"kind"`
+	ID      string `json:"id"`
+	Version int64  `json:"version,omitempty"`
+	Deleted bool   `json:"deleted,omitempty"`
 }
 
 // ChangelogHead is where a repository's changelog stands: its highest

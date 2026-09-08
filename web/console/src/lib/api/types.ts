@@ -225,6 +225,18 @@ export interface ChangeTrigger {
   error?: string
 }
 
+/** One record a change moved (`substrate.AffectedRecord`, decision 0061).
+ * `version` is what the record reached in this entry, absent on a purge and
+ * on an entry written before the effects recorded one; `deleted` is true when
+ * the entry tombstoned or purged it. A client keeping a copy fetches the
+ * record, or drops it when `deleted`. */
+export interface AffectedRecord {
+  kind: string
+  id: string
+  version?: number
+  deleted?: boolean
+}
+
 /** One changelog entry as the server serializes it (`substrate.Change`). */
 export interface Change {
   seq: number
@@ -235,6 +247,9 @@ export interface Change {
   /** The changed record's kind reference. */
   kind: string
   payload?: Record<string, unknown>
+  /** The public change event: every record the entry moved, the addressed
+   * one included, a merge's loser and a collection's purges beside it. */
+  affected?: AffectedRecord[]
   /** The entry's chain hash, hex: a receipt checkable against the operator's
    * `repository verify` output. Absent only on an entry written before the
    * chain existed and not yet backfilled. */
@@ -281,9 +296,9 @@ export interface OccurrenceList {
 }
 
 /** One row of the cross-collection change feed. The payload's `properties` key
- * names what moved without its values; the values ride with the write's
- * recorded EFFECTS, which the console reads through `changeEffects`
- * (lib/changelog.ts) — never raw, and never by the payload key's own name. */
+ * names what moved without its values, and `affected` names the records the
+ * write moved with the version each reached; the write's stored replay
+ * effects never reach the wire (decision 0061). */
 export interface ChangeRow extends Change {
   triggers?: ChangeTrigger[]
 }

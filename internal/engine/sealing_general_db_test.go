@@ -133,38 +133,6 @@ func TestSecretMovesIntoTheStore(t *testing.T) {
 	mustHaveNoPlaintext(t, db, sgPlainKey)
 }
 
-func TestChangeFeedRedactsSensitiveValues(t *testing.T) {
-	t.Parallel()
-	_, ds, _ := newSealingDataset(t)
-	sgPutProvider(t, ds, sgPlainKey)
-
-	changes, err := ds.Changes(context.Background(), 0, substrate.ChangeFilter{}, 500)
-	if err != nil {
-		t.Fatalf("changes: %v", err)
-	}
-	found := false
-	for _, ch := range changes {
-		effects, _ := ch.Payload["fold"].([]any)
-		for _, e := range effects {
-			op, _ := e.(map[string]any)
-			if op["ref"] != sgProviderKind {
-				continue
-			}
-			delta, _ := op["delta"].(map[string]any)
-			set, _ := delta["set"].(map[string]any)
-			if v, ok := set["apiKey"]; ok {
-				found = true
-				if v != "<redacted>" {
-					t.Fatalf("change feed shows the apiKey delta as %v", v)
-				}
-			}
-		}
-	}
-	if !found {
-		t.Fatal("no llmprovider apiKey delta found in the feed")
-	}
-}
-
 func TestSecretRepasteIsANoOp(t *testing.T) {
 	t.Parallel()
 	_, ds, db := newSealingDataset(t)

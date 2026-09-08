@@ -1,13 +1,13 @@
 /** The changelog's brain, kept pure: the flat row's verb and summary voice (the
- * changelog is a flat table now), the human reading of a write's EFFECTS (see
- * "the effects" below), the live tail's buffer (pause-on-scroll holds rows
- * aside), and the mapping from the toolbar's facet rows to the wire's
- * `ChangeFeedFilter` — including the two facets the wire lacks: `authority`
- * expands to its kinds (still server-side), time becomes a seq seek plus a
- * paging floor (see api/changes.ts). */
+ * changelog is a flat table now), the human reading of the records a write
+ * moved (see "the affected records" below), the live tail's buffer
+ * (pause-on-scroll holds rows aside), and the mapping from the toolbar's facet
+ * rows to the wire's `ChangeFeedFilter` — including the two facets the wire
+ * lacks: `authority` expands to its kinds (still server-side), time becomes a
+ * seq seek plus a paging floor (see api/changes.ts). */
 
 import type { ChangeFeedFilter } from "@/lib/api/changes"
-import type { ChangeRow, KindInfo } from "@/lib/api/types"
+import type { AffectedRecord, ChangeRow, KindInfo } from "@/lib/api/types"
 import { CORE_PACKAGE } from "@/lib/api/http"
 import type { ActiveFilter } from "@/lib/filters"
 import type { DeclaredProperty } from "@/lib/definition"
@@ -60,8 +60,8 @@ export function verbOf(row: ChangeRow): string {
 }
 
 /** The properties a change row touched, by name — the `properties` key carries
- * no values (states/managers ride their own keys, and the write's recorded
- * effects carry the rest; see `changeEffects`). */
+ * no values (states/managers ride their own keys; a value is read off the
+ * record itself). */
 export function changedProperties(row: ChangeRow): string[] {
   const properties = row.payload?.properties
   return Array.isArray(properties) ? properties.map(String) : []
@@ -94,222 +94,52 @@ export function changeSummary(row: ChangeRow): string {
   return parts.join(", ")
 }
 
-// ── the effects ─────────────────────────────────────────────────────────────
+// ── the affected records ────────────────────────────────────────────────────
 //
-// Every committed write records, in order, the EFFECTS it applied — record
-// deltas with their values, tombstones, manager rows — because
-// the log is the truth and the records table is a fold of it, and a rebuild
-// replays exactly these (engine/fold.go).
-//
-// That machinery has an internal name the reader must never meet: the payload
-// carries the list under `fold`, an implementation word for an implementation
-// concern. This section is the translation — one honest English line per
-// effect, and an unknown effect kind names itself rather than disappearing, so
-// a substrate that grows a new one degrades to "did something we don't render"
-// instead of lying by omission. The raw JSON stays one disclosure away.
+// A write's public event names every record it moved with the version each
+// reached (decision 0061): the addressed record, a merge's tombstoned loser,
+// a collection's purges. The write's stored replay effects never reach the
+// wire, so this list is the whole of what the console knows about them, and a
+// reader who wants a record's values opens the record.
 
-/** Where a write's effects live in the changelog payload. INTERNAL — this is
- * the only place in the console that may know the key, and nothing renders it. */
-const EFFECTS_PAYLOAD_KEY = "fold"
-
-/** One effect as the wire encodes it (engine/fold.go `foldOp`). Every field is
- * optional: the encoding is one flat union and each effect kind reads its own. */
-interface ChangeEffect {
-  kind?: string
-  /** The kind reference of the record the effect lands on. */
-  ref?: string
-  id?: string
-  delta?: {
-    created?: boolean
-    restored?: boolean
-    force?: boolean
-    set?: Record<string, unknown>
-    del?: string[]
-    title?: string
-    body?: string
-    at?: string
-    endsAt?: string
-    dueAt?: string
-    states?: Record<string, string>
-    labels?: Record<string, unknown>
-    finalizers?: string[]
-    /** The version of the kind declaration the write validated the row
-     * against, carried when it moved. */
-    kindVersion?: number
-  }
-  finalizer?: string
-  key?: string
-  value?: unknown
-  property?: string
-  actor?: string
-  tier?: string
-  formerId?: string
-  scope?: { kind?: string; id?: string }[]
-  rows?: {
-    annotations?: unknown[]
-    managers?: unknown[]
-    formerIds?: unknown[]
-  }
-}
-
-/** One effect, said in English. `detail` is the second, quieter half — the
- * property names that moved, the counts a resync restated — and is empty when
- * the effect has nothing more to say. `actor` is the row's, not the effect's:
- * the log attributes a whole write, not each effect inside it. */
-export interface EffectLine {
-  /** What happened, e.g. `updated` / `restored` / `deleted`. */
+/** One affected record, said in English: what became of it and which record
+ * it is (`<kind>/<id>`). */
+export interface AffectedLine {
+  /** `deleted`, `version N`, or `changed` when the entry predates versions. */
   verb: string
-  /** The record it happened to, `<kind>/<id>`, or "" when the effect names no
-   * single record (a resync names a scope). */
   target: string
-  detail: string
 }
 
-function refOf(effect: ChangeEffect): string {
-  const kind = effect.ref ?? ""
-  const id = effect.id ?? ""
-  if (kind && id) return `${kind}/${id}`
-  return kind || id
+export function affectedVerb(a: AffectedRecord): string {
+  if (a.deleted) return "deleted"
+  if (typeof a.version === "number") return `version ${a.version}`
+  return "changed"
 }
 
-function names(list: unknown): string[] {
-  return Array.isArray(list) ? list.map(String) : []
-}
-
-/** The record delta's detail: which properties took a value, which were
- * cleared, and which of the record's own columns moved. Values themselves are
- * NOT spelled here — the delta carries them, and the raw disclosure is where a
- * reader who wants them looks; a summary that inlined every value would be the
- * payload again, just slower to read. */
-function deltaDetail(delta: NonNullable<ChangeEffect["delta"]>): string {
-  const parts: string[] = []
-  const set = Object.keys(delta.set ?? {})
-  const del = names(delta.del)
-  if (set.length) parts.push(`set ${set.join(", ")}`)
-  if (del.length) parts.push(`cleared ${del.join(", ")}`)
-  const columns: string[] = []
-  if (delta.title !== undefined) columns.push("title")
-  if (delta.body !== undefined) columns.push("body")
-  if (delta.at !== undefined) columns.push("at")
-  if (delta.endsAt !== undefined) columns.push("endsAt")
-  if (delta.dueAt !== undefined) columns.push("dueAt")
-  if (delta.states !== undefined) columns.push("states")
-  if (delta.labels !== undefined) columns.push("labels")
-  if (delta.finalizers !== undefined) columns.push("finalizers")
-  if (columns.length) parts.push(`moved ${columns.join(", ")}`)
-  if (delta.kindVersion !== undefined)
-    parts.push(`kind version ${delta.kindVersion}`)
-  return parts.join("; ")
-}
-
-function resyncDetail(effect: ChangeEffect): string {
-  const scope = effect.scope ?? []
-  const rows = effect.rows ?? {}
-  const counted: string[] = []
-  const count = (label: string, list: unknown[] | undefined) => {
-    const n = list?.length ?? 0
-    if (n) counted.push(`${n} ${label}${n === 1 ? "" : "s"}`)
-  }
-  count("annotation", rows.annotations)
-  count("manager row", rows.managers)
-  count("former id", rows.formerIds)
-  const where = scope
-    .map((s) => (s.kind && s.id ? `${s.kind}/${s.id}` : (s.id ?? s.kind ?? "")))
-    .filter(Boolean)
-    .join(", ")
-  const what = counted.length ? counted.join(", ") : "nothing left"
-  return where ? `${what} — on ${where}` : what
-}
-
-/** One effect → one line. An effect kind this console does not know still
- * renders: it names itself and its target rather than being dropped. */
-export function effectLine(effect: ChangeEffect): EffectLine {
-  const target = refOf(effect)
-  switch (effect.kind) {
-    case "record": {
-      const delta = effect.delta ?? {}
-      const verb = delta.created
-        ? "created"
-        : delta.restored
-          ? "restored"
-          : "updated"
-      return { verb, target, detail: deltaDetail(delta) }
-    }
-    case "tombstone":
-      return {
-        verb: "deleted",
-        target,
-        detail: effect.finalizer ? `held by ${effect.finalizer}` : "",
-      }
-    case "purge":
-      return { verb: "purged", target, detail: "and everything hanging off it" }
-    case "bump":
-      return { verb: "touched", target, detail: "version only" }
-    case "annotation":
-      // The engine carries the value as a POINTER precisely so `false`, `0`
-      // and `""` stay values: only an ABSENT value is the deletion. JSON
-      // cannot tell absent from null, so both read as the deletion here.
-      return {
-        verb:
-          effect.value === undefined || effect.value === null
-            ? "un-annotated"
-            : "annotated",
-        target,
-        detail: effect.key ?? "",
-      }
-    case "manager":
-      return effect.actor
-        ? {
-            verb: "reassigned",
-            target,
-            detail: `${effect.property ?? "?"} → ${effect.actor}${effect.tier ? ` (${effect.tier})` : ""}`,
-          }
-        : {
-            verb: "released",
-            target,
-            detail: `${effect.property ?? "?"} has no manager`,
-          }
-    case "former":
-      return {
-        verb: "aliased",
-        target: effect.ref ? `${effect.ref}/${effect.formerId ?? ""}` : "",
-        detail: effect.id ? `now resolves to ${effect.id}` : "",
-      }
-    case "resync":
-      return { verb: "restated", target: "", detail: resyncDetail(effect) }
-    default:
-      // An effect kind this console has not learned. Name it plainly — the
-      // reader can open the raw payload, and the line is a signal that this
-      // console is older than the substrate it is talking to.
-      return {
-        verb: effect.kind ? `${effect.kind} (unrecognized)` : "unrecognized",
-        target,
-        detail: "",
-      }
-  }
-}
-
-/** The write's effects, in the order it applied them, each said in English.
- * Empty for a row whose payload records none (an older entry, or an operation
- * that moved nothing). */
-export function changeEffects(row: ChangeRow): EffectLine[] {
-  const raw = row.payload?.[EFFECTS_PAYLOAD_KEY]
+/** The records a row moved, one line each, in the order the entry touched
+ * them. Empty for a row that names none, and never throws on junk. */
+export function affectedLines(row: ChangeRow): AffectedLine[] {
+  const raw: unknown = row.affected
   if (!Array.isArray(raw)) return []
   return raw
-    .filter((e): e is ChangeEffect => typeof e === "object" && e !== null)
-    .map(effectLine)
+    .filter(
+      (a): a is AffectedRecord =>
+        typeof a === "object" &&
+        a !== null &&
+        typeof (a as AffectedRecord).kind === "string" &&
+        typeof (a as AffectedRecord).id === "string"
+    )
+    .map((a) => ({ verb: affectedVerb(a), target: `${a.kind}/${a.id}` }))
 }
 
 /** The payload keys the detail surface renders by hand; the remainder is shown
- * as JSON so nothing the wire said goes missing. `fold` is here because its
- * effects render as `changeEffects` above — it must never reach a reader raw. */
+ * as JSON so nothing the wire said goes missing. */
 export const NAMED_PAYLOAD_KEYS = new Set([
   "created",
   "restored",
   "properties",
   "states",
   "managers",
-  EFFECTS_PAYLOAD_KEY,
 ])
 
 // ── the live buffer ─────────────────────────────────────────────────────────

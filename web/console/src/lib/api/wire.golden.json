@@ -1,4 +1,10 @@
 {
+  "AffectedRecord": {
+    "deleted": false,
+    "id": true,
+    "kind": true,
+    "version": false
+  },
   "AgentEvent": {
     "args": false,
     "error": false,
@@ -112,6 +118,7 @@
   },
   "Change": {
     "actor": true,
+    "affected": false,
     "hash": false,
     "kind": true,
     "op": true,
@@ -128,6 +135,7 @@
   },
   "ChangeRow": {
     "actor": true,
+    "affected": false,
     "hash": false,
     "kind": true,
     "op": true,

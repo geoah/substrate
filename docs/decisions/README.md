@@ -205,3 +205,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0058](0058-a-graphql-name-always-carries-the-authority.md) | A non-core kind's GraphQL name always carries its full authority | accepted |
 | [0059](0059-a-marked-repository-refuses-plain-and-host-key-sealed-payloads.md) | A repository marked DEK-only refuses plain and host-key-sealed payloads | accepted |
 | [0060](0060-a-record-carries-the-kind-version-that-last-wrote-it.md) | A record carries the kind version that last wrote it | accepted |
+| [0061](0061-a-change-event-names-the-affected-records-and-clients-fetch-them.md) | A change event names the affected records with their versions, and clients fetch them | accepted |

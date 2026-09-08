@@ -270,6 +270,18 @@ func BuildSchema(types []substrate.KindInfo) (graphql.Schema, error) {
 }
 
 func (b *schemaBuilder) build() (graphql.Schema, error) {
+	// The public change event (substrate.AffectedRecord, decision 0061): the
+	// records an entry moved, each with the version it reached. The same
+	// projection REST serves; the stored replay effects are on neither.
+	affected := graphql.NewObject(graphql.ObjectConfig{
+		Name: "AffectedRecord",
+		Fields: graphql.Fields{
+			"kind":    &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"id":      &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"version": &graphql.Field{Type: longScalar},
+			"deleted": &graphql.Field{Type: graphql.Boolean},
+		},
+	})
 	b.changeType = graphql.NewObject(graphql.ObjectConfig{
 		Name: "Change",
 		Fields: graphql.Fields{
@@ -280,6 +292,7 @@ func (b *schemaBuilder) build() (graphql.Schema, error) {
 			"recordId": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"kind":     &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"payload":  &graphql.Field{Type: jsonScalar},
+			"affected": &graphql.Field{Type: graphql.NewList(graphql.NewNonNull(affected))},
 		},
 	})
 
@@ -538,6 +551,7 @@ func (b *schemaBuilder) reservedNames() (map[string]string, error) {
 		"Record":           "the Record interface",
 		"GenericRecord":    "the fallback record type",
 		"Change":           "the Change type",
+		"AffectedRecord":   "the change event's record type",
 		"Reference":        "the Reference scalar",
 		"RecordConnection": "the list connection type",
 		"SearchHit":        "the search hit type",

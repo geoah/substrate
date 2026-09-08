@@ -85,7 +85,7 @@ package, and `/data/{authority}/{package}` tables the one package's kinds.
 ## Changelog
 
 [The changelog](changelog.md), newest first, one row per committed change, expanded
-in place to its payload. Filters cover kind, actor, op, and free text, and the
+in place to its payload and the records it moved. Filters cover kind, actor, op, and free text, and the
 same view tails live. It is the audit trail and the debugging surface in one,
 because there is only one changelog.
 
