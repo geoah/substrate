@@ -46,11 +46,12 @@ package engine
 // THE PLAN IS COUNTED, HASHED AND JUDGED IN ONE PLACE (conversionPlan.wire),
 // so the two previews (PlanBundleUpgrade, PlanVocabularyApply) and the two
 // doors (the apply transaction, the boot upgrade) agree on every number. A
-// step touching no live record is not a step. A plan is LOSSY when it removes
-// values from the fold: every null, and a remap whose target another stored
-// value already maps to (a value the stored declaration still admits, or the
-// target of another remap of the same property), judged over the whole
-// plan's map from stored values to candidate values. A lossy plan runs only
+// step touching no live record is not a step. A plan is LOSSY when it collapses
+// a distinction live records hold: every null (a value leaves the fold), and a
+// remap whose target some live record already holds, or that another remap of
+// the same property lands its own records on, judged over the whole plan once
+// every step is counted. A remap onto a value the declaration keeps but no
+// record holds loses nothing and needs no consent. A lossy plan runs only
 // with a confirmation naming the plan's hash and the changelog head it was
 // previewed at (admitConversion); the boot door has nobody to confirm and
 // refuses instead. The old values stay in the changelog either way: a lossy
@@ -66,7 +67,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -97,10 +97,6 @@ type enumRemap struct {
 	prop string
 	from string
 	to   string
-	// lossy marks a target another stored value already maps to: a value the
-	// stored declaration still admits, or another remap's target. The records
-	// holding either would become one set (convert.go's header).
-	lossy bool
 }
 
 // propertyNull is one dropped property whose live values the plan removes:
@@ -180,23 +176,16 @@ func classifyConversions(current, candidate *vocabulary.Registry, touched, skip 
 				if curP.Datatype != candP.Datatype || curP.Repeated != candP.Repeated || curP.Keyed != candP.Keyed {
 					continue
 				}
-				// Lossiness is injectivity of the whole property's map from
-				// stored values to candidate values: a retained value maps to
-				// itself, a remapped one to its target, and two stored values
-				// landing on one target collapse a distinction. The loader
-				// forbids two values naming one previous value and a target
-				// the list still declares, so both arms are held here for the
-				// stored side it cannot see.
-				stored := curP.ValueStrings()
-				taken := map[string]bool{}
-				for _, old := range removedStrings(stored, candP.ValueStrings()) {
+				// Whether a remap collapses a distinction is decided over the
+				// live records, not here (wire): the loader cannot see the
+				// stored side, and a target the stored list still declares is
+				// lossy only while some record holds it.
+				for _, old := range removedStrings(curP.ValueStrings(), candP.ValueStrings()) {
 					to := valueRenamedTo(candP, old)
 					if to == "" {
 						continue // stranded: the narrowing counts it
 					}
-					lossy := slices.Contains(stored, to) || taken[to]
-					taken[to] = true
-					plan.remaps = append(plan.remaps, enumRemap{kind: candT, prop: pname, from: old, to: to, lossy: lossy})
+					plan.remaps = append(plan.remaps, enumRemap{kind: candT, prop: pname, from: old, to: to})
 				}
 			}
 		}
@@ -373,9 +362,18 @@ func (p conversionPlan) wire(q sqlReader) (substrate.ConversionPlan, error) {
 		step.Records = n
 		plan.Steps = append(plan.Steps, step)
 		plan.Work += n
-		plan.Lossy = plan.Lossy || step.Lossy
 		return nil
 	}
+	// A remap collapses a distinction only where live records stand on both
+	// sides of it: a record holds the target already (a value the stored
+	// declaration keeps, or one a restored tombstone carries), or another
+	// remap of the same property lands its own records on the same target.
+	// Judged over the whole plan, after every step is counted: `landing`
+	// counts the remap steps with records per (kind, property, target), and
+	// `held` says whether the target is on some record now.
+	type target struct{ kind, prop, to string }
+	landing := map[target]int{}
+	held := map[target]bool{}
 	for _, kc := range p.byKind() {
 		ident := kc.kind.Identity
 		for _, r := range kc.renames {
@@ -394,9 +392,26 @@ func (p conversionPlan) wire(q sqlReader) (substrate.ConversionPlan, error) {
 			// Counted in the property's own container, element by element in
 			// a list and value by value in a keyed map, exactly as the
 			// narrowing counts a removed value (schemadiff.go valuesAtPath).
-			query, args := valuesAtPath(ident, containerPath(nil, kc.kind.Props[m.prop], m.prop), []string{m.from})
+			path := containerPath(nil, kc.kind.Props[m.prop], m.prop)
+			query, args := valuesAtPath(ident, path, []string{m.from})
 			n, err := count(query, args...)
-			if err := add(substrate.ConversionStep{Step: substrate.StepRemap, Kind: ident, Property: m.prop, From: m.from, To: m.to, Lossy: m.lossy}, n, err); err != nil {
+			if err != nil {
+				return plan, err
+			}
+			if n == 0 {
+				continue
+			}
+			key := target{ident, m.prop, m.to}
+			landing[key]++
+			if !held[key] {
+				query, args = valuesAtPath(ident, path, []string{m.to})
+				t, err := count(query, args...)
+				if err != nil {
+					return plan, err
+				}
+				held[key] = t > 0
+			}
+			if err := add(substrate.ConversionStep{Step: substrate.StepRemap, Kind: ident, Property: m.prop, From: m.from, To: m.to}, n, nil); err != nil {
 				return plan, err
 			}
 		}
@@ -407,8 +422,48 @@ func (p conversionPlan) wire(q sqlReader) (substrate.ConversionPlan, error) {
 			}
 		}
 	}
+	for i := range plan.Steps {
+		s := &plan.Steps[i]
+		if s.Step == substrate.StepRemap {
+			key := target{s.Kind, s.Property, s.To}
+			s.Lossy = held[key] || landing[key] > 1
+		}
+		plan.Lossy = plan.Lossy || s.Lossy
+	}
 	plan.PlanHash = planHash(plan.Steps)
 	return plan, nil
+}
+
+// packagePlan is the plan as one shipped package reads it: the steps that
+// rewrite its own kinds, with the work, the lossy judgment and the hash
+// recounted over them. The changelog head is the whole plan's. The boot
+// refuses the shipped set whole, so the blockers are shared; the rewrites are
+// each package's own, as the renames were before the steps existed.
+func packagePlan(plan substrate.ConversionPlan, pkg string) substrate.ConversionPlan {
+	out := substrate.ConversionPlan{ChangelogSeq: plan.ChangelogSeq}
+	for _, s := range plan.Steps {
+		if vocabulary.KindPackage(s.Kind) != pkg {
+			continue
+		}
+		out.Steps = append(out.Steps, s)
+		out.Work += s.Records
+		out.Lossy = out.Lossy || s.Lossy
+	}
+	out.PlanHash = planHash(out.Steps)
+	return out
+}
+
+// legacyRenames is the plan's rename steps in the shape BundleUpgrade.Renames
+// carried before Steps existed: the same count, read once, so the two lists
+// cannot disagree. Nil when nothing is renamed, so the field is omitted.
+func legacyRenames(steps []substrate.ConversionStep) []substrate.BundleUpgradeRename {
+	var out []substrate.BundleUpgradeRename
+	for _, s := range steps {
+		if s.Step == substrate.StepRename {
+			out = append(out, substrate.BundleUpgradeRename{Kind: s.Kind, From: s.From, To: s.To, Records: s.Records})
+		}
+	}
+	return out
 }
 
 // planHash identifies a plan by its steps and their counts: the same steps
@@ -436,7 +491,7 @@ func describeStep(s substrate.ConversionStep) string {
 	case substrate.StepRemap:
 		line := fmt.Sprintf("type %s: property %q value %q rewritten to %q on %d live records", s.Kind, s.Property, s.From, s.To, s.Records)
 		if s.Lossy {
-			line += ", which the stored declaration still admits: the records holding either become one set (lossy)"
+			line += ", a value live records already hold: the records holding either become one set (lossy)"
 		}
 		return line
 	default:

@@ -427,10 +427,11 @@ still refuses while records occupy a state, because a state moves by
 transition and never by assignment.
 
 **A lossy plan runs only when you confirm it.** Two steps remove values from
-the fold: the null above, and a rename onto a value the declaration still
-admits (`{value: open, renamedFrom: active}` while `open` stands makes the
-records holding either one set). A plan with either, judged over the whole
-change, is **lossy**
+the fold: the null above, and a rename onto a value some live record already
+holds (`{value: open, renamedFrom: active}` while a record holds `open` makes
+the records holding either one set; while none does, the same rename loses
+nothing). A plan with either, judged over the whole change and the records it
+counts, is **lossy**
 ([decision 0067](decisions/0067-a-lossy-conversion-runs-only-with-a-confirmation-bound-to-its-preview.md)).
 `POST /api/v1/vocabulary/plan` with the same `documents` answers the plan
 without writing: every step with the live records it touches, `work`, `lossy`,

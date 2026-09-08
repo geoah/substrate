@@ -3204,9 +3204,9 @@ components:
         lossy:
           type: boolean
           description: The plan removes values from the fold (a `null` step,
-            or a remap onto a value another stored value already maps to)
-            and runs only with a `ConversionConfirm` naming it. The old values
-            stay in the changelog.
+            or a remap onto a value some live record already holds) and runs
+            only with a `ConversionConfirm` naming it. The old values stay
+            in the changelog.
         planHash:
           type: string
           description: A hash over the steps and their counts. Absent when
@@ -3452,6 +3452,30 @@ components:
         planHash:
           type: string
         changelogSeq:
+          type: integer
+          format: int64
+        renames:
+          type: array
+          deprecated: true
+          description: The `rename` steps in the shape this field had before
+            `steps` existed, derived from them. Read `steps`.
+          items:
+            $ref: "#/components/schemas/BundleUpgradeRename"
+    BundleUpgradeRename:
+      type: object
+      deprecated: true
+      description: "One property the upgrade moves live values for, and how
+        many records carry the old name. A `ConversionStep` whose `step` is
+        `rename` says the same."
+      required: [kind, from, to, records]
+      properties:
+        kind:
+          type: string
+        from:
+          type: string
+        to:
+          type: string
+        records:
           type: integer
           format: int64
     CatalogTakeRequest:

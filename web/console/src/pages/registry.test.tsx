@@ -612,6 +612,148 @@ describe("RegistryPage", () => {
       })
     })
 
+    /** The install bodies the page sent, decoded, in order. */
+    function installBodies(): { confirm?: { planHash: string } }[] {
+      return fetchMock.mock.calls
+        .filter(
+          ([url, init]) =>
+            String(url).endsWith("/install") &&
+            (init as RequestInit | undefined)?.method === "POST"
+        )
+        .map(([, init]) => {
+          const raw = (init as RequestInit | undefined)?.body
+          return raw ? JSON.parse(String(raw)) : {}
+        })
+    }
+
+    it("a lossy upgrade asks first and confirms the previewed hash", async () => {
+      const lossy = {
+        ...MOVED,
+        upgrade: {
+          ...MOVED.upgrade,
+          work: 3,
+          lossy: true,
+          planHash: "cafe",
+          changelogSeq: 41,
+          steps: [
+            {
+              step: "null" as const,
+              kind: "providers.substrate.reamde.dev/google/contact",
+              property: "middleName",
+              records: 3,
+              lossy: true,
+            },
+          ],
+        },
+      }
+      serve({ statuses: [googleStatus()], catalog: [lossy, PEOPLE] })
+      renderPage(<RegistryPage />)
+      const google = await rowOf("google")
+      fireEvent.click(within(google).getByRole("button", { name: /Upgrade/ }))
+      // Nothing was sent: the dialog lists the loss and asks.
+      expect(installBodies()).toEqual([])
+      const dialog = await screen.findByRole("dialog")
+      expect(
+        within(dialog).getByText(/drops middleName on .*3 live records/)
+      ).toBeTruthy()
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: /accept the loss/ })
+      )
+      await waitFor(() => expect(installBodies()).toHaveLength(1))
+      expect(installBodies()[0].confirm).toEqual({
+        planHash: "cafe",
+        changelogSeq: 41,
+      })
+    })
+
+    it("a stale confirmation re-reads the preview and confirms the fresh plan", async () => {
+      const step = {
+        step: "null" as const,
+        kind: "providers.substrate.reamde.dev/google/contact",
+        property: "middleName",
+        records: 3,
+        lossy: true,
+      }
+      const stale = {
+        ...MOVED,
+        upgrade: {
+          ...MOVED.upgrade,
+          work: 3,
+          lossy: true,
+          planHash: "cafe",
+          changelogSeq: 41,
+          steps: [step],
+        },
+      }
+      // A record landed in between: the head moved and one more record
+      // carries the property, so the plan reads differently.
+      const fresh = {
+        ...stale,
+        upgrade: {
+          ...stale.upgrade,
+          work: 4,
+          planHash: "f00d",
+          changelogSeq: 42,
+          steps: [{ ...step, records: 4 }],
+        },
+      }
+      const wire: Wire = {
+        statuses: [googleStatus()],
+        catalog: [stale, PEOPLE],
+      }
+      let installs = 0
+      wire.take = () => {
+        installs++
+        if (installs === 1) {
+          wire.catalog = [fresh, PEOPLE]
+          return jsonResponse(409, {
+            error: {
+              code: "conflict",
+              message: "the changelog moved since the plan was previewed",
+            },
+          })
+        }
+        return jsonResponse(200, googleStatus())
+      }
+      serve(wire)
+      renderPage(<RegistryPage />)
+      const google = await rowOf("google")
+      fireEvent.click(within(google).getByRole("button", { name: /Upgrade/ }))
+      // The toast that announces the stale preview is a dialog too, so the
+      // loss dialog is found by its title.
+      const lossDialog = () =>
+        screen.getByRole("dialog", { name: /and lose values/ })
+      await screen.findByRole("dialog", { name: /and lose values/ })
+      fireEvent.click(
+        within(lossDialog()).getByRole("button", { name: /accept the loss/ })
+      )
+      await waitFor(() => expect(installs).toBe(1))
+      expect(installBodies()[0].confirm?.planHash).toBe("cafe")
+      // The preview is read again (a second catalog GET), the dialog stays
+      // open on the re-read plan, which now names four records, and the next
+      // click confirms the fresh hash.
+      const catalogReads = () =>
+        fetchMock.mock.calls.filter(([url]) => String(url) === CATALOG_PATH)
+          .length
+      await waitFor(() => expect(catalogReads()).toBeGreaterThanOrEqual(2))
+      expect(
+        within(lossDialog()).getByText(/Records changed since this preview/)
+      ).toBeTruthy()
+      await within(lossDialog()).findByText(
+        /drops middleName on .*4 live records/,
+        {},
+        { timeout: 3000 }
+      )
+      fireEvent.click(
+        within(lossDialog()).getByRole("button", { name: /accept the loss/ })
+      )
+      await waitFor(() => expect(installs).toBe(2))
+      expect(installBodies()[1].confirm).toEqual({
+        planHash: "f00d",
+        changelogSeq: 42,
+      })
+    })
+
     it("a blocked upgrade is stated, never offered", async () => {
       serve({
         statuses: [googleStatus()],

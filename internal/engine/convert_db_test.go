@@ -444,7 +444,7 @@ func TestLossyPlanRunsOnlyWithAConfirmationBoundToItsPreview(t *testing.T) {
 
 	// The bare verb refuses it, naming the step and the count.
 	wantLossyRefusal(t, ds, cvApply(t, ds, lossy), held,
-		`property "status" value "active" rewritten to "open" on 1 live records, which the stored declaration still admits`,
+		`property "status" value "active" rewritten to "open" on 1 live records, a value live records already hold`,
 		"runs only with a confirmation")
 
 	// The preview: one lossy step with its count, the work, the hash and the
@@ -501,6 +501,40 @@ func TestLossyPlanRunsOnlyWithAConfirmationBoundToItsPreview(t *testing.T) {
 		t.Fatalf("the old value must stay in the changelog (rows=%d, err=%v)", kept, err)
 	}
 	cvReplays(t, svc, ds)
+}
+
+// A remap onto a value the declaration keeps collapses nothing while no live
+// record holds the target: the plan is lossless and lands unconfirmed, and the
+// records read the retained spelling afterwards. Lossiness is the live rule,
+// never the declaration's (decision 0067).
+func TestRemapOntoARetainedValueNobodyHoldsIsLossless(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	if err := cvApply(t, ds, map[string]any{
+		"status": map[string]any{"type": "enum", "values": []any{"open", "active"}},
+	}); err != nil {
+		t.Fatalf("install the package: %v", err)
+	}
+	only := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"status": "active"}})
+	docs := cvDocs(map[string]any{
+		"status": map[string]any{"type": "enum", "values": []any{
+			map[string]any{"value": "open", "renamedFrom": "active"},
+		}},
+	})
+	plan, err := cvPlanner(t, ds).PlanVocabularyApply(ctx, owner, docs)
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if plan.Lossy || len(plan.Steps) != 1 || plan.Steps[0].Lossy || plan.Steps[0].Records != 1 {
+		t.Fatalf("a remap onto a value nobody holds must be lossless: %+v", plan)
+	}
+	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+		t.Fatalf("a lossless remap must land unconfirmed: %v", err)
+	}
+	if got := mustGet(t, ds, cvWidget, only.ID); got.Properties["status"] != "open" {
+		t.Fatalf("the value did not move: %v", got.Properties)
+	}
 }
 
 // Dropping a property live records carry is the null step: lossy, so it runs

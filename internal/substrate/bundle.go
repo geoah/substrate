@@ -92,6 +92,27 @@ type BundleUpgrade struct {
 	// The record rewrites the upgrade performs, counted against the live
 	// records (decision 0067).
 	ConversionPlan
+	// Renames is the plan's rename steps in the shape this field had before
+	// Steps existed, derived from Steps and never a second count.
+	//
+	// Deprecated: read Steps, where a rename is `step: rename`. The field
+	// stays because the bundles feature is stable and frozen means additive
+	// only (decision 0067).
+	Renames []BundleUpgradeRename `json:"renames,omitempty"`
+}
+
+// BundleUpgradeRename is one property rename an upgrade performs, the shape
+// the deprecated BundleUpgrade.Renames carries; a ConversionStep with
+// StepRename says the same and more.
+type BundleUpgradeRename struct {
+	// Kind is the full reference of the kind whose property moves.
+	Kind string `json:"kind"`
+	// From and To are the old and the new property names.
+	From string `json:"from"`
+	To   string `json:"to"`
+	// Records is the number of live records carrying the old name, each of
+	// which the upgrade rewrites.
+	Records int64 `json:"records"`
 }
 
 // ConversionPlan is the composed set of record rewrites a declaration change
@@ -108,9 +129,9 @@ type ConversionPlan struct {
 	// deployment's ceiling (SUBSTRATE_CONVERSION_CEILING, in records, 10000
 	// by default) is refused.
 	Work int64 `json:"work"`
-	// Lossy reports the plan collapses distinct stored values: a `null` step,
-	// or a remap onto a value another stored value already maps to, judged
-	// across the whole plan. A lossy plan runs only with a ConversionConfirm
+	// Lossy reports the plan collapses a distinction live records hold: a
+	// `null` step, or a remap onto a value some live record already holds (or
+	// that another remap lands its records on), judged across the whole plan. A lossy plan runs only with a ConversionConfirm
 	// carrying this plan's PlanHash and ChangelogSeq; a lossless one runs
 	// unconfirmed. The old values stay in the changelog either way: a lossy
 	// step removes them from the fold and nothing erases them.
@@ -140,7 +161,7 @@ type ConversionStep struct {
 	// Records is the number of live records the step rewrites.
 	Records int64 `json:"records"`
 	// Lossy marks a step that removes values from the fold: every null, and a
-	// remap whose target another stored value already maps to.
+	// remap whose target some live record already holds.
 	Lossy bool `json:"lossy,omitempty"`
 }
 

@@ -54,13 +54,13 @@ lossless plan runs unconfirmed and ignores a confirmation, because there is
 nothing to consent to.
 
 **Lossy is judged over the whole plan, against the live records.** A plan is
-lossy when a step removes values from the fold: a `null` step (a dropped
-property some live record carries), or a remap onto a value another stored
-value already maps to (a value the stored declaration keeps, or another
-remap's target), which the loader cannot see because it reads one document.
-A step touching no live record is not a step, so a remap onto a retained value
-nobody holds lands unconfirmed; this narrows 0066's refusal by declaration to
-the case where a stored distinction exists to lose. The old values stay in the
+lossy when a step collapses a distinction live records hold: a `null` step (a
+dropped property some live record carries), or a remap whose target some live
+record already holds, or that another remap of the same property lands its
+own records on, decided once every step is counted. The declaration alone
+decides nothing: a remap onto a value the stored list keeps but no record
+holds loses nothing and lands unconfirmed, which narrows 0066's refusal by
+declaration to the case where a stored distinction exists to lose. The old values stay in the
 changelog either way: a lossy step removes them from the fold, and no surface
 claims erasure.
 
@@ -98,16 +98,23 @@ records it counts. The ceiling binds there too.
   repository (a sync landing records every minute) may need the preview and
   the confirmation in quick succession; the CLI does both in one command for
   that reason.
-- Bad, because `BundleUpgrade.renames`, shipped days earlier under a stable
-  feature, is replaced by `steps` rather than kept beside it: a rename is a
-  step, and two lists of one thing would be the wire forever.
+- Bad, because `BundleUpgrade.renames`, shipped days earlier under the stable
+  `bundles` feature, stays on the wire beside `steps`, deprecated and derived
+  from the rename steps: frozen means additive only, so two spellings of one
+  list ride every preview until a break is announced.
+- Bad, because lossiness judged over the live records lets a remap whose only
+  holders of the old value are tombstoned records land unconfirmed, and a put
+  that restores one of them revives the old spelling under a declaration that
+  no longer admits it; this widens what
+  [#434](https://github.com/geoah/substrate/issues/434) tracks for the rename.
 - Bad, because the ceiling refuses a legitimate large conversion outright, and
   the route through (expand, migrate through ordinary writes, contract) is
   slower than one click. Chunked execution stays unbuilt until a repository
   hurts.
 - Bad, because the import door takes the same body but a sample has no
-  preview to read the hash from, so a lossy re-import is refused with no
-  confirmation to give until a sample preview exists.
+  preview to read the hash from, so a lossy re-import is refused, the `403`
+  naming the pair, with no way to give it until the sample preview of
+  [#386](https://github.com/geoah/substrate/issues/386) lands.
 
 ### Confirmation
 

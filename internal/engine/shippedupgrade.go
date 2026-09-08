@@ -293,8 +293,9 @@ func (st *shippedUpgradeStage) guards(q sqlReader, ceiling int64) ([]string, sub
 // shipped package here, and the guard lines it refuses on: the same staging
 // and the same counts the boot runs (st.guards), over the bare pool, writing
 // nothing. The boot refuses the shipped set as a whole, so every package with
-// something to write carries the whole list, which is exactly the list the
-// refusal logged, and the whole conversion plan with it.
+// something to write carries the whole blocker list, which is exactly the list
+// the refusal logged; the conversion steps are each package's own
+// (packagePlan), because they rewrite that package's kinds.
 func (ds *dataset) PlanShippedUpgrade(ctx context.Context) ([]substrate.ShippedUpgrade, error) {
 	st, err := ds.stageShippedUpgrade(ctx)
 	if err != nil {
@@ -312,7 +313,8 @@ func (ds *dataset) PlanShippedUpgrade(ctx context.Context) ([]substrate.ShippedU
 			continue
 		}
 		st.plans[i].Upgrade.Blockers = blockers
-		st.plans[i].Upgrade.ConversionPlan = plan
+		st.plans[i].Upgrade.ConversionPlan = packagePlan(plan, st.plans[i].Package)
+		st.plans[i].Upgrade.Renames = legacyRenames(st.plans[i].Upgrade.Steps) //nolint:staticcheck // the deprecated field is produced here for readers that still read it
 	}
 	return st.plans, nil
 }

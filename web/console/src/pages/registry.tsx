@@ -30,7 +30,7 @@
  * `…/catalog/{id}/import` for a sample. enable/disable/uninstall are a
  * DIFFERENT lifecycle and keep their own words. */
 
-import { useMemo, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
 import type { DataTableColumn } from "@/components/data-table/data-table"
@@ -95,7 +95,7 @@ import {
 import { repositoryQueryOptions } from "@/lib/api/repository"
 import { CORE_PACKAGE } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
-import type { KindInfo, ShippedUpgrade } from "@/lib/api/types"
+import { ApiError, type KindInfo, type ShippedUpgrade } from "@/lib/api/types"
 import { splitKind } from "@/lib/definition"
 import {
   bundleRecordRows,
@@ -383,29 +383,27 @@ function ImportAgainButton({
  * never reaches here: the server attaches no preview to one, because what it
  * landed belongs to the repository (decision record 0048).
  *
- * A LOSSY preview (decision 0067) asks first: the dialog lists the steps that
- * remove values from the fold, and the click sends the preview's `planHash`
- * and `changelogSeq` as the confirmation, so the consent covers exactly what
- * was shown and the server refuses it once anything moved. A lossless upgrade
- * installs on the click, as before. */
-function UpgradeButton({ row }: { row: BundleRow }) {
+ * A LOSSY preview (decision 0067) asks first: the click hands the row to the
+ * section's LossyUpgradeDialog, which lists the steps that remove values from
+ * the fold and sends the preview's `planHash` and `changelogSeq` as the
+ * confirmation, so the consent covers exactly what was shown and the server
+ * refuses it once anything moved. The dialog lives in the section rather than
+ * in this cell because a catalog refetch rebuilds the table's columns and
+ * remounts every cell, which would close a dialog kept here. A lossless
+ * upgrade installs on the click, as before. */
+function UpgradeButton({
+  row,
+  onConfirmLoss,
+}: {
+  row: BundleRow
+  onConfirmLoss: (row: BundleRow) => void
+}) {
   const queryClient = useQueryClient()
   const upgrade = row.upgrade
-  const [confirming, setConfirming] = useState(false)
   const lossy = Boolean(upgrade?.lossy && upgrade.planHash)
   const upgrading = useMutation({
-    mutationFn: () =>
-      installBundle(
-        row.catalog?.id ?? row.id,
-        lossy && upgrade?.planHash
-          ? {
-              planHash: upgrade.planHash,
-              changelogSeq: upgrade.changelogSeq ?? 0,
-            }
-          : undefined
-      ),
+    mutationFn: () => installBundle(row.catalog?.id ?? row.id),
     onSuccess: (status) => {
-      setConfirming(false)
       toast.add({
         type: "success",
         title: upgrade?.to
@@ -428,91 +426,156 @@ function UpgradeButton({ row }: { row: BundleRow }) {
   })
   const motion = upgrade ? upgradeMotion(upgrade) : ""
   const steps = stepLines(upgrade)
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={upgrading.isPending}
+            onClick={(e) => {
+              e.stopPropagation()
+              if (lossy) onConfirmLoss(row)
+              else upgrading.mutate()
+            }}
+          />
+        }
+      >
+        {upgrading.isPending ? (
+          <Spinner className="size-3.5" />
+        ) : (
+          <CircleArrowUpIcon />
+        )}
+        {upgrading.isPending ? "Upgrading…" : "Upgrade"}
+      </TooltipTrigger>
+      {(motion || steps.length > 0) && (
+        <TooltipContent className="max-w-96">
+          <div className="space-y-1">
+            {motion && <p>{motion}</p>}
+            {steps.map((s) => (
+              <p key={s}>{s}</p>
+            ))}
+          </div>
+        </TooltipContent>
+      )}
+    </Tooltip>
+  )
+}
+
+/** The consent to a lossy upgrade (decision 0067), rendered by the section for
+ * the row the reader clicked, so it outlives the table's re-render. It reads
+ * the row's CURRENT preview: after a `409` (records changed since the preview
+ * was read, so the server no longer counts that plan) the catalog is read
+ * again, the dialog stays open, says so, and its next click confirms the fresh
+ * `planHash` and `changelogSeq`, never the stale pair again. */
+function LossyUpgradeDialog({
+  row,
+  onClose,
+}: {
+  row: BundleRow | undefined
+  onClose: () => void
+}) {
+  const queryClient = useQueryClient()
+  const [stale, setStale] = useState(false)
+  const upgrade = row?.upgrade
+  const upgrading = useMutation({
+    mutationFn: () => {
+      if (!row || !upgrade?.planHash) {
+        throw new Error("no lossy plan to confirm")
+      }
+      return installBundle(row.catalog?.id ?? row.id, {
+        planHash: upgrade.planHash,
+        changelogSeq: upgrade.changelogSeq ?? 0,
+      })
+    },
+    onSuccess: (status) => {
+      setStale(false)
+      onClose()
+      toast.add({
+        type: "success",
+        title: upgrade?.to
+          ? `${row?.name} upgraded to ${upgrade.to}.`
+          : `${row?.name} upgraded.`,
+      })
+      seedBundleStatus(queryClient, status)
+      void queryClient.invalidateQueries()
+      refetchBundleStateSoon(queryClient)
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 409) {
+        setStale(true)
+        void queryClient.invalidateQueries({
+          queryKey: catalogQueryOptions.queryKey,
+        })
+        return
+      }
+      toast.add({
+        type: "error",
+        title: `Could not upgrade ${row?.name}`,
+        description: importFailureText(error),
+      })
+    },
+  })
+  if (!row) return null
   const losses = lossyStepLines(upgrade)
   return (
-    <>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={upgrading.isPending}
-              onClick={(e) => {
-                e.stopPropagation()
-                if (lossy) setConfirming(true)
-                else upgrading.mutate()
-              }}
-            />
-          }
-        >
-          {upgrading.isPending ? (
-            <Spinner className="size-3.5" />
-          ) : (
-            <CircleArrowUpIcon />
-          )}
-          {upgrading.isPending ? "Upgrading…" : "Upgrade"}
-        </TooltipTrigger>
-        {(motion || steps.length > 0) && (
-          <TooltipContent className="max-w-96">
-            <div className="space-y-1">
-              {motion && <p>{motion}</p>}
-              {steps.map((s) => (
-                <p key={s}>{s}</p>
-              ))}
-            </div>
-          </TooltipContent>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (open || upgrading.isPending) return
+        setStale(false)
+        onClose()
+      }}
+    >
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Upgrade {row.name} and lose values?</DialogTitle>
+          <DialogDescription>
+            {`This upgrade rewrites ${upgrade?.work ?? 0} live ${
+              upgrade?.work === 1 ? "record" : "records"
+            }, and some of the rewrites remove values from your records. ` +
+              `The removed values stay in the changelog; nothing is erased. ` +
+              `The confirmation covers exactly this plan: if anything is written before it lands, the server refuses it and the preview is read again.`}
+          </DialogDescription>
+        </DialogHeader>
+        {stale && (
+          <p role="status" className="text-sm text-warning">
+            Records changed since this preview was read, so the server refused
+            the confirmation. The plan below was read again: check it and
+            confirm what it says now.
+          </p>
         )}
-      </Tooltip>
-      {confirming && (
-        <Dialog
-          open
-          onOpenChange={(open) =>
-            !open && !upgrading.isPending && setConfirming(false)
-          }
-        >
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Upgrade {row.name} and lose values?</DialogTitle>
-              <DialogDescription>
-                {`This upgrade rewrites ${upgrade?.work ?? 0} live ${
-                  upgrade?.work === 1 ? "record" : "records"
-                }, and some of the rewrites remove values from your records. ` +
-                  `The removed values stay in the changelog; nothing is erased. ` +
-                  `The confirmation covers exactly this plan: if anything is written before it lands, the server refuses it and the preview is read again.`}
-              </DialogDescription>
-            </DialogHeader>
-            <ul className="space-y-1 text-sm">
-              {losses.map((s) => (
-                <li key={s}>{s}</li>
-              ))}
-            </ul>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                disabled={upgrading.isPending}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setConfirming(false)
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                disabled={upgrading.isPending}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  upgrading.mutate()
-                }}
-              >
-                {upgrading.isPending && <Spinner className="size-3.5" />}
-                Upgrade and accept the loss
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
-    </>
+        <ul className="space-y-1 text-sm">
+          {losses.map((s) => (
+            <li key={s}>{s}</li>
+          ))}
+        </ul>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            disabled={upgrading.isPending}
+            onClick={(e) => {
+              e.stopPropagation()
+              setStale(false)
+              onClose()
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            disabled={upgrading.isPending || !upgrade?.planHash}
+            onClick={(e) => {
+              e.stopPropagation()
+              upgrading.mutate()
+            }}
+          >
+            {upgrading.isPending && <Spinner className="size-3.5" />}
+            Upgrade and accept the loss
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -548,7 +611,8 @@ function UpgradeBlockedChip({ row }: { row: BundleRow }) {
 
 function buildColumns(
   requirements: (row: BundleRow) => Requirement[],
-  mappings: (row: BundleRow) => SuggestedMappingRow[]
+  mappings: (row: BundleRow) => SuggestedMappingRow[],
+  confirmLoss: (row: BundleRow) => void
 ): DataTableColumn<BundleRow>[] {
   return [
     {
@@ -652,7 +716,7 @@ function buildColumns(
               {upgradeBlocked(row.original) ? (
                 <UpgradeBlockedChip row={row.original} />
               ) : (
-                <UpgradeButton row={row.original} />
+                <UpgradeButton row={row.original} onConfirmLoss={confirmLoss} />
               )}
             </div>
           ) : row.original.tier === "sample" &&
@@ -1030,9 +1094,14 @@ function BundleSection({
   kinds: KindInfo[]
   onOpen: (row: BundleRow) => void
 }) {
+  // The row whose lossy upgrade is being confirmed, by id: the dialog reads
+  // the row's current preview from `rows`, so a refetch after a stale
+  // confirmation shows the fresh plan (LossyUpgradeDialog).
+  const [lossyID, setLossyID] = useState<string | null>(null)
+  const confirmLoss = useCallback((row: BundleRow) => setLossyID(row.id), [])
   const columns = useMemo(
-    () => buildColumns(requirements, mappings),
-    [requirements, mappings]
+    () => buildColumns(requirements, mappings, confirmLoss),
+    [requirements, mappings, confirmLoss]
   )
   const table = useDataTable({
     columns,
@@ -1077,6 +1146,10 @@ function BundleSection({
             </EmptyHeader>
           </Empty>
         }
+      />
+      <LossyUpgradeDialog
+        row={rows.find((r) => r.id === lossyID)}
+        onClose={() => setLossyID(null)}
       />
     </section>
   )

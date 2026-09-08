@@ -72,6 +72,7 @@
     "from": false,
     "lossy": true,
     "planHash": false,
+    "renames": false,
     "steps": false,
     "to": false,
     "work": true
@@ -81,6 +82,12 @@
     "id": true,
     "kind": true,
     "to": false
+  },
+  "BundleUpgradeRename": {
+    "from": true,
+    "kind": true,
+    "records": true,
+    "to": true
   },
   "CatalogBundle": {
     "authority": true,

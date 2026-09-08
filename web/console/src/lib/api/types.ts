@@ -565,7 +565,7 @@ export interface ConversionPlan {
    * server refuses the plan and says so in `blockers`. */
   work: number
   /** The plan removes values from the fold (a `null` step, or a remap onto a
-   * value another stored value already maps to). A lossy plan runs only with
+   * value some live record already holds). A lossy plan runs only with
    * a ConversionConfirm naming `planHash` and `changelogSeq`; the console
    * asks before it sends one. The old values stay in the changelog. */
   lossy: boolean
@@ -589,7 +589,7 @@ export interface ConversionStep {
   /** The live records the step rewrites. */
   records: number
   /** The step removes values from the fold: every null, and a remap whose
-   * target another stored value already maps to. */
+   * target some live record already holds. */
   lossy?: boolean
 }
 
@@ -619,6 +619,19 @@ export interface BundleUpgrade extends ConversionPlan {
    * at all carries one fixed line ("the upgrade preview failed; see the
    * server log") and no motion. */
   blockers?: string[]
+  /** The `rename` steps in the shape this field had before `steps` existed,
+   * derived from them.
+   * @deprecated read `steps`; kept because the bundles feature is stable. */
+  renames?: BundleUpgradeRename[]
+}
+
+/** One property rename an upgrade performs (substrate.BundleUpgradeRename).
+ * @deprecated a ConversionStep with `step: "rename"` says the same. */
+export interface BundleUpgradeRename {
+  kind: string
+  from: string
+  to: string
+  records: number
 }
 
 /** The preview of one vocabulary apply (substrate.VocabularyPlan), from

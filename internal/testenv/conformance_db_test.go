@@ -180,6 +180,41 @@ func conformanceCases() []codeCase {
 			wantError(t, status, body, http.StatusForbidden, "guard")
 		},
 	}, {
+		name: "a declaration change that removes values answers 403 lossy",
+		code: "lossy",
+		run: func(t *testing.T, e *testenv.Env) {
+			// A note carrying `occurredAt`, then the kind declared again
+			// without it: the value would leave the fold, so the batch is a
+			// lossy plan and refuses without a confirmation for it (decision
+			// 0067). Nothing lands, and the datetime case below still finds
+			// the property declared.
+			status, body := e.Do(http.MethodPut, notesPath+"/dated", map[string]any{
+				"properties": map[string]any{"subject": "dated", "occurredAt": "2026-09-08T00:00:00Z"},
+			})
+			wantRecord(t, status, body, http.StatusCreated)
+			status, body = e.Do(http.MethodPost, "/api/v1/vocabulary/apply", map[string]any{
+				"documents": []map[string]any{{
+					"kind":     "substrate.reamde.dev/core/kind",
+					"metadata": map[string]any{"id": conformanceRef + "/note"},
+					"data": map[string]any{
+						"authority":       conformanceAuthority,
+						"package":         conformancePackage,
+						"names":           map[string]any{"singular": "note", "plural": "notes"},
+						"displayTemplate": "{subject}",
+						"properties": map[string]any{
+							"subject": map[string]any{"type": "string", "required": true, "description": "what the note is about"},
+							"phase": map[string]any{
+								"type": "state", "states": []any{"draft", "filed"}, "initial": "draft",
+								"transitions": []any{map[string]any{"from": "draft", "to": "filed"}},
+								"description": "where the note sits in its life",
+							},
+						},
+					},
+				}},
+			})
+			wantError(t, status, body, http.StatusForbidden, "lossy")
+		},
+	}, {
 		name: "a missing required property answers 422 validation",
 		code: "validation",
 		run: func(t *testing.T, e *testenv.Env) {
