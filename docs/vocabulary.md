@@ -238,18 +238,30 @@ once. The narrowing diffs that refuse:
   widening back to `any` narrows nothing)
 - tightening a keyed map's `keyPattern:` while records hold a key the new
   contract refuses, since a key is not rewritable in place
+- changing or adding a `pattern:` while records hold a value the new
+  expression refuses. Any change to the expression counts, because whether one
+  regular expression admits everything another does is not decidable. The
+  count runs the write path's compiled regexp over the stored values in Go,
+  so it agrees with the write, and a change every stored value still matches
+  admits. A `secret` is stored sealed, so its values cannot be matched: any
+  pattern change on a secret property refuses while a record holds one
+- raising or adding `min:`, and lowering or adding `max:`, while records hold
+  a number outside the new bound; a `decimal` is compared against the bound's
+  float64 value, as `coerceDecimal` compares it
 - every one of those inside an object property's declared `fields:`, at each
   level the dialect nests: a dropped field, a field whose datatype or container
-  changed, a field's removed enum value, a field's tightened keys, a field
-  reference's narrowed target, each counted where the value actually sits
+  changed, a field's removed enum value, a field's tightened keys, a field's
+  changed pattern or tightened bound, a field reference's narrowed target, each
+  counted where the value actually sits
 - adding `required:` to a property a record lacks, and declaring a **new**
   property `required:`, which strands every live record at once: none of them
   can carry a property no declaration had
 - adding `mustExist:` to a reference whose stored values name records that are
   not there
-- the same four shapes on a reference's own
+- the same shapes on a reference's own
   [link properties](#reference-properties) (dropped, retyped, an enum value
-  removed, `required:` added), counted over the stored values that carry them
+  removed, `required:` added, a pattern changed or a bound tightened), counted
+  over the stored values that carry them
 
 Widening diffs (a new kind, a new optional property, a new enum value, a new
 state or transition, removing `required:`) always admit. The guard counts, it

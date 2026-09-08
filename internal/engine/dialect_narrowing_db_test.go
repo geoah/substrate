@@ -9,6 +9,8 @@ package engine_test
 // admit). A query that never runs is a guard that does not exist.
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -34,6 +36,25 @@ func dnBaseProps() map[string]any {
 		"calls": map[string]any{"type": "int"},
 	}}
 	props["plain"] = map[string]any{"type": "string"}
+	// The three value constraints, at every position the write path enforces
+	// them: a kind's own property in each container, a field at depth, and a
+	// reference's link data. dnRow holds a value at each that the tightened
+	// constraint in dnCases refuses.
+	props["code"] = map[string]any{"type": "string", "pattern": "^[a-z]+$"}
+	props["codes"] = map[string]any{"type": "string", "pattern": "^[a-z]+$", "repeated": true}
+	props["count"] = map[string]any{"type": "int", "min": 1, "max": 10}
+	props["ratio"] = map[string]any{"type": "float"}
+	props["price"] = map[string]any{"type": "decimal", "min": 0}
+	spec["fields"].(map[string]any)["code"] = map[string]any{"type": "string", "pattern": "^[a-z]+$"}
+	// The two sensitive datatypes the write path also holds to a pattern: a
+	// digest is stored as its hex string, a secret as a ref into the sealed
+	// store, so only the first can be matched.
+	props["fingerprint"] = map[string]any{"type": "digest", "pattern": "^ab"}
+	props["token"] = map[string]any{"type": "secret", "pattern": "^old-"}
+	props["pinned"] = map[string]any{"type": "reference", "kind": "target", "properties": map[string]any{
+		"note":   map[string]any{"type": "string", "pattern": "^[a-z]+$"},
+		"weight": map[string]any{"type": "int", "min": 1},
+	}}
 	return props
 }
 
@@ -50,6 +71,7 @@ func dnRow(t *testing.T, ds substrate.Dataset) {
 			"grant": map[string]any{"scopes": []any{"read"}, "subject": "ada"},
 			"spec": map[string]any{
 				"mode": "high",
+				"code": "abcd",
 				"limits": map[string]any{
 					"depth": 3, "ref": "a", "grade": "high",
 					// The level-4 leaf, so the deepest arm counts a live row too.
@@ -71,6 +93,15 @@ func dnRow(t *testing.T, ds substrate.Dataset) {
 			"level":  "high",
 			"levels": []any{"high"},
 			"slots":  map[string]any{"primary": "high"},
+			"code":   "abcd",
+			"codes":  []any{"abcd"},
+			"count":  5,
+			"ratio":  0.25,
+			"price":  "5.50",
+			"pinned": map[string]any{"ref": "a", "note": "abcd", "weight": 5},
+
+			"fingerprint": strings.Repeat("ab", 32),
+			"token":       "old-secret",
 		},
 	})
 }
@@ -80,6 +111,7 @@ func dnRow(t *testing.T, ds substrate.Dataset) {
 func dnCases() map[string]struct {
 	mutate func(props map[string]any)
 	says   string
+	refs   bool // the count is over live references, not records
 } {
 	// spec.fields, reached the same way by every case that edits a level-2 field.
 	specFields := func(props map[string]any) map[string]any {
@@ -96,6 +128,7 @@ func dnCases() map[string]struct {
 	return map[string]struct {
 		mutate func(props map[string]any)
 		says   string
+		refs   bool
 	}{
 		"level-2 field dropped": {
 			mutate: func(props map[string]any) { delete(limitFields(props), "depth") },
@@ -245,6 +278,124 @@ func dnCases() map[string]struct {
 			},
 			says: `object "spec" field "slots" removes value(s) "high"`,
 		},
+		// A value constraint tightened. Any change to a pattern counts, a
+		// bound counts in its narrowing direction, and each is counted in the
+		// value's own container and at its own depth, the link data included.
+		"property pattern changed": {
+			mutate: func(props map[string]any) {
+				props["code"] = map[string]any{"type": "string", "pattern": "^[a-z]{3}$"}
+			},
+			says: `property "code" changes its pattern to ^[a-z]{3}$`,
+		},
+		"repeated property pattern changed": {
+			mutate: func(props map[string]any) {
+				props["codes"] = map[string]any{"type": "string", "pattern": "^[a-z]{3}$", "repeated": true}
+			},
+			says: `property "codes" changes its pattern to ^[a-z]{3}$`,
+		},
+		"property pattern added": {
+			mutate: func(props map[string]any) {
+				props["plain"] = map[string]any{"type": "string", "pattern": "^x"}
+			},
+			says: `property "plain" changes its pattern to ^x`,
+		},
+		"keyed property pattern added": {
+			mutate: func(props map[string]any) {
+				props["notes"] = map[string]any{"type": "string", "keyed": true, "pattern": "^x"}
+			},
+			says: `property "notes" changes its pattern to ^x`,
+		},
+		"digest pattern changed": {
+			mutate: func(props map[string]any) {
+				props["fingerprint"] = map[string]any{"type": "digest", "pattern": "^cd"}
+			},
+			says: `property "fingerprint" changes its pattern to ^cd`,
+		},
+		// A sealed value cannot be matched, so any pattern change on a secret
+		// counts every row holding one, and the guard says so.
+		"secret pattern changed": {
+			mutate: func(props map[string]any) {
+				props["token"] = map[string]any{"type": "secret", "pattern": "^new-"}
+			},
+			says: `property "token" changes its pattern to ^new- while 1 live records hold a sealed value, which cannot be checked against a pattern`,
+		},
+		"property min raised": {
+			mutate: func(props map[string]any) {
+				props["count"] = map[string]any{"type": "int", "min": 6, "max": 10}
+			},
+			says: `property "count" requires values >= 6`,
+		},
+		"property max lowered": {
+			mutate: func(props map[string]any) {
+				props["count"] = map[string]any{"type": "int", "min": 1, "max": 4}
+			},
+			says: `property "count" requires values <= 4`,
+		},
+		"float min added": {
+			mutate: func(props map[string]any) { props["ratio"] = map[string]any{"type": "float", "min": 0.5} },
+			says:   `property "ratio" requires values >= 0.5`,
+		},
+		"float max added": {
+			mutate: func(props map[string]any) { props["ratio"] = map[string]any{"type": "float", "max": 0.1} },
+			says:   `property "ratio" requires values <= 0.1`,
+		},
+		"decimal min raised": {
+			mutate: func(props map[string]any) { props["price"] = map[string]any{"type": "decimal", "min": 10} },
+			says:   `property "price" requires values >= 10`,
+		},
+		"decimal max added": {
+			mutate: func(props map[string]any) {
+				props["price"] = map[string]any{"type": "decimal", "min": 0, "max": 5}
+			},
+			says: `property "price" requires values <= 5`,
+		},
+		"field pattern changed": {
+			mutate: func(props map[string]any) {
+				specFields(props)["code"] = map[string]any{"type": "string", "pattern": "^[a-z]{3}$"}
+			},
+			says: `object "spec" field "code" changes its pattern to ^[a-z]{3}$`,
+		},
+		"field pattern added inside a repeated object": {
+			mutate: func(props map[string]any) {
+				props["tools"].(map[string]any)["fields"].(map[string]any)["label"] = map[string]any{"type": "string", "pattern": "^[a-z]{3}$"}
+			},
+			says: `object "tools" field "label" changes its pattern to ^[a-z]{3}$`,
+		},
+		"field pattern added inside a keyed map": {
+			mutate: func(props map[string]any) {
+				props["installs"].(map[string]any)["fields"].(map[string]any)["version"] = map[string]any{"type": "string", "pattern": "^[0-9]+$"}
+			},
+			says: `object "installs" field "version" changes its pattern to ^[0-9]+$`,
+		},
+		"level-3 field min added": {
+			mutate: func(props map[string]any) { limitFields(props)["depth"] = map[string]any{"type": "int", "min": 5} },
+			says:   `object "spec.limits" field "depth" requires values >= 5`,
+		},
+		"level-4 field max added": {
+			mutate: func(props map[string]any) { budgetFields(props)["calls"] = map[string]any{"type": "int", "max": 2} },
+			says:   `object "spec.limits.budgets" field "calls" requires values <= 2`,
+		},
+		"link property pattern changed": {
+			mutate: func(props map[string]any) {
+				props["pinned"].(map[string]any)["properties"].(map[string]any)["note"] = map[string]any{"type": "string", "pattern": "^[a-z]{3}$"}
+			},
+			says: `reference "pinned" changes link property "note"'s pattern to ^[a-z]{3}$`,
+			refs: true,
+		},
+		"link property min raised": {
+			mutate: func(props map[string]any) {
+				props["pinned"].(map[string]any)["properties"].(map[string]any)["weight"] = map[string]any{"type": "int", "min": 6}
+			},
+			says: `reference "pinned" requires link property "weight" >= 6`,
+			refs: true,
+		},
+		"link property max added": {
+			mutate: func(props map[string]any) {
+				props["pinned"].(map[string]any)["properties"].(map[string]any)["weight"] = map[string]any{"type": "int", "min": 1, "max": 4}
+			},
+			says: `reference "pinned" requires link property "weight" <= 4`,
+			refs: true,
+		},
 	}
 }
 
@@ -260,7 +411,11 @@ func TestNestedNarrowingsRefusedWithLiveRows(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			props := dnBaseProps()
 			c.mutate(props)
-			wantNarrowingGuard(t, dwApply(t, ds, props), c.says, "1 live records")
+			count := "1 live records"
+			if c.refs {
+				count = "1 live references"
+			}
+			wantNarrowingGuard(t, dwApply(t, ds, props), c.says, count)
 		})
 	}
 }
@@ -446,4 +601,112 @@ func TestNestedNarrowingCountsOnlyTheRowsThatCarryTheValue(t *testing.T) {
 		Properties: map[string]any{"spec": map[string]any{"limits": map[string]any{"depth": 1}}},
 	})
 	wantNarrowingGuard(t, dwApply(t, ds, props), `drops field "depth"`, "1 live records")
+}
+
+// A constraint change admits when every stored value already satisfies it, and
+// a loosening always admits. The other direction of the guard: one that refused
+// every pattern edit would block the ordinary evolution of a kind whose rows
+// already conform.
+func TestConstraintChangesAdmitWhatTheDataSatisfies(t *testing.T) {
+	t.Parallel()
+	_, ds := newDataset(t)
+	if err := dwApply(t, ds, dnBaseProps()); err != nil {
+		t.Fatalf("install the base authority: %v", err)
+	}
+	dnRow(t, ds)
+
+	cases := map[string]func(props map[string]any){
+		"pattern dropped": func(props map[string]any) {
+			props["code"] = map[string]any{"type": "string"}
+		},
+		"pattern changed to one the value matches": func(props map[string]any) {
+			props["code"] = map[string]any{"type": "string", "pattern": "^[a-d]+$"}
+		},
+		// An escape RE2 reads and Postgres' ARE does not: the count runs the
+		// write path's regexp, so the value is judged as its next write would
+		// judge it, not as SQL would.
+		"pattern with an RE2-only escape the value matches": func(props map[string]any) {
+			props["code"] = map[string]any{"type": "string", "pattern": `^[a-z]+\z`}
+		},
+		"bounds loosened": func(props map[string]any) {
+			props["count"] = map[string]any{"type": "int", "min": 0, "max": 100}
+		},
+		"min raised to the held value": func(props map[string]any) {
+			props["count"] = map[string]any{"type": "int", "min": 5, "max": 10}
+		},
+		"float max added at the held value": func(props map[string]any) {
+			props["ratio"] = map[string]any{"type": "float", "max": 0.25}
+		},
+		"decimal max added at the held value": func(props map[string]any) {
+			props["price"] = map[string]any{"type": "decimal", "min": 0, "max": 5.5}
+		},
+		"digest pattern changed to one the value matches": func(props map[string]any) {
+			props["fingerprint"] = map[string]any{"type": "digest", "pattern": "^(ab)+$"}
+		},
+		"link property pattern changed to one the value matches": func(props map[string]any) {
+			props["pinned"].(map[string]any)["properties"].(map[string]any)["note"] = map[string]any{"type": "string", "pattern": "^[a-d]+$"}
+		},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			props := dnBaseProps()
+			mutate(props)
+			if err := dwApply(t, ds, props); err != nil {
+				t.Fatalf("every stored value satisfies the new constraint, so it must land: %v", err)
+			}
+			if err := dwApply(t, ds, dnBaseProps()); err != nil {
+				t.Fatalf("restore the base declaration: %v", err)
+			}
+		})
+	}
+
+	// The same RE2-only escape, refusing: the row is judged by the regexp the
+	// write path compiles, in both directions.
+	props := dnBaseProps()
+	props["code"] = map[string]any{"type": "string", "pattern": `^[a-c]+\z`}
+	wantNarrowingGuard(t, dwApply(t, ds, props), `property "code" changes its pattern to ^[a-c]+\z`, "1 live records")
+}
+
+// A constraint can reach a kind through a `propertytype` it refines from. The
+// kind's own declaration does not move; the type it names does, and the guard
+// counts the kind's rows all the same, because the candidate registry resolves
+// the refinement exactly as the write path will.
+func TestConstraintTightenedThroughAPropertyTypeIsRefused(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	const pkg = "constraints.example.substrate.reamde.dev/codes"
+	propertyType := func(pattern string) map[string]any {
+		return map[string]any{
+			"kind":     vocabulary.CoreKind(vocabulary.DocPropertyType),
+			"metadata": map[string]any{"id": pkg + "/code"},
+			"data": map[string]any{
+				"authority": "constraints.example.substrate.reamde.dev",
+				"package":   "codes",
+				"base":      "string",
+				"pattern":   pattern,
+			},
+		}
+	}
+	item := vocabulary.KindManifest(pkg,
+		map[string]any{"singular": "item", "plural": "items"},
+		map[string]any{"properties": map[string]any{"code": map[string]any{"type": "code"}}})
+	sa := applier(t, ds)
+	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(pkg, 0), propertyType("^[a-z]+$"), item,
+	}); err != nil {
+		t.Fatalf("install the package: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: pkg + "/item", ID: "one", Properties: map[string]any{"code": "abcd"},
+	})
+
+	// The property type alone tightens; the kind document is not resent.
+	_, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{propertyType("^[a-z]{3}$")})
+	wantNarrowingGuard(t, err, `type `+pkg+`/item: property "code" changes its pattern to ^[a-z]{3}$`, "1 live records")
+
+	// A change the stored value satisfies lands through the same channel.
+	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{propertyType("^[a-z]{1,8}$")}); err != nil {
+		t.Fatalf("a refinement every row satisfies must land: %v", err)
+	}
 }
