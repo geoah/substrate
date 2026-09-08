@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"sort"
 
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/substrate"
@@ -38,7 +39,7 @@ func (h *handler) getCatalog(w http.ResponseWriter, r *http.Request) {
 		}
 		home := homeAuthority(r.Context())
 		for _, b := range h.catalog.Bundles() {
-			items = append(items, h.catalogItemFor(r.Context(), b, installed[b.HeldID(heldIDs(installed), home)]))
+			items = append(items, h.catalogItemFor(r.Context(), b, heldCopy(b, installed, home)))
 		}
 	}
 	writeJSON(w, http.StatusOK, substrate.Listed(items))
@@ -73,8 +74,39 @@ func (h *handler) getCatalogItem(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, err)
 		return
 	}
-	held := installed[b.HeldID(heldIDs(installed), homeAuthority(r.Context()))]
-	writeJSON(w, http.StatusOK, h.catalogItemFor(r.Context(), b, held))
+	writeJSON(w, http.StatusOK, h.catalogItemFor(r.Context(), b, heldCopy(b, installed, homeAuthority(r.Context()))))
+}
+
+// heldCopy is the installed bundle that IS catalog entry b in this
+// repository, or nil. A copy that carries an origin is matched on it: two
+// authorities may each publish a sample of one package word, and both land
+// under the repository's authority as `<home>/<package>`, so the landed id
+// alone would read both entries as installed after either import and hand
+// both the one copy's provenance. Only a copy stamped before the origin
+// existed, and a provider (which is never stamped), fall back to the id
+// lookup HeldID does.
+func heldCopy(b *catalog.Bundle, installed map[string]*substrate.BundleStatus, home string) *substrate.BundleStatus {
+	for _, id := range sortedStatusIDs(installed) {
+		if st := installed[id]; st.Origin == b.ID {
+			return st
+		}
+	}
+	st := installed[b.HeldID(heldIDs(installed), home)]
+	if st == nil || st.Origin != "" {
+		return nil
+	}
+	return st
+}
+
+// sortedStatusIDs is the map's keys in one order, so the match above is the
+// same on every read.
+func sortedStatusIDs(installed map[string]*substrate.BundleStatus) []string {
+	ids := make([]string, 0, len(installed))
+	for id := range installed {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // catalogItemFor assembles one wire entry, asking the catalog for the upgrade

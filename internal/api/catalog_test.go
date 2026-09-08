@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/geoah/substrate/kinds"
 	"github.com/geoah/substrate/samples"
@@ -376,19 +377,22 @@ func TestCatalogInstallRefusesNonOwner(t *testing.T) {
 	wantErrorCode(t, rec, http.StatusForbidden, codeForbidden)
 }
 
-// heldDataset reports one bundle installed, whichever id the test names. It
-// exists to ask the catalog read the one question the two tiers make
-// ambiguous: which id counts as "this repository has it".
+// heldDataset reports one bundle installed, whichever id the test names, with
+// the origin stamp the test gives it ("" for a copy stamped before the origin
+// existed, or a provider). It exists to ask the catalog read the one question
+// the two tiers make ambiguous: which id counts as "this repository has it".
 type heldDataset struct {
 	*fakeDataset
-	id string
+	id     string
+	origin string
 }
 
 func (d heldDataset) BundleStatuses(context.Context) ([]substrate.BundleStatus, error) {
-	return []substrate.BundleStatus{{
-		ID: d.id, Name: "web", Installed: true, Enabled: true,
-		Origin: webBundleID, OriginVersion: 8, Modified: true,
-	}}, nil
+	st := substrate.BundleStatus{ID: d.id, Name: "web", Installed: true, Enabled: true}
+	if d.origin != "" {
+		st.Origin, st.OriginVersion, st.Modified = d.origin, 8, true
+	}
+	return []substrate.BundleStatus{st}, nil
 }
 
 func (d heldDataset) BundleStatus(_ context.Context, id string) (substrate.BundleStatus, error) {
@@ -421,7 +425,8 @@ var _ substrate.BundleOps = heldDataset{}
 
 type heldService struct {
 	*fakeService
-	id string
+	id     string
+	origin string
 }
 
 func (s *heldService) Authenticate(ctx context.Context, secret string) (substrate.Dataset, substrate.TokenInfo, error) {
@@ -429,19 +434,30 @@ func (s *heldService) Authenticate(ctx context.Context, secret string) (substrat
 	if err != nil {
 		return nil, info, err
 	}
-	return heldDataset{fakeDataset: ds.(*fakeDataset), id: s.id}, info, nil
+	return heldDataset{fakeDataset: ds.(*fakeDataset), id: s.id, origin: s.origin}, info, nil
 }
 
 // newHeldEnv is a catalog env whose repository holds exactly one bundle, under
-// the id given.
+// the id given. A held web copy is stamped with the web sample as its origin;
+// anything else (a provider) carries none, as a provider never does.
 func newHeldEnv(t *testing.T, id string) *testEnv {
 	t.Helper()
 	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
+	origin := ""
+	if strings.HasSuffix(id, "/web") {
+		origin = webBundleID
+	}
+	return newHeldEnvFor(t, cat, id, origin)
+}
+
+// newHeldEnvFor is newHeldEnv over a given catalog and origin stamp.
+func newHeldEnvFor(t *testing.T, cat *catalog.Catalog, id, origin string) *testEnv {
+	t.Helper()
 	base := newFakeService()
-	svc := &heldService{fakeService: base, id: id}
+	svc := &heldService{fakeService: base, id: id, origin: origin}
 	clock := &testClock{}
 	return &testEnv{
 		svc:   base,
@@ -512,11 +528,133 @@ func TestCatalogCarriesTheHeldCopyProvenance(t *testing.T) {
 	}
 }
 
+// otherWebBundleID is a second SAMPLE of the package word `web`, published by
+// another authority: both land as `<home>/web`, so the landed id alone cannot
+// say which one a repository imported.
+const otherWebBundleID = "other.example.com/web"
+
+// catalogWithOtherWeb is the shipped catalog plus a second sample root
+// carrying otherWebBundleID.
+func catalogWithOtherWeb(t *testing.T) *catalog.Catalog {
+	t.Helper()
+	other := fstest.MapFS{
+		"web/bundle.yaml": &fstest.MapFile{Data: []byte(`
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: other.example.com/web
+data:
+  authority: other.example.com
+  package: web
+  version: 2
+---
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: other.example.com/web
+data:
+  authority: other.example.com
+  package: web
+  description: another authority's web sample
+  installs:
+    - other.example.com/web/page
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: other.example.com/web/page
+data:
+  authority: other.example.com
+  package: web
+  names:
+    singular: page
+  properties:
+    url:
+      type: string
+`)},
+	}
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()), catalog.SampleRoot(other))
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	if _, ok := cat.ByID(otherWebBundleID); !ok {
+		t.Fatalf("the second web sample did not load: %v", cat.Warnings())
+	}
+	return cat
+}
+
+// provenanceFor reads one catalog entry's installed flag and provenance off
+// the listing AND its detail, which must agree.
+func provenanceFor(t *testing.T, env *testEnv, id string) (installed bool, origin string) {
+	t.Helper()
+	type item struct {
+		ID        string `json:"id"`
+		Installed bool   `json:"installed"`
+		Origin    string `json:"origin"`
+	}
+	tok := env.svc.token("geoah")
+	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	body := decodeJSON[struct {
+		Items []item `json:"items"`
+	}](t, rec)
+	var listed *item
+	for i := range body.Items {
+		if body.Items[i].ID == id {
+			listed = &body.Items[i]
+		}
+	}
+	if listed == nil {
+		t.Fatalf("bundle %q missing from the catalog listing", id)
+	}
+	rec = env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape(id), tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	detail := decodeJSON[item](t, rec)
+	if detail.Installed != listed.Installed || detail.Origin != listed.Origin {
+		t.Errorf("%s: detail (installed=%v origin=%q) disagrees with the listing (installed=%v origin=%q)",
+			id, detail.Installed, detail.Origin, listed.Installed, listed.Origin)
+	}
+	return listed.Installed, listed.Origin
+}
+
+// Two samples of one package word from two authorities both land as
+// `<home>/web`. The copy's ORIGIN says which one was imported, so only that
+// entry reads installed and carries the provenance; the other is still on
+// offer.
+func TestCatalogMatchesAnImportedSampleByItsOrigin(t *testing.T) {
+	cat := catalogWithOtherWeb(t)
+	for _, imported := range []string{webBundleID, otherWebBundleID} {
+		env := newHeldEnvFor(t, cat, "geoah.example.com/web", imported)
+		for _, id := range []string{webBundleID, otherWebBundleID} {
+			installed, origin := provenanceFor(t, env, id)
+			if id == imported {
+				if !installed || origin != imported {
+					t.Errorf("imported %s: entry %s installed=%v origin=%q, want installed with its own origin", imported, id, installed, origin)
+				}
+				continue
+			}
+			if installed || origin != "" {
+				t.Errorf("imported %s: entry %s installed=%v origin=%q, want on offer with no provenance", imported, id, installed, origin)
+			}
+		}
+	}
+}
+
+// A copy imported before the origin stamp existed carries none, and the
+// landed id is all there is to match on: both entries read installed, as
+// they did before, and neither carries provenance.
+func TestCatalogFallsBackToTheLandedIDForAnUnstampedCopy(t *testing.T) {
+	env := newHeldEnvFor(t, catalogWithOtherWeb(t), "geoah.example.com/web", "")
+	for _, id := range []string{webBundleID, otherWebBundleID} {
+		installed, origin := provenanceFor(t, env, id)
+		if !installed || origin != "" {
+			t.Errorf("entry %s installed=%v origin=%q, want installed with no provenance", id, installed, origin)
+		}
+	}
+}
+
 // A sample INSTALLED verbatim is held under the SHIPPED id, which is still a
 // door while the providers name sample packages under `requires:`. The listing
 // has to see that one too, or the console offers an install that already ran.
 func TestCatalogReportsAVerbatimInstalledSampleInstalled(t *testing.T) {
-	env := newHeldEnv(t, webBundleID)
+	env := newHeldEnvFor(t, catalogWithOtherWeb(t), webBundleID, "")
 	if !installedFor(t, env, webBundleID) {
 		t.Error("a verbatim-installed sample reads as available, so the console offers it again")
 	}

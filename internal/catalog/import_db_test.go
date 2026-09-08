@@ -165,6 +165,24 @@ func TestImportLandsASampleUnderTheRepositoryAuthority(t *testing.T) {
 	}
 	wantOrigin(t, st3, tasksSampleID, b.Version, true)
 
+	// An ACTOR declared into the package is an edit too: the digest keeps every
+	// actor row but the two the package itself stands for.
+	importSamples(t, c, ds, tasksSampleID)
+	applier, ok := ds.(substrate.VocabularyApplier)
+	if !ok {
+		t.Fatal("dataset does not support ApplyVocabularyDocuments")
+	}
+	if _, err := applier.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+		vocabulary.ActorManifest(homeAuthority+"/tasks", "helper"),
+	}); err != nil {
+		t.Fatalf("declare an actor into the copy: %v", err)
+	}
+	stActor, err := ds.(bundleStatuser).BundleStatus(ctx, b.LandedID(homeAuthority))
+	if err != nil {
+		t.Fatalf("bundle status after the actor: %v", err)
+	}
+	wantOrigin(t, stActor, tasksSampleID, b.Version, true)
+
 	// A re-import REPLACES the package (record 0048), edits included, and
 	// re-stamps it: the copy is the shipped closure again and reads so, even
 	// though its versions now sit above the shipped ones.

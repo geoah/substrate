@@ -1285,15 +1285,24 @@ func (t *txn) stampOrigin(reg *vocabulary.Registry, projecting map[string]bool, 
 	if _, name := vocabulary.SplitPackageRef(opts.origin); name == "" || name != g.Name {
 		return nil
 	}
+	// Each written row is read back through rowDocument, the same read the
+	// status and the registry rebuild use, so an actor row (whose document
+	// omits the default tier) hashes the same on both sides.
 	docs := make([]vocabulary.Document, 0, len(decls))
 	for _, d := range decls {
 		e := out[d.short+"\x00"+d.id]
 		if e == nil {
 			return fmt.Errorf("substrate/engine: stamp the origin of %s: %s %s was not projected", g.Identity, d.short, d.id)
 		}
-		docs = append(docs, vocabulary.Document{Kind: d.short, ID: d.id, Data: declarationData(d.short, e.Properties)})
+		doc, ok, err := rowDocument(d.id, d.typ, e.Properties)
+		if err != nil {
+			return fmt.Errorf("substrate/engine: stamp the origin of %s: %w", g.Identity, err)
+		}
+		if ok {
+			docs = append(docs, doc)
+		}
 	}
-	digest, err := closureDigest(docs)
+	digest, err := closureDigest(g.Identity, docs)
 	if err != nil {
 		return err
 	}
@@ -1313,21 +1322,22 @@ func (t *txn) stampOrigin(reg *vocabulary.Registry, projecting map[string]bool, 
 	return nil
 }
 
-// closureDigest fingerprints a package's declarations as DOCUMENTS: each one
-// as its loader-admitted data minus `version`, keyed by kind and id and
-// sorted, so a kind, trait, property type, mapping, function, agent or bundle
-// document that is edited, added or removed changes it and a version alone
-// does not (a re-import that puts an edited copy back moves versions and
-// nothing else). Actor documents are left out because the read side
-// synthesizes the package-named one (vocabularyDocumentRows) and the
-// projection writes none for it, and an actor is declared by nothing but its
-// own row anyway.
+// closureDigest fingerprints the declarations of package pkg as DOCUMENTS:
+// each one as its loader-admitted data minus `version`, keyed by kind and id
+// and sorted, so a kind, trait, property type, mapping, function, agent,
+// actor or bundle document that is edited, added or removed changes it and a
+// version alone does not (a re-import that puts an edited copy back moves
+// versions and nothing else). The two actors the package itself stands for
+// are left out: the package-named actor has no row (record 60) and the
+// package's bundle actor is synthesized on read when its row is absent
+// (vocabularyDocumentRows), so neither is a declaration the two sides agree
+// on; every other actor row is.
 //
 // Both sides hash rows read back from the store, and json.Marshal sorts map
 // keys and renders an integral float and an int the same, so the record a
 // put returned and the jsonb a later read decodes hash alike; it is the same
 // comparison declarationDataEqual rests on.
-func closureDigest(docs []vocabulary.Document) (string, error) {
+func closureDigest(pkg string, docs []vocabulary.Document) (string, error) {
 	type entry struct {
 		Kind string         `json:"kind"`
 		ID   string         `json:"id"`
@@ -1335,7 +1345,7 @@ func closureDigest(docs []vocabulary.Document) (string, error) {
 	}
 	entries := make([]entry, 0, len(docs))
 	for _, d := range docs {
-		if d.Kind == vocabulary.DocActor {
+		if d.Kind == vocabulary.DocActor && (d.ID == pkg || d.ID == vocabulary.PackageActor(pkg)) {
 			continue
 		}
 		entries = append(entries, entry{Kind: d.Kind, ID: d.ID, Data: minusVersionKey(d.Data)})
@@ -1366,7 +1376,7 @@ func (ds *dataset) packageClosureDigest(ctx context.Context, pkg string) (string
 	for _, key := range sortedKeys(rows) {
 		docs = append(docs, rows[key])
 	}
-	return closureDigest(docs)
+	return closureDigest(pkg, docs)
 }
 
 // pruneSchemaRows tombstones schema record rows of the touched packages the
