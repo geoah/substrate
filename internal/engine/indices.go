@@ -23,12 +23,9 @@ import (
 // WHERE it runs from matters: a plain `CREATE INDEX` locks the shared
 // table for every repository, so it is taken exactly twice — ONCE PER PROCESS
 // at Open, over the binary's shipped vocabulary, and on the schema-write path
-// that admits a kind the process has not seen (a bundle install). It is
-// NOT on the repository-open path: opening a repository declares nothing.
-func (ds *dataset) ensureIndices(ctx context.Context) error {
-	return ensureIndices(ctx, ds.svc.admin, ds.registry().Kinds())
-}
-
+// that admits a kind the process has not seen (a bundle install), before that
+// path's transaction opens (vocabularywrite.go). It is NOT on the
+// repository-open path: opening a repository declares nothing.
 func ensureIndices(ctx context.Context, admin *sql.DB, types []*vocabulary.Kind) error {
 	for _, t := range types {
 		for i, cols := range t.Indices {

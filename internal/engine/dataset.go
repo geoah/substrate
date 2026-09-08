@@ -128,6 +128,10 @@ type dataset struct {
 	mu   sync.RWMutex
 	reg  *vocabulary.Registry
 	info substrate.RepositoryInfo
+	// beforeSignal, under mu, runs after a transaction's publish hooks and
+	// before its head signal when set. Only a test sets it: the order
+	// "published, then signaled" is observable nowhere else without a race.
+	beforeSignal func(t *txn)
 	// blobSweepAfter is the blob orphan sweep's cursor: the last digest the
 	// previous pass looked at, so a store with more objects than one batch is
 	// walked whole instead of the sweep restarting at the front every time.
@@ -337,6 +341,12 @@ type txn struct {
 	// decision's thread resume, which must never run inside the transaction
 	// that recorded it.
 	afterCommit []func()
+	// publish runs after the commit and BEFORE the head signal and the
+	// afterCommit hooks: the vocabulary apply's registry pointer swap
+	// (vocabularywrite.go). Whatever is woken by the signal reads the live
+	// registry, so a swap after the signal leaves a window in which the
+	// declaration's changelog entry is visible and the declaration is not.
+	publish []func()
 	// interactionThread marks the agent loop's own ask dispatch: the ONE
 	// writer allowed to stamp an interaction's thread reference
 	// (interactions.go admitInteraction).
@@ -437,6 +447,15 @@ func (ds *dataset) inTx(ctx context.Context, actor substrate.Actor, internal boo
 	}
 	if err := ds.commitAndMirror(tx, t); err != nil {
 		return err
+	}
+	for _, fn := range t.publish {
+		fn()
+	}
+	ds.mu.RLock()
+	beforeSignal := ds.beforeSignal
+	ds.mu.RUnlock()
+	if beforeSignal != nil {
+		beforeSignal(t)
 	}
 	if t.maxSeq > 0 {
 		ds.watch.signal(t.maxSeq)

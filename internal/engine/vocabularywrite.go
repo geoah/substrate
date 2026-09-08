@@ -9,11 +9,16 @@ package engine
 //     and compiles it (CEL guards, templates) BEFORE the transaction opens; a
 //     failed closure fails the whole batch with the loader's full problem list;
 //   - record rows and changelog rows commit together (the changelog row is the
-//     established signal), then the registry pointer publishes under ds.mu —
-//     commit IS activation, RCU-style: in-flight function deliveries finish on
-//     the snapshot they started with;
+//     established signal), then the registry pointer publishes under ds.mu,
+//     after the commit and before the head signal (txn.publish): commit IS
+//     activation, RCU-style, in-flight function deliveries finish on the
+//     snapshot they started with, and nothing woken by the entry reads the
+//     registry it replaced;
 //   - one per-repository schema-write mutex serializes schema writes against each
-//     other; data writes never wait — they read whichever pointer is current;
+//     other, and the registry-dependency advisory lock (registryDepKey) orders
+//     them against data writes: a data write holds it shared from kind
+//     resolution to commit, an apply holds it exclusive, so no write lands a
+//     value against a declaration the apply is replacing;
 //   - deleting a type with live instances is refused, counted inside the same
 //     transaction; identities are never reused (history orphans by design);
 //   - repository open rebuilds the registry FROM the schema record rows, which
@@ -278,6 +283,18 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 	if err := ds.prepareFunctions(ctx, candidate, prepare); err != nil {
 		return nil, err
 	}
+	// The declared indexes, BEFORE the transaction: an index the engine cannot
+	// build (a name that is not a column, a statement Postgres refuses) is an
+	// admission failure, and an admission failure must land nothing. It ran
+	// after the commit once, so a refused index came back as an error from an
+	// apply that had already published. CREATE INDEX cannot run inside the
+	// transaction either: it takes a SHARE lock on `records` that the
+	// transaction's own row writes conflict with. An index built for a batch
+	// the guards below then refuse is harmless: IF NOT EXISTS finds it next
+	// time, and nothing reads it until its kind lands.
+	if err := ensureIndices(ctx, ds.svc.admin, candidate.Kinds()); err != nil {
+		return nil, err
+	}
 
 	// The transaction: rows + changelog together, all or none.
 	written := map[string]*substrate.Record{}
@@ -366,19 +383,18 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 			return fmt.Errorf("%w: this apply wrote rows of a kind it removes: %s",
 				substrate.ErrGuard, strings.Join(final, "; "))
 		}
+		// Publish: the commit is the activation and the pointer swap is how it
+		// is seen. It runs after the commit and before the head signal, so a
+		// watcher woken by the kind's entry resolves the kind. A crash between
+		// the two is healed by the rebuild-from-records at repository open.
+		t.publish = append(t.publish, func() {
+			ds.mu.Lock()
+			ds.reg = candidate
+			ds.mu.Unlock()
+		})
 		return nil
 	})
 	if err != nil {
-		return nil, err
-	}
-
-	// Publish: commit happened, the pointer swap is the activation. A crash
-	// between the two is healed by the rebuild-from-records at repository open.
-	ds.mu.Lock()
-	ds.reg = candidate
-	ds.mu.Unlock()
-
-	if err := ds.ensureIndices(ctx); err != nil {
 		return nil, err
 	}
 	// Bodies prepared synchronously above; what remains after publish is the
