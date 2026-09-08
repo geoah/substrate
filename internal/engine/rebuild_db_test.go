@@ -227,7 +227,7 @@ func offersIn(t *testing.T, snap []byte) int {
 // else.
 func TestRebuildReproducesTheFold(t *testing.T) {
 	t.Parallel()
-	svc, ds := newDataset(t)
+	svc, ds, dsn := newDatasetWithDSN(t)
 	cleared := writeSomeHistory(t, ds)
 	installPeopleSourcesWithDir(t, ds)
 	writeMappedHistory(t, ds)
@@ -241,6 +241,11 @@ func TestRebuildReproducesTheFold(t *testing.T) {
 	rb, ok := svc.(rebuilder)
 	if !ok {
 		t.Fatal("the service cannot rebuild a repository")
+	}
+	// The rebuild must DERIVE the offers, not find them where the live path
+	// left them: emptied here, they are back only if the rebuild put them back.
+	if _, err := rawDB(t, dsn).Exec(`DELETE FROM property_offers`); err != nil {
+		t.Fatalf("empty property_offers: %v", err)
 	}
 	report, err := rb.RebuildRepository(context.Background(), "geoah")
 	if err != nil {

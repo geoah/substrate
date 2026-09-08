@@ -257,6 +257,13 @@ func (t *txn) mergeRecordIf(winnerRef, loserRef eref, winnerVersion, loserVersio
 	if err := t.afterTombstone(loserRef); err != nil {
 		return nil, err
 	}
+	// The winner's row was re-stamped above (foldRow), and where the winner is
+	// a SOURCE that stamp is its subject's offer stamp (mapping.go
+	// syncOffers): the subject recomputes, or the live offer keeps the
+	// pre-merge stamp a rebuild would not derive.
+	if err := t.recomputeSubjectsOf(winnerRef); err != nil {
+		return nil, err
+	}
 	// The winner's source set just grew: recompute it.
 	if err := t.recompute(winnerRef); err != nil {
 		return nil, err
@@ -701,9 +708,12 @@ func (t *txn) splitIf(mergeID string, ifVersion *int64) (*substrate.Record, erro
 			return nil, err
 		}
 	}
-	// And where the loser is a SOURCE, it contributes to its subject again.
-	if err := t.recomputeSubjectsOf(loserRef); err != nil {
-		return nil, err
+	// And where either is a SOURCE: the loser contributes to its subject
+	// again, and the winner's re-stamped row is its subject's offer stamp.
+	for _, ref := range []eref{winnerRef, loserRef} {
+		if err := t.recomputeSubjectsOf(ref); err != nil {
+			return nil, err
+		}
 	}
 	if _, err := t.tombstone(eref{Kind: kindRecordMerge, ID: mergeID}, ""); err != nil {
 		return nil, err

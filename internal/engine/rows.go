@@ -262,6 +262,12 @@ func nonNilStrings(ss []string) []string {
 // and visibility order the same — the guarantee consumers resume on — and,
 // because the lock is per repository, it also makes `seq` a per-repository
 // gapless counter rather than a shared one with holes.
+//
+// It is also the FIRST key of the global lock order, which every transaction
+// keeps: changelog < registry-dep < subject-type < record. inTx takes it
+// before the transaction locks anything else, so no writer holds a record
+// (an advisory record lock or a row FOR UPDATE) while waiting for the
+// changelog, and RebuildRepository takes it first for the same reason.
 const changelogLockKey = "changelog"
 
 // changeEntry is one appended changelog row's ADDRESS: the seq addresses the

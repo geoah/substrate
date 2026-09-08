@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -481,6 +482,26 @@ type mappedSource struct {
 	actor string
 }
 
+// changedMappingTargets lists the target kinds whose mapping set differs
+// between two registries: a mapping added, removed or redefined, in identity
+// order.
+func changedMappingTargets(old, cand *vocabulary.Registry) []string {
+	targets := map[string]bool{}
+	for _, m := range old.Mappings() {
+		targets[m.To] = true
+	}
+	for _, m := range cand.Mappings() {
+		targets[m.To] = true
+	}
+	var out []string
+	for _, k := range sortedKeys(targets) {
+		if !reflect.DeepEqual(old.MappingsTo(k), cand.MappingsTo(k)) {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
 // mappedInputs is what a target's offers and its accepted values are both
 // computed from: its live sources, latest write first, and the union of the
 // properties its mappings map.
@@ -594,7 +615,8 @@ func (t *txn) recompute(target eref) error {
 		value, actor := selectValue(in.unionProp[name], contributionsFor(name, in.srcs))
 		// nil deletes: release-by-omission. Not on a required property, which
 		// the write path refuses to empty (checkRequiredProps): the last value
-		// stands, credited as it was, until something writes it. Otherwise the
+		// stands, and its property_managers row goes on crediting the actor
+		// whose source has gone, until something writes it. Otherwise the
 		// delete or sweep that removed the property's last source would fail
 		// on the refusal, the sweep on every pass.
 		if value == nil {
@@ -855,6 +877,11 @@ func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool,
 			}
 			cands := contributionsFor(name, mine)
 			if v, _ := selectValue(unionProp[name], cands); v != nil {
+				// cands[0] is the latest source CARRYING the path. For a union
+				// property it may carry an empty list and contribute no item,
+				// so the stamp is not always a contributing source's; it is
+				// the same on the live path and the rebuild, which is what
+				// the stamp has to be.
 				current[offerKey{name, s.actor}] = offer{value: v, at: cands[0].updatedAt}
 			}
 			actors[s.actor] = true
@@ -992,7 +1019,7 @@ func (t *txn) afterTombstone(ref eref) error {
 // per mapping its kind carries (record 49). A kind the registry does not hold
 // carries no mapping, so a record of a parked package recomputes nothing.
 func (t *txn) recomputeSubjectsOf(src eref) error {
-	reg := t.ds.registry()
+	reg := t.declarations()
 	ty, ok := reg.ByIdentity(src.Kind)
 	if !ok {
 		return nil

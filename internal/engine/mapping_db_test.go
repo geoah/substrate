@@ -1648,6 +1648,69 @@ func TestCascadeTombstoneRecomputesItsSubject(t *testing.T) {
 	wantSubjectWithoutEntry(t, svc, ds, sam)
 }
 
+// Two entries of one account on two DIFFERENT people. A merge re-stamps the
+// winner's row (foldRow) and a split re-stamps both, and a source's stamp is
+// its subject's offer stamp, so each verb has to recompute the winner's
+// subject as well as the loser's, or the live offer keeps a stamp a rebuild
+// does not derive. TestMergedSourceLeavesItsSubject cannot see this: its two
+// entries share one subject, which the loser's recompute covers.
+func TestMergedSourcesWithDistinctSubjectsKeepBothCurrent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds := newDataset(t)
+	installPeopleSourcesWithDir(t, ds)
+
+	sam := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: typePerson, Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
+	})
+	pat := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: typePerson, Properties: map[string]any{"name": "Pat", "emails": []any{"pat@acme.com"}},
+	})
+	acc := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: enginetest.AccountType, ID: "dir-acct",
+		Properties: map[string]any{"provider": "dir", "label": "Work"},
+	})
+	first := syncSource(t, ds, dirsync, typeDirEntry, "e-1", map[string]any{
+		"fullName": "Samuel J.", "nickname": "Sammy", "email": "sam@acme.com", "account": acc.ID,
+	}, sam.ID)
+	second := syncSource(t, ds, dirsync2, typeDirEntry, "e-2", map[string]any{
+		"fullName": "Patricia", "nickname": "Pat", "email": "pat@acme.com", "account": acc.ID,
+	}, pat.ID)
+	if p := mustGet(t, ds, sam.Kind, sam.ID); !offeredBy(p, "name", dirsync) {
+		t.Fatalf("the entry offers Sam nothing, so the test would prove nothing: %+v", p.PropertyMeta["name"].Alternatives)
+	}
+
+	rec, err := ds.Merge(ctx, owner, first.Kind, first.ID, second.ID)
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	// wantRebuildAgrees leaves the live table the derived one, so the split
+	// alone is what the second comparison sees.
+	wantRebuildAgrees(t, svc, ds)
+	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+		t.Fatalf("split: %v", err)
+	}
+	wantRebuildAgrees(t, svc, ds)
+}
+
+// Removing a mapping through a vocabulary apply takes its sources out of the
+// projection with no source write to say so. The apply derives the target
+// kind's offers again against the closure it publishes and recomputes the
+// values once it has, so the person neither offers nor holds what the entry
+// projected, and a rebuild agrees.
+func TestRemovedMappingReleasesItsOffers(t *testing.T) {
+	t.Parallel()
+	svc, ds := newDataset(t)
+	installPeopleSourcesWithDir(t, ds)
+	sam, _, _ := samWithDirEntry(t, ds)
+
+	// The people closure again, without the entry's mapping: the apply prunes it.
+	if err := enginetest.DeclareMappings(context.Background(), ds, peopleMappings()...); err != nil {
+		t.Fatalf("apply the people closure without the entry mapping: %v", err)
+	}
+	wantSubjectWithoutEntry(t, svc, ds, sam)
+}
+
 // offeredBy reports whether actor offers an alternative for property.
 func offeredBy(r *substrate.Record, property string, actor substrate.Actor) bool {
 	for _, alt := range r.PropertyMeta[property].Alternatives {

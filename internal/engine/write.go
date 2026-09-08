@@ -2569,8 +2569,8 @@ func (t *txn) forbidSystemKind(ty *vocabulary.Kind, op substrate.Op) error {
 }
 
 // preRecordLocks takes the locks the global order (the contract:
-// registry-dep < subject-type < record) places BEFORE a write's own record
-// lock:
+// changelog < registry-dep < subject-type < record, the first taken by inTx)
+// places BEFORE a write's own record lock:
 //
 //   - the SHARED registry-dependency lock, for EVERY kind (#321): the write's
 //     properties and its refs rows both project from the declaration this

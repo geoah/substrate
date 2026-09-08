@@ -417,6 +417,20 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 			return fmt.Errorf("%w: this apply wrote rows of a kind it removes: %s",
 				substrate.ErrGuard, strings.Join(final, "; "))
 		}
+		// A mapping the batch adds, removes or narrows changes what every live
+		// record of its target kind is offered, and no source write will ever
+		// run for a mapping that is gone. The offers are derived again here,
+		// against the candidate, so the table this commit publishes is the
+		// one a rebuild derives; the accepted values recompute after the
+		// commit (recomputeTargets), once the candidate is the registry the
+		// write path resolves against.
+		changed := changedMappingTargets(ds.registry(), candidate)
+		if err := t.rederiveOffersOf(changed); err != nil {
+			return err
+		}
+		if len(changed) > 0 {
+			t.afterCommit = append(t.afterCommit, func() { ds.recomputeTargets(ctx, changed) })
+		}
 		// Publish: the commit is the activation and the pointer swap is how it
 		// is seen. commitAndPublish swaps it under ds.mu held across the
 		// commit, so a data write the commit wakes at the registry-dependency

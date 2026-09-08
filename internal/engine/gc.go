@@ -63,15 +63,6 @@ func (ds *dataset) gcPass(ctx context.Context) (int, error) {
 	for _, v := range victims {
 		err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 			ref := eref{Kind: v.typ, ID: v.id}
-			// The changelog lock first, as every writer's append takes it,
-			// and ahead of any record lock: the cascade below recomputes a
-			// collected child's subject, which takes record|<subject>, while
-			// a sync of that subject's source holds the changelog lock from
-			// its own append when it reaches for the same record lock. The
-			// order is changelog < record on both sides.
-			if err := t.lockKey(changelogLockKey); err != nil {
-				return err
-			}
 			row, err := t.loadRow(ref, true)
 			if err != nil || row == nil {
 				return err

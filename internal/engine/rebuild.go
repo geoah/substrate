@@ -235,21 +235,74 @@ func (t *txn) rederiveOffers() error {
 		return fmt.Errorf("substrate/engine: rebuild: clear property_offers: %w", err)
 	}
 	targets := map[string]bool{}
-	for _, m := range t.ds.registry().Mappings() {
+	for _, m := range t.declarations().Mappings() {
 		targets[m.To] = true
 	}
-	for _, kind := range sortedKeys(targets) {
+	return t.deriveOffersOf(sortedKeys(targets))
+}
+
+// rederiveOffersOf deletes the offers of the given target kinds and derives
+// them again against the transaction's declarations (refs.go), which inside a
+// vocabulary apply are its candidate: the table the apply's commit publishes is
+// the one a rebuild under that registry derives.
+func (t *txn) rederiveOffersOf(kinds []string) error {
+	if len(kinds) == 0 {
+		return nil
+	}
+	for _, kind := range kinds {
+		if _, err := t.exec(`DELETE FROM property_offers WHERE record_kind = $1`, kind); err != nil {
+			return fmt.Errorf("substrate/engine: clear the offers of %s: %w", kind, err)
+		}
+	}
+	return t.deriveOffersOf(kinds)
+}
+
+// deriveOffersOf derives the offers of every live record of the given target
+// kinds from its live sources, against the transaction's declarations. The
+// caller has deleted what it wants gone; this writes what is live.
+func (t *txn) deriveOffersOf(kinds []string) error {
+	for _, kind := range kinds {
 		ids, err := t.liveIDsOf(kind)
 		if err != nil {
 			return err
 		}
 		for _, id := range ids {
 			if err := t.syncOffersOf(eref{Kind: kind, ID: id}); err != nil {
-				return fmt.Errorf("substrate/engine: rebuild: derive the offers of %s %s: %w", kind, id, err)
+				return fmt.Errorf("substrate/engine: derive the offers of %s %s: %w", kind, id, err)
 			}
 		}
 	}
 	return nil
+}
+
+// recomputeTargets recomputes every live record of the given target kinds in
+// one transaction of its own, after a vocabulary apply changed their mapping
+// set: a value a removed mapping's sources projected is released or refilled
+// from what still maps, under the usual yield. It runs after the apply's
+// commit, because the write path resolves against the published registry. A
+// kind that lost its last mapping keeps what was written to it, as a record
+// with no mapping does. A failure is logged and not returned: the offers are
+// already the published closure's, and the next source write converges the
+// values.
+func (ds *dataset) recomputeTargets(ctx context.Context, kinds []string) {
+	err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		for _, kind := range kinds {
+			ids, err := t.liveIDsOf(kind)
+			if err != nil {
+				return err
+			}
+			for _, id := range ids {
+				if err := t.recompute(eref{Kind: kind, ID: id}); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		ds.svc.log.Warn("substrate: recompute after a mapping change failed",
+			"repository", ds.scope.Repository, "kinds", kinds, "err", err)
+	}
 }
 
 // liveIDsOf lists one kind's live record ids, read to the end before the

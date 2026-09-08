@@ -468,6 +468,16 @@ func (ds *dataset) inTx(ctx context.Context, actor substrate.Actor, internal boo
 		ctx: ctx, ds: ds, tx: tx, actor: actor, tier: ds.actorTier(actor),
 		principal: substrate.PrincipalFrom(ctx), now: nowUTC(), internal: internal,
 	}
+	// The changelog lock before anything else the transaction locks: the
+	// first key of the global order (rows.go changelogLockKey). A write that
+	// appends holds it from its first append to its commit anyway, so taking
+	// it here serializes nothing that was not serialized; what it removes is
+	// the window in which one writer held a row and waited for the changelog
+	// while another held the changelog and waited for the row.
+	if err := t.lockKey(changelogLockKey); err != nil {
+		return err
+	}
+	t.seqLocked = true
 	if err := fn(t); err != nil {
 		return err
 	}
