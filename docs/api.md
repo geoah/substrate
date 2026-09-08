@@ -455,6 +455,35 @@ with a minimum sunset window before removal. GraphQL makes no such promise
 ([REST and GraphQL](#rest-and-graphql) below). There is no Kubernetes-style
 multi-version conversion machinery.
 
+## The OpenAPI document
+
+The REST surface is also an OpenAPI 3.1 document,
+[`internal/api/openapi.yaml`](../internal/api/openapi.yaml), served as JSON at
+`GET /.well-known/substrate/openapi.json` with discovery's posture: no token,
+no repository. It is what a client generator reads; this page stays the prose
+contract, and where the two disagree the tests decide, because the document is
+held to the code and this page is not.
+
+The document is written by hand and checked, never generated. Five Go tests
+in `internal/api/openapi_test.go` hold it: every route the router mounts is a
+path and method in the document and nothing else is; every component schema
+names exactly the fields its Go struct serializes, with their types, and for a
+response `required` lists the ones the server always writes (a request body is
+closed with `additionalProperties: false`, because the server decodes it
+strictly, and its `required` is the endpoint's own rule); every shape the
+console mirrors in `wire.golden.json` is a component under the console's
+name, so a field that moves fails the golden, the console and the document
+together; every `$ref` resolves; and the served route answers the document.
+
+What the document says about the parts OpenAPI cannot type: record
+`properties` are `additionalProperties: true`, because a kind's shape is in
+its declaration; `filter` is a query parameter with
+`content: application/json`, since it is one JSON document, not a string; an
+`application/x-ndjson` stream is an opaque string whose line grammar is in the
+description ([frames](changelog.md#frames-and-the-horizon)); an id carrying
+`/` is percent-encoded once, `%2F`; `POST /api/v1/graphql` appears once,
+marked preview. The `X-Substrate-Actor` header is a parameter on the writes.
+
 ## REST and GraphQL
 
 The two surfaces make different promises, and the difference decides what a

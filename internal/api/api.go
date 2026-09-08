@@ -150,6 +150,10 @@ func New(cfg Config) http.Handler {
 	// feature detection, and its well-known path is what lets a caller ask
 	// "is this domain a substrate at all" before it knows anything else.
 	r.Get("/.well-known/substrate/server.json", h.getDiscovery)
+	// The REST contract as an OpenAPI document, under the same well-known
+	// prefix and with the same posture: a client generator fetches it before
+	// it holds a token. openapi_test.go holds it to every route mounted here.
+	r.Get(openapiRoute, h.getOpenAPI)
 
 	// The door, BESIDE the API and outside every version prefix. No repository
 	// segment: registration has none yet, and everything after it takes one

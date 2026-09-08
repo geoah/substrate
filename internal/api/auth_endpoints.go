@@ -64,8 +64,11 @@ type totpRequest struct {
 	NewTOTPCode   string `json:"newTotpCode"`
 }
 
+// mintRequest is the mint body. Both fields are omitempty because both may be
+// absent (the label defaults to "token"); the OpenAPI document reads its
+// required set off these tags.
 type mintRequest struct {
-	Label     string     `json:"label"`
+	Label     string     `json:"label,omitempty"`
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 }
 

@@ -68,10 +68,13 @@ func normalizeVariables(v any) any {
 	return v
 }
 
+// graphqlRequest is the GraphQL-over-HTTP body. Only the query is required;
+// the rest is omitempty because a client may leave each out, and the OpenAPI
+// document reads the required set off these tags.
 type graphqlRequest struct {
 	Query         string         `json:"query"`
-	Variables     map[string]any `json:"variables"`
-	OperationName string         `json:"operationName"`
+	Variables     map[string]any `json:"variables,omitempty"`
+	OperationName string         `json:"operationName,omitempty"`
 	// Extensions is the standard GraphQL-over-HTTP escape hatch (persisted
 	// queries, tracing). It is an open map so the strict body decoder accepts
 	// a spec-compliant client while still rejecting a misspelled `query`.
