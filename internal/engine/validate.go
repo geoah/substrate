@@ -417,6 +417,12 @@ func coerceScalar(p *vocabulary.Property, v any) (any, error) {
 		return f, nil
 	}
 
+	if p.Datatype == vocabulary.DatatypeBlobRef {
+		var err error
+		if v, err = blobRefInput(v); err != nil {
+			return nil, err
+		}
+	}
 	s, err := asString(v)
 	if err != nil {
 		return nil, err
@@ -642,6 +648,25 @@ func asFloat(v any) (float64, error) {
 	default:
 		return 0, fmt.Errorf("expected a number")
 	}
+}
+
+// blobRefInput admits the shape a read hands back. A blob-ref READS as its
+// manifest ({digest, name, mediaType, size, status}) and STORES as the digest
+// string, so a document read and applied back carries the object. Only the
+// digest is the reference; the other keys describe the blob and are never
+// written through this property, so they are dropped, not checked. Anything
+// that is not a map passes through for asString to judge.
+func blobRefInput(v any) (any, error) {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return v, nil
+	}
+	d, ok := m[blobPropDigest].(string)
+	if !ok {
+		return nil, fmt.Errorf("expected a blob digest (%s<64 hex>), or the read shape carrying one under %q",
+			substrate.BlobDigestPrefix, blobPropDigest)
+	}
+	return d, nil
 }
 
 func asString(v any) (string, error) {

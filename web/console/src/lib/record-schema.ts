@@ -587,6 +587,18 @@ export function checkItem(spec: PropSpec, value: unknown): string | undefined {
     return undefined
   }
 
+  // A blob-ref READS as its manifest ({digest, name, mediaType, size,
+  // status}) and STORES as the digest string, so a document read and applied
+  // back carries the object. The server takes the digest and ignores the
+  // rest, and this mirror does the same.
+  if (spec.kind === "blobref" && isPlainObject(value)) {
+    const digest = value.digest
+    if (typeof digest !== "string") {
+      return "expected a blob digest (blob-sha256-<64 hex>) under `digest`"
+    }
+    return checkItem(spec, digest)
+  }
+
   if (typeof value !== "string") return "expected a string"
   const s = value
 
@@ -733,6 +745,26 @@ export function formatValue(spec: PropSpec, value: unknown): string {
   }
   if (typeof value === "object") return JSON.stringify(value, null, 2)
   return String(value)
+}
+
+/** The value an EDITABLE control is seeded with. A blob-ref reads as its
+ * manifest and is edited as its digest: the other keys are resolved metadata
+ * the write carries no authority over, so typing over them would change
+ * nothing. A read-only rendering keeps the whole manifest (`formatValue`). */
+export function editableValue(spec: PropSpec, value: unknown): unknown {
+  if (spec.kind !== "blobref") return value
+  return Array.isArray(value) ? value.map(blobRefDigest) : blobRefDigest(value)
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+/** The digest under a blob-ref's read shape, or the value as it came. */
+function blobRefDigest(value: unknown): unknown {
+  return isPlainObject(value) && typeof value.digest === "string"
+    ? value.digest
+    : value
 }
 
 export interface ParsedValue {

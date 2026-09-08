@@ -10,6 +10,7 @@ import type { KindInfo } from "@/lib/api/types"
 import {
   checkValue,
   controlFor,
+  editableValue,
   exampleFor,
   formatValue,
   parseValue,
@@ -82,8 +83,20 @@ const wideKind: KindInfo = {
       },
       hidden: { type: "string", writer: "oauth" },
       code: { type: "string", pattern: "^[a-z]{3}$" },
+      attachment: { type: "blobref" },
+      attachments: { type: "blobref", repeated: true },
     },
   },
+}
+
+const DIGEST = "blob-sha256-" + "a".repeat(64)
+/** What a read hands back for a blob-ref: the manifest, never the bytes. */
+const MANIFEST = {
+  digest: DIGEST,
+  name: "layout.png",
+  mediaType: "image/png",
+  size: 2048,
+  status: "stored",
 }
 
 function spec(kind: KindInfo, name: string): PropSpec {
@@ -292,6 +305,44 @@ describe("checkValue", () => {
         round: 2,
       })
     ).toMatch(/not a declared link property/)
+  })
+})
+
+describe("blobref: the read shape applies back", () => {
+  it("admits the digest string and the manifest a read handed back", () => {
+    const one = spec(wideKind, "attachment")
+    expect(checkValue(one, DIGEST)).toBeUndefined()
+    expect(checkValue(one, MANIFEST)).toBeUndefined()
+    // A blob whose manifest is gone reads as the bare {digest}.
+    expect(checkValue(one, { digest: DIGEST })).toBeUndefined()
+    const many = spec(wideKind, "attachments")
+    expect(checkValue(many, [MANIFEST, DIGEST])).toBeUndefined()
+  })
+
+  it("refuses an object that names no blob, on the item it sits in", () => {
+    const one = spec(wideKind, "attachment")
+    expect(checkValue(one, { name: "layout.png" })).toMatch(/under `digest`/)
+    expect(checkValue(one, { digest: 7 })).toMatch(/under `digest`/)
+    expect(checkValue(one, { digest: "sha256:abc" })).toMatch(/blob digest/)
+    expect(checkValue(one, 7)).toMatch(/string/)
+    expect(checkValue(spec(wideKind, "attachments"), [DIGEST, {}])).toMatch(
+      /\[1\]/
+    )
+  })
+
+  it("edits as the digest, reads as the whole manifest", () => {
+    const one = spec(wideKind, "attachment")
+    const many = spec(wideKind, "attachments")
+    // The editable control seeds the digest alone: the other keys are not
+    // the author's to type over.
+    expect(editableValue(one, MANIFEST)).toBe(DIGEST)
+    expect(editableValue(one, DIGEST)).toBe(DIGEST)
+    expect(editableValue(many, [MANIFEST, DIGEST])).toEqual([DIGEST, DIGEST])
+    expect(formatValue(one, editableValue(one, MANIFEST))).toBe(DIGEST)
+    expect(parseValue(one, DIGEST)).toEqual({ value: DIGEST })
+    // A read-only rendering keeps name, mediaType, size and status.
+    expect(formatValue(one, MANIFEST)).toContain('"name": "layout.png"')
+    expect(formatValue(one, MANIFEST)).toContain('"size": 2048')
   })
 })
 

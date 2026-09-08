@@ -8,6 +8,8 @@ package engine_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/geoah/substrate/internal/engine"
@@ -353,5 +355,99 @@ func TestBlobNameRefusesAPath(t *testing.T) {
 	for _, name := range []string{"../../etc/passwd", `dir\file.pdf`, "line\nbreak.pdf"} {
 		_, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{Name: name}, []byte("payload "+name), "")
 		wantErr(t, err, substrate.ErrValidation, "blob name")
+	}
+}
+
+// A blob-ref reads as its manifest and stores as the digest, so the read shape
+// applied back must land as a no-op and stay a string in storage: the GC's
+// referencedDigests selects `jsonb_typeof = 'string'`, and an object stored
+// there would let it collect a referenced blob. The manifest's own keys are not
+// writable through the property: a wrong mediaType in the object changes
+// nothing.
+func TestBlobRefReadShapeAppliesBackUnchanged(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name     string
+		prop     string
+		repeated bool
+	}{
+		{"single", "attachment", false},
+		{"repeated", "attachments", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			_, ds, dsn := newDatasetWithDSN(t)
+			bs := blobStoreOf(t, ds)
+			if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, blobDocDocs(tc.prop, tc.repeated)); err != nil {
+				t.Fatalf("install doc kind: %v", err)
+			}
+			a, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "image/png", Name: "a.png"}, []byte("first"), "")
+			if err != nil {
+				t.Fatalf("put blob a: %v", err)
+			}
+			b, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "image/png", Name: "b.png"}, []byte("second"), "")
+			if err != nil {
+				t.Fatalf("put blob b: %v", err)
+			}
+			// The read shape, with the descriptive keys deliberately wrong:
+			// only the digest is the reference.
+			readShape := func(digest string) map[string]any {
+				return map[string]any{
+					"digest": digest, "name": "renamed.txt", "mediaType": "text/plain",
+					"size": json.Number("1"), "status": "pending",
+				}
+			}
+			var written any = readShape(a.Digest)
+			if tc.repeated {
+				written = []any{readShape(a.Digest), b.Digest}
+			}
+			doc := mustPut(t, ds, owner, substrate.PutInput{
+				Kind:       blobPackage + "/doc",
+				Properties: map[string]any{tc.prop: written},
+			})
+
+			read := mustGet(t, ds, doc.Kind, doc.ID)
+			var manifests []map[string]any
+			if tc.repeated {
+				for _, item := range read.Properties[tc.prop].([]any) {
+					manifests = append(manifests, item.(map[string]any))
+				}
+			} else {
+				manifests = append(manifests, read.Properties[tc.prop].(map[string]any))
+			}
+			if manifests[0]["digest"] != a.Digest || manifests[0]["name"] != "a.png" ||
+				manifests[0]["mediaType"] != "image/png" || manifests[0]["status"] != "stored" {
+				t.Fatalf("the read did not resolve the stored manifest: %#v", manifests[0])
+			}
+			if tc.repeated && manifests[1]["digest"] != b.Digest {
+				t.Fatalf("second manifest = %#v", manifests[1])
+			}
+
+			// The read applied back verbatim is a no-op, and reads the same.
+			again := mustPut(t, ds, owner, substrate.PutInput{
+				Kind: doc.Kind, ID: doc.ID, Properties: read.Properties,
+			})
+			if again.Version != doc.Version {
+				t.Fatalf("re-applying the read shape moved the version %d -> %d", doc.Version, again.Version)
+			}
+			final := mustGet(t, ds, doc.Kind, doc.ID)
+			if !reflect.DeepEqual(final.Properties[tc.prop], read.Properties[tc.prop]) {
+				t.Fatalf("the read changed across get | put | get:\n%#v\n%#v", read.Properties[tc.prop], final.Properties[tc.prop])
+			}
+
+			// Storage holds the digest string, never the object.
+			var stored string
+			q := `SELECT jsonb_typeof(props -> $1) FROM records WHERE id = $2`
+			if tc.repeated {
+				q = `SELECT string_agg(DISTINCT jsonb_typeof(e), ',') FROM records, jsonb_array_elements(props -> $1) e WHERE id = $2`
+			}
+			if err := rawDB(t, dsn).QueryRow(q, tc.prop, doc.ID).Scan(&stored); err != nil {
+				t.Fatalf("read stored shape: %v", err)
+			}
+			if stored != "string" {
+				t.Fatalf("stored jsonb type = %q, want string", stored)
+			}
+		})
 	}
 }
