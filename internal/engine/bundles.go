@@ -184,7 +184,7 @@ func (t *txn) checkBundleWrite(ty *vocabulary.Kind, id string, create bool) erro
 	if t.internal {
 		return nil
 	}
-	b, ok := t.ds.registry().BundleOf(ty.Package)
+	b, ok := t.declarations().BundleOf(ty.Package)
 	if !ok {
 		return nil
 	}
@@ -216,7 +216,7 @@ func (t *txn) checkBundleDelete(ty *vocabulary.Kind) error {
 	if t.internal {
 		return nil
 	}
-	b, ok := t.ds.registry().BundleOf(ty.Package)
+	b, ok := t.declarations().BundleOf(ty.Package)
 	if !ok {
 		return nil
 	}
@@ -388,13 +388,13 @@ func (t *txn) checkTriggerCallableRow(tr *trigger) error {
 	var ident, rowType, kind string
 	switch tr.CallableKind {
 	case callableKindAgent:
-		a, err := t.ds.registry().ResolveAgent(tr.CallableID)
+		a, err := t.declarations().ResolveAgent(tr.CallableID)
 		if err != nil {
 			return fmt.Errorf("%w: trigger callable: %w", substrate.ErrValidation, err)
 		}
 		ident, rowType, kind = a.Identity(), kindAgent, callableKindAgent
 	default:
-		f, err := t.ds.registry().ResolveFunction(tr.CallableID)
+		f, err := t.declarations().ResolveFunction(tr.CallableID)
 		if err != nil {
 			return fmt.Errorf("%w: trigger callable: %w", substrate.ErrValidation, err)
 		}

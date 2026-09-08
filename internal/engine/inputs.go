@@ -226,6 +226,9 @@ func (ds *dataset) BindBundleInput(ctx context.Context, bundleID, input, recordI
 	src := eref{Kind: kindBundle, ID: b.Identity()}
 	if recordID == "" {
 		return ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+			if err := t.lockRegistryDepShared(); err != nil {
+				return err
+			}
 			// Lock the bundle row so an unbind cannot interleave a concurrent
 			// uninstall's teardown or another bind.
 			srcRow, err := t.loadRow(src, true)
@@ -247,6 +250,15 @@ func (ds *dataset) BindBundleInput(ctx context.Context, bundleID, input, recordI
 	}
 	dst := eref{Kind: in.Kind, ID: recordID}
 	return ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		// The shared registry-dependency lock before the row lock below, the
+		// order every put takes (registry-dep < subject-type < record): the
+		// patch this transaction ends in takes it too, but only after the row is
+		// held, and a vocabulary apply holding the exclusive side while waiting
+		// on this row would deadlock against a transaction queueing for the
+		// shared side with the row in hand.
+		if err := t.lockRegistryDepShared(); err != nil {
+			return err
+		}
 		// Both ends are validated UNDER the transaction's locks (the ascending
 		// (kind, id) order every multi-record path takes), so a bind can neither
 		// race the target's delete into a dangling binding nor race an uninstall

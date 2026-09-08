@@ -851,7 +851,7 @@ func (r *titleResolver) referenceProp(ref eref, prop string) string {
 	// skip is enforced here: a
 	// value every read surface redacts must not land in the unsealed,
 	// FTS-indexed title.
-	if ty, terr := r.t.ds.resolveType(row.Kind); terr == nil && ty != nil {
+	if ty, terr := r.t.resolveType(row.Kind); terr == nil && ty != nil {
 		if p, ok := ty.Prop(prop); ok && p.Sensitive() {
 			return ""
 		}

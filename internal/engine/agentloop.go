@@ -661,6 +661,15 @@ func (l *agentLoop) leaseUntil() time.Time {
 func (l *agentLoop) claimThread(ctx context.Context) error {
 	return l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
 		t.causedBy = l.in.causedBy
+		// The shared registry-dependency lock before the row lock below, the
+		// order every put takes (registry-dep < subject-type < record): the
+		// patch this transaction ends in takes it too, but only after the row is
+		// held, and a vocabulary apply holding the exclusive side while waiting
+		// on this row would deadlock against a transaction queueing for the
+		// shared side with the row in hand.
+		if err := t.lockRegistryDepShared(); err != nil {
+			return err
+		}
 		if err := t.lockRecord(eref{Kind: typeThread, ID: l.in.threadID}); err != nil {
 			return err
 		}
@@ -776,6 +785,15 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string) er
 	}
 	return l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
 		t.causedBy = l.in.causedBy
+		// The shared registry-dependency lock before the row lock below, the
+		// order every put takes (registry-dep < subject-type < record): the
+		// patch this transaction ends in takes it too, but only after the row is
+		// held, and a vocabulary apply holding the exclusive side while waiting
+		// on this row would deadlock against a transaction queueing for the
+		// shared side with the row in hand.
+		if err := t.lockRegistryDepShared(); err != nil {
+			return err
+		}
 		if err := t.lockRecord(eref{Kind: typeThread, ID: l.threadID}); err != nil {
 			return err
 		}
