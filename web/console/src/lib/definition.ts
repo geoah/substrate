@@ -209,22 +209,33 @@ export function resolveReferenceTarget(
 }
 
 /** The GraphQL type name a kind reference maps to, mirroring the server's
- * `GraphQLName`. A SHIPPED kind, the seed's (`source: builtin`), keeps its bare
- * singular PascalCased (`substrate.reamde.dev/core/token` → `Token`); every
- * other kind is prefixed with its PACKAGE and an underscore
- * (`samples.substrate.reamde.dev/tasks/task` → `Tasks_Task`), because those
- * kinds share names across packages and the prefix disambiguates. That covers
+ * `GraphQLName` (decision 0058). A SHIPPED kind, the seed's (`source:
+ * builtin`), keeps its bare singular PascalCased (`substrate.reamde.dev/core/token`
+ * → `Token`); every other kind carries its FULL authority folded by
+ * `graphqlAuthority`, then its package, then the singular
+ * (`samples.substrate.reamde.dev/tasks/task` →
+ * `Samples_substrate_reamde_dev_Tasks_Task`). The name depends on the kind
+ * alone, so installing a package never renames another kind's type. That covers
  * an installed kind and a published one alike: a provider's declarations are a
- * copy the repository holds. Two authorities installing one package name
- * collide here, which the server resolves over the whole set (`GraphQLNames`);
- * this answers the base name alone. A caller that does not know the source
- * gets the bare name, since the prefix it cannot spell would be a wrong
- * answer rather than an approximate one. */
+ * copy the repository holds. A bare reference has no authority and gets the
+ * bare name, as does a caller that does not know the source, since the prefix
+ * it cannot spell would be a wrong answer rather than an approximate one. */
 export function graphqlTypeName(ref: string, source?: string): string {
-  const { pkg, name } = splitKind(ref)
+  const { authority, pkg, name } = splitKind(ref)
   const base = pascal(name)
-  if (!base || !source || source === "builtin") return base
-  return `${pascal(pkg)}_${base}`
+  if (!base || !source || source === "builtin" || !authority) return base
+  return `${graphqlAuthority(authority)}_${pascal(pkg)}_${base}`
+}
+
+/** An authority folded into one GraphQL name segment, the server's
+ * `graphqlAuthority` in TypeScript, and the two must fold identically. The fold
+ * is injective because an authority never carries an underscore: a dot becomes
+ * `_`, a hyphen becomes `__`, and an authority whose first character is a
+ * digit gains a leading `_` so the name is a legal GraphQL identifier. The
+ * first letter is upper-cased. */
+function graphqlAuthority(authority: string): string {
+  const lead = /^[0-9]/.test(authority) ? "_" : ""
+  return pascal(lead + authority.replace(/-/g, "__").replace(/\./g, "_"))
 }
 
 function pascal(word: string): string {

@@ -109,7 +109,11 @@ data:
   # `published` on every declaration kind that carries it (decision record
   # 0048); `actor` pins no version of its own and takes this one, while the
   # other six bump theirs.
-  version: 16
+  # version 20: a non-core kind's GraphQL type is named with its full
+  # authority (decision record 0058). The `graphql` host function card stops
+  # spelling a generated type name and points at introspection instead; it
+  # pins no version of its own and takes this one.
+  version: 20
 ---
 # The substrate's own actors: the doors a human write comes through, and the
 # engine's own hand. Attribution, not authorization (§3). The machine hands

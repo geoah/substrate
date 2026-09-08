@@ -252,11 +252,14 @@ job for `/`; the rest of it stands, first-label reservation included. The
 actors are `bundle:<authority>:<package>`,
 `function:<authority>:<package>:<name>` and
 `agent:<authority>:<package>:<name>`, derived by the engine and never declared
-([0025](docs/decisions/0025-an-actor-carries-the-full-authority.md)). An
-installed kind's GraphQL name is `<Package>_<Kind>`, and the FULL authority
-joins it, dots folded to underscores, only to break a tie between two
-authorities publishing a package of one name. Nothing keys on a first label any
-more, which is 0014's last reservation discharged.
+([0025](docs/decisions/0025-an-actor-carries-the-full-authority.md)). A
+non-core kind's GraphQL name is `<Authority>_<Package>_<Kind>`, the authority's
+dots folded to underscores (`Ada_example_com_Tasks_Task`); only the seeded
+`core` kinds keep the bare singular. The authority is always in the name and
+never a tie-break, so installing a package cannot rename another kind's type
+([0058](docs/decisions/0058-a-graphql-name-always-carries-the-authority.md)).
+Nothing keys on a first label any more, which is 0014's last reservation
+discharged.
 
 ## House rules
 

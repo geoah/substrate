@@ -212,87 +212,71 @@ func ReferentIDs(values []any, pin string) []string {
 // kinds all live there ("substrate.reamde.dev/core/kind").
 func CoreKind(name string) string { return PackageCore + "/" + name }
 
-// GraphQLName is the GraphQL object name a kind resolves to WITHOUT
-// disambiguation, and the ONE place that base rule lives:
+// GraphQLName is the GraphQL object name a kind resolves to, and the ONE
+// place the rule lives (record 0058):
 //
 //   - a SHIPPED kind, the seed's (`source: builtin`), keeps its bare singular:
 //     "substrate.reamde.dev/core/token" -> Token;
-//   - every other kind is PACKAGE-prefixed,
-//     "samples.substrate.reamde.dev/tasks/task" -> Tasks_Task. That is both an
-//     installed kind and a published one: a provider's declarations are a copy
-//     the repository holds, so they are named like one.
+//   - every other kind carries its FULL authority, dots folded to underscores,
+//     then its package, then its singular:
+//     "samples.substrate.reamde.dev/tasks/task" ->
+//     Samples_substrate_reamde_dev_Tasks_Task. That is both an installed kind
+//     and a published one: a provider's declarations are a copy the repository
+//     holds, so they are named like one.
 //
-// The underscore keeps installed names in a namespace disjoint from the
-// shipped ones, so a bundle can never rename a shipped kind's GraphQL name by
-// colliding with it. Two authorities installing the SAME package name would
-// still collide here, which GraphQLNames resolves over the whole set; a
-// collision it cannot resolve is refused where a declaration lands
-// (graphqlNameProblems, run by Finalize, Install and InstallAll alike), never
-// silently renamed.
+// The name is a function of the kind alone, never of its neighbors, so
+// installing a package cannot rename a kind that was already there, and both
+// readers (the schema builder in internal/gql and graphqlNameProblems in
+// load.go) call this function directly rather than a map built over the set.
+// The authority is always present rather than joined as a tie-break, because a
+// tie-break renames both sides when the second authority arrives and a query
+// written against the first name breaks. The underscore keeps every non-seed
+// name apart from the names core's bare singulars use. A reference with no
+// authority (a bare kind name) gets the bare singular, because prefixing an
+// empty authority would spell the `__` GraphQL reserves for introspection.
+// Two kinds that still spell one name are refused where the second
+// declaration lands (graphqlNameProblems, run by Finalize, Install and
+// InstallAll alike), never silently renamed.
 func GraphQLName(ref, source string) string {
-	_, pkg, name := SplitKindRef(ref)
+	authority, pkg, name := SplitKindRef(ref)
 	base := titleCase(name)
 	if base == "" {
 		return ""
 	}
-	if source == SourceBuiltin {
+	if source == SourceBuiltin || authority == "" {
 		return base
 	}
-	return titleCase(sanitizeName(pkg)) + "_" + base
+	return graphqlAuthority(authority) + "_" + titleCase(pkg) + "_" + base
 }
 
-// GraphQLKind is one kind as the naming rule sees it: its identity and where
-// its declaration came from.
-type GraphQLKind struct {
-	Identity string
-	Source   string
-}
-
-// GraphQLNames is the naming rule over a WHOLE SET of kinds, and it is what
-// both readers ask: the GraphQL schema builder (internal/gql) and the
-// declaration-time collision check (load.go). Asking one function keeps the
-// schema and the refusal from being two spellings of one rule.
-//
-// The base name is GraphQLName above. Its one ambiguity is two AUTHORITIES
-// installing the same package name: "acme.example.com/tasks/task" and
-// "samples.substrate.reamde.dev/tasks/task" both want Tasks_Task. There the
-// FULL authority joins the name, dots folded to underscores, for EVERY kind of
-// both packages (Acme_example_com_Tasks_Task), so a kind's name does not
-// depend on which of its neighbors exist inside its own package. The result is
-// order independent: the input is a set.
-//
-// The full authority and not its first label, because two authorities can
-// share a label ("acme.example.com" and "acme.example.org"), and a tie-break
-// that ties again is a name claimed twice. It is also what decision 0014
-// reserved: no identifier is derived from a first label.
-func GraphQLNames(kinds []GraphQLKind) map[string]string {
-	authoritiesOf := map[string]map[string]bool{}
-	for _, k := range kinds {
-		if k.Source == SourceBuiltin {
-			continue
-		}
-		authority, pkg, _ := SplitKindRef(k.Identity)
-		if authority == "" {
-			continue
-		}
-		if authoritiesOf[pkg] == nil {
-			authoritiesOf[pkg] = map[string]bool{}
-		}
-		authoritiesOf[pkg][authority] = true
+// graphqlAuthority folds an authority into one GraphQL name segment, and the
+// fold is INJECTIVE: two distinct authorities never spell one segment, so the
+// one-name refusal is reachable only for the seed's bare singulars. The
+// authority grammar (authorityRE) is lowercase labels of letters, digits and
+// inner hyphens, joined by dots, and never carries an underscore, so the
+// underscore is the escape: `.` becomes `_`, `-` becomes `__`, and an
+// authority whose first character is a digit gains a leading `_` so the name
+// satisfies GraphQL's `^[_a-zA-Z][_a-zA-Z0-9]*$`. A run of underscores reads
+// back unambiguously because a hyphen never sits beside a dot. The first
+// letter is upper-cased. The console's graphqlAuthority
+// (web/console/src/lib/definition.ts) is this function in TypeScript and
+// must fold identically.
+func graphqlAuthority(authority string) string {
+	var out strings.Builder
+	if authority[0] >= '0' && authority[0] <= '9' {
+		out.WriteByte('_')
 	}
-	out := make(map[string]string, len(kinds))
-	for _, k := range kinds {
-		name := GraphQLName(k.Identity, k.Source)
-		if name == "" {
-			continue
+	for _, r := range authority {
+		switch r {
+		case '.':
+			out.WriteByte('_')
+		case '-':
+			out.WriteString("__")
+		default:
+			out.WriteRune(r)
 		}
-		authority, pkg, _ := SplitKindRef(k.Identity)
-		if k.Source != SourceBuiltin && len(authoritiesOf[pkg]) > 1 {
-			name = titleCase(sanitizeName(strings.ReplaceAll(authority, ".", "_"))) + "_" + name
-		}
-		out[k.Identity] = name
 	}
-	return out
+	return titleCase(out.String())
 }
 
 // titleCase upper-cases the first rune and leaves the rest as declared, so a
@@ -302,18 +286,6 @@ func titleCase(s string) string {
 		return ""
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
-}
-
-// sanitizeName drops every character a GraphQL name may not carry, leaving
-// letters, digits and the underscore an authority's folded dots become.
-func sanitizeName(s string) string {
-	var out strings.Builder
-	for _, r := range s {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
-			out.WriteRune(r)
-		}
-	}
-	return out.String()
 }
 
 // PackageActor is the writing hand a PACKAGE's own installed code carries:

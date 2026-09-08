@@ -43,7 +43,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: pebble
-  version: 1
+  version: 2
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -294,11 +294,15 @@ data:
 
       { records(filter: {kinds: ["samples.substrate.reamde.dev/tasks/task"],
           properties: {status: {in: ["open", "proposed"]}}}, first: 50)
-        { nodes { id ... on Task { name dueAt } } } }
+        { nodes { id title } } }
 
-    lists what is open. Introspect (__type) rather than guess when a field
-    name is in doubt. If an open task already says the same thing, do not
-    create another.
+    lists what is open, `title` being the task's name. A task's own
+    properties (dueAt) need an inline fragment on the kind's GraphQL type,
+    whose name is the repository's authority, the package and the kind
+    joined by underscores with dots folded to underscores; read it from
+    __schema { types { name } } rather than guess it. Introspect (__type)
+    rather than guess when a field name is in doubt. If an open task already
+    says the same thing, do not create another.
 
     Create each missing task with ONE mutate call each:
 

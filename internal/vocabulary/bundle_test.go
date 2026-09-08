@@ -129,47 +129,67 @@ func TestTwoAuthoritiesMayShareAPackageName(t *testing.T) {
 	}
 }
 
-// TWO AUTHORITIES SHARING A PACKAGE NAME KEEP TWO GRAPHQL NAMES. The base name
-// of an installed kind is `<Package>_<Kind>`; when the package name is claimed
-// by two authorities, the FULL authority joins it with its dots folded to
-// underscores, for every kind of both packages, so a name never depends on load
-// order and two authorities sharing a first label still get two names.
-func TestGraphQLNamesDisambiguateBySharedPackageName(t *testing.T) {
-	kinds := []vocabulary.GraphQLKind{
-		{Identity: "samples.substrate.reamde.dev/tasks/task", Source: vocabulary.SourceInstalled},
-		{Identity: "samples.substrate.reamde.dev/people/person", Source: vocabulary.SourceInstalled},
-		{Identity: "substrate.reamde.dev/core/token", Source: vocabulary.SourceBuiltin},
+// A NON-SEED KIND ALWAYS CARRIES ITS FULL AUTHORITY (record 0058). The name
+// is a function of the reference and the source alone, so it is asserted per
+// identity: no neighbor is passed because none could change the answer,
+// which is the property that stops a second authority's install renaming the
+// first. The authority fold is injective: a dot is `_`, a hyphen is `__`, and
+// a digit-first authority gains a leading `_` so the name is a legal GraphQL
+// identifier. The console's graphqlTypeName test pins the same spellings.
+func TestGraphQLNamesAlwaysCarryTheAuthority(t *testing.T) {
+	cases := map[string]string{
+		"samples.substrate.reamde.dev/tasks/task": "Samples_substrate_reamde_dev_Tasks_Task",
+		"acme.example.com/tasks/task":             "Acme_example_com_Tasks_Task",
+		"acme.example.org/tasks/task":             "Acme_example_org_Tasks_Task",
+		"acme-dev.example.com/tasks/task":         "Acme__dev_example_com_Tasks_Task",
+		"3rd.example.com/tasks/task":              "_3rd_example_com_Tasks_Task",
+		"ada.example.com/people/person":           "Ada_example_com_People_Person",
 	}
-	names := vocabulary.GraphQLNames(kinds)
-	if got := names["samples.substrate.reamde.dev/tasks/task"]; got != "Tasks_Task" {
-		t.Errorf("task = %q, want Tasks_Task", got)
+	for ref, want := range cases {
+		if got := vocabulary.GraphQLName(ref, vocabulary.SourceInstalled); got != want {
+			t.Errorf("GraphQLName(%s) = %q, want %q", ref, got, want)
+		}
 	}
-	if got := names["substrate.reamde.dev/core/token"]; got != "Token" {
+	if got := vocabulary.GraphQLName("substrate.reamde.dev/core/token", vocabulary.SourceBuiltin); got != "Token" {
 		t.Errorf("token = %q, want the bare Token", got)
 	}
-	kinds = append(kinds, vocabulary.GraphQLKind{
-		Identity: "acme.example.com/tasks/task", Source: vocabulary.SourceInstalled,
-	})
-	names = vocabulary.GraphQLNames(kinds)
-	if got := names["samples.substrate.reamde.dev/tasks/task"]; got != "Samples_substrate_reamde_dev_Tasks_Task" {
-		t.Errorf("shipped task = %q, want Samples_substrate_reamde_dev_Tasks_Task", got)
+	// A bare reference has no authority to fold; prefixing an empty one would
+	// spell the reserved `__` introspection prefix.
+	if got := vocabulary.GraphQLName("task", vocabulary.SourceInstalled); got != "Task" {
+		t.Errorf("bare task = %q, want Task", got)
 	}
-	if got := names["acme.example.com/tasks/task"]; got != "Acme_example_com_Tasks_Task" {
-		t.Errorf("acme task = %q, want Acme_example_com_Tasks_Task", got)
+}
+
+// TWO AUTHORITIES DIFFERING ONLY BY A HYPHEN GET TWO NAMES, AND BOTH INSTALL.
+// The fold spells a hyphen `__` and a dot `_`, so `my-host.example.com` and
+// `myhost.example.com` never meet in one GraphQL name and neither install is
+// refused. A digit-first authority installs too, under its `_` lead. The
+// packages are INSTALLED, not loaded from the shipped tree, because only a
+// non-seed kind carries its authority in the name.
+func TestAuthoritiesFoldToDistinctGraphQLNames(t *testing.T) {
+	want := map[string]string{
+		"my-host.example.com/tasks/task": "My__host_example_com_Tasks_Task",
+		"myhost.example.com/tasks/task":  "Myhost_example_com_Tasks_Task",
+		"3rd.example.com/tasks/task":     "_3rd_example_com_Tasks_Task",
 	}
-	// Two authorities that SHARE a first label still get two names: the
-	// tie-break reads the whole authority, which is what decision 0014
-	// reserved.
-	kinds = append(kinds, vocabulary.GraphQLKind{
-		Identity: "acme.example.org/tasks/task", Source: vocabulary.SourceInstalled,
-	})
-	names = vocabulary.GraphQLNames(kinds)
-	if names["acme.example.com/tasks/task"] == names["acme.example.org/tasks/task"] {
-		t.Errorf("two authorities sharing a first label share the name %q",
-			names["acme.example.com/tasks/task"])
+	r := vocabulary.NewRegistry()
+	for _, pkg := range []string{"my-host.example.com/tasks", "myhost.example.com/tasks", "3rd.example.com/tasks"} {
+		built, err := vocabulary.BuildPackages(mustParse(t, bnPackageKind(pkg, "task")), vocabulary.SourceInstalled)
+		if err != nil {
+			t.Fatalf("build %s: %v", pkg, err)
+		}
+		if err := r.InstallAll(built); err != nil {
+			t.Fatalf("installing %s beside the others must admit: %v", pkg, err)
+		}
 	}
-	if got := names["samples.substrate.reamde.dev/people/person"]; got != "People_Person" {
-		t.Errorf("a package nobody shares must keep its name: %q", got)
+	for ref, name := range want {
+		k, ok := r.ByIdentity(ref)
+		if !ok {
+			t.Fatalf("%s did not install", ref)
+		}
+		if got := vocabulary.GraphQLName(k.Identity, k.Source); got != name {
+			t.Errorf("GraphQLName(%s) = %q, want %q", ref, got, name)
+		}
 	}
 }
 
@@ -179,30 +199,14 @@ func TestGraphQLNamesDisambiguateBySharedPackageName(t *testing.T) {
 // the namespace core's kinds live in, where the next shipped kind of that name
 // collides with it.
 func TestAPublishedKindIsNamedLikeAnInstalledOne(t *testing.T) {
-	if got := vocabulary.GraphQLName("providers.substrate.reamde.dev/whoop/account", vocabulary.SourcePublished); got != "Whoop_Account" {
-		t.Errorf("published account = %q, want Whoop_Account", got)
+	if got := vocabulary.GraphQLName("providers.substrate.reamde.dev/whoop/account", vocabulary.SourcePublished); got != "Providers_substrate_reamde_dev_Whoop_Account" {
+		t.Errorf("published account = %q, want Providers_substrate_reamde_dev_Whoop_Account", got)
+	}
+	if got := vocabulary.GraphQLName("acme.example.com/whoop/account", vocabulary.SourceInstalled); got != "Acme_example_com_Whoop_Account" {
+		t.Errorf("installed account = %q, want Acme_example_com_Whoop_Account", got)
 	}
 	if got := vocabulary.GraphQLName("substrate.reamde.dev/core/token", vocabulary.SourceBuiltin); got != "Token" {
 		t.Errorf("seeded token = %q, want the bare Token", got)
-	}
-
-	// And it joins the cross-authority tie-break: two authorities carrying a
-	// package of one name disambiguate whatever origins they hold, so a name
-	// never depends on the mix.
-	kinds := []vocabulary.GraphQLKind{
-		{Identity: "providers.substrate.reamde.dev/whoop/account", Source: vocabulary.SourcePublished},
-		{Identity: "acme.example.com/whoop/account", Source: vocabulary.SourceInstalled},
-		{Identity: "substrate.reamde.dev/core/token", Source: vocabulary.SourceBuiltin},
-	}
-	names := vocabulary.GraphQLNames(kinds)
-	if got := names["providers.substrate.reamde.dev/whoop/account"]; got != "Providers_substrate_reamde_dev_Whoop_Account" {
-		t.Errorf("published account = %q, want Providers_substrate_reamde_dev_Whoop_Account", got)
-	}
-	if got := names["acme.example.com/whoop/account"]; got != "Acme_example_com_Whoop_Account" {
-		t.Errorf("installed account = %q, want Acme_example_com_Whoop_Account", got)
-	}
-	if got := names["substrate.reamde.dev/core/token"]; got != "Token" {
-		t.Errorf("the tie-break moved a seeded name: %q", got)
 	}
 }
 

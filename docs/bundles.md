@@ -24,10 +24,12 @@ owns**. Its `metadata.id` IS that package
 ([decision 0047](decisions/0047-a-kind-lives-in-a-package.md)): a closure and
 the thing that installs it can never be spelled apart, and a document whose id
 says anything else is refused naming the package. The package's own word is the
-bundle's name and the prefix an installed kind's GraphQL name carries, so it is
+bundle's name and one segment of an installed kind's GraphQL name, so it is
 one lowercase word. Two authorities may publish a package of the same word: an
 install writes under `bundle:<authority>:<package>`, so they stay two writers,
-and their GraphQL names take the authority's first label to stay apart.
+and every installed kind's GraphQL name carries its full authority
+(`Acme_example_com_Tasks_Task`), so the two names never collide
+([decision 0058](decisions/0058-a-graphql-name-always-carries-the-authority.md)).
 `installs:` lists the exact references of everything the closure ships: its [kinds](data-model.md#kinds-and-references),
 [traits](data-model.md#traits),
 [property types](data-model.md#property-types),

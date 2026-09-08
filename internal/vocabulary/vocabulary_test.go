@@ -2945,8 +2945,8 @@ var shippedVocabularyDirs = []string{
 // same bar where they now live: they admit TOGETHER (messaging and calendar
 // point at people) and they carry the shape a sample package has — kinds, no
 // inputs, no callables. They install as the repository's own
-// (`source: installed`), which is what makes their GraphQL names
-// `People_Person` and `Tasks_Task`.
+// (`source: installed`), which is what gives their GraphQL names an authority
+// and package prefix instead of the bare singular.
 func TestShippedVocabularyBundles(t *testing.T) {
 	var raw []map[string]any
 	for _, dir := range shippedVocabularyDirs {
@@ -3071,10 +3071,10 @@ func TestShippedVocabularyBundles(t *testing.T) {
 			t.Errorf("person.%s must not exist", p)
 		}
 	}
-	// An installed kind carries its PACKAGE in GraphQL, so two packages may
-	// declare a `person` without either renaming the other.
-	if got := vocabulary.GraphQLName("samples.substrate.reamde.dev/people/person", person.Source); got != "People_Person" {
-		t.Errorf("GraphQL name = %q, want People_Person", got)
+	// An installed kind carries its AUTHORITY and PACKAGE in GraphQL, so two
+	// packages may declare a `person` without either renaming the other.
+	if got := vocabulary.GraphQLName("samples.substrate.reamde.dev/people/person", person.Source); got != "Samples_substrate_reamde_dev_People_Person" {
+		t.Errorf("GraphQL name = %q, want Samples_substrate_reamde_dev_People_Person", got)
 	}
 }
 

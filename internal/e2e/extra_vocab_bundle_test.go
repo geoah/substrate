@@ -22,11 +22,11 @@ const (
 	xvPkg              = xvAuthority + "/" + xvPackage
 	xvWidgetKind       = xvPkg + "/widget"
 	xvWidgetCollection = "/api/v1/" + xvPkg + "/widget"
-	// The GraphQL type name the widget kind generates: the PACKAGE is the
-	// prefix (decision 0047), and the authority joins it only when two
-	// authorities install a package of one name, so a rename of that keying
-	// fails here loudly.
-	xvWidgetGraphQLType = "Upgrades_Widget"
+	// The GraphQL type name the widget kind generates: the kind lands as
+	// `installed`, so its name is the authority (dots folded to
+	// underscores), the package and the kind (decision 0058); a change to
+	// that fold fails here loudly.
+	xvWidgetGraphQLType = "Upgrades_e2e_example_Upgrades_Widget"
 
 	// The package VOC-04 tries to admit with a key the dialect does not
 	// know. It must never exist afterwards.
