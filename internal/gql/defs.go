@@ -24,7 +24,7 @@ import (
 // rather than a typed declaration because the schema is built from
 // `substrate.KindInfo` — the API builds it too, and `internal/api` may not import
 // the engine (nor `internal/substrate` the vocabulary, which declares the parsed
-// kind). `kind.properties` is the meta-kind's one json leaf for the same reason a
+// kind). `kind.properties` is a json leaf of the meta-kind for the same reason a
 // property declaration cannot state its own grammar: it recurses.
 
 func definitionMap(def map[string]any, key string) map[string]any {

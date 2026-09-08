@@ -362,24 +362,34 @@ data:
 ```
 
 Retirement is explicit: a prune without the entry keeps today's behavior, and
-a name is spent only when it is written here. It is also permanent. The block
-is stored on the declaration row, so a rebuild and `get -o yaml` carry it; the
-engine copies a stored entry into every later document of the same package or
-kind, so a document that omits the list does not lift it; and a declaration
-of a retired name is refused on every door with the same sentence, `a retired
-name is never declared again`: the apply verb, a bundle install or a sample
-import (a rehomed sample that declares a name the repository retired under
-the same package is refused too), the boot upgrade of the shipped tree, and
-`mise run kinds:check` for the tree itself. A retired name is not a
-`deprecated:` one: `deprecated:` keeps the name usable and asks clients to
-stop offering it.
+a name is spent only when it is written here. The block is stored on the
+declaration row, so a rebuild and `get -o yaml` carry it; the engine copies a
+stored entry into every later document of the same package or kind, so a
+document that omits the list does not lift it and the list never shrinks
+while the row stands; and a declaration of a retired name is refused on every
+door with the same sentence, `a retired name is never declared again`: the
+apply verb, a bundle install or a sample import (a rehomed sample that
+declares a name the repository retired under the same package is refused
+too), the boot upgrade of the shipped tree, and `mise run kinds:check` for the
+tree itself. A retired name is not a `deprecated:` one: `deprecated:` keeps
+the name usable and asks clients to stop offering it.
+
+The row is the scope. A kind's list lives as long as the kind: deleting the
+kind (once no live record remains) and declaring it again starts a kind with
+no retirements, so a property, value or state name that must stay spent
+across a kind delete is held by retiring the kind name itself in the
+package's `retired.kinds`. A package's list lives as long as the package.
 
 The block's shape is held at load: every entry is a valid name, no entry is
 listed twice, and a name both declared and retired in the same document is
-refused. An entry needs no live subject, so `values.level` may name a property
-the kind no longer declares. Nested object fields, a reference's link
-properties, traits, property types, functions and agents have no reservation
-today. Names removed before this landed carry none either.
+refused, a stamp target a transition writes included. A retired value bites
+only while its property is an enum and a retired state only while its
+property is a machine; under another datatype the entry lies dormant, so the
+property is free to change shape. An entry needs no live subject, so
+`values.level` may name a property the kind no longer declares. Nested object
+fields, a reference's link properties, traits, property types, functions and
+agents have no reservation today. Names removed before this landed carry none
+either.
 
 ## The reserved keys
 

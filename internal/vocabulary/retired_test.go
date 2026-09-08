@@ -109,6 +109,18 @@ func TestRetiredReserved(t *testing.T) {
   retired:
     properties: [size]
 `, `property "size" is retired and declared; a retired name is never declared again`)
+		// A stamp target the kind never spelled out is declared by the
+		// transition that writes it.
+		loadThingErr(t, `  properties:
+    phase:
+      type: state
+      states: [open, done]
+      initial: open
+      transitions:
+        - {from: open, to: done, stamps: {doneAt: now}}
+  retired:
+    properties: [doneAt]
+`, `property "doneAt" is retired and a transition stamps it; a retired name is never declared again`)
 		loadThingErr(t, `  properties:
     level: {type: enum, values: [low, high]}
   retired:

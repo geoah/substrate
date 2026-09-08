@@ -56,14 +56,20 @@ An author who wants a name spent says so; the engine never infers permanence
 from a removal, because a rename in flight, a mistaken apply and an uninstall
 that will be reinstalled all look like prunes.
 
-A retirement is permanent and lives as long as its package or kind. The
-engine carries a stored retirement into every later document of the same
-package or kind before it resolves versions, so a document that omits the
-list does not lift it (the apply verb merges and never prunes). On the boot
-upgrade, where the shipped tree is the candidate and nothing merges, a tree
-that drops a stored retirement refuses the upgrade like any other narrowing.
-Removing a package whole removes its reservations with it: the package name
-itself is not reserved here.
+A retirement lives as long as the row that carries it, and while that row
+stands it cannot shrink. The engine carries a stored retirement into every
+later document of the same package or kind before it resolves versions, so a
+document that omits the list does not lift it (the apply verb merges and never
+prunes). On the boot upgrade, where the shipped tree is the candidate and
+nothing merges, a tree that drops a stored retirement refuses the upgrade like
+any other narrowing, and so does a tree that retires a kind name this
+repository still declares, because the boot upgrade never prunes the kind.
+The row is the scope: deleting a kind (its live rows gone) and declaring it
+again starts a kind with no retirements, and removing a package whole removes
+its reservations with it. `retired.kinds` on the package header is what holds
+a name across a kind delete; the package name itself is not reserved here.
+A stamp target a transition writes counts as declared, spelled out or not, so
+retiring its name is refused while the transition stamps it.
 
 A retired name refuses on every admission door with the same sentence: the
 apply verb, `InstallBundleClosure` (which the catalog's install and import
@@ -109,8 +115,10 @@ spends names nobody meant to spend. Doing nothing leaves the defect.
 - Good, because the existing prune-and-return behavior is untouched: nothing
   a repository could do yesterday is refused today unless its author wrote
   `retired:`.
-- Bad, because a retirement is irreversible by design. A typo in the list
-  spends a name, and the only recourse is another name.
+- Bad, because a retirement cannot be edited away while its row stands. A
+  typo in a package's list spends a kind name for as long as the package
+  exists; a typo in a kind's list lasts until the kind is deleted and
+  declared again, which also drops every other retirement the kind held.
 - Bad, because a sample package whose kind name the repository retired under
   the same package can never be imported. The import rehomes the authority
   and keeps the package name, so the collision has no way around it.

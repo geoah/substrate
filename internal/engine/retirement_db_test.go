@@ -100,11 +100,27 @@ func TestRetirementRefusesOnEveryDoor(t *testing.T) {
 		_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs)
 		return err
 	}
-	if err := apply(packageDocRetiring(retPackage),
+	// The base closure's header carries an EMPTY list, which is no retirement:
+	// the row stores no block, and re-applying the same header is a no-op that
+	// moves no version.
+	emptyList := packageDocRetiring(retPackage)
+	emptyList["data"].(map[string]any)["retired"] = map[string]any{"kinds": []any{}}
+	if err := apply(emptyList,
 		retKindDoc(retPackage, "widget", retWidgetProps(), nil),
 		retKindDoc(retPackage, "gadget", map[string]any{"label": map[string]any{"type": "string"}}, nil),
+		retKindDoc(retPackage, "trinket", map[string]any{"label": map[string]any{"type": "string"}}, nil),
 	); err != nil {
 		t.Fatalf("install the base closure: %v", err)
+	}
+	header := mustGet(t, ds, "substrate.reamde.dev/core/package", retPackage)
+	if _, stored := header.Properties["retired"]; stored {
+		t.Fatalf("an empty list stored a block: %v", header.Properties["retired"])
+	}
+	if err := apply(emptyList); err != nil {
+		t.Fatalf("re-apply the header with an empty list: %v", err)
+	}
+	if again := mustGet(t, ds, "substrate.reamde.dev/core/package", retPackage); again.Properties["version"] != header.Properties["version"] {
+		t.Fatalf("re-applying an empty list moved the package version %v -> %v", header.Properties["version"], again.Properties["version"])
 	}
 
 	// Retiring a name the package still declares is one document contradicting
@@ -136,6 +152,14 @@ func TestRetirementRefusesOnEveryDoor(t *testing.T) {
 		}
 	}
 	assertStored("after the retire")
+
+	// A change elsewhere in the package travels without its header: deleting
+	// another kind moves the package version from the STORED row, retirement
+	// included, rather than from a bare header that would read as un-retiring.
+	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/kind", retPackage+"/trinket"); err != nil {
+		t.Fatalf("deleting another kind of a package with retirements must admit: %v", err)
+	}
+	assertStored("after deleting another kind without the header")
 
 	// The marker is a declaration key like any other: it rides the changelog,
 	// so a rebuild from the segment files carries it.
@@ -242,8 +266,8 @@ func TestRetirementRefusesOnEveryDoor(t *testing.T) {
 	if err := install(closure(packageDocRetiring(pkg), thing)); err != nil {
 		t.Fatalf("an upgrade that omits the block must admit: %v", err)
 	}
-	header := mustGet(t, ds, "substrate.reamde.dev/core/package", pkg)
-	if got := header.Properties["retired"]; !reflect.DeepEqual(got, map[string]any{"kinds": []any{"other"}}) {
+	mirror := mustGet(t, ds, "substrate.reamde.dev/core/package", pkg)
+	if got := mirror.Properties["retired"]; !reflect.DeepEqual(got, map[string]any{"kinds": []any{"other"}}) {
 		t.Fatalf("the install door lifted the retirement: %v", got)
 	}
 	if _, err := ds.KindByRef(ctx, pkg+"/other"); err == nil {

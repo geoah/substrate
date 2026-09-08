@@ -79,6 +79,34 @@ func retirementGuards(current, candidate *vocabulary.Registry, touched, skip map
 	return out
 }
 
+// heldRetirementGuards is the boot door's extra branch: a shipped header that
+// retires a kind name while this repository still declares the kind. The apply
+// and install doors prune what a closure stops declaring, so there the drop and
+// the retirement land in one batch; the boot upgrade never prunes, so the
+// header would land beside the kind row and the next open would refuse the
+// stored closure as retired-and-declared, which for core is a repository that
+// no longer opens. Refused before any row moves, naming the kind to delete
+// first.
+func heldRetirementGuards(current, candidate *vocabulary.Registry, touched map[string]bool) []string {
+	var out []string
+	for _, aname := range sortedKeys(touched) {
+		cur, _ := current.PackageByName(aname)
+		cand, _ := candidate.PackageByName(aname)
+		if cur == nil || cand == nil {
+			continue
+		}
+		for _, name := range cand.RetiredKinds {
+			held := cur.Kinds[name]
+			if held == nil || cand.Kinds[name] != nil {
+				continue
+			}
+			out = append(out, fmt.Sprintf("kind %s: the shipped package retires the name while this repository still declares the kind; the boot upgrade never prunes, so delete the kind first",
+				held.Identity))
+		}
+	}
+	return out
+}
+
 // kindRetirementGuards is one kind's half: the stored list may not shrink, and
 // the candidate may not declare a name either list covers. curT is nil for a
 // kind the repository does not hold yet, whose own block the loader already
@@ -106,8 +134,9 @@ func kindRetirementGuards(curT, candT *vocabulary.Kind) []string {
 				ident, pname, v, retirementPermanent))
 		}
 	}
+	// An implicit stamp target counts as declared: a transition writes it.
 	for _, name := range unionStrings(stored.Properties, candT.Retired.Properties) {
-		if p := candT.Props[name]; p != nil && !p.Implicit {
+		if candT.Props[name] != nil {
 			out = append(out, fmt.Sprintf("kind %s: property %q is retired; %s", ident, name, retiredDeclaredAgain))
 		}
 	}
@@ -162,6 +191,14 @@ func carryRetirements(b *vocabularyBatch, existing map[string]vocabulary.Documen
 		if d.Kind != vocabulary.DocPackage && d.Kind != vocabulary.DocKind {
 			continue
 		}
+		// An empty list is no retirement. The row regenerator writes the key
+		// only for a non-empty list, so a document carrying `kinds: []` would
+		// otherwise never compare equal to its row and bump the version on
+		// every re-apply.
+		if normalized, changed := normalizeRetired(d.Data); changed {
+			d.Data = normalized
+			b.docs[i] = d
+		}
 		stored, has := existing[docKey(d)]
 		if !has {
 			continue
@@ -194,6 +231,35 @@ func carryRetirements(b *vocabularyBatch, existing map[string]vocabulary.Documen
 	}
 }
 
+// normalizeRetired drops the empty parts of a document's `retired` block: an
+// empty list, a property whose list is empty, and the key itself once nothing
+// is left. Only a well-formed block is touched; a malformed one is the
+// loader's to refuse. Returns the data with a fresh map when anything moved.
+func normalizeRetired(data map[string]any) (map[string]any, bool) {
+	raw, present := data["retired"]
+	if !present {
+		return data, false
+	}
+	block := mapOrNil(raw)
+	if block == nil {
+		return data, false
+	}
+	normalized, ok := mergeRetiredBlocks(block, nil)
+	if !ok || declarationDataEqual(block, normalized) {
+		return data, false
+	}
+	out := make(map[string]any, len(data))
+	for k, v := range data {
+		out[k] = v
+	}
+	if len(normalized) == 0 {
+		delete(out, "retired")
+	} else {
+		out["retired"] = normalized
+	}
+	return out, true
+}
+
 // mergeRetiredBlocks unions two `retired` blocks key by key: a list key
 // (`kinds`, `properties`) unions its names, a by-property key (`values`,
 // `states`) unions per property. Stored entries come first, then the incoming
@@ -210,7 +276,9 @@ func mergeRetiredBlocks(stored, incoming map[string]any) (map[string]any, bool) 
 			if (sv != nil && !isList(sv)) || (iv != nil && !isList(iv)) {
 				return nil, false
 			}
-			out[key] = anyList(unionStrings(anyStrings(sv), anyStrings(iv)))
+			if names := unionStrings(anyStrings(sv), anyStrings(iv)); len(names) > 0 {
+				out[key] = anyList(names)
+			}
 		default:
 			sm, im := mapOrNil(sv), mapOrNil(iv)
 			if (sv != nil && sm == nil) || (iv != nil && im == nil) {
@@ -221,9 +289,13 @@ func mergeRetiredBlocks(stored, incoming map[string]any) (map[string]any, bool) 
 				if (sm[pname] != nil && !isList(sm[pname])) || (im[pname] != nil && !isList(im[pname])) {
 					return nil, false
 				}
-				byProp[pname] = anyList(unionStrings(anyStrings(sm[pname]), anyStrings(im[pname])))
+				if names := unionStrings(anyStrings(sm[pname]), anyStrings(im[pname])); len(names) > 0 {
+					byProp[pname] = anyList(names)
+				}
 			}
-			out[key] = byProp
+			if len(byProp) > 0 {
+				out[key] = byProp
+			}
 		}
 	}
 	return out, true

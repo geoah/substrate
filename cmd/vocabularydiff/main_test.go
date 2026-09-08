@@ -325,6 +325,34 @@ func TestRetiredNameReuseIsRefused(t *testing.T) {
 		wantViolation(t, got, `declares retired states "archived" on property "phase"`)
 	})
 
+	t.Run("a retired value returning through a property type", func(t *testing.T) {
+		// The kind's `level` takes its values from a refinement, so the tree
+		// check reads them off the property type document, as the loader does.
+		const levelType = `kind: substrate.reamde.dev/core/propertytype
+metadata: {id: t.example.com/t/level}
+data:
+  authority: t.example.com
+  package: t
+  base: enum
+  values: [high]
+`
+		base := retiredFiles()
+		base["t.example.com/t/level.yaml"] = levelType
+		base["t.example.com/t/thing.yaml"] = strings.Replace(retiredThing,
+			"    level: {type: enum, values: [high]}\n", "    level: {type: level}\n", 1)
+		if got := diffTrees(writeTree(t, base), writeTree(t, base)); len(got) != 0 {
+			t.Fatalf("an unchanged refinement violates: %v", got)
+		}
+		head := map[string]string{}
+		for k, v := range base {
+			head[k] = v
+		}
+		head["t.example.com/t/level.yaml"] = strings.Replace(levelType, "values: [high]", "values: [high, low]", 1)
+		head["t.example.com/t/bundle.yaml"] = strings.Replace(retiredBundle, "version: 2", "version: 3", 1)
+		got := diffTrees(writeTree(t, base), writeTree(t, head))
+		wantViolation(t, got, `declares retired values "low" on property "level"`)
+	})
+
 	t.Run("a retired property, value or state dropped from the list", func(t *testing.T) {
 		head := retiredFiles()
 		head["t.example.com/t/thing.yaml"] = strings.Replace(baseThing, "    label: {type: string}\n",

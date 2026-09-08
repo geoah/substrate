@@ -315,6 +315,13 @@ func retirementViolations(base, head *tree) []string {
 					}
 					p, _ := props[pname].(map[string]any)
 					live := declaredWords(p[key])
+					if key == "values" && p["values"] == nil {
+						// A refinement (`type: <propertytype>`) carries its values
+						// on the property type document, in the same package.
+						if pt, ok := head.decls[declKey(vocabulary.DocPropertyType, h.pkg+"/"+fmt.Sprint(p["type"]))]; ok {
+							live = declaredWords(pt.data["values"])
+						}
+					}
 					for _, v := range union(anyStrings(sm[pname]), anyStrings(cm[pname])) {
 						if live[v] {
 							out = append(out, fmt.Sprintf("%s: kind %s declares retired %s %q on property %q; a retired name is never declared again", h.file, h.id, key, v, pname))

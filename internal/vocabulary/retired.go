@@ -75,7 +75,12 @@ func (l *loader) parseKindRetirement(where string, d map[string]any, t *Kind) {
 			l.errf("%s.properties: %q must be %s", bwhere, v, camelRule)
 		case seen[v]:
 			l.errf("%s.properties: %q is listed twice", bwhere, v)
-		case t.Props[v] != nil && !t.Props[v].Implicit:
+		case t.Props[v] != nil && t.Props[v].Implicit:
+			// A stamp target the kind never spelled out is still a property
+			// the machine writes on every transition, so retiring the name
+			// while a transition stamps it is the same contradiction.
+			l.errf("%s.properties: property %q is retired and a transition stamps it; %s", bwhere, v, retiredDeclaredAgain)
+		case t.Props[v] != nil:
 			l.errf("%s.properties: property %q is retired and declared; %s", bwhere, v, retiredDeclaredAgain)
 		default:
 			if _, builtin := reservedProps[v]; builtin {
@@ -105,7 +110,7 @@ func (l *loader) parseKindRetirement(where string, d map[string]any, t *Kind) {
 		}
 		for _, pname := range sortedKeys(mapOfAny(byProp)) {
 			p := t.Props[pname]
-			if p == nil || p.Implicit {
+			if p == nil {
 				continue
 			}
 			live := map[string]bool{}

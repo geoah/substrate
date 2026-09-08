@@ -259,6 +259,10 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 	// moves. This door has no document merge in front of it, so a dropped list
 	// is refused here rather than carried forward.
 	retirements := retirementGuards(current, reg, upgrade, keptIdents)
+	// And the branch only this door needs: the tree retires a name this
+	// repository still declares. Nothing here prunes the kind, so the header
+	// would land beside it and the next open would refuse the stored closure.
+	retirements = append(retirements, heldRetirementGuards(current, reg, upgrade)...)
 
 	// REFUSING THE UPGRADE IS NOT REFUSING THE REPOSITORY. A guard that failed
 	// the open would take the repository down with it — and leave no way back
@@ -298,7 +302,7 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 		// The message is the entire interface for the migration it is asking
 		// for, so it names the repository, the kind, the property and the count.
 		ds.svc.log.Error("substrate: REFUSED to upgrade a repository's shipped vocabulary. Live rows hold the old shape, "+
-			"or a declared default no write could store. The stored declarations stand, "+
+			"a declared default no write could store, or a retired name is declared again or dropped. The stored declarations stand, "+
 			"and this binary's newer ones will not land until it is resolved",
 			"repository", ds.info.Name, "refused", strings.Join(refused, "; "))
 		return nil

@@ -20,7 +20,8 @@ package engine
 //     resolution to commit, an apply holds it exclusive, so no write lands a
 //     value against a declaration the apply is replacing;
 //   - deleting a type with live instances is refused, counted inside the same
-//     transaction; identities are never reused (history orphans by design);
+//     transaction; a dropped name may return unless the package retires it
+//     (history orphans by design);
 //   - repository open rebuilds the registry FROM the schema record rows, which
 //     is what retired the stored-manifest reload and its restart-to-activate
 //     hazard.
@@ -755,11 +756,17 @@ func resolveDeclarationVersions(b *vocabularyBatch, existing map[string]vocabula
 		if stored == 0 {
 			continue
 		}
-		authority, name := vocabulary.SplitPackageRef(g)
-		b.docs = append(b.docs, vocabulary.Document{
-			Kind: vocabulary.DocPackage, ID: g,
-			Data: map[string]any{"authority": authority, "package": name, "version": stored + 1},
-		})
+		// The header travels as its STORED row says it, version moved: a bare
+		// header would drop the description and the retired kind names, and
+		// the retirement guard would then refuse the batch as un-retiring a
+		// name (decision 0055).
+		data := map[string]any{}
+		for k, v := range existing[vocabulary.DocPackage+"\x00"+g].Data {
+			data[k] = v
+		}
+		data["authority"], data["package"] = vocabulary.SplitPackageRef(g)
+		data["version"] = stored + 1
+		b.docs = append(b.docs, vocabulary.Document{Kind: vocabulary.DocPackage, ID: g, Data: data})
 		authorityVersion[g] = stored + 1
 	}
 

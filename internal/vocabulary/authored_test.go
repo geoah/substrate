@@ -182,7 +182,7 @@ func TestADeclarationIsTheAuthoredMap(t *testing.T) {
 		}
 	}
 	// A kind's enum values keep the author's spelling: the meta-kind types
-	// `properties` as the one json leaf, so there is nothing to normalize for.
+	// `properties` as a json leaf, so there is nothing to normalize for.
 	props, _ := g.Kinds["widget"].Definition["properties"].(map[string]any)
 	status, _ := props["status"].(map[string]any)
 	vals, _ := status["values"].([]any)
