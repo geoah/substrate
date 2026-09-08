@@ -73,8 +73,11 @@ func (h *handler) getChangesPage(w http.ResponseWriter, r *http.Request, ds subs
 	// `before=0` is the head of whatever history is there and names nothing.
 	generation := r.URL.Query().Get("generation")
 	switch {
-	case before > 0 && before < retentionHorizon():
+	case before < 0 || (before > 0 && before < retentionHorizon()):
 		writeCompacted(w, head, fmt.Sprintf("seq %d is below the retention horizon %d; re-list and resume from the head", before, retentionHorizon()))
+		return
+	case before > head.Seq:
+		writeCompacted(w, head, fmt.Sprintf("seq %d is above the head %d: this changelog never reached the cursor; re-list and resume from the head", before, head.Seq))
 		return
 	case generation != "" && generation != head.Generation:
 		writeCompacted(w, head, fmt.Sprintf("generation %q is not this changelog's %q: the history was replaced since the cursor was saved; re-list and resume from the head", generation, head.Generation))

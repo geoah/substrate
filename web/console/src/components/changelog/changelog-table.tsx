@@ -16,7 +16,11 @@ import {
   useState,
   type ReactNode,
 } from "react"
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
+import {
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query"
 import { ArrowUpIcon, InboxIcon, SearchXIcon } from "lucide-react"
 
 import {
@@ -116,6 +120,7 @@ export function ChangelogTable({
   toolbarLeft,
   toolbarRight,
 }: ChangelogTableProps) {
+  const queryClient = useQueryClient()
   // The seek answers "where does history ≤ until start" before paging begins.
   const seek = useQuery({
     ...seekQueryOptions(untilMs ?? 0),
@@ -239,11 +244,14 @@ export function ChangelogTable({
         // resending the refused cursor would only be refused again.
         resetRef.current = true
         setResetNonce((n) => n + 1)
+        // The seek's answer is a position in the OLD history, cached without
+        // expiry; a time-bound view would keep resending it and stay refused.
+        void queryClient.invalidateQueries({ queryKey: ["changes", "seek"] })
         void refetchHistoryRef.current?.()
       },
     })
     return () => handle.stop()
-  }, [follow, filterKey, resetNonce])
+  }, [follow, filterKey, resetNonce, queryClient])
 
   function onScroll() {
     const el = scrollRef.current

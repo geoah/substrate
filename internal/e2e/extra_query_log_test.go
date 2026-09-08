@@ -477,10 +477,10 @@ func xqCaseBackwardPage(c *C) {
 	c.requiref(len(forward) > 0, "the changelog is empty")
 	head := forward[len(forward)-1].Seq
 
-	// `before` is exclusive, so the walk starts one above the head to take
-	// the head row itself; rows committed during the walk sit above it and
-	// belong to neither read.
-	before := head + 1
+	// `before` is exclusive and a cursor above the head is refused, so the
+	// walk starts at 0, the head of whatever is there; the stories write
+	// nothing while it runs, so that head is the forward read's.
+	before := int64(0)
 	// A `before` above 0 travels with the history generation it belongs to.
 	_, generation := c.changelogHead()
 	var seqs []int64

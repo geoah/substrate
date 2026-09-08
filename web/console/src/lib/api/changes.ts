@@ -151,7 +151,12 @@ export function changesInfiniteOptions(
       "changes",
       "feed",
       filterKey(filter),
-      { first, startBefore, sinceMs: opts.sinceMs ?? null },
+      {
+        first,
+        startBefore,
+        startGeneration: opts.startGeneration ?? null,
+        sinceMs: opts.sinceMs ?? null,
+      },
     ],
     queryFn: ({ pageParam, signal }) =>
       fetchChangesPage({

@@ -355,6 +355,8 @@ func TestHistoryContinuationIsHeldToTheGeneration(t *testing.T) {
 		"first=2&before=3",
 		"first=2&before=3&generation=some-other-history",
 		"first=2&generation=some-other-history",
+		"first=2&before=4&generation=" + ds.generation,  // above the head
+		"first=2&before=-1&generation=" + ds.generation, // below every horizon
 	} {
 		status, got := resumeRefusal(t, srv, "/api/v1/changes?"+query, tok)
 		if status != http.StatusGone {
