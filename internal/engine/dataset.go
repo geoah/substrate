@@ -73,6 +73,7 @@ var systemKinds = map[string]bool{
 var (
 	_ substrate.Dataset               = (*dataset)(nil)
 	_ substrate.VocabularyApplier     = (*dataset)(nil)
+	_ substrate.VocabularyPlanner     = (*dataset)(nil)
 	_ substrate.ChangeFeedOps         = (*dataset)(nil)
 	_ substrate.AutomationOps         = (*dataset)(nil)
 	_ substrate.TriggerDispatcher     = (*dataset)(nil)

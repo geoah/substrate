@@ -135,13 +135,35 @@ lines the install would refuse on as `blockers`. A preview that cannot run at
 all (a database fault, a closure this repository cannot admit) still leaves
 the entry in the listing, with one fixed blocker line ("the upgrade preview
 failed; see the server log") and no version motion; the error itself goes to
-the server log, never to a repository token. The console's Registry counts
-these on the sidebar badge, offers Upgrade where nothing blocks, and states
-the guard lines where something does; the button is the install verb,
-unchanged. Of the two catalog tiers only a PROVIDER is previewed: a sample's
-closure landed under the repository's own authority and belongs to it, so the
-catalog answers not-available before the dataset is asked
+the server log, never to a repository token. Of the two catalog tiers only a
+PROVIDER is previewed: a sample's closure landed under the repository's own
+authority and belongs to it, so the catalog answers not-available before the
+dataset is asked
 ([0048](decisions/0048-providers-are-published-samples-are-copied.md)).
+
+The preview also carries the **conversion plan** the install would run
+([decision 0067](decisions/0067-a-lossy-conversion-runs-only-with-a-confirmation-bound-to-its-preview.md)):
+`steps`, one per record rewrite the closure declares against the live records
+(`rename`, `backfill`, `remap` and `null`, [vocabulary
+evolution](vocabulary.md#backfilling-and-remapping)), each with the number of
+live records it touches; `work`, the sum of those counts; `lossy`, true when a
+step removes values from the fold (a dropped property nulled, an enum value
+renamed onto a value the declaration keeps); and `planHash` and
+`changelogSeq`, the plan's identity and the changelog head it was counted at.
+A lossless plan installs on the bare `POST …/install`. A lossy one runs only
+with a body confirming what was previewed, `{"confirm": {"planHash",
+"changelogSeq"}}`: without it the install is refused with the `lossy` code,
+after any write since the preview with `conflict`, and with a hash that is not
+the recounted plan's with `lossy` again. The console's Registry counts
+upgrades on the sidebar badge, offers Upgrade where nothing blocks, asks
+first (listing the lossy steps) where the preview is lossy, and states the
+guard lines where something blocks; `substratectl install <provider>
+--allow-data-loss` reads the preview, prints the steps and confirms exactly
+that hash. The old values stay in the changelog either way; a lossy step
+removes them from the fold and nothing erases them. A plan whose `work` is
+above the deployment's ceiling (`SUBSTRATE_CONVERSION_CEILING`, 10000 records
+by default, [operations](operations.md#configuration)) is refused and the
+preview lists the refusal among `blockers`.
 
 The seeded `core` package is not a catalog entry, so its preview is its own
 read: `GET /api/v1/vocabulary/upgrade` answers one entry per package the
@@ -154,9 +176,13 @@ lines the server logged, which name the records to migrate. Admitted:
 `blockers` is empty (the last blocking record was migrated, or nothing ever
 blocked) but the boot upgrade runs only at a repository's first open under a
 binary, so the stored declarations stay old until the server starts again.
-The Registry states both above its sections (the guard lines, or "lands when
-the server starts again"), and `substratectl catalog` prints every package's
-motion with `blocked` or, for core, `lands at restart`.
+The boot upgrade has nobody to confirm a lossy plan, so it never runs a lossy
+step: a shipped change whose plan is lossy here is refused, and the step is
+among the `blockers` with its count, cleared by rewriting the records it
+names. The Registry states both above its sections (the guard lines, or
+"lands when the server starts again"), and `substratectl catalog` prints
+every package's motion with `blocked` or, for core, `lands at restart`, and
+the steps each upgrade would run beneath.
 
 A changed declaration therefore **must** ship a changed version, or no
 repository ever learns it moved; CI enforces that (`mise run kinds:check`,

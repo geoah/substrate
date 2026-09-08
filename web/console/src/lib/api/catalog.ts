@@ -12,6 +12,7 @@ import type {
   BundleStatus,
   CatalogItem,
   CatalogTier,
+  ConversionConfirm,
   OperationalList,
   ShippedUpgrade,
 } from "./types"
@@ -142,8 +143,15 @@ export function catalogItemQueryOptions(id: string, home = "") {
  * upgrade semantics); the response is the installed bundle's computed status.
  * The catalog id is a package reference and carries a `/`, so it is
  * `%2F`-encoded as one path segment. */
-export function installBundle(id: string): Promise<BundleStatus> {
-  return request<BundleStatus>("POST", `${CATALOG}/${seg(id)}/install`)
+export function installBundle(
+  id: string,
+  confirm?: ConversionConfirm
+): Promise<BundleStatus> {
+  return request<BundleStatus>(
+    "POST",
+    `${CATALOG}/${seg(id)}/install`,
+    confirm && { confirm }
+  )
 }
 
 /** Import a SAMPLE under this repository's own authority (decision record

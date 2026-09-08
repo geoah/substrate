@@ -566,6 +566,8 @@ describe("RegistryPage", () => {
         available: true,
         from: 1,
         to: 2,
+        work: 0,
+        lossy: false,
         changes: [
           {
             kind: "kind",
@@ -648,6 +650,8 @@ describe("RegistryPage", () => {
             installed: true,
             upgrade: {
               available: false,
+              work: 0,
+              lossy: false,
               blockers: ["the upgrade preview failed; see the server log"],
             },
           },
@@ -683,9 +687,15 @@ describe("RegistryPage", () => {
               from: 16,
               to: 17,
               blockers: [guard],
-              renames: [
+              work: 2,
+              lossy: false,
+              planHash: "cafe",
+              changelogSeq: 41,
+              steps: [
                 {
+                  step: "rename" as const,
                   kind: "substrate.reamde.dev/core/llmprovider",
+                  property: "protocol",
                   from: "wire",
                   to: "protocol",
                   records: 2,
@@ -718,7 +728,13 @@ describe("RegistryPage", () => {
         shipped: [
           {
             package: "substrate.reamde.dev/core",
-            upgrade: { available: true, from: 16, to: 17 },
+            upgrade: {
+              available: true,
+              from: 16,
+              to: 17,
+              work: 0,
+              lossy: false,
+            },
           },
         ],
       })
@@ -738,7 +754,13 @@ describe("RegistryPage", () => {
         shipped: [
           {
             package: "substrate.reamde.dev/core",
-            upgrade: { available: false, from: 17, to: 17 },
+            upgrade: {
+              available: false,
+              from: 17,
+              to: 17,
+              work: 0,
+              lossy: false,
+            },
           },
         ],
       })

@@ -48,6 +48,10 @@ type options struct {
 	dataRoot  string
 	// segmentBytes is the changelog segment size (WithChangelogSegmentBytes).
 	segmentBytes int64
+	// conversionCeiling is the work ceiling (WithConversionCeiling); the set
+	// flag tells an explicit zero (no ceiling) from the default.
+	conversionCeiling    int64
+	conversionCeilingSet bool
 	// catchUpBatch is the page size of the boot's table-to-file catch-up
 	// (appendFromTable); rebuildBatch when not positive. Only a test sets it
 	// (export_test.go), to put a transaction across a page boundary.
@@ -138,6 +142,15 @@ func WithDataRoot(root string) Option { return func(o *options) { o.dataRoot = r
 // when not given or not positive.
 func WithChangelogSegmentBytes(n int64) Option { return func(o *options) { o.segmentBytes = n } }
 
+// WithConversionCeiling bounds the live records one declaration change may
+// rewrite in its transaction (SUBSTRATE_CONVERSION_CEILING, decision 0067): a
+// plan whose estimated work is above n is refused on both doors, and the
+// previews report it as a blocker. Zero or less is no ceiling;
+// DefaultConversionCeiling when the option is not given.
+func WithConversionCeiling(n int64) Option {
+	return func(o *options) { o.conversionCeiling, o.conversionCeilingSet = n, true }
+}
+
 // WithDirectoryReadOnly opens the service as a second process beside a running
 // server: the operator hat's `repository verify` and `reembed`. Open runs no
 // boot check and no orphan sweep, a dataset opens no changelog writer and
@@ -224,6 +237,9 @@ type service struct {
 	dataRoot string
 	// segmentBytes is the size every changelog writer rotates at.
 	segmentBytes int64
+	// conversionCeiling is the most live records one declaration change may
+	// rewrite (convert.go admitConversion); zero or less is no ceiling.
+	conversionCeiling int64
 	// catchUpBatch is the page size of the table-to-file catch-up.
 	catchUpBatch int
 	// blobs is where blob bytes live (WithBlobStore); the fs backend under
@@ -319,6 +335,9 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 	if o.catchUpBatch <= 0 {
 		o.catchUpBatch = rebuildBatch
 	}
+	if !o.conversionCeilingSet {
+		o.conversionCeiling = DefaultConversionCeiling
+	}
 
 	admin, err := sql.Open("pgx", dsn)
 	if err != nil {
@@ -352,13 +371,15 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 		segmentBytes: o.segmentBytes,
 		catchUpBatch: o.catchUpBatch,
 		blobs:        o.blobs,
-		totpDisabled: o.insecureDisableTOTP,
-		readOnly:     o.dirReadOnly,
-		log:          o.log,
-		gqlSchemas:   gql.NewCache(),
-		bg:           newBackground(),
-		datasets:     map[string]*dataset{},
-		opening:      map[string]chan struct{}{},
+
+		conversionCeiling: o.conversionCeiling,
+		totpDisabled:      o.insecureDisableTOTP,
+		readOnly:          o.dirReadOnly,
+		log:               o.log,
+		gqlSchemas:        gql.NewCache(),
+		bg:                newBackground(),
+		datasets:          map[string]*dataset{},
+		opening:           map[string]chan struct{}{},
 
 		testImportFault:   o.importFault,
 		testImportBatch:   o.importBatch,

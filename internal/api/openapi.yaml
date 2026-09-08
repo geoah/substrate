@@ -656,7 +656,10 @@ paths:
         types, mappings, functions, agents, bundles): every document
         admitted or none, one transaction, activation on commit. Each
         document is the four-key envelope `kind`/`metadata`/`data`/`status`.
-        Bounded at 32 MiB.
+        Bounded at 32 MiB. A batch whose conversion plan is lossy (see
+        `/vocabulary/plan`) runs only with `confirm` carrying that plan's
+        `planHash` and `changelogSeq`; without one it is refused with the
+        `lossy` code, and after any intervening write with `conflict`.
       operationId: applyVocabulary
       parameters:
         - $ref: "#/components/parameters/actor"
@@ -673,6 +676,35 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VocabularyApplyResponse"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/vocabulary/plan:
+    post:
+      tags: [vocabulary]
+      summary: Preview an apply
+      description: |-
+        What applying the batch would refuse (`blockers`) and what it would
+        rewrite: the conversion steps with a live record count each, the
+        estimated work, whether the plan is lossy, and the `planHash` and
+        `changelogSeq` a confirmation names. Writes nothing. A batch the
+        apply would refuse before counting anything (a malformed document, a
+        package the caller may not write) is the same refusal here.
+      operationId: planVocabulary
+      parameters:
+        - $ref: "#/components/parameters/actor"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VocabularyPlanRequest"
+      responses:
+        "200":
+          description: The plan.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VocabularyPlan"
         default:
           $ref: "#/components/responses/Error"
   /api/v1/vocabulary/upgrade:
@@ -997,11 +1029,20 @@ paths:
       description: |-
         Applies the shipped closure under the authority that publishes it.
         Re-install is the upgrade. Answers the landed bundle's status with
-        the state of each suggested mapping the closure carried.
+        the state of each suggested mapping the closure carried. An upgrade
+        whose preview (`upgrade` on the catalog read) is `lossy` runs only
+        with a body confirming that preview's `planHash` and `changelogSeq`;
+        a lossless one takes no body.
       operationId: installCatalogItem
       parameters:
         - $ref: "#/components/parameters/catalogID"
         - $ref: "#/components/parameters/actor"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogTakeRequest"
       responses:
         "200":
           description: The installed bundle.
@@ -1018,11 +1059,19 @@ paths:
       description: |-
         Rehomes the shipped closure onto this repository's own authority and
         applies it, so what lands is `<authority>/<package>`. A provider id
-        is refused here, naming install.
+        is refused here, naming install. The optional body is the install's:
+        a re-import replaces the package, and one whose conversion plan is
+        lossy runs only with a confirmation.
       operationId: importCatalogItem
       parameters:
         - $ref: "#/components/parameters/catalogID"
         - $ref: "#/components/parameters/actor"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogTakeRequest"
       responses:
         "200":
           description: The imported bundle, under the repository's authority.
@@ -3088,6 +3137,8 @@ components:
           items:
             type: object
             additionalProperties: true
+        confirm:
+          $ref: "#/components/schemas/ConversionConfirm"
     VocabularyApplyResponse:
       type: object
       required: [records]
@@ -3096,6 +3147,110 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SubstrateRecord"
+    VocabularyPlanRequest:
+      type: object
+      additionalProperties: false
+      required: [documents]
+      properties:
+        documents:
+          type: array
+          description: The declaration documents the apply would take.
+          items:
+            type: object
+            additionalProperties: true
+    VocabularyPlan:
+      type: object
+      description: "The preview of one apply: the guard lines it would refuse
+        on and the conversion plan it would run (a `ConversionPlan`, flattened)."
+      required: [work, lossy]
+      properties:
+        blockers:
+          type: array
+          items:
+            type: string
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConversionStep"
+        work:
+          type: integer
+          format: int64
+        lossy:
+          type: boolean
+        planHash:
+          type: string
+        changelogSeq:
+          type: integer
+          format: int64
+    ConversionPlan:
+      type: object
+      description: The record rewrites a declaration change performs, counted
+        against the live records. Counts only, never record ids.
+      required: [work, lossy]
+      properties:
+        steps:
+          type: array
+          description: Each rewrite touching at least one live record, in
+            kind then step order.
+          items:
+            $ref: "#/components/schemas/ConversionStep"
+        work:
+          type: integer
+          format: int64
+          description: The sum of the steps' record counts, an upper bound
+            on the changelog entries the transaction appends. Refused above
+            the deployment's ceiling (`SUBSTRATE_CONVERSION_CEILING`, 10000
+            records by default).
+        lossy:
+          type: boolean
+          description: The plan removes values from the fold (a `null` step,
+            or a remap onto a value another stored value already maps to)
+            and runs only with a `ConversionConfirm` naming it. The old values
+            stay in the changelog.
+        planHash:
+          type: string
+          description: A hash over the steps and their counts. Absent when
+            nothing was planned.
+        changelogSeq:
+          type: integer
+          format: int64
+          description: The changelog head the plan was counted at.
+    ConversionStep:
+      type: object
+      required: [step, kind, property, records]
+      properties:
+        step:
+          type: string
+          enum: [rename, backfill, remap, "null"]
+        kind:
+          type: string
+        property:
+          type: string
+          description: The property written, under its candidate name.
+        from:
+          type: string
+          description: A rename's old property name, or a remap's old value.
+        to:
+          type: string
+          description: A rename's new property name, or a remap's new value.
+        records:
+          type: integer
+          format: int64
+        lossy:
+          type: boolean
+    ConversionConfirm:
+      type: object
+      additionalProperties: false
+      description: Consent to a lossy plan, bound to its preview. Refused
+        when the changelog head is no longer `changelogSeq` (`conflict`) or
+        the recounted plan's hash is not `planHash` (`lossy`).
+      required: [planHash, changelogSeq]
+      properties:
+        planHash:
+          type: string
+        changelogSeq:
+          type: integer
+          format: int64
     ShippedUpgrade:
       type: object
       required: [package, upgrade]
@@ -3264,7 +3419,10 @@ components:
             type: string
     BundleUpgrade:
       type: object
-      required: [available]
+      description: "The upgrade preview: the version motion, the guard lines
+        the install would refuse on, and the conversion plan it would run
+        (a `ConversionPlan`, flattened)."
+      required: [available, work, lossy]
       properties:
         available:
           type: boolean
@@ -3282,25 +3440,27 @@ components:
           type: array
           items:
             type: string
-        renames:
+        steps:
           type: array
           items:
-            $ref: "#/components/schemas/BundleUpgradeRename"
-    BundleUpgradeRename:
-      type: object
-      description: One property the upgrade moves live values for, and how
-        many records carry the old name.
-      required: [kind, from, to, records]
-      properties:
-        kind:
-          type: string
-        from:
-          type: string
-        to:
-          type: string
-        records:
+            $ref: "#/components/schemas/ConversionStep"
+        work:
           type: integer
           format: int64
+        lossy:
+          type: boolean
+        planHash:
+          type: string
+        changelogSeq:
+          type: integer
+          format: int64
+    CatalogTakeRequest:
+      type: object
+      additionalProperties: false
+      description: The optional body of install and import.
+      properties:
+        confirm:
+          $ref: "#/components/schemas/ConversionConfirm"
     BundleUpgradeChange:
       type: object
       required: [kind, id]

@@ -218,7 +218,7 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 		if err := t.lockKey(registryDepKey(ds)); err != nil {
 			return err
 		}
-		guards, err := st.guards(t)
+		guards, _, err := st.guards(t, ds.svc.conversionCeiling)
 		if err != nil {
 			return err
 		}

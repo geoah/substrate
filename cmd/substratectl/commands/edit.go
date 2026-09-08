@@ -67,7 +67,9 @@ ignored on the way in; emptying the file aborts.`,
 				if err := body.Decode(&raw); err != nil {
 					return fmt.Errorf("parse the edited document: %w", err)
 				}
-				return a.applySchemaDocuments(ctx, cl, []map[string]any{raw})
+				// An edit that removes values from records is refused as lossy;
+				// `apply --allow-data-loss` is the door that confirms one.
+				return a.applySchemaDocuments(ctx, cl, []map[string]any{raw}, false)
 			}
 			d, err := nodeDocument(body, "the edited document")
 			if err != nil {

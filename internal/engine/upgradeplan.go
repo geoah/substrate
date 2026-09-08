@@ -180,25 +180,18 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 		return plan, err
 	}
 	q := dbReader{ctx: ctx, db: ds.db}
-	blockers, err := droppedTypeGuards(q, st.droppedTypes)
-	if err != nil {
+	if plan.Blockers, err = st.guards(q); err != nil {
 		return plan, err
 	}
-	blockers = append(blockers, st.strandedMappings...)
-	blockers = append(blockers, st.retirements...)
-	blockers = append(blockers, st.conversionGuards...)
-	narrowed, err := narrowingGuards(q, st.narrowings)
-	if err != nil {
+	// The conversion plan the install would run, counted now: the steps, the
+	// work, whether it is lossy, and the hash and changelog head a
+	// confirmation names (convert.go, decision 0067). A plan above the work
+	// ceiling is refused by the install, so it blocks here.
+	if plan.ConversionPlan, err = st.conversions.wire(q); err != nil {
 		return plan, err
 	}
-	blockers = append(blockers, narrowed...)
-	stranded, err := droppedCallableGuards(q, st.droppedCallables)
-	if err != nil {
-		return plan, err
-	}
-	plan.Blockers = append(blockers, stranded...)
-	if plan.Renames, err = renamePlans(q, st.conversions.renames); err != nil {
-		return plan, err
+	if line := ceilingGuard(plan.ConversionPlan, ds.svc.conversionCeiling); line != "" {
+		plan.Blockers = append(plan.Blockers, line)
 	}
 	return plan, nil
 }

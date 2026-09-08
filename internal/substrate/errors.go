@@ -11,12 +11,13 @@ var (
 	ErrNotFound = errors.New("substrate: not found")
 	ErrConflict = errors.New("substrate: version conflict") // CAS mismatch
 	ErrGuard    = errors.New("substrate: operation not allowed here")
-	// ErrLossyConversion marks a vocabulary change that would collapse two
-	// stored values into one: an enum value renamed onto a value the stored
-	// declaration still admits. The engine wraps it together with ErrGuard, so
-	// the wire answers the guard code and a caller can still tell this refusal
-	// from a narrowing that a write of the records would clear. Nothing admits
-	// a lossy conversion today; the confirmation that would is issue #152's.
+	// ErrLossyConversion marks a vocabulary change whose conversion plan
+	// removes values from the fold (a dropped property nulled on live records,
+	// an enum value renamed onto a value the stored declaration still admits)
+	// and arrived without a ConversionConfirm for that plan, or with one for
+	// another plan. The engine wraps it together with ErrGuard; the API
+	// answers 403 under its own code, so a caller can preview the plan and
+	// confirm it (decision 0067).
 	ErrLossyConversion = errors.New("substrate: lossy conversion refused")
 	ErrValidation      = errors.New("substrate: validation failed")
 	ErrForbidden       = errors.New("substrate: forbidden") // e.g. foreign label namespace, system type write

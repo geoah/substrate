@@ -102,11 +102,13 @@ import {
   bundleSections,
   importFailureText,
   installedKindRows,
+  lossyStepLines,
   mergeBundles,
   missingRequirements,
   presentPackages,
   previewFailed,
   requirementsOf,
+  stepLines,
   readySuggestedMappings,
   REIMPORT_WARNING,
   requiresHint,
@@ -115,7 +117,6 @@ import {
   suggestedMappingsOf,
   upgradeAvailable,
   upgradeBlocked,
-  renameLines,
   upgradeMotion,
   pendingShippedUpgrades,
   type BundleRow,
@@ -380,13 +381,31 @@ function ImportAgainButton({
  * renders as UpgradeBlockedChip instead, because the server would refuse it,
  * so the console never offers the click (owner decision: no force). A SAMPLE
  * never reaches here: the server attaches no preview to one, because what it
- * landed belongs to the repository (decision record 0048). */
+ * landed belongs to the repository (decision record 0048).
+ *
+ * A LOSSY preview (decision 0067) asks first: the dialog lists the steps that
+ * remove values from the fold, and the click sends the preview's `planHash`
+ * and `changelogSeq` as the confirmation, so the consent covers exactly what
+ * was shown and the server refuses it once anything moved. A lossless upgrade
+ * installs on the click, as before. */
 function UpgradeButton({ row }: { row: BundleRow }) {
   const queryClient = useQueryClient()
   const upgrade = row.upgrade
+  const [confirming, setConfirming] = useState(false)
+  const lossy = Boolean(upgrade?.lossy && upgrade.planHash)
   const upgrading = useMutation({
-    mutationFn: () => installBundle(row.catalog?.id ?? row.id),
+    mutationFn: () =>
+      installBundle(
+        row.catalog?.id ?? row.id,
+        lossy && upgrade?.planHash
+          ? {
+              planHash: upgrade.planHash,
+              changelogSeq: upgrade.changelogSeq ?? 0,
+            }
+          : undefined
+      ),
     onSuccess: (status) => {
+      setConfirming(false)
       toast.add({
         type: "success",
         title: upgrade?.to
@@ -408,30 +427,92 @@ function UpgradeButton({ row }: { row: BundleRow }) {
     },
   })
   const motion = upgrade ? upgradeMotion(upgrade) : ""
+  const steps = stepLines(upgrade)
+  const losses = lossyStepLines(upgrade)
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={upgrading.isPending}
-            onClick={(e) => {
-              e.stopPropagation()
-              upgrading.mutate()
-            }}
-          />
-        }
-      >
-        {upgrading.isPending ? (
-          <Spinner className="size-3.5" />
-        ) : (
-          <CircleArrowUpIcon />
+    <>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={upgrading.isPending}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (lossy) setConfirming(true)
+                else upgrading.mutate()
+              }}
+            />
+          }
+        >
+          {upgrading.isPending ? (
+            <Spinner className="size-3.5" />
+          ) : (
+            <CircleArrowUpIcon />
+          )}
+          {upgrading.isPending ? "Upgrading…" : "Upgrade"}
+        </TooltipTrigger>
+        {(motion || steps.length > 0) && (
+          <TooltipContent className="max-w-96">
+            <div className="space-y-1">
+              {motion && <p>{motion}</p>}
+              {steps.map((s) => (
+                <p key={s}>{s}</p>
+              ))}
+            </div>
+          </TooltipContent>
         )}
-        {upgrading.isPending ? "Upgrading…" : "Upgrade"}
-      </TooltipTrigger>
-      {motion && <TooltipContent>{motion}</TooltipContent>}
-    </Tooltip>
+      </Tooltip>
+      {confirming && (
+        <Dialog
+          open
+          onOpenChange={(open) =>
+            !open && !upgrading.isPending && setConfirming(false)
+          }
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Upgrade {row.name} and lose values?</DialogTitle>
+              <DialogDescription>
+                {`This upgrade rewrites ${upgrade?.work ?? 0} live ${
+                  upgrade?.work === 1 ? "record" : "records"
+                }, and some of the rewrites remove values from your records. ` +
+                  `The removed values stay in the changelog; nothing is erased. ` +
+                  `The confirmation covers exactly this plan: if anything is written before it lands, the server refuses it and the preview is read again.`}
+              </DialogDescription>
+            </DialogHeader>
+            <ul className="space-y-1 text-sm">
+              {losses.map((s) => (
+                <li key={s}>{s}</li>
+              ))}
+            </ul>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                disabled={upgrading.isPending}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setConfirming(false)
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={upgrading.isPending}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  upgrading.mutate()
+                }}
+              >
+                {upgrading.isPending && <Spinner className="size-3.5" />}
+                Upgrade and accept the loss
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
   )
 }
 
@@ -703,7 +784,7 @@ function BundleDisclosure({
                 {ch.kind} {splitKind(ch.id).name}
               </span>
             ))}
-            {renameLines(row.upgrade).map((line) => (
+            {stepLines(row.upgrade).map((line) => (
               <span key={line} className="data text-muted-foreground">
                 {line}
               </span>
@@ -1218,9 +1299,9 @@ function PendingUpgradeNotice({ item }: { item: ShippedUpgrade }) {
           ))}
         </div>
       )}
-      {renameLines(item.upgrade).length > 0 && (
+      {stepLines(item.upgrade).length > 0 && (
         <div className="mt-1 space-y-0.5 pl-5">
-          {renameLines(item.upgrade).map((line) => (
+          {stepLines(item.upgrade).map((line) => (
             <p key={line} className="data text-muted-foreground">
               {line}
             </p>

@@ -126,6 +126,7 @@ func run() error {
 		engine.WithChangelogSegmentBytes(cfg.Data.ChangelogSegmentBytes),
 		engine.WithCredentialKey(cfg.CredentialKey),
 		engine.WithBlobStore(blobs),
+		engine.WithConversionCeiling(cfg.ConversionCeiling),
 	}
 	if cfg.OAuthCallbackURL != "" {
 		stateKey := cfg.OAuthStateKey

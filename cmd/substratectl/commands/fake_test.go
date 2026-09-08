@@ -74,6 +74,9 @@ type fakeSubstrate struct {
 	// the file name its Content-Disposition offers (export_test.go).
 	exportTar  []byte
 	exportName string
+	// plan is POST /api/v1/vocabulary/plan's answer: the conversion plan the
+	// apply would run, which `apply --allow-data-loss` confirms by its hash.
+	plan substrate.VocabularyPlan
 
 	requests  []string
 	lastBody  map[string]json.RawMessage
@@ -189,6 +192,10 @@ func (f *fakeSubstrate) handler() http.Handler {
 	// The sample door: the server rehomes the closure and answers with the
 	// LANDED bundle's status, whose id is the repository's own authority.
 	mux.HandleFunc("POST /api/v1/catalog/{id}/import", f.handleCatalogImport)
+	// The provider door: the id lands as named. The body, when there is one,
+	// is the confirmation of a lossy plan, kept in lastBody for the test.
+	mux.HandleFunc("POST /api/v1/catalog/{id}/install", f.handleCatalogInstall)
+	mux.HandleFunc("POST /api/v1/vocabulary/plan", f.handleVocabularyPlan)
 	mux.HandleFunc("GET /api/v1/catalog", f.handleCatalog)
 	mux.HandleFunc("GET /api/v1/vocabulary/upgrade", f.handleShippedUpgrade)
 	// The recovery export: a tar the test seeds (export_test.go).
@@ -378,6 +385,33 @@ func (f *fakeSubstrate) handleVocabularyApply(w http.ResponseWriter, r *http.Req
 func (f *fakeSubstrate) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
 	writeJSON(w, http.StatusOK, substrate.Listed(f.catalog))
+}
+
+// handleCatalogInstall stands in for the provider door: the bundle lands under
+// the id the request named, and the status comes back.
+func (f *fakeSubstrate) handleCatalogInstall(w http.ResponseWriter, r *http.Request) {
+	f.noteRequest(r)
+	id := r.PathValue("id")
+	pkg := id
+	if _, after, ok := strings.Cut(id, "/"); ok {
+		pkg = after
+	}
+	writeJSON(w, http.StatusOK, substrate.BundleStatus{
+		ID: id, Name: pkg, Authority: strings.TrimSuffix(id, "/"+pkg),
+		Package: pkg, Installed: true, Enabled: true, Kinds: 3,
+	})
+}
+
+// handleVocabularyPlan serves the apply preview the harness seeded.
+func (f *fakeSubstrate) handleVocabularyPlan(w http.ResponseWriter, r *http.Request) {
+	f.noteRequest(r)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.lastBody["documents"]; !ok {
+		writeError(w, http.StatusUnprocessableEntity, "validation", "no documents", nil)
+		return
+	}
+	writeJSON(w, http.StatusOK, f.plan)
 }
 
 // handleShippedUpgrade serves the boot upgrade's preview, or the refusal a

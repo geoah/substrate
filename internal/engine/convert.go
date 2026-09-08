@@ -1,6 +1,6 @@
 package engine
 
-// A CONVERSION IS ORDINARY RECORD WRITES (decisions 0063 and 0066). Three
+// A CONVERSION IS ORDINARY RECORD WRITES (decisions 0063, 0066 and 0067). Four
 // declaration changes rewrite live records instead of refusing with a count:
 //
 //   - a rename: a property naming its previous name with `renamedFrom:` takes
@@ -12,44 +12,59 @@ package engine
 //     rows the write path would refuse `required` on: emptyValue);
 //   - a remap: an enum value naming its previous spelling with `renamedFrom:`
 //     takes every live record's value under the old spelling, in a scalar, a
-//     list or a keyed map.
+//     list or a keyed map;
+//   - a null: a property the candidate no longer declares, and nothing
+//     renames, has its value removed from every live record carrying it.
 //
-// The three compose. Every step a batch declares against one kind runs in one
+// The four compose. Every step a batch declares against one kind runs in one
 // pass over that kind's records, in id order, and a record any step touches is
 // rewritten ONCE: renames first, so a backfill and a remap read the property
-// under the name the candidate declares; then backfills; then remaps. One
-// record effect and one changelog entry per rewritten record, a `patch` whose
-// payload names the properties and says which step moved them (`renamed`,
-// `backfilled`, `remapped`), through the same fold every write takes. The
-// fold reads no declaration, so a fresh replay reproduces the converted
-// records without ever reading the declaration that converted them. The
-// payload keys are descriptive: the fold replays the effects, never the keys,
-// so a binary before this one reads the entry as the patch it is and needs no
-// changelog dialect rung.
+// under the name the candidate declares; then backfills; then remaps; then
+// nulls. One record effect and one changelog entry per rewritten record, a
+// `patch` whose payload names the properties and says which step moved them
+// (`renamed`, `backfilled`, `remapped`, `nulled`), through the same fold every
+// write takes. The fold reads no declaration, so a fresh replay reproduces the
+// converted records without ever reading the declaration that converted them.
+// The payload keys are descriptive: the fold replays the effects, never the
+// keys, so a binary before this one reads the entry as the patch it is and
+// needs no changelog dialect rung.
 //
 // Who wrote it: a backfilled value is a write by the hand that applied the
 // declaration, so its manager row is that actor at the transaction's tier, as
 // a create that fell back to the default would record. A renamed value keeps
 // its manager (rename.go moveManager), and a remapped one keeps its manager
-// too: the value's spelling moved, not who last wrote it. A converted record
-// is a source write like any other, so its subjects recompute after its entry
+// too: the value's spelling moved, not who last wrote it. A nulled value has
+// no manager afterwards, no embedding and no sealed material, exactly as a
+// patch clearing it would leave the record. A converted record is a source
+// write like any other, so its subjects recompute after its entry
 // (recomputeSubjectsOf, as afterTombstone does): a mapped target and its offer
-// rows follow a remapped or backfilled source value, and a rebuild, which
-// derives the offers from the sources again, agrees with the live table. A
-// rename rekeys the offer rows of the renamed kind itself, because they are
+// rows follow a remapped, backfilled or nulled source value, and a rebuild,
+// which derives the offers from the sources again, agrees with the live table.
+// A rename rekeys the offer rows of the renamed kind itself, because they are
 // keyed by the renamed property.
 //
-// What is refused: a remap onto a value the stored declaration still admits
-// (the live records holding either spelling would become one set), because
-// nothing here may discard a stored distinction. It is refused by declaration,
-// without a count, under substrate.ErrLossyConversion; the confirmation that
-// would admit one is issue #152's.
+// THE PLAN IS COUNTED, HASHED AND JUDGED IN ONE PLACE (conversionPlan.wire),
+// so the two previews (PlanBundleUpgrade, PlanVocabularyApply) and the two
+// doors (the apply transaction, the boot upgrade) agree on every number. A
+// step touching no live record is not a step. A plan is LOSSY when it removes
+// values from the fold: every null, and a remap whose target another stored
+// value already maps to (a value the stored declaration still admits, or the
+// target of another remap of the same property), judged over the whole
+// plan's map from stored values to candidate values. A lossy plan runs only
+// with a confirmation naming the plan's hash and the changelog head it was
+// previewed at (admitConversion); the boot door has nobody to confirm and
+// refuses instead. The old values stay in the changelog either way: a lossy
+// step removes them from the fold, and nothing here erases anything.
 //
 // The bound is the live count: a kind with N records a step touches costs N
 // entries and N row rewrites in one transaction, under the vocabulary write
-// mutex and the exclusive registry-dependency lock. Nothing caps it.
+// mutex and the exclusive registry-dependency lock. The deployment's ceiling
+// (service.conversionCeiling, in records) refuses a plan whose estimated work
+// is above it, on both doors.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"slices"
 	"sort"
@@ -59,6 +74,11 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
+
+// DefaultConversionCeiling is the work ceiling a service runs with when none
+// is configured (WithConversionCeiling): the most live records one declaration
+// change may rewrite in its transaction.
+const DefaultConversionCeiling int64 = 10000
 
 // propertyBackfill is one backfill a batch declares: the kind as the candidate
 // declares it and the property whose declared default every live record
@@ -77,22 +97,34 @@ type enumRemap struct {
 	prop string
 	from string
 	to   string
+	// lossy marks a target another stored value already maps to: a value the
+	// stored declaration still admits, or another remap's target. The records
+	// holding either would become one set (convert.go's header).
+	lossy bool
+}
+
+// propertyNull is one dropped property whose live values the plan removes:
+// the kind as the candidate declares it (without the property), the dropped
+// name, and whether the stored declaration typed it secret, so the sealed
+// material goes with the value as a clearing patch would take it.
+type propertyNull struct {
+	kind   *vocabulary.Kind
+	prop   string
+	secret bool
 }
 
 // conversionPlan is every conversion a batch declares, classified against the
-// stored declarations, plus the lossy refusals decided without a count.
+// stored declarations. Nothing here is counted: wire counts.
 type conversionPlan struct {
 	renames   []propertyRename
 	backfills []propertyBackfill
 	remaps    []enumRemap
-	// lossy names each value rename onto a value the stored declaration still
-	// admits: a guard line, refused by declaration (convert.go's header).
-	lossy []string
+	nulls     []propertyNull
 }
 
 // empty reports a plan with nothing to rewrite.
 func (p conversionPlan) empty() bool {
-	return len(p.renames) == 0 && len(p.backfills) == 0 && len(p.remaps) == 0
+	return len(p.renames) == 0 && len(p.backfills) == 0 && len(p.remaps) == 0 && len(p.nulls) == 0
 }
 
 // classifyConversions lists the conversions a batch declares against the
@@ -118,8 +150,13 @@ func classifyConversions(current, candidate *vocabulary.Registry, touched, skip 
 				if candT.Props[pname] != nil {
 					continue
 				}
+				curP := curT.Props[pname]
 				if to := renamedTo(candT, pname); to != "" {
 					plan.renames = append(plan.renames, propertyRename{kind: candT, from: pname, to: to})
+					continue
+				}
+				if nullable(curT, curP) {
+					plan.nulls = append(plan.nulls, propertyNull{kind: candT, prop: pname, secret: curP.Secret()})
 				}
 			}
 			for _, pname := range candT.PropOrder {
@@ -143,19 +180,23 @@ func classifyConversions(current, candidate *vocabulary.Registry, touched, skip 
 				if curP.Datatype != candP.Datatype || curP.Repeated != candP.Repeated || curP.Keyed != candP.Keyed {
 					continue
 				}
+				// Lossiness is injectivity of the whole property's map from
+				// stored values to candidate values: a retained value maps to
+				// itself, a remapped one to its target, and two stored values
+				// landing on one target collapse a distinction. The loader
+				// forbids two values naming one previous value and a target
+				// the list still declares, so both arms are held here for the
+				// stored side it cannot see.
 				stored := curP.ValueStrings()
+				taken := map[string]bool{}
 				for _, old := range removedStrings(stored, candP.ValueStrings()) {
 					to := valueRenamedTo(candP, old)
 					if to == "" {
 						continue // stranded: the narrowing counts it
 					}
-					if slices.Contains(stored, to) {
-						plan.lossy = append(plan.lossy, fmt.Sprintf(
-							"type %s: property %q renames value %q onto %q, which the stored declaration still admits: the records holding either would become one set, and a lossy conversion is refused; rename it onto a new value, or rewrite the records and drop %q",
-							candT.Identity, pname, old, to, old))
-						continue
-					}
-					plan.remaps = append(plan.remaps, enumRemap{kind: candT, prop: pname, from: old, to: to})
+					lossy := slices.Contains(stored, to) || taken[to]
+					taken[to] = true
+					plan.remaps = append(plan.remaps, enumRemap{kind: candT, prop: pname, from: old, to: to, lossy: lossy})
 				}
 			}
 		}
@@ -181,6 +222,22 @@ func backfillable(ty *vocabulary.Kind, p *vocabulary.Property) bool {
 	return true
 }
 
+// nullable reports whether dropping p is a null step rather than a counted
+// narrowing: a value the record carries under `props`, which the step can
+// remove. A state is not a value (it moves by transition, never by
+// assignment), and a property living in its own column (a hot trait
+// property, the title, the body) is not under `props`, so the count the
+// narrowing takes stays the answer for those.
+func nullable(ty *vocabulary.Kind, p *vocabulary.Property) bool {
+	if p.IsState() || p.Name == substrate.PropTitle || p.Name == substrate.PropBody {
+		return false
+	}
+	if _, hot := hotColumns[p.Name]; hot && ty.UsesHot(p.Name) {
+		return false
+	}
+	return true
+}
+
 // valueRenamedTo reports the candidate value (if any) that declares the given
 // spelling as its renamedFrom.
 func valueRenamedTo(candP *vocabulary.Property, from string) string {
@@ -194,7 +251,7 @@ func valueRenamedTo(candP *vocabulary.Property, from string) string {
 
 // unrenamedValues keeps the removed values no candidate value takes: the ones
 // a removal strands, which the narrowing counts. A value some candidate value
-// names is a remap or a lossy refusal (classifyConversions), never a count.
+// names is a remap (classifyConversions), never a count.
 func unrenamedValues(candP *vocabulary.Property, removed []string) []string {
 	var out []string
 	for _, old := range removed {
@@ -211,6 +268,7 @@ type kindConversion struct {
 	renames   []propertyRename
 	backfills []propertyBackfill
 	remaps    []enumRemap
+	nulls     []propertyNull
 	// filled is each backfilled property's value as the rows receive it: the
 	// declared default coerced and, for a reference, validated and normalized
 	// as a write's would be (backfillValues). One value per property, computed
@@ -250,10 +308,195 @@ func (t *txn) backfillValues(kc *kindConversion) error {
 	return nil
 }
 
+// byKind groups the plan's steps by the kind they rewrite, in identity order,
+// so a record several steps touch is rewritten once and the steps are listed
+// in one order everywhere.
+func (p conversionPlan) byKind() []*kindConversion {
+	groups := map[string]*kindConversion{}
+	group := func(k *vocabulary.Kind) *kindConversion {
+		kc := groups[k.Identity]
+		if kc == nil {
+			kc = &kindConversion{kind: k}
+			groups[k.Identity] = kc
+		}
+		return kc
+	}
+	for _, r := range p.renames {
+		kc := group(r.kind)
+		kc.renames = append(kc.renames, r)
+	}
+	for _, b := range p.backfills {
+		kc := group(b.kind)
+		kc.backfills = append(kc.backfills, b)
+	}
+	for _, m := range p.remaps {
+		kc := group(m.kind)
+		kc.remaps = append(kc.remaps, m)
+	}
+	for _, n := range p.nulls {
+		kc := group(n.kind)
+		kc.nulls = append(kc.nulls, n)
+	}
+	out := make([]*kindConversion, 0, len(groups))
+	for _, ident := range sortedKeys(groups) {
+		out = append(out, groups[ident])
+	}
+	return out
+}
+
+// wire counts every step over q and answers the plan as the wire carries it:
+// the steps that touch a record, the work, the lossy judgment, the hash and
+// the changelog head the counts were taken at. The previews read it over the
+// bare pool and the doors inside their transaction, through the same queries,
+// so the hash a preview handed out is the hash the door recomputes when
+// nothing moved in between.
+func (p conversionPlan) wire(q sqlReader) (substrate.ConversionPlan, error) {
+	var plan substrate.ConversionPlan
+	if err := q.row(`SELECT coalesce(max(seq), 0) FROM changelog`).Scan(&plan.ChangelogSeq); err != nil {
+		return plan, err
+	}
+	if p.empty() {
+		return plan, nil
+	}
+	count := func(query string, args ...any) (int64, error) {
+		var n int64
+		err := q.row(query, args...).Scan(&n)
+		return n, err
+	}
+	add := func(step substrate.ConversionStep, n int64, err error) error {
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return nil // nothing to rewrite, so nothing to plan, confirm or count
+		}
+		step.Records = n
+		plan.Steps = append(plan.Steps, step)
+		plan.Work += n
+		plan.Lossy = plan.Lossy || step.Lossy
+		return nil
+	}
+	for _, kc := range p.byKind() {
+		ident := kc.kind.Identity
+		for _, r := range kc.renames {
+			n, err := count(countPropQuery, ident, r.from)
+			if err := add(substrate.ConversionStep{Step: substrate.StepRename, Kind: ident, Property: r.to, From: r.from, To: r.to}, n, err); err != nil {
+				return plan, err
+			}
+		}
+		for _, b := range kc.backfills {
+			n, err := count(countMissingPropQuery, ident, b.prop)
+			if err := add(substrate.ConversionStep{Step: substrate.StepBackfill, Kind: ident, Property: b.prop}, n, err); err != nil {
+				return plan, err
+			}
+		}
+		for _, m := range kc.remaps {
+			// Counted in the property's own container, element by element in
+			// a list and value by value in a keyed map, exactly as the
+			// narrowing counts a removed value (schemadiff.go valuesAtPath).
+			query, args := valuesAtPath(ident, containerPath(nil, kc.kind.Props[m.prop], m.prop), []string{m.from})
+			n, err := count(query, args...)
+			if err := add(substrate.ConversionStep{Step: substrate.StepRemap, Kind: ident, Property: m.prop, From: m.from, To: m.to, Lossy: m.lossy}, n, err); err != nil {
+				return plan, err
+			}
+		}
+		for _, nl := range kc.nulls {
+			n, err := count(countPropQuery, ident, nl.prop)
+			if err := add(substrate.ConversionStep{Step: substrate.StepNull, Kind: ident, Property: nl.prop, Lossy: true}, n, err); err != nil {
+				return plan, err
+			}
+		}
+	}
+	plan.PlanHash = planHash(plan.Steps)
+	return plan, nil
+}
+
+// planHash identifies a plan by its steps and their counts: the same steps
+// over the same live records hash the same, and one record more or less does
+// not. A confirmation names this hash, so it covers exactly what the preview
+// showed and nothing the data has since become.
+func planHash(steps []substrate.ConversionStep) string {
+	if len(steps) == 0 {
+		return ""
+	}
+	h := sha256.New()
+	for _, s := range steps {
+		fmt.Fprintf(h, "%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%d\x1f%t\n", s.Step, s.Kind, s.Property, s.From, s.To, s.Records, s.Lossy)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// describeStep renders one step for a refusal or a log line.
+func describeStep(s substrate.ConversionStep) string {
+	switch s.Step {
+	case substrate.StepRename:
+		return fmt.Sprintf("type %s: property %q renamed to %q on %d live records", s.Kind, s.From, s.To, s.Records)
+	case substrate.StepBackfill:
+		return fmt.Sprintf("type %s: property %q backfilled with its default on %d live records", s.Kind, s.Property, s.Records)
+	case substrate.StepRemap:
+		line := fmt.Sprintf("type %s: property %q value %q rewritten to %q on %d live records", s.Kind, s.Property, s.From, s.To, s.Records)
+		if s.Lossy {
+			line += ", which the stored declaration still admits: the records holding either become one set (lossy)"
+		}
+		return line
+	default:
+		return fmt.Sprintf("type %s: property %q dropped, its value removed from %d live records (lossy; the values stay in the changelog and leave the fold)", s.Kind, s.Property, s.Records)
+	}
+}
+
+// lossyLines renders the plan's lossy steps, one per line.
+func lossyLines(plan substrate.ConversionPlan) []string {
+	var out []string
+	for _, s := range plan.Steps {
+		if s.Lossy {
+			out = append(out, describeStep(s))
+		}
+	}
+	return out
+}
+
+// ceilingGuard is the guard line a plan above the work ceiling refuses on, or
+// "" when it fits. A ceiling of zero or less is no ceiling.
+func ceilingGuard(plan substrate.ConversionPlan, ceiling int64) string {
+	if ceiling <= 0 || plan.Work <= ceiling {
+		return ""
+	}
+	return fmt.Sprintf("the conversion rewrites %d live records, above this substrate's ceiling of %d (SUBSTRATE_CONVERSION_CEILING): declare the new shape beside the old one, move the records through ordinary writes at your own pace, then apply the contraction",
+		plan.Work, ceiling)
+}
+
+// admitConversion is the plan's own guard, after the refuse-breakage guards
+// passed: the work ceiling, then the confirmation a lossy plan needs. The
+// confirmation is bound to what was previewed: the changelog head must still
+// be the one the preview counted at (any write moves it, so the counts may
+// have too) and the hash must be the one the door just recomputed (the
+// consent covers that plan and no other). A lossless plan ignores a
+// confirmation: there is nothing to consent to.
+func admitConversion(plan substrate.ConversionPlan, ceiling int64, confirm *substrate.ConversionConfirm) error {
+	if line := ceilingGuard(plan, ceiling); line != "" {
+		return fmt.Errorf("%w: %s", substrate.ErrGuard, line)
+	}
+	if !plan.Lossy {
+		return nil
+	}
+	switch {
+	case confirm == nil:
+		return fmt.Errorf("%w: %w: the change removes values from the fold and runs only with a confirmation carrying the previewed planHash and changelogSeq (planHash %s at changelogSeq %d): %s",
+			substrate.ErrGuard, substrate.ErrLossyConversion, plan.PlanHash, plan.ChangelogSeq, strings.Join(lossyLines(plan), "; "))
+	case confirm.ChangelogSeq != plan.ChangelogSeq:
+		return fmt.Errorf("%w: the changelog moved since the plan was previewed (confirmed at seq %d, the head is %d): preview the plan again and confirm what it says now",
+			substrate.ErrConflict, confirm.ChangelogSeq, plan.ChangelogSeq)
+	case confirm.PlanHash != plan.PlanHash:
+		return fmt.Errorf("%w: %w: the confirmation is for another plan (%s; this plan is %s): preview the plan again and confirm what it says now",
+			substrate.ErrGuard, substrate.ErrLossyConversion, confirm.PlanHash, plan.PlanHash)
+	}
+	return nil
+}
+
 // convertRecords performs every conversion a batch declares and reports how
 // many records it rewrote. It runs after the declaration rows projected and
 // before the refs index re-derives, so the index reads the converted
-// properties.
+// properties. The caller admitted the plan (admitConversion) first.
 func (t *txn) convertRecords(candidate *vocabulary.Registry, plan conversionPlan) (int64, error) {
 	if plan.empty() {
 		return 0, nil
@@ -266,34 +509,11 @@ func (t *txn) convertRecords(candidate *vocabulary.Registry, plan conversionPlan
 	prev := t.writeReg
 	t.writeReg = candidate
 	defer func() { t.writeReg = prev }()
-	// Grouped by kind, so a record several steps touch is rewritten once and
-	// appends one entry.
-	byKind := map[string]*kindConversion{}
-	group := func(k *vocabulary.Kind) *kindConversion {
-		kc := byKind[k.Identity]
-		if kc == nil {
-			kc = &kindConversion{kind: k}
-			byKind[k.Identity] = kc
-		}
-		return kc
-	}
-	for _, r := range plan.renames {
-		kc := group(r.kind)
-		kc.renames = append(kc.renames, r)
-	}
-	for _, b := range plan.backfills {
-		kc := group(b.kind)
-		kc.backfills = append(kc.backfills, b)
-	}
-	for _, m := range plan.remaps {
-		kc := group(m.kind)
-		kc.remaps = append(kc.remaps, m)
-	}
 	var total int64
-	for _, ident := range sortedKeys(byKind) {
-		n, err := t.convertKind(byKind[ident])
+	for _, kc := range plan.byKind() {
+		n, err := t.convertKind(kc)
 		if err != nil {
-			return total, fmt.Errorf("substrate/engine: convert records of %s: %w", ident, err)
+			return total, fmt.Errorf("substrate/engine: convert records of %s: %w", kc.kind.Identity, err)
 		}
 		total += n
 	}
@@ -302,7 +522,7 @@ func (t *txn) convertRecords(candidate *vocabulary.Registry, plan conversionPlan
 
 // convertKind rewrites every live record of one kind that any step touches,
 // in id order. The id query is the union of what each step reads: a record
-// carrying a renamed property's old name, one holding no value for a
+// carrying a renamed or a dropped property, one holding no value for a
 // backfilled property, one carrying a remapped property at all (whether it
 // holds the old spelling is decided in Go, value by value, where the
 // container shapes are).
@@ -325,6 +545,9 @@ func (t *txn) convertKind(kc *kindConversion) (int64, error) {
 	}
 	for _, m := range kc.remaps {
 		holds = append(holds, "props ? "+bind(m.prop))
+	}
+	for _, n := range kc.nulls {
+		holds = append(holds, "props ? "+bind(n.prop))
 	}
 	rows, err := t.query(`SELECT id FROM records WHERE kind = $1 AND deleted_at IS NULL AND (`+
 		strings.Join(holds, " OR ")+`) ORDER BY id`, args...)
@@ -376,10 +599,10 @@ func (t *txn) convertKind(kc *kindConversion) (int64, error) {
 
 // convertRecord rewrites one record: every step that finds something to move
 // on it lands in a single record effect, renames first, then backfills, then
-// remaps. It reports false when the record is gone or no step touches it,
-// which the id query mostly excludes (a remapped property may be carried
-// without the old spelling) and a concurrent write cannot produce under the
-// locks the apply holds.
+// remaps, then nulls. It reports false when the record is gone or no step
+// touches it, which the id query mostly excludes (a remapped property may be
+// carried without the old spelling) and a concurrent write cannot produce
+// under the locks the apply holds.
 func (t *txn) convertRecord(kc *kindConversion, ref eref) (bool, error) {
 	row, err := t.loadRow(ref, true)
 	if err != nil || row == nil || row.DeletedAt != nil {
@@ -429,6 +652,15 @@ func (t *txn) convertRecord(kc *kindConversion, ref eref) (bool, error) {
 		}
 		remapped[m.prop][m.from] = m.to
 		touched[m.prop] = true
+	}
+	var nulled []propertyNull
+	for _, n := range kc.nulls {
+		if _, held := row.Props[n.prop]; !held {
+			continue
+		}
+		delete(row.Props, n.prop)
+		nulled = append(nulled, n)
+		touched[n.prop] = true
 	}
 	if len(touched) == 0 {
 		return false, nil
@@ -484,6 +716,26 @@ func (t *txn) convertRecord(kc *kindConversion, ref eref) (bool, error) {
 			}
 		}
 	}
+	var nulledNames []string
+	for _, n := range nulled {
+		// What a patch clearing the property leaves behind: no manager row (a
+		// released property is nobody's), no vectors and no queue row under a
+		// name no declaration has, and no sealed material behind a secret
+		// (write.go erases it on an accepted clear).
+		if err := t.deleteManager(ref, n.prop); err != nil {
+			return false, err
+		}
+		if err := t.dropEmbeddings(ref, n.prop); err != nil {
+			return false, err
+		}
+		if old, _ := before.Props[n.prop].(string); n.secret && strings.HasPrefix(old, secretRefPrefix) {
+			if _, err := t.exec(`DELETE FROM sealed WHERE ref = $1`, old); err != nil {
+				return false, err
+			}
+			t.mirrorSealedDelete(old)
+		}
+		nulledNames = append(nulledNames, n.prop)
+	}
 
 	properties := sortedKeys(touched)
 	payload := map[string]any{"properties": properties}
@@ -497,6 +749,10 @@ func (t *txn) convertRecord(kc *kindConversion, ref eref) (bool, error) {
 	if len(remapped) > 0 {
 		payload["remapped"] = remapped
 	}
+	if len(nulledNames) > 0 {
+		sort.Strings(nulledNames)
+		payload["nulled"] = nulledNames
+	}
 	// One entry per record, as a patch: the record's properties changed, and
 	// the step keys say the apply moved them rather than a writer.
 	if err := t.appendChange(t.actor, substrate.OpPatch, ref.ID, ref.Kind, payload); err != nil {
@@ -508,6 +764,20 @@ func (t *txn) convertRecord(kc *kindConversion, ref eref) (bool, error) {
 	// target would hold a value the candidate no longer admits, and a rebuild
 	// (which derives from the sources) would disagree with the live fold.
 	return true, t.recomputeSubjectsOf(ref)
+}
+
+// dropEmbeddings removes a property's vectors and its queue row: the property
+// is gone from the record, so a worker mid-flight on it finds no row and
+// writes nothing (commitEmbedding), and nothing stays searchable under a name
+// no declaration has.
+func (t *txn) dropEmbeddings(ref eref, prop string) error {
+	if _, err := t.exec(`DELETE FROM embeddings WHERE record_kind = $1 AND record_id = $2 AND property = $3`,
+		ref.Kind, ref.ID, prop); err != nil {
+		return err
+	}
+	_, err := t.exec(`DELETE FROM embed_queue WHERE record_kind = $1 AND record_id = $2 AND property = $3`,
+		ref.Kind, ref.ID, prop)
+	return err
 }
 
 // remapValue rewrites one stored value's old spelling to the new one in the

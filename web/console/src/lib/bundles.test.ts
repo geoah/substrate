@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest"
 
 import type { BundleStatus } from "@/lib/api/bundles"
 import type { CatalogItem } from "@/lib/api/catalog"
-import { ApiError, type KindInfo } from "@/lib/api/types"
+import { ApiError, type BundleUpgrade, type KindInfo } from "@/lib/api/types"
 import {
   accountKindOf,
   bundleRecordRows,
@@ -19,6 +19,7 @@ import {
   declaresProviderInterfaces,
   importFailureText,
   installedKindRows,
+  lossyStepLines,
   mergeBundles,
   missingRequirements,
   oauthConnectBlocked,
@@ -27,9 +28,9 @@ import {
   FAILED_PREVIEW_BLOCKER,
   requirementsOf,
   requiresHint,
+  stepLines,
   upgradableBundleCount,
   upgradeBlocked,
-  renameLines,
   upgradeMotion,
   pendingShippedUpgrades,
 } from "./bundles"
@@ -293,7 +294,7 @@ describe("the upgrade preview helpers", () => {
         catalog({
           id: "b",
           installed: true,
-          upgrade: { available: true, to: 2 },
+          upgrade: { available: true, to: 2, work: 0, lossy: false },
         }),
         // Not installed: nothing to upgrade, whatever the preview would say.
         catalog({ id: "c", installed: false }),
@@ -301,14 +302,25 @@ describe("the upgrade preview helpers", () => {
         catalog({
           id: "d",
           installed: true,
-          upgrade: { available: true, to: 2, blockers: ["live rows"] },
+          upgrade: {
+            available: true,
+            to: 2,
+            work: 0,
+            lossy: false,
+            blockers: ["live rows"],
+          },
         }),
         // A preview the server could not run: blocked without a motion. It
         // shows a chip on the row, so the badge counts it too.
         catalog({
           id: "e",
           installed: true,
-          upgrade: { available: false, blockers: [FAILED_PREVIEW_BLOCKER] },
+          upgrade: {
+            available: false,
+            work: 0,
+            lossy: false,
+            blockers: [FAILED_PREVIEW_BLOCKER],
+          },
         }),
       ])
     ).toBe(3)
@@ -317,28 +329,55 @@ describe("the upgrade preview helpers", () => {
   it("a failed preview is keyed on its one fixed line", () => {
     expect(previewFailed({ upgrade: undefined })).toBe(false)
     expect(
-      previewFailed({ upgrade: { available: true, blockers: ["live rows"] } })
+      previewFailed({
+        upgrade: {
+          available: true,
+          work: 0,
+          lossy: false,
+          blockers: ["live rows"],
+        },
+      })
     ).toBe(false)
     expect(
       previewFailed({
-        upgrade: { available: false, blockers: [FAILED_PREVIEW_BLOCKER] },
+        upgrade: {
+          available: false,
+          work: 0,
+          lossy: false,
+          blockers: [FAILED_PREVIEW_BLOCKER],
+        },
       })
     ).toBe(true)
   })
 
   it("blocked means the server named blockers", () => {
     expect(upgradeBlocked({ upgrade: undefined })).toBe(false)
-    expect(upgradeBlocked({ upgrade: { available: true, to: 2 } })).toBe(false)
     expect(
       upgradeBlocked({
-        upgrade: { available: true, to: 2, blockers: ["a guard line"] },
+        upgrade: { available: true, to: 2, work: 0, lossy: false },
+      })
+    ).toBe(false)
+    expect(
+      upgradeBlocked({
+        upgrade: {
+          available: true,
+          to: 2,
+          work: 0,
+          lossy: false,
+          blockers: ["a guard line"],
+        },
       })
     ).toBe(true)
     // A preview the server could not run: no motion, one line with the error
     // text. Stated as blocked, never dropped.
     expect(
       upgradeBlocked({
-        upgrade: { available: false, blockers: [FAILED_PREVIEW_BLOCKER] },
+        upgrade: {
+          available: false,
+          work: 0,
+          lossy: false,
+          blockers: [FAILED_PREVIEW_BLOCKER],
+        },
       })
     ).toBe(true)
   })
@@ -350,6 +389,8 @@ describe("the upgrade preview helpers", () => {
         available: true,
         from: 16,
         to: 17,
+        work: 0,
+        lossy: false,
         blockers: ["a guard line"],
       },
     }
@@ -358,57 +399,91 @@ describe("the upgrade preview helpers", () => {
     // is what lands it.
     const admitted = {
       package: "substrate.reamde.dev/core",
-      upgrade: { available: true, from: 16, to: 17 },
+      upgrade: { available: true, from: 16, to: 17, work: 0, lossy: false },
     }
     expect(
       pendingShippedUpgrades([
-        { package: "substrate.reamde.dev/core", upgrade: { available: false } },
+        {
+          package: "substrate.reamde.dev/core",
+          upgrade: { available: false, work: 0, lossy: false },
+        },
         admitted,
         refused,
       ])
     ).toEqual([admitted, refused])
   })
 
-  it("names each rename with the live records it rewrites", () => {
-    expect(renameLines(undefined)).toEqual([])
-    expect(renameLines({ available: true })).toEqual([])
-    expect(
-      renameLines({
-        available: true,
-        renames: [
-          {
-            kind: "substrate.reamde.dev/core/llmprovider",
-            from: "label",
-            to: "displayLabel",
-            records: 3,
-          },
-          {
-            kind: "geoah.example.com/shop/widget",
-            from: "size",
-            to: "dimensions",
-            records: 1,
-          },
-        ],
-      })
-    ).toEqual([
+  it("names each conversion step with the live records it rewrites", () => {
+    expect(stepLines(undefined)).toEqual([])
+    expect(stepLines({ work: 0, lossy: false })).toEqual([])
+    const plan: BundleUpgrade = {
+      available: true,
+      work: 7,
+      lossy: true,
+      planHash: "abc",
+      changelogSeq: 41,
+      steps: [
+        {
+          step: "rename",
+          kind: "substrate.reamde.dev/core/llmprovider",
+          property: "displayLabel",
+          from: "label",
+          to: "displayLabel",
+          records: 3,
+        },
+        {
+          step: "backfill",
+          kind: "geoah.example.com/shop/widget",
+          property: "size",
+          records: 1,
+        },
+        {
+          step: "remap",
+          kind: "geoah.example.com/shop/widget",
+          property: "status",
+          from: "active",
+          to: "open",
+          records: 2,
+          lossy: true,
+        },
+        {
+          step: "null",
+          kind: "geoah.example.com/shop/widget",
+          property: "color",
+          records: 1,
+          lossy: true,
+        },
+      ],
+    }
+    expect(stepLines(plan)).toEqual([
       "renames label to displayLabel on substrate.reamde.dev/core/llmprovider: 3 live records rewritten",
-      "renames size to dimensions on geoah.example.com/shop/widget: 1 live record rewritten",
+      "backfills size with its default on geoah.example.com/shop/widget: 1 live record rewritten",
+      "rewrites status active to open on geoah.example.com/shop/widget: 2 live records rewritten (lossy: the records holding either value become one set)",
+      "drops color on geoah.example.com/shop/widget: its value leaves 1 live record (lossy: the values stay in the changelog only)",
+    ])
+    // The dialog lists the lossy steps alone: what the click consents to.
+    expect(lossyStepLines(plan)).toEqual([
+      "rewrites status active to open on geoah.example.com/shop/widget: 2 live records rewritten (lossy: the records holding either value become one set)",
+      "drops color on geoah.example.com/shop/widget: its value leaves 1 live record (lossy: the values stay in the changelog only)",
     ])
   })
 
   it("renders the version motion, tolerating a store with no version", () => {
-    expect(upgradeMotion({ available: true, from: 1, to: 2 })).toBe("1 → 2")
-    expect(upgradeMotion({ available: true, to: 2 })).toBe("2")
+    const plan = { available: true, work: 0, lossy: false }
+    expect(upgradeMotion({ ...plan, from: 1, to: 2 })).toBe("1 → 2")
+    expect(upgradeMotion({ ...plan, to: 2 })).toBe("2")
     // 0 is the wire's absent (omitempty), so it reads exactly like undefined.
-    expect(upgradeMotion({ available: true, from: 0, to: 2 })).toBe("2")
-    expect(upgradeMotion({ available: true, from: 0, to: 0 })).toBe("")
+    expect(upgradeMotion({ ...plan, from: 0, to: 2 })).toBe("2")
+    expect(upgradeMotion({ ...plan, from: 0, to: 0 })).toBe("")
   })
 
   it("states one version when the authority did not move", () => {
     // A kind's own bump, or a kind the closure ADDED, upgrades without the
     // authority version moving — both legal. "3 → 3" would read as a bug, so
     // it collapses to the version itself.
-    expect(upgradeMotion({ available: true, from: 1, to: 1 })).toBe("1")
+    expect(
+      upgradeMotion({ available: true, work: 0, lossy: false, from: 1, to: 1 })
+    ).toBe("1")
   })
 })
 

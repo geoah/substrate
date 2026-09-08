@@ -13,10 +13,21 @@ const maxVocabularyApplyBody = 32 << 20
 
 type vocabularyApplyRequest struct {
 	Documents []map[string]any `json:"documents"`
+	// Confirm is the caller's consent to a lossy conversion plan, bound to the
+	// preview `POST /vocabulary/plan` answered (decision 0067). Absent, a
+	// lossy batch is refused with the `lossy` code; a lossless one runs
+	// either way.
+	Confirm *substrate.ConversionConfirm `json:"confirm,omitempty"`
 }
 
 type vocabularyApplyResponse struct {
 	Records []*substrate.Record `json:"records"`
+}
+
+// vocabularyPlanRequest is the preview's body: the documents the apply would
+// take, and nothing else, because a preview has nothing to confirm.
+type vocabularyPlanRequest struct {
+	Documents []map[string]any `json:"documents"`
 }
 
 // applyVocabulary is POST /api/v1/vocabulary/apply: the one verb that applies
@@ -38,12 +49,50 @@ func (h *handler) applyVocabulary(w http.ResponseWriter, r *http.Request) {
 		writeUnsupported(w, "this service cannot apply schema documents")
 		return
 	}
-	ents, err := sa.ApplyVocabularyDocuments(ctx, ActorFrom(ctx), req.Documents)
+	var ents []*substrate.Record
+	var err error
+	if req.Confirm != nil {
+		// A confirmation is meaningful only where the dataset plans: one that
+		// cannot has no lossy plan to confirm, and a bare apply is the answer.
+		planner, ok := sa.(substrate.VocabularyPlanner)
+		if !ok {
+			writeUnsupported(w, "this service does not plan a vocabulary apply, so there is nothing to confirm")
+			return
+		}
+		ents, err = planner.ApplyVocabularyDocumentsWith(ctx, ActorFrom(ctx), req.Documents, substrate.VocabularyApply{Confirm: req.Confirm})
+	} else {
+		ents, err = sa.ApplyVocabularyDocuments(ctx, ActorFrom(ctx), req.Documents)
+	}
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, vocabularyApplyResponse{Records: ents})
+}
+
+// planVocabulary is POST /api/v1/vocabulary/plan: what applying the batch
+// would refuse and what it would rewrite, with the plan hash and changelog
+// head a confirmation names (decision 0067). It writes nothing. A POST because
+// the documents are the input, and beside `/vocabulary/apply` because it is
+// that verb's preview.
+func (h *handler) planVocabulary(w http.ResponseWriter, r *http.Request) {
+	var req vocabularyPlanRequest
+	if err := decodeJSONStrict(http.MaxBytesReader(nil, r.Body, maxVocabularyApplyBody), &req); err != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+		return
+	}
+	ctx := r.Context()
+	planner, ok := DatasetFrom(ctx).(substrate.VocabularyPlanner)
+	if !ok {
+		writeUnsupported(w, "this service does not plan a vocabulary apply")
+		return
+	}
+	plan, err := planner.PlanVocabularyApply(ctx, ActorFrom(ctx), req.Documents)
+	if err != nil {
+		writeSubstrateError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, plan)
 }
 
 // getVocabularyUpgrade is GET /api/v1/vocabulary/upgrade: what the running

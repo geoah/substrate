@@ -32,6 +32,12 @@ type Config struct {
 	// substrate that already has its user.
 	InviteCode string `envconfig:"SUBSTRATE_INVITE_CODE" default:""`
 
+	// ConversionCeiling bounds the live records one declaration change (a
+	// vocabulary apply, a provider upgrade, the boot upgrade) may rewrite in
+	// its transaction: a plan whose estimated work is above it is refused and
+	// the previews say so (decision 0067). In records; 0 removes the ceiling.
+	ConversionCeiling int64 `envconfig:"SUBSTRATE_CONVERSION_CEILING" default:"10000"`
+
 	// InsecureDisableTOTP takes the SECOND FACTOR OFF the whole door: login,
 	// registration and the credential changes ask for a username and a
 	// password and nothing else. It exists for a local substrate you wipe

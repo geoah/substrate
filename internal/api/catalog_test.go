@@ -499,6 +499,71 @@ func newHeldEnvFor(t *testing.T, cat *catalog.Catalog, id, origin string) *testE
 	}
 }
 
+// installerDataset is a heldDataset that can install: it records the options
+// the door hands the engine, so the body's confirmation can be seen arriving.
+type installerDataset struct {
+	heldDataset
+	last *substrate.BundleInstall
+}
+
+func (d installerDataset) InstallBundleClosure(_ context.Context, _ substrate.Actor, _ []map[string]any, _ []substrate.PutInput, opts substrate.BundleInstall) ([]*substrate.Record, error) {
+	*d.last = opts
+	return nil, nil
+}
+
+var _ substrate.BundleInstaller = installerDataset{}
+
+type installerService struct {
+	*fakeService
+	last *substrate.BundleInstall
+}
+
+func (s *installerService) Authenticate(ctx context.Context, secret string) (substrate.Dataset, substrate.TokenInfo, error) {
+	ds, info, err := s.fakeService.Authenticate(ctx, secret)
+	if err != nil {
+		return nil, info, err
+	}
+	return installerDataset{heldDataset: heldDataset{fakeDataset: ds.(*fakeDataset), id: googleBundleID}, last: s.last}, info, nil
+}
+
+// The install body's confirmation reaches the engine as BundleInstall.Confirm
+// (decision 0067); a bare POST hands the door none, as it always did; and a
+// key the body does not declare is refused.
+func TestCatalogInstallCarriesTheConfirmation(t *testing.T) {
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	base := newFakeService()
+	var last substrate.BundleInstall
+	clock := &testClock{}
+	env := &testEnv{
+		svc:   base,
+		h:     New(Config{Service: &installerService{fakeService: base, last: &last}, Now: clock.now, Catalog: cat}),
+		clock: clock,
+	}
+	tok := env.svc.token("geoah")
+	path := "/api/v1/catalog/" + url.PathEscape(googleBundleID) + "/install"
+	rec := env.do(t, http.MethodPost, path, tok, map[string]any{
+		"confirm": map[string]any{"planHash": "cafe", "changelogSeq": 41},
+	})
+	wantStatus(t, rec, http.StatusOK)
+	if last.Confirm == nil || *last.Confirm != (substrate.ConversionConfirm{PlanHash: "cafe", ChangelogSeq: 41}) {
+		t.Fatalf("the engine saw confirmation %+v", last.Confirm)
+	}
+	if !last.Published {
+		t.Fatal("a provider install lost its tier on the way to the engine")
+	}
+	last = substrate.BundleInstall{}
+	rec = env.do(t, http.MethodPost, path, tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if last.Confirm != nil {
+		t.Fatalf("a bare install handed the engine a confirmation: %+v", last.Confirm)
+	}
+	rec = env.do(t, http.MethodPost, path, tok, map[string]any{"force": true})
+	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
+}
+
 // installedFor reads one catalog entry's `installed` flag off the listing.
 func installedFor(t *testing.T, env *testEnv, id string) bool {
 	t.Helper()

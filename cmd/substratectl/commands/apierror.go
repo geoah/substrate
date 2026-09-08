@@ -57,6 +57,8 @@ func (e *apiError) headline() string {
 		return "that transition is not allowed for this actor"
 	case "not_found":
 		return "no such resource"
+	case "lossy":
+		return "the schema change removes values from stored records and needs a confirmation"
 	case "forbidden":
 		return "forbidden"
 	case "auth":
@@ -88,6 +90,10 @@ func (e *apiError) hint() string {
 		return fmt.Sprintf("re-list, then resume with --from %d --generation %s", *e.Head, e.Generation)
 	case e.Code == "guard":
 		return guardHint(e.Path)
+	case e.Code == "lossy":
+		// The consent is bound to a preview, so the flag previews first and
+		// confirms exactly what it printed (decision 0067).
+		return "re-run with --allow-data-loss: it previews the plan, prints the steps that remove values and confirms exactly those"
 	case e.Status == 403 || e.Code == "forbidden":
 		// A token has FULL access to its repository — there are no scopes and
 		// no ACLs — so a forbidden is never about the token's reach. It is the

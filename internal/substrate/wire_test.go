@@ -130,7 +130,12 @@ var wireTypes = map[string]any{
 	// provider. The Registry renders the motion and the blockers.
 	"BundleUpgrade":       BundleUpgrade{},
 	"BundleUpgradeChange": BundleUpgradeChange{},
-	"BundleUpgradeRename": BundleUpgradeRename{},
+	// The conversion plan every upgrade preview carries flattened, the step it
+	// lists, the consent a lossy plan needs, and the apply's own preview.
+	"ConversionPlan":    ConversionPlan{},
+	"ConversionStep":    ConversionStep{},
+	"ConversionConfirm": ConversionConfirm{},
+	"VocabularyPlan":    VocabularyPlan{},
 	// `GET /api/v1/vocabulary/upgrade` carries one upgrade preview per shipped
 	// package. The Registry renders the motion and the blockers.
 	"ShippedUpgrade": ShippedUpgrade{},
