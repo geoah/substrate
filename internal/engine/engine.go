@@ -629,11 +629,12 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.Username, err)
 	}
 	ds := &dataset{
-		svc:   s,
-		db:    db,
-		dek:   dek,
-		scope: sc,
-		dir:   dir,
+		svc:        s,
+		db:         db,
+		dek:        dek,
+		scope:      sc,
+		dir:        dir,
+		generation: repo.HistoryGeneration,
 		// A dataset's registry starts EMPTY and is built from the repository's
 		// OWN rows: the embedded tree seeded them once, at
 		// creation, and has no standing here afterwards. Nothing re-projects

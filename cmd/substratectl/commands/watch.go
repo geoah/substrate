@@ -11,18 +11,22 @@ import (
 
 func (a *app) watchCommand() *cobra.Command {
 	var (
-		from   int64
-		kinds  []string
-		ops    []string
-		actors []string
+		from       int64
+		generation string
+		kinds      []string
+		ops        []string
+		actors     []string
 	)
 	cmd := &cobra.Command{
 		Use:   "watch",
 		Short: "Stream the changelog",
 		Long: `Stream the repository's changelog as one line per committed change.
 
-The stream is resumable: --from takes the sequence number to resume after,
-and every printed line starts with the sequence it can be resumed from.`,
+The stream is resumable: --from takes the sequence number to resume after and
+--generation the history generation it was read under. The opening line
+prints both, and every printed line starts with the sequence it can be resumed
+from. A cursor from a history the server has since replaced (a restore of an
+older repository directory) is refused with the head to resume from instead.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cl, err := a.client()
@@ -33,6 +37,9 @@ and every printed line starts with the sequence it can be resumed from.`,
 			q.Set("watch", "1")
 			if from > 0 {
 				q.Set("from", strconv.FormatInt(from, 10))
+			}
+			if generation != "" {
+				q.Set("generation", generation)
 			}
 			if len(kinds) > 0 {
 				q.Set("kinds", strings.Join(kinds, ","))
@@ -54,6 +61,7 @@ and every printed line starts with the sequence it can be resumed from.`,
 	}
 	f := cmd.Flags()
 	f.Int64Var(&from, "from", 0, "resume after this changelog sequence")
+	f.StringVar(&generation, "generation", "", "the history generation --from was read under (printed on the opening line)")
 	f.StringSliceVar(&kinds, "kinds", nil, "only these kind identities")
 	f.StringSliceVar(&ops, "ops", nil, "only these ops (put, patch, delete, merge, split, gc)")
 	f.StringSliceVar(&actors, "actors", nil, "only these actors")

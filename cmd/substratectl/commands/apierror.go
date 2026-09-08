@@ -15,6 +15,10 @@ type apiError struct {
 	Message    string
 	Problems   []string
 	RetryAfter string
+	// Head and Generation ride a `compacted` refusal: the position the client
+	// re-lists from and resumes at (docs/changelog.md, frames and the horizon).
+	Head       *int64
+	Generation string
 	Method     string
 	Path       string
 	// Hint, when set, replaces the status-derived next action.
@@ -59,6 +63,8 @@ func (e *apiError) headline() string {
 		return "not authenticated"
 	case "rate_limited":
 		return "rate limited"
+	case "compacted":
+		return "the cursor no longer addresses this changelog"
 	}
 	return fmt.Sprintf("request failed with status %d", e.Status)
 }
@@ -78,6 +84,8 @@ func (e *apiError) hint() string {
 			return fmt.Sprintf("wait %ss and try again", e.RetryAfter)
 		}
 		return "wait a few seconds and try again"
+	case e.Code == "compacted" && e.Head != nil:
+		return fmt.Sprintf("re-list, then resume with --from %d --generation %s", *e.Head, e.Generation)
 	case e.Code == "guard":
 		return guardHint(e.Path)
 	case e.Status == 403 || e.Code == "forbidden":

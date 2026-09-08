@@ -52,7 +52,9 @@ Two guarantees consumers may lean on:
   with N-1 still uncommitted, so resuming from a remembered `seq` misses
   nothing. Gapless resume is a guarantee, not a convention, and it survives a
   restart because the counter is the repository's own `max(seq)`, never process
-  state.
+  state. A seq is a position in one **history generation** ([watching](#watching)),
+  and a resume is held to it, so a cursor saved before an older directory was
+  restored is refused rather than resumed against numbering it never saw.
 - **Causal chains are finite.** Every delivery-authored entry records the seq
   that caused it, always strictly smaller, so a chain cannot loop, and the
   engine parks a chain deeper than its cap (16) rather than spinning. The link is stored, not published: a change on the wire
@@ -201,15 +203,30 @@ newline-delimited JSON (`application/x-ndjson`), opened with a bookmark you can
 resume from, so a consumer that disconnects misses nothing:
 
 ```http
-GET /api/v1/changes?from=4189&watch=1
+GET /api/v1/changes?from=4189&generation=7f3a0c2e9b1d4e6f&watch=1
 
-{"bookmark": 4189}
+{"bookmark": 4189, "generation": "7f3a0c2e9b1d4e6f"}
 {"seq": 4190, "op": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
  "recordId": "kq3v9x2m41pf", "actor": "api"}
 ```
 
 Without `from`, the stream opens at the current head and tails forward; the
-bookmark is the seq it opened at, so remembering it is all a resume needs.
+bookmark is the seq it opened at and the generation that seq belongs to, so
+remembering the pair is all a resume needs.
+
+The **history generation** is an opaque string the server mints for a
+repository when it registers, and mints again when its directory is imported
+into a database that holds no row for it, which is what a
+[restore](operations.md#backups) into a fresh database is. A database dump
+keeps the row and its generation, so a restore that starts from a dump runs
+`substratectl repository rotate-generation` once per repository. A restart and
+`repository rebuild` keep it. A seq is a position in one generation only: an older copy of the directory
+imported over an emptied database restarts the numbering below whatever
+cursors clients saved, and a bare seq cannot tell the two histories apart. So
+`from` or `before` above 0 carries the `generation` it was read under, and the server
+refuses a cursor under another generation, above the head, or with no
+generation at all, with the `compacted` error [below](#frames-and-the-horizon).
+`from=0` and `before=0` name no entry, so they need none.
 
 The same endpoint pages backward through history with `before=`, and filters
 the same way in watch and history modes alike. Every filter parameter is plural
@@ -222,10 +239,12 @@ other is a `bad_request`. A singular guess (`kind=`, `op=`, `actor=`) is
 refused naming the plural rather than silently answering with the whole
 unfiltered feed.
 
-History returns one JSON body (`{"changes": […], "cursor": <seq>}`)
+History returns one JSON body
+(`{"changes": […], "cursor": <seq>, "head": <seq>, "generation": "…"}`)
 newest-first; `cursor` is the continuation, the oldest seq the page consumed,
 which you pass as the next `before` (omitted when the walk is exhausted), so
-the client never computes the boundary itself. The watch resumes from a
+the client never computes the boundary itself, and `head` with `generation`
+is the same watch handoff a list page carries. The watch resumes from a
 transparent `from={seq}`. (Note the continuation rule from
 [the API](api.md#pagination): the changelog uses transparent `from` and `before`
 seqs, because a seq is a real ordinal; opaque `after` cursors are for list
@@ -237,16 +256,18 @@ Every row this endpoint returns also carries `triggers`: each runnable enabled
 on it at all. Per-collection watches stay plain rows.
 
 This is the other half of the list-to-watch handoff: a list response carries
-the changelog `head` seq at its snapshot, so paging a collection and then opening
-`watch?from={head}` misses nothing and double-sees nothing.
+the changelog `head` seq at its snapshot and the `generation` it belongs to, so
+paging a collection and then opening `watch?from={head}&generation={generation}`
+misses nothing and double-sees nothing.
 
 ## Frames and the horizon
 
 The ndjson framing is pinned so a client can parse a stream unambiguously:
 
 - A line **with** a `seq` is a change row.
-- A line **without** a `seq` is a **control frame**, keyed by its single key.
-  The opening `{"bookmark": N}` is one such frame, and the idle heartbeat `{}`,
+- A line **without** a `seq` is a **control frame**, keyed by its field.
+  The opening `{"bookmark": N, "generation": "…"}` is one such frame, and the
+  idle heartbeat `{}`,
   sent every 30 seconds, is another. The stream may also end with a **terminal
   error frame** carrying the one [problem object](api.md#errors), so a
   mid-stream failure is legible rather than a dropped connection:
@@ -256,10 +277,14 @@ The ndjson framing is pinned so a client can parse a stream unambiguously:
 ```
 
 The changelog has a **horizon**: the oldest seq still resumable. Requesting `from=`
-a seq below the horizon is a `compacted` error (HTTP 410), so a consumer that
-has fallen too far behind is told plainly instead of silently missing rows, and
-its handler is one it **must** have: re-list, then resume the watch from the fresh
-head. The horizon is reported in [API discovery](api.md#discovery), and it is
+a seq below the horizon is a `compacted` error (HTTP 410), and so is a cursor
+the changelog cannot verify: above the head, under another history generation,
+or with no generation beside a `from` above 0. The problem object carries the
+current `head` and `generation`, so a consumer that has fallen too far behind,
+or resumes after a restore, is told plainly instead of silently missing rows,
+and its handler is one it **must** have: re-list, then resume the watch from
+the head and generation the response names. The horizon is reported in
+[API discovery](api.md#discovery), and it is
 **0 today**: nothing prunes or compacts the changelog, so replaying any consumer from
 any seq, zero included, is possible. Retention is a deployment **policy**, not
 a wire guarantee: the wire promises gapless resume from any seq at or above the

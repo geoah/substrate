@@ -34,6 +34,7 @@ import type {
   OccurrenceLog,
   OccurrenceProblem,
   OperationalList,
+  Page,
   PropertyAlternative,
   PropertyMeta,
   PutInput,
@@ -113,6 +114,14 @@ const change: Keys<Change> = {
 
 /** The operational-list envelope is generic; its keys do not depend on the
  * element, so `unknown` pins them. */
+/** The list envelope; the element type does not change its keys. */
+const page: Keys<Page<unknown>> = {
+  records: true,
+  cursor: true,
+  head: true,
+  generation: true,
+}
+
 const operationalList: Keys<OperationalList<unknown>> = {
   items: true,
   cursor: true,
@@ -196,6 +205,7 @@ const mirrors: Record<string, Record<string, true>> = {
   PutInput: putInput,
   Change: change,
   OperationalList: operationalList,
+  Page: page,
   Occurrence: occurrence,
   OccurrenceLog: occurrenceLog,
   OccurrenceProblem: occurrenceProblem,

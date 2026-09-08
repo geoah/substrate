@@ -28,8 +28,8 @@ run anywhere.
 
 **The operator's hat** speaks to the box's Postgres directly and holds no token
 at all: `user reset`, `repository list`, `repository inspect`,
-`repository verify`, `repository rebuild`, `repository reembed`,
-`blobs migrate`. It needs `--dsn` (or `DATABASE_URL`) and
+`repository verify`, `repository rebuild`, `repository rotate-generation`,
+`repository reembed`, `blobs migrate`. It needs `--dsn` (or `DATABASE_URL`) and
 `SUBSTRATE_DATA_ROOT`, and without them every operator command refuses before
 touching anything. The one exception is `repository rewrap`, which opens a
 copied repository directory with the user's recovery key for a new
@@ -129,7 +129,9 @@ full `<kind>/<id>` path where the declaration names no kind.
 ## Watching, triggers, and bundles
 
 `substratectl watch` streams [the changelog](changelog.md), one line per committed change,
-resumable with `--from` and filterable by `--kinds`, `--actors` and `--ops`. To
+resumable with `--from` and `--generation` (the opening line prints both) and
+filterable by `--kinds`, `--actors` and `--ops`. A cursor from a history the
+server has since replaced is refused with the head to resume from. To
 narrow to one collection instead, `substratectl get <kind> -w` streams that
 one kind's changes.
 

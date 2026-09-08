@@ -37,6 +37,19 @@ type Change struct {
 	Hash string `json:"hash,omitempty"`
 }
 
+// ChangelogHead is where a repository's changelog stands: its highest
+// committed seq and the history generation that numbering belongs to. A
+// change cursor is a seq under one generation, and it resumes only while the
+// generation is the repository's and the seq is at or below the head: the
+// generation changes when a repository's history is imported into a database
+// that did not hold it, and holds across a restart and a rebuild, so a cursor
+// saved from a history that was since replaced is refused instead of
+// silently skipping the replacement's writes (decision 0056).
+type ChangelogHead struct {
+	Seq        int64  `json:"seq"`
+	Generation string `json:"generation"`
+}
+
 // ChangeFilter narrows a changelog read or watch.
 type ChangeFilter struct {
 	Kinds         []string `json:"kinds,omitempty"`

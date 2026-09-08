@@ -65,18 +65,25 @@ describe("changesSearch", () => {
 
 describe("changesInfiniteOptions paging", () => {
   const opts = changesInfiniteOptions({}, { first: 3 })
+  // Every page names the history generation it was read in; the continuation
+  // carries it back so the next page walks the same history.
   const page = (changes: ChangeRow[], cursor?: number): ChangesPage => ({
     changes,
     cursor,
+    generation: "gen-1",
   })
-  const next = (p: ChangesPage) => opts.getNextPageParam(p, [p], 0, [0])
+  const next = (p: ChangesPage) =>
+    opts.getNextPageParam(p, [p], { before: 0 }, [{ before: 0 }])
 
   it("continues on the server cursor, not on a full page", () => {
-    expect(next(page([row(9), row(8), row(7)], 7))).toBe(7)
+    expect(next(page([row(9), row(8), row(7)], 7))).toEqual({
+      before: 7,
+      generation: "gen-1",
+    })
   })
 
   it("a short page still continues while a cursor comes back (scope filtering)", () => {
-    expect(next(page([row(9)], 9))).toBe(9)
+    expect(next(page([row(9)], 9))).toEqual({ before: 9, generation: "gen-1" })
   })
 
   it("stops when the cursor is omitted (the feed's beginning)", () => {
@@ -89,9 +96,13 @@ describe("changesInfiniteOptions paging", () => {
       { first: 3, sinceMs: T0 + 8_000 }
     )
     const below = page([row(9), row(8), row(7)], 7)
-    expect(withFloor.getNextPageParam(below, [below], 0, [0])).toBeUndefined()
+    expect(
+      withFloor.getNextPageParam(below, [below], { before: 0 }, [{ before: 0 }])
+    ).toBeUndefined()
     const above = page([row(12), row(11), row(10)], 10)
-    expect(withFloor.getNextPageParam(above, [above], 0, [0])).toBe(10)
+    expect(
+      withFloor.getNextPageParam(above, [above], { before: 0 }, [{ before: 0 }])
+    ).toEqual({ before: 10, generation: "gen-1" })
   })
 })
 
@@ -142,6 +153,11 @@ describe("parseWatchLine", () => {
 
   it("reads the leading bookmark", () => {
     expect(parseWatchLine('{"bookmark":32700}')?.bookmark).toBe(32700)
+  })
+
+  it("reads the history generation beside the bookmark", () => {
+    const line = parseWatchLine('{"bookmark":32700,"generation":"7f3a0c2e"}')
+    expect(line).toEqual({ bookmark: 32700, generation: "7f3a0c2e" })
   })
 
   it("reads the terminal error control frame", () => {

@@ -168,13 +168,14 @@ export interface PutInput {
 /** One keyset page of a collection list. `cursor` is the OPAQUE continuation
  * token — store it and resend it VERBATIM as `after=`
  * for the next page; it is omitted once the walk is exhausted. `head` is the
- * changelog head seq at the page's snapshot (open `watch?from={head}` for a
- * gapless handoff). The server has NO offset. */
+ * changelog head seq at the page's snapshot and `generation` the history
+ * generation it belongs to (open `watch?from={head}&generation={generation}`
+ * for a gapless handoff). The server has NO offset. */
 export interface Page<T = SubstrateRecord> {
   records: T[]
   cursor?: string
   head?: number
-  total?: number
+  generation?: string
 }
 
 /** The envelope every OPERATIONAL list answers with — tokens, the catalog,
@@ -262,10 +263,13 @@ export interface ChangeRow extends Change {
 
 /** One history page of the feed, newest first. `cursor` is the CONTINUATION —
  * the oldest seq on the page, handed back as the next `before`; absent when
- * the walk is exhausted. */
+ * the walk is exhausted. `head` and `generation` are the watch handoff, as on
+ * a list page. */
 export interface ChangePage {
   changes: ChangeRow[]
   cursor?: number
+  head?: number
+  generation?: string
 }
 
 /** One predicate of the filter grammar (`substrate.Cond`). The console writes

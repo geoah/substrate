@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -424,15 +425,69 @@ func caseChangelog(c *C) {
 	c.stepf("operator verify (`substratectl repository verify %s`): %s", r.username, verifySummary(string(out)))
 }
 
+// changelogHead reads the feed's head and history generation off a one-row
+// history page: the pair a forward read above seq 0 and a watch resume hand
+// back beside `from`.
+func (c *C) changelogHead() (int64, string) {
+	c.t.Helper()
+	var page struct {
+		Head       int64  `json:"head"`
+		Generation string `json:"generation"`
+	}
+	status, raw := c.do(http.MethodGet, "/api/v1/changes?first=1", nil, &page)
+	c.requiref(status == http.StatusOK, "GET /api/v1/changes?first=1 answered %d: %s", status, raw)
+	c.requiref(page.Generation != "", "the history page carries no generation: %s", raw)
+	return page.Head, page.Generation
+}
+
+// bookmarkGeneration reads the generation off a bookmark control frame; ""
+// for any other frame.
+func bookmarkGeneration(line string) string {
+	var frame struct {
+		Bookmark   *int64 `json:"bookmark"`
+		Generation string `json:"generation"`
+	}
+	if json.Unmarshal([]byte(line), &frame) != nil || frame.Bookmark == nil {
+		return ""
+	}
+	return frame.Generation
+}
+
 // readChangesForward reads the forward feed from a seq (exclusive) to its
 // end. One forward page holds at most 500 rows, so the read pages until a
-// page comes back empty; a story run's changelog outgrows one page.
+// page comes back empty; a story run's changelog outgrows one page. A `from`
+// above 0 travels with the history generation it belongs to, which the
+// first page's bookmark names for every page after.
 func (c *C) readChangesForward(from int64) []changeRow {
 	c.t.Helper()
+	return c.readChangesForwardAs(c.r.token, from)
+}
+
+func (c *C) readChangesForwardAs(token string, from int64) []changeRow {
+	c.t.Helper()
+	return c.readChangesForwardWith(token, from, nil)
+}
+
+// readChangesForwardWith is the forward read under extra query parameters
+// (the feed's filters); every page carries the cursor pair.
+func (c *C) readChangesForwardWith(token string, from int64, v url.Values) []changeRow {
+	c.t.Helper()
 	var rows []changeRow
+	generation := ""
+	if from > 0 {
+		_, generation = c.changelogHead()
+	}
 	for {
-		path := fmt.Sprintf("/api/v1/changes?from=%d", from)
-		status, raw := c.do(http.MethodGet, path, nil, nil)
+		q := url.Values{}
+		for name, vals := range v {
+			q[name] = vals
+		}
+		q.Set("from", strconv.FormatInt(from, 10))
+		if generation != "" {
+			q.Set("generation", generation)
+		}
+		path := "/api/v1/changes?" + q.Encode()
+		status, raw := c.doAs(token, http.MethodGet, path, nil, nil)
 		c.requiref(status == http.StatusOK, "GET %s answered %d: %s", path, status, raw)
 		page := 0
 		for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
@@ -445,6 +500,9 @@ func (c *C) readChangesForward(from int64) []changeRow {
 				// A control frame: the bookmark or a heartbeat is fine, the
 				// reserved terminal error frame is a failure, never a skip.
 				c.requiref(!strings.Contains(line, `"error"`), "the feed ended with an error frame: %s", line)
+				if g := bookmarkGeneration(line); g != "" {
+					generation = g
+				}
 				continue
 			}
 			rows = append(rows, row)
@@ -463,7 +521,8 @@ func (c *C) watchForWrite(from int64, recordID string, write func()) changeRow {
 	c.t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	u := fmt.Sprintf("%s/api/v1/changes?watch=1&from=%d", c.r.base, from)
+	_, generation := c.changelogHead()
+	u := fmt.Sprintf("%s/api/v1/changes?watch=1&from=%d&generation=%s", c.r.base, from, generation)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	c.requiref(err == nil, "building the watch request: %v", err)
 	req.Header.Set("Authorization", "Bearer "+c.r.token)
@@ -471,7 +530,7 @@ func (c *C) watchForWrite(from int64, recordID string, write func()) changeRow {
 	resp, err := (&http.Client{}).Do(req)
 	c.requiref(err == nil, "opening the watch: %v", err)
 	defer resp.Body.Close()
-	c.stepf("`GET /api/v1/changes?watch=1&from=%d` answered %d and streams", from, resp.StatusCode)
+	c.stepf("`GET /api/v1/changes?watch=1&from=%d&generation=%s` answered %d and streams", from, generation, resp.StatusCode)
 	c.requiref(resp.StatusCode == http.StatusOK, "the watch answered %d, want 200", resp.StatusCode)
 
 	write()
@@ -592,10 +651,13 @@ func (r *run) appendix() {
 	}
 
 	b.WriteString("### The changelog\n\n| seq | op | kind | record | actor | hash |\n| --- | --- | --- | --- | --- | --- |\n")
-	from := int64(0)
+	from, generation := int64(0), ""
 	for {
-		status, raw, err := httpJSON(r.hc, r.base, r.token, http.MethodGet,
-			fmt.Sprintf("/api/v1/changes?from=%d", from), nil)
+		path := fmt.Sprintf("/api/v1/changes?from=%d", from)
+		if generation != "" {
+			path += "&generation=" + generation
+		}
+		status, raw, err := httpJSON(r.hc, r.base, r.token, http.MethodGet, path, nil)
 		if err != nil || status != http.StatusOK {
 			fmt.Fprintf(&b, "\nReading the changelog failed: status %d, %v\n", status, err)
 			break
@@ -604,6 +666,10 @@ func (r *run) appendix() {
 		for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
 			var row changeRow
 			if json.Unmarshal([]byte(line), &row) != nil || row.Seq == 0 {
+				// The bookmark names the generation the next page resends.
+				if g := bookmarkGeneration(line); g != "" {
+					generation = g
+				}
 				continue
 			}
 			fmt.Fprintf(&b, "| %d | %s | %s | `%s` | %s | `%s` |\n",

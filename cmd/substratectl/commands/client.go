@@ -181,13 +181,16 @@ func parseAPIError(resp *http.Response, method, path string) *apiError {
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	var env struct {
 		Error struct {
-			Code     string   `json:"code"`
-			Message  string   `json:"message"`
-			Problems []string `json:"problems"`
+			Code       string   `json:"code"`
+			Message    string   `json:"message"`
+			Problems   []string `json:"problems"`
+			Head       *int64   `json:"head"`
+			Generation string   `json:"generation"`
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(b, &env); err == nil && (env.Error.Code != "" || env.Error.Message != "") {
 		ae.Code, ae.Message, ae.Problems = env.Error.Code, env.Error.Message, env.Error.Problems
+		ae.Head, ae.Generation = env.Error.Head, env.Error.Generation
 		return ae
 	}
 	if msg := strings.TrimSpace(string(b)); msg != "" {

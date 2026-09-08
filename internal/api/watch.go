@@ -1,10 +1,9 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
-	"math"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -30,10 +29,10 @@ const (
 func retentionHorizon() int64 { return 0 }
 
 // ndjson control-frame rule: a line WITHOUT `seq` is a control
-// frame identified by its single key. `bookmark` opens a stream, `{}` is an
-// idle heartbeat, and the errorEnvelope (`{"error":{…}}`) is the reserved
-// TERMINAL error frame — a mid-stream failure travels as one problem object
-// rather than a silent EOF.
+// frame identified by its key. `bookmark` opens a stream (with the history
+// `generation` beside it), `{}` is an idle heartbeat, and the errorEnvelope
+// (`{"error":{…}}`) is the reserved TERMINAL error frame: a mid-stream
+// failure travels as one problem object rather than a silent EOF.
 //
 // writeWatchError encodes that terminal frame. A client-gone encode error is
 // swallowed: there is no one left to tell.
@@ -71,19 +70,11 @@ func (h *handler) getChanges(w http.ResponseWriter, r *http.Request) {
 		h.getChangesPage(w, r, ds, f)
 		return
 	}
-	from, hasFrom, err := parseFrom(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	rs, ok := resumeCursor(w, r, ds)
+	if !ok {
 		return
 	}
-	if !hasFrom {
-		from = 0
-	}
-	if hasFrom && from < retentionHorizon() {
-		writeCompacted(w, retentionHorizon())
-		return
-	}
-	changes, err := ds.Changes(r.Context(), from, f, changeBatch)
+	changes, err := ds.Changes(r.Context(), rs.from, f, changeBatch)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
@@ -96,7 +87,7 @@ func (h *handler) getChanges(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	enc := json.NewEncoder(w)
-	_ = enc.Encode(map[string]int64{"bookmark": from})
+	_ = enc.Encode(bookmarkFrame{Bookmark: rs.from, Generation: rs.head.Generation})
 	for i := range rows {
 		if err := enc.Encode(rows[i]); err != nil {
 			return
@@ -112,35 +103,23 @@ func (h *handler) getChanges(w http.ResponseWriter, r *http.Request) {
 // no per-row gate left to apply.
 func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds substrate.Dataset, f substrate.ChangeFilter, annotate bool) {
 	ctx := r.Context()
-	from, hasFrom, err := parseFrom(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
-		return
-	}
-	// The horizon check happens before any 200/stream bytes, so a compacted
-	// resume is a clean 410, not a terminal frame.
-	if hasFrom && from < retentionHorizon() {
-		writeCompacted(w, retentionHorizon())
-		return
-	}
-
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, codeInternal, "streaming unsupported")
 		return
 	}
 
-	// Subscribe before establishing the head so nothing committed in
-	// between is missed.
+	// Subscribe before reading the head so nothing committed in between is
+	// missed. The cursor check runs before any 200/stream bytes, so a
+	// refused resume is a clean 410, not a terminal frame.
 	signals := ds.WatchSignal(ctx)
-
-	if !hasFrom {
-		head, err := headSeq(ctx, ds)
-		if err != nil {
-			writeSubstrateError(w, err)
-			return
-		}
-		from = head
+	rs, ok := resumeCursor(w, r, ds)
+	if !ok {
+		return
+	}
+	from := rs.from
+	if !rs.hasFrom {
+		from = rs.head.Seq
 	}
 
 	w.Header().Set("Content-Type", "application/x-ndjson")
@@ -149,7 +128,7 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 	w.WriteHeader(http.StatusOK)
 
 	enc := json.NewEncoder(w)
-	if err := enc.Encode(map[string]int64{"bookmark": from}); err != nil {
+	if err := enc.Encode(bookmarkFrame{Bookmark: from, Generation: rs.head.Generation}); err != nil {
 		return
 	}
 	flusher.Flush()
@@ -217,51 +196,59 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 	}
 }
 
-// headSeq is the changelog's highest committed seq. The Dataset contract
-// exposes no direct "latest seq" read and only pages forward, so the head
-// is found by an exponential then binary probe: O(changelog head) single-row
-// reads instead of a walk whose length is the changelog's.
-func headSeq(ctx context.Context, ds substrate.Dataset) (int64, error) {
-	more := func(after int64) (bool, error) {
-		changes, err := ds.Changes(ctx, after, substrate.ChangeFilter{}, 1)
-		if err != nil {
-			return false, err
-		}
-		return len(changes) > 0, nil
+// bookmarkFrame opens every stream and every forward page: the seq the rows
+// that follow are read after, and the history generation that seq belongs to.
+// A client saves the pair and resumes with `from={bookmark}&generation={…}`.
+type bookmarkFrame struct {
+	Bookmark   int64  `json:"bookmark"`
+	Generation string `json:"generation"`
+}
+
+// resume is a checked `from` cursor: the head it was held to, the seq to read
+// after, and whether the request supplied one at all.
+type resume struct {
+	head    substrate.ChangelogHead
+	from    int64
+	hasFrom bool
+}
+
+// resumeCursor reads the `from` cursor and holds it to the changelog before a
+// byte of the response is written. A cursor is a seq under a history
+// generation, and it resumes only while the generation is the repository's
+// and the seq is at or below the head: an imported directory recreates a
+// repository under the same authority with seqs that restart below whatever
+// cursors clients saved, and a bare seq cannot tell that history from this one
+// (decision 0056). Seq 0 is the start of every history and names no entry, so
+// it needs no generation. Anything else answers 410 `compacted` naming the
+// head to re-list from; a parse failure is the 400 it always was. ok is false
+// once the response has been written.
+func resumeCursor(w http.ResponseWriter, r *http.Request, ds substrate.Dataset) (resume, bool) {
+	from, hasFrom, err := parseFrom(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+		return resume{}, false
 	}
-	// Invariant: more(lo) is true, more(hi) is false, so head is in (lo,hi].
-	if ok, err := more(0); err != nil || !ok {
-		return 0, err
+	head, err := ds.Head(r.Context())
+	if err != nil {
+		writeSubstrateError(w, err)
+		return resume{}, false
 	}
-	lo, hi := int64(0), int64(1)
-	for {
-		ok, err := more(hi)
-		if err != nil {
-			return 0, err
-		}
-		if !ok {
-			break
-		}
-		lo = hi
-		if hi > math.MaxInt64/2 {
-			hi = math.MaxInt64
-			break
-		}
-		hi *= 2
+	generation := r.URL.Query().Get("generation")
+	refuse := func(msg string) (resume, bool) {
+		writeCompacted(w, head, msg+"; re-list and resume from the head")
+		return resume{}, false
 	}
-	for hi-lo > 1 {
-		mid := lo + (hi-lo)/2
-		ok, err := more(mid)
-		if err != nil {
-			return 0, err
-		}
-		if ok {
-			lo = mid
-		} else {
-			hi = mid
-		}
+	switch {
+	case hasFrom && from < retentionHorizon():
+		return refuse(fmt.Sprintf("seq %d is below the retention horizon %d", from, retentionHorizon()))
+	case generation != "" && generation != head.Generation:
+		return refuse(fmt.Sprintf("generation %q is not this changelog's %q: the history was replaced since the cursor was saved", generation, head.Generation))
+	case hasFrom && from > 0 && generation == "":
+		return refuse(fmt.Sprintf("from=%d names an entry and needs the generation it was read under; the head is %d under generation %q", from, head.Seq, head.Generation))
+	case hasFrom && from > head.Seq:
+		return refuse(fmt.Sprintf("seq %d is above the head %d: this changelog never reached the cursor", from, head.Seq))
 	}
-	return hi, nil
+	return resume{head: head, from: from, hasFrom: hasFrom}, true
 }
 
 func parseFrom(r *http.Request) (int64, bool, error) {

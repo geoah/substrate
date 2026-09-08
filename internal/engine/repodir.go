@@ -535,7 +535,7 @@ func (s *service) reconcileRow(ctx context.Context, repo Repository, allowImport
 // and is closed by its caller.
 func (s *service) bareDataset(repo Repository, db *sql.DB, dir string) *dataset {
 	return &dataset{
-		svc: s, db: db, scope: repo.scope(), dir: dir,
+		svc: s, db: db, scope: repo.scope(), dir: dir, generation: repo.HistoryGeneration,
 		reg: vocabulary.NewRegistry(), watch: newBroadcaster(), info: repo.info(),
 	}
 }
@@ -986,9 +986,17 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 	if repo.CreatedAt.IsZero() {
 		repo.CreatedAt = nowUTC()
 	}
+	// A fresh generation, never one carried in the manifest: the directory
+	// may be an older copy of a history this database's clients hold cursors
+	// into, and a bare seq cannot tell the two apart. Every cursor saved
+	// against the history that was here before is refused once and re-lists
+	// (decision 0056).
+	if repo.HistoryGeneration, err = newHistoryGeneration(); err != nil {
+		return out, err
+	}
 	if _, err := s.maint.ExecContext(ctx, `
-		INSERT INTO repositories (id, username, authority, created_at, dek)
-		VALUES ($1, $2, $3, $4, $5)`, repo.ID, repo.Username, repo.Authority, repo.CreatedAt, repo.DEK); err != nil {
+		INSERT INTO repositories (id, username, authority, created_at, dek, history_generation)
+		VALUES ($1, $2, $3, $4, $5, $6)`, repo.ID, repo.Username, repo.Authority, repo.CreatedAt, repo.DEK, repo.HistoryGeneration); err != nil {
 		return out, fmt.Errorf("create the row from the manifest: %w", err)
 	}
 	if m.ChangelogDialect > 0 {

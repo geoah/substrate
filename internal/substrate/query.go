@@ -52,12 +52,14 @@ type Query struct {
 
 // Page is a page of records plus continuation cursor ("" = exhausted).
 // Head is the changelog's highest committed seq at the snapshot this page was
-// read from: a client that Lists then opens `watch?from={head}` sees every
-// subsequent change with neither a gap nor a double-see. It is
+// read from, and Generation the history generation it belongs to: a client
+// that Lists then opens `watch?from={head}&generation={generation}` sees every
+// subsequent change with neither a gap nor a double-see. Head is
 // always emitted, 0 included (an empty changelog), so the list→watch handoff
 // is never ambiguous.
 type Page struct {
-	Records []*Record `json:"records"`
-	Cursor  string    `json:"cursor,omitempty"`
-	Head    int64     `json:"head"`
+	Records    []*Record `json:"records"`
+	Cursor     string    `json:"cursor,omitempty"`
+	Head       int64     `json:"head"`
+	Generation string    `json:"generation"`
 }

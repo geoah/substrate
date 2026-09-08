@@ -100,6 +100,11 @@ type dataset struct {
 	// record holds it wrapped to the user's age recipient.
 	dek   []byte
 	watch *broadcaster
+	// generation is the repository's history generation (repositories.go),
+	// the marker every change cursor this dataset hands out is bound to. It
+	// is read once at open: the row changes it only when a boot imports the
+	// repository, and no dataset is open then.
+	generation string
 
 	// dir is the repository's directory under the data root (repodir.go):
 	// the manifest, the changelog segments, the blob bytes and the sealed
@@ -184,6 +189,16 @@ func (ds *dataset) Repository() substrate.RepositoryInfo {
 	ds.mu.RLock()
 	defer ds.mu.RUnlock()
 	return ds.info
+}
+
+// Head is the changelog's highest committed seq and the history generation it
+// belongs to: the pair a change cursor is held to before it resumes.
+func (ds *dataset) Head(ctx context.Context) (substrate.ChangelogHead, error) {
+	seq, err := tableChangelogHead(ctx, ds.db)
+	if err != nil {
+		return substrate.ChangelogHead{}, err
+	}
+	return substrate.ChangelogHead{Seq: seq, Generation: ds.historyGeneration()}, nil
 }
 
 func (ds *dataset) registry() *vocabulary.Registry {

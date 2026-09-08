@@ -40,7 +40,8 @@ func (a *app) repositoryCommand() *cobra.Command {
 	}
 	cmd.AddCommand(a.repositoryListCommand(), a.repositoryInspectCommand(),
 		a.repositoryRebuildCommand(), a.repositoryReembedCommand(),
-		a.repositoryVerifyCommand(), a.repositoryRewrapCommand())
+		a.repositoryVerifyCommand(), a.repositoryRewrapCommand(),
+		a.repositoryRotateGenerationCommand())
 	return cmd
 }
 

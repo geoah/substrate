@@ -117,6 +117,11 @@ func (ds *dataset) Incoming(ctx context.Context, typ, id string, opts substrate.
 		if err != nil {
 			return nil, err
 		}
+		// The generation check mirrors List: an incoming cursor carries no
+		// head, but one history's positions are not another's either.
+		if tok.G != ds.historyGeneration() {
+			return nil, fmt.Errorf("%w: cursor was minted against another history; list again", substrate.ErrValidation)
+		}
 		if tok.O != signature || len(tok.K) != 5 {
 			return nil, fmt.Errorf("%w: bad cursor", substrate.ErrValidation)
 		}
@@ -162,7 +167,7 @@ func (ds *dataset) Incoming(ctx context.Context, typ, id string, opts substrate.
 			return nil, err
 		}
 		if len(page.Incoming) == first {
-			page.Cursor = encodeKeyset(signature, lastKey, 0)
+			page.Cursor = encodeKeyset(signature, lastKey, 0, ds.historyGeneration())
 			break
 		}
 		lastKey = []*string{
@@ -498,6 +503,14 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 		if len(tok.K) != len(terms) {
 			return nil, fmt.Errorf("%w: bad cursor", substrate.ErrValidation)
 		}
+		// The carried head is a position in ONE history: a cursor minted
+		// before an import replaced the changelog would hand the client a
+		// `head` the new history never reached, and `watch?from={head}` would
+		// then resume past writes it never saw. The generation the cursor was
+		// minted under is what says the head still means something.
+		if tok.G != ds.historyGeneration() {
+			return nil, fmt.Errorf("%w: cursor was minted against another history; list again", substrate.ErrValidation)
+		}
 		b.add(seekPredicate(b, terms, tok.K))
 		carriedHead = tok.H
 	}
@@ -534,7 +547,7 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	page := &substrate.Page{}
+	page := &substrate.Page{Generation: ds.historyGeneration()}
 	if carriedHead != 0 {
 		page.Head = carriedHead
 	} else {
@@ -590,7 +603,7 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 	}
 	_ = rows.Close()
 	if hasMore && len(got) > 0 {
-		page.Cursor = encodeKeyset(order, got[len(got)-1].keys, page.Head)
+		page.Cursor = encodeKeyset(order, got[len(got)-1].keys, page.Head, page.Generation)
 	}
 	for _, s := range got {
 		e, err := ds.hydrate(ctx, tx, s.row, q.WithAnnotations)
@@ -1398,10 +1411,12 @@ type keyset struct {
 	O string    `json:"o"`
 	K []*string `json:"k"`
 	H int64     `json:"h,omitempty"`
+	// G is the history generation H belongs to (dataset.generation).
+	G string `json:"g,omitempty"`
 }
 
-func encodeKeyset(order string, keys []*string, head int64) string {
-	raw, _ := json.Marshal(keyset{O: order, K: keys, H: head})
+func encodeKeyset(order string, keys []*string, head int64, generation string) string {
+	raw, _ := json.Marshal(keyset{O: order, K: keys, H: head, G: generation})
 	return base64.RawURLEncoding.EncodeToString(raw)
 }
 

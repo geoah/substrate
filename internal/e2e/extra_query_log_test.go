@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -87,9 +86,10 @@ func init() {
 // xqPage is the list wire shape: the records, the keyset cursor ("" once the
 // walk is exhausted) and the changelog head the page was read at.
 type xqPage struct {
-	Records []record `json:"records"`
-	Cursor  string   `json:"cursor"`
-	Head    int64    `json:"head"`
+	Records    []record `json:"records"`
+	Cursor     string   `json:"cursor"`
+	Head       int64    `json:"head"`
+	Generation string   `json:"generation"`
 }
 
 // xqError is the wire's problem shape, which every refusal below is pinned
@@ -199,36 +199,7 @@ func xqSeqSet(rows []changeRow) map[int64]bool {
 // exactly as readChangesForward does.
 func xqReadFeed(c *C, v url.Values) []changeRow {
 	c.t.Helper()
-	var rows []changeRow
-	from := int64(0)
-	for {
-		q := url.Values{}
-		for name, vals := range v {
-			q[name] = vals
-		}
-		q.Set("from", strconv.FormatInt(from, 10))
-		path := xqChanges + "?" + q.Encode()
-		status, raw := xqGet(c, path, nil)
-		c.requiref(status == http.StatusOK, "GET %s answered %d: %s", path, status, raw)
-		page := 0
-		for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
-			if line == "" {
-				continue
-			}
-			var row changeRow
-			c.requiref(json.Unmarshal([]byte(line), &row) == nil, "undecodable ndjson line: %s", line)
-			if row.Seq == 0 {
-				c.requiref(!strings.Contains(line, `"error"`), "the feed ended with an error frame: %s", line)
-				continue
-			}
-			rows = append(rows, row)
-			page++
-			from = row.Seq
-		}
-		if page == 0 {
-			return rows
-		}
-	}
+	return c.readChangesForwardWith(c.r.token, 0, v)
 }
 
 // xqStream is one open ndjson stream. The request carries the deadline, so a
@@ -453,9 +424,10 @@ func xqCaseListWatchHandoff(c *C) {
 	page := xqListTasks(c, xqValues("first", "1"))
 	head := page.Head
 	c.requiref(head > 0, "the list page carries head %d, and the stories wrote hundreds of rows", head)
-	c.stepf("a task list page answered head %d, the changelog seq it was read at", head)
+	c.requiref(page.Generation != "", "the list page carries no history generation beside head %d", head)
+	c.stepf("a task list page answered head %d under generation %s, the changelog position it was read at", head, page.Generation)
 
-	st := xqOpenStream(c, fmt.Sprintf("%s?watch=1&from=%d", xqChanges, head), 30*time.Second)
+	st := xqOpenStream(c, fmt.Sprintf("%s?watch=1&from=%d&generation=%s", xqChanges, head, page.Generation), 30*time.Second)
 	defer st.close()
 	c.requiref(st.bookmark(c) == head, "the watch bookmarked a different seq than the list's head %d", head)
 
@@ -505,10 +477,12 @@ func xqCaseBackwardPage(c *C) {
 	c.requiref(len(forward) > 0, "the changelog is empty")
 	head := forward[len(forward)-1].Seq
 
-	// `before` is exclusive, so the walk starts one above the head to take
-	// the head row itself; rows committed during the walk sit above it and
-	// belong to neither read.
-	before := head + 1
+	// `before` is exclusive and a cursor above the head is refused, so the
+	// walk starts at 0, the head of whatever is there; the stories write
+	// nothing while it runs, so that head is the forward read's.
+	before := int64(0)
+	// A `before` above 0 travels with the history generation it belongs to.
+	_, generation := c.changelogHead()
 	var seqs []int64
 	pages := 0
 	cursored := true
@@ -517,7 +491,7 @@ func xqCaseBackwardPage(c *C) {
 	// rather than fixed, which a growing changelog would walk into.
 	maxPages := len(forward)/50 + 3
 	for {
-		path := fmt.Sprintf("%s?before=%d&first=50", xqChanges, before)
+		path := fmt.Sprintf("%s?before=%d&first=50&generation=%s", xqChanges, before, generation)
 		var body struct {
 			Changes []changeRow `json:"changes"`
 			Cursor  *int64      `json:"cursor"`

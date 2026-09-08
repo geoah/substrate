@@ -16,7 +16,11 @@ import {
   useState,
   type ReactNode,
 } from "react"
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
+import {
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query"
 import { ArrowUpIcon, InboxIcon, SearchXIcon } from "lucide-react"
 
 import {
@@ -116,19 +120,21 @@ export function ChangelogTable({
   toolbarLeft,
   toolbarRight,
 }: ChangelogTableProps) {
+  const queryClient = useQueryClient()
   // The seek answers "where does history ≤ until start" before paging begins.
   const seek = useQuery({
     ...seekQueryOptions(untilMs ?? 0),
     enabled: untilMs !== undefined,
   })
-  const startBefore = untilMs === undefined ? 0 : seek.data
+  const start = untilMs === undefined ? { before: 0 } : seek.data
   const history = useInfiniteQuery({
     ...changesInfiniteOptions(filter, {
       first: CHANGELOG_TABLE_PAGE,
-      startBefore: startBefore ?? 0,
+      startBefore: start?.before ?? 0,
+      startGeneration: start?.generation,
       sinceMs,
     }),
-    enabled: startBefore !== undefined,
+    enabled: start !== undefined,
   })
 
   const [live, dispatch] = useReducer(liveReducer, EMPTY_LIVE_FEED)
@@ -145,15 +151,19 @@ export function ChangelogTable({
   useEffect(() => {
     statusRef.current = onStatus
   }, [onStatus])
-  // Compaction recovery: a `compacted` watch signal means the resume seq fell
-  // below retention — the gap can't be tailed, so we re-list from a fresh head
-  // and re-open the tail. The refetch handle stays in a ref (its identity
-  // changes each render); a nonce re-runs the watch effect after the re-list.
+  // Cursor recovery: a `compacted` watch signal means the resume cursor no
+  // longer addresses this changelog (it fell below retention, or a restore
+  // replaced the history and its generation). The gap can't be tailed, so the
+  // tail re-opens at the head, with no cursor, and history is re-listed. The
+  // refetch handle stays in a ref (its identity changes each render); a nonce
+  // re-runs the watch effect, and resetRef makes that run open bare instead
+  // of resending the refused cursor.
   const refetchHistoryRef = useRef(history.refetch)
   useEffect(() => {
     refetchHistoryRef.current = history.refetch
   }, [history.refetch])
   const [resetNonce, setResetNonce] = useState(0)
+  const resetRef = useRef(false)
 
   /** The time bounds, applied to whatever page shows (the seek bounds by
    * seq; these keep the range honest to the instant). */
@@ -191,19 +201,35 @@ export function ChangelogTable({
     setPage(1)
   }
 
-  // The tail: resume above what is already showing, deliver into the buffer.
+  // The tail: resume above what is already showing, under the history
+  // generation the pages were read in, deliver into the buffer.
   const headRef = useRef<number | undefined>(undefined)
   useEffect(() => {
     headRef.current = headSeq
   }, [headSeq])
+  // The ref keeps the LAST KNOWN generation: on a facet change the pages are
+  // not in yet, and a tail opened bare would miss a write landing between the
+  // old page's snapshot and the new head read. A retained pair from before a
+  // restore is refused and recovers through onCompacted.
+  const generation = history.data?.pages[0]?.generation
+  const generationRef = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (generation !== undefined) generationRef.current = generation
+  }, [generation])
   useEffect(() => {
     dispatch({ kind: "reset" })
     if (!follow) {
       statusRef.current?.("off")
       return
     }
+    const reset = resetRef.current
+    // A cursor travels only with its generation; before the first page has
+    // ever landed there is none, and the tail opens at the head.
+    const resume = !reset && generationRef.current !== undefined
+    resetRef.current = false
     const handle = watchChanges({
-      from: headRef.current,
+      from: resume ? headRef.current : undefined,
+      generation: resume ? generationRef.current : undefined,
       filter: JSON.parse(filterKey) as ChangeFeedFilter,
       onRow: (row) =>
         dispatch({
@@ -213,14 +239,19 @@ export function ChangelogTable({
         }),
       onStatus: (status, detail) => statusRef.current?.(status, detail),
       onCompacted: () => {
-        // Re-list, then bump the nonce so this effect re-subscribes from the
-        // fresh head instead of the stale (now-compacted) resume seq.
-        void refetchHistoryRef.current?.()
+        // Re-open the tail bare (at the head, under the server's generation)
+        // BEFORE re-listing, so nothing committed between the two is lost:
+        // resending the refused cursor would only be refused again.
+        resetRef.current = true
         setResetNonce((n) => n + 1)
+        // The seek's answer is a position in the OLD history, cached without
+        // expiry; a time-bound view would keep resending it and stay refused.
+        void queryClient.invalidateQueries({ queryKey: ["changes", "seek"] })
+        void refetchHistoryRef.current?.()
       },
     })
     return () => handle.stop()
-  }, [follow, filterKey, resetNonce])
+  }, [follow, filterKey, resetNonce, queryClient])
 
   function onScroll() {
     const el = scrollRef.current

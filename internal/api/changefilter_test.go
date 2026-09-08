@@ -163,33 +163,3 @@ func changeTypesFromNDJSON(t *testing.T, rec *httptest.ResponseRecorder) []strin
 	}
 	return types
 }
-
-func TestHeadSeqFindsTheTrueHeadOfALargeChangelog(t *testing.T) {
-	ds := newFakeDataset("geoah")
-	const n = 120_000
-	ds.changes = make([]substrate.Change, 0, n)
-	for i := 1; i <= n; i++ {
-		ds.changes = append(ds.changes, substrate.Change{
-			Seq: int64(i), TS: time.Unix(int64(i), 0).UTC(), Actor: substrate.ActorAPI,
-			Op: substrate.OpPut, RecordID: "c1", Kind: "samples.substrate.reamde.dev/people/person",
-		})
-	}
-	got, err := headSeq(t.Context(), ds)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != n {
-		t.Fatalf("headSeq = %d, want %d — a watch without a cursor would replay from the middle", got, n)
-	}
-}
-
-func TestHeadSeqOnAnEmptyChangelog(t *testing.T) {
-	ds := newFakeDataset("geoah")
-	got, err := headSeq(t.Context(), ds)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != 0 {
-		t.Fatalf("headSeq = %d, want 0", got)
-	}
-}

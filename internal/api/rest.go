@@ -169,8 +169,8 @@ func (h *handler) listCollection(w http.ResponseWriter, r *http.Request) {
 	// A collection watch is the changelog tail scoped to this type. The list
 	// query grammar does not apply to it — filter/orderBy/first/after/
 	// withAnnotations are silently meaningless on a watch — so their presence is
-	// a bad_request naming the param, never silent success. `from`
-	// (the transparent resume seq) IS honored.
+	// a bad_request naming the param, never silent success. `from` and
+	// `generation` (the resume cursor) ARE honored.
 	if r.URL.Query().Get("watch") == "1" {
 		if bad := rejectParams(r, "filter", "orderBy", "first", "after", "withAnnotations"); bad != "" {
 			writeError(w, http.StatusBadRequest, codeBadRequest, bad+" is not supported with watch=1")
@@ -323,11 +323,11 @@ var (
 	// watchParams is a collection watch: the mode switch and the resume cursor.
 	// The list grammar does not apply, and rejectParams names those keys with a
 	// message of their own before this set is consulted.
-	watchParams = []string{"watch", "from"}
+	watchParams = []string{"watch", "from", "generation"}
 	// changeParams is the cross-collection changefeed: the two modes' cursors
 	// plus the change filter, whose list-valued keys are all PLURAL.
 	changeParams = []string{
-		"watch", "from", "before", "first",
+		"watch", "from", "generation", "before", "first",
 		"recordId", "recordKind", "q",
 		"kinds", "excludeKinds", "actors", "excludeActors", "ops", "excludeOps",
 	}

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -52,12 +53,37 @@ func (h *handler) getChangesPage(w http.ResponseWriter, r *http.Request, ds subs
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
 	}
+	// The head is read BEFORE the page: a row committed between the two reads
+	// then lands above the head the body reports, so a client resuming a
+	// watch at `head` sees it again rather than never. The other order would
+	// hide it under a head the page never saw.
+	head, err := ds.Head(r.Context())
+	if err != nil {
+		writeSubstrateError(w, err)
+		return
+	}
 	// The horizon binds both ends of the cursor contract, not just the forward
 	// one: walking back below it is exactly the "you can no longer address
 	// this" case `compacted` exists for, and answering with an empty 200 would
-	// let a client mistake a pruned range for the start of the changelog.
-	if before > 0 && before < retentionHorizon() {
-		writeCompacted(w, retentionHorizon())
+	// let a client mistake a pruned range for the start of the changelog. The
+	// generation binds both ends too: a `before` continuation names an entry
+	// of ONE history, and a client that fetched a page, then had an older
+	// directory restored under it, would otherwise walk on through the
+	// replacement's rows as if they were the ones it had been reading.
+	// `before=0` is the head of whatever history is there and names nothing.
+	generation := r.URL.Query().Get("generation")
+	switch {
+	case before < 0 || (before > 0 && before < retentionHorizon()):
+		writeCompacted(w, head, fmt.Sprintf("seq %d is below the retention horizon %d; re-list and resume from the head", before, retentionHorizon()))
+		return
+	case before > head.Seq:
+		writeCompacted(w, head, fmt.Sprintf("seq %d is above the head %d: this changelog never reached the cursor; re-list and resume from the head", before, head.Seq))
+		return
+	case generation != "" && generation != head.Generation:
+		writeCompacted(w, head, fmt.Sprintf("generation %q is not this changelog's %q: the history was replaced since the cursor was saved; re-list and resume from the head", generation, head.Generation))
+		return
+	case before > 0 && generation == "":
+		writeCompacted(w, head, fmt.Sprintf("before=%d names an entry and needs the generation it was read under; the head is %d under generation %q; re-list and resume from it", before, head.Seq, head.Generation))
 		return
 	}
 	first, err := parseFirstParam(r)
@@ -92,7 +118,10 @@ func (h *handler) getChangesPage(w http.ResponseWriter, r *http.Request, ds subs
 	// The history walks backward, newest-first. `cursor` is the continuation
 	//: the seq the client passes as the next `before`. It is omitted
 	// only when the walk reached the bottom with room to spare (absence = done).
-	body := map[string]any{"changes": kept}
+	// `head` and `generation` are the watch handoff, as on a list envelope:
+	// `watch?from={head}&generation={generation}` tails what this page did not
+	// hold.
+	body := map[string]any{"changes": kept, "head": head.Seq, "generation": head.Generation}
 	switch {
 	case len(kept) > first:
 		// Overshoot: return the first `first` readable rows and set the cursor to

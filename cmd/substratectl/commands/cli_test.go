@@ -180,6 +180,7 @@ func TestHelpSpeaksTheV1Vocabulary(t *testing.T) {
 		{"repository", "--help"},
 		{"repository", "inspect", "--help"},
 		{"repository", "rebuild", "--help"},
+		{"repository", "rotate-generation", "--help"},
 	} {
 		out, _ := h.mustRun(args...)
 		all.WriteString(out)
@@ -1468,12 +1469,12 @@ func TestWatchPrintsOneLinePerChange(t *testing.T) {
 		{Seq: 42, TS: testNow, Actor: substrate.ActorAPI, Op: substrate.OpPut, RecordID: "t9", Kind: "samples.substrate.reamde.dev/tasks/task"},
 		{Seq: 43, TS: testNow, Actor: "connector:gmail", Op: substrate.OpPatch, RecordID: "m3", Kind: "samples.substrate.reamde.dev/messaging/conversationmessage"},
 	}
-	out, _ := h.mustRun("watch", "--from", "41", "--kinds", "samples.substrate.reamde.dev/tasks/task,samples.substrate.reamde.dev/messaging/conversationmessage")
+	out, _ := h.mustRun("watch", "--from", "41", "--generation", "gen-test", "--kinds", "samples.substrate.reamde.dev/tasks/task,samples.substrate.reamde.dev/messaging/conversationmessage")
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
 	if len(lines) != 4 {
 		t.Fatalf("expected bookmark + header + 2 change lines, got:\n%s", out)
 	}
-	if lines[0] != "# watching from seq 41" {
+	if lines[0] != "# watching from seq 41, generation gen-test" {
 		t.Errorf("bookmark line = %q", lines[0])
 	}
 	if lines[1] != changeHeader {
@@ -1487,10 +1488,29 @@ func TestWatchPrintsOneLinePerChange(t *testing.T) {
 	}
 }
 
+// A cursor the server refuses names the position to resume at, and the CLI
+// prints it as the flags to pass rather than a bare 410.
+func TestWatchPrintsTheReplacementCursorOnARefusedOne(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	_, _, err := h.run("watch", "--from", "5", "--generation", "stale")
+	if err == nil {
+		t.Fatal("a cursor under another generation streamed")
+	}
+	var buf bytes.Buffer
+	renderError(&buf, err)
+	got := buf.String()
+	for _, want := range []string{"the cursor no longer addresses this changelog", "--from 41 --generation gen-test"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("rendered error lacks %q:\n%s", want, got)
+		}
+	}
+}
+
 func TestWatchSendsFilters(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
-	h.mustRun("watch", "--from", "7", "--kinds", "a,b", "--ops", "put", "--actors", "api")
+	h.mustRun("watch", "--from", "7", "--generation", "gen-test", "--kinds", "a,b", "--ops", "put", "--actors", "api")
 	// The fake records only the path; assert the request happened at all and
 	// that the client built the query without error.
 	var saw bool
@@ -1499,6 +1519,10 @@ func TestWatchSendsFilters(t *testing.T) {
 	}
 	if !saw {
 		t.Fatalf("watch did not hit the changes endpoint: %v", h.fake.requests)
+	}
+	// The cursor travels as the pair the server holds it to.
+	if q := h.fake.lastQuery; q.Get("from") != "7" || q.Get("generation") != "gen-test" {
+		t.Fatalf("watch sent from=%q generation=%q, want 7 and gen-test", q.Get("from"), q.Get("generation"))
 	}
 }
 
