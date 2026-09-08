@@ -1265,6 +1265,14 @@ func (l *loader) parseLinkProps(where string, ed map[string]any) (map[string]*Pr
 				l.errf("%s.values: a link property spells a value as a mapping, `{value: %v}`, never a bare word", pwhere, v)
 			}
 		}
+		// The engine rewrites a renamed value on a kind's own property
+		// (convert.go); link data sits inside a reference value, which it
+		// never reaches, so the key is refused here rather than stored and
+		// honored by nothing.
+		if valuesRenamed(p.Values) {
+			l.errf("%s.values: renamedFrom is only for a kind's own property's values, not a link property's", pwhere)
+			continue
+		}
 		out[pname] = p
 	}
 	if len(out) == 0 {
@@ -1407,14 +1415,21 @@ const valueRule = "a lowercase word ([a-z][a-z0-9]*)"
 // enumValueKeys is the closed key set of a labeled enum value entry.
 // `deprecated` is the RESERVED marker on one value: removing a value live
 // records hold is a narrowing the guard refuses, so deprecating it is the move
-// the dialect has to have a word for.
-var enumValueKeys = map[string]bool{"value": true, "label": true, "deprecated": true}
+// the dialect has to have a word for. `renamedFrom` is the value's previous
+// spelling, the property-level key's twin (decision 0066): the engine rewrites
+// every live record holding the old value when the declaration is admitted
+// (engine/convert.go). A key set is closed, so a binary older than the key
+// refuses a closure carrying it, as decision 0020 requires of every new key.
+var enumValueKeys = map[string]bool{"value": true, "label": true, "deprecated": true, "renamedFrom": true}
 
 // parseEnumValue reads ONE `values:` entry in either declared form (record
 // 64): a bare scalar (`last30d`) is a value with no label; a mapping
 // (`{value: last30d, label: "Last 30 days"}`) carries both. The value is held
 // to the same lowercase-word rule whichever form declared it — labels are free
-// text. Returns false (with an error recorded) on a malformed entry.
+// text. Returns false (with an error recorded) on a malformed entry. The
+// checks that need the whole list (a previous value still declared, two
+// values naming one previous value) are checkValueRenames', once every entry
+// is parsed.
 func (l *loader) parseEnumValue(where string, v any) (EnumValue, bool) {
 	if m := asMapOrNil(v); m != nil {
 		l.checkKeys(where+".values[]", m, enumValueKeys)
@@ -1423,7 +1438,18 @@ func (l *loader) parseEnumValue(where string, v any) (EnumValue, bool) {
 			l.errf("%s.values: %q must be %s", where, val, valueRule)
 			return EnumValue{}, false
 		}
-		return EnumValue{Value: val, Label: mstr(m, "label"), Deprecated: mbool(m, "deprecated")}, true
+		ev := EnumValue{Value: val, Label: mstr(m, "label"), Deprecated: mbool(m, "deprecated")}
+		if rf := mstr(m, "renamedFrom"); rf != "" {
+			switch {
+			case !ValidValue(rf):
+				l.errf("%s.values: %q.renamedFrom: %q must be %s", where, val, rf, valueRule)
+			case rf == val:
+				l.errf("%s.values: %q.renamedFrom: names the value itself", where, val)
+			default:
+				ev.RenamedFrom = rf
+			}
+		}
+		return ev, true
 	}
 	s := fmt.Sprint(v)
 	if !ValidValue(s) {
@@ -1438,9 +1464,10 @@ func (l *loader) parseEnumValue(where string, v any) (EnumValue, bool) {
 // surfaces (the console's kind mirror) see one shape whether the manifest
 // authored bare scalars or labeled mappings.
 //
-// `deprecated` is rendered only where it was declared. It is an absent-means-
-// false marker like every other one, and writing it out everywhere would
-// rewrite the stored form of every refinement that already carries values.
+// `deprecated` and `renamedFrom` are rendered only where they were declared.
+// Each is an absent-means-none marker like every other one, and writing them
+// out everywhere would rewrite the stored form of every refinement that
+// already carries values.
 func enumValuesToAny(values []EnumValue) []any {
 	out := make([]any, len(values))
 	for i, v := range values {
@@ -1448,9 +1475,53 @@ func enumValuesToAny(values []EnumValue) []any {
 		if v.Deprecated {
 			m["deprecated"] = true
 		}
+		if v.RenamedFrom != "" {
+			m["renamedFrom"] = v.RenamedFrom
+		}
 		out[i] = m
 	}
 	return out
+}
+
+// checkValueRenames is the half of a value's `renamedFrom` that needs the
+// whole list: the previous value may not be one the list still declares (both
+// present is not a rename, and the engine would collapse two stored values
+// into one), and two values may not name the same previous value, because
+// one value takes a renamed record. It runs on every values list the dialect
+// admits; the contexts that admit the list and refuse the key (an object's
+// field, a link property) refuse it after this, so a malformed key is named
+// before its placement is.
+func (l *loader) checkValueRenames(where string, values []EnumValue) {
+	declared := make(map[string]bool, len(values))
+	for _, v := range values {
+		declared[v.Value] = true
+	}
+	taken := map[string]string{}
+	for _, v := range values {
+		rf := v.RenamedFrom
+		if rf == "" {
+			continue
+		}
+		if declared[rf] {
+			l.errf("%s.values: %q.renamedFrom: %q is still declared in the list — a rename drops the old value", where, v.Value, rf)
+		}
+		if other, dup := taken[rf]; dup {
+			l.errf("%s.values: %q.renamedFrom: %q is also the previous value of %q, and one value takes a renamed record", where, v.Value, rf, other)
+		}
+		taken[rf] = v.Value
+	}
+}
+
+// valuesRenamed reports whether any value of the list declares a previous
+// spelling: the contexts whose values the engine never rewrites refuse the
+// key on it.
+func valuesRenamed(values []EnumValue) bool {
+	for _, v := range values {
+		if v.RenamedFrom != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // asMapOrNil returns the map v decodes to, or nil when v is not a map — the
@@ -1981,6 +2052,7 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 		}
 		p.Values = append(p.Values, ev)
 	}
+	l.checkValueRenames(where, p.Values)
 	if p.Datatype == DatatypeEnum && len(p.Values) == 0 {
 		l.errf("%s: enum needs values", where)
 	}
@@ -2232,6 +2304,13 @@ func (l *loader) parseFields(where string, d map[string]any, depth int) map[stri
 		}
 		if fp.RenamedFrom != "" {
 			l.errf("%s: renamedFrom is only for a type's own property, not a field", fwhere)
+			continue
+		}
+		// The same for a value's previous spelling: the engine rewrites a
+		// renamed value on a kind's own property (convert.go) and never
+		// reaches inside an object to rewrite one.
+		if valuesRenamed(fp.Values) {
+			l.errf("%s.values: renamedFrom is only for a type's own property's values, not a field's", fwhere)
 			continue
 		}
 		// `unique` names a whole property one index can police. Inside an object

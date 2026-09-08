@@ -301,11 +301,13 @@ different: every write leaves the record carrying one, or it is refused.
 A `default:` beside it is what a create that does not name the property stores,
 materialized into the row and the changelog entry at the write. It is a
 property's own: a `default:` inside `fields:` is refused, because nothing builds
-an object to put one in. Defaults do not backfill, so adding `required:` to a
-stored declaration is still a narrowing: the guard counts the records that hold
-no value for it, by the same rule the write path refuses them. Nothing converts
-or discards your records behind your back; they are yours to migrate, and the
-refusal tells you how many stand in the way.
+an object to put one in. A default alone never rewrites a stored record, so
+adding `required:` without one is still a narrowing: the guard counts the
+records that hold no value for it, by the same rule the write path refuses
+them, and tells you to declare a default or write them. With a `default:`
+beside it the apply backfills them instead ([below](#backfilling-and-remapping)).
+Nothing discards your records behind your back; a conversion writes values
+the changelog keeps, and a lossy one is refused.
 
 **Renaming: `renamedFrom:` moves the values.** A property may declare the name
 it replaces:
@@ -339,7 +341,9 @@ A rename moves values and changes nothing else about them. Whatever else the
 new declaration changes is classified against the old one and counted under
 the old name: `dimensions: {type: int, renamedFrom: size}` while records hold
 strings refuses as `property "size" changes kind string → int`, and
-`required: true` on the new property counts the records that lack `size`. The
+`required: true` on the new property counts the records that lack `size`
+unless a `default:` stands beside it, in which case the rename moves the
+values and the backfill fills the rest. The
 rename is also refused while something still reads the old name: a mapping
 whose `map:` or `match:` names it (every mapping from or onto the kind is
 re-resolved against the new declaration, so rewrite a mapping in the kind's own
@@ -365,7 +369,61 @@ name rewrites a thousand rows and appends a thousand entries in one
 transaction, holding the repository's vocabulary write lock for the duration,
 and nothing caps it. The boot upgrade of the shipped tree converts the same
 way, at the first open of a repository under the binary that ships the rename,
-and reports the count as `renamedRecords`.
+and reports the count as `convertedRecords`.
+
+### Backfilling and remapping
+
+Two more declaration changes rewrite live records the way a rename does
+([decision 0066](decisions/0066-a-backfill-and-an-enum-remap-are-ordinary-record-writes.md)).
+
+**A `default:` beside a new `required:` backfills.** A property that becomes
+required, or is added as required, with a default declared, has the default
+written onto every live record holding no value for it: the key absent, or
+one of the empty values `required:` refuses. No marker is needed; the pair is
+the trigger. The value is coerced as a create's default is, the record's
+manager row for it names the actor that applied the declaration, and a
+property with `embed: true` is queued to embed. A record already carrying a
+value is left alone, and so is a default declared without `required:`, which
+seeds creates and nothing else.
+
+**`renamedFrom:` on a value respells it.** An enum value, or any value in a
+`values:` list, may declare the spelling it replaces:
+
+```yaml
+properties:
+  status:
+    type: enum
+    values:
+      - open
+      - value: working
+        renamedFrom: active
+      - closed
+```
+
+Admitting the declaration rewrites `active` to `working` on every live
+record, in a scalar, in each element of a `repeated:` list and in each value
+of a `keyed:` map. The manager row stays: the spelling moved, not who wrote
+it. The same list rules hold as for a property's `renamedFrom:`: the previous
+value may not still be declared, two values may not name the same previous
+value, and the key is refused inside `fields:` and on a
+[link property](#reference-properties), where nothing rewrites a value. It is
+a reserved key of the value entry, so a binary older than it refuses a closure
+that carries it, as every new key does.
+
+**A rename onto a value the declaration still admits is refused.** `{value:
+open, renamedFrom: active}` while `open` stands would make the records holding
+either one set, and nothing here discards a stored distinction: the apply
+refuses it as a lossy conversion, by declaration, whether or not a record holds
+`active`, and the boot upgrade skips it and reports the line. Rename it onto a
+new value, or rewrite the records and drop the old one. Confirming a lossy
+plan is future work.
+
+The three compose. Every step one apply declares against a kind runs in one
+pass over its records, renames first, then backfills, then remaps, and a
+record any step touches is rewritten once: one `patch` entry whose payload
+carries `renamed`, `backfilled` or `remapped` beside the property names. The
+cost is the same count a rename has, and the same replay guarantee: a rebuild
+and an import reproduce the converted records from the changelog alone.
 
 ## Retiring a name
 
@@ -444,7 +502,8 @@ A declaration's key set is closed, so a key one binary does not know
 key an upgrade of every binary that might read the closure, which is why a key
 enters the dialect before anything acts on it. Two are reserved today: each is
 admitted, validated at load and stored on the declaration, and neither changes
-a write. `renamedFrom:`, above, was reserved the same way and is acted on now.
+a write. `renamedFrom:`, above, was reserved the same way and is acted on now,
+on a property and on a value entry alike.
 
 **`unique:` marks one value per record.** At most one live record of the kind
 carries any given value, which is the constraint behind "one person per email"

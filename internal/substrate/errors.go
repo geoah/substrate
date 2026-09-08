@@ -8,11 +8,18 @@ import (
 // Sentinel errors. The engine wraps these (errors.Is-matchable) with
 // human-readable detail; the API layer maps them to status codes.
 var (
-	ErrNotFound   = errors.New("substrate: not found")
-	ErrConflict   = errors.New("substrate: version conflict") // CAS mismatch
-	ErrGuard      = errors.New("substrate: operation not allowed here")
-	ErrValidation = errors.New("substrate: validation failed")
-	ErrForbidden  = errors.New("substrate: forbidden") // e.g. foreign label namespace, system type write
+	ErrNotFound = errors.New("substrate: not found")
+	ErrConflict = errors.New("substrate: version conflict") // CAS mismatch
+	ErrGuard    = errors.New("substrate: operation not allowed here")
+	// ErrLossyConversion marks a vocabulary change that would collapse two
+	// stored values into one: an enum value renamed onto a value the stored
+	// declaration still admits. The engine wraps it together with ErrGuard, so
+	// the wire answers the guard code and a caller can still tell this refusal
+	// from a narrowing that a write of the records would clear. Nothing admits
+	// a lossy conversion today; the confirmation that would is issue #152's.
+	ErrLossyConversion = errors.New("substrate: lossy conversion refused")
+	ErrValidation      = errors.New("substrate: validation failed")
+	ErrForbidden       = errors.New("substrate: forbidden") // e.g. foreign label namespace, system type write
 	// ErrGated marks a write a policy HELD rather than refused: it converted
 	// into a recordpatchrequest awaiting review, and the message names it. The
 	// policy door runs only inside the agent loop, where the hold becomes a

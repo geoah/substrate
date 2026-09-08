@@ -172,12 +172,18 @@ type Property struct {
 	// row (checkRequiredProps, in internal/engine). A Default is what keeps a
 	// required property writable without naming it. ADDING `required` to a
 	// property is a narrowing definition change, refused by admission while
-	// live rows lack the property, and a Default does not backfill.
+	// live rows lack the property, unless the declaration also carries a
+	// Default: admission then writes the default onto every live record that
+	// lacks a value, as ordinary record writes in the same transaction
+	// (engine/convert.go, decision 0066).
 	Required bool
 	// Default is the declared `default:`, the value a CREATE stores when it
 	// does not name the property. It is materialized at write time, into the
 	// stored value and the changelog delta both: a default applied on read
-	// would be derived data, and the fold would no longer be the truth.
+	// would be derived data, and the fold would no longer be the truth. A
+	// default alone never rewrites a stored record; the pair of Required and
+	// Default backfills, because that pair is the one declaration a record
+	// without the value cannot satisfy.
 	//
 	// The value is the author's literal, held to this property's own
 	// declaration at admission (checkDeclaredDefaults, in internal/engine) so a
@@ -418,6 +424,17 @@ type EnumValue struct {
 	// it, and no longer offered by a picker. Removing a value live records hold
 	// is the narrowing this exists to avoid.
 	Deprecated bool
+	// RenamedFrom is the previous spelling of this value. Admission rewrites
+	// every live record holding the old value to this one, as ordinary record
+	// writes in the same transaction (engine/convert.go, decision 0066), and
+	// the key stays stored on the declaration afterwards. Loader-validated: a
+	// lowercase word, not the value itself, not a value the list still
+	// declares, no two values naming the same previous value, and only on a
+	// kind's own property or a refinement, never inside `fields:` or a link
+	// property. The engine refuses it where the previous value is one the
+	// stored declaration still admits, because the rewrite would collapse two
+	// stored values into one.
+	RenamedFrom string
 }
 
 // UnmarshalYAML admits BOTH declared forms, so a stored closure whose enum was
@@ -434,14 +451,15 @@ func (e *EnumValue) UnmarshalYAML(node *yaml.Node) error {
 		return nil
 	}
 	var m struct {
-		Value      string `yaml:"value"`
-		Label      string `yaml:"label"`
-		Deprecated bool   `yaml:"deprecated"`
+		Value       string `yaml:"value"`
+		Label       string `yaml:"label"`
+		Deprecated  bool   `yaml:"deprecated"`
+		RenamedFrom string `yaml:"renamedFrom"`
 	}
 	if err := node.Decode(&m); err != nil {
 		return err
 	}
-	e.Value, e.Label, e.Deprecated = m.Value, m.Label, m.Deprecated
+	e.Value, e.Label, e.Deprecated, e.RenamedFrom = m.Value, m.Label, m.Deprecated, m.RenamedFrom
 	return nil
 }
 
