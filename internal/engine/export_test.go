@@ -40,6 +40,30 @@ func mustDecodeTestCredentialKey(key string) []byte {
 // a repository's directory (changelogfile.RepoDir) and damage or copy it.
 func DataRootOf(svc substrate.Service) string { return svc.(*service).dataRoot }
 
+// WithTestImportFault runs fn at each durable step of a boot import
+// (repodir.go importEntries): after every batch of changelog rows commits,
+// with ImportAfterBatch, and after the first fold pass commits, with
+// ImportAfterFirstFold. An error from fn ends the boot there, which is the
+// shape of a process dying at that step. A batch above zero replaces
+// rebuildBatch for the import's row batches, so a short history spans
+// several.
+func WithTestImportFault(batch int, fn func(stage string) error) Option {
+	return func(o *options) { o.importFault, o.importBatch = fn, batch }
+}
+
+// The import stages WithTestImportFault reports.
+const (
+	ImportAfterBatch     = importAfterBatch
+	ImportAfterFirstFold = importAfterFirstFold
+)
+
+// ImportIncomplete reports whether the repository's import-progress marker
+// is set, read through the tamperer's seat.
+func ImportIncomplete(ctx context.Context, db dbx) (bool, error) {
+	_, incomplete, err := importIncomplete(ctx, db)
+	return incomplete, err
+}
+
 // AdvisoryKeySQL is the engine's advisory-lock key expression (identity.go),
 // for a test that takes one of the engine's locks by hand: a barrier test that
 // composed the key itself would park on a lock nothing else takes.

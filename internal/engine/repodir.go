@@ -30,7 +30,10 @@ package engine
 //     created from the manifest when missing, sealed/ is loaded into the
 //     table, the missing entries are inserted with their checksums, and the
 //     fold is rebuilt from the files (the same replay `repository rebuild`
-//     runs).
+//     runs). An `import_progress` row marks the repository from before the
+//     first batch of entries commits until the transaction that commits the
+//     last fold pass, so a boot that finds the row with equal heads resumes
+//     the fold, and no dataset opens while it is set (ErrImportIncomplete).
 //  4. A seq in both with different checksums, a line whose sum does not
 //     verify, or a finished segment whose sidecar does not match: the boot
 //     refuses, naming the repository and the seq or file. Nothing is repaired.
@@ -98,6 +101,12 @@ var ErrChangelogDiverged = errors.New("substrate/engine: the changelog file and 
 // nowhere else, so the answer is a restart.
 var ErrChangelogFileAhead = errors.New("substrate/engine: the changelog file is ahead of the table; restart the server so the boot check imports it")
 
+// ErrImportIncomplete is the refusal a dataset open meets while the
+// repository's import-progress marker is set: an import began and the fold
+// has not been rebuilt from the imported entries, so what `records` holds is
+// not the changelog's. The boot check resumes the import; nothing else does.
+var ErrImportIncomplete = errors.New("substrate/engine: the import of the repository directory has not completed; restart the server so the boot check resumes it")
+
 // ErrChangelogLocked is the refusal a process meets when another one holds a
 // repository's changelog writer lock: the operator ran `rebuild` or `user
 // reset` beside a running server. It wraps changelogfile.ErrLocked.
@@ -143,6 +152,9 @@ const (
 	reconcileCaughtUp = "caught up"
 	reconcileImported = "imported"
 	reconcileWroteDir = "wrote directory"
+	// reconcileResumed is an import a previous boot began and did not
+	// complete, finished from the rows already in the table.
+	reconcileResumed = "resumed import"
 	// reconcileSkipped is a directory with no row and no manifest: nothing
 	// says whose it is, so it is neither imported nor deleted.
 	reconcileSkipped = "skipped: no manifest"
@@ -568,9 +580,6 @@ func (ds *dataset) reconcileDir(ctx context.Context, out *reconcileOutcome, allo
 		if !allowImport {
 			return fmt.Errorf("%w: file head %d, table head %d", ErrChangelogFileAhead, fileHead, tableHead)
 		}
-		if err := loadSealedFiles(ctx, ds.db, ds.dir); err != nil {
-			return err
-		}
 		n, err := ds.importEntries(ctx, log, tableHead)
 		if err != nil {
 			return err
@@ -578,7 +587,32 @@ func (ds *dataset) reconcileDir(ctx context.Context, out *reconcileOutcome, allo
 		out.Action, out.Entries = reconcileImported, n
 		return nil
 	}
-	return mirrorSealedFromTable(ctx, ds.db, ds.dir)
+	// Equal heads say the rows are all there and nothing about the fold: an
+	// import that died after its last batch left the marker, and the fold is
+	// rebuilt before anything reads it. A catch-up above a marked repository
+	// is what a binary from before the marker leaves when it served one and
+	// died between a commit and its append; the Log opened above predates
+	// that append, so it is opened again and the refold sees every row.
+	markedHead, incomplete, err := importIncomplete(ctx, ds.db)
+	if err != nil {
+		return err
+	}
+	if !incomplete {
+		return mirrorSealedFromTable(ctx, ds.db, ds.dir)
+	}
+	if !allowImport {
+		return importIncompleteErr(ds.info.Name, markedHead)
+	}
+	if out.Action == reconcileCaughtUp {
+		if log, err = changelogfile.Open(changelogfile.ChangelogDir(ds.dir)); err != nil {
+			return directoryOpenErr(err)
+		}
+	}
+	if err := ds.completeImport(ctx, log, markedHead); err != nil {
+		return err
+	}
+	out.Action = reconcileResumed
+	return nil
 }
 
 // tableChangelogHead is the table's head, 0 for an empty changelog.
@@ -688,16 +722,36 @@ func appendFromTable(ctx context.Context, q dbx, w *changelogfile.Writer, after 
 	}
 }
 
-// importEntries inserts every file entry above the table's head into the
-// table, in batches of one transaction each under the changelog lock, then
-// rebuilds the fold from the files. It is idempotent by construction: a crash
-// between batches leaves the file still ahead, and the next boot resumes from
-// the new table head.
+// The import's durable steps, as the test seam names them (testImportFault).
+const (
+	importAfterBatch     = "after a batch of rows committed"
+	importAfterFirstFold = "after the first fold pass committed"
+)
+
+// importEntries loads sealed/ into the table, inserts every file entry above
+// the table's head, in batches of one transaction each under the changelog
+// lock, then rebuilds the fold from the files. The import-progress marker is
+// written before the first batch and deleted by the transaction that commits
+// the last fold pass (refoldFromFiles), so every crash window in between
+// leaves a state the next boot finishes: the file still ahead resumes the
+// rows from the new table head, and equal heads under the marker resume the
+// fold (completeImport). No row is ever inserted twice, because `seq` is the
+// key and the resume starts above what the table holds.
 func (ds *dataset) importEntries(ctx context.Context, log *changelogfile.Log, tableHead int64) (int64, error) {
+	if err := loadSealedFiles(ctx, ds.db, ds.dir); err != nil {
+		return 0, err
+	}
+	if err := markImportIncomplete(ctx, ds.db, log.Head()); err != nil {
+		return 0, err
+	}
+	batch := rebuildBatch
+	if ds.svc.testImportBatch > 0 {
+		batch = ds.svc.testImportBatch
+	}
 	var n int64
 	after := tableHead
 	for {
-		entries, err := log.Read(after, rebuildBatch)
+		entries, err := log.Read(after, batch)
 		if err != nil {
 			return n, fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
 		}
@@ -709,11 +763,70 @@ func (ds *dataset) importEntries(ctx context.Context, log *changelogfile.Log, ta
 		}
 		n += int64(len(entries))
 		after = entries[len(entries)-1].Seq
+		if err := ds.importFault(importAfterBatch); err != nil {
+			return n, err
+		}
 	}
 	if err := ds.refoldFromFiles(ctx, log); err != nil {
 		return n, err
 	}
 	return n, nil
+}
+
+// completeImport finishes an import whose rows are all in the table and whose
+// marker is still set: a boot that died between the last batch and the last
+// fold pass. sealed/ is loaded again because the direction is still the
+// import's (the files are what is being restored), and the upsert is
+// idempotent. markedHead is the file head the marker recorded; the log's own
+// head is what the refold folds, and the two differ after a catch-up.
+func (ds *dataset) completeImport(ctx context.Context, log *changelogfile.Log, markedHead int64) error {
+	ds.svc.log.Warn("substrate: resuming an interrupted import of the repository directory",
+		"repository", ds.scope.Repository, "username", ds.info.Name, "markedHead", markedHead, "fileHead", log.Head())
+	if err := loadSealedFiles(ctx, ds.db, ds.dir); err != nil {
+		return err
+	}
+	return ds.refoldFromFiles(ctx, log)
+}
+
+// importFault runs the test seam at one of the import's durable steps; a nil
+// hook is the server.
+func (ds *dataset) importFault(stage string) error {
+	if ds.svc.testImportFault == nil {
+		return nil
+	}
+	return ds.svc.testImportFault(stage)
+}
+
+// importIncomplete reports whether the repository's import-progress marker is
+// set (an import began and the transaction that completes it has not
+// committed) and the file head the marker recorded.
+func importIncomplete(ctx context.Context, q dbx) (int64, bool, error) {
+	var head int64
+	err := q.QueryRowContext(ctx, `SELECT file_head FROM import_progress`).Scan(&head)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("substrate/engine: read the import-progress marker: %w", err)
+	}
+	return head, true, nil
+}
+
+// importIncompleteErr is the refusal a marked repository meets, naming the
+// repository and the file head its import was bringing the table to.
+func importIncompleteErr(repository string, markedHead int64) error {
+	return fmt.Errorf("%w: repository %s, marked at file head %d", ErrImportIncomplete, repository, markedHead)
+}
+
+// markImportIncomplete sets the marker, or moves its head when a resumed
+// import finds one already there.
+func markImportIncomplete(ctx context.Context, q dbx, fileHead int64) error {
+	if _, err := q.ExecContext(ctx, `
+		INSERT INTO import_progress (file_head) VALUES ($1)
+		ON CONFLICT (repository) DO UPDATE SET file_head = EXCLUDED.file_head`, fileHead); err != nil {
+		return fmt.Errorf("substrate/engine: mark the import in progress: %w", err)
+	}
+	return nil
 }
 
 // insertEntries writes one batch of file entries as changelog rows, each with
@@ -757,8 +870,17 @@ func (ds *dataset) insertEntries(ctx context.Context, entries []changelogfile.En
 // them without writing anything, and the second pass folds every row the way
 // the live write did. Nothing appends here: an import runs before any dataset
 // is open and must leave the heads equal.
+//
+// The second pass's transaction is also the one that deletes the
+// import-progress marker, so the import is complete exactly when the fold is
+// the live write's. The first pass commits on its own: a crash after it
+// leaves records with no `refs` and unweighted `fts`, which is why the marker
+// stays set until the second pass, and the resume runs both passes again
+// (each clears the fold tables first). The registry load between them reads
+// the first pass's committed rows through the pool, which is why the two
+// passes need not share a transaction.
 func (ds *dataset) refoldFromFiles(ctx context.Context, log *changelogfile.Log) error {
-	replay := func() error {
+	replay := func(last bool) error {
 		tx, err := ds.db.BeginTx(ctx, nil)
 		if err != nil {
 			return err
@@ -772,15 +894,23 @@ func (ds *dataset) refoldFromFiles(ctx context.Context, log *changelogfile.Log) 
 		if err := t.rebuild(log, &report); err != nil {
 			return err
 		}
+		if last {
+			if _, err := t.exec(`DELETE FROM import_progress`); err != nil {
+				return fmt.Errorf("clear the import-progress marker: %w", err)
+			}
+		}
 		return tx.Commit()
 	}
-	if err := replay(); err != nil {
+	if err := replay(false); err != nil {
 		return fmt.Errorf("substrate/engine: import: first fold: %w", err)
+	}
+	if err := ds.importFault(importAfterFirstFold); err != nil {
+		return err
 	}
 	if err := ds.loadDeclarationsForReplay(ctx); err != nil {
 		return err
 	}
-	if err := replay(); err != nil {
+	if err := replay(true); err != nil {
 		return fmt.Errorf("substrate/engine: import: second fold: %w", err)
 	}
 	return nil
@@ -1059,7 +1189,8 @@ func loadSealedFiles(ctx context.Context, q dbx, dir string) error {
 // --- the dataset's side ------------------------------------------------------
 
 // openDirectory runs the head comparison for a dataset that is about to
-// serve: the directory must be at the table's head (a creation's directory
+// serve: the import-progress marker must be clear (ErrImportIncomplete), the
+// directory must be at the table's head (a creation's directory
 // write racing a first open is the one way it can be behind, and it is caught
 // up here), never ahead, and the common tail must agree. It opens the
 // dataset's writer over the same scan, which is where a second process meets
@@ -1071,6 +1202,16 @@ func loadSealedFiles(ctx context.Context, q dbx, dir string) error {
 // that owns the directory may be between a commit and its append, and only the
 // common tail is held to agree.
 func (ds *dataset) openDirectory(ctx context.Context) error {
+	// Before either shape: a fold an import has not finished is not served,
+	// read-only or not, and the open ladder behind this (the vocabulary
+	// upgrade appends) must not run over it.
+	markedHead, incomplete, err := importIncomplete(ctx, ds.db)
+	if err != nil {
+		return err
+	}
+	if incomplete {
+		return importIncompleteErr(ds.info.Name, markedHead)
+	}
 	tableHead, err := tableChangelogHead(ctx, ds.db)
 	if err != nil {
 		return err

@@ -59,6 +59,12 @@ type options struct {
 	// dirReadOnly opens the service beside a running server
 	// (WithDirectoryReadOnly): no boot check, no writer, no write.
 	dirReadOnly bool
+	// importFault and importBatch are the boot import's test seams
+	// (export_test.go): a hook run at each durable step of an import, so a
+	// test can stop the process there, and a batch size below rebuildBatch,
+	// so a small history spans more than one batch. Tests only.
+	importFault func(stage string) error
+	importBatch int
 }
 
 // Option configures Open.
@@ -224,6 +230,10 @@ type service struct {
 	// fail AFTER the seed transaction commits and BEFORE the control-plane row —
 	// the exact crash window the erase-and-sweep guarantees cover.
 	testFailAfterSeed func() error
+	// testImportFault and testImportBatch are the options' import seams
+	// (repodir.go importEntries, refoldFromFiles). Tests only.
+	testImportFault func(stage string) error
+	testImportBatch int
 }
 
 // Open connects to Postgres, loads the schema files, ensures the two roles and
@@ -309,6 +319,9 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 		bg:           newBackground(),
 		datasets:     map[string]*dataset{},
 		opening:      map[string]chan struct{}{},
+
+		testImportFault: o.importFault,
+		testImportBatch: o.importBatch,
 	}
 	if o.oauthKey != "" || o.oauthURL != "" {
 		// An empty HMAC key would make every state "signature" forgeable —
