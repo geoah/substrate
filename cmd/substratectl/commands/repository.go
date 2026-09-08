@@ -35,7 +35,7 @@ import (
 func (a *app) repositoryCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "repository",
-		Short:   "Operator: inspect and rebuild repositories (direct database, no HTTP)",
+		Short:   "Operator: inspect and rebuild repositories (direct database, no HTTP; rewrap reads a directory and no database)",
 		Aliases: []string{"repositories", "repo"},
 	}
 	cmd.AddCommand(a.repositoryListCommand(), a.repositoryInspectCommand(),
@@ -85,9 +85,16 @@ server whose database has never held this repository, then boot.
   SUBSTRATE_CREDENTIAL_KEY=… substratectl repository rewrap ./ada.example.com --identity-file ./recovery.key`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// The key is checked BEFORE the identity is asked for, the same
-			// order `user reset` keeps: the answer is the same either way, and
-			// nobody should paste a recovery key to learn the key is missing.
+			// Every refusal that needs no secret comes first: a bad flag must
+			// not be discovered after the manifest is rewritten, and nobody
+			// should paste a recovery key to learn the key is missing. The
+			// key check keeps the order `user reset` keeps.
+			if output != "" && output != "text" && output != "json" {
+				return fmt.Errorf("unknown output format %q: use text or json", output)
+			}
+			if identityFile != "" && identityStdin {
+				return errors.New("--identity-file and --identity-stdin name two sources for one recovery key: pass one")
+			}
 			credKey := os.Getenv(credentialKeyEnv)
 			if credKey == "" {
 				return fmt.Errorf("refusing to rewrap: set %s to the key this host's server runs with; the manifest is rewritten so that key opens the repository", credentialKeyEnv)

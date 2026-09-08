@@ -114,3 +114,40 @@ func TestRepositoryRewrapReadsAnAgeKeygenFile(t *testing.T) {
 		t.Fatalf("the refusal echoed the file's content: %v", err)
 	}
 }
+
+// A flag the command cannot honor is refused before the recovery key is read
+// and before the manifest could be touched: "-o jsno" must not rewrite
+// repository.json and exit 0 with text output, and two identity sources are
+// one too many.
+func TestRepositoryRewrapRefusesBadFlagsBeforeReadingTheKey(t *testing.T) {
+	h := newHarness(t)
+	key := make([]byte, 32)
+	t.Setenv("SUBSTRATE_CREDENTIAL_KEY", base64.StdEncoding.EncodeToString(key))
+	dir := filepath.Join(t.TempDir(), "ada.example.com")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	h.stdin.WriteString("AGE-SECRET-KEY-1NOTREAD\n")
+	_, _, err := h.run("repository", "rewrap", dir, "--identity-stdin", "-o", "jsno")
+	if err == nil || !strings.Contains(err.Error(), "jsno") {
+		t.Fatalf("a bad output format was not refused by name: %v", err)
+	}
+	if h.stdin.Len() == 0 {
+		t.Fatal("the recovery key was read before the bad flag was reported")
+	}
+
+	keyFile := filepath.Join(t.TempDir(), "recovery.key")
+	if err := os.WriteFile(keyFile, []byte("AGE-SECRET-KEY-1NOTREAD\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = h.run("repository", "rewrap", dir, "--identity-stdin", "--identity-file", keyFile)
+	if err == nil || !strings.Contains(err.Error(), "--identity-file") || !strings.Contains(err.Error(), "--identity-stdin") {
+		t.Fatalf("two identity sources were not refused by name: %v", err)
+	}
+	if h.stdin.Len() == 0 {
+		t.Fatal("the recovery key was read before the flag conflict was reported")
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("a refused rewrap wrote into the directory: %v", entries)
+	}
+}
