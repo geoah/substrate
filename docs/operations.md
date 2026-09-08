@@ -384,8 +384,11 @@ server finishes it can hold the segment with a sidecar that does not match
 yet, and a copy that reads `sealed/` before `changelog/` can hold a line whose
 sealed file it missed. So a copy is a backup once `repository verify` passes
 on it (boot a scratch server over the copy with an empty database, which
-imports it, then verify); one that fails is retaken. A cron running this is
-enough:
+imports it, then verify); one that fails is retaken. Verify proves the files
+are undamaged, not that their replay is the fold they came from: an entry
+written before this fix that removed a record's last label replays with the
+label back, on import as on rebuild ([the caveat under `repository
+rebuild`](#operator-recovery)). A cron running this is enough:
 
 ```
 rsync -a --delete "$SUBSTRATE_DATA_ROOT"/ backup-host:/srv/substrate-backup/
@@ -420,7 +423,9 @@ enough.
 server's data root, set the same `SUBSTRATE_CREDENTIAL_KEY`, and boot: a
 directory with no row in `repositories` is imported, which creates the row from
 its manifest, loads `sealed/` into the table, inserts every changelog entry
-with its checksum and folds them through `fold.go`. Then verify each one:
+with its checksum and folds them through `fold.go`. The import is the same
+replay `repository rebuild` runs, so a label clear an old entry lost comes
+back here too (the caveat below). Then verify each one:
 
 ```
 rsync -a ./substrate-backup/repositories/ "$SUBSTRATE_DATA_ROOT"/repositories/
@@ -523,9 +528,16 @@ the exec path needs nothing open at all.
   removal of a record's last label with no `labels` key in the delta, so
   replaying such an entry brings that label back whatever else the write
   changed. When that write changed nothing else in the row, the entry's delta
-  is `{}` and the replay also skips the `version` bump the live write made.
-  Nothing reconstructs the clear from the changelog alone; remove the label
-  again after the rebuild. It does not touch blobs or sealed files, which were
+  is `{}` and the replay also leaves `version` and `updated_at` at the prior
+  write's, where the live write bumped one and moved the other. Nothing
+  reconstructs the clear from the changelog alone. The bare `{}` entries are
+  listable, since the stored payload carries the effects. Against the
+  database, `SELECT seq, kind, record_id FROM changelog WHERE repository =
+  '<authority>' AND EXISTS (SELECT 1 FROM jsonb_array_elements(payload->'fold')
+  e WHERE e->>'kind' = 'record' AND e->'delta' = '{}')` names each record to
+  relabel after the rebuild. A clear that rode along with a property change in
+  the same write leaves no mark that tells it from the property change alone,
+  and nothing lists those. It does not touch blobs or sealed files, which were
   never in the changelog, and it leaves runtime state (trigger cursors, OAuth
   flows) alone, because a cursor is a consumer's position in the changelog,
   not a fold of it. Stop the server
