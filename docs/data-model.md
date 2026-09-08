@@ -53,8 +53,11 @@ its full identity, on every surface.**
 Ids the server mints are 12 characters of lowercase base32. A writer may
 supply its own id on create, which is how an integration composes a stable id
 out of a provider's own key; supplied ids allow a wider character set (RFC 3986
-unreserved plus `:`, `@` and `/`, up to 128 characters). Ids are never derived
-from content and never reused.
+unreserved plus `:`, `@` and `/`, up to 128 characters). The one exception is
+a kind some `recordmapping` points at: its ids are server-assigned, and a
+create carrying an id is refused
+([0049](decisions/0049-the-owner-of-a-mappings-target-declares-it.md)). Ids
+are never derived from content and never reused.
 
 Three more words, used precisely on every page:
 
