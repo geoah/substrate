@@ -186,3 +186,28 @@ func TestCatalogJSONCarriesTheBlockers(t *testing.T) {
 		}
 	}
 }
+
+// A shipped package with no stored version has never landed here: a second
+// builtin package a core guard withholds, say. Its row reads not installed,
+// rather than the seed tier being assumed present.
+func TestCatalogReadsASeedPackageNotYetHeldAsAbsent(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.fake.shipped = []substrate.ShippedUpgrade{
+		{
+			Package: "substrate.reamde.dev/core",
+			Upgrade: substrate.BundleUpgrade{Available: true, From: 16, To: 17, Blockers: []string{labelGuard}},
+		},
+		{
+			Package: "substrate.reamde.dev/extra",
+			Upgrade: substrate.BundleUpgrade{Available: true, To: 3, Blockers: []string{labelGuard}},
+		},
+	}
+	stdout, _ := h.mustRun("catalog")
+	if !regexp.MustCompile(`(?m)^substrate\.reamde\.dev/core\s+seed\s+true\s+17\s`).MatchString(stdout) {
+		t.Fatalf("core is not listed as held:\n%s", stdout)
+	}
+	if !regexp.MustCompile(`(?m)^substrate\.reamde\.dev/extra\s+seed\s+false\s+3\s`).MatchString(stdout) {
+		t.Fatalf("a shipped package with no stored version reads as installed:\n%s", stdout)
+	}
+}

@@ -209,8 +209,11 @@ offered an upgrade: what it landed is yours.`,
 			switch {
 			case err == nil:
 				for _, s := range shipped.Items {
+					// Held here when a stored package row carries a version.
+					// Core always does; a second shipped package a core guard
+					// withholds is listed before it has ever landed.
 					up := s.Upgrade
-					rows = append(rows, catalogRow{ID: s.Package, Tier: tierSeed, Installed: true, Version: up.To, Upgrade: &up})
+					rows = append(rows, catalogRow{ID: s.Package, Tier: tierSeed, Installed: up.From != 0, Version: up.To, Upgrade: &up})
 				}
 			case errors.As(err, &ae):
 				if ae.Status != http.StatusNotFound && ae.Status != http.StatusNotImplemented {

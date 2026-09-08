@@ -41,8 +41,9 @@ type shippedUpgradeStage struct {
 	narrowings []narrowing
 	// refused are the guard lines decided without a count: a declared default
 	// no write could store, a retired name declared again or dropped, a
-	// retirement of a kind this repository still declares. Non-empty means
-	// the boot never opens its counting transaction.
+	// retirement of a kind this repository still declares. guards puts them
+	// first, then the counted narrowings; the boot and the preview both read
+	// that one list.
 	refused []string
 	// plans is the version motion per shipped PACKAGE this repository holds as
 	// shipped vocabulary, sorted by identity. The authority row beside the
@@ -132,7 +133,7 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 	// narrowing guards are here: a declared default no write could store would
 	// land at boot and break every create of that kind afterwards, and the door
 	// that refuses it by hand would have caught it. It needs no live rows, so it
-	// is decided before any transaction opens.
+	// is decided before any row is counted.
 	st.refused = checkDeclaredDefaults(reg, st.upgrade)
 	// The retired-name check the same door takes (decision 0055): a shipped
 	// declaration that reuses a name this repository's stored closure retired,
@@ -160,11 +161,10 @@ func (st *shippedUpgradeStage) guards(q sqlReader) ([]string, error) {
 
 // PlanShippedUpgrade reports what this binary's boot upgrade would do to each
 // shipped package here, and the guard lines it refuses on: the same staging
-// and the same counts the boot runs, over the bare pool, writing nothing. The
-// boot refuses the shipped set as a whole, so every package with something to
-// write carries the whole list, which is the list the refusal logged. One
-// difference: a bad default stops the boot before it counts, so that log names
-// the defaults alone, while this read counts anyway and names both.
+// and the same counts the boot runs (st.guards), over the bare pool, writing
+// nothing. The boot refuses the shipped set as a whole, so every package with
+// something to write carries the whole list, which is exactly the list the
+// refusal logged.
 func (ds *dataset) PlanShippedUpgrade(ctx context.Context) ([]substrate.ShippedUpgrade, error) {
 	st, err := ds.stageShippedUpgrade(ctx)
 	if err != nil {

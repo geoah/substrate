@@ -193,3 +193,46 @@ func TestShippedUpgradePreviewReportsARetiredName(t *testing.T) {
 		t.Fatalf("preview blockers:\n  %s\nlogged refused:\n  %s", got, refused)
 	}
 }
+
+// A refusal is one list on both doors. A tree carrying both an unstorable
+// default (decided without a count) and a narrowing over live rows (counted)
+// is refused with both lines in the log, and the preview's blockers are that
+// list exactly. A boot that stopped at the first kind of guard would log one
+// line while the read reports two, and "these lines caused the refusal" would
+// be false on one of them.
+func TestShippedUpgradePreviewMatchesTheLogWithEveryGuardKind(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := seededRepository(t)
+
+	tree := shippedTree(t)
+	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
+		doc = pinVersion(t, narrowLabel(t, doc), "99")
+		return strings.Replace(doc, "  properties:\n",
+			"  properties:\n    region:\n      type: string\n      pattern: \"^eu-\"\n"+
+				"      default: us-east\n      description: a default the pattern refuses\n", 1)
+	})
+	bumpPackageVersion(t, tree, corePackage, "99")
+	var logs bytes.Buffer
+	svc, err := engine.Open(ctx, dsn,
+		engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
+		engine.WithKindsDir(tree), engine.WithLogger(slog.New(slog.NewJSONHandler(&logs, nil))))
+	if err != nil {
+		t.Fatalf("open the moved tree: %v", err)
+	}
+	defer func() { _ = svc.Close() }()
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("a refused upgrade must not fail the open: %v", err)
+	}
+	refused := loggedRefusal(t, logs.String())
+	for _, want := range []string{`property "region": default us-east`, `property "label"`} {
+		if !strings.Contains(refused, want) {
+			t.Fatalf("the log names one guard kind and not the other; missing %q in: %s", want, refused)
+		}
+	}
+	plan := planCore(t, ds)
+	if got := strings.Join(plan.Upgrade.Blockers, "; "); got != refused {
+		t.Fatalf("preview blockers:\n  %s\nlogged refused:\n  %s", got, refused)
+	}
+}
