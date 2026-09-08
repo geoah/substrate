@@ -175,7 +175,7 @@ func (t *txn) cascadeChildren(owner eref) ([]ownedChild, error) {
 	}
 	_ = rows.Close()
 
-	reg := t.ds.registry()
+	reg := t.declarations()
 	var out []ownedChild
 	for _, c := range found {
 		ty, ok := reg.ByIdentity(c.typ)

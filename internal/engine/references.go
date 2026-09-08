@@ -260,12 +260,12 @@ func (t *txn) normalizeReference(p *vocabulary.Property, v any) (any, error) {
 	if !ok {
 		return nil, fmt.Errorf(`a reference is a "<kind>/<id>" path string, and %q is not one`, s)
 	}
-	rt, err := t.ds.resolveType(kind)
+	rt, err := t.resolveType(kind)
 	if err != nil {
 		return nil, fmt.Errorf("referent kind %q is unknown", kind)
 	}
 	target := eref{Kind: rt.Identity, ID: id}
-	if !referenceAdmits(t.ds.registry(), p, rt) {
+	if !referenceAdmits(t.declarations(), p, rt) {
 		hopped, err := t.subjectHop(p, target, rt)
 		if err != nil {
 			return nil, err
@@ -340,7 +340,7 @@ func (t *txn) subjectHop(p *vocabulary.Property, target eref, rt *vocabulary.Kin
 		// means, and what is missing is the declaration saying which kind it
 		// describes. Since record 49 that declaration is the target owner's,
 		// so the message says whose it is rather than repeating the pin.
-		if subjectSlots(rt) && len(t.ds.registry().MappingsFrom(rt.Identity)) == 0 {
+		if subjectSlots(rt) && len(t.declarations().MappingsFrom(rt.Identity)) == 0 {
 			pin := p.To
 			if pin == "" {
 				pin = "trait " + p.ToTrait
@@ -367,9 +367,9 @@ func (t *txn) subjectHop(p *vocabulary.Property, target eref, rt *vocabulary.Kin
 	// declaration means either, so it is refused naming both mappings rather
 	// than resolved by load order.
 	var admitted []*vocabulary.Mapping
-	for _, cand := range t.ds.registry().MappingsFrom(rt.Identity) {
-		to, known := t.ds.registry().ByIdentity(cand.To)
-		if known && referenceAdmits(t.ds.registry(), p, to) {
+	for _, cand := range t.declarations().MappingsFrom(rt.Identity) {
+		to, known := t.declarations().ByIdentity(cand.To)
+		if known && referenceAdmits(t.declarations(), p, to) {
 			admitted = append(admitted, cand)
 		}
 	}

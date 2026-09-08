@@ -225,7 +225,17 @@ func emitAllows(fn *vocabulary.Function, ident string) bool {
 // mid-delivery, a split record's endpoints — stay the documented lockCanonical
 // caveat.
 func (t *txn) lockEffectTargets(effects []effect) error {
-	reg := t.ds.registry()
+	// The shared registry-dependency lock FIRST, ahead of every subject and
+	// record lock this plan takes (the order is registry-dep < subject-type <
+	// record). The effects' own puts and patches take it too, but only after
+	// this plan has locked rows; a vocabulary apply holding the exclusive side
+	// while waiting on one of those rows would then deadlock against the
+	// effect waiting for the shared side. Taking it here also pins the
+	// registry the plan is derived from to the one the effects apply against.
+	if err := t.lockRegistryDepShared(); err != nil {
+		return err
+	}
+	reg := t.declarations()
 	subjects := map[string]bool{}
 	ids := map[string]eref{}
 	note := func(ref eref) {

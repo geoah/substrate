@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // eref is one record's full storage identity: the (type, id) pair every
@@ -529,6 +530,18 @@ func (t *txn) applyAnnotation(ref eref, key string, value any) (bool, error) {
 // credit (mapping.go). This function is also the facility seams'
 // (StartOAuth's owner-gate) resolution, outside any transaction.
 func (ds *dataset) actorTier(actor substrate.Actor) substrate.Tier {
+	return actorTierIn(ds.registry(), actor)
+}
+
+// actorTier resolves an actor's tier against the transaction's declarations:
+// inside a vocabulary apply that is the candidate, so a closure installed
+// under an actor it declares writes its manager rows at the tier the closure
+// declares on the first install, not only on a re-install.
+func (t *txn) actorTier(actor substrate.Actor) substrate.Tier {
+	return actorTierIn(t.declarations(), actor)
+}
+
+func actorTierIn(reg *vocabulary.Registry, actor substrate.Actor) substrate.Tier {
 	switch {
 	case substrate.HumanActors[actor]:
 		return substrate.TierOwner
@@ -537,7 +550,7 @@ func (ds *dataset) actorTier(actor substrate.Actor) substrate.Tier {
 	case actor == substrate.ActorSystem:
 		return substrate.TierMachine
 	}
-	if tier, ok := ds.registry().ActorTier(string(actor)); ok {
+	if tier, ok := reg.ActorTier(string(actor)); ok {
 		return tier
 	}
 	if substrate.ReservedActor(actor) {

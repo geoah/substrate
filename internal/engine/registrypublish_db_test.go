@@ -118,7 +118,7 @@ func TestAParkedWriteResolvesThePublishedDeclaration(t *testing.T) {
 		t.Fatal(err)
 	}
 	actor := substrate.ActorAPI
-	_, err = ds.applyVocabularyBatch(ctx, actor, vocabularyBatch{docs: docs, extra: func(*txn, *vocabulary.Registry) error {
+	_, err = ds.applyVocabularyBatch(ctx, actor, vocabularyBatch{docs: docs, extra: func(*txn) error {
 		go func() {
 			_, err := ds.Put(ctx, actor, substrate.PutInput{
 				Kind: kind, ID: "racer", Properties: map[string]any{"name": "a", "legacy": "held"},

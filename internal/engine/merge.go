@@ -22,7 +22,13 @@ const corePackage = "substrate.reamde.dev/core"
 func (ds *dataset) Merge(ctx context.Context, actor substrate.Actor, typ, winner, loser string) (*substrate.Record, error) {
 	var out *substrate.Record
 	err := ds.inTx(ctx, actor, false, func(t *txn) error {
-		ty, err := t.ds.resolveType(typ)
+		// The shared registry-dependency lock before the kind resolves, as a
+		// put takes it: the merge rewrites both rows against this declaration
+		// and must not race a vocabulary apply that replaces it.
+		if err := t.lockRegistryDepShared(); err != nil {
+			return err
+		}
+		ty, err := t.resolveType(typ)
 		if err != nil {
 			return err
 		}
@@ -79,7 +85,7 @@ func (t *txn) mergeRecord(winnerRef, loserRef eref) (*substrate.Record, error) {
 	if winner == nil || loser == nil {
 		return nil, fmt.Errorf("%w: merge needs two records", substrate.ErrNotFound)
 	}
-	ty, err := t.ds.resolveType(winner.Kind)
+	ty, err := t.resolveType(winner.Kind)
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +274,7 @@ func (t *txn) recordOf(ref eref) (*substrate.Record, error) {
 	if row == nil {
 		return nil, fmt.Errorf("%w: record %s", substrate.ErrNotFound, ref.ID)
 	}
-	ty, err := t.ds.resolveType(row.Kind)
+	ty, err := t.resolveType(row.Kind)
 	if err != nil {
 		return nil, err
 	}
@@ -434,6 +440,12 @@ func (ds *dataset) Split(ctx context.Context, actor substrate.Actor, mergeID str
 }
 
 func (t *txn) split(mergeID string) (*substrate.Record, error) {
+	// The shared registry-dependency lock before any row lock: the split
+	// resolves the merged-away record's kind and resurrects its row against
+	// that declaration, so it holds the declaration to commit as a put does.
+	if err := t.lockRegistryDepShared(); err != nil {
+		return nil, err
+	}
 	rec, err := t.loadRow(eref{Kind: kindRecordMerge, ID: mergeID}, true)
 	if err != nil {
 		return nil, err
@@ -472,7 +484,7 @@ func (t *txn) split(mergeID string) (*substrate.Record, error) {
 	if loser == nil {
 		return nil, fmt.Errorf("%w: merged-away record %s", substrate.ErrNotFound, loserID)
 	}
-	loserTy, err := t.ds.resolveType(loser.Kind)
+	loserTy, err := t.resolveType(loser.Kind)
 	if err != nil {
 		return nil, err
 	}
@@ -612,7 +624,7 @@ func (t *txn) split(mergeID string) (*substrate.Record, error) {
 		return nil, err
 	}
 	if winner != nil {
-		winnerTy, err := t.ds.resolveType(winner.Kind)
+		winnerTy, err := t.resolveType(winner.Kind)
 		if err != nil {
 			return nil, err
 		}

@@ -1089,14 +1089,13 @@ func TestOpenNeverPrunesShippedRows(t *testing.T) {
 // data documents are written against.
 const swInstallPackage = "installer.example.substrate.reamde.dev/installer"
 
-// The projection resolves a declaration row's kind against the CANDIDATE when
-// this projection is what installs that kind's declaration, because the row is
-// then newer than the stored declaration (engine.projectionKind). Every other
-// write, that pass's own rows of a kind it leaves alone included, is held to the
-// declarations the repository STORES: an ordinary put and an install's data
-// documents are validated against the live registry, so an undeclared property
-// is refused at both doors.
-func TestCandidateResolutionIsTheProjectionsAlone(t *testing.T) {
+// A batch's writes are held to its candidate registry, and for a kind the
+// batch leaves alone the candidate carries the declaration the repository
+// STORES: the projection's own rows of such a kind (engine.projectionKind),
+// an install's data documents of it, and an ordinary put are all validated
+// against that stored declaration, so an undeclared property is refused at
+// every door.
+func TestAnUntouchedKindKeepsItsStoredDeclarationAtEveryDoor(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
@@ -1194,13 +1193,13 @@ func dkKindDoc(singular, plural string) map[string]any {
 
 // NO TRANSACTION PUBLISHES A VOCABULARY WITHOUT A KIND IT JUST WROTE ROWS OF.
 //
-// The dropped-kind guard counts live rows as the transaction FINDS them, and two
-// writes after it create rows: an install's data documents (put against the
-// still-live pre-commit registry) and the projection's own declaration rows. A
-// bundle upgrade that removes a kind and ships a data document of that same kind
-// would pass the opening count, create the row, prune the declaration and
-// publish a registry that cannot resolve it. The guard runs again with every
-// write behind it, so the row and the removal cannot both land.
+// A bundle upgrade that removes a kind and ships a data document of that same
+// kind passes the opening dropped-kind count, since no live row exists yet.
+// The batch's writes are held to its candidate registry, which no longer
+// declares the kind, so the document is refused as an unknown kind before it
+// can create a row. The dropped-kind guard still runs again with every write
+// behind it for the rows the projection itself creates. Either way the row and
+// the removal cannot both land.
 func TestBundleUpgradeRefusesARowOfTheKindItRemoves(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -1225,7 +1224,7 @@ func TestBundleUpgradeRefusesARowOfTheKindItRemoves(t *testing.T) {
 		[]substrate.PutInput{{
 			Kind: dkPackage + "/widget", ID: "late", Properties: map[string]any{"name": "late"},
 		}}, substrate.BundleInstall{})
-	wantErr(t, err, substrate.ErrGuard, "an upgrade that writes a row of the kind it removes")
+	wantErr(t, err, substrate.ErrValidation, "an upgrade that writes a row of the kind it removes")
 	if !strings.Contains(err.Error(), dkPackage+"/widget") {
 		t.Fatalf("the refusal must name the kind: %v", err)
 	}

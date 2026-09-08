@@ -146,7 +146,7 @@ func (t *txn) put(in substrate.PutInput) (*substrate.Record, error) {
 	if err := t.lockRegistryDepShared(); err != nil {
 		return nil, err
 	}
-	ty, err := t.ds.resolveType(in.Kind)
+	ty, err := t.resolveType(in.Kind)
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +275,7 @@ func (t *txn) checkID(typ, id string) error {
 // exists is not naming it, so `PUT …/{plural}/{id}` — the console's Save, and
 // `substrate apply` — works on every type.
 func (t *txn) checkCreateID(ty *vocabulary.Kind) error {
-	if len(t.ds.registry().MappingsTo(ty.Identity)) == 0 {
+	if len(t.declarations().MappingsTo(ty.Identity)) == 0 {
 		return nil
 	}
 	return fmt.Errorf("%w: %s ids are server-assigned — a mapping points at it, and nothing external names a subject",
@@ -483,7 +483,7 @@ func (ds *dataset) patchWith(ctx context.Context, actor substrate.Actor, typ, id
 	var out *substrate.Record
 	err := ds.inTx(ctx, actor, internal, func(t *txn) error {
 		ceiling.stamp(t)
-		ty, err := t.ds.resolveType(typ)
+		ty, err := t.resolveType(typ)
 		if err != nil {
 			return err
 		}
@@ -533,7 +533,7 @@ func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error
 	if err := t.lockRegistryDepShared(); err != nil {
 		return nil, err
 	}
-	ty, err := t.ds.resolveType(ref.Kind)
+	ty, err := t.resolveType(ref.Kind)
 	if err != nil {
 		return nil, err
 	}
@@ -713,7 +713,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// srcMappings is non-empty when this type is a source record (§6.1): each
 	// mapping's subject reference is guarded, ensured, and recomputed through.
 	// A kind carries one per subject property (record 49).
-	srcMappings := t.ds.registry().MappingsFrom(sp.ty.Identity)
+	srcMappings := t.declarations().MappingsFrom(sp.ty.Identity)
 
 	// A blob-ref must name a known blob: the shape passed
 	// coercion, the existence gate is here inside the transaction.
@@ -995,7 +995,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		if err := t.lockRegistryDepShared(); err != nil {
 			return nil, err
 		}
-		if err := t.ds.validateTriggerRow(t.ds.registry(), sp.id, row.Props, !t.internal); err != nil {
+		if err := t.ds.validateTriggerRow(t.declarations(), sp.id, row.Props, !t.internal); err != nil {
 			return nil, err
 		}
 		if !t.internal {
@@ -1032,7 +1032,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		if err := t.lockRegistryDepShared(); err != nil {
 			return nil, err
 		}
-		if err := validatePolicyRow(t.ds.registry(), row.Props); err != nil {
+		if err := validatePolicyRow(t.declarations(), row.Props); err != nil {
 			return nil, err
 		}
 	}
@@ -1168,7 +1168,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// on the spot — no unpin verb, no flag lifecycle. The row is reloaded so
 	// the caller sees what the recompute refilled.
 	if changed && !t.recomputing && len(deleted) > 0 &&
-		len(t.ds.registry().MappingsTo(sp.ty.Identity)) > 0 {
+		len(t.declarations().MappingsTo(sp.ty.Identity)) > 0 {
 		if err := t.recompute(sp.ref()); err != nil {
 			return nil, err
 		}
@@ -1367,7 +1367,7 @@ func (t *txn) isBundleOwnerGated(ty *vocabulary.Kind) bool {
 	if ty.Implements(vocabulary.TraitAccountConfigCore) {
 		return true
 	}
-	b, ok := t.ds.registry().BundleOf(ty.Package)
+	b, ok := t.declarations().BundleOf(ty.Package)
 	return ok && bundleInputKind(b, ty.Identity)
 }
 
@@ -1661,7 +1661,7 @@ func (t *txn) canonicalizeResubmittedDiff(sp *applySpec) error {
 	if ident != "" {
 		// An unresolvable kind cannot canonicalize anything: leave the write to
 		// the guard rather than refusing a re-put that used to pass.
-		resolved, err := t.ds.resolveType(ident)
+		resolved, err := t.resolveType(ident)
 		if err != nil {
 			return nil
 		}
@@ -1771,7 +1771,7 @@ func (t *txn) admitRequestDiff(sp *applySpec) error {
 			return fmt.Errorf("%w: a create request needs targetKind and targetId — the kind and the id the accept would mint",
 				substrate.ErrValidation)
 		}
-		ty, err := t.ds.resolveType(ident)
+		ty, err := t.resolveType(ident)
 		if err != nil {
 			return err
 		}
@@ -1828,7 +1828,7 @@ func (t *txn) requestTargetKind(target string) (*vocabulary.Kind, error) {
 	if !ok {
 		return nil, nil
 	}
-	return t.ds.resolveType(ident)
+	return t.resolveType(ident)
 }
 
 // storeNormalizedDiff replaces the write's diff with its normalised WRAPPER
@@ -2240,7 +2240,7 @@ func (t *txn) applyCreateRequest(edit *erow) error {
 	if typeIdent == "" || targetID == "" {
 		return fmt.Errorf("%w: create request names no targetKind/targetId", substrate.ErrValidation)
 	}
-	ty, err := t.ds.resolveType(typeIdent)
+	ty, err := t.resolveType(typeIdent)
 	if err != nil {
 		return err
 	}
@@ -2445,6 +2445,14 @@ func (ds *dataset) deleteWith(ctx context.Context, actor substrate.Actor, ref er
 // delete path proper, shared by the Delete mutation and a function's delete
 // effect.
 func (t *txn) softDelete(ref eref) (*substrate.Record, error) {
+	// The shared registry-dependency lock before the record lock and the
+	// kind resolution below, as a put takes it: a delete resolves its kind
+	// inside the transaction, and it must not read a declaration a
+	// vocabulary apply is replacing, nor hold a row that apply waits on while
+	// queueing for the shared side.
+	if err := t.lockRegistryDepShared(); err != nil {
+		return nil, err
+	}
 	// A former id denotes its canonical record everywhere (§6.3) —
 	// including here, or a delete through a merged-away id 404s while
 	// every read and patch of the same id resolves. Lock, then resolve: the
@@ -2461,7 +2469,7 @@ func (t *txn) softDelete(ref eref) (*substrate.Record, error) {
 	if row == nil {
 		return nil, fmt.Errorf("%w: record %s", substrate.ErrNotFound, id)
 	}
-	ty, err := t.ds.resolveType(row.Kind)
+	ty, err := t.resolveType(row.Kind)
 	if err != nil {
 		return nil, err
 	}
@@ -2504,7 +2512,7 @@ func (t *txn) softDelete(ref eref) (*substrate.Record, error) {
 		// from — and delete does not run through apply, so the trigger has
 		// to be here, or the subject keeps values no source carries. One
 		// recompute per mapping the kind carries (record 49).
-		for _, m := range t.ds.registry().MappingsFrom(ty.Identity) {
+		for _, m := range t.declarations().MappingsFrom(ty.Identity) {
 			if err := t.recomputeSubjectOf(ref, m); err != nil {
 				return nil, err
 			}
@@ -2556,7 +2564,7 @@ func (t *txn) preRecordLocks(ty *vocabulary.Kind) error {
 	// One key per mapping the kind carries (record 49), taken in the same
 	// ascending order the effect lock plan takes them in.
 	var keys []string
-	for _, m := range t.ds.registry().MappingsFrom(ty.Identity) {
+	for _, m := range t.declarations().MappingsFrom(ty.Identity) {
 		keys = append(keys, "subject|"+m.To)
 	}
 	sort.Strings(keys)
