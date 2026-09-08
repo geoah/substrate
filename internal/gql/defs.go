@@ -136,21 +136,22 @@ func (b *schemaBuilder) propertyType(t substrate.KindInfo, prop string) graphql.
 
 // scalarType maps a datatype name onto the scalar that carries it. Link
 // properties go through it too: their grammar admits the flat datatypes only,
-// so the same table answers both.
+// so the same table answers both. The names are vocabulary.Datatype values and
+// nothing else: the loader admits no alias, so a case for one is dead.
 func scalarType(kind string) graphql.Output {
 	switch kind {
-	case "int", "integer":
+	case "int":
 		// The engine admits |value| <= 2^53-1 (decision 0012), and graphql-go's
 		// 32-bit Int serializes anything past 2^31-1 as null with no error, so
 		// a stored int must ride the 64-bit scalar to read back at all.
 		return longScalar
-	case "float", "number":
+	case "float":
 		return graphql.Float
 	case "decimal":
 		// The stored value IS the exact digit string; Float would round it,
 		// which is the one thing the datatype exists to refuse.
 		return graphql.String
-	case "bool", "boolean":
+	case "bool":
 		return graphql.Boolean
 	case "datetime":
 		return graphql.DateTime

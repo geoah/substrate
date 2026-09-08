@@ -523,42 +523,67 @@ func (d *fakeDataset) normalizeReferences(kind string, props map[string]any) map
 // fakeMaxSafeInt is the engine's int bound (decision 0012): 2^53-1.
 const fakeMaxSafeInt = 1<<53 - 1
 
-// refuseUnsafeInts mirrors the engine's int bound on a kind's top-level `int`
-// properties, scalar or repeated. The GraphQL door re-encodes its input before
-// the engine sees it, and this is the fake's proof that a value past the bound
-// still arrives past it, rather than rounded into range. Nested sites and the
-// wording of the refusal are the engine's and are tested there.
-func (d *fakeDataset) refuseUnsafeInts(kind string, props map[string]any) error {
+// refuseUnsafeNumbers mirrors the two numeric refusals of decision 0012 on a
+// kind's top-level properties: an `int` (scalar, repeated, or a link property
+// inside a reference) past |2^53-1|, and a `decimal` that arrives as a JSON
+// number instead of its digit string. The GraphQL door re-encodes its input
+// before the engine sees it, and this is the fake's proof that what arrives is
+// what the engine would refuse, rather than a value rounded into range or a
+// number turned back into a string. Nested sites and the wording of the
+// refusal are the engine's and are tested there.
+func (d *fakeDataset) refuseUnsafeNumbers(kind string, props map[string]any) error {
 	ty, err := d.KindByRef(context.Background(), kind)
 	if err != nil {
 		return nil
 	}
 	defs, _ := ty.Definition["properties"].(map[string]any)
+	return refuseUnsafeNumbersIn(defs, props)
+}
+
+func refuseUnsafeNumbersIn(defs, props map[string]any) error {
 	for name, raw := range defs {
 		pd, _ := raw.(map[string]any)
-		if dt, _ := pd["type"].(string); dt != "int" {
-			continue
-		}
+		dt, _ := pd["type"].(string)
 		values := []any{props[name]}
 		if list, ok := props[name].([]any); ok {
 			values = list
 		}
 		for _, v := range values {
-			var f float64
-			switch n := v.(type) {
-			case float64:
-				f = n
-			case int64:
-				f = float64(n)
-			default:
-				continue
-			}
-			if f > fakeMaxSafeInt || f < -fakeMaxSafeInt {
-				return fmt.Errorf("%w: %s: an int is a safe integer (|value| <= %d)", substrate.ErrValidation, name, int64(fakeMaxSafeInt))
+			switch dt {
+			case "int":
+				if f, ok := fakeNumber(v); ok && (f > fakeMaxSafeInt || f < -fakeMaxSafeInt) {
+					return fmt.Errorf("%w: %s: an int is a safe integer (|value| <= %d)", substrate.ErrValidation, name, int64(fakeMaxSafeInt))
+				}
+			case "decimal":
+				if _, ok := fakeNumber(v); ok {
+					return fmt.Errorf("%w: %s: a decimal is a string of digits, not a JSON number", substrate.ErrValidation, name)
+				}
+			case "reference":
+				link, _ := v.(map[string]any)
+				linkDefs, _ := pd["properties"].(map[string]any)
+				if err := refuseUnsafeNumbersIn(linkDefs, link); err != nil {
+					return err
+				}
 			}
 		}
 	}
 	return nil
+}
+
+// fakeNumber reads a JSON number in every shape the decoders hand over.
+func fakeNumber(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case int64:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case json.Number:
+		f, err := n.Float64()
+		return f, err == nil
+	}
+	return 0, false
 }
 
 func (d *fakeDataset) put(e *substrate.Record) {
@@ -575,7 +600,7 @@ func (d *fakeDataset) Put(ctx context.Context, actor substrate.Actor, in substra
 	if err := d.fail("Put"); err != nil {
 		return nil, err
 	}
-	if err := d.refuseUnsafeInts(in.Kind, in.Properties); err != nil {
+	if err := d.refuseUnsafeNumbers(in.Kind, in.Properties); err != nil {
 		return nil, err
 	}
 	d.lastPut, d.lastActor = in, actor
@@ -616,14 +641,14 @@ func (d *fakeDataset) Patch(ctx context.Context, actor substrate.Actor, typ, id 
 	if err := d.fail("Patch"); err != nil {
 		return nil, err
 	}
+	if err := d.refuseUnsafeNumbers(typ, in.Properties); err != nil {
+		return nil, err
+	}
 	d.lastPatch, d.lastActor = in, actor
 	d.lastPrincipal = substrate.PrincipalFrom(ctx)
 	e, ok := d.records[id]
 	if !ok || (typ != "" && e.Kind != typ) {
 		return nil, fmt.Errorf("%w: %s", substrate.ErrNotFound, id)
-	}
-	if err := d.refuseUnsafeInts(e.Kind, in.Properties); err != nil {
-		return nil, err
 	}
 	if title, ok := in.Properties[substrate.PropTitle].(string); ok {
 		e.Title = title

@@ -789,9 +789,10 @@ func wireInt64(t *testing.T, v any) int64 {
 
 // An int property is the Long scalar. The engine admits |value| <= 2^53-1
 // (decision 0012), and graphql-go's 32-bit Int serialized every stored value
-// past 2^31-1 as null with no error. The bound holds on a scalar int, a
-// repeated int and a reference's link property, through a GraphQL put and
-// back; one past it is the engine's refusal, not a rounded value.
+// past 2^31-1 as null with no error. The bound round-trips on a scalar int, a
+// repeated int and a reference's link property through a GraphQL put and
+// back; one past it is the engine's refusal, not a rounded value, on the
+// scalar and on the link property alike.
 func TestGraphQLIntPropertyRoundTripsSafeIntegers(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
@@ -837,19 +838,25 @@ func TestGraphQLIntPropertyRoundTripsSafeIntegers(t *testing.T) {
 		}
 	}
 
-	res := env.gqlRaw(t, tok, `mutation ($in: JSON!) { put(input: $in) { id } }`,
-		map[string]any{"in": map[string]any{
-			"kind": widgetRef, "id": "w1",
-			"properties": map[string]any{"count": maxSafe + 1},
-		}})
-	if len(res.Errors) == 0 || !strings.Contains(res.Errors[0].Message, "safe integer") {
-		t.Fatalf("put of 2^53 was not refused as a safe-integer violation: %v", res.Errors)
+	for _, in := range []map[string]any{
+		{"kind": widgetRef, "id": "w1", "properties": map[string]any{"count": maxSafe + 1}},
+		{"kind": message, "id": "m1", "properties": map[string]any{
+			"author": map[string]any{"ref": "samples.substrate.reamde.dev/people/person/p1", "since": maxSafe + 1},
+		}},
+	} {
+		res := env.gqlRaw(t, tok, `mutation ($in: JSON!) { put(input: $in) { id } }`, map[string]any{"in": in})
+		if len(res.Errors) == 0 || !strings.Contains(res.Errors[0].Message, "safe integer") {
+			t.Fatalf("put of 2^53 into %v was not refused as a safe-integer violation: %v", in["properties"], res.Errors)
+		}
 	}
 }
 
 // A number in an inline JSON literal reaches the dataset as a number. It used
 // to arrive as the literal's AST string, so an inline `count: 5` failed the
-// engine's `expected a number` while the same value in a variable passed.
+// engine's `expected a number` while the same value in a variable passed. The
+// same rule now refuses what the string used to let through: an inline
+// `price: 19.90` on a decimal property is a bare number, refused as it is from
+// a variable or over REST (decision 0012).
 func TestGraphQLInlineNumberLiteralStoresANumber(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
@@ -866,6 +873,11 @@ func TestGraphQLInlineNumberLiteralStoresANumber(t *testing.T) {
 	put, _ := res.Data["put"].(map[string]any)
 	if got := wireInt64(t, put["count"]); got != 5 {
 		t.Fatalf("count = %d, want 5", got)
+	}
+
+	raw := env.gqlRaw(t, tok, `mutation { put(input: {kind: "`+widgetRef+`", id: "w2", properties: {price: 19.90}}) { id } }`, nil)
+	if len(raw.Errors) == 0 || !strings.Contains(raw.Errors[0].Message, "decimal") {
+		t.Fatalf("an inline decimal literal was not refused as a bare number: %v", raw.Errors)
 	}
 }
 
