@@ -269,6 +269,78 @@ func TestImportConvergesTheVectorsAnOlderDatabaseHolds(t *testing.T) {
 	}
 }
 
+// The directory re-points the repository's llmprovider row at another model
+// while every blurb stays the same: the older database's vectors carry the
+// old pair, so the text hash alone would call them current, and semantic
+// search would refuse naming `reembed` until an operator ran it. The import
+// holds a chunk current only under the pair the folded records resolve, so
+// the old vectors go, the property is queued and the answer counts it.
+func TestImportRequeuesWhenTheDirectoryRepointsTheModel(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	emb := newFakeEmbedServer(t)
+	svc, dsn := newService(t)
+	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatal(err)
+	}
+	importVocabulary(t, ds, "people")
+	installShelf(t, ds)
+	installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
+	book := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "book", Properties: map[string]any{"title": "Same", "description": "alpha unique marmalade prose"},
+	})
+	if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != 1 {
+		t.Fatalf("drain = %d, %v, want 1, nil", n, err)
+	}
+	id := repositoryIDOf(t, ds)
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+
+	// The directory moves on in another database: the row is re-pointed,
+	// the blurb is not touched.
+	root2 := copyRepositoryDir(t, root, id)
+	svc2 := mustReopen(t, testdb.NewSchema(t), root2)
+	ds2, err := svc2.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustPut(t, ds2, owner, substrate.PutInput{
+		Kind: typeProvider, ID: "vectors",
+		Properties: map[string]any{"embedModel": "text-embedding-ada-002"},
+	})
+	_ = svc2.Close()
+
+	// The first database is the older dump: its one vector is the old model's.
+	svc3 := mustReopen(t, dsn, root2)
+	ds3, err := svc3.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("open the repository restored over the older database: %v", err)
+	}
+	raw := scopedDB(t, dsn, "geoah")
+	if n := countRows(t, raw, "embeddings"); n != 0 {
+		t.Fatalf("%d vectors of the old model outlived the import", n)
+	}
+	assertQueued(t, raw, []string{book.ID})
+	_, err = ds3.Search(ctx, substrate.SearchInput{Q: "marmalade prose", Mode: substrate.SearchSemantic})
+	if !errors.Is(err, substrate.ErrUnavailable) || !strings.Contains(err.Error(), `"text-embedding-ada-002": 1 properties pending`) {
+		t.Fatalf("semantic search before the drain = %v, want ErrUnavailable naming the new model and 1 pending", err)
+	}
+	if n, err := ds3.ProcessEmbedQueue(ctx, 20); err != nil || n != 1 {
+		t.Fatalf("drain = %d, %v, want 1, nil", n, err)
+	}
+	if got := semanticIDs(t, ds3, "marmalade prose"); len(got) == 0 || got[0] != book.ID {
+		t.Fatalf("the blurb is not found under the new model: %v", got)
+	}
+	var model string
+	if err := raw.QueryRow(`SELECT model FROM embeddings WHERE record_id = $1`, book.ID).Scan(&model); err != nil || model != "text-embedding-ada-002" {
+		t.Fatalf("the re-bought vector names model %q, %v; want the new one", model, err)
+	}
+}
+
 // A provider and nothing embeddable is an empty answer, not a refusal: the
 // unavailable signal needs work in the queue, or a 503 would never clear.
 func TestSemanticSearchWithNothingEmbeddableIsEmpty(t *testing.T) {

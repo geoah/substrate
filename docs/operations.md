@@ -576,7 +576,8 @@ restart and a rebuild keep it too, and neither costs a client its cursor.
 **The import queues the embeddable properties and the drain buys the vectors
 again.** In the transaction that completes it, the import compares the vectors
 the database already holds with the records it folded: a vector for a record
-or a value that is gone is deleted, a vector whose text is unchanged is kept,
+or a value that is gone is deleted, a vector
+bought by the current provider and model for unchanged text is kept,
 and every property without a current vector is queued (the boot logs `import
 queued the repository's embeddable properties` with the count). Into an empty
 database that is every property; a newer directory restored over an older

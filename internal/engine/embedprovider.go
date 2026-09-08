@@ -53,31 +53,19 @@ func (p *embedProvider) Dimension() int { return p.client.Dimension() }
 // no provider does not embed, which is a state and not a failure — the queue
 // idles, search stays lexical, and boot never depended on any of it.
 func (ds *dataset) resolveEmbedProvider(ctx context.Context) (*embedProvider, error) {
-	rows, err := ds.db.QueryContext(ctx,
-		`SELECT id FROM records
-		   WHERE kind = $1 AND deleted_at IS NULL
-		     AND coalesce(props->>'`+propEmbedModel+`', '') <> ''
-		   ORDER BY id`, typeProvider)
+	claims, err := embedClaims(ctx, ds.db)
 	if err != nil {
-		return nil, fmt.Errorf("substrate/engine: find the embeddings provider: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	switch len(ids) {
+	switch len(claims) {
 	case 0:
 		return nil, nil
 	case 1:
 	default:
+		ids := make([]string, len(claims))
+		for i, c := range claims {
+			ids[i] = c.id
+		}
 		// Unreachable by design: every path that can make a row live and
 		// claiming goes through admitProviderRow — the ordinary write
 		// (write.go) and the split that resurrects a merged-away row
@@ -87,7 +75,35 @@ func (ds *dataset) resolveEmbedProvider(ctx context.Context) (*embedProvider, er
 		return nil, fmt.Errorf("%w: llmprovider rows %s each declare %s — a repository buys embeddings from one row, so clear it from all but one",
 			substrate.ErrValidation, strings.Join(ids, ", "), propEmbedModel)
 	}
-	return ds.openEmbedProvider(ctx, ids[0])
+	return ds.openEmbedProvider(ctx, claims[0].id)
+}
+
+// embedClaim is one live llmprovider row declaring embedModel: the pair a
+// vector it buys is stamped with (embedProvider.id, embedProvider.model).
+type embedClaim struct{ id, model string }
+
+// embedClaims is every live row claiming the embeddings job, by id, read
+// through q so the import can ask its own transaction.
+func embedClaims(ctx context.Context, q dbx) ([]embedClaim, error) {
+	rows, err := q.QueryContext(ctx,
+		`SELECT id, props->>'`+propEmbedModel+`' FROM records
+		   WHERE kind = $1 AND deleted_at IS NULL
+		     AND coalesce(props->>'`+propEmbedModel+`', '') <> ''
+		   ORDER BY id`, typeProvider)
+	if err != nil {
+		return nil, fmt.Errorf("substrate/engine: find the embeddings provider: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []embedClaim
+	for rows.Next() {
+		var c embedClaim
+		if err := rows.Scan(&c.id, &c.model); err != nil {
+			return nil, err
+		}
+		c.model = strings.TrimSpace(c.model)
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }
 
 // openEmbedProvider builds the client for one named row. It goes through
@@ -203,9 +219,11 @@ func (ds *dataset) enqueueReembed(ctx context.Context, provider *embedProvider, 
 // chunks is queued, stamped `at` (the import's clock, so every live edit after
 // it sorts ahead in the drain). Into an empty database that is every property;
 // over an older dump restored beside a newer directory it is only what
-// changed, so a restore does not re-buy a repository. The pair is not
-// consulted: whether the vectors are the resolved pair's is `reembed`'s
-// question, not the import's. Returns how many properties were queued.
+// changed, so a restore does not re-buy a repository. Current means the text
+// AND the pair: a chunk bought by a row or model the folded records no longer
+// resolve (the directory re-pointed the row while the text stood) is stale
+// too, or the restored repository would answer the `reembed` refusal until an
+// operator ran it by hand. Returns how many properties were queued.
 //
 // The registry decides what is embeddable, and it is also the gap: a closure
 // the import parks (loadDeclarationsForReplay leaves out what does not admit)
@@ -213,13 +231,23 @@ func (ds *dataset) enqueueReembed(ctx context.Context, provider *embedProvider, 
 // the closure admits and a `reembed` runs. The live write skips the same
 // records for the same reason.
 func (ds *dataset) reconcileEmbeddings(ctx context.Context, q dbx, at time.Time) (int, error) {
+	// No row, or two claiming rows, is no pair, and then no stored vector is
+	// current: whatever pair bought it, the folded records do not name it.
+	claims, err := embedClaims(ctx, q)
+	if err != nil {
+		return 0, err
+	}
+	var pair *embedClaim
+	if len(claims) == 1 {
+		pair = &claims[0]
+	}
 	total := 0
 	for _, ty := range ds.registry().Kinds() {
 		for name, p := range ty.Props {
 			if p == nil || !p.Embed {
 				continue
 			}
-			n, err := reconcileEmbeddable(ctx, q, ty.Identity, name, at)
+			n, err := reconcileEmbeddable(ctx, q, ty.Identity, name, pair, at)
 			if err != nil {
 				return total, fmt.Errorf("substrate/engine: reconcile embeddings of %s.%s: %w", ty.Identity, name, err)
 			}
@@ -229,7 +257,7 @@ func (ds *dataset) reconcileEmbeddings(ctx context.Context, q dbx, at time.Time)
 	return total, nil
 }
 
-func reconcileEmbeddable(ctx context.Context, q dbx, kind, prop string, at time.Time) (int, error) {
+func reconcileEmbeddable(ctx context.Context, q dbx, kind, prop string, pair *embedClaim, at time.Time) (int, error) {
 	want, err := currentChunkHashes(ctx, q, kind, prop)
 	if err != nil {
 		return 0, err
@@ -246,14 +274,14 @@ func reconcileEmbeddable(ctx context.Context, q dbx, kind, prop string, at time.
 			gone = append(gone, id)
 			continue
 		}
-		if chunksCurrent(stored, hashes) {
+		if chunksCurrent(stored, hashes, pair) {
 			current[id] = true
 			continue
 		}
-		// Only the chunks that no longer match go; the drain keeps the rest
-		// through the same hash and buys what is missing.
-		for i, h := range stored {
-			if i < len(hashes) && hashes[i] == h {
+		// Only the chunks that are no longer current go; the drain keeps the
+		// rest through the same hash and pair and buys what is missing.
+		for i, c := range stored {
+			if chunkCurrent(c, i, hashes, pair) {
 				continue
 			}
 			if _, err := q.ExecContext(ctx,
@@ -314,38 +342,51 @@ func currentChunkHashes(ctx context.Context, q dbx, kind, prop string) (map[stri
 	return out, rows.Err()
 }
 
-// storedChunkHashes is every stored chunk's text_hash for one property, by
-// record id then chunk index.
-func storedChunkHashes(ctx context.Context, q dbx, kind, prop string) (map[string]map[int]string, error) {
+// storedChunk is what an embeddings row says about the vector it holds: the
+// text it embeds and the pair that bought it.
+type storedChunk struct{ hash, provider, model string }
+
+// storedChunkHashes is every stored chunk for one property, by record id then
+// chunk index.
+func storedChunkHashes(ctx context.Context, q dbx, kind, prop string) (map[string]map[int]storedChunk, error) {
 	rows, err := q.QueryContext(ctx,
-		`SELECT record_id, chunk, text_hash FROM embeddings WHERE record_kind = $1 AND property = $2`, kind, prop)
+		`SELECT record_id, chunk, text_hash, provider, model FROM embeddings WHERE record_kind = $1 AND property = $2`, kind, prop)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	out := map[string]map[int]string{}
+	out := map[string]map[int]storedChunk{}
 	for rows.Next() {
-		var id, hash string
+		var id string
 		var chunk int
-		if err := rows.Scan(&id, &chunk, &hash); err != nil {
+		var c storedChunk
+		if err := rows.Scan(&id, &chunk, &c.hash, &c.provider, &c.model); err != nil {
 			return nil, err
 		}
 		if out[id] == nil {
-			out[id] = map[int]string{}
+			out[id] = map[int]storedChunk{}
 		}
-		out[id][chunk] = hash
+		out[id][chunk] = c
 	}
 	return out, rows.Err()
 }
 
+// chunkCurrent reports whether one stored chunk is the current text's chunk i
+// bought by the current pair.
+func chunkCurrent(c storedChunk, i int, hashes []string, pair *embedClaim) bool {
+	return pair != nil && i < len(hashes) && hashes[i] == c.hash &&
+		c.provider == pair.id && c.model == pair.model
+}
+
 // chunksCurrent reports whether the stored chunks are exactly the current
-// text's: one row per chunk, each with its hash, none beyond.
-func chunksCurrent(stored map[int]string, hashes []string) bool {
+// text's under the current pair: one row per chunk, each current, none beyond.
+func chunksCurrent(stored map[int]storedChunk, hashes []string, pair *embedClaim) bool {
 	if len(stored) != len(hashes) {
 		return false
 	}
-	for i, h := range hashes {
-		if stored[i] != h {
+	for i := range hashes {
+		c, ok := stored[i]
+		if !ok || !chunkCurrent(c, i, hashes, pair) {
 			return false
 		}
 	}
