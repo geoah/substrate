@@ -128,14 +128,19 @@ func checkRecorded(migrations []migration, applied map[int]recorded) error {
 		highest = max(highest, m.Version)
 	}
 	highestRecorded := 0
-	var newer []string
-	for v, r := range applied {
+	var unknown []int
+	for v := range applied {
 		highestRecorded = max(highestRecorded, v)
 		if !embedded[v] {
-			newer = append(newer, fmt.Sprintf("  %d (%s)", v, r.Name))
+			unknown = append(unknown, v)
 		}
 	}
-	sort.Strings(newer)
+	// Numeric, not lexical: 10 follows 9 in the refusal text.
+	sort.Ints(unknown)
+	newer := make([]string, 0, len(unknown))
+	for _, v := range unknown {
+		newer = append(newer, fmt.Sprintf("  %d (%s)", v, applied[v].Name))
+	}
 	var drift, gap []string
 	for _, m := range migrations {
 		r, ok := applied[m.Version]

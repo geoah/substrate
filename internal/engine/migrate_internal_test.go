@@ -74,6 +74,14 @@ func TestCheckRecordedRefusesAVersionTheBinaryLacks(t *testing.T) {
 			t.Fatalf("the error names a migration that matches (%s): %v", unwanted, err)
 		}
 	}
+	// The rows are listed in version order, numerically: 10 after 9.
+	err = checkRecorded(migrations, rows(map[int]string{1: "aaa", 2: "bbb", 9: "i", 10: "j"}))
+	if err == nil {
+		t.Fatal("two future migrations were accepted")
+	}
+	if nine, ten := strings.Index(err.Error(), "  9 ("), strings.Index(err.Error(), "  10 ("); nine < 0 || ten < 0 || ten < nine {
+		t.Fatalf("the rows are not in numeric order: %v", err)
+	}
 }
 
 // The runner applies in order, so a pending migration BELOW one the database
