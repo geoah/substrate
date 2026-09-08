@@ -119,15 +119,18 @@ func TestBootUpgradeRefusesANarrowingWithLiveRows(t *testing.T) {
 	t.Parallel()
 	dsn := seededRepository(t)
 	tree := shippedTree(t)
+	// llmprovider pins a version of its own, so the authority bump alone would
+	// keep the stored declaration and never classify the retype: the pin moves
+	// too, and the guard is the only thing that keeps the narrowing out.
 	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
-		return narrowLabel(t, doc)
+		return pinVersion(t, narrowLabel(t, doc), "99")
 	})
 
 	// The open SUCCEEDS — a repository whose rows a guard names must still be
-	// reachable, or the migration it is asking for cannot be performed.
-	if err := openMoved(t, dsn, tree); err != nil {
-		t.Fatalf("a refused upgrade must not fail the open: %v", err)
-	}
+	// reachable, or the migration it is asking for cannot be performed. The
+	// refusal names the property and the count.
+	refused := openMovedRefused(t, dsn, tree)
+	wantRefusedUpgrade(t, refused, `property "label" changes kind string → int`, "1 live records")
 	// …and the narrowing did NOT land: the repository still speaks the shape
 	// its live rows are written in.
 	stillSpeaksTheOldShape(t, dsn)
