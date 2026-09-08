@@ -49,7 +49,8 @@ func reopen(t *testing.T, dsn, root string) (substrate.Service, error) {
 	svc, err := engine.Open(context.Background(), dsn,
 		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithDataRoot(root),
-		engine.WithCredentialKey(engine.TestCredentialKey))
+		engine.WithCredentialKey(engine.TestCredentialKey),
+		engine.WithTestClock(clockOf(t).now))
 	if err == nil {
 		t.Cleanup(func() { _ = svc.Close() })
 	}
@@ -443,7 +444,7 @@ func TestBootImportsARepositoryDirectory(t *testing.T) {
 	_ = svc.Close()
 
 	root2 := copyRepositoryDir(t, root, id)
-	dsn2 := testdb.NewSchema(t)
+	dsn2 := engine.MigratedDSN(t)
 	svc2 := mustReopen(t, dsn2, root2)
 	ctx := context.Background()
 	repos, err := svc2.Repositories(ctx)
@@ -528,7 +529,7 @@ func TestHistoryGenerationHoldsAcrossRestartAndRebuildAndRotatesOnImport(t *test
 
 	// The older copy over an emptied database: the row is recreated from the
 	// manifest, and with it the generation.
-	svc3 := mustReopen(t, testdb.NewSchema(t), olderRoot)
+	svc3 := mustReopen(t, engine.MigratedDSN(t), olderRoot)
 	ds3, err := svc3.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open the imported repository: %v", err)
@@ -659,7 +660,7 @@ func TestRoundTripDirectoryRestoresARepository(t *testing.T) {
 	_ = svc.Close()
 
 	root2 := copyRepositoryDir(t, root, id)
-	dsn2 := testdb.NewSchema(t)
+	dsn2 := engine.MigratedDSN(t)
 	svc2 := mustReopen(t, dsn2, root2)
 	ds2, err := svc2.Dataset(ctx, "ada")
 	if err != nil {
@@ -963,7 +964,7 @@ func TestImportRefusesADirectoryTheKeyCannotOpen(t *testing.T) {
 	_ = svc.Close()
 
 	root2 := copyRepositoryDir(t, root, id)
-	dsn2 := testdb.NewSchema(t)
+	dsn2 := engine.MigratedDSN(t)
 	other := make([]byte, 32)
 	if _, err := rand.Read(other); err != nil {
 		t.Fatal(err)
@@ -1352,6 +1353,14 @@ func TestBootRefusesARowWhoseIdIsNotItsAuthority(t *testing.T) {
 	if _, err := db.Exec(`UPDATE repositories SET id = 'k3j9x2m41pfq'`); err != nil {
 		t.Fatalf("give the row a random id: %v", err)
 	}
+	// Such a database recorded nothing from 0015 on, and the runner refuses
+	// a gap, so every migration from 0015 runs again at the boot: 0015 puts
+	// the constraint back NOT VALID over the old row, which a validating one
+	// could not, and the later ones are idempotent over a schema that has
+	// them.
+	if _, err := db.Exec(`DELETE FROM schema_migrations WHERE version >= 15`); err != nil {
+		t.Fatalf("forget the migrations from 0015 on: %v", err)
+	}
 	_, err := reopen(t, dsn, root)
 	if err == nil {
 		t.Fatal("a row whose id is not its authority booted")
@@ -1365,7 +1374,10 @@ func TestBootRefusesARowWhoseIdIsNotItsAuthority(t *testing.T) {
 		}
 	}
 	var validated bool
-	if err := db.QueryRow(`SELECT convalidated FROM pg_constraint WHERE conname = 'repositories_id_is_authority'`).Scan(&validated); err != nil {
+	// Scoped to THIS database's table: an unscoped conname lookup answered
+	// from another test's schema when every test shared one database.
+	if err := db.QueryRow(`SELECT convalidated FROM pg_constraint
+		WHERE conname = 'repositories_id_is_authority' AND conrelid = 'repositories'::regclass`).Scan(&validated); err != nil {
 		t.Fatalf("the migration did not re-add the constraint: %v", err)
 	}
 	if validated {
@@ -1547,7 +1559,7 @@ func TestBootImportsAnOldIdNamedDirectory(t *testing.T) {
 	fx := buildLegacyFixture(t)
 	m := fx.manifest
 
-	dsn2 := testdb.NewSchema(t)
+	dsn2 := engine.MigratedDSN(t)
 	svc2 := mustReopen(t, dsn2, fx.root)
 	if _, err := os.Stat(fx.oldDir); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("the old directory is still there: %v", err)
@@ -1659,7 +1671,7 @@ func TestLegacyMoveRefusesWhileTheBucketHoldsTheOldPrefix(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	fx := buildLegacyFixture(t)
-	dsn2 := testdb.NewSchema(t)
+	dsn2 := engine.MigratedDSN(t)
 	fsBackend, err := blobbytes.NewFS(fx.root)
 	if err != nil {
 		t.Fatal(err)
@@ -1717,7 +1729,7 @@ func TestInterruptedLegacyMoveRefusesATakenAuthority(t *testing.T) {
 	}
 	// A row that holds the authority, registered on the same database from
 	// another data root.
-	dsn2 := testdb.NewSchema(t)
+	dsn2 := engine.MigratedDSN(t)
 	other := mustReopen(t, dsn2, t.TempDir())
 	registerUser(t, other, "ada")
 	_ = other.Close()
@@ -1791,7 +1803,7 @@ func TestAnInterruptedImportResumesAtTheNextBoot(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			root2 := copyRepositoryDir(t, root, id)
-			dsn2 := testdb.NewSchema(t)
+			dsn2 := engine.MigratedDSN(t)
 			for i, c := range tc.crashes {
 				seen := 0
 				_, err := engine.Open(ctx, dsn2,
@@ -1900,7 +1912,7 @@ func TestAResumedImportFoldsWhatTheCatchUpAppended(t *testing.T) {
 	// The import dies after its last batch: every row in the table, the
 	// marker set, the fold empty.
 	root2 := copyRepositoryDir(t, root, id)
-	dsn2 := testdb.NewSchema(t)
+	dsn2 := engine.MigratedDSN(t)
 	errKilled := errors.New("the process died here")
 	ctx := context.Background()
 	_, err := engine.Open(ctx, dsn2,

@@ -3,6 +3,8 @@ package engine_test
 import (
 	"os"
 	"testing"
+
+	"github.com/geoah/substrate/internal/testdb"
 )
 
 // Two gates refuse loopback by default, and the engine suites lean on both
@@ -22,5 +24,11 @@ func TestMain(m *testing.M) {
 	if os.Getenv("SUBSTRATE_EGRESS_ALLOW") == "" {
 		_ = os.Setenv("SUBSTRATE_EGRESS_ALLOW", "127.0.0.0/8,::1/128")
 	}
-	os.Exit(m.Run())
+	// Every test's data root is a t.TempDir(), and every write fsyncs it
+	// (0062). Sixteen repositories fsyncing one ext4 journal wait on each
+	// other; on tmpfs they do not (measured: 84 s to 67 s for this binary).
+	cleanup := testdb.TempDirOnTmpfs()
+	code := m.Run()
+	cleanup()
+	os.Exit(code)
 }

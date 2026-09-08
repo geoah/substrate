@@ -173,6 +173,15 @@ run = [
     """,
 ]
 
+[tasks."test:timing"]
+description = "Where a `go test -json` run spent its time: per-package wall and the 30 slowest tests"
+# The engine suite is 800 tests on one Postgres, so one slow fixture is 800
+# slow tests and no single case looks guilty. Capture a run once, then read it:
+#   go test -count=1 -p 1 -json ./internal/engine/... > timing.json
+#   mise run test:timing -- timing.json
+# Not a gate: the numbers are the machine's. It is how a regression is found.
+run = "python3 .mise/testtiming.py"
+
 [tasks."test:llm"]
 description = "The LIVE suite: real completions from real providers, when the keys are there"
 # Every case skips itself unless its key is in the environment, so this exits 0
@@ -277,7 +286,7 @@ description = "ruff over the runner's Python host"
 # internal/runner/host.py is the long-lived child every `runtime: python`
 # function body is exec'd into: a syntax slip there takes out every Python
 # function at once, and no Go test compiles it. Config is .ruff.toml.
-run = "ruff check internal/runner/host.py"
+run = "ruff check internal/runner/host.py .mise/testtiming.py"
 
 [tasks."lint:migrations"]
 description = "The shape of internal/engine/migrations: naming, numbering, no gaps"

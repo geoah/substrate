@@ -6,9 +6,13 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"os"
+	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -42,6 +46,38 @@ func mustDecodeTestCredentialKey(key string) []byte {
 // DataRootOf is the data root a service was opened with, so a test can find
 // a repository's directory (changelogfile.RepoDir) and damage or copy it.
 func DataRootOf(svc substrate.Service) string { return svc.(*service).dataRoot }
+
+// migratedTemplate is the database MigratedDSN copies for each test
+// (testdb.Template): Open ran on it once, with no repository, so the copy
+// holds the recorded migrations, the roles' grants and the shipped indexes
+// and nothing else. A copy beside an empty data root is exactly a fresh
+// install (nothing on either side), and Open on the copy runs every boot
+// step over it; what it skips is the DDL, and with it the one migration
+// lock every parallel test used to queue on.
+var migratedTemplate = testdb.NewTemplate("engine", func(ctx context.Context, dsn string) error {
+	root, err := os.MkdirTemp("", "substrate-template-")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(root) }()
+	svc, err := Open(ctx, dsn,
+		WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		WithDataRoot(root),
+		WithCredentialKey(TestCredentialKey))
+	if err != nil {
+		return err
+	}
+	return svc.Close()
+})
+
+// MigratedDSN is a fresh database of the test's own on which the shipped
+// migrations have already run, dropped when the test ends. It is what a
+// test opens unless the test is about the from-empty migration itself
+// (migrate_db_test.go), which opens testdb.NewSchema and migrates.
+func MigratedDSN(t *testing.T) string {
+	t.Helper()
+	return migratedTemplate.Clone(t)
+}
 
 // WithTestImportFault runs fn at each durable step of a boot import
 // (repodir.go importEntries): after every batch of changelog rows commits,
@@ -94,6 +130,14 @@ const (
 // mid-copy; a nil hook is the production path.
 func WithTestSnapshotFault(fn func(stage, dir string) error) Option {
 	return func(o *options) { o.snapshotFault = fn }
+}
+
+// WithTestClock is the clock the TOTP verifier reads (auth.go totpVerify
+// callers). A test that has spent one window's codes advances it one step
+// instead of sleeping through a real 30 second window; the record timestamps
+// stay on the wall clock, so only the code check moves.
+func WithTestClock(now func() time.Time) Option {
+	return func(o *options) { o.now = now }
 }
 
 // WithTestInvokeHook runs fn with a function's identity as the runner is

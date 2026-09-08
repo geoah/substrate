@@ -17,7 +17,7 @@ import (
 // its schema, for assertions about what is actually stored under a redaction.
 func newDatasetWithDB(t *testing.T, opts ...engine.Option) (substrate.Dataset, *sql.DB, string) {
 	t.Helper()
-	dsn := testdb.NewSchema(t)
+	dsn := engine.MigratedDSN(t)
 	ctx := context.Background()
 	all := []engine.Option{
 		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),

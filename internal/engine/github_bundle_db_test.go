@@ -66,7 +66,6 @@ import (
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/runner/substratefn"
 	"github.com/geoah/substrate/internal/substrate"
-	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -571,7 +570,7 @@ func (f *fakeGithub) queries() []string {
 func openGithubOAuthDataset(t *testing.T, hc *http.Client) *dataset {
 	t.Helper()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := MigratedDSN(t)
 	svc, err := Open(ctx, dsn,
 		WithDataRoot(t.TempDir()),
 		WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"),

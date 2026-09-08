@@ -58,19 +58,63 @@ concurrently. A `*_db_test.go` failure that looks arbitrary usually is, so
 confirm it alone before believing it:
 
 ```bash
-mise run test:db:engine                # 2 to 8 minutes by machine; the answer you can trust
+mise run test:db:engine                # about a minute on 16 cores; the answer you can trust
 go test ./internal/engine/ -run TestFold -v
 ```
 
-The engine package is 825 top-level tests: about two minutes of wall time on a
-16 core machine and six to eight on a 4 vCPU CI runner (measured 2026-09-08),
-so the budget in the comment above is the spread, not a promise.
+The engine package is 830 top-level tests: 67 s of wall time on a 16 core
+machine (measured 2026-09-08, down from 134 s the same day; the section below
+says where the time went), and longer on a 4 vCPU CI runner (six to eight
+minutes before that change; a shard's log says what it is now), so the budget
+in the comment above is the spread, not a promise.
 
 `test:db:engine` is the engine package with `test:db`'s flags, and it is also
 the task CI shards: with `SHARD` and `SHARDS` in the environment it runs one
 slice of the package (`SHARD=3 SHARDS=8 mise run test:db:engine`), which is
 how a red shard is reproduced by number. `test:db:rest` is every other
 database package. The cut is described under [What CI runs](#what-ci-runs).
+
+### The engine fixture, and where the time goes
+
+Almost every engine test opens its own service, creates a repository and
+imports the sample vocabulary. The database it opens is a copy of one
+template (`testdb.Template`, prepared by `engineTemplate` in
+`helpers_db_test.go`): `engine.Open` ran on the template once with no
+repository, so a copy holds the recorded migrations, the roles' grants and
+the shipped indexes, and `CREATE DATABASE ... TEMPLATE` hands it out per
+test. `engine.Open` still runs every boot step on the copy; what it skips is
+the DDL, and with it the migration lock. Before the template, each test
+migrated a fresh schema under the one database-wide `pg_advisory_lock`, so
+the parallel suite ran its migrations one test at a time: 90% of Postgres's
+time in a run was that lock. A test about the from-empty boot itself
+(`migrate_db_test.go`, `seed_db_test.go`, the `repodir` restores) opens
+`testdb.NewSchema` directly and migrates.
+
+The TOTP tests read a clock (`engine.WithTestClock`, installed by
+`newService` and `reopen`): `waitStep` advances it to the next step where it
+used to sleep through a real 30 second window.
+
+Three more things the harness does for time, each measured on a 16 core box
+with the engine suite. The container runs with `fsync=off`,
+`synchronous_commit=off` and `full_page_writes=off`, because it dies with the
+binary and every `DROP DATABASE` forces a checkpoint that fsync makes slow
+(CI's service container gets the same through `ALTER SYSTEM`, gated on
+`SUBSTRATE_TEST_DATABASE_DISPOSABLE`; a server you point the suite at
+otherwise keeps its durability). `testdb` connects to the container's own
+IP where the host can route to it, not the published port: the published
+port is docker-proxy, one process relaying every connection, and it was the
+queue every test waited in (98 s to 84 s). And the engine's `TestMain` puts
+`TMPDIR`, so every `t.TempDir()` data root, on `/dev/shm` when that is a
+writable tmpfs (`testdb.TempDirOnTmpfs`): every changelog write fsyncs, and
+sixteen repositories fsyncing one ext4 journal serialize on it (84 s to
+67 s). Set `TMPDIR` yourself to opt out.
+
+To see what a run spent, capture it as JSON once and read it:
+
+```bash
+go test -count=1 -p 1 -json ./internal/engine/... > timing.json
+mise run test:timing -- timing.json     # per-package wall, then the 30 slowest tests
+```
 
 ### Testing the boot upgrade
 

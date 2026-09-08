@@ -95,7 +95,7 @@ func asValidationErr(err error, target **substrate.ValidationError) bool {
 func TestSchemaApplyActivatesOnCommit(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := engine.MigratedDSN(t)
 	open := func() substrate.Service {
 		svc, err := engine.Open(ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
 			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
@@ -447,7 +447,7 @@ func TestProjectionStoresTheAuthoredDeclaration(t *testing.T) {
 func TestKindInfoDefinitionSurvivesAReload(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := engine.MigratedDSN(t)
 	open := func() substrate.Service {
 		svc, err := engine.Open(ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 		if err != nil {
@@ -1015,7 +1015,7 @@ func TestBuiltinActorRowsRefuseRedeclaration(t *testing.T) {
 func TestOpenNeverPrunesShippedRows(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := engine.MigratedDSN(t)
 	open := func() substrate.Service {
 		svc, err := engine.Open(ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
 			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))

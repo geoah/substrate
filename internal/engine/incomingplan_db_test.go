@@ -29,7 +29,7 @@ const (
 func planDataset(t *testing.T) *dataset {
 	t.Helper()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := MigratedDSN(t)
 	svc, err := Open(ctx, dsn,
 		WithDataRoot(t.TempDir()),
 		WithKindsDir("../../kinds/substrate.reamde.dev/core"),

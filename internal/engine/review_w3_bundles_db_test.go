@@ -34,7 +34,7 @@ import (
 // credentials table has no read API by design).
 func newW3Env(t *testing.T, opts ...engine.Option) (substrate.Service, substrate.Dataset, *sql.DB) {
 	t.Helper()
-	dsn := testdb.NewSchema(t)
+	dsn := engine.MigratedDSN(t)
 	all := []engine.Option{
 		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithDataRoot(t.TempDir()),
@@ -260,7 +260,7 @@ func TestW3OAuthStateReplayRefused(t *testing.T) {
 // callback's whole authentication.
 func TestW3OAuthEmptyStateKeyRefused(t *testing.T) {
 	t.Parallel()
-	dsn := testdb.NewSchema(t)
+	dsn := engine.MigratedDSN(t)
 	_, err := engine.Open(context.Background(), dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
 		engine.WithOAuth("", "https://substrate.example/callback", nil),

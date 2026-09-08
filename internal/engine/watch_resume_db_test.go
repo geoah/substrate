@@ -17,7 +17,7 @@ import (
 func TestWatchResumesGaplesslyAcrossARestart(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := engine.MigratedDSN(t)
 	open := func() (substrate.Service, substrate.Dataset) {
 		svc, err := engine.Open(ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
 			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))

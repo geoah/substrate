@@ -70,7 +70,7 @@ func TestVerifyReportsMissingAndDamagedSideStoreFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc2 := mustReopen(t, testdb.NewSchema(t), root2)
+	svc2 := mustReopen(t, engine.MigratedDSN(t), root2)
 	report := mustVerify(t, svc2, "ada")
 	if report.OK {
 		t.Fatalf("a copy short of a blob's bytes and a live secret's file verified: %+v", report)
@@ -209,7 +209,7 @@ func TestSnapshotRecordsThePointAndRestoresIntoAnEmptyDatabase(t *testing.T) {
 	_ = operator.Close()
 
 	// The restore: the destination is laid out as a data root.
-	dsn2 := testdb.NewSchema(t)
+	dsn2 := engine.MigratedDSN(t)
 	svc2 := mustReopen(t, dsn2, dest)
 	ds2, err := svc2.Dataset(ctx, "ada")
 	if err != nil {

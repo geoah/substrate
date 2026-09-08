@@ -31,7 +31,7 @@ const (
 func newRaceDataset(t *testing.T) *dataset {
 	t.Helper()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := MigratedDSN(t)
 	svc, err := Open(ctx, dsn,
 		WithDataRoot(t.TempDir()),
 		WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"))

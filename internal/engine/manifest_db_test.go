@@ -237,7 +237,7 @@ func TestImportRefusesAManifestAboveTheBinaryBeforeAnyRow(t *testing.T) {
 			if err := changelogfile.WriteManifest(dir, m); err != nil {
 				t.Fatal(err)
 			}
-			dsn2 := testdb.NewSchema(t)
+			dsn2 := engine.MigratedDSN(t)
 			_, err = reopen(t, dsn2, root2)
 			if !errors.Is(err, c.want) {
 				t.Fatalf("boot over the directory: err = %v, want %v", err, c.want)
@@ -277,7 +277,7 @@ func TestBootImportsAFormatOneDirectory(t *testing.T) {
 	rewriteChangelogDir(t, changelogfile.ChangelogDir(dir), unframe)
 	writeFormatOneManifest(t, dir, readManifest(t, dir))
 
-	dsn2 := testdb.NewSchema(t)
+	dsn2 := engine.MigratedDSN(t)
 	svc2 := mustReopen(t, dsn2, root2)
 	db, err := engine.OpenScopedDB(dsn2, id, engine.RoleApp)
 	if err != nil {
@@ -344,7 +344,7 @@ func TestImportRefusesARetiredLinkEntryBeforeAnyRow(t *testing.T) {
 			e.Op = "link"
 		}
 	})
-	dsn2 := testdb.NewSchema(t)
+	dsn2 := engine.MigratedDSN(t)
 	_, err = reopen(t, dsn2, root2)
 	if !errors.Is(err, engine.ErrChangelogPredatesReferences) {
 		t.Fatalf("boot over a directory holding a link entry: err = %v, want ErrChangelogPredatesReferences", err)

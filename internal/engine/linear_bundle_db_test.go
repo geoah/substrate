@@ -476,7 +476,7 @@ func (f *linearFakeAPI) moveIssueBTeam(team map[string]any) {
 func linearOpenDataset(t *testing.T, client *http.Client) (*service, *dataset) {
 	t.Helper()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := MigratedDSN(t)
 	svc, err := Open(ctx, dsn,
 		WithDataRoot(t.TempDir()),
 		WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"),

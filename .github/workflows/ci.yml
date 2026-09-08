@@ -171,6 +171,10 @@ jobs:
           5s --health-timeout 5s --health-retries 20
     env:
       SUBSTRATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/substrate?sslmode=disable
+      # The service container dies with the job, so testdb turns fsync off
+      # on it (ALTER SYSTEM): a service takes no command line, and the
+      # per-test DROP DATABASE forces a checkpoint that fsync makes slow.
+      SUBSTRATE_TEST_DATABASE_DISPOSABLE: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
@@ -216,6 +220,7 @@ jobs:
           5s --health-timeout 5s --health-retries 20
     env:
       SUBSTRATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/substrate?sslmode=disable
+      SUBSTRATE_TEST_DATABASE_DISPOSABLE: "1"
       SHARD: ${{ matrix.shard }}
       SHARDS: ${{ strategy.job-total }}
     steps:
@@ -283,6 +288,7 @@ jobs:
           5s --health-timeout 5s --health-retries 20
     env:
       SUBSTRATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/substrate?sslmode=disable
+      SUBSTRATE_TEST_DATABASE_DISPOSABLE: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5

@@ -36,17 +36,26 @@ import (
 // those tests stay serial. t.Setenv is the same hazard by another name — it
 // panics under t.Parallel, so nothing here reaches for it.
 
+// coreKindsDir is the shipped core package, relative to this package.
+const coreKindsDir = "../../kinds/substrate.reamde.dev/core"
+
+// newService opens a service over a database copied from the migrated
+// template (engine.MigratedDSN): Open runs every boot step over the copy and
+// skips only the DDL. A test about the from-empty migration itself opens
+// testdb.NewSchema and migrates.
 func newService(t *testing.T, opts ...engine.Option) (substrate.Service, string) {
 	t.Helper()
-	dsn := testdb.NewSchema(t)
+	dsn := engine.MigratedDSN(t)
 	all := []engine.Option{
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		engine.WithKindsDir(coreKindsDir),
 		// Every repository's files live under the data root, and the blob
 		// bytes default to the fs backend inside it.
 		engine.WithDataRoot(t.TempDir()),
 		// Every repository's DEK wraps under this key, so every test runs
 		// the keyed shape the server runs.
 		engine.WithCredentialKey(engine.TestCredentialKey),
+		// The TOTP verifier reads the test's clock, so waitStep can move it.
+		engine.WithTestClock(clockOf(t).now),
 	}
 	all = append(all, opts...)
 	svc, err := engine.Open(context.Background(), dsn, all...)
@@ -134,7 +143,7 @@ type authUser struct {
 // third needs waitStep.
 func (u *authUser) code(t *testing.T) string {
 	t.Helper()
-	step := engine.TOTPStep(time.Now())
+	step := engine.TOTPStep(clockOf(t).now())
 	if step <= u.step {
 		step = u.step + 1
 	}
@@ -146,15 +155,46 @@ func (u *authUser) code(t *testing.T) string {
 	return code
 }
 
-// waitStep blocks until the TOTP counter ticks, which is what a user does
-// when they have spent this window's codes. A test needing a third
-// authentication inside one window has to wait exactly as they would.
+// waitStep moves the test's TOTP clock to the next step, which is what a
+// user waits for when they have spent this window's codes. The clock is the
+// one every service the test opened verifies against (engine.WithTestClock)
+// and the one authUser.code reads, so the two agree without a real 30 second
+// sleep.
 func waitStep(t *testing.T) {
 	t.Helper()
-	start := engine.TOTPStep(time.Now())
-	for engine.TOTPStep(time.Now()) == start {
-		time.Sleep(200 * time.Millisecond)
+	c := clockOf(t)
+	start := engine.TOTPStep(c.now())
+	for engine.TOTPStep(c.now()) == start {
+		c.advance(time.Second)
 	}
+}
+
+// testClock is one test's TOTP clock: the wall clock plus what waitStep has
+// advanced. It is keyed on the top-level test, so a subtest and a service
+// reopened mid-test (reopen) read the same instant.
+type testClock struct {
+	mu     sync.Mutex
+	offset time.Duration
+}
+
+var testClocks sync.Map
+
+func clockOf(t *testing.T) *testClock {
+	name, _, _ := strings.Cut(t.Name(), "/")
+	c, _ := testClocks.LoadOrStore(name, &testClock{})
+	return c.(*testClock)
+}
+
+func (c *testClock) now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return time.Now().Add(c.offset).UTC().Truncate(time.Microsecond)
+}
+
+func (c *testClock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.offset += d
 }
 
 // registerUser walks the REAL registration flow — enrollment, one code, the

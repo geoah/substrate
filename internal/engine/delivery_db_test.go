@@ -362,7 +362,7 @@ func TestARestoredRepositoryResumesItsDeliveries(t *testing.T) {
 	if err := os.CopyFS(dst, os.DirFS(src)); err != nil {
 		t.Fatal(err)
 	}
-	svc2, err := Open(ctx, testdb.NewSchema(t), WithDataRoot(root2), WithCredentialKey(TestCredentialKey),
+	svc2, err := Open(ctx, MigratedDSN(t), WithDataRoot(root2), WithCredentialKey(TestCredentialKey),
 		WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 	if err != nil {
 		t.Fatalf("import the directory: %v", err)
@@ -615,7 +615,7 @@ func txnGroups(t *testing.T, ds *dataset, after int64) (groups, rows int) {
 func TestAFirstOpenAdoptsLegacyTriggerBookkeeping(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := MigratedDSN(t)
 	root := t.TempDir()
 	open := func() *service {
 		svc, err := Open(ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey),
@@ -1059,7 +1059,7 @@ func TestARestoredTriggerAppliesAnEditedSourceFromTheEdit(t *testing.T) {
 	if err := os.CopyFS(dst, os.DirFS(src)); err != nil {
 		t.Fatal(err)
 	}
-	svc2, err := Open(ctx, testdb.NewSchema(t), WithDataRoot(root2), WithCredentialKey(TestCredentialKey),
+	svc2, err := Open(ctx, MigratedDSN(t), WithDataRoot(root2), WithCredentialKey(TestCredentialKey),
 		WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 	if err != nil {
 		t.Fatalf("import the directory: %v", err)

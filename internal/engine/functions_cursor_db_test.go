@@ -131,7 +131,7 @@ def main(input, host):
 func openInternalDataset(t *testing.T, opts ...Option) *dataset {
 	t.Helper()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := MigratedDSN(t)
 	svc, err := Open(ctx, dsn,
 		append([]Option{
 			WithDataRoot(t.TempDir()),
@@ -164,7 +164,7 @@ func openInternalDataset(t *testing.T, opts ...Option) *dataset {
 func openCoreDataset(t *testing.T, opts ...Option) *dataset {
 	t.Helper()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := MigratedDSN(t)
 	svc, err := Open(ctx, dsn,
 		append([]Option{
 			WithDataRoot(t.TempDir()),

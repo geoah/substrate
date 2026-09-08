@@ -1,6 +1,8 @@
 // Package testdb provisions the shared Postgres+pgvector container the
 // substrate integration tests run against: one container per test binary,
-// one throwaway Postgres SCHEMA per test, dropped on cleanup.
+// and per test either a throwaway Postgres SCHEMA (NewSchema, empty) or a
+// throwaway DATABASE copied from a template the suite prepared once
+// (Template.Clone), both dropped on cleanup.
 package testdb
 
 import (
@@ -8,6 +10,8 @@ import (
 	"database/sql"
 	"fmt"
 	"hash/fnv"
+	"net"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -51,7 +55,15 @@ func DSN(t *testing.T) string {
 				// 16 cores (measured: ~56) and would not survive 32, and the
 				// failure — "too many clients already" — reads like a leak
 				// rather than a limit, so it is raised here once.
-				testcontainers.WithCmdArgs("-c", "max_connections=500"),
+				testcontainers.WithCmdArgs("-c", "max_connections=500",
+					// The container is thrown away with the binary, so
+					// durability buys nothing here and costs most of the run:
+					// DROP DATABASE forces a checkpoint, and with fsync on,
+					// a checkpoint under 16 parallel tests fsyncs every dirty
+					// file (measured: 830 drops averaged 1.2 s, one took 26 s,
+					// 72% of Postgres's time). Every commit's WAL flush went
+					// the same way.
+					"-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off"),
 				testcontainers.WithWaitStrategy(
 					wait.ForLog("database system is ready to accept connections").
 						WithOccurrence(2).WithStartupTimeout(120*time.Second)),
@@ -60,7 +72,7 @@ func DSN(t *testing.T) string {
 				pgErr = err
 				return
 			}
-			pgDSN, pgErr = c.ConnectionString(ctx, "sslmode=disable")
+			pgDSN, pgErr = containerDSN(ctx, c)
 			if pgErr != nil {
 				return
 			}
@@ -80,11 +92,59 @@ func DSN(t *testing.T) string {
 				return
 			}
 		}
+		// A server somebody else points the suite at keeps its durability
+		// unless they say it is disposable (CI's service container is; a dev
+		// substrate's database is not, and fsync=off is a data-loss setting
+		// on a server that crashes). The container above got the same three
+		// on its command line.
+		if os.Getenv("SUBSTRATE_TEST_DATABASE_DISPOSABLE") != "" {
+			for _, stmt := range []string{
+				`ALTER SYSTEM SET fsync = off`,
+				`ALTER SYSTEM SET synchronous_commit = off`,
+				`ALTER SYSTEM SET full_page_writes = off`,
+				`SELECT pg_reload_conf()`,
+			} {
+				if _, err := db.ExecContext(ctx, stmt); err != nil {
+					pgErr = fmt.Errorf("SUBSTRATE_TEST_DATABASE_DISPOSABLE: %s: %w", stmt, err)
+					return
+				}
+			}
+		}
 	})
 	if pgErr != nil {
 		t.Fatalf("start pgvector container: %v", pgErr)
 	}
 	return pgDSN
+}
+
+// containerDSN addresses the container by its own IP where the host can
+// route to it (Linux, the default bridge), and through the published port
+// otherwise (Docker Desktop). The published port is docker-proxy, one
+// userland process relaying every byte of every connection: with sixteen
+// tests each running a thousand statements, that one process is the queue
+// they all wait in, and a round trip through it measured 76 µs against 48 µs
+// direct on an idle machine.
+func containerDSN(ctx context.Context, c *postgres.PostgresContainer) (string, error) {
+	published, err := c.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		return "", err
+	}
+	ip, err := c.ContainerIP(ctx)
+	if err != nil || ip == "" {
+		return published, nil
+	}
+	direct := fmt.Sprintf("postgres://postgres:postgres@%s/substrate?sslmode=disable", net.JoinHostPort(ip, "5432"))
+	db, err := sql.Open("pgx", direct)
+	if err != nil {
+		return published, nil
+	}
+	defer func() { _ = db.Close() }()
+	pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(pingCtx); err != nil {
+		return published, nil
+	}
+	return direct, nil
 }
 
 // NewSchema creates a throwaway Postgres schema and returns a DSN whose
@@ -110,6 +170,183 @@ func NewSchema(t *testing.T) string {
 		}
 	})
 	return WithSearchPath(base, name)
+}
+
+// TempDirOnTmpfs points TMPDIR, and with it every t.TempDir() of the binary,
+// at a directory of its own under /dev/shm when that is a writable tmpfs, and
+// leaves it alone otherwise (macOS, a container without one). A suite calls
+// it from TestMain before m.Run and runs the returned cleanup after. The
+// engine fsyncs every changelog and sealed write, and sixteen parallel tests
+// fsyncing one ext4 journal serialize on it; a tmpfs fsync is free, and the
+// tests assert what the files hold, never that a power cut would keep them.
+func TempDirOnTmpfs() (cleanup func()) {
+	if os.Getenv("TMPDIR") != "" {
+		return func() {}
+	}
+	dir, err := os.MkdirTemp("/dev/shm", "substrate-test-")
+	if err != nil {
+		return func() {}
+	}
+	if err := os.Setenv("TMPDIR", dir); err != nil {
+		_ = os.RemoveAll(dir)
+		return func() {}
+	}
+	return func() { _ = os.RemoveAll(dir) }
+}
+
+// Template is one database per test binary that a caller prepares once
+// (migrates, seeds, whatever its suite needs) and Clone copies per test with
+// CREATE DATABASE ... TEMPLATE. Copying a prepared database is one catalog
+// operation where migrating a fresh schema is every DDL statement again, and
+// the engine suite runs its fixture eight hundred times on one Postgres.
+//
+// The copy carries everything the template's catalog holds: tables, indexes,
+// policies, the grants to the cluster roles, the recorded migrations, the
+// extensions. It carries no connection: Clone waits until nothing is
+// connected to the template, because Postgres refuses to copy a database
+// anyone is using.
+type Template struct {
+	key     string
+	prepare func(ctx context.Context, dsn string) error
+
+	once sync.Once
+	name string
+	err  error
+}
+
+// NewTemplate declares a template; nothing runs until the first Clone. key
+// names it in the cluster (one word, lowercase), and prepare runs once
+// against the fresh database with the extensions installed, from the base
+// DSN's own user, and must leave no connection open.
+func NewTemplate(key string, prepare func(ctx context.Context, dsn string) error) *Template {
+	return &Template{key: key, prepare: prepare}
+}
+
+// Clone returns the DSN of a new database copied from the template, dropped
+// when the test ends. The first call in a binary builds the template.
+func (tp *Template) Clone(t *testing.T) string {
+	t.Helper()
+	base := DSN(t)
+	tp.once.Do(func() { tp.name, tp.err = tp.build(base) })
+	if tp.err != nil {
+		t.Fatalf("build the %s template database: %v", tp.key, tp.err)
+	}
+	name := uniqueName()
+	db, err := sql.Open("pgx", base)
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	ctx := context.Background()
+	if err := createFromTemplate(ctx, db, name, tp.name); err != nil {
+		_ = db.Close()
+		t.Fatalf("create database %s from %s: %v", name, tp.name, err)
+	}
+	t.Cleanup(func() {
+		defer func() { _ = db.Close() }()
+		// FORCE: a pool a test forgot to close is not a reason to leave
+		// the database behind, and the service's own pools closed already.
+		if _, err := db.ExecContext(context.Background(), `DROP DATABASE IF EXISTS `+name+` WITH (FORCE)`); err != nil {
+			t.Logf("drop database %s: %v", name, err)
+		}
+	})
+	dsn, err := withDatabase(base, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dsn
+}
+
+// build creates the template database, installs the extensions, runs the
+// caller's preparation and waits for its connections to go away. The name
+// carries the pid, so two binaries preparing the same key at once (a plain
+// `go test ./...`) never share one, and a template a killed binary leaves
+// behind is as visible as the schemas were.
+func (tp *Template) build(base string) (string, error) {
+	ctx := context.Background()
+	name := fmt.Sprintf("sub_tpl_%s_%d", tp.key, os.Getpid())
+	admin, err := sql.Open("pgx", base)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = admin.Close() }()
+	if _, err := admin.ExecContext(ctx, `DROP DATABASE IF EXISTS `+name+` WITH (FORCE)`); err != nil {
+		return "", fmt.Errorf("drop a stale template: %w", err)
+	}
+	if _, err := admin.ExecContext(ctx, `CREATE DATABASE `+name); err != nil {
+		return "", fmt.Errorf("create the template: %w", err)
+	}
+	dsn, err := withDatabase(base, name)
+	if err != nil {
+		return "", err
+	}
+	if err := func() error {
+		db, err := sql.Open("pgx", dsn)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = db.Close() }()
+		for _, ext := range []string{"vector", "pgcrypto"} {
+			if _, err := db.ExecContext(ctx, `CREATE EXTENSION IF NOT EXISTS `+ext+` SCHEMA public`); err != nil {
+				return fmt.Errorf("create extension %s: %w", ext, err)
+			}
+		}
+		return nil
+	}(); err != nil {
+		return "", err
+	}
+	if err := tp.prepare(ctx, dsn); err != nil {
+		return "", fmt.Errorf("prepare: %w", err)
+	}
+	// Closing a pool ends its connections from the client's side; the backends
+	// take a moment to notice, and CREATE DATABASE refuses a template with a
+	// backend still attached. Wait for the count, then refuse new ones so a
+	// straggler cannot reattach between a test's clones.
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		var n int
+		if err := admin.QueryRowContext(ctx,
+			`SELECT count(*) FROM pg_stat_activity WHERE datname = $1`, name).Scan(&n); err != nil {
+			return "", err
+		}
+		if n == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			return "", fmt.Errorf("%d connection(s) to the template are still open after prepare returned", n)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if _, err := admin.ExecContext(ctx, `ALTER DATABASE `+name+` WITH ALLOW_CONNECTIONS false IS_TEMPLATE true`); err != nil {
+		return "", fmt.Errorf("mark the template: %w", err)
+	}
+	return name, nil
+}
+
+// createFromTemplate copies the template. A backend that was still detaching
+// from it when the count read zero answers 55006 (object_in_use), which is
+// retried rather than failed: it is a timing, not a state.
+func createFromTemplate(ctx context.Context, db *sql.DB, name, template string) error {
+	var err error
+	for range 50 {
+		_, err = db.ExecContext(ctx, `CREATE DATABASE `+name+` TEMPLATE `+template)
+		if err == nil || !strings.Contains(err.Error(), "55006") {
+			return err
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return err
+}
+
+// withDatabase is the base DSN pointed at another database of the same
+// cluster. The DSN is a URL (the container's is, and a SUBSTRATE_TEST_DATABASE_URL
+// that is not one is refused here rather than mis-parsed).
+func withDatabase(dsn, name string) (string, error) {
+	u, err := url.Parse(dsn)
+	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
+		return "", fmt.Errorf("testdb: the DSN must be a postgres:// URL to address another database, got %q", dsn)
+	}
+	u.Path = "/" + name
+	return u.String(), nil
 }
 
 // WithSearchPath bakes a search_path into a DSN — never SET on a pooled

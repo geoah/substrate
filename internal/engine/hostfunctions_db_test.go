@@ -113,7 +113,7 @@ func TestProposeCardOpsMatchTheDispatcher(t *testing.T) {
 // (M1); against the stored one it is refused and the open fails.
 func TestBootUpgradeDeliversTheHostFunctions(t *testing.T) {
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := MigratedDSN(t)
 	openWith := func(dir string) substrate.Service {
 		svc, err := Open(ctx, dsn, WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey), WithKindsDir(dir))
 		if err != nil {

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -94,7 +95,7 @@ func policySelectorOps(t *testing.T, ds substrate.Dataset) []string {
 func TestPolicySelectorOpsUpgradeToTheEnum(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := engine.MigratedDSN(t)
 
 	old := openTree(t, dsn, oldPolicyTree(t))
 	if _, err := old.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
@@ -161,7 +162,7 @@ func TestPolicySelectorOpsUpgradeToTheEnum(t *testing.T) {
 func TestPolicySelectorOpsUpgradeRefusedByAStrandedSelector(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := engine.MigratedDSN(t)
 
 	old := openTree(t, dsn, oldPolicyTree(t))
 	if _, err := old.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {

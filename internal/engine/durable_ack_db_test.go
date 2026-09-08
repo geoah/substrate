@@ -32,7 +32,7 @@ func openDurabilityService(t *testing.T, opts ...Option) (*service, Repository, 
 	t.Helper()
 	ctx := context.Background()
 	root := t.TempDir()
-	dsn := testdb.NewSchema(t)
+	dsn := MigratedDSN(t)
 	svcIface, err := Open(ctx, dsn, append([]Option{
 		WithDataRoot(root), WithCredentialKey(TestCredentialKey),
 		WithKindsDir("../../kinds/substrate.reamde.dev/core"),
@@ -105,7 +105,7 @@ func importCopy(t *testing.T, root, repoID string) (*service, Repository) {
 	if err := os.CopyFS(dst, os.DirFS(src)); err != nil {
 		t.Fatal(err)
 	}
-	svc2, err := Open(ctx, testdb.NewSchema(t), WithDataRoot(root2), WithCredentialKey(TestCredentialKey),
+	svc2, err := Open(ctx, MigratedDSN(t), WithDataRoot(root2), WithCredentialKey(TestCredentialKey),
 		WithKindsDir("../../kinds/substrate.reamde.dev/core"))
 	if err != nil {
 		t.Fatalf("import the directory: %v", err)

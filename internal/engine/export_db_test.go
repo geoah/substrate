@@ -240,7 +240,7 @@ func TestExportOverTheAPIRestoresIntoAnEmptyDatabase(t *testing.T) {
 	}
 
 	// The restore: an empty database, the same host key.
-	dsn2 := testdb.NewSchema(t)
+	dsn2 := engine.MigratedDSN(t)
 	svc2 := mustReopen(t, dsn2, root2)
 	ds2, err := svc2.Dataset(ctx, "ada")
 	if err != nil {
@@ -404,7 +404,7 @@ func TestExportPinsAPointWhileWritesContinue(t *testing.T) {
 		t.Fatalf("the archive holds %d segments, the directory held %d at the pin", files.Segments, len(segmentsAtPin))
 	}
 
-	svc2 := mustReopen(t, testdb.NewSchema(t), root2)
+	svc2 := mustReopen(t, engine.MigratedDSN(t), root2)
 	verified := mustVerify(t, svc2, "ada")
 	if !verified.OK || verified.Head != head || verified.Snapshot == nil || verified.Snapshot.Head != head {
 		t.Fatalf("the restored repository does not verify at the pinned point: %+v", verified)
@@ -632,7 +632,7 @@ func TestExportStreamsBlobsOutOfS3(t *testing.T) {
 	}
 
 	// An fs host imports the archive as it is.
-	svc2 := mustReopen(t, testdb.NewSchema(t), root2)
+	svc2 := mustReopen(t, engine.MigratedDSN(t), root2)
 	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)

@@ -229,7 +229,7 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := engine.MigratedDSN(t)
 	tree := shippedTree(t)
 
 	// --- binary N: two repositories are created and their seed is the tree.
@@ -454,7 +454,7 @@ func plantKindDeclarationsWithout(t *testing.T, ds substrate.Dataset, prop strin
 func TestBootUpgradeHoldsRowsToADeclarationItKeeps(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := engine.MigratedDSN(t)
 	tree := shippedTree(t)
 
 	svc1 := openTree(t, dsn, tree)
@@ -542,7 +542,7 @@ func TestBootUpgradeHoldsRowsToADeclarationItKeeps(t *testing.T) {
 func TestBootUpgradeNeverDowngrades(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := engine.MigratedDSN(t)
 	tree := shippedTree(t)
 	addShippedKind(t, tree, "substrate.reamde.dev/core", "widget", "widgets")
 	bumpPackageVersion(t, tree, "substrate.reamde.dev/core", "99")

@@ -23,7 +23,7 @@ import (
 func w2Opener(t *testing.T) (open func() *dataset, closeSvc func()) {
 	t.Helper()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := MigratedDSN(t)
 	var last substrate.Service
 	created := false
 	imported := false
