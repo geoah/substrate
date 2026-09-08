@@ -663,7 +663,14 @@ the exec path needs nothing open at all.
   fold, in one transaction, under that repository's own lock, after running
   the same check the boot runs. It reproduces the fold bit for bit and appends
   nothing, so it is safe to run on a healthy repository, and it is the proof
-  that the directory alone reproduces the records. One exception is already
+  that the directory alone reproduces the records. The search index (`fts`)
+  is reproduced too, with one limit: the replay indexes every row under the
+  kind declarations in force at the end, and a kind edit that changes what
+  its records index re-indexes the kind's rows in the same apply, so the two
+  agree from that apply on. Rows indexed by a release before v0.52.0 under a
+  declaration that has since changed keep the old bands until a rebuild or
+  the next such edit of their kind; a search over them can return a hit the
+  rebuilt repository does not, or miss one it does. One exception is already
   written: every release before this fix, v0.1.0 through v0.47.0, stored the
   removal of a record's last label with no `labels` key in the delta, so
   replaying such an entry brings that label back whatever else the write

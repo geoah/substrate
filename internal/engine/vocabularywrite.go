@@ -386,6 +386,15 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		if err := t.reprojectRefs(st.reprojected); err != nil {
 			return err
 		}
+		// The search index is the other projection of the row against its
+		// declaration (fold.go foldFTS), and a rebuild derives it under the
+		// declarations it ends with. Re-derived here for the kinds whose
+		// searchable shape this batch changes, against the candidate, so the
+		// live index and its replay agree; the rows' values do not move, so
+		// this bumps nothing and appends nothing.
+		if err := t.reprojectFTS(candidate, st.reprojectedFTS); err != nil {
+			return err
+		}
 		if b.extra != nil {
 			if err := b.extra(t); err != nil {
 				return err
@@ -469,7 +478,12 @@ type vocabularyStage struct {
 	// touched kind: a declaration whose reference sites are identical projects
 	// the same rows it already holds.
 	reprojected []string
-	narrowings  []narrowing
+	// reprojectedFTS names the kinds whose SEARCHABLE shape moved (ftsShape),
+	// so `fts` is re-derived for their rows in the same transaction
+	// (fold.go reprojectFTS). Same rule as reprojected: the kinds the change
+	// can be seen through, dropped kinds included.
+	reprojectedFTS []string
+	narrowings     []narrowing
 }
 
 // stageVocabularyBatch builds the batch's candidate registry and classifies
@@ -676,6 +690,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		retirements:      retirementGuards(current, candidate, touched, nil),
 		droppedCallables: droppedBundleCallables(current, candidate, touched),
 		reprojected:      reprojectedKinds(current, candidate, touched),
+		reprojectedFTS:   reprojectedFTSKinds(current, candidate, touched),
 		// Evolution-with-data: a NARROWING definition
 		// diff — property dropped/renamed/kind-changed, enum value or state
 		// removed, required added — is classified here against the currently
@@ -2278,6 +2293,46 @@ func reprojectedKinds(current, candidate *vocabulary.Registry, touched map[strin
 		}
 		return b.String()
 	}
+	return kindsWhoseShapeMoved(current, candidate, touched, sites)
+}
+
+// reprojectedFTSKinds lists the touched packages' kinds whose searchable shape
+// differs between the stored closure and the candidate (ftsShape), the kinds
+// the candidate drops included: their rows index under the unknown-kind bands
+// from the publish on, which is what a rebuild computes for them.
+func reprojectedFTSKinds(current, candidate *vocabulary.Registry, touched map[string]bool) []string {
+	return kindsWhoseShapeMoved(current, candidate, touched, ftsShape)
+}
+
+// ftsShape writes the part of one declaration that ftsBands reads: which
+// properties index, in which order, and in which band, plus whether the body
+// column does. Two declarations with the same string index the same row into
+// the same bands. An undeclared kind is the empty string, distinct from every
+// declared shape, because its rows take the unknown-kind bands (foldFTS)
+// rather than a declaration's.
+func ftsShape(reg *vocabulary.Registry, ident string) string {
+	ty, ok := reg.ByIdentity(ident)
+	if !ok {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("declared;")
+	for _, name := range ty.PropOrder {
+		p := ty.Props[name]
+		if !p.FTS || p.Sensitive() {
+			continue
+		}
+		fmt.Fprintf(&b, "%s|%v;", name, vocabulary.IsLongText(p.Datatype))
+	}
+	if bp, ok := ty.Props[substrate.PropBody]; ok && bp.FTS && !bp.Sensitive() {
+		b.WriteString("body")
+	}
+	return b.String()
+}
+
+// kindsWhoseShapeMoved walks the touched packages' kinds on both sides of the
+// apply and keeps the ones whose `shape` differs, sorted.
+func kindsWhoseShapeMoved(current, candidate *vocabulary.Registry, touched map[string]bool, shape func(*vocabulary.Registry, string) string) []string {
 	seen := map[string]bool{}
 	var out []string
 	for aname := range touched {
@@ -2292,7 +2347,7 @@ func reprojectedKinds(current, candidate *vocabulary.Registry, touched map[strin
 					continue
 				}
 				seen[ident] = true
-				if sites(current, ident) != sites(candidate, ident) {
+				if shape(current, ident) != shape(candidate, ident) {
 					out = append(out, ident)
 				}
 			}

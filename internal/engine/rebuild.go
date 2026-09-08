@@ -21,7 +21,9 @@ import (
 // WHAT IS CLEARED AND WHY. The fold tables are the ones the changelog's entries
 // write and therefore the ones the changelog can say again:
 //
-//	records            the fold itself
+//	records            the fold itself, and with it `fts`, the search index
+//	                   the fold derives over each row from the kind's
+//	                   declaration (fold.go foldFTS, reprojectFTS)
 //	refs               the reverse projection of the records' reference values,
 //	                   re-derived by the same record effect that produces them
 //	annotations        written by the same entries
@@ -231,16 +233,20 @@ func changeOfEntry(e changelogfile.Entry) (substrate.Change, error) {
 }
 
 // foldSnapshot reads every folded table in one deterministic order — the shape
-// a rebuild is compared against. `fts` is included: the search index is derived
-// from the folded row, so a rebuild that reproduced the rows but not their
-// index would not have reproduced the store.
+// a rebuild is compared against. `fts` is its own section, not a column of
+// `records`: the search index is derived from the folded row AND the kind's
+// declaration (fold.go foldFTS), so a rebuild that reproduced the rows but not
+// their index has not reproduced the store, and a mismatch in the index is a
+// different finding from a mismatch in the rows, which the section names.
 func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 	out := map[string]any{}
 	queries := map[string]string{
 		"records": `SELECT to_jsonb(r) - 'repository' FROM (
 				SELECT kind, id, title, body, states, at, ends_at, due_at, props, labels,
-					version, created_at, updated_at, deleted_at, finalizers, fts::text
+					version, created_at, updated_at, deleted_at, finalizers
 				FROM records ORDER BY kind, id) r`,
+		"fts": `SELECT to_jsonb(f) FROM (
+				SELECT kind, id, fts::text FROM records ORDER BY kind, id) f`,
 		"refs": `SELECT to_jsonb(r) FROM (
 				SELECT src_kind, src, property, path, ord, dst_kind, dst, props
 				FROM refs ORDER BY src_kind, src, property, path, ord) r`,

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // THE FOLD.
@@ -31,6 +32,19 @@ import (
 // at write time and its RESULT is in the delta. The registry is consulted for
 // exactly one thing, the weighted search bands, because `fts` is an INDEX over
 // the folded row rather than part of it (foldFTS).
+//
+// THE ONE COLUMN WRITTEN OUTSIDE THE FOLD PATH IS `fts`. Every other column of
+// `records` is a function of the changelog alone, so a replay reproduces it
+// from the entries. The bands are a function of the folded row AND the kind's
+// declaration in force, and a replay reads the declarations it ends under, so
+// a kind edit that changes what its records index (a property's `fts` flag,
+// its datatype family, its position, the kind dropped) leaves the live rows
+// indexed under a declaration the replay never sees. reprojectFTS closes that
+// gap: the vocabulary apply re-derives `fts` for every row of such a kind, in
+// the apply's transaction and against the closure it publishes, and moves
+// nothing else: no `version`, no `updated_at`, no changelog entry, because the
+// record did not change, only the index over it did. Nothing else may write
+// `records` from outside this file.
 
 // foldKind names one kind of effect. The values are wire values: they land in
 // the changelog's payload and a rebuild reads them back.
@@ -325,7 +339,13 @@ func (t *txn) foldFTS(row *erow) [3]string {
 			return ftsBands(ty, row)
 		}
 	}
-	if ty, ok := t.ds.registry().ByIdentity(row.Kind); ok {
+	return ftsBandsUnder(t.ds.registry(), row)
+}
+
+// ftsBandsUnder computes a row's bands under one registry alone: its kind's
+// declaration where the registry holds it, the unknown-kind bands otherwise.
+func ftsBandsUnder(reg *vocabulary.Registry, row *erow) [3]string {
+	if ty, ok := reg.ByIdentity(row.Kind); ok {
 		return ftsBands(ty, row)
 	}
 	// No declaration to consult (a kind this binary no longer declares), so no
@@ -333,6 +353,65 @@ func (t *txn) foldFTS(row *erow) [3]string {
 	// default for an unknown row, and it keeps a legacy body searchable rather
 	// than dropping it out of the index on a binary that forgot its kind (#68).
 	return [3]string{row.Title, "", row.Body}
+}
+
+// reprojectFTS re-derives `fts` for every stored row of the named kinds, live
+// and tombstoned, under `reg`: the closure a vocabulary apply is about to
+// publish, which is also what a rebuild of the repository will fold under. It
+// reads `reg` ALONE, not through declarations(): a kind the closure drops is
+// still in the live registry until the publish, and its rows must land at the
+// unknown-kind bands the replay computes, not the bands of a declaration that
+// is leaving. Tombstones are included because a rebuild indexes them too, and
+// a resurrecting put refolds the row anyway.
+//
+// The UPDATE touches `fts` and nothing else (see the header): the row's
+// values did not move, so neither `version` nor `updated_at` may. It runs in
+// pages, because the transaction cannot write while a cursor over `records`
+// is open, and inline, whatever the kind's size: a kind edit is rare and the
+// alternative is a live index that answers for a declaration that is gone.
+func (t *txn) reprojectFTS(reg *vocabulary.Registry, kinds []string) error {
+	for _, kind := range kinds {
+		after := ""
+		for {
+			rows, err := t.query(`SELECT `+recordCols+` FROM records WHERE kind = $1 AND id > $2 ORDER BY id LIMIT $3`,
+				kind, after, rebuildBatch)
+			if err != nil {
+				return err
+			}
+			var ids, a, b, c []string
+			for rows.Next() {
+				row, err := scanRecord(rows)
+				if err != nil {
+					_ = rows.Close()
+					return err
+				}
+				bands := ftsBandsUnder(reg, row)
+				ids, a, b, c = append(ids, row.ID), append(a, bands[0]), append(b, bands[1]), append(c, bands[2])
+				after = row.ID
+			}
+			if err := rows.Err(); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			_ = rows.Close()
+			if len(ids) == 0 {
+				break
+			}
+			if _, err := t.exec(`
+				UPDATE records r SET fts =
+					setweight(to_tsvector('english', u.a), 'A') ||
+					setweight(to_tsvector('english', u.b), 'B') ||
+					setweight(to_tsvector('english', u.c), 'C')
+				FROM unnest($2::text[], $3::text[], $4::text[], $5::text[]) AS u(id, a, b, c)
+				WHERE r.kind = $1 AND r.id = u.id`, kind, ids, a, b, c); err != nil {
+				return fmt.Errorf("substrate/engine: re-derive the search index of %s: %w", kind, err)
+			}
+			if len(ids) < rebuildBatch {
+				break
+			}
+		}
+	}
+	return nil
 }
 
 // --- the resync effect (merge and split) ---

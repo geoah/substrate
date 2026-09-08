@@ -283,7 +283,11 @@ discharged.
   from changelog to `records`, so a live write, a boot import and
   `RebuildRepository` cannot drift. Anything that writes `records` directly,
   or a changelog entry that reaches one store and not the other outside
-  `inTx`, is wrong.
+  `inTx`, is wrong. The one exception is `fts`, the search index over each
+  row: it is derived from the row and the kind's declaration, so a vocabulary
+  apply that changes what a kind indexes re-derives it for that kind's rows
+  (`reprojectFTS`, also in `fold.go`) without moving `version`, `updated_at`
+  or the changelog.
 - **A changed declaration ships a changed version.** Every document under
   `kinds/` and `samples/` projects with a `version`, an incremental integer (a
   kind's own `data.version` where it pins one, else its package's, else 1). The boot
