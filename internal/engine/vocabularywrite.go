@@ -409,6 +409,16 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		// leave a changelog-backed live row whose kind the registry it publishes
 		// cannot resolve, so the count that decides is the one taken LAST. It
 		// also covers whatever write is added to this transaction next.
+		// A mapping the batch adds, removes or narrows changes what every live
+		// record of its target kind is offered and holds, and no source write
+		// will ever run for a mapping that is gone. Every such record
+		// recomputes here, in this transaction and against the candidate
+		// (t.declarations()), so the offers and the values this commit
+		// publishes are the ones the published closure derives; a kind left
+		// with no mapping releases what the machine held (recomputeMappingTargets).
+		if err := t.recomputeMappingTargets(changedMappingTargets(ds.registry(), candidate)); err != nil {
+			return err
+		}
 		final, err := droppedTypeGuards(t, st.droppedTypes)
 		if err != nil {
 			return err
@@ -416,20 +426,6 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		if len(final) > 0 {
 			return fmt.Errorf("%w: this apply wrote rows of a kind it removes: %s",
 				substrate.ErrGuard, strings.Join(final, "; "))
-		}
-		// A mapping the batch adds, removes or narrows changes what every live
-		// record of its target kind is offered, and no source write will ever
-		// run for a mapping that is gone. The offers are derived again here,
-		// against the candidate, so the table this commit publishes is the
-		// one a rebuild derives; the accepted values recompute after the
-		// commit (recomputeTargets), once the candidate is the registry the
-		// write path resolves against.
-		changed := changedMappingTargets(ds.registry(), candidate)
-		if err := t.rederiveOffersOf(changed); err != nil {
-			return err
-		}
-		if len(changed) > 0 {
-			t.afterCommit = append(t.afterCommit, func() { ds.recomputeTargets(ctx, changed) })
 		}
 		// Publish: the commit is the activation and the pointer swap is how it
 		// is seen. commitAndPublish swaps it under ds.mu held across the

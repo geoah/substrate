@@ -162,7 +162,7 @@ func writeMappedHistory(t *testing.T, ds substrate.Dataset) {
 	s := syncSource(t, ds, slack, typeSlackUser, "s-sam", map[string]any{
 		"realName": "Sam J", "displayName": "sam", "email": "sam@corp.example",
 	})
-	if _, err := ds.Merge(ctx, owner, sam.Kind, sam.ID, personOf(t, ds, s)); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: sam.Kind, Winner: sam.ID, Loser: personOf(t, ds, s)}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 	// The entry is the latest write, so its nickname takes displayName at the
@@ -175,7 +175,7 @@ func writeMappedHistory(t *testing.T, ds substrate.Dataset) {
 	syncSource(t, ds, dirsync, typeDirEntry, "e-sam", map[string]any{
 		"fullName": "Samuel J.", "nickname": "Sammy", "email": "sam@acme.com", "account": acc.ID,
 	}, sam.ID)
-	if _, err := ds.Delete(ctx, owner, acc.Kind, acc.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, acc.Kind, acc.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the account: %v", err)
 	}
 	if _, err := ds.RunGC(ctx); err != nil {
@@ -197,7 +197,7 @@ func writeMappedHistory(t *testing.T, ds substrate.Dataset) {
 		})
 		pid := personOf(t, ds, g)
 		mustPatch(t, ds, owner, typePerson, pid, substrate.PatchInput{Properties: map[string]any{"name": who.short}})
-		if _, err := ds.Delete(ctx, owner, typePerson, pid); err != nil {
+		if _, err := ds.Delete(ctx, owner, typePerson, pid, substrate.DeleteInput{}); err != nil {
 			t.Fatalf("delete %s: %v", who.short, err)
 		}
 		if who.back {

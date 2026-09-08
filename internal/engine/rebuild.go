@@ -241,20 +241,39 @@ func (t *txn) rederiveOffers() error {
 	return t.deriveOffersOf(sortedKeys(targets))
 }
 
-// rederiveOffersOf deletes the offers of the given target kinds and derives
-// them again against the transaction's declarations (refs.go), which inside a
-// vocabulary apply are its candidate: the table the apply's commit publishes is
-// the one a rebuild under that registry derives.
-func (t *txn) rederiveOffersOf(kinds []string) error {
-	if len(kinds) == 0 {
-		return nil
-	}
+// recomputeMappingTargets is the vocabulary apply's half of recompute: for
+// every target kind whose mapping set the batch changed, the offers go and
+// every live record recomputes against the transaction's declarations
+// (refs.go), which are the candidate. Offers AND values: the values a removed
+// or narrowed mapping's sources projected are changelog entries, so a rebuild
+// would keep them, and only a recompute in this transaction leaves nothing
+// for a rebuild under the published closure to disagree with. A kind with no
+// mapping left has nothing to recompute from, so what the machine held is
+// released instead (releaseMachineManaged).
+func (t *txn) recomputeMappingTargets(kinds []string) error {
+	reg := t.declarations()
 	for _, kind := range kinds {
 		if _, err := t.exec(`DELETE FROM property_offers WHERE record_kind = $1`, kind); err != nil {
 			return fmt.Errorf("substrate/engine: clear the offers of %s: %w", kind, err)
 		}
+		ids, err := t.liveIDsOf(kind)
+		if err != nil {
+			return err
+		}
+		mapped := len(reg.MappingsTo(kind)) > 0
+		for _, id := range ids {
+			ref := eref{Kind: kind, ID: id}
+			if mapped {
+				err = t.recompute(ref)
+			} else {
+				err = t.releaseMachineManaged(ref)
+			}
+			if err != nil {
+				return fmt.Errorf("substrate/engine: recompute %s %s after its mappings changed: %w", kind, id, err)
+			}
+		}
 	}
-	return t.deriveOffersOf(kinds)
+	return nil
 }
 
 // deriveOffersOf derives the offers of every live record of the given target
@@ -273,36 +292,6 @@ func (t *txn) deriveOffersOf(kinds []string) error {
 		}
 	}
 	return nil
-}
-
-// recomputeTargets recomputes every live record of the given target kinds in
-// one transaction of its own, after a vocabulary apply changed their mapping
-// set: a value a removed mapping's sources projected is released or refilled
-// from what still maps, under the usual yield. It runs after the apply's
-// commit, because the write path resolves against the published registry. A
-// kind that lost its last mapping keeps what was written to it, as a record
-// with no mapping does. A failure is logged and not returned: the offers are
-// already the published closure's, and the next source write converges the
-// values.
-func (ds *dataset) recomputeTargets(ctx context.Context, kinds []string) {
-	err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
-		for _, kind := range kinds {
-			ids, err := t.liveIDsOf(kind)
-			if err != nil {
-				return err
-			}
-			for _, id := range ids {
-				if err := t.recompute(eref{Kind: kind, ID: id}); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		ds.svc.log.Warn("substrate: recompute after a mapping change failed",
-			"repository", ds.scope.Repository, "kinds", kinds, "err", err)
-	}
 }
 
 // liveIDsOf lists one kind's live record ids, read to the end before the

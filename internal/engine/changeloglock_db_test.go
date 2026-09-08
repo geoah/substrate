@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
@@ -18,25 +17,30 @@ import (
 // cycle with 40P01. With the changelog first, both park there, having locked
 // nothing, and run one after the other.
 
-// rowFree reports whether a record's row is free of a FOR UPDATE lock: a
-// probe transaction's NOWAIT select, rolled back at once.
-func rowFree(t *testing.T, ds *dataset, kind, id string) bool {
+// waitParked waits until n sessions are parked on one advisory key of this
+// repository, the pg_locks probe registrydelete_db_test.go waitParkedOn makes
+// for one, so a probe that follows runs after the writer reached the lock and
+// not before, whatever the runner's load.
+func waitParked(t *testing.T, ds *dataset, name string, n int) {
 	t.Helper()
 	ctx := context.Background()
-	probe, err := ds.db.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		var waiting int
+		if err := ds.db.QueryRowContext(ctx, `
+			SELECT count(*) FROM pg_locks
+			WHERE locktype = 'advisory' AND NOT granted AND objsubid = 1
+			  AND classid::bigint = ((hashtext(current_schema() || '|' || $1)::bigint >> 32) & 4294967295)
+			  AND objid::bigint = (hashtext(current_schema() || '|' || $1)::bigint & 4294967295)`,
+			ds.scope.lockKey(name)).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting >= n {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	defer func() { _ = probe.Rollback() }()
-	_, err = probe.ExecContext(ctx,
-		`SELECT id FROM records WHERE kind = $1 AND id = $2 FOR UPDATE NOWAIT`, kind, id)
-	if err == nil {
-		return true
-	}
-	if !strings.Contains(err.Error(), "could not obtain lock") {
-		t.Fatalf("probe the row: %v", err)
-	}
-	return false
+	t.Fatalf("%d sessions never parked on %s within the bound", n, name)
 }
 
 func TestPutAndSweepOnOneTombstoneTakeTheChangelogFirst(t *testing.T) {
@@ -48,7 +52,7 @@ func TestPutAndSweepOnOneTombstoneTakeTheChangelogFirst(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, raceWidget, "v"); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, raceWidget, "v", substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -70,8 +74,8 @@ func TestPutAndSweepOnOneTombstoneTakeTheChangelogFirst(t *testing.T) {
 		_, err := ds.RunGC(ctx)
 		gcDone <- err
 	}()
-	time.Sleep(400 * time.Millisecond)
-	if !rowFree(t, ds, raceWidget, "v") {
+	waitParked(t, ds, changelogLockKey, 1)
+	if !rowLockFree(t, ds, raceWidget, "v") {
 		t.Fatal("the sweep locked the victim's row before the changelog lock")
 	}
 	select {
@@ -87,7 +91,7 @@ func TestPutAndSweepOnOneTombstoneTakeTheChangelogFirst(t *testing.T) {
 		})
 		putDone <- err
 	}()
-	time.Sleep(400 * time.Millisecond)
+	waitParked(t, ds, changelogLockKey, 2)
 	if !tryLockFree(t, ds, "record|"+raceWidget+"|v") {
 		t.Fatal("the put locked its record before the changelog lock")
 	}

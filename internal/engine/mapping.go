@@ -1015,6 +1015,50 @@ func (t *txn) afterTombstone(ref eref) error {
 	return t.recomputeSubjectsOf(ref)
 }
 
+// releaseMachineManaged releases every property the machine tier manages on a
+// record: what recompute wrote for mappings that no longer exist, once a kind
+// has no mapping left (recomputeMappingTargets). Each is nulled through the
+// same recomputing patch recompute uses, so the value and its manager row go
+// together; a required property keeps its value, as recompute leaves it.
+// Nothing else writes at the machine tier (rows.go), so nothing else is
+// touched.
+func (t *txn) releaseMachineManaged(target eref) error {
+	row, err := t.loadRow(target, false)
+	if err != nil || row == nil || row.DeletedAt != nil {
+		return err
+	}
+	ty, err := t.resolveType(row.Kind)
+	if err != nil {
+		return err
+	}
+	managers, err := t.managersOf(target)
+	if err != nil {
+		return err
+	}
+	patch := map[string]any{}
+	for _, name := range sortedKeys(managers) {
+		if managers[name].tier != substrate.TierMachine {
+			continue
+		}
+		if p, ok := ty.Props[name]; ok && p.Required {
+			continue
+		}
+		patch[name] = nil
+	}
+	if len(patch) == 0 {
+		return nil
+	}
+	was := t.actor
+	t.actor = substrate.ActorSystem
+	t.recomputing, t.recomputeManagers = true, nil
+	defer func() {
+		t.actor = was
+		t.recomputing, t.recomputeManagers = false, nil
+	}()
+	_, err = t.patch(target, substrate.PatchInput{Properties: patch})
+	return err
+}
+
 // recomputeSubjectsOf recomputes every subject a source record points at, one
 // per mapping its kind carries (record 49). A kind the registry does not hold
 // carries no mapping, so a record of a parked package recomputes nothing.

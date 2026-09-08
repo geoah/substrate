@@ -1524,7 +1524,7 @@ func TestMergedSourceLeavesItsSubject(t *testing.T) {
 			p.Properties["displayName"], p.PropertyMeta["name"].Alternatives)
 	}
 
-	rec, err := ds.Merge(ctx, owner, first.Kind, first.ID, second.ID)
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: first.Kind, Winner: first.ID, Loser: second.ID})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -1537,7 +1537,7 @@ func TestMergedSourceLeavesItsSubject(t *testing.T) {
 	}
 	wantRebuildAgrees(t, svc, ds)
 
-	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	if p = mustGet(t, ds, sam.Kind, sam.ID); !offeredBy(p, "name", dirsync2) {
@@ -1570,7 +1570,7 @@ func TestRecomputeKeepsARequiredValueWhenItsSourceLeaves(t *testing.T) {
 		t.Fatalf("the recompute did not fill the shell, so the test would prove nothing: %v", lead.Properties)
 	}
 
-	if _, err := ds.Delete(ctx, owner, src.Kind, src.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, src.Kind, src.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("deleting the last source of a required property: %v", err)
 	}
 	lead = mustGet(t, ds, typeLead, leadID)
@@ -1612,7 +1612,7 @@ func TestCollectedSourceRecomputesItsSubject(t *testing.T) {
 	installPeopleSourcesWithDir(t, ds)
 	sam, acc, entry := samWithDirEntry(t, ds)
 
-	if _, err := ds.Delete(ctx, owner, acc.Kind, acc.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, acc.Kind, acc.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ds.RunGC(ctx); err != nil {
@@ -1636,7 +1636,7 @@ func TestCascadeTombstoneRecomputesItsSubject(t *testing.T) {
 	mustPatch(t, ds, owner, entry.Kind, entry.ID,
 		substrate.PatchInput{AddFinalizers: []string{dirPackage + "/teardown"}})
 
-	if _, err := ds.Delete(ctx, owner, acc.Kind, acc.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, acc.Kind, acc.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ds.RunGC(ctx); err != nil {
@@ -1680,14 +1680,14 @@ func TestMergedSourcesWithDistinctSubjectsKeepBothCurrent(t *testing.T) {
 		t.Fatalf("the entry offers Sam nothing, so the test would prove nothing: %+v", p.PropertyMeta["name"].Alternatives)
 	}
 
-	rec, err := ds.Merge(ctx, owner, first.Kind, first.ID, second.ID)
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: first.Kind, Winner: first.ID, Loser: second.ID})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 	// wantRebuildAgrees leaves the live table the derived one, so the split
 	// alone is what the second comparison sees.
 	wantRebuildAgrees(t, svc, ds)
-	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	wantRebuildAgrees(t, svc, ds)
@@ -1709,6 +1709,50 @@ func TestRemovedMappingReleasesItsOffers(t *testing.T) {
 		t.Fatalf("apply the people closure without the entry mapping: %v", err)
 	}
 	wantSubjectWithoutEntry(t, svc, ds, sam)
+}
+
+// Removing a target kind's LAST mapping leaves nothing to recompute from, so
+// the apply releases what the machine tier held: the value and its manager row
+// go, the owner's own writes stay, and a rebuild agrees.
+func TestRemovedLastMappingReleasesMachineValues(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds := newDataset(t)
+	// Google alone, and its mapping the only one onto person.
+	installSources(t, ds, []enginetest.Manifest{googleManifest()}, peopleMappings()[:1])
+	g := syncSource(t, ds, people, typeGoogleContact, "g-1", map[string]any{
+		"name": aname("Alexandros Papas"), "emails": gemails("alex@acme.example"),
+	})
+	pid := personOf(t, ds, g)
+	mustPatch(t, ds, owner, typePerson, pid, substrate.PatchInput{Properties: map[string]any{"pronouns": "he/him"}})
+	p := mustGet(t, ds, typePerson, pid)
+	if p.Properties["name"] != "Alexandros Papas" || p.PropertyMeta["name"].Tier != substrate.TierMachine {
+		t.Fatalf("the sync did not fill name at the machine tier, so the test would prove nothing: %v %+v",
+			p.Properties["name"], p.PropertyMeta["name"])
+	}
+
+	if err := enginetest.DeclareMappings(ctx, ds); err != nil {
+		t.Fatalf("apply the people closure without its mapping: %v", err)
+	}
+	p = mustGet(t, ds, typePerson, pid)
+	for _, name := range []string{"name", "emails"} {
+		if v, still := p.Properties[name]; still {
+			t.Fatalf("%s = %v survived the removal of the mapping that wrote it", name, v)
+		}
+		if _, still := p.PropertyMeta[name]; still {
+			t.Fatalf("%s keeps a manager after the removal of the mapping that wrote it: %+v", name, p.PropertyMeta[name])
+		}
+	}
+	if p.Properties["pronouns"] != "he/him" {
+		t.Fatalf("the owner's own write went with the mapping: %v", p.Properties["pronouns"])
+	}
+	before := foldOf(t, ds)
+	if _, err := svc.(rebuilder).RebuildRepository(ctx, "geoah"); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if after := foldOf(t, ds); string(after) != string(before) {
+		t.Fatalf("the rebuilt fold is not the live one\n%s", firstDifference(before, after))
+	}
 }
 
 // offeredBy reports whether actor offers an alternative for property.
