@@ -243,7 +243,7 @@ func (h *handler) postPassword(w http.ResponseWriter, r *http.Request) {
 		writeAuthFailure(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"username": req.Username})
+	writeJSON(w, http.StatusOK, substrate.SessionUser{Username: req.Username})
 }
 
 // postTOTPBegin verifies the current factors and issues a candidate seed,
@@ -293,7 +293,7 @@ func (h *handler) postTOTP(w http.ResponseWriter, r *http.Request) {
 		writeAuthFailure(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"username": req.Username})
+	writeJSON(w, http.StatusOK, substrate.SessionUser{Username: req.Username})
 }
 
 // factorsPresented enforces the password-factor rule at the door (ruling

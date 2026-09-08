@@ -15,6 +15,7 @@ import type {
   OperationalList,
   TokenInfo,
   TOTPEnrollment,
+  SessionUser,
 } from "./types"
 
 /** How many digits a TOTP code has; the substrate accepts nothing else. */
@@ -110,7 +111,7 @@ export async function changePassword(
   totpCode: string,
   newPassword: string
 ): Promise<void> {
-  await request<{ username: string }>(
+  await request<SessionUser>(
     "POST",
     "/password",
     { username, password, totpCode, newPassword },
@@ -140,7 +141,7 @@ export async function totpChange(
   newTotpSecret: string,
   newTotpCode: string
 ): Promise<void> {
-  await request<{ username: string }>(
+  await request<SessionUser>(
     "POST",
     "/totp",
     { username, password, totpCode, newTotpSecret, newTotpCode },

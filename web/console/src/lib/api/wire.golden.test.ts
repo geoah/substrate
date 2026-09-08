@@ -53,6 +53,7 @@ import type {
   ChangeRow,
   ChangeTrigger,
   Cond,
+  ErrorEnvelope,
   ErrorPayload,
   FunctionCalled,
   IncomingPage,
@@ -73,6 +74,7 @@ import type {
   PropertyMeta,
   PutInput,
   RecordFilter,
+  SessionUser,
   SetupItem,
   ShippedRecord,
   ShippedUpgrade,
@@ -96,6 +98,8 @@ type OptionalKeys<T> = {
 type Shape<T> = { [K in Exclude<keyof T, OptionalKeys<T>>]: true } & {
   [K in OptionalKeys<T>]: false
 }
+
+const errorEnvelope: Shape<ErrorEnvelope> = { error: true }
 
 const errorPayload: Shape<ErrorPayload> = {
   code: true,
@@ -316,6 +320,8 @@ const registerInput: Shape<RegisterInput> = {
   recoveryPublicKey: false,
 }
 
+const sessionUser: Shape<SessionUser> = { username: true }
+
 const registerResult: Shape<RegisterResult> = {
   ...mintedToken,
   authority: true,
@@ -473,6 +479,7 @@ const functionCalled: Shape<FunctionCalled> = { output: true, effects: true }
 const webhookAccepted: Shape<WebhookAccepted> = { fire: true }
 
 const mirrors: Record<string, Record<string, boolean>> = {
+  ErrorEnvelope: errorEnvelope,
   ErrorPayload: errorPayload,
   ProblemDetail: problemDetail,
   SubstrateRecord: substrateRecord,
@@ -501,6 +508,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   TOTPEnrollment: totpEnrollment,
   RegisterInput: registerInput,
   RegisterResult: registerResult,
+  SessionUser: sessionUser,
   AgentResult: agentResult,
   AgentEvent: agentEvent,
   CatalogBundle: catalogBundle,

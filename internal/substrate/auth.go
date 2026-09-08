@@ -49,6 +49,13 @@ type MintedToken struct {
 	Secret string    `json:"secret"`
 }
 
+// SessionUser is what a credential change answers (a password change, a TOTP
+// re-enrollment): the username the factors proved, and nothing else. No token
+// is minted, so the caller signs in again with the new material.
+type SessionUser struct {
+	Username string `json:"username"`
+}
+
 // RegisterRequest is the registration commit as the HTTP door decodes it:
 // the invite code, the username, the password, the enrollment the caller was
 // issued plus one code from it, and what a client may choose about its

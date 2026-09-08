@@ -43,7 +43,9 @@ const goldenPath = "../../web/console/src/lib/api/wire.golden.json"
 // a bare map cannot be pinned, so a handler names its reply as a struct here
 // first.
 var wireTypes = map[string]any{
-	// The error envelope: the one body every refused request answers with.
+	// The error envelope: the one body every refused request answers with,
+	// and the refusal it wraps.
+	"ErrorEnvelope": ErrorEnvelope{},
 	"ErrorPayload":  ErrorPayload{},
 	"ProblemDetail": ProblemDetail{},
 
@@ -89,6 +91,8 @@ var wireTypes = map[string]any{
 	// The console's RegisterInput and RegisterResult (auth.ts) mirror them.
 	"RegisterInput":  RegisterRequest{},
 	"RegisterResult": Registered{},
+	// A credential change's answer: the username the factors proved.
+	"SessionUser": SessionUser{},
 
 	// The agent chat stream (agents.ts): one ndjson event, and the settled
 	// result the done event carries.

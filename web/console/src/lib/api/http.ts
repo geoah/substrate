@@ -10,7 +10,7 @@
  * kind name. */
 
 import { getToken, sessionExpired } from "./session"
-import { ApiError, type ErrorCode, type ErrorPayload } from "./types"
+import { ApiError, type ErrorCode, type ErrorEnvelope } from "./types"
 
 export const API_BASE = "/api/v1"
 
@@ -76,7 +76,7 @@ export function envelopeError(
   body: unknown,
   retryAfter?: number
 ): ApiError {
-  const err = (body as { error?: Partial<ErrorPayload> } | undefined)?.error
+  const err = (body as Partial<ErrorEnvelope> | undefined)?.error
   const code = (err?.code ?? fallbackCode(status)) as ErrorCode
   const message = err?.message ?? `request failed (${status})`
   return new ApiError(

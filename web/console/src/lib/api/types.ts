@@ -47,6 +47,12 @@ export interface ErrorPayload {
   generation?: string
 }
 
+/** The body every refused request answers with (`substrate.ErrorEnvelope`):
+ * the refusal under `error`, and nothing beside it. */
+export interface ErrorEnvelope {
+  error: ErrorPayload
+}
+
 /** The one error shape every call rejects with: the REST envelope's
  * `{code, message, problems, problemDetails}` plus the HTTP status that
  * carried it. */
@@ -419,6 +425,12 @@ export interface TokenInfo {
   createdAt: string
   /** Absent = the token lives until it is deleted. */
   expiresAt?: string
+}
+
+/** What a credential change answers (`POST /password`, `POST /totp`): the
+ * username the factors proved. No token is minted; the caller signs in again. */
+export interface SessionUser {
+  username: string
 }
 
 /** A mint (login, registration or `POST /tokens`): the record, plus the secret

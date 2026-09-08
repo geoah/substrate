@@ -154,6 +154,9 @@
     "lte": false,
     "prefix": false
   },
+  "ErrorEnvelope": {
+    "error": true
+  },
   "ErrorPayload": {
     "code": true,
     "generation": false,
@@ -293,6 +296,9 @@
     "recoveryPublicKey": false,
     "secret": true,
     "token": true
+  },
+  "SessionUser": {
+    "username": true
   },
   "SetupItem": {
     "code": true,
