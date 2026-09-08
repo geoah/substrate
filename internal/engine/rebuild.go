@@ -35,7 +35,8 @@ import (
 // changelog never carried it, and a table left standing would hold whatever
 // the last live recompute left, or nothing after an import into an empty
 // database. The rebuild clears it and derives it again from the fold it just
-// replayed (rederiveOffers), so its updated_at is the derivation's time.
+// replayed (rederiveOffers); a row's updated_at is its source record's, so the
+// derived table is the live one exactly.
 //
 // Everything else survives the rebuild, and each for a stated reason:
 //
@@ -315,10 +316,10 @@ func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 		"former_ids": `SELECT to_jsonb(f) FROM (
 				SELECT record_kind, former_id, record_id, created_at
 				FROM former_ids ORDER BY record_kind, former_id) f`,
-		// Without updated_at: an offer's stamp is the time it was last derived,
-		// and a rebuild derives every row again (rederiveOffers).
+		// Whole, updated_at included: a row's stamp is its source record's
+		// (mapping.go syncOffers), so a rebuild derives it too.
 		"property_offers": `SELECT to_jsonb(o) FROM (
-				SELECT record_kind, record_id, property, actor, value
+				SELECT record_kind, record_id, property, actor, value, updated_at
 				FROM property_offers ORDER BY record_kind, record_id, property, actor) o`,
 	}
 	for name, q := range queries {

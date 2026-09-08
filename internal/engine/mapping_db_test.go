@@ -103,13 +103,20 @@ func slackManifest() enginetest.Manifest {
 // samples.substrate.reamde.dev/people, under the owner's hand.
 func installPeopleSources(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
+	installSources(t, ds, []enginetest.Manifest{googleManifest(), slackManifest()}, peopleMappings())
+}
+
+// installSources installs source manifests and then the people package's
+// mappings onto person, in that order: a mapping names its source kind.
+func installSources(t *testing.T, ds substrate.Dataset, sources []enginetest.Manifest, mappings []map[string]any) {
+	t.Helper()
 	ctx := context.Background()
-	for _, m := range []enginetest.Manifest{googleManifest(), slackManifest()} {
+	for _, m := range sources {
 		if err := enginetest.Install(ctx, ds, substrate.ActorSystem, m); err != nil {
 			t.Fatalf("register %s: %v", m.Name, err)
 		}
 	}
-	if err := enginetest.DeclareMappings(ctx, ds, peopleMappings()...); err != nil {
+	if err := enginetest.DeclareMappings(ctx, ds, mappings...); err != nil {
 		t.Fatalf("declare the person mappings: %v", err)
 	}
 }
@@ -149,6 +156,8 @@ const (
 	dirPackage   = "dir.connectors.substrate.reamde.dev/dir"
 	typeDirEntry = dirPackage + "/entry"
 	dirsync      = substrate.Actor("connector:dirsync")
+	// A second writer of the same kind, so two entries' offers are two rows.
+	dirsync2 = substrate.Actor("connector:dirsync2")
 )
 
 func dirManifest() enginetest.Manifest {
@@ -157,6 +166,7 @@ func dirManifest() enginetest.Manifest {
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(dirPackage, 1),
 			vocabulary.ActorManifest(dirPackage, string(dirsync)),
+			vocabulary.ActorManifest(dirPackage, string(dirsync2)),
 			vocabulary.KindManifest(dirPackage,
 				map[string]any{"singular": "entry", "plural": "entries"},
 				map[string]any{
@@ -191,21 +201,64 @@ func dirMapping() map[string]any {
 	})
 }
 
-// installPeopleSourcesWithDir is installPeopleSources plus the account type,
+// installPeopleSourcesWithDir is installPeopleSources plus the account kind,
 // the account-owned entry kind and its mapping onto person.
 func installPeopleSourcesWithDir(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
-	ctx := context.Background()
-	if err := enginetest.InstallAccountType(ctx, ds, substrate.ActorAPI); err != nil {
-		t.Fatalf("install account type: %v", err)
+	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
+		t.Fatalf("install the account kind: %v", err)
 	}
-	for _, m := range []enginetest.Manifest{googleManifest(), slackManifest(), dirManifest()} {
-		if err := enginetest.Install(ctx, ds, substrate.ActorSystem, m); err != nil {
-			t.Fatalf("register %s: %v", m.Name, err)
-		}
-	}
-	if err := enginetest.DeclareMappings(ctx, ds, append(peopleMappings(), dirMapping())...); err != nil {
-		t.Fatalf("declare the person mappings: %v", err)
+	installSources(t, ds,
+		[]enginetest.Manifest{googleManifest(), slackManifest(), dirManifest()},
+		append(peopleMappings(), dirMapping()))
+}
+
+// The required-property fixture: a target kind whose mapped `name` is
+// required, with the default a mapping shell needs to mint it, and one source
+// kind onto it. The target's own package declares the mapping (record 49).
+const (
+	crmPackage     = "crm.test.dev/crm"
+	typeLead       = crmPackage + "/lead"
+	typeLeadSource = crmPackage + "/leadsource"
+	crmsync        = substrate.Actor("connector:crmsync")
+)
+
+func crmManifest() enginetest.Manifest {
+	return enginetest.Manifest{
+		Name: "crm", Authority: crmPackage,
+		Manifests: []map[string]any{
+			vocabulary.PackageManifest(crmPackage, 1),
+			vocabulary.ActorManifest(crmPackage, string(crmsync)),
+			vocabulary.KindManifest(crmPackage,
+				map[string]any{"singular": "lead", "plural": "leads"},
+				map[string]any{
+					"displayTemplate": "{name}",
+					"properties": map[string]any{
+						"name":  map[string]any{"type": "string", "required": true, "default": "unnamed"},
+						"email": map[string]any{"type": "email"},
+					},
+				}),
+			vocabulary.KindManifest(crmPackage,
+				map[string]any{"singular": "leadsource", "plural": "leadsources"},
+				map[string]any{
+					"displayTemplate": "{fullName}",
+					"properties": map[string]any{
+						"fullName": map[string]any{"type": "string"},
+						"email":    map[string]any{"type": "email"},
+						"lead": map[string]any{
+							"type": "reference", "kind": typeLead,
+							"required": true, "mustExist": true, "subject": true,
+						},
+					},
+				}),
+			vocabulary.MappingManifest(crmPackage, "leadsourcelead", map[string]any{
+				"from": typeLeadSource, "to": typeLead, "property": "lead",
+				"map": map[string]any{
+					"name":  map[string]any{"path": "fullName"},
+					"email": map[string]any{"path": "email"},
+				},
+			}),
+		},
 	}
 }
 
@@ -1419,6 +1472,13 @@ func wantSubjectWithoutEntry(t *testing.T, svc substrate.Service, ds substrate.D
 	if offeredBy(p, "name", dirsync) {
 		t.Fatalf("a source outside the live set still offers name: %+v", p.PropertyMeta["name"].Alternatives)
 	}
+	wantRebuildAgrees(t, svc, ds)
+}
+
+// wantRebuildAgrees asserts a rebuild reproduces the live fold, offers
+// included, and that there are offers for it to reproduce.
+func wantRebuildAgrees(t *testing.T, svc substrate.Service, ds substrate.Dataset) {
+	t.Helper()
 	before := foldOf(t, ds)
 	if offersIn(t, before) == 0 {
 		t.Fatal("no offers survive; the rebuild comparison would prove nothing")
@@ -1429,6 +1489,116 @@ func wantSubjectWithoutEntry(t *testing.T, svc substrate.Service, ds substrate.D
 	if after := foldOf(t, ds); string(after) != string(before) {
 		t.Fatalf("the rebuilt fold is not the live one\n%s", firstDifference(before, after))
 	}
+}
+
+// A merge tombstones its loser and a split revives it, neither through the
+// delete verb or a put. When the pair are SOURCES their subject must follow:
+// after the merge only the winner contributes, after the split both do again,
+// and a rebuild, deriving from the live set, must agree at each step. The two
+// entries have different writers, so the loser's contribution is its own offer
+// row and its absence and return are observable; the accepted value after the
+// split is not asserted, because the split re-stamps both entries in one
+// transaction and the tie-break, not the revival, then picks the value.
+func TestMergedSourceLeavesItsSubject(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds := newDataset(t)
+	installPeopleSourcesWithDir(t, ds)
+
+	sam := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: typePerson, Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
+	})
+	acc := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: enginetest.AccountType, ID: "dir-acct",
+		Properties: map[string]any{"provider": "dir", "label": "Work"},
+	})
+	first := syncSource(t, ds, dirsync, typeDirEntry, "e-1", map[string]any{
+		"fullName": "Samuel J.", "nickname": "Sammy", "email": "sam@acme.com", "account": acc.ID,
+	}, sam.ID)
+	second := syncSource(t, ds, dirsync2, typeDirEntry, "e-2", map[string]any{
+		"fullName": "Samuel Jones", "nickname": "Samuel", "email": "sam@acme.com", "account": acc.ID,
+	}, sam.ID)
+	p := mustGet(t, ds, sam.Kind, sam.ID)
+	if p.Properties["displayName"] != "Samuel" || !offeredBy(p, "name", dirsync2) {
+		t.Fatalf("the later entry took neither displayName nor a name offer, so the test would prove nothing: %v %+v",
+			p.Properties["displayName"], p.PropertyMeta["name"].Alternatives)
+	}
+
+	rec, err := ds.Merge(ctx, owner, first.Kind, first.ID, second.ID)
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	p = mustGet(t, ds, sam.Kind, sam.ID)
+	if p.Properties["displayName"] != "Sammy" {
+		t.Fatalf("displayName = %v after its source lost a merge, want the winner's", p.Properties["displayName"])
+	}
+	if offeredBy(p, "name", dirsync2) {
+		t.Fatalf("a merged-away source still offers name: %+v", p.PropertyMeta["name"].Alternatives)
+	}
+	wantRebuildAgrees(t, svc, ds)
+
+	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+		t.Fatalf("split: %v", err)
+	}
+	if p = mustGet(t, ds, sam.Kind, sam.ID); !offeredBy(p, "name", dirsync2) {
+		t.Fatalf("the split revived a source that offers nothing: %+v", p.PropertyMeta["name"].Alternatives)
+	}
+	wantRebuildAgrees(t, svc, ds)
+}
+
+// Removing the last source of a REQUIRED property cannot null it: the write
+// path refuses an empty required value, and the refusal would fail the delete,
+// or the sweep on every pass. The last value stands and the offer goes.
+func TestRecomputeKeepsARequiredValueWhenItsSourceLeaves(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds := newDataset(t)
+	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, crmManifest()); err != nil {
+		t.Fatalf("install the crm fixture: %v", err)
+	}
+	// No lead named: the mapping mints the shell and the recompute fills it.
+	src := mustPut(t, ds, crmsync, substrate.PutInput{
+		Kind: typeLeadSource, ID: "ls-1",
+		Properties: map[string]any{"fullName": "Acme Corp", "email": "hi@acme.example"},
+	})
+	leadID, ok := refIDOf(mustGet(t, ds, src.Kind, src.ID), "lead", typeLead)
+	if !ok {
+		t.Fatalf("the source names no lead: %v", src.Properties["lead"])
+	}
+	lead := mustGet(t, ds, typeLead, leadID)
+	if lead.Properties["name"] != "Acme Corp" || lead.Properties["email"] != "hi@acme.example" {
+		t.Fatalf("the recompute did not fill the shell, so the test would prove nothing: %v", lead.Properties)
+	}
+
+	if _, err := ds.Delete(ctx, owner, src.Kind, src.ID); err != nil {
+		t.Fatalf("deleting the last source of a required property: %v", err)
+	}
+	lead = mustGet(t, ds, typeLead, leadID)
+	if lead.Properties["name"] != "Acme Corp" {
+		t.Fatalf("name = %v, want the last value to stand", lead.Properties["name"])
+	}
+	if _, still := lead.Properties["email"]; still {
+		t.Fatalf("email = %v, want the optional property released", lead.Properties["email"])
+	}
+	if len(lead.PropertyMeta["name"].Alternatives) != 0 {
+		t.Fatalf("a deleted source still offers name: %+v", lead.PropertyMeta["name"].Alternatives)
+	}
+	// No offers are left anywhere here, so compare the folds directly rather
+	// than through wantRebuildAgrees and its offers guard.
+	before := foldOf(t, ds)
+	if _, err := svc.(rebuilder).RebuildRepository(ctx, "geoah"); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if after := foldOf(t, ds); string(after) != string(before) {
+		t.Fatalf("the rebuilt fold is not the live one\n%s", firstDifference(before, after))
+	}
+}
+
+// refIDOf reads the id a record's pinned reference property names, when it
+// names a record of kind.
+func refIDOf(r *substrate.Record, property, kind string) (string, bool) {
+	k, id, ok := vocabulary.SplitRecordPath(refPathValue(r, property))
+	return id, ok && k == kind
 }
 
 // The sweep tombstones a source without the delete verb: the account's

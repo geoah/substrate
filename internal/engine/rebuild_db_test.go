@@ -181,6 +181,31 @@ func writeMappedHistory(t *testing.T, ds substrate.Dataset) {
 	if _, err := ds.RunGC(ctx); err != nil {
 		t.Fatalf("gc: %v", err)
 	}
+	// Two mapped TARGETS holding an offer beside an owner's hold: one
+	// tombstoned, one tombstoned and put back. The tombstone drops the
+	// target's offers and the put derives them again, so a rebuild, which
+	// derives for live records alone, agrees with both.
+	for _, who := range []struct {
+		contact, name, short, email string
+		back                        bool
+	}{
+		{"g-ada", "Ada Lovelace", "Ada", "ada@acme.example", false},
+		{"g-bo", "Bo Peep", "Bo", "bo@acme.example", true},
+	} {
+		g := syncSource(t, ds, people, typeGoogleContact, who.contact, map[string]any{
+			"name": aname(who.name), "emails": gemails(who.email),
+		})
+		pid := personOf(t, ds, g)
+		mustPatch(t, ds, owner, typePerson, pid, substrate.PatchInput{Properties: map[string]any{"name": who.short}})
+		if _, err := ds.Delete(ctx, owner, typePerson, pid); err != nil {
+			t.Fatalf("delete %s: %v", who.short, err)
+		}
+		if who.back {
+			mustPut(t, ds, owner, substrate.PutInput{
+				Kind: typePerson, ID: pid, Properties: map[string]any{"name": who.short},
+			})
+		}
+	}
 }
 
 // offersIn counts the property_offers rows a fold snapshot carries.
@@ -204,8 +229,13 @@ func TestRebuildReproducesTheFold(t *testing.T) {
 	t.Parallel()
 	svc, ds := newDataset(t)
 	cleared := writeSomeHistory(t, ds)
+	installPeopleSourcesWithDir(t, ds)
+	writeMappedHistory(t, ds)
 
 	before := foldOf(t, ds)
+	if offersIn(t, before) == 0 {
+		t.Fatal("the fold holds no property_offers; the rebuild would prove nothing about them")
+	}
 	head := maxSeq(t, ds)
 
 	rb, ok := svc.(rebuilder)

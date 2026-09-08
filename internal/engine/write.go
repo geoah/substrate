@@ -1171,6 +1171,16 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		}
 	}
 
+	// A put onto a tombstone brings a mapped target back with no offer rows:
+	// its tombstone deleted them (afterTombstone), and the sources still
+	// naming it did not recompute it while it was gone. Offers only: the
+	// values are the writer's, and a rebuild derives these same rows.
+	if sp.resurrect && !t.recomputing {
+		if err := t.syncOffersOf(sp.ref()); err != nil {
+			return nil, err
+		}
+	}
+
 	// A property DELETED on a mapped target is a release: the
 	// same transaction recomputes from live sources, so the property refills
 	// on the spot — no unpin verb, no flag lifecycle. The row is reloaded so
@@ -2538,14 +2548,11 @@ func (t *txn) softDeleteIf(ref eref, ifVersion *int64) (*substrate.Record, error
 				return nil, err
 			}
 		}
-		// Deleting a source record changes the set its subject recomputes
-		// from — and delete does not run through apply, so the trigger has
-		// to be here, or the subject keeps values no source carries. One
-		// recompute per mapping the kind carries (record 49).
-		for _, m := range t.declarations().MappingsFrom(ty.Identity) {
-			if err := t.recomputeSubjectOf(ref, m); err != nil {
-				return nil, err
-			}
+		// Delete does not run through apply, so what a tombstone owes the
+		// mapping graph runs here (mapping.go afterTombstone): the record's
+		// offers go, and the subjects it was a source of recompute without it.
+		if err := t.afterTombstone(ref); err != nil {
+			return nil, err
 		}
 	}
 	return t.record(row, ty)

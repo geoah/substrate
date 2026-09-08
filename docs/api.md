@@ -138,10 +138,9 @@ GET /api/v1/samples.substrate.reamde.dev/people/person/9f2k
         "value": "ada", "updatedAt": "2026-08-04T08:00:00Z"}]}}}
 ```
 
-An alternative's `updatedAt` is when the offer was last derived, not when the
-source wrote: the source write that changed it stamps it, and so does a
-`repository rebuild` or a restore, which derive every offer again from the
-live records ([operations](operations.md#backups)).
+An alternative's `updatedAt` is its source record's, not the target's;
+[reading provenance](projection.md#reading-provenance-propertymeta) has the
+rule.
 
 ## The five mutations
 

@@ -63,6 +63,15 @@ func (ds *dataset) gcPass(ctx context.Context) (int, error) {
 	for _, v := range victims {
 		err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 			ref := eref{Kind: v.typ, ID: v.id}
+			// The changelog lock first, as every writer's append takes it,
+			// and ahead of any record lock: the cascade below recomputes a
+			// collected child's subject, which takes record|<subject>, while
+			// a sync of that subject's source holds the changelog lock from
+			// its own append when it reaches for the same record lock. The
+			// order is changelog < record on both sides.
+			if err := t.lockKey(changelogLockKey); err != nil {
+				return err
+			}
 			row, err := t.loadRow(ref, true)
 			if err != nil || row == nil {
 				return err
@@ -130,14 +139,13 @@ func (t *txn) cascadeOwned(owner eref) error {
 			return err
 		}
 		// The tombstone takes the child out of the live set exactly as a
-		// delete of it would, so its subjects recompute here as the delete
-		// verb's do (write.go), after the entry that reports the tombstone
-		// and appending their own. It cannot wait for the purge: a child
-		// holding a finalizer stays tombstoned for good, and its subject
-		// would keep a value and an offer from a source recompute no longer
-		// counts, which a rebuild, deriving offers from live records alone,
-		// would then disagree with.
-		if err := t.recomputeSubjectsOf(ref); err != nil {
+		// delete of it would, so it owes the mapping graph the same
+		// (mapping.go afterTombstone), after the entry that reports it. It
+		// cannot wait for the purge: a child holding a finalizer stays
+		// tombstoned for good, and its subject would keep a value and an
+		// offer from a source recompute no longer counts, which a rebuild,
+		// deriving offers from live records alone, would disagree with.
+		if err := t.afterTombstone(ref); err != nil {
 			return err
 		}
 	}

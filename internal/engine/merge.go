@@ -191,18 +191,13 @@ func (t *txn) mergeRecordIf(winnerRef, loserRef eref, winnerVersion, loserVersio
 	// yield rules, so a hand edit on the winner survives its own merge.
 	// Copying values across would freeze a stale answer into the winner.
 	// The loser's MANAGER rows migrate where the winner has none — tier and
-	// all, recorded so split can put them back — and its offer rows go:
-	// they are recompute's projection, and the winner's recompute rebuilds
-	// them from the sources that moved.
+	// all, recorded so split can put them back. Its offer rows go with its
+	// tombstone (afterTombstone, below the entry).
 	movedManagers, err := t.moveManagers(loserRef, winnerRef)
 	if err != nil {
 		return nil, err
 	}
 	moved["managers"] = movedManagers
-	if _, err := t.exec(`DELETE FROM property_offers WHERE record_kind = $1 AND record_id = $2`,
-		loserRef.Kind, loserID); err != nil {
-		return nil, err
-	}
 
 	// Labels: the winner's stand, the loser's fill the gaps. The value goes
 	// into the record too, so split can tell a still-moved label from one
@@ -255,6 +250,11 @@ func (t *txn) mergeRecordIf(winnerRef, loserRef eref, winnerVersion, loserVersio
 	// sources by walking the winner's former ids (mapping.go subjectSourcesOf).
 	// Written after the entry above, so it rides that entry's effects.
 	if err := t.recordFormerID(ty.Identity, loserID, winnerID); err != nil {
+		return nil, err
+	}
+	// The loser left the live set: its offer rows go, and where it was a
+	// SOURCE its own subject recomputes without it (mapping.go afterTombstone).
+	if err := t.afterTombstone(loserRef); err != nil {
 		return nil, err
 	}
 	// The winner's source set just grew: recompute it.
@@ -700,6 +700,10 @@ func (t *txn) splitIf(mergeID string, ifVersion *int64) (*substrate.Record, erro
 		if err := t.recompute(ref); err != nil {
 			return nil, err
 		}
+	}
+	// And where the loser is a SOURCE, it contributes to its subject again.
+	if err := t.recomputeSubjectsOf(loserRef); err != nil {
+		return nil, err
 	}
 	if _, err := t.tombstone(eref{Kind: kindRecordMerge, ID: mergeID}, ""); err != nil {
 		return nil, err

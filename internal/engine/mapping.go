@@ -485,6 +485,7 @@ type mappedSource struct {
 // computed from: its live sources, latest write first, and the union of the
 // properties its mappings map.
 type mappedInputs struct {
+	ty        *vocabulary.Kind
 	srcs      []mappedSource
 	props     []string
 	unionProp map[string]bool
@@ -542,7 +543,7 @@ func (t *txn) mappedInputsOf(target eref) (*mappedInputs, error) {
 		// A link-only mapping carries structure and copies nothing.
 		return nil, nil
 	}
-	return &mappedInputs{srcs: srcs, props: props, unionProp: unionProp}, nil
+	return &mappedInputs{ty: ty, srcs: srcs, props: props, unionProp: unionProp}, nil
 }
 
 // syncOffersOf is the offers half of recompute alone: the target's
@@ -591,7 +592,17 @@ func (t *txn) recompute(target eref) error {
 			continue // yield: the offer above is the whole record of it
 		}
 		value, actor := selectValue(in.unionProp[name], contributionsFor(name, in.srcs))
-		patch[name] = value // nil deletes: release-by-omission
+		// nil deletes: release-by-omission. Not on a required property, which
+		// the write path refuses to empty (checkRequiredProps): the last value
+		// stands, credited as it was, until something writes it. Otherwise the
+		// delete or sweep that removed the property's last source would fail
+		// on the refusal, the sweep on every pass.
+		if value == nil {
+			if p, ok := in.ty.Props[name]; ok && p.Required {
+				continue
+			}
+		}
+		patch[name] = value
 		if value != nil {
 			overrides[name] = substrate.Actor(actor)
 		}
@@ -823,8 +834,13 @@ func selectValue(union bool, cands []contribution) (any, string) {
 // source contributes — computed with the same selection, restricted to that
 // actor's sources — and deletes the rows nothing live backs any more.
 // Unchanged offers write nothing.
+//
+// A row's updated_at is the updated_at of the latest source record carrying
+// the property for that actor, never the transaction's clock: the stamp is a
+// function of the live records exactly as the value is, so a rebuild, which
+// derives the table again (rebuild.go rederiveOffers), reproduces it.
 func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool, srcs []mappedSource) error {
-	current := map[offerKey]any{}
+	current := map[offerKey]offer{}
 	for _, name := range props {
 		actors := map[string]bool{}
 		for _, s := range srcs {
@@ -837,8 +853,9 @@ func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool,
 					mine = append(mine, x)
 				}
 			}
-			if v, _ := selectValue(unionProp[name], contributionsFor(name, mine)); v != nil {
-				current[offerKey{name, s.actor}] = v
+			cands := contributionsFor(name, mine)
+			if v, _ := selectValue(unionProp[name], cands); v != nil {
+				current[offerKey{name, s.actor}] = offer{value: v, at: cands[0].updatedAt}
 			}
 			actors[s.actor] = true
 		}
@@ -873,7 +890,8 @@ func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool,
 		}
 	}
 	for _, k := range sortedOfferKeys(current) {
-		raw, err := jsonb(current[k])
+		o := current[k]
+		raw, err := jsonb(o.value)
 		if err != nil {
 			return err
 		}
@@ -882,8 +900,9 @@ func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool,
 			VALUES ($1, $2, $3, $4, $5::jsonb, $6)
 			ON CONFLICT (repository, record_kind, record_id, property, actor) DO UPDATE SET
 				value = EXCLUDED.value, updated_at = EXCLUDED.updated_at
-			WHERE property_offers.value IS DISTINCT FROM EXCLUDED.value`,
-			target.Kind, target.ID, k.property, k.actor, raw, t.now); err != nil {
+			WHERE property_offers.value IS DISTINCT FROM EXCLUDED.value
+			   OR property_offers.updated_at IS DISTINCT FROM EXCLUDED.updated_at`,
+			target.Kind, target.ID, k.property, k.actor, raw, o.at); err != nil {
 			return err
 		}
 	}
@@ -893,7 +912,13 @@ func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool,
 // offerKey addresses one property_offers row.
 type offerKey struct{ property, actor string }
 
-func sortedOfferKeys(m map[offerKey]any) []offerKey {
+// offer is one row's derived content: the value and its source's stamp.
+type offer struct {
+	value any
+	at    time.Time
+}
+
+func sortedOfferKeys(m map[offerKey]offer) []offerKey {
 	out := make([]offerKey, 0, len(m))
 	for k := range m {
 		out = append(out, k)
@@ -945,6 +970,22 @@ func (t *txn) recomputeSubjectOf(src eref, m *vocabulary.Mapping) error {
 		return err
 	}
 	return t.recompute(target)
+}
+
+// afterTombstone is what every non-fold tombstone owes the mapping graph once
+// the entry reporting it is appended: softDelete, the sweep's cascade and a
+// merge's loser all call it. The record's own offer rows go, because a
+// tombstone is not a live target and a rebuild derives offers for live
+// records alone; and its subjects recompute, because as a source it has left
+// the live set. It runs after the reporting entry rather than inside the
+// tombstone so that the tombstone effect rides that entry and the
+// recompute's own patch rides its own.
+func (t *txn) afterTombstone(ref eref) error {
+	if _, err := t.exec(`DELETE FROM property_offers WHERE record_kind = $1 AND record_id = $2`,
+		ref.Kind, ref.ID); err != nil {
+		return err
+	}
+	return t.recomputeSubjectsOf(ref)
 }
 
 // recomputeSubjectsOf recomputes every subject a source record points at, one
