@@ -272,7 +272,7 @@ func (h *handler) mountResources(r chi.Router) {
 			// buys embeddings from.
 			r.Post("/embeddings/reembed", h.postReembed)
 			// The owner's recovery export: the repository directory as of
-			// one committed point, as a tar (decision 0066).
+			// one committed point, as a tar (decision 0069).
 			r.Get(exportRoute, h.getExport)
 			// Merge joins two records of one kind; split reverses a merge.
 			// Creating the command record performs the operation, so these are

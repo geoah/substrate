@@ -4,7 +4,7 @@ date: 2026-09-08
 decision-makers: George Antoniadis
 ---
 
-# 0066. The owner's export is the snapshot, streamed as a tar under the bearer token
+# 0069. The owner's export is the snapshot, streamed as a tar under the bearer token
 
 ## Context and Problem Statement
 

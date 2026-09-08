@@ -294,7 +294,7 @@ func features(seams substrate.Dataset, embeddings bool) []featureInfo {
 	_, blobs := seams.(substrate.BlobStore)
 	add(blobs, "blobs", substrate.StabilityStable, []string{surfaceREST})
 	// The recovery export is one REST verb, `GET /export`, streaming a tar
-	// in the snapshot format (decision 0066). Beta: the archive's layout is
+	// in the snapshot format (decision 0069). Beta: the archive's layout is
 	// the repository directory's and its snapshot.json is the operator's,
 	// both settled, but this is the surface's first release.
 	_, exporter := seams.(substrate.Exporter)

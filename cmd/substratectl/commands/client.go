@@ -43,7 +43,7 @@ const (
 	pathVocabulary = apiPrefix + "/vocabulary/apply"
 	pathOAuthStart = apiPrefix + "/oauth/start"
 	// pathExport is the owner's recovery export, a tar of the repository
-	// directory (decision 0066).
+	// directory (decision 0069).
 	pathExport = apiPrefix + "/export"
 )
 

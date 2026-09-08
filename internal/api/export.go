@@ -10,7 +10,7 @@ import (
 )
 
 // exportRoute is the owner's recovery export, a non-record endpoint at the
-// version root (decision 0066).
+// version root (decision 0069).
 const exportRoute = "/export"
 
 // getExport is GET /api/v1/export: the repository's directory as of one

@@ -552,7 +552,7 @@ tar laid out as a data root: `repositories/<authority>/` with
 `repository.json`, `changelog/` (every finished segment with its sidecar and
 the active segment cut at the point), `sealed/`, `blobs/` and, as the last
 entry, `snapshot.json` recording the head seq and checksum the archive holds
-([decision 0066](decisions/0066-the-owner-export-is-the-snapshot-streamed-as-a-tar.md)).
+([decision 0069](decisions/0069-the-owner-export-is-the-snapshot-streamed-as-a-tar.md)).
 The bearer token is the whole credential: a token already reads every record
 and blob the archive carries, and the sealed files in it are ciphertext under
 the repository's DEK. The server pins the point under the repository's writer

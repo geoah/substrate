@@ -1,6 +1,6 @@
 package engine
 
-// The owner's recovery export (decision 0066): one repository's directory as
+// The owner's recovery export (decision 0069): one repository's directory as
 // of one committed point, streamed as a tar laid out as a data root
 // (`repositories/<authority>/...`) in the snapshot format `repository
 // snapshot` writes (snapshot.go, decision 0065). The point is pinned under

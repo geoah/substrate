@@ -9,7 +9,7 @@ import (
 // Exporter is the owner's recovery export, an optional Dataset extension (see
 // Dataset): the repository's directory as of one committed point, streamed as
 // a tar in the layout a data root has and the format an operator's
-// `repository snapshot` writes (decision 0066). The bearer token is the whole
+// `repository snapshot` writes (decision 0069). The bearer token is the whole
 // credential, because a token already reads every record and every blob the
 // stream carries, and the sealed files in it are ciphertext under a key the
 // stream does not hold.
