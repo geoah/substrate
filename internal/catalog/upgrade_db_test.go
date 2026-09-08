@@ -8,6 +8,7 @@ package catalog_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -239,32 +240,73 @@ func TestUpgradePreviewReportsBlockers(t *testing.T) {
 	}
 
 	shipped := shippedVersion(t, c)
-	moved := movedTasksCatalog(t, map[string]func(string) string{
+	const urlDecl = "    url:\n      type: url\n      description: where this task lives outside the substrate\n"
+	const nameDecl = "    name:\n      type: string\n      description: the task's heading, one line\n"
+	// Binary N+1 drops `url` and makes `name` required: the drop is a lossy
+	// null step over the live row (decision 0067), the requirement a
+	// narrowing no step covers, so the preview reports both the blocker and
+	// the plan.
+	blocked := movedTasksCatalog(t, map[string]func(string) string{
 		"bundle.yaml": func(doc string) string { return bumpTasksPackage(t, shipped, doc) },
 		"task.yaml": func(doc string) string {
 			doc = bumpTaskPin(t, doc)
-			return mustReplace(t, doc,
-				"    url:\n      type: url\n      description: where this task lives outside the substrate\n", "")
+			doc = mustReplace(t, doc, urlDecl, "")
+			return mustReplace(t, doc, nameDecl,
+				"    name:\n      type: string\n      required: true\n      description: the task's heading, one line\n")
 		},
 	})
-	up, err := moved.Upgrade(ctx, tasksBundleID, ds)
+	up, err := blocked.Upgrade(ctx, tasksBundleID, ds)
 	if err != nil {
 		t.Fatalf("preview of the narrowing closure: %v", err)
 	}
 	if up == nil || !up.Available {
 		t.Fatalf("a moved closure previews no upgrade: %+v", up)
 	}
-	if len(up.Blockers) == 0 {
-		t.Fatal("a narrowing upgrade previews no blockers")
+	if len(up.Blockers) != 1 || !strings.Contains(up.Blockers[0], `"name"`) || !strings.Contains(up.Blockers[0], "1 live record") {
+		t.Fatalf("the narrowing is not the one blocker naming the property and the count: %v", up.Blockers)
 	}
-	if !strings.Contains(up.Blockers[0], `"url"`) || !strings.Contains(up.Blockers[0], "1 live record") {
-		t.Errorf("the blocker does not name the property and the count: %v", up.Blockers)
+	if !up.Lossy || len(up.Steps) != 1 || up.Steps[0].Step != substrate.StepNull || up.Steps[0].Property != "url" || up.Steps[0].Records != 1 {
+		t.Fatalf("the preview does not plan the null step beside the blocker: %+v", up.ConversionPlan)
+	}
+	// The preview's blocker IS the install door's refusal.
+	if _, _, err := blocked.Install(ctx, substrate.ActorAPI, tasksBundleID, ds); err == nil {
+		t.Fatal("the install door admitted the closure the preview reported blocked")
+	} else if !strings.Contains(err.Error(), `"name"`) {
+		t.Errorf("the refusal does not name the property the preview named: %v", err)
 	}
 
-	// The preview's blocker IS the install door's refusal.
-	if _, _, err := moved.Install(ctx, substrate.ActorAPI, tasksBundleID, ds); err == nil {
-		t.Fatal("the install door admitted the closure the preview reported blocked")
-	} else if !strings.Contains(err.Error(), `"url"`) {
-		t.Errorf("the refusal does not name the property the preview named: %v", err)
+	// Dropping `url` alone blocks nothing: the plan is lossy, the door
+	// refuses it without the previewed pair, naming the property, and lands
+	// it with them. Nothing is renamed, so the legacy list stays empty.
+	lossy := movedTasksCatalog(t, map[string]func(string) string{
+		"bundle.yaml": func(doc string) string { return bumpTasksPackage(t, shipped, doc) },
+		"task.yaml": func(doc string) string {
+			return mustReplace(t, bumpTaskPin(t, doc), urlDecl, "")
+		},
+	})
+	if up, err = lossy.Upgrade(ctx, tasksBundleID, ds); err != nil {
+		t.Fatalf("preview of the lossy closure: %v", err)
+	}
+	if up == nil || !up.Available || len(up.Blockers) != 0 || !up.Lossy || up.Work != 1 || up.PlanHash == "" {
+		t.Fatalf("a lossy drop previews as %+v", up)
+	}
+	if len(up.Renames) != 0 { //nolint:staticcheck // the deprecated field is still served, and must stay empty here
+		t.Fatalf("a drop previews renames: %+v", up.Renames) //nolint:staticcheck // as above
+	}
+	if _, _, err := lossy.Install(ctx, substrate.ActorAPI, tasksBundleID, ds); err == nil {
+		t.Fatal("the install door admitted a lossy plan without a confirmation")
+	} else if !errors.Is(err, substrate.ErrLossyConversion) || !strings.Contains(err.Error(), `"url"`) {
+		t.Errorf("the refusal is not the lossy one naming the property: %v", err)
+	}
+	confirm := &substrate.ConversionConfirm{PlanHash: up.PlanHash, ChangelogSeq: up.ChangelogSeq}
+	if _, _, err := lossy.InstallConfirmed(ctx, substrate.ActorAPI, tasksBundleID, ds, confirm); err != nil {
+		t.Fatalf("the confirmed install must land: %v", err)
+	}
+	got, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "guarded")
+	if err != nil {
+		t.Fatalf("get the converted row: %v", err)
+	}
+	if got.Properties["url"] != nil {
+		t.Fatalf("the null step did not remove the value: %v", got.Properties)
 	}
 }

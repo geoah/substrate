@@ -85,16 +85,25 @@ type BundleUpgrade struct {
 	// Changes lists each declaration the upgrade would move.
 	Changes []BundleUpgradeChange `json:"changes,omitempty"`
 	// Blockers are the refuse-breakage guard lines the install verb would
-	// refuse this closure on: the same guards, with the live-row counts.
-	// Empty means the upgrade would be admitted.
+	// refuse this closure on: the same guards, with the live-row counts, and
+	// a conversion above the work ceiling. Empty means the upgrade would be
+	// admitted, with a confirmation where Lossy says so.
 	Blockers []string `json:"blockers,omitempty"`
-	// Renames lists each property the upgrade moves live values for
-	// (`renamedFrom`, decision 0063), with the number of live records the
-	// move rewrites: one changelog entry each.
+	// The record rewrites the upgrade performs, counted against the live
+	// records (decision 0067).
+	ConversionPlan
+	// Renames is the plan's rename steps in the shape this field had before
+	// Steps existed, derived from Steps and never a second count.
+	//
+	// Deprecated: read Steps, where a rename is `step: rename`. The field
+	// stays because the bundles feature is stable and frozen means additive
+	// only (decision 0067).
 	Renames []BundleUpgradeRename `json:"renames,omitempty"`
 }
 
-// BundleUpgradeRename is one property rename an upgrade performs.
+// BundleUpgradeRename is one property rename an upgrade performs, the shape
+// the deprecated BundleUpgrade.Renames carries; a ConversionStep with
+// StepRename says the same and more.
 type BundleUpgradeRename struct {
 	// Kind is the full reference of the kind whose property moves.
 	Kind string `json:"kind"`
@@ -104,6 +113,81 @@ type BundleUpgradeRename struct {
 	// Records is the number of live records carrying the old name, each of
 	// which the upgrade rewrites.
 	Records int64 `json:"records"`
+}
+
+// ConversionPlan is the composed set of record rewrites a declaration change
+// performs on the live records (decisions 0063, 0066 and 0067), as the two
+// previews report it and the two doors run it. Every count is a number, never
+// a record id: the plan says how much moves, and the changelog says what did.
+type ConversionPlan struct {
+	// Steps lists each rewrite with the live records it touches, in kind then
+	// step order. A step touching no record is not listed.
+	Steps []ConversionStep `json:"steps,omitempty"`
+	// Work is the estimated cost: the sum of the steps' record counts, an
+	// upper bound on the changelog entries the transaction appends (a record
+	// several steps touch is rewritten once). A plan whose Work is above the
+	// deployment's ceiling (SUBSTRATE_CONVERSION_CEILING, in records, 10000
+	// by default) is refused.
+	Work int64 `json:"work"`
+	// Lossy reports the plan collapses a distinction live records hold: a
+	// `null` step, or a remap onto a value some live record already holds (or
+	// that another remap lands its records on), judged across the whole plan. A lossy plan runs only with a ConversionConfirm
+	// carrying this plan's PlanHash and ChangelogSeq; a lossless one runs
+	// unconfirmed. The old values stay in the changelog either way: a lossy
+	// step removes them from the fold and nothing erases them.
+	Lossy bool `json:"lossy"`
+	// PlanHash identifies the plan: a hash over the steps and their counts.
+	// Empty when nothing was planned.
+	PlanHash string `json:"planHash,omitempty"`
+	// ChangelogSeq is the repository's changelog head when the plan was
+	// counted. Any write moves it, and a confirmation carrying another seq is
+	// refused.
+	ChangelogSeq int64 `json:"changelogSeq,omitempty"`
+}
+
+// ConversionStep is one record rewrite a declaration change performs.
+type ConversionStep struct {
+	// Step is the rewrite: StepRename, StepBackfill, StepRemap or StepNull.
+	Step string `json:"step"`
+	// Kind is the full reference of the kind whose records move.
+	Kind string `json:"kind"`
+	// Property is the property the step writes, under the name the candidate
+	// declaration gives it (a rename's To; a null's dropped name).
+	Property string `json:"property"`
+	// From and To are a rename's old and new property names, or a remap's old
+	// and new values. Empty on a backfill and a null.
+	From string `json:"from,omitempty"`
+	To   string `json:"to,omitempty"`
+	// Records is the number of live records the step rewrites.
+	Records int64 `json:"records"`
+	// Lossy marks a step that removes values from the fold: every null, and a
+	// remap whose target some live record already holds.
+	Lossy bool `json:"lossy,omitempty"`
+}
+
+// ConversionStep.Step values, in the order the engine runs them on a record.
+const (
+	// StepRename moves a property's value to its new name (`renamedFrom`).
+	StepRename = "rename"
+	// StepBackfill writes a property's declared default onto every record
+	// holding no value for it, where the property becomes required.
+	StepBackfill = "backfill"
+	// StepRemap rewrites an enum value to its new spelling (`renamedFrom` on
+	// the value entry).
+	StepRemap = "remap"
+	// StepNull removes a dropped property's value from every record carrying
+	// it. Always lossy.
+	StepNull = "null"
+)
+
+// ConversionConfirm is the caller's consent to a lossy plan, bound to what
+// was previewed: the plan's hash and the changelog head it was counted at.
+// The door recounts the plan under its locks and refuses a confirmation whose
+// seq is not the current head (a write landed since the preview) or whose
+// hash is not the recounted plan's (the consent covers a different plan).
+type ConversionConfirm struct {
+	PlanHash     string `json:"planHash"`
+	ChangelogSeq int64  `json:"changelogSeq"`
 }
 
 // BundleUpgradeChange is one declaration an upgrade would move.
@@ -248,12 +332,16 @@ type BundleInstall struct {
 	// apply leave both empty and stamp nothing.
 	Origin        string
 	OriginVersion int64
+	// Confirm is the caller's consent to a lossy conversion plan, or nil. The
+	// install refuses a lossy plan without one and a lossless plan ignores it
+	// (decision 0067).
+	Confirm *ConversionConfirm
 }
 
 // BundleUpgradePlanner is the read-only preview beside BundleInstaller, an
 // optional Dataset extension (see Dataset): what installing the shipped
-// closure over the stored declarations would move, and the guard lines the
-// install would refuse it on.
+// closure over the stored declarations would move, the guard lines the
+// install would refuse it on, and the conversion plan it would run.
 type BundleUpgradePlanner interface {
 	PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[string]any) (BundleUpgrade, error)
 }

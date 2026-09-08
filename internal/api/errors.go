@@ -18,9 +18,14 @@ import (
 // (unavailable) from "never here" (unsupported) from "genuine fault"
 // (internal). `compacted` is the changelog's one 410 signal.
 const (
-	codeValidation  = "validation"   // 422
-	codeConflict    = "conflict"     // 409
-	codeGuard       = "guard"        // 403
+	codeValidation = "validation" // 422
+	codeConflict   = "conflict"   // 409
+	codeGuard      = "guard"      // 403
+	// codeLossy is 403: a declaration change whose conversion plan removes
+	// values from the fold arrived without a confirmation for that plan
+	// (substrate.ErrLossyConversion). Distinct from codeGuard so a client
+	// knows to preview the plan and confirm it rather than migrate records.
+	codeLossy       = "lossy"        // 403
 	codeNotFound    = "not_found"    // 404
 	codeForbidden   = "forbidden"    // 403
 	codeAuth        = "auth"         // 401
@@ -118,6 +123,8 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 		return http.StatusNotFound, substrate.ErrorPayload{Code: codeNotFound, Message: err.Error()}
 	case errors.Is(err, substrate.ErrConflict):
 		return http.StatusConflict, substrate.ErrorPayload{Code: codeConflict, Message: err.Error()}
+	case errors.Is(err, substrate.ErrLossyConversion):
+		return http.StatusForbidden, substrate.ErrorPayload{Code: codeLossy, Message: err.Error()}
 	case errors.Is(err, substrate.ErrGuard):
 		return http.StatusForbidden, substrate.ErrorPayload{Code: codeGuard, Message: err.Error()}
 	case errors.Is(err, substrate.ErrForbidden):

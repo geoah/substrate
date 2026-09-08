@@ -175,7 +175,13 @@ holds it, the version the binary ships and, where the server previewed an
 is admitted and waits for the boot upgrade. Each blocked upgrade's guard lines print
 under the table; they name the kind, the property and the count of live
 records holding the old shape, which is what to migrate before the upgrade
-lands. `-o json` prints the same rows.
+lands. So do the conversion steps an upgrade would run, each with the live
+records it rewrites; a step marked lossy removes values from the fold, and a
+provider upgrade with one runs only as `substratectl install <provider>
+--allow-data-loss`, which reads the preview again, prints the steps and
+confirms exactly that plan ([bundles](bundles.md#install-and-lifecycle)).
+`substratectl apply --allow-data-loss` does the same for a schema change of
+your own. `-o json` prints the same rows.
 
 ## Exporting
 

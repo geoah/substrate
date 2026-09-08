@@ -19,7 +19,7 @@ import (
 func (a *app) applyCommand() *cobra.Command {
 	var files []string
 	var as string
-	var asMine bool
+	var asMine, allowDataLoss bool
 	cmd := &cobra.Command{
 		Use:   "apply -f FILE",
 		Short: "Create or update records from manifests",
@@ -72,7 +72,15 @@ the documents are authored under is rewritten to the one named, which is what
 importing a shipped sample by hand takes (` + "`substratectl import`" + ` does
 the same server-side). ` + "`--as-mine`" + ` uses the authority this context
 logged in with. The input must be authored under a single authority, the
-target must be one a repository may own, and core references are untouched.`,
+target must be one a repository may own, and core references are untouched.
+
+A schema change that removes values from stored records (a dropped property
+records still carry, an enum value renamed onto one the declaration keeps) is
+refused until it is confirmed. --allow-data-loss previews the plan first
+(` + "`POST /api/v1/vocabulary/plan`" + `), prints the steps that remove
+values with the records each touches, and confirms exactly that plan: a write
+that lands in between, or a plan that reads differently, is refused again.
+The removed values stay in the changelog.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if len(files) == 0 {
@@ -109,7 +117,7 @@ target must be one a repository may own, and core references are untouched.`,
 			// admitted or none — so the record documents behind them can use
 			// the types they declare.
 			if len(vocabularyDocs) > 0 {
-				if err := a.applySchemaDocuments(cmd.Context(), cl, vocabularyDocs); err != nil {
+				if err := a.applySchemaDocuments(cmd.Context(), cl, vocabularyDocs, allowDataLoss); err != nil {
 					return err
 				}
 			}
@@ -127,6 +135,7 @@ target must be one a repository may own, and core references are untouched.`,
 	// treats a string flag's empty NoOptDefVal as "a value is required", so
 	// `--as` alone would be a usage error rather than a default.
 	cmd.Flags().BoolVar(&asMine, "as-mine", false, "rehome the input under this repository's own authority")
+	cmd.Flags().BoolVar(&allowDataLoss, "allow-data-loss", false, "preview the schema change and confirm the plan even where it removes values from stored records")
 	return cmd
 }
 
@@ -315,9 +324,30 @@ func isSchemaDocument(node *yaml.Node) bool {
 		vocabulary.VocabularyDocumentKind(vocabulary.KindName(probe.Kind))
 }
 
-// applySchemaDocuments sends one schema batch and prints what landed.
-func (a *app) applySchemaDocuments(ctx context.Context, cl *client, docs []map[string]any) error {
-	ents, err := cl.applyVocabulary(ctx, docs)
+// applySchemaDocuments sends one schema batch and prints what landed. With
+// allowDataLoss it previews the batch first and, where the plan is lossy,
+// prints the steps that remove values and confirms that plan and no other:
+// the consent the server takes is the preview's hash and changelog head, so a
+// bare "yes" is never sent (decision 0067). A lossless plan needs no consent
+// and is applied as it is.
+func (a *app) applySchemaDocuments(ctx context.Context, cl *client, docs []map[string]any, allowDataLoss bool) error {
+	var confirm *substrate.ConversionConfirm
+	if allowDataLoss {
+		plan, err := cl.planVocabulary(ctx, docs)
+		if err != nil {
+			return err
+		}
+		if plan.Lossy {
+			fmt.Fprintf(a.out, "confirming plan %s at changelog seq %d, which removes values:\n", plan.PlanHash, plan.ChangelogSeq)
+			for _, s := range plan.Steps {
+				if s.Lossy {
+					fmt.Fprintf(a.out, "  %s\n", stepLine(s))
+				}
+			}
+			confirm = &substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
+		}
+	}
+	ents, err := cl.applyVocabulary(ctx, docs, confirm)
 	if err != nil {
 		return err
 	}

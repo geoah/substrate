@@ -41,7 +41,10 @@ const (
 const (
 	pathChanges    = apiPrefix + "/changes"
 	pathVocabulary = apiPrefix + "/vocabulary/apply"
-	pathOAuthStart = apiPrefix + "/oauth/start"
+	// pathVocabularyPlan is the apply's preview: the same documents, nothing
+	// written, the conversion plan answered (decision 0067).
+	pathVocabularyPlan = apiPrefix + "/vocabulary/plan"
+	pathOAuthStart     = apiPrefix + "/oauth/start"
 	// pathExport is the owner's recovery export, a tar of the repository
 	// directory (decision 0069).
 	pathExport = apiPrefix + "/export"
@@ -298,16 +301,33 @@ func (c *client) delete(ctx context.Context, pkg, kind, id string) (*substrate.R
 }
 
 // applyVocabulary sends a batch of schema documents to the one apply verb:
-// every document admitted or none, one transaction, activation on commit.
-func (c *client) applyVocabulary(ctx context.Context, docs []map[string]any) ([]*substrate.Record, error) {
+// every document admitted or none, one transaction, activation on commit. A
+// confirmation, when given, is the consent to a lossy conversion plan the
+// server previewed (planVocabulary), bound to that preview's hash and
+// changelog head.
+func (c *client) applyVocabulary(ctx context.Context, docs []map[string]any, confirm *substrate.ConversionConfirm) ([]*substrate.Record, error) {
 	var out struct {
 		Records []*substrate.Record `json:"records"`
 	}
 	body := map[string]any{"documents": docs}
+	if confirm != nil {
+		body["confirm"] = confirm
+	}
 	if err := c.do(ctx, http.MethodPost, pathVocabulary, nil, body, &out); err != nil {
 		return nil, err
 	}
 	return out.Records, nil
+}
+
+// planVocabulary asks what applying the batch would refuse and rewrite,
+// without applying it: the conversion steps with their counts, whether the
+// plan is lossy, and the hash and changelog head a confirmation names.
+func (c *client) planVocabulary(ctx context.Context, docs []map[string]any) (*substrate.VocabularyPlan, error) {
+	var out substrate.VocabularyPlan
+	if err := c.do(ctx, http.MethodPost, pathVocabularyPlan, nil, map[string]any{"documents": docs}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // --- the door: register, login, the credential changes, tokens -------------

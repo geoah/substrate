@@ -118,6 +118,10 @@ type vocabularyBatch struct {
 	// re-projection preserves them.
 	origin        string
 	originVersion int64
+	// confirm is the caller's consent to a lossy conversion plan, or nil: the
+	// batch refuses a lossy plan without one, or with one for another plan or
+	// an older changelog head (convert.go admitConversion, decision 0067).
+	confirm *substrate.ConversionConfirm
 	// beforeGuards runs INSIDE the batch transaction, right after the
 	// registry-dependency lock and BEFORE the refuse-breakage guards: a bundle
 	// uninstall tears its delivery wiring (triggers referencing the owned
@@ -161,8 +165,16 @@ func parseVocabularyDocs(raw []map[string]any) ([]vocabulary.Document, error) {
 
 // ApplyVocabularyDocuments is the batch apply verb: every document admitted or
 // none, one transaction, activation on commit. Documents wear the same
-// kind/metadata/data envelope the loader has always parsed.
+// kind/metadata/data envelope the loader has always parsed. A batch whose
+// conversion plan is lossy is refused here: ApplyVocabularyDocumentsWith
+// carries the confirmation.
 func (ds *dataset) ApplyVocabularyDocuments(ctx context.Context, actor substrate.Actor, raw []map[string]any) ([]*substrate.Record, error) {
+	return ds.ApplyVocabularyDocumentsWith(ctx, actor, raw, substrate.VocabularyApply{})
+}
+
+// ApplyVocabularyDocumentsWith is ApplyVocabularyDocuments carrying the
+// caller's decisions: the confirmation a lossy plan needs (decision 0067).
+func (ds *dataset) ApplyVocabularyDocumentsWith(ctx context.Context, actor substrate.Actor, raw []map[string]any, opts substrate.VocabularyApply) ([]*substrate.Record, error) {
 	if len(raw) == 0 {
 		return nil, fmt.Errorf("%w: no documents", substrate.ErrValidation)
 	}
@@ -170,7 +182,7 @@ func (ds *dataset) ApplyVocabularyDocuments(ctx context.Context, actor substrate
 	if err != nil {
 		return nil, err
 	}
-	written, err := ds.applyVocabularyBatch(ctx, actor, vocabularyBatch{docs: docs})
+	written, err := ds.applyVocabularyBatch(ctx, actor, vocabularyBatch{docs: docs, confirm: opts.Confirm})
 	if err != nil {
 		return nil, err
 	}
@@ -181,6 +193,39 @@ func (ds *dataset) ApplyVocabularyDocuments(ctx context.Context, actor substrate
 		}
 	}
 	return out, nil
+}
+
+// PlanVocabularyApply is the batch apply verb's preview: the same staging and
+// the same guard counts ApplyVocabularyDocuments runs, over the bare pool, and
+// the conversion plan it would run, with the hash and the changelog head a
+// confirmation names. It writes nothing. What the apply would refuse before
+// any count (a document the loader refuses, a package this actor may not
+// write) is the same error here, because a preview of an inadmissible batch
+// is that refusal.
+func (ds *dataset) PlanVocabularyApply(ctx context.Context, actor substrate.Actor, raw []map[string]any) (substrate.VocabularyPlan, error) {
+	var plan substrate.VocabularyPlan
+	if len(raw) == 0 {
+		return plan, fmt.Errorf("%w: no documents", substrate.ErrValidation)
+	}
+	docs, err := parseVocabularyDocs(raw)
+	if err != nil {
+		return plan, err
+	}
+	st, err := ds.stageVocabularyBatch(ctx, ds.registry(), &actor, vocabularyBatch{docs: docs})
+	if err != nil {
+		return plan, err
+	}
+	q := dbReader{ctx: ctx, db: ds.db}
+	if plan.Blockers, err = st.guards(q); err != nil {
+		return plan, err
+	}
+	if plan.ConversionPlan, err = st.conversions.wire(q); err != nil {
+		return plan, err
+	}
+	if line := ceilingGuard(plan.ConversionPlan, ds.svc.conversionCeiling); line != "" {
+		plan.Blockers = append(plan.Blockers, line)
+	}
+	return plan, nil
 }
 
 // InstallBundleClosure admits a bundle's schema closure AND its shipped data
@@ -206,6 +251,7 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 		published:     opts.Published,
 		origin:        opts.Origin,
 		originVersion: opts.OriginVersion,
+		confirm:       opts.Confirm,
 		extra: func(t *txn) error {
 			for _, in := range dataDocs {
 				// A trigger's callable is validated against the candidate here
@@ -344,31 +390,23 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		// rows, a dropped type another package's mapping names as its source,
 		// a narrowing definition diff stranding live rows, and (bundle
 		// authorities) a dropped callable live triggers name.
-		guards, err := droppedTypeGuards(t, st.droppedTypes)
+		guards, err := st.guards(t)
 		if err != nil {
 			return err
 		}
-		guards = append(guards, st.strandedMappings...)
-		guards = append(guards, st.retirements...)
-		guards = append(guards, st.conversionGuards...)
-		narrowed, err := narrowingGuards(t, st.narrowings)
-		if err != nil {
-			return err
-		}
-		guards = append(guards, narrowed...)
-		more, err := droppedCallableGuards(t, st.droppedCallables)
-		if err != nil {
-			return err
-		}
-		guards = append(guards, more...)
 		if len(guards) > 0 {
-			// A lossy conversion among the refusals is named as one, so a
-			// caller can tell it from a narrowing that writing the records
-			// would clear (convert.go).
-			if len(st.conversions.lossy) > 0 {
-				return fmt.Errorf("%w: %w: %s", substrate.ErrGuard, substrate.ErrLossyConversion, strings.Join(guards, "; "))
-			}
 			return fmt.Errorf("%w: %s", substrate.ErrGuard, strings.Join(guards, "; "))
+		}
+		// The conversion plan, counted under the locks this transaction
+		// holds, so the hash a preview handed out is recomputed over the same
+		// records or refused: the work ceiling, then the confirmation a lossy
+		// plan needs (convert.go, decision 0067).
+		plan, err := st.conversions.wire(t)
+		if err != nil {
+			return err
+		}
+		if err := admitConversion(plan, ds.svc.conversionCeiling, b.confirm); err != nil {
+			return err
 		}
 		if err := t.checkSchemaCAS(b.meta); err != nil {
 			return err
@@ -511,11 +549,36 @@ type vocabularyStage struct {
 	reprojectedFTS []string
 	narrowings     []narrowing
 	// conversions are the record rewrites the candidate declares (a rename, a
-	// backfill, a remap: convert.go), performed inside the transaction after
-	// the projection; conversionGuards names what refuses the batch without a
-	// count: a reader of a renamed name (renameGuards) and a lossy remap.
+	// backfill, a remap, a null: convert.go), performed inside the transaction
+	// after the projection and admitted by admitConversion once the guards
+	// pass; conversionGuards names what refuses the batch without a count: a
+	// reader of a renamed name (renameGuards).
 	conversions      conversionPlan
 	conversionGuards []string
+}
+
+// guards is every refuse-breakage guard line the staged batch refuses on, read
+// through q: the apply door runs it inside its transaction, the two previews
+// (PlanBundleUpgrade, PlanVocabularyApply) over the bare pool. One list, so
+// what a preview reports blocked is what the door refuses.
+func (st *vocabularyStage) guards(q sqlReader) ([]string, error) {
+	guards, err := droppedTypeGuards(q, st.droppedTypes)
+	if err != nil {
+		return nil, err
+	}
+	guards = append(guards, st.strandedMappings...)
+	guards = append(guards, st.retirements...)
+	guards = append(guards, st.conversionGuards...)
+	narrowed, err := narrowingGuards(q, st.narrowings)
+	if err != nil {
+		return nil, err
+	}
+	guards = append(guards, narrowed...)
+	stranded, err := droppedCallableGuards(q, st.droppedCallables)
+	if err != nil {
+		return nil, err
+	}
+	return append(guards, stranded...), nil
 }
 
 // stageVocabularyBatch builds the batch's candidate registry and classifies
@@ -730,13 +793,13 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		// stored definitions and refused while live rows would be stranded,
 		// with the count. Additive changes pass through untouched (schemadiff.go).
 		narrowings: classifyNarrowings(current, candidate, touched),
-		// A rename, a backfill and a remap are neither: the transaction
-		// rewrites the live records (convert.go), and what refuses them is a
-		// reader of the old name the candidate cannot see, or a remap that
-		// would collapse two stored values.
-		conversions: conversions,
-		conversionGuards: append(renameGuards(current, candidate, conversions.renames),
-			conversions.lossy...),
+		// A rename, a backfill, a remap and a null are neither: the
+		// transaction rewrites the live records (convert.go), and what refuses
+		// them without a count is a reader of the old name the candidate
+		// cannot see. A lossy plan is admitted by confirmation, not refused
+		// here (admitConversion).
+		conversions:      conversions,
+		conversionGuards: renameGuards(current, candidate, conversions.renames),
 	}, nil
 }
 

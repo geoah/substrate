@@ -173,14 +173,14 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 	}
 	st.refused = append(st.refused, problems...)
 	st.candidate = candidate
-	// A shipped rename, backfill or remap is not a narrowing: the boot
+	// A shipped rename, backfill, remap or null is not a narrowing: the boot
 	// rewrites the live records in the same transaction, against the
 	// candidate (convert.go, decisions 0063 and 0066). What refuses one beyond
 	// the compile is a stored template reading a renamed name through a
-	// reference (renameGuards), read through the candidate, and a remap that
-	// would collapse two stored values, which this door never runs.
+	// reference (renameGuards), read through the candidate; a lossy step and a
+	// plan above the work ceiling refuse once counted (guards), because this
+	// door has nobody to confirm them (decision 0067).
 	st.conversions = classifyConversions(current, reg, st.upgrade, keptIdents)
-	st.refused = append(st.refused, st.conversions.lossy...)
 	if candidate != nil {
 		st.refused = append(st.refused, renameGuards(current, candidate, st.conversions.renames)...)
 	}
@@ -259,22 +259,43 @@ func (ds *dataset) shippedCandidate(ctx context.Context, current, reg *vocabular
 }
 
 // guards is every guard line the staged upgrade refuses on: the ones decided
-// without a count, then each narrowing whose count strands live rows, read
-// through q. Empty means the upgrade would be admitted.
-func (st *shippedUpgradeStage) guards(q sqlReader) ([]string, error) {
+// without a count, then each narrowing whose count strands live rows, then
+// the conversion plan's own refusals, read through q. Empty means the upgrade
+// would be admitted. The plan comes back with the lines, counted once: the
+// boot runs it, the preview reports it.
+//
+// The boot upgrade runs unattended, so a lossy step (convert.go) has nobody to
+// confirm it and refuses here: the repository opens on its stored
+// declarations, the preview names the step, and rewriting the records it
+// counts (or applying the change through a door that can confirm it) is what
+// clears the line. A plan above the work ceiling refuses for the same reason
+// the apply door refuses it.
+func (st *shippedUpgradeStage) guards(q sqlReader, ceiling int64) ([]string, substrate.ConversionPlan, error) {
 	counted, err := narrowingGuards(q, st.narrowings)
 	if err != nil {
-		return nil, err
+		return nil, substrate.ConversionPlan{}, err
 	}
-	return append(append([]string(nil), st.refused...), counted...), nil
+	lines := append(append([]string(nil), st.refused...), counted...)
+	plan, err := st.conversions.wire(q)
+	if err != nil {
+		return nil, plan, err
+	}
+	for _, line := range lossyLines(plan) {
+		lines = append(lines, line+"; the boot upgrade runs unattended and never runs a lossy step, so a lossy conversion is refused here: rewrite the records it counts first")
+	}
+	if line := ceilingGuard(plan, ceiling); line != "" {
+		lines = append(lines, line)
+	}
+	return lines, plan, nil
 }
 
 // PlanShippedUpgrade reports what this binary's boot upgrade would do to each
 // shipped package here, and the guard lines it refuses on: the same staging
 // and the same counts the boot runs (st.guards), over the bare pool, writing
 // nothing. The boot refuses the shipped set as a whole, so every package with
-// something to write carries the whole list, which is exactly the list the
-// refusal logged.
+// something to write carries the whole blocker list, which is exactly the list
+// the refusal logged; the conversion steps are each package's own
+// (packagePlan), because they rewrite that package's kinds.
 func (ds *dataset) PlanShippedUpgrade(ctx context.Context) ([]substrate.ShippedUpgrade, error) {
 	st, err := ds.stageShippedUpgrade(ctx)
 	if err != nil {
@@ -283,12 +304,7 @@ func (ds *dataset) PlanShippedUpgrade(ctx context.Context) ([]substrate.ShippedU
 	if len(st.upgrade) == 0 {
 		return st.plans, nil
 	}
-	q := dbReader{ctx: ctx, db: ds.db}
-	blockers, err := st.guards(q)
-	if err != nil {
-		return nil, err
-	}
-	renames, err := renamePlans(q, st.conversions.renames)
+	blockers, plan, err := st.guards(dbReader{ctx: ctx, db: ds.db}, ds.svc.conversionCeiling)
 	if err != nil {
 		return nil, err
 	}
@@ -297,13 +313,8 @@ func (ds *dataset) PlanShippedUpgrade(ctx context.Context) ([]substrate.ShippedU
 			continue
 		}
 		st.plans[i].Upgrade.Blockers = blockers
-		// A rename belongs to the package whose kind declares it; the blockers
-		// are the whole set, because the boot refuses the shipped set whole.
-		for _, r := range renames {
-			if vocabulary.KindPackage(r.Kind) == st.plans[i].Package {
-				st.plans[i].Upgrade.Renames = append(st.plans[i].Upgrade.Renames, r)
-			}
-		}
+		st.plans[i].Upgrade.ConversionPlan = packagePlan(plan, st.plans[i].Package)
+		st.plans[i].Upgrade.Renames = legacyRenames(st.plans[i].Upgrade.Steps) //nolint:staticcheck // the deprecated field is produced here for readers that still read it
 	}
 	return st.plans, nil
 }

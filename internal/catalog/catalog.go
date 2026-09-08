@@ -383,6 +383,14 @@ func (c *Catalog) Warnings() []string { return c.warnings }
 // `authorizeNewPackage` sanctions. It takes the same suggested-mapping filter
 // an import does.
 func (c *Catalog) Install(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset) (*Bundle, []substrate.SuggestedMapping, error) {
+	return c.InstallConfirmed(ctx, actor, id, ds, nil)
+}
+
+// InstallConfirmed is Install carrying the caller's consent to a lossy
+// conversion plan (decision 0067): the hash and changelog head the upgrade
+// preview (Upgrade) answered. The engine refuses a lossy plan without one, or
+// with one for another plan; a lossless plan ignores it.
+func (c *Catalog) InstallConfirmed(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset, confirm *substrate.ConversionConfirm) (*Bundle, []substrate.SuggestedMapping, error) {
 	b, err := c.installable(actor, id)
 	if err != nil {
 		return nil, nil, err
@@ -402,7 +410,7 @@ func (c *Catalog) Install(ctx context.Context, actor substrate.Actor, id string,
 	// hand (`substratectl apply -f` of these very files) carries no tier and
 	// stays the repository's own, which record 0047 sanctions and which is the
 	// only way to hold a provider's declarations open to editing.
-	opts := substrate.BundleInstall{Published: b.Tier == substrate.TierProvider}
+	opts := substrate.BundleInstall{Published: b.Tier == substrate.TierProvider, Confirm: confirm}
 	// A sample installed VERBATIM takes the same suggested-mapping filter an
 	// import does: the mapping's `from` is a provider package either way, and
 	// admission refuses it either way while that package is absent. The
@@ -443,6 +451,15 @@ func (c *Catalog) Install(ctx context.Context, actor substrate.Actor, id string,
 // provider and importing again lands them; that second import REPLACES the
 // package, which is what a re-import always does (decision record 0048).
 func (c *Catalog) Import(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset) (*Bundle, []substrate.SuggestedMapping, error) {
+	return c.ImportConfirmed(ctx, actor, id, ds, nil)
+}
+
+// ImportConfirmed is Import carrying the caller's consent to a lossy
+// conversion plan (decision 0067). A re-import replaces the package, so a
+// kind the repository edited since can lose a property's values here; the
+// same rule as the install door's applies, and without a consent the engine
+// refuses the lossy plan and names it.
+func (c *Catalog) ImportConfirmed(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset, confirm *substrate.ConversionConfirm) (*Bundle, []substrate.SuggestedMapping, error) {
 	b, err := c.installable(actor, id)
 	if err != nil {
 		return nil, nil, err
@@ -491,7 +508,7 @@ func (c *Catalog) Import(ctx context.Context, actor substrate.Actor, id string, 
 	// told from a package the user declared by hand and an edited copy from
 	// a pristine one. Only this door stamps them: the provider install lands
 	// the id it was asked for, and a hand apply has no origin to name.
-	opts := substrate.BundleInstall{Origin: b.ID, OriginVersion: b.Version}
+	opts := substrate.BundleInstall{Origin: b.ID, OriginVersion: b.Version, Confirm: confirm}
 	if err := install(ctx, ds, substrate.BundleActor(home, b.Package), vocabularyDocs, dataDocs, opts); err != nil {
 		return nil, nil, err
 	}

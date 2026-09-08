@@ -19,6 +19,7 @@ import { CORE_PACKAGE } from "@/lib/api/http"
 import type {
   BundleUpgrade,
   CatalogTier,
+  ConversionPlan,
   KindInfo,
   ShippedUpgrade,
   SuggestedMapping,
@@ -187,15 +188,34 @@ export function upgradableBundleCount(catalog: CatalogItem[]): number {
   ).length
 }
 
-/** One line per property the upgrade renames (`renamedFrom`, decision 0063),
- * with the live records the move rewrites: the operator sees the rewrite the
- * server will make before it makes it. Empty when the upgrade renames nothing. */
-export function renameLines(upgrade: BundleUpgrade | undefined): string[] {
-  return (upgrade?.renames ?? []).map(
-    (r) =>
-      `renames ${r.from} to ${r.to} on ${r.kind}: ${r.records} live ${
-        r.records === 1 ? "record" : "records"
-      } rewritten`
+/** One line per conversion step the upgrade runs (decision 0067), with the
+ * live records it rewrites: the operator sees the rewrite the server will make
+ * before it makes it, and a lossy step says so. Empty when nothing moves. */
+export function stepLines(plan: ConversionPlan | undefined): string[] {
+  return (plan?.steps ?? []).map((s) => {
+    const n = `${s.records} live ${s.records === 1 ? "record" : "records"}`
+    switch (s.step) {
+      case "rename":
+        return `renames ${s.from} to ${s.to} on ${s.kind}: ${n} rewritten`
+      case "backfill":
+        return `backfills ${s.property} with its default on ${s.kind}: ${n} rewritten`
+      case "remap":
+        return `rewrites ${s.property} ${s.from} to ${s.to} on ${s.kind}: ${n} rewritten${
+          s.lossy
+            ? " (lossy: the records holding either value become one set)"
+            : ""
+        }`
+      default:
+        return `drops ${s.property} on ${s.kind}: its value leaves ${n} (lossy: the values stay in the changelog only)`
+    }
+  })
+}
+
+/** The steps that remove values from the fold: what the confirmation dialog
+ * lists before it asks. */
+export function lossyStepLines(plan: ConversionPlan | undefined): string[] {
+  return stepLines(
+    plan && { ...plan, steps: (plan.steps ?? []).filter((s) => s.lossy) }
   )
 }
 

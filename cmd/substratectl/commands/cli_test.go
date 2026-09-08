@@ -587,6 +587,24 @@ func TestErrorRenderingProblemsAndHints(t *testing.T) {
 			err:  &apiError{Status: 401, Code: "auth"},
 			want: []string{"hint: run `substratectl login`"},
 		},
+		// A lossy refusal names the command that carries --allow-data-loss
+		// for the door that refused; `import` has no such flag, so its hint
+		// names the route that works instead (decision 0067).
+		{
+			name: "lossy apply",
+			err:  &apiError{Status: 403, Code: "lossy", Path: "/api/v1/vocabulary/apply"},
+			want: []string{"error: the schema change removes values", "hint: re-run `substratectl apply --allow-data-loss`"},
+		},
+		{
+			name: "lossy install",
+			err:  &apiError{Status: 403, Code: "lossy", Path: "/api/v1/catalog/providers.substrate.reamde.dev%2Fgoogle/install"},
+			want: []string{"hint: re-run `substratectl install <provider> --allow-data-loss`"},
+		},
+		{
+			name: "lossy import",
+			err:  &apiError{Status: 403, Code: "lossy", Path: "/api/v1/catalog/samples.substrate.reamde.dev%2Ftasks/import"},
+			want: []string{"hint: a sample re-import has no preview to confirm against yet", "`substratectl apply --as-mine --allow-data-loss`"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

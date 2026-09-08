@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -23,20 +24,84 @@ func catalogPath(id, verb string) string {
 // takeBundle runs one of the two catalog doors and prints what landed. The
 // server answers with the LANDED bundle's status, which for an import is the
 // sample's package under this repository's own authority rather than the id
-// typed.
-func (a *app) takeBundle(cmd *cobra.Command, id, verb, past string) error {
+// typed. With allowDataLoss the door is asked for its preview first, and a
+// lossy plan is confirmed by the hash and changelog head that preview carried
+// (confirmedUpgrade): the consent covers what was shown and nothing else.
+func (a *app) takeBundle(cmd *cobra.Command, id, verb, past string, allowDataLoss bool) error {
 	cl, err := a.client()
 	if err != nil {
 		return err
 	}
+	var body any
+	if allowDataLoss {
+		confirm, err := a.confirmedUpgrade(cmd.Context(), cl, id)
+		if err != nil {
+			return err
+		}
+		if confirm != nil {
+			body = map[string]any{"confirm": confirm}
+		}
+	}
 	var taken bundleTaken
-	if err := cl.do(cmd.Context(), http.MethodPost, catalogPath(id, verb), nil, nil, &taken); err != nil {
+	if err := cl.do(cmd.Context(), http.MethodPost, catalogPath(id, verb), nil, body, &taken); err != nil {
 		return err
 	}
 	fmt.Fprintf(a.out, "%s %s\n", taken.ID, past)
 	printBundleStatus(a, taken.BundleStatus)
 	printSuggestedMappings(a, id, taken.SuggestedMappings)
 	return nil
+}
+
+// confirmedUpgrade reads the catalog's preview of one bundle and, where its
+// conversion plan is lossy, prints the steps that remove values and answers
+// the confirmation bound to that preview (decision 0067). A bundle with no
+// preview, or a lossless one, answers nil: there is nothing to consent to, and
+// the door runs the plan as it stands.
+func (a *app) confirmedUpgrade(ctx context.Context, cl *client, id string) (*substrate.ConversionConfirm, error) {
+	var cat substrate.OperationalList[substrate.CatalogItem]
+	if err := cl.do(ctx, http.MethodGet, apiPrefix+"/catalog", nil, nil, &cat); err != nil {
+		return nil, err
+	}
+	for _, e := range cat.Items {
+		if e.ID != id {
+			continue
+		}
+		if e.Upgrade == nil || !e.Upgrade.Lossy || e.Upgrade.PlanHash == "" {
+			fmt.Fprintf(a.out, "%s: the upgrade removes no values, so --allow-data-loss confirms nothing\n", id)
+			return nil, nil
+		}
+		fmt.Fprintf(a.out, "%s: confirming plan %s at changelog seq %d, which removes values:\n", id, e.Upgrade.PlanHash, e.Upgrade.ChangelogSeq)
+		for _, s := range e.Upgrade.Steps {
+			if s.Lossy {
+				fmt.Fprintf(a.out, "  %s\n", stepLine(s))
+			}
+		}
+		return &substrate.ConversionConfirm{PlanHash: e.Upgrade.PlanHash, ChangelogSeq: e.Upgrade.ChangelogSeq}, nil
+	}
+	return nil, nil
+}
+
+// stepLine renders one conversion step the way the console does: what moves,
+// on which kind, and how many live records it rewrites, with the loss named.
+func stepLine(s substrate.ConversionStep) string {
+	n := fmt.Sprintf("%d live record", s.Records)
+	if s.Records != 1 {
+		n += "s"
+	}
+	switch s.Step {
+	case substrate.StepRename:
+		return fmt.Sprintf("renames %s to %s on %s: %s rewritten", s.From, s.To, s.Kind, n)
+	case substrate.StepBackfill:
+		return fmt.Sprintf("backfills %s with its default on %s: %s rewritten", s.Property, s.Kind, n)
+	case substrate.StepRemap:
+		line := fmt.Sprintf("rewrites %s %s to %s on %s: %s rewritten", s.Property, s.From, s.To, s.Kind, n)
+		if s.Lossy {
+			line += " (lossy: the records holding either value become one set)"
+		}
+		return line
+	default:
+		return fmt.Sprintf("drops %s on %s: its value leaves %s (lossy: the values stay in the changelog only)", s.Property, s.Kind, n)
+	}
 }
 
 // bundleTaken is the two doors' response: the landed bundle's computed status,
@@ -104,7 +169,7 @@ Providers take the other door, ` + "`substratectl install`" + `, and land under
 the authority that publishes them. Importing a provider is refused, naming it.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.takeBundle(cmd, args[0], "import", "imported")
+			return a.takeBundle(cmd, args[0], "import", "imported", false)
 		},
 	}
 }
@@ -113,7 +178,8 @@ the authority that publishes them. Importing a provider is refused, naming it.`,
 // authority that publishes it, and the publisher's next version bump is what
 // the console offers as an upgrade.
 func (a *app) installCommand() *cobra.Command {
-	return &cobra.Command{
+	var allowDataLoss bool
+	cmd := &cobra.Command{
 		Use:   "install <provider>",
 		Short: "Install a shipped provider under the authority that publishes it",
 		Long: `Install one of the shipped PROVIDER packages into this repository.
@@ -126,13 +192,23 @@ Its declarations are the publisher's afterwards (` + "`source: published`" + `),
 so this repository's token may not rewrite them, and each change the publisher
 ships arrives as an upgrade. Re-running this command is that upgrade.
 
+An upgrade that removes values from your records (a property the new closure
+drops while records carry it, an enum value renamed onto one it keeps) is
+refused until it is confirmed. ` + "`substratectl catalog`" + ` shows the plan;
+--allow-data-loss reads it again, prints the steps that remove values with the
+records each touches, and confirms exactly that plan: a write that lands in
+between, or a plan that reads differently, is refused again. The removed
+values stay in the changelog.
+
 Samples take the other door, ` + "`substratectl import`" + `, and land under
 your own authority.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.takeBundle(cmd, args[0], "install", "installed")
+			return a.takeBundle(cmd, args[0], "install", "installed", allowDataLoss)
 		},
 	}
+	cmd.Flags().BoolVar(&allowDataLoss, "allow-data-loss", false, "confirm the previewed upgrade plan even where it removes values from records")
+	return cmd
 }
 
 // catalogRow is one line of `substratectl catalog`: a package the binary ships,
@@ -185,7 +261,13 @@ upgrade lands once those records are migrated or deleted. For core that is
 the boot upgrade, which runs at the server's next start and not before, so
 an admitted core upgrade reads "lands at restart" until then; for a provider
 it is ` + "`substratectl install <provider>`" + ` again. A sample is never
-offered an upgrade: what it landed is yours.`,
+offered an upgrade: what it landed is yours.
+
+An upgrade that rewrites records prints its steps under the table too, each
+with the live records it touches. A step marked lossy removes values from the
+fold (they stay in the changelog); a provider upgrade with one runs only with
+` + "`substratectl install <provider> --allow-data-loss`" + `, and the boot
+upgrade never runs one.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cl, err := a.client()
@@ -261,6 +343,25 @@ func printCatalogTable(w io.Writer, rows []catalogRow) error {
 		fmt.Fprintf(w, "\n%s: the upgrade is blocked\n", r.ID)
 		for _, b := range r.Upgrade.Blockers {
 			fmt.Fprintf(w, "  %s\n", b)
+		}
+	}
+	// The conversion plan, step by step: what the upgrade rewrites and how
+	// many live records each step touches, so the loss a lossy step means is
+	// read here before anybody confirms it (decision 0067).
+	for _, r := range rows {
+		if r.Upgrade == nil || len(r.Upgrade.Steps) == 0 {
+			continue
+		}
+		switch {
+		case r.Upgrade.Lossy && r.Tier == tierSeed:
+			fmt.Fprintf(w, "\n%s: the upgrade rewrites %d live records and removes values; the boot upgrade never runs a lossy step, so rewrite the records it names first\n", r.ID, r.Upgrade.Work)
+		case r.Upgrade.Lossy:
+			fmt.Fprintf(w, "\n%s: the upgrade rewrites %d live records and removes values; confirm it with `substratectl install %s --allow-data-loss`\n", r.ID, r.Upgrade.Work, r.ID)
+		default:
+			fmt.Fprintf(w, "\n%s: the upgrade rewrites %d live records\n", r.ID, r.Upgrade.Work)
+		}
+		for _, s := range r.Upgrade.Steps {
+			fmt.Fprintf(w, "  %s\n", stepLine(s))
 		}
 	}
 	return nil

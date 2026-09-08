@@ -14,6 +14,7 @@ export type ErrorCode =
   | "auth"
   | "forbidden"
   | "guard"
+  | "lossy"
   | "not_found"
   | "conflict"
   | "compacted"
@@ -553,11 +554,59 @@ export interface BundleUpgradeChange {
   to?: number
 }
 
+/** The record rewrites a declaration change performs on the live records
+ * (substrate.ConversionPlan, decision 0067), counted by the server: an upgrade
+ * preview carries one flattened, and so does the apply preview. Counts only,
+ * never record ids. */
+export interface ConversionPlan {
+  /** Each rewrite touching at least one live record, kind then step order. */
+  steps?: ConversionStep[]
+  /** The sum of the steps' record counts: an upper bound on the changelog
+   * entries the transaction appends. Above the deployment's ceiling the
+   * server refuses the plan and says so in `blockers`. */
+  work: number
+  /** The plan removes values from the fold (a `null` step, or a remap onto a
+   * value some live record already holds). A lossy plan runs only with
+   * a ConversionConfirm naming `planHash` and `changelogSeq`; the console
+   * asks before it sends one. The old values stay in the changelog. */
+  lossy: boolean
+  /** A hash over the steps and their counts; absent when nothing is planned. */
+  planHash?: string
+  /** The changelog head the plan was counted at; any write moves it and
+   * invalidates a confirmation. */
+  changelogSeq?: number
+}
+
+/** One record rewrite a declaration change performs (substrate.ConversionStep). */
+export interface ConversionStep {
+  step: "rename" | "backfill" | "remap" | "null"
+  kind: string
+  /** The property written, under its candidate name. */
+  property: string
+  /** A rename's old property name, or a remap's old value. */
+  from?: string
+  /** A rename's new property name, or a remap's new value. */
+  to?: string
+  /** The live records the step rewrites. */
+  records: number
+  /** The step removes values from the fold: every null, and a remap whose
+   * target some live record already holds. */
+  lossy?: boolean
+}
+
+/** Consent to a lossy plan (substrate.ConversionConfirm), bound to the preview
+ * it was read from: the server refuses it once the changelog moved
+ * (`conflict`) or when the plan it recounts hashes differently (`lossy`). */
+export interface ConversionConfirm {
+  planHash: string
+  changelogSeq: number
+}
+
 /** What re-importing a bundle's shipped closure would do here
- * (substrate.BundleUpgrade): the version motion and, when the server would
- * refuse it, the refusal's own guard lines. The upgrade verb IS the import
- * verb; this is its preview. */
-export interface BundleUpgrade {
+ * (substrate.BundleUpgrade): the version motion, the guard lines the server
+ * would refuse on, and the conversion plan it would run. The upgrade verb IS
+ * the install verb; this is its preview. */
+export interface BundleUpgrade extends ConversionPlan {
   available: boolean
   /** Stored and shipped versions of the bundle's owned package; absent
    * (0 is omitted on the wire) where none is stored. */
@@ -565,24 +614,31 @@ export interface BundleUpgrade {
   to?: number
   changes?: BundleUpgradeChange[]
   /** The refuse-breakage guard lines the import would refuse on, with live
-   * row counts. Non-empty means the upgrade is BLOCKED: the console shows the
-   * lines and offers no button, because the server refuses it anyway. A
-   * preview the server could not run at all carries one fixed line ("the
-   * upgrade preview failed; see the server log") and no motion. */
+   * row counts, and a plan above the work ceiling. Non-empty means the
+   * upgrade is BLOCKED: the console shows the lines and offers no button,
+   * because the server refuses it anyway. A preview the server could not run
+   * at all carries one fixed line ("the upgrade preview failed; see the
+   * server log") and no motion. */
   blockers?: string[]
-  /** The property renames the upgrade performs (`renamedFrom`), each with the
-   * number of live records it rewrites. */
+  /** The `rename` steps in the shape this field had before `steps` existed,
+   * derived from them.
+   * @deprecated read `steps`; kept because the bundles feature is stable. */
   renames?: BundleUpgradeRename[]
 }
 
-/** One property rename an upgrade performs (substrate.BundleUpgradeRename):
- * every live record of `kind` carrying `from` is rewritten to `to`, one
- * changelog entry each. */
+/** One property rename an upgrade performs (substrate.BundleUpgradeRename).
+ * @deprecated a ConversionStep with `step: "rename"` says the same. */
 export interface BundleUpgradeRename {
   kind: string
   from: string
   to: string
   records: number
+}
+
+/** The preview of one vocabulary apply (substrate.VocabularyPlan), from
+ * `POST /api/v1/vocabulary/plan`: the guard lines and the conversion plan. */
+export interface VocabularyPlan extends ConversionPlan {
+  blockers?: string[]
 }
 
 /** One package the binary ships and seeds (core), and what this binary's boot

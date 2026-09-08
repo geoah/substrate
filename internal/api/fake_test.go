@@ -340,11 +340,15 @@ type fakeDataset struct {
 	lastPrincipal      string
 	lastSearch         substrate.SearchInput
 	lastVocabularyDocs []map[string]any
-	lastDeleteType     string
-	lastDeleteID       string
-	lastDelete         substrate.DeleteInput
-	lastMerge          substrate.MergeInput
-	lastSplit          substrate.SplitInput
+	// lastConfirm is the consent the confirmed apply verb received; plan is
+	// what the preview answers.
+	lastConfirm    *substrate.ConversionConfirm
+	plan           substrate.VocabularyPlan
+	lastDeleteType string
+	lastDeleteID   string
+	lastDelete     substrate.DeleteInput
+	lastMerge      substrate.MergeInput
+	lastSplit      substrate.SplitInput
 
 	// error injection, keyed by method name
 	errs map[string]error
@@ -1104,6 +1108,7 @@ var _ substrate.Dataset = (*fakeDataset)(nil)
 var (
 	_ substrate.ChangeFeedOps      = (*fakeDataset)(nil)
 	_ substrate.VocabularyApplier  = (*fakeDataset)(nil)
+	_ substrate.VocabularyPlanner  = (*fakeDataset)(nil)
 	_ substrate.RecoveryEnroller   = (*fakeService)(nil)
 	_ substrate.SeamReporter       = (*fakeService)(nil)
 	_ substrate.EmbeddingsReporter = (*fakeService)(nil)

@@ -288,6 +288,12 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 				})
 				continue
 			}
+			if nullable(curT, curP) {
+				// The apply removes the value from every live record as a
+				// lossy null step, confirmed by the caller (convert.go,
+				// decision 0067); the count is the step's, not a refusal.
+				continue
+			}
 			out = append(out, narrowing{
 				format: fmt.Sprintf("type %s: property %q dropped while %%d live records still carry it — null it on them first", ident, pname),
 				query:  countPropQuery, args: []any{ident, pname},
@@ -1382,21 +1388,6 @@ func renameGuards(current, candidate *vocabulary.Registry, renames []propertyRen
 		}
 	}
 	return out
-}
-
-// renamePlans reports each rename with the live count it would rewrite, read
-// through q: the upgrade previews' answer (PlanBundleUpgrade,
-// PlanShippedUpgrade), so an operator sees the rewrite before the door runs it.
-func renamePlans(q sqlReader, renames []propertyRename) ([]substrate.BundleUpgradeRename, error) {
-	var out []substrate.BundleUpgradeRename
-	for _, r := range renames {
-		var n int64
-		if err := q.row(countPropQuery, r.kind.Identity, r.from).Scan(&n); err != nil {
-			return nil, err
-		}
-		out = append(out, substrate.BundleUpgradeRename{Kind: r.kind.Identity, From: r.from, To: r.to, Records: n})
-	}
-	return out, nil
 }
 
 // referenceMayName reports whether a stored value of the reference property p

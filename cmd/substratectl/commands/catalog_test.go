@@ -1,6 +1,10 @@
 package commands
 
 import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -209,5 +213,187 @@ func TestCatalogReadsASeedPackageNotYetHeldAsAbsent(t *testing.T) {
 	}
 	if !regexp.MustCompile(`(?m)^substrate\.reamde\.dev/extra\s+seed\s+false\s+3\s`).MatchString(stdout) {
 		t.Fatalf("a shipped package with no stored version reads as installed:\n%s", stdout)
+	}
+}
+
+const googleProvider = "providers.substrate.reamde.dev/google"
+
+// lossyGoogle is a catalog entry whose upgrade preview removes values: one
+// null step the door runs only confirmed (decision 0067).
+func lossyGoogle() substrate.CatalogItem {
+	return substrate.CatalogItem{
+		CatalogBundle: substrate.CatalogBundle{
+			ID: googleProvider, Name: "google", Authority: "providers.substrate.reamde.dev",
+			Package: "google", Version: 4, Tier: substrate.TierProvider,
+		},
+		Installed: true,
+		Upgrade: &substrate.BundleUpgrade{
+			Available: true, From: 3, To: 4,
+			ConversionPlan: substrate.ConversionPlan{
+				Lossy: true, Work: 3, PlanHash: "cafe", ChangelogSeq: 41,
+				Steps: []substrate.ConversionStep{{
+					Step: substrate.StepNull, Kind: googleProvider + "/contact", Property: "middleName", Records: 3, Lossy: true,
+				}},
+			},
+		},
+	}
+}
+
+// lastConfirm decodes the confirmation the last request's body carried.
+func lastConfirm(t *testing.T, h *harness) (substrate.ConversionConfirm, bool) {
+	t.Helper()
+	raw, ok := h.fake.lastBody["confirm"]
+	if !ok {
+		return substrate.ConversionConfirm{}, false
+	}
+	var c substrate.ConversionConfirm
+	if err := json.Unmarshal(raw, &c); err != nil {
+		t.Fatalf("decode the confirmation: %v", err)
+	}
+	return c, true
+}
+
+// `install --allow-data-loss` binds the consent to the preview: it reads the
+// catalog, prints the steps that remove values and sends that preview's hash
+// and changelog head as the confirmation, never a bare yes.
+func TestInstallConfirmsALossyUpgradeItPreviewed(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.fake.catalog = []substrate.CatalogItem{lossyGoogle()}
+	stdout, _ := h.mustRun("install", googleProvider, "--allow-data-loss")
+	for _, want := range []string{"GET /api/v1/catalog", "POST /api/v1/catalog/" + googleProvider + "/install"} {
+		if !contains(h.fake.doorRequests(), want) {
+			t.Errorf("install did not call %s: %v", want, h.fake.doorRequests())
+		}
+	}
+	confirm, ok := lastConfirm(t, h)
+	if !ok || confirm != (substrate.ConversionConfirm{PlanHash: "cafe", ChangelogSeq: 41}) {
+		t.Fatalf("the install body carried confirmation %+v (present=%v)", confirm, ok)
+	}
+	for _, want := range []string{
+		googleProvider + ": confirming plan cafe at changelog seq 41, which removes values:",
+		"drops middleName on " + googleProvider + "/contact: its value leaves 3 live records (lossy: the values stay in the changelog only)",
+		googleProvider + " installed",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("install did not print %q:\n%s", want, stdout)
+		}
+	}
+}
+
+// Without the flag the install is the bare POST it always was: no preview is
+// read and no body is sent, so a lossy upgrade is the server's 403, which the
+// CLI renders with the hint naming the flag this command carries.
+func TestInstallWithoutTheFlagIsRefusedWithTheHint(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.fake.catalog = []substrate.CatalogItem{lossyGoogle()}
+	h.fake.installRefusesLossy = true
+	_, _, err := h.run("install", googleProvider)
+	if err == nil {
+		t.Fatal("a lossy install without the flag must fail")
+	}
+	if contains(h.fake.doorRequests(), "GET /api/v1/catalog") {
+		t.Errorf("a bare install read the catalog: %v", h.fake.doorRequests())
+	}
+	if _, ok := lastConfirm(t, h); ok {
+		t.Fatal("a bare install sent a confirmation")
+	}
+	// Rendered as the binary renders it (renderError), the refusal names the
+	// flag this command carries.
+	var rendered bytes.Buffer
+	renderError(&rendered, err)
+	for _, want := range []string{
+		"error: the schema change removes values from stored records and needs a confirmation",
+		"hint: re-run `substratectl install <provider> --allow-data-loss`",
+	} {
+		if !strings.Contains(rendered.String(), want) {
+			t.Errorf("the refusal did not render %q:\n%s", want, rendered.String())
+		}
+	}
+	// With the flag the same install confirms the previewed plan and lands.
+	h.mustRun("install", googleProvider, "--allow-data-loss")
+	if confirm, ok := lastConfirm(t, h); !ok || confirm.PlanHash != "cafe" {
+		t.Fatalf("the flagged install carried confirmation %+v (present=%v)", confirm, ok)
+	}
+}
+
+// `substratectl catalog` prints the steps an upgrade would run, with the loss
+// named and the command that confirms it.
+func TestCatalogPrintsTheConversionSteps(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.fake.catalog = []substrate.CatalogItem{lossyGoogle()}
+	stdout, _ := h.mustRun("catalog")
+	for _, want := range []string{
+		googleProvider + ": the upgrade rewrites 3 live records and removes values; confirm it with `substratectl install " + googleProvider + " --allow-data-loss`",
+		"  drops middleName on " + googleProvider + "/contact: its value leaves 3 live records",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("catalog did not print %q:\n%s", want, stdout)
+		}
+	}
+}
+
+// `apply --allow-data-loss` previews the batch first and confirms the plan it
+// printed, by its hash and changelog head; a lossless plan confirms nothing.
+func TestApplyConfirmsALossyPlanItPreviewed(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.fake.plan = substrate.VocabularyPlan{ConversionPlan: substrate.ConversionPlan{
+		Lossy: true, Work: 2, PlanHash: "f00d", ChangelogSeq: 7,
+		Steps: []substrate.ConversionStep{{
+			Step: substrate.StepRemap, Kind: "geoah.example.com/shop/widget", Property: "status",
+			From: "active", To: "open", Records: 2, Lossy: true,
+		}},
+	}}
+	file := filepath.Join(t.TempDir(), "widget.yaml")
+	if err := os.WriteFile(file, []byte(`kind: substrate.reamde.dev/core/kind
+metadata:
+  id: geoah.example.com/shop/widget
+data:
+  authority: geoah.example.com
+  package: shop
+  names:
+    singular: widget
+    plural: widgets
+  properties:
+    status:
+      type: enum
+      values: [open, active]
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stdout, _ := h.mustRun("apply", "-f", file, "--allow-data-loss")
+	requests := h.fake.doorRequests()
+	plan, apply := -1, -1
+	for i, r := range requests {
+		switch r {
+		case "POST /api/v1/vocabulary/plan":
+			plan = i
+		case "POST /api/v1/vocabulary/apply":
+			apply = i
+		}
+	}
+	if plan < 0 || apply < 0 || plan > apply {
+		t.Fatalf("apply must preview before it applies: %v", requests)
+	}
+	confirm, ok := lastConfirm(t, h)
+	if !ok || confirm != (substrate.ConversionConfirm{PlanHash: "f00d", ChangelogSeq: 7}) {
+		t.Fatalf("the apply body carried confirmation %+v (present=%v)", confirm, ok)
+	}
+	for _, want := range []string{
+		"confirming plan f00d at changelog seq 7, which removes values:",
+		"rewrites status active to open on geoah.example.com/shop/widget: 2 live records rewritten (lossy: the records holding either value become one set)",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("apply did not print %q:\n%s", want, stdout)
+		}
+	}
+
+	h.fake.plan = substrate.VocabularyPlan{}
+	h.mustRun("apply", "-f", file, "--allow-data-loss")
+	if _, ok := lastConfirm(t, h); ok {
+		t.Fatal("a lossless plan was confirmed")
 	}
 }

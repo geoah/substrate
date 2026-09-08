@@ -1,7 +1,9 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"log/slog"
 	"net/http"
 	"sort"
@@ -158,14 +160,22 @@ const failedPreviewBlocker = "the upgrade preview failed; see the server log"
 // own upgrade semantics). The response is the installed bundle's computed
 // status.
 func (h *handler) postCatalogInstall(w http.ResponseWriter, r *http.Request) {
-	h.takeCatalogBundle(w, r, (*catalog.Catalog).Install, false)
+	h.takeCatalogBundle(w, r, (*catalog.Catalog).InstallConfirmed, false)
 }
 
 // postCatalogImport is the SAMPLE door: the same admission over a closure
 // rehomed onto this repository's own authority first, so what lands is the
 // repository's own vocabulary. A PROVIDER id is refused here, naming install.
 func (h *handler) postCatalogImport(w http.ResponseWriter, r *http.Request) {
-	h.takeCatalogBundle(w, r, (*catalog.Catalog).Import, true)
+	h.takeCatalogBundle(w, r, (*catalog.Catalog).ImportConfirmed, true)
+}
+
+// catalogTakeRequest is the optional body of the two doors: the caller's
+// consent to a lossy conversion plan, bound to the preview it saw (decision
+// 0067). No body is the same as no confirmation, so a lossless upgrade is the
+// bare POST it always was.
+type catalogTakeRequest struct {
+	Confirm *substrate.ConversionConfirm `json:"confirm,omitempty"`
 }
 
 // takeCatalogBundle runs one of the two doors and answers with the status of
@@ -174,15 +184,27 @@ func (h *handler) postCatalogImport(w http.ResponseWriter, r *http.Request) {
 // `<authority>/<package>`, while an install landed the id the request named.
 // Asking for the wrong one is a 404 on a write that succeeded.
 func (h *handler) takeCatalogBundle(w http.ResponseWriter, r *http.Request,
-	take func(*catalog.Catalog, context.Context, substrate.Actor, string, substrate.Dataset) (*catalog.Bundle, []substrate.SuggestedMapping, error),
+	take func(*catalog.Catalog, context.Context, substrate.Actor, string, substrate.Dataset, *substrate.ConversionConfirm) (*catalog.Bundle, []substrate.SuggestedMapping, error),
 	rehomed bool,
 ) {
 	if h.catalog == nil {
 		writeError(w, http.StatusNotFound, codeNotFound, "no catalog is shipped")
 		return
 	}
+	var req catalogTakeRequest
+	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, maxRequestBody))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+		return
+	}
+	if len(bytes.TrimSpace(raw)) > 0 {
+		if err := decodeStrictBytes(raw, &req, false); err != nil {
+			writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+			return
+		}
+	}
 	ctx := r.Context()
-	b, suggested, err := take(h.catalog, ctx, ActorFrom(ctx), pathParam(r, "id"), DatasetFrom(ctx))
+	b, suggested, err := take(h.catalog, ctx, ActorFrom(ctx), pathParam(r, "id"), DatasetFrom(ctx), req.Confirm)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return

@@ -307,7 +307,8 @@ records that hold no value for it, by the same rule the write path refuses
 them, and tells you to declare a default or write them. With a `default:`
 beside it the apply backfills them instead ([below](#backfilling-and-remapping)).
 Nothing discards your records behind your back; a conversion writes values
-the changelog keeps, and a lossy one is refused.
+the changelog keeps, and a lossy one runs only when you confirm the plan you
+previewed ([below](#backfilling-and-remapping)).
 
 **Renaming: `renamedFrom:` moves the values.** A property may declare the name
 it replaces:
@@ -366,10 +367,14 @@ properties may not name the same previous name.
 
 The cost is the live count: a kind with a thousand records carrying the old
 name rewrites a thousand rows and appends a thousand entries in one
-transaction, holding the repository's vocabulary write lock for the duration,
-and nothing caps it. The boot upgrade of the shipped tree converts the same
-way, at the first open of a repository under the binary that ships the rename,
-and reports the count as `convertedRecords`.
+transaction, holding the repository's vocabulary write lock for the duration.
+The deployment caps it: a plan whose summed record count is above
+`SUBSTRATE_CONVERSION_CEILING` (10000 records by default) is refused, and the
+way through is the expand-and-contract route, declaring the new shape beside
+the old one and moving the records through ordinary writes first. The boot
+upgrade of the shipped tree converts the same way, at the first open of a
+repository under the binary that ships the rename, and reports the count as
+`convertedRecords`.
 
 ### Backfilling and remapping
 
@@ -412,24 +417,47 @@ value, and the key is refused inside `fields:` and on a
 a reserved key of the value entry, so a binary older than it refuses a closure
 that carries it, as every new key does.
 
-**A rename onto a value the declaration still admits is refused.** `{value:
-open, renamedFrom: active}` while `open` stands would make the records holding
-either one set, and nothing here discards a stored distinction: the apply
-refuses it as a lossy conversion, by declaration, whether or not a record holds
-`active`, and the boot upgrade skips it and reports the line. Rename it onto a
-new value, or rewrite the records and drop the old one. Confirming a lossy
-plan is future work.
+**Dropping a property nulls its values.** A property the new declaration no
+longer names, and no `renamedFrom:` takes, has its value removed from every
+live record carrying it: the record's manager row for it, its embedding and,
+for a secret, its sealed material go with the value, exactly as a patch
+clearing the property would leave it. The old values stay in the changelog,
+where a rebuild replays the removal as the write it was. A state property
+still refuses while records occupy a state, because a state moves by
+transition and never by assignment.
 
-The three compose. Every step one apply declares against a kind runs in one
-pass over its records, renames first, then backfills, then remaps, and a
-record any step touches is rewritten once: one `patch` entry whose payload
-carries `renamed`, `backfilled` or `remapped` beside the property names. A
-converted record is a source write like any other, so the records a mapping
-from its kind projects onto follow it in the same transaction, offer rows
-included. A tombstoned record is neither counted nor converted, as for a
-rename: a put that restores it revives the old spelling. The
-cost is the same count a rename has, and the same replay guarantee: a rebuild
-and an import reproduce the converted records from the changelog alone.
+**A lossy plan runs only when you confirm it.** Two steps remove values from
+the fold: the null above, and a rename onto a value some live record already
+holds (`{value: open, renamedFrom: active}` while a record holds `open` makes
+the records holding either one set; while none does, the same rename loses
+nothing). A plan with either, judged over the whole change and the records it
+counts, is **lossy**
+([decision 0067](decisions/0067-a-lossy-conversion-runs-only-with-a-confirmation-bound-to-its-preview.md)).
+`POST /api/v1/vocabulary/plan` with the same `documents` answers the plan
+without writing: every step with the live records it touches, `work`, `lossy`,
+a `planHash` and the `changelogSeq` it was counted at. The apply then takes
+`confirm: {planHash, changelogSeq}` beside `documents`; without it a lossy
+batch is refused with the `lossy` code, and a confirmation is refused after
+any write since the preview (`conflict`) or for a plan that recounts to
+another hash. A lossless plan (renames, backfills, remaps onto new values)
+runs unconfirmed. `substratectl apply --allow-data-loss` previews first,
+prints the steps and confirms exactly that hash; the console's Registry asks
+before a lossy upgrade. The boot upgrade of the shipped tree has nobody to
+confirm it, so it never runs a lossy step: it refuses and `GET
+/api/v1/vocabulary/upgrade` names the step, cleared by rewriting the records
+it counts.
+
+The four compose. Every step one apply declares against a kind runs in one
+pass over its records, renames first, then backfills, then remaps, then nulls,
+and a record any step touches is rewritten once: one `patch` entry whose
+payload carries `renamed`, `backfilled`, `remapped` or `nulled` beside the
+property names. A converted record is a source write like any other, so the
+records a mapping from its kind projects onto follow it in the same
+transaction, offer rows included. A tombstoned record is neither counted nor
+converted, as for a rename: a put that restores it revives the old spelling.
+The cost is the same count a rename has, and the same replay guarantee: a
+rebuild and an import reproduce the converted records from the changelog
+alone.
 
 ## Retiring a name
 

@@ -264,6 +264,10 @@ func (h *handler) mountResources(r chi.Router) {
 			// It stays distinct because a batch of declarations is not record
 			// data and the schema-apply admission is not the generic write path.
 			r.Post("/vocabulary/apply", h.applyVocabulary)
+			// The apply's preview: the guard lines it would refuse on and the
+			// conversion plan it would run, with the hash and changelog head a
+			// lossy plan's confirmation names (decision 0067). Writes nothing.
+			r.Post("/vocabulary/plan", h.planVocabulary)
 			// The boot upgrade's preview: what this binary would move in the
 			// shipped packages here, and the guard lines it refused on.
 			r.Get("/vocabulary/upgrade", h.getVocabularyUpgrade)

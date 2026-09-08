@@ -608,7 +608,7 @@ func TestBootUpgradeConvertsAShippedRename(t *testing.T) {
 		t.Fatalf("plan the shipped upgrade: %v", err)
 	}
 	for _, p := range plans {
-		if p.Upgrade.Available || len(p.Upgrade.Renames) > 0 {
+		if p.Upgrade.Available || len(p.Upgrade.Steps) > 0 {
 			t.Fatalf("the landed rename still shows as pending: %+v", p)
 		}
 	}
@@ -998,13 +998,26 @@ func TestBootUpgradeConvertsAShippedBackfillAndRemap(t *testing.T) {
 }
 
 // A shipped remap onto a wire the stored declaration still admits would make
-// two providers' rows one set. The boot never runs a lossy step: it refuses,
-// the open succeeds on the stored declarations, and the preview names the
-// refusal.
+// two providers' rows one set. The boot never runs a lossy step (decision
+// 0067): it refuses, the open succeeds on the stored declarations, and the
+// preview names the refusal with the plan behind it.
 func TestBootUpgradeRefusesAShippedLossyRemap(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	dsn := seededRepository(t)
+	// A row on the wire the tree renames: lossiness is judged over the live
+	// records, so the collapse needs a record to lose.
+	{
+		svc := openTree(t, dsn, shippedTree(t))
+		ds, err := svc.Dataset(ctx, "geoah")
+		if err != nil {
+			t.Fatalf("dataset: %v", err)
+		}
+		mustPut(t, ds, owner, substrate.PutInput{
+			Kind: "substrate.reamde.dev/core/llmprovider", ID: "bare", Properties: map[string]any{"wire": "azure"},
+		})
+		_ = svc.Close()
+	}
 	tree := shippedTree(t)
 	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
 		const azure = "        - value: azure\n          label: Azure OpenAI\n"
@@ -1020,7 +1033,7 @@ func TestBootUpgradeRefusesAShippedLossyRemap(t *testing.T) {
 		return pinVersion(t, doc, "99")
 	})
 	refused := openMovedRefused(t, dsn, tree)
-	wantRefusedUpgrade(t, refused, `property "wire" renames value "azure" onto "openai", which the stored declaration still admits`)
+	wantRefusedUpgrade(t, refused, `property "wire" value "azure" rewritten to "openai" on 1 live records, a value live records already hold`, "never runs a lossy step")
 	stillSpeaksTheOldShape(t, dsn)
 
 	svc := openTree(t, dsn, tree)
@@ -1037,13 +1050,68 @@ func TestBootUpgradeRefusesAShippedLossyRemap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("plan the shipped upgrade: %v", err)
 	}
-	var named bool
+	var named, planned bool
 	for _, p := range plans {
 		for _, b := range p.Upgrade.Blockers {
 			named = named || strings.Contains(b, "lossy conversion is refused")
 		}
+		// The plan rides the preview too: the lossy step with its count, the
+		// hash and the head a door that could confirm would name.
+		for _, s := range p.Upgrade.Steps {
+			planned = planned || (s.Step == substrate.StepRemap && s.From == "azure" && s.To == "openai" && s.Records == 1 && s.Lossy)
+		}
+		if p.Upgrade.Available && (!p.Upgrade.Lossy || p.Upgrade.PlanHash == "" || p.Upgrade.ChangelogSeq == 0) {
+			t.Fatalf("the preview carries no plan for the refused upgrade: %+v", p.Upgrade)
+		}
 	}
-	if !named {
-		t.Fatalf("the preview does not name the lossy remap: %+v", plans)
+	if !named || !planned {
+		t.Fatalf("the preview does not name the lossy remap (named=%v planned=%v): %+v", named, planned, plans)
+	}
+}
+
+// The same shipped remap onto a retained wire is lossless while no live record
+// holds the target: the boot runs it unattended and the row reads the new
+// spelling, because lossiness is judged over the records and never the
+// declaration (decision 0067).
+func TestBootUpgradeConvertsARemapOntoARetainedValueNobodyHolds(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := seededRepository(t)
+	const provider = "substrate.reamde.dev/core/llmprovider"
+	// The one live row moves onto the wire the tree renames, so nothing holds
+	// `openai` when the remap lands on it.
+	{
+		svc := openTree(t, dsn, shippedTree(t))
+		ds, err := svc.Dataset(ctx, "geoah")
+		if err != nil {
+			t.Fatalf("dataset: %v", err)
+		}
+		if _, err := ds.Patch(ctx, owner, provider, "guarded", substrate.PatchInput{Properties: map[string]any{"wire": "azure"}}); err != nil {
+			t.Fatalf("move the row onto the old wire: %v", err)
+		}
+		_ = svc.Close()
+	}
+	tree := shippedTree(t)
+	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
+		const azure = "        - value: azure\n          label: Azure OpenAI\n"
+		const openai = "        - value: openai\n          label: OpenAI\n"
+		if !strings.Contains(doc, azure) || !strings.Contains(doc, openai) {
+			t.Fatal("llmprovider no longer declares the `azure` and `openai` wires")
+		}
+		doc = strings.Replace(doc, azure, "", 1)
+		doc = strings.Replace(doc, openai, "        - value: openai\n          label: OpenAI\n          renamedFrom: azure\n", 1)
+		return pinVersion(t, doc, "99")
+	})
+	if err := openMoved(t, dsn, tree); err != nil {
+		t.Fatalf("a remap onto a value nobody holds must land at open: %v", err)
+	}
+	svc := openTree(t, dsn, tree)
+	defer func() { _ = svc.Close() }()
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("dataset: %v", err)
+	}
+	if got := mustGet(t, ds, provider, "guarded"); got.Properties["wire"] != "openai" {
+		t.Fatalf("the boot did not convert the row: %v", got.Properties)
 	}
 }

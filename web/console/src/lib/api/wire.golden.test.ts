@@ -55,6 +55,9 @@ import type {
   ChangeRow,
   ChangeTrigger,
   Cond,
+  ConversionConfirm,
+  ConversionPlan,
+  ConversionStep,
   ErrorEnvelope,
   ErrorPayload,
   FunctionCalled,
@@ -86,6 +89,7 @@ import type {
   TokenInfo,
   TriggerRan,
   TriggerReplayed,
+  VocabularyPlan,
   WebhookAccepted,
 } from "./types"
 
@@ -461,8 +465,34 @@ const setupItem: Shape<SetupItem> = {
   message: true,
 }
 
+/** The conversion plan (decision 0067): flattened into the upgrade preview
+ * and the apply preview, so both carry its keys beside their own. */
+const conversionPlan: Shape<ConversionPlan> = {
+  steps: false,
+  work: true,
+  lossy: true,
+  planHash: false,
+  changelogSeq: false,
+}
+
+const conversionStep: Shape<ConversionStep> = {
+  step: true,
+  kind: true,
+  property: true,
+  from: false,
+  to: false,
+  records: true,
+  lossy: false,
+}
+
+const conversionConfirm: Shape<ConversionConfirm> = {
+  planHash: true,
+  changelogSeq: true,
+}
+
 /** The upgrade preview, on a catalog entry and on the shipped-upgrade read. */
 const bundleUpgrade: Shape<BundleUpgrade> = {
+  ...conversionPlan,
   available: true,
   from: false,
   to: false,
@@ -471,18 +501,23 @@ const bundleUpgrade: Shape<BundleUpgrade> = {
   renames: false,
 }
 
-const bundleUpgradeChange: Shape<BundleUpgradeChange> = {
-  kind: true,
-  id: true,
-  from: false,
-  to: false,
-}
-
 const bundleUpgradeRename: Shape<BundleUpgradeRename> = {
   kind: true,
   from: true,
   to: true,
   records: true,
+}
+
+const vocabularyPlan: Shape<VocabularyPlan> = {
+  ...conversionPlan,
+  blockers: false,
+}
+
+const bundleUpgradeChange: Shape<BundleUpgradeChange> = {
+  kind: true,
+  id: true,
+  from: false,
+  to: false,
 }
 
 const shippedUpgrade: Shape<ShippedUpgrade> = {
@@ -544,6 +579,10 @@ const mirrors: Record<string, Record<string, boolean>> = {
   BundleUpgrade: bundleUpgrade,
   BundleUpgradeChange: bundleUpgradeChange,
   BundleUpgradeRename: bundleUpgradeRename,
+  ConversionPlan: conversionPlan,
+  ConversionStep: conversionStep,
+  ConversionConfirm: conversionConfirm,
+  VocabularyPlan: vocabularyPlan,
   ShippedUpgrade: shippedUpgrade,
   BundleUninstalled: bundleUninstalled,
   BundlePurged: bundlePurged,

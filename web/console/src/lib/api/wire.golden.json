@@ -67,10 +67,15 @@
   "BundleUpgrade": {
     "available": true,
     "blockers": false,
+    "changelogSeq": false,
     "changes": false,
     "from": false,
+    "lossy": true,
+    "planHash": false,
     "renames": false,
-    "to": false
+    "steps": false,
+    "to": false,
+    "work": true
   },
   "BundleUpgradeChange": {
     "from": false,
@@ -168,6 +173,26 @@
     "lt": false,
     "lte": false,
     "prefix": false
+  },
+  "ConversionConfirm": {
+    "changelogSeq": true,
+    "planHash": true
+  },
+  "ConversionPlan": {
+    "changelogSeq": false,
+    "lossy": true,
+    "planHash": false,
+    "steps": false,
+    "work": true
+  },
+  "ConversionStep": {
+    "from": false,
+    "kind": true,
+    "lossy": false,
+    "property": true,
+    "records": true,
+    "step": true,
+    "to": false
   },
   "ErrorEnvelope": {
     "error": true
@@ -369,6 +394,14 @@
   },
   "TriggerReplayed": {
     "from": true
+  },
+  "VocabularyPlan": {
+    "blockers": false,
+    "changelogSeq": false,
+    "lossy": true,
+    "planHash": false,
+    "steps": false,
+    "work": true
   },
   "WebhookAccepted": {
     "fire": true
