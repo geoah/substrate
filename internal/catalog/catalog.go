@@ -485,7 +485,14 @@ func (c *Catalog) Import(ctx context.Context, actor substrate.Actor, id string, 
 	// It lands `installed`, never `published`: what a sample leaves behind
 	// belongs to the repository, and `published` is exactly the origin whose
 	// declarations the repository's own token may not write (record 0048).
-	if err := install(ctx, ds, substrate.BundleActor(home, b.Package), vocabularyDocs, dataDocs, substrate.BundleInstall{}); err != nil {
+	//
+	// What it does carry is where it came from: the shipped id and the
+	// shipped version, stamped on the landed package row, so the copy can be
+	// told from a package the user declared by hand and an edited copy from
+	// a pristine one. Only this door stamps them: the provider install lands
+	// the id it was asked for, and a hand apply has no origin to name.
+	opts := substrate.BundleInstall{Origin: b.ID, OriginVersion: b.Version}
+	if err := install(ctx, ds, substrate.BundleActor(home, b.Package), vocabularyDocs, dataDocs, opts); err != nil {
 		return nil, nil, err
 	}
 	return b, report, nil

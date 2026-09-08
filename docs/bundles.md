@@ -415,6 +415,26 @@ the repository. `requires:` is rehomed with everything else, so importing
 `tasks` before `people` is refused by the ordinary admission naming
 `<your authority>/people`, the sample to import first.
 
+The copy records where it came from. The import stamps three managed
+properties on the landed package row: `origin`, the shipped bundle id
+(`samples.substrate.reamde.dev/tasks`), `originVersion`, the shipped package
+version it was copied at, and `originDigest`, a digest of the declarations it
+landed. The bundle status and the catalog entry carry `origin` and
+`originVersion` back, plus `modified`, which the server derives by recomputing
+the digest from the stored declarations: a kind, trait, property type, mapping,
+function, agent or bundle document edited, added or removed since the import
+reads `modified: true`. Versions alone could not say so, because a kind edit
+moves the kind's version and not the package's, and an addition moves nothing.
+`modified` covers declaration data only: labels, annotations and the data
+records a sample ships beside its closure do not flip it, and
+[#386](https://github.com/geoah/substrate/issues/386) owns the definition of a
+local modification.
+The provider door and a hand `apply -f` stamp nothing, so a package with no
+`origin` is either a provider or the repository's own from the start. A
+re-import replaces the package as before and re-stamps it, so an edited copy
+reads pristine again once its edits are gone. A sample imported before the
+stamp existed has no origin, and nothing reconstructs one.
+
 `import` on a provider id is refused naming `install`. `install` on a sample id
 still admits the closure verbatim, under the placeholder authority: nothing
 needs it now that no provider names a sample package, but a repository that

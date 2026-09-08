@@ -46,6 +46,23 @@ type BundleStatus struct {
 	Quarantined bool `json:"quarantined,omitempty"`
 	// QuarantineReason is the admission error that quarantined the bundle.
 	QuarantineReason string `json:"quarantineReason,omitempty"`
+	// Origin is the shipped bundle id an imported SAMPLE was copied from
+	// ("samples.substrate.reamde.dev/tasks"), read off the owned package
+	// row where the import stamped it (decision record 0048's copy, with its
+	// provenance). Empty on a provider, on a hand-applied closure, and on a
+	// sample imported before the stamp existed: nothing reconstructs it.
+	Origin string `json:"origin,omitempty"`
+	// OriginVersion is the shipped package version the copy was taken at.
+	// Zero when Origin is empty.
+	OriginVersion int64 `json:"originVersion,omitempty"`
+	// Modified reports the copy's declarations no longer match what the
+	// import landed: a kind, trait, property type, mapping, function, agent
+	// or bundle document edited, added or removed since. Versions alone
+	// cannot say so (a kind edit moves the kind's version and not the
+	// package's, and an addition moves nothing), so the import stamps a
+	// digest of the landed closure and the status recomputes it from the
+	// stored rows. False when Origin is empty.
+	Modified bool `json:"modified,omitempty"`
 }
 
 // BundleUpgrade is what re-installing a bundle's SHIPPED closure over this
@@ -188,6 +205,15 @@ type BundleInstall struct {
 	// tier it served the closure from; a hand-applied closure carries no tier,
 	// so it lands `installed` and stays the repository's own.
 	Published bool
+	// Origin and OriginVersion are the SAMPLE import's provenance: the
+	// shipped bundle id the closure was copied from and the shipped package
+	// version it was copied at. The engine stamps them, with a digest of the
+	// landed closure, as managed properties on the package row the origin
+	// names, so a copy can be told from an original and an edited copy from
+	// a pristine one (BundleStatus.Modified). The provider install and a hand
+	// apply leave both empty and stamp nothing.
+	Origin        string
+	OriginVersion int64
 }
 
 // BundleUpgradePlanner is the read-only preview beside BundleInstaller, an

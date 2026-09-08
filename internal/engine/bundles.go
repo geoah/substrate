@@ -37,6 +37,7 @@ package engine
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -777,32 +778,107 @@ func (ds *dataset) BundleStatuses(ctx context.Context) ([]substrate.BundleStatus
 // row — a quarantined package is absent from the live registry, so its status
 // comes from the store. A bundle row's id IS the package identity (record
 // 0047), so the two rows join on the id and nothing has to parse a property.
+// The origin stamp rides the same read: a quarantined copy is exactly the one
+// whose owner has to decide whether to re-import it, so it says where it came
+// from and whether it was edited.
 func (ds *dataset) quarantinedBundleStatuses(ctx context.Context) ([]substrate.BundleStatus, error) {
 	rows, err := ds.db.QueryContext(ctx, `
-		SELECT b.id, COALESCE(g.props->>$3, '')
+		SELECT b.id, COALESCE(g.props->>$3, ''),
+		       COALESCE(g.props->>$5, ''), g.props->$6, COALESCE(g.props->>$7, '')
 		FROM records g
 		JOIN records b ON b.kind = $2 AND b.deleted_at IS NULL AND b.id = g.id
 		WHERE g.kind = $1 AND g.deleted_at IS NULL AND (g.props ? $4) AND g.props->>$4 = 'true'
 		ORDER BY g.id`,
-		kindPackage, kindBundle, propPackageQuarantineReason, propPackageQuarantined)
+		kindPackage, kindBundle, propPackageQuarantineReason, propPackageQuarantined,
+		propPackageOrigin, propPackageOriginVersion, propPackageOriginDigest)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 	var out []substrate.BundleStatus
 	for rows.Next() {
-		var id, reason string
-		if err := rows.Scan(&id, &reason); err != nil {
+		var id, reason, origin, digest string
+		var rawVersion []byte
+		if err := rows.Scan(&id, &reason, &origin, &rawVersion, &digest); err != nil {
 			return nil, err
 		}
 		authority, name := vocabulary.SplitPackageRef(id)
-		out = append(out, substrate.BundleStatus{
+		st := substrate.BundleStatus{
 			ID: id, Name: name, Authority: authority, Package: name,
 			Installed: false, Enabled: false,
 			Quarantined: true, QuarantineReason: reason,
-		})
+		}
+		if err := ds.applyOriginStamp(ctx, &st, origin, rawVersion, digest); err != nil {
+			return nil, err
+		}
+		out = append(out, st)
 	}
 	return out, rows.Err()
+}
+
+// packageOrigin reads the provenance a SAMPLE import stamped on the package
+// row (vocabularywrite.go stampOrigin) onto the status. A row with no origin
+// (a provider, a hand apply, a copy imported before the stamp) leaves all
+// three zero.
+func (ds *dataset) packageOrigin(ctx context.Context, pkg string, st *substrate.BundleStatus) error {
+	var origin, digest string
+	var rawVersion []byte
+	err := ds.db.QueryRowContext(ctx, `
+		SELECT COALESCE(props->>$3, ''), props->$4, COALESCE(props->>$5, '')
+		FROM records WHERE kind = $1 AND id = $2 AND deleted_at IS NULL`,
+		kindPackage, pkg, propPackageOrigin, propPackageOriginVersion, propPackageOriginDigest,
+	).Scan(&origin, &rawVersion, &digest)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return ds.applyOriginStamp(ctx, st, origin, rawVersion, digest)
+}
+
+// applyOriginStamp puts one package row's stamp on its status and decides
+// Modified by recomputing the closure digest from the stored declarations:
+// equal means the copy is what the import landed, anything else means a
+// declaration was edited, added or removed since. An empty origin is no
+// stamp, and leaves the status untouched.
+func (ds *dataset) applyOriginStamp(ctx context.Context, st *substrate.BundleStatus, origin string, rawVersion []byte, digest string) error {
+	if origin == "" {
+		return nil
+	}
+	version, err := originVersionOf(st.ID, rawVersion)
+	if err != nil {
+		return err
+	}
+	st.Origin, st.OriginVersion = origin, version
+	current, err := ds.packageClosureDigest(ctx, st.ID)
+	if err != nil {
+		return err
+	}
+	st.Modified = digest == "" || current != digest
+	return nil
+}
+
+// originVersionOf reads the stamped `originVersion` off its jsonb value
+// through the one version reader (vocabulary.VersionValue), so the stamp and
+// every other declaration version agree on what an integer is. An absent
+// value is zero; a value that is not an integer is a corrupt row, reported.
+func originVersionOf(pkg string, raw []byte) (int64, error) {
+	if len(raw) == 0 {
+		return 0, nil
+	}
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return 0, fmt.Errorf("substrate/engine: %s: decode %s: %w", pkg, propPackageOriginVersion, err)
+	}
+	if v == nil {
+		return 0, nil
+	}
+	n, ok := vocabulary.VersionValue(v)
+	if !ok {
+		return 0, fmt.Errorf("substrate/engine: %s: %s is not an integer: %v", pkg, propPackageOriginVersion, v)
+	}
+	return n, nil
 }
 
 // BundleStatus computes one bundle's runtime state.
@@ -835,6 +911,9 @@ func (ds *dataset) bundleStatus(ctx context.Context, b *vocabulary.Bundle) (subs
 	}
 	st.Functions = len(g.FunctionOrder)
 	st.Kinds = len(g.KindOrder)
+	if err := ds.packageOrigin(ctx, b.Package, &st); err != nil {
+		return st, err
+	}
 	for _, tn := range g.KindOrder {
 		t := g.Kinds[tn]
 		var n int64
