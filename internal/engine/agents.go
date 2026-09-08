@@ -67,13 +67,20 @@ func (ds *dataset) claimAgentDelivery(ctx context.Context, settle *settlement) (
 		return err
 	})
 	if err != nil {
-		// A claim the transaction took and rolled back is given back.
-		settle.release()
+		// A claim the transaction took and rolled back is given back. A
+		// retry's hold is the caller's (RetryTriggerFailure, deliverFire on a
+		// pending webhook request) and outlives this attempt.
+		if settle.retire == 0 {
+			settle.release()
+		}
 		return 0, err
 	}
 	if settle.retire == 0 {
 		settle.claimed = claim
 	}
+	// A pending webhook request's row now reads as in flight; the rewrite
+	// committed, so a later attempt of the same fire does not repeat it.
+	settle.pending = nil
 	return claim, nil
 }
 

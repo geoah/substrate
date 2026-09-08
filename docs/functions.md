@@ -718,8 +718,9 @@ resource). No path carries a repository segment: the bearer token implies the
 repository.
 
 - `GET …/triggers/status` is the one collection-level verb: every trigger's
-  kind, callable, cursor, head, lag, last fire and parked count in a single
-  answer. There is no per-trigger `status`.
+  kind, callable, cursor, head, lag, last fire, parked count and pending count
+  (accepted webhook requests whose fire has not settled) in a single answer.
+  There is no per-trigger `status`.
 - `POST …/triggers/{id}/replay` takes `{"from": seq}` and resets a
   record-sourced trigger's cursor for a retrospective run.
 - `POST …/triggers/{id}/run` takes `{"kind": …, "id": …}`, both required, and
@@ -729,22 +730,33 @@ repository.
   `request`, a record trigger drains its backlog, a schedule checks its due
   occurrence.
 - `POST /webhooks/{authority}/{trigger}` is the public door: no bearer, the
-  request in the envelope, `202` with `{"fire": id}` once the delivery is
-  handed to the background, and one `404` for every refusal (no such trigger,
-  disabled, wrong key). The callable's output is never the response.
+  request in the envelope, `202` with `{"fire": id}` once the request is
+  recorded in the repository's changelog and the fire is handed to the
+  background, and one `404` for every refusal (no such trigger, disabled,
+  wrong key). The callable's output is never the response. The record is a
+  `delivery` entry that lists the request under the trigger's parked
+  failures as `delivery accepted` until the fire settles
+  ([decision 0068](decisions/0068-an-accepted-webhook-is-a-pending-entry-in-the-delivery-ledger.md)):
+  a server that stops after the `202`, or while the fire runs and before its
+  effects commit, runs the fire again under the same id on its trigger
+  dispatcher's next pass over the repository (an operator's process never
+  does), and a fire that fails parks the same entry. An agent
+  callable's fire claims that entry before its loop, so one interrupted
+  mid-loop waits under `…/parked` for a hand like every agent delivery.
 - `GET …/triggers/{id}/parked` lists the deliveries the trigger gave up on,
   and `POST …/triggers/{id}/parked/{failureId}/retry` re-runs one. A
   failure's id is the seq of the changelog entry that parked it, so it
-  survives a restore ([backups](operations.md#backups)). A parked webhook
-  keeps the request it arrived with, minus what a replay does not need: only
-  the headers that describe the body (`content-type`, `content-length`,
+  survives a restore ([backups](operations.md#backups)). A webhook request
+  is recorded there minus what a replay does not need, from the `202` on:
+  only the headers that describe the body (`content-type`, `content-length`,
   `content-encoding`, `user-agent`, `date`) and the exact provider headers
   the shipped webhook bodies read (GitHub, Stripe, Slack, Linear, Standard
   Webhooks, `idempotency-key`, `x-request-id`, `x-pebble-mode`) are kept, the
   query string is dropped, and the body and every inline multipart value are
-  stored in the blob store rather than in the changelog; the retry delivers
-  the request with those headers, an empty query, and the body and parts as
-  they arrived.
+  stored in the blob store rather than in the changelog; the fire, a resumed
+  fire and a retry all deliver the request with those headers, an empty
+  query, and the body and parts as they arrived. A retry of an entry whose
+  fire this server is running answers `409`.
 
 `replay` answers the cursor it set; `run`, `wake` and `retry` answer
 `{"ran": n}`, the number of deliveries that applied effects. Every settled

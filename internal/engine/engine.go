@@ -82,6 +82,10 @@ type options struct {
 	// snapshotFault is the snapshot's test seam (export_test.go): a hook run
 	// with the partial directory after each copy step (snapshot.go).
 	snapshotFault func(stage, dir string) error
+	// invokeHook is the runner's test seam (export_test.go): a hook run with
+	// a function's identity as its body is about to be invoked
+	// (runner.go runCallableRaw), so a test can act while the body runs.
+	invokeHook func(function string)
 }
 
 // Option configures Open.
@@ -263,6 +267,8 @@ type service struct {
 	testCommitFault func(stage string) error
 	// testSnapshotFault is the options' snapshot seam (snapshot.go).
 	testSnapshotFault func(stage, dir string) error
+	// testInvokeHook is the options' runner seam (runner.go). Tests only.
+	testInvokeHook func(function string)
 }
 
 // Open connects to Postgres, loads the schema files, ensures the two roles and
@@ -359,6 +365,7 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 		testAdoptFault:    o.adoptFault,
 		testCommitFault:   o.commitFault,
 		testSnapshotFault: o.snapshotFault,
+		testInvokeHook:    o.invokeHook,
 	}
 	if o.oauthKey != "" || o.oauthURL != "" {
 		// An empty HMAC key would make every state "signature" forgeable —

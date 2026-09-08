@@ -170,6 +170,9 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 		in.Config = cfg
 		inv.scrub.add(secrets...)
 	}
+	if hook := ds.svc.testInvokeHook; hook != nil {
+		hook(fn.Identity())
+	}
 	res, err := runner.Shared.Invoke(ctx, ds.runnerSpec(fn), in, &callBackend{
 		inv: inv, fn: fn, key: in.IdempotencyKey, causalDepth: in.CausalDepth,
 	})

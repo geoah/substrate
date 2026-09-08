@@ -27,7 +27,8 @@ const (
 
 // TriggerStatus is one trigger's delivery bookkeeping, computed on read:
 // its cursor (record sources), the changelog head, the lag between them, the
-// last fire (schedule sources) and how many parked failures it holds.
+// last fire (schedule sources), how many parked failures it holds and how
+// many accepted webhook requests it has yet to settle.
 type TriggerStatus struct {
 	ID       string `json:"id"`
 	Kind     string `json:"kind"` // record | schedule | webhook
@@ -42,7 +43,12 @@ type TriggerStatus struct {
 	// server root: "/webhooks/{authority}/{trigger}". The key, when the
 	// trigger declares one, is on the record and never here.
 	WebhookPath string `json:"webhookPath,omitempty"`
-	Parked      int64  `json:"parked"`
+	// Parked counts the deliveries the trigger gave up on, listed under
+	// `…/parked`. Pending counts the webhook requests the door accepted whose
+	// fire has not settled: listed there too, with `lastError` saying so,
+	// and not a failure.
+	Parked  int64 `json:"parked"`
+	Pending int64 `json:"pending"`
 	// Error names a trigger the dispatcher cannot run: an unparseable row or
 	// a callable that no longer resolves.
 	Error string `json:"error,omitempty"`

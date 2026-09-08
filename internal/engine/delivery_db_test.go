@@ -285,7 +285,7 @@ func TestARestoredRepositoryResumesItsDeliveries(t *testing.T) {
 		Query: map[string][]string{"token": {secret}},
 		Body:  []byte(body),
 	}
-	fid, err := d.svc.receiveWebhook(ctx, "geoah.example.com", ledgerHook, "", req, true)
+	fid, err := d.svc.receiveWebhook(ctx, "geoah.example.com", ledgerHook, "", req, webhookFireInline)
 	if err != nil {
 		t.Fatalf("receive: %v", err)
 	}
@@ -1411,7 +1411,7 @@ func TestAParkedMultipartWebhookKeepsItsPartValuesOutOfTheLedger(t *testing.T) {
 			{Name: "audio", MediaType: "audio/mp4", Data: []byte("not really audio")},
 		},
 	}
-	if _, err := d.svc.receiveWebhook(ctx, "geoah.example.com", ledgerHook, "", req, true); err != nil {
+	if _, err := d.svc.receiveWebhook(ctx, "geoah.example.com", ledgerHook, "", req, webhookFireInline); err != nil {
 		t.Fatalf("receive: %v", err)
 	}
 	ids := failureIDs(t, d, ledgerHook)

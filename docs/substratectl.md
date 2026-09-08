@@ -139,7 +139,8 @@ one kind's changes.
 
 Delivery bookkeeping lives on [triggers](functions.md#triggers), not on
 functions, so it is the `trigger` subcommands that drive it: `status` shows
-each trigger's kind, callable, cursor, lag, last fire, parked count and, for a
+each trigger's kind, callable, cursor, lag, last fire, parked count, pending
+count and, for a
 webhook trigger, the public path its `WEBHOOK` column prints
 (`/webhooks/<authority>/<trigger-id>`, the URL an external service POSTs to);
 `parked` lists the deliveries it gave up on and `retry` re-runs one; `replay`

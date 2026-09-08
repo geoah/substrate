@@ -2092,7 +2092,9 @@ components:
           schema:
             $ref: "#/components/schemas/BlobInfo"
     WebhookAccepted:
-      description: The delivery is on its way; `fire` names its run.
+      description: The request is recorded in the repository's changelog and
+        the fire is on its way; a restart resumes it under the same id, and
+        `fire` names its run.
       content:
         application/json:
           schema:
@@ -3480,7 +3482,7 @@ components:
     # --- triggers and callables -----------------------------------------
     TriggerStatus:
       type: object
-      required: [id, kind, callable, enabled, head, parked]
+      required: [id, kind, callable, enabled, head, parked, pending]
       properties:
         id:
           type: string
@@ -3508,6 +3510,10 @@ components:
         parked:
           type: integer
           format: int64
+        pending:
+          type: integer
+          format: int64
+          description: Accepted webhook requests whose fire has not settled.
         error:
           type: string
     TriggerFailure:

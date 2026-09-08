@@ -650,7 +650,7 @@ reach the server.
 
 | Answer | When |
 | --- | --- |
-| `202 {"fire": "hook-…"}` | the delivery is on its way; the fire id names its run row |
+| `202 {"fire": "hook-…"}` | the request is recorded in the repository's changelog and the fire is on its way; a restart resumes it under the same id, which names its run row |
 | `404 not_found` | no such repository, trigger or key, a disabled trigger, or a trigger of another source: one answer for all of them |
 | `413` | a non-multipart body over 1 MiB, or a multipart request over 32 MiB |
 | `431` | headers over 16 KiB |

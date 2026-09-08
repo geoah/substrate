@@ -148,13 +148,19 @@ type dataset struct {
 	changelogStamped atomic.Bool
 	// runningClaims holds the failure ids this process is running a delivery
 	// under: a dispatch's claim from inside the transaction that writes it
-	// until its completion or park ends, and a retry's failure from before
-	// anything runs until its retirement or re-park ends (functions.go
-	// acquireClaim). The insert is compare-and-swap (sync.Map.LoadOrStore), so
-	// two hands on one failure cannot both start a loop: the second answers
-	// ErrConflict. A crash empties it, and the claim it leaves behind is
-	// retryable.
+	// until its completion or park ends, a retry's failure from before
+	// anything runs until its retirement or re-park ends, and a webhook
+	// fire's pending entry from before anything runs until its retirement or
+	// park ends (functions.go acquireClaim, deliverFire). The insert is
+	// compare-and-swap (sync.Map.LoadOrStore), so two hands on one failure
+	// cannot both start a loop, and a resume racing the door's own spawn
+	// cannot both start a fire: the second answers ErrConflict. A crash
+	// empties it, and the claim it leaves behind is retryable.
 	runningClaims sync.Map
+	// resumingWebhooks is set while a dispatcher pass's resume of pending
+	// webhook requests runs (webhooks.go resumeWebhooks), so passes that
+	// come faster than a fire settles do not start a second walk.
+	resumingWebhooks atomic.Bool
 	// stampHeld, set on the opening goroutine only, keeps the appends the
 	// ledger adoption makes BEFORE its own transaction (the blob spool of a
 	// legacy park's body) from stamping the dialect: the stamp must commit
