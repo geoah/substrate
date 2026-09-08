@@ -87,6 +87,20 @@ const (
 	CommitAfterCommit    = commitAfterCommit
 )
 
+// WithTestSnapshotFault installs a hook the snapshot runs after each copy
+// step with the partial directory it is building (snapshot.go). A test
+// damages a copied file there, or returns an error to fail the snapshot
+// mid-copy; a nil hook is the production path.
+func WithTestSnapshotFault(fn func(stage, dir string) error) Option {
+	return func(o *options) { o.snapshotFault = fn }
+}
+
+// The snapshot stages WithTestSnapshotFault reports, in the order they run.
+const (
+	SnapshotAfterChangelog = snapshotAfterChangelog
+	SnapshotAfterCopy      = snapshotAfterCopy
+)
+
 // BreakSealedStore replaces a dataset's sealed-file writer with one that
 // fails every call, under its mutex, so the next write that touches the
 // sealed table is refused the way a full disk would refuse it: before its

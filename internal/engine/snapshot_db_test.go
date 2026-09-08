@@ -240,6 +240,148 @@ func TestSnapshotRecordsThePointAndRestoresIntoAnEmptyDatabase(t *testing.T) {
 	}
 }
 
+// snapshotFixture registers ada with one secret and one blob and stops the
+// server: the repository an operator's process snapshots.
+func snapshotFixture(t *testing.T) (dsn, root, id, ref, digest string, head int64) {
+	t.Helper()
+	svc, dsn := newService(t)
+	ctx := context.Background()
+	registerUser(t, svc, "ada")
+	ds, err := svc.Dataset(ctx, "ada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref = putProvider(t, ds, dsn, "openai", "sk-fixture")
+	digest = putBlob(t, ds, []byte("fixture bytes"))
+	head = maxSeq(t, ds)
+	id = repositoryIDOf(t, ds)
+	root = engine.DataRootOf(svc)
+	_ = svc.Close()
+	return dsn, root, id, ref, digest, head
+}
+
+// nothingAt asserts the destination root holds neither the repository's
+// directory nor a partial the snapshot was building.
+func nothingAt(t *testing.T, dest, id string) {
+	t.Helper()
+	if _, err := os.Lstat(filepath.Join(dest, changelogfile.RepositoriesDir, id)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the destination holds the repository directory after a failed snapshot: %v", err)
+	}
+	entries, err := os.ReadDir(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".incoming-") {
+			t.Fatalf("a partial %s was left under the destination", e.Name())
+		}
+	}
+}
+
+// A copied file damaged between the copy and the read-back is caught the way
+// the source is verified: a sealed file that is still valid JSON and base64
+// but not the source's ciphertext, a blob whose bytes are not its digest's, a
+// segment whose line no longer checks. The snapshot is discarded whole, the
+// destination is left empty, and a clean retry into the same place succeeds.
+func TestSnapshotDiscardsACopyThatDoesNotReadBack(t *testing.T) {
+	t.Parallel()
+	cases := map[string]func(t *testing.T, dir, ref, digest string){
+		"sealed": func(t *testing.T, dir, ref, _ string) {
+			path := filepath.Join(changelogfile.SealedDir(dir), changelogfile.SealedFileName(ref))
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var rec changelogfile.SealedRecord
+			if err := json.Unmarshal(raw, &rec); err != nil {
+				t.Fatal(err)
+			}
+			rec.Payload[len(rec.Payload)-1] ^= 0xff
+			out, err := json.Marshal(rec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, append(out, '\n'), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"blob": func(t *testing.T, dir, _, digest string) {
+			if err := os.WriteFile(filepath.Join(changelogfile.BlobsDir(dir), digest), []byte("FIXTURE bytes"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"segment": func(t *testing.T, dir, _, _ string) {
+			segments, err := changelogfile.Segments(changelogfile.ChangelogDir(dir))
+			if err != nil || len(segments) == 0 {
+				t.Fatalf("segments of the copy: %v (%d)", err, len(segments))
+			}
+			path := filepath.Join(changelogfile.ChangelogDir(dir), segments[len(segments)-1].Name)
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw[len(raw)/2] ^= 0x01
+			if err := os.WriteFile(path, raw, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		},
+	}
+	for name, damage := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			dsn, root, id, ref, digest, head := snapshotFixture(t)
+			armed := true
+			operator := reopenWith(t, dsn, root, engine.WithTestSnapshotFault(func(stage, dir string) error {
+				if stage == engine.SnapshotAfterCopy && armed {
+					damage(t, dir, ref, digest)
+				}
+				return nil
+			}))
+			dest := t.TempDir()
+			_, err := operator.(snapshotter).SnapshotRepository(ctx, "ada", dest)
+			if !errors.Is(err, engine.ErrSnapshotCopyDamaged) {
+				t.Fatalf("a damaged copy was kept: %v", err)
+			}
+			nothingAt(t, dest, id)
+			armed = false
+			report, err := operator.(snapshotter).SnapshotRepository(ctx, "ada", dest)
+			if err != nil || report.Head != head {
+				t.Fatalf("the retry into the same destination: %+v, %v", report, err)
+			}
+			if _, err := changelogfile.ReadSnapshot(report.Directory); err != nil {
+				t.Fatalf("the retry left no %s: %v", changelogfile.SnapshotName, err)
+			}
+		})
+	}
+}
+
+// A failure in the middle of the copy leaves nothing at the destination, not
+// even the partial, and the same destination takes the retry.
+func TestSnapshotFailureMidCopyLeavesNothingAndRetries(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn, root, id, _, _, head := snapshotFixture(t)
+	diskFull := errors.New("test: the disk filled after the changelog")
+	armed := true
+	operator := reopenWith(t, dsn, root, engine.WithTestSnapshotFault(func(stage, _ string) error {
+		if stage == engine.SnapshotAfterChangelog && armed {
+			return diskFull
+		}
+		return nil
+	}))
+	dest := t.TempDir()
+	if _, err := operator.(snapshotter).SnapshotRepository(ctx, "ada", dest); !errors.Is(err, diskFull) {
+		t.Fatalf("the mid-copy failure was not the snapshot's error: %v", err)
+	}
+	nothingAt(t, dest, id)
+	armed = false
+	report, err := operator.(snapshotter).SnapshotRepository(ctx, "ada", dest)
+	if err != nil || report.Head != head {
+		t.Fatalf("the retry into the same destination: %+v, %v", report, err)
+	}
+}
+
 // A snapshot copies nothing beside a running server, and nothing of a
 // repository that does not verify.
 func TestSnapshotRefusesTheLockAndADamagedRepository(t *testing.T) {

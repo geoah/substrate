@@ -516,9 +516,20 @@ ignores the file, and `repository verify` on the restored repository prints
 the point and checks that the entry it names is in the files with that
 checksum ([decision 0065](decisions/0065-a-snapshot-is-a-stopped-server-copy-that-records-its-head.md)).
 A destination that already holds a directory for the repository is refused;
-a snapshot is a fresh copy, never a merge over an older one. The copy holds
-what the fold needs and nothing else: a pending upload, a tombstoned blob's
-bytes and a staged sealed file are not copied.
+a snapshot is a fresh copy, never a merge over an older one. The copy is
+built under a dot-prefixed temporary directory beside `repositories/` and
+renamed into place once `snapshot.json` is on disk, so a snapshot that fails
+leaves nothing at the destination and the same destination takes the retry.
+The copy holds what the fold needs and nothing else: a pending upload, a
+tombstoned blob's bytes and a staged sealed file are not copied. Run it with
+the binary the server runs, as with `rebuild`: it opens the repository the
+way the server does, so a newer `substratectl` stamps the source with its own
+dialects and the older server then refuses the repository. The lock it takes
+is the changelog writer's, held from the server's first open of the
+repository until it exits, so a snapshot cannot slip between two
+transactions of a running server; a server that has not opened the
+repository yet holds nothing, and its first open fails with the lock named
+until the snapshot finishes.
 
 ```
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository snapshot ada /srv/substrate-backup/2026-09-08
@@ -770,7 +781,9 @@ the exec path needs nothing open at all.
   against each other. It then holds the side stores to the fold: every blob
   whose manifest says `stored` is read out of the configured blob store and
   hashed against its digest, every secret reference a live record holds
-  (by the repository's own declarations) must have its sealed file, and with
+  (by the repository's own declarations, as a replay loads them, so the
+  records of a package the loader parked are not walked) must have its
+  sealed file, and with
   `SUBSTRATE_CREDENTIAL_KEY` in the environment every sealed file is opened
   under the repository's key; without the key the files are compared with
   the rows and the report says nothing was opened. A directory that is a
@@ -795,8 +808,11 @@ the exec path needs nothing open at all.
   `verify` first and refuses on any finding, refuses a destination that
   already holds the repository, and refuses beside a running server, because
   it opens the repository as its changelog writer so nothing lands while it
-  copies. Under `s3` it lists the objects the copy needs instead of copying
-  them.
+  copies (and a server that opens the repository first while it runs meets
+  the same lock). The copy is built beside the destination and renamed into
+  place last, so a failed snapshot leaves nothing there. Run it with the
+  server's binary, as with `rebuild`. Under `s3` it lists the objects the
+  copy needs instead of copying them.
 - **`repository rebuild <username>`** replays the segment files into a fresh
   fold, in one transaction, under that repository's own lock, after running
   the same check the boot runs. It reproduces the fold bit for bit and appends

@@ -69,11 +69,18 @@ both places, every stored blob's bytes, every live secret reference and, under
 SUBSTRATE_CREDENTIAL_KEY, every sealed file opened. A finding refuses the
 snapshot and is printed. The key is required for that reason. A destination
 that already holds a directory for the repository is refused: a snapshot is
-a fresh copy, never a merge over an older one.
+a fresh copy, never a merge over an older one. The copy is built beside the
+destination and renamed into place once snapshot.json is on disk, so a failed
+snapshot leaves nothing there and the same destination takes the retry. The
+copy is read back before that: every segment's checksums, every sealed file
+opened under the key, every blob hashed.
 
 STOP THE SERVER FIRST. The snapshot opens the repository as its changelog
 writer so that no write can land while it copies, and a running server holds
-that lock; the command refuses rather than copy beside it.
+that lock; the command refuses rather than copy beside it, and a server that
+opens the repository first while the snapshot runs meets the same lock. Run it
+with the binary the server runs, as with 'rebuild': the open stamps the
+repository with this binary's dialects, which an older server then refuses.
 
   SUBSTRATE_CREDENTIAL_KEY=… substratectl repository snapshot ada /srv/substrate-backup/2026-09-08`,
 		Args: cobra.ExactArgs(2),
