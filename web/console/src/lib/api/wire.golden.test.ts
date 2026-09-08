@@ -1,8 +1,9 @@
 /** The console's half of the wire-drift guard.
  *
- * `types.ts` is written BY HAND to mirror the Go structs in
- * `internal/substrate`. Nothing generates it, so the two can drift silently —
- * a renamed Go field is invisible here until something breaks in a browser.
+ * The interfaces under `src/lib/api/` are written BY HAND to mirror the Go
+ * structs in `internal/substrate`. Nothing generates them, so the two can
+ * drift silently: a renamed Go field is invisible here until something breaks
+ * in a browser.
  *
  * `wire.golden.json` is what stops that. A Go test
  * (`internal/substrate/wire_test.go`) reflects over the structs and writes,
@@ -16,20 +17,27 @@
  *
  * The trick that makes it real rather than decorative is the `Shape<T>` maps
  * below. TypeScript types are erased at runtime, so a test cannot enumerate an
- * interface's keys — but a `Shape<T>` literal will not COMPILE unless it lists
- * every key of `T` and no others, `true` for a required key and `false` for an
- * optional one. So each map is checked twice: by `tsc`, against the interface,
- * and here, against the golden. A field that moves in Go fails the Go test;
- * once the golden is regenerated, it fails here until the interface and its
- * map agree.
+ * interface's keys. A `Shape<T>` literal, though, will not COMPILE unless it
+ * lists every key of `T` and no others, `true` for a required key and `false`
+ * for an optional one. So each map is checked twice: by `tsc`, against the
+ * interface, and here, against the golden. A field that moves in Go fails the
+ * Go test; once the golden is regenerated, it fails here until the interface
+ * and its map agree.
  *
- * When this fails, fix `types.ts` — the golden is the server's word, not a
+ * The last test reads the source of every module in this directory: an
+ * exported interface is either in the golden or in `notOnTheWire` with the
+ * reason it mirrors no Go struct. A wire shape added in `auth.ts` or
+ * `agents.ts` is held the same way as one in `types.ts`.
+ *
+ * When this fails, fix the interface: the golden is the server's word, not a
  * suggestion. */
 
 import { describe, expect, it } from "vitest"
 
+import type { AgentEvent, AgentResult } from "./agents"
+import type { RegisterInput, RegisterResult } from "./auth"
+import type { RecordPatch } from "./records"
 import golden from "./wire.golden.json"
-import typesSource from "./types?raw"
 import type {
   BundleClosure,
   BundlePurged,
@@ -67,6 +75,7 @@ import type {
   RecordFilter,
   SetupItem,
   ShippedRecord,
+  ShippedUpgrade,
   SubstrateRecord,
   SuggestedMapping,
   TOTPEnrollment,
@@ -158,6 +167,16 @@ const putInput: Shape<PutInput> = {
   properties: false,
   labels: false,
   annotations: false,
+  ifVersion: false,
+}
+
+/** The patch body (`substrate.PatchInput`). */
+const recordPatch: Shape<RecordPatch> = {
+  properties: false,
+  labels: false,
+  annotations: false,
+  addFinalizers: false,
+  removeFinalizers: false,
   ifVersion: false,
 }
 
@@ -284,6 +303,55 @@ const totpEnrollment: Shape<TOTPEnrollment> = {
   otpauthUri: true,
 }
 
+/** Registration (auth.ts): the request the door decodes and its answer, which
+ * is the mint plus the authority and the recovery material. */
+const registerInput: Shape<RegisterInput> = {
+  inviteCode: true,
+  username: true,
+  password: true,
+  totpSecret: true,
+  totpCode: true,
+  label: false,
+  authority: false,
+  recoveryPublicKey: false,
+}
+
+const registerResult: Shape<RegisterResult> = {
+  ...mintedToken,
+  authority: true,
+  recoveryKey: false,
+  recoveryPublicKey: false,
+}
+
+/** The agent chat stream (agents.ts). */
+const agentResult: Shape<AgentResult> = {
+  reply: true,
+  thread: true,
+  status: true,
+  reason: false,
+  effects: true,
+  effectsByAction: false,
+  turns: true,
+  toolCalls: true,
+  promptTokens: true,
+  completionTokens: true,
+  totalTokens: true,
+  costUSD: true,
+}
+
+const agentEvent: Shape<AgentEvent> = {
+  kind: true,
+  thread: false,
+  text: false,
+  id: false,
+  tool: false,
+  args: false,
+  ok: false,
+  output: false,
+  result: false,
+  error: false,
+}
+
 /** The catalog entry and the shapes nested in it. */
 const catalogBundle: Shape<CatalogBundle> = {
   id: true,
@@ -375,6 +443,7 @@ const setupItem: Shape<SetupItem> = {
   message: true,
 }
 
+/** The upgrade preview, on a catalog entry and on the shipped-upgrade read. */
 const bundleUpgrade: Shape<BundleUpgrade> = {
   available: true,
   from: false,
@@ -388,6 +457,11 @@ const bundleUpgradeChange: Shape<BundleUpgradeChange> = {
   id: true,
   from: false,
   to: false,
+}
+
+const shippedUpgrade: Shape<ShippedUpgrade> = {
+  package: true,
+  upgrade: true,
 }
 
 const bundleUninstalled: Shape<BundleUninstalled> = { uninstalled: true }
@@ -408,6 +482,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   PropertyMeta: propertyMeta,
   PropertyAlternative: propertyAlternative,
   PutInput: putInput,
+  RecordPatch: recordPatch,
   Cond: cond,
   RecordFilter: recordFilter,
   KindInfo: kindInfo,
@@ -424,6 +499,10 @@ const mirrors: Record<string, Record<string, boolean>> = {
   TokenInfo: tokenInfo,
   MintedToken: mintedToken,
   TOTPEnrollment: totpEnrollment,
+  RegisterInput: registerInput,
+  RegisterResult: registerResult,
+  AgentResult: agentResult,
+  AgentEvent: agentEvent,
   CatalogBundle: catalogBundle,
   CatalogItem: catalogItem,
   CatalogInput: catalogInput,
@@ -435,6 +514,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   SetupItem: setupItem,
   BundleUpgrade: bundleUpgrade,
   BundleUpgradeChange: bundleUpgradeChange,
+  ShippedUpgrade: shippedUpgrade,
   BundleUninstalled: bundleUninstalled,
   BundlePurged: bundlePurged,
   OAuthStarted: oauthStarted,
@@ -444,14 +524,78 @@ const mirrors: Record<string, Record<string, boolean>> = {
   WebhookAccepted: webhookAccepted,
 }
 
-/** The interfaces types.ts exports that mirror no Go struct in
- * `internal/substrate`, each with the reason. Everything else it exports must
- * be in the golden. */
+/** The interfaces the modules in this directory export that mirror no Go
+ * struct in `internal/substrate`, each with the reason. Everything else they
+ * export must be in the golden. */
 const notOnTheWire: Record<string, string> = {
+  // types.ts
   LinkedReference:
     "an open map: a reference value is `ref` plus whatever link properties the declaration names, not a struct",
   EnumValue:
     "one element of a property declaration's `values`, declared in internal/vocabulary and out of the golden's reach",
+  // discovery.ts
+  AuthPolicy:
+    "one field of server.json's `registration` object, read as a Partial; the discovery document is #361's to pin",
+  // http.ts
+  RequestOpts: "the fetch wrapper's own options, never serialized",
+  // agents.ts
+  ChatHandle: "a client handle over the stream, never serialized",
+  // kinds.ts
+  PackageNav: "the sidebar's grouping of KindInfo rows",
+  AuthorityNav: "the sidebar's grouping of KindInfo rows",
+  KindNav: "the sidebar's grouping of KindInfo rows",
+  // transcript.ts
+  ChangeStamp: "a view the console folds from llmmessage records",
+  ToolCallView: "a view the console folds from llmmessage records",
+  TurnView: "a view the console folds from llmmessage records",
+  DecisionNotice: "a view the console folds from llmmessage records",
+  InteractionNotice: "a view the console folds from llmmessage records",
+  DeliveryNotice: "a view the console folds from llmmessage records",
+  // actors.ts
+  ActorMirrors: "client-side actor resolution state",
+  ResolvedActor: "client-side actor resolution state",
+  // bundles.ts
+  TraitRecords: "a bounded read's result the console derives from a Page",
+  // changes.ts
+  ChangeFeedFilter:
+    "the feed's query parameters, URL-encoded, never a JSON body",
+  ChangesFeedOpts: "query options for the infinite feed, client-side",
+  HistoryPosition: "a seek position the console holds, client-side",
+  WatchError:
+    "a loose reading of ErrorPayload off a stream frame (`code` as any string); the shape is pinned as ErrorPayload",
+  WatchLine:
+    "the union of the three ndjson frame shapes (a ChangeRow, `{bookmark, generation}`, `{error}`), keyed by which field is present",
+  WatchHandle: "a client handle over the stream, never serialized",
+  // overview.ts
+  KindCount: "a dashboard tally the console computes",
+  // records.ts
+  ListParams: "the list read's query parameters, never a JSON body",
+  RecordCount: "a bounded walk's tally the console computes",
+  IncomingGroup: "a client-side fold of IncomingReference rows",
+  // repository.ts
+  RepositoryInfo:
+    "two properties read off the repository record; not the operator's substrate.RepositoryInfo",
+}
+
+/** Every module in this directory, source included, tests excluded: the shapes
+ * a module exports are read off its text, since types are erased at runtime. */
+const modules = import.meta.glob<string>("./*.ts", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+})
+
+const exportedShape = /^export (?:interface (\w+)|type (\w+) = \{)/gm
+
+function exportedShapes(): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const [path, source] of Object.entries(modules)) {
+    if (path.endsWith(".test.ts")) continue
+    for (const m of source.matchAll(exportedShape)) {
+      out.set(m[1] ?? m[2], path)
+    }
+  }
+  return out
 }
 
 describe("wire types mirror the Go structs", () => {
@@ -460,19 +604,19 @@ describe("wire types mirror the Go structs", () => {
     expect(Object.keys(mirrors).sort()).toEqual(Object.keys(golden).sort())
   })
 
-  it("pins every interface types.ts exports", () => {
-    const exported = [...typesSource.matchAll(/^export interface (\w+)/gm)].map(
-      (m) => m[1]
-    )
-    const unpinned = exported.filter(
-      (name) => !(name in golden) && !(name in notOnTheWire)
-    )
+  it("pins every shape a module under lib/api exports", () => {
+    const exported = exportedShapes()
+    // The glob has to have read something, or the check below is vacuous.
+    expect(exported.get("SubstrateRecord")).toBe("./types.ts")
+    const unpinned = [...exported.entries()]
+      .filter(([name]) => !(name in golden) && !(name in notOnTheWire))
+      .map(([name, path]) => `${name} (${path})`)
     expect(
       unpinned,
-      "an exported interface is neither in the golden nor listed in notOnTheWire with a reason"
+      "an exported shape is neither in the golden nor listed in notOnTheWire with a reason"
     ).toEqual([])
     const stale = Object.keys(notOnTheWire).filter(
-      (name) => !exported.includes(name) || name in golden
+      (name) => !exported.has(name) || name in golden
     )
     expect(stale, "notOnTheWire names a shape that is gone or pinned").toEqual(
       []

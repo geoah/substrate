@@ -64,9 +64,9 @@ export interface RegisterInput {
  * (present only when the server minted the pair; shown once, never stored)
  * and the enrolled recipient. */
 export interface RegisterResult extends MintedToken {
-  /** The authority the repository was created with, echoed so a client that
-   * sent none learns the default it got. */
-  authority?: string
+  /** The authority the repository was created with, always echoed so a client
+   * that sent none learns the default it got. */
+  authority: string
   recoveryKey?: string
   recoveryPublicKey?: string
 }

@@ -37,10 +37,11 @@ const goldenPath = "../../web/console/src/lib/api/wire.golden.json"
 // which is the console's word for it — `Record` is `SubstrateRecord` there
 // because TypeScript already owns `Record<K, V>`.
 //
-// Every interface types.ts exports is here, and the vitest beside the golden
-// refuses an export that is not (a shape with no Go struct in this package is
-// named there, with the reason). A response an API handler builds as a bare
-// map cannot be pinned, so a handler names its reply as a struct here first.
+// Every interface a module under web/console/src/lib/api exports is here, and
+// the vitest beside the golden refuses an export that is not (a client-only
+// shape is named there, with the reason). A response an API handler builds as
+// a bare map cannot be pinned, so a handler names its reply as a struct here
+// first.
 var wireTypes = map[string]any{
 	// The error envelope: the one body every refused request answers with.
 	"ErrorPayload":  ErrorPayload{},
@@ -53,6 +54,8 @@ var wireTypes = map[string]any{
 	"PropertyMeta":        PropertyMeta{},
 	"PropertyAlternative": PropertyAlternative{},
 	"PutInput":            PutInput{},
+	// The patch body. The console calls it RecordPatch (records.ts).
+	"RecordPatch": PatchInput{},
 	// The filter grammar. The console calls the Filter `RecordFilter`.
 	"Cond":         Cond{},
 	"RecordFilter": Filter{},
@@ -82,6 +85,15 @@ var wireTypes = map[string]any{
 	"TokenInfo":      TokenInfo{},
 	"MintedToken":    MintedToken{},
 	"TOTPEnrollment": TOTPEnrollment{},
+	// Registration: the request the door decodes and the answer it writes.
+	// The console's RegisterInput and RegisterResult (auth.ts) mirror them.
+	"RegisterInput":  RegisterRequest{},
+	"RegisterResult": Registered{},
+
+	// The agent chat stream (agents.ts): one ndjson event, and the settled
+	// result the done event carries.
+	"AgentResult": AgentResult{},
+	"AgentEvent":  AgentEvent{},
 
 	// The catalog entry and the shapes nested in it. The console's Registry
 	// reads them on every visit and its two sections key on `tier`, so a
@@ -108,6 +120,9 @@ var wireTypes = map[string]any{
 	// provider. The Registry renders the motion and the blockers.
 	"BundleUpgrade":       BundleUpgrade{},
 	"BundleUpgradeChange": BundleUpgradeChange{},
+	// `GET /api/v1/vocabulary/upgrade` carries one upgrade preview per shipped
+	// package. The Registry renders the motion and the blockers.
+	"ShippedUpgrade": ShippedUpgrade{},
 
 	// The installed bundle's computed status and the lifecycle replies.
 	"BundleStatus":      BundleStatus{},
@@ -135,6 +150,10 @@ var wireTypes = map[string]any{
 // An embedded struct with no tag is flattened, as encoding/json promotes its
 // fields: ChangeRow is a Change plus `triggers`, CatalogItem a CatalogBundle
 // plus `installed` and `upgrade`, and the console mirrors both with `extends`.
+// An embedded POINTER is refused: encoding/json drops every promoted field
+// when it is nil, which no per-field boolean can say. So is `omitempty` on a
+// struct value (time.Time included): it never omits one, so the golden would
+// call required a field it marked optional; `omitzero` is the tag that works.
 func wireFields(t *testing.T, v any) map[string]bool {
 	t.Helper()
 	rt := reflect.TypeOf(v)
@@ -155,14 +174,13 @@ func collectWireFields(t *testing.T, rt reflect.Type, out map[string]bool) {
 		}
 		tag, tagged := f.Tag.Lookup("json")
 		if f.Anonymous && !tagged {
-			ft := f.Type
-			if ft.Kind() == reflect.Pointer {
-				ft = ft.Elem()
+			if f.Type.Kind() == reflect.Pointer {
+				t.Fatalf("%s embeds *%s: a nil pointer drops every promoted field, which the golden cannot record", rt.Name(), f.Type.Elem().Name())
 			}
-			if ft.Kind() != reflect.Struct {
+			if f.Type.Kind() != reflect.Struct {
 				t.Fatalf("%s embeds %s, which is not a struct: the wire name would be the Go name by accident", rt.Name(), f.Type)
 			}
-			collectWireFields(t, ft, out)
+			collectWireFields(t, f.Type, out)
 			continue
 		}
 		if !tagged {
@@ -178,13 +196,19 @@ func collectWireFields(t *testing.T, rt reflect.Type, out map[string]bool) {
 		if _, dup := out[name]; dup {
 			t.Fatalf("%s serializes %q twice", rt.Name(), name)
 		}
-		required := true
+		omitempty, omitzero := false, false
 		for _, o := range strings.Split(opts, ",") {
-			if o == "omitempty" || o == "omitzero" {
-				required = false
+			switch o {
+			case "omitempty":
+				omitempty = true
+			case "omitzero":
+				omitzero = true
 			}
 		}
-		out[name] = required
+		if omitempty && !omitzero && f.Type.Kind() == reflect.Struct {
+			t.Fatalf("%s.%s: omitempty never omits a struct value (%s), so the field is required on the wire; tag it omitzero", rt.Name(), f.Name, f.Type)
+		}
+		out[name] = !omitempty && !omitzero
 	}
 }
 

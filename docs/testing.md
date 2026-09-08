@@ -168,9 +168,9 @@ a field the server always writes (`null` included), `false` for one tagged
 golden asserts the TypeScript carries exactly those keys with exactly that
 optionality, using `Shape<T>` maps that `tsc` refuses to compile if they are
 missing a key, carry a spare one, or mark a `?` key `true`. The same vitest
-reads `types.ts` and refuses an exported interface that is in neither the
-golden nor its short list of shapes with no Go struct, so a new mirror is
-pinned or explained.
+reads every module under `web/console/src/lib/api/` and refuses an exported
+interface that is in neither the golden nor its list of client-only shapes,
+each with a reason, so a new mirror is pinned or explained wherever it lives.
 
 A response an API handler builds as a bare `map[string]any` cannot be pinned:
 a handler names its reply as a struct in `internal/substrate` first

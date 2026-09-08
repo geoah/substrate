@@ -49,6 +49,39 @@ type MintedToken struct {
 	Secret string    `json:"secret"`
 }
 
+// RegisterRequest is the registration commit as the HTTP door decodes it:
+// the invite code, the username, the password, the enrollment the caller was
+// issued plus one code from it, and what a client may choose about its
+// repository. The door builds the engine's RegisterInput from it.
+type RegisterRequest struct {
+	InviteCode string `json:"inviteCode"`
+	Username   string `json:"username"`
+	Password   string `json:"password"`
+	TOTPSecret string `json:"totpSecret"`
+	TOTPCode   string `json:"totpCode"`
+	// Label names the token registration mints; absent, the door's default.
+	Label string `json:"label,omitempty"`
+	// Authority is the DNS-style authority the new repository will own, the
+	// home of the kinds its user declares. Absent, it defaults to the
+	// username under the host the request reached (`ada.example.com`).
+	Authority string `json:"authority,omitempty"`
+	// RecoveryPublicKey is the client-generated age recipient; absent asks
+	// the server to mint the pair and return the identity once.
+	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
+}
+
+// Registered is what a registration answers: the mint, the authority the
+// repository was created with (always echoed, so a client that sent none
+// learns the default it got), and the recovery material. RecoveryKey is
+// present only when the server generated the pair, shown this once like the
+// token secret beside it.
+type Registered struct {
+	MintedToken
+	Authority         string `json:"authority"`
+	RecoveryKey       string `json:"recoveryKey,omitempty"`
+	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
+}
+
 // TOTPEnrollment is a candidate second factor: the base32 seed and the
 // otpauth:// URI a password manager imports. Issuing one creates NOTHING
 // durable — the caller proves possession by returning the seed with one code,

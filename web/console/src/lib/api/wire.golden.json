@@ -1,4 +1,30 @@
 {
+  "AgentEvent": {
+    "args": false,
+    "error": false,
+    "id": false,
+    "kind": true,
+    "ok": false,
+    "output": false,
+    "result": false,
+    "text": false,
+    "thread": false,
+    "tool": false
+  },
+  "AgentResult": {
+    "completionTokens": true,
+    "costUSD": true,
+    "effects": true,
+    "effectsByAction": false,
+    "promptTokens": true,
+    "reason": false,
+    "reply": true,
+    "status": true,
+    "thread": true,
+    "toolCalls": true,
+    "totalTokens": true,
+    "turns": true
+  },
   "BundleClosure": {
     "agents": true,
     "functions": true,
@@ -243,6 +269,31 @@
     "labels": false,
     "properties": false
   },
+  "RecordPatch": {
+    "addFinalizers": false,
+    "annotations": false,
+    "ifVersion": false,
+    "labels": false,
+    "properties": false,
+    "removeFinalizers": false
+  },
+  "RegisterInput": {
+    "authority": false,
+    "inviteCode": true,
+    "label": false,
+    "password": true,
+    "recoveryPublicKey": false,
+    "totpCode": true,
+    "totpSecret": true,
+    "username": true
+  },
+  "RegisterResult": {
+    "authority": true,
+    "recoveryKey": false,
+    "recoveryPublicKey": false,
+    "secret": true,
+    "token": true
+  },
   "SetupItem": {
     "code": true,
     "input": false,
@@ -253,6 +304,10 @@
   "ShippedRecord": {
     "id": true,
     "kind": true
+  },
+  "ShippedUpgrade": {
+    "package": true,
+    "upgrade": true
   },
   "SubstrateRecord": {
     "annotations": false,

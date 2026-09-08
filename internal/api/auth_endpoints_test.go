@@ -37,7 +37,7 @@ func TestRegisterThenLogin(t *testing.T) {
 		"label": "console",
 	})
 	wantStatus(t, rec, http.StatusCreated)
-	out := decodeJSON[registerResponse](t, rec)
+	out := decodeJSON[substrate.Registered](t, rec)
 	if out.Secret == "" || out.Token.Label != "console" {
 		t.Fatalf("registration response = %+v", out)
 	}
@@ -72,7 +72,7 @@ func TestRegistrationKeepsTheAuthorityItIsGiven(t *testing.T) {
 		"authority": " ada.example.org ",
 	})
 	wantStatus(t, rec, http.StatusCreated)
-	out := decodeJSON[registerResponse](t, rec)
+	out := decodeJSON[substrate.Registered](t, rec)
 	if out.Authority != "ada.example.org" {
 		t.Fatalf("registration authority = %q, want the trimmed one the request named", out.Authority)
 	}

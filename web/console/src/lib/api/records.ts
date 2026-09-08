@@ -20,11 +20,12 @@ import { fetchChangesPage, type HistoryPosition } from "./changes"
 import { collectionPath, request, seg } from "./http"
 import type {
   ChangeRow,
-  SubstrateRecord,
-  RecordFilter,
-  IncomingReference,
   IncomingPage,
+  IncomingReference,
   Page,
+  PutInput,
+  RecordFilter,
+  SubstrateRecord,
 } from "./types"
 
 /** A record id as one URL path segment: `encodeURIComponent`, so a `/` inside
@@ -180,17 +181,12 @@ export function recordQueryOptions(
 
 // ── writes (bundle config + account records, integrations flow) ─────────────
 
-/** A create/upsert write body (`substrate.PutInput`): authored properties,
- * labels and annotations, plus an optional id (omit to let the substrate mint
- * one). The kind is settled by the collection path, and a pointer at another
- * record is a `reference` property like any other. */
-export interface RecordWrite {
-  id?: string
-  properties?: Record<string, unknown>
-  labels?: Record<string, unknown>
-  annotations?: Record<string, unknown>
-  ifVersion?: number
-}
+/** A create/upsert write body: `substrate.PutInput` without `kind`, which the
+ * collection path settles. Authored properties, labels and annotations, plus
+ * an optional id (omit to let the substrate mint one); a pointer at another
+ * record is a `reference` property like any other. Derived from the pinned
+ * shape, so the golden holds it through PutInput. */
+export type RecordWrite = Omit<PutInput, "kind">
 
 /** Create one record in a collection: `POST /{authority}/{package}/{name}`.
  * The kind is settled by the URL; the body carries authored properties (and an
@@ -234,6 +230,10 @@ export interface RecordPatch {
   properties?: Record<string, unknown>
   labels?: Record<string, unknown>
   annotations?: Record<string, unknown>
+  /** The finalizer arms. The console writes neither; they ride along so the
+   * mirror is whole. */
+  addFinalizers?: string[]
+  removeFinalizers?: string[]
   ifVersion?: number
 }
 
