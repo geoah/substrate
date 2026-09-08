@@ -16,7 +16,8 @@ import (
 // and each part of it is a named OPTIONAL EXTENSION interface in this package
 // that an implementation may also satisfy: VocabularyApplier, AutomationOps,
 // TriggerDispatcher, AgentOps, ResolutionSweeper, BundleOps, BundleInstaller,
-// BundleUpgradePlanner, OAuthMaintainer, BlobStore, ChangeFeedOps. A consumer
+// BundleUpgradePlanner, ShippedUpgradePlanner, OAuthMaintainer, BlobStore,
+// ChangeFeedOps. A consumer
 // that needs one type-asserts THAT interface, never a concrete engine type,
 // and every implementation asserts each seam it satisfies at compile time
 // (`var _ substrate.BundleOps = (*dataset)(nil)`) — otherwise renaming a

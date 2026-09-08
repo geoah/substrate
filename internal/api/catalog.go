@@ -116,7 +116,10 @@ func (s installedSet) copyOf(b *catalog.Bundle, home string) *substrate.BundleSt
 // The listing is what the console's Registry (and now its sidebar badge, on
 // every page) reads, so one unpreviewable closure must not blank it — the
 // same reason catalog.Load drops a broken directory instead of bricking the
-// shipped set. The offer is an extra; the listing is the promise.
+// shipped set. The offer is an extra; the listing is the promise. The failure
+// itself is not dropped: it rides the entry as one blocker line carrying the
+// error text, so a database fault or an unadmittable closure reads as an
+// upgrade nobody can take, not as an entry with nothing to offer.
 func (h *handler) catalogItemFor(ctx context.Context, b *catalog.Bundle, held *substrate.BundleStatus) catalogItem {
 	installed := held != nil
 	item := catalogItem{CatalogBundle: b.CatalogBundle, Installed: installed}
@@ -141,11 +144,22 @@ func (h *handler) catalogItemFor(ctx context.Context, b *catalog.Bundle, held *s
 		return item
 	}
 	up, err := h.catalog.Upgrade(ctx, b.ID, DatasetFrom(ctx))
-	if err != nil || up == nil || !up.Available {
+	if err != nil {
+		item.Upgrade = &substrate.BundleUpgrade{Blockers: []string{failedPreviewBlocker(err)}}
+		return item
+	}
+	if up == nil || !up.Available {
 		return item
 	}
 	item.Upgrade = up
 	return item
+}
+
+// failedPreviewBlocker is the one guard line a preview that could not run
+// leaves on its entry. The error text is the substrate's own, the same one the
+// read would have failed with.
+func failedPreviewBlocker(err error) string {
+	return "the upgrade preview failed: " + err.Error()
 }
 
 // postCatalogInstall applies a shipped bundle's closure into the caller's

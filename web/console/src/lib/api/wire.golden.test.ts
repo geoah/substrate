@@ -25,6 +25,8 @@ import { describe, expect, it } from "vitest"
 import golden from "./wire.golden.json"
 import type {
   BundleClosure,
+  BundleUpgrade,
+  BundleUpgradeChange,
   CatalogBundle,
   Change,
   IncomingReference,
@@ -39,6 +41,7 @@ import type {
   PropertyMeta,
   PutInput,
   ShippedRecord,
+  ShippedUpgrade,
   SubstrateRecord,
   SuggestedMapping,
 } from "./types"
@@ -196,6 +199,27 @@ const shippedRecord: Keys<ShippedRecord> = {
   id: true,
 }
 
+/** The upgrade preview, on a catalog entry and on the shipped-upgrade read. */
+const bundleUpgrade: Keys<BundleUpgrade> = {
+  available: true,
+  from: true,
+  to: true,
+  changes: true,
+  blockers: true,
+}
+
+const bundleUpgradeChange: Keys<BundleUpgradeChange> = {
+  kind: true,
+  id: true,
+  from: true,
+  to: true,
+}
+
+const shippedUpgrade: Keys<ShippedUpgrade> = {
+  package: true,
+  upgrade: true,
+}
+
 const mirrors: Record<string, Record<string, true>> = {
   SubstrateRecord: substrateRecord,
   IncomingReference: incomingReference,
@@ -211,6 +235,9 @@ const mirrors: Record<string, Record<string, true>> = {
   OccurrenceProblem: occurrenceProblem,
   OccurrenceList: occurrenceList,
   CatalogBundle: catalogBundle,
+  BundleUpgrade: bundleUpgrade,
+  BundleUpgradeChange: bundleUpgradeChange,
+  ShippedUpgrade: shippedUpgrade,
   BundleClosure: bundleClosure,
   ShippedRecord: shippedRecord,
   SuggestedMapping: suggestedMapping,

@@ -71,18 +71,19 @@ var systemKinds = map[string]bool{
 // one method below compiles clean and turns a whole endpoint family into a
 // 501 at runtime. Add a line here whenever a seam is added.
 var (
-	_ substrate.Dataset              = (*dataset)(nil)
-	_ substrate.VocabularyApplier    = (*dataset)(nil)
-	_ substrate.ChangeFeedOps        = (*dataset)(nil)
-	_ substrate.AutomationOps        = (*dataset)(nil)
-	_ substrate.TriggerDispatcher    = (*dataset)(nil)
-	_ substrate.AgentOps             = (*dataset)(nil)
-	_ substrate.ResolutionSweeper    = (*dataset)(nil)
-	_ substrate.BundleOps            = (*dataset)(nil)
-	_ substrate.BundleInstaller      = (*dataset)(nil)
-	_ substrate.BundleUpgradePlanner = (*dataset)(nil)
-	_ substrate.OAuthMaintainer      = (*dataset)(nil)
-	_ substrate.BlobStore            = (*dataset)(nil)
+	_ substrate.Dataset               = (*dataset)(nil)
+	_ substrate.VocabularyApplier     = (*dataset)(nil)
+	_ substrate.ChangeFeedOps         = (*dataset)(nil)
+	_ substrate.AutomationOps         = (*dataset)(nil)
+	_ substrate.TriggerDispatcher     = (*dataset)(nil)
+	_ substrate.AgentOps              = (*dataset)(nil)
+	_ substrate.ResolutionSweeper     = (*dataset)(nil)
+	_ substrate.BundleOps             = (*dataset)(nil)
+	_ substrate.BundleInstaller       = (*dataset)(nil)
+	_ substrate.BundleUpgradePlanner  = (*dataset)(nil)
+	_ substrate.ShippedUpgradePlanner = (*dataset)(nil)
+	_ substrate.OAuthMaintainer       = (*dataset)(nil)
+	_ substrate.BlobStore             = (*dataset)(nil)
 )
 
 type dataset struct {

@@ -164,4 +164,13 @@ lifecycle; install and upgrade are `substratectl apply` of the closure, and `con
 starts the host [OAuth flow](bundles.md#the-oauth-facility) for an account
 record, printing the consent URL.
 
+`substratectl catalog` lists every package the binary ships, seeded `core`
+first, then the catalog's providers and samples: whether this repository
+holds it, the version the binary ships and, where the server previewed an
+[upgrade](bundles.md#install-and-lifecycle), its motion (`16 -> 17`) and
+`blocked` when a guard refuses it. Each blocked upgrade's guard lines print
+under the table; they name the kind, the property and the count of live
+records holding the old shape, which is what to migrate before the upgrade
+lands. `-o json` prints the same rows.
+
 Next: the [web console](console.md), the same repository in a browser.

@@ -131,13 +131,29 @@ The upgrade has a read-only **preview** beside it: the catalog compares the
 shipped closure's declaration versions against the stored ones (the same diff
 the boot upgrade runs for core, engine `PlanBundleUpgrade`) and attaches the
 result to the catalog read as `upgrade`, with the same refuse-breakage guard
-lines the install would refuse on as `blockers`. The console's Registry counts
+lines the install would refuse on as `blockers`. A preview that cannot run at
+all (a database fault, a closure this repository cannot admit) still leaves
+the entry in the listing, with one blocker line carrying the error text and
+no version motion. The console's Registry counts
 these on the sidebar badge, offers Upgrade where nothing blocks, and states
 the guard lines where something does; the button is the install verb,
-unchanged. Only a PROVIDER is previewed: a sample's closure landed under the
-repository's own authority and belongs to it, so the catalog answers
-not-available before the dataset is asked
-([0048](decisions/0048-providers-are-published-samples-are-copied.md)). A changed declaration therefore **must** ship a changed version, or no
+unchanged. Of the two catalog tiers only a PROVIDER is previewed: a sample's
+closure landed under the repository's own authority and belongs to it, so the
+catalog answers not-available before the dataset is asked
+([0048](decisions/0048-providers-are-published-samples-are-copied.md)).
+
+The seeded `core` package is not a catalog entry, so its preview is its own
+read: `GET /api/v1/vocabulary/upgrade` answers one entry per package the
+binary ships and seeds, `{package, upgrade}`, with the same `upgrade` shape.
+It is the boot upgrade's decision computed at read against the running
+binary: when a guard refused the boot upgrade, the repository opened on its
+stored declarations and `blockers` carries the guard lines the server logged,
+until the records they name are migrated and the server restarts. The
+Registry states a withheld core upgrade above its sections, and
+`substratectl catalog` prints every package's motion and guard lines in one
+table.
+
+A changed declaration therefore **must** ship a changed version, or no
 repository ever learns it moved; CI enforces that (`mise run kinds:check`,
 AGENTS.md).
 

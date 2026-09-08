@@ -28,6 +28,7 @@ import {
   upgradableBundleCount,
   upgradeBlocked,
   upgradeMotion,
+  withheldShippedUpgrades,
 } from "./bundles"
 
 function status(over: Partial<BundleStatus> = {}): BundleStatus {
@@ -289,7 +290,7 @@ describe("the upgrade preview helpers", () => {
     ).toBe(2)
   })
 
-  it("blocked means available AND the server named blockers", () => {
+  it("blocked means the server named blockers", () => {
     expect(upgradeBlocked({ upgrade: undefined })).toBe(false)
     expect(upgradeBlocked({ upgrade: { available: true, to: 2 } })).toBe(false)
     expect(
@@ -297,6 +298,38 @@ describe("the upgrade preview helpers", () => {
         upgrade: { available: true, to: 2, blockers: ["a guard line"] },
       })
     ).toBe(true)
+    // A preview the server could not run: no motion, one line with the error
+    // text. Stated as blocked, never dropped.
+    expect(
+      upgradeBlocked({
+        upgrade: {
+          available: false,
+          blockers: ["the upgrade preview failed: boom"],
+        },
+      })
+    ).toBe(true)
+  })
+
+  it("a withheld shipped upgrade is one the boot refused", () => {
+    const refused = {
+      package: "substrate.reamde.dev/core",
+      upgrade: {
+        available: true,
+        from: 16,
+        to: 17,
+        blockers: ["a guard line"],
+      },
+    }
+    expect(
+      withheldShippedUpgrades([
+        { package: "substrate.reamde.dev/core", upgrade: { available: false } },
+        {
+          package: "substrate.reamde.dev/core",
+          upgrade: { available: true, from: 16, to: 17 },
+        },
+        refused,
+      ])
+    ).toEqual([refused])
   })
 
   it("renders the version motion, tolerating a store with no version", () => {

@@ -20,6 +20,7 @@ import type {
   BundleUpgrade,
   CatalogTier,
   KindInfo,
+  ShippedUpgrade,
   SuggestedMapping,
   SuggestedMappingState,
 } from "@/lib/api/types"
@@ -141,10 +142,22 @@ export function upgradeAvailable(row: Pick<BundleRow, "upgrade">): boolean {
   return Boolean(row.upgrade?.available)
 }
 
-/** A blocked upgrade: the server's refuse-breakage guards would refuse the
- * re-import, so the console shows the guard lines and no button. */
+/** A blocked upgrade: the server named blockers, so the console shows the
+ * guard lines and no button. Usually the refuse-breakage guards on a moved
+ * closure (`available` too); a preview the server could not run is the other
+ * case, one line with the error text and no motion, and it is stated the same
+ * way rather than dropped. */
 export function upgradeBlocked(row: Pick<BundleRow, "upgrade">): boolean {
-  return Boolean(row.upgrade?.available && row.upgrade.blockers?.length)
+  return Boolean(row.upgrade?.blockers?.length)
+}
+
+/** The shipped packages whose boot upgrade the server refused: what the
+ * Registry states above its sections. An entry with nothing to move, or one
+ * the boot admitted, is not news. */
+export function withheldShippedUpgrades(
+  items: ShippedUpgrade[]
+): ShippedUpgrade[] {
+  return items.filter((item) => (item.upgrade.blockers?.length ?? 0) > 0)
 }
 
 /** The sidebar badge's number: installed bundles whose shipped closure moved,

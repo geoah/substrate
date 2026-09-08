@@ -89,12 +89,13 @@ import {
   catalogQueryOptions,
   importBundle,
   installBundle,
+  shippedUpgradesQueryOptions,
   takeBundle,
 } from "@/lib/api/catalog"
 import { repositoryQueryOptions } from "@/lib/api/repository"
 import { CORE_PACKAGE } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
-import type { KindInfo } from "@/lib/api/types"
+import type { KindInfo, ShippedUpgrade } from "@/lib/api/types"
 import { splitKind } from "@/lib/definition"
 import {
   bundleRecordRows,
@@ -114,6 +115,7 @@ import {
   upgradeAvailable,
   upgradeBlocked,
   upgradeMotion,
+  withheldShippedUpgrades,
   type BundleRow,
   type Requirement,
   type SuggestedMappingRow,
@@ -562,7 +564,7 @@ function buildColumns(
       header: () => <span className="sr-only">action</span>,
       cell: ({ row }) =>
         row.original.installed ? (
-          upgradeAvailable(row.original) ? (
+          upgradeAvailable(row.original) || upgradeBlocked(row.original) ? (
             <div className="flex justify-end">
               {upgradeBlocked(row.original) ? (
                 <UpgradeBlockedChip row={row.original} />
@@ -995,6 +997,15 @@ export function RegistryPage() {
   const navigate = useNavigate()
   const statuses = useQuery(bundleStatusesQueryOptions)
   const catalog = useQuery(catalogQueryOptions)
+  // The boot upgrade's preview, for the one package no catalog entry carries:
+  // core. The server refused to move it when this carries blockers, and the
+  // repository is running on its stored declarations. Not waited on and not
+  // fatal: a read that fails leaves the banner off, the sections stand.
+  const shipped = useQuery(shippedUpgradesQueryOptions)
+  const withheld = useMemo(
+    () => withheldShippedUpgrades(shipped.data ?? []),
+    [shipped.data]
+  )
   // The repository's own record answers ONE question: the authority this
   // repository owns, which is where an imported sample lands (decision records
   // 0046 and 0048) and so what a sample row previews.
@@ -1104,6 +1115,9 @@ export function RegistryPage() {
           every other kind it records into comes from here. Expand a row to see
           what it adds.
         </p>
+        {withheld.map((item) => (
+          <WithheldUpgradeNotice key={item.package} item={item} />
+        ))}
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
         <BundleSection
@@ -1148,6 +1162,44 @@ export function RegistryPage() {
             onOpen={open}
           />
         )}
+      </div>
+    </div>
+  )
+}
+
+/** A shipped package whose boot upgrade the server refused, stated where the
+ * upgrades live: this binary ships a newer core than the repository holds, and
+ * the refuse-breakage guards would strand live records, so the stored
+ * declarations stand. The lines are the server's own, naming the kind, the
+ * property and the count: what to migrate before the next start lands it. */
+function WithheldUpgradeNotice({ item }: { item: ShippedUpgrade }) {
+  const motion = upgradeMotion(item.upgrade)
+  return (
+    <div
+      role="alert"
+      className="mt-3 max-w-3xl rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs"
+    >
+      <p className="flex items-start gap-1.5 text-warning">
+        <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
+        <span>
+          The upgrade of <span className="data">{item.package}</span>
+          {motion ? (
+            <>
+              {" "}
+              (<span className="data">{motion}</span>)
+            </>
+          ) : null}{" "}
+          was refused when the server started. The stored declarations stand
+          until what the lines below name is resolved and the server starts
+          again.
+        </span>
+      </p>
+      <div className="mt-1 space-y-0.5 pl-5">
+        {item.upgrade.blockers?.map((b) => (
+          <p key={b} className="data text-muted-foreground">
+            {b}
+          </p>
+        ))}
       </div>
     </div>
   )

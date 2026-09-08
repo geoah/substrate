@@ -68,6 +68,12 @@ var wireTypes = map[string]any{
 	// sections: a sample's card lists what it would project, a provider's
 	// lists the samples waiting on it (decision record 0049).
 	"SuggestedMapping": SuggestedMapping{},
+	// The upgrade preview: a catalog entry carries one for an installed
+	// provider, and `GET /api/v1/vocabulary/upgrade` carries one per shipped
+	// package. The Registry renders the motion and the blockers of both.
+	"BundleUpgrade":       BundleUpgrade{},
+	"BundleUpgradeChange": BundleUpgradeChange{},
+	"ShippedUpgrade":      ShippedUpgrade{},
 }
 
 // jsonFields lists the wire names a struct serializes, in declaration order. A

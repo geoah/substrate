@@ -7,6 +7,19 @@
     "mappings",
     "records"
   ],
+  "BundleUpgrade": [
+    "available",
+    "from",
+    "to",
+    "changes",
+    "blockers"
+  ],
+  "BundleUpgradeChange": [
+    "kind",
+    "id",
+    "from",
+    "to"
+  ],
   "CatalogBundle": [
     "id",
     "name",
@@ -97,6 +110,10 @@
   "ShippedRecord": [
     "kind",
     "id"
+  ],
+  "ShippedUpgrade": [
+    "package",
+    "upgrade"
   ],
   "SubstrateRecord": [
     "id",

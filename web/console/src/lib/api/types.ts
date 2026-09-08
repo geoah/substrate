@@ -482,8 +482,20 @@ export interface BundleUpgrade {
   changes?: BundleUpgradeChange[]
   /** The refuse-breakage guard lines the import would refuse on, with live
    * row counts. Non-empty means the upgrade is BLOCKED: the console shows the
-   * lines and offers no button, because the server refuses it anyway. */
+   * lines and offers no button, because the server refuses it anyway. A
+   * preview the server could not run at all carries one line with the error
+   * text and no motion. */
   blockers?: string[]
+}
+
+/** One package the binary ships and seeds (core), and what this binary's boot
+ * upgrade would do to it here (substrate.ShippedUpgrade), the same `upgrade`
+ * shape a catalog entry carries. `GET /api/v1/vocabulary/upgrade` lists one
+ * per shipped package; `blockers` non-empty means the boot upgrade was refused
+ * and the stored declarations stand. */
+export interface ShippedUpgrade {
+  package: string
+  upgrade: BundleUpgrade
 }
 
 /** Which of the two catalog doors a shipped closure takes (decision record
