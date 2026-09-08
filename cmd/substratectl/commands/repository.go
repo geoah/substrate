@@ -3,8 +3,10 @@ package commands
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,9 +25,11 @@ import (
 // primary key, the scope, the directory under the data root. These commands
 // are the only place the control plane is visible.
 //
-// All three run ON THE BOX against the database (operator.go): there is no
+// They run ON THE BOX against the database (operator.go): there is no
 // repository segment in any URL and no HTTP surface that lists other people's
-// repositories, because users cannot see each other.
+// repositories, because users cannot see each other. `rewrap` is the one that
+// takes no database at all: it acts on a copied directory before any server
+// has imported it.
 
 func (a *app) repositoryCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -35,8 +39,103 @@ func (a *app) repositoryCommand() *cobra.Command {
 	}
 	cmd.AddCommand(a.repositoryListCommand(), a.repositoryInspectCommand(),
 		a.repositoryRebuildCommand(), a.repositoryReembedCommand(),
-		a.repositoryVerifyCommand())
+		a.repositoryVerifyCommand(), a.repositoryRewrapCommand())
 	return cmd
+}
+
+func (a *app) repositoryRewrapCommand() *cobra.Command {
+	var (
+		identityFile  string
+		identityStdin bool
+		output        string
+	)
+	cmd := &cobra.Command{
+		Use:   "rewrap <repository directory>",
+		Short: "Operator: open a copied repository directory with its recovery key for a new credential key (no database)",
+		Long: `Rewrite a repository directory's manifest so this host's SUBSTRATE_CREDENTIAL_KEY
+opens it, using the user's recovery key.
+
+A repository directory copied to a host without the credential key it was
+written under refuses to import: repository.json carries the repository's
+data-encryption key wrapped under that key. The same key sits in the changelog,
+wrapped to the user's age recipient in the recoverykey record, and this command
+opens that wrap with the recovery key (the AGE-SECRET-KEY-1... line the user
+kept), proves it opens every file under sealed/, wraps it under
+SUBSTRATE_CREDENTIAL_KEY and rewrites repository.json. Booting the server with
+the directory under its data root then imports it as usual.
+
+It is offline: no database, no server, no HTTP. It takes the directory itself,
+which must be named by the repository's authority, as a copy of
+<root>/repositories/<authority> is. The recovery key is read from --identity-file
+or from stdin, never from an argument, and neither it nor the data-encryption
+key is printed or logged. A directory with no manifest, or whose changelog
+holds no recoverykey record, is refused: nothing is synthesized. A running
+server holding the directory is refused too.
+
+  SUBSTRATE_CREDENTIAL_KEY=… substratectl repository rewrap /srv/restore/repositories/ada.example.com
+  SUBSTRATE_CREDENTIAL_KEY=… substratectl repository rewrap ./ada.example.com --identity-file ./recovery.key`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// The key is checked BEFORE the identity is asked for, the same
+			// order `user reset` keeps: the answer is the same either way, and
+			// nobody should paste a recovery key to learn the key is missing.
+			credKey := os.Getenv(credentialKeyEnv)
+			if credKey == "" {
+				return fmt.Errorf("refusing to rewrap: set %s to the key this host's server runs with; the manifest is rewritten so that key opens the repository", credentialKeyEnv)
+			}
+			if err := config.ValidateCredentialKey(credKey); err != nil {
+				return err
+			}
+			identity, err := a.recoveryIdentity(identityFile, identityStdin)
+			if err != nil {
+				return err
+			}
+			report, err := engine.RewrapRepositoryDir(args[0], identity, credKey)
+			if err != nil {
+				return lockHint(err)
+			}
+			if output == "json" {
+				return printJSON(a.out, report)
+			}
+			fmt.Fprintf(a.out, "repository %s rewrapped\n", report.Username)
+			fmt.Fprintf(a.out, "  authority:   %s\n", report.Repository)
+			fmt.Fprintf(a.out, "  recovery key: recoverykey record at seq %d opened\n", report.RecoveryKeySeq)
+			fmt.Fprintf(a.out, "  sealed:      %d file(s) open under the recovered key\n", report.SealedFiles)
+			fmt.Fprintf(a.out, "  manifest:    %s rewritten under %s\n", changelogfile.ManifestName, credentialKeyEnv)
+			fmt.Fprintln(a.out, "boot the server with the directory under SUBSTRATE_DATA_ROOT to import it, then `repository verify`")
+			return nil
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&identityFile, "identity-file", "", "read the recovery key from this file (one line)")
+	f.BoolVar(&identityStdin, "identity-stdin", false, "read the recovery key from stdin (one line)")
+	f.StringVarP(&output, "output", "o", "", "output format: text|json")
+	return cmd
+}
+
+// recoveryIdentity resolves the recovery key for a rewrap: the named file,
+// else stdin, else a prompt that does not echo. Never an argument, where it
+// would land in the shell history and the process table.
+func (a *app) recoveryIdentity(file string, fromStdin bool) (string, error) {
+	if file != "" {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			return "", fmt.Errorf("read the recovery key: %w", err)
+		}
+		id := strings.TrimSpace(string(raw))
+		if id == "" {
+			return "", fmt.Errorf("%s holds no recovery key", file)
+		}
+		return id, nil
+	}
+	id, err := a.secret(fromStdin, "Recovery key: ")
+	if err != nil {
+		return "", err
+	}
+	if id == "" {
+		return "", errors.New("a recovery key is required: the AGE-SECRET-KEY-1... line kept at registration")
+	}
+	return id, nil
 }
 
 func (a *app) repositoryReembedCommand() *cobra.Command {

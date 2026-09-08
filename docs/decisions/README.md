@@ -198,3 +198,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0051](0051-a-repository-directory-is-the-backup-unit.md) | A repository directory under the data root is the backup unit | superseded |
 | [0052](0052-the-authority-is-the-repository-id.md) | The authority is the repository id | accepted |
 | [0053](0053-rest-is-supported-all-of-graphql-is-preview.md) | REST is the supported interface; all of GraphQL is preview | accepted |
+| [0053](0053-a-repository-moves-between-host-keys-through-an-offline-rewrap.md) | A repository moves between host keys through an offline rewrap of its manifest | accepted |

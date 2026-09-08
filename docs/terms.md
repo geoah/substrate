@@ -79,7 +79,7 @@ nothing, there are none.
 | **digest** | A one-way SHA-256 the server minted to compare, never to reveal (a token's `hash`). Redacted like a secret but stored as the value itself: auth matches it in SQL. |
 | **sealed store** | The engine table holding secret material (property secrets, OAuth tokens, the password hash, the TOTP seed) encrypted under the repository's DEK, addressed by refs. |
 | **DEK** | The repository's own data-encryption key. Wrapped twice: under the host credential key in the control plane (live operation) and to the user's age recipient in the `recoverykey` record (recovery). |
-| **recovery key** | The age identity the user keeps and the substrate never stores. It opens the `recoverykey` record's wrap, so a backup plus the identity is a complete recovery with no host key. Enrolled at registration, or once via `recovery enroll`. |
+| **recovery key** | The age identity the user keeps and the substrate never stores. It opens the `recoverykey` record's wrap, so a backup plus the identity is a complete recovery with no host key: `repository rewrap` opens a copied repository directory with it for a new host key. Enrolled at registration, or once via `recovery enroll`. |
 
 ## The wire
 

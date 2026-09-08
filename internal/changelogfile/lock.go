@@ -57,3 +57,19 @@ func (l *dirLock) release() error {
 	l.f = nil
 	return err
 }
+
+// LockWriter takes the changelog directory's writer lock without waiting and
+// returns the release. It is for a command that rewrites a repository
+// directory's files without opening a Writer (the offline rewrap of the
+// manifest), so a running server, or a second such command, is refused with
+// ErrLocked rather than met halfway through the write.
+func LockWriter(dir string) (release func() error, err error) {
+	if err := os.MkdirAll(dir, dirMode); err != nil {
+		return nil, err
+	}
+	l, err := lockDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	return l.release, nil
+}

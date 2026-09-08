@@ -406,9 +406,10 @@ without the key is every record and every attachment in the clear and no
 secret; the key beside the directory is every secret too. On compose the key
 is the `substrate-keys` volume (`/keys/credential.key`) unless the environment
 sets one. The user's own recovery key wraps the same DEK in the repository's
-`recoverykey` record, but no shipped command opens a backup from it yet
-([#137](https://github.com/geoah/substrate/issues/137)), so losing the host key
-leaves the sealed files inert.
+`recoverykey` record, and `substratectl repository rewrap` opens a copy with it
+([restore without the credential key](#restore-without-the-credential-key)),
+so losing the host key leaves the sealed files inert only for a user who also
+lost the recovery key.
 
 **A database dump is optional, and it is not a restore.** The tables hold
 nothing the directory lacks except runtime state (below). Take one beside the
@@ -443,6 +444,33 @@ repository no login could open. Under the `s3` blob store the bucket is the
 second artifact: restore it too, or the manifests come back `stored` with no
 bytes behind them.
 
+### Restore without the credential key
+
+A directory copied to a host whose `SUBSTRATE_CREDENTIAL_KEY` is not the one
+it was written under is opened with the user's recovery key instead: the
+`AGE-SECRET-KEY-1…` line kept at registration or at `recovery enroll`. Before
+the boot, with the server stopped, run `repository rewrap` on the copied
+directory with the new host's key in the environment. It reads the last
+`recoverykey` record out of the changelog files, opens its `sealedKey` with
+the recovery key, checks that the data-encryption key it recovered opens every
+file under `sealed/`, wraps that key under `SUBSTRATE_CREDENTIAL_KEY` and
+rewrites `repository.json`. Then boot, which imports the directory as above.
+
+```
+SUBSTRATE_CREDENTIAL_KEY=… substratectl repository rewrap "$SUBSTRATE_DATA_ROOT"/repositories/ada.example.com --identity-file ./recovery.key
+SUBSTRATE_DATA_ROOT=… SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substrate   # imports at boot
+```
+
+The command takes no database and no server, and prints neither the recovery
+key nor the data-encryption key. Without `--identity-file` it reads the
+recovery key from stdin: `--identity-stdin` for a script, a prompt that does
+not echo otherwise; the key is never an argument. It refuses a directory with
+no `repository.json`, one whose changelog holds no `recoverykey` record (the
+repository never enrolled one, so only the key it was written under opens it),
+one whose `sealed/` files the recovered key does not open, and one a running
+server holds. A refused rewrap leaves the directory as it was. The rewrap
+revokes nothing: a copy taken before it still opens under the old host key.
+
 **What does not come back.** Runtime state is not in the directory: trigger
 cursors, paged cursors, embeddings and OAuth flows in flight. On an import
 into an empty database triggers start at the head, so a delivery that had not
@@ -463,13 +491,15 @@ Operator commands (the "operator hat" of
 directly and hold no token. They need `--dsn` (or `DATABASE_URL`) and
 `SUBSTRATE_DATA_ROOT`, and refuse before touching anything without them.
 
-**Three of them run beside a live server; two need it stopped.** `repository
-list`, `repository inspect` and `repository verify` read: `verify` opens the
-engine read-only, so it runs no boot check, appends nothing and reports a torn
-tail or a table ahead of its file as a finding instead of repairing it.
-`repository rebuild` and `user reset` write, so each opens the repository as
-its changelog writer, and a running server holds that lock: the command
-refuses, naming the lock, until the server is stopped.
+**Three of them run beside a live server; two need it stopped; one takes no
+database.** `repository list`, `repository inspect` and `repository verify`
+read: `verify` opens the engine read-only, so it runs no boot check, appends
+nothing and reports a torn tail or a table ahead of its file as a finding
+instead of repairing it. `repository rebuild` and `user reset` write, so each
+opens the repository as its changelog writer, and a running server holds that
+lock: the command refuses, naming the lock, until the server is stopped.
+`repository rewrap` acts on a copied directory before any boot has imported
+it, so it needs `SUBSTRATE_CREDENTIAL_KEY` and the directory, and no DSN.
 
 ```
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository list
@@ -477,6 +507,7 @@ DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository inspect ada
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository verify ada
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rebuild ada
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl user reset ada
+SUBSTRATE_CREDENTIAL_KEY=… substratectl repository rewrap ./repositories/ada.example.com --identity-file ./recovery.key
 ```
 
 **On the compose deployment, run them inside the container.** Both runtime
