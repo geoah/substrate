@@ -16,7 +16,7 @@
 
 import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query"
 
-import { fetchChangesPage } from "./changes"
+import { fetchChangesPage, type HistoryPosition } from "./changes"
 import { collectionPath, request, seg } from "./http"
 import type {
   ChangeRow,
@@ -359,9 +359,11 @@ async function fetchRecordHistory(
 ): Promise<ChangeRow[]> {
   const rows: ChangeRow[] = []
   let before: number | undefined
+  let generation: string | undefined
   for (let page = 0; page < FORMER_SLICE_MAX_PAGES; page++) {
     const res = await fetchChangesPage({
       before,
+      generation,
       first: FORMER_SLICE_PAGE,
       filter: { recordId, recordKind },
       signal,
@@ -369,6 +371,7 @@ async function fetchRecordHistory(
     rows.push(...res.changes)
     if (res.cursor === undefined) break
     before = res.cursor
+    generation = res.generation
   }
   return rows
 }
@@ -405,15 +408,19 @@ export function recordChangesInfiniteOptions(
     queryKey: ["changes", "record", recordKind, recordId],
     queryFn: ({ pageParam, signal }) =>
       fetchChangesPage({
-        before: pageParam > 0 ? pageParam : undefined,
+        before: pageParam.before > 0 ? pageParam.before : undefined,
+        generation: pageParam.generation,
         first,
         filter: { recordId, recordKind },
         signal,
       }),
-    initialPageParam: 0,
+    initialPageParam: { before: 0 } as HistoryPosition,
     // The server cursor is the continuation — it advances past scope-filtered
     // rows, so a short page is not the end. The walk ends when the cursor is
-    // omitted (exhausted).
-    getNextPageParam: (last) => last.cursor ?? undefined,
+    // omitted (exhausted). The continuation resends the page's generation.
+    getNextPageParam: (last): HistoryPosition | undefined =>
+      last.cursor === undefined
+        ? undefined
+        : { before: last.cursor, generation: last.generation },
   })
 }

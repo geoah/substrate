@@ -200,7 +200,7 @@ func TestSupportedChangeParamsStillWork(t *testing.T) {
 		"",
 		"?from=0",
 		"?first=2",
-		"?first=2&before=3",
+		"?first=2&before=3&generation=" + env.svc.datasets["geoah"].generation,
 		"?kinds=samples.substrate.reamde.dev/people/person&ops=put&actors=owner",
 		"?excludeKinds=samples.substrate.reamde.dev/tasks/task&excludeOps=delete&excludeActors=machine",
 		"?recordId=e1&recordKind=samples.substrate.reamde.dev/people/person",

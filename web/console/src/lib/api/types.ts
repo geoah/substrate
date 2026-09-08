@@ -176,7 +176,6 @@ export interface Page<T = SubstrateRecord> {
   cursor?: string
   head?: number
   generation?: string
-  total?: number
 }
 
 /** The envelope every OPERATIONAL list answers with — tokens, the catalog,

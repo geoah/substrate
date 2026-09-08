@@ -43,10 +43,10 @@ string minted where the row is written (`insertRepositoryRow`,
 `repository rebuild`, neither of which touches the row. A cursor is the pair
 `(seq, generation)`: the bookmark frame is
 `{"bookmark": N, "generation": "…"}`, a list envelope and a history page carry
-`generation` beside `head`, and `from` above 0 needs `generation=`. The
+`generation` beside `head`, and `from` or `before` above 0 needs `generation=`. The
 server answers a cursor under another generation, above the head, or with no
 generation with `410 compacted` naming the current head and generation;
-`from=0` names no entry and needs none. A list cursor carries the generation
+`from=0` and `before=0` name no entry and need none. A list cursor carries the generation
 of the head it was minted with and is refused across a change, so a `head`
 from one history never reaches a watch on another.
 

@@ -121,14 +121,15 @@ export function ChangelogTable({
     ...seekQueryOptions(untilMs ?? 0),
     enabled: untilMs !== undefined,
   })
-  const startBefore = untilMs === undefined ? 0 : seek.data
+  const start = untilMs === undefined ? { before: 0 } : seek.data
   const history = useInfiniteQuery({
     ...changesInfiniteOptions(filter, {
       first: CHANGELOG_TABLE_PAGE,
-      startBefore: startBefore ?? 0,
+      startBefore: start?.before ?? 0,
+      startGeneration: start?.generation,
       sinceMs,
     }),
-    enabled: startBefore !== undefined,
+    enabled: start !== undefined,
   })
 
   const [live, dispatch] = useReducer(liveReducer, EMPTY_LIVE_FEED)

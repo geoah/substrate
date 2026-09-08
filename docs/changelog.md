@@ -221,10 +221,10 @@ into a database that holds no row for it, which is what a
 it. A seq is a position in one generation only: an older copy of the directory
 imported over an emptied database restarts the numbering below whatever
 cursors clients saved, and a bare seq cannot tell the two histories apart. So
-`from` above 0 carries the `generation` it was read under, and the server
+`from` or `before` above 0 carries the `generation` it was read under, and the server
 refuses a cursor under another generation, above the head, or with no
 generation at all, with the `compacted` error [below](#frames-and-the-horizon).
-`from=0` is the start of every history and names no entry, so it needs none.
+`from=0` and `before=0` name no entry, so they need none.
 
 The same endpoint pages backward through history with `before=`, and filters
 the same way in watch and history modes alike. Every filter parameter is plural

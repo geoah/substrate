@@ -47,7 +47,7 @@ func TestChangesHistoryPagesNewestFirst(t *testing.T) {
 	}
 
 	// The next page starts strictly below the oldest row already shown.
-	rec = env.do(t, http.MethodGet, "/api/v1/changes?first=2&before=4", tok, nil)
+	rec = env.do(t, http.MethodGet, "/api/v1/changes?first=2&before=4&generation="+env.svc.datasets["geoah"].generation, tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	page = decodeJSON[changesBody](t, rec)
 	if len(page.Changes) != 2 || page.Changes[0].Seq != 3 || page.Changes[1].Seq != 2 {

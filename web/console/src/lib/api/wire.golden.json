@@ -69,6 +69,12 @@
     "items",
     "cursor"
   ],
+  "Page": [
+    "records",
+    "cursor",
+    "head",
+    "generation"
+  ],
   "PropertyAlternative": [
     "actor",
     "value",

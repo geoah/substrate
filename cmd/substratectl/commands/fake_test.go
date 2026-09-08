@@ -617,6 +617,15 @@ func (f *fakeSubstrate) rejectUnknown(w http.ResponseWriter, route string, allow
 
 func (f *fakeSubstrate) handleChanges(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
+	// A cursor above 0 under another history generation is refused the way the
+	// server refuses it: 410 naming the head and generation to resume at.
+	if q := r.URL.Query(); q.Get("from") != "" && q.Get("from") != "0" && q.Get("generation") != "gen-test" {
+		writeJSON(w, http.StatusGone, map[string]any{"error": map[string]any{
+			"code": "compacted", "message": "the history was replaced since the cursor was saved",
+			"head": 41, "generation": "gen-test",
+		}})
+		return
+	}
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.WriteHeader(http.StatusOK)
 	enc := json.NewEncoder(w)

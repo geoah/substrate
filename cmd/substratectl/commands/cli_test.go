@@ -1487,6 +1487,25 @@ func TestWatchPrintsOneLinePerChange(t *testing.T) {
 	}
 }
 
+// A cursor the server refuses names the position to resume at, and the CLI
+// prints it as the flags to pass rather than a bare 410.
+func TestWatchPrintsTheReplacementCursorOnARefusedOne(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	_, _, err := h.run("watch", "--from", "5", "--generation", "stale")
+	if err == nil {
+		t.Fatal("a cursor under another generation streamed")
+	}
+	var buf bytes.Buffer
+	renderError(&buf, err)
+	got := buf.String()
+	for _, want := range []string{"the cursor no longer addresses this changelog", "--from 41 --generation gen-test"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("rendered error lacks %q:\n%s", want, got)
+		}
+	}
+}
+
 func TestWatchSendsFilters(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()

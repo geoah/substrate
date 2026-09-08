@@ -65,9 +65,22 @@ func (h *handler) getChangesPage(w http.ResponseWriter, r *http.Request, ds subs
 	// The horizon binds both ends of the cursor contract, not just the forward
 	// one: walking back below it is exactly the "you can no longer address
 	// this" case `compacted` exists for, and answering with an empty 200 would
-	// let a client mistake a pruned range for the start of the changelog.
-	if before > 0 && before < retentionHorizon() {
+	// let a client mistake a pruned range for the start of the changelog. The
+	// generation binds both ends too: a `before` continuation names an entry
+	// of ONE history, and a client that fetched a page, then had an older
+	// directory restored under it, would otherwise walk on through the
+	// replacement's rows as if they were the ones it had been reading.
+	// `before=0` is the head of whatever history is there and names nothing.
+	generation := r.URL.Query().Get("generation")
+	switch {
+	case before > 0 && before < retentionHorizon():
 		writeCompacted(w, head, fmt.Sprintf("seq %d is below the retention horizon %d; re-list and resume from the head", before, retentionHorizon()))
+		return
+	case generation != "" && generation != head.Generation:
+		writeCompacted(w, head, fmt.Sprintf("generation %q is not this changelog's %q: the history was replaced since the cursor was saved; re-list and resume from the head", generation, head.Generation))
+		return
+	case before > 0 && generation == "":
+		writeCompacted(w, head, fmt.Sprintf("before=%d names an entry and needs the generation it was read under; re-list and resume from the head", before))
 		return
 	}
 	first, err := parseFirstParam(r)

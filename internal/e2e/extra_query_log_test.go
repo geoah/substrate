@@ -511,6 +511,8 @@ func xqCaseBackwardPage(c *C) {
 	// the head row itself; rows committed during the walk sit above it and
 	// belong to neither read.
 	before := head + 1
+	// A `before` above 0 travels with the history generation it belongs to.
+	_, generation := c.changelogHead()
 	var seqs []int64
 	pages := 0
 	cursored := true
@@ -519,7 +521,7 @@ func xqCaseBackwardPage(c *C) {
 	// rather than fixed, which a growing changelog would walk into.
 	maxPages := len(forward)/50 + 3
 	for {
-		path := fmt.Sprintf("%s?before=%d&first=50", xqChanges, before)
+		path := fmt.Sprintf("%s?before=%d&first=50&generation=%s", xqChanges, before, generation)
 		var body struct {
 			Changes []changeRow `json:"changes"`
 			Cursor  *int64      `json:"cursor"`

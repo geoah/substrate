@@ -89,13 +89,19 @@ export interface ChangesPage {
 export async function fetchChangesPage(opts: {
   /** Rows strictly below this seq; absent/0 = from the head. */
   before?: number
+  /** The history generation `before` was read under (the previous page's).
+   * A `before` above 0 without it is refused by the server. */
+  generation?: string
   first?: number
   filter?: ChangeFeedFilter
   signal?: AbortSignal
 }): Promise<ChangesPage> {
   const params = changesSearch(opts.filter)
   params.set("first", String(opts.first ?? CHANGELOG_PAGE))
-  if (opts.before && opts.before > 0) params.set("before", String(opts.before))
+  if (opts.before && opts.before > 0) {
+    params.set("before", String(opts.before))
+    if (opts.generation) params.set("generation", opts.generation)
+  }
   const res = await request<{
     changes?: ChangeRow[]
     cursor?: number
@@ -116,9 +122,18 @@ export interface ChangesFeedOpts {
   first?: number
   /** Start below this seq (a time seek's answer); 0 = the head. */
   startBefore?: number
+  /** The generation `startBefore` was read under; required with one above 0. */
+  startGeneration?: string
   /** Stop paging once a page reaches rows older than this instant — the
    * client half of the time range the wire cannot express. */
   sinceMs?: number
+}
+
+/** A history page's position: the `before` to read under and the history
+ * generation it belongs to, which every continuation resends. */
+export interface HistoryPosition {
+  before: number
+  generation?: string
 }
 
 export function changesInfiniteOptions(
@@ -127,6 +142,10 @@ export function changesInfiniteOptions(
 ) {
   const first = opts.first ?? CHANGELOG_PAGE
   const startBefore = opts.startBefore ?? 0
+  const start: HistoryPosition = {
+    before: startBefore,
+    generation: opts.startGeneration,
+  }
   return infiniteQueryOptions({
     queryKey: [
       "changes",
@@ -136,13 +155,14 @@ export function changesInfiniteOptions(
     ],
     queryFn: ({ pageParam, signal }) =>
       fetchChangesPage({
-        before: pageParam > 0 ? pageParam : undefined,
+        before: pageParam.before > 0 ? pageParam.before : undefined,
+        generation: pageParam.generation,
         first,
         filter,
         signal,
       }),
-    initialPageParam: startBefore,
-    getNextPageParam: (last) => {
+    initialPageParam: start,
+    getNextPageParam: (last): HistoryPosition | undefined => {
       // The server cursor is the continuation (it advances past scope-filtered
       // rows); its absence — not a short page — is the feed's beginning.
       if (last.cursor === undefined) return undefined
@@ -155,7 +175,7 @@ export function changesInfiniteOptions(
       ) {
         return undefined
       }
-      return last.cursor
+      return { before: last.cursor, generation: last.generation }
     },
   })
 }
@@ -188,15 +208,24 @@ export async function seekBoundary(
   return lo + 1
 }
 
-/** Immutable answer — history never moves under a fixed instant. */
+/** Immutable answer — history never moves under a fixed instant. The answer
+ * carries the generation the probes ran under, so the pages that follow it
+ * resume in the same history. */
 export function seekQueryOptions(untilMs: number) {
   return queryOptions({
     queryKey: ["changes", "seek", untilMs],
-    queryFn: async ({ signal }) => {
-      const one = async (before?: number) =>
-        (await fetchChangesPage({ before, first: 1, signal })).changes[0]
-      const head = await one()
-      return seekBoundary(async (maxSeq) => one(maxSeq + 1), head, untilMs)
+    queryFn: async ({ signal }): Promise<HistoryPosition> => {
+      const headPage = await fetchChangesPage({ first: 1, signal })
+      const generation = headPage.generation
+      const one = async (before: number) =>
+        (await fetchChangesPage({ before, generation, first: 1, signal }))
+          .changes[0]
+      const before = await seekBoundary(
+        async (maxSeq) => one(maxSeq + 1),
+        headPage.changes[0],
+        untilMs
+      )
+      return { before, generation }
     },
     staleTime: Infinity,
   })

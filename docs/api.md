@@ -627,7 +627,7 @@ thing wherever it surfaces. An unmatched path under an API prefix is that same
 object with `404 not_found` — never the console's HTML with a 200.
 
 One more code lives on the changelog surface: `compacted` (410) answers a
-`from=` the changelog cannot resume, below the retention
+`from=` or `before=` the changelog cannot resume, below the retention
 [horizon](changelog.md#frames-and-the-horizon), above the head, or under a
 history generation the server does not hold. Its problem object names the
 current `head` and `generation`, telling a consumer that has fallen too far

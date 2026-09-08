@@ -339,6 +339,39 @@ func TestRestoredHistoryResetsTheCursorAndLosesNothing(t *testing.T) {
 	wantReset(t, status, reset, 7, ds.generation)
 }
 
+// A `before` continuation is a position in one history too: a client that
+// fetched a page, then had an older directory restored under it, must not
+// walk on through the replacement's rows. `before=0` is the head of whatever
+// history is there and needs no generation.
+func TestHistoryContinuationIsHeldToTheGeneration(t *testing.T) {
+	env := newTestEnv(t)
+	srv := httptest.NewServer(env.h)
+	defer srv.Close()
+	tok := env.svc.token("geoah")
+	ds := env.svc.datasets["geoah"]
+	head := seedPeople(ds, 3)
+
+	for _, query := range []string{
+		"first=2&before=3",
+		"first=2&before=3&generation=some-other-history",
+		"first=2&generation=some-other-history",
+	} {
+		status, got := resumeRefusal(t, srv, "/api/v1/changes?"+query, tok)
+		if status != http.StatusGone {
+			t.Fatalf("%s: status %d, want 410", query, status)
+		}
+		wantReset(t, status, got, head, ds.generation)
+	}
+	for _, query := range []string{
+		"first=2",
+		"first=2&before=0",
+		"first=2&before=3&generation=" + ds.generation,
+	} {
+		rec := env.do(t, http.MethodGet, "/api/v1/changes?"+query, tok, nil)
+		wantStatus(t, rec, http.StatusOK)
+	}
+}
+
 // The list envelope and the history page carry the generation beside the
 // head, so a client can hand either straight to `watch?from=&generation=`.
 func TestListAndHistoryCarryTheHandoff(t *testing.T) {
