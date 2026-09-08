@@ -19,6 +19,7 @@ import (
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 )
 
 type verifier interface {
@@ -43,10 +44,10 @@ func newDatasetWithDSN(t *testing.T, opts ...engine.Option) (substrate.Service, 
 	t.Helper()
 	svc, dsn := newService(t, opts...)
 	ctx := context.Background()
-	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, "geoah")
+	ds, err := svc.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
@@ -145,7 +146,7 @@ func TestVerifyNamesDamageBySeq(t *testing.T) {
 			Properties: map[string]any{"name": name},
 		})
 	}
-	if report := mustVerify(t, svc, "geoah"); !report.OK || report.Head != report.Entries {
+	if report := mustVerify(t, svc, testdb.Username(t)); !report.OK || report.Head != report.Entries {
 		t.Fatalf("a fresh repository does not verify: %+v", report)
 	}
 	db := rawDB(t, dsn)
@@ -165,7 +166,7 @@ func TestVerifyNamesDamageBySeq(t *testing.T) {
 	if _, err := db.Exec(`DELETE FROM changelog WHERE seq = $1`, head-2); err != nil {
 		t.Fatalf("delete an entry: %v", err)
 	}
-	report := mustVerify(t, svc, "geoah")
+	report := mustVerify(t, svc, testdb.Username(t))
 	if report.OK {
 		t.Fatalf("a damaged changelog verified: %+v", report)
 	}
@@ -231,7 +232,7 @@ func TestAWrongCredentialKeyIsRefusedAtBoot(t *testing.T) {
 		t.Fatalf("reopen with the original wrap restored: %v", err)
 	}
 	t.Cleanup(func() { _ = svc2.Close() })
-	if report := mustVerify(t, svc2, "geoah"); !report.OK {
+	if report := mustVerify(t, svc2, testdb.Username(t)); !report.OK {
 		t.Fatalf("the store did not survive the refused boot: %+v", report.Findings)
 	}
 }
@@ -250,7 +251,7 @@ func TestVerifyNamesATableTransactionThatNeverEnds(t *testing.T) {
 	if _, err := rawDB(t, dsn).Exec(`UPDATE changelog SET txn = seq + 3 WHERE seq = $1`, head); err != nil {
 		t.Fatalf("tamper with the frame: %v", err)
 	}
-	report := mustVerify(t, svc, "geoah")
+	report := mustVerify(t, svc, testdb.Username(t))
 	if report.OK {
 		t.Fatalf("a table ending inside a transaction verified: %+v", report)
 	}

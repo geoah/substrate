@@ -633,7 +633,7 @@ func TestExportStreamsBlobsOutOfS3(t *testing.T) {
 
 	// An fs host imports the archive as it is.
 	svc2 := mustReopen(t, testdb.NewSchema(t), root2)
-	ds2, err := svc2.Dataset(ctx, "geoah")
+	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -643,7 +643,7 @@ func TestExportStreamsBlobsOutOfS3(t *testing.T) {
 	if got := getBlob(t, ds2, digest); !bytes.Equal(got, payload) {
 		t.Fatalf("blob bytes = %d bytes, want %d", len(got), len(payload))
 	}
-	verified := mustVerify(t, svc2, "geoah")
+	verified := mustVerify(t, svc2, testdb.Username(t))
 	if !verified.OK || verified.Head != head || verified.Blobs != 1 || verified.BlobBytes != int64(len(payload)) {
 		t.Fatalf("the restored repository does not verify: %+v", verified)
 	}

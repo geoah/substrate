@@ -38,10 +38,10 @@ func newHookDatasetWithDSN(t *testing.T, triggers []enginetest.Trigger, fns ...m
 	t.Helper()
 	ctx := context.Background()
 	svc, dsn := newService(t)
-	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, "geoah")
+	ds, err := svc.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestParkedEnvelopeGainsTheAuthorityOnRetry(t *testing.T) {
 			"permissions": map[string]any{"reads": map[string]any{"kinds": []any{widgetType}}},
 		}, []any{widgetType}, hookRepoSource),
 	)
-	if _, err := engine.ReceiveWebhookSync(ctx, svc, "geoah.example.com", "hook-repo", "", jsonHook("repo", "repo")); err != nil {
+	if _, err := engine.ReceiveWebhookSync(ctx, svc, testdb.Authority(t), "hook-repo", "", jsonHook("repo", "repo")); err != nil {
 		t.Fatalf("receive: %v", err)
 	}
 	failures, err := ops.TriggerFailures(ctx, "hook-repo")
@@ -81,15 +81,15 @@ func TestParkedEnvelopeGainsTheAuthorityOnRetry(t *testing.T) {
 	}
 
 	// The payload as a binary before the authority wrote it.
-	raw, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, "geoah"), engine.RoleApp)
+	raw, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, testdb.Username(t)), engine.RoleApp)
 	if err != nil {
 		t.Fatalf("open raw: %v", err)
 	}
 	t.Cleanup(func() { _ = raw.Close() })
 	if _, err := raw.ExecContext(ctx, `
 		UPDATE trigger_failures
-		SET payload = jsonb_set(payload, '{repository}', '{"owner": "geoah"}'::jsonb)
-		WHERE id = $1`, failures[0].ID); err != nil {
+		SET payload = jsonb_set(payload, '{repository}', jsonb_build_object('owner', $2::text))
+		WHERE id = $1`, failures[0].ID, testdb.Username(t)); err != nil {
 		t.Fatalf("rewrite the parked payload: %v", err)
 	}
 
@@ -98,7 +98,7 @@ func TestParkedEnvelopeGainsTheAuthorityOnRetry(t *testing.T) {
 		t.Fatalf("retry: %v", err)
 	}
 	got := hookEcho(t, ds, "repo-echo")
-	if got["name"] != "geoah.example.com" || got["want"] != "geoah" {
+	if got["name"] != testdb.Authority(t) || got["want"] != testdb.Username(t) {
 		t.Fatalf("the replayed envelope carried %v, want both repository names", got)
 	}
 }

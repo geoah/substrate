@@ -133,13 +133,13 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, dsn := newService(t)
-	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
 	// The seed is COMPLETE at creation: the changelog's head is already where it
 	// will be, before anything has opened the repository.
-	raw, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, "geoah"), engine.RoleApp)
+	raw, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, testdb.Username(t)), engine.RoleApp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 		t.Fatal("creation wrote no changelog entries")
 	}
 
-	ds, err := svc.Dataset(ctx, "geoah")
+	ds, err := svc.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -458,10 +458,10 @@ func TestBootUpgradeHoldsRowsToADeclarationItKeeps(t *testing.T) {
 	tree := shippedTree(t)
 
 	svc1 := openTree(t, dsn, tree)
-	if _, err := svc1.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+	if _, err := svc1.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	ds1, err := svc1.Dataset(ctx, "geoah")
+	ds1, err := svc1.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -501,7 +501,7 @@ func TestBootUpgradeHoldsRowsToADeclarationItKeeps(t *testing.T) {
 
 	svc2 := openTree(t, dsn, tree)
 	t.Cleanup(func() { _ = svc2.Close() })
-	_, err = svc2.Dataset(ctx, "geoah")
+	_, err = svc2.Dataset(ctx, testdb.Username(t))
 	// What matters is the invariant below: no row lands that the surviving
 	// declaration rejects. Today the projection's refusal is how it holds, so the
 	// upgrade fails rather than writing such a row.
@@ -512,7 +512,7 @@ func TestBootUpgradeHoldsRowsToADeclarationItKeeps(t *testing.T) {
 		t.Fatalf("the refusal must name the undeclared property: %v", err)
 	}
 
-	raw, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, "geoah"), engine.RoleApp)
+	raw, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, testdb.Username(t)), engine.RoleApp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -548,10 +548,10 @@ func TestBootUpgradeNeverDowngrades(t *testing.T) {
 	bumpPackageVersion(t, tree, "substrate.reamde.dev/core", "99")
 
 	svc1 := openTree(t, dsn, tree)
-	if _, err := svc1.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+	if _, err := svc1.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	ds1, err := svc1.Dataset(ctx, "geoah")
+	ds1, err := svc1.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -563,7 +563,7 @@ func TestBootUpgradeNeverDowngrades(t *testing.T) {
 	older := shippedTree(t)
 	svc2 := openTree(t, dsn, older)
 	t.Cleanup(func() { _ = svc2.Close() })
-	ds2, err := svc2.Dataset(ctx, "geoah")
+	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open on the older binary: %v", err)
 	}

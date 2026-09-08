@@ -36,12 +36,12 @@ func w2Opener(t *testing.T) (open func() *dataset, closeSvc func()) {
 		}
 		last = svc
 		if !created {
-			if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+			if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
 				t.Fatalf("create repository: %v", err)
 			}
 			created = true
 		}
-		d, err := svc.Dataset(ctx, "geoah")
+		d, err := svc.Dataset(ctx, testdb.Username(t))
 		if err != nil {
 			t.Fatalf("open dataset: %v", err)
 		}

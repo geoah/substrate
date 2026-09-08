@@ -13,6 +13,7 @@ import (
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 )
 
 // Registration is two calls and ONE durable write: the enrollment creates
@@ -24,7 +25,7 @@ func TestRegistrationCreatesTheUserAndNothingBefore(t *testing.T) {
 	svc, _ := newService(t)
 
 	// An abandoned enrollment leaves no trace at all.
-	if _, err := svc.BeginRegistration(ctx, "geoah"); err != nil {
+	if _, err := svc.BeginRegistration(ctx, testdb.Username(t)); err != nil {
 		t.Fatalf("begin registration: %v", err)
 	}
 	if repos, err := svc.Repositories(ctx); err != nil || len(repos) != 0 {
@@ -34,12 +35,12 @@ func TestRegistrationCreatesTheUserAndNothingBefore(t *testing.T) {
 		t.Fatal("a malformed username must not get an enrollment")
 	}
 
-	user, tok, secret := registerUser(t, svc, "geoah")
+	user, tok, secret := registerUser(t, svc, testdb.Username(t))
 	if tok.Label != "cli" || secret == "" {
 		t.Fatalf("registration token = %+v, secret %q", tok, secret)
 	}
 	repos, err := svc.Repositories(ctx)
-	if err != nil || len(repos) != 1 || repos[0].Name != "geoah" || repos[0].Authority != "geoah.example.com" {
+	if err != nil || len(repos) != 1 || repos[0].Name != testdb.Username(t) || repos[0].Authority != testdb.Authority(t) {
 		t.Fatalf("repositories = %v (err %v)", repos, err)
 	}
 
@@ -49,7 +50,7 @@ func TestRegistrationCreatesTheUserAndNothingBefore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("authenticate the registration token: %v", err)
 	}
-	if info.ID != tok.ID || ds.Repository().Name != "geoah" {
+	if info.ID != tok.ID || ds.Repository().Name != testdb.Username(t) {
 		t.Fatalf("authenticated as %+v in %q", info, ds.Repository().Name)
 	}
 	// The repository's self-description carries the authority it owns, so a
@@ -58,7 +59,7 @@ func TestRegistrationCreatesTheUserAndNothingBefore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the repository record: %v", err)
 	}
-	if self.Properties["authority"] != "geoah.example.com" || self.Properties["name"] != "geoah" {
+	if self.Properties["authority"] != testdb.Authority(t) || self.Properties["name"] != testdb.Username(t) {
 		t.Fatalf("repository record = %v", self.Properties)
 	}
 
@@ -67,7 +68,7 @@ func TestRegistrationCreatesTheUserAndNothingBefore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the credential record: %v", err)
 	}
-	if cred.Properties["username"] != "geoah" {
+	if cred.Properties["username"] != testdb.Username(t) {
 		t.Fatalf("credential username = %v", cred.Properties["username"])
 	}
 	for _, ref := range []string{"passwordRef", "totpRef"} {
@@ -93,13 +94,13 @@ func TestRegistrationCreatesTheUserAndNothingBefore(t *testing.T) {
 
 	// A second registration for the same username is refused, and refusing it
 	// leaves the first user untouched.
-	enrollment, err := svc.BeginRegistration(ctx, "geoah")
+	enrollment, err := svc.BeginRegistration(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("begin registration: %v", err)
 	}
-	dup := &authUser{username: "geoah", seed: enrollment.Secret}
+	dup := &authUser{username: testdb.Username(t), seed: enrollment.Secret}
 	if _, err := svc.Register(ctx, substrate.RegisterInput{
-		Username: "geoah", Authority: "geoah" + ".example.com", Password: testPassword,
+		Username: testdb.Username(t), Authority: testdb.Authority(t), Password: testPassword,
 		TOTPSecret: enrollment.Secret, TOTPCode: dup.code(t),
 	}); err == nil {
 		t.Fatal("a taken username must not register twice")
@@ -119,47 +120,47 @@ func TestRegistrationRefusals(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
-	enrollment, err := svc.BeginRegistration(ctx, "geoah")
+	enrollment, err := svc.BeginRegistration(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("begin registration: %v", err)
 	}
-	u := &authUser{username: "geoah", seed: enrollment.Secret}
+	u := &authUser{username: testdb.Username(t), seed: enrollment.Secret}
 
 	for name, in := range map[string]substrate.RegisterInput{
 		"wrong code": {
-			Username: "geoah", Password: testPassword,
+			Username: testdb.Username(t), Password: testPassword,
 			TOTPSecret: enrollment.Secret, TOTPCode: "000000",
 		},
 		"short password": {
-			Username: "geoah", Password: "short",
+			Username: testdb.Username(t), Password: "short",
 			TOTPSecret: enrollment.Secret, TOTPCode: u.code(t),
 		},
 		"unusable seed": {
-			Username: "geoah", Password: testPassword,
+			Username: testdb.Username(t), Password: testPassword,
 			TOTPSecret: "not base32!", TOTPCode: "123456",
 		},
 		// The authority is required, DNS-shaped, and never under the
 		// publisher's namespace (decision record 0046).
 		"no authority": {
-			Username: "geoah", Password: testPassword,
+			Username: testdb.Username(t), Password: testPassword,
 			TOTPSecret: enrollment.Secret, TOTPCode: u.code(t),
 		},
 		"one-label authority": {
-			Username: "geoah", Password: testPassword,
-			TOTPSecret: enrollment.Secret, TOTPCode: u.code(t), Authority: "geoah",
+			Username: testdb.Username(t), Password: testPassword,
+			TOTPSecret: enrollment.Secret, TOTPCode: u.code(t), Authority: testdb.Username(t),
 		},
 		"uppercase authority": {
-			Username: "geoah", Password: testPassword,
+			Username: testdb.Username(t), Password: testPassword,
 			TOTPSecret: enrollment.Secret, TOTPCode: u.code(t), Authority: "Geoah.Example.com",
 		},
 		"publisher authority": {
-			Username: "geoah", Password: testPassword,
+			Username: testdb.Username(t), Password: testPassword,
 			TOTPSecret: enrollment.Secret, TOTPCode: u.code(t), Authority: "geoah.substrate.reamde.dev",
 		},
 		// DNS admits 253 bytes; a repository id, which the authority now is
 		// (decision record 0052), admits MaxIDLen.
 		"authority longer than a record id": {
-			Username: "geoah", Password: testPassword,
+			Username: testdb.Username(t), Password: testPassword,
 			TOTPSecret: enrollment.Secret, TOTPCode: u.code(t),
 			Authority: strings.Repeat("a", 60) + "." + strings.Repeat("b", 60) + ".example.com",
 		},
@@ -179,7 +180,7 @@ func TestRegistrationRefusesATakenAuthority(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
-	registerUser(t, svc, "geoah")
+	registerUser(t, svc, testdb.Username(t))
 
 	enrollment, err := svc.BeginRegistration(ctx, "ada")
 	if err != nil {
@@ -189,7 +190,7 @@ func TestRegistrationRefusesATakenAuthority(t *testing.T) {
 	_, err = svc.Register(ctx, substrate.RegisterInput{
 		Username: "ada", Password: testPassword,
 		TOTPSecret: enrollment.Secret, TOTPCode: u.code(t),
-		Authority: "geoah.example.com",
+		Authority: testdb.Authority(t),
 	})
 	if err == nil || !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "already owned") {
 		t.Fatalf("a taken authority registered: %v", err)
@@ -282,11 +283,11 @@ func TestLoginMintsATokenAndSpendsTheCode(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
-	user, _, _ := registerUser(t, svc, "geoah")
+	user, _, _ := registerUser(t, svc, testdb.Username(t))
 
 	code := user.code(t)
 	tok, secret, err := svc.Login(ctx, substrate.LoginInput{
-		Username: "geoah", Password: testPassword, TOTPCode: code, Label: "console",
+		Username: testdb.Username(t), Password: testPassword, TOTPCode: code, Label: "console",
 	})
 	if err != nil {
 		t.Fatalf("login: %v", err)
@@ -310,7 +311,7 @@ func TestLoginMintsATokenAndSpendsTheCode(t *testing.T) {
 
 	// The same code cannot be spent twice.
 	if _, _, err := svc.Login(ctx, substrate.LoginInput{
-		Username: "geoah", Password: testPassword, TOTPCode: code,
+		Username: testdb.Username(t), Password: testPassword, TOTPCode: code,
 	}); err == nil {
 		t.Fatal("a consumed code logged in again")
 	} else {
@@ -324,11 +325,11 @@ func TestLoginGivesNoOracle(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
-	user, _, _ := registerUser(t, svc, "geoah")
+	user, _, _ := registerUser(t, svc, testdb.Username(t))
 
 	for name, in := range map[string]substrate.LoginInput{
-		"wrong password": {Username: "geoah", Password: "wrong-password-entirely", TOTPCode: user.code(t)},
-		"wrong code":     {Username: "geoah", Password: testPassword, TOTPCode: "000000"},
+		"wrong password": {Username: testdb.Username(t), Password: "wrong-password-entirely", TOTPCode: user.code(t)},
+		"wrong code":     {Username: testdb.Username(t), Password: testPassword, TOTPCode: "000000"},
 		"unknown user":   {Username: "nosuch", Password: testPassword, TOTPCode: "000000"},
 	} {
 		_, _, err := svc.Login(ctx, in)
@@ -349,11 +350,11 @@ func TestChangePasswordKeepsTheSecondFactor(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
-	user, _, secret := registerUser(t, svc, "geoah")
+	user, _, secret := registerUser(t, svc, testdb.Username(t))
 
 	const newPassword = "a-longer-passphrase-entirely"
 	if err := svc.ChangePassword(ctx, substrate.LoginInput{
-		Username: "geoah", Password: testPassword, TOTPCode: user.code(t),
+		Username: testdb.Username(t), Password: testPassword, TOTPCode: user.code(t),
 	}, newPassword); err != nil {
 		t.Fatalf("change password: %v", err)
 	}
@@ -363,7 +364,7 @@ func TestChangePasswordKeepsTheSecondFactor(t *testing.T) {
 	// refused attempt spends no code — nothing is consumed until both factors
 	// have already passed.
 	if err := svc.ChangePassword(ctx, substrate.LoginInput{
-		Username: "geoah", Password: testPassword, TOTPCode: "000000",
+		Username: testdb.Username(t), Password: testPassword, TOTPCode: "000000",
 	}, "yet-another-passphrase"); err == nil {
 		t.Fatal("the old password changed the credential")
 	}
@@ -378,12 +379,12 @@ func TestChangePasswordKeepsTheSecondFactor(t *testing.T) {
 	// The new password logs in with the SAME seed, and the old one does not.
 	waitStep(t)
 	if _, _, err := svc.Login(ctx, substrate.LoginInput{
-		Username: "geoah", Password: newPassword, TOTPCode: user.code(t),
+		Username: testdb.Username(t), Password: newPassword, TOTPCode: user.code(t),
 	}); err != nil {
 		t.Fatalf("login with the new password: %v", err)
 	}
 	if _, _, err := svc.Login(ctx, substrate.LoginInput{
-		Username: "geoah", Password: testPassword, TOTPCode: "000000",
+		Username: testdb.Username(t), Password: testPassword, TOTPCode: "000000",
 	}); err == nil {
 		t.Fatal("the old password still logs in")
 	}
@@ -395,11 +396,11 @@ func TestReenrollTOTPSwapsTheSecondFactor(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
-	user, _, _ := registerUser(t, svc, "geoah")
+	user, _, _ := registerUser(t, svc, testdb.Username(t))
 	oldSeed := user.seed
 
 	enrollment, err := svc.BeginTOTPReenrollment(ctx, substrate.LoginInput{
-		Username: "geoah", Password: testPassword, TOTPCode: user.code(t),
+		Username: testdb.Username(t), Password: testPassword, TOTPCode: user.code(t),
 	})
 	if err != nil {
 		t.Fatalf("begin re-enrollment: %v", err)
@@ -407,7 +408,7 @@ func TestReenrollTOTPSwapsTheSecondFactor(t *testing.T) {
 	if enrollment.Secret == oldSeed {
 		t.Fatal("the re-enrollment reissued the same seed")
 	}
-	if !strings.Contains(enrollment.URI, "otpauth://totp/Substrate:geoah") {
+	if !strings.Contains(enrollment.URI, "otpauth://totp/Substrate:"+testdb.Username(t)) {
 		t.Fatalf("enrollment uri = %q", enrollment.URI)
 	}
 	// Nothing changed yet: the credential still points at the live seed, and
@@ -415,20 +416,20 @@ func TestReenrollTOTPSwapsTheSecondFactor(t *testing.T) {
 	waitStep(t)
 	candidate := &authUser{seed: enrollment.Secret}
 	if err := svc.ReenrollTOTP(ctx, substrate.LoginInput{
-		Username: "geoah", Password: testPassword, TOTPCode: user.code(t),
+		Username: testdb.Username(t), Password: testPassword, TOTPCode: user.code(t),
 	}, enrollment.Secret, candidate.code(t)); err != nil {
 		t.Fatalf("re-enroll: %v", err)
 	}
 
 	// The old seed is dead, the new one works, the password is unchanged.
 	if _, _, err := svc.Login(ctx, substrate.LoginInput{
-		Username: "geoah", Password: testPassword, TOTPCode: user.code(t),
+		Username: testdb.Username(t), Password: testPassword, TOTPCode: user.code(t),
 	}); err == nil {
 		t.Fatal("the replaced seed still logs in")
 	}
 	waitStep(t)
 	if _, _, err := svc.Login(ctx, substrate.LoginInput{
-		Username: "geoah", Password: testPassword, TOTPCode: candidate.code(t),
+		Username: testdb.Username(t), Password: testPassword, TOTPCode: candidate.code(t),
 	}); err != nil {
 		t.Fatalf("login with the new seed: %v", err)
 	}
@@ -440,8 +441,8 @@ func TestResetUser(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
-	registerUser(t, svc, "geoah")
-	ds, err := svc.Dataset(ctx, "geoah")
+	registerUser(t, svc, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -457,13 +458,13 @@ func TestResetUser(t *testing.T) {
 		t.Fatal("the engine service must expose ResetUser for substratectl")
 	}
 	const resetPassword = "operator-issued-passphrase"
-	enrollment, err := resetter.ResetUser(ctx, "geoah", resetPassword)
+	enrollment, err := resetter.ResetUser(ctx, testdb.Username(t), resetPassword)
 	if err != nil {
 		t.Fatalf("reset: %v", err)
 	}
-	fresh := &authUser{username: "geoah", password: resetPassword, seed: enrollment.Secret}
+	fresh := &authUser{username: testdb.Username(t), password: resetPassword, seed: enrollment.Secret}
 	if _, _, err := svc.Login(ctx, substrate.LoginInput{
-		Username: "geoah", Password: resetPassword, TOTPCode: fresh.code(t),
+		Username: testdb.Username(t), Password: resetPassword, TOTPCode: fresh.code(t),
 	}); err != nil {
 		t.Fatalf("login after a reset: %v", err)
 	}
@@ -482,15 +483,15 @@ func TestAuthKindsRefuseGenericWrites(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
-	registerUser(t, svc, "geoah")
-	ds, err := svc.Dataset(ctx, "geoah")
+	registerUser(t, svc, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
 		Kind: "substrate.reamde.dev/core/credential", ID: "self",
-		Properties: map[string]any{"username": "geoah", "passwordRef": "forged"},
+		Properties: map[string]any{"username": testdb.Username(t), "passwordRef": "forged"},
 	}); err == nil {
 		t.Fatal("the credential was forged through the generic surface")
 	} else {
@@ -552,8 +553,8 @@ func TestAuthenticationWritesNothing(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
-	registerUser(t, svc, "geoah")
-	ds, err := svc.Dataset(ctx, "geoah")
+	registerUser(t, svc, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -578,11 +579,11 @@ func TestEnrollmentURIShape(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
-	enrollment, err := svc.BeginRegistration(ctx, "geoah")
+	enrollment, err := svc.BeginRegistration(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("begin registration: %v", err)
 	}
-	want := "otpauth://totp/Substrate:geoah?secret=" + enrollment.Secret +
+	want := "otpauth://totp/Substrate:" + testdb.Username(t) + "?secret=" + enrollment.Secret +
 		"&issuer=Substrate&algorithm=SHA1&digits=6&period=30"
 	if enrollment.URI != want {
 		t.Fatalf("uri = %q, want %q", enrollment.URI, want)
@@ -602,7 +603,7 @@ func TestInsecureDisableTOTPTakesThePasswordAlone(t *testing.T) {
 	svc, _ := newService(t, engine.WithInsecureDisableTOTP())
 
 	res, err := svc.Register(ctx, substrate.RegisterInput{
-		Username: "geoah", Authority: "geoah" + ".example.com", Password: testPassword, Label: "cli",
+		Username: testdb.Username(t), Authority: testdb.Authority(t), Password: testPassword, Label: "cli",
 	})
 	if err != nil {
 		t.Fatalf("register without a second factor: %v", err)
@@ -614,22 +615,22 @@ func TestInsecureDisableTOTPTakesThePasswordAlone(t *testing.T) {
 	// Login, and the credential change behind the password-factor rule, both
 	// without a code.
 	if _, _, err := svc.Login(ctx, substrate.LoginInput{
-		Username: "geoah", Password: testPassword, Label: "cli",
+		Username: testdb.Username(t), Password: testPassword, Label: "cli",
 	}); err != nil {
 		t.Fatalf("login without a code: %v", err)
 	}
 	if _, _, err := svc.Login(ctx, substrate.LoginInput{
-		Username: "geoah", Password: "not-the-password",
+		Username: testdb.Username(t), Password: "not-the-password",
 	}); err == nil {
 		t.Fatal("a wrong password logged in: the password is the whole credential now")
 	}
 	if err := svc.ChangePassword(ctx, substrate.LoginInput{
-		Username: "geoah", Password: testPassword,
+		Username: testdb.Username(t), Password: testPassword,
 	}, "a-second-correct-horse"); err != nil {
 		t.Fatalf("change the password without a code: %v", err)
 	}
 	if _, _, err := svc.Login(ctx, substrate.LoginInput{
-		Username: "geoah", Password: "a-second-correct-horse",
+		Username: testdb.Username(t), Password: "a-second-correct-horse",
 	}); err != nil {
 		t.Fatalf("login with the new password: %v", err)
 	}
@@ -662,7 +663,7 @@ func TestInsecureDisableTOTPKeepsASuppliedSeed(t *testing.T) {
 		t.Fatalf("mint a seed: %v", err)
 	}
 	if _, err := svc.Register(ctx, substrate.RegisterInput{
-		Username: "geoah", Authority: "geoah" + ".example.com", Password: testPassword, TOTPSecret: seed,
+		Username: testdb.Username(t), Authority: testdb.Authority(t), Password: testPassword, TOTPSecret: seed,
 		TOTPCode: "000000", Label: "cli",
 	}); err != nil {
 		t.Fatalf("register with a seed and a wrong code: %v", err)
@@ -674,7 +675,7 @@ func TestInsecureDisableTOTPKeepsASuppliedSeed(t *testing.T) {
 		t.Fatalf("code from the seed: %v", err)
 	}
 	if _, _, err := svc.Login(ctx, substrate.LoginInput{
-		Username: "geoah", Password: testPassword, TOTPCode: code,
+		Username: testdb.Username(t), Password: testPassword, TOTPCode: code,
 	}); err != nil {
 		t.Fatalf("login carrying a code: %v", err)
 	}

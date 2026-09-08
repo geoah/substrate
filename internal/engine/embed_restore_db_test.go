@@ -40,11 +40,11 @@ func TestImportQueuesEveryEmbeddableProperty(t *testing.T) {
 	root2 := copyRepositoryDir(t, root, id)
 	dsn2 := testdb.NewSchema(t)
 	svc2 := mustReopen(t, dsn2, root2)
-	ds2, err := svc2.Dataset(ctx, "geoah")
+	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open the restored repository: %v", err)
 	}
-	raw := scopedDB(t, dsn2, "geoah")
+	raw := scopedDB(t, dsn2, testdb.Username(t))
 	assertQueued(t, raw, ids)
 	if n := countRows(t, raw, "embeddings"); n != 0 {
 		t.Fatalf("the restore brought %d vectors; the directory holds none", n)
@@ -106,11 +106,11 @@ func TestImportQueuesEmbedsWithoutAProvider(t *testing.T) {
 	root2 := copyRepositoryDir(t, root, id)
 	dsn2 := testdb.NewSchema(t)
 	svc2 := mustReopen(t, dsn2, root2)
-	ds2, err := svc2.Dataset(ctx, "geoah")
+	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open the restored repository: %v", err)
 	}
-	raw := scopedDB(t, dsn2, "geoah")
+	raw := scopedDB(t, dsn2, testdb.Username(t))
 	assertQueued(t, raw, ids)
 	if n, err := ds2.ProcessEmbedQueue(ctx, 20); err != nil || n != 0 {
 		t.Fatalf("drain with no provider after the restore = %d, %v, want 0, nil", n, err)
@@ -160,13 +160,13 @@ func TestAResumedImportQueuesEmbeds(t *testing.T) {
 	if !errors.Is(err, errKilled) {
 		t.Fatalf("the boot did not die between the fold passes: %v", err)
 	}
-	raw := scopedDB(t, dsn2, "geoah")
+	raw := scopedDB(t, dsn2, testdb.Username(t))
 	if n := countRows(t, raw, "embed_queue"); n != 0 {
 		t.Fatalf("the crashed import queued %d rows before the transaction that completes it", n)
 	}
 
 	svc2 := mustReopen(t, dsn2, root2)
-	if _, err := svc2.Dataset(ctx, "geoah"); err != nil {
+	if _, err := svc2.Dataset(ctx, testdb.Username(t)); err != nil {
 		t.Fatalf("open the repository after the import resumed: %v", err)
 	}
 	assertQueued(t, raw, ids)
@@ -185,10 +185,10 @@ func TestImportConvergesTheVectorsAnOlderDatabaseHolds(t *testing.T) {
 	ctx := context.Background()
 	emb := newFakeEmbedServer(t)
 	svc, dsn := newService(t)
-	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, "geoah")
+	ds, err := svc.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestImportConvergesTheVectorsAnOlderDatabaseHolds(t *testing.T) {
 	// one cleared, one record tombstoned, the rest left alone.
 	root2 := copyRepositoryDir(t, root, id)
 	svc2 := mustReopen(t, testdb.NewSchema(t), root2)
-	ds2, err := svc2.Dataset(ctx, "geoah")
+	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,11 +250,11 @@ func TestImportConvergesTheVectorsAnOlderDatabaseHolds(t *testing.T) {
 
 	// The first database is the older dump: its vectors are the old texts'.
 	svc3 := mustReopen(t, dsn, root2)
-	ds3, err := svc3.Dataset(ctx, "geoah")
+	ds3, err := svc3.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open the repository restored over the older database: %v", err)
 	}
-	raw := scopedDB(t, dsn, "geoah")
+	raw := scopedDB(t, dsn, testdb.Username(t))
 	if n := countRows(t, raw, "embeddings"); n != 2 {
 		t.Fatalf("%d vectors after the import, want the unchanged blurb's and the tombstone's", n)
 	}
@@ -306,10 +306,10 @@ func TestImportRequeuesWhenTheDirectoryRepointsTheModel(t *testing.T) {
 	ctx := context.Background()
 	emb := newFakeEmbedServer(t)
 	svc, dsn := newService(t)
-	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, "geoah")
+	ds, err := svc.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +330,7 @@ func TestImportRequeuesWhenTheDirectoryRepointsTheModel(t *testing.T) {
 	// the blurb is not touched.
 	root2 := copyRepositoryDir(t, root, id)
 	svc2 := mustReopen(t, testdb.NewSchema(t), root2)
-	ds2, err := svc2.Dataset(ctx, "geoah")
+	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,11 +342,11 @@ func TestImportRequeuesWhenTheDirectoryRepointsTheModel(t *testing.T) {
 
 	// The first database is the older dump: its one vector is the old model's.
 	svc3 := mustReopen(t, dsn, root2)
-	ds3, err := svc3.Dataset(ctx, "geoah")
+	ds3, err := svc3.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open the repository restored over the older database: %v", err)
 	}
-	raw := scopedDB(t, dsn, "geoah")
+	raw := scopedDB(t, dsn, testdb.Username(t))
 	if n := countRows(t, raw, "embeddings"); n != 0 {
 		t.Fatalf("%d vectors of the old model outlived the import", n)
 	}
@@ -379,10 +379,10 @@ func TestImportDropsTheVectorsOfAPropertyNoLongerEmbedded(t *testing.T) {
 	ctx := context.Background()
 	emb := newFakeEmbedServer(t)
 	svc, dsn := newService(t)
-	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, "geoah")
+	ds, err := svc.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,7 +410,7 @@ func TestImportDropsTheVectorsOfAPropertyNoLongerEmbedded(t *testing.T) {
 	// declared again with the blurb no longer embeddable.
 	root2 := copyRepositoryDir(t, root, id)
 	svc2 := mustReopen(t, testdb.NewSchema(t), root2)
-	ds2, err := svc2.Dataset(ctx, "geoah")
+	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -420,11 +420,11 @@ func TestImportDropsTheVectorsOfAPropertyNoLongerEmbedded(t *testing.T) {
 	_ = svc2.Close()
 
 	svc3 := mustReopen(t, dsn, root2)
-	ds3, err := svc3.Dataset(ctx, "geoah")
+	ds3, err := svc3.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open the repository restored over the older database: %v", err)
 	}
-	raw := scopedDB(t, dsn, "geoah")
+	raw := scopedDB(t, dsn, testdb.Username(t))
 	if n := countRows(t, raw, "embeddings"); n != 0 {
 		t.Fatalf("%d vectors of a property no longer embedded outlived the import", n)
 	}
@@ -457,7 +457,7 @@ func TestSemanticSearchWithNothingEmbeddableIsEmpty(t *testing.T) {
 // is copied anywhere.
 func raw0(t *testing.T, dsn string) *sql.DB {
 	t.Helper()
-	return scopedDB(t, dsn, "geoah")
+	return scopedDB(t, dsn, testdb.Username(t))
 }
 
 // shelfRepository is a repository with the shelf fixture installed:

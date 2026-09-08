@@ -125,10 +125,10 @@ func TestBootUpgradeDeliversTheHostFunctions(t *testing.T) {
 
 	// The tree as it stood before host functions existed.
 	svc := openWith(preHostKindsDir(t))
-	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	dsOld, err := svc.Dataset(ctx, "geoah")
+	dsOld, err := svc.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestBootUpgradeDeliversTheHostFunctions(t *testing.T) {
 
 	// This binary's tree: the open runs the upgrade.
 	svc2 := openWith("../../kinds/substrate.reamde.dev/core")
-	ds2, err := svc2.Dataset(ctx, "geoah")
+	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("the boot upgrade could not deliver the host functions: %v", err)
 	}

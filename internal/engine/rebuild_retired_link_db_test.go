@@ -13,6 +13,7 @@ import (
 
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 )
 
 func TestRebuildRefusesARetiredLinkOp(t *testing.T) {
@@ -22,10 +23,10 @@ func TestRebuildRefusesARetiredLinkOp(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
 			svc, dsn := newService(t)
-			if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+			if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
 				t.Fatalf("create repository: %v", err)
 			}
-			ds, err := svc.Dataset(ctx, "geoah")
+			ds, err := svc.Dataset(ctx, testdb.Username(t))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -50,7 +51,7 @@ func TestRebuildRefusesARetiredLinkOp(t *testing.T) {
 			}
 
 			before := foldOf(t, ds)
-			_, err = svc.(rebuilder).RebuildRepository(ctx, "geoah")
+			_, err = svc.(rebuilder).RebuildRepository(ctx, testdb.Username(t))
 			if err == nil {
 				t.Fatalf("the rebuild replayed a %s entry", op)
 			}

@@ -16,6 +16,7 @@ import (
 
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -116,7 +117,7 @@ func TestDeclaredDefaultLandsInTheRecordAndSurvivesARebuild(t *testing.T) {
 	if !ok {
 		t.Fatal("the service cannot rebuild a repository")
 	}
-	if _, err := rb.RebuildRepository(ctx, "geoah"); err != nil {
+	if _, err := rb.RebuildRepository(ctx, testdb.Username(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	if rebuilt := mustGet(t, ds, requiredTicket, "t1"); rebuilt.Properties["priority"] != "none" {

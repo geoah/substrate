@@ -23,8 +23,12 @@ import (
 // the suite finish in a third of the time it used to: the work is mostly spent
 // waiting on Postgres, so running one test at a time left the machine idle.
 // What makes it SAFE is that a test shares nothing it can observe — its own
-// schema (testdb.NewSchema), and its own function processes, which the runner
-// keys on the repository's ID rather than the name every test happens to reuse.
+// schema (testdb.NewSchema), and its own repository id (testdb.Username, a
+// name derived from the test's own). The runner (runner.Shared, one per
+// process) keys function processes on the repository id, and the id is the
+// authority, so two tests registering one username would share function
+// processes and either one's Close would retire the other's mid-delivery.
+// A test that runs function bodies must not register a fixed username.
 //
 // The exceptions are the tests that write a PACKAGE-LEVEL var: BlobUploadGrace
 // (the blob GC tests) and maxPagesPerDrain / maxDrainEffects / pagedSweepGrace
@@ -71,10 +75,10 @@ func newCoreDataset(t *testing.T, opts ...engine.Option) (substrate.Service, sub
 	t.Helper()
 	svc, _ := newService(t, opts...)
 	ctx := context.Background()
-	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, "geoah")
+	ds, err := svc.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
