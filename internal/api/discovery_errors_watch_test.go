@@ -24,6 +24,7 @@ var wantFeatureSurfaces = map[string][]string{
 	"functions":  {surfaceREST},
 	"bundles":    {surfaceREST},
 	"blobs":      {surfaceREST},
+	"export":     {surfaceREST},
 	"changefeed": {surfaceREST, surfaceGraphQL},
 	"search":     {surfaceGraphQL},
 	"embeddings": {surfaceREST, surfaceGraphQL},
@@ -85,7 +86,7 @@ func TestDiscoveryReportsVersionsFeaturesDialect(t *testing.T) {
 			t.Fatalf("feature %q stability = %q, want %q", name, stab[name], want)
 		}
 	}
-	for _, absent := range []string{"triggers", "functions", "bundles", "blobs", featureEmbeddings, substrate.FeatureAgents} {
+	for _, absent := range []string{"triggers", "functions", "bundles", "blobs", featureExport, featureEmbeddings, substrate.FeatureAgents} {
 		if _, ok := stab[absent]; ok {
 			t.Fatalf("feature %q advertised, but nothing here serves it", absent)
 		}
@@ -204,6 +205,7 @@ type allSeams struct {
 	substrate.BundleOps
 	substrate.BundleInstaller
 	substrate.BlobStore
+	substrate.Exporter
 	substrate.ChangeFeedOps
 	substrate.AgentOps
 }
@@ -257,6 +259,7 @@ func TestDiscoveryStampsEachFeatureStability(t *testing.T) {
 		"functions":             substrate.StabilityStable,
 		"bundles":               substrate.StabilityStable,
 		"blobs":                 substrate.StabilityStable,
+		featureExport:           substrate.StabilityBeta,
 		"changefeed":            substrate.StabilityStable,
 		"search":                substrate.StabilityBeta,
 		featureEmbeddings:       substrate.StabilityAlpha,

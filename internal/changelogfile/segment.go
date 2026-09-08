@@ -68,6 +68,10 @@ func SegmentName(first int64) string {
 // sidecarName is the name of the sidecar that finishes segment name.
 func sidecarName(name string) string { return name + sidecarSuffix }
 
+// SidecarName is sidecarName for a caller laying the changelog out somewhere
+// other than a directory (the export's tar): `<segment name>.sha256`.
+func SidecarName(name string) string { return sidecarName(name) }
+
 // parseSegmentName recovers the first seq from a segment file name. Exactly
 // 15 digits, first seq at least 1: a name that does not round-trip through
 // SegmentName is refused, so two spellings can never name one segment.

@@ -70,6 +70,10 @@ type fakeSubstrate struct {
 	catalog       []substrate.CatalogItem
 	shipped       []substrate.ShippedUpgrade
 	shippedStatus int
+	// exportTar is the archive GET /api/v1/export streams, and exportName
+	// the file name its Content-Disposition offers (export_test.go).
+	exportTar  []byte
+	exportName string
 
 	requests  []string
 	lastBody  map[string]json.RawMessage
@@ -187,6 +191,8 @@ func (f *fakeSubstrate) handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/catalog/{id}/import", f.handleCatalogImport)
 	mux.HandleFunc("GET /api/v1/catalog", f.handleCatalog)
 	mux.HandleFunc("GET /api/v1/vocabulary/upgrade", f.handleShippedUpgrade)
+	// The recovery export: a tar the test seeds (export_test.go).
+	mux.HandleFunc("GET /api/v1/export", f.handleExport)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		f.noteRequest(r)
 		writeError(w, http.StatusNotFound, "not_found", "no such route: "+r.URL.Path, nil)

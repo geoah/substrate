@@ -150,6 +150,7 @@ bin/substratectl get kind <ref> -o yaml      # one kind's definition
 bin/substratectl get task <id> -o yaml       # one record, apply-able envelope
 bin/substratectl apply -f record.yaml        # put (merge, never prune)
 bin/substratectl watch                       # resumable change stream
+bin/substratectl export                      # the recovery export: a tar of the repository directory as of one committed point
 
 # the operator's hat — a DSN, no HTTP
 bin/substratectl --dsn "$DATABASE_URL" repository list

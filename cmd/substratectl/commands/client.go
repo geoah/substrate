@@ -42,6 +42,9 @@ const (
 	pathChanges    = apiPrefix + "/changes"
 	pathVocabulary = apiPrefix + "/vocabulary/apply"
 	pathOAuthStart = apiPrefix + "/oauth/start"
+	// pathExport is the owner's recovery export, a tar of the repository
+	// directory (decision 0066).
+	pathExport = apiPrefix + "/export"
 )
 
 // The door sits BESIDE the versioned API and outside every prefix:

@@ -15,6 +15,7 @@ substratectl get task t9 -o yaml         # one record, apply-able envelope
 substratectl apply -f task.yaml           # put: merge, never prune
 substratectl patch task t9 --state status=done
 substratectl watch                        # resumable change stream
+substratectl export                       # the recovery export, a tar of the repository directory
 ```
 
 ## Two hats
@@ -23,8 +24,8 @@ substratectl watch                        # resumable change stream
 
 **The user's hat** speaks HTTP and carries a token: everything above, plus
 `register`, `login`, `logout`, `token`, `user password`, `user totp`,
-`trigger`, `function` and `bundle`. It needs a server and a token, and it can
-run anywhere.
+`trigger`, `function`, `bundle` and `export`. It needs a server and a token,
+and it can run anywhere.
 
 **The operator's hat** speaks to the box's Postgres directly and holds no token
 at all: `user reset`, `repository list`, `repository inspect`,
@@ -174,5 +175,21 @@ is admitted and waits for the boot upgrade. Each blocked upgrade's guard lines p
 under the table; they name the kind, the property and the count of live
 records holding the old shape, which is what to migrate before the upgrade
 lands. `-o json` prints the same rows.
+
+## Exporting
+
+`substratectl export` downloads the repository's recovery export
+([backups](operations.md#backups)): `GET /api/v1/export` streamed to
+`<authority>-<head>.tar`, a tar of the repository directory as of one
+committed point, laid out as a data root with `snapshot.json` recording the
+head seq and checksum as its last entry. The token is the whole credential.
+The archive is read back on the way to disk, so one the connection cut short
+is refused and removed rather than kept as a backup; a complete one prints
+its point, its segment, sealed-file and blob counts, and how to restore it.
+`-o` names the file, `-o -` streams the archive to stdout with the report on
+stderr, and an existing file is never overwritten. Restoring is extracting it
+under a stopped server's `SUBSTRATE_DATA_ROOT` and booting, or, on a host
+with another credential key, `repository rewrap` with the recovery key first
+([restore without the credential key](operations.md#restore-without-the-credential-key)).
 
 Next: the [web console](console.md), the same repository in a browser.

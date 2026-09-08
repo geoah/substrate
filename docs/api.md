@@ -379,8 +379,9 @@ records: a trigger and a blob manifest are ordinary records and read on both
 surfaces whatever the entry says, while `["rest"]` means the feature's verbs
 (a replay, an install, a function call, a blob's bytes) have REST paths and no
 GraphQL field. The example above is abridged; the full roster a deployment may
-report is `triggers`, `functions`, `bundles`, `blobs`, `changefeed`, `search`,
-`embeddings` and `agents`, and which of them a given deployment lists is
+report is `triggers`, `functions`, `bundles`, `blobs`, `export`,
+`changefeed`, `search`, `embeddings` and `agents`, and which of them a given
+deployment lists is
 [what it implements](#what-a-features-stability-means).
 
 `surfaces` is the verdict per request surface, and it is a different axis from
@@ -426,6 +427,9 @@ changefeed's were the last two: a change cursor bound to a history generation
 and a change event that names the affected records
 ([decision 0061](decisions/0061-a-change-event-names-the-affected-records-and-clients-fetch-them.md)).
 `search` reports `beta`: its only door is the preview GraphQL surface.
+`export` reports `beta` too: `GET /api/v1/export` streams the repository's
+recovery export, a tar of its directory in the snapshot format
+([backups](operations.md#backups)), and this is the surface's first release.
 `agents` and `embeddings` report `alpha`: their shapes are still moving, and
 the `rest` in their `surfaces` says where they are served, not that they are
 frozen.

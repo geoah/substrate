@@ -325,6 +325,10 @@ type fakeDataset struct {
 	// what the verb answers instead.
 	reembedCalls []bool
 	reembedErr   error
+	// exportErr refuses Export before a point is pinned; exportFailMidway
+	// makes the stream fail after its first entry (export_test.go).
+	exportErr        error
+	exportFailMidway bool
 
 	// recorded inputs
 	lastQuery substrate.Query

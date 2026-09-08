@@ -84,6 +84,7 @@ var (
 	_ substrate.ShippedUpgradePlanner = (*dataset)(nil)
 	_ substrate.OAuthMaintainer       = (*dataset)(nil)
 	_ substrate.BlobStore             = (*dataset)(nil)
+	_ substrate.Exporter              = (*dataset)(nil)
 )
 
 type dataset struct {
