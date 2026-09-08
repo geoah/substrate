@@ -51,7 +51,7 @@ func retirementGuards(current, candidate *vocabulary.Registry, touched, skip map
 			stored = cur.RetiredKinds
 		}
 		if !skip[aname] {
-			for _, name := range missingStrings(stored, cand.RetiredKinds) {
+			for _, name := range removedStrings(stored, cand.RetiredKinds) {
 				out = append(out, fmt.Sprintf("package %s: kind name %q is retired and this declaration drops it; %s",
 					aname, name, retirementPermanent))
 			}
@@ -118,21 +118,9 @@ func kindRetirementGuards(curT, candT *vocabulary.Kind) []string {
 	if curT != nil {
 		stored = curT.Retired
 	}
-	for _, name := range missingStrings(stored.Properties, candT.Retired.Properties) {
+	for _, name := range removedStrings(stored.Properties, candT.Retired.Properties) {
 		out = append(out, fmt.Sprintf("kind %s: property %q is retired and this declaration drops it; %s",
 			ident, name, retirementPermanent))
-	}
-	for _, pname := range sortedKeys(mapOfLists(stored.Values)) {
-		for _, v := range missingStrings(stored.Values[pname], candT.Retired.Values[pname]) {
-			out = append(out, fmt.Sprintf("kind %s: property %q: enum value %q is retired and this declaration drops it; %s",
-				ident, pname, v, retirementPermanent))
-		}
-	}
-	for _, pname := range sortedKeys(mapOfLists(stored.States)) {
-		for _, v := range missingStrings(stored.States[pname], candT.Retired.States[pname]) {
-			out = append(out, fmt.Sprintf("kind %s: property %q: state %q is retired and this declaration drops it; %s",
-				ident, pname, v, retirementPermanent))
-		}
 	}
 	// An implicit stamp target counts as declared: a transition writes it.
 	for _, name := range unionStrings(stored.Properties, candT.Retired.Properties) {
@@ -140,37 +128,55 @@ func kindRetirementGuards(curT, candT *vocabulary.Kind) []string {
 			out = append(out, fmt.Sprintf("kind %s: property %q is retired; %s", ident, name, retiredDeclaredAgain))
 		}
 	}
-	values := unionByProperty(stored.Values, candT.Retired.Values)
-	for _, pname := range sortedKeys(mapOfLists(values)) {
-		p := candT.Props[pname]
-		if p == nil || p.Datatype != vocabulary.DatatypeEnum {
-			continue
-		}
-		live := map[string]bool{}
-		for _, ev := range p.Values {
-			live[ev.Value] = true
-		}
-		for _, v := range values[pname] {
-			if live[v] {
-				out = append(out, fmt.Sprintf("kind %s: property %q: enum value %q is retired; %s",
-					ident, pname, v, retiredDeclaredAgain))
+	out = append(out, byPropertyRetirementGuards(ident, "enum value", stored.Values, candT.Retired.Values, candT,
+		func(p *vocabulary.Property) []string {
+			if p.Datatype != vocabulary.DatatypeEnum {
+				return nil
 			}
+			live := make([]string, 0, len(p.Values))
+			for _, ev := range p.Values {
+				live = append(live, ev.Value)
+			}
+			return live
+		})...)
+	out = append(out, byPropertyRetirementGuards(ident, "state", stored.States, candT.Retired.States, candT,
+		func(p *vocabulary.Property) []string {
+			if p.Machine == nil {
+				return nil
+			}
+			return p.Machine.States
+		})...)
+	return out
+}
+
+// byPropertyRetirementGuards is the values and states half of a kind's guard,
+// which differ only in the word and in which declared list an entry bites
+// against: the stored map may not shrink, and no entry may be live under the
+// candidate's property in the shape the entry reserves. live answers the
+// candidate property's declared words in that shape, nil when the property is
+// not in it, which is how a retired value lies dormant under another datatype.
+func byPropertyRetirementGuards(ident, what string, stored, cand map[string][]string, candT *vocabulary.Kind, live func(*vocabulary.Property) []string) []string {
+	var out []string
+	for _, pname := range sortedKeys(stored) {
+		for _, v := range removedStrings(stored[pname], cand[pname]) {
+			out = append(out, fmt.Sprintf("kind %s: property %q: %s %q is retired and this declaration drops it; %s",
+				ident, pname, what, v, retirementPermanent))
 		}
 	}
-	states := unionByProperty(stored.States, candT.Retired.States)
-	for _, pname := range sortedKeys(mapOfLists(states)) {
+	union := unionByProperty(stored, cand)
+	for _, pname := range sortedKeys(union) {
 		p := candT.Props[pname]
-		if p == nil || p.Machine == nil {
+		if p == nil {
 			continue
 		}
-		live := map[string]bool{}
-		for _, s := range p.Machine.States {
-			live[s] = true
+		held := map[string]bool{}
+		for _, word := range live(p) {
+			held[word] = true
 		}
-		for _, v := range states[pname] {
-			if live[v] {
-				out = append(out, fmt.Sprintf("kind %s: property %q: state %q is retired; %s",
-					ident, pname, v, retiredDeclaredAgain))
+		for _, v := range union[pname] {
+			if held[v] {
+				out = append(out, fmt.Sprintf("kind %s: property %q: %s %q is retired; %s",
+					ident, pname, what, v, retiredDeclaredAgain))
 			}
 		}
 	}
@@ -337,12 +343,6 @@ func unionKeys(a, b map[string]any) map[string]any {
 	return out
 }
 
-// missingStrings lists the members of stored that cand no longer carries, in
-// stored's order.
-func missingStrings(stored, cand []string) []string {
-	return removedStrings(stored, cand)
-}
-
 // unionStrings lists a's members then b's additions, without duplicates.
 func unionStrings(a, b []string) []string {
 	seen := make(map[string]bool, len(a))
@@ -369,14 +369,6 @@ func unionByProperty(a, b map[string][]string) map[string][]string {
 		for pname, vals := range m {
 			out[pname] = unionStrings(out[pname], vals)
 		}
-	}
-	return out
-}
-
-func mapOfLists(m map[string][]string) map[string]any {
-	out := make(map[string]any, len(m))
-	for k, v := range m {
-		out[k] = v
 	}
 	return out
 }

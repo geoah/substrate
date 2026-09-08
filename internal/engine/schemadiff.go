@@ -600,7 +600,7 @@ func droppedTypeGuards(q sqlReader, droppedTypes []string) ([]string, error) {
 			return nil, err
 		}
 		if n > 0 {
-			guards = append(guards, fmt.Sprintf("type %s has %d live records: delete or migrate them first (a dropped name may be declared again unless the package lists it under `retired.kinds`)",
+			guards = append(guards, fmt.Sprintf("kind %s has %d live records: delete or migrate them first (a dropped name may be declared again unless the package lists it under `retired.kinds`)",
 				ident, n))
 		}
 	}
