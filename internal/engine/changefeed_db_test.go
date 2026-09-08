@@ -169,3 +169,83 @@ func TestChangeTriggersStates(t *testing.T) {
 		t.Fatalf("self write carries a chip: %+v", ct)
 	}
 }
+
+// A merge writes one entry addressed to the winner and a split one addressed
+// to the loser, and each changes both records. The record scope matches the
+// payload's winner and loser too, so a feed following either id sees both
+// entries, on the forward read and the backward page alike.
+func TestRecordFilterMatchesMergeAndSplitForBothRecords(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	feed := feedOf(t, ds)
+
+	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Nina Ray"}})
+	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "N. Ray"}})
+	other := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Someone Else"}})
+	rec, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID)
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+		t.Fatalf("split: %v", err)
+	}
+
+	// The API always pairs recordId with recordKind (parseChangeFilter), so
+	// the scope here carries both.
+	scope := func(id string) substrate.ChangeFilter {
+		return substrate.ChangeFilter{RecordID: id, Kinds: []string{winner.Kind}}
+	}
+	opsOf := func(changes []substrate.Change) map[substrate.Op]int {
+		out := map[substrate.Op]int{}
+		for _, c := range changes {
+			out[c.Op]++
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		name string
+		id   string
+		want bool
+	}{
+		{"winner", winner.ID, true},
+		{"loser", loser.ID, true},
+		{"unrelated", other.ID, false},
+	} {
+		forward, err := ds.Changes(ctx, 0, scope(tc.id), 500)
+		if err != nil {
+			t.Fatalf("%s: changes: %v", tc.name, err)
+		}
+		backward, err := feed.ChangesBefore(ctx, 0, scope(tc.id), 500)
+		if err != nil {
+			t.Fatalf("%s: changes before: %v", tc.name, err)
+		}
+		for _, got := range []struct {
+			read string
+			ops  map[substrate.Op]int
+		}{{"forward", opsOf(forward)}, {"backward", opsOf(backward)}} {
+			wantN := 0
+			if tc.want {
+				wantN = 1
+			}
+			if got.ops[substrate.OpMerge] != wantN || got.ops[substrate.OpSplit] != wantN {
+				t.Fatalf("%s %s: merge=%d split=%d, want %d each (ops %v)",
+					tc.name, got.read, got.ops[substrate.OpMerge], got.ops[substrate.OpSplit], wantN, got.ops)
+			}
+		}
+		// Every row the scope returns is about this record: its own entries,
+		// or a merge or split that names it. Nothing else leaks through the
+		// widened predicate.
+		for _, c := range forward {
+			if c.RecordID == tc.id {
+				continue
+			}
+			if c.Op != substrate.OpMerge && c.Op != substrate.OpSplit {
+				t.Fatalf("%s: foreign row %d op=%s record=%s", tc.name, c.Seq, c.Op, c.RecordID)
+			}
+			if c.Payload["winner"] != tc.id && c.Payload["loser"] != tc.id {
+				t.Fatalf("%s: %s row %d names neither side as %s: %v", tc.name, c.Op, c.Seq, tc.id, c.Payload)
+			}
+		}
+	}
+}

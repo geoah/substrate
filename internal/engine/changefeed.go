@@ -73,7 +73,18 @@ func (ds *dataset) buildChangeFilter(b *builder, f substrate.ChangeFilter) error
 		b.add(`actor NOT IN ` + b.jsonArray(actors))
 	}
 	if f.RecordID != "" {
-		b.add(`record_id = ` + b.arg(f.RecordID))
+		// A merge and a split each write ONE entry that changes two records:
+		// the merge addresses the winner and tombstones the loser, the split
+		// addresses the loser and rewrites the winner. Their payloads name
+		// both as `winner` and `loser`, so the record scope matches on those
+		// too; otherwise a client following the loser never sees its removal
+		// and one following the winner never sees the split. The match is the
+		// addressed pair only: the winner's later writes do not follow a
+		// former id here (the former-id trail is a read-side redirect, not a
+		// feed), and the entry count is unchanged.
+		id := b.arg(f.RecordID)
+		b.add(`(record_id = ` + id + ` OR (op IN ('merge', 'split') AND (payload->>'winner' = ` + id +
+			` OR payload->>'loser' = ` + id + `)))`)
 	}
 	if f.Q != "" {
 		// One substring over the row's text: metacharacters escaped so the

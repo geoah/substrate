@@ -73,12 +73,20 @@ writes a rule that matches nothing. Here is one act across all four:
 | an existing record changes    | `put`, `patch`, `merge`, `split`                   | `put`, `patch`                   | `patch`                 | `update`                    |
 | a record goes away            | `delete`, and `gc` on the collector's pass         | `delete`                         | `delete`                | `delete`                    |
 
-Merge and split are the two rows the table cannot hold. A merge tombstones the
-loser under the winner's single `merge` entry, so `OpOf` reads that entry as an
-`update` on the winner and no trigger delivers a delete class for the loser
-(reads of the loser's id forward to the winner, so nothing is lost). An accepted
-split reverses it, restoring the loser under one `split` entry, again read as an
-`update`, so a record can return to existence with no create class delivered.
+Merge and split are the two rows the table cannot hold, because each one
+changes two records under one entry. A merge tombstones the loser under the
+winner's single `merge` entry, so `OpOf` reads that entry as an `update` on the
+winner and no trigger delivers a delete class for the loser (reads of the
+loser's id forward to the winner, so nothing is lost). An accepted split
+reverses it, restoring the loser under one `split` entry addressed to the
+loser, again read as an `update`, so a record can return to existence with no
+create class delivered. Both payloads name the pair as `winner` and `loser`,
+and the `recordId` filter ([watching](#watching)) matches a `merge` or `split`
+entry on either name as well as on the entry's own `recordId`: a feed scoped to
+the loser carries the merge that removed it and the split that restored it, and
+a feed scoped to the winner carries the split that rewrote it. The filter
+follows the addressed pair only; the winner's writes after a merge do not
+appear under the loser's id.
 
 Each column answers a different question.
 
