@@ -30,6 +30,13 @@ import (
 //	property_managers  ditto — who last had a write accepted, per property
 //	former_ids         ditto — merge's trail
 //
+// property_offers is neither replayed nor kept: it is recompute's projection
+// of what each live source offers each target (mapping.go syncOffers), the
+// changelog never carried it, and a table left standing would hold whatever
+// the last live recompute left, or nothing after an import into an empty
+// database. The rebuild clears it and derives it again from the fold it just
+// replayed (rederiveOffers), so its updated_at is the derivation's time.
+//
 // Everything else survives the rebuild, and each for a stated reason:
 //
 //   - blobs, sealed — SIDE STORES. Their bytes were never in the changelog and
@@ -38,9 +45,6 @@ import (
 //   - embeddings, embed_queue — DERIVED FROM THE RECORDS, not from the changelog,
 //     and expensive: the vectors of a reproduced row are still that row's, so
 //     they are kept rather than re-bought from the provider.
-//   - property_offers — recompute's projection of what each live source would
-//     write. It is rebuilt and pruned by mapping recompute, from the records;
-//     the changelog never carried it.
 //   - trigger_cursors, trigger_failures, trigger_schedule, oauth_flows,
 //     paged_cursors — RUNTIME STATE. A cursor is a consumer's position in the
 //     changelog, not a fold of it: clearing them would redeliver history, and a
@@ -211,7 +215,59 @@ func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
 			after = ch.Seq
 		}
 	}
+	if err := t.rederiveOffers(); err != nil {
+		return err
+	}
 	return t.row(`SELECT count(*) FROM records`).Scan(&report.Records)
+}
+
+// rederiveOffers clears property_offers and derives it again from the fold:
+// every live record of a kind some mapping targets gets the rows its live
+// sources offer (mapping.go syncOffersOf). It is the offers half of recompute
+// alone, so no accepted value moves and nothing appends, which is what lets a
+// rebuild and an import, both forbidden to append, run it. The registry names
+// the target kinds, so the import's first pass, folding under an empty
+// registry, clears the table and derives nothing; the second pass derives it
+// all.
+func (t *txn) rederiveOffers() error {
+	if _, err := t.exec(`DELETE FROM property_offers`); err != nil {
+		return fmt.Errorf("substrate/engine: rebuild: clear property_offers: %w", err)
+	}
+	targets := map[string]bool{}
+	for _, m := range t.ds.registry().Mappings() {
+		targets[m.To] = true
+	}
+	for _, kind := range sortedKeys(targets) {
+		ids, err := t.liveIDsOf(kind)
+		if err != nil {
+			return err
+		}
+		for _, id := range ids {
+			if err := t.syncOffersOf(eref{Kind: kind, ID: id}); err != nil {
+				return fmt.Errorf("substrate/engine: rebuild: derive the offers of %s %s: %w", kind, id, err)
+			}
+		}
+	}
+	return nil
+}
+
+// liveIDsOf lists one kind's live record ids, read to the end before the
+// caller writes: a transaction cannot iterate a cursor while it writes.
+func (t *txn) liveIDsOf(kind string) ([]string, error) {
+	rows, err := t.query(`SELECT id FROM records WHERE kind = $1 AND deleted_at IS NULL ORDER BY id`, kind)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // changeOfEntry is a file entry in the shape the fold replays. The payload is
@@ -259,6 +315,11 @@ func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 		"former_ids": `SELECT to_jsonb(f) FROM (
 				SELECT record_kind, former_id, record_id, created_at
 				FROM former_ids ORDER BY record_kind, former_id) f`,
+		// Without updated_at: an offer's stamp is the time it was last derived,
+		// and a rebuild derives every row again (rederiveOffers).
+		"property_offers": `SELECT to_jsonb(o) FROM (
+				SELECT record_kind, record_id, property, actor, value
+				FROM property_offers ORDER BY record_kind, record_id, property, actor) o`,
 	}
 	for name, q := range queries {
 		rows, err := db.QueryContext(ctx, q)

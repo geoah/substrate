@@ -140,6 +140,61 @@ func nonNilLabels(m map[string]any) map[string]any {
 	return m
 }
 
+// writeMappedHistory drives the mapping surface so the fold under test holds
+// property_offers rows of every origin: two sources disagreeing on a property
+// the owner holds, a merge that brings a source's contributions to the winner,
+// and a source the sweep collects through its account.
+func writeMappedHistory(t *testing.T, ds substrate.Dataset) {
+	t.Helper()
+	ctx := context.Background()
+	sam := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: typePerson, Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
+	})
+	// Google matches by email, fills phones, and yields on the owner's name:
+	// an offer beside a hold.
+	syncSource(t, ds, people, typeGoogleContact, "g-sam", map[string]any{
+		"name":   aname("Samuel Jones"),
+		"emails": gemails("sam@acme.com"),
+		"phones": gphones("+441234567890"),
+	})
+	// Slack shares nothing with Sam, so it is a second person, merged by hand:
+	// the recompute after the merge offers slack's name and address.
+	s := syncSource(t, ds, slack, typeSlackUser, "s-sam", map[string]any{
+		"realName": "Sam J", "displayName": "sam", "email": "sam@corp.example",
+	})
+	if _, err := ds.Merge(ctx, owner, sam.Kind, sam.ID, personOf(t, ds, s)); err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	// The entry is the latest write, so its nickname takes displayName at the
+	// machine tier. Deleting its account has the sweep collect it, and the
+	// person must end where a delete of the entry would have left it.
+	acc := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: enginetest.AccountType, ID: "dir-acct",
+		Properties: map[string]any{"provider": "dir", "label": "Work"},
+	})
+	syncSource(t, ds, dirsync, typeDirEntry, "e-sam", map[string]any{
+		"fullName": "Samuel J.", "nickname": "Sammy", "email": "sam@acme.com", "account": acc.ID,
+	}, sam.ID)
+	if _, err := ds.Delete(ctx, owner, acc.Kind, acc.ID); err != nil {
+		t.Fatalf("delete the account: %v", err)
+	}
+	if _, err := ds.RunGC(ctx); err != nil {
+		t.Fatalf("gc: %v", err)
+	}
+}
+
+// offersIn counts the property_offers rows a fold snapshot carries.
+func offersIn(t *testing.T, snap []byte) int {
+	t.Helper()
+	var doc struct {
+		Offers []json.RawMessage `json:"property_offers"`
+	}
+	if err := json.Unmarshal(snap, &doc); err != nil {
+		t.Fatalf("decode the fold snapshot: %v", err)
+	}
+	return len(doc.Offers)
+}
+
 // TestRebuildReproducesTheFold is the containment test: clear the records
 // table and everything derived with it, replay the whole changelog through the fold,
 // and the store must come back bit for bit — the seed's schema rows included,

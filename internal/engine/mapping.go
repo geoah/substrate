@@ -481,32 +481,35 @@ type mappedSource struct {
 	actor string
 }
 
-// recompute recomputes targetID's mapped properties from its live sources
-// (§7.1, primitives §6). Pure function of the live records, with yield: a
-// manager row above the machine tier — the owner above all, a bundle's
-// pin beside it — keeps its property, and what the recompute would have
-// written stays legible as the source's offer row. A record with zero live
-// sources keeps only what was written to it directly.
-func (t *txn) recompute(target eref) error {
-	if t.recomputing {
-		return nil
-	}
+// mappedInputs is what a target's offers and its accepted values are both
+// computed from: its live sources, latest write first, and the union of the
+// properties its mappings map.
+type mappedInputs struct {
+	srcs      []mappedSource
+	props     []string
+	unionProp map[string]bool
+}
+
+// mappedInputsOf loads a target's mapped inputs, nil when there is nothing to
+// compute: the target is not live, nothing maps onto its kind, or every
+// mapping onto it is link-only.
+func (t *txn) mappedInputsOf(target eref) (*mappedInputs, error) {
 	row, err := t.loadRow(target, false)
 	if err != nil || row == nil || row.DeletedAt != nil {
-		return err
+		return nil, err
 	}
 	reg := t.declarations()
 	ty, err := t.resolveType(row.Kind)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	mappings := reg.MappingsTo(ty.Identity)
 	if len(mappings) == 0 {
-		return nil
+		return nil, nil
 	}
 	srcs, err := t.subjectSourcesOf(target, mappings)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	// Latest write wins, deterministically: sources written in one
 	// transaction share updated_at, so equal instants order by type then id
@@ -537,12 +540,42 @@ func (t *txn) recompute(target eref) error {
 	props := sortedKeys(propSet)
 	if len(props) == 0 {
 		// A link-only mapping carries structure and copies nothing.
+		return nil, nil
+	}
+	return &mappedInputs{srcs: srcs, props: props, unionProp: unionProp}, nil
+}
+
+// syncOffersOf is the offers half of recompute alone: the target's
+// property_offers rows from its live sources, and nothing else. It never
+// reaches t.patch, so no accepted value moves and nothing appends, which is
+// what lets a rebuild and an import derive the table again
+// (rebuild.go rederiveOffers).
+func (t *txn) syncOffersOf(target eref) error {
+	in, err := t.mappedInputsOf(target)
+	if err != nil || in == nil {
+		return err
+	}
+	return t.syncOffers(target, in.props, in.unionProp, in.srcs)
+}
+
+// recompute recomputes targetID's mapped properties from its live sources
+// (§7.1, primitives §6). Pure function of the live records, with yield: a
+// manager row above the machine tier — the owner above all, a bundle's
+// pin beside it — keeps its property, and what the recompute would have
+// written stays legible as the source's offer row. A record with zero live
+// sources keeps only what was written to it directly.
+func (t *txn) recompute(target eref) error {
+	if t.recomputing {
 		return nil
+	}
+	in, err := t.mappedInputsOf(target)
+	if err != nil || in == nil {
+		return err
 	}
 
 	// Offers first, accepted or yielded: one row per (property,
 	// actor), so a held value's alternatives are visible on every read.
-	if err := t.syncOffers(target, props, unionProp, srcs); err != nil {
+	if err := t.syncOffers(target, in.props, in.unionProp, in.srcs); err != nil {
 		return err
 	}
 
@@ -553,11 +586,11 @@ func (t *txn) recompute(target eref) error {
 
 	patch := map[string]any{}
 	overrides := map[string]substrate.Actor{}
-	for _, name := range props {
+	for _, name := range in.props {
 		if m, held := managers[name]; held && m.tier != substrate.TierMachine {
 			continue // yield: the offer above is the whole record of it
 		}
-		value, actor := selectValue(unionProp[name], contributionsFor(name, srcs))
+		value, actor := selectValue(in.unionProp[name], contributionsFor(name, in.srcs))
 		patch[name] = value // nil deletes: release-by-omission
 		if value != nil {
 			overrides[name] = substrate.Actor(actor)
@@ -912,4 +945,21 @@ func (t *txn) recomputeSubjectOf(src eref, m *vocabulary.Mapping) error {
 		return err
 	}
 	return t.recompute(target)
+}
+
+// recomputeSubjectsOf recomputes every subject a source record points at, one
+// per mapping its kind carries (record 49). A kind the registry does not hold
+// carries no mapping, so a record of a parked package recomputes nothing.
+func (t *txn) recomputeSubjectsOf(src eref) error {
+	reg := t.ds.registry()
+	ty, ok := reg.ByIdentity(src.Kind)
+	if !ok {
+		return nil
+	}
+	for _, m := range reg.MappingsFrom(ty.Identity) {
+		if err := t.recomputeSubjectOf(src, m); err != nil {
+			return err
+		}
+	}
+	return nil
 }

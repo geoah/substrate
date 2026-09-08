@@ -142,6 +142,73 @@ func peopleMappings() []map[string]any {
 	}
 }
 
+// The collected source. A mirror kind owned by an account through
+// `onDelete: cascade`: deleting the account has the sweep tombstone the entry
+// and purge it on its next pass, neither through the delete verb (gc.go).
+const (
+	dirPackage   = "dir.connectors.substrate.reamde.dev/dir"
+	typeDirEntry = dirPackage + "/entry"
+	dirsync      = substrate.Actor("connector:dirsync")
+)
+
+func dirManifest() enginetest.Manifest {
+	return enginetest.Manifest{
+		Name: "dir", Authority: dirPackage,
+		Manifests: []map[string]any{
+			vocabulary.PackageManifest(dirPackage, 1),
+			vocabulary.ActorManifest(dirPackage, string(dirsync)),
+			vocabulary.KindManifest(dirPackage,
+				map[string]any{"singular": "entry", "plural": "entries"},
+				map[string]any{
+					"displayTemplate": "{fullName}",
+					"properties": map[string]any{
+						"fullName": map[string]any{"type": "string"},
+						"nickname": map[string]any{"type": "string"},
+						"email":    map[string]any{"type": "email"},
+						"account": map[string]any{
+							"type": "reference", "kind": enginetest.AccountType,
+							"required": true, "onDelete": "cascade",
+						},
+						"person": map[string]any{
+							"type": "reference", "kind": typePerson,
+							"required": true, "mustExist": true, "subject": true,
+						},
+					},
+				}),
+		},
+	}
+}
+
+func dirMapping() map[string]any {
+	return enginetest.PeopleMapping("entryperson", map[string]any{
+		"from": typeDirEntry, "property": "person",
+		"match": []any{map[string]any{"from": "email", "to": "emails"}},
+		"map": map[string]any{
+			"name":        map[string]any{"path": "fullName"},
+			"displayName": map[string]any{"path": "nickname"},
+			"emails":      map[string]any{"path": "email", "merge": "union"},
+		},
+	})
+}
+
+// installPeopleSourcesWithDir is installPeopleSources plus the account type,
+// the account-owned entry kind and its mapping onto person.
+func installPeopleSourcesWithDir(t *testing.T, ds substrate.Dataset) {
+	t.Helper()
+	ctx := context.Background()
+	if err := enginetest.InstallAccountType(ctx, ds, substrate.ActorAPI); err != nil {
+		t.Fatalf("install account type: %v", err)
+	}
+	for _, m := range []enginetest.Manifest{googleManifest(), slackManifest(), dirManifest()} {
+		if err := enginetest.Install(ctx, ds, substrate.ActorSystem, m); err != nil {
+			t.Fatalf("register %s: %v", m.Name, err)
+		}
+	}
+	if err := enginetest.DeclareMappings(ctx, ds, append(peopleMappings(), dirMapping())...); err != nil {
+		t.Fatalf("declare the person mappings: %v", err)
+	}
+}
+
 // aname/gemails/gphones build the People-API-shaped object properties.
 func aname(display string) map[string]any {
 	return map[string]any{"displayName": display}
@@ -1311,4 +1378,74 @@ func TestUndeclaredNullDeletes(t *testing.T) {
 	if _, has := e.Properties["neverDeclared"]; has {
 		t.Fatalf("no-op null materialized a property: %v", e.Properties)
 	}
+}
+
+// The sweep purges a source without the delete verb: the account's
+// `onDelete: cascade` tombstones the entry and the next pass collects it. The
+// subject has to recompute before the row goes, or the person keeps a value
+// and an offer from a source that no longer exists, and a rebuild, which
+// derives offers from live records alone, disagrees with the live table.
+func TestCollectedSourceRecomputesItsSubject(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds := newDataset(t)
+	installPeopleSourcesWithDir(t, ds)
+
+	sam := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: typePerson, Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
+	})
+	syncSource(t, ds, slack, typeSlackUser, "s-sam", map[string]any{
+		"realName": "Sam J", "displayName": "sam", "email": "sam@acme.com",
+	})
+	acc := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: enginetest.AccountType, ID: "dir-acct",
+		Properties: map[string]any{"provider": "dir", "label": "Work"},
+	})
+	entry := syncSource(t, ds, dirsync, typeDirEntry, "e-sam", map[string]any{
+		"fullName": "Samuel J.", "nickname": "Sammy", "email": "sam@acme.com", "account": acc.ID,
+	}, sam.ID)
+	p := mustGet(t, ds, sam.Kind, sam.ID)
+	if p.Properties["displayName"] != "Sammy" || !offeredBy(p, "name", dirsync) {
+		t.Fatalf("the entry took neither displayName nor a name offer, so the test would prove nothing: %v %+v",
+			p.Properties["displayName"], p.PropertyMeta["name"].Alternatives)
+	}
+
+	if _, err := ds.Delete(ctx, owner, acc.Kind, acc.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds.RunGC(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds.Get(ctx, entry.Kind, entry.ID); err == nil {
+		t.Fatal("the cascade should have collected the entry")
+	}
+	p = mustGet(t, ds, sam.Kind, sam.ID)
+	if p.Properties["displayName"] != "sam" {
+		t.Fatalf("displayName = %v after its source was collected, want slack's", p.Properties["displayName"])
+	}
+	if offeredBy(p, "name", dirsync) {
+		t.Fatalf("a collected source still offers name: %+v", p.PropertyMeta["name"].Alternatives)
+	}
+
+	// The live table is exactly what a rebuild derives from the live records.
+	before := foldOf(t, ds)
+	if offersIn(t, before) == 0 {
+		t.Fatal("no offers survive; the rebuild comparison would prove nothing")
+	}
+	if _, err := svc.(rebuilder).RebuildRepository(ctx, "geoah"); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if after := foldOf(t, ds); string(after) != string(before) {
+		t.Fatalf("the rebuilt fold is not the live one\n%s", firstDifference(before, after))
+	}
+}
+
+// offeredBy reports whether actor offers an alternative for property.
+func offeredBy(r *substrate.Record, property string, actor substrate.Actor) bool {
+	for _, alt := range r.PropertyMeta[property].Alternatives {
+		if alt.Actor == string(actor) {
+			return true
+		}
+	}
+	return false
 }

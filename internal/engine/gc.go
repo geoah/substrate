@@ -73,6 +73,16 @@ func (ds *dataset) gcPass(ctx context.Context) (int, error) {
 			if err := t.cascadeOwned(ref); err != nil {
 				return err
 			}
+			// Only the delete verb recomputes a source's subjects at the
+			// tombstone (write.go); a cascade tombstones without it, and the
+			// subject would keep the value and the offer of a source about to
+			// stop existing. The tombstone is already outside the live set, so
+			// this lands the subject where a delete would have, and a rebuild,
+			// which derives offers from live records alone, agrees with the
+			// live table.
+			if err := t.recomputeSubjectsOf(ref); err != nil {
+				return err
+			}
 			// The purge lands BEFORE the entry that reports it: the entry
 			// carries the effects folded since the previous one, so an effect
 			// applied after its own append would ride on the next entry instead
