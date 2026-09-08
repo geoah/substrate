@@ -710,8 +710,13 @@ func (ds *dataset) blobGCPass(ctx context.Context) (int, error) {
 // manifest found here means the bytes belong to somebody and the delete does
 // not happen. It is the one path that removes bytes a transaction cannot
 // remove with their manifest.
+//
+// A raw transaction, not inTx: it appends nothing, and inTx takes the
+// changelog lock first (rows.go changelogLockKey), which would park every
+// writer of the repository behind an fs or s3 delete. The per-digest lock is
+// the only one it needs.
 func (ds *dataset) deleteOrphanBytes(ctx context.Context, store blobbytes.Store, digest string) error {
-	return ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+	return ds.inRawTx(ctx, func(t *txn) error {
 		if err := t.lockKey(blobLockKey(digest)); err != nil {
 			return err
 		}

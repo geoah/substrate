@@ -189,8 +189,13 @@ source value that differs from the stored one:
 ```
 
 The owner typed "Ada Lovelace" by hand, GitHub still says "ada", and both
-facts are on the wire. Lists and changes never carry `propertyMeta`; only a
-single-record read assembles it. Adopting an alternative is just writing it.
+facts are on the wire. An alternative's `updatedAt` is the `updatedAt` of the
+source record it comes from (for a union property, the latest of that actor's
+sources carrying it), not the moment the substrate wrote the row: like the
+value, it is a function of the live records, so a `repository rebuild` or a
+restore derives the same alternatives, stamps included. Lists and changes never
+carry `propertyMeta`; only a single-record read assembles it. Adopting an
+alternative is just writing it.
 **Releasing** a hand edit is patching the property to null: the delete clears
 the value and its manager, and the same transaction recomputes from live
 sources, so the property refills on the spot, back to following the sources.

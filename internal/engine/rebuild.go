@@ -10,6 +10,7 @@ import (
 
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // rebuild-repository: clear the fold and replay the changelog
@@ -30,6 +31,14 @@ import (
 //	property_managers  ditto — who last had a write accepted, per property
 //	former_ids         ditto — merge's trail
 //
+// property_offers is neither replayed nor kept: it is recompute's projection
+// of what each live source offers each target (mapping.go syncOffers), the
+// changelog never carried it, and a table left standing would hold whatever
+// the last live recompute left, or nothing after an import into an empty
+// database. The rebuild clears it and derives it again from the fold it just
+// replayed (rederiveOffers); a row's updated_at is its source record's, so the
+// derived table is the live one exactly.
+//
 // Everything else survives the rebuild, and each for a stated reason:
 //
 //   - blobs, sealed — SIDE STORES. Their bytes were never in the changelog and
@@ -38,9 +47,6 @@ import (
 //   - embeddings, embed_queue — DERIVED FROM THE RECORDS, not from the changelog,
 //     and expensive: the vectors of a reproduced row are still that row's, so
 //     they are kept rather than re-bought from the provider.
-//   - property_offers — recompute's projection of what each live source would
-//     write. It is rebuilt and pruned by mapping recompute, from the records;
-//     the changelog never carried it.
 //   - trigger_cursors, trigger_failures, trigger_schedule, oauth_flows,
 //     paged_cursors — RUNTIME STATE. A cursor is a consumer's position in the
 //     changelog, not a fold of it: clearing them would redeliver history, and a
@@ -211,7 +217,120 @@ func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
 			after = ch.Seq
 		}
 	}
+	if err := t.rederiveOffers(); err != nil {
+		return err
+	}
 	return t.row(`SELECT count(*) FROM records`).Scan(&report.Records)
+}
+
+// rederiveOffers clears property_offers and derives it again from the fold:
+// every live record of a kind some mapping targets gets the rows its live
+// sources offer (mapping.go syncOffersOf). It is the offers half of recompute
+// alone, so no accepted value moves and nothing appends, which is what lets a
+// rebuild and an import, both forbidden to append, run it. The registry names
+// the target kinds, so the import's first pass, folding under an empty
+// registry, clears the table and derives nothing; the second pass derives it
+// all.
+func (t *txn) rederiveOffers() error {
+	if _, err := t.exec(`DELETE FROM property_offers`); err != nil {
+		return fmt.Errorf("substrate/engine: rebuild: clear property_offers: %w", err)
+	}
+	targets := map[string]bool{}
+	for _, m := range t.declarations().Mappings() {
+		targets[m.To] = true
+	}
+	return t.deriveOffersOf(sortedKeys(targets))
+}
+
+// recomputeMappingTargets is the vocabulary apply's half of recompute. For
+// every target kind whose mapping set the batch changed: the properties the
+// LIVE mappings supplied and the candidate's no longer do are released on
+// every live record where the machine tier holds them (value and manager row,
+// a required property kept), the kind's offers go, and each record recomputes
+// against the candidate for whatever still maps. Offers AND values: the values
+// a removed or narrowed mapping's sources projected are changelog entries a
+// rebuild keeps, so only a recompute in this transaction leaves nothing for a
+// rebuild under the published closure to disagree with. A kind losing its last
+// mapping is the same computation against an empty candidate set, so a value
+// the machine wrote for no mapping (a system write, a default) is not touched.
+func (t *txn) recomputeMappingTargets(live, cand *vocabulary.Registry) error {
+	for _, kind := range changedMappingTargets(live, cand) {
+		removed := mappedProperties(live.MappingsTo(kind))
+		for name := range mappedProperties(cand.MappingsTo(kind)) {
+			delete(removed, name)
+		}
+		if _, err := t.exec(`DELETE FROM property_offers WHERE record_kind = $1`, kind); err != nil {
+			return fmt.Errorf("substrate/engine: clear the offers of %s: %w", kind, err)
+		}
+		ids, err := t.liveIDsOf(kind)
+		if err != nil {
+			return err
+		}
+		mapped := len(cand.MappingsTo(kind)) > 0
+		for _, id := range ids {
+			ref := eref{Kind: kind, ID: id}
+			if err := t.releaseMachineManaged(ref, sortedKeys(removed)); err != nil {
+				return fmt.Errorf("substrate/engine: release %s %s after its mappings changed: %w", kind, id, err)
+			}
+			if !mapped {
+				continue
+			}
+			if err := t.recompute(ref); err != nil {
+				return fmt.Errorf("substrate/engine: recompute %s %s after its mappings changed: %w", kind, id, err)
+			}
+		}
+	}
+	return nil
+}
+
+// mappedProperties is the set of target properties a mapping set writes: the
+// union of every mapping's map keys. A match rule reads a target property to
+// find the subject and writes nothing, so it is not one.
+func mappedProperties(ms []*vocabulary.Mapping) map[string]bool {
+	out := map[string]bool{}
+	for _, m := range ms {
+		for _, name := range m.MapOrder {
+			out[name] = true
+		}
+	}
+	return out
+}
+
+// deriveOffersOf derives the offers of every live record of the given target
+// kinds from its live sources, against the transaction's declarations. The
+// caller has deleted what it wants gone; this writes what is live.
+func (t *txn) deriveOffersOf(kinds []string) error {
+	for _, kind := range kinds {
+		ids, err := t.liveIDsOf(kind)
+		if err != nil {
+			return err
+		}
+		for _, id := range ids {
+			if err := t.syncOffersOf(eref{Kind: kind, ID: id}); err != nil {
+				return fmt.Errorf("substrate/engine: derive the offers of %s %s: %w", kind, id, err)
+			}
+		}
+	}
+	return nil
+}
+
+// liveIDsOf lists one kind's live record ids, read to the end before the
+// caller writes: a transaction cannot iterate a cursor while it writes.
+func (t *txn) liveIDsOf(kind string) ([]string, error) {
+	rows, err := t.query(`SELECT id FROM records WHERE kind = $1 AND deleted_at IS NULL ORDER BY id`, kind)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // changeOfEntry is a file entry in the shape the fold replays. The payload is
@@ -259,6 +378,11 @@ func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 		"former_ids": `SELECT to_jsonb(f) FROM (
 				SELECT record_kind, former_id, record_id, created_at
 				FROM former_ids ORDER BY record_kind, former_id) f`,
+		// Whole, updated_at included: a row's stamp is its source record's
+		// (mapping.go syncOffers), so a rebuild derives it too.
+		"property_offers": `SELECT to_jsonb(o) FROM (
+				SELECT record_kind, record_id, property, actor, value, updated_at
+				FROM property_offers ORDER BY record_kind, record_id, property, actor) o`,
 	}
 	for name, q := range queries {
 		rows, err := db.QueryContext(ctx, q)

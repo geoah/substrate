@@ -639,11 +639,18 @@ func TestRoundTripDirectoryRestoresARepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	importVocabulary(t, ds, "tasks")
+	importVocabulary(t, ds, "tasks", "people")
 	cleared := writeSomeHistory(t, ds)
+	installPeopleSourcesWithDir(t, ds)
+	writeMappedHistory(t, ds)
 	ref := putProvider(t, ds, dsn, "openai", "sk-round-trip")
 	digest := putBlob(t, ds, []byte("round trip bytes"))
 	before := foldOf(t, ds)
+	// property_offers is not in the directory: the import derives it again,
+	// and the snapshot only proves that if the original holds some.
+	if offersIn(t, before) == 0 {
+		t.Fatal("the fold holds no property_offers; the round trip would prove nothing about them")
+	}
 	head := maxSeq(t, ds)
 	secretBefore := openSecret(t, dsn, ref)
 	id := repositoryIDOf(t, ds)

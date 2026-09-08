@@ -262,6 +262,12 @@ func nonNilStrings(ss []string) []string {
 // and visibility order the same — the guarantee consumers resume on — and,
 // because the lock is per repository, it also makes `seq` a per-repository
 // gapless counter rather than a shared one with holes.
+//
+// It is also the FIRST key of the global lock order, which every transaction
+// keeps: changelog < registry-dep < subject-type < record. inTx takes it
+// before the transaction locks anything else, so no writer holds a record
+// (an advisory record lock or a row FOR UPDATE) while waiting for the
+// changelog, and RebuildRepository takes it first for the same reason.
 const changelogLockKey = "changelog"
 
 // changeEntry is one appended changelog row's ADDRESS: the seq addresses the
@@ -643,8 +649,15 @@ func (t *txn) enqueueEmbed(ref eref, property string) error {
 	return err
 }
 
-// hardDelete removes a record and every record that hangs off it.
+// hardDelete removes a record and every row that hangs off it. Its subjects
+// recompute first: a tombstone the cascade wrote before tombstones recomputed
+// (mapping.go afterTombstone) never did, and the purge is the last moment the
+// source is there to say which subject that was. Where the tombstone already
+// recomputed, the live set is unchanged and this writes nothing.
 func (t *txn) hardDelete(ref eref) error {
+	if err := t.recomputeSubjectsOf(ref); err != nil {
+		return err
+	}
 	_, err := t.fold(foldOp{Kind: foldPurge, Ref: ref.Kind, ID: ref.ID})
 	return err
 }

@@ -468,6 +468,19 @@ func (ds *dataset) inTx(ctx context.Context, actor substrate.Actor, internal boo
 		ctx: ctx, ds: ds, tx: tx, actor: actor, tier: ds.actorTier(actor),
 		principal: substrate.PrincipalFrom(ctx), now: nowUTC(), internal: internal,
 	}
+	// The changelog lock before anything else the transaction locks: the
+	// first key of the global order (rows.go changelogLockKey). The cost is
+	// plain: every write of a repository now serializes from its start, so
+	// its whole pre-append phase (loads, validation, a recompute) runs one
+	// writer at a time, where before only the stretch from the first append to
+	// the commit did. What it buys is that no writer ever holds a row, or a
+	// record lock, while waiting for the changelog that another writer holds
+	// while waiting for that row. A transaction that appends nothing and must
+	// not wait here uses inRawTx.
+	if err := t.lockKey(changelogLockKey); err != nil {
+		return err
+	}
+	t.seqLocked = true
 	if err := fn(t); err != nil {
 		return err
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -481,32 +482,56 @@ type mappedSource struct {
 	actor string
 }
 
-// recompute recomputes targetID's mapped properties from its live sources
-// (§7.1, primitives §6). Pure function of the live records, with yield: a
-// manager row above the machine tier — the owner above all, a bundle's
-// pin beside it — keeps its property, and what the recompute would have
-// written stays legible as the source's offer row. A record with zero live
-// sources keeps only what was written to it directly.
-func (t *txn) recompute(target eref) error {
-	if t.recomputing {
-		return nil
+// changedMappingTargets lists the target kinds whose mapping set differs
+// between two registries: a mapping added, removed or redefined, in identity
+// order.
+func changedMappingTargets(old, cand *vocabulary.Registry) []string {
+	targets := map[string]bool{}
+	for _, m := range old.Mappings() {
+		targets[m.To] = true
 	}
+	for _, m := range cand.Mappings() {
+		targets[m.To] = true
+	}
+	var out []string
+	for _, k := range sortedKeys(targets) {
+		if !reflect.DeepEqual(old.MappingsTo(k), cand.MappingsTo(k)) {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// mappedInputs is what a target's offers and its accepted values are both
+// computed from: its live sources, latest write first, and the union of the
+// properties its mappings map.
+type mappedInputs struct {
+	ty        *vocabulary.Kind
+	srcs      []mappedSource
+	props     []string
+	unionProp map[string]bool
+}
+
+// mappedInputsOf loads a target's mapped inputs, nil when there is nothing to
+// compute: the target is not live, nothing maps onto its kind, or every
+// mapping onto it is link-only.
+func (t *txn) mappedInputsOf(target eref) (*mappedInputs, error) {
 	row, err := t.loadRow(target, false)
 	if err != nil || row == nil || row.DeletedAt != nil {
-		return err
+		return nil, err
 	}
 	reg := t.declarations()
 	ty, err := t.resolveType(row.Kind)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	mappings := reg.MappingsTo(ty.Identity)
 	if len(mappings) == 0 {
-		return nil
+		return nil, nil
 	}
 	srcs, err := t.subjectSourcesOf(target, mappings)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	// Latest write wins, deterministically: sources written in one
 	// transaction share updated_at, so equal instants order by type then id
@@ -537,12 +562,42 @@ func (t *txn) recompute(target eref) error {
 	props := sortedKeys(propSet)
 	if len(props) == 0 {
 		// A link-only mapping carries structure and copies nothing.
+		return nil, nil
+	}
+	return &mappedInputs{ty: ty, srcs: srcs, props: props, unionProp: unionProp}, nil
+}
+
+// syncOffersOf is the offers half of recompute alone: the target's
+// property_offers rows from its live sources, and nothing else. It never
+// reaches t.patch, so no accepted value moves and nothing appends, which is
+// what lets a rebuild and an import derive the table again
+// (rebuild.go rederiveOffers).
+func (t *txn) syncOffersOf(target eref) error {
+	in, err := t.mappedInputsOf(target)
+	if err != nil || in == nil {
+		return err
+	}
+	return t.syncOffers(target, in.props, in.unionProp, in.srcs)
+}
+
+// recompute recomputes targetID's mapped properties from its live sources
+// (§7.1, primitives §6). Pure function of the live records, with yield: a
+// manager row above the machine tier — the owner above all, a bundle's
+// pin beside it — keeps its property, and what the recompute would have
+// written stays legible as the source's offer row. A record with zero live
+// sources keeps only what was written to it directly.
+func (t *txn) recompute(target eref) error {
+	if t.recomputing {
 		return nil
+	}
+	in, err := t.mappedInputsOf(target)
+	if err != nil || in == nil {
+		return err
 	}
 
 	// Offers first, accepted or yielded: one row per (property,
 	// actor), so a held value's alternatives are visible on every read.
-	if err := t.syncOffers(target, props, unionProp, srcs); err != nil {
+	if err := t.syncOffers(target, in.props, in.unionProp, in.srcs); err != nil {
 		return err
 	}
 
@@ -553,12 +608,23 @@ func (t *txn) recompute(target eref) error {
 
 	patch := map[string]any{}
 	overrides := map[string]substrate.Actor{}
-	for _, name := range props {
+	for _, name := range in.props {
 		if m, held := managers[name]; held && m.tier != substrate.TierMachine {
 			continue // yield: the offer above is the whole record of it
 		}
-		value, actor := selectValue(unionProp[name], contributionsFor(name, srcs))
-		patch[name] = value // nil deletes: release-by-omission
+		value, actor := selectValue(in.unionProp[name], contributionsFor(name, in.srcs))
+		// nil deletes: release-by-omission. Not on a required property, which
+		// the write path refuses to empty (checkRequiredProps): the last value
+		// stands, and its property_managers row goes on crediting the actor
+		// whose source has gone, until something writes it. Otherwise the
+		// delete or sweep that removed the property's last source would fail
+		// on the refusal, the sweep on every pass.
+		if value == nil {
+			if p, ok := in.ty.Props[name]; ok && p.Required {
+				continue
+			}
+		}
+		patch[name] = value
 		if value != nil {
 			overrides[name] = substrate.Actor(actor)
 		}
@@ -790,8 +856,13 @@ func selectValue(union bool, cands []contribution) (any, string) {
 // source contributes — computed with the same selection, restricted to that
 // actor's sources — and deletes the rows nothing live backs any more.
 // Unchanged offers write nothing.
+//
+// A row's updated_at is the updated_at of the latest source record carrying
+// the property for that actor, never the transaction's clock: the stamp is a
+// function of the live records exactly as the value is, so a rebuild, which
+// derives the table again (rebuild.go rederiveOffers), reproduces it.
 func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool, srcs []mappedSource) error {
-	current := map[offerKey]any{}
+	current := map[offerKey]offer{}
 	for _, name := range props {
 		actors := map[string]bool{}
 		for _, s := range srcs {
@@ -804,8 +875,14 @@ func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool,
 					mine = append(mine, x)
 				}
 			}
-			if v, _ := selectValue(unionProp[name], contributionsFor(name, mine)); v != nil {
-				current[offerKey{name, s.actor}] = v
+			cands := contributionsFor(name, mine)
+			if v, _ := selectValue(unionProp[name], cands); v != nil {
+				// cands[0] is the latest source CARRYING the path. For a union
+				// property it may carry an empty list and contribute no item,
+				// so the stamp is not always a contributing source's; it is
+				// the same on the live path and the rebuild, which is what
+				// the stamp has to be.
+				current[offerKey{name, s.actor}] = offer{value: v, at: cands[0].updatedAt}
 			}
 			actors[s.actor] = true
 		}
@@ -840,7 +917,8 @@ func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool,
 		}
 	}
 	for _, k := range sortedOfferKeys(current) {
-		raw, err := jsonb(current[k])
+		o := current[k]
+		raw, err := jsonb(o.value)
 		if err != nil {
 			return err
 		}
@@ -849,8 +927,9 @@ func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool,
 			VALUES ($1, $2, $3, $4, $5::jsonb, $6)
 			ON CONFLICT (repository, record_kind, record_id, property, actor) DO UPDATE SET
 				value = EXCLUDED.value, updated_at = EXCLUDED.updated_at
-			WHERE property_offers.value IS DISTINCT FROM EXCLUDED.value`,
-			target.Kind, target.ID, k.property, k.actor, raw, t.now); err != nil {
+			WHERE property_offers.value IS DISTINCT FROM EXCLUDED.value
+			   OR property_offers.updated_at IS DISTINCT FROM EXCLUDED.updated_at`,
+			target.Kind, target.ID, k.property, k.actor, raw, o.at); err != nil {
 			return err
 		}
 	}
@@ -860,7 +939,13 @@ func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool,
 // offerKey addresses one property_offers row.
 type offerKey struct{ property, actor string }
 
-func sortedOfferKeys(m map[offerKey]any) []offerKey {
+// offer is one row's derived content: the value and its source's stamp.
+type offer struct {
+	value any
+	at    time.Time
+}
+
+func sortedOfferKeys(m map[offerKey]offer) []offerKey {
 	out := make([]offerKey, 0, len(m))
 	for k := range m {
 		out = append(out, k)
@@ -912,4 +997,84 @@ func (t *txn) recomputeSubjectOf(src eref, m *vocabulary.Mapping) error {
 		return err
 	}
 	return t.recompute(target)
+}
+
+// afterTombstone is what every non-fold tombstone owes the mapping graph once
+// the entry reporting it is appended: softDelete, the sweep's cascade and a
+// merge's loser all call it. The record's own offer rows go, because a
+// tombstone is not a live target and a rebuild derives offers for live
+// records alone; and its subjects recompute, because as a source it has left
+// the live set. It runs after the reporting entry rather than inside the
+// tombstone so that the tombstone effect rides that entry and the
+// recompute's own patch rides its own.
+func (t *txn) afterTombstone(ref eref) error {
+	if _, err := t.exec(`DELETE FROM property_offers WHERE record_kind = $1 AND record_id = $2`,
+		ref.Kind, ref.ID); err != nil {
+		return err
+	}
+	return t.recomputeSubjectsOf(ref)
+}
+
+// releaseMachineManaged releases the named properties on a record where the
+// machine tier manages them: what recompute wrote for mappings a vocabulary
+// apply removed (recomputeMappingTargets). Each is nulled through the same
+// recomputing patch recompute uses, so the value and its manager row go
+// together; a required property keeps its value, as recompute leaves it. A
+// property held above the machine tier, or one the machine wrote for no
+// mapping, is not named and is not touched.
+func (t *txn) releaseMachineManaged(target eref, props []string) error {
+	if len(props) == 0 {
+		return nil
+	}
+	row, err := t.loadRow(target, false)
+	if err != nil || row == nil || row.DeletedAt != nil {
+		return err
+	}
+	ty, err := t.resolveType(row.Kind)
+	if err != nil {
+		return err
+	}
+	managers, err := t.managersOf(target)
+	if err != nil {
+		return err
+	}
+	patch := map[string]any{}
+	for _, name := range props {
+		if m, held := managers[name]; !held || m.tier != substrate.TierMachine {
+			continue
+		}
+		if p, ok := ty.Props[name]; ok && p.Required {
+			continue
+		}
+		patch[name] = nil
+	}
+	if len(patch) == 0 {
+		return nil
+	}
+	was := t.actor
+	t.actor = substrate.ActorSystem
+	t.recomputing, t.recomputeManagers = true, nil
+	defer func() {
+		t.actor = was
+		t.recomputing, t.recomputeManagers = false, nil
+	}()
+	_, err = t.patch(target, substrate.PatchInput{Properties: patch})
+	return err
+}
+
+// recomputeSubjectsOf recomputes every subject a source record points at, one
+// per mapping its kind carries (record 49). A kind the registry does not hold
+// carries no mapping, so a record of a parked package recomputes nothing.
+func (t *txn) recomputeSubjectsOf(src eref) error {
+	reg := t.declarations()
+	ty, ok := reg.ByIdentity(src.Kind)
+	if !ok {
+		return nil
+	}
+	for _, m := range reg.MappingsFrom(ty.Identity) {
+		if err := t.recomputeSubjectOf(src, m); err != nil {
+			return err
+		}
+	}
+	return nil
 }

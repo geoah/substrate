@@ -140,6 +140,86 @@ func nonNilLabels(m map[string]any) map[string]any {
 	return m
 }
 
+// writeMappedHistory drives the mapping surface so the fold under test holds
+// property_offers rows of every origin: two sources disagreeing on a property
+// the owner holds, a merge that brings a source's contributions to the winner,
+// and a source the sweep collects through its account.
+func writeMappedHistory(t *testing.T, ds substrate.Dataset) {
+	t.Helper()
+	ctx := context.Background()
+	sam := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: typePerson, Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
+	})
+	// Google matches by email, fills phones, and yields on the owner's name:
+	// an offer beside a hold.
+	syncSource(t, ds, people, typeGoogleContact, "g-sam", map[string]any{
+		"name":   aname("Samuel Jones"),
+		"emails": gemails("sam@acme.com"),
+		"phones": gphones("+441234567890"),
+	})
+	// Slack shares nothing with Sam, so it is a second person, merged by hand:
+	// the recompute after the merge offers slack's name and address.
+	s := syncSource(t, ds, slack, typeSlackUser, "s-sam", map[string]any{
+		"realName": "Sam J", "displayName": "sam", "email": "sam@corp.example",
+	})
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: sam.Kind, Winner: sam.ID, Loser: personOf(t, ds, s)}); err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	// The entry is the latest write, so its nickname takes displayName at the
+	// machine tier. Deleting its account has the sweep collect it, and the
+	// person must end where a delete of the entry would have left it.
+	acc := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: enginetest.AccountType, ID: "dir-acct",
+		Properties: map[string]any{"provider": "dir", "label": "Work"},
+	})
+	syncSource(t, ds, dirsync, typeDirEntry, "e-sam", map[string]any{
+		"fullName": "Samuel J.", "nickname": "Sammy", "email": "sam@acme.com", "account": acc.ID,
+	}, sam.ID)
+	if _, err := ds.Delete(ctx, owner, acc.Kind, acc.ID, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete the account: %v", err)
+	}
+	if _, err := ds.RunGC(ctx); err != nil {
+		t.Fatalf("gc: %v", err)
+	}
+	// Two mapped TARGETS holding an offer beside an owner's hold: one
+	// tombstoned, one tombstoned and put back. The tombstone drops the
+	// target's offers and the put derives them again, so a rebuild, which
+	// derives for live records alone, agrees with both.
+	for _, who := range []struct {
+		contact, name, short, email string
+		back                        bool
+	}{
+		{"g-ada", "Ada Lovelace", "Ada", "ada@acme.example", false},
+		{"g-bo", "Bo Peep", "Bo", "bo@acme.example", true},
+	} {
+		g := syncSource(t, ds, people, typeGoogleContact, who.contact, map[string]any{
+			"name": aname(who.name), "emails": gemails(who.email),
+		})
+		pid := personOf(t, ds, g)
+		mustPatch(t, ds, owner, typePerson, pid, substrate.PatchInput{Properties: map[string]any{"name": who.short}})
+		if _, err := ds.Delete(ctx, owner, typePerson, pid, substrate.DeleteInput{}); err != nil {
+			t.Fatalf("delete %s: %v", who.short, err)
+		}
+		if who.back {
+			mustPut(t, ds, owner, substrate.PutInput{
+				Kind: typePerson, ID: pid, Properties: map[string]any{"name": who.short},
+			})
+		}
+	}
+}
+
+// offersIn counts the property_offers rows a fold snapshot carries.
+func offersIn(t *testing.T, snap []byte) int {
+	t.Helper()
+	var doc struct {
+		Offers []json.RawMessage `json:"property_offers"`
+	}
+	if err := json.Unmarshal(snap, &doc); err != nil {
+		t.Fatalf("decode the fold snapshot: %v", err)
+	}
+	return len(doc.Offers)
+}
+
 // TestRebuildReproducesTheFold is the containment test: clear the records
 // table and everything derived with it, replay the whole changelog through the fold,
 // and the store must come back bit for bit — the seed's schema rows included,
@@ -147,15 +227,25 @@ func nonNilLabels(m map[string]any) map[string]any {
 // else.
 func TestRebuildReproducesTheFold(t *testing.T) {
 	t.Parallel()
-	svc, ds := newDataset(t)
+	svc, ds, dsn := newDatasetWithDSN(t)
 	cleared := writeSomeHistory(t, ds)
+	installPeopleSourcesWithDir(t, ds)
+	writeMappedHistory(t, ds)
 
 	before := foldOf(t, ds)
+	if offersIn(t, before) == 0 {
+		t.Fatal("the fold holds no property_offers; the rebuild would prove nothing about them")
+	}
 	head := maxSeq(t, ds)
 
 	rb, ok := svc.(rebuilder)
 	if !ok {
 		t.Fatal("the service cannot rebuild a repository")
+	}
+	// The rebuild must DERIVE the offers, not find them where the live path
+	// left them: emptied here, they are back only if the rebuild put them back.
+	if _, err := rawDB(t, dsn).Exec(`DELETE FROM property_offers`); err != nil {
+		t.Fatalf("empty property_offers: %v", err)
 	}
 	report, err := rb.RebuildRepository(context.Background(), "geoah")
 	if err != nil {

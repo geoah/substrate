@@ -619,7 +619,11 @@ comes back with a new history generation, and a resume under the old one
 answers `410 compacted` naming the head to re-list from ([the
 changelog](changelog.md#frames-and-the-horizon)). A dump keeps the row's
 generation, which is what `repository rotate-generation` above is for. A
-restart and a rebuild keep it too, and neither costs a client its cursor.
+restart and a rebuild keep it too, and neither costs a client its cursor. The
+alternatives beside a property (`propertyMeta.alternatives`) are not in the
+directory either, and need not be: the import derives them again from the
+records it folded, values, actors and stamps alike
+([reading provenance](projection.md#reading-provenance-propertymeta)).
 
 **The import queues the embeddable properties and the drain buys the vectors
 again.** In the transaction that completes it, the import compares the vectors

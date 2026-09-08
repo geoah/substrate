@@ -138,6 +138,10 @@ GET /api/v1/samples.substrate.reamde.dev/people/person/9f2k
         "value": "ada", "updatedAt": "2026-08-04T08:00:00Z"}]}}}
 ```
 
+An alternative's `updatedAt` is its source record's, not the target's;
+[reading provenance](projection.md#reading-provenance-propertymeta) has the
+rule.
+
 ## The five mutations
 
 The complete write surface, for every actor, forever. Each one addresses its

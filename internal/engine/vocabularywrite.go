@@ -409,6 +409,17 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		// leave a changelog-backed live row whose kind the registry it publishes
 		// cannot resolve, so the count that decides is the one taken LAST. It
 		// also covers whatever write is added to this transaction next.
+		// A mapping the batch adds, removes or narrows changes what every live
+		// record of its target kind is offered and holds, and no source write
+		// will ever run for a mapping that is gone. Every such record
+		// recomputes here, in this transaction and against the candidate
+		// (t.declarations()), so the offers and the values this commit
+		// publishes are the ones the published closure derives; a property no
+		// candidate mapping supplies any more is released first
+		// (recomputeMappingTargets).
+		if err := t.recomputeMappingTargets(ds.registry(), candidate); err != nil {
+			return err
+		}
 		final, err := droppedTypeGuards(t, st.droppedTypes)
 		if err != nil {
 			return err

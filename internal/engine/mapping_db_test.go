@@ -103,13 +103,20 @@ func slackManifest() enginetest.Manifest {
 // samples.substrate.reamde.dev/people, under the owner's hand.
 func installPeopleSources(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
+	installSources(t, ds, []enginetest.Manifest{googleManifest(), slackManifest()}, peopleMappings())
+}
+
+// installSources installs source manifests and then the people package's
+// mappings onto person, in that order: a mapping names its source kind.
+func installSources(t *testing.T, ds substrate.Dataset, sources []enginetest.Manifest, mappings []map[string]any) {
+	t.Helper()
 	ctx := context.Background()
-	for _, m := range []enginetest.Manifest{googleManifest(), slackManifest()} {
+	for _, m := range sources {
 		if err := enginetest.Install(ctx, ds, substrate.ActorSystem, m); err != nil {
 			t.Fatalf("register %s: %v", m.Name, err)
 		}
 	}
-	if err := enginetest.DeclareMappings(ctx, ds, peopleMappings()...); err != nil {
+	if err := enginetest.DeclareMappings(ctx, ds, mappings...); err != nil {
 		t.Fatalf("declare the person mappings: %v", err)
 	}
 }
@@ -139,6 +146,119 @@ func peopleMappings() []map[string]any {
 				"emails":      map[string]any{"path": "email", "merge": "union"},
 			},
 		}),
+	}
+}
+
+// The collected source. A mirror kind owned by an account through
+// `onDelete: cascade`: deleting the account has the sweep tombstone the entry
+// and purge it on its next pass, neither through the delete verb (gc.go).
+const (
+	dirPackage   = "dir.connectors.substrate.reamde.dev/dir"
+	typeDirEntry = dirPackage + "/entry"
+	dirsync      = substrate.Actor("connector:dirsync")
+	// A second writer of the same kind, so two entries' offers are two rows.
+	dirsync2 = substrate.Actor("connector:dirsync2")
+)
+
+func dirManifest() enginetest.Manifest {
+	return enginetest.Manifest{
+		Name: "dir", Authority: dirPackage,
+		Manifests: []map[string]any{
+			vocabulary.PackageManifest(dirPackage, 1),
+			vocabulary.ActorManifest(dirPackage, string(dirsync)),
+			vocabulary.ActorManifest(dirPackage, string(dirsync2)),
+			vocabulary.KindManifest(dirPackage,
+				map[string]any{"singular": "entry", "plural": "entries"},
+				map[string]any{
+					"displayTemplate": "{fullName}",
+					"properties": map[string]any{
+						"fullName": map[string]any{"type": "string"},
+						"nickname": map[string]any{"type": "string"},
+						"email":    map[string]any{"type": "email"},
+						"account": map[string]any{
+							"type": "reference", "kind": enginetest.AccountType,
+							"required": true, "onDelete": "cascade",
+						},
+						"person": map[string]any{
+							"type": "reference", "kind": typePerson,
+							"required": true, "mustExist": true, "subject": true,
+						},
+					},
+				}),
+		},
+	}
+}
+
+func dirMapping() map[string]any {
+	return enginetest.PeopleMapping("entryperson", map[string]any{
+		"from": typeDirEntry, "property": "person",
+		"match": []any{map[string]any{"from": "email", "to": "emails"}},
+		"map": map[string]any{
+			"name":        map[string]any{"path": "fullName"},
+			"displayName": map[string]any{"path": "nickname"},
+			"emails":      map[string]any{"path": "email", "merge": "union"},
+		},
+	})
+}
+
+// installPeopleSourcesWithDir is installPeopleSources plus the account kind,
+// the account-owned entry kind and its mapping onto person.
+func installPeopleSourcesWithDir(t *testing.T, ds substrate.Dataset) {
+	t.Helper()
+	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
+		t.Fatalf("install the account kind: %v", err)
+	}
+	installSources(t, ds,
+		[]enginetest.Manifest{googleManifest(), slackManifest(), dirManifest()},
+		append(peopleMappings(), dirMapping()))
+}
+
+// The required-property fixture: a target kind whose mapped `name` is
+// required, with the default a mapping shell needs to mint it, and one source
+// kind onto it. The target's own package declares the mapping (record 49).
+const (
+	crmPackage     = "crm.test.dev/crm"
+	typeLead       = crmPackage + "/lead"
+	typeLeadSource = crmPackage + "/leadsource"
+	crmsync        = substrate.Actor("connector:crmsync")
+)
+
+func crmManifest() enginetest.Manifest {
+	return enginetest.Manifest{
+		Name: "crm", Authority: crmPackage,
+		Manifests: []map[string]any{
+			vocabulary.PackageManifest(crmPackage, 1),
+			vocabulary.ActorManifest(crmPackage, string(crmsync)),
+			vocabulary.KindManifest(crmPackage,
+				map[string]any{"singular": "lead", "plural": "leads"},
+				map[string]any{
+					"displayTemplate": "{name}",
+					"properties": map[string]any{
+						"name":  map[string]any{"type": "string", "required": true, "default": "unnamed"},
+						"email": map[string]any{"type": "email"},
+					},
+				}),
+			vocabulary.KindManifest(crmPackage,
+				map[string]any{"singular": "leadsource", "plural": "leadsources"},
+				map[string]any{
+					"displayTemplate": "{fullName}",
+					"properties": map[string]any{
+						"fullName": map[string]any{"type": "string"},
+						"email":    map[string]any{"type": "email"},
+						"lead": map[string]any{
+							"type": "reference", "kind": typeLead,
+							"required": true, "mustExist": true, "subject": true,
+						},
+					},
+				}),
+			vocabulary.MappingManifest(crmPackage, "leadsourcelead", map[string]any{
+				"from": typeLeadSource, "to": typeLead, "property": "lead",
+				"map": map[string]any{
+					"name":  map[string]any{"path": "fullName"},
+					"email": map[string]any{"path": "email"},
+				},
+			}),
+		},
 	}
 }
 
@@ -1311,4 +1431,382 @@ func TestUndeclaredNullDeletes(t *testing.T) {
 	if _, has := e.Properties["neverDeclared"]; has {
 		t.Fatalf("no-op null materialized a property: %v", e.Properties)
 	}
+}
+
+// samWithDirEntry is the fixture the sweep tests share: Sam by hand, slack's
+// sam matched by email, and an account-owned entry on Sam whose nickname takes
+// displayName at the machine tier and whose fullName is an offer beside the
+// owner's held name. Deleting the account has the cascade tombstone the entry.
+func samWithDirEntry(t *testing.T, ds substrate.Dataset) (sam, acc, entry *substrate.Record) {
+	t.Helper()
+	sam = mustPut(t, ds, owner, substrate.PutInput{
+		Kind: typePerson, Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
+	})
+	syncSource(t, ds, slack, typeSlackUser, "s-sam", map[string]any{
+		"realName": "Sam J", "displayName": "sam", "email": "sam@acme.com",
+	})
+	acc = mustPut(t, ds, owner, substrate.PutInput{
+		Kind: enginetest.AccountType, ID: "dir-acct",
+		Properties: map[string]any{"provider": "dir", "label": "Work"},
+	})
+	entry = syncSource(t, ds, dirsync, typeDirEntry, "e-sam", map[string]any{
+		"fullName": "Samuel J.", "nickname": "Sammy", "email": "sam@acme.com", "account": acc.ID,
+	}, sam.ID)
+	p := mustGet(t, ds, sam.Kind, sam.ID)
+	if p.Properties["displayName"] != "Sammy" || !offeredBy(p, "name", dirsync) {
+		t.Fatalf("the entry took neither displayName nor a name offer, so the test would prove nothing: %v %+v",
+			p.Properties["displayName"], p.PropertyMeta["name"].Alternatives)
+	}
+	return sam, acc, entry
+}
+
+// wantSubjectWithoutEntry asserts Sam ended where a delete of the entry would
+// have left him: displayName back to slack's, no offer from the entry's actor,
+// and a live fold a rebuild reproduces, offers included.
+func wantSubjectWithoutEntry(t *testing.T, svc substrate.Service, ds substrate.Dataset, sam *substrate.Record) {
+	t.Helper()
+	p := mustGet(t, ds, sam.Kind, sam.ID)
+	if p.Properties["displayName"] != "sam" {
+		t.Fatalf("displayName = %v after its source left the live set, want slack's", p.Properties["displayName"])
+	}
+	if offeredBy(p, "name", dirsync) {
+		t.Fatalf("a source outside the live set still offers name: %+v", p.PropertyMeta["name"].Alternatives)
+	}
+	wantRebuildAgrees(t, svc, ds)
+}
+
+// wantRebuildAgrees asserts a rebuild reproduces the live fold, offers
+// included, and that there are offers for it to reproduce.
+func wantRebuildAgrees(t *testing.T, svc substrate.Service, ds substrate.Dataset) {
+	t.Helper()
+	before := foldOf(t, ds)
+	if offersIn(t, before) == 0 {
+		t.Fatal("no offers survive; the rebuild comparison would prove nothing")
+	}
+	if _, err := svc.(rebuilder).RebuildRepository(context.Background(), "geoah"); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if after := foldOf(t, ds); string(after) != string(before) {
+		t.Fatalf("the rebuilt fold is not the live one\n%s", firstDifference(before, after))
+	}
+}
+
+// A merge tombstones its loser and a split revives it, neither through the
+// delete verb or a put. When the pair are SOURCES their subject must follow:
+// after the merge only the winner contributes, after the split both do again,
+// and a rebuild, deriving from the live set, must agree at each step. The two
+// entries have different writers, so the loser's contribution is its own offer
+// row and its absence and return are observable; the accepted value after the
+// split is not asserted, because the split re-stamps both entries in one
+// transaction and the tie-break, not the revival, then picks the value.
+func TestMergedSourceLeavesItsSubject(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds := newDataset(t)
+	installPeopleSourcesWithDir(t, ds)
+
+	sam := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: typePerson, Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
+	})
+	acc := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: enginetest.AccountType, ID: "dir-acct",
+		Properties: map[string]any{"provider": "dir", "label": "Work"},
+	})
+	first := syncSource(t, ds, dirsync, typeDirEntry, "e-1", map[string]any{
+		"fullName": "Samuel J.", "nickname": "Sammy", "email": "sam@acme.com", "account": acc.ID,
+	}, sam.ID)
+	second := syncSource(t, ds, dirsync2, typeDirEntry, "e-2", map[string]any{
+		"fullName": "Samuel Jones", "nickname": "Samuel", "email": "sam@acme.com", "account": acc.ID,
+	}, sam.ID)
+	p := mustGet(t, ds, sam.Kind, sam.ID)
+	if p.Properties["displayName"] != "Samuel" || !offeredBy(p, "name", dirsync2) {
+		t.Fatalf("the later entry took neither displayName nor a name offer, so the test would prove nothing: %v %+v",
+			p.Properties["displayName"], p.PropertyMeta["name"].Alternatives)
+	}
+
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: first.Kind, Winner: first.ID, Loser: second.ID})
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	p = mustGet(t, ds, sam.Kind, sam.ID)
+	if p.Properties["displayName"] != "Sammy" {
+		t.Fatalf("displayName = %v after its source lost a merge, want the winner's", p.Properties["displayName"])
+	}
+	if offeredBy(p, "name", dirsync2) {
+		t.Fatalf("a merged-away source still offers name: %+v", p.PropertyMeta["name"].Alternatives)
+	}
+	wantRebuildAgrees(t, svc, ds)
+
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
+		t.Fatalf("split: %v", err)
+	}
+	if p = mustGet(t, ds, sam.Kind, sam.ID); !offeredBy(p, "name", dirsync2) {
+		t.Fatalf("the split revived a source that offers nothing: %+v", p.PropertyMeta["name"].Alternatives)
+	}
+	wantRebuildAgrees(t, svc, ds)
+}
+
+// Removing the last source of a REQUIRED property cannot null it: the write
+// path refuses an empty required value, and the refusal would fail the delete,
+// or the sweep on every pass. The last value stands and the offer goes.
+func TestRecomputeKeepsARequiredValueWhenItsSourceLeaves(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds := newDataset(t)
+	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, crmManifest()); err != nil {
+		t.Fatalf("install the crm fixture: %v", err)
+	}
+	// No lead named: the mapping mints the shell and the recompute fills it.
+	src := mustPut(t, ds, crmsync, substrate.PutInput{
+		Kind: typeLeadSource, ID: "ls-1",
+		Properties: map[string]any{"fullName": "Acme Corp", "email": "hi@acme.example"},
+	})
+	leadID, ok := refIDOf(mustGet(t, ds, src.Kind, src.ID), "lead", typeLead)
+	if !ok {
+		t.Fatalf("the source names no lead: %v", src.Properties["lead"])
+	}
+	lead := mustGet(t, ds, typeLead, leadID)
+	if lead.Properties["name"] != "Acme Corp" || lead.Properties["email"] != "hi@acme.example" {
+		t.Fatalf("the recompute did not fill the shell, so the test would prove nothing: %v", lead.Properties)
+	}
+
+	if _, err := ds.Delete(ctx, owner, src.Kind, src.ID, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("deleting the last source of a required property: %v", err)
+	}
+	lead = mustGet(t, ds, typeLead, leadID)
+	if lead.Properties["name"] != "Acme Corp" {
+		t.Fatalf("name = %v, want the last value to stand", lead.Properties["name"])
+	}
+	if _, still := lead.Properties["email"]; still {
+		t.Fatalf("email = %v, want the optional property released", lead.Properties["email"])
+	}
+	if len(lead.PropertyMeta["name"].Alternatives) != 0 {
+		t.Fatalf("a deleted source still offers name: %+v", lead.PropertyMeta["name"].Alternatives)
+	}
+	// No offers are left anywhere here, so compare the folds directly rather
+	// than through wantRebuildAgrees and its offers guard.
+	before := foldOf(t, ds)
+	if _, err := svc.(rebuilder).RebuildRepository(ctx, "geoah"); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if after := foldOf(t, ds); string(after) != string(before) {
+		t.Fatalf("the rebuilt fold is not the live one\n%s", firstDifference(before, after))
+	}
+}
+
+// refIDOf reads the id a record's pinned reference property names, when it
+// names a record of kind.
+func refIDOf(r *substrate.Record, property, kind string) (string, bool) {
+	k, id, ok := vocabulary.SplitRecordPath(refPathValue(r, property))
+	return id, ok && k == kind
+}
+
+// The sweep tombstones a source without the delete verb: the account's
+// `onDelete: cascade` collects the entry, and the next pass purges it. The
+// subject recomputes at the tombstone, as it does under a delete, or the
+// person keeps a value and an offer from a source recompute no longer counts.
+func TestCollectedSourceRecomputesItsSubject(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds := newDataset(t)
+	installPeopleSourcesWithDir(t, ds)
+	sam, acc, entry := samWithDirEntry(t, ds)
+
+	if _, err := ds.Delete(ctx, owner, acc.Kind, acc.ID, substrate.DeleteInput{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds.RunGC(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds.Get(ctx, entry.Kind, entry.ID); err == nil {
+		t.Fatal("the cascade should have collected the entry")
+	}
+	wantSubjectWithoutEntry(t, svc, ds, sam)
+}
+
+// A child holding a finalizer is tombstoned by the cascade and never purged,
+// so the recompute cannot wait for the purge: the tombstone is the moment the
+// source leaves the live set.
+func TestCascadeTombstoneRecomputesItsSubject(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds := newDataset(t)
+	installPeopleSourcesWithDir(t, ds)
+	sam, acc, entry := samWithDirEntry(t, ds)
+	mustPatch(t, ds, owner, entry.Kind, entry.ID,
+		substrate.PatchInput{AddFinalizers: []string{dirPackage + "/teardown"}})
+
+	if _, err := ds.Delete(ctx, owner, acc.Kind, acc.ID, substrate.DeleteInput{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds.RunGC(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustGet(t, ds, entry.Kind, entry.ID); got.DeletedAt == nil {
+		t.Fatal("the cascade should have tombstoned the entry")
+	}
+	wantSubjectWithoutEntry(t, svc, ds, sam)
+}
+
+// Two entries of one account on two DIFFERENT people. A merge re-stamps the
+// winner's row (foldRow) and a split re-stamps both, and a source's stamp is
+// its subject's offer stamp, so each verb has to recompute the winner's
+// subject as well as the loser's, or the live offer keeps a stamp a rebuild
+// does not derive. TestMergedSourceLeavesItsSubject cannot see this: its two
+// entries share one subject, which the loser's recompute covers.
+func TestMergedSourcesWithDistinctSubjectsKeepBothCurrent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds := newDataset(t)
+	installPeopleSourcesWithDir(t, ds)
+
+	sam := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: typePerson, Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
+	})
+	pat := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: typePerson, Properties: map[string]any{"name": "Pat", "emails": []any{"pat@acme.com"}},
+	})
+	acc := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: enginetest.AccountType, ID: "dir-acct",
+		Properties: map[string]any{"provider": "dir", "label": "Work"},
+	})
+	first := syncSource(t, ds, dirsync, typeDirEntry, "e-1", map[string]any{
+		"fullName": "Samuel J.", "nickname": "Sammy", "email": "sam@acme.com", "account": acc.ID,
+	}, sam.ID)
+	second := syncSource(t, ds, dirsync2, typeDirEntry, "e-2", map[string]any{
+		"fullName": "Patricia", "nickname": "Pat", "email": "pat@acme.com", "account": acc.ID,
+	}, pat.ID)
+	if p := mustGet(t, ds, sam.Kind, sam.ID); !offeredBy(p, "name", dirsync) {
+		t.Fatalf("the entry offers Sam nothing, so the test would prove nothing: %+v", p.PropertyMeta["name"].Alternatives)
+	}
+
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: first.Kind, Winner: first.ID, Loser: second.ID})
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	// wantRebuildAgrees leaves the live table the derived one, so the split
+	// alone is what the second comparison sees.
+	wantRebuildAgrees(t, svc, ds)
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
+		t.Fatalf("split: %v", err)
+	}
+	wantRebuildAgrees(t, svc, ds)
+}
+
+// Removing a mapping through a vocabulary apply takes its sources out of the
+// projection with no source write to say so. The apply derives the target
+// kind's offers again against the closure it publishes and recomputes the
+// values once it has, so the person neither offers nor holds what the entry
+// projected, and a rebuild agrees.
+func TestRemovedMappingReleasesItsOffers(t *testing.T) {
+	t.Parallel()
+	svc, ds := newDataset(t)
+	installPeopleSourcesWithDir(t, ds)
+	sam, _, _ := samWithDirEntry(t, ds)
+
+	// The people closure again, without the entry's mapping: the apply prunes it.
+	if err := enginetest.DeclareMappings(context.Background(), ds, peopleMappings()...); err != nil {
+		t.Fatalf("apply the people closure without the entry mapping: %v", err)
+	}
+	wantSubjectWithoutEntry(t, svc, ds, sam)
+}
+
+// Removing one of a kind's mappings releases exactly the properties it alone
+// supplied: slack's `displayName` goes, value and manager row, while `name`
+// recomputes from google and google's `phones` stand. A rebuild agrees.
+func TestRemovedMappingReleasesOnlyItsProperties(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds := newDataset(t)
+	installPeopleSources(t, ds)
+	sam := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: typePerson, Properties: map[string]any{"emails": []any{"sam@acme.com"}},
+	})
+	syncSource(t, ds, people, typeGoogleContact, "g-sam", map[string]any{
+		"name": aname("Samuel Jones"), "emails": gemails("sam@acme.com"), "phones": gphones("+441234567890"),
+	})
+	syncSource(t, ds, slack, typeSlackUser, "s-sam", map[string]any{
+		"realName": "Sam J", "displayName": "sam", "email": "sam@acme.com",
+	})
+	p := mustGet(t, ds, sam.Kind, sam.ID)
+	if p.Properties["name"] != "Sam J" || p.Properties["displayName"] != "sam" || p.Properties["phones"] == nil {
+		t.Fatalf("the two sources did not fill the person as the test needs: %v", p.Properties)
+	}
+
+	// The people closure with google's mapping alone: slack's is pruned.
+	if err := enginetest.DeclareMappings(ctx, ds, peopleMappings()[0]); err != nil {
+		t.Fatalf("apply the people closure without slack's mapping: %v", err)
+	}
+	p = mustGet(t, ds, sam.Kind, sam.ID)
+	if v, still := p.Properties["displayName"]; still {
+		t.Fatalf("displayName = %v survived the removal of the only mapping that supplied it", v)
+	}
+	if _, still := p.PropertyMeta["displayName"]; still {
+		t.Fatalf("displayName keeps a manager after its mapping went: %+v", p.PropertyMeta["displayName"])
+	}
+	if p.Properties["name"] != "Samuel Jones" || p.PropertyMeta["name"].Manager != string(people) {
+		t.Fatalf("name = %v (%+v), want google's after slack's mapping went", p.Properties["name"], p.PropertyMeta["name"])
+	}
+	if got, _ := p.Properties["phones"].([]any); len(got) != 1 || got[0] != "+441234567890" {
+		t.Fatalf("phones = %v, want google's kept", p.Properties["phones"])
+	}
+	wantRebuildAgrees(t, svc, ds)
+}
+
+// Removing a target kind's LAST mapping releases what that mapping supplied
+// and nothing else: the value and its manager row go, a property the machine
+// wrote for no mapping (a system write) stays with its manager, and a rebuild
+// agrees.
+func TestRemovedLastMappingReleasesMachineValues(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds := newDataset(t)
+	// Google alone, and its mapping the only one onto person.
+	installSources(t, ds, []enginetest.Manifest{googleManifest()}, peopleMappings()[:1])
+	g := syncSource(t, ds, people, typeGoogleContact, "g-1", map[string]any{
+		"name": aname("Alexandros Papas"), "emails": gemails("alex@acme.example"),
+	})
+	pid := personOf(t, ds, g)
+	// The system's own hand writes at the machine tier, for no mapping.
+	mustPatch(t, ds, substrate.ActorSystem, typePerson, pid, substrate.PatchInput{Properties: map[string]any{"pronouns": "he/him"}})
+	p := mustGet(t, ds, typePerson, pid)
+	if p.Properties["name"] != "Alexandros Papas" || p.PropertyMeta["name"].Tier != substrate.TierMachine ||
+		p.PropertyMeta["pronouns"].Tier != substrate.TierMachine {
+		t.Fatalf("the fixture did not land name and pronouns at the machine tier, so the test would prove nothing: %v %+v",
+			p.Properties, p.PropertyMeta)
+	}
+
+	if err := enginetest.DeclareMappings(ctx, ds); err != nil {
+		t.Fatalf("apply the people closure without its mapping: %v", err)
+	}
+	p = mustGet(t, ds, typePerson, pid)
+	for _, name := range []string{"name", "emails"} {
+		if v, still := p.Properties[name]; still {
+			t.Fatalf("%s = %v survived the removal of the mapping that wrote it", name, v)
+		}
+		if _, still := p.PropertyMeta[name]; still {
+			t.Fatalf("%s keeps a manager after the removal of the mapping that wrote it: %+v", name, p.PropertyMeta[name])
+		}
+	}
+	if p.Properties["pronouns"] != "he/him" || p.PropertyMeta["pronouns"].Tier != substrate.TierMachine {
+		t.Fatalf("a machine write no mapping supplied went with the mapping: %v %+v",
+			p.Properties["pronouns"], p.PropertyMeta["pronouns"])
+	}
+	before := foldOf(t, ds)
+	if _, err := svc.(rebuilder).RebuildRepository(ctx, "geoah"); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if after := foldOf(t, ds); string(after) != string(before) {
+		t.Fatalf("the rebuilt fold is not the live one\n%s", firstDifference(before, after))
+	}
+}
+
+// offeredBy reports whether actor offers an alternative for property.
+func offeredBy(r *substrate.Record, property string, actor substrate.Actor) bool {
+	for _, alt := range r.PropertyMeta[property].Alternatives {
+		if alt.Actor == string(actor) {
+			return true
+		}
+	}
+	return false
 }
