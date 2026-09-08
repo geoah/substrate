@@ -187,6 +187,18 @@ export function upgradableBundleCount(catalog: CatalogItem[]): number {
   ).length
 }
 
+/** One line per property the upgrade renames (`renamedFrom`, decision 0063),
+ * with the live records the move rewrites: the operator sees the rewrite the
+ * server will make before it makes it. Empty when the upgrade renames nothing. */
+export function renameLines(upgrade: BundleUpgrade | undefined): string[] {
+  return (upgrade?.renames ?? []).map(
+    (r) =>
+      `renames ${r.from} to ${r.to} on ${r.kind}: ${r.records} live ${
+        r.records === 1 ? "record" : "records"
+      } rewritten`
+  )
+}
+
 /** "2 → 3", or just the one version when there is no motion to show: the
  * store held none, or the AUTHORITY version did not move because what moved
  * was a kind's own version or a kind the closure added. Both are legal

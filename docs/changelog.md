@@ -37,8 +37,10 @@ engine's own housekeeping), and
 `kind` plus `recordId` are the record's full identity. `payload` names what
 changed rather than repeating it: `created` on first write, `restored` on an
 undelete, the list of accepted `properties`, the resulting `states` when a
-transition moved one, `winner` and `loser` on a merge or a split. `affected`
-is the change event ([below](#the-change-event)).
+transition moved one, `winner` and `loser` on a merge or a split, and
+`renamed` (old name to new) on the `patch` a property rename writes per record
+([vocabulary](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)).
+`affected` is the change event ([below](#the-change-event)).
 
 Beneath the wire row, the stored entry also carries the write's **values** as
 the fold effects it applied, under the payload key `fold`, which is what makes
@@ -254,7 +256,7 @@ mint a token, fails as an internal error.
 The refusal is the point. Without it an old binary opens a store it cannot
 replay, serves it for weeks, and fails only when somebody runs `repository
 rebuild`, the day the changelog had to be replayable. The changelog dialect is
-4 today: 1 was the changelog while `link` and `unlink` were ops, 2 the
+5 today: 1 was the changelog while `link` and `unlink` were ops, 2 the
 changelog after references replaced them, 3 the entry that names its
 transaction (`txn`, covered by the checksum), which a dialect 2 binary would
 silently re-stamp away at boot
@@ -263,7 +265,11 @@ and 4 the `record` delta that carries `kindVersion`, the kind declaration
 version that wrote the row
 ([decision 0060](decisions/0060-a-record-carries-the-kind-version-that-last-wrote-it.md)),
 which a dialect 3 binary would drop at replay, folding every record to 0 with
-nothing refusing. A repository's stored dialect is not on the wire, and
+nothing refusing, and 5 the `manager` effect that carries `updatedAt`, the
+stamp of a manager row a property rename moved
+([decision 0063](decisions/0063-a-property-rename-is-ordinary-record-writes.md)),
+which a dialect 4 binary would drop the same way, stamping the replay's own
+time. A repository's stored dialect is not on the wire, and
 neither are the entries written in it: what
 [API discovery](api.md#discovery) reports is the binary's maximum. The dialect
 is in the repository directory, as `changelogDialect` in `repository.json`,

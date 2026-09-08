@@ -69,6 +69,7 @@
     "blockers": false,
     "changes": false,
     "from": false,
+    "renames": false,
     "to": false
   },
   "BundleUpgradeChange": {
@@ -76,6 +77,12 @@
     "id": true,
     "kind": true,
     "to": false
+  },
+  "BundleUpgradeRename": {
+    "from": true,
+    "kind": true,
+    "records": true,
+    "to": true
   },
   "CatalogBundle": {
     "authority": true,

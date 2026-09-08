@@ -192,6 +192,11 @@ type foldOp struct {
 	Actor     string `json:"actor,omitempty"`
 	Tier      string `json:"tier,omitempty"`
 	Principal string `json:"principal,omitempty"`
+	// UpdatedAt is the manager row's stamp when the effect carries one: a
+	// property rename moves a row and keeps the time its actor last had a
+	// change accepted (rename.go), which is not the rename's time. Absent on
+	// every other manager effect, whose stamp is the transaction's clock.
+	UpdatedAt *time.Time `json:"updatedAt,omitempty"`
 
 	FormerID string `json:"formerId,omitempty"`
 
@@ -308,7 +313,11 @@ func (t *txn) foldOne(op foldOp) (foldResult, error) {
 		changed, err := t.applyAnnotation(op.ref(), op.Key, value)
 		return foldResult{changed: changed}, err
 	case foldManager:
-		changed, err := t.applyManager(op.ref(), op.Property, substrate.Actor(op.Actor), substrate.Tier(op.Tier), op.Principal)
+		at := t.now
+		if op.UpdatedAt != nil {
+			at = *op.UpdatedAt
+		}
+		changed, err := t.applyManager(op.ref(), op.Property, substrate.Actor(op.Actor), substrate.Tier(op.Tier), op.Principal, at)
 		return foldResult{changed: changed}, err
 	case foldFormerID:
 		if err := t.applyFormerID(op.Ref, op.FormerID, op.ID); err != nil {

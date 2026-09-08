@@ -88,6 +88,22 @@ type BundleUpgrade struct {
 	// refuse this closure on: the same guards, with the live-row counts.
 	// Empty means the upgrade would be admitted.
 	Blockers []string `json:"blockers,omitempty"`
+	// Renames lists each property the upgrade moves live values for
+	// (`renamedFrom`, decision 0063), with the number of live records the
+	// move rewrites: one changelog entry each.
+	Renames []BundleUpgradeRename `json:"renames,omitempty"`
+}
+
+// BundleUpgradeRename is one property rename an upgrade performs.
+type BundleUpgradeRename struct {
+	// Kind is the full reference of the kind whose property moves.
+	Kind string `json:"kind"`
+	// From and To are the old and the new property names.
+	From string `json:"from"`
+	To   string `json:"to"`
+	// Records is the number of live records carrying the old name, each of
+	// which the upgrade rewrites.
+	Records int64 `json:"records"`
 }
 
 // BundleUpgradeChange is one declaration an upgrade would move.

@@ -961,9 +961,17 @@ func (l *loader) parseType(doc Document) *Kind {
 	// After the properties: a retired name that is also declared is refused.
 	l.parseKindRetirement(where, d, t)
 
-	// renamedFrom's sibling half (reserved, ticket 003): the previous name may
-	// not be one the type still declares — both present is not a rename — and
-	// a built-in column never renames into a declared property.
+	// renamedFrom's sibling half: the previous name may not be one the type
+	// still declares (both present is not a rename), and a built-in column
+	// never renames into a declared property. The engine moves each live
+	// record's value from the old name to the new one at admission
+	// (engine/rename.go), and it moves a key of `props`: `body` lives in its
+	// own column, so neither side of a rename may be body, and two properties
+	// naming the same previous name would both claim its value. A state
+	// property's key set has no renamedFrom (its value lives in the states
+	// column), and a stored state renamed into a value is the kind change the
+	// engine refuses.
+	renamedFrom := map[string]string{}
 	for _, pname := range t.PropOrder {
 		rf := t.Props[pname].RenamedFrom
 		if rf == "" {
@@ -976,6 +984,13 @@ func (l *loader) parseType(doc Document) *Kind {
 		if _, reserved := reservedProps[rf]; reserved {
 			l.errf("%s.renamedFrom: %q is a built-in property — it never renames", pwhere, rf)
 		}
+		if rf == "body" || pname == "body" {
+			l.errf("%s.renamedFrom: body is column-backed and never renames", pwhere)
+		}
+		if other, taken := renamedFrom[rf]; taken {
+			l.errf("%s.renamedFrom: %q is also the previous name of %q, and one property takes a renamed value", pwhere, rf, other)
+		}
+		renamedFrom[rf] = pname
 	}
 
 	// traits
@@ -1671,12 +1686,12 @@ var propKeys = map[string]bool{
 	// ADDING `required` to a stored declaration is a narrowing change, refused
 	// by admission while live rows lack the property (ticket 003, ruling A3).
 	"required": true, "default": true,
-	// renamedFrom is RESERVED for declared evolution:
-	// the property's previous name, admitted and stored (it rides in the
-	// Definition map like everything else) but not yet acted on — nothing
-	// rewrites rows today. Shape-checked in parseProperty; the sibling and
-	// reserved-name checks live in parseType, where the whole property set is
-	// known.
+	// renamedFrom is the property's previous name: admitted and stored (it
+	// rides in the Definition map like everything else), and the engine moves
+	// every live record's value to the new name when the declaration is
+	// admitted (engine/rename.go). Shape-checked in parseProperty; the sibling
+	// and reserved-name checks live in parseType, where the whole property set
+	// is known.
 	"renamedFrom": true,
 	// `unique` and `deprecated` are RESERVED the same way and for the same
 	// reason: a key set is closed, so an unknown key quarantines the authority

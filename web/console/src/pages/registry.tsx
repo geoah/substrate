@@ -115,6 +115,7 @@ import {
   suggestedMappingsOf,
   upgradeAvailable,
   upgradeBlocked,
+  renameLines,
   upgradeMotion,
   pendingShippedUpgrades,
   type BundleRow,
@@ -702,6 +703,11 @@ function BundleDisclosure({
                 {ch.kind} {splitKind(ch.id).name}
               </span>
             ))}
+            {renameLines(row.upgrade).map((line) => (
+              <span key={line} className="data text-muted-foreground">
+                {line}
+              </span>
+            ))}
           </Line>
         )}
         <Line label="tier">
@@ -1208,6 +1214,15 @@ function PendingUpgradeNotice({ item }: { item: ShippedUpgrade }) {
           {blockers.map((b) => (
             <p key={b} className="data text-muted-foreground">
               {b}
+            </p>
+          ))}
+        </div>
+      )}
+      {renameLines(item.upgrade).length > 0 && (
+        <div className="mt-1 space-y-0.5 pl-5">
+          {renameLines(item.upgrade).map((line) => (
+            <p key={line} className="data text-muted-foreground">
+              {line}
             </p>
           ))}
         </div>

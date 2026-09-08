@@ -267,6 +267,13 @@ func providerWrite(t *testing.T, dsn, id string, props map[string]any) error {
 func openMovedRefused(t *testing.T, dsn, tree string) string {
 	t.Helper()
 	bumpPackageVersion(t, tree, corePackage, "99")
+	return openRefused(t, dsn, tree)
+}
+
+// openRefused is openMovedRefused without the version bump: the tree is opened
+// as it stands, for a test that moved the version itself.
+func openRefused(t *testing.T, dsn, tree string) string {
+	t.Helper()
 	var refused string
 	log := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{
 		ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
@@ -565,4 +572,337 @@ func retireShippedKind(t *testing.T, doc, name string) string {
 		return header + "\n---" + rest
 	}
 	return header
+}
+
+// The boot door converts a shipped rename at open, in the transaction that
+// projects the declaration (decision 0063): the live row reads the value under
+// the new name, the old name is undeclared, and the open neither refused nor
+// skipped the upgrade.
+func TestBootUpgradeConvertsAShippedRename(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := seededRepository(t)
+	tree := shippedTree(t)
+	renameShippedLabel(t, tree)
+	if err := openMoved(t, dsn, tree); err != nil {
+		t.Fatalf("a shipped rename must land at open: %v", err)
+	}
+
+	svc := openTree(t, dsn, tree)
+	defer func() { _ = svc.Close() }()
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("dataset: %v", err)
+	}
+	got := mustGet(t, ds, "substrate.reamde.dev/core/llmprovider", "guarded")
+	if got.Properties["displayLabel"] != "a label" || got.Properties["label"] != nil {
+		t.Fatalf("the boot did not move the value: %v", got.Properties)
+	}
+	// Landed, the preview reports the rename as done: nothing to write.
+	planner, ok := ds.(substrate.ShippedUpgradePlanner)
+	if !ok {
+		t.Fatal("dataset does not plan the shipped upgrade")
+	}
+	plans, err := planner.PlanShippedUpgrade(ctx)
+	if err != nil {
+		t.Fatalf("plan the shipped upgrade: %v", err)
+	}
+	for _, p := range plans {
+		if p.Upgrade.Available || len(p.Upgrade.Renames) > 0 {
+			t.Fatalf("the landed rename still shows as pending: %+v", p)
+		}
+	}
+	if got.Title != "a label (openai)" {
+		t.Fatalf("the title did not render under the renamed template: %q", got.Title)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "substrate.reamde.dev/core/llmprovider", ID: "renamed",
+		Properties: map[string]any{"displayLabel": "written under the new name", "wire": "openai"},
+	})
+	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "substrate.reamde.dev/core/llmprovider", ID: "stale",
+		Properties: map[string]any{"label": "the old name", "wire": "openai"},
+	}); err == nil {
+		t.Fatal("the old name must be undeclared once the rename landed")
+	}
+}
+
+// renameShippedLabel is the shipped rename the boot tests drive: llmprovider's
+// `label` becomes `displayLabel`, the kind's own template follows, and the
+// declaration pins version 99 so the authority bump re-projects it.
+func renameShippedLabel(t *testing.T, tree string) {
+	t.Helper()
+	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
+		const from = "    label:\n      type: string\n"
+		if !strings.Contains(doc, from) {
+			t.Fatal("llmprovider no longer declares `label` as a plain string")
+		}
+		doc = strings.Replace(doc, from, "    displayLabel:\n      type: string\n      renamedFrom: label\n", 1)
+		const tmpl = `displayTemplate: "{label|localName} ({wire})"`
+		if !strings.Contains(doc, tmpl) {
+			t.Fatal("llmprovider no longer titles itself from `label`")
+		}
+		doc = strings.Replace(doc, tmpl, `displayTemplate: "{displayLabel|localName} ({wire})"`, 1)
+		return pinVersion(t, doc, "99")
+	})
+}
+
+// addShippedMirror adds a provider-mirror shape to the shipped core tree: a
+// `gadget` kind with an EMPTY subject slot (an unpinned, optional `person`
+// reference marked `subject: true`, the shape a provider ships so the package
+// owning the subject kind can declare the mapping, record 49) and one string
+// property named by prop.
+func addShippedMirror(t *testing.T, tree, prop string) {
+	t.Helper()
+	doc := "kind: substrate.reamde.dev/core/kind\nmetadata:\n  id: " + corePackage + "/gadget\ndata:\n" +
+		"  authority: substrate.reamde.dev\n  package: core\n  names:\n    singular: gadget\n    plural: gadgets\n" +
+		"  properties:\n    " + prop + ":\n      type: string\n"
+	if prop != "login" {
+		doc += "      renamedFrom: login\n"
+	}
+	doc += "    person:\n      type: reference\n      subject: true\n      mustExist: true\n"
+	if err := os.WriteFile(filepath.Join(tree, corePackage, "gadget.yaml"), []byte(doc), 0o600); err != nil {
+		t.Fatalf("add the shipped mirror kind: %v", err)
+	}
+}
+
+// The mapping half of the boot door: a repository's own mapping FROM a shipped
+// mirror kind reads the renamed property as a map path. The boot builds its
+// candidate from the stored packages plus the shipped ones and compiles it, so
+// the stale path refuses the boot with the loader's own line, the open
+// succeeds, and the rename lands once the mapping moves, rewriting the mirror
+// record the mapping projects from.
+func TestBootUpgradeRefusesARenameAStoredMappingReads(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := seededRepository(t)
+	const ownerPackage = "geoah.example.com/handles"
+	const gadget = corePackage + "/gadget"
+
+	// Binary N+1 ships the mirror; the owner declares the subject kind and the
+	// mapping from it, and writes one mirror record.
+	shipping := shippedTree(t)
+	addShippedMirror(t, shipping, "login")
+	if err := openMoved(t, dsn, shipping); err != nil {
+		t.Fatalf("shipping the mirror kind must land: %v", err)
+	}
+	mapping := func(path string) []map[string]any {
+		return []map[string]any{
+			vocabulary.PackageManifest(ownerPackage, 0),
+			vocabulary.KindManifest(ownerPackage, map[string]any{"singular": "handleowner", "plural": "handleowners"},
+				map[string]any{"properties": map[string]any{"handle": map[string]any{"type": "string"}}}),
+			vocabulary.MappingManifest(ownerPackage, "gadgethandleowner", map[string]any{
+				"from": gadget, "to": ownerPackage + "/handleowner", "property": "person",
+				"map": map[string]any{"handle": map[string]any{"path": path}},
+			}),
+		}
+	}
+	declare := func(t *testing.T, tree, path string) substrate.Dataset {
+		t.Helper()
+		svc := openTree(t, dsn, tree)
+		t.Cleanup(func() { _ = svc.Close() })
+		ds, err := svc.Dataset(ctx, "geoah")
+		if err != nil {
+			t.Fatalf("dataset: %v", err)
+		}
+		if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, mapping(path)); err != nil {
+			t.Fatalf("declare the mapping: %v", err)
+		}
+		return ds
+	}
+	ds := declare(t, shipping, "login")
+	mirror := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: gadget, ID: "g1", Properties: map[string]any{"login": "geoah"},
+	})
+	subjectKind, subjectID, _ := vocabulary.SplitRecordPath(refPathValue(mustGet(t, ds, gadget, mirror.ID), "person"))
+	if got := mustGet(t, ds, subjectKind, subjectID); got.Properties["handle"] != "geoah" {
+		t.Fatalf("the mapping did not project the handle: %v", got.Properties)
+	}
+
+	// Binary N+2 renames `login` to `username`: the stored mapping's path no
+	// longer resolves against the candidate, so the boot refuses, naming the
+	// mapping, and the mirror record keeps its value under the old name.
+	renaming := shippedTree(t)
+	addShippedMirror(t, renaming, "username")
+	bumpPackageVersion(t, renaming, corePackage, "100")
+	refused := openRefused(t, dsn, renaming)
+	wantRefusedUpgrade(t, refused, "recordmapping "+ownerPackage+"/gadgethandleowner", `declares no property "login"`)
+	svc := openTree(t, dsn, renaming)
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("dataset: %v", err)
+	}
+	if got := mustGet(t, ds, gadget, mirror.ID); got.Properties["login"] != "geoah" || got.Properties["username"] != nil {
+		t.Fatalf("a refused boot rename moved the value: %v", got.Properties)
+	}
+	_ = svc.Close()
+
+	// The mapping cannot move first: its path type-checks against the stored
+	// declaration, which still says `login`. The way out is to delete the
+	// mapping, let the next open land the rename, and declare the mapping
+	// again on the new name.
+	svc = openTree(t, dsn, shippedTree(t))
+	ds, err = svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("dataset: %v", err)
+	}
+	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, mapping("username")); err == nil {
+		t.Fatal("a mapping path onto the new name must not compile before the rename landed")
+	}
+	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/recordmapping", ownerPackage+"/gadgethandleowner", substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete the mapping: %v", err)
+	}
+	_ = svc.Close()
+	svc = openTree(t, dsn, renaming)
+	if _, err := svc.Dataset(ctx, "geoah"); err != nil {
+		t.Fatalf("dataset: %v", err)
+	}
+	_ = svc.Close()
+	declare(t, renaming, "username")
+	svc = openTree(t, dsn, renaming)
+	defer func() { _ = svc.Close() }()
+	ds, err = svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("dataset: %v", err)
+	}
+	if got := mustGet(t, ds, gadget, mirror.ID); got.Properties["username"] != "geoah" || got.Properties["login"] != nil {
+		t.Fatalf("the rename did not land once the mapping moved: %v", got.Properties)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: gadget, ID: "g1", Properties: map[string]any{"username": "george"}})
+	if got := mustGet(t, ds, subjectKind, subjectID); got.Properties["handle"] != "george" {
+		t.Fatalf("the redeclared mapping does not project from the new name: %v", got.Properties)
+	}
+}
+
+// addShippedGadget adds a core `gadget` kind pinned at its own version, whose
+// displayTemplate reads an llmprovider property through a reference pinned at
+// llmprovider: the shape whose stored and embedded declarations can disagree.
+func addShippedGadget(t *testing.T, tree, version, tmpl string) {
+	t.Helper()
+	doc := "kind: substrate.reamde.dev/core/kind\nmetadata:\n  id: " + corePackage + "/gadget\ndata:\n" +
+		"  authority: substrate.reamde.dev\n  package: core\n  version: " + version + "\n" +
+		"  names:\n    singular: gadget\n    plural: gadgets\n" +
+		"  displayTemplate: \"" + tmpl + "\"\n" +
+		"  properties:\n    note:\n      type: string\n" +
+		"    provider:\n      type: reference\n      kind: substrate.reamde.dev/core/llmprovider\n"
+	if err := os.WriteFile(filepath.Join(tree, corePackage, "gadget.yaml"), []byte(doc), 0o600); err != nil {
+		t.Fatalf("add the shipped gadget kind: %v", err)
+	}
+}
+
+// The boot's candidate is EXACTLY the projected set: a stored declaration
+// newer than the shipped one is kept, so the guards compile against the kept
+// stored declaration and not the embedded one. Here the stored `gadget` (200)
+// already reads `{provider.displayLabel}` while the binary embeds an older
+// gadget (150) still reading `{provider.label}`; a candidate built from the
+// shipped package whole would refuse a valid rename on the embedded template.
+func TestBootUpgradeCompilesTheKeptStoredDeclaration(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := seededRepository(t)
+
+	// Binary N+1 ships gadget at 200, already on the new name.
+	ahead := shippedTree(t)
+	addShippedGadget(t, ahead, "200", "{provider.displayLabel}")
+	if err := openMoved(t, dsn, ahead); err != nil {
+		t.Fatalf("shipping the gadget kind must land: %v", err)
+	}
+
+	// Binary N+2 renames llmprovider's label and embeds gadget at 150 on the
+	// OLD name: gadget is kept at its stored 200, and the rename must land.
+	renaming := shippedTree(t)
+	renameShippedLabel(t, renaming)
+	addShippedGadget(t, renaming, "150", "{provider.label}")
+	if refused := openRefused(t, dsn, renaming); refused != "" {
+		t.Fatalf("a kept stored declaration must not refuse the boot on its embedded twin: %s", refused)
+	}
+	svc := openTree(t, dsn, renaming)
+	defer func() { _ = svc.Close() }()
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("dataset: %v", err)
+	}
+	if got := mustGet(t, ds, "substrate.reamde.dev/core/llmprovider", "guarded"); got.Properties["displayLabel"] != "a label" {
+		t.Fatalf("the rename did not land: %v", got.Properties)
+	}
+	gadget := mustGet(t, ds, "substrate.reamde.dev/core/kind", corePackage+"/gadget")
+	if v, _ := vocabulary.VersionValue(gadget.Properties["version"]); v != 200 {
+		t.Fatalf("the kept gadget is stored at version %d, want 200", v)
+	}
+	if gadget.Properties["displayTemplate"] != "{provider.displayLabel}" {
+		t.Fatalf("the kept gadget's template is %v, want the stored one", gadget.Properties["displayTemplate"])
+	}
+	card := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: corePackage + "/gadget", ID: "g1",
+		Properties: map[string]any{"provider": "substrate.reamde.dev/core/llmprovider/guarded"},
+	})
+	if card.Title != "a label" {
+		t.Fatalf("the kept template does not render the renamed property: %q", card.Title)
+	}
+}
+
+// The boot door reads the STORED closure, not the shipped tree alone: a
+// repository's own kind whose displayTemplate reads the renamed property through
+// a reference pinned at the shipped kind refuses the boot rename, the open
+// succeeds on the stored declarations, and the rename lands once the template
+// moves. Without the check the boot would rename, the stored template would
+// render an empty title, and a stored mapping onto the property would fail to
+// re-resolve and quarantine the user's package for a change the tree made.
+func TestBootUpgradeRefusesARenameAStoredTemplateReads(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := seededRepository(t)
+	const viewerPackage = "geoah.example.com/dash"
+	viewer := func(tmpl string) []map[string]any {
+		return []map[string]any{
+			vocabulary.PackageManifest(viewerPackage, 0),
+			vocabulary.KindManifest(viewerPackage, map[string]any{"singular": "providercard", "plural": "providercards"},
+				map[string]any{
+					"displayTemplate": tmpl,
+					"properties": map[string]any{
+						"provider": map[string]any{"type": "reference", "kind": "substrate.reamde.dev/core/llmprovider"},
+					},
+				}),
+		}
+	}
+	declare := func(t *testing.T, tmpl string) {
+		t.Helper()
+		svc := openTree(t, dsn, shippedTree(t))
+		defer func() { _ = svc.Close() }()
+		ds, err := svc.Dataset(ctx, "geoah")
+		if err != nil {
+			t.Fatalf("dataset: %v", err)
+		}
+		if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, viewer(tmpl)); err != nil {
+			t.Fatalf("declare the viewer kind: %v", err)
+		}
+	}
+	declare(t, "{provider.label}")
+
+	tree := shippedTree(t)
+	renameShippedLabel(t, tree)
+	refused := openMovedRefused(t, dsn, tree)
+	wantRefusedUpgrade(t, refused,
+		`kind `+viewerPackage+`/providercard: displayTemplate {provider.label} reads property "label" of substrate.reamde.dev/core/llmprovider, which this apply renames to "displayLabel"; rewrite the template first`)
+	stillSpeaksTheOldShape(t, dsn)
+
+	// The owner moves the template; the next open lands the rename.
+	declare(t, "{provider.displayLabel}")
+	svc := openTree(t, dsn, tree)
+	defer func() { _ = svc.Close() }()
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("dataset: %v", err)
+	}
+	got := mustGet(t, ds, "substrate.reamde.dev/core/llmprovider", "guarded")
+	if got.Properties["displayLabel"] != "a label" || got.Properties["label"] != nil {
+		t.Fatalf("the rename did not land once the template moved: %v", got.Properties)
+	}
+	card := mustPut(t, ds, owner, substrate.PutInput{
+		Kind:       viewerPackage + "/providercard",
+		Properties: map[string]any{"provider": "substrate.reamde.dev/core/llmprovider/guarded"},
+	})
+	if card.Title != "a label" {
+		t.Fatalf("the stored template does not read the renamed property: %q", card.Title)
+	}
 }

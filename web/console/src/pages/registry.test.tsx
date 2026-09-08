@@ -678,7 +678,20 @@ describe("RegistryPage", () => {
         shipped: [
           {
             package: "substrate.reamde.dev/core",
-            upgrade: { available: true, from: 16, to: 17, blockers: [guard] },
+            upgrade: {
+              available: true,
+              from: 16,
+              to: 17,
+              blockers: [guard],
+              renames: [
+                {
+                  kind: "substrate.reamde.dev/core/llmprovider",
+                  from: "wire",
+                  to: "protocol",
+                  records: 2,
+                },
+              ],
+            },
           },
         ],
       })
@@ -688,6 +701,13 @@ describe("RegistryPage", () => {
       expect(within(notice).getByText("substrate.reamde.dev/core")).toBeTruthy()
       expect(within(notice).getByText("16 → 17")).toBeTruthy()
       expect(within(notice).getByText(guard)).toBeTruthy()
+      // The rename the upgrade would perform is stated with its count, so the
+      // operator knows the boot rewrites records, not only declarations.
+      expect(
+        within(notice).getByText(
+          "renames wire to protocol on substrate.reamde.dev/core/llmprovider: 2 live records rewritten"
+        )
+      ).toBeTruthy()
     })
 
     it("an admitted core upgrade says a restart lands it", async () => {

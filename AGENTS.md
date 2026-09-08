@@ -317,8 +317,12 @@ discharged.
   keys therefore land inert and validated, in batches, and there is no `x-`
   escape hatch
   ([0020](docs/decisions/0020-dialect-keys-are-reserved-not-tolerated.md)).
-  `unique`, `deprecated` and `renamedFrom` are reserved today: stored,
-  refused where they could not be honored, and acted on by nothing.
+  `unique` and `deprecated` are reserved today: stored, refused where they
+  could not be honored, and acted on by nothing. `renamedFrom` was reserved
+  the same way and is live: admitting the declaration moves every live
+  record's value to the new name inside the apply's transaction, as ordinary
+  record writes
+  ([0063](docs/decisions/0063-a-property-rename-is-ordinary-record-writes.md)).
   `edges.<rel>.properties` was reserved with them and is now live: an edge
   write carrying a property the rel does not declare is refused
   ([0027](docs/decisions/0027-an-edge-outlives-a-tombstone-and-dies-with-a-purge.md)).

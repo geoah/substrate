@@ -29,6 +29,7 @@ import {
   requiresHint,
   upgradableBundleCount,
   upgradeBlocked,
+  renameLines,
   upgradeMotion,
   pendingShippedUpgrades,
 } from "./bundles"
@@ -366,6 +367,33 @@ describe("the upgrade preview helpers", () => {
         refused,
       ])
     ).toEqual([admitted, refused])
+  })
+
+  it("names each rename with the live records it rewrites", () => {
+    expect(renameLines(undefined)).toEqual([])
+    expect(renameLines({ available: true })).toEqual([])
+    expect(
+      renameLines({
+        available: true,
+        renames: [
+          {
+            kind: "substrate.reamde.dev/core/llmprovider",
+            from: "label",
+            to: "displayLabel",
+            records: 3,
+          },
+          {
+            kind: "geoah.example.com/shop/widget",
+            from: "size",
+            to: "dimensions",
+            records: 1,
+          },
+        ],
+      })
+    ).toEqual([
+      "renames label to displayLabel on substrate.reamde.dev/core/llmprovider: 3 live records rewritten",
+      "renames size to dimensions on geoah.example.com/shop/widget: 1 live record rewritten",
+    ])
   })
 
   it("renders the version motion, tolerating a store with no version", () => {

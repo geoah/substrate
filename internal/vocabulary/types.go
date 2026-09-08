@@ -204,13 +204,14 @@ type Property struct {
 	// write. A deprecated property may not also be `required:`, which would tell
 	// a form to stop offering a value it refuses to submit without.
 	Deprecated bool
-	// RenamedFrom is the RESERVED declared-evolution key (ticket 003, ruling
-	// A3): the previous name of this property, admitted and stored so the
-	// manifest dialect has room for a one-time rewrite, but NOT yet acted on —
-	// no projection rewrites rows today, and admission still refuses the
-	// rename while live rows carry the old name. Loader-validated: camelCase,
-	// not the property's own name, not a name the type still declares, never
-	// a reserved built-in.
+	// RenamedFrom is the previous name of this property. Admission moves every
+	// live record's value from that name to this one, as ordinary record
+	// writes in the same transaction (engine/rename.go, decision 0063), and
+	// the key stays stored on the declaration afterwards. Loader-validated:
+	// camelCase, not the property's own name, not a name the type still
+	// declares, never a reserved built-in, never `body` on either side, and no
+	// two properties name the same previous name. A state property's key set
+	// does not carry it.
 	RenamedFrom string
 	// Machine is the state machine a `type: state` property declares; nil
 	// for every other kind.
