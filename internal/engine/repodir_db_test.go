@@ -212,6 +212,13 @@ func copyRepositoryDir(t *testing.T, srcRoot, id string) string {
 // under the host key, the payload opened under the DEK with its row binding.
 func openSecret(t *testing.T, dsn, ref string) string {
 	t.Helper()
+	return openSecretUnder(t, dsn, ref, engine.TestCredentialKeyBytes)
+}
+
+// openSecretUnder is openSecret with the host key named: the restoring host's
+// key after a rewrap.
+func openSecretUnder(t *testing.T, dsn, ref string, hostKey []byte) string {
+	t.Helper()
 	db := rawDB(t, dsn)
 	var payload []byte
 	var kind, rid, repoID string
@@ -224,7 +231,7 @@ func openSecret(t *testing.T, dsn, ref string) string {
 	if err := db.QueryRow(`SELECT dek FROM repositories WHERE id = $1`, repoID).Scan(&wrapped); err != nil {
 		t.Fatalf("read wrapped dek: %v", err)
 	}
-	dek, err := engine.OpenPayloadWithKey(engine.TestCredentialKeyBytes, wrapped, engine.DEKAAD(repoID))
+	dek, err := engine.OpenPayloadWithKey(hostKey, wrapped, engine.DEKAAD(repoID))
 	if err != nil {
 		t.Fatalf("unwrap the DEK: %v", err)
 	}

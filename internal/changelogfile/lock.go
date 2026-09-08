@@ -57,3 +57,30 @@ func (l *dirLock) release() error {
 	l.f = nil
 	return err
 }
+
+// ErrNoChangelogDir is returned by LockWriter for a directory that does not
+// exist: a repository directory without changelog/ is not one to lock, and
+// creating it would change a directory the caller only meant to check.
+var ErrNoChangelogDir = errors.New("changelogfile: no changelog directory")
+
+// LockWriter takes the changelog directory's writer lock without waiting and
+// returns the release. It is for a command that rewrites a repository
+// directory's files without opening a Writer (the offline rewrap of the
+// manifest), so a server that has opened the repository, or a second such
+// command, is refused with ErrLocked rather than met halfway through the
+// write. The directory must exist; on a read-only copy the lock file cannot
+// be opened and the refusal is the filesystem's.
+func LockWriter(dir string) (release func() error, err error) {
+	info, err := os.Stat(dir)
+	if errors.Is(err, os.ErrNotExist) || (err == nil && !info.IsDir()) {
+		return nil, fmt.Errorf("%w: %s", ErrNoChangelogDir, dir)
+	}
+	if err != nil {
+		return nil, err
+	}
+	l, err := lockDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	return l.release, nil
+}

@@ -31,7 +31,9 @@ at all: `user reset`, `repository list`, `repository inspect`,
 `repository verify`, `repository rebuild`, `repository reembed`,
 `blobs migrate`. It needs `--dsn` (or `DATABASE_URL`) and
 `SUBSTRATE_DATA_ROOT`, and without them every operator command refuses before
-touching anything.
+touching anything. The one exception is `repository rewrap`, which opens a
+copied repository directory with the user's recovery key for a new
+`SUBSTRATE_CREDENTIAL_KEY` and needs no database at all.
 [Running a substrate](operations.md) is where that hat lives.
 
 `substratectl version` belongs to neither hat: it prints the client version
