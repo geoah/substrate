@@ -1380,28 +1380,23 @@ func TestUndeclaredNullDeletes(t *testing.T) {
 	}
 }
 
-// The sweep purges a source without the delete verb: the account's
-// `onDelete: cascade` tombstones the entry and the next pass collects it. The
-// subject has to recompute before the row goes, or the person keeps a value
-// and an offer from a source that no longer exists, and a rebuild, which
-// derives offers from live records alone, disagrees with the live table.
-func TestCollectedSourceRecomputesItsSubject(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	svc, ds := newDataset(t)
-	installPeopleSourcesWithDir(t, ds)
-
-	sam := mustPut(t, ds, owner, substrate.PutInput{
+// samWithDirEntry is the fixture the sweep tests share: Sam by hand, slack's
+// sam matched by email, and an account-owned entry on Sam whose nickname takes
+// displayName at the machine tier and whose fullName is an offer beside the
+// owner's held name. Deleting the account has the cascade tombstone the entry.
+func samWithDirEntry(t *testing.T, ds substrate.Dataset) (sam, acc, entry *substrate.Record) {
+	t.Helper()
+	sam = mustPut(t, ds, owner, substrate.PutInput{
 		Kind: typePerson, Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
 	})
 	syncSource(t, ds, slack, typeSlackUser, "s-sam", map[string]any{
 		"realName": "Sam J", "displayName": "sam", "email": "sam@acme.com",
 	})
-	acc := mustPut(t, ds, owner, substrate.PutInput{
+	acc = mustPut(t, ds, owner, substrate.PutInput{
 		Kind: enginetest.AccountType, ID: "dir-acct",
 		Properties: map[string]any{"provider": "dir", "label": "Work"},
 	})
-	entry := syncSource(t, ds, dirsync, typeDirEntry, "e-sam", map[string]any{
+	entry = syncSource(t, ds, dirsync, typeDirEntry, "e-sam", map[string]any{
 		"fullName": "Samuel J.", "nickname": "Sammy", "email": "sam@acme.com", "account": acc.ID,
 	}, sam.ID)
 	p := mustGet(t, ds, sam.Kind, sam.ID)
@@ -1409,6 +1404,43 @@ func TestCollectedSourceRecomputesItsSubject(t *testing.T) {
 		t.Fatalf("the entry took neither displayName nor a name offer, so the test would prove nothing: %v %+v",
 			p.Properties["displayName"], p.PropertyMeta["name"].Alternatives)
 	}
+	return sam, acc, entry
+}
+
+// wantSubjectWithoutEntry asserts Sam ended where a delete of the entry would
+// have left him: displayName back to slack's, no offer from the entry's actor,
+// and a live fold a rebuild reproduces, offers included.
+func wantSubjectWithoutEntry(t *testing.T, svc substrate.Service, ds substrate.Dataset, sam *substrate.Record) {
+	t.Helper()
+	p := mustGet(t, ds, sam.Kind, sam.ID)
+	if p.Properties["displayName"] != "sam" {
+		t.Fatalf("displayName = %v after its source left the live set, want slack's", p.Properties["displayName"])
+	}
+	if offeredBy(p, "name", dirsync) {
+		t.Fatalf("a source outside the live set still offers name: %+v", p.PropertyMeta["name"].Alternatives)
+	}
+	before := foldOf(t, ds)
+	if offersIn(t, before) == 0 {
+		t.Fatal("no offers survive; the rebuild comparison would prove nothing")
+	}
+	if _, err := svc.(rebuilder).RebuildRepository(context.Background(), "geoah"); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if after := foldOf(t, ds); string(after) != string(before) {
+		t.Fatalf("the rebuilt fold is not the live one\n%s", firstDifference(before, after))
+	}
+}
+
+// The sweep tombstones a source without the delete verb: the account's
+// `onDelete: cascade` collects the entry, and the next pass purges it. The
+// subject recomputes at the tombstone, as it does under a delete, or the
+// person keeps a value and an offer from a source recompute no longer counts.
+func TestCollectedSourceRecomputesItsSubject(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds := newDataset(t)
+	installPeopleSourcesWithDir(t, ds)
+	sam, acc, entry := samWithDirEntry(t, ds)
 
 	if _, err := ds.Delete(ctx, owner, acc.Kind, acc.ID); err != nil {
 		t.Fatal(err)
@@ -1419,25 +1451,31 @@ func TestCollectedSourceRecomputesItsSubject(t *testing.T) {
 	if _, err := ds.Get(ctx, entry.Kind, entry.ID); err == nil {
 		t.Fatal("the cascade should have collected the entry")
 	}
-	p = mustGet(t, ds, sam.Kind, sam.ID)
-	if p.Properties["displayName"] != "sam" {
-		t.Fatalf("displayName = %v after its source was collected, want slack's", p.Properties["displayName"])
-	}
-	if offeredBy(p, "name", dirsync) {
-		t.Fatalf("a collected source still offers name: %+v", p.PropertyMeta["name"].Alternatives)
-	}
+	wantSubjectWithoutEntry(t, svc, ds, sam)
+}
 
-	// The live table is exactly what a rebuild derives from the live records.
-	before := foldOf(t, ds)
-	if offersIn(t, before) == 0 {
-		t.Fatal("no offers survive; the rebuild comparison would prove nothing")
+// A child holding a finalizer is tombstoned by the cascade and never purged,
+// so the recompute cannot wait for the purge: the tombstone is the moment the
+// source leaves the live set.
+func TestCascadeTombstoneRecomputesItsSubject(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds := newDataset(t)
+	installPeopleSourcesWithDir(t, ds)
+	sam, acc, entry := samWithDirEntry(t, ds)
+	mustPatch(t, ds, owner, entry.Kind, entry.ID,
+		substrate.PatchInput{AddFinalizers: []string{dirPackage + "/teardown"}})
+
+	if _, err := ds.Delete(ctx, owner, acc.Kind, acc.ID); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := svc.(rebuilder).RebuildRepository(ctx, "geoah"); err != nil {
-		t.Fatalf("rebuild: %v", err)
+	if _, err := ds.RunGC(ctx); err != nil {
+		t.Fatal(err)
 	}
-	if after := foldOf(t, ds); string(after) != string(before) {
-		t.Fatalf("the rebuilt fold is not the live one\n%s", firstDifference(before, after))
+	if got := mustGet(t, ds, entry.Kind, entry.ID); got.DeletedAt == nil {
+		t.Fatal("the cascade should have tombstoned the entry")
 	}
+	wantSubjectWithoutEntry(t, svc, ds, sam)
 }
 
 // offeredBy reports whether actor offers an alternative for property.

@@ -73,16 +73,6 @@ func (ds *dataset) gcPass(ctx context.Context) (int, error) {
 			if err := t.cascadeOwned(ref); err != nil {
 				return err
 			}
-			// Only the delete verb recomputes a source's subjects at the
-			// tombstone (write.go); a cascade tombstones without it, and the
-			// subject would keep the value and the offer of a source about to
-			// stop existing. The tombstone is already outside the live set, so
-			// this lands the subject where a delete would have, and a rebuild,
-			// which derives offers from live records alone, agrees with the
-			// live table.
-			if err := t.recomputeSubjectsOf(ref); err != nil {
-				return err
-			}
 			// The purge lands BEFORE the entry that reports it: the entry
 			// carries the effects folded since the previous one, so an effect
 			// applied after its own append would ride on the next entry instead
@@ -137,6 +127,17 @@ func (t *txn) cascadeOwned(owner eref) error {
 		}
 		if err := t.appendChange(substrate.ActorSystem, substrate.OpGC, c.id, c.typ,
 			map[string]any{"reason": "owner_collected", "owner": owner.ID}); err != nil {
+			return err
+		}
+		// The tombstone takes the child out of the live set exactly as a
+		// delete of it would, so its subjects recompute here as the delete
+		// verb's do (write.go), after the entry that reports the tombstone
+		// and appending their own. It cannot wait for the purge: a child
+		// holding a finalizer stays tombstoned for good, and its subject
+		// would keep a value and an offer from a source recompute no longer
+		// counts, which a rebuild, deriving offers from live records alone,
+		// would then disagree with.
+		if err := t.recomputeSubjectsOf(ref); err != nil {
 			return err
 		}
 	}
