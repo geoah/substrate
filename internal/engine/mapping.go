@@ -47,7 +47,7 @@ func (t *txn) subjectPinned(ty *vocabulary.Kind) *vocabulary.Kind {
 		if !p.Subject || (p.To != "" && p.To != vocabulary.ToAny) {
 			continue
 		}
-		m, ok := t.ds.registry().MappingFor(ty.Identity, name)
+		m, ok := t.declarations().MappingFor(ty.Identity, name)
 		if !ok {
 			continue
 		}
@@ -254,10 +254,10 @@ func (t *txn) matchOrMint(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mappi
 	return target, nil
 }
 
-// matchSubject runs the mapping's probes against the live target type, ""
-// when nothing decides. Only an EXACTLY-ONE candidate set links.
+// matchSubject runs the mapping's probes against the target kind the
+// transaction's declarations hold, "" when nothing decides. Only an EXACTLY-ONE candidate set links.
 func (t *txn) matchSubject(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mapping) (string, error) {
-	to, ok := t.ds.registry().ByIdentity(m.To)
+	to, ok := t.declarations().ByIdentity(m.To)
 	if !ok {
 		return "", nil
 	}
@@ -495,8 +495,8 @@ func (t *txn) recompute(target eref) error {
 	if err != nil || row == nil || row.DeletedAt != nil {
 		return err
 	}
-	reg := t.ds.registry()
-	ty, err := t.ds.resolveType(row.Kind)
+	reg := t.declarations()
+	ty, err := t.resolveType(row.Kind)
 	if err != nil {
 		return err
 	}
@@ -677,7 +677,7 @@ func (t *txn) sourceActor(src eref, m *vocabulary.Mapping) (string, error) {
 	if actor != "" {
 		return actor, nil
 	}
-	if g, ok := t.ds.registry().PackageByName(vocabulary.KindPackage(m.From)); ok && len(g.Actors) > 0 {
+	if g, ok := t.declarations().PackageByName(vocabulary.KindPackage(m.From)); ok && len(g.Actors) > 0 {
 		return g.Actors[0], nil
 	}
 	return string(substrate.ActorSystem), nil

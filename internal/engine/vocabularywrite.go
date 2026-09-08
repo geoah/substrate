@@ -114,12 +114,13 @@ type vocabularyBatch struct {
 	// already gone and the whole-package teardown never refuses on its own
 	// triggers. A guard that fires afterwards rolls this back with the batch.
 	beforeGuards func(t *txn) error
-	// extra runs INSIDE the batch transaction, after the projection, against
-	// the compiled candidate registry: connector registration writes its
-	// default triggers and bookkeeping row here, so schema rows, triggers
-	// and bookkeeping land — or fail — together, and the registry publishes
-	// only after the whole installation committed.
-	extra func(t *txn, candidate *vocabulary.Registry) error
+	// extra runs INSIDE the batch transaction, after the projection. The
+	// transaction's declarations are the compiled candidate registry
+	// (txn.declarations), so a closure's shipped data documents resolve their
+	// kinds, references, mappings and trigger callables against the closure
+	// being installed, and schema rows and data land or fail together. The
+	// registry publishes only after the whole installation committed.
+	extra func(t *txn) error
 }
 
 func docKey(d vocabulary.Document) string { return d.Kind + "\x00" + d.ID }
@@ -178,10 +179,9 @@ func (ds *dataset) ApplyVocabularyDocuments(ctx context.Context, actor substrate
 // document that fails to admit — a malformed trigger, an unresolvable callable,
 // a failed write — rolls the schema apply back with it, so a failed install
 // never leaves a live half-installed closure. The data documents
-// are UPSERTS: a re-install refreshes the wiring in place. Their trigger
-// callables resolve against the CANDIDATE registry, so a trigger may name a
-// function the same closure installs — the same seam RegisterConnector's
-// default triggers ride (dataset.go).
+// are UPSERTS: a re-install refreshes the wiring in place. The transaction's
+// declarations are the candidate registry, so a data document may name a kind,
+// a mapping or a callable the same closure installs.
 func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Actor, vocabularyDocs []map[string]any, dataDocs []substrate.PutInput, opts substrate.BundleInstall) ([]*substrate.Record, error) {
 	if len(vocabularyDocs) == 0 {
 		return nil, fmt.Errorf("%w: no schema documents", substrate.ErrValidation)
@@ -193,15 +193,13 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 	written, err := ds.applyVocabularyBatch(ctx, actor, vocabularyBatch{
 		docs:      docs,
 		published: opts.Published,
-		extra: func(t *txn, candidate *vocabulary.Registry) error {
+		extra: func(t *txn) error {
 			for _, in := range dataDocs {
-				// A trigger's callable is validated against the CANDIDATE here:
-				// the internal put below skips the callable check (the registry
-				// pointer has not published yet), so an unresolvable trigger
-				// would otherwise slip in — exactly as installDefaultTriggers
-				// guards its writes.
+				// A trigger's callable is validated against the candidate here
+				// because the internal put below skips the callable check, so
+				// an unresolvable trigger would otherwise slip in.
 				if in.Kind == typeTrigger {
-					if err := t.ds.validateTriggerRow(candidate, in.ID, in.Properties, true); err != nil {
+					if err := t.ds.validateTriggerRow(t.declarations(), in.ID, in.Properties, true); err != nil {
 						return fmt.Errorf("delivery wiring %s: %w", in.ID, err)
 					}
 				}
@@ -309,6 +307,17 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		if err := t.lockKey(registryDepKey(ds)); err != nil {
 			return err
 		}
+		// Every registry read in this transaction is the candidate's
+		// (txn.declarations): the guards, the projection, the reprojected
+		// refs and the batch's `extra` writes all resolve, map and admit
+		// against the closure this commit publishes. A closure may therefore
+		// ship a record of a kind it declares, and a data document of a kind
+		// the batch removes is refused as unknown. The live pointer still
+		// holds the declarations being replaced until the publish below.
+		t.writeReg = candidate
+		// inTx resolved the tier against the live registry, before the
+		// candidate was set: an actor this closure declares resolves here.
+		t.tier = t.actorTier(actor)
 		// A whole-package teardown (bundle uninstall) removes the owned package's
 		// delivery wiring first — under the same lock, before the guards below —
 		// so dropping every callable never strands its own triggers. If a guard
@@ -358,24 +367,23 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		// gone. The narrowing guards above have already refused every change
 		// that would strand a LIVE value, so what this reaches is the additive
 		// case and the tombstones the counts deliberately do not see.
-		if err := t.reprojectRefs(candidate, st.reprojected); err != nil {
+		if err := t.reprojectRefs(st.reprojected); err != nil {
 			return err
 		}
 		if b.extra != nil {
-			if err := b.extra(t, candidate); err != nil {
+			if err := b.extra(t); err != nil {
 				return err
 			}
 		}
 		// THE DROPPED-KIND GUARD AGAIN, with every write this transaction makes
 		// behind it. The count above is the transaction's opening reading, and
-		// both writes below it CREATE rows: `extra` puts a bundle's data
-		// documents against the still-live pre-commit registry (a widget row for
-		// a kind the same upgrade removes), and the projection writes declaration
-		// rows of the meta-kinds (a declaration of a category the same batch
-		// stops declaring). Either way the publish would leave a
-		// changelog-backed live row whose kind the registry it publishes cannot
-		// resolve, so the count that decides is the one taken LAST. It also
-		// covers whatever write is added to this transaction next.
+		// the projection below it CREATES rows: declaration rows of the
+		// meta-kinds, which projectionKind holds to the live registry for a
+		// category the batch does not itself declare, so a declaration of a
+		// category the same batch stops declaring lands. The publish would then
+		// leave a changelog-backed live row whose kind the registry it publishes
+		// cannot resolve, so the count that decides is the one taken LAST. It
+		// also covers whatever write is added to this transaction next.
 		final, err := droppedTypeGuards(t, st.droppedTypes)
 		if err != nil {
 			return err
@@ -901,8 +909,8 @@ func (t *txn) projectPackages(reg *vocabulary.Registry, authorities map[string]b
 	// The projection's rows are validated against `reg` (projectionKind), so the
 	// fold's search bands come from it too: a row indexed under a declaration
 	// other than the one it was admitted against would be re-indexed differently
-	// by its own replay. Restored before the batch's `extra` hook, whose data
-	// documents are ordinary writes against the live registry.
+	// by its own replay. The apply door sets the same candidate for its whole
+	// transaction; the boot upgrade sets none, so its projection alone reads it.
 	prevReg := t.writeReg
 	t.writeReg = reg
 	defer func() { t.writeReg = prevReg }()
@@ -2117,13 +2125,11 @@ func appendReferenceShape(b *strings.Builder, path string, p *vocabulary.Propert
 }
 
 // reprojectRefs re-derives the refs index for the kinds whose reference
-// declarations moved, against the CANDIDATE closure: the candidate is what the
-// committed rows must project against, and the live registry does not hold it
-// until the publish.
-func (t *txn) reprojectRefs(candidate *vocabulary.Registry, kinds []string) error {
-	prev := t.writeReg
-	t.writeReg = candidate
-	defer func() { t.writeReg = prev }()
+// declarations moved. It runs inside the apply's transaction, whose
+// declarations are the candidate closure: the candidate is what the committed
+// rows must project against, and the live registry does not hold it until the
+// publish.
+func (t *txn) reprojectRefs(kinds []string) error {
 	for _, ident := range kinds {
 		if err := t.syncRefsOfKind(ident); err != nil {
 			return err

@@ -138,7 +138,10 @@ problem list), and a committed batch is active immediately, no restart
 anywhere. A candidate registry is built and compiled whole, closure
 resolution and CEL guards and templates and the GraphQL-name uniqueness check
 included, before the write transaction opens, so a broken closure fails the
-batch rather than half-loading. The kinds' declared indexes are built before
+batch rather than half-loading. Inside the transaction every write is held to
+that candidate, the closure's own data documents included, so a closure may
+ship a record, a reference, a mapping source or a trigger of a kind or callable
+it declares in the same batch. The kinds' declared indexes are built before
 the transaction too, so an index the engine cannot build refuses the batch
 with nothing landed. One per-repository mutex serializes vocabulary writes
 against each other, and a registry-dependency lock orders them against data

@@ -258,10 +258,10 @@ func (ds *dataset) resolveType(name string) (*vocabulary.Kind, error) {
 	return resolveKindIn(ds.registry(), name)
 }
 
-// resolveKindIn resolves a kind reference against a GIVEN registry. Every
-// ordinary write resolves against the LIVE one (resolveType above); the
-// vocabulary projection resolves a declaration row's kind against the candidate
-// when this projection is what decides that kind's stored declaration
+// resolveKindIn resolves a kind reference against a GIVEN registry: the
+// dataset's live one outside a transaction (resolveType above), the
+// transaction's declarations inside one (txn.resolveType), and the candidate
+// for a declaration row whose stored declaration the projection is deciding
 // (vocabularywrite.go projectionKind).
 func resolveKindIn(reg *vocabulary.Registry, name string) (*vocabulary.Kind, error) {
 	t, err := reg.Resolve(name)
@@ -366,14 +366,15 @@ type txn struct {
 	seqLocked bool
 	// internal writes bypass the system-type guard.
 	internal bool
-	// writeReg is the registry this transaction's DECLARATIONS come from, when it
-	// is not the live one: the vocabulary projection resolves a declaration row's
-	// kind against the candidate it is installing (vocabularywrite.go
-	// projectionKind). The fold consults the registry for exactly one thing —
-	// the weighted search bands — and computing those from a declaration OTHER
-	// than the one the row was validated against is what made a live row and its
-	// own replay disagree: a replay reads the registry the rebuild holds, which is
-	// the declaration the row ended up under.
+	// writeReg is the registry this transaction's writes are held to when it
+	// is not the live one: a vocabulary apply sets its candidate for the whole
+	// transaction (vocabularywrite.go), and the boot upgrade sets it for its
+	// projection. Read through declarations(), never directly. The fold
+	// consults the registry for exactly one thing, the weighted search bands,
+	// and computing those from a declaration OTHER than the one the row was
+	// validated against is what made a live row and its own replay disagree:
+	// a replay reads the registry the rebuild holds, which is the declaration
+	// the row ended up under.
 	writeReg *vocabulary.Registry
 	// refMissing collects the `mustExist:` misses of the reference pass, so the
 	// refusal leaves as the not-found it is rather than as a shape problem
@@ -524,7 +525,7 @@ func (ds *dataset) commitAndPublish(tx *sql.Tx, t *txn) error {
 // follows the actor, since it is resolved from the actor's data.
 func (t *txn) asActor(actor substrate.Actor, fn func() error) error {
 	prevActor, prevTier := t.actor, t.tier
-	t.actor, t.tier = actor, t.ds.actorTier(actor)
+	t.actor, t.tier = actor, t.actorTier(actor)
 	defer func() { t.actor, t.tier = prevActor, prevTier }()
 	return fn()
 }

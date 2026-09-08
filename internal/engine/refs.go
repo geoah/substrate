@@ -317,12 +317,24 @@ func (t *txn) syncRefsOf(ref eref) error {
 
 // declarations is the registry this transaction's writes are held to: the
 // candidate closure while a vocabulary apply is in flight, the live registry
-// otherwise.
+// otherwise. Every registry read inside a transaction goes through it, so a
+// batch's own writes (its projection, its reprojected refs, a closure's data
+// documents) resolve, map and admit against the declarations the batch is
+// about to publish rather than the ones it is replacing. Two readers stand
+// apart: projectionKind (vocabularywrite.go) asks the live registry on purpose
+// for a kind the batch leaves alone, and inTx resolves the actor's tier before
+// any candidate is set, so the apply re-resolves it (txn.actorTier).
 func (t *txn) declarations() *vocabulary.Registry {
 	if t.writeReg != nil {
 		return t.writeReg
 	}
 	return t.ds.registry()
+}
+
+// resolveType resolves a kind reference against the transaction's
+// declarations.
+func (t *txn) resolveType(name string) (*vocabulary.Kind, error) {
+	return resolveKindIn(t.declarations(), name)
 }
 
 // syncRefsOfKind re-derives every record of one kind. Its caller is the

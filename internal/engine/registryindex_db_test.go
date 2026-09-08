@@ -50,7 +50,7 @@ func TestAChangedIndexDefinitionRebuildsTheStaleOrdinalIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	failed := errors.New("the batch's data write failed")
-	_, err = ds.applyVocabularyBatch(ctx, substrate.ActorAPI, vocabularyBatch{docs: docs, extra: func(*txn, *vocabulary.Registry) error {
+	_, err = ds.applyVocabularyBatch(ctx, substrate.ActorAPI, vocabularyBatch{docs: docs, extra: func(*txn) error {
 		return failed
 	}})
 	if !errors.Is(err, failed) {

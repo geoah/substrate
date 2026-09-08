@@ -773,7 +773,7 @@ func (ds *dataset) blobOrphanSweep(ctx context.Context, store blobbytes.Store) e
 // a blob-ref property (scalar or repeated), across every declared type. It is
 // the in-transaction re-check GC runs under the per-digest lock.
 func (t *txn) blobReferenced(digest string) (bool, error) {
-	for _, ty := range t.ds.registry().Kinds() {
+	for _, ty := range t.declarations().Kinds() {
 		for _, name := range ty.PropOrder {
 			p := ty.Props[name]
 			if p.Datatype != vocabulary.DatatypeBlobRef {
