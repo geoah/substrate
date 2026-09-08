@@ -193,9 +193,21 @@ POSTs behave the same way.
 
 The remedy is a client-supplied `Idempotency-Key` request header on that call
 surface: two requests carrying the same key return the same outcome, and the
-effect runs once. The header is additive and not yet accepted by the server;
-the semantics are fixed here so a client may rely on them the moment it lands. A
-caller that needs an idempotent create today supplies its own id and uses `put`.
+effect runs once. The header is additive and not yet accepted by the server
+(#378 adds the key store); the semantics are fixed here so a client may rely
+on them the moment it lands.
+
+Until then, whether a create can be made idempotent depends on the kind. A
+kind no `recordmapping` points at accepts a client-supplied id: `put` at
+`…/{kind}/{id}` creates the record on the first attempt and upserts the same
+row on the retry. A kind some mapping points at does not: `checkCreateID`
+refuses a client id on a record that does not exist yet, a `validation` error
+(`422`) saying "ids are server-assigned", because nothing external names a
+subject ([0049](decisions/0049-the-owner-of-a-mappings-target-declares-it.md)).
+The `people` and `tasks` samples ship mappings onto their own `person` and
+`task`, so those two are server-assigned from the moment the mappings land
+([Suggested mappings](bundles.md#suggested-mappings)). There is no safe create
+for a mapped kind today; `Idempotency-Key` is its remedy once the header lands.
 
 ## The filter grammar
 
