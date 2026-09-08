@@ -3218,3 +3218,93 @@ func TestRepositoryAuthorityGrammar(t *testing.T) {
 		t.Error("an IPv6 literal host produced a default that passes the grammar")
 	}
 }
+
+// An enum value's `renamedFrom` (decision 0066) is admitted on a kind's own
+// property and on a refinement, stored on the declaration, and refused where
+// the engine never rewrites a value: inside an object's fields and on a link
+// property. The whole-list checks (a previous value still declared, two values
+// taking one) hold whichever form spelled the entry.
+func TestEnumValueRenamedFromReserved(t *testing.T) {
+	mk := func(props string) fstest.MapFS {
+		return fstest.MapFS{"g.yaml": &fstest.MapFile{Data: []byte(`kind: substrate.reamde.dev/core/package
+metadata: {id: g.example.com/g}
+data: {authority: g.example.com, package: g, version: 1}
+---
+kind: substrate.reamde.dev/core/kind
+metadata: {id: g.example.com/g/thing}
+data:
+  authority: g.example.com
+  package: g
+  names: {singular: thing, plural: things}
+  properties:
+` + props)}}
+	}
+
+	t.Run("admitted and parsed", func(t *testing.T) {
+		r, err := vocabulary.LoadFS(mk("    level: {type: enum, values: [low, {value: top, renamedFrom: high}]}\n"))
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		thing, _ := r.ByIdentity("g.example.com/g/thing")
+		values := thing.Props["level"].Values
+		if len(values) != 2 || values[1].Value != "top" || values[1].RenamedFrom != "high" || values[0].RenamedFrom != "" {
+			t.Fatalf("Values = %+v", values)
+		}
+		// Stored: the definition map (what the projection persists) keeps the
+		// entry as the author spelled it.
+		props, _ := thing.Definition["properties"].(map[string]any)
+		level, _ := props["level"].(map[string]any)
+		list, _ := level["values"].([]any)
+		if len(list) != 2 {
+			t.Fatalf("definition values = %v", level["values"])
+		}
+		top, _ := list[1].(map[string]any)
+		if got, _ := top["renamedFrom"].(string); got != "high" {
+			t.Fatalf("definition renamedFrom = %q", got)
+		}
+	})
+
+	t.Run("a refinement carries it into the canonical form", func(t *testing.T) {
+		r, err := vocabulary.LoadFS(fstest.MapFS{"g.yaml": &fstest.MapFile{Data: []byte(`kind: substrate.reamde.dev/core/package
+metadata: {id: g.example.com/g}
+data: {authority: g.example.com, package: g, version: 1}
+---
+kind: substrate.reamde.dev/core/propertytype
+metadata: {id: g.example.com/g/grade}
+data:
+  authority: g.example.com
+  package: g
+  base: enum
+  values: [low, {value: top, renamedFrom: high}]
+`)}})
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		g, _ := r.PackageByName("g.example.com/g")
+		grade := g.PropertyTypes["grade"]
+		if grade == nil || grade.Prop.Values[1].RenamedFrom != "high" {
+			t.Fatalf("refinement = %+v", grade)
+		}
+		list, _ := grade.Definition["values"].([]any)
+		top, _ := list[1].(map[string]any)
+		if got, _ := top["renamedFrom"].(string); got != "high" || len(list) != 2 {
+			t.Fatalf("canonical values = %v", grade.Definition["values"])
+		}
+	})
+
+	for name, tc := range map[string]struct{ props, want string }{
+		"self":               {"    level: {type: enum, values: [low, {value: top, renamedFrom: top}]}\n", "names the value itself"},
+		"not a word":         {"    level: {type: enum, values: [low, {value: top, renamedFrom: High}]}\n", "must be a lowercase word"},
+		"still declared":     {"    level: {type: enum, values: [high, {value: top, renamedFrom: high}]}\n", "still declared in the list"},
+		"two take one":       {"    level: {type: enum, values: [{value: top, renamedFrom: high}, {value: peak, renamedFrom: high}]}\n", "also the previous value"},
+		"inside fields":      {"    spec: {type: object, fields: {level: {type: enum, values: [{value: top, renamedFrom: high}]}}}\n", "not a field's"},
+		"on a link property": {"    author: {type: reference, properties: {role: {type: enum, values: [{value: lead, renamedFrom: head}]}}}\n", "not a link property's"},
+	} {
+		t.Run(name+" is an error", func(t *testing.T) {
+			_, err := vocabulary.LoadFS(mk(tc.props))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}

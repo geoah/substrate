@@ -1281,10 +1281,10 @@ func (t *txn) stampTargetVersion(sp *applySpec, row *erow, target eref, accepted
 // one is not.
 //
 // A declared `default:` is what keeps a required property writable without
-// naming it, and withDefaults has already filled it on a create. Defaults do not
-// backfill, so a record stored before its property was declared required stays
-// missing it, and admission is what refuses that declaration change
-// (schemadiff.go) rather than this.
+// naming it, and withDefaults has already filled it on a create. A record
+// stored before its property was declared required is admission's business,
+// not this check's: the apply backfills the default onto it (convert.go) or,
+// without a default, refuses the declaration change (schemadiff.go).
 //
 // This is a kind's OWN properties; a `required:` FIELD is held to the object
 // the write stores, where the object is coerced (coerceObject, in validate.go).

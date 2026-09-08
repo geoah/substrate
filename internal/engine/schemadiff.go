@@ -10,19 +10,25 @@ package engine
 //
 //   - property dropped. A property the candidate declares under a new name
 //     with `renamedFrom:` is NOT a drop: the apply moves every live record's
-//     value to the new name in its own transaction (rename.go, decision 0063),
+//     value to the new name in its own transaction (convert.go, decision 0063),
 //     and the new declaration is classified against the old one below, so a
 //     rename that also narrows refuses with the count under the old name;
 //   - property kind changed (container flips count: a list is not a scalar and
 //     a keyed map is neither), at every declared level of an object's fields;
 //   - a keyed map's key contract tightened while rows hold the map;
-//   - enum value removed while rows hold it;
+//   - enum value removed while rows hold it. A removed value a candidate value
+//     names with `renamedFrom:` is NOT stranded: the apply rewrites every live
+//     record holding it (convert.go, decision 0066). A rename onto a value the
+//     stored declaration still admits would collapse two stored values into
+//     one and is refused as lossy, by declaration and without a count
+//     (classifyConversions);
 //   - state removed while rows occupy it (a state property dropped or turned
 //     scalar counts as a kind change);
 //   - required added while rows lack the property (the write path enforces
-//     `required` on the merged row, and a declared `default` does not
-//     backfill, so the rows that lack it now would be nonconforming and
-//     unpatchable);
+//     `required` on the merged row, so the rows that lack it now would be
+//     nonconforming and unpatchable), unless the declaration also carries a
+//     `default`: the apply then writes the default onto every live record
+//     lacking a value (convert.go), and the count is not taken;
 //   - a reference repointing its pin, gaining `mustExist:`, or narrowing one of
 //     its declared link properties — each counted over the refs index
 //     (referenceNarrowings), which reads every value shape and every depth;
@@ -167,9 +173,13 @@ const countStateValuesQuery = `SELECT count(*) FROM records
 // to the coercion a WRITE puts a value through, and answers one problem per
 // default that would not survive it. The loader has already checked the
 // literal's shape (parseDefault); what is left is the value's own rules (a
-// pattern, a bound, an instant's range), which live with the write path. A kind
-// whose default no create could store is refused here, once, instead of at
-// every create of it.
+// pattern, a bound, an instant's range), which live with the write path, and
+// the one rule `required` adds: an empty value is no value (emptyValue), so a
+// required property's default may not be one, or a create would fill it and
+// refuse it in the same write, and a backfill (convert.go) would commit rows
+// every later write refuses. A kind whose default no create could store is
+// refused here, once, instead of at every create of it, and both doors run
+// this: the apply (stageVocabularyBatch) and the boot (stageShippedUpgrade).
 func checkDeclaredDefaults(candidate *vocabulary.Registry, touched map[string]bool) []string {
 	var problems []string
 	for aname := range touched {
@@ -182,6 +192,11 @@ func checkDeclaredDefaults(candidate *vocabulary.Registry, touched map[string]bo
 			for _, pname := range ty.PropOrder {
 				p := ty.Props[pname]
 				if p.Default == nil {
+					continue
+				}
+				if p.Required && emptyValue(p.Default) {
+					problems = append(problems, fmt.Sprintf("kind %s: property %q: default %v: a required property's default holds a value, and an empty one is what having none means",
+						ty.Identity, pname, jsonLiteral(p.Default)))
 					continue
 				}
 				if _, err := coerceValue(p, p.Default); err != nil {
@@ -295,6 +310,9 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 		if _, existed := curT.Props[pname]; existed {
 			continue // the `becomes required` case above owns it
 		}
+		if backfillable(candT, candP) {
+			continue // the apply writes the default onto every row (convert.go)
+		}
 		q, args := missingValueCount(candT, ident, pname)
 		out = append(out, narrowing{
 			format: fmt.Sprintf("type %s: property %q is added as required while %%d live records lack it — backfill or delete them first",
@@ -381,7 +399,12 @@ func propertyNarrowings(ident, pname string, curP, candP *vocabulary.Property, c
 			// Every value count below walks the property's own container, so a
 			// keyed enum and a repeated one are counted in their own shape rather
 			// than compared as whole containers against a value list.
-			if removed := removedStrings(curP.ValueStrings(), candP.ValueStrings()); len(removed) > 0 {
+			// A removed value a candidate value takes with `renamedFrom` is
+			// rewritten, not stranded (convert.go); the lossy case, a rename
+			// onto a value still admitted, is refused there by declaration,
+			// so neither reaches the count.
+			removed := unrenamedValues(candP, removedStrings(curP.ValueStrings(), candP.ValueStrings()))
+			if len(removed) > 0 {
 				q, args := valuesAtPath(ident, containerPath(nil, curP, pname), removed)
 				out = append(out, narrowing{
 					format: fmt.Sprintf("type %s: property %q removes value(s) %s while %%d live records hold one — rewrite them first",
@@ -420,10 +443,13 @@ func propertyNarrowings(ident, pname string, curP, candP *vocabulary.Property, c
 					[]fieldStep{{key: pname, repeated: curP.Repeated, keyed: curP.Keyed}}, curP, candP)...)
 			}
 		}
-		if !curP.Required && candP.Required {
+		// With a `default` beside it the apply writes the default onto every
+		// row lacking a value (convert.go), so nothing is stranded and the
+		// count is not taken.
+		if !curP.Required && candP.Required && !backfillable(candT, candP) {
 			q, args := missingValueCount(candT, ident, pname)
 			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: property %q becomes required while %%d live records lack it — backfill them first", ident, pname),
+				format: fmt.Sprintf("type %s: property %q becomes required while %%d live records lack it: declare a default to backfill them, or write them first", ident, pname),
 				query:  q, args: args,
 			})
 		}
@@ -1301,44 +1327,11 @@ func renamedTo(candT *vocabulary.Kind, from string) string {
 
 // propertyRename is one rename a batch declares against the stored
 // declaration: the kind as the candidate declares it, the name live rows still
-// carry, and the property that takes their values (rename.go).
+// carry, and the property that takes their values (convert.go).
 type propertyRename struct {
 	kind *vocabulary.Kind
 	from string
 	to   string
-}
-
-// classifyRenames lists the renames a batch declares: a stored property the
-// candidate no longer declares while one of its properties names it as
-// `renamedFrom`. It walks the kinds classifyNarrowingsExcept walks and skips
-// the same ones, so a kind the boot upgrade holds at its stored version renames
-// nothing. A `renamedFrom` naming a property no stored declaration had is not
-// a rename: it is stored and does nothing, as it did before the rewrite.
-func classifyRenames(current, candidate *vocabulary.Registry, touched, skip map[string]bool) []propertyRename {
-	var out []propertyRename
-	for _, aname := range sortedKeys(touched) {
-		cur, _ := current.PackageByName(aname)
-		cand, _ := candidate.PackageByName(aname)
-		if cur == nil || cand == nil {
-			continue
-		}
-		for _, tn := range cur.KindOrder {
-			candT := cand.Kinds[tn]
-			if candT == nil || skip[candT.Identity] {
-				continue
-			}
-			curT := cur.Kinds[tn]
-			for _, pname := range curT.PropOrder {
-				if candT.Props[pname] != nil {
-					continue
-				}
-				if to := renamedTo(candT, pname); to != "" {
-					out = append(out, propertyRename{kind: candT, from: pname, to: to})
-				}
-			}
-		}
-	}
-	return out
 }
 
 // renameGuards names what a rename cannot carry and the candidate does not
@@ -1445,6 +1438,13 @@ func removedStrings(cur, cand []string) []string {
 // jsonArray renders values as a JSON array literal for the ::jsonb casts.
 func jsonArray(values []string) string {
 	raw, _ := json.Marshal(values)
+	return string(raw)
+}
+
+// jsonLiteral renders one declared literal for a guard message, so `""`, `[]`
+// and `{}` read as what the author wrote rather than as Go's empty spellings.
+func jsonLiteral(v any) string {
+	raw, _ := json.Marshal(v)
 	return string(raw)
 }
 

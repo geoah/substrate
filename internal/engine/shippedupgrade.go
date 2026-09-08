@@ -46,11 +46,12 @@ type shippedUpgradeStage struct {
 	// first, then the counted narrowings; the boot and the preview both read
 	// that one list.
 	refused []string
-	// renames are the property renames the shipped tree declares against the
-	// stored declarations (rename.go): the boot performs them in the
-	// transaction that projects the declarations, and a reader of the old name
-	// the candidate cannot refuse lands in refused.
-	renames []propertyRename
+	// conversions are the record rewrites the shipped tree declares against the
+	// stored declarations (a rename, a backfill, a remap: convert.go): the boot
+	// performs them in the transaction that projects the declarations, and
+	// what refuses one without a count (a reader of a renamed name, a lossy
+	// remap) lands in refused.
+	conversions conversionPlan
 	// candidate is the registry the boot would publish (shippedCandidate): the
 	// stored one with the upgraded packages replaced by the shipped ones. The
 	// rename rewrites run against it, so a stored user kind a renamed record
@@ -172,13 +173,16 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 	}
 	st.refused = append(st.refused, problems...)
 	st.candidate = candidate
-	// A shipped rename is not a narrowing: the boot moves the live values in
-	// the same transaction, against the candidate (rename.go, decision 0063).
-	// What refuses it beyond the compile is a stored template reading the old
-	// name through a reference (renameGuards), read through the candidate.
-	st.renames = classifyRenames(current, reg, st.upgrade, keptIdents)
+	// A shipped rename, backfill or remap is not a narrowing: the boot
+	// rewrites the live records in the same transaction, against the
+	// candidate (convert.go, decisions 0063 and 0066). What refuses one beyond
+	// the compile is a stored template reading a renamed name through a
+	// reference (renameGuards), read through the candidate, and a remap that
+	// would collapse two stored values, which this door never runs.
+	st.conversions = classifyConversions(current, reg, st.upgrade, keptIdents)
+	st.refused = append(st.refused, st.conversions.lossy...)
 	if candidate != nil {
-		st.refused = append(st.refused, renameGuards(current, candidate, st.renames)...)
+		st.refused = append(st.refused, renameGuards(current, candidate, st.conversions.renames)...)
 	}
 	return st, nil
 }
@@ -284,7 +288,7 @@ func (ds *dataset) PlanShippedUpgrade(ctx context.Context) ([]substrate.ShippedU
 	if err != nil {
 		return nil, err
 	}
-	renames, err := renamePlans(q, st.renames)
+	renames, err := renamePlans(q, st.conversions.renames)
 	if err != nil {
 		return nil, err
 	}

@@ -319,10 +319,14 @@ discharged.
   ([0020](docs/decisions/0020-dialect-keys-are-reserved-not-tolerated.md)).
   `unique` and `deprecated` are reserved today: stored, refused where they
   could not be honored, and acted on by nothing. `renamedFrom` was reserved
-  the same way and is live: admitting the declaration moves every live
-  record's value to the new name inside the apply's transaction, as ordinary
-  record writes
-  ([0063](docs/decisions/0063-a-property-rename-is-ordinary-record-writes.md)).
+  the same way and is live, on a property and on an enum value entry alike:
+  admitting the declaration moves every live record's value to the new name,
+  or rewrites the old spelling to the new one, inside the apply's
+  transaction, as ordinary record writes
+  ([0063](docs/decisions/0063-a-property-rename-is-ordinary-record-writes.md),
+  [0066](docs/decisions/0066-a-backfill-and-an-enum-remap-are-ordinary-record-writes.md)).
+  `required` beside a `default` backfills the same way, and a remap onto a
+  value the stored declaration still admits is refused as lossy.
   `edges.<rel>.properties` was reserved with them and is now live: an edge
   write carrying a property the rel does not declare is refused
   ([0027](docs/decisions/0027-an-edge-outlives-a-tombstone-and-dies-with-a-purge.md)).

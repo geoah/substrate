@@ -213,7 +213,7 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 	// the same list (st.guards), and an operator resolving a refusal wants
 	// the whole of it, not one reason per restart.
 	var refused []string
-	var renamed int64
+	var converted int64
 	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 		if err := t.lockKey(registryDepKey(ds)); err != nil {
 			return err
@@ -231,14 +231,14 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 		}); err != nil {
 			return err
 		}
-		// A shipped rename converts here, in the transaction that projects
-		// the declaration (rename.go): a door that projected the new name and
-		// left the rows under the old one would be the shape the guards exist
-		// to prevent, and one that skipped forever would be a rename no
-		// repository receives. The candidate carries the stored packages the
-		// shipped tree does not, so a renamed record referencing a user kind
-		// still resolves it (shippedupgrade.go).
-		renamed, err = t.renameProperties(st.candidate, st.renames)
+		// A shipped rename, backfill or remap converts here, in the
+		// transaction that projects the declaration (convert.go): a door that
+		// projected the new shape and left the rows in the old one would be
+		// the shape the guards exist to prevent, and one that skipped forever
+		// would be a conversion no repository receives. The candidate carries
+		// the stored packages the shipped tree does not, so a converted record
+		// referencing a user kind still resolves it (shippedupgrade.go).
+		converted, err = t.convertRecords(st.candidate, st.conversions)
 		return err
 	})
 	if err != nil {
@@ -254,7 +254,7 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 		return nil
 	}
 	ds.svc.log.Info("substrate: upgraded a repository's shipped vocabulary from the embedded tree",
-		"repository", ds.info.Name, "packages", sortedKeys(st.upgrade), "renamedRecords", renamed)
+		"repository", ds.info.Name, "packages", sortedKeys(st.upgrade), "convertedRecords", converted)
 
 	// The rows moved, so the live registry is rebuilt from them — the same
 	// read every open does, so an upgraded repository and a freshly opened one

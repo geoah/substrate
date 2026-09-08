@@ -350,7 +350,7 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		}
 		guards = append(guards, st.strandedMappings...)
 		guards = append(guards, st.retirements...)
-		guards = append(guards, st.renameGuards...)
+		guards = append(guards, st.conversionGuards...)
 		narrowed, err := narrowingGuards(t, st.narrowings)
 		if err != nil {
 			return err
@@ -362,6 +362,12 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		}
 		guards = append(guards, more...)
 		if len(guards) > 0 {
+			// A lossy conversion among the refusals is named as one, so a
+			// caller can tell it from a narrowing that writing the records
+			// would clear (convert.go).
+			if len(st.conversions.lossy) > 0 {
+				return fmt.Errorf("%w: %w: %s", substrate.ErrGuard, substrate.ErrLossyConversion, strings.Join(guards, "; "))
+			}
 			return fmt.Errorf("%w: %s", substrate.ErrGuard, strings.Join(guards, "; "))
 		}
 		if err := t.checkSchemaCAS(b.meta); err != nil {
@@ -376,11 +382,12 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		for k, e := range got {
 			written[k] = e
 		}
-		// The renames the candidate declares, as record writes against it
-		// (rename.go): after the declaration rows, so the entries follow the
-		// declaration they answer to, and before the refs index re-derives,
-		// so it reads the renamed properties.
-		if _, err := t.renameProperties(candidate, st.renames); err != nil {
+		// The conversions the candidate declares (a rename, a backfill, a
+		// remap), as record writes against it (convert.go): after the
+		// declaration rows, so the entries follow the declaration they answer
+		// to, and before the refs index re-derives, so it reads the converted
+		// properties.
+		if _, err := t.convertRecords(candidate, st.conversions); err != nil {
 			return err
 		}
 		// The refs index is the reverse projection of stored reference values
@@ -503,11 +510,12 @@ type vocabularyStage struct {
 	// can be seen through, dropped kinds included.
 	reprojectedFTS []string
 	narrowings     []narrowing
-	// renames are the property renames the candidate declares (rename.go),
-	// performed inside the transaction after the projection; renameGuards
-	// names what would keep reading the old name and refuses the batch.
-	renames      []propertyRename
-	renameGuards []string
+	// conversions are the record rewrites the candidate declares (a rename, a
+	// backfill, a remap: convert.go), performed inside the transaction after
+	// the projection; conversionGuards names what refuses the batch without a
+	// count: a reader of a renamed name (renameGuards) and a lossy remap.
+	conversions      conversionPlan
+	conversionGuards []string
 }
 
 // stageVocabularyBatch builds the batch's candidate registry and classifies
@@ -700,7 +708,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
 	}
 
-	renames := classifyRenames(current, candidate, touched, nil)
+	conversions := classifyConversions(current, candidate, touched, nil)
 	return &vocabularyStage{
 		candidate: candidate,
 		touched:   touched,
@@ -722,11 +730,13 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		// stored definitions and refused while live rows would be stranded,
 		// with the count. Additive changes pass through untouched (schemadiff.go).
 		narrowings: classifyNarrowings(current, candidate, touched),
-		// A rename is neither: the transaction moves the live values to the
-		// new name (rename.go), and only a reader of the old name the
-		// candidate cannot see refuses it.
-		renames:      renames,
-		renameGuards: renameGuards(current, candidate, renames),
+		// A rename, a backfill and a remap are neither: the transaction
+		// rewrites the live records (convert.go), and what refuses them is a
+		// reader of the old name the candidate cannot see, or a remap that
+		// would collapse two stored values.
+		conversions: conversions,
+		conversionGuards: append(renameGuards(current, candidate, conversions.renames),
+			conversions.lossy...),
 	}, nil
 }
 

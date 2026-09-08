@@ -906,3 +906,144 @@ func TestBootUpgradeRefusesARenameAStoredTemplateReads(t *testing.T) {
 		t.Fatalf("the stored template does not read the renamed property: %q", card.Title)
 	}
 }
+
+// convertShippedProvider is the shipped backfill and remap the boot tests
+// drive: llmprovider's optional `label` becomes required with a default, and
+// the `azure` wire is respelled `azureopenai`. The declaration pins version 99
+// so the authority bump re-projects it.
+func convertShippedProvider(t *testing.T, tree string) {
+	t.Helper()
+	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
+		const label = "    label:\n      type: string\n"
+		if !strings.Contains(doc, label) {
+			t.Fatal("llmprovider no longer declares `label` as a plain string")
+		}
+		doc = strings.Replace(doc, label, "    label:\n      type: string\n      required: true\n      default: unnamed\n", 1)
+		const azure = "        - value: azure\n          label: Azure OpenAI\n"
+		if !strings.Contains(doc, azure) {
+			t.Fatal("llmprovider no longer declares the `azure` wire")
+		}
+		doc = strings.Replace(doc, azure, "        - value: azureopenai\n          label: Azure OpenAI\n          renamedFrom: azure\n", 1)
+		return pinVersion(t, doc, "99")
+	})
+}
+
+// The boot door converts a shipped backfill and a shipped remap at open, in
+// the transaction that projects the declaration (decision 0066): the row that
+// lacked the label reads the default, the row on the old wire reads the new
+// spelling, and the open neither refused nor skipped the upgrade.
+func TestBootUpgradeConvertsAShippedBackfillAndRemap(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := seededRepository(t)
+	const provider = "substrate.reamde.dev/core/llmprovider"
+	// Beside the seeded row (a label, the openai wire): one without a label
+	// on the wire the tree respells.
+	{
+		svc := openTree(t, dsn, shippedTree(t))
+		ds, err := svc.Dataset(ctx, "geoah")
+		if err != nil {
+			t.Fatalf("dataset: %v", err)
+		}
+		mustPut(t, ds, owner, substrate.PutInput{
+			Kind: provider, ID: "bare", Properties: map[string]any{"wire": "azure"},
+		})
+		_ = svc.Close()
+	}
+	tree := shippedTree(t)
+	convertShippedProvider(t, tree)
+	if err := openMoved(t, dsn, tree); err != nil {
+		t.Fatalf("a shipped backfill and remap must land at open: %v", err)
+	}
+
+	svc := openTree(t, dsn, tree)
+	defer func() { _ = svc.Close() }()
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("dataset: %v", err)
+	}
+	bare := mustGet(t, ds, provider, "bare")
+	if bare.Properties["label"] != "unnamed" || bare.Properties["wire"] != "azureopenai" {
+		t.Fatalf("the boot did not convert the row: %v", bare.Properties)
+	}
+	if guarded := mustGet(t, ds, provider, "guarded"); guarded.Properties["label"] != "a label" || guarded.Properties["wire"] != "openai" {
+		t.Fatalf("the boot rewrote a row no step touched: %v", guarded.Properties)
+	}
+	// Landed, the preview reports nothing pending.
+	planner, ok := ds.(substrate.ShippedUpgradePlanner)
+	if !ok {
+		t.Fatal("dataset does not plan the shipped upgrade")
+	}
+	plans, err := planner.PlanShippedUpgrade(ctx)
+	if err != nil {
+		t.Fatalf("plan the shipped upgrade: %v", err)
+	}
+	for _, p := range plans {
+		if p.Upgrade.Available {
+			t.Fatalf("the landed conversion still shows as pending: %+v", p)
+		}
+	}
+	// The repository speaks the new shape: a create without a label takes the
+	// default, and the old wire spelling is undeclared.
+	if got := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: provider, ID: "later", Properties: map[string]any{"wire": "openai"},
+	}); got.Properties["label"] != "unnamed" {
+		t.Fatalf("a create did not take the default: %v", got.Properties)
+	}
+	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: provider, ID: "stale", Properties: map[string]any{"label": "x", "wire": "azure"},
+	}); err == nil {
+		t.Fatal("the old wire spelling must be undeclared once the remap landed")
+	}
+}
+
+// A shipped remap onto a wire the stored declaration still admits would make
+// two providers' rows one set. The boot never runs a lossy step: it refuses,
+// the open succeeds on the stored declarations, and the preview names the
+// refusal.
+func TestBootUpgradeRefusesAShippedLossyRemap(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := seededRepository(t)
+	tree := shippedTree(t)
+	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
+		const azure = "        - value: azure\n          label: Azure OpenAI\n"
+		if !strings.Contains(doc, azure) {
+			t.Fatal("llmprovider no longer declares the `azure` wire")
+		}
+		const openai = "        - value: openai\n          label: OpenAI\n"
+		if !strings.Contains(doc, openai) {
+			t.Fatal("llmprovider no longer declares the `openai` wire")
+		}
+		doc = strings.Replace(doc, azure, "", 1)
+		doc = strings.Replace(doc, openai, "        - value: openai\n          label: OpenAI\n          renamedFrom: azure\n", 1)
+		return pinVersion(t, doc, "99")
+	})
+	refused := openMovedRefused(t, dsn, tree)
+	wantRefusedUpgrade(t, refused, `property "wire" renames value "azure" onto "openai", which the stored declaration still admits`)
+	stillSpeaksTheOldShape(t, dsn)
+
+	svc := openTree(t, dsn, tree)
+	defer func() { _ = svc.Close() }()
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("dataset: %v", err)
+	}
+	planner, ok := ds.(substrate.ShippedUpgradePlanner)
+	if !ok {
+		t.Fatal("dataset does not plan the shipped upgrade")
+	}
+	plans, err := planner.PlanShippedUpgrade(ctx)
+	if err != nil {
+		t.Fatalf("plan the shipped upgrade: %v", err)
+	}
+	var named bool
+	for _, p := range plans {
+		for _, b := range p.Upgrade.Blockers {
+			named = named || strings.Contains(b, "lossy conversion is refused")
+		}
+	}
+	if !named {
+		t.Fatalf("the preview does not name the lossy remap: %+v", plans)
+	}
+}

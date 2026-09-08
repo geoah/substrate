@@ -27,7 +27,10 @@ data:
   # reserved, stored, and read by no server-side path.
   # version 10: `source` gains `published`, the origin a provider install
   # writes (decision record 0048).
-  version: 10
+  # version 11: an admitted value may name its previous spelling with
+  # `renamedFrom` (decision record 0066); admission rewrites the live records
+  # holding the old value. Additive, so live refinements are untouched.
+  version: 11
   names:
     singular: propertytype
   # id = "<authority>/<package>/<name>". A refinement is package-local — a
@@ -117,3 +120,7 @@ data:
         deprecated:
           type: bool
           description: clients should stop offering this value
+        renamedFrom:
+          type: string
+          description: the value's previous spelling, which admission rewrites
+            on every live record holding it
