@@ -53,10 +53,10 @@ func TestChangesNameEachAffectedRecordWithItsVersion(t *testing.T) {
 	a = mustPatch(t, ds, owner, a.Kind, a.ID, substrate.PatchInput{Properties: map[string]any{"name": "Ada L."}})
 	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Nina Ray"}})
 	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "N. Ray"}})
-	if _, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
-	if _, err := ds.Delete(ctx, owner, a.Kind, a.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, a.Kind, a.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	if _, err := ds.RunGC(ctx); err != nil {
@@ -123,7 +123,7 @@ func TestAnEntryWithoutEffectsStillNamesItsRecord(t *testing.T) {
 	ctx := context.Background()
 	svc, ds, dsn := newDatasetWithDSN(t)
 	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Ada"}})
-	if _, err := ds.Delete(ctx, owner, a.Kind, a.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, a.Kind, a.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	// Strip the effects off every entry of the record, in the table and the
@@ -187,17 +187,17 @@ func TestAClientKeepsACurrentCopyFromTheStreamAlone(t *testing.T) {
 	mustPatch(t, ds, owner, ada.Kind, ada.ID, substrate.PatchInput{Properties: map[string]any{"name": "Ada Lovelace"}})
 	bob := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Bob"}})
 	dup := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Robert"}})
-	if _, err := ds.Merge(ctx, owner, bob.Kind, bob.ID, dup.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: bob.Kind, Winner: bob.ID, Loser: dup.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 	gone := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Gone"}})
-	if _, err := ds.Delete(ctx, owner, gone.Kind, gone.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, gone.Kind, gone.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	// Deleted and then put back: `deleted` flips true and then false again,
 	// and the copy has to follow both.
 	back := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Back"}})
-	if _, err := ds.Delete(ctx, owner, back.Kind, back.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, back.Kind, back.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	back = mustPut(t, ds, owner, substrate.PutInput{Kind: "person", ID: back.ID, Properties: map[string]any{"name": "Back again"}})
