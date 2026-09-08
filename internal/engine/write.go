@@ -57,6 +57,9 @@ func (sp *applySpec) ref() eref { return eref{Kind: sp.ty.Identity, ID: sp.id} }
 const (
 	propTarget        = "target"
 	propTargetVersion = "targetVersion"
+	// propIfVersion is a delete request's precondition on its target; a patch
+	// request carries its own inside the diff.
+	propIfVersion = "ifVersion"
 )
 
 // diffConflict marks an onEnter apply that lost — a stale applyDiff CAS, a
@@ -1687,7 +1690,7 @@ func (t *txn) canonicalizeResubmittedDiff(sp *applySpec) error {
 // reference is guarded in apply, where the write's resolved target is compared to
 // the current one (a re-sync of the same target is fine; a swap is not).
 func guardImmutableEnvelope(sp *applySpec) error {
-	for _, name := range []string{"op", "targetKind", "targetId", "diff", "policy", "policyRevision", msgRelThread} {
+	for _, name := range []string{"op", "targetKind", "targetId", "diff", propIfVersion, "policy", "policyRevision", msgRelThread} {
 		next, named := sp.props[name]
 		if !named {
 			continue
@@ -2353,11 +2356,17 @@ func decodeCreate(edit *erow) (substrate.PutInput, error) {
 
 // applyDeleteRequest tombstones a delete request's target through the ordinary
 // soft-delete path, idempotent on replay: an already-gone target
-// is a verified no-op.
+// is a verified no-op. A request carrying `ifVersion` is held to it first: the
+// target moved while the request waited, so the accept fails conflict rather
+// than deleting a record nobody reviewed, the already-gone case included.
 func (t *txn) applyDeleteRequest(edit *erow) error {
 	target := referenceTargetOf(edit, propTarget)
 	if target.ID == "" {
 		return fmt.Errorf("%w: delete request %s has no target", substrate.ErrValidation, edit.ID)
+	}
+	var ifVersion *int64
+	if v, ok := asInt64(edit.Props[propIfVersion]); ok {
+		ifVersion = &v
 	}
 	id, err := t.lockCanonical(target)
 	if err != nil {
@@ -2365,6 +2374,9 @@ func (t *txn) applyDeleteRequest(edit *erow) error {
 	}
 	row, err := t.loadRow(id, true)
 	if err != nil {
+		return err
+	}
+	if err := checkCAS(row, ifVersion); err != nil {
 		return err
 	}
 	if row == nil || row.DeletedAt != nil {
@@ -2377,7 +2389,7 @@ func (t *txn) applyDeleteRequest(edit *erow) error {
 	if err := t.authorizeRequestOp(opDelete, row.Kind); err != nil {
 		return err
 	}
-	if _, err := t.softDelete(id); err != nil {
+	if _, err := t.softDeleteIf(id, ifVersion); err != nil {
 		return err
 	}
 	return nil

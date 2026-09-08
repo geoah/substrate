@@ -195,11 +195,13 @@ records are core's, so their verbs sit beside them.
 ### Idempotency and retries
 
 A retried write is safe when the request names its own target. `put` with an id
-is a primary-key upsert, so retrying it lands the same row. `patch` and `put`
-under `ifVersion` are compare-and-set: the second attempt sees the version it
-already moved and fails `conflict`. A blob `PUT` is content addressed by its
-digest. The trigger delivery path carries its own idempotency key, so a
-redelivered change applies once.
+is a primary-key upsert, so retrying it lands the same row. Any of the five
+mutations under its version precondition (`ifVersion` on `put`, `patch`,
+`delete` and `split`, `winnerVersion` and `loserVersion` on `merge`) is
+compare-and-set: the second attempt sees the version it already moved and fails
+`conflict`. A blob `PUT` is content addressed by its digest. The trigger
+delivery path carries its own idempotency key, so a redelivered change applies
+once.
 
 A retried write is NOT safe when the server assigns the identity or the effect.
 A `POST /api/v1/{authority}/{package}/{kind}` with no id mints a random id, so

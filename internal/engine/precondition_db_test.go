@@ -275,3 +275,51 @@ func TestDeleteOfADeclarationHonorsIfVersion(t *testing.T) {
 		t.Fatal("deleted kind still resolves")
 	}
 }
+
+// A delete request may carry `ifVersion` on the target, the way a patch
+// request carries one in its diff: the accept holds the target to it, so a
+// request written against a version that has since moved fails the transition
+// with a conflict and leaves the target live, while a matching one deletes.
+func TestDeleteRequestHonorsIfVersion(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	const taskKind = "samples.substrate.reamde.dev/tasks/task"
+
+	stale := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "moves"}})
+	req := mustPut(t, ds, engram, substrate.PutInput{
+		Kind: "recordpatchrequest",
+		Properties: map[string]any{
+			"op": "delete", "ifVersion": stale.Version,
+			"target": vocabulary.RecordPath(taskKind, stale.ID),
+		},
+	})
+	mustPatch(t, ds, owner, stale.Kind, stale.ID, substrate.PatchInput{Properties: map[string]any{"name": "moved"}})
+	_, err := ds.Patch(ctx, owner, req.Kind, req.ID, substrate.PatchInput{
+		Properties: map[string]any{"decision": "accepted"}, IfVersion: ptr(req.Version),
+	})
+	wantErr(t, err, substrate.ErrConflict, "accepting a delete request whose target moved")
+	if got := mustGet(t, ds, stale.Kind, stale.ID); got.DeletedAt != nil {
+		t.Fatalf("a refused accept tombstoned the target: %+v", got)
+	}
+	if got := mustGet(t, ds, req.Kind, req.ID); got.Properties["decision"] != "proposed" {
+		t.Fatalf("a refused accept moved the request: %v", got.Properties["decision"])
+	}
+
+	fresh := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "stays put"}})
+	ok := mustPut(t, ds, engram, substrate.PutInput{
+		Kind: "recordpatchrequest",
+		Properties: map[string]any{
+			"op": "delete", "ifVersion": fresh.Version,
+			"target": vocabulary.RecordPath(taskKind, fresh.ID),
+		},
+	})
+	if _, err := ds.Patch(ctx, owner, ok.Kind, ok.ID, substrate.PatchInput{
+		Properties: map[string]any{"decision": "accepted"}, IfVersion: ptr(ok.Version),
+	}); err != nil {
+		t.Fatalf("accept under the current version: %v", err)
+	}
+	if got := mustGet(t, ds, fresh.Kind, fresh.ID); got.DeletedAt == nil {
+		t.Fatalf("target not tombstoned: %+v", got)
+	}
+}

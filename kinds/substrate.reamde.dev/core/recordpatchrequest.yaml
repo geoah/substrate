@@ -34,7 +34,11 @@ data:
   # a record's first version is 1 and a CAS assertion below it names none.
   # version 14: `target` is an unpinned `type: reference` property with
   # `mustExist: true`, so a request names any patchable record.
-  version: 14
+  # version 15: `ifVersion`, a delete request's precondition on its target.
+  # The policy door writes it from the gated delete's own `ifVersion`, and
+  # the accept refuses when the target has moved, as it did already for a
+  # patch through `diff.ifVersion`.
+  version: 15
   names:
     singular: recordpatchrequest
   displayTemplate: "{decision}: {target|targetId}"
@@ -95,6 +99,15 @@ data:
       description: the proposed change, applied whole when the decision is
         accepted — property values under `properties`, a link to another record
         among them
+    # delete only: the target version the proposer read. A patch carries its
+    # own inside `diff.ifVersion`; a delete has no diff, so the precondition
+    # sits here. Frozen with the envelope. Absent, the accept deletes whatever
+    # version the target is at.
+    ifVersion:
+      type: int
+      min: 1
+      description: "op delete: tombstone only if the target's stored version
+        still equals this, else the accept fails conflict"
     rationale:
       type: string
       description: why the writer proposes this change

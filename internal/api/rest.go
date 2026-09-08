@@ -309,8 +309,12 @@ func (h *handler) deleteResource(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, codeBadRequest, bad)
 		return
 	}
+	// Presence is what counts, not a non-empty value: `?ifVersion=` is a
+	// precondition the caller meant and the server cannot read, so it is
+	// refused, never treated as omitted and deleted through.
 	var in substrate.DeleteInput
-	if raw := r.URL.Query().Get("ifVersion"); raw != "" {
+	if q := r.URL.Query(); q.Has("ifVersion") {
+		raw := q.Get("ifVersion")
 		n, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, codeBadRequest, "ifVersion: "+strconv.Quote(raw)+" is not an integer")

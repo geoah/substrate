@@ -685,6 +685,9 @@ func (d *fakeDataset) Delete(ctx context.Context, _ substrate.Actor, typ, id str
 	}
 	now := time.Unix(10, 0).UTC()
 	e.DeletedAt = &now
+	// The tombstone moves the version, as the engine's does (rows.go), so a
+	// retried conditioned delete meets the same conflict here.
+	e.Version++
 	return e, nil
 }
 

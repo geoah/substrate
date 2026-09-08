@@ -356,6 +356,13 @@ func (ds *dataset) convertToRequest(ctx context.Context, actor substrate.Actor, 
 	} else {
 		op = opDelete
 		props[propTarget] = vocabulary.RecordPath(gw.kind.Identity, gw.id)
+		// A delete has no diff to carry its precondition in, so the held
+		// write's own ifVersion goes on the request, where the accept reads
+		// it (applyDeleteRequest). Dropping it here would let the accept
+		// delete a record that moved while the request waited.
+		if gw.ifVersion != nil {
+			props[propIfVersion] = *gw.ifVersion
+		}
 	}
 	props["op"] = op
 	if gw.thread != "" {

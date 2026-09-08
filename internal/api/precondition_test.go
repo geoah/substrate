@@ -34,6 +34,10 @@ func TestRESTDeleteIfVersion(t *testing.T) {
 	if decodeJSON[substrate.Record](t, rec).DeletedAt == nil {
 		t.Fatal("the conditioned delete did not tombstone")
 	}
+	// The tombstone moved the version, so the same precondition retried is
+	// the conflict the engine answers, not a second success.
+	rec = env.do(t, http.MethodDelete, peoplePath+"/p1?ifVersion=3", tok, nil)
+	wantErrorCode(t, rec, http.StatusConflict, codeConflict)
 
 	ds.put(&substrate.Record{ID: "p2", Kind: personKind, Version: 5})
 	rec = env.do(t, http.MethodDelete, peoplePath+"/p2", tok, nil)
@@ -52,14 +56,14 @@ func TestRESTDeleteRefusesAMalformedPrecondition(t *testing.T) {
 	ds := env.svc.datasets["geoah"]
 	ds.put(&substrate.Record{ID: "p1", Kind: personKind, Version: 3})
 
-	for _, query := range []string{"?ifVersion=three", "?ifversion=3", "?version=3"} {
+	for _, query := range []string{"?ifVersion=three", "?ifVersion=", "?ifversion=3", "?version=3"} {
 		ds.lastDeleteID = ""
 		rec := env.do(t, http.MethodDelete, peoplePath+"/p1"+query, tok, nil)
 		wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 		if ds.lastDeleteID != "" {
 			t.Fatalf("DELETE %s reached the dataset", query)
 		}
-		msg := decodeJSON[errorEnvelope](t, rec).Error.Message
+		msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message
 		key := strings.TrimPrefix(strings.SplitN(query, "=", 2)[0], "?")
 		if !strings.Contains(msg, key) {
 			t.Fatalf("DELETE %s said %q; it must name %q", query, msg, key)
@@ -99,7 +103,7 @@ func TestRESTMergeSplitPreconditions(t *testing.T) {
 		"kind": personKind, "winner": "a1", "loser": "b2", "winnerversion": 4,
 	})
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
-	if msg := decodeJSON[errorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "winnerversion") {
+	if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "winnerversion") {
 		t.Fatalf("a miscased key said %q; it must name the key", msg)
 	}
 
