@@ -128,6 +128,13 @@ type dataset struct {
 	mu   sync.RWMutex
 	reg  *vocabulary.Registry
 	info substrate.RepositoryInfo
+	// beforePublish and beforeSignal, under mu, are set only by tests.
+	// beforePublish runs inside commitAndPublish, after the commit and before
+	// the swap, with mu held exclusively; beforeSignal runs after the publish
+	// and before the head signal. The two orders they pin ("committed, then
+	// published, then signaled") are observable nowhere else without a race.
+	beforePublish func(t *txn)
+	beforeSignal  func(t *txn)
 	// blobSweepAfter is the blob orphan sweep's cursor: the last digest the
 	// previous pass looked at, so a store with more objects than one batch is
 	// walked whole instead of the sweep restarting at the front every time.
@@ -337,6 +344,11 @@ type txn struct {
 	// decision's thread resume, which must never run inside the transaction
 	// that recorded it.
 	afterCommit []func()
+	// publishReg is the registry this transaction's commit activates: the
+	// vocabulary apply's candidate (vocabularywrite.go). commitAndPublish
+	// swaps it in under ds.mu held from before the commit, so a writer the
+	// commit wakes and a watcher the head signal wakes both read it.
+	publishReg *vocabulary.Registry
 	// interactionThread marks the agent loop's own ask dispatch: the ONE
 	// writer allowed to stamp an interaction's thread reference
 	// (interactions.go admitInteraction).
@@ -438,6 +450,12 @@ func (ds *dataset) inTx(ctx context.Context, actor substrate.Actor, internal boo
 	if err := ds.commitAndMirror(tx, t); err != nil {
 		return err
 	}
+	ds.mu.RLock()
+	beforeSignal := ds.beforeSignal
+	ds.mu.RUnlock()
+	if beforeSignal != nil {
+		beforeSignal(t)
+	}
 	if t.maxSeq > 0 {
 		ds.watch.signal(t.maxSeq)
 	}
@@ -459,17 +477,42 @@ func (ds *dataset) inTx(ctx context.Context, actor substrate.Actor, internal boo
 // written from the tables afterwards.
 func (ds *dataset) commitAndMirror(tx *sql.Tx, t *txn) error {
 	if ds.writer == nil || (len(t.pending) == 0 && len(t.sealedMirror) == 0) {
-		return tx.Commit()
+		return ds.commitAndPublish(tx, t)
 	}
 	ds.writerMu.Lock()
 	defer ds.writerMu.Unlock()
 	if ds.fileErr != nil {
 		return ds.fileErr
 	}
-	if err := tx.Commit(); err != nil {
+	if err := ds.commitAndPublish(tx, t); err != nil {
 		return err
 	}
 	ds.mirrorAfterCommit(t)
+	return nil
+}
+
+// commitAndPublish commits the transaction and, when it carries a registry to
+// publish, swaps the pointer under ds.mu held from BEFORE the commit. The
+// registry-dependency advisory lock a parked data write waits on releases at
+// the commit, and that write's next act is ds.registry(), which takes ds.mu
+// shared: with the mutex held across the commit and the swap, the write reads
+// the published declaration and not the one the commit retired. A commit that
+// fails publishes nothing. ds.mu nests inside writerMu here, which is the
+// order the rebuild takes them (writerMu held, the fold's registry() inside),
+// and it is held for the commit alone, never for the file mirror.
+func (ds *dataset) commitAndPublish(tx *sql.Tx, t *txn) error {
+	if t.publishReg == nil {
+		return tx.Commit()
+	}
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if ds.beforePublish != nil {
+		ds.beforePublish(t)
+	}
+	ds.reg = t.publishReg
 	return nil
 }
 

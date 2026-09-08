@@ -138,8 +138,14 @@ problem list), and a committed batch is active immediately, no restart
 anywhere. A candidate registry is built and compiled whole, closure
 resolution and CEL guards and templates and the GraphQL-name uniqueness check
 included, before the write transaction opens, so a broken closure fails the
-batch rather than half-loading. One per-repository mutex serializes vocabulary
-writes against each other; data writes never take it and never wait.
+batch rather than half-loading. The kinds' declared indexes are built before
+the transaction too, so an index the engine cannot build refuses the batch
+with nothing landed. One per-repository mutex serializes vocabulary writes
+against each other, and a registry-dependency lock orders them against data
+writes: a data write holds it shared from kind resolution to commit, an apply
+holds it exclusive, so no write lands a value against a declaration the apply
+is replacing. The committed registry publishes after the commit and before
+watchers are signaled, so a watcher woken by a kind's entry resolves the kind.
 
 The loader's rules are hard errors, never warnings. The load-bearing ones:
 
