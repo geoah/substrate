@@ -17,7 +17,7 @@ func TestMintTokenIsAuthenticatedAndUnmetered(t *testing.T) {
 	for range 3 {
 		rec := env.do(t, http.MethodPost, tokensPath, tok, map[string]any{"label": "scripted"})
 		wantStatus(t, rec, http.StatusCreated)
-		out := decodeJSON[tokenResponse](t, rec)
+		out := decodeJSON[substrate.MintedToken](t, rec)
 		if out.Secret == "" || out.Token.Label != "scripted" {
 			t.Fatalf("minted %+v", out)
 		}

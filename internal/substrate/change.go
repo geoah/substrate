@@ -37,6 +37,28 @@ type Change struct {
 	Hash string `json:"hash,omitempty"`
 }
 
+// ChangeRow is one row of the change feed, history page and watch stream
+// alike: the change plus each enabled trigger's stance on it. Triggers is
+// omitted when no trigger matches, so absence means "nothing listens", never
+// "unknown".
+type ChangeRow struct {
+	Change
+	Triggers []ChangeTrigger `json:"triggers,omitempty"`
+}
+
+// ChangePage is one history page of the change feed, newest first. Cursor is
+// the continuation, the seq the client passes as the next `before`; it is
+// omitted only when the walk reached the bottom (absence means done), and a
+// seq is never 0, so the zero value is the absent one. Head and Generation
+// are the watch handoff, as on a list Page: `watch?from={head}&generation=
+// {generation}` tails what this page did not hold.
+type ChangePage struct {
+	Changes    []ChangeRow `json:"changes"`
+	Cursor     int64       `json:"cursor,omitempty"`
+	Head       int64       `json:"head"`
+	Generation string      `json:"generation"`
+}
+
 // ChangelogHead is where a repository's changelog stands: its highest
 // committed seq and the history generation that numbering belongs to. A
 // change cursor is a seq under one generation, and it resumes only while the

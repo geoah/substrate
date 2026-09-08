@@ -547,7 +547,9 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	page := &substrate.Page{Generation: ds.historyGeneration()}
+	// Records starts non-nil so an empty page serializes `[]`, the array the
+	// wire promises, never `null`.
+	page := &substrate.Page{Records: []*substrate.Record{}, Generation: ds.historyGeneration()}
 	if carriedHead != 0 {
 		page.Head = carriedHead
 	} else {

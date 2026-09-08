@@ -42,6 +42,7 @@ const llmprovider: KindInfo = {
   version: 1,
   plural: "llmproviders",
   source: "builtin",
+  description: "",
   definition: {
     authority: "substrate.reamde.dev",
     package: "core",
@@ -79,6 +80,8 @@ const account: KindInfo = {
   version: 1,
   plural: "accounts",
   source: "builtin",
+  description: "",
+  definition: {},
 }
 
 function renderDefinition(kind: KindInfo = llmprovider) {
@@ -161,7 +164,7 @@ describe("KindDefinition", () => {
   it("says so plainly when the registry stored no declaration", () => {
     const { container } = renderDefinition({
       ...llmprovider,
-      definition: undefined,
+      definition: {},
     })
     expect(container.textContent).toContain("No stored declaration")
     expect(container.querySelector("pre")).toBeNull()

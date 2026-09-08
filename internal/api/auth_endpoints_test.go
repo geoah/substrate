@@ -37,7 +37,7 @@ func TestRegisterThenLogin(t *testing.T) {
 		"label": "console",
 	})
 	wantStatus(t, rec, http.StatusCreated)
-	out := decodeJSON[registerResponse](t, rec)
+	out := decodeJSON[substrate.Registered](t, rec)
 	if out.Secret == "" || out.Token.Label != "console" {
 		t.Fatalf("registration response = %+v", out)
 	}
@@ -56,7 +56,7 @@ func TestRegisterThenLogin(t *testing.T) {
 	rec = env.do(t, http.MethodPost, loginPath, "",
 		loginBody("ada", "correct-horse-battery-staple", fakeCode("ada")))
 	wantStatus(t, rec, http.StatusCreated)
-	if login := decodeJSON[tokenResponse](t, rec); login.Secret == out.Secret {
+	if login := decodeJSON[substrate.MintedToken](t, rec); login.Secret == out.Secret {
 		t.Fatal("login handed back the registration's secret")
 	}
 }
@@ -72,7 +72,7 @@ func TestRegistrationKeepsTheAuthorityItIsGiven(t *testing.T) {
 		"authority": " ada.example.org ",
 	})
 	wantStatus(t, rec, http.StatusCreated)
-	out := decodeJSON[registerResponse](t, rec)
+	out := decodeJSON[substrate.Registered](t, rec)
 	if out.Authority != "ada.example.org" {
 		t.Fatalf("registration authority = %q, want the trimmed one the request named", out.Authority)
 	}

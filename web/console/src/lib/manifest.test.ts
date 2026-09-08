@@ -98,6 +98,8 @@ const registry: KindInfo[] = [
     version: 0,
     plural: "people",
     source: "builtin",
+    description: "",
+    definition: {},
   },
   {
     identity: "samples.substrate.reamde.dev/people/organization",
@@ -107,6 +109,8 @@ const registry: KindInfo[] = [
     version: 0,
     plural: "organizations",
     source: "builtin",
+    description: "",
+    definition: {},
   },
   {
     identity: "samples.substrate.reamde.dev/calendar/calendarevent",
@@ -116,6 +120,8 @@ const registry: KindInfo[] = [
     version: 0,
     plural: "calendarevents",
     source: "builtin",
+    description: "",
+    definition: {},
   },
 ]
 
@@ -241,6 +247,7 @@ const llmprovider: KindInfo = {
   version: 1,
   plural: "llmproviders",
   source: "builtin",
+  description: "",
   definition: {
     // deliberately scrambled: jsonb lost the authored order.
     properties: { wire: { type: "string" } },
@@ -273,7 +280,7 @@ describe("kindManifestOf", () => {
   })
 
   it("renders an empty data map for a kind with no stored declaration", () => {
-    const bare = kindManifestOf({ ...llmprovider, definition: undefined })
+    const bare = kindManifestOf({ ...llmprovider, definition: {} })
     expect(bare.data).toEqual({})
   })
 })

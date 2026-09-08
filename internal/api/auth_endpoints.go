@@ -36,34 +36,6 @@ type registerBeginRequest struct {
 	Username   string `json:"username"`
 }
 
-type registerRequest struct {
-	InviteCode string `json:"inviteCode"`
-	Username   string `json:"username"`
-	Password   string `json:"password"`
-	TOTPSecret string `json:"totpSecret"`
-	TOTPCode   string `json:"totpCode"`
-	Label      string `json:"label,omitempty"`
-	// Authority is the DNS-style authority the new repository will own, the
-	// home of the kinds its user declares. Absent, it defaults to the
-	// username under the host this request reached (`ada.example.com`).
-	Authority string `json:"authority,omitempty"`
-	// RecoveryPublicKey is the client-generated age recipient; absent asks
-	// the server to mint the pair and return the identity once.
-	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
-}
-
-// registerResponse is the one response that may carry a server-minted
-// recovery identity, shown exactly once like the token secret beside it.
-type registerResponse struct {
-	Token  substrate.TokenInfo `json:"token"`
-	Secret string              `json:"secret"`
-	// Authority is the one the repository was created with, so a client that
-	// sent none learns the default it got.
-	Authority         string `json:"authority"`
-	RecoveryKey       string `json:"recoveryKey,omitempty"`
-	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
-}
-
 type loginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
@@ -95,11 +67,6 @@ type totpRequest struct {
 type mintRequest struct {
 	Label     string     `json:"label"`
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
-}
-
-type tokenResponse struct {
-	Token  substrate.TokenInfo `json:"token"`
-	Secret string              `json:"secret"`
 }
 
 // --- the shared gate ---
@@ -187,7 +154,7 @@ func (h *handler) postRegisterBegin(w http.ResponseWriter, r *http.Request) {
 // postRegister creates the user and returns the first token, so registration
 // ends logged in. Everything durable happens here or not at all.
 func (h *handler) postRegister(w http.ResponseWriter, r *http.Request) {
-	var req registerRequest
+	var req substrate.RegisterRequest
 	if err := decodeBody(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
@@ -220,8 +187,9 @@ func (h *handler) postRegister(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, registerResponse{
-		Token: res.Token, Secret: res.Secret, Authority: res.Authority,
+	writeJSON(w, http.StatusCreated, substrate.Registered{
+		MintedToken: substrate.MintedToken{Token: res.Token, Secret: res.Secret},
+		Authority:   res.Authority,
 		RecoveryKey: res.RecoveryKey, RecoveryPublicKey: res.RecoveryPublicKey,
 	})
 }
@@ -248,7 +216,7 @@ func (h *handler) postLogin(w http.ResponseWriter, r *http.Request) {
 		writeAuthFailure(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, tokenResponse{Token: info, Secret: secret})
+	writeJSON(w, http.StatusCreated, substrate.MintedToken{Token: info, Secret: secret})
 }
 
 // --- the credential changes (the password-factor rule) ---
@@ -275,7 +243,7 @@ func (h *handler) postPassword(w http.ResponseWriter, r *http.Request) {
 		writeAuthFailure(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"username": req.Username})
+	writeJSON(w, http.StatusOK, substrate.SessionUser{Username: req.Username})
 }
 
 // postTOTPBegin verifies the current factors and issues a candidate seed,
@@ -325,7 +293,7 @@ func (h *handler) postTOTP(w http.ResponseWriter, r *http.Request) {
 		writeAuthFailure(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"username": req.Username})
+	writeJSON(w, http.StatusOK, substrate.SessionUser{Username: req.Username})
 }
 
 // factorsPresented enforces the password-factor rule at the door (ruling
@@ -368,7 +336,7 @@ func (h *handler) postMintToken(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, tokenResponse{Token: info, Secret: secret})
+	writeJSON(w, http.StatusCreated, substrate.MintedToken{Token: info, Secret: secret})
 }
 
 type recoveryEnrollRequest struct {

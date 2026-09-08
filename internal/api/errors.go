@@ -36,50 +36,22 @@ const (
 	codeFunctionFailed = "function_failed" // 500 — a callable body faulted
 )
 
-// problemDetail is the field-addressable form of one validation problem. The
-// engine emits problems as "path: message" strings (`props.name: required`,
-// `props.peer.role: requires a value`); this splits each on its
-// first ": " so a form or SDK maps a problem to the input it concerns without
-// parsing prose. It is ADDITIVE: the `problems` string list stays for readers
-// that do not need the split.
-type problemDetail struct {
-	Path    string `json:"path"`
-	Message string `json:"message"`
-}
-
 // problemDetails derives the structured siblings from the engine's problem
 // strings. A string without a ": " separator keeps its whole text as the
 // message and an empty path, so a malformed problem never drops silently.
-func problemDetails(problems []string) []problemDetail {
+func problemDetails(problems []string) []substrate.ProblemDetail {
 	if len(problems) == 0 {
 		return nil
 	}
-	out := make([]problemDetail, len(problems))
+	out := make([]substrate.ProblemDetail, len(problems))
 	for i, p := range problems {
 		if path, msg, ok := strings.Cut(p, ": "); ok {
-			out[i] = problemDetail{Path: path, Message: msg}
+			out[i] = substrate.ProblemDetail{Path: path, Message: msg}
 		} else {
-			out[i] = problemDetail{Message: p}
+			out[i] = substrate.ProblemDetail{Message: p}
 		}
 	}
 	return out
-}
-
-type errorPayload struct {
-	Code           string          `json:"code"`
-	Message        string          `json:"message"`
-	Problems       []string        `json:"problems,omitempty"`
-	ProblemDetails []problemDetail `json:"problemDetails,omitempty"`
-	// Head and Generation ride a `compacted` problem only: the changelog
-	// head and history generation the client re-lists from and resumes at,
-	// so a refused cursor names its replacement. Head is a pointer so an
-	// empty changelog's 0 is still written.
-	Head       *int64 `json:"head,omitempty"`
-	Generation string `json:"generation,omitempty"`
-}
-
-type errorEnvelope struct {
-	Error errorPayload `json:"error"`
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -91,7 +63,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func writeError(w http.ResponseWriter, status int, code, msg string, problems ...string) {
-	writeJSON(w, status, errorEnvelope{Error: errorPayload{Code: code, Message: msg, Problems: problems}})
+	writeJSON(w, status, substrate.ErrorEnvelope{Error: substrate.ErrorPayload{Code: code, Message: msg, Problems: problems}})
 }
 
 // writeUnsupported is the 501 emit: a capability this deployment does not
@@ -124,7 +96,7 @@ func writeUnavailable(w http.ResponseWriter, retryAfter time.Duration, msg strin
 // MUST handle, never a silent gap.
 func writeCompacted(w http.ResponseWriter, head substrate.ChangelogHead, msg string) {
 	seq := head.Seq
-	writeJSON(w, http.StatusGone, errorEnvelope{Error: errorPayload{
+	writeJSON(w, http.StatusGone, substrate.ErrorEnvelope{Error: substrate.ErrorPayload{
 		Code: codeCompacted, Message: msg, Head: &seq, Generation: head.Generation,
 	}})
 }
@@ -133,29 +105,29 @@ func writeCompacted(w http.ResponseWriter, head substrate.ChangelogHead, msg str
 // object. It is the single source of truth shared by the REST writer and the
 // watch terminal error frame, so a substrate error means the same thing
 // wherever it surfaces.
-func problemFor(err error) (int, errorPayload) {
+func problemFor(err error) (int, substrate.ErrorPayload) {
 	var ve *substrate.ValidationError
 	switch {
 	case errors.As(err, &ve):
-		return http.StatusUnprocessableEntity, errorPayload{Code: codeValidation, Message: err.Error(), Problems: ve.Problems, ProblemDetails: problemDetails(ve.Problems)}
+		return http.StatusUnprocessableEntity, substrate.ErrorPayload{Code: codeValidation, Message: err.Error(), Problems: ve.Problems, ProblemDetails: problemDetails(ve.Problems)}
 	case errors.Is(err, substrate.ErrValidation):
-		return http.StatusUnprocessableEntity, errorPayload{Code: codeValidation, Message: err.Error()}
+		return http.StatusUnprocessableEntity, substrate.ErrorPayload{Code: codeValidation, Message: err.Error()}
 	case errors.Is(err, substrate.ErrFunctionFault):
-		return http.StatusInternalServerError, errorPayload{Code: codeFunctionFailed, Message: err.Error()}
+		return http.StatusInternalServerError, substrate.ErrorPayload{Code: codeFunctionFailed, Message: err.Error()}
 	case errors.Is(err, substrate.ErrNotFound):
-		return http.StatusNotFound, errorPayload{Code: codeNotFound, Message: err.Error()}
+		return http.StatusNotFound, substrate.ErrorPayload{Code: codeNotFound, Message: err.Error()}
 	case errors.Is(err, substrate.ErrConflict):
-		return http.StatusConflict, errorPayload{Code: codeConflict, Message: err.Error()}
+		return http.StatusConflict, substrate.ErrorPayload{Code: codeConflict, Message: err.Error()}
 	case errors.Is(err, substrate.ErrGuard):
-		return http.StatusForbidden, errorPayload{Code: codeGuard, Message: err.Error()}
+		return http.StatusForbidden, substrate.ErrorPayload{Code: codeGuard, Message: err.Error()}
 	case errors.Is(err, substrate.ErrForbidden):
-		return http.StatusForbidden, errorPayload{Code: codeForbidden, Message: err.Error()}
+		return http.StatusForbidden, substrate.ErrorPayload{Code: codeForbidden, Message: err.Error()}
 	case errors.Is(err, substrate.ErrAuth):
-		return http.StatusUnauthorized, errorPayload{Code: codeAuth, Message: err.Error()}
+		return http.StatusUnauthorized, substrate.ErrorPayload{Code: codeAuth, Message: err.Error()}
 	case errors.Is(err, substrate.ErrUnavailable):
-		return http.StatusServiceUnavailable, errorPayload{Code: codeUnavailable, Message: err.Error()}
+		return http.StatusServiceUnavailable, substrate.ErrorPayload{Code: codeUnavailable, Message: err.Error()}
 	default:
-		return http.StatusInternalServerError, errorPayload{Code: codeInternal, Message: "internal error"}
+		return http.StatusInternalServerError, substrate.ErrorPayload{Code: codeInternal, Message: "internal error"}
 	}
 }
 
@@ -170,5 +142,5 @@ func writeSubstrateError(w http.ResponseWriter, err error) {
 	if status >= http.StatusInternalServerError {
 		slog.Error("request failed", "error", err)
 	}
-	writeJSON(w, status, errorEnvelope{Error: p})
+	writeJSON(w, status, substrate.ErrorEnvelope{Error: p})
 }

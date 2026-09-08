@@ -1,159 +1,360 @@
 {
-  "BundleClosure": [
-    "kinds",
-    "kindDescriptions",
-    "functions",
-    "agents",
-    "mappings",
-    "records"
-  ],
-  "BundleUpgrade": [
-    "available",
-    "from",
-    "to",
-    "changes",
-    "blockers"
-  ],
-  "BundleUpgradeChange": [
-    "kind",
-    "id",
-    "from",
-    "to"
-  ],
-  "CatalogBundle": [
-    "id",
-    "name",
-    "authority",
-    "package",
-    "description",
-    "version",
-    "tier",
-    "inputs",
-    "requires",
-    "suggestedMappings",
-    "origin",
-    "originVersion",
-    "modified",
-    "closure"
-  ],
-  "CatalogItem": [
-    "id",
-    "name",
-    "authority",
-    "package",
-    "description",
-    "version",
-    "tier",
-    "inputs",
-    "requires",
-    "suggestedMappings",
-    "origin",
-    "originVersion",
-    "modified",
-    "closure",
-    "installed",
-    "upgrade"
-  ],
-  "Change": [
-    "seq",
-    "ts",
-    "actor",
-    "op",
-    "recordId",
-    "kind",
-    "payload",
-    "hash"
-  ],
-  "IncomingReference": [
-    "property",
-    "path",
-    "from"
-  ],
-  "IncomingSource": [
-    "id",
-    "kind",
-    "title"
-  ],
-  "Occurrence": [
-    "kind",
-    "id",
-    "title",
-    "at",
-    "log"
-  ],
-  "OccurrenceList": [
-    "occurrences",
-    "truncated",
-    "problems"
-  ],
-  "OccurrenceLog": [
-    "kind",
-    "id",
-    "status"
-  ],
-  "OccurrenceProblem": [
-    "kind",
-    "id",
-    "message"
-  ],
-  "OperationalList": [
-    "items",
-    "cursor"
-  ],
-  "Page": [
-    "records",
-    "cursor",
-    "head",
-    "generation"
-  ],
-  "PropertyAlternative": [
-    "actor",
-    "value",
-    "updatedAt"
-  ],
-  "PropertyMeta": [
-    "manager",
-    "tier",
-    "updatedAt",
-    "alternatives"
-  ],
-  "PutInput": [
-    "kind",
-    "id",
-    "properties",
-    "labels",
-    "annotations",
-    "ifVersion"
-  ],
-  "ShippedRecord": [
-    "kind",
-    "id"
-  ],
-  "ShippedUpgrade": [
-    "package",
-    "upgrade"
-  ],
-  "SubstrateRecord": [
-    "id",
-    "kind",
-    "canonicalId",
-    "formerIds",
-    "properties",
-    "labels",
-    "annotations",
-    "version",
-    "createdAt",
-    "updatedAt",
-    "deletedAt",
-    "finalizers",
-    "propertyMeta"
-  ],
-  "SuggestedMapping": [
-    "id",
-    "from",
-    "to",
-    "package",
-    "state",
-    "problems"
-  ]
+  "AgentEvent": {
+    "args": false,
+    "error": false,
+    "id": false,
+    "kind": true,
+    "ok": false,
+    "output": false,
+    "result": false,
+    "text": false,
+    "thread": false,
+    "tool": false
+  },
+  "AgentResult": {
+    "completionTokens": true,
+    "costUSD": true,
+    "effects": true,
+    "effectsByAction": false,
+    "promptTokens": true,
+    "reason": false,
+    "reply": true,
+    "status": true,
+    "thread": true,
+    "toolCalls": true,
+    "totalTokens": true,
+    "turns": true
+  },
+  "BundleClosure": {
+    "agents": true,
+    "functions": true,
+    "kindDescriptions": false,
+    "kinds": true,
+    "mappings": true,
+    "records": true
+  },
+  "BundlePurged": {
+    "purged": true
+  },
+  "BundleStatus": {
+    "accounts": true,
+    "authority": true,
+    "enabled": true,
+    "functions": true,
+    "id": true,
+    "inputs": false,
+    "installed": true,
+    "kinds": true,
+    "liveRecords": true,
+    "modified": false,
+    "name": true,
+    "origin": false,
+    "originVersion": false,
+    "package": true,
+    "quarantineReason": false,
+    "quarantined": false,
+    "setup": false
+  },
+  "BundleUninstalled": {
+    "uninstalled": true
+  },
+  "BundleUpgrade": {
+    "available": true,
+    "blockers": false,
+    "changes": false,
+    "from": false,
+    "to": false
+  },
+  "BundleUpgradeChange": {
+    "from": false,
+    "id": true,
+    "kind": true,
+    "to": false
+  },
+  "CatalogBundle": {
+    "authority": true,
+    "closure": true,
+    "description": true,
+    "id": true,
+    "inputs": false,
+    "modified": false,
+    "name": true,
+    "origin": false,
+    "originVersion": false,
+    "package": true,
+    "requires": false,
+    "suggestedMappings": false,
+    "tier": true,
+    "version": true
+  },
+  "CatalogInput": {
+    "description": false,
+    "inject": false,
+    "kind": true
+  },
+  "CatalogItem": {
+    "authority": true,
+    "closure": true,
+    "description": true,
+    "id": true,
+    "inputs": false,
+    "installed": true,
+    "modified": false,
+    "name": true,
+    "origin": false,
+    "originVersion": false,
+    "package": true,
+    "requires": false,
+    "suggestedMappings": false,
+    "tier": true,
+    "upgrade": false,
+    "version": true
+  },
+  "Change": {
+    "actor": true,
+    "hash": false,
+    "kind": true,
+    "op": true,
+    "payload": false,
+    "recordId": true,
+    "seq": true,
+    "ts": true
+  },
+  "ChangePage": {
+    "changes": true,
+    "cursor": false,
+    "generation": true,
+    "head": true
+  },
+  "ChangeRow": {
+    "actor": true,
+    "hash": false,
+    "kind": true,
+    "op": true,
+    "payload": false,
+    "recordId": true,
+    "seq": true,
+    "triggers": false,
+    "ts": true
+  },
+  "ChangeTrigger": {
+    "callable": true,
+    "error": false,
+    "state": true,
+    "trigger": true
+  },
+  "Cond": {
+    "contains": false,
+    "eq": false,
+    "exists": false,
+    "gt": false,
+    "gte": false,
+    "in": false,
+    "lt": false,
+    "lte": false,
+    "prefix": false
+  },
+  "ErrorEnvelope": {
+    "error": true
+  },
+  "ErrorPayload": {
+    "code": true,
+    "generation": false,
+    "head": false,
+    "message": true,
+    "problemDetails": false,
+    "problems": false
+  },
+  "FunctionCalled": {
+    "effects": true,
+    "output": true
+  },
+  "IncomingPage": {
+    "cursor": false,
+    "incoming": true,
+    "total": true
+  },
+  "IncomingReference": {
+    "from": true,
+    "path": false,
+    "property": true
+  },
+  "IncomingSource": {
+    "id": true,
+    "kind": true,
+    "title": false
+  },
+  "InputStatus": {
+    "description": false,
+    "kind": true,
+    "name": true,
+    "record": false,
+    "via": false
+  },
+  "KindInfo": {
+    "authority": true,
+    "definition": true,
+    "description": true,
+    "identity": true,
+    "name": true,
+    "package": true,
+    "plural": true,
+    "source": true,
+    "version": true
+  },
+  "MintedToken": {
+    "secret": true,
+    "token": true
+  },
+  "OAuthStarted": {
+    "url": true
+  },
+  "Occurrence": {
+    "at": true,
+    "id": true,
+    "kind": true,
+    "log": false,
+    "title": false
+  },
+  "OccurrenceList": {
+    "occurrences": true,
+    "problems": false,
+    "truncated": true
+  },
+  "OccurrenceLog": {
+    "id": true,
+    "kind": true,
+    "status": false
+  },
+  "OccurrenceProblem": {
+    "id": true,
+    "kind": true,
+    "message": true
+  },
+  "OperationalList": {
+    "cursor": false,
+    "items": true
+  },
+  "Page": {
+    "cursor": false,
+    "generation": true,
+    "head": true,
+    "records": true
+  },
+  "ProblemDetail": {
+    "message": true,
+    "path": true
+  },
+  "PropertyAlternative": {
+    "actor": true,
+    "updatedAt": true,
+    "value": true
+  },
+  "PropertyMeta": {
+    "alternatives": false,
+    "manager": false,
+    "tier": false,
+    "updatedAt": false
+  },
+  "PutInput": {
+    "annotations": false,
+    "id": false,
+    "ifVersion": false,
+    "kind": false,
+    "labels": false,
+    "properties": false
+  },
+  "RecordFilter": {
+    "deleted": false,
+    "ids": false,
+    "implements": false,
+    "kinds": false,
+    "labels": false,
+    "properties": false
+  },
+  "RecordPatch": {
+    "addFinalizers": false,
+    "annotations": false,
+    "ifVersion": false,
+    "labels": false,
+    "properties": false,
+    "removeFinalizers": false
+  },
+  "RegisterInput": {
+    "authority": false,
+    "inviteCode": true,
+    "label": false,
+    "password": true,
+    "recoveryPublicKey": false,
+    "totpCode": true,
+    "totpSecret": true,
+    "username": true
+  },
+  "RegisterResult": {
+    "authority": true,
+    "recoveryKey": false,
+    "recoveryPublicKey": false,
+    "secret": true,
+    "token": true
+  },
+  "SessionUser": {
+    "username": true
+  },
+  "SetupItem": {
+    "code": true,
+    "input": false,
+    "kind": false,
+    "message": true,
+    "record": false
+  },
+  "ShippedRecord": {
+    "id": true,
+    "kind": true
+  },
+  "ShippedUpgrade": {
+    "package": true,
+    "upgrade": true
+  },
+  "SubstrateRecord": {
+    "annotations": false,
+    "canonicalId": false,
+    "createdAt": true,
+    "deletedAt": false,
+    "finalizers": false,
+    "formerIds": false,
+    "id": true,
+    "kind": true,
+    "labels": true,
+    "properties": true,
+    "propertyMeta": false,
+    "updatedAt": true,
+    "version": true
+  },
+  "SuggestedMapping": {
+    "from": true,
+    "id": true,
+    "package": true,
+    "problems": false,
+    "state": true,
+    "to": true
+  },
+  "TOTPEnrollment": {
+    "otpauthUri": true,
+    "totpSecret": true
+  },
+  "TokenInfo": {
+    "createdAt": true,
+    "expiresAt": false,
+    "id": true,
+    "label": true
+  },
+  "TriggerRan": {
+    "ran": true
+  },
+  "TriggerReplayed": {
+    "from": true
+  },
+  "WebhookAccepted": {
+    "fire": true
+  }
 }

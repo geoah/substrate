@@ -69,7 +69,7 @@ func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"fire": fid})
+	writeJSON(w, http.StatusAccepted, substrate.WebhookAccepted{Fire: fid})
 }
 
 // webhookKey reads the credential from wherever the sender could put it: the

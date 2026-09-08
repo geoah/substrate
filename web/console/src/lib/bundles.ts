@@ -548,7 +548,7 @@ export function bundleRecordRows(catalog?: CatalogItem): ShippedRecordRow[] {
   if (!catalog) return []
   const c = catalog.closure
   const rows: ShippedRecordRow[] = []
-  const push = (kind: string, ids?: string[]) => {
+  const push = (kind: string, ids: string[] | null) => {
     for (const id of ids ?? []) {
       rows.push({ kind, id, name: splitKind(id).name })
     }

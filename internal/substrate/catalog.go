@@ -47,9 +47,9 @@ type CatalogBundle struct {
 	// takes, and which of the two authorities it lands under.
 	Tier string `json:"tier"`
 	// Inputs are the bundle's declared configuration needs, verbatim from
-	// the manifest: input name → {kind, inject?, description?}. A bundle
-	// with no needs carries none, and the console previews nothing.
-	Inputs map[string]any `json:"inputs,omitempty"`
+	// the manifest, keyed by input name. A bundle with no needs carries none,
+	// and the console previews nothing.
+	Inputs map[string]CatalogInput `json:"inputs,omitempty"`
 	// Requires names the PACKAGES this bundle's closure declares against: the
 	// vocabulary its mappings, references and trigger subscriptions point at.
 	// Vocabulary is imported now rather than seeded (repository creation seeds
@@ -74,6 +74,18 @@ type CatalogBundle struct {
 	Modified      bool   `json:"modified,omitempty"`
 	// Closure enumerates what taking this bundle lands, for the detail preview.
 	Closure CatalogClosure `json:"closure"`
+}
+
+// CatalogInput is one declared input as the catalog previews it, the manifest's
+// closed key set (internal/vocabulary's bundleInputKeys): the kind whose
+// records satisfy it, who consumes it, and what it is for.
+type CatalogInput struct {
+	// Kind is the full identity of the kind whose records satisfy the input.
+	Kind string `json:"kind"`
+	// Inject is "functions" when the resolved record rides function
+	// invocations; empty means facility-read only.
+	Inject      string `json:"inject,omitempty"`
+	Description string `json:"description,omitempty"`
 }
 
 // CatalogItem is one catalog entry as the API serves it (`GET /api/v1/catalog`

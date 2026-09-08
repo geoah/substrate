@@ -15,6 +15,7 @@ import type {
   OperationalList,
   TokenInfo,
   TOTPEnrollment,
+  SessionUser,
 } from "./types"
 
 /** How many digits a TOTP code has; the substrate accepts nothing else. */
@@ -64,9 +65,9 @@ export interface RegisterInput {
  * (present only when the server minted the pair; shown once, never stored)
  * and the enrolled recipient. */
 export interface RegisterResult extends MintedToken {
-  /** The authority the repository was created with, echoed so a client that
-   * sent none learns the default it got. */
-  authority?: string
+  /** The authority the repository was created with, always echoed so a client
+   * that sent none learns the default it got. */
+  authority: string
   recoveryKey?: string
   recoveryPublicKey?: string
 }
@@ -110,7 +111,7 @@ export async function changePassword(
   totpCode: string,
   newPassword: string
 ): Promise<void> {
-  await request<{ username: string }>(
+  await request<SessionUser>(
     "POST",
     "/password",
     { username, password, totpCode, newPassword },
@@ -140,7 +141,7 @@ export async function totpChange(
   newTotpSecret: string,
   newTotpCode: string
 ): Promise<void> {
-  await request<{ username: string }>(
+  await request<SessionUser>(
     "POST",
     "/totp",
     { username, password, totpCode, newTotpSecret, newTotpCode },

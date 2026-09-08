@@ -30,7 +30,13 @@ function item(over: Partial<CatalogItem> = {}): CatalogItem {
         description: "The OAuth client record.",
       },
     },
-    closure: { kinds: ["a", "b"], functions: ["c"] },
+    closure: {
+      agents: null,
+      mappings: null,
+      records: null,
+      kinds: ["a", "b"],
+      functions: ["c"],
+    },
     installed: false,
     ...over,
   }

@@ -68,7 +68,13 @@ function catalog(over: Partial<CatalogItem> = {}): CatalogItem {
     inputs: {
       client: { kind: "providers.substrate.reamde.dev/google/config" },
     },
-    closure: { kinds: ["a", "b"], functions: ["c"] },
+    closure: {
+      agents: null,
+      mappings: null,
+      records: null,
+      kinds: ["a", "b"],
+      functions: ["c"],
+    },
     installed: false,
     tier: "provider",
     ...over,
@@ -84,6 +90,8 @@ function kindInfo(over: Partial<KindInfo> = {}): KindInfo {
     version: 0,
     plural: "persons",
     source: "builtin",
+    description: "",
+    definition: {},
     ...over,
   }
 }
@@ -187,7 +195,13 @@ describe("mergeBundles", () => {
           package: "tasks",
           tier: "sample",
           installed: true,
-          closure: { kinds: ["samples.substrate.reamde.dev/tasks/task"] },
+          closure: {
+            functions: null,
+            agents: null,
+            mappings: null,
+            records: null,
+            kinds: ["samples.substrate.reamde.dev/tasks/task"],
+          },
         }),
       ],
       "ada.example.com"
@@ -552,7 +566,13 @@ describe("installedKindRows — the Kinds table", () => {
       status(),
       registry,
       catalog({
-        closure: { kinds: [contactKind.identity, configKind.identity] },
+        closure: {
+          functions: null,
+          agents: null,
+          mappings: null,
+          records: null,
+          kinds: [contactKind.identity, configKind.identity],
+        },
       })
     )
     // sorted by display name: config < contact
@@ -571,7 +591,13 @@ describe("installedKindRows — the Kinds table", () => {
       status(),
       registry,
       catalog({
-        closure: { kinds: registry.map((k) => k.identity) },
+        closure: {
+          functions: null,
+          agents: null,
+          mappings: null,
+          records: null,
+          kinds: registry.map((k) => k.identity),
+        },
       })
     )
     const byId = Object.fromEntries(rows.map((r) => [r.identity, r]))
@@ -584,7 +610,15 @@ describe("installedKindRows — the Kinds table", () => {
     const rows = installedKindRows(
       { id: "providers.substrate.reamde.dev/google", inputs: undefined },
       registry,
-      catalog({ closure: { kinds: registry.map((k) => k.identity) } })
+      catalog({
+        closure: {
+          functions: null,
+          agents: null,
+          mappings: null,
+          records: null,
+          kinds: registry.map((k) => k.identity),
+        },
+      })
     )
     const byId = Object.fromEntries(rows.map((r) => [r.identity, r]))
     expect(byId[configKind.identity].role).toBe("input")
@@ -605,6 +639,10 @@ describe("installedKindRows — the Kinds table", () => {
       [],
       catalog({
         closure: {
+          functions: null,
+          agents: null,
+          mappings: null,
+          records: null,
           kinds: [contactKind.identity],
           kindDescriptions: { [contactKind.identity]: "What Google holds." },
         },
@@ -617,6 +655,10 @@ describe("installedKindRows — the Kinds table", () => {
       [{ ...contactKind, description: "The reconciled one." }],
       catalog({
         closure: {
+          functions: null,
+          agents: null,
+          mappings: null,
+          records: null,
           kinds: [contactKind.identity],
           kindDescriptions: { [contactKind.identity]: "What Google holds." },
         },
@@ -630,7 +672,13 @@ describe("installedKindRows — the Kinds table", () => {
       status(),
       registry,
       catalog({
-        closure: { kinds: ["providers.substrate.reamde.dev/google/ghost"] },
+        closure: {
+          functions: null,
+          agents: null,
+          mappings: null,
+          records: null,
+          kinds: ["providers.substrate.reamde.dev/google/ghost"],
+        },
       })
     )
     expect(rows).toHaveLength(1)
@@ -644,6 +692,8 @@ describe("bundleRecordRows — the Records table", () => {
     const rows = bundleRecordRows(
       catalog({
         closure: {
+          mappings: null,
+          records: null,
           kinds: ["providers.substrate.reamde.dev/google/t"],
           functions: ["providers.substrate.reamde.dev/google/syncgoogle"],
           agents: ["providers.substrate.reamde.dev/google/summarize"],
@@ -671,6 +721,9 @@ describe("bundleRecordRows — the Records table", () => {
     const rows = bundleRecordRows(
       catalog({
         closure: {
+          functions: null,
+          agents: null,
+          mappings: null,
           kinds: [],
           records: [
             { kind: "substrate.reamde.dev/core/trigger", id: "ongooglesync" },
@@ -697,6 +750,9 @@ describe("bundleRecordRows — the Records table", () => {
     const withMappings = bundleRecordRows(
       catalog({
         closure: {
+          functions: null,
+          agents: null,
+          records: null,
           kinds: [],
           mappings: ["providers.substrate.reamde.dev/google/m"],
         },
@@ -709,7 +765,19 @@ describe("bundleRecordRows — the Records table", () => {
         name: "m",
       },
     ])
-    expect(bundleRecordRows(catalog({ closure: { kinds: [] } }))).toEqual([])
+    expect(
+      bundleRecordRows(
+        catalog({
+          closure: {
+            functions: null,
+            agents: null,
+            mappings: null,
+            records: null,
+            kinds: [],
+          },
+        })
+      )
+    ).toEqual([])
   })
 
   it("is empty for a bundle with no catalog entry (applied, not shipped)", () => {

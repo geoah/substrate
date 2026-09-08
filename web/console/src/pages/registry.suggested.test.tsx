@@ -86,7 +86,13 @@ function people(suggested: SuggestedMapping[], installed = false): CatalogItem {
     description: "The shipped vocabulary for humans.",
     version: 4,
     tier: "sample",
-    closure: { kinds: ["samples.substrate.reamde.dev/people/person"] },
+    closure: {
+      functions: null,
+      agents: null,
+      mappings: null,
+      records: null,
+      kinds: ["samples.substrate.reamde.dev/people/person"],
+    },
     suggestedMappings: suggested,
     installed,
   }
@@ -100,7 +106,13 @@ const githubEntry: CatalogItem = {
   description: "Mirrors the code work you are involved in.",
   version: 12,
   tier: "provider",
-  closure: { kinds: [`${GITHUB}/user`] },
+  closure: {
+    functions: null,
+    agents: null,
+    mappings: null,
+    records: null,
+    kinds: [`${GITHUB}/user`],
+  },
   installed: true,
 }
 
@@ -112,10 +124,14 @@ const CORE_KIND: KindInfo = {
   version: 1,
   plural: "bundles",
   source: "builtin",
+  description: "",
+  definition: {},
 }
 
 function peopleStatus(): BundleStatus {
   return {
+    accounts: 0,
+    functions: 0,
     id: `${HOME}/people`,
     name: "people",
     authority: HOME,
@@ -131,6 +147,8 @@ function peopleStatus(): BundleStatus {
  * "Import again" gate reachable on a row that must never offer it. */
 function githubStatus(): BundleStatus {
   return {
+    accounts: 0,
+    functions: 0,
     id: GITHUB,
     name: "github",
     authority: "providers.substrate.reamde.dev",

@@ -71,7 +71,7 @@ func (h *handler) postTriggerReplay(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"from": req.From})
+	writeJSON(w, http.StatusOK, substrate.TriggerReplayed{From: req.From})
 }
 
 type runRequest struct {
@@ -102,7 +102,7 @@ func (h *handler) postTriggerRun(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ran": ran})
+	writeJSON(w, http.StatusOK, substrate.TriggerRan{Ran: ran})
 }
 
 // postTriggerWake runs a trigger's scan NOW: a webhook trigger delivers one
@@ -121,7 +121,7 @@ func (h *handler) postTriggerWake(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ran": ran})
+	writeJSON(w, http.StatusOK, substrate.TriggerRan{Ran: ran})
 }
 
 // getTriggerParked lists a trigger's parked deliveries.
@@ -156,7 +156,7 @@ func (h *handler) postTriggerRetry(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ran": ran})
+	writeJSON(w, http.StatusOK, substrate.TriggerRan{Ran: ran})
 }
 
 type callRequest struct {
@@ -182,5 +182,5 @@ func (h *handler) postFunctionCall(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"output": output, "effects": effects})
+	writeJSON(w, http.StatusOK, substrate.FunctionCalled{Output: output, Effects: effects})
 }

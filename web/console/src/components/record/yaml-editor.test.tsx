@@ -17,6 +17,7 @@ const taskKind: KindInfo = {
   version: 0,
   plural: "tasks",
   source: "installed",
+  description: "",
   definition: {
     properties: { title: { type: "string", required: true } },
   },

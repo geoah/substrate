@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/geoah/substrate/internal/substrate"
 )
 
 type testClock struct {
@@ -99,7 +101,7 @@ func wantStatus(t *testing.T, rec *httptest.ResponseRecorder, want int) {
 func wantErrorCode(t *testing.T, rec *httptest.ResponseRecorder, status int, code string) {
 	t.Helper()
 	wantStatus(t, rec, status)
-	env := decodeJSON[errorEnvelope](t, rec)
+	env := decodeJSON[substrate.ErrorEnvelope](t, rec)
 	if env.Error.Code != code {
 		t.Fatalf("error code = %q, want %q (body %s)", env.Error.Code, code, rec.Body.String())
 	}

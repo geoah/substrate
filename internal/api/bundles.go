@@ -174,7 +174,7 @@ func (h *handler) patchBundleLifecycle(w http.ResponseWriter, r *http.Request, i
 			writeSubstrateError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"uninstalled": true})
+		writeJSON(w, http.StatusOK, substrate.BundleUninstalled{Uninstalled: true})
 	case has(in.Properties, propBundlePurging):
 		if v, ok := in.Properties[propBundlePurging].(bool); !ok || !v {
 			writeError(w, http.StatusBadRequest, codeBadRequest, propBundlePurging+" transitions only to true")
@@ -185,7 +185,7 @@ func (h *handler) patchBundleLifecycle(w http.ResponseWriter, r *http.Request, i
 			writeSubstrateError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"purged": purged})
+		writeJSON(w, http.StatusOK, substrate.BundlePurged{Purged: purged})
 	default:
 		writeError(w, http.StatusBadRequest, codeBadRequest,
 			"unknown bundle lifecycle state — set "+propBundleDisabled+", "+
@@ -308,7 +308,7 @@ func (h *handler) postOAuthStart(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"url": url})
+	writeJSON(w, http.StatusOK, substrate.OAuthStarted{URL: url})
 }
 
 // getOAuthCallback completes a consent. Unauthenticated: the provider

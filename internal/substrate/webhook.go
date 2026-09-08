@@ -43,3 +43,9 @@ type WebhookPart struct {
 type WebhookReceiver interface {
 	ReceiveWebhook(ctx context.Context, authority, trigger, key string, req WebhookRequest) (string, error)
 }
+
+// WebhookAccepted is the 202 a webhook door answers with: the fire id the
+// delivery runs under. The callable's output is never a response.
+type WebhookAccepted struct {
+	Fire string `json:"fire"`
+}

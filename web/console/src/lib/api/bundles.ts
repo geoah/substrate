@@ -10,7 +10,10 @@ import { queryOptions, type QueryClient } from "@tanstack/react-query"
 import { catalogQueryOptions, type CatalogItem } from "./catalog"
 import { CORE_PACKAGE, corePath, request, rootPath, seg } from "./http"
 import type {
+  BundlePurged,
   BundleStatus,
+  BundleUninstalled,
+  OAuthStarted,
   OperationalList,
   SubstrateRecord,
   Page,
@@ -84,12 +87,12 @@ export function runBundleVerb(
   return patchBundleState<BundleStatus>(id, "disabled", verb === "disable")
 }
 
-export function uninstallBundle(id: string): Promise<{ uninstalled: boolean }> {
-  return patchBundleState<{ uninstalled: boolean }>(id, "uninstalled", true)
+export function uninstallBundle(id: string): Promise<BundleUninstalled> {
+  return patchBundleState<BundleUninstalled>(id, "uninstalled", true)
 }
 
-export function purgeBundle(id: string): Promise<{ purged: number }> {
-  return patchBundleState<{ purged: number }>(id, "purging", true)
+export function purgeBundle(id: string): Promise<BundlePurged> {
+  return patchBundleState<BundlePurged>(id, "purging", true)
 }
 
 /** Bind one input to a record (a reference on the bundle's record row, named
@@ -187,8 +190,8 @@ export function traitRecordsQueryOptions(trait: string) {
 
 /** Begin the host connect flow for one account record: the response carries
  * the provider consent URL the browser should visit. */
-export function startOAuth(record: string): Promise<{ url: string }> {
-  return request<{ url: string }>("POST", rootPath("oauth", "start"), {
+export function startOAuth(record: string): Promise<OAuthStarted> {
+  return request<OAuthStarted>("POST", rootPath("oauth", "start"), {
     record,
   })
 }

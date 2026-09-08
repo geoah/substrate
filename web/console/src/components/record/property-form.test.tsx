@@ -30,6 +30,7 @@ const llmprovider: KindInfo = {
   version: 0,
   plural: "llmproviders",
   source: "builtin",
+  description: "",
   definition: {
     properties: {
       name: { type: "string", required: true, description: "a human label" },
@@ -288,6 +289,7 @@ const mappingKind: KindInfo = {
   version: 0,
   plural: "mappings",
   source: "installed",
+  description: "",
   definition: {
     properties: {
       keys: {
@@ -319,6 +321,7 @@ const agentKind: KindInfo = {
   version: 0,
   plural: "agents",
   source: "builtin",
+  description: "",
   definition: {
     properties: {
       version: {

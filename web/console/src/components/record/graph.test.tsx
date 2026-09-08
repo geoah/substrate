@@ -76,6 +76,7 @@ const task: KindInfo = {
   version: 1,
   plural: "tasks",
   source: "installed",
+  description: "",
   definition: {
     properties: {
       summary: { type: "string" },
@@ -97,6 +98,8 @@ const person: KindInfo = {
   version: 1,
   plural: "people",
   source: "installed",
+  description: "",
+  definition: {},
 }
 
 const record: SubstrateRecord = {

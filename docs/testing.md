@@ -161,10 +161,20 @@ disagree silently, and a renamed Go field used to stay invisible until
 something broke in a browser.
 
 `wire.golden.json` is the contract they meet at. The Go test
-`internal/substrate/wire_test.go` reflects over the structs and writes the field
-names they serialize; the vitest beside the golden asserts the TypeScript
-carries exactly those keys, using `Record<keyof T, true>` maps that `tsc`
-refuses to compile if they are missing a key or carry a spare one.
+`internal/substrate/wire_test.go` reflects over the structs and writes, per
+shape, the field names they serialize and whether each is required: `true` for
+a field the server always writes (`null` included), `false` for one tagged
+`omitempty` or `omitzero`, which a reader meets absent. The vitest beside the
+golden asserts the TypeScript carries exactly those keys with exactly that
+optionality, using `Shape<T>` maps that `tsc` refuses to compile if they are
+missing a key, carry a spare one, or mark a `?` key `true`. The same vitest
+reads every module under `web/console/src/lib/api/` and refuses an exported
+interface that is in neither the golden nor its list of client-only shapes,
+each with a reason, so a new mirror is pinned or explained wherever it lives.
+
+A response an API handler builds as a bare `map[string]any` cannot be pinned:
+a handler names its reply as a struct in `internal/substrate` first
+(`TriggerRan`, `BundlePurged`, `WebhookAccepted`) and adds it to `wireTypes`.
 
 So a Go field that moves fails the Go test first:
 

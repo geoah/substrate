@@ -56,7 +56,7 @@ func TestUnmatchedAPIPathsAreJSONNotFound(t *testing.T) {
 		if strings.Contains(rec.Body.String(), "console") {
 			t.Errorf("%s: served the console HTML: %s", path, rec.Body.String())
 		}
-		if got := decodeJSON[errorEnvelope](t, rec).Error.Code; got != codeNotFound {
+		if got := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Code; got != codeNotFound {
 			t.Errorf("%s: error code = %q, want %q", path, got, codeNotFound)
 		}
 	}
@@ -106,21 +106,21 @@ func TestUnknownListParamsAreRefused(t *testing.T) {
 	for _, query := range []string{"?bogus=1", "?first=2&bogus=1", "?limit=5", "?watch=1&bogus=1"} {
 		rec := env.do(t, http.MethodGet, peoplePath+query, tok, nil)
 		wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
-		msg := decodeJSON[errorEnvelope](t, rec).Error.Message
+		msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message
 		if !strings.Contains(msg, "bogus") && !strings.Contains(msg, "limit") {
 			t.Errorf("%s: message = %q, want the offending key named", query, msg)
 		}
 	}
 	// The key is quoted so the message points at exactly one thing.
 	rec := env.do(t, http.MethodGet, peoplePath+"?limit=5", tok, nil)
-	msg := decodeJSON[errorEnvelope](t, rec).Error.Message
+	msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message
 	if !strings.Contains(msg, `"limit"`) {
 		t.Errorf("message = %q, want the offending key quoted", msg)
 	}
 	// A near miss is told the spelling that works: `orderby` is `orderBy`.
 	rec = env.do(t, http.MethodGet, peoplePath+"?orderby=createdAt", tok, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
-	if msg := decodeJSON[errorEnvelope](t, rec).Error.Message; !strings.Contains(msg, `"orderBy"`) {
+	if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, `"orderBy"`) {
 		t.Errorf("message = %q, want the working spelling suggested", msg)
 	}
 }
@@ -183,7 +183,7 @@ func TestUnknownChangeParamsAreRefused(t *testing.T) {
 	} {
 		rec := env.do(t, http.MethodGet, changesPath+query, tok, nil)
 		wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
-		msg := decodeJSON[errorEnvelope](t, rec).Error.Message
+		msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message
 		if want != "" && !strings.Contains(msg, want) {
 			t.Errorf("%s: message = %q, want the plural %q suggested", query, msg, want)
 		}
