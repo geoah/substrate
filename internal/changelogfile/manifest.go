@@ -47,6 +47,17 @@ type Manifest struct {
 	// the `repositories.dek` bytes; base64 on the wire. Ciphertext under a key
 	// that is never in the directory.
 	DEK []byte
+	// DEKKeyID names the host key DEK is wrapped under, the
+	// `repositories.dek_key_id` value: 16 hex digits of a one-way hash over
+	// the key, never the key. Empty for a wrap written before the id was
+	// recorded, or under no key (decision 0059).
+	DEKKeyID string
+	// SealedDEKOnly is `repositories.sealed_dek_only`: every file under
+	// sealed/ is bound-framed ciphertext under DEK, with no plain and no
+	// host-key-sealed payload left, so the engine refuses those forms on
+	// this repository. False for a directory written before the marker
+	// existed; the first open re-keys the store and sets it (0059).
+	SealedDEKOnly bool
 }
 
 // manifestWire is the JSON form. CreatedAt is written in TSFormat, the
@@ -58,6 +69,8 @@ type manifestWire struct {
 	CreatedAt        string `json:"createdAt"`
 	ChangelogDialect int    `json:"changelogDialect"`
 	DEK              []byte `json:"dek"`
+	DEKKeyID         string `json:"dekKeyId"`
+	SealedDEKOnly    bool   `json:"sealedDekOnly"`
 }
 
 // MarshalJSON renders the manifest in its file form.
@@ -65,6 +78,7 @@ func (m Manifest) MarshalJSON() ([]byte, error) {
 	w := manifestWire{
 		Format: m.Format, Username: m.Username, Authority: m.Authority,
 		ChangelogDialect: m.ChangelogDialect, DEK: m.DEK,
+		DEKKeyID: m.DEKKeyID, SealedDEKOnly: m.SealedDEKOnly,
 	}
 	if !m.CreatedAt.IsZero() {
 		w.CreatedAt = m.CreatedAt.UTC().Format(TSFormat)
@@ -74,8 +88,11 @@ func (m Manifest) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON parses the file form. The key set is closed: an unknown key is
 // refused, because format 1 is defined by exactly these keys and a later
-// format announces itself in `format`. The `id` key a pre-authority binary
-// wrote is unknown here on purpose; ReadLegacyManifest reads that shape.
+// format announces itself in `format`. `dekKeyId` and `sealedDekOnly` joined
+// the set after the first format-1 manifests were written, so a manifest
+// without them reads as an unnamed key and an unmarked store, which is what
+// such a directory is. The `id` key a pre-authority binary wrote is unknown
+// here on purpose; ReadLegacyManifest reads that shape.
 func (m *Manifest) UnmarshalJSON(data []byte) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
@@ -90,6 +107,7 @@ func (m *Manifest) UnmarshalJSON(data []byte) error {
 	*m = Manifest{
 		Format: w.Format, Username: w.Username, Authority: w.Authority,
 		CreatedAt: created, ChangelogDialect: w.ChangelogDialect, DEK: w.DEK,
+		DEKKeyID: w.DEKKeyID, SealedDEKOnly: w.SealedDEKOnly,
 	}
 	return nil
 }

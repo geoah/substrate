@@ -34,6 +34,10 @@ import (
 // copied or swapped without the key stops decrypting; `credSealed` is the older
 // unbound form, which the open path still reads until a re-key rebinds it
 // ([0023](../../docs/decisions/0023-a-sealed-payload-is-bound-to-its-address.md)).
+// `credPlain` is what a keyless release stored; the DEK wrap of a keyless
+// host is still written so, and a sealed-store payload so framed opens only
+// on a repository not yet marked DEK-only
+// ([0059](../../docs/decisions/0059-a-marked-repository-refuses-plain-and-host-key-sealed-payloads.md)).
 const (
 	credPlain       byte = 'p'
 	credSealed      byte = 's'
@@ -411,7 +415,10 @@ func (ds *dataset) openSecretValue(ctx context.Context, stored string) (string, 
 			return "", fmt.Errorf("substrate/engine: decode sealed property: %w", err)
 		}
 		// The retired inline-sealed form predates the binding: unbound framing.
-		out, err := openWithFallback(raw, ds.dek, ds.svc.credKey, nil)
+		// It lives in a record property, not in the sealed store, so the
+		// store's DEK-only marker says nothing about it and the re-key never
+		// meets it: the host-key fallback stays open for this form (0059).
+		out, err := openRepoPayload(raw, ds.dek, ds.svc.credKey, nil, false)
 		if err != nil {
 			return "", fmt.Errorf("substrate/engine: open sealed property: %w", err)
 		}
@@ -447,9 +454,11 @@ func (s *service) openPropValue(stored string) (string, error) {
 // TOTP step consume or token refresh serializes behind this transaction instead
 // of being overwritten by a stale buffered copy. A payload already `credBoundSealed`
 // and openable under the DEK with its row binding passes byte-identical, which is
-// the idempotency. Recovery enrollment runs it: the
-// recovery promise is only true once every payload is under the DEK the recovery
-// key wraps.
+// the idempotency. The first open of a repository not yet marked DEK-only runs
+// it and marks the row (retireLegacySealed, 0059); recovery enrollment runs it
+// again, because the recovery promise is only true once every payload is under
+// the DEK the recovery key wraps. It must run BEFORE the marker is read as set:
+// opening the legacy forms is what it is for.
 func (t *txn) rekeySealedStore() (int, error) {
 	dekAEAD, err := aeadOf(t.ds.dek)
 	if err != nil {

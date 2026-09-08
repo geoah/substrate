@@ -155,3 +155,7 @@ func refID(e *substrate.Record, name string) string {
 func ReceiveWebhookSync(ctx context.Context, svc substrate.Service, authority, trigger, key string, req substrate.WebhookRequest) (string, error) {
 	return svc.(*service).receiveWebhook(ctx, authority, trigger, key, req, true)
 }
+
+// SetDatasetDEKOnly overrides an open dataset's DEK-only marker, so a test can
+// present a dataset the open did not mark to a path that requires the marker.
+func SetDatasetDEKOnly(ds substrate.Dataset, v bool) { ds.(*dataset).dekOnly = v }

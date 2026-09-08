@@ -39,7 +39,7 @@ boot.
 | `SUBSTRATE_INVITE_CODE`        | — (unset: registration is off)         | The one way in. See below.                                                                                  |
 | `SUBSTRATE_DATA_ROOT`          | required                               | The directory every repository's files live under: `repositories/<authority>/` with the manifest, the changelog segments, the sealed store's files and (on the `fs` blob store) the blob bytes. See [the repository directory](#the-repository-directory). It must be an absolute path, it must outlive the container, and a host without one refuses to boot, naming the variable. |
 | `SUBSTRATE_CHANGELOG_SEGMENT_BYTES` | `268435456`                       | The size past which the active changelog segment rotates: the writer fsyncs, writes the finished file's `.sha256` sidecar and opens the next segment. At least 1 MiB. |
-| `SUBSTRATE_CREDENTIAL_KEY`     | required                               | Wraps each repository's data-encryption key (DEK), which encrypts the sealed store: every secret-typed property's material, the password hash, the TOTP seed and stored provider tokens (AES-256-GCM). It is key material, not a passphrase: base64 of exactly 32 bytes, the AES-256 key itself. Generate one with `openssl rand -base64 32`; a host whose key is empty or any other shape refuses to boot, naming the variable (ADR [0024](decisions/0024-the-credential-key-is-key-material-not-a-passphrase.md)). A host whose key does not open the wrapped DEKs the store already holds refuses to boot too, naming the repositories: that is a wrong key or a store from somewhere else, and nothing here can be re-keyed. |
+| `SUBSTRATE_CREDENTIAL_KEY`     | required                               | Wraps each repository's data-encryption key (DEK), which encrypts the sealed store: every secret-typed property's material, the password hash, the TOTP seed and stored provider tokens (AES-256-GCM). It is key material, not a passphrase: base64 of exactly 32 bytes, the AES-256 key itself. Generate one with `openssl rand -base64 32`; a host whose key is empty or any other shape refuses to boot, naming the variable (ADR [0024](decisions/0024-the-credential-key-is-key-material-not-a-passphrase.md)). A host whose key does not open the wrapped DEKs the store already holds refuses to boot too, naming each repository, the id of the key its wrap was written under and the id of the key this host holds (`repositories.dek_key_id`: 16 hex digits of a one-way hash over the key, never the key): that is a wrong key or a store from somewhere else. No command re-wraps a live repository's DEK under another host key; a copied directory moves between keys through `repository rewrap` ([restore without the credential key](#restore-without-the-credential-key)). |
 | `SUBSTRATE_INSECURE_DISABLE_TOTP` | `false`                             | **Local development only.** Stops verifying the second factor, so a password is the whole credential: see [the local TOTP-off switch](auth.md#the-second-factor-can-be-switched-off-locally). Boots with a warning, and `GET /.well-known/substrate/server.json` says so. |
 | `SUBSTRATE_OAUTH_STATE_KEY`    | —                                      | Signs OAuth flow state. Unset mints a random key per boot, with a warning: flows in progress break on restart. |
 | `SUBSTRATE_OAUTH_CALLBACK_URL` | —                                      | The one redirect URI every provider app registers.                                                        |
@@ -71,7 +71,7 @@ that directory is the truth on disk and the unit a backup copies
 $SUBSTRATE_DATA_ROOT/
   repositories/
     ada.example.com/                # one per repository, named by its authority
-      repository.json               # the manifest: authority, username, createdAt, changelogDialect, the wrapped DEK
+      repository.json               # the manifest: authority, username, createdAt, changelogDialect, the wrapped DEK, dekKeyId, sealedDekOnly
       changelog/
         000000000000001.ndjson      # a segment, named by its first seq; the highest is the active one
         000000000000001.ndjson.sha256   # the digest of a finished segment
@@ -90,7 +90,13 @@ authority is `ada.example.com`, so a person finds it by name; `repository.json`
 carries the username beside the authority. It also carries the DEK wrapped
 under `SUBSTRATE_CREDENTIAL_KEY`, the same bytes as the `repositories.dek`
 column, so a copy restored onto a host with the same key opens without
-anything else. The key itself is never in the directory.
+anything else. The key itself is never in the directory; `dekKeyId` names it
+(16 hex digits of a one-way hash over the key), so a host holding another key
+is told which key the directory wants. `sealedDekOnly` records that every
+file under `sealed/` is ciphertext under the DEK and nothing else: no plain
+payload and none sealed under a host key, so the server refuses those forms on
+this repository and a recovery through the recovery key is complete
+([decision 0059](decisions/0059-a-marked-repository-refuses-plain-and-host-key-sealed-payloads.md)).
 
 Postgres is the commit point and the live index: every write commits to the
 `changelog` table first, and the repository's one writer then appends the same
@@ -236,6 +242,21 @@ on the box, through the DSN.
 - Each repository is opened the first time something touches it. Opening
   rebuilds its kind registry **from its own stored declaration records** —
   nothing on the serving path reads the binary's embedded tree.
+- **The first open re-keys the sealed store once.** A repository whose row is
+  not yet marked `sealed_dek_only` has every sealed payload that is plain
+  (`'p'`, from a keyless release) or sealed under the host key (from before
+  repositories had their own DEK) re-sealed under its DEK, then the row is
+  marked and `repository.json` follows. From then on a read of that
+  repository refuses a plain payload and never tries the host key, naming the
+  framing it found and the key it expected, so a payload planted in the old
+  forms is refused rather than read
+  ([decision 0059](decisions/0059-a-marked-repository-refuses-plain-and-host-key-sealed-payloads.md)).
+  `repository inspect` shows the marker and the id of the host key the DEK
+  is wrapped under. A payload that opens under neither the DEK nor the host
+  key refuses that open, naming the ref: nothing can recover its material,
+  so delete the row from `sealed` (and its file under `sealed/`) and have the
+  user re-enter the secret it held (a provider token: reconnect the account;
+  the login credential: `user reset`), then open again.
 - **The data root is reconciled with the `repositories` table**, directory
   by directory and row by row, before anything else writes. Five cases: a
   directory and a row whose heads and last checksums agree open; a table ahead

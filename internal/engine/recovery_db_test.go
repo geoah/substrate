@@ -200,11 +200,13 @@ func TestServerMintedRecoveryKeyAndEnrollOnce(t *testing.T) {
 	}
 }
 
-// TestEnrollRecoveryKeyMigratesLegacyPayloads is the pre-recovery
-// repository's whole story: its payloads sat sealed under the HOST key, and
-// enrollment must re-key them under the DEK in the same commit, or "a backup
-// plus the recovery key, no host involved" is a false promise.
-func TestEnrollRecoveryKeyMigratesLegacyPayloads(t *testing.T) {
+// TestEnrollRecoveryKeyWrapsADEKThatOpensMigratedPayloads is the pre-recovery
+// repository's whole story: its payloads sat sealed under the HOST key, the
+// first open under a binary with the DEK-only marker re-keys them under the
+// DEK (decision 0059), and enrollment then wraps that DEK to the recovery key
+// and re-keys once more in the same commit, so "a backup plus the recovery
+// key, no host involved" holds for every payload.
+func TestEnrollRecoveryKeyWrapsADEKThatOpensMigratedPayloads(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, dsn := newService(t, engine.WithCredentialKey(engine.TestCredentialKey))
@@ -230,8 +232,11 @@ func TestEnrollRecoveryKeyMigratesLegacyPayloads(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	// Simulate the pre-recovery store: drop the enrollment registration
-	// wrote, and plant a payload sealed under the HOST key, exactly what a
-	// pre-DEK release left behind.
+	// wrote, plant a payload sealed under the HOST key, and clear the
+	// DEK-only marker, exactly what a pre-DEK release left behind. A marked
+	// repository refuses a host-key payload outright (0059), so the planted
+	// row is only a legacy one on an unmarked row, and the rewind has to be
+	// followed by a reopen: the open dataset already holds the marker.
 	if _, err := db.Exec(`DELETE FROM records WHERE kind = $1 AND id = 'self'`, recoveryKeyKind); err != nil {
 		t.Fatalf("drop recovery record: %v", err)
 	}
@@ -252,6 +257,15 @@ func TestEnrollRecoveryKeyMigratesLegacyPayloads(t *testing.T) {
 		sealUnder(t, hostKey, []byte("sk-legacy-material")), ref); err != nil {
 		t.Fatalf("plant host-key payload: %v", err)
 	}
+	if _, err := db.Exec(`UPDATE repositories SET sealed_dek_only = false WHERE username = 'cleo'`); err != nil {
+		t.Fatalf("clear the DEK-only marker: %v", err)
+	}
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+	svc = mustReopen(t, dsn, root)
+	if ds, err = svc.Dataset(ctx, "cleo"); err != nil {
+		t.Fatalf("reopen dataset: %v", err)
+	}
 
 	identity, recipient, err := svc.(substrate.RecoveryEnroller).EnrollRecoveryKey(ctx, substrate.LoginInput{
 		Username: "cleo", Password: testPassword, TOTPCode: u.code(t),
@@ -269,8 +283,8 @@ func TestEnrollRecoveryKeyMigratesLegacyPayloads(t *testing.T) {
 	sealedKey, _ := rec.Properties["sealedKey"].(string)
 	dek := unwrapWithIdentity(t, identity, sealedKey)
 
-	// The planted host-key payload was re-keyed in the enrollment's own
-	// transaction: the identity-recovered DEK alone opens it now.
+	// The planted host-key payload was re-keyed by the first open and the
+	// enrollment wrapped that DEK: the identity-recovered DEK alone opens it.
 	var payload []byte
 	var kind, rid string
 	if err := db.QueryRow(`SELECT payload, record_kind, record_id FROM sealed WHERE ref = $1`, ref).
@@ -311,4 +325,70 @@ func sealUnder(t *testing.T, key, raw []byte) []byte {
 	}
 	out := append([]byte{'s'}, nonce...)
 	return aead.Seal(out, nonce, raw, nil)
+}
+
+// Enrollment requires the DEK-only marker BEFORE it writes, and writes
+// nothing to the control plane: a refused enrollment leaves no record, so a
+// retry is not told the slot is taken, and a granted one has no step left
+// that could fail after the identity is minted (decision 0059).
+func TestEnrollRecoveryKeyRefusesAnUnmarkedDatasetBeforeWriting(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, dsn := newService(t, engine.WithCredentialKey(engine.TestCredentialKey))
+	enrollment, err := svc.BeginRegistration(ctx, "dee")
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	u := &authUser{username: "dee", password: testPassword, seed: enrollment.Secret}
+	if _, err := svc.Register(ctx, substrate.RegisterInput{
+		Username: "dee", Authority: "dee.example.com", Password: testPassword,
+		TOTPSecret: u.seed, TOTPCode: u.code(t),
+	}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, "dee")
+	if err != nil {
+		t.Fatalf("dataset: %v", err)
+	}
+	db := rawDB(t, dsn)
+	if _, err := db.Exec(`DELETE FROM records WHERE kind = $1 AND id = 'self'`, recoveryKeyKind); err != nil {
+		t.Fatalf("drop the recovery record registration wrote: %v", err)
+	}
+	recoveryRecords := func() int {
+		var n int
+		if err := db.QueryRow(`SELECT count(*) FROM records WHERE kind = $1 AND id = 'self' AND deleted_at IS NULL`, recoveryKeyKind).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	enroll := func() (string, error) {
+		identity, _, err := svc.(substrate.RecoveryEnroller).EnrollRecoveryKey(ctx, substrate.LoginInput{
+			Username: "dee", Password: testPassword, TOTPCode: u.code(t),
+		}, "")
+		return identity, err
+	}
+
+	engine.SetDatasetDEKOnly(ds, false)
+	if identity, err := enroll(); err == nil || !strings.Contains(err.Error(), "DEK-only") {
+		t.Fatalf("an unmarked dataset enrolled: identity minted=%v err=%v", identity != "", err)
+	}
+	if n := recoveryRecords(); n != 0 {
+		t.Fatalf("a refused enrollment left %d recovery record(s)", n)
+	}
+	var marked bool
+	if err := db.QueryRow(`SELECT sealed_dek_only FROM repositories WHERE username = 'dee'`).Scan(&marked); err != nil || !marked {
+		t.Fatalf("the row's marker moved under a refused enrollment: %v %v", marked, err)
+	}
+
+	engine.SetDatasetDEKOnly(ds, true)
+	// The refused enrollment verified the factors and spent its code before
+	// the guard, so the retry needs the next step.
+	waitStep(t)
+	identity, err := enroll()
+	if err != nil || !strings.HasPrefix(identity, "AGE-SECRET-KEY-1") {
+		t.Fatalf("the marked dataset did not enroll: %q, %v", identity, err)
+	}
+	if n := recoveryRecords(); n != 1 {
+		t.Fatalf("a granted enrollment left %d recovery record(s), want 1", n)
+	}
 }
