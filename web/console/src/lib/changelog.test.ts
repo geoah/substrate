@@ -107,7 +107,10 @@ describe("the records a write moved", () => {
     expect(affectedLines(row({ seq: 1, affected: [] }))).toEqual([])
     expect(
       affectedLines(
-        row({ seq: 1, affected: "nonsense" as unknown as ChangeRow["affected"] })
+        row({
+          seq: 1,
+          affected: "nonsense" as unknown as ChangeRow["affected"],
+        })
       )
     ).toEqual([])
     expect(

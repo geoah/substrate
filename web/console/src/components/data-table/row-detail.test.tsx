@@ -40,7 +40,11 @@ const ROW: ChangeRow = {
     properties: ["name", "email"],
   },
   affected: [
-    { kind: "samples.substrate.reamde.dev/people/person", id: "p1", version: 1 },
+    {
+      kind: "samples.substrate.reamde.dev/people/person",
+      id: "p1",
+      version: 1,
+    },
     {
       kind: "samples.substrate.reamde.dev/people/person",
       id: "p2",
