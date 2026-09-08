@@ -128,6 +128,12 @@ type dataset struct {
 	// append or mirror failed (ErrChangelogFileBehind): the directory is
 	// behind the tables and only the boot check repairs it.
 	fileErr error
+	// manifest, under writerMu, is the manifest the directory holds, as the
+	// open wrote or verified it (engine.go openNew). The transaction that
+	// claims the changelog dialect rewrites it from here BEFORE it appends
+	// (repodir.go writeManifestBeforeCommit), so the directory's record of
+	// what its segments require is never behind the segments.
+	manifest changelogfile.Manifest
 
 	// changelogStamped remembers that this repository's changelog dialect is
 	// COMMITTED at this binary's maximum, so the stamp rides the first
@@ -365,6 +371,11 @@ type txn struct {
 	// decision's thread resume, which must never run inside the transaction
 	// that recorded it.
 	afterCommit []func()
+	// claimsChangelogDialect marks the transaction that stamps the changelog
+	// dialect (changelogdialect.go stampChangelogDialect): its entries are the
+	// first in the file that the new dialect covers, so commitAndMirror
+	// rewrites the manifest before it commits or appends them.
+	claimsChangelogDialect bool
 	// publishReg is the registry this transaction's commit activates: the
 	// vocabulary apply's candidate (vocabularywrite.go). commitAndPublish
 	// swaps it in under ds.mu held from before the commit, so a writer the
@@ -497,6 +508,14 @@ func (ds *dataset) inTx(ctx context.Context, actor substrate.Actor, internal boo
 // transactions could reach the writer in the other order. A dataset with no
 // writer (the creation dataset) commits and mirrors nothing; its directory is
 // written from the tables afterwards.
+//
+// The transaction that claims the changelog dialect rewrites the manifest
+// FIRST, before the commit and before the append (writeManifestBeforeCommit):
+// its lines are the first the new dialect covers, and a manifest written
+// after them would leave a window, a crash or a copy between the append and
+// the rewrite, in which the directory understates what its segments require.
+// A manifest that fails to write refuses the transaction, which rolls back
+// with nothing appended and nothing to latch.
 func (ds *dataset) commitAndMirror(tx *sql.Tx, t *txn) error {
 	if ds.writer == nil || (len(t.pending) == 0 && len(t.sealedMirror) == 0) {
 		return ds.commitAndPublish(tx, t)
@@ -505,6 +524,11 @@ func (ds *dataset) commitAndMirror(tx *sql.Tx, t *txn) error {
 	defer ds.writerMu.Unlock()
 	if ds.fileErr != nil {
 		return ds.fileErr
+	}
+	if t.claimsChangelogDialect {
+		if err := ds.writeManifestBeforeCommit(maxChangelogDialect); err != nil {
+			return err
+		}
 	}
 	if err := ds.commitAndPublish(tx, t); err != nil {
 		return err

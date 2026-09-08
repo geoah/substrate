@@ -69,6 +69,11 @@ type options struct {
 	// so a small history spans more than one batch. Tests only.
 	importFault func(stage string) error
 	importBatch int
+	// commitFault is the stamping commit's test seam (export_test.go): a hook
+	// run on either side of the manifest write that precedes the first append
+	// in a new changelog dialect, so a test can fail the write or stop the
+	// process between the write and the append. Tests only.
+	commitFault func(stage string) error
 }
 
 // Option configures Open.
@@ -243,6 +248,9 @@ type service struct {
 	// (repodir.go importEntries, refoldFromFiles). Tests only.
 	testImportFault func(stage string) error
 	testImportBatch int
+	// testCommitFault is the options' commit seam (repodir.go
+	// writeManifestBeforeCommit). Tests only.
+	testCommitFault func(stage string) error
 }
 
 // Open connects to Postgres, loads the schema files, ensures the two roles and
@@ -336,6 +344,7 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 
 		testImportFault: o.importFault,
 		testImportBatch: o.importBatch,
+		testCommitFault: o.commitFault,
 	}
 	if o.oauthKey != "" || o.oauthURL != "" {
 		// An empty HMAC key would make every state "signature" forgeable —
@@ -692,24 +701,35 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	if !s.readOnly {
 		// The one-shot re-key of a store that still holds legacy payloads,
 		// and the marker that retires the fallback (0059), come before the
-		// manifest is written, because the manifest carries the marker.
+		// manifest is written below, because the manifest carries the marker.
 		if repo, err = s.retireLegacySealed(ctx, ds, repo); err != nil {
 			ds.close()
 			return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.Username, err)
 		}
 		ds.dekOnly = repo.SealedDEKOnly
-		if err := s.ensureManifest(ctx, dir, repo, db); err != nil {
-			ds.close()
-			return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.Username, err)
-		}
 	}
 	// The stored rows speak one DIALECT: the gate in dialect.go refuses a
 	// store newer than this binary with a named error and stamps an older one,
-	// before anything reads declaration rows back. Then the whole vocabulary
-	// rebuilds FROM the rows, and only then does the shipped-vocabulary
-	// upgrade append what a newer binary added (seed.go).
+	// before anything reads declaration rows back.
+	if err := ds.promoteSchemaDialect(ctx); err != nil {
+		ds.close()
+		return nil, err
+	}
+	// The manifest, after both gates, the re-key and the vocabulary stamp, and
+	// before the first append: it says what the row and the stamps say, and
+	// the transaction that claims the changelog dialect rewrites it from what
+	// is remembered here (repodir.go writeManifestBeforeCommit).
+	if !s.readOnly {
+		m, err := s.ensureManifest(ctx, dir, repo, db)
+		if err != nil {
+			ds.close()
+			return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.Username, err)
+		}
+		ds.manifest = m
+	}
+	// Then the whole vocabulary rebuilds FROM the rows, and only then does the
+	// shipped-vocabulary upgrade append what a newer binary added (seed.go).
 	for _, step := range []func(context.Context) error{
-		ds.promoteSchemaDialect,
 		ds.loadStoredVocabulary,
 		ds.upgradeShippedVocabulary,
 		ds.ensureTriggerCursors,

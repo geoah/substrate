@@ -1310,14 +1310,15 @@ func buildLegacyFixture(t *testing.T) legacyFixture {
 	root := engine.DataRootOf(svc)
 	_ = svc.Close()
 
-	// The old shape: <root>/repositories/<random id>, the manifest with `id`,
-	// the DEK wrapped under `dek\x00<random id>`, the self-description under
-	// the random id.
+	// The old shape: <root>/repositories/<random id>, the manifest with `id`
+	// and v0.46.0's changelog dialect 2, lines without `txn`, the DEK wrapped
+	// under `dek\x00<random id>`, the self-description under the random id.
 	src := filepath.Join(root, changelogfile.RepositoriesDir, fx.authority)
 	fx.root = t.TempDir()
 	fx.oldDir = filepath.Join(fx.root, changelogfile.RepositoriesDir, fx.oldID)
 	copyDir(t, src, fx.oldDir)
 	rewriteRecordID(t, changelogfile.ChangelogDir(fx.oldDir), repositoryKind, fx.authority, fx.oldID)
+	rewriteChangelogDir(t, changelogfile.ChangelogDir(fx.oldDir), unframe)
 	m, err := changelogfile.ReadManifest(src)
 	if err != nil {
 		t.Fatal(err)
@@ -1331,7 +1332,7 @@ func buildLegacyFixture(t *testing.T) legacyFixture {
 	}
 	legacy, err := json.MarshalIndent(map[string]any{
 		"format": 1, "id": fx.oldID, "username": "ada", "authority": fx.authority,
-		"createdAt": m.CreatedAt.Format("2006-01-02T15:04:05.000000Z"), "changelogDialect": m.ChangelogDialect,
+		"createdAt": m.CreatedAt.Format("2006-01-02T15:04:05.000000Z"), "changelogDialect": 2,
 		"dek": base64.StdEncoding.EncodeToString(fx.oldWrap),
 	}, "", "  ")
 	if err != nil {
@@ -1447,9 +1448,15 @@ func TestBootImportsAnOldIdNamedDirectory(t *testing.T) {
 	newDir := filepath.Join(fx.root, changelogfile.RepositoriesDir, fx.authority)
 	m2, err := changelogfile.ReadManifest(newDir)
 	if err != nil {
-		t.Fatalf("no format-1 manifest under the authority: %v", err)
+		t.Fatalf("no manifest under the authority: %v", err)
 	}
-	if m2.Authority != fx.authority || m2.Username != "ada" || m2.ChangelogDialect != m.ChangelogDialect || !m2.CreatedAt.Equal(m.CreatedAt) {
+	// The manifest is in the format this binary writes, with the vocabulary
+	// dialect the old format implied. The changelog dialect is this binary's:
+	// the boot appended the self-description's correction (below), so it
+	// claimed the dialect, and the manifest followed the claim without a
+	// restart (manifest_db_test.go).
+	if m2.Format != changelogfile.ManifestFormat || m2.Authority != fx.authority || m2.Username != "ada" ||
+		m2.ChangelogDialect != engine.MaxChangelogDialect() || m2.VocabularyDialect != formatOneVocabularyDialect || !m2.CreatedAt.Equal(m.CreatedAt) {
 		t.Fatalf("manifest after the move = %+v", m2)
 	}
 	if bytes.Equal(m2.DEK, fx.oldWrap) {

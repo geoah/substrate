@@ -95,9 +95,8 @@ func (ds *dataset) promoteSchemaDialect(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if stored > maxVocabularyDialect {
-		return fmt.Errorf("%w: repository %s stores dialect %d, this binary supports <= %d — upgrade the substrate",
-			ErrVocabularyDialectNewer, ds.info.Name, stored, maxVocabularyDialect)
+	if err := admitVocabularyDialect(ds.info.Name, stored); err != nil {
+		return err
 	}
 	if stored == maxVocabularyDialect {
 		return nil
@@ -157,11 +156,30 @@ func (ds *dataset) definitionBearingRows(ctx context.Context) ([]string, error) 
 	return out, rows.Err()
 }
 
+// admitVocabularyDialect is the one comparison every gate over the stored
+// declarations makes, at open (promoteSchemaDialect) and before a boot import
+// writes a row (repodir.go importRepositoryDir): a store stamped above the
+// binary's maximum is refused, everything at or below it is admitted here and
+// judged by the ladder.
+func admitVocabularyDialect(repository string, stored int) error {
+	if stored > maxVocabularyDialect {
+		return fmt.Errorf("%w: repository %s stores dialect %d, this binary supports <= %d — upgrade the substrate",
+			ErrVocabularyDialectNewer, repository, stored, maxVocabularyDialect)
+	}
+	return nil
+}
+
 // storedSchemaDialect reads the repository's stored dialect; an absent row is
 // 0, a store that has never been stamped.
 func (ds *dataset) storedSchemaDialect(ctx context.Context) (int, error) {
+	return readVocabularyDialect(ctx, ds.db)
+}
+
+// readVocabularyDialect reads the repository's stored dialect through a pool
+// or a transaction; an absent row is 0, a store that has never been stamped.
+func readVocabularyDialect(ctx context.Context, q dbx) (int, error) {
 	var d int
-	err := ds.db.QueryRowContext(ctx, `SELECT dialect FROM vocabulary_dialect`).Scan(&d)
+	err := q.QueryRowContext(ctx, `SELECT dialect FROM vocabulary_dialect`).Scan(&d)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
 	}
@@ -170,6 +188,15 @@ func (ds *dataset) storedSchemaDialect(ctx context.Context) (int, error) {
 	}
 	return d, nil
 }
+
+// vocabularyDialectStamp only ever moves the stamp up (GREATEST), so a stale
+// racer can never wind the dialect back. The promotion runs it beside its
+// vocabulary_promotions row (recordDialectStep); a boot import runs it alone,
+// with the dialect the manifest recorded, because the import ran no step.
+const vocabularyDialectStamp = `
+	INSERT INTO vocabulary_dialect (dialect) VALUES ($1)
+	ON CONFLICT (repository) DO UPDATE
+	SET dialect = GREATEST(vocabulary_dialect.dialect, EXCLUDED.dialect), updated_at = now()`
 
 // recordDialectStep records one completed step and stamps the dialect, in one
 // transaction. The stamp only ever moves up (GREATEST), so a stale racer can
@@ -185,11 +212,7 @@ func (ds *dataset) recordDialectStep(ctx context.Context, dialect int, name stri
 		ON CONFLICT (repository, dialect) DO NOTHING`, dialect, name); err != nil {
 		return fmt.Errorf("substrate/engine: record dialect step %d: %w", dialect, err)
 	}
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO vocabulary_dialect (dialect) VALUES ($1)
-		ON CONFLICT (repository) DO UPDATE
-		SET dialect = GREATEST(vocabulary_dialect.dialect, EXCLUDED.dialect), updated_at = now()`,
-		dialect); err != nil {
+	if _, err := tx.ExecContext(ctx, vocabularyDialectStamp, dialect); err != nil {
 		return fmt.Errorf("substrate/engine: stamp dialect %d: %w", dialect, err)
 	}
 	return tx.Commit()

@@ -31,10 +31,11 @@ const sumPrefix = "sha256:"
 // LineFormat is the line format this package writes. Format 2 lines carry
 // `txn`, the seq of the last entry of the transaction that appended them, so
 // a reader knows where a transaction ends and cuts an incomplete one whole.
-// Format 1, which v0.46.0 and v0.47.0 wrote, carried no `txn` and recorded no
-// boundary; this package still reads it, one line as one transaction, because
-// nothing can reconstruct a boundary that was never written. The manifest is
-// where a directory will name the format its lines need (#370).
+// Format 1, which v0.46.0 through v0.51.0 wrote, carried no `txn` and recorded
+// no boundary; this package still reads it, one line as one transaction, because
+// nothing can reconstruct a boundary that was never written. The manifest's
+// `changelogDialect` is where a directory names what its lines need: format 2
+// lines are changelog dialect 3.
 const LineFormat = 2
 
 // Entry is one changelog entry as the file carries it. Payload is the JSON

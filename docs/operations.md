@@ -71,7 +71,7 @@ that directory is the truth on disk and the unit a backup copies
 $SUBSTRATE_DATA_ROOT/
   repositories/
     ada.example.com/                # one per repository, named by its authority
-      repository.json               # the manifest: authority, username, createdAt, changelogDialect, the wrapped DEK, dekKeyId, sealedDekOnly
+      repository.json               # the manifest: format, authority, username, createdAt, changelogDialect, vocabularyDialect, the wrapped DEK, dekKeyId, sealedDekOnly
       changelog/
         000000000000001.ndjson      # a segment, named by its first seq; the highest is the active one
         000000000000001.ndjson.sha256   # the digest of a finished segment
@@ -97,6 +97,24 @@ file under `sealed/` is ciphertext under the DEK and nothing else: no plain
 payload and none sealed under a host key, so the server refuses those forms on
 this repository and a recovery through the recovery key is complete
 ([decision 0059](decisions/0059-a-marked-repository-refuses-plain-and-host-key-sealed-payloads.md)).
+
+The manifest is also the directory's record of what a binary must understand
+to read it: `changelogDialect` is the repository's
+[changelog dialect](changelog.md#the-dialect-a-changelog-is-written-in) and
+`vocabularyDialect` its
+[vocabulary dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract),
+each the same number the repository's stamp holds. The server rewrites the
+manifest when a stamp moves: at the open that promotes the vocabulary
+dialect, and in the first write a new binary appends, which claims the
+changelog dialect and writes the manifest before it commits or appends. So a
+copy of the directory never holds segments its manifest understates, at any
+instant between an upgrade's first write and the next restart. A manifest
+with `format` 1, which v0.46.0 through v0.53.0 wrote, has no
+`vocabularyDialect`; it is read as vocabulary dialect 3, the one every one of
+those releases stored, and rewritten as format 2 at the next boot. Those
+releases refuse a format-2 manifest, so a rollback to one of them fails at
+boot for every repository this binary has opened; the remedy is to delete
+each `repository.json`, which the older binary rewrites from the row.
 
 Postgres is the commit point and the live index: every write commits to the
 `changelog` table first, and the repository's one writer then appends the same
@@ -265,9 +283,18 @@ on the box, through the DSN.
   has the missing entries appended to the file, whole transactions at a time,
   and its sealed files rewritten from the table; a file
   ahead of its table, or a directory with no row, is **imported**, which
-  creates the row from `repository.json`, loads `sealed/` into the table,
-  inserts the missing entries with their checksums and folds them through
-  `fold.go` (this is the restore path, and the only one). The import writes
+  creates the row from `repository.json`, stamps the repository with the
+  `changelogDialect` and `vocabularyDialect` the manifest recorded, loads
+  `sealed/` into the table, inserts the missing entries with their checksums
+  and folds them through `fold.go` (this is the restore path, and the only
+  one). A manifest whose `changelogDialect` or `vocabularyDialect` is above
+  the binary's maximum **refuses the boot** with the same named error the open
+  gives ("the changelog speaks a newer dialect than this binary can replay",
+  "the store speaks a newer schema dialect than this binary"), and a
+  changelog holding a retired `link` or `unlink` entry refuses it too; both
+  refusals come before the row is created, so a refused directory reserves
+  neither its username nor its authority and leaves no row for a later boot
+  to export an empty repository from. The import writes
   an `import_progress` row before its first batch of entries commits and
   deletes it in the transaction that commits the last fold pass. A boot that
   dies in between leaves the row, and the next boot check resumes the import
