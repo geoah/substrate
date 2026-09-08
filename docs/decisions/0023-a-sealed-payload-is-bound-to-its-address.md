@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-08-17
 decision-makers: George Antoniadis
+amended-by: 0059
 ---
 
 # 0023. A sealed payload is bound to the address it was written at

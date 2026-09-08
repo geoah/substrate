@@ -99,8 +99,13 @@ type dataset struct {
 	// sealed-store payload seals under it. The control plane holds it
 	// wrapped under the host credential key; the repository's recoverykey
 	// record holds it wrapped to the user's age recipient.
-	dek   []byte
-	watch *broadcaster
+	dek []byte
+	// dekOnly is the row's `sealed_dek_only` marker (0059): every payload in
+	// the sealed store is bound under dek, so openPayload refuses a plain
+	// payload and never tries the host key. Set before the dataset is
+	// published and never written afterwards.
+	dekOnly bool
+	watch   *broadcaster
 	// generation is the repository's history generation (repositories.go),
 	// the marker every change cursor this dataset hands out is bound to. It
 	// is read once at open: the row changes it only when a boot imports the
@@ -688,7 +693,8 @@ func metaKeyAllowed(actor substrate.Actor, key string) error {
 
 // inRawTx runs fn in a plain scoped transaction: no actor, no fold, no
 // changelog entry, the shape a re-key or a maintenance read needs. It
-// settles nothing on purpose: fn must not fold.
+// settles nothing on purpose: fn must not fold. Sealed rows it rewrote are
+// mirrored into the directory after the commit, as any transaction's are.
 func (ds *dataset) inRawTx(ctx context.Context, fn func(*txn) error) error {
 	if ds.svc.readOnly {
 		return ErrDirectoryReadOnly
@@ -697,14 +703,16 @@ func (ds *dataset) inRawTx(ctx context.Context, fn func(*txn) error) error {
 	if err != nil {
 		return err
 	}
+	// One rollback covers every exit, commitAndMirror's refusal of a latched
+	// directory included: a re-key holds every sealed row FOR UPDATE, and a
+	// transaction left open there would hold them until the context died.
+	defer func() { _ = tx.Rollback() }()
 	t := &txn{ctx: ctx, ds: ds, tx: tx, now: nowUTC(), internal: true}
 	if err := fn(t); err != nil {
-		_ = tx.Rollback()
 		return err
 	}
 	if len(t.folded) > 0 || len(t.pending) > 0 {
-		_ = tx.Rollback()
 		return errors.New("substrate/engine: a raw transaction folded or appended; it may not")
 	}
-	return tx.Commit()
+	return ds.commitAndMirror(tx, t)
 }

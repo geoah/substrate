@@ -38,6 +38,7 @@ import (
 
 	"golang.org/x/crypto/argon2"
 
+	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -214,15 +215,31 @@ func (s *service) authMaterialOf(ctx context.Context, repoID string) (authMateri
 }
 
 // openSealed reads and unseals one row by ref, on the maintenance pool. The
-// payload opens under the repository's DEK, with the host-key fallback for
-// material sealed before DEKs existed.
+// payload opens under the repository's DEK; the host-key fallback for material
+// sealed before DEKs existed is tried only while the row is not yet marked
+// DEK-only (0059).
 func (s *service) openSealed(ctx context.Context, repoID, ref string) ([]byte, error) {
 	if ref == "" {
 		return nil, fmt.Errorf("%w: credential incomplete", substrate.ErrAuth)
 	}
+	// The keys and the payload come from ONE snapshot. A first open that
+	// adopts a DEK and re-keys the store commits between two separate reads
+	// otherwise, and the login would try the re-keyed payload with the DEK it
+	// read a moment before (none), or the old payload against the marker set
+	// after it. Adoption commits before the re-key and the marker after it,
+	// so no snapshot holds a re-keyed payload without its DEK.
+	tx, err := s.maint.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	keys, err := s.repoKeysOn(ctx, tx, repoID)
+	if err != nil {
+		return nil, err
+	}
 	var payload []byte
 	var owner eref
-	err := s.maint.QueryRowContext(ctx,
+	err = tx.QueryRowContext(ctx,
 		`SELECT payload, record_kind, record_id FROM sealed WHERE repository = $1 AND ref = $2`,
 		repoID, ref).Scan(&payload, &owner.Kind, &owner.ID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -231,11 +248,7 @@ func (s *service) openSealed(ctx context.Context, repoID, ref string) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	dek, err := s.repoDEK(ctx, repoID)
-	if err != nil {
-		return nil, err
-	}
-	return openWithFallback(payload, dek, s.credKey, sealedAAD(ref, owner.Kind, owner.ID))
+	return openRepoPayload(payload, keys.dek, s.credKey, sealedAAD(ref, owner.Kind, owner.ID), keys.dekOnly)
 }
 
 // consumeTOTPStep spends a code by recording its step on the sealed TOTP row.
@@ -252,22 +265,25 @@ func (s *service) consumeTOTPStep(ctx context.Context, repo Repository, ref stri
 	defer func() { _ = tx.Rollback() }()
 	var payload []byte
 	var owner eref
-	var expires sql.NullTime
 	err = tx.QueryRowContext(ctx,
-		`SELECT payload, record_kind, record_id, expires_at FROM sealed WHERE repository = $1 AND ref = $2 FOR UPDATE`,
-		repoID, ref).Scan(&payload, &owner.Kind, &owner.ID, &expires)
+		`SELECT payload, record_kind, record_id FROM sealed WHERE repository = $1 AND ref = $2 FOR UPDATE`,
+		repoID, ref).Scan(&payload, &owner.Kind, &owner.ID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	dek, err := s.repoDEK(ctx, repoID)
+	// The keys are read inside the transaction that holds the row FOR UPDATE:
+	// a re-key that would move this row waits on that lock, so the payload
+	// above and the keys here describe the same moment.
+	keys, err := s.repoKeysOn(ctx, tx, repoID)
 	if err != nil {
 		return false, err
 	}
+	dek := keys.dek
 	aad := sealedAAD(ref, owner.Kind, owner.ID)
-	raw, err := openWithFallback(payload, dek, s.credKey, aad)
+	raw, err := openRepoPayload(payload, dek, s.credKey, aad, keys.dekOnly)
 	if err != nil {
 		return false, err
 	}
@@ -283,10 +299,9 @@ func (s *service) consumeTOTPStep(ctx context.Context, repo Repository, ref stri
 	if err != nil {
 		return false, err
 	}
-	var updated time.Time
-	if err := tx.QueryRowContext(ctx,
-		`UPDATE sealed SET payload = $3, updated_at = now() WHERE repository = $1 AND ref = $2 RETURNING updated_at`,
-		repoID, ref, sealed).Scan(&updated); err != nil {
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE sealed SET payload = $3, updated_at = now() WHERE repository = $1 AND ref = $2`,
+		repoID, ref, sealed); err != nil {
 		return false, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -299,14 +314,42 @@ func (s *service) consumeTOTPStep(ctx context.Context, repo Repository, ref stri
 	// a concurrent rekeySealedStore and leave the older payload on disk. The
 	// row is committed either way; a mirror this cannot run is the boot
 	// check's to rewrite.
-	rec := sealedRecordOf(ref, owner.Kind, owner.ID, sealed, expires, updated)
-	if ds, err := s.open(ctx, repo); err != nil {
+	ds, err := s.open(ctx, repo)
+	if err != nil {
 		s.log.Error("substrate: could not open the repository to mirror a sealed row; the boot check will rewrite it",
 			"repository", repoID, "ref", ref, "error", err)
-	} else {
-		ds.mirrorSealedNow([]sealedMirrorOp{{rec: rec}})
+		return true, nil
 	}
+	// The row is re-read AFTER the open and the file gets what the table
+	// holds now, not the bytes sealed above: on the first open of a
+	// repository that had no DEK, the open has just re-keyed this row under
+	// the DEK it adopted and marked the repository (retireLegacySealed), and
+	// mirroring the host-key bytes would leave a payload the marked
+	// repository refuses under a manifest that says sealedDekOnly.
+	rec, err := s.readSealedRecord(ctx, repoID, ref)
+	if err != nil {
+		s.log.Error("substrate: could not re-read a sealed row to mirror it; the boot check will rewrite it",
+			"repository", repoID, "ref", ref, "error", err)
+		return true, nil
+	}
+	ds.mirrorSealedNow([]sealedMirrorOp{{rec: rec}})
 	return true, nil
+}
+
+// readSealedRecord reads one sealed row on the maintenance pool as its file
+// record, for a mirror that must carry the row as committed rather than as
+// one writer remembers it.
+func (s *service) readSealedRecord(ctx context.Context, repoID, ref string) (changelogfile.SealedRecord, error) {
+	var owner eref
+	var payload []byte
+	var expires sql.NullTime
+	var updated time.Time
+	if err := s.maint.QueryRowContext(ctx,
+		`SELECT record_kind, record_id, payload, expires_at, updated_at FROM sealed WHERE repository = $1 AND ref = $2`,
+		repoID, ref).Scan(&owner.Kind, &owner.ID, &payload, &expires, &updated); err != nil {
+		return changelogfile.SealedRecord{}, err
+	}
+	return sealedRecordOf(ref, owner.Kind, owner.ID, payload, expires, updated), nil
 }
 
 func mustJSON(v any) []byte {
@@ -446,10 +489,14 @@ func (s *service) registrationSeed(in substrate.RegisterInput) (string, int64, e
 // which is materially more than the repository API can ever do, so a stolen
 // token must not be enough.
 //
-// The same transaction re-keys the whole sealed store under the DEK: a
-// pre-DEK repository's payloads sat under the host key, and the recovery
-// promise (a backup plus this key, no host involved) is only true once
-// nothing in the store needs the host to open.
+// The same transaction re-keys the whole sealed store under the DEK. The
+// open already did that once and marked the row DEK-only (retireLegacySealed,
+// 0059), and the enrollment requires that marker BEFORE it writes: the
+// recovery promise (a backup plus this key, no host involved) is only true of
+// a DEK-only store. The row is not written here at all. The scoped
+// transaction cannot reach `repositories`, and a control-plane write after
+// the commit would be a step that can fail once the record is committed and
+// a server-minted identity, returned exactly once, is gone.
 func (s *service) EnrollRecoveryKey(ctx context.Context, in substrate.LoginInput, publicKey string) (identity, recipient string, err error) {
 	repo, _, err := s.verifyFactors(ctx, in)
 	if err != nil {
@@ -466,6 +513,15 @@ func (s *service) EnrollRecoveryKey(ctx context.Context, in substrate.LoginInput
 	ds, err := s.open(ctx, repo)
 	if err != nil {
 		return "", "", err
+	}
+	// A read-only process neither re-keys nor marks at open, so its dataset
+	// carries the row's marker as stored; it is refused as read-only, not as
+	// unmarked, because that is what it is.
+	if s.readOnly {
+		return "", "", ErrDirectoryReadOnly
+	}
+	if !ds.dekOnly {
+		return "", "", errors.New("substrate/engine: the sealed store is not marked DEK-only, so a recovery key cannot promise to open it; the open re-keys and marks a repository before anything writes to it")
 	}
 	ref := eref{Kind: kindRecoveryKey, ID: recoveryKeyID}
 	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {

@@ -44,6 +44,14 @@ type Repository struct {
 	// registration and at import, and nothing else changes it, so a restart
 	// and a rebuild keep every cursor while an import resets them once.
 	HistoryGeneration string
+	// DEKKeyID names the host key DEK is wrapped under (hostKeyID). Empty for
+	// a wrap written before the id was recorded or under no key; the first
+	// open under a keyed host fills it in (0059).
+	DEKKeyID string
+	// SealedDEKOnly records that every payload in the sealed store is bound
+	// under DEK: no plain and no host-key-sealed payload remains, so a read
+	// refuses both (0059). Set at creation and by the re-key at open.
+	SealedDEKOnly bool
 }
 
 // newHistoryGeneration mints a history generation: a random id in the record
@@ -273,9 +281,9 @@ func (s *service) insertRepositoryRow(ctx context.Context, cp controlPlane, r *R
 	}
 	r.HistoryGeneration = generation
 	err = cp.QueryRowContext(ctx, `
-		INSERT INTO repositories (id, username, authority, dek, history_generation)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING created_at`, r.ID, r.Username, r.Authority, r.DEK, r.HistoryGeneration).Scan(&r.CreatedAt)
+		INSERT INTO repositories (id, username, authority, dek, history_generation, dek_key_id, sealed_dek_only)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING created_at`, r.ID, r.Username, r.Authority, r.DEK, r.HistoryGeneration, nullString(r.DEKKeyID), r.SealedDEKOnly).Scan(&r.CreatedAt)
 	if err != nil {
 		if taken := repositoryRowTaken(err, r); taken != nil {
 			return taken
@@ -490,12 +498,27 @@ func (s *service) repositoryByID(ctx context.Context, id string) (Repository, er
 // registration lock is held on.
 func (s *service) repositoryByUsernameOn(ctx context.Context, q dbx, username string) (Repository, error) {
 	return s.scanRepository(q.QueryRowContext(ctx,
-		`SELECT id, username, authority, created_at, dek, history_generation FROM repositories WHERE username = $1`, username), username)
+		`SELECT `+repositoryColumns+` FROM repositories WHERE username = $1`, username), username)
 }
 
 func (s *service) repositoryByIDOn(ctx context.Context, q dbx, id string) (Repository, error) {
 	return s.scanRepository(q.QueryRowContext(ctx,
-		`SELECT id, username, authority, created_at, dek, history_generation FROM repositories WHERE id = $1`, id), id)
+		`SELECT `+repositoryColumns+` FROM repositories WHERE id = $1`, id), id)
+}
+
+// repositoryColumns is the column list scanRepositoryRow reads, in its order.
+const repositoryColumns = `id, username, authority, created_at, dek, history_generation, dek_key_id, sealed_dek_only`
+
+// scanRepositoryRow reads one row of repositoryColumns.
+func scanRepositoryRow(scan func(dest ...any) error) (Repository, error) {
+	var r Repository
+	var keyID sql.NullString
+	if err := scan(&r.ID, &r.Username, &r.Authority, &r.CreatedAt, &r.DEK, &r.HistoryGeneration, &keyID, &r.SealedDEKOnly); err != nil {
+		return Repository{}, err
+	}
+	r.DEKKeyID = keyID.String
+	r.CreatedAt = r.CreatedAt.UTC()
+	return r, nil
 }
 
 // repositoryByAuthority finds the repository that owns an authority, which is
@@ -507,31 +530,29 @@ func (s *service) repositoryByAuthority(ctx context.Context, authority string) (
 }
 
 func (s *service) scanRepository(row *sql.Row, what string) (Repository, error) {
-	var r Repository
-	if err := row.Scan(&r.ID, &r.Username, &r.Authority, &r.CreatedAt, &r.DEK, &r.HistoryGeneration); err != nil {
+	r, err := scanRepositoryRow(row.Scan)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Repository{}, fmt.Errorf("%w: repository %q", substrate.ErrNotFound, what)
 		}
 		return Repository{}, err
 	}
-	r.CreatedAt = r.CreatedAt.UTC()
 	return r, nil
 }
 
 func (s *service) listRepositories(ctx context.Context) ([]Repository, error) {
 	rows, err := s.maint.QueryContext(ctx,
-		`SELECT id, username, authority, created_at, dek, history_generation FROM repositories ORDER BY created_at, id`)
+		`SELECT `+repositoryColumns+` FROM repositories ORDER BY created_at, id`)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 	var out []Repository
 	for rows.Next() {
-		var r Repository
-		if err := rows.Scan(&r.ID, &r.Username, &r.Authority, &r.CreatedAt, &r.DEK, &r.HistoryGeneration); err != nil {
+		r, err := scanRepositoryRow(rows.Scan)
+		if err != nil {
 			return nil, err
 		}
-		r.CreatedAt = r.CreatedAt.UTC()
 		out = append(out, r)
 	}
 	return out, rows.Err()

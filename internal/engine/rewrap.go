@@ -97,6 +97,9 @@ func RewrapRepositoryDir(repoDir, identity, newKey string) (RewrapReport, error)
 	if m.DEK, err = sealWith(aead, dek, dekAAD(m.Authority)); err != nil {
 		return report, err
 	}
+	// The wrap names the key it is now under; the sealed-store marker is the
+	// copy's own and stays as the manifest carried it.
+	m.DEKKeyID = hostKeyID(hostKey)
 	// The lock is taken only now, once every refusal is behind: a refused
 	// rewrap leaves the directory exactly as it found it, lock file included.
 	// A server that has opened the repository holds this lock and is refused;
@@ -186,11 +189,21 @@ func sealedStoreOpens(repoDir string, dek []byte) (int, error) {
 	if len(files) == 0 {
 		return 0, fmt.Errorf("substrate/engine: %s has no files under sealed/; a registered repository seals at least its login credential, so this copy is incomplete", repoDir)
 	}
+	if err := sealedFilesOpenUnder(files, dek); err != nil {
+		return 0, fmt.Errorf("substrate/engine: the recovered DEK does not open every sealed file: %w", err)
+	}
+	return len(files), nil
+}
+
+// sealedFilesOpenUnder opens every sealed file under dek alone, each under its
+// own row binding, and names the first that does not: the check behind the
+// offline rewrap and behind the import of a directory marked DEK-only (0059).
+func sealedFilesOpenUnder(files []changelogfile.SealedRecord, dek []byte) error {
 	for _, f := range files {
 		if _, err := OpenPayloadWithKey(dek, f.Payload, sealedAAD(f.Ref, f.RecordKind, f.RecordID)); err != nil {
-			return 0, fmt.Errorf("substrate/engine: the recovered DEK does not open sealed/%s (%s %s): %w",
+			return fmt.Errorf("sealed/%s (%s %s) does not open under the DEK: %w",
 				changelogfile.SealedFileName(f.Ref), f.RecordKind, f.RecordID, err)
 		}
 	}
-	return len(files), nil
+	return nil
 }

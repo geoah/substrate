@@ -17,6 +17,8 @@ func sampleManifest(authority string) Manifest {
 		CreatedAt:        time.Date(2026, 9, 5, 10, 0, 0, 123456000, time.UTC),
 		ChangelogDialect: 2,
 		DEK:              []byte{0, 1, 2, 3, 250, 251, 252, 253},
+		DEKKeyID:         "0123456789abcdef",
+		SealedDEKOnly:    true,
 	}
 }
 
@@ -34,7 +36,7 @@ func TestManifestRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"format": 1`, `"authority": "ada.example.com"`, `"createdAt": "2026-09-05T10:00:00.123456Z"`, `"dek": "AAECA/r7/P0="`, `"changelogDialect": 2`} {
+	for _, want := range []string{`"format": 1`, `"authority": "ada.example.com"`, `"createdAt": "2026-09-05T10:00:00.123456Z"`, `"dek": "AAECA/r7/P0="`, `"changelogDialect": 2`, `"dekKeyId": "0123456789abcdef"`, `"sealedDekOnly": true`} {
 		if !bytes.Contains(raw, []byte(want)) {
 			t.Errorf("manifest lacks %s:\n%s", want, raw)
 		}
@@ -55,7 +57,8 @@ func TestManifestRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.Format != m.Format || got.Username != m.Username || got.Authority != m.Authority ||
-		!got.CreatedAt.Equal(m.CreatedAt) || got.ChangelogDialect != m.ChangelogDialect || !bytes.Equal(got.DEK, m.DEK) {
+		!got.CreatedAt.Equal(m.CreatedAt) || got.ChangelogDialect != m.ChangelogDialect || !bytes.Equal(got.DEK, m.DEK) ||
+		got.DEKKeyID != m.DEKKeyID || got.SealedDEKOnly != m.SealedDEKOnly {
 		t.Fatalf("round trip: got %+v, want %+v", got, m)
 	}
 	// A rewrite replaces the file whole.
@@ -103,6 +106,11 @@ func TestManifestReadsThePlanExample(t *testing.T) {
 	}
 	if m.Authority != "ada.example.com" || m.Username != "ada" || !m.CreatedAt.Equal(time.Date(2026, 9, 5, 10, 0, 0, 0, time.UTC)) || !bytes.Equal(m.DEK, []byte{0, 1, 2, 3}) {
 		t.Fatalf("manifest = %+v", m)
+	}
+	// A manifest from before the key id and the marker reads as an unnamed
+	// key and an unmarked store, which is what such a directory is.
+	if m.DEKKeyID != "" || m.SealedDEKOnly {
+		t.Fatalf("a manifest without dekKeyId/sealedDekOnly read as %+v", m)
 	}
 }
 
@@ -253,7 +261,7 @@ func TestManifestJSONOmitsNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"format":1,"username":"ada","authority":"","createdAt":"","changelogDialect":0,"dek":null}`
+	want := `{"format":1,"username":"ada","authority":"","createdAt":"","changelogDialect":0,"dek":null,"dekKeyId":"","sealedDekOnly":false}`
 	if string(raw) != want {
 		t.Fatalf("got %s\nwant %s", raw, want)
 	}

@@ -199,6 +199,9 @@ type service struct {
 	oauth *oauthflow.Client
 	// credKey seals the sealed store (AES-256-GCM); empty stores plain.
 	credKey []byte
+	// credKeyID is hostKeyID(credKey): what every DEK wrap this host writes
+	// names as its key, and what a failing unwrap is compared against.
+	credKeyID string
 	// dataRoot is the data root (WithDataRoot); <dataRoot>/repositories/<authority>
 	// is one repository's directory (repodir.go).
 	dataRoot string
@@ -318,6 +321,7 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 		admin:        admin,
 		base:         reg,
 		credKey:      credKey,
+		credKeyID:    hostKeyID(credKey),
 		dataRoot:     o.dataRoot,
 		segmentBytes: o.segmentBytes,
 		catchUpBatch: o.catchUpBatch,
@@ -498,32 +502,44 @@ func (s *service) requireCredentialKeyOpens(ctx context.Context) error {
 		return nil
 	}
 	rows, err := s.maint.QueryContext(ctx,
-		`SELECT id, dek FROM repositories WHERE dek IS NOT NULL ORDER BY id`)
+		`SELECT id, dek, dek_key_id FROM repositories WHERE dek IS NOT NULL ORDER BY id`)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = rows.Close() }()
 	var checked int
-	var sealed []string
+	var failures []string
+	// A wrap that names THIS key and still does not open is damage, not a
+	// foreign database, and the advice for the two is opposite: the first
+	// must keep its key, the second must find another.
+	damaged := false
 	for rows.Next() {
 		var id string
 		var wrapped []byte
-		if err := rows.Scan(&id, &wrapped); err != nil {
+		var keyID sql.NullString
+		if err := rows.Scan(&id, &wrapped, &keyID); err != nil {
 			return err
 		}
 		checked++
-		if _, err := s.unwrapDEK(wrapped, id); err != nil {
-			sealed = append(sealed, id)
+		if _, err := s.unwrapDEK(wrapped, id, keyID.String); err != nil {
+			failures = append(failures, err.Error())
+			if keyID.String == s.credKeyID {
+				damaged = true
+			}
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	if len(sealed) == 0 {
+	if len(failures) == 0 {
 		return nil
 	}
-	return fmt.Errorf("substrate/engine: SUBSTRATE_CREDENTIAL_KEY does not open the DEK of %d of this database's %d repositories (%s): this is the key every repository DEK wraps under, so this database was written under a different one. Restore the original key, or point this host at the database that belongs to this key. Do NOT let a fresh key start over an existing database: nothing here can be re-keyed and every repository would be unopenable",
-		len(sealed), checked, strings.Join(sealed, ", "))
+	advice := "Every repository DEK wraps under this one key, so this database was written under a different one. Restore the key the wraps name, or point this host at the database that belongs to this key. Do NOT let a fresh key start over an existing database: no verb re-wraps a live repository's DEK under another host key, and every repository would be unopenable"
+	if damaged {
+		advice = "A wrap that names this very key and does not open is damaged, not foreign: the key is right, so keep it, and restore that repository's row from a database dump or its directory from a copy (a copy re-wraps through its recovery key: `substratectl repository rewrap`)"
+	}
+	return fmt.Errorf("substrate/engine: SUBSTRATE_CREDENTIAL_KEY (id %s) does not open the DEK of %d of this database's %d repositories: %s. %s",
+		s.credKeyID, len(failures), checked, strings.Join(failures, "; "), advice)
 }
 
 func (s *service) Close() error {
@@ -614,13 +630,15 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.Username, err)
 	}
 	db.SetMaxOpenConns(8)
-	// The repository's DEK, unwrapped for the dataset's lifetime; a pre-DEK
-	// repository adopts one here, compare-and-swap against a concurrent open.
-	dek, err := s.repoDEK(ctx, repo.ID)
+	// The repository's keys for the dataset's lifetime: the DEK unwrapped and
+	// the sealed-store marker; a pre-DEK repository adopts a DEK here,
+	// compare-and-swap against a concurrent open.
+	keys, err := s.repoKeys(ctx, repo.ID)
 	if err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("substrate/engine: open repository %s: unwrap DEK: %w", repo.Username, err)
 	}
+	dek := keys.dek
 	if dek == nil {
 		if dek, err = s.adoptDEK(ctx, repo.ID); err != nil {
 			_ = db.Close()
@@ -642,6 +660,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		svc:        s,
 		db:         db,
 		dek:        dek,
+		dekOnly:    repo.SealedDEKOnly,
 		scope:      sc,
 		dir:        dir,
 		generation: repo.HistoryGeneration,
@@ -661,12 +680,6 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.close()
 		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.Username, err)
 	}
-	if !s.readOnly {
-		if err := s.ensureManifest(ctx, dir, repo, db); err != nil {
-			ds.close()
-			return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.Username, err)
-		}
-	}
 	// The changelog dialect gate runs next, ahead of every step that writes:
 	// a binary that cannot replay this history must not extend it either. It
 	// only reads; the claim is written by the first transaction that appends
@@ -675,6 +688,20 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	if err := ds.gateChangelogDialect(ctx); err != nil {
 		ds.close()
 		return nil, err
+	}
+	if !s.readOnly {
+		// The one-shot re-key of a store that still holds legacy payloads,
+		// and the marker that retires the fallback (0059), come before the
+		// manifest is written, because the manifest carries the marker.
+		if repo, err = s.retireLegacySealed(ctx, ds, repo); err != nil {
+			ds.close()
+			return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.Username, err)
+		}
+		ds.dekOnly = repo.SealedDEKOnly
+		if err := s.ensureManifest(ctx, dir, repo, db); err != nil {
+			ds.close()
+			return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.Username, err)
+		}
 	}
 	// The stored rows speak one DIALECT: the gate in dialect.go refuses a
 	// store newer than this binary with a named error and stamps an older one,
@@ -809,7 +836,8 @@ func (s *service) createSeededRepository(ctx context.Context, name, authority st
 	// The DEK is born with the repository: the seed transaction below already
 	// writes sealed material (the credential, at registration), and it seals
 	// under this key from the first byte. The control-plane row wraps it
-	// under the host key at the commit point.
+	// under the host key at the commit point, names that key, and is born
+	// DEK-only: nothing it will ever hold was sealed any other way (0059).
 	dek, err := newDEK()
 	if err != nil {
 		return zero, err
@@ -817,6 +845,7 @@ func (s *service) createSeededRepository(ctx context.Context, name, authority st
 	if repo.DEK, err = s.wrapDEK(dek, repo.ID); err != nil {
 		return zero, err
 	}
+	repo.DEKKeyID, repo.SealedDEKOnly = s.credKeyID, true
 
 	db, err := openScoped(s.dsn, repo.scope(), s.appRole)
 	if err != nil {
@@ -832,7 +861,7 @@ func (s *service) createSeededRepository(ctx context.Context, name, authority st
 	// After the seed commits, the dataset is thrown away and the repository is
 	// opened the ordinary way: from its own rows.
 	seedDS := &dataset{
-		svc: s, db: db, dek: dek, scope: repo.scope(),
+		svc: s, db: db, dek: dek, dekOnly: true, scope: repo.scope(),
 		reg: s.base.Clone(), watch: newBroadcaster(), info: repo.info(),
 	}
 	// inserted flips once the control-plane row is this creation's, and

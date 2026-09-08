@@ -255,6 +255,7 @@ the invite code is the only door and there is nothing else to record.`,
 					out = append(out, map[string]any{
 						"authority": r.ID, "username": r.Username,
 						"createdAt": r.CreatedAt.Format(time.RFC3339),
+						"dekKeyId":  r.DEKKeyID, "sealedDekOnly": r.SealedDEKOnly,
 					})
 				}
 				return printJSON(a.out, out)
@@ -316,6 +317,7 @@ This command only reads.`,
 			fmt.Fprintf(a.out, "  authority: %s\n", repo.ID)
 			fmt.Fprintf(a.out, "  created:   %s (%s)\n",
 				repo.CreatedAt.Format(time.RFC3339), humanAge(a.now(), repo.CreatedAt))
+			fmt.Fprintf(a.out, "  dek:       %s\n", describeKeys(repo))
 
 			head, entries, err := changelogHead(cmd.Context(), scoped)
 			if err != nil {

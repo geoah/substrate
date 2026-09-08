@@ -171,40 +171,82 @@ type repositoryRow struct {
 	Username  string
 	Authority string
 	CreatedAt time.Time
+	// DEKKeyID names the host key the repository's DEK is wrapped under;
+	// empty for a wrap written before key ids were recorded. PlainWrap says
+	// the wrap is plain-marked, written by a keyless host, so no key protects
+	// it. SealedDEKOnly says every sealed payload is under the DEK, so the
+	// server refuses the legacy forms on this repository (decision record
+	// 0059).
+	DEKKeyID      string
+	HasDEK        bool
+	PlainWrap     bool
+	SealedDEKOnly bool
+}
+
+// repositoryRowColumns is the column list scanRepositoryRow reads, in order.
+// The wrap's first byte is its framing; 112 is 'p', the plain marker.
+const repositoryRowColumns = `id, username, authority, created_at, dek_key_id,
+	dek IS NOT NULL, dek IS NOT NULL AND get_byte(dek, 0) = 112, sealed_dek_only`
+
+func scanRepositoryRow(scan func(dest ...any) error) (repositoryRow, error) {
+	var r repositoryRow
+	var keyID sql.NullString
+	if err := scan(&r.ID, &r.Username, &r.Authority, &r.CreatedAt, &keyID, &r.HasDEK, &r.PlainWrap, &r.SealedDEKOnly); err != nil {
+		return repositoryRow{}, err
+	}
+	r.DEKKeyID = keyID.String
+	r.CreatedAt = r.CreatedAt.UTC()
+	return r, nil
 }
 
 func listRepositoryRows(ctx context.Context, db *sql.DB) ([]repositoryRow, error) {
 	rows, err := db.QueryContext(ctx,
-		`SELECT id, username, authority, created_at FROM repositories ORDER BY created_at, id`)
+		`SELECT `+repositoryRowColumns+` FROM repositories ORDER BY created_at, id`)
 	if err != nil {
 		return nil, controlPlaneError(err)
 	}
 	defer func() { _ = rows.Close() }()
 	var out []repositoryRow
 	for rows.Next() {
-		var r repositoryRow
-		if err := rows.Scan(&r.ID, &r.Username, &r.Authority, &r.CreatedAt); err != nil {
+		r, err := scanRepositoryRow(rows.Scan)
+		if err != nil {
 			return nil, err
 		}
-		r.CreatedAt = r.CreatedAt.UTC()
 		out = append(out, r)
 	}
 	return out, rows.Err()
 }
 
 func repositoryRowByUsername(ctx context.Context, db *sql.DB, username string) (repositoryRow, error) {
-	var r repositoryRow
-	err := db.QueryRowContext(ctx,
-		`SELECT id, username, authority, created_at FROM repositories WHERE username = $1`, username).
-		Scan(&r.ID, &r.Username, &r.Authority, &r.CreatedAt)
+	r, err := scanRepositoryRow(db.QueryRowContext(ctx,
+		`SELECT `+repositoryRowColumns+` FROM repositories WHERE username = $1`, username).Scan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return repositoryRow{}, fmt.Errorf("no user %q on this substrate", username)
 	}
 	if err != nil {
 		return repositoryRow{}, controlPlaneError(err)
 	}
-	r.CreatedAt = r.CreatedAt.UTC()
 	return r, nil
+}
+
+// describeKeys renders what the row records about the repository's keys
+// (decision record 0059): the host key its DEK is wrapped under, and whether
+// the server has re-keyed its sealed store under the DEK alone.
+func describeKeys(r repositoryRow) string {
+	wrap := "wrapped under an unnamed host key (written before key ids; a keyed server re-wraps and names it at the next open)"
+	switch {
+	case !r.HasDEK:
+		wrap = "no DEK yet (a repository from before DEKs; the server adopts one and re-keys the sealed store at the next open)"
+	case r.PlainWrap:
+		wrap = "PLAIN wrap, written by a keyless host: no key protects the DEK until a keyed server opens the repository"
+	case r.DEKKeyID != "":
+		wrap = "wrapped under host key " + r.DEKKeyID
+	}
+	store := "sealed store DEK-only"
+	if !r.SealedDEKOnly {
+		store = "sealed store not yet re-keyed (plain or host-key-sealed payloads may remain until the server opens it once)"
+	}
+	return wrap + "; " + store
 }
 
 // controlPlaneError names the one failure an operator will actually hit: a DSN

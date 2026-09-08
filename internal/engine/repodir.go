@@ -453,21 +453,23 @@ func (s *service) legacyBlobsMoved(ctx context.Context, oldID, authority string)
 }
 
 // rewrapLegacyDEK renders a pre-authority manifest as the format-1 manifest,
-// with the DEK re-wrapped from the old id's binding to the authority's. An
-// empty DEK (a pre-DEK repository) is carried as is.
+// with the DEK re-wrapped from the old id's binding to the authority's and
+// the wrap naming this host's key. An empty DEK (a pre-DEK repository) is
+// carried as is.
 func (s *service) rewrapLegacyDEK(lm changelogfile.LegacyManifest) (changelogfile.Manifest, error) {
 	m := lm.Manifest
 	if len(lm.Manifest.DEK) == 0 {
 		return m, nil
 	}
-	dek, err := s.unwrapDEK(lm.Manifest.DEK, lm.ID)
+	dek, err := s.unwrapDEK(lm.Manifest.DEK, lm.ID, lm.Manifest.DEKKeyID)
 	if err != nil {
-		return m, fmt.Errorf("SUBSTRATE_CREDENTIAL_KEY does not open the DEK in the manifest of repository %s (%s, directory %s): the directory was written under a different key. Set the key the directory was written under, or move the directory out of the data root (%w)",
+		return m, fmt.Errorf("the DEK in the manifest of repository %s (%s, directory %s) does not open: %w. Set the key the directory was written under, or move the directory out of the data root",
 			lm.Manifest.Authority, lm.Manifest.Username, lm.ID, err)
 	}
 	if m.DEK, err = s.wrapDEK(dek, m.Authority); err != nil {
 		return m, err
 	}
+	m.DEKKeyID = s.credKeyID
 	return m, nil
 }
 
@@ -1038,9 +1040,25 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 		return out, newerChangelogDialect(m.Username, m.ChangelogDialect)
 	}
 	if len(m.DEK) > 0 {
-		if _, err := s.unwrapDEK(m.DEK, m.Authority); err != nil {
-			return out, fmt.Errorf("SUBSTRATE_CREDENTIAL_KEY does not open the DEK in the manifest of repository %s (%s): the directory was written under a different key, so importing it would leave a repository whose sealed store no login can open. Set the key the directory was written under, or move the directory out of the data root (%w)",
+		dek, err := s.unwrapDEK(m.DEK, m.Authority, m.DEKKeyID)
+		if err != nil {
+			return out, fmt.Errorf("the DEK in the manifest of repository %s (%s) does not open: %w. Importing it would leave a repository whose sealed store no login can open; set the key the directory was written under, or move the directory out of the data root",
 				m.Authority, m.Username, err)
+		}
+		// A marked manifest is a claim about the files, and the row it would
+		// create refuses every legacy form for good, so the claim is proven
+		// before the row exists: every file under sealed/ must open under the
+		// DEK alone (0059). An unmarked directory is not checked here; its
+		// first open re-keys what it can and refuses, by ref, what it cannot.
+		if m.SealedDEKOnly {
+			files, err := changelogfile.ReadSealed(dir)
+			if err != nil {
+				return out, err
+			}
+			if err := sealedFilesOpenUnder(files, dek); err != nil {
+				return out, fmt.Errorf("the manifest of repository %s (%s) says sealedDekOnly, but %w; the directory is refused rather than imported as a repository that would refuse that payload for good. Restore the directory from a copy whose files open, or clear sealedDekOnly in %s so the first open re-keys the store",
+					m.Authority, m.Username, err, changelogfile.ManifestName)
+			}
 		}
 	}
 	if other, err := s.repositoryByUsername(ctx, m.Username); err == nil {
@@ -1051,7 +1069,13 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 	// The directory is listed because no row has its authority as id, and the
 	// authority column always equals the id; this is the check that the
 	// manifest agrees with the directory name it was read under.
-	repo := Repository{ID: m.Authority, Username: m.Username, Authority: m.Authority, CreatedAt: m.CreatedAt, DEK: m.DEK}
+	// The marker is carried only beside a DEK: a manifest that claims a
+	// DEK-only store with no DEK to be under is contradictory, and an unmarked
+	// row costs one re-key pass at the first open, which is the safe reading.
+	repo := Repository{
+		ID: m.Authority, Username: m.Username, Authority: m.Authority, CreatedAt: m.CreatedAt,
+		DEK: m.DEK, DEKKeyID: m.DEKKeyID, SealedDEKOnly: m.SealedDEKOnly && len(m.DEK) > 0,
+	}
 	if repo.CreatedAt.IsZero() {
 		repo.CreatedAt = nowUTC()
 	}
@@ -1064,8 +1088,10 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 		return out, err
 	}
 	if _, err := s.maint.ExecContext(ctx, `
-		INSERT INTO repositories (id, username, authority, created_at, dek, history_generation)
-		VALUES ($1, $2, $3, $4, $5, $6)`, repo.ID, repo.Username, repo.Authority, repo.CreatedAt, repo.DEK, repo.HistoryGeneration); err != nil {
+		INSERT INTO repositories (id, username, authority, created_at, dek, history_generation, dek_key_id, sealed_dek_only)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		repo.ID, repo.Username, repo.Authority, repo.CreatedAt, repo.DEK, repo.HistoryGeneration,
+		nullString(repo.DEKKeyID), repo.SealedDEKOnly); err != nil {
 		return out, fmt.Errorf("create the row from the manifest: %w", err)
 	}
 	if m.ChangelogDialect > 0 {
@@ -1092,12 +1118,13 @@ func (s *service) manifestOf(ctx context.Context, repo Repository, q dbx) (chang
 	return changelogfile.Manifest{
 		Format: changelogfile.ManifestFormat, Username: repo.Username,
 		Authority: repo.Authority, CreatedAt: repo.CreatedAt, ChangelogDialect: dialect, DEK: repo.DEK,
+		DEKKeyID: repo.DEKKeyID, SealedDEKOnly: repo.SealedDEKOnly,
 	}, nil
 }
 
 // ensureManifest writes the repository's manifest when it is missing or when
-// what the row says has moved (a DEK adopted, a dialect stamped). The row is
-// the truth for a repository that has one.
+// what the row says has moved (a DEK adopted, a dialect stamped, the store
+// marked DEK-only). The row is the truth for a repository that has one.
 func (s *service) ensureManifest(ctx context.Context, dir string, repo Repository, q dbx) error {
 	want, err := s.manifestOf(ctx, repo, q)
 	if err != nil {
@@ -1115,7 +1142,8 @@ func (s *service) ensureManifest(ctx context.Context, dir string, repo Repositor
 
 func manifestsEqual(a, b changelogfile.Manifest) bool {
 	return a.Format == b.Format && a.Username == b.Username && a.Authority == b.Authority &&
-		a.CreatedAt.Equal(b.CreatedAt) && a.ChangelogDialect == b.ChangelogDialect && bytes.Equal(a.DEK, b.DEK)
+		a.CreatedAt.Equal(b.CreatedAt) && a.ChangelogDialect == b.ChangelogDialect && bytes.Equal(a.DEK, b.DEK) &&
+		a.DEKKeyID == b.DEKKeyID && a.SealedDEKOnly == b.SealedDEKOnly
 }
 
 // --- the sealed mirror ------------------------------------------------------
