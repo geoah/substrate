@@ -906,8 +906,10 @@ func TestRoundtripOnRetiredProcessIsChildGone(t *testing.T) {
 // scheduler, so this can pass on the old code by luck; the seam tests
 // above are the proof, and this one runs the real interleavings under the race
 // detector. A delivery may lose its process twice under this much killing and
-// report errChildGone, but no delivery may ever fail on the closed pipe, and
-// at least one must get through.
+// report errChildGone, and on a saturated host every one of them may: how
+// many get through is scheduling, not a property, so nothing here counts them.
+// No delivery may ever fail on the closed pipe, and once the sweeper has
+// stopped, a delivery must get through.
 func TestSweepRacingInvokesNeverClosesThePipeUnderThem(t *testing.T) {
 	ctx := context.Background()
 	r := New()
@@ -949,10 +951,8 @@ func TestSweepRacingInvokesNeverClosesThePipeUnderThem(t *testing.T) {
 	close(stop)
 	killer.Wait()
 	close(errs)
-	delivered := 0
 	for err := range errs {
 		if err == nil {
-			delivered++
 			continue
 		}
 		if strings.Contains(err.Error(), "file already closed") {
@@ -962,7 +962,9 @@ func TestSweepRacingInvokesNeverClosesThePipeUnderThem(t *testing.T) {
 			t.Fatalf("a delivery failed with something other than a lost process: %v", err)
 		}
 	}
-	if delivered == 0 {
-		t.Fatalf("none of %d deliveries got through the sweep", workers*rounds)
+	// With the sweeper stopped the installation is invocable again: whatever
+	// the race left in the map, dead or live, the lookup restarts or reuses it.
+	if res, err := r.Invoke(ctx, windowSpec, testInput(), nil); err != nil || res.Output != "ok" {
+		t.Fatalf("a delivery after the sweep stopped did not get through: %+v %v", res, err)
 	}
 }
