@@ -440,7 +440,9 @@ func (c *Catalog) InstallConfirmed(ctx context.Context, actor substrate.Actor, i
 // Install runs, over a closure rehomed onto the repository's OWN authority
 // first. `samples.substrate.reamde.dev/tasks/task` lands as
 // `ada.example.com/tasks/task`, owned by the repository that imported it:
-// `source: installed`, writable through the API, never offered an upgrade.
+// `source: installed`, writable through the API, and offered the shipped
+// upgrade through the stamp below, which a re-import takes (decision record
+// 0070).
 //
 // The rehoming is a walk over the decoded documents, so it reaches every
 // string one carries: the ids, the declared authority, the reference pins,
