@@ -22,7 +22,11 @@ type Exporter interface {
 	Export(ctx context.Context) (Export, error)
 }
 
-// Export is one pinned export: the point it holds and the stream of it.
+// Export is one pinned export: the point it holds and the stream of it. A
+// caller that pins streams: the repository's one export slot is held from
+// Export until WriteTo returns, however it returns, so a second Export in
+// between is refused with ErrConflict, and an Export that is never streamed
+// keeps the slot for the life of the process.
 type Export interface {
 	// Point is the committed point the stream holds, known before the first
 	// byte is written, so a server names it in the response headers.

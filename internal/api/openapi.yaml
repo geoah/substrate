@@ -752,6 +752,13 @@ paths:
               schema:
                 type: string
                 format: binary
+        "409":
+          description: An export of this repository is already streaming (`conflict`);
+            one streams at a time.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "501":
           description: This deployment does not export a repository (`unsupported`).
           content:

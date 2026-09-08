@@ -155,9 +155,6 @@ func (ds *dataset) pinExport(ctx context.Context) (*export, error) {
 	}
 	digests := make([]string, 0, len(e.blobs))
 	for _, b := range e.blobs {
-		if b.size < 0 {
-			return nil, fmt.Errorf("substrate/engine: blob %s is stored and its manifest declares no size, so its archive entry cannot be sized", b.digest)
-		}
 		digests = append(digests, b.digest)
 	}
 	taken := nowUTC()
@@ -306,7 +303,22 @@ func (e *export) writeFile(tw *tar.Writer, name, src string, size int64) error {
 // export here, which ends the stream, so a restore never holds a blob that is
 // not its digest's; the archive is already committed to the entry by then, so
 // the failure is the export's and not a shorter archive.
+//
+// A `stored` manifest that declares no size (verify passes one: it hashes
+// the bytes and compares the size only when the manifest claims one) is read
+// whole instead, as the operator's snapshot reads every blob, so the header
+// is sized from the bytes; the upload cap bounds what that holds.
 func (e *export) writeBlob(tw *tar.Writer, name string, store blobbytes.Store, b storedBlob) error {
+	if b.size < 0 {
+		data, err := readBlob(e.ctx, store, b.digest)
+		if err != nil {
+			return fmt.Errorf("substrate/engine: read blob %s: %w", b.digest, err)
+		}
+		if got := blobDigest(data); got != b.digest {
+			return fmt.Errorf("substrate/engine: blob %s read back as %s", b.digest, got)
+		}
+		return e.writeBytes(tw, name, data)
+	}
 	rc, err := store.Open(e.ctx, b.digest)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: read blob %s: %w", b.digest, err)

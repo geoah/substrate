@@ -532,6 +532,11 @@ var (
 
 func minioURL(t *testing.T) string {
 	t.Helper()
+	// Before the container, as internal/blobbytes does: the short suite must
+	// not start MinIO, or fail for want of Docker, before testdb skips it.
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
 	minioOnce.Do(func() {
 		ctx := context.Background()
 		c, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
