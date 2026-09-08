@@ -230,13 +230,6 @@ var traitFields = map[string]graphql.Fields{
 
 type schemaBuilder struct {
 	types []substrate.KindInfo
-	// names is every kind's GraphQL object name, computed ONCE over the whole
-	// set by the one naming rule (vocabulary.GraphQLNames): an installed kind
-	// is `<Package>_<Kind>`, and the authority's first label joins it only
-	// where two authorities install a package of one name. The declaration
-	// door computes the same map (vocabulary graphqlNameProblems), so the
-	// schema and the refusal can never disagree.
-	names map[string]string
 
 	changeType *graphql.Object
 	recordIF   *graphql.Interface
@@ -264,13 +257,8 @@ func BuildSchema(types []substrate.KindInfo) (graphql.Schema, error) {
 	copy(sorted, types)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Identity < sorted[j].Identity })
 
-	names := make([]vocabulary.GraphQLKind, 0, len(sorted))
-	for _, t := range sorted {
-		names = append(names, vocabulary.GraphQLKind{Identity: t.Identity, Source: t.Source})
-	}
 	b := &schemaBuilder{
 		types:         sorted,
-		names:         vocabulary.GraphQLNames(names),
 		traitIF:       map[string]*graphql.Interface{},
 		machineIF:     map[string]*graphql.Interface{},
 		machineStamps: map[string][]string{},
@@ -449,15 +437,13 @@ func (b *schemaBuilder) buildObjects() error {
 		return err
 	}
 	for _, t := range b.types {
-		// The GraphQL name is a function of the whole SET, not of load order:
-		// a shipped kind keeps its bare name, an installed kind is
-		// package-prefixed, and the authority's first label joins that only
-		// where two authorities install one package name — for every kind of
-		// both, so no kind's name depends on its neighbors. A name that lands
-		// on a structural/interface name, or on another kind's name, is
-		// REFUSED here with a clear error rather than silently renamed:
-		// installing a bundle can never rename an existing kind's GraphQL
-		// name.
+		// The GraphQL name is a function of the kind alone, never of its
+		// neighbors or of load order: a shipped kind keeps its bare name,
+		// every other kind carries its full authority and its package
+		// (record 0058). A name that lands on a structural/interface name,
+		// or on another kind's name, is REFUSED here with a clear error
+		// rather than silently renamed: installing a bundle can never rename
+		// an existing kind's GraphQL name.
 		name := b.typeName(t)
 		if owner, taken := reserved[name]; taken {
 			return fmt.Errorf("graphql: type %s cannot take name %q — reserved for %s; rename the kind or its package", t.Identity, name, owner)
@@ -595,16 +581,12 @@ func fieldFromDefinition(f *graphql.FieldDefinition) *graphql.Field {
 	return &graphql.Field{Type: f.Type, Args: args, Resolve: f.Resolve}
 }
 
-// typeName is the GraphQL object name for a kind. The rule itself lives in the
-// vocabulary package (vocabulary.GraphQLNames), because the DECLARATION path
+// typeName is the GraphQL object name for a kind. The rule lives in the
+// vocabulary package (vocabulary.GraphQLName), because the DECLARATION path
 // has to apply it too: two kinds that resolve to one GraphQL name are refused
-// when the second is declared, never silently renamed. A kind the builder was
-// not given falls back to the un-disambiguated base name, which is what a
-// reserved-name check on a stray identity wants.
+// when the second is declared, never silently renamed. It is a function of
+// the kind alone (record 0058), so the builder holds no name table.
 func (b *schemaBuilder) typeName(t substrate.KindInfo) string {
-	if name, ok := b.names[t.Identity]; ok {
-		return name
-	}
 	return vocabulary.GraphQLName(t.Identity, t.Source)
 }
 
@@ -659,7 +641,8 @@ func (b *schemaBuilder) queryType() *graphql.Object {
 				Type: graphql.NewList(b.recordIF),
 				Description: "The page's records, as the Record interface: id, kind, title and the " +
 					"other shared fields read directly, and a kind's own properties need an " +
-					`inline fragment, nodes { id ... on Calendarevent { summary at } }.`,
+					`inline fragment on the kind's GraphQL type, nodes { id ... on <Type> { summary at } }; ` +
+					"<Type> is listed by __schema { types { name } } (a non-core type carries its authority, record 0058).",
 			},
 			"cursor": &graphql.Field{Type: graphql.String},
 			// No `total`: the keyset walk never counts the matching set, and a

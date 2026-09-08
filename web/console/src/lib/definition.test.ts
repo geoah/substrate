@@ -310,13 +310,41 @@ describe("graphqlTypeName", () => {
     )
   })
 
-  it("prefixes an installed bundle kind with the bundle name", () => {
+  it("prefixes an installed kind with its full authority and package", () => {
+    // Decision 0058: the authority is always in the name, dots folded to
+    // underscores, so a second authority installing `google` renames nothing.
     expect(
       graphqlTypeName(
         "providers.substrate.reamde.dev/google/person",
         "installed"
       )
-    ).toBe("Google_Person")
+    ).toBe("Providers_substrate_reamde_dev_Google_Person")
+    expect(graphqlTypeName("ada.example.com/google/person", "installed")).toBe(
+      "Ada_example_com_Google_Person"
+    )
+  })
+
+  it("folds the authority injectively, as the server does", () => {
+    // A hyphen is legal in an authority and illegal in a GraphQL name; the
+    // server spells it `__` (a dot is `_`), so a hyphenated authority and its
+    // unhyphenated twin keep two names.
+    expect(
+      graphqlTypeName("acme-dev.example.com/tasks/task", "installed")
+    ).toBe("Acme__dev_example_com_Tasks_Task")
+    expect(
+      graphqlTypeName("my-host.example.com/tasks/task", "installed")
+    ).not.toBe(graphqlTypeName("myhost.example.com/tasks/task", "installed"))
+    // A GraphQL name may not begin with a digit, so a digit-first authority
+    // leads with `_`.
+    expect(graphqlTypeName("3rd.example.com/tasks/task", "installed")).toBe(
+      "_3rd_example_com_Tasks_Task"
+    )
+  })
+
+  it("leaves a bare reference bare whatever its source", () => {
+    // No authority to fold; prefixing an empty one would spell the reserved
+    // `__` introspection prefix.
+    expect(graphqlTypeName("task", "installed")).toBe("Task")
   })
 
   it("prefixes a published provider kind too", () => {
@@ -327,7 +355,7 @@ describe("graphqlTypeName", () => {
         "providers.substrate.reamde.dev/whoop/account",
         "published"
       )
-    ).toBe("Whoop_Account")
+    ).toBe("Providers_substrate_reamde_dev_Whoop_Account")
   })
 
   it("leaves a seeded kind bare", () => {

@@ -97,10 +97,15 @@ data:
   `<actor>/<name>`): `bundle:<authority>:<package>`,
   `function:<authority>:<package>:<name>`, `agent:<authority>:<package>:<name>`.
   Amends [0025](../decisions/0025-an-actor-carries-the-full-authority.md).
-- The GraphQL name of an installed kind is `<Package>_<Kind>` (`Tasks_Task`),
-  and only when two authorities install the same package name does the
-  authority's first label join it. This retires the last first-label keying
-  0014 reserved.
+- The GraphQL name of an installed kind was planned as `<Package>_<Kind>`
+  (`Tasks_Task`), with the authority's first label joining it only when two
+  authorities installed the same package name. That landed reading the full
+  authority as the tie-break, and
+  [0058](../decisions/0058-a-graphql-name-always-carries-the-authority.md)
+  then made the authority a fixed part of every non-core name
+  (`Ada_example_com_Tasks_Task`), because the tie-break renamed the first
+  package's types when the second arrived. Either way, no identifier keys on a
+  first label, which retires the last first-label keying 0014 reserved.
 
 ### The shipped tree
 
@@ -183,10 +188,11 @@ the import rewrites kind ids of the final shape once.
 
 ## Open
 
-- The exact GraphQL disambiguation rule when two authorities install one
-  package name. What landed reads the FULL authority, dots folded to
-  underscores, rather than the first label this page sketched: two authorities
-  can share a label, and 0014 reserves first-label keying.
+- The GraphQL disambiguation rule when two authorities install one package
+  name: settled by
+  [0058](../decisions/0058-a-graphql-name-always-carries-the-authority.md).
+  The full authority, dots folded to underscores, is part of every non-core
+  name, not a tie-break, so a second install renames nothing.
 - Writing the repository's own authority row at registration. The `authority`
   document kind exists and the shipped tree declares one per authority, but
   registration still records the authority on the repository row alone; the

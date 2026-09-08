@@ -379,11 +379,14 @@ func TestGraphQLSchemaIsCachedPerRegistryFingerprint(t *testing.T) {
 		Source:     "installed",
 		Definition: map[string]any{"plural": "threads", "properties": map[string]any{"subject": map[string]any{"type": "string"}}},
 	})
-	// An installed type is ALWAYS authority-prefixed: the beeper
-	// bundle's thread is Beeper_Thread, never the bare Thread.
-	res := env.gql(t, tok, `{ __type(name: "Beeper_Thread") { name } }`, nil)
+	// An installed type ALWAYS carries its authority and package (record
+	// 0058): the beeper bundle's thread is
+	// Beeper_connectors_substrate_reamde_dev_Beeper_Thread, never the bare
+	// Thread.
+	const want = "Beeper_connectors_substrate_reamde_dev_Beeper_Thread"
+	res := env.gql(t, tok, `{ __type(name: "`+want+`") { name } }`, nil)
 	typ, _ := res.Data["__type"].(map[string]any)
-	if typ == nil || typ["name"] != "Beeper_Thread" {
+	if typ == nil || typ["name"] != want {
 		t.Fatalf("installed type did not reach the schema under its prefixed name: %v", res.Data)
 	}
 }
@@ -577,9 +580,10 @@ func TestGraphQLIncomingIsNotOnRecord(t *testing.T) {
 
 // Installing a package whose singular collides with a shipped kind must NOT
 // rename the shipped kind's GraphQL name. The shipped task keeps the bare
-// "Task"; the installed task is package-prefixed "Alpha_Task". Both are
-// resolvable and distinct — the pre-A14 first-claim scheme renamed the shipped
-// type to "TasksTask" when the bundle sorted ahead of it.
+// "Task"; the installed task carries its authority and package,
+// "Acme_example_com_Alpha_Task" (record 0058). Both are resolvable and
+// distinct: the pre-A14 first-claim scheme renamed the shipped type to
+// "TasksTask" when the bundle sorted ahead of it.
 func TestGraphQLNamesDoNotDependOnRegistryOrder(t *testing.T) {
 	shipped := substrate.KindInfo{
 		Identity: "substrate.reamde.dev/core/task", Name: "task",
@@ -606,12 +610,12 @@ func TestGraphQLNamesDoNotDependOnRegistryOrder(t *testing.T) {
 	if bare.Description() != "substrate.reamde.dev/core/task" {
 		t.Fatalf("bare Task resolves to %q, not the shipped kind", bare.Description())
 	}
-	prefixed, ok := tm["Alpha_Task"].(*graphql.Object)
+	prefixed, ok := tm["Acme_example_com_Alpha_Task"].(*graphql.Object)
 	if !ok {
-		t.Fatalf("installed task did not get its package-prefixed name; have %v", sortedTypeNames(tm))
+		t.Fatalf("installed task did not get its authority-prefixed name; have %v", sortedTypeNames(tm))
 	}
 	if prefixed.Description() != "acme.example.com/alpha/task" {
-		t.Fatalf("Alpha_Task resolves to %q", prefixed.Description())
+		t.Fatalf("Acme_example_com_Alpha_Task resolves to %q", prefixed.Description())
 	}
 	// The order the two arrive in must not change either name.
 	schema2, err := gql.BuildSchema([]substrate.KindInfo{installed, shipped})
@@ -620,6 +624,88 @@ func TestGraphQLNamesDoNotDependOnRegistryOrder(t *testing.T) {
 	}
 	if _, ok := schema2.TypeMap()["Task"].(*graphql.Object); !ok {
 		t.Fatal("shipped Task name depends on registry order")
+	}
+}
+
+// INSTALLING A SAME-WORD PACKAGE RENAMES NOTHING (record 0058). A query
+// written against an installed kind's type name keeps working after a second
+// authority installs a package of the same word: every non-seed name carries
+// its authority from the start, so there is no tie to break and no rename.
+func TestGraphQLInstallingASameWordPackageKeepsExistingNames(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token("geoah")
+	ds := env.svc.datasets["geoah"]
+
+	taskKind := func(authority string) substrate.KindInfo {
+		return substrate.KindInfo{
+			Identity: authority + "/tasks/task", Name: "task",
+			Authority: authority, Package: "tasks",
+			Version: 1, Plural: "tasks", Source: "installed",
+			Definition: map[string]any{"properties": map[string]any{"summary": map[string]any{"type": "string"}}},
+		}
+	}
+	ds.types = append(ds.types, taskKind("acme.example.com"))
+	ds.records["t1"] = &substrate.Record{
+		ID: "t1", Kind: "acme.example.com/tasks/task", Version: 1,
+		Properties: map[string]any{"summary": "write the record"},
+	}
+
+	const query = `{ record(kind: "acme.example.com/tasks/task", id: "t1") { id ... on Acme_example_com_Tasks_Task { summary } } }`
+	read := func() string {
+		res := env.gql(t, tok, query, nil)
+		rec, _ := res.Data["record"].(map[string]any)
+		summary, _ := rec["summary"].(string)
+		return summary
+	}
+	if got := read(); got != "write the record" {
+		t.Fatalf("before the second install: summary = %q", got)
+	}
+
+	// A second authority installs its own `tasks` package. The schema is
+	// rebuilt (the registry fingerprint moved), and the first kind's name and
+	// the query on it survive.
+	ds.types = append(ds.types, taskKind("other.example.org"))
+	if got := read(); got != "write the record" {
+		t.Fatalf("after the second install: summary = %q", got)
+	}
+	res := env.gql(t, tok, `{ record(kind: "acme.example.com/tasks/task", id: "t1") { __typename } }`, nil)
+	rec, _ := res.Data["record"].(map[string]any)
+	if got := rec["__typename"]; got != "Acme_example_com_Tasks_Task" {
+		t.Fatalf("__typename = %v after the second install", got)
+	}
+}
+
+// A DIGIT-FIRST AUTHORITY STILL BUILDS. The authority grammar admits
+// `3rd.example.com`, and a GraphQL name may not begin with a digit, so the
+// fold leads with `_`; without it graphql-go refuses the name and the whole
+// repository loses its schema (record 0058). A hyphenated authority folds
+// the hyphen to `__` and builds beside its unhyphenated twin.
+func TestGraphQLDigitFirstAndHyphenatedAuthoritiesBuild(t *testing.T) {
+	task := func(authority string) substrate.KindInfo {
+		return substrate.KindInfo{
+			Identity: authority + "/tasks/task", Name: "task",
+			Authority: authority, Package: "tasks",
+			Version: 1, Plural: "tasks", Source: "installed",
+			Definition: map[string]any{"properties": map[string]any{"note": map[string]any{"type": "string"}}},
+		}
+	}
+	schema, err := gql.BuildSchema([]substrate.KindInfo{task("3rd.example.com"), task("my-host.example.com"), task("myhost.example.com")})
+	if err != nil {
+		t.Fatalf("buildSchema: %v", err)
+	}
+	tm := schema.TypeMap()
+	for name, identity := range map[string]string{
+		"_3rd_example_com_Tasks_Task":     "3rd.example.com/tasks/task",
+		"My__host_example_com_Tasks_Task": "my-host.example.com/tasks/task",
+		"Myhost_example_com_Tasks_Task":   "myhost.example.com/tasks/task",
+	} {
+		obj, ok := tm[name].(*graphql.Object)
+		if !ok {
+			t.Fatalf("%s missing; have %v", name, sortedTypeNames(tm))
+		}
+		if obj.Description() != identity {
+			t.Fatalf("%s resolves to %q, want %s", name, obj.Description(), identity)
+		}
 	}
 }
 

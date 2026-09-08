@@ -86,10 +86,11 @@ data:
     to a condition (eq, in, prefix, gt, gte, lt, lte, contains, exists), timestamps
     RFC3339, so a day is properties: {at: {gte: "2026-08-15T00:00:00Z", lt:
     "2026-08-16T00:00:00Z"}}. `nodes` is the Record interface: a kind's own
-    properties need an inline fragment, nodes { id ... on Calendarevent {
-    summary } }. Do not guess field names: introspect when unsure, and batch
-    related lookups into one query. Mutations and subscriptions are rejected.
-    Responses over 64KB are refused; narrow the query.
+    properties need an inline fragment, nodes { id ... on <Type> { summary
+    } }; <Type> comes from __schema { types { name } }. Do not guess field
+    names: introspect when unsure, and batch related lookups into one query.
+    Mutations and subscriptions are rejected. Responses over 64KB are refused;
+    narrow the query.
   runtime: host
   arguments:
     - name: query

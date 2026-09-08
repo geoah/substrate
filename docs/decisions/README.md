@@ -200,3 +200,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0053](0053-rest-is-supported-all-of-graphql-is-preview.md) | REST is the supported interface; all of GraphQL is preview | accepted |
 | [0054](0054-a-repository-moves-between-host-keys-through-an-offline-rewrap.md) | A repository moves between host keys through an offline rewrap of its manifest | accepted |
 | [0056](0056-a-change-cursor-is-a-seq-under-a-history-generation.md) | A change cursor is a seq under a history generation | accepted |
+| [0058](0058-a-graphql-name-always-carries-the-authority.md) | A non-core kind's GraphQL name always carries its full authority | accepted |

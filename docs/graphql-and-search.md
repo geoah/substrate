@@ -18,13 +18,13 @@ The whole read/write surface also serves at one endpoint,
 ```graphql
 query ($f: JSON) {
   records(filter: $f, first: 20) {
-    nodes { id kind title ... on Tasks_Task { status } }
+    nodes { id kind title ... on Ada_example_com_Tasks_Task { status } }
     cursor
     head
   }
 }
 # variables:
-# {"f": {"kinds": ["samples.substrate.reamde.dev/tasks/task"],
+# {"f": {"kinds": ["ada.example.com/tasks/task"],
 #        "properties": {"status": {"eq": "open"}}}}
 ```
 
@@ -78,18 +78,23 @@ never rename another kind. The rule has two arms. A **seeded kind keeps its
 bare singular**: `substrate.reamde.dev/core/token` is `Token`. That is the core
 package alone, because creation seeds core and nothing else — every sample a
 repository imports, `people` and `tasks` included, installs as the repository's
-own. An **installed kind is package-prefixed**: the package's word, TitleCased,
-an underscore, then the singular. Two packages may declare the same singular
-and stay distinct: `providers.substrate.reamde.dev/notion/page` is `Notion_Page`
-and `samples.substrate.reamde.dev/web/page` is `Web_Page`, and the underscore
-keeps both out of reach of any seeded name. Two AUTHORITIES publishing a
-package of one word are the one ambiguity left, and there the authority's
-leading label joins the front for every kind of both packages
-(`Acme_Tasks_Task`, `Samples_Tasks_Task`), so a kind's name never depends on
-which of its neighbours are installed
-([decision 0047](decisions/0047-a-kind-lives-in-a-package.md)). Interfaces
-follow the same determinism: one per trait that carries properties (a pure
-marker trait adds none), and one per distinct state-property name
+own. Every **other kind carries its authority and its package**: the authority
+folded (a dot becomes `_`, a hyphen becomes `__`, and a digit-first authority
+gains a leading `_`), the package's word, then the singular, each TitleCased
+and joined by underscores. The fold reads back unambiguously because an
+authority never carries an underscore, so two authorities never share a name:
+`my-host.example.com` is `My__host_example_com` and `myhost.example.com` is
+`Myhost_example_com`. The repository `ada.example.com`
+that imported the `tasks` sample has `Ada_example_com_Tasks_Task`, and the
+installed Notion provider has `Providers_substrate_reamde_dev_Notion_Page`. The
+underscore keeps every one of them out of reach of any seeded name, the
+package keeps two packages apart that declare one singular, and the authority
+keeps two authorities apart that publish a package of one word, so a name
+never depends on which of its neighbours are installed and a later install
+never renames an earlier kind
+([decision 0058](decisions/0058-a-graphql-name-always-carries-the-authority.md)).
+Interfaces follow the same determinism: one per trait that carries properties
+(a pure marker trait adds none), and one per distinct state-property name
 (`HasStatus`, `HasProminence`).
 
 Two kinds that still resolve to one name are **refused when the second is

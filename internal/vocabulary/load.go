@@ -2691,25 +2691,37 @@ func mslice(m map[string]any, k string) []any {
 func (r *Registry) graphqlNameProblems() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	// The SAME rule the schema builder applies (internal/gql), asked over the
-	// same set: a name this refuses is a name that could not be built, and a
-	// name it admits is the one the schema will carry.
-	kinds := make([]GraphQLKind, 0, len(r.byIdent))
-	for _, t := range r.byIdent {
-		kinds = append(kinds, GraphQLKind{Identity: t.Identity, Source: t.Source})
-	}
+	// The SAME rule the schema builder applies (internal/gql), asked of every
+	// kind: a name this refuses is a name that could not be built, and a name
+	// it admits is the one the schema will carry.
 	byName := map[string][]string{}
-	for ident, name := range GraphQLNames(kinds) {
-		byName[name] = append(byName[name], ident)
-	}
 	var problems []string
+	for _, t := range r.byIdent {
+		name := GraphQLName(t.Identity, t.Source)
+		if name == "" {
+			continue
+		}
+		// The authority fold is built to satisfy this pattern for every
+		// legal reference; the check stands so a name the schema builder
+		// would refuse is refused here, naming the kind, instead of at the
+		// next schema build where it takes every query down with it.
+		if !reGraphQLName.MatchString(name) {
+			problems = append(problems, fmt.Sprintf(
+				"graphql name %s of %s is not a GraphQL identifier (%s)",
+				name, t.Identity, reGraphQLName.String()))
+		}
+		byName[name] = append(byName[name], t.Identity)
+	}
 	for name, idents := range byName {
 		if len(idents) < 2 {
 			continue
 		}
 		sort.Strings(idents)
+		// Both identities are named in full. The authority fold is injective,
+		// so two non-seed kinds meet here only when their references are one
+		// reference; two SEED kinds meet on the bare singular.
 		problems = append(problems, fmt.Sprintf(
-			"graphql name %s is claimed by %s — one kind per GraphQL name; rename one of them",
+			"graphql name %s is claimed by %s: one kind per GraphQL name; rename one kind or its package",
 			name, strings.Join(idents, " and ")))
 	}
 	sort.Strings(problems)
