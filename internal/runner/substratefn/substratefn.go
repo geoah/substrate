@@ -521,19 +521,39 @@ func (s SearchQuery) params() map[string]any {
 	return params
 }
 
-// Search returns typed hits.
+// SearchResult is the host's whole search answer: the typed hits, and
+// Pending, the number of properties the drain has yet to buy vectors for. A
+// non-zero Pending beside a ranking says the semantic arm saw a partial index
+// (a repository restored from its directory, a re-embed in progress).
+type SearchResult struct {
+	Hits    []ReadHit `json:"hits"`
+	Pending int       `json:"pending"`
+}
+
+// Search returns typed hits; SearchResult is the same call with the backlog.
 func (e *Records) Search(s SearchQuery) ([]ReadHit, error) {
+	res, err := e.SearchResult(s)
+	if err != nil {
+		return nil, err
+	}
+	return res.Hits, nil
+}
+
+// SearchResult returns the hits and the embed backlog beside them.
+func (e *Records) SearchResult(s SearchQuery) (*SearchResult, error) {
 	raw, err := e.host.call("search", s.params())
 	if err != nil {
 		return nil, err
 	}
-	var out struct {
-		Hits []ReadHit `json:"hits"`
-	}
+	return decodeSearchResult(raw)
+}
+
+func decodeSearchResult(raw []byte) (*SearchResult, error) {
+	var out SearchResult
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return nil, fmt.Errorf("substratefn: decode search result: %w", err)
 	}
-	return out.Hits, nil
+	return &out, nil
 }
 
 // SearchRaw is the untyped escape hatch: the hits as a slice of any.

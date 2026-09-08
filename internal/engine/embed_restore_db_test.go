@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/internal/engine"
+	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 )
@@ -358,6 +359,70 @@ func TestImportRequeuesWhenTheDirectoryRepointsTheModel(t *testing.T) {
 	if err := raw.QueryRow(`SELECT model FROM embeddings WHERE record_id = $1`, book.ID).Scan(&model); err != nil || model != "text-embedding-ada-002" {
 		t.Fatalf("the re-bought vector names model %q, %v; want the new one", model, err)
 	}
+}
+
+// The directory's later declaration of the same closure turns `embed` off on
+// the property the older database holds vectors for. Nothing queues them, so
+// nothing would ever replace them, and the semantic arm would keep scoring
+// them: the import deletes them with their queue rows, because the registry
+// no longer embeds the pair. (A kind the registry does not know at all is a
+// parked closure and is left alone.)
+func TestImportDropsTheVectorsOfAPropertyNoLongerEmbedded(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	emb := newFakeEmbedServer(t)
+	svc, dsn := newService(t)
+	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatal(err)
+	}
+	importVocabulary(t, ds, "people")
+	installShelf(t, ds)
+	installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
+	book := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "book", Properties: map[string]any{"title": "Same", "description": "alpha unique marmalade prose"},
+	})
+	if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != 1 {
+		t.Fatalf("drain = %d, %v, want 1, nil", n, err)
+	}
+	id := repositoryIDOf(t, ds)
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+
+	// The directory moves on in another database: the shelf closure is
+	// declared again with the blurb no longer embeddable.
+	root2 := copyRepositoryDir(t, root, id)
+	svc2 := mustReopen(t, testdb.NewSchema(t), root2)
+	ds2, err := svc2.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := enginetest.InstallShelfVersion(ctx, ds2, 2, false); err != nil {
+		t.Fatalf("declare the shelf again without embed: %v", err)
+	}
+	_ = svc2.Close()
+
+	svc3 := mustReopen(t, dsn, root2)
+	ds3, err := svc3.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("open the repository restored over the older database: %v", err)
+	}
+	raw := scopedDB(t, dsn, "geoah")
+	if n := countRows(t, raw, "embeddings"); n != 0 {
+		t.Fatalf("%d vectors of a property no longer embedded outlived the import", n)
+	}
+	if n := countRows(t, raw, "embed_queue"); n != 0 {
+		t.Fatalf("%d queue rows for a property no longer embedded", n)
+	}
+	// Nothing embeddable, nothing queued, nothing stored: an empty answer.
+	res, err := ds3.Search(ctx, substrate.SearchInput{Q: "marmalade prose", Mode: substrate.SearchSemantic})
+	if err != nil || len(res.Hits) != 0 || res.Pending != 0 {
+		t.Fatalf("semantic search = %+v, %v; want an empty answer", res, err)
+	}
+	_ = book
 }
 
 // A provider and nothing embeddable is an empty answer, not a refusal: the

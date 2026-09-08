@@ -13,6 +13,7 @@ import (
 	"github.com/geoah/substrate/internal/embed"
 	"github.com/geoah/substrate/internal/llm"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // WHERE VECTORS ARE BOUGHT. Completions name their provider row on the agent;
@@ -243,11 +244,14 @@ func (ds *dataset) reconcileEmbeddings(ctx context.Context, q dbx, at time.Time)
 		pair = &claims[0]
 	}
 	total := 0
-	for _, ty := range ds.registry().Kinds() {
+	reg := ds.registry()
+	embeddable := map[[2]string]bool{}
+	for _, ty := range reg.Kinds() {
 		for name, p := range ty.Props {
 			if p == nil || !p.Embed {
 				continue
 			}
+			embeddable[[2]string{ty.Identity, name}] = true
 			n, err := reconcileEmbeddable(ctx, q, ty.Identity, name, pair, at)
 			if err != nil {
 				return total, fmt.Errorf("substrate/engine: reconcile embeddings of %s.%s: %w", ty.Identity, name, err)
@@ -255,7 +259,52 @@ func (ds *dataset) reconcileEmbeddings(ctx context.Context, q dbx, at time.Time)
 			total += n
 		}
 	}
+	if err := pruneUnembeddable(ctx, q, reg, embeddable); err != nil {
+		return total, err
+	}
 	return total, nil
+}
+
+// pruneUnembeddable deletes the chunks, and the queue rows, of every
+// (kind, property) the database holds vectors for that the registry no longer
+// embeds: the directory turned `embed` off, dropped the property, or dropped
+// the kind. Nothing else would ever remove them (`reembed` walks the same
+// registry), and semantic() would keep scoring them. A kind the registry does
+// not know is left alone: that is a parked closure, whose records are neither
+// reconciled nor queued (reconcileEmbeddings), and whose vectors are its own
+// until it admits.
+func pruneUnembeddable(ctx context.Context, q dbx, reg *vocabulary.Registry, embeddable map[[2]string]bool) error {
+	rows, err := q.QueryContext(ctx, `SELECT DISTINCT record_kind, property FROM embeddings`)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: list embedded pairs: %w", err)
+	}
+	var stale [][2]string
+	for rows.Next() {
+		var pair [2]string
+		if err := rows.Scan(&pair[0], &pair[1]); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if embeddable[pair] {
+			continue
+		}
+		if _, known := reg.ByIdentity(pair[0]); !known {
+			continue
+		}
+		stale = append(stale, pair)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, pair := range stale {
+		for _, table := range []string{"embeddings", "embed_queue"} {
+			if _, err := q.ExecContext(ctx,
+				`DELETE FROM `+table+` WHERE record_kind = $1 AND property = $2`, pair[0], pair[1]); err != nil {
+				return fmt.Errorf("substrate/engine: prune %s of %s.%s: %w", table, pair[0], pair[1], err)
+			}
+		}
+	}
+	return nil
 }
 
 func reconcileEmbeddable(ctx context.Context, q dbx, kind, prop string, pair *embedClaim, at time.Time) (int, error) {

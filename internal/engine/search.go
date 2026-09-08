@@ -79,6 +79,22 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) (substr
 			mode = substrate.SearchLexical
 		}
 	}
+	// The semantic arm runs only over vectors the resolved pair has: with
+	// none there is nothing to score, so embedding the query would buy nothing
+	// and a provider that is down (mid-restore, say) must not fail a hybrid
+	// search whose lexical arm has an answer. Semantic mode says why instead.
+	semanticArm := false
+	if provider != nil {
+		have, err := ds.pairHasVectors(ctx, provider)
+		if err != nil {
+			return out, err
+		}
+		if have {
+			semanticArm = true
+		} else if mode == substrate.SearchSemantic {
+			return out, ds.refuseSemantic(ctx, provider, out.Pending)
+		}
+	}
 	var types []string
 	reg := ds.registry()
 	for _, name := range in.Kinds {
@@ -112,12 +128,7 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) (substr
 			demoted[id] = demoted[id] || r.demoted
 		}
 	}
-	if mode == substrate.SearchSemantic {
-		if err := ds.requireVectors(ctx, provider, out.Pending); err != nil {
-			return out, err
-		}
-	}
-	if mode == substrate.SearchSemantic || mode == substrate.SearchHybrid {
+	if semanticArm {
 		sem, err := ds.semantic(ctx, provider, q, types, k)
 		if err != nil {
 			return out, err
@@ -241,29 +252,31 @@ func (ds *dataset) embedPending(ctx context.Context) (int, error) {
 	return n, nil
 }
 
-// requireVectors refuses a semantic search the resolved pair cannot answer,
-// and says why, so an empty index is never read as "no matches". A pair with
-// vectors searches, and that one EXISTS is the whole cost on the happy path.
-// Work in the queue (pending, counted by the caller) is substrate.ErrUnavailable
-// with the count: a repository restored from its directory (whose vectors were
-// never in the directory, only its queue rows are) or a re-embed the drain has
-// not reached, and the number falls as the drain buys. No work and vectors
-// from another pair is a row re-pointed at a model nobody ran `reembed` for:
-// nothing will change by itself, so that is substrate.ErrValidation naming the
-// command, as the missing-row refusal above names the property. No work and no
-// vectors at all is a repository with nothing embeddable: an empty answer.
-// Hybrid is not held to any of this: its lexical arm is the documented answer
-// while the semantic arm has nothing, and Pending says how much it is missing.
-func (ds *dataset) requireVectors(ctx context.Context, provider *embedProvider, pending int) error {
+// pairHasVectors reports whether the resolved pair has any vector to score;
+// one EXISTS, the whole cost on the happy path.
+func (ds *dataset) pairHasVectors(ctx context.Context, provider *embedProvider) (bool, error) {
 	var have bool
 	if err := ds.db.QueryRowContext(ctx,
 		`SELECT EXISTS (SELECT 1 FROM embeddings WHERE provider = $1 AND model = $2)`,
 		provider.id, provider.model).Scan(&have); err != nil {
-		return fmt.Errorf("substrate/engine: semantic search: %w", err)
+		return false, fmt.Errorf("substrate/engine: semantic search: %w", err)
 	}
-	if have {
-		return nil
-	}
+	return have, nil
+}
+
+// refuseSemantic is the answer to a semantic search whose resolved pair has no
+// vectors, so an empty index is never read as "no matches". Work in the queue
+// (pending, counted by the caller) is substrate.ErrUnavailable with the count:
+// a repository restored from its directory (whose vectors were never in the
+// directory, only its queue rows are) or a re-embed the drain has not reached,
+// and the number falls as the drain buys. No work and vectors from another
+// pair is a row re-pointed at a model nobody ran `reembed` for: nothing will
+// change by itself, so that is substrate.ErrValidation naming the command, as
+// the missing-row refusal above names the property. No work and no vectors at
+// all is a repository with nothing embeddable: nil, and the caller answers
+// empty. Hybrid never comes here: its lexical arm is the documented answer
+// while the semantic arm has nothing, and Pending says how much it is missing.
+func (ds *dataset) refuseSemantic(ctx context.Context, provider *embedProvider, pending int) error {
 	if pending > 0 {
 		return fmt.Errorf("%w: semantic search has no vectors yet from llmprovider %q model %q: %d properties pending in the embed queue",
 			substrate.ErrUnavailable, provider.id, provider.model, pending)

@@ -161,12 +161,20 @@ const (
 // apply an import rides, under its own bundle actor. It requires people:
 // the author and narrator references land on person.
 func InstallShelf(ctx context.Context, ds substrate.Dataset) error {
+	return InstallShelfVersion(ctx, ds, 1, true)
+}
+
+// InstallShelfVersion is InstallShelf at a chosen package version, with
+// `book.description` embeddable or not: the shape a later declaration of the
+// same closure takes, for the tests about what a vocabulary change does to
+// the vectors already bought.
+func InstallShelfVersion(ctx context.Context, ds substrate.Dataset, version int64, embed bool) error {
 	sa, ok := ds.(substrate.VocabularyApplier)
 	if !ok {
 		return errors.New("enginetest: dataset does not support ApplyVocabularyDocuments")
 	}
 	docs := []map[string]any{
-		vocabulary.PackageManifest(ShelfPackage, 1),
+		vocabulary.PackageManifest(ShelfPackage, version),
 		{
 			"kind":     "substrate.reamde.dev/core/propertytype",
 			"metadata": map[string]any{"id": ShelfPackage + "/asin"},
@@ -194,7 +202,7 @@ func InstallShelf(ctx context.Context, ds substrate.Dataset) error {
 			map[string]any{
 				"properties": map[string]any{
 					"subtitle":    map[string]any{"type": "string"},
-					"description": map[string]any{"type": "markdown", "embed": true},
+					"description": map[string]any{"type": "markdown", "embed": embed},
 					"author": map[string]any{
 						"type": "reference", "kind": "samples.substrate.reamde.dev/people/person",
 						"repeated": true, "mustExist": true,

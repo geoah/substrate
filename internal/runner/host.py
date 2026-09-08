@@ -484,6 +484,17 @@ def _as_kinds(kinds):
     return list(kinds or [])
 
 
+class SearchResult(list):
+    """A search answer: iterable as its hits, with `pending`, the number of
+    properties the drain has yet to buy vectors for. Non-zero beside a ranking
+    means the semantic arm saw a partial index."""
+
+    def __init__(self, hits, pending=0):
+        super().__init__(hits)
+        self.hits = self
+        self.pending = pending
+
+
 class Records:
     """Typed, type-scoped, budget-aware reads over the host's read calls. A
     forbidden type or an exhausted budget surfaces as a HostError carrying the
@@ -591,8 +602,11 @@ class Host:
         return self._call("list", query).get("page") or {}
 
     def search(self, **params):
-        """Lexical/semantic search (q, mode, kinds, k) -> hits list."""
-        return self._call("search", params).get("hits") or []
+        """Lexical/semantic search (q, mode, kinds, k) -> SearchResult: the hits
+        list, with `.pending` (properties the drain has yet to buy vectors
+        for) beside it."""
+        raw = self._call("search", params)
+        return SearchResult(raw.get("hits") or [], raw.get("pending") or 0)
 
     def call(self, function, input=None):
         """Invoke another function (permissions.call gated) -> its output.
