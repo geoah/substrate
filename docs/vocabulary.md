@@ -243,7 +243,9 @@ once. The narrowing diffs that refuse:
   regular expression admits everything another does is not decidable, so the
   guard asks the rows instead, and a change every stored value still matches
   admits. The values are matched with the same compiled expression the write
-  path uses, never with Postgres' own regex dialect
+  path uses, never with Postgres' own regex dialect. A `secret` is stored
+  sealed, so its values cannot be matched: any pattern change on a secret
+  property refuses while a record holds one
 - raising or adding `min:`, and lowering or adding `max:`, while records hold
   a number outside the new bound; a `decimal` compares exactly
 - every one of those inside an object property's declared `fields:`, at each

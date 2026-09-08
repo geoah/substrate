@@ -1006,11 +1006,24 @@ func keyPatternTightens(curP, candP *vocabulary.Property) bool {
 // nothing.
 func constraintNarrowings(ident, subject string, path []fieldStep, curP, candP *vocabulary.Property) []narrowing {
 	var out []narrowing
-	if patternTightens(curP, candP) {
+	switch {
+	case patternTightens(curP, candP) && candP.Datatype == vocabulary.DatatypeSecret:
+		// A secret's plaintext meets the pattern at the write (coerceProps runs
+		// before storeSecretValue), but the row holds a ref into the sealed
+		// store, so no stored value can be matched here. The count is every row
+		// holding one: conservative, and the guard says why.
+		q, args := sealedPresence(ident, path)
+		out = append(out, narrowing{
+			format: fmt.Sprintf("type %s: %s changes its pattern to %s while %%d live records hold a sealed value, which cannot be checked against a pattern; rewrite them first",
+				ident, subject, candP.Pattern),
+			query: q, args: args,
+		})
+	case patternTightens(curP, candP):
 		out = append(out, narrowing{
 			format: fmt.Sprintf("type %s: %s changes its pattern to %s while %%d live records hold a value it refuses; rewrite them first",
 				ident, subject, candP.Pattern),
-			query: propValuesQuery, args: []any{ident, path[0].key},
+			query:   propValuesQuery,
+			args:    []any{ident, path[0].key},
 			strands: patternStrands(path, candP.Pattern),
 		})
 	}
@@ -1096,18 +1109,26 @@ func maxLowers(cur, cand *vocabulary.Property) bool {
 
 // patternApplies reports whether coerceScalar matches a datatype's values
 // against a declared pattern: the string family, minus the datatypes that
-// return before the match (datetime, blobref). A sensitive value is excluded
-// too: a secret is stored sealed, so no stored value can be matched, and a
-// digest is minted by the server, never authored.
+// return before the match (datetime, blobref). A digest is in: it is stored as
+// the hex string the write matched. A secret is in too, and counted by
+// presence, because its stored form is a sealed ref (constraintNarrowings).
 func patternApplies(dt vocabulary.Datatype) bool {
 	switch dt {
 	case vocabulary.DatatypeObject, vocabulary.DatatypeReference, vocabulary.DatatypeJSON,
 		vocabulary.DatatypeBool, vocabulary.DatatypeInt, vocabulary.DatatypeFloat, vocabulary.DatatypeDecimal,
-		vocabulary.DatatypeDatetime, vocabulary.DatatypeBlobRef, vocabulary.DatatypeState,
-		vocabulary.DatatypeSecret, vocabulary.DatatypeDigest:
+		vocabulary.DatatypeDatetime, vocabulary.DatatypeBlobRef, vocabulary.DatatypeState:
 		return false
 	}
 	return true
+}
+
+// sealedPresence counts the live rows holding a string at the path: a secret's
+// stored form is the ref string into the sealed store, so presence is the
+// whole of what the rows can say about it.
+func sealedPresence(ident string, path []fieldStep) (string, []any) {
+	return countAtPath(ident, path, func(expr string, _ *sqlArgs) string {
+		return fmt.Sprintf("jsonb_typeof(%s) = 'string'", expr)
+	})
 }
 
 // boundsApply reports whether coerceScalar holds a datatype's values to `min`

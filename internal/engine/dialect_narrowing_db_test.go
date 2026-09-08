@@ -10,6 +10,7 @@ package engine_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -45,6 +46,11 @@ func dnBaseProps() map[string]any {
 	props["ratio"] = map[string]any{"type": "float"}
 	props["price"] = map[string]any{"type": "decimal", "min": 0}
 	spec["fields"].(map[string]any)["code"] = map[string]any{"type": "string", "pattern": "^[a-z]+$"}
+	// The two sensitive datatypes the write path also holds to a pattern: a
+	// digest is stored as its hex string, a secret as a ref into the sealed
+	// store, so only the first can be matched.
+	props["fingerprint"] = map[string]any{"type": "digest", "pattern": "^ab"}
+	props["token"] = map[string]any{"type": "secret", "pattern": "^old-"}
 	props["pinned"] = map[string]any{"type": "reference", "kind": "target", "properties": map[string]any{
 		"note":   map[string]any{"type": "string", "pattern": "^[a-z]+$"},
 		"weight": map[string]any{"type": "int", "min": 1},
@@ -93,6 +99,9 @@ func dnRow(t *testing.T, ds substrate.Dataset) {
 			"ratio":  0.25,
 			"price":  "5.50",
 			"pinned": map[string]any{"ref": "a", "note": "abcd", "weight": 5},
+
+			"fingerprint": strings.Repeat("ab", 32),
+			"token":       "old-secret",
 		},
 	})
 }
@@ -295,6 +304,20 @@ func dnCases() map[string]struct {
 				props["notes"] = map[string]any{"type": "string", "keyed": true, "pattern": "^x"}
 			},
 			says: `property "notes" changes its pattern to ^x`,
+		},
+		"digest pattern changed": {
+			mutate: func(props map[string]any) {
+				props["fingerprint"] = map[string]any{"type": "digest", "pattern": "^cd"}
+			},
+			says: `property "fingerprint" changes its pattern to ^cd`,
+		},
+		// A sealed value cannot be matched, so any pattern change on a secret
+		// counts every row holding one, and the guard says so.
+		"secret pattern changed": {
+			mutate: func(props map[string]any) {
+				props["token"] = map[string]any{"type": "secret", "pattern": "^new-"}
+			},
+			says: `property "token" changes its pattern to ^new- while 1 live records hold a sealed value, which cannot be checked against a pattern`,
 		},
 		"property min raised": {
 			mutate: func(props map[string]any) {
@@ -616,6 +639,9 @@ func TestConstraintChangesAdmitWhatTheDataSatisfies(t *testing.T) {
 		},
 		"decimal max added at the held value": func(props map[string]any) {
 			props["price"] = map[string]any{"type": "decimal", "min": 0, "max": 5.5}
+		},
+		"digest pattern changed to one the value matches": func(props map[string]any) {
+			props["fingerprint"] = map[string]any{"type": "digest", "pattern": "^(ab)+$"}
 		},
 		"link property pattern changed to one the value matches": func(props map[string]any) {
 			props["pinned"].(map[string]any)["properties"].(map[string]any)["note"] = map[string]any{"type": "string", "pattern": "^[a-d]+$"}
