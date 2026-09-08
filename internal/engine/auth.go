@@ -805,6 +805,9 @@ var errCredentialConflict = fmt.Errorf("%w: the credential changed concurrently 
 // is used on its own (a rotation) and inside the creation transaction
 // (registration), which is why it is a txn method and not a dataset one.
 func (t *txn) writeCredential(cw credentialWrite) error {
+	// Under the changelog lock the transaction already holds (rows.go
+	// changelogLockKey), so this key never sits ahead of another writer's
+	// append.
 	if err := t.lockKey("credential"); err != nil {
 		return err
 	}

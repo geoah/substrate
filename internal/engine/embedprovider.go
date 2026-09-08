@@ -525,14 +525,10 @@ func (t *txn) admitProviderRow(id string, props map[string]any) error {
 	// exclusive lock is what stops two concurrent writes from both finding no
 	// other claimant and both landing.
 	//
-	// LOCK ORDER. This is taken before the transaction's changelog append,
-	// while a provider row written by a post-apply effect or a mapping shell
-	// takes it after one, so two such transactions in the same repository can
-	// deadlock. Postgres detects it and aborts one, and the cost is a
-	// transient error after deadlock_timeout rather than a hang. It needs
-	// user-authored vocabulary that writes llmprovider rows from an effect,
-	// and the `credential` lock (auth.go) already has the same shape, so the
-	// ordering is a known class rather than this claim's own bug.
+	// LOCK ORDER. The changelog lock is already held: inTx takes it before
+	// anything else (rows.go changelogLockKey), so this key is never taken
+	// ahead of an append by one transaction and behind it by another, which
+	// is the cycle an effect-written provider row used to be able to form.
 	if err := t.lockKey("embedprovider"); err != nil {
 		return err
 	}

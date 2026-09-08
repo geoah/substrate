@@ -643,8 +643,15 @@ func (t *txn) enqueueEmbed(ref eref, property string) error {
 	return err
 }
 
-// hardDelete removes a record and every record that hangs off it.
+// hardDelete removes a record and every row that hangs off it. Its subjects
+// recompute first: a tombstone the cascade wrote before tombstones recomputed
+// (mapping.go afterTombstone) never did, and the purge is the last moment the
+// source is there to say which subject that was. Where the tombstone already
+// recomputed, the live set is unchanged and this writes nothing.
 func (t *txn) hardDelete(ref eref) error {
+	if err := t.recomputeSubjectsOf(ref); err != nil {
+		return err
+	}
 	_, err := t.fold(foldOp{Kind: foldPurge, Ref: ref.Kind, ID: ref.ID})
 	return err
 }
