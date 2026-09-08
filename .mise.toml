@@ -120,7 +120,10 @@ description = "The suites that want a database: a pgvector container, or SUBSTRA
 #
 # ./cmd/substratectl/...: the operator hat's `*_db_test.go` opens a real
 # database; the rest of that package runs again here, cheaply.
-run = "go test -count=1 -p 1 -skip '^TestLive' ./internal/engine/... ./internal/blobbytes/... ./internal/catalog/... ./internal/testenv/... ./cmd/substratectl/..."
+# -timeout 30m: the engine suite alone runs 4 to 10 minutes depending on the
+# machine, and Go's default of 10m has killed it on a slow CI runner with no
+# test failing. The CI job's own budget is 40 minutes; this stays inside it.
+run = "go test -count=1 -p 1 -timeout 30m -skip '^TestLive' ./internal/engine/... ./internal/blobbytes/... ./internal/catalog/... ./internal/testenv/... ./cmd/substratectl/..."
 
 [tasks."test:race"]
 description = "The short suite under the race detector"
@@ -144,7 +147,7 @@ description = "The whole suite with a coverage profile -> coverage.out"
 # block, so keeping the first line and dropping the other's is the whole merge.
 run = [
   "go test -count=1 -short -covermode=atomic -coverprofile=coverage.short.out ./...",
-  "go test -count=1 -p 1 -skip '^TestLive' -covermode=atomic -coverprofile=coverage.db.out ./internal/engine/... ./internal/blobbytes/... ./internal/catalog/... ./internal/testenv/... ./cmd/substratectl/...",
+  "go test -count=1 -p 1 -timeout 30m -skip '^TestLive' -covermode=atomic -coverprofile=coverage.db.out ./internal/engine/... ./internal/blobbytes/... ./internal/catalog/... ./internal/testenv/... ./cmd/substratectl/...",
   """
     { cat coverage.short.out; tail -n +2 coverage.db.out; } >coverage.out
     rm -f coverage.short.out coverage.db.out
