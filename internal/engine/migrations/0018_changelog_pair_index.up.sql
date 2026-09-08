@@ -1,0 +1,21 @@
+-- The record-scoped change feed matches a merge or split entry on the pair its
+-- payload names, not only on the row's own record_id (engine/changefeed.go):
+-- a merge is addressed to the winner and tombstones the loser, a split is
+-- addressed to the loser and rewrites the winner. `changelog_record_idx`
+-- answers the record_id arm; without this index, the two payload arms make
+-- every record-scoped read (the console's activity rail, GraphQL history, a
+-- resumed record watch) walk the repository's whole changelog.
+--
+-- Partial on the two ops, so it holds one entry per merge or split and nothing
+-- for the ordinary writes that are the bulk of a changelog: each payload arm
+-- becomes a scan of the repository's merge and split rows, and the `->>` test
+-- runs on those alone. Not an expression index on `payload->>'winner'`: the
+-- changelog is under row-level security and `->>` is not leakproof, so the
+-- planner may not evaluate it before the policy's repository qual and would
+-- never probe such an index, only filter after it.
+--
+-- The reader spells `op IN ('merge', 'split')` as a literal, not a bound
+-- parameter: the planner proves a partial index applicable only from a
+-- predicate it can see, and a generic plan sees a parameter as any value.
+CREATE INDEX IF NOT EXISTS changelog_pair_idx
+    ON changelog (repository, seq) WHERE op IN ('merge', 'split');

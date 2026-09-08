@@ -517,3 +517,13 @@ describe("changelogFacetFields", () => {
     expect(fixed.some((f) => f.name === "actor")).toBe(false)
   })
 })
+
+describe("verbOf", () => {
+  it("reads a split as its own verb, not the raw op fallback", () => {
+    expect(verbOf(row({ seq: 1, op: "merge" }))).toBe("merged")
+    expect(verbOf(row({ seq: 2, op: "split" }))).toBe("split")
+    expect(verbOf(row({ seq: 3, op: "put", payload: { created: true } }))).toBe(
+      "created"
+    )
+  })
+})

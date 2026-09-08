@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -162,4 +163,59 @@ func changeTypesFromNDJSON(t *testing.T, rec *httptest.ResponseRecorder) []strin
 		}
 	}
 	return types
+}
+
+// A merge entry is addressed to the winner and a split entry to the loser, and
+// each names both in its payload. The record scope returns them for either id,
+// on the history page and the watch drain alike, and for nobody else.
+func TestChangesRecordScopeCarriesMergeAndSplitForBothRecords(t *testing.T) {
+	env := newTestEnv(t)
+	srv := httptest.NewServer(env.h)
+	defer srv.Close()
+	tok := env.svc.token("geoah")
+	ds := env.svc.datasets["geoah"]
+	const kind = "samples.substrate.reamde.dev/people/person"
+	pair := map[string]any{"winner": "w1", "loser": "l1"}
+	for i, c := range []substrate.Change{
+		{Op: substrate.OpPut, RecordID: "w1"},
+		{Op: substrate.OpPut, RecordID: "l1"},
+		{Op: substrate.OpPut, RecordID: "x1"},
+		{Op: substrate.OpMerge, RecordID: "w1", Payload: pair},
+		{Op: substrate.OpSplit, RecordID: "l1", Payload: pair},
+	} {
+		c.TS, c.Actor, c.Kind = time.Unix(int64(i+1), 0).UTC(), substrate.ActorAPI, kind
+		ds.commit(c)
+		<-ds.signals
+	}
+	for id, want := range map[string][]float64{
+		"w1": {1, 4, 5},
+		"l1": {2, 4, 5},
+		"x1": {3},
+	} {
+		scope := "recordId=" + id + "&recordKind=" + kind
+		rec := env.do(t, http.MethodGet, "/api/v1/changes?first=50&"+scope, tok, nil)
+		wantStatus(t, rec, http.StatusOK)
+		page := decodeJSON[changesBody](t, rec)
+		var got []float64
+		for i := len(page.Changes) - 1; i >= 0; i-- {
+			got = append(got, float64(page.Changes[i].Seq))
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("%s history seqs = %v, want %v", id, got, want)
+		}
+
+		br, stop := startWatch(t, srv, "/api/v1/changes?watch=1&from=0&"+scope, tok)
+		if bm := readLine(t, br); bm["bookmark"] != float64(0) {
+			stop()
+			t.Fatalf("%s bookmark = %v", id, bm)
+		}
+		got = got[:0]
+		for range want {
+			got = append(got, readLine(t, br)["seq"].(float64))
+		}
+		stop()
+		if !slices.Equal(got, want) {
+			t.Fatalf("%s watch seqs = %v, want %v", id, got, want)
+		}
+	}
 }

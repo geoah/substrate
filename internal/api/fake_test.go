@@ -888,7 +888,7 @@ func matchesChange(c substrate.Change, f substrate.ChangeFilter) bool {
 	if containsString(excludedOps, string(c.Op)) {
 		return false
 	}
-	if f.RecordID != "" && f.RecordID != c.RecordID {
+	if f.RecordID != "" && !namesRecord(c, f.RecordID) {
 		return false
 	}
 	if f.Q != "" {
@@ -899,6 +899,18 @@ func matchesChange(c substrate.Change, f substrate.ChangeFilter) bool {
 		}
 	}
 	return true
+}
+
+// namesRecord is the record scope the engine implements: the row's own id,
+// or a merge or split entry whose payload names the id as winner or loser.
+func namesRecord(c substrate.Change, id string) bool {
+	if c.RecordID == id {
+		return true
+	}
+	if c.Op != substrate.OpMerge && c.Op != substrate.OpSplit {
+		return false
+	}
+	return c.Payload["winner"] == id || c.Payload["loser"] == id
 }
 
 // ChangesBefore and ChangeTriggers are the change-feed seam (api/changes.go)

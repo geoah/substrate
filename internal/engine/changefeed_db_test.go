@@ -2,6 +2,8 @@ package engine_test
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"testing"
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
@@ -167,5 +169,65 @@ func TestChangeTriggersStates(t *testing.T) {
 	// own echo: self-actor exclusion drops the chip.
 	if ct, ok := chipOf("t-"+processed.ID, substrate.FunctionActor(vocabulary.SplitKindRef(mirror))); ok {
 		t.Fatalf("self write carries a chip: %+v", ct)
+	}
+}
+
+// A merge writes one entry addressed to the winner and a split one addressed
+// to the loser, and each changes both records. The record scope matches the
+// payload's winner and loser too, so a feed following either id sees both
+// entries, on the forward read and the backward page alike.
+func TestRecordFilterMatchesMergeAndSplitForBothRecords(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	feed := feedOf(t, ds)
+
+	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Nina Ray"}})
+	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "N. Ray"}})
+	other := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Someone Else"}})
+	rec, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID)
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+		t.Fatalf("split: %v", err)
+	}
+
+	opsOf := func(changes []substrate.Change) map[substrate.Op]int {
+		out := map[substrate.Op]int{}
+		for _, c := range changes {
+			out[c.Op]++
+		}
+		return out
+	}
+	both := map[substrate.Op]int{substrate.OpPut: 1, substrate.OpMerge: 1, substrate.OpSplit: 1}
+	for _, tc := range []struct {
+		name string
+		id   string
+		want map[substrate.Op]int
+	}{
+		{"winner", winner.ID, both},
+		{"loser", loser.ID, both},
+		{"unrelated", other.ID, map[substrate.Op]int{substrate.OpPut: 1}},
+	} {
+		// The API always pairs recordId with recordKind (parseChangeFilter),
+		// so the scope here carries both.
+		scope := substrate.ChangeFilter{RecordID: tc.id, Kinds: []string{winner.Kind}}
+		forward, err := ds.Changes(ctx, 0, scope, 500)
+		if err != nil {
+			t.Fatalf("%s: changes: %v", tc.name, err)
+		}
+		if got := opsOf(forward); !maps.Equal(got, tc.want) {
+			t.Fatalf("%s: ops = %v, want %v", tc.name, got, tc.want)
+		}
+		backward, err := feed.ChangesBefore(ctx, 0, scope, 500)
+		if err != nil {
+			t.Fatalf("%s: changes before: %v", tc.name, err)
+		}
+		want := seqsOf(forward)
+		slices.Reverse(want)
+		if got := seqsOf(backward); !slices.Equal(got, want) {
+			t.Fatalf("%s: backward seqs = %v, want %v", tc.name, got, want)
+		}
 	}
 }

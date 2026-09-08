@@ -73,7 +73,27 @@ func (ds *dataset) buildChangeFilter(b *builder, f substrate.ChangeFilter) error
 		b.add(`actor NOT IN ` + b.jsonArray(actors))
 	}
 	if f.RecordID != "" {
-		b.add(`record_id = ` + b.arg(f.RecordID))
+		// A merge and a split each write ONE entry that changes two records:
+		// the merge addresses the winner and tombstones the loser, the split
+		// addresses the loser and rewrites the winner. Their payloads name
+		// both (merge.go payloadWinner, payloadLoser), so the record scope
+		// matches on those too; otherwise a client following the loser never
+		// sees its removal and one following the winner never sees the split.
+		// The match is the addressed pair only: the winner's later writes do
+		// not follow a former id here, and the entry count is unchanged.
+		//
+		// Three flat arms, each with an index: changelog_record_idx for the
+		// first, the partial changelog_pair_idx of migration 0018 for the
+		// other two, whose WHERE the op test must repeat as a LITERAL. Bound
+		// as a parameter, a generic plan could not prove the partial index
+		// applicable and would walk the changelog. The `->>` test itself is
+		// never an index condition under row-level security (0018 says why),
+		// so the pair arms scan the repository's merge and split rows.
+		id := b.arg(f.RecordID)
+		pair := `op IN ('` + string(substrate.OpMerge) + `', '` + string(substrate.OpSplit) + `')`
+		b.add(`(record_id = ` + id +
+			` OR (` + pair + ` AND payload->>'` + payloadWinner + `' = ` + id + `)` +
+			` OR (` + pair + ` AND payload->>'` + payloadLoser + `' = ` + id + `))`)
 	}
 	if f.Q != "" {
 		// One substring over the row's text: metacharacters escaped so the

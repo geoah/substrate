@@ -73,12 +73,16 @@ writes a rule that matches nothing. Here is one act across all four:
 | an existing record changes    | `put`, `patch`, `merge`, `split`                   | `put`, `patch`                   | `patch`                 | `update`                    |
 | a record goes away            | `delete`, and `gc` on the collector's pass         | `delete`                         | `delete`                | `delete`                    |
 
-Merge and split are the two rows the table cannot hold. A merge tombstones the
-loser under the winner's single `merge` entry, so `OpOf` reads that entry as an
-`update` on the winner and no trigger delivers a delete class for the loser
-(reads of the loser's id forward to the winner, so nothing is lost). An accepted
-split reverses it, restoring the loser under one `split` entry, again read as an
-`update`, so a record can return to existence with no create class delivered.
+Merge and split are the two rows the table cannot hold, because each one
+changes two records under one entry. A merge tombstones the loser under the
+winner's single `merge` entry, so `OpOf` reads that entry as an `update` on the
+winner and no trigger delivers a delete class for the loser (reads of the
+loser's id forward to the winner, so nothing is lost). An accepted split
+reverses it, restoring the loser under one `split` entry addressed to the
+loser, again read as an `update`, so a record can return to existence with no
+create class delivered. Both payloads name the pair as `winner` and `loser`,
+which is what lets the `recordId` scope return the entry to either record
+([watching](#watching)).
 
 Each column answers a different question.
 
@@ -235,7 +239,13 @@ and takes a repeated parameter or a comma-separated list: `kinds`, `ops`,
 `q` matches free text across the row's kind, actor, record id and payload
 text. Scoping the feed to one record takes **both** `recordId` and
 `recordKind`, because an id alone names no record; either one without the
-other is a `bad_request`. A singular guess (`kind=`, `op=`, `actor=`) is
+other is a `bad_request`. The scope also returns a `merge` or `split` entry
+whose payload names the id as `winner` or `loser`. Such a row's own `recordId`
+is the other side of the pair (the winner on a `merge`, the loser on a
+`split`), so a client that re-fetches by `(kind, recordId)` must read
+`payload.winner` and `payload.loser` to know which record the row is about. The
+scope does not follow the winner's later writes under a merged-away id. A
+singular guess (`kind=`, `op=`, `actor=`) is
 refused naming the plural rather than silently answering with the whole
 unfiltered feed.
 
