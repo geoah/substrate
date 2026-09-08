@@ -9,7 +9,8 @@ wire break, which is what `"compatibility": "preview"` on the `graphql`
 surface in [discovery](api.md#discovery) says. The supported interface is
 [REST](api.md#rest-and-graphql). `search` is the one operation only this
 surface serves, and the feature reports `beta` in
-[discovery](api.md#what-a-features-stability-means).
+[discovery](api.md#what-a-features-stability-means) because its one door is
+this preview.
 
 The whole read/write surface also serves at one endpoint,
 `POST /api/v1/graphql`. Filters take the same JSON grammar as

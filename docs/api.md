@@ -355,8 +355,8 @@ its stability and the `surfaces` that serve it (`rest`, `graphql`, or both):
  "server": {"version": "…", "build": "…"},
  "vocabulary": {"maxDialect": 3, "note": "…"},
  "changelog": {"horizon": 0, "maxDialect": 1},
- "features": [{"name": "triggers", "stability": "beta", "surfaces": ["rest"]},
-              {"name": "changefeed", "stability": "beta", "surfaces": ["rest", "graphql"]},
+ "features": [{"name": "triggers", "stability": "stable", "surfaces": ["rest"]},
+              {"name": "changefeed", "stability": "stable", "surfaces": ["rest", "graphql"]},
               {"name": "search", "stability": "beta", "surfaces": ["graphql"]},
               {"name": "agents", "stability": "alpha", "surfaces": ["rest"]}],
  "surfaces": {"rest": {"endpoint": "/api/v1", "compatibility": "supported"},
@@ -389,8 +389,11 @@ is the interface a client builds on, and a break there is announced, never
 silent. It is `preview` on `graphql`: every part of the GraphQL surface, the
 generated types, the root operations and the scalars, may change without a v1
 wire break, so a client that posts to `/api/v1/graphql` pins the server
-version. A feature's `stability` then says how far that one feature's shape has
-settled on whichever surface serves it
+version. The two axes compose one way: a feature's `stability` says how far
+that feature's shape has settled, and it binds on the REST door alone, because
+the GraphQL door is `preview` for every feature whatever the feature stamps;
+a `stable` `changefeed` freezes `GET …/changes` and does not make GraphQL's
+`changelog` field stable
 ([decision 0053](decisions/0053-rest-is-supported-all-of-graphql-is-preview.md)).
 
 `registration` is what the register door asks for, and whether it is even
@@ -414,13 +417,18 @@ is served and works today.
 | `beta` | Served and supported, and the shape is still moving before v1 freezes it. A break is announced, never silent. |
 | `stable` | Frozen for v1. Changes are additive only. |
 
-**Nothing reports `stable` yet.** The path grammar settled the collection
-segment to the kind name and moved the non-record endpoints to the version root
-([decision 0033](decisions/0033-the-path-grammar-has-no-separators.md)), and the
-package segment then moved every kind path again
-([decision 0047](decisions/0047-a-kind-lives-in-a-package.md)); the surface is
-not frozen. `agents` and `embeddings` report `alpha`; every other
-feature reports `beta`.
+**Every feature of the supported REST surface reports `stable`**
+([decision 0053](decisions/0053-rest-is-supported-all-of-graphql-is-preview.md)):
+`triggers`, `functions`, `bundles`, `blobs` and `changefeed` froze once the
+release's wire changes landed. The
+changefeed's were the last two: a change cursor bound to a history generation
+([decision 0056](decisions/0056-a-change-cursor-is-a-seq-under-a-history-generation.md))
+and a change event that names the affected records
+([decision 0061](decisions/0061-a-change-event-names-the-affected-records-and-clients-fetch-them.md)).
+`search` reports `beta`: its only door is the preview GraphQL surface.
+`agents` and `embeddings` report `alpha`: their shapes are still moving, and
+the `rest` in their `surfaces` says where they are served, not that they are
+frozen.
 
 The list is derived from what the deployment implements, not written out, so a
 feature is never advertised without the code that serves it: a substrate that

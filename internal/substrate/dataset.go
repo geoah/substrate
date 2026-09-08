@@ -22,9 +22,10 @@ import (
 // and every implementation asserts each seam it satisfies at compile time
 // (`var _ substrate.BundleOps = (*dataset)(nil)`) — otherwise renaming a
 // method turns a whole endpoint family into a 501 with a green build.
-// The five mutations and four reads below are the part meant to freeze at v1;
-// the HTTP paths that serve them are not frozen yet, which is why no discovery
-// feature reports stable (stability.go).
+// The five mutations and four reads below are the core of the supported REST
+// contract (decision 0053). Of them only Search is a discovery feature
+// (stability.go), listed unconditionally because every dataset serves it; the
+// other stamps cover the extension seams.
 type Dataset interface {
 	Repository() RepositoryInfo
 
