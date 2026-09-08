@@ -133,6 +133,9 @@ interface ChangeEffect {
     states?: Record<string, string>
     labels?: Record<string, unknown>
     finalizers?: string[]
+    /** The version of the kind declaration the write validated the row
+     * against, carried when it moved. */
+    kindVersion?: number
   }
   finalizer?: string
   key?: string
@@ -194,6 +197,8 @@ function deltaDetail(delta: NonNullable<ChangeEffect["delta"]>): string {
   if (delta.labels !== undefined) columns.push("labels")
   if (delta.finalizers !== undefined) columns.push("finalizers")
   if (columns.length) parts.push(`moved ${columns.join(", ")}`)
+  if (delta.kindVersion !== undefined)
+    parts.push(`kind version ${delta.kindVersion}`)
   return parts.join("; ")
 }
 

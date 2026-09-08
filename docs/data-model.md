@@ -93,7 +93,8 @@ data:
     project:                      # a reference, always an object
       ref: samples.substrate.reamde.dev/tasks/project/infra7
 status:                           # server-set, ignored on input
-  version: 4
+  version: 4                      # the edit counter
+  kindVersion: 3                  # the kind declaration that last wrote it
   createdAt: "2026-08-04T09:00:00Z"
   updatedAt: "2026-08-04T09:12:00Z"
 ```
@@ -698,9 +699,15 @@ mechanical:
 ## The server-owned status
 
 The envelope's `status` block is server-set and ignored on input:
-`version`, `createdAt`, `updatedAt`, `deletedAt` and `finalizers` on a
-tombstone, `formerIds` after a merge, and per-property provenance
-([managed properties](projection.md#managed-properties)). Two consequences:
+`version`, `kindVersion`, `createdAt`, `updatedAt`, `deletedAt` and
+`finalizers` on a tombstone, `formerIds` after a merge, and per-property
+provenance ([managed properties](projection.md#managed-properties)).
+`version` counts the record's edits; `kindVersion` is the version of the
+kind's declaration (its own, else its package's) that validated the record's
+data at the write that last moved it, absent on a record not written since
+the stamp existed
+([0060](decisions/0060-a-record-carries-the-kind-version-that-last-wrote-it.md)).
+Two consequences:
 
 - A document you `get`, edit, and `apply` back means exactly what it looks
   like; the `status` you carried along is ignored.

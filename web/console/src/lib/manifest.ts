@@ -42,6 +42,10 @@ export function manifestOf(record: SubstrateRecord): Record<string, unknown> {
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   }
+  // The kind declaration version that last wrote the record; the wire omits
+  // it on a record not written since the stamp existed, and so does the
+  // document, as `get -o yaml` does.
+  if (record.kindVersion) status.kindVersion = record.kindVersion
   if (record.deletedAt) status.deletedAt = record.deletedAt
   if (record.canonicalId) status.canonicalId = record.canonicalId
   if (record.formerIds?.length) status.formerIds = record.formerIds

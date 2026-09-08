@@ -53,13 +53,16 @@ type documentData struct {
 // anything. Incoming references are not part of the document; they page on
 // their own resource.
 type documentStatus struct {
-	Version    int64                     `yaml:"version" json:"version"`
-	CreatedAt  time.Time                 `yaml:"createdAt" json:"createdAt"`
-	UpdatedAt  time.Time                 `yaml:"updatedAt" json:"updatedAt"`
-	DeletedAt  *time.Time                `yaml:"deletedAt,omitempty" json:"deletedAt,omitempty"`
-	Finalizers []string                  `yaml:"finalizers,omitempty" json:"finalizers,omitempty"`
-	FormerIDs  []string                  `yaml:"formerIds,omitempty" json:"formerIds,omitempty"`
-	Properties map[string]statusProperty `yaml:"properties,omitempty" json:"properties,omitempty"`
+	Version int64 `yaml:"version" json:"version"`
+	// KindVersion is the version of the kind declaration the record's data was
+	// last written under; absent when the record predates the stamp.
+	KindVersion int64                     `yaml:"kindVersion,omitempty" json:"kindVersion,omitempty"`
+	CreatedAt   time.Time                 `yaml:"createdAt" json:"createdAt"`
+	UpdatedAt   time.Time                 `yaml:"updatedAt" json:"updatedAt"`
+	DeletedAt   *time.Time                `yaml:"deletedAt,omitempty" json:"deletedAt,omitempty"`
+	Finalizers  []string                  `yaml:"finalizers,omitempty" json:"finalizers,omitempty"`
+	FormerIDs   []string                  `yaml:"formerIds,omitempty" json:"formerIds,omitempty"`
+	Properties  map[string]statusProperty `yaml:"properties,omitempty" json:"properties,omitempty"`
 }
 
 // statusProperty is one managed property: its manager (the actor whose write
@@ -118,13 +121,14 @@ func recordDocument(e *substrate.Record, meta map[string]statusProperty) *docume
 			Properties: normalizeMap(e.Properties),
 		},
 		Status: &documentStatus{
-			Version:    e.Version,
-			CreatedAt:  e.CreatedAt,
-			UpdatedAt:  e.UpdatedAt,
-			DeletedAt:  e.DeletedAt,
-			Finalizers: e.Finalizers,
-			FormerIDs:  e.FormerIDs,
-			Properties: normalizeMeta(meta),
+			Version:     e.Version,
+			KindVersion: e.KindVersion,
+			CreatedAt:   e.CreatedAt,
+			UpdatedAt:   e.UpdatedAt,
+			DeletedAt:   e.DeletedAt,
+			Finalizers:  e.Finalizers,
+			FormerIDs:   e.FormerIDs,
+			Properties:  normalizeMeta(meta),
 		},
 	}
 	return d
@@ -200,13 +204,14 @@ func declarationDocumentOf(short string, e *substrate.Record, meta map[string]st
 		},
 		Data: data,
 		Status: &documentStatus{
-			Version:    e.Version,
-			CreatedAt:  e.CreatedAt,
-			UpdatedAt:  e.UpdatedAt,
-			DeletedAt:  e.DeletedAt,
-			Finalizers: e.Finalizers,
-			FormerIDs:  e.FormerIDs,
-			Properties: normalizeMeta(meta),
+			Version:     e.Version,
+			KindVersion: e.KindVersion,
+			CreatedAt:   e.CreatedAt,
+			UpdatedAt:   e.UpdatedAt,
+			DeletedAt:   e.DeletedAt,
+			Finalizers:  e.Finalizers,
+			FormerIDs:   e.FormerIDs,
+			Properties:  normalizeMeta(meta),
 		},
 	}
 }

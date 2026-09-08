@@ -99,7 +99,12 @@ export interface SubstrateRecord {
   properties: Record<string, unknown>
   labels: Record<string, unknown>
   annotations?: Record<string, unknown>
+  /** The edit counter a write asserts with `ifVersion`. */
   version: number
+  /** The version of the kind declaration the record's data was last written
+   * under (the kind's own pin, else its package's). Absent when the record has
+   * not been written since the stamp existed. Server-set. */
+  kindVersion?: number
   createdAt: string
   updatedAt: string
   deletedAt?: string

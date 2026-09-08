@@ -12,6 +12,7 @@ package engine
 // changing what lands in a payload is not.
 
 import (
+	"encoding/json"
 	"errors"
 	"go/ast"
 	"go/parser"
@@ -25,9 +26,11 @@ import (
 // `unlink` stopped being ops and `edge`/`unedge`/`edge1` stopped being
 // effects. Dialect 1 entries carrying any of the five are refused at the fold
 // by name (fold.go foldRefuses) rather than replayed into a store with no
-// pointers in it. Dialect 3 (maxChangelogDialect) keeps this vocabulary
-// unchanged: its rung is the `txn` frame on every entry and the checksum over
-// it (decision 0057), not a spelling.
+// pointers in it. Dialect 3 keeps this vocabulary unchanged: its rung is the
+// `txn` frame on every entry and the checksum over it (decision 0057), not a
+// spelling. Dialect 4 keeps it unchanged too: its rung is the `kindVersion`
+// key on the record delta (decision 0060, TestTheKindVersionStampIsDialectFour),
+// so the lists hold.
 var (
 	dialectTwoOps = []string{
 		"put", "patch", "delete", "merge", "split", "gc",
@@ -64,6 +67,33 @@ func TestChangelogDialectCoversTheChangelogVocabulary(t *testing.T) {
 					c.what, v, maxChangelogDialect)
 			}
 		}
+	}
+}
+
+// Dialect 4 is the `record` delta carrying `kindVersion` (decision 0060). A
+// dialect 3 binary does not refuse the key: foldOpsOf decodes without
+// DisallowUnknownFields, so it replays the entry, drops the stamp and folds
+// the row to 0 with nothing saying so. The rung is what makes that binary
+// refuse at the gate, so the constant and the key are pinned together: a
+// binary that writes the key stamps 4, and one that stops writing it may not
+// keep the number.
+func TestTheKindVersionStampIsDialectFour(t *testing.T) {
+	t.Parallel()
+	if maxChangelogDialect != 4 {
+		t.Fatalf("maxChangelogDialect = %d; the kindVersion stamp is rung 4", maxChangelogDialect)
+	}
+	if err := admitChangelogDialect("geoah", maxChangelogDialect, 3); !errors.Is(err, ErrChangelogDialectNewer) {
+		t.Fatalf("a dialect 3 binary admitted a repository stamped 4: %v", err)
+	}
+	if err := admitChangelogDialect("geoah", 3, maxChangelogDialect); err != nil {
+		t.Fatalf("a repository stamped 3 must open under this binary: %v", err)
+	}
+	raw, err := json.Marshal(rowDelta{KindVersion: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != `{"kindVersion":4}` {
+		t.Fatalf("the record delta spells the stamp as %s; dialect 4 is the key `kindVersion`", raw)
 	}
 }
 
@@ -111,10 +141,10 @@ func declaredStrings(t *testing.T, file, typeName string) []string {
 // `changelog.hash` without `txn` (changelogdialect.go, rung three).
 func TestChangelogDialectThreeIsRefusedByADialectTwoBinary(t *testing.T) {
 	t.Parallel()
-	if maxChangelogDialect != 3 {
+	if maxChangelogDialect < 3 {
 		t.Fatalf("maxChangelogDialect = %d; the txn frame is rung 3", maxChangelogDialect)
 	}
-	err := admitChangelogDialect("geoah", maxChangelogDialect, 2)
+	err := admitChangelogDialect("geoah", 3, 2)
 	if !errors.Is(err, ErrChangelogDialectNewer) {
 		t.Fatalf("a dialect 2 binary admitted a repository stamped 3: %v", err)
 	}

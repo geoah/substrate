@@ -324,6 +324,7 @@
     "formerIds": false,
     "id": true,
     "kind": true,
+    "kindVersion": false,
     "labels": true,
     "properties": true,
     "propertyMeta": false,

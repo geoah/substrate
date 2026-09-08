@@ -29,6 +29,7 @@ const record: SubstrateRecord = {
   },
   labels: {},
   version: 3,
+  kindVersion: 2,
   createdAt: "2026-08-05T16:26:27.161544Z",
   updatedAt: "2026-08-05T16:26:27.310967Z",
   propertyMeta: {
@@ -63,8 +64,14 @@ describe("manifestOf", () => {
   it("keeps status server-owned: version, stamps, §7.1 provenance", () => {
     const status = manifestOf(record).status as Record<string, unknown>
     expect(status.version).toBe(3)
+    expect(status.kindVersion).toBe(2)
     expect(status.properties).toBe(record.propertyMeta)
     expect(status).not.toHaveProperty("deletedAt")
+    // A record the wire did not stamp carries no key, as `get -o yaml` prints.
+    const unstamped = { ...record }
+    delete unstamped.kindVersion
+    const before = manifestOf(unstamped).status as Record<string, unknown>
+    expect(before).not.toHaveProperty("kindVersion")
   })
 
   it("omits empty labels and an empty data block rather than printing {}", () => {

@@ -28,7 +28,7 @@ package engine
 // replayer needs), and the stamped column is what makes that refinement
 // possible later without guessing at unstamped history.
 //
-// THE LADDER HAS THREE RUNGS. Dialect 1 was the changelog while edges existed:
+// THE LADDER HAS FOUR RUNGS. Dialect 1 was the changelog while edges existed:
 // `link`/`unlink` ops and `edge`/`unedge`/`edge1` fold effects. Dialect 2 is the
 // changelog after references absorbed the edge (decision 0044): those five
 // spellings are gone and this binary refuses any entry carrying one (fold.go
@@ -42,6 +42,14 @@ package engine
 // `changelog.hash` to that encoding, after which no binary agrees with the
 // file. The stamp of 3 makes that binary refuse at open, before it touches a
 // row.
+// Dialect 4 keeps dialect 3's ops, effects and entry frame and changes the
+// RECORD DELTA: it carries `kindVersion`, the kind declaration version that
+// wrote the row (decision 0060). The rung exists because a dialect 3 binary
+// does not refuse the key, it drops it: foldOpsOf decodes without
+// DisallowUnknownFields, so that binary imports a data root this one wrote,
+// folds every row to `kind_version` 0, and after an upgrade back the fold and
+// the changelog disagree with nothing saying so. The stamp of 4 makes it
+// refuse at the gate and at the manifest (repodir.go) instead.
 //
 // A STORE BELOW THE MAXIMUM IS PROBED, NOT ASSUMED. Migration 0010 drops the
 // edges table, so a store whose changelog holds `link`/`unlink` entries has
@@ -87,7 +95,7 @@ var ErrChangelogPredatesReferences = errors.New("substrate/engine: the changelog
 // maxChangelogDialect is the newest changelog dialect this binary can replay.
 // It is what this binary stamps when it appends; a repository stored above it
 // refuses to open.
-const maxChangelogDialect = 3
+const maxChangelogDialect = 4
 
 // MaxChangelogDialect is the newest changelog dialect this binary can replay,
 // the value GET /.well-known/substrate/server.json reports as the binary
