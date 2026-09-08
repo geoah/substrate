@@ -258,6 +258,13 @@ func (s *service) openSealed(ctx context.Context, repoID, ref string) ([]byte, e
 // replay counter is not a change to the credential.
 func (s *service) consumeTOTPStep(ctx context.Context, repo Repository, ref string, to int64) (bool, error) {
 	repoID := repo.ID
+	// The dataset is opened BEFORE the row is locked: the open ladder may
+	// itself lock sealed rows (a re-key), and it must not wait behind this
+	// transaction's FOR UPDATE.
+	ds, err := s.open(ctx, repo)
+	if err != nil {
+		return false, err
+	}
 	tx, err := s.maint.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
@@ -304,47 +311,35 @@ func (s *service) consumeTOTPStep(ctx context.Context, repo Repository, ref stri
 		repoID, ref, sealed); err != nil {
 		return false, err
 	}
-	if err := tx.Commit(); err != nil {
+	// The row is re-read inside the transaction, so the file gets what the
+	// table holds at the commit and not the bytes one writer remembers; the
+	// dataset was opened before the row was locked, so the re-key a first
+	// open runs (retireLegacySealed) is already in the row this read sees.
+	rec, err := readSealedRecordOn(ctx, tx, repoID, ref)
+	if err != nil {
 		return false, err
 	}
 	// The step lives in the sealed row and nowhere in the changelog, so the
-	// mirror is the only thing that carries it into the directory. It goes
-	// through the dataset, under the writer mutex every other sealed write
-	// takes: written straight from here it could lose the rename race against
-	// a concurrent rekeySealedStore and leave the older payload on disk. The
-	// row is committed either way; a mirror this cannot run is the boot
-	// check's to rewrite.
-	ds, err := s.open(ctx, repo)
-	if err != nil {
-		s.log.Error("substrate: could not open the repository to mirror a sealed row; the boot check will rewrite it",
-			"repository", repoID, "ref", ref, "error", err)
-		return true, nil
+	// file is the only thing that carries it into the directory, and the row
+	// commits only once the file is written (commitSealed). It goes through
+	// the dataset, under the writer mutex every other sealed write takes:
+	// written straight from here it could lose the rename race against a
+	// concurrent rekeySealedStore and leave the older payload on disk.
+	if err := ds.commitSealed(tx, []sealedMirrorOp{{rec: rec}}); err != nil {
+		return false, err
 	}
-	// The row is re-read AFTER the open and the file gets what the table
-	// holds now, not the bytes sealed above: on the first open of a
-	// repository that had no DEK, the open has just re-keyed this row under
-	// the DEK it adopted and marked the repository (retireLegacySealed), and
-	// mirroring the host-key bytes would leave a payload the marked
-	// repository refuses under a manifest that says sealedDekOnly.
-	rec, err := s.readSealedRecord(ctx, repoID, ref)
-	if err != nil {
-		s.log.Error("substrate: could not re-read a sealed row to mirror it; the boot check will rewrite it",
-			"repository", repoID, "ref", ref, "error", err)
-		return true, nil
-	}
-	ds.mirrorSealedNow([]sealedMirrorOp{{rec: rec}})
 	return true, nil
 }
 
-// readSealedRecord reads one sealed row on the maintenance pool as its file
-// record, for a mirror that must carry the row as committed rather than as
+// readSealedRecordOn reads one sealed row through q as its file record, for a
+// mirror that must carry the row as the transaction leaves it rather than as
 // one writer remembers it.
-func (s *service) readSealedRecord(ctx context.Context, repoID, ref string) (changelogfile.SealedRecord, error) {
+func readSealedRecordOn(ctx context.Context, q dbx, repoID, ref string) (changelogfile.SealedRecord, error) {
 	var owner eref
 	var payload []byte
 	var expires sql.NullTime
 	var updated time.Time
-	if err := s.maint.QueryRowContext(ctx,
+	if err := q.QueryRowContext(ctx,
 		`SELECT record_kind, record_id, payload, expires_at, updated_at FROM sealed WHERE repository = $1 AND ref = $2`,
 		repoID, ref).Scan(&owner.Kind, &owner.ID, &payload, &expires, &updated); err != nil {
 		return changelogfile.SealedRecord{}, err

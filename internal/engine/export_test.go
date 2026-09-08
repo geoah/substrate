@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 
+	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -57,22 +59,74 @@ const (
 	ImportAfterFirstFold = importAfterFirstFold
 )
 
-// WithTestCommitFault runs fn around the manifest write that precedes the
-// first append in a new changelog dialect (repodir.go
-// writeManifestBeforeCommit): with CommitBeforeManifest just before the write,
-// where an error stands for the write failing, and with CommitAfterManifest
-// once the manifest is written and before the transaction commits or appends,
-// where an error is the process dying in between. Either error rolls the
-// transaction back.
+// WithTestCommitFault runs fn at each durable step of a write's commit
+// (dataset.go commitAndMirror), five stages. Around the manifest write that
+// precedes the first append in a new changelog dialect (repodir.go
+// writeManifestBeforeCommit): CommitBeforeManifest just before the write,
+// where an error stands for the write failing, and CommitAfterManifest once
+// it is written, where an error is the process dying there; either rolls the
+// transaction back. Then CommitAfterPrepare, after the sealed files are staged
+// and the changelog lines are prepared and before Postgres commits, and
+// CommitAfterCommit, after Postgres committed and before the staged files are
+// renamed into place and the file's final newline: an error from fn at either
+// ends the write there and runs nothing after it, the shape of a process
+// dying at that step, so the directory is left exactly as the crash would
+// leave it. CommitInDoubt is not a crash: the hook's error is taken as the
+// commit's answer after Postgres committed, the shape of a connection lost at
+// the answer, and the write's error path runs.
 func WithTestCommitFault(fn func(stage string) error) Option {
 	return func(o *options) { o.commitFault = fn }
 }
 
-// The commit stages WithTestCommitFault reports.
+// The commit stages WithTestCommitFault reports, in the order they run.
 const (
 	CommitBeforeManifest = commitBeforeManifest
 	CommitAfterManifest  = commitAfterManifest
+	CommitAfterPrepare   = commitAfterPrepare
+	CommitInDoubt        = commitInDoubt
+	CommitAfterCommit    = commitAfterCommit
 )
+
+// BreakSealedStore replaces a dataset's sealed-file writer with one that
+// fails every call, under its mutex, so the next write that touches the
+// sealed table is refused the way a full disk would refuse it: before its
+// transaction commits, with nothing durable anywhere (ErrDirectoryWrite).
+func BreakSealedStore(ds substrate.Dataset) {
+	d := ds.(*dataset)
+	d.writerMu.Lock()
+	defer d.writerMu.Unlock()
+	d.sealed = brokenSealedStore{}
+}
+
+// ErrSealedStoreBroken is what BreakSealedStore's store fails with.
+var ErrSealedStoreBroken = errors.New("engine test: the sealed store is broken")
+
+type brokenSealedStore struct{}
+
+func (brokenSealedStore) Write(string, changelogfile.SealedRecord) error { return ErrSealedStoreBroken }
+func (brokenSealedStore) Stage(string, changelogfile.SealedRecord) error { return ErrSealedStoreBroken }
+func (brokenSealedStore) Commit(string, string) error                    { return ErrSealedStoreBroken }
+func (brokenSealedStore) Delete(string, string) error                    { return ErrSealedStoreBroken }
+
+// BreakSealedStoreAfterStage replaces a dataset's sealed-file writer with one
+// whose Stage writes the pending file and then fails, the shape of a rename
+// that landed and a directory fsync that did not: the write must be refused
+// and the pending file must not be left behind.
+func BreakSealedStoreAfterStage(ds substrate.Dataset) {
+	d := ds.(*dataset)
+	d.writerMu.Lock()
+	defer d.writerMu.Unlock()
+	d.sealed = stagedThenFails{}
+}
+
+type stagedThenFails struct{ fileSealedStore }
+
+func (s stagedThenFails) Stage(repoDir string, rec changelogfile.SealedRecord) error {
+	if err := s.fileSealedStore.Stage(repoDir, rec); err != nil {
+		return err
+	}
+	return ErrSealedStoreBroken
+}
 
 // ImportIncomplete reports whether the repository's import-progress marker
 // is set, read through the tamperer's seat.
@@ -92,9 +146,10 @@ func WithCatchUpBatch(n int) Option { return func(o *options) { o.catchUpBatch =
 const AdvisoryKeySQL = advisoryKeySQL
 
 // BreakChangelogWriter closes a dataset's changelog writer under its mutex, so
-// the next commit's append fails the way a full disk would: the tables take
-// the write, the directory does not, and the dataset latches
-// ErrChangelogFileBehind. The closed writer also releases the directory's
+// the next write's prepare fails the way a full disk would: the write is
+// refused before its transaction commits, neither store takes it, and the
+// dataset latches ErrChangelogFileBehind, because a failed writer serves
+// nothing until a restart. The closed writer also releases the directory's
 // lock, so a reopened service can take it.
 func BreakChangelogWriter(ds substrate.Dataset) {
 	d := ds.(*dataset)

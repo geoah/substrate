@@ -19,6 +19,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -993,59 +994,158 @@ func TestImportRefusesADirectoryTheKeyCannotOpen(t *testing.T) {
 	}
 }
 
-// An append that fails AFTER commit latches the dataset: the tables hold the
-// write, the file does not, every later write is refused with
-// ErrChangelogFileBehind, and the next boot catches the file up. The sealed
-// file of the same transaction is on disk before the append is tried, which
-// is mirrorAfterCommit's order: sealed/ is always a superset of what the log
-// references.
-func TestAFailedAppendLatchesTheDatasetUntilABootCatchesUp(t *testing.T) {
-	t.Parallel()
-	svc, ds, dsn := newDatasetWithDSN(t)
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "before"}})
-	head := maxSeq(t, ds)
-	root := engine.DataRootOf(svc)
-	dir := repoDirOf(t, svc, ds)
+// errCrash is what a commit-fault hook returns where the process would die.
+var errCrash = errors.New("test: the process died here")
 
-	engine.BreakChangelogWriter(ds)
-	// The write commits: a provider row with a secret, so a sealed upsert
-	// rides the same transaction as the entry the writer cannot take.
-	ref := putProvider(t, ds, dsn, "openai", "sk-latched")
-	tableHead := maxSeq(t, ds)
-	if tableHead <= head {
-		t.Fatal("the write did not commit")
+// armedFault is a WithTestCommitFault hook a test arms for one stage, once:
+// the first write that reaches the stage dies there, every other write runs.
+type armedFault struct {
+	mu    sync.Mutex
+	stage string
+}
+
+func (f *armedFault) arm(stage string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.stage = stage
+}
+
+func (f *armedFault) hook(stage string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if stage != f.stage {
+		return nil
 	}
+	f.stage = ""
+	return errCrash
+}
+
+// sealedRefs lists the refs with a file under sealed/.
+func sealedRefs(t *testing.T, dir string) []string {
+	t.Helper()
 	files, err := changelogfile.ReadSealed(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	found := false
+	refs := make([]string, 0, len(files))
 	for _, f := range files {
-		found = found || f.Ref == ref
+		refs = append(refs, f.Ref)
 	}
-	if !found {
-		t.Fatalf("the sealed file for %s was not written before the failed append: %+v", ref, files)
+	return refs
+}
+
+// A crash between the prepared changelog lines and the Postgres commit
+// leaves the transaction on disk without its final newline, and nothing reads
+// it: the table never had it, a read-only open counts it as the incomplete
+// tail, and the next boot cuts it whole and removes the sealed file the same
+// transaction wrote first. The write the client got no answer for is in
+// neither store, and the next write continues from the head before it.
+func TestACrashBetweenPrepareAndCommitFoldsNoUncommittedLine(t *testing.T) {
+	t.Parallel()
+	fault := &armedFault{}
+	svc, ds, dsn := newDatasetWithDSN(t, engine.WithTestCommitFault(fault.hook))
+	ctx := context.Background()
+	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "before"}})
+	head := maxSeq(t, ds)
+	root := engine.DataRootOf(svc)
+	dir := repoDirOf(t, svc, ds)
+	sealedBefore := len(sealedRefs(t, dir))
+
+	// A provider row with a secret: a staged sealed file and a changelog
+	// line in one transaction, so both halves of the directory are in flight.
+	fault.arm(engine.CommitAfterPrepare)
+	_, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: typeProvider, ID: "openai",
+		Properties: map[string]any{"label": "openai", "wire": "openai", "baseURL": "https://llm.example.com/v1", "apiKey": "sk-uncommitted"},
+	})
+	if !errors.Is(err, errCrash) {
+		t.Fatalf("the write did not die at the seam: %v", err)
 	}
-	l, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir))
+	if maxSeq(t, ds) != head {
+		t.Fatal("the table took a write the process died before committing")
+	}
+	ro, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if l.Head() != head {
-		t.Fatalf("file head = %d after the failed append, want %d", l.Head(), head)
+	if ro.Head() != head || ro.TruncatedBytes == 0 {
+		t.Fatalf("the prepared transaction is not on disk as an incomplete tail: head %d, truncated %d", ro.Head(), ro.TruncatedBytes)
 	}
-	// Latched: refused with the named error, and the table does not move.
-	if _, err := ds.Put(context.Background(), owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "after"}}); !errors.Is(err, engine.ErrChangelogFileBehind) {
-		t.Fatalf("a write after the latch: err = %v, want ErrChangelogFileBehind", err)
+	if n := len(sealedRefs(t, dir)); n != sealedBefore {
+		t.Fatalf("a staged sealed file is listed as a record: %d files, want %d", n, sealedBefore)
 	}
-	if maxSeq(t, ds) != tableHead {
-		t.Fatal("a refused write reached the table")
+	if pending, err := changelogfile.PendingSealed(dir); err != nil || len(pending) != 1 {
+		t.Fatalf("the sealed file was not staged before the prepare: pending = %v, %v", pending, err)
 	}
 	_ = svc.Close()
 
 	svc2 := mustReopen(t, dsn, root)
 	report := mustVerify(t, svc2, "geoah")
-	if !report.OK || report.Head != tableHead || report.FileHead != tableHead {
-		t.Fatalf("the boot did not catch the file up: %+v", report)
+	if !report.OK || report.Head != head || report.FileHead != head || report.TruncatedBytes != 0 {
+		t.Fatalf("after the boot: %+v", report)
+	}
+	if n := len(sealedRefs(t, dir)); n != sealedBefore {
+		t.Fatalf("the boot made a sealed file of a transaction that never committed: %d files, want %d", n, sealedBefore)
+	}
+	if pending, _ := changelogfile.PendingSealed(dir); len(pending) != 0 {
+		t.Fatalf("the boot left the staged file of a transaction that never committed: %v", pending)
+	}
+	ds2, err := svc2.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds2.Get(ctx, typeProvider, "openai"); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("the uncommitted write is readable after the boot: err = %v", err)
+	}
+	mustPut(t, ds2, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "after"}})
+	if report := mustVerify(t, svc2, "geoah"); !report.OK || report.Head != head+1 || report.FileHead != head+1 {
+		t.Fatalf("the next write did not continue from the head before the crash: %+v", report)
+	}
+}
+
+// A crash between the Postgres commit and the file's final newline leaves the
+// table ahead of the file by that transaction and the file with an incomplete
+// tail. The next boot cuts the tail and appends the transaction again from
+// the table: the catch-up path is what heals this window, and the write,
+// which the client got no answer for, is in both stores afterwards.
+func TestACrashBetweenCommitAndTheNewlineIsCaughtUpAtTheNextOpen(t *testing.T) {
+	t.Parallel()
+	fault := &armedFault{}
+	svc, ds, dsn := newDatasetWithDSN(t, engine.WithTestCommitFault(fault.hook))
+	ctx := context.Background()
+	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "before"}})
+	head := maxSeq(t, ds)
+	root := engine.DataRootOf(svc)
+	dir := repoDirOf(t, svc, ds)
+
+	fault.arm(engine.CommitAfterCommit)
+	_, err := ds.Put(ctx, owner, substrate.PutInput{Kind: taskKind, ID: "committed", Properties: map[string]any{"name": "committed"}})
+	if !errors.Is(err, errCrash) {
+		t.Fatalf("the write did not die at the seam: %v", err)
+	}
+	if maxSeq(t, ds) != head+1 {
+		t.Fatal("the write did not commit")
+	}
+	ro, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ro.Head() != head || ro.TruncatedBytes == 0 {
+		t.Fatalf("the committed transaction is not an incomplete tail in the file: head %d, truncated %d", ro.Head(), ro.TruncatedBytes)
+	}
+	_ = svc.Close()
+
+	svc2 := mustReopen(t, dsn, root)
+	report := mustVerify(t, svc2, "geoah")
+	if !report.OK || report.Head != head+1 || report.FileHead != head+1 || report.TruncatedBytes != 0 {
+		t.Fatalf("the boot did not append the committed transaction again: %+v", report)
+	}
+	ds2, err := svc2.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds2.Get(ctx, taskKind, "committed"); err != nil {
+		t.Fatalf("the committed write is not readable after the boot: %v", err)
 	}
 }
 
@@ -1965,5 +2065,60 @@ func TestCatchUpAppendsWholeTransactions(t *testing.T) {
 	}
 	if report := mustVerify(t, svc2, "geoah"); !report.OK {
 		t.Fatalf("verify after the boot: %+v", report)
+	}
+}
+
+// A commit whose answer is lost after Postgres committed (the connection
+// dropped at the reply) is treated as a failure: the prepared lines are cut
+// and the staged files discarded, so the table is one transaction ahead of
+// the directory. The next write's prepare meets that gap and latches the
+// dataset rather than refusing as retryable, and the boot catches the file
+// up from the table.
+func TestACommitInDoubtLatchesUntilTheBootCatchesUp(t *testing.T) {
+	t.Parallel()
+	fault := &armedFault{}
+	svc, ds, dsn := newDatasetWithDSN(t, engine.WithTestCommitFault(fault.hook))
+	ctx := context.Background()
+	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "before"}})
+	head := maxSeq(t, ds)
+	root := engine.DataRootOf(svc)
+	dir := repoDirOf(t, svc, ds)
+
+	fault.arm(engine.CommitInDoubt)
+	_, err := ds.Put(ctx, owner, substrate.PutInput{Kind: taskKind, ID: "doubt", Properties: map[string]any{"name": "doubt"}})
+	if !errors.Is(err, errCrash) {
+		t.Fatalf("the commit did not report the seam's failure: %v", err)
+	}
+	if maxSeq(t, ds) != head+1 {
+		t.Fatal("the write did not commit")
+	}
+	ro, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ro.Head() != head || ro.TruncatedBytes != 0 {
+		t.Fatalf("the file after the doubted commit: head %d (want %d), %d bytes of tail", ro.Head(), head, ro.TruncatedBytes)
+	}
+	// The next write finds the table ahead and latches: not a retry's error.
+	_, err = ds.Put(ctx, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "next"}})
+	if !errors.Is(err, engine.ErrChangelogFileBehind) || errors.Is(err, substrate.ErrUnavailable) {
+		t.Fatalf("the write after an in-doubt commit: err = %v, want ErrChangelogFileBehind and not ErrUnavailable", err)
+	}
+	if maxSeq(t, ds) != head+1 {
+		t.Fatal("a latched write reached the table")
+	}
+	_ = svc.Close()
+
+	svc2 := mustReopen(t, dsn, root)
+	report := mustVerify(t, svc2, "geoah")
+	if !report.OK || report.Head != head+1 || report.FileHead != head+1 {
+		t.Fatalf("the boot did not catch the file up: %+v", report)
+	}
+	ds2, err := svc2.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds2.Get(ctx, taskKind, "doubt"); err != nil {
+		t.Fatalf("the committed write is not readable after the boot: %v", err)
 	}
 }

@@ -176,3 +176,74 @@ func TestSealedRefGrammar(t *testing.T) {
 		}
 	}
 }
+
+// A staged sealed file is on disk and is not the record: ReadSealed lists the
+// record's own file, PendingSealed lists the staged one, a discard leaves the
+// record as it was, and a commit makes the staged payload the record and
+// leaves nothing pending. DiscardPendingSealed drops every pending file.
+func TestAStagedSealedFileIsNotARecordUntilCommitted(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
+	old := SealedRecord{Ref: "secret:one", RecordKind: "a.example.com/p/k", RecordID: "r1", Payload: []byte("old"), UpdatedAt: now}
+	if err := WriteSealed(dir, old); err != nil {
+		t.Fatal(err)
+	}
+	staged := old
+	staged.Payload, staged.UpdatedAt = []byte("new"), now.Add(time.Minute)
+	if err := StageSealed(dir, staged); err != nil {
+		t.Fatal(err)
+	}
+	fresh := SealedRecord{Ref: "secret:two", RecordKind: old.RecordKind, RecordID: "r2", Payload: []byte("fresh"), UpdatedAt: now}
+	if err := StageSealed(dir, fresh); err != nil {
+		t.Fatal(err)
+	}
+	recs, err := ReadSealed(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != 1 || string(recs[0].Payload) != "old" {
+		t.Fatalf("ReadSealed with two staged files: %+v", recs)
+	}
+	pending, err := PendingSealed(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 2 || pending[0] != "secret-one.json.pending" || pending[1] != "secret-two.json.pending" {
+		t.Fatalf("pending = %v", pending)
+	}
+	if err := DiscardSealed(dir, "secret:two"); err != nil {
+		t.Fatal(err)
+	}
+	if err := DiscardSealed(dir, "secret:two"); err != nil {
+		t.Fatalf("a second discard: %v", err)
+	}
+	if err := CommitSealed(dir, "secret:one"); err != nil {
+		t.Fatal(err)
+	}
+	if err := CommitSealed(dir, "secret:one"); err == nil {
+		t.Fatal("a commit with nothing staged succeeded")
+	}
+	recs, err = ReadSealed(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != 1 || string(recs[0].Payload) != "new" || !recs[0].UpdatedAt.Equal(staged.UpdatedAt) {
+		t.Fatalf("ReadSealed after the commit: %+v", recs)
+	}
+	if pending, _ = PendingSealed(dir); len(pending) != 0 {
+		t.Fatalf("pending after commit and discard = %v", pending)
+	}
+	if err := StageSealed(dir, fresh); err != nil {
+		t.Fatal(err)
+	}
+	n, err := DiscardPendingSealed(dir)
+	if err != nil || n != 1 {
+		t.Fatalf("DiscardPendingSealed = %d, %v", n, err)
+	}
+	if pending, _ = PendingSealed(dir); len(pending) != 0 {
+		t.Fatalf("pending after DiscardPendingSealed = %v", pending)
+	}
+	if recs, _ = ReadSealed(dir); len(recs) != 1 {
+		t.Fatalf("records after DiscardPendingSealed: %+v", recs)
+	}
+}

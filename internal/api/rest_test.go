@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -244,6 +245,13 @@ func TestRESTErrorEnvelopeMapping(t *testing.T) {
 		{"function_failed", fmt.Errorf("body: %w", substrate.ErrFunctionFault), http.StatusInternalServerError, codeFunctionFailed},
 		{"internal", errBoom, http.StatusInternalServerError, codeInternal},
 		{"unavailable", fmt.Errorf("vectors: %w", substrate.ErrUnavailable), http.StatusServiceUnavailable, codeUnavailable},
+		// The engine's two directory refusals (engine.ErrDirectoryWrite,
+		// engine.ErrChangelogFileBehind), as they reach this package: a write
+		// rolled back because its files could not be written is retryable and
+		// wraps ErrUnavailable; a dataset latched behind its tables is not,
+		// and is a plain error.
+		{"directory_write_rolled_back", fmt.Errorf("%w: the repository directory could not be written, so the write was rolled back", substrate.ErrUnavailable), http.StatusServiceUnavailable, codeUnavailable},
+		{"directory_behind_latched", errors.New("substrate/engine: the repository directory is behind the tables after a failed write; restart the server so the boot check catches it up"), http.StatusInternalServerError, codeInternal},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

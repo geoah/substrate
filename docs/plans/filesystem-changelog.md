@@ -117,21 +117,34 @@ The Postgres transaction stays the commit point and the `changelog` table
 stays the live index (the change feed filters by kind, op, actor, record id
 and substring; triggers read `max(seq)` and walk `caused_by`). A row is
 final only at commit: `settleFold` merges late effects into the last entry,
-then the checksum is stamped. Right after `tx.Commit()` in `inTx`, the
-dataset's one file writer appends the finalized lines and fsyncs before
-watchers are signaled. The advisory lock that serializes appends already
-guarantees a single writer per repository. A crash between commit and append
-leaves the file one transaction behind, and a crash between the writer's
-`write()` and its `fsync()` can leave a prefix of that transaction, which the
-next open cuts back to the transaction before it; in both cases the file is
-one transaction behind the table and the boot check appends it. Without the
-table (a restore from a copy of the directory) that transaction is lost
-whole, never in part.
+then the checksum is stamped. The directory is written before the commit and
+finished after it
+([0062](../decisions/0062-a-write-is-on-disk-before-its-commit-and-its-final-newline-is-the-commit-marker.md)):
+under the writer's mutex, `inTx` stages the transaction's sealed files under pending names, then
+has the dataset's one file writer write and fsync the finalized lines without
+the last line's newline (`Prepare`), then runs `tx.Commit()`, then renames the pending files into place, then writes and
+fsyncs that newline (`Commit`), then removes the sealed files of the rows the
+transaction deleted, and only then signals watchers and returns. The advisory
+lock that serializes appends already guarantees a single writer per
+repository. A failure before the commit cuts the prepared bytes (`Abort`),
+discards the pending sealed files and returns `ErrDirectoryWrite` with the
+transaction rolled back. A crash between the prepare and the commit leaves a
+transaction with no final newline, which the next open cuts whole, so a write
+nobody acknowledged never becomes history; a crash between the commit and
+the newline leaves the table one transaction ahead of the cut file, and the
+boot check appends it. A failure after the commit latches the dataset
+(`ErrChangelogFileBehind`) and is returned: the tables hold the write, and
+the restart heals the directory from them. Without the table (a restore from
+a copy of the directory) a transaction the server never acknowledged is lost
+whole, never in part, and an acknowledged one is there.
 
-The sealed store mirrors the same way: every insert, update and delete on
-the `sealed` table writes or removes `sealed/<ref>.json` after commit. The
-file holds `ref`, `recordKind`, `recordId`, `payload` (base64 ciphertext
-under the DEK), `expiresAt` and `updatedAt`.
+The sealed store follows the same order: every insert and update on the
+`sealed` table stages `sealed/<ref>.json.pending` before the commit and
+renames it over `sealed/<ref>.json` after it, and every delete removes the
+file after. A pending file is never loaded, and the boot removes it once the
+records are written from the table. The file holds `ref`, `recordKind`,
+`recordId`, `payload` (base64 ciphertext under the DEK), `expiresAt` and
+`updatedAt`.
 
 Blob bytes go through the existing fs backend, rooted at
 `<root>/repositories/<authority>/blobs/`. `fs` is the default and the only

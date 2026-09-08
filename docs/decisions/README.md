@@ -206,3 +206,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0059](0059-a-marked-repository-refuses-plain-and-host-key-sealed-payloads.md) | A repository marked DEK-only refuses plain and host-key-sealed payloads | accepted |
 | [0060](0060-a-record-carries-the-kind-version-that-last-wrote-it.md) | A record carries the kind version that last wrote it | accepted |
 | [0061](0061-a-change-event-names-the-affected-records-and-clients-fetch-them.md) | A change event names the affected records with their versions, and clients fetch them | accepted |
+| [0062](0062-a-write-is-on-disk-before-its-commit-and-its-final-newline-is-the-commit-marker.md) | A write is on disk before its commit, and its final newline is the commit marker | accepted |

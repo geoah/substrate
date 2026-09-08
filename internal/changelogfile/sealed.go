@@ -35,6 +35,12 @@ const maxSealedRef = 200
 
 const sealedSuffix = ".json"
 
+// pendingSuffix marks a staged sealed file: the payload a write put on disk
+// before its transaction committed, under `<file>.json.pending`. It is not
+// the record until CommitSealed renames it over the `.json`, so a reader
+// lists it with PendingSealed and never as a record, and a boot removes it.
+const pendingSuffix = ".pending"
+
 func checkSealedRef(ref string) error {
 	if len(ref) > maxSealedRef || !reSealedRef.MatchString(ref) || strings.HasPrefix(ref, ".") {
 		return fmt.Errorf("%w: %q", ErrSealedRef, ref)
@@ -77,6 +83,96 @@ func WriteSealed(repoDir string, rec SealedRecord) error {
 	return writeFileAtomic(dir, SealedFileName(rec.Ref), append(data, '\n'))
 }
 
+// StageSealed writes the record to its pending file, atomically and fsynced,
+// leaving the record's own file as it was: the write is on disk and is not
+// yet the record. CommitSealed makes it the record; DiscardSealed drops it.
+// A write whose transaction commits elsewhere between the two (the engine's
+// Postgres transaction) therefore has its payload durable before the commit
+// while an import that never sees the commit loads the old payload.
+func StageSealed(repoDir string, rec SealedRecord) error {
+	if err := checkSealedRef(rec.Ref); err != nil {
+		return err
+	}
+	dir := SealedDir(repoDir)
+	if err := os.MkdirAll(dir, dirMode); err != nil {
+		return err
+	}
+	data, err := json.Marshal(rec)
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(dir, SealedFileName(rec.Ref)+pendingSuffix, append(data, '\n'))
+}
+
+// CommitSealed renames the pending file under ref over the record's file and
+// fsyncs the directory. A ref with no pending file is an error: the caller
+// staged nothing, or a boot already discarded it.
+func CommitSealed(repoDir, ref string) error {
+	if err := checkSealedRef(ref); err != nil {
+		return err
+	}
+	dir := SealedDir(repoDir)
+	name := SealedFileName(ref)
+	if err := os.Rename(filepath.Join(dir, name+pendingSuffix), filepath.Join(dir, name)); err != nil {
+		return err
+	}
+	return syncDir(dir)
+}
+
+// DiscardSealed removes the pending file under ref, fsyncing the directory.
+// A ref with no pending file is already discarded, so the call succeeds.
+func DiscardSealed(repoDir, ref string) error {
+	if err := checkSealedRef(ref); err != nil {
+		return err
+	}
+	dir := SealedDir(repoDir)
+	if err := os.Remove(filepath.Join(dir, SealedFileName(ref)+pendingSuffix)); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	return syncDir(dir)
+}
+
+// PendingSealed lists the pending files under sealed/ by file name, sorted. A
+// missing directory lists as empty.
+func PendingSealed(repoDir string) ([]string, error) {
+	entries, err := os.ReadDir(SealedDir(repoDir))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), sealedSuffix+pendingSuffix) {
+			out = append(out, e.Name())
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// DiscardPendingSealed removes every pending file under sealed/ and returns
+// how many it removed: a staged write whose commit the directory never saw.
+// A boot runs it after the table has been written out, so a pending file
+// whose transaction did commit is already the record by then.
+func DiscardPendingSealed(repoDir string) (int, error) {
+	names, err := PendingSealed(repoDir)
+	if err != nil || len(names) == 0 {
+		return 0, err
+	}
+	dir := SealedDir(repoDir)
+	for _, name := range names {
+		if err := os.Remove(filepath.Join(dir, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return 0, err
+		}
+	}
+	return len(names), syncDir(dir)
+}
+
 // DeleteSealed removes the file under ref. A ref with no file is already
 // deleted, so the call succeeds.
 func DeleteSealed(repoDir, ref string) error {
@@ -113,24 +209,33 @@ func ReadSealed(repoDir string) ([]SealedRecord, error) {
 		if e.IsDir() || strings.HasPrefix(name, tmpPrefix) || !strings.HasSuffix(name, sealedSuffix) {
 			continue
 		}
-		raw, err := os.ReadFile(filepath.Join(dir, name))
+		rec, err := readSealedFile(dir, name)
 		if err != nil {
 			return nil, err
-		}
-		dec := json.NewDecoder(bytes.NewReader(raw))
-		dec.DisallowUnknownFields()
-		var rec SealedRecord
-		if err := dec.Decode(&rec); err != nil {
-			return nil, fmt.Errorf("changelogfile: decode sealed/%s: %w", name, err)
-		}
-		if err := checkSealedRef(rec.Ref); err != nil {
-			return nil, fmt.Errorf("sealed/%s: %w", name, err)
-		}
-		if SealedFileName(rec.Ref) != name {
-			return nil, fmt.Errorf("%w: sealed/%s holds ref %q", ErrSealedName, name, rec.Ref)
 		}
 		out = append(out, rec)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Ref < out[j].Ref })
 	return out, nil
+}
+
+// readSealedFile decodes one sealed file and holds it to its name.
+func readSealedFile(dir, name string) (SealedRecord, error) {
+	raw, err := os.ReadFile(filepath.Join(dir, name))
+	if err != nil {
+		return SealedRecord{}, err
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	var rec SealedRecord
+	if err := dec.Decode(&rec); err != nil {
+		return SealedRecord{}, fmt.Errorf("changelogfile: decode sealed/%s: %w", name, err)
+	}
+	if err := checkSealedRef(rec.Ref); err != nil {
+		return SealedRecord{}, fmt.Errorf("sealed/%s: %w", name, err)
+	}
+	if SealedFileName(rec.Ref) != name {
+		return SealedRecord{}, fmt.Errorf("%w: sealed/%s holds ref %q", ErrSealedName, name, rec.Ref)
+	}
+	return rec, nil
 }
