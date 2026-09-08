@@ -48,6 +48,9 @@ import (
 //   - changelog_dialect — what dialect the entries being replayed are written
 //     in (changelogdialect.go). A replay does not rewrite an entry, so it
 //     cannot change the answer.
+//   - import_progress: the boot import's own marker (repodir.go). A rebuild
+//     never runs while it is set, because no dataset opens over an
+//     incomplete import.
 //   - repositories — the control plane, one row per user.
 
 // RebuildReport is what one rebuild did.

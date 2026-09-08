@@ -1518,3 +1518,144 @@ func TestInterruptedLegacyMoveRefusesATakenAuthority(t *testing.T) {
 		t.Fatalf("the refusal must name the taken authority: %v", err)
 	}
 }
+
+// An import lands its rows in batches and folds after the last one, so a boot
+// that died after that batch used to leave equal heads and an empty fold that
+// the next boot served as a healthy repository; one that died between the two
+// fold passes left records with no refs and unweighted fts. Each case here
+// kills the import at one durable step (the no-row restore path first, then
+// the row path a resumed boot takes), holds that no dataset opens over what
+// the crash left, reboots, and compares the result to an uninterrupted import:
+// the same fold (records, refs, fts), the same changelog rows, nothing
+// appended, the marker gone.
+func TestAnInterruptedImportResumesAtTheNextBoot(t *testing.T) {
+	t.Parallel()
+	svc, ds, dsn := newDatasetWithDSN(t)
+	writeSomeHistory(t, ds)
+	ref := putProvider(t, ds, dsn, "openai", "sk-survives-the-crash")
+	before := foldOf(t, ds)
+	head := maxSeq(t, ds)
+	rows := tableChangelog(t, dsn)
+	id := repositoryIDOf(t, ds)
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+
+	// A batch far below the history, so the import spans several and "after
+	// the last batch" is not "after the first".
+	const batch = 7
+	batches := int((head + batch - 1) / batch)
+	if batches < 3 {
+		t.Fatalf("head %d spans %d batches of %d; the schedule below needs at least 3", head, batches, batch)
+	}
+
+	// A crash is the stage that kills one boot, and which occurrence of it;
+	// a schedule kills one boot per crash, in order, and the boot after the
+	// last one runs undisturbed.
+	type crash struct {
+		stage string
+		nth   int
+	}
+	cases := []struct {
+		name    string
+		crashes []crash
+	}{
+		{"after the first batch", []crash{{engine.ImportAfterBatch, 1}}},
+		{"after the last batch", []crash{{engine.ImportAfterBatch, batches}}},
+		{"between the fold passes", []crash{{engine.ImportAfterFirstFold, 1}}},
+		// The resumed boot has batches-1 batches left, so its last batch is
+		// the (batches-1)th: the same window as above, on the row path.
+		{"at every step in turn", []crash{
+			{engine.ImportAfterBatch, 1},
+			{engine.ImportAfterBatch, batches - 1},
+			{engine.ImportAfterFirstFold, 1},
+		}},
+	}
+	errKilled := errors.New("the process died here")
+	ctx := context.Background()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root2 := copyRepositoryDir(t, root, id)
+			dsn2 := testdb.NewSchema(t)
+			for i, c := range tc.crashes {
+				seen := 0
+				_, err := engine.Open(ctx, dsn2,
+					engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+					engine.WithDataRoot(root2),
+					engine.WithCredentialKey(engine.TestCredentialKey),
+					engine.WithTestImportFault(batch, func(stage string) error {
+						if stage != c.stage {
+							return nil
+						}
+						seen++
+						if seen == c.nth {
+							return errKilled
+						}
+						return nil
+					}))
+				if !errors.Is(err, errKilled) {
+					t.Fatalf("boot %d did not die %s (occurrence %d): %v", i+1, c.stage, c.nth, err)
+				}
+				incomplete, err := engine.ImportIncomplete(ctx, rawDB(t, dsn2))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !incomplete {
+					t.Fatalf("boot %d died %s and left no import-progress marker", i+1, c.stage)
+				}
+				if n := len(tableChangelog(t, dsn2)); n > int(head) {
+					t.Fatalf("boot %d left %d changelog rows, the history has %d", i+1, n, head)
+				}
+				// What the crash left is not served, not even read-only: a
+				// second process beside the (dead) server meets the marker at
+				// the open and is told to boot the server.
+				ro, err := engine.Open(ctx, dsn2,
+					engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+					engine.WithDataRoot(root2),
+					engine.WithCredentialKey(engine.TestCredentialKey),
+					engine.WithDirectoryReadOnly())
+				if err != nil {
+					t.Fatalf("open read-only after boot %d: %v", i+1, err)
+				}
+				if _, err := ro.Dataset(ctx, "geoah"); !errors.Is(err, engine.ErrImportIncomplete) {
+					t.Fatalf("a read-only open after boot %d = %v, want ErrImportIncomplete", i+1, err)
+				}
+				_ = ro.Close()
+			}
+
+			svc2 := mustReopen(t, dsn2, root2)
+			ds2, err := svc2.Dataset(ctx, "geoah")
+			if err != nil {
+				t.Fatalf("open the repository after the import resumed: %v", err)
+			}
+			if after := foldOf(t, ds2); string(after) != string(before) {
+				t.Fatalf("the resumed import's fold is not the original\n%s", firstDifference(before, after))
+			}
+			if got := maxSeq(t, ds2); got != head {
+				t.Fatalf("head after the resumed import = %d, want %d: the boot appended", got, head)
+			}
+			after := tableChangelog(t, dsn2)
+			if len(after) != len(rows) {
+				t.Fatalf("%d changelog rows after the resumed import, want %d", len(after), len(rows))
+			}
+			for seq, hash := range rows {
+				if !bytes.Equal(after[seq], hash) {
+					t.Fatalf("seq %d: checksum after the resumed import is not the original's", seq)
+				}
+			}
+			incomplete, err := engine.ImportIncomplete(ctx, rawDB(t, dsn2))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if incomplete {
+				t.Fatal("the import-progress marker outlived the import")
+			}
+			if got := openSecret(t, dsn2, ref); got != "sk-survives-the-crash" {
+				t.Fatalf("secret after the resumed import = %q", got)
+			}
+			if report := mustVerify(t, svc2, "geoah"); !report.OK || report.Head != head {
+				t.Fatalf("the resumed repository does not verify: %+v", report)
+			}
+		})
+	}
+}

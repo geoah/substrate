@@ -241,7 +241,12 @@ on the box, through the DSN.
   ahead of its table, or a directory with no row, is **imported**, which
   creates the row from `repository.json`, loads `sealed/` into the table,
   inserts the missing entries with their checksums and folds them through
-  `fold.go` (this is the restore path, and the only one); a seq present in
+  `fold.go` (this is the restore path, and the only one). The import writes
+  an `import_progress` row before its first batch of entries commits and
+  deletes it in the transaction that commits the last fold pass. A boot that
+  dies in between leaves the row; the next boot resumes the import from the
+  table's head, inserting no entry twice and appending nothing, and until it
+  does no open of the repository is served, read-only included; a seq present in
   both with different checksums, a line whose `sum` does not verify or a
   finished segment whose sidecar does not match **refuses the boot**, naming
   the repository and the seq or the file, and repairs nothing (one refusal an
@@ -432,6 +437,19 @@ DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository verify ada     
 Each directory under `repositories/` is one repository, named by its
 authority: `./substrate-backup/repositories/ada.example.com/` is Ada's, and
 its `repository.json` names the username the operator commands take.
+
+**An import that dies is resumed, not served.** The boot marks the repository
+in `import_progress` before the first changelog entry lands and clears the
+mark only when the last fold pass commits. A boot that dies in between (the
+entries all inserted but not folded, or folded once without the references
+and the weighted search index the second pass adds) leaves the mark, and the
+next boot logs `resuming an interrupted import` and finishes: entries already
+in the table are not inserted again, and nothing is appended. Until that boot
+runs, opening the repository from the server or from `repository rebuild`,
+`user reset` or a read-only process refuses with `the import of the
+repository directory has not completed; restart the server so the boot check
+resumes it`. A repository a release before this one served empty after such
+a crash is repaired with `repository rebuild`.
 
 A directory whose files do not verify (a bad `sum`, a sidecar that does not
 match) refuses the boot with the repository and the seq or the file named;
