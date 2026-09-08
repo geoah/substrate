@@ -89,12 +89,13 @@ import {
   catalogQueryOptions,
   importBundle,
   installBundle,
+  shippedUpgradesQueryOptions,
   takeBundle,
 } from "@/lib/api/catalog"
 import { repositoryQueryOptions } from "@/lib/api/repository"
 import { CORE_PACKAGE } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
-import type { KindInfo } from "@/lib/api/types"
+import type { KindInfo, ShippedUpgrade } from "@/lib/api/types"
 import { splitKind } from "@/lib/definition"
 import {
   bundleRecordRows,
@@ -104,6 +105,7 @@ import {
   mergeBundles,
   missingRequirements,
   presentPackages,
+  previewFailed,
   requirementsOf,
   readySuggestedMappings,
   REIMPORT_WARNING,
@@ -114,6 +116,7 @@ import {
   upgradeAvailable,
   upgradeBlocked,
   upgradeMotion,
+  pendingShippedUpgrades,
   type BundleRow,
   type Requirement,
   type SuggestedMappingRow,
@@ -562,7 +565,7 @@ function buildColumns(
       header: () => <span className="sr-only">action</span>,
       cell: ({ row }) =>
         row.original.installed ? (
-          upgradeAvailable(row.original) ? (
+          upgradeAvailable(row.original) || upgradeBlocked(row.original) ? (
             <div className="flex justify-end">
               {upgradeBlocked(row.original) ? (
                 <UpgradeBlockedChip row={row.original} />
@@ -880,8 +883,9 @@ function BundleDisclosure({
       {(row.upgrade?.blockers?.length ?? 0) > 0 && (
         <div className="space-y-1 text-warning">
           <p>
-            The upgrade is blocked: live records still hold the shape it would
-            drop, and the server refuses to strand them.
+            {previewFailed(row)
+              ? "The upgrade could not be previewed: the server's preview failed, and its log says why. Nothing is offered until it runs."
+              : "The upgrade is blocked: live records still hold the shape it would drop, and the server refuses to strand them."}
           </p>
           {row.upgrade?.blockers?.map((b) => (
             <p key={b} className="data text-xs">
@@ -995,6 +999,15 @@ export function RegistryPage() {
   const navigate = useNavigate()
   const statuses = useQuery(bundleStatusesQueryOptions)
   const catalog = useQuery(catalogQueryOptions)
+  // The boot upgrade's preview, for the one package no catalog entry carries:
+  // core. An available entry has not landed here: refused with blockers, or
+  // admitted and waiting for the server to start again. Not waited on and not
+  // fatal: a read that fails leaves the notice off, the sections stand.
+  const shipped = useQuery(shippedUpgradesQueryOptions)
+  const pending = useMemo(
+    () => pendingShippedUpgrades(shipped.data ?? []),
+    [shipped.data]
+  )
   // The repository's own record answers ONE question: the authority this
   // repository owns, which is where an imported sample lands (decision records
   // 0046 and 0048) and so what a sample row previews.
@@ -1104,6 +1117,9 @@ export function RegistryPage() {
           every other kind it records into comes from here. Expand a row to see
           what it adds.
         </p>
+        {pending.map((item) => (
+          <PendingUpgradeNotice key={item.package} item={item} />
+        ))}
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
         <BundleSection
@@ -1149,6 +1165,53 @@ export function RegistryPage() {
           />
         )}
       </div>
+    </div>
+  )
+}
+
+/** A shipped package whose upgrade has not landed here, stated where the
+ * upgrades live. Two states, told apart by the blockers. REFUSED: the boot
+ * upgrade ran and the refuse-breakage guards refused it, so the stored
+ * declarations stand; the lines are the server's own, naming the kind, the
+ * property and the count, which is what to migrate. ADMITTED: nothing blocks
+ * any more (or nothing ever did), but the boot upgrade runs only at a
+ * repository's first open under a binary, so the newer declarations land when
+ * the server starts again. Without the second state the notice would vanish
+ * the moment the last blocking record is migrated, with the store still old
+ * and nobody told a restart is what finishes it. */
+function PendingUpgradeNotice({ item }: { item: ShippedUpgrade }) {
+  const motion = upgradeMotion(item.upgrade)
+  const blockers = item.upgrade.blockers ?? []
+  const refused = blockers.length > 0
+  return (
+    <div
+      role="alert"
+      className="mt-3 max-w-3xl rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs"
+    >
+      <p className="flex items-start gap-1.5 text-warning">
+        <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
+        <span>
+          The upgrade of <span className="data">{item.package}</span>
+          {motion ? (
+            <>
+              {" "}
+              (<span className="data">{motion}</span>)
+            </>
+          ) : null}{" "}
+          {refused
+            ? "was refused when the server started. The stored declarations stand until what the lines below name is resolved and the server starts again."
+            : "is admitted and lands when the server starts again. Until then this repository runs on the declarations it stores."}
+        </span>
+      </p>
+      {refused && (
+        <div className="mt-1 space-y-0.5 pl-5">
+          {blockers.map((b) => (
+            <p key={b} className="data text-muted-foreground">
+              {b}
+            </p>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

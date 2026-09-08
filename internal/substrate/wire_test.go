@@ -62,12 +62,22 @@ var wireTypes = map[string]any{
 	// calls these two `BundleClosure` and `ShippedRecord`, while the Go types
 	// carry the `Catalog` prefix that keeps them apart in this package.
 	"CatalogBundle": CatalogBundle{},
+	// The entry as the API serves it: the bundle's fields promoted, then
+	// `installed` and `upgrade`. The console's CatalogItem extends its
+	// CatalogBundle, so its key set is this flattened list.
+	"CatalogItem":   CatalogItem{},
 	"BundleClosure": CatalogClosure{},
 	"ShippedRecord": CatalogShippedRecord{},
 	// One suggested mapping and its state. The Registry renders these on both
 	// sections: a sample's card lists what it would project, a provider's
 	// lists the samples waiting on it (decision record 0049).
 	"SuggestedMapping": SuggestedMapping{},
+	// The upgrade preview: a catalog entry carries one for an installed
+	// provider, and `GET /api/v1/vocabulary/upgrade` carries one per shipped
+	// package. The Registry renders the motion and the blockers of both.
+	"BundleUpgrade":       BundleUpgrade{},
+	"BundleUpgradeChange": BundleUpgradeChange{},
+	"ShippedUpgrade":      ShippedUpgrade{},
 }
 
 // jsonFields lists the wire names a struct serializes, in declaration order. A
@@ -86,13 +96,18 @@ func jsonFields(t *testing.T, v any) []string {
 		if !f.IsExported() {
 			continue
 		}
-		if f.Anonymous {
-			// Nothing here embeds today. If something starts to, its fields
-			// are promoted onto the wire and this guard would quietly miss
-			// them, so it stops instead.
-			t.Fatalf("%s embeds %s: teach jsonFields to flatten it", rt.Name(), f.Type)
-		}
 		tag, ok := f.Tag.Lookup("json")
+		if f.Anonymous && !ok {
+			// An untagged embedded struct's fields are promoted onto the wire
+			// (CatalogItem carries CatalogBundle's), so they are listed here
+			// in place, in the order encoding/json writes them. A tagged one
+			// is an ordinary named field and falls through.
+			if f.Type.Kind() != reflect.Struct {
+				t.Fatalf("%s embeds %s, which is not a struct", rt.Name(), f.Type)
+			}
+			out = append(out, jsonFields(t, reflect.New(f.Type).Elem().Interface())...)
+			continue
+		}
 		if !ok {
 			t.Fatalf("%s.%s has no json tag: the wire name would be the Go name by accident", rt.Name(), f.Name)
 		}

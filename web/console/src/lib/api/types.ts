@@ -482,8 +482,20 @@ export interface BundleUpgrade {
   changes?: BundleUpgradeChange[]
   /** The refuse-breakage guard lines the import would refuse on, with live
    * row counts. Non-empty means the upgrade is BLOCKED: the console shows the
-   * lines and offers no button, because the server refuses it anyway. */
+   * lines and offers no button, because the server refuses it anyway. A
+   * preview the server could not run at all carries one fixed line ("the
+   * upgrade preview failed; see the server log") and no motion. */
   blockers?: string[]
+}
+
+/** One package the binary ships and seeds (core), and what this binary's boot
+ * upgrade would do to it here (substrate.ShippedUpgrade), the same `upgrade`
+ * shape a catalog entry carries. `GET /api/v1/vocabulary/upgrade` lists one
+ * per shipped package; `blockers` non-empty means the boot upgrade was refused
+ * and the stored declarations stand. */
+export interface ShippedUpgrade {
+  package: string
+  upgrade: BundleUpgrade
 }
 
 /** Which of the two catalog doors a shipped closure takes (decision record
@@ -581,13 +593,15 @@ export interface SuggestedMapping {
  */
 export type SuggestedMappingState = "landed" | "ready" | "waiting" | "blocked"
 
-/** One catalog entry as the API serves it: the shipped bundle plus whether
- * THIS repository has it and, for an installed provider whose closure moved,
- * what re-installing would do. */
+/** One catalog entry as the API serves it (substrate.CatalogItem): the
+ * shipped bundle plus whether THIS repository has it and, for an installed
+ * provider whose closure moved, what re-installing would do. Held by the wire
+ * golden with the bundle's keys promoted. */
 export interface CatalogItem extends CatalogBundle {
   installed: boolean
-  /** Present only on an installed PROVIDER whose shipped closure moved past
-   * the stored one: what re-installing would change, or why it is blocked. A
+  /** Present on an installed PROVIDER whose shipped closure moved past the
+   * stored one (what re-installing would change, or why it is blocked) and on
+   * one whose preview could not run (one fixed blocker line, no motion). A
    * sample is never offered one. */
   upgrade?: BundleUpgrade
 }

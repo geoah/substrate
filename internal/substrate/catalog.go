@@ -76,6 +76,26 @@ type CatalogBundle struct {
 	Closure CatalogClosure `json:"closure"`
 }
 
+// CatalogItem is one catalog entry as the API serves it (`GET /api/v1/catalog`
+// and `/catalog/{id}`): the shipped bundle plus whether THIS repository holds
+// it and, for a held one whose shipped closure moved or whose preview could
+// not run, what re-installing would do. The console and the CLI decode this
+// one shape, and the wire golden holds it with the embedded bundle's fields
+// promoted, the way encoding/json writes them.
+type CatalogItem struct {
+	// The shipped bundle by VALUE, not by pointer: the catalog holds one
+	// parsed copy of each closure and serves every repository from it, and
+	// `suggestedMappings` and the origin fields carry a per-repository state,
+	// so the entry a request answers with is a copy the handler fills.
+	CatalogBundle
+	Installed bool `json:"installed"`
+	// Upgrade is present when the shipped closure moves something here (the
+	// version motion and the guard lines an install would refuse on), and
+	// when the preview could not say (one blocker line, no motion). The
+	// upgrade itself is the existing install verb, unchanged.
+	Upgrade *BundleUpgrade `json:"upgrade,omitempty"`
+}
+
 // SuggestedMapping is one mapping a SAMPLE ships onto a kind of its own from a
 // PROVIDER's mirror kind (decision record 0049): the declaration's id, both
 // ends, the provider package the source lives in, and what that mapping is

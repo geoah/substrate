@@ -25,7 +25,12 @@ import type { ReactElement } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { Toaster } from "@/components/ui/toast"
-import type { BundleStatus, CatalogItem, KindInfo } from "@/lib/api/types"
+import type {
+  BundleStatus,
+  CatalogItem,
+  KindInfo,
+  ShippedUpgrade,
+} from "@/lib/api/types"
 
 const navigate = vi.fn().mockResolvedValue(undefined)
 
@@ -50,6 +55,7 @@ vi.mock("@tanstack/react-router", () => ({
 import { RegistryPage } from "./registry"
 
 const CATALOG_PATH = "/api/v1/catalog"
+const SHIPPED_PATH = "/api/v1/vocabulary/upgrade"
 const STATUS_PATH = "/api/v1/substrate.reamde.dev/core/bundle/status"
 const REPOSITORY_PATH = "/api/v1/substrate.reamde.dev/core/repository"
 
@@ -190,6 +196,8 @@ interface Wire {
   statuses?: BundleStatus[]
   kinds?: KindInfo[]
   catalog?: CatalogItem[]
+  /** The boot upgrade's preview, one entry per shipped package. */
+  shipped?: ShippedUpgrade[]
   /** The repository's own authority; "" models a repository that names none. */
   authority?: string
   take?: (id: string) => Response
@@ -223,6 +231,9 @@ describe("RegistryPage", () => {
         return jsonResponse(200, {
           items: wire.catalog ?? [PEOPLE, TASKS, GOOGLE],
         })
+      }
+      if (path === SHIPPED_PATH) {
+        return jsonResponse(200, { items: wire.shipped ?? [] })
       }
       if (
         (path.endsWith("/install") || path.endsWith("/import")) &&
@@ -591,6 +602,97 @@ describe("RegistryPage", () => {
       ).toBeNull()
       const detail = expand(google)
       expect(within(detail).getByText(/middleName/)).toBeTruthy()
+    })
+
+    it("a preview the server could not run is stated as blocked", async () => {
+      // The server attaches the failure as one fixed blocker line and no
+      // motion (api catalogItemFor). It reads as a blocked upgrade, never as
+      // an entry with nothing to say.
+      serve({
+        statuses: [googleStatus()],
+        catalog: [
+          {
+            ...GOOGLE,
+            installed: true,
+            upgrade: {
+              available: false,
+              blockers: ["the upgrade preview failed; see the server log"],
+            },
+          },
+          PEOPLE,
+        ],
+      })
+      renderPage(<RegistryPage />)
+      const google = await rowOf("google")
+      expect(within(google).getByText("upgrade blocked")).toBeTruthy()
+      expect(
+        within(google).queryByRole("button", { name: /Upgrade/ })
+      ).toBeNull()
+      const detail = expand(google)
+      expect(
+        within(detail).getByText(
+          "the upgrade preview failed; see the server log"
+        )
+      ).toBeTruthy()
+      // The lead says the preview failed, not that live records block it.
+      expect(within(detail).getByText(/could not be previewed/)).toBeTruthy()
+      expect(within(detail).queryByText(/live records still hold/)).toBeNull()
+    })
+
+    it("a refused core boot upgrade is stated above the sections", async () => {
+      const guard =
+        'type substrate.reamde.dev/core/llmprovider: property "label" dropped while 1 live records still carry it — null it on them first'
+      serve({
+        shipped: [
+          {
+            package: "substrate.reamde.dev/core",
+            upgrade: { available: true, from: 16, to: 17, blockers: [guard] },
+          },
+        ],
+      })
+      renderPage(<RegistryPage />)
+      await screen.findByText("people")
+      const notice = screen.getByRole("alert")
+      expect(within(notice).getByText("substrate.reamde.dev/core")).toBeTruthy()
+      expect(within(notice).getByText("16 → 17")).toBeTruthy()
+      expect(within(notice).getByText(guard)).toBeTruthy()
+    })
+
+    it("an admitted core upgrade says a restart lands it", async () => {
+      // The owner migrated the last blocking record: the preview has no
+      // blockers, but the store is still old until the server starts again,
+      // and the notice has to say so instead of vanishing.
+      serve({
+        shipped: [
+          {
+            package: "substrate.reamde.dev/core",
+            upgrade: { available: true, from: 16, to: 17 },
+          },
+        ],
+      })
+      renderPage(<RegistryPage />)
+      await screen.findByText("people")
+      const notice = screen.getByRole("alert")
+      expect(within(notice).getByText("substrate.reamde.dev/core")).toBeTruthy()
+      expect(within(notice).getByText("16 → 17")).toBeTruthy()
+      expect(
+        within(notice).getByText(/lands when the server starts again/)
+      ).toBeTruthy()
+      expect(within(notice).queryByText(/was refused/)).toBeNull()
+    })
+
+    it("a core package at the shipped version states nothing", async () => {
+      serve({
+        shipped: [
+          {
+            package: "substrate.reamde.dev/core",
+            upgrade: { available: false, from: 17, to: 17 },
+          },
+        ],
+      })
+      renderPage(<RegistryPage />)
+      await screen.findByText("people")
+      expect(screen.queryByRole("alert")).toBeNull()
     })
 
     it("a current bundle offers nothing", async () => {

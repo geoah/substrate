@@ -25,7 +25,10 @@ import { describe, expect, it } from "vitest"
 import golden from "./wire.golden.json"
 import type {
   BundleClosure,
+  BundleUpgrade,
+  BundleUpgradeChange,
   CatalogBundle,
+  CatalogItem,
   Change,
   IncomingReference,
   IncomingSource,
@@ -39,6 +42,7 @@ import type {
   PropertyMeta,
   PutInput,
   ShippedRecord,
+  ShippedUpgrade,
   SubstrateRecord,
   SuggestedMapping,
 } from "./types"
@@ -153,9 +157,9 @@ const occurrenceList: Keys<OccurrenceList> = {
   problems: true,
 }
 
-/** The catalog entry, and the two shapes nested in it. `installed` and
- * `upgrade` are NOT here: the API adds them around the bundle, and the
- * console carries them on CatalogItem. */
+/** The shipped bundle, and the two shapes nested in it. `installed` and
+ * `upgrade` are NOT here: the API adds them around the bundle on CatalogItem,
+ * held below with the bundle's keys promoted. */
 const catalogBundle: Keys<CatalogBundle> = {
   id: true,
   name: true,
@@ -171,6 +175,15 @@ const catalogBundle: Keys<CatalogBundle> = {
   originVersion: true,
   modified: true,
   closure: true,
+}
+
+/** The entry as served: every bundle key, then the two the API adds. The
+ * golden lists them flattened, the way encoding/json writes an embedded
+ * struct, so the TypeScript `extends` and the Go embedding meet here. */
+const catalogItem: Keys<CatalogItem> = {
+  ...catalogBundle,
+  installed: true,
+  upgrade: true,
 }
 
 const suggestedMapping: Keys<SuggestedMapping> = {
@@ -196,6 +209,27 @@ const shippedRecord: Keys<ShippedRecord> = {
   id: true,
 }
 
+/** The upgrade preview, on a catalog entry and on the shipped-upgrade read. */
+const bundleUpgrade: Keys<BundleUpgrade> = {
+  available: true,
+  from: true,
+  to: true,
+  changes: true,
+  blockers: true,
+}
+
+const bundleUpgradeChange: Keys<BundleUpgradeChange> = {
+  kind: true,
+  id: true,
+  from: true,
+  to: true,
+}
+
+const shippedUpgrade: Keys<ShippedUpgrade> = {
+  package: true,
+  upgrade: true,
+}
+
 const mirrors: Record<string, Record<string, true>> = {
   SubstrateRecord: substrateRecord,
   IncomingReference: incomingReference,
@@ -211,6 +245,10 @@ const mirrors: Record<string, Record<string, true>> = {
   OccurrenceProblem: occurrenceProblem,
   OccurrenceList: occurrenceList,
   CatalogBundle: catalogBundle,
+  CatalogItem: catalogItem,
+  BundleUpgrade: bundleUpgrade,
+  BundleUpgradeChange: bundleUpgradeChange,
+  ShippedUpgrade: shippedUpgrade,
   BundleClosure: bundleClosure,
   ShippedRecord: shippedRecord,
   SuggestedMapping: suggestedMapping,

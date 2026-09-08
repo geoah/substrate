@@ -45,3 +45,26 @@ func (h *handler) applyVocabulary(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, vocabularyApplyResponse{Records: ents})
 }
+
+// getVocabularyUpgrade is GET /api/v1/vocabulary/upgrade: what the running
+// binary's boot upgrade would do to each package it ships and seeds (the core
+// package), computed against this repository's stored declarations, with the
+// guard lines the boot refused on. The boot upgrade skips rather than fails
+// when a guard refuses it, so without this read a withheld core upgrade is a
+// server log line and nothing a repository token can see. It sits at the
+// version root beside `/vocabulary/apply`, because it is about the shipped
+// declarations and names no kind (decision 0033).
+func (h *handler) getVocabularyUpgrade(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	planner, ok := DatasetFrom(ctx).(substrate.ShippedUpgradePlanner)
+	if !ok {
+		writeUnsupported(w, "this service does not preview the shipped upgrade")
+		return
+	}
+	items, err := planner.PlanShippedUpgrade(ctx)
+	if err != nil {
+		writeSubstrateError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, substrate.Listed(items))
+}

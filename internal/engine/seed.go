@@ -131,11 +131,11 @@ func isSubstratePath(actor substrate.Actor) bool {
 // It never prunes and never re-asserts: this is the one and only time the
 // embedded tree writes itself into this repository wholesale.
 func (t *txn) seedShippedSchema(reg *vocabulary.Registry) error {
-	authorities := shippedPackages(reg)
-	if len(authorities) == 0 {
+	packages := shippedPackages(reg)
+	if len(packages) == 0 {
 		return fmt.Errorf("substrate/engine: the binary ships no vocabulary to seed")
 	}
-	_, err := t.projectPackages(reg, authorities, projectOpts{})
+	_, err := t.projectPackages(reg, packages, projectOpts{})
 	return err
 }
 
@@ -186,83 +186,16 @@ func shippedPackages(reg *vocabulary.Registry) map[string]bool {
 // already own here.
 func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 	reg := ds.svc.base
-	stored, err := ds.storedDeclarations(ctx)
+	// The diff and the guards are shippedupgrade.go's: PlanShippedUpgrade
+	// stages the same way and serves the answer as `GET
+	// /api/v1/vocabulary/upgrade`, so a refusal here is readable there.
+	st, err := ds.stageShippedUpgrade(ctx)
 	if err != nil {
 		return err
 	}
-	current := ds.registry()
-
-	// What each shipped package would have to write, and what it would leave
-	// alone. A package with nothing to write is not touched at all.
-	upgrade := map[string]bool{}
-	keep := map[string]bool{}
-	// The kinds and package headers this upgrade will NOT rewrite, by
-	// identity: a declaration held at its stored version keeps whatever shape
-	// it has, so it is not the upgrade's business and must not be able to
-	// refuse the boot below.
-	keptIdents := map[string]bool{}
-	for _, aname := range sortedKeys(shippedPackages(reg)) {
-		g, ok := reg.PackageByName(aname)
-		if !ok {
-			continue
-		}
-		if cur, ok := current.PackageByName(aname); ok && cur.Source != vocabulary.SourceBuiltin {
-			continue // the name is somebody else's here; the tree does not take it
-		}
-		decls, err := packageDeclarations(g)
-		if err != nil {
-			return err
-		}
-		write := false
-		for _, d := range decls {
-			have, exists := stored[d.key()]
-			switch {
-			case !exists:
-				write = true // a declaration this repository has never had
-			case vocabulary.CompareVersions(d.version(), have.version) > 0:
-				write = true // the shipped declaration moved forward
-			default:
-				keep[d.key()] = true // same or older than stored: never a downgrade
-				if d.typ == kindKind || d.typ == kindPackage {
-					keptIdents[d.id] = true
-				}
-			}
-		}
-		if write {
-			upgrade[aname] = true
-		}
-	}
-	if len(upgrade) == 0 {
+	if len(st.upgrade) == 0 {
 		return nil
 	}
-
-	// The SAME refuse-breakage guards `/vocabulary/apply` takes
-	// (vocabularywrite.go): a narrowing declaration diff — a property dropped,
-	// renamed or kind-changed, an enum value or state removed, required added —
-	// is refused while live rows still hold the old shape, with the count.
-	//
-	// The two doors used to disagree. An operator applying the same change by
-	// hand was refused; the boot upgrade projected it silently, leaving rows
-	// shaped one way under a declaration that said another, with nothing
-	// anywhere reporting it. A guard only one door honors is not a guard.
-	narrowings := classifyNarrowingsExcept(current, reg, upgrade, keptIdents)
-
-	// The default check `/vocabulary/apply` takes, for the same reason the
-	// narrowing guards are here: a declared default no write could store would
-	// land at boot and break every create of that kind afterwards, and the door
-	// that refuses it by hand would have caught it. It needs no live rows, so it
-	// is decided before the transaction opens.
-	badDefaults := checkDeclaredDefaults(reg, upgrade)
-	// The retired-name check the same door takes (decision 0055): a shipped
-	// declaration that reuses a name this repository's stored closure retired,
-	// or a tree that dropped a stored retirement, is refused before any row
-	// moves. This door has no document merge in front of it, so a dropped list
-	// is refused here rather than carried forward.
-	retirements := retirementGuards(current, reg, upgrade, keptIdents)
-	// And the branch only this door needs: the tree retires a name this
-	// repository still declares. Nothing here prunes the kind, so the header
-	// would land beside it and the next open would refuse the stored closure.
-	retirements = append(retirements, heldRetirementGuards(current, reg, upgrade)...)
 
 	// REFUSING THE UPGRADE IS NOT REFUSING THE REPOSITORY. A guard that failed
 	// the open would take the repository down with it — and leave no way back
@@ -274,29 +207,31 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 	//
 	// This is the same answer /vocabulary/apply gives — the narrowing does not
 	// land — differing only in what it costs a caller who did not ask for it.
-	// A bad default is decided already, so the counting transaction never opens.
-	refused := append(append([]string(nil), badDefaults...), retirements...)
-	if len(refused) == 0 {
-		err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
-			if err := t.lockKey(registryDepKey(ds)); err != nil {
-				return err
-			}
-			guards, err := narrowingGuards(t, narrowings)
-			if err != nil {
-				return err
-			}
-			if len(guards) > 0 {
-				refused = guards
-				return nil
-			}
-			_, err = t.projectPackages(reg, upgrade, projectOpts{
-				skip: func(key string) bool { return keep[key] },
-			})
+	//
+	// Every guard is counted every time, a bad default or a retired name
+	// notwithstanding: the log line and `GET /api/v1/vocabulary/upgrade` are
+	// the same list (st.guards), and an operator resolving a refusal wants
+	// the whole of it, not one reason per restart.
+	var refused []string
+	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		if err := t.lockKey(registryDepKey(ds)); err != nil {
 			return err
-		})
-		if err != nil {
-			return fmt.Errorf("substrate/engine: upgrade shipped vocabulary of %s: %w", ds.info.Name, err)
 		}
+		guards, err := st.guards(t)
+		if err != nil {
+			return err
+		}
+		if len(guards) > 0 {
+			refused = guards
+			return nil
+		}
+		_, err = t.projectPackages(reg, st.upgrade, projectOpts{
+			skip: func(key string) bool { return st.keep[key] },
+		})
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("substrate/engine: upgrade shipped vocabulary of %s: %w", ds.info.Name, err)
 	}
 	if len(refused) > 0 {
 		// The message is the entire interface for the migration it is asking
@@ -308,7 +243,7 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 		return nil
 	}
 	ds.svc.log.Info("substrate: upgraded a repository's shipped vocabulary from the embedded tree",
-		"repository", ds.info.Name, "authorities", sortedKeys(upgrade))
+		"repository", ds.info.Name, "packages", sortedKeys(st.upgrade))
 
 	// The rows moved, so the live registry is rebuilt from them — the same
 	// read every open does, so an upgraded repository and a freshly opened one

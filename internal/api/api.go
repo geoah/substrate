@@ -260,6 +260,9 @@ func (h *handler) mountResources(r chi.Router) {
 			// It stays distinct because a batch of declarations is not record
 			// data and the schema-apply admission is not the generic write path.
 			r.Post("/vocabulary/apply", h.applyVocabulary)
+			// The boot upgrade's preview: what this binary would move in the
+			// shipped packages here, and the guard lines it refused on.
+			r.Get("/vocabulary/upgrade", h.getVocabularyUpgrade)
 			// Re-embed: enqueue every embeddable property whose stored vectors
 			// did not come from the llmprovider row this repository currently
 			// buys embeddings from.

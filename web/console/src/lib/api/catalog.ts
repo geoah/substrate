@@ -13,6 +13,7 @@ import type {
   CatalogItem,
   CatalogTier,
   OperationalList,
+  ShippedUpgrade,
 } from "./types"
 
 /** One shipped bundle closure plus whether this repository already has it. */
@@ -28,6 +29,24 @@ export const catalogQueryOptions = queryOptions({
     const res = await request<OperationalList<CatalogItem>>(
       "GET",
       CATALOG,
+      undefined,
+      { signal }
+    )
+    return res.items ?? []
+  },
+  staleTime: 60_000,
+})
+
+/** The boot upgrade's preview: one entry per package the binary ships and
+ * seeds (core), which no catalog entry carries. The server computes it at read
+ * against the running binary, so `blockers` here is what the boot logged when
+ * it refused to move core, and the Registry can state it. */
+export const shippedUpgradesQueryOptions = queryOptions({
+  queryKey: ["vocabulary", "upgrade"],
+  queryFn: async ({ signal }) => {
+    const res = await request<OperationalList<ShippedUpgrade>>(
+      "GET",
+      rootPath("vocabulary", "upgrade"),
       undefined,
       { signal }
     )

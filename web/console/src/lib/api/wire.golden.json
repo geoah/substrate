@@ -7,6 +7,19 @@
     "mappings",
     "records"
   ],
+  "BundleUpgrade": [
+    "available",
+    "from",
+    "to",
+    "changes",
+    "blockers"
+  ],
+  "BundleUpgradeChange": [
+    "kind",
+    "id",
+    "from",
+    "to"
+  ],
   "CatalogBundle": [
     "id",
     "name",
@@ -22,6 +35,24 @@
     "originVersion",
     "modified",
     "closure"
+  ],
+  "CatalogItem": [
+    "id",
+    "name",
+    "authority",
+    "package",
+    "description",
+    "version",
+    "tier",
+    "inputs",
+    "requires",
+    "suggestedMappings",
+    "origin",
+    "originVersion",
+    "modified",
+    "closure",
+    "installed",
+    "upgrade"
   ],
   "Change": [
     "seq",
@@ -97,6 +128,10 @@
   "ShippedRecord": [
     "kind",
     "id"
+  ],
+  "ShippedUpgrade": [
+    "package",
+    "upgrade"
   ],
   "SubstrateRecord": [
     "id",

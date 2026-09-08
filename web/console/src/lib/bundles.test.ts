@@ -23,11 +23,14 @@ import {
   missingRequirements,
   oauthConnectBlocked,
   presentPackages,
+  previewFailed,
+  FAILED_PREVIEW_BLOCKER,
   requirementsOf,
   requiresHint,
   upgradableBundleCount,
   upgradeBlocked,
   upgradeMotion,
+  pendingShippedUpgrades,
 } from "./bundles"
 
 function status(over: Partial<BundleStatus> = {}): BundleStatus {
@@ -285,11 +288,30 @@ describe("the upgrade preview helpers", () => {
           installed: true,
           upgrade: { available: true, to: 2, blockers: ["live rows"] },
         }),
+        // A preview the server could not run: blocked without a motion. It
+        // shows a chip on the row, so the badge counts it too.
+        catalog({
+          id: "e",
+          installed: true,
+          upgrade: { available: false, blockers: [FAILED_PREVIEW_BLOCKER] },
+        }),
       ])
-    ).toBe(2)
+    ).toBe(3)
   })
 
-  it("blocked means available AND the server named blockers", () => {
+  it("a failed preview is keyed on its one fixed line", () => {
+    expect(previewFailed({ upgrade: undefined })).toBe(false)
+    expect(
+      previewFailed({ upgrade: { available: true, blockers: ["live rows"] } })
+    ).toBe(false)
+    expect(
+      previewFailed({
+        upgrade: { available: false, blockers: [FAILED_PREVIEW_BLOCKER] },
+      })
+    ).toBe(true)
+  })
+
+  it("blocked means the server named blockers", () => {
     expect(upgradeBlocked({ upgrade: undefined })).toBe(false)
     expect(upgradeBlocked({ upgrade: { available: true, to: 2 } })).toBe(false)
     expect(
@@ -297,6 +319,39 @@ describe("the upgrade preview helpers", () => {
         upgrade: { available: true, to: 2, blockers: ["a guard line"] },
       })
     ).toBe(true)
+    // A preview the server could not run: no motion, one line with the error
+    // text. Stated as blocked, never dropped.
+    expect(
+      upgradeBlocked({
+        upgrade: { available: false, blockers: [FAILED_PREVIEW_BLOCKER] },
+      })
+    ).toBe(true)
+  })
+
+  it("a pending shipped upgrade is one the binary ships and the store lacks", () => {
+    const refused = {
+      package: "substrate.reamde.dev/core",
+      upgrade: {
+        available: true,
+        from: 16,
+        to: 17,
+        blockers: ["a guard line"],
+      },
+    }
+    // Admitted but not landed: the last blocking record was migrated and the
+    // boot has not run again. Still news, or the owner never learns a restart
+    // is what lands it.
+    const admitted = {
+      package: "substrate.reamde.dev/core",
+      upgrade: { available: true, from: 16, to: 17 },
+    }
+    expect(
+      pendingShippedUpgrades([
+        { package: "substrate.reamde.dev/core", upgrade: { available: false } },
+        admitted,
+        refused,
+      ])
+    ).toEqual([admitted, refused])
   })
 
   it("renders the version motion, tolerating a store with no version", () => {

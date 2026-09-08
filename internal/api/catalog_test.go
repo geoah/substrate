@@ -189,9 +189,13 @@ func newUpgradeErrEnv(t *testing.T) *testEnv {
 	}
 }
 
-// A preview that fails costs that entry its upgrade offer and NOTHING else.
-// The offer is an extra; the listing is the promise, and the console reads it
-// on every page.
+// A preview that fails costs that entry its upgrade offer and NOTHING else:
+// the listing still answers 200, because the console reads it on every page.
+// The failure is not swallowed with the offer, though. It rides the entry as
+// one fixed blocker line, so the owner sees an upgrade nobody can take
+// instead of an entry with nothing to say. The error text stays in the server
+// log: a driver error names the deployment, and a repository token's 200 body
+// is not where that goes.
 func TestCatalogListSurvivesAFailedUpgradePreview(t *testing.T) {
 	env := newUpgradeErrEnv(t)
 	tok := env.svc.token("geoah")
@@ -200,25 +204,54 @@ func TestCatalogListSurvivesAFailedUpgradePreview(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("catalog list = %d, want 200 (a failed preview must not blank the listing): %s", rec.Code, rec.Body)
 	}
+	type entry struct {
+		ID        string                   `json:"id"`
+		Installed bool                     `json:"installed"`
+		Upgrade   *substrate.BundleUpgrade `json:"upgrade"`
+	}
 	body := decodeJSON[struct {
-		Items []struct {
-			ID      string                   `json:"id"`
-			Upgrade *substrate.BundleUpgrade `json:"upgrade"`
-		} `json:"items"`
+		Items []entry `json:"items"`
 	}](t, rec)
 	if len(body.Items) == 0 {
 		t.Fatal("the listing is empty")
 	}
-	for _, item := range body.Items {
-		if item.Upgrade != nil {
-			t.Errorf("bundle %s carries an upgrade from a failed preview", item.ID)
+	wantFailedPreview := func(item entry) {
+		t.Helper()
+		if item.Upgrade == nil {
+			t.Fatalf("bundle %s dropped its failed preview silently", item.ID)
 		}
+		if item.Upgrade.Available {
+			t.Errorf("bundle %s offers an upgrade its preview could not compute", item.ID)
+		}
+		if len(item.Upgrade.Blockers) != 1 || item.Upgrade.Blockers[0] != failedPreviewBlocker {
+			t.Errorf("bundle %s blockers = %q, want exactly %q", item.ID, item.Upgrade.Blockers, failedPreviewBlocker)
+		}
+		if strings.Contains(strings.Join(item.Upgrade.Blockers, ";"), errBoom.Error()) {
+			t.Errorf("bundle %s serves the preview's error text to a repository token: %q", item.ID, item.Upgrade.Blockers)
+		}
+	}
+	var found bool
+	for _, item := range body.Items {
+		if item.ID != googleBundleID {
+			// Only the installed provider is previewed; nothing else may
+			// inherit its failure.
+			if item.Upgrade != nil {
+				t.Errorf("bundle %s carries an upgrade it was never previewed for", item.ID)
+			}
+			continue
+		}
+		found = true
+		wantFailedPreview(item)
+	}
+	if !found {
+		t.Fatalf("%s is not in the listing", googleBundleID)
 	}
 
 	rec = env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape(googleBundleID), tok, nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("catalog detail = %d, want 200: %s", rec.Code, rec.Body)
 	}
+	wantFailedPreview(decodeJSON[entry](t, rec))
 }
 
 func TestCatalogListReturnsShippedBundles(t *testing.T) {
@@ -335,7 +368,7 @@ func TestCatalogDetailPreviewsTheClosure(t *testing.T) {
 	tok := env.svc.token("geoah")
 	rec := env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape(webBundleID), tok, nil)
 	wantStatus(t, rec, http.StatusOK)
-	item := decodeJSON[catalogItem](t, rec)
+	item := decodeJSON[substrate.CatalogItem](t, rec)
 	if len(item.Closure.Functions) != 4 || len(item.Closure.Records) != 4 {
 		t.Errorf("closure = %+v", item.Closure)
 	}

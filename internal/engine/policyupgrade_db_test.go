@@ -195,10 +195,11 @@ func TestPolicySelectorOpsUpgradeRefusedByAStrandedSelector(t *testing.T) {
 	if _, err := ds.Get(ctx, vocabulary.KindRecordPatchPolicy, "gate-creates"); err != nil {
 		t.Fatalf("the stranding policy: %v", err)
 	}
-	// ONE ROW WITHHOLDS THE WHOLE AUTHORITY. The skip is per projection, not
+	// ONE ROW WITHHOLDS THE WHOLE PACKAGE. The skip is per projection, not
 	// per kind, so core's other version-12 declarations do not land either.
-	// An owner reading the log needs the blast radius to be the authority,
-	// and a narrower skip is a change this assertion sees.
+	// An owner reading the log, or `GET /api/v1/vocabulary/upgrade`, needs the
+	// blast radius to be the package, and a narrower skip is a change this
+	// assertion sees.
 	if v := kindVersion(t, ds, corePackage+"/trigger"); v != 9 {
 		t.Fatalf("trigger is at version %d; the refusal withholds all of core, not one kind", v)
 	}

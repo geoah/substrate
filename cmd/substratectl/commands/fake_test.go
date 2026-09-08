@@ -64,6 +64,12 @@ type fakeSubstrate struct {
 	totpDisabled bool
 	// changes is the ndjson watch payload (one substrate.Change per row).
 	changes []substrate.Change
+	// catalog is GET /api/v1/catalog's items, and shipped is GET
+	// /api/v1/vocabulary/upgrade's. shippedStatus, when non-zero, fails the
+	// shipped read with it: the server that previews no boot upgrade.
+	catalog       []substrate.CatalogItem
+	shipped       []substrate.ShippedUpgrade
+	shippedStatus int
 
 	requests  []string
 	lastBody  map[string]json.RawMessage
@@ -179,6 +185,8 @@ func (f *fakeSubstrate) handler() http.Handler {
 	// The sample door: the server rehomes the closure and answers with the
 	// LANDED bundle's status, whose id is the repository's own authority.
 	mux.HandleFunc("POST /api/v1/catalog/{id}/import", f.handleCatalogImport)
+	mux.HandleFunc("GET /api/v1/catalog", f.handleCatalog)
+	mux.HandleFunc("GET /api/v1/vocabulary/upgrade", f.handleShippedUpgrade)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		f.noteRequest(r)
 		writeError(w, http.StatusNotFound, "not_found", "no such route: "+r.URL.Path, nil)
@@ -357,6 +365,24 @@ func (f *fakeSubstrate) handleVocabularyApply(w http.ResponseWriter, r *http.Req
 		ents = append(ents, &substrate.Record{ID: id, Kind: kind, Version: 1})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"records": ents})
+}
+
+// handleCatalog serves the seeded catalog listing, the shape the API answers:
+// each shipped bundle with `installed` and the `upgrade` preview beside it.
+func (f *fakeSubstrate) handleCatalog(w http.ResponseWriter, r *http.Request) {
+	f.noteRequest(r)
+	writeJSON(w, http.StatusOK, substrate.Listed(f.catalog))
+}
+
+// handleShippedUpgrade serves the boot upgrade's preview, or the refusal a
+// server without it gives.
+func (f *fakeSubstrate) handleShippedUpgrade(w http.ResponseWriter, r *http.Request) {
+	f.noteRequest(r)
+	if f.shippedStatus != 0 {
+		writeError(w, f.shippedStatus, "unsupported", "this service does not preview the shipped upgrade", nil)
+		return
+	}
+	writeJSON(w, http.StatusOK, substrate.Listed(f.shipped))
 }
 
 // handleCatalogImport stands in for the sample door: it answers the status of

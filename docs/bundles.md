@@ -131,13 +131,34 @@ The upgrade has a read-only **preview** beside it: the catalog compares the
 shipped closure's declaration versions against the stored ones (the same diff
 the boot upgrade runs for core, engine `PlanBundleUpgrade`) and attaches the
 result to the catalog read as `upgrade`, with the same refuse-breakage guard
-lines the install would refuse on as `blockers`. The console's Registry counts
+lines the install would refuse on as `blockers`. A preview that cannot run at
+all (a database fault, a closure this repository cannot admit) still leaves
+the entry in the listing, with one fixed blocker line ("the upgrade preview
+failed; see the server log") and no version motion; the error itself goes to
+the server log, never to a repository token. The console's Registry counts
 these on the sidebar badge, offers Upgrade where nothing blocks, and states
 the guard lines where something does; the button is the install verb,
-unchanged. Only a PROVIDER is previewed: a sample's closure landed under the
-repository's own authority and belongs to it, so the catalog answers
-not-available before the dataset is asked
-([0048](decisions/0048-providers-are-published-samples-are-copied.md)). A changed declaration therefore **must** ship a changed version, or no
+unchanged. Of the two catalog tiers only a PROVIDER is previewed: a sample's
+closure landed under the repository's own authority and belongs to it, so the
+catalog answers not-available before the dataset is asked
+([0048](decisions/0048-providers-are-published-samples-are-copied.md)).
+
+The seeded `core` package is not a catalog entry, so its preview is its own
+read: `GET /api/v1/vocabulary/upgrade` answers one entry per package the
+binary ships and seeds, `{package, upgrade}`, with the same `upgrade` shape.
+It is the boot upgrade's decision computed at read against the running
+binary, and `available` says the upgrade has not landed here. Two states
+follow from `blockers`. Refused: a guard refused the boot upgrade, the
+repository opened on its stored declarations and `blockers` carries the guard
+lines the server logged, which name the records to migrate. Admitted:
+`blockers` is empty (the last blocking record was migrated, or nothing ever
+blocked) but the boot upgrade runs only at a repository's first open under a
+binary, so the stored declarations stay old until the server starts again.
+The Registry states both above its sections (the guard lines, or "lands when
+the server starts again"), and `substratectl catalog` prints every package's
+motion with `blocked` or, for core, `lands at restart`.
+
+A changed declaration therefore **must** ship a changed version, or no
 repository ever learns it moved; CI enforces that (`mise run kinds:check`,
 AGENTS.md).
 
