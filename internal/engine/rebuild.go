@@ -10,6 +10,7 @@ import (
 
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // rebuild-repository: clear the fold and replay the changelog
@@ -241,18 +242,23 @@ func (t *txn) rederiveOffers() error {
 	return t.deriveOffersOf(sortedKeys(targets))
 }
 
-// recomputeMappingTargets is the vocabulary apply's half of recompute: for
-// every target kind whose mapping set the batch changed, the offers go and
-// every live record recomputes against the transaction's declarations
-// (refs.go), which are the candidate. Offers AND values: the values a removed
-// or narrowed mapping's sources projected are changelog entries, so a rebuild
-// would keep them, and only a recompute in this transaction leaves nothing
-// for a rebuild under the published closure to disagree with. A kind with no
-// mapping left has nothing to recompute from, so what the machine held is
-// released instead (releaseMachineManaged).
-func (t *txn) recomputeMappingTargets(kinds []string) error {
-	reg := t.declarations()
-	for _, kind := range kinds {
+// recomputeMappingTargets is the vocabulary apply's half of recompute. For
+// every target kind whose mapping set the batch changed: the properties the
+// LIVE mappings supplied and the candidate's no longer do are released on
+// every live record where the machine tier holds them (value and manager row,
+// a required property kept), the kind's offers go, and each record recomputes
+// against the candidate for whatever still maps. Offers AND values: the values
+// a removed or narrowed mapping's sources projected are changelog entries a
+// rebuild keeps, so only a recompute in this transaction leaves nothing for a
+// rebuild under the published closure to disagree with. A kind losing its last
+// mapping is the same computation against an empty candidate set, so a value
+// the machine wrote for no mapping (a system write, a default) is not touched.
+func (t *txn) recomputeMappingTargets(live, cand *vocabulary.Registry) error {
+	for _, kind := range changedMappingTargets(live, cand) {
+		removed := mappedProperties(live.MappingsTo(kind))
+		for name := range mappedProperties(cand.MappingsTo(kind)) {
+			delete(removed, name)
+		}
 		if _, err := t.exec(`DELETE FROM property_offers WHERE record_kind = $1`, kind); err != nil {
 			return fmt.Errorf("substrate/engine: clear the offers of %s: %w", kind, err)
 		}
@@ -260,20 +266,34 @@ func (t *txn) recomputeMappingTargets(kinds []string) error {
 		if err != nil {
 			return err
 		}
-		mapped := len(reg.MappingsTo(kind)) > 0
+		mapped := len(cand.MappingsTo(kind)) > 0
 		for _, id := range ids {
 			ref := eref{Kind: kind, ID: id}
-			if mapped {
-				err = t.recompute(ref)
-			} else {
-				err = t.releaseMachineManaged(ref)
+			if err := t.releaseMachineManaged(ref, sortedKeys(removed)); err != nil {
+				return fmt.Errorf("substrate/engine: release %s %s after its mappings changed: %w", kind, id, err)
 			}
-			if err != nil {
+			if !mapped {
+				continue
+			}
+			if err := t.recompute(ref); err != nil {
 				return fmt.Errorf("substrate/engine: recompute %s %s after its mappings changed: %w", kind, id, err)
 			}
 		}
 	}
 	return nil
+}
+
+// mappedProperties is the set of target properties a mapping set writes: the
+// union of every mapping's map keys. A match rule reads a target property to
+// find the subject and writes nothing, so it is not one.
+func mappedProperties(ms []*vocabulary.Mapping) map[string]bool {
+	out := map[string]bool{}
+	for _, m := range ms {
+		for _, name := range m.MapOrder {
+			out[name] = true
+		}
+	}
+	return out
 }
 
 // deriveOffersOf derives the offers of every live record of the given target

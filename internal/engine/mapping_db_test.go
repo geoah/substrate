@@ -1711,9 +1711,52 @@ func TestRemovedMappingReleasesItsOffers(t *testing.T) {
 	wantSubjectWithoutEntry(t, svc, ds, sam)
 }
 
-// Removing a target kind's LAST mapping leaves nothing to recompute from, so
-// the apply releases what the machine tier held: the value and its manager row
-// go, the owner's own writes stay, and a rebuild agrees.
+// Removing one of a kind's mappings releases exactly the properties it alone
+// supplied: slack's `displayName` goes, value and manager row, while `name`
+// recomputes from google and google's `phones` stand. A rebuild agrees.
+func TestRemovedMappingReleasesOnlyItsProperties(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds := newDataset(t)
+	installPeopleSources(t, ds)
+	sam := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: typePerson, Properties: map[string]any{"emails": []any{"sam@acme.com"}},
+	})
+	syncSource(t, ds, people, typeGoogleContact, "g-sam", map[string]any{
+		"name": aname("Samuel Jones"), "emails": gemails("sam@acme.com"), "phones": gphones("+441234567890"),
+	})
+	syncSource(t, ds, slack, typeSlackUser, "s-sam", map[string]any{
+		"realName": "Sam J", "displayName": "sam", "email": "sam@acme.com",
+	})
+	p := mustGet(t, ds, sam.Kind, sam.ID)
+	if p.Properties["name"] != "Sam J" || p.Properties["displayName"] != "sam" || p.Properties["phones"] == nil {
+		t.Fatalf("the two sources did not fill the person as the test needs: %v", p.Properties)
+	}
+
+	// The people closure with google's mapping alone: slack's is pruned.
+	if err := enginetest.DeclareMappings(ctx, ds, peopleMappings()[0]); err != nil {
+		t.Fatalf("apply the people closure without slack's mapping: %v", err)
+	}
+	p = mustGet(t, ds, sam.Kind, sam.ID)
+	if v, still := p.Properties["displayName"]; still {
+		t.Fatalf("displayName = %v survived the removal of the only mapping that supplied it", v)
+	}
+	if _, still := p.PropertyMeta["displayName"]; still {
+		t.Fatalf("displayName keeps a manager after its mapping went: %+v", p.PropertyMeta["displayName"])
+	}
+	if p.Properties["name"] != "Samuel Jones" || p.PropertyMeta["name"].Manager != string(people) {
+		t.Fatalf("name = %v (%+v), want google's after slack's mapping went", p.Properties["name"], p.PropertyMeta["name"])
+	}
+	if got, _ := p.Properties["phones"].([]any); len(got) != 1 || got[0] != "+441234567890" {
+		t.Fatalf("phones = %v, want google's kept", p.Properties["phones"])
+	}
+	wantRebuildAgrees(t, svc, ds)
+}
+
+// Removing a target kind's LAST mapping releases what that mapping supplied
+// and nothing else: the value and its manager row go, a property the machine
+// wrote for no mapping (a system write) stays with its manager, and a rebuild
+// agrees.
 func TestRemovedLastMappingReleasesMachineValues(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -1724,11 +1767,13 @@ func TestRemovedLastMappingReleasesMachineValues(t *testing.T) {
 		"name": aname("Alexandros Papas"), "emails": gemails("alex@acme.example"),
 	})
 	pid := personOf(t, ds, g)
-	mustPatch(t, ds, owner, typePerson, pid, substrate.PatchInput{Properties: map[string]any{"pronouns": "he/him"}})
+	// The system's own hand writes at the machine tier, for no mapping.
+	mustPatch(t, ds, substrate.ActorSystem, typePerson, pid, substrate.PatchInput{Properties: map[string]any{"pronouns": "he/him"}})
 	p := mustGet(t, ds, typePerson, pid)
-	if p.Properties["name"] != "Alexandros Papas" || p.PropertyMeta["name"].Tier != substrate.TierMachine {
-		t.Fatalf("the sync did not fill name at the machine tier, so the test would prove nothing: %v %+v",
-			p.Properties["name"], p.PropertyMeta["name"])
+	if p.Properties["name"] != "Alexandros Papas" || p.PropertyMeta["name"].Tier != substrate.TierMachine ||
+		p.PropertyMeta["pronouns"].Tier != substrate.TierMachine {
+		t.Fatalf("the fixture did not land name and pronouns at the machine tier, so the test would prove nothing: %v %+v",
+			p.Properties, p.PropertyMeta)
 	}
 
 	if err := enginetest.DeclareMappings(ctx, ds); err != nil {
@@ -1743,8 +1788,9 @@ func TestRemovedLastMappingReleasesMachineValues(t *testing.T) {
 			t.Fatalf("%s keeps a manager after the removal of the mapping that wrote it: %+v", name, p.PropertyMeta[name])
 		}
 	}
-	if p.Properties["pronouns"] != "he/him" {
-		t.Fatalf("the owner's own write went with the mapping: %v", p.Properties["pronouns"])
+	if p.Properties["pronouns"] != "he/him" || p.PropertyMeta["pronouns"].Tier != substrate.TierMachine {
+		t.Fatalf("a machine write no mapping supplied went with the mapping: %v %+v",
+			p.Properties["pronouns"], p.PropertyMeta["pronouns"])
 	}
 	before := foldOf(t, ds)
 	if _, err := svc.(rebuilder).RebuildRepository(ctx, "geoah"); err != nil {

@@ -414,9 +414,10 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		// will ever run for a mapping that is gone. Every such record
 		// recomputes here, in this transaction and against the candidate
 		// (t.declarations()), so the offers and the values this commit
-		// publishes are the ones the published closure derives; a kind left
-		// with no mapping releases what the machine held (recomputeMappingTargets).
-		if err := t.recomputeMappingTargets(changedMappingTargets(ds.registry(), candidate)); err != nil {
+		// publishes are the ones the published closure derives; a property no
+		// candidate mapping supplies any more is released first
+		// (recomputeMappingTargets).
+		if err := t.recomputeMappingTargets(ds.registry(), candidate); err != nil {
 			return err
 		}
 		final, err := droppedTypeGuards(t, st.droppedTypes)

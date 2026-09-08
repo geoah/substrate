@@ -1015,14 +1015,17 @@ func (t *txn) afterTombstone(ref eref) error {
 	return t.recomputeSubjectsOf(ref)
 }
 
-// releaseMachineManaged releases every property the machine tier manages on a
-// record: what recompute wrote for mappings that no longer exist, once a kind
-// has no mapping left (recomputeMappingTargets). Each is nulled through the
-// same recomputing patch recompute uses, so the value and its manager row go
-// together; a required property keeps its value, as recompute leaves it.
-// Nothing else writes at the machine tier (rows.go), so nothing else is
-// touched.
-func (t *txn) releaseMachineManaged(target eref) error {
+// releaseMachineManaged releases the named properties on a record where the
+// machine tier manages them: what recompute wrote for mappings a vocabulary
+// apply removed (recomputeMappingTargets). Each is nulled through the same
+// recomputing patch recompute uses, so the value and its manager row go
+// together; a required property keeps its value, as recompute leaves it. A
+// property held above the machine tier, or one the machine wrote for no
+// mapping, is not named and is not touched.
+func (t *txn) releaseMachineManaged(target eref, props []string) error {
+	if len(props) == 0 {
+		return nil
+	}
 	row, err := t.loadRow(target, false)
 	if err != nil || row == nil || row.DeletedAt != nil {
 		return err
@@ -1036,8 +1039,8 @@ func (t *txn) releaseMachineManaged(target eref) error {
 		return err
 	}
 	patch := map[string]any{}
-	for _, name := range sortedKeys(managers) {
-		if managers[name].tier != substrate.TierMachine {
+	for _, name := range props {
+		if m, held := managers[name]; !held || m.tier != substrate.TierMachine {
 			continue
 		}
 		if p, ok := ty.Props[name]; ok && p.Required {
