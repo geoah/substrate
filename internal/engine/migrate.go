@@ -40,7 +40,8 @@ type recorded struct {
 // newer binary migrated the database. Every boot step after the runner writes
 // to the schema (the orphan sweep, the declared indexes, the data root
 // import), so the open refuses before applying or serving anything. The
-// operator commands open the engine the same way and refuse the same way.
+// operator commands that open the engine (verify, rebuild, reembed, user
+// reset) run the same runner and refuse the same way.
 var ErrDatabaseNewer = errors.New("substrate/engine: the database applied migrations this binary does not carry")
 
 // supersededSHA256 lists, per version, the hashes a migration's file carried
@@ -157,10 +158,11 @@ func checkRecorded(migrations []migration, applied map[int]recorded) error {
 	}
 	var errs []error
 	if len(newer) > 0 {
-		errs = append(errs, fmt.Errorf(`%w: %d recorded, and this binary carries migrations up to %d, so a newer binary `+
-			`migrated this database. Nothing is applied or served, because every later boot step writes to a schema `+
-			`this binary does not know. Run the binary that wrote them, or a later one; to run this one, restore the `+
-			`database from the copy taken before that binary ran. What the database recorded:`+"\n%s",
+		errs = append(errs, fmt.Errorf(`%w: %d migration(s) recorded that this binary does not carry (it carries up to %d), `+
+			`so a newer binary migrated this database. Nothing is applied or served, because every later boot step `+
+			`writes to a schema this binary does not know. The recorded name is the migration file's name, and the `+
+			`tree's history says which release added it: run that release or a later one, or, to run this binary, `+
+			`restore the database from the copy taken before that release ran. What the database recorded:`+"\n%s",
 			ErrDatabaseNewer, len(newer), highest, strings.Join(newer, "\n")))
 	}
 	if len(drift) > 0 {

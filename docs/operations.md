@@ -351,13 +351,16 @@ version the binary does not embed means a newer binary migrated the database,
 and the binary refuses to open it: every step after the runner (the orphan
 sweep, the declared indexes, the data root import) writes to the schema, and
 an older binary does not know the shape it would be writing to. The refusal
-names each such row; the name says which release wrote it. The repair is to
-run that binary or a later one, or to restore the database from the copy taken
-before the upgrade. This is the database's own downgrade refusal, beside the
-two per-repository ones above, and it closes the rollback even when no
-repository was written: a new binary that carries a migration applies it at its
-first boot. Every operator command opens the engine the same way, so an older
-`substratectl repository verify` or `rebuild` refuses the same database.
+names each such row by its recorded name, which is the migration file's name
+(`0016_something`); the tree's history says which release added that file. The
+repair is to run that release or a later one, or to restore the database from
+the copy taken before the upgrade. This is the database's own downgrade
+refusal, beside the two per-repository ones above, and it closes the rollback
+even when no repository was written: a new binary that carries a migration
+applies it at its first boot. The operator commands that open the engine run
+the same runner, so an older `substratectl repository verify`, `repository
+rebuild`, `repository reembed` or `user reset` refuses the same database;
+`repository list` and `inspect` read the tables directly and do not.
 
 **A migration this binary does not recognize stops the boot too.** The same
 read compares the recorded hashes against the files the binary carries. A
