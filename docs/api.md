@@ -1,9 +1,10 @@
 # The API
 
 The substrate serves one set of operations for everything: four reads
-(`record`, `records`, `search`, `changelog`) plus a watch stream, and seven
+(`record`, `records`, `search`, `changelog`) plus a watch stream, and five
 mutations. REST serves all of them but `search`, which is the GraphQL query's
-alone. A new kind never adds an
+alone. REST is the supported developer interface and the whole of GraphQL is a
+preview; [discovery](#discovery) says so per surface. A new kind never adds an
 endpoint: the REST path pattern is the same routes for every package, and the
 [GraphQL](graphql-and-search.md) schema is generated from the loaded kinds.
 This page is the REST surface, the filter grammar, pagination, the mutations,
@@ -304,7 +305,8 @@ maximum [changelog dialect](changelog.md#the-dialect-a-changelog-is-written-in);
 the reference
 grammar this deployment speaks; the authentication endpoints beside the
 versioned API (`/register`, `/login`, `/tokens`, `/password`, `/totp`); what
-registration asks for and whether it is open at all; and a feature list. (Both
+registration asks for and whether it is open at all; the two request surfaces,
+each with its endpoint and its compatibility; and a feature list. (Both
 stored dialects are per-repository and never appear on the wire; a binary too
 old for a store refuses to open it, which surfaces as `unavailable`.) That
 feature list is what replaces probing for 501s: each entry names a feature,
@@ -319,6 +321,8 @@ its stability and the `surfaces` that serve it (`rest`, `graphql`, or both):
               {"name": "changefeed", "stability": "beta", "surfaces": ["rest", "graphql"]},
               {"name": "search", "stability": "beta", "surfaces": ["graphql"]},
               {"name": "agents", "stability": "alpha", "surfaces": ["rest"]}],
+ "surfaces": {"rest": {"endpoint": "/api/v1", "compatibility": "supported"},
+              "graphql": {"endpoint": "/api/v1/graphql", "compatibility": "preview"}},
  "grammar": {"kind": "<authority>/<package>/<name>",
              "record": "<authority>/<package>/<kind>/<id>",
              "collection": "/api/v1/{authority}/{package}/{kind}[/{id}]",
@@ -340,6 +344,16 @@ GraphQL field. The example above is abridged; the full roster a deployment may
 report is `triggers`, `functions`, `bundles`, `blobs`, `changefeed`, `search`,
 `embeddings` and `agents`, and which of them a given deployment lists is
 [what it implements](#what-a-features-stability-means).
+
+`surfaces` is the verdict per request surface, and it is a different axis from
+a feature's stability. `compatibility` is `supported` on `rest`: the REST API
+is the interface a client builds on, and a break there is announced, never
+silent. It is `preview` on `graphql`: every part of the GraphQL surface, the
+generated types, the root operations and the scalars, may change without a v1
+wire break, so a client that posts to `/api/v1/graphql` pins the server
+version. A feature's `stability` then says how far that one feature's shape has
+settled on whichever surface serves it
+([decision 0053](decisions/0053-rest-is-supported-all-of-graphql-is-preview.md)).
 
 `registration` is what the register door asks for, and whether it is even
 open. `registration.open` is `false` only on a deployment with no invite code
@@ -388,31 +402,38 @@ listed there as `deprecated` with the prefix that replaces it, and every
 response on it would carry a `Warning` header (RFC 7234 warn-code 299) naming
 that replacement.
 
-Within v1 the surface is **additive only**: fields and endpoints are added,
-never removed or narrowed under the same version. A deprecation is signalled,
-not a silent break: a `Warning` HTTP header on the REST response and
-`@deprecated` on the GraphQL schema element, each with a minimum sunset window
-before removal. There is no Kubernetes-style multi-version conversion
-machinery.
+Within v1 the REST surface is **additive only**: fields and endpoints are
+added, never removed or narrowed under the same version. A deprecation is
+signalled, not a silent break: a `Warning` HTTP header on the REST response,
+with a minimum sunset window before removal. GraphQL makes no such promise
+([REST and GraphQL](#rest-and-graphql) below). There is no Kubernetes-style
+multi-version conversion machinery.
 
 ## REST and GraphQL
 
 The two surfaces make different promises, and the difference decides what a
-client may hard-code.
+client may build on. Discovery states it as `surfaces`: `rest` is `supported`
+and `graphql` is `preview`.
 
-**REST is the frozen v1 contract.** Its routes, request and response shapes,
-error codes and headers are fixed under `/api/v1` and widen only by addition,
-so a client may pin a path and a field name. A new kind adds no route: the
-collection segment is the kind's name on the same route pattern.
+**REST is the supported developer interface.** Its routes, request and
+response shapes, error codes and headers live under `/api/v1` and widen by
+addition; a change that would break a client is announced, never silent, and
+each feature's `stability` says how far its own shape has settled. A new kind
+adds no route: the collection segment is the kind's name on the same route
+pattern.
 
-**GraphQL is a projection derived from the vocabulary**, rebuilt per
-repository. Installing a bundle adds types and fields and uninstalling one
-takes them away, so the schema is whatever that repository's installed kinds
-declare right now, and a client reads it by introspection instead of pinning
-it. The structural half (the four reads, the five mutations, `Record`'s own
-fields, the scalars) follows the same additive rule REST does, `@deprecated`
-with a sunset window before anything leaves. The generated half carries only
-the [declaration's own upgrade
+**GraphQL is a preview, all of it.** The schema is a projection derived from
+the vocabulary and rebuilt per repository: installing a bundle adds types and
+fields and uninstalling one takes them away, so a client reads it by
+introspection instead of pinning it. The root operations (`record`, `records`,
+`search`, `changelog` and the five mutations), `Record`'s own fields and the
+scalars carry no promise either: they may change, and a schema element leaves
+without a deprecation marker. A client that needs ranking posts to
+`POST /api/v1/graphql` and pins the server version. The surface stays because
+the engine executes it itself: the agent loop's
+[`substrate.reamde.dev/core/graphql`](functions.md#host-functions) host
+function reads a repository through the same schema and resolvers. The
+generated half carries only the [declaration's own upgrade
 rules](vocabulary.md#vocabulary-evolution-and-the-dialect-contract).
 
 The two also do not serve the same set. Discovery says which serves what
@@ -438,7 +459,7 @@ door. `propertyMeta` is the other asymmetry: it is assembled per record, so a
 list never carries it on either surface. Both are listed here rather than left
 for a client to find out by trying, which is the rule: an asymmetry is written
 down or it is a bug
-([decision 0022](decisions/0022-rest-is-frozen-graphql-is-a-projection.md)).
+([decision 0053](decisions/0053-rest-is-supported-all-of-graphql-is-preview.md)).
 
 ## Actors
 

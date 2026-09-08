@@ -26,7 +26,7 @@ var wantFeatureSurfaces = map[string][]string{
 	"blobs":      {surfaceREST},
 	"changefeed": {surfaceREST, surfaceGraphQL},
 	"search":     {surfaceGraphQL},
-	"embeddings": {surfaceGraphQL},
+	"embeddings": {surfaceREST, surfaceGraphQL},
 	"agents":     {surfaceREST},
 }
 
@@ -133,6 +133,47 @@ func TestDiscoveryFeaturesNameTheirSurfaces(t *testing.T) {
 	}
 }
 
+// The surface verdict is one object, not a stamp per feature: REST is the
+// supported developer interface and every part of GraphQL is preview (decision
+// 0053). Each surface names its endpoint so a preview door is locatable from
+// discovery alone, and the GraphQL endpoint is held to the mounted route. The
+// object is read off the wire as bytes too, because a client reads JSON and a
+// renamed key would still decode into the Go struct.
+func TestDiscoveryNamesEachSurfaceWithItsCompatibility(t *testing.T) {
+	env := newTestEnv(t)
+	rec := env.do(t, http.MethodGet, "/.well-known/substrate/server.json", "", nil)
+	wantStatus(t, rec, http.StatusOK)
+	doc := decodeJSON[discoveryDoc](t, rec)
+
+	if want := (surfaceInfo{Endpoint: "/api/v1", Compatibility: "supported"}); doc.Surfaces.REST != want {
+		t.Fatalf("surfaces.rest = %+v, want %+v", doc.Surfaces.REST, want)
+	}
+	if want := (surfaceInfo{Endpoint: "/api/v1/graphql", Compatibility: "preview"}); doc.Surfaces.GraphQL != want {
+		t.Fatalf("surfaces.graphql = %+v, want %+v", doc.Surfaces.GraphQL, want)
+	}
+	wire := `"surfaces":{"rest":{"endpoint":"/api/v1","compatibility":"supported"},` +
+		`"graphql":{"endpoint":"/api/v1/graphql","compatibility":"preview"}}`
+	if body := rec.Body.String(); !strings.Contains(body, wire) {
+		t.Fatalf("surfaces did not serialize as %s: %s", wire, body)
+	}
+
+	// Every surface a feature names is a key of the object, so a client can
+	// follow a feature to its door.
+	for _, f := range doc.Features {
+		for _, s := range f.Surfaces {
+			if s != surfaceREST && s != surfaceGraphQL {
+				t.Fatalf("feature %q names surface %q, which the surfaces object does not carry", f.Name, s)
+			}
+		}
+	}
+
+	// The advertised GraphQL endpoint is the one that answers.
+	tok := env.svc.token("geoah")
+	gql := env.do(t, http.MethodPost, doc.Surfaces.GraphQL.Endpoint, tok,
+		map[string]any{"query": `{ __typename }`})
+	wantStatus(t, gql, http.StatusOK)
+}
+
 // The gql-only marker is a claim about the routes, so hold the routes to it:
 // a search path under /api/v1 is read as an ordinary collection ("unknown
 // collection"), which is what "there is no search route" looks like from
@@ -200,9 +241,9 @@ func discoveryFeatures(t *testing.T, svc substrate.Service) map[string]string {
 
 // A deployment whose datasets carry every seam advertises every feature, each
 // with the stability the surface has actually reached. `stable` means frozen
-// for v1 and nothing here is: the paths all move under the settled path
-// grammar (#202). Change a stamp here and in features() together, and only
-// with the ticket that froze the surface.
+// for v1 and nothing here is: the P0 wire changes tracked in #360 still move
+// responses, and the REST compatibility text is #131. Change a stamp here and
+// in features() together, and only with the ticket that froze the surface.
 func TestDiscoveryStampsEachFeatureStability(t *testing.T) {
 	svc := newFakeService()
 	svc.embeddings = true
