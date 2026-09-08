@@ -97,17 +97,30 @@ kind whose computed name would land on a structural name (`Record`, `Change`,
 `Reference`, a scalar, an interface) is refused at schema build with a
 named error. Neither is ever silently renamed.
 
-`version` and `seq` (and the changelog resume seqs, `head` and `from`, and the
-`ifVersion` precondition) are the **`Long`** scalar, a 64-bit signed integer
-serialized as a JSON number. GraphQL's built-in `Int` is 32-bit, so a
-repository's version or seq counter would overflow past 2^31 (about 2.1
-billion); `Long` carries the full int64 range on the wire. `first` page sizes
-stay `Int`. A JavaScript client should read the
-64-bit fields through a 64-bit-safe path if a counter can exceed 2^53, since a
-JSON number past that loses precision in the browser's `Number`.
+Three groups of fields are the **`Long`** scalar, a 64-bit signed integer
+serialized as a JSON number: `version` and `seq`; the changelog resume seqs
+`head` and `from` with the `ifVersion` precondition; and every `int`
+property, scalar, repeated or a reference's link property. GraphQL's built-in
+`Int` is 32-bit, and graphql-go serializes a value past 2^31-1 (about 2.1
+billion) as `null` with no error. The engine accepts an `int` up to 2^53-1
+([decision 0012](decisions/0012-numbers-are-exact-or-refused.md)) and a
+repository's version or seq counter has no bound at all, so `Long` carries the
+full int64 range on the wire. The `first` and `k` page sizes stay `Int`. A
+`decimal` property is a `String` holding its exact digit string, never a
+`Float`. A JavaScript client should read the 64-bit fields through a
+64-bit-safe path if a counter can exceed 2^53, since a JSON number past that
+loses precision in the browser's `Number`.
+
+A number inside an inline JSON argument (`put(input: {properties: {count:
+5}})`) reaches the engine as a number, exactly as the same value in a variable
+does. That holds for every number literal, including the ones the old string
+let through: an inline `price: 19.90` on a `decimal` property is refused as a
+bare number (decision 0012), and an inline `id: 42` is refused because `id` is
+a string. Write them as `price: "19.90"` and `id: "42"`, as a variable or a
+REST body already must.
 
 Property types render as their proper shapes. A `repeated` property is a GraphQL
-list of its element type for every kind (`[Int]`, `[Float]`, `[Boolean]`,
+list of its element type for every kind (`[Long]`, `[Float]`, `[Boolean]`,
 `[String]`), not a bare scalar. An `object` property (inline structured fields)
 renders as the `JSON` scalar, lossless, rather than flattening to `String`. A
 `reference` property is its own generated OBJECT type, `<Kind><Property>Reference`:

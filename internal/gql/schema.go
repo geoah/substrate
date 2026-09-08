@@ -82,10 +82,11 @@ func parseReferenceLiteral(valueAST ast.Value) any {
 }
 
 // longScalar carries int64 values (Record.version, Change.seq, changelog
-// resume seqs) that GraphQL's built-in 32-bit Int would overflow past 2^31. It
-// serializes as a plain JSON number, which round-trips a full int64 safely
-// both ways; graphql-go marshals the response with encoding/json, so an int64
-// result is written as a number, not truncated to int32.
+// resume seqs, and every `int` property) that GraphQL's built-in 32-bit Int
+// would overflow past 2^31. It serializes as a plain JSON number, which
+// round-trips a full int64 safely both ways; graphql-go marshals the response
+// with encoding/json, so an int64 result is written as a number, not truncated
+// to int32. The `first` and `k` page sizes stay Int: nothing pages past 2^31.
 var longScalar = graphql.NewScalar(graphql.ScalarConfig{
 	Name:         "Long",
 	Description:  "A 64-bit signed integer, serialized as a JSON number.",
@@ -185,6 +186,11 @@ func argInt64(args map[string]any, key string) (int64, bool) {
 	return 0, false
 }
 
+// parseJSONLiteral turns an inline JSON argument into the values a variable
+// would have carried. A number literal becomes a json.Number, never its AST
+// string: remarshal re-encodes the argument and json.Number writes back as a
+// number, so an inline `count: 5` reaches the engine as 5 and not as "5",
+// which `asInt` refuses with "expected a number".
 func parseJSONLiteral(v ast.Value) any {
 	switch v := v.(type) {
 	case *ast.StringValue:
@@ -192,9 +198,9 @@ func parseJSONLiteral(v ast.Value) any {
 	case *ast.BooleanValue:
 		return v.Value
 	case *ast.IntValue:
-		return v.Value
+		return json.Number(v.Value)
 	case *ast.FloatValue:
-		return v.Value
+		return json.Number(v.Value)
 	case *ast.EnumValue:
 		return v.Value
 	case *ast.ListValue:
