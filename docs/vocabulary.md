@@ -384,7 +384,9 @@ the trigger. The value is coerced as a create's default is, the record's
 manager row for it names the actor that applied the declaration, and a
 property with `embed: true` is queued to embed. A record already carrying a
 value is left alone, and so is a default declared without `required:`, which
-seeds creates and nothing else.
+seeds creates and nothing else. A required property's default may not be an
+empty value (`""`, `[]`, `{}`), because `required:` refuses those on every
+write; the pair is refused at admission.
 
 **`renamedFrom:` on a value respells it.** An enum value, or any value in a
 `values:` list, may declare the spelling it replaces:
@@ -421,7 +423,11 @@ plan is future work.
 The three compose. Every step one apply declares against a kind runs in one
 pass over its records, renames first, then backfills, then remaps, and a
 record any step touches is rewritten once: one `patch` entry whose payload
-carries `renamed`, `backfilled` or `remapped` beside the property names. The
+carries `renamed`, `backfilled` or `remapped` beside the property names. A
+converted record is a source write like any other, so the records a mapping
+from its kind projects onto follow it in the same transaction, offer rows
+included. A tombstoned record is neither counted nor converted, as for a
+rename: a put that restores it revives the old spelling. The
 cost is the same count a rename has, and the same replay guarantee: a rebuild
 and an import reproduce the converted records from the changelog alone.
 

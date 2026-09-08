@@ -63,7 +63,17 @@ contradict it. A `default:` alone still rewrites nothing: it seeds creates.
 `required:` without a default keeps refusing with the count, and the message
 now says to declare one. The backfilled value is coerced as a create's default
 is and stored under the actor that applied the declaration, at the
-transaction's tier, so its manager row reads as a create's would.
+transaction's tier, so its manager row reads as a create's would. A required
+property's default may not be an empty value (`""`, `[]`, `{}`), because
+`required` refuses those on every write: `checkDeclaredDefaults` refuses the
+pair at both doors, and `backfillable` treats such a default as none, so the
+count stands if one were ever stored.
+
+A converted record is a source write like any other: its subjects recompute
+after its entry (`recomputeSubjectsOf`), so a mapped target and its offer
+rows follow a remapped or backfilled source value in the same transaction,
+and a rebuild, which derives the offers from the sources again, agrees with
+the live table.
 
 **A remap is `renamedFrom:` on the value entry**, reserved by name as
 [0020](0020-dialect-keys-are-reserved-not-tolerated.md) requires: the loader
@@ -118,6 +128,19 @@ blockers, until #152 gives every step a line.
 - Bad, because a value renamed onto a retained value cannot be expressed at
   all today, even where no record holds the old spelling; the author drops the
   value instead, which the guard admits once nothing holds it.
+- Bad, because a tombstoned record is neither counted nor converted, the
+  posture 0063 took for a rename: a put that restores it merges the stored
+  properties back, so it can return holding a spelling the kind no longer
+  admits, or lacking the value the backfill gave every live record, and its
+  next write is refused. Converting tombstones would be replay-safe, and
+  [issue #434](https://github.com/geoah/substrate/issues/434) decides it.
+- Bad, because the boot upgrade holds a kind at its stored version out of the
+  count and the conversion plan alike (`keptIdents`), so a shipped
+  `propertytype` with `base: enum` that renames a value while the kinds using
+  it keep their version lands with neither a count nor a remap, and the
+  records holding the old spelling are refused on their next write.
+  [Issue #435](https://github.com/geoah/substrate/issues/435) closes the gap;
+  the apply door does not have it, because a batch replaces a package whole.
 - Bad, because 0063's More Information attributes the backfill and the remap
   to #152 and expects them to take this shape; its body is frozen, so this
   record carries the correction: they are #385's, and they did.
