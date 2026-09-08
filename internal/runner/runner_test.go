@@ -3,9 +3,12 @@ package runner
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -754,5 +757,168 @@ def main(input, host):
 	_, err = r.Invoke(context.Background(), thrifty, testInput(), backend)
 	if !errors.Is(err, ErrReadBudget) {
 		t.Fatalf("over-budget call: %v", err)
+	}
+}
+
+// windowSpec is the body the lookup-and-use window tests run: Invoke takes its
+// process out of the map, and a kill can land before roundtrip takes proc.mu.
+var windowSpec = Spec{
+	Repository: "t1", Function: "window.g.test", Runtime: "python", TimeoutMs: 5000,
+	Source: "def main(input, host):\n    return {\"output\": \"ok\"}\n",
+}
+
+func liveProc(t *testing.T, r *Runner, spec Spec) *proc {
+	t.Helper()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.pys[spec.Key()]
+}
+
+// A kill that lands between the lookup and the write used to fail the delivery
+// with "write to child: write |1: file already closed" and park it. The frame
+// never reached the child, so the delivery restarts the process and runs.
+// Each killer is forced into the window on the first attempt: the idle sweep
+// with a clock past the TTL, a Reconcile retiring the installation, and a
+// sibling that kills under the process lock.
+func TestKillInLookupWindowRestartsTheDelivery(t *testing.T) {
+	ctx := context.Background()
+	killers := map[string]func(r *Runner, p *proc){
+		"sweep":     func(r *Runner, _ *proc) { r.sweep(nowPlus(idleTTL + 1)) },
+		"reconcile": func(r *Runner, _ *proc) { r.Reconcile(ctx, windowSpec.Repository, nil) },
+		"sibling": func(_ *Runner, p *proc) {
+			p.mu.Lock()
+			p.kill()
+			p.mu.Unlock()
+		},
+	}
+	for name, kill := range killers {
+		t.Run(name, func(t *testing.T) {
+			r := New()
+			if err := r.Warm(ctx, windowSpec); err != nil {
+				t.Fatalf("warm: %v", err)
+			}
+			first := liveProc(t, r, windowSpec)
+			hits := 0
+			r.afterLookup = func(p *proc) {
+				if p != first {
+					return
+				}
+				hits++
+				kill(r, p)
+				if p.alive() {
+					t.Fatal("the kill did not land in the window")
+				}
+			}
+			res, err := r.Invoke(ctx, windowSpec, testInput(), nil)
+			if err != nil || res.Output != "ok" {
+				t.Fatalf("a kill in the lookup window failed the delivery: %+v %v", res, err)
+			}
+			if hits != 1 {
+				t.Fatalf("the doomed process was looked up %d times, want once", hits)
+			}
+			if second := liveProc(t, r, windowSpec); second == nil || second == first {
+				t.Fatal("the delivery did not run on a fresh process")
+			}
+		})
+	}
+}
+
+// The restart is one retry, not a loop: a process lost in the window twice in
+// a row surfaces errChildGone for the dispatcher's retry-then-park.
+func TestSecondLossInLookupWindowSurfaces(t *testing.T) {
+	ctx := context.Background()
+	r := New()
+	r.afterLookup = func(p *proc) {
+		p.mu.Lock()
+		p.kill()
+		p.mu.Unlock()
+	}
+	_, err := r.Invoke(ctx, windowSpec, testInput(), nil)
+	if !errors.Is(err, errChildGone) {
+		t.Fatalf("two losses returned %v, want errChildGone", err)
+	}
+}
+
+// roundtrip on a process a sweep retired reports errChildGone from the alive
+// check, before any write: the closed pipe never becomes the error.
+func TestRoundtripOnRetiredProcessIsChildGone(t *testing.T) {
+	ctx := context.Background()
+	r := New()
+	p, err := r.pythonProc(ctx, windowSpec)
+	if err != nil {
+		t.Fatalf("python proc: %v", err)
+	}
+	r.sweep(nowPlus(idleTTL + 1))
+	in := testInput()
+	_, err = p.roundtrip(ctx, windowSpec.timeout(),
+		frame{Op: "invoke", ID: windowSpec.Key(), Input: &in}, &readState{spec: windowSpec})
+	if !errors.Is(err, errChildGone) {
+		t.Fatalf("roundtrip on a swept process: %v, want errChildGone", err)
+	}
+	if strings.Contains(err.Error(), "file already closed") {
+		t.Fatalf("the closed pipe leaked into the error: %v", err)
+	}
+}
+
+// The unforced race: deliveries against one installation while the sweep and
+// Reconcile spin beside them. A delivery may lose its process twice under this
+// much killing and report errChildGone, but no delivery may ever fail on the
+// closed pipe, and every delivery that returns a result ran.
+func TestSweepRacingInvokesNeverClosesThePipeUnderThem(t *testing.T) {
+	ctx := context.Background()
+	r := New()
+	if err := r.Warm(ctx, windowSpec); err != nil {
+		t.Fatalf("warm: %v", err)
+	}
+	stop := make(chan struct{})
+	var killers sync.WaitGroup
+	for _, kill := range []func(){
+		func() { r.sweep(nowPlus(idleTTL + 1)) },
+		func() { r.Reconcile(ctx, windowSpec.Repository, nil) },
+	} {
+		killers.Add(1)
+		go func() {
+			defer killers.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					kill()
+					runtime.Gosched()
+				}
+			}
+		}()
+	}
+	const workers, rounds = 3, 6
+	errs := make(chan error, workers*rounds)
+	var deliveries sync.WaitGroup
+	for range workers {
+		deliveries.Add(1)
+		go func() {
+			defer deliveries.Done()
+			for range rounds {
+				res, err := r.Invoke(ctx, windowSpec, testInput(), nil)
+				if err == nil && res.Output != "ok" {
+					err = fmt.Errorf("output %v", res.Output)
+				}
+				errs <- err
+			}
+		}()
+	}
+	deliveries.Wait()
+	close(stop)
+	killers.Wait()
+	close(errs)
+	for err := range errs {
+		if err == nil {
+			continue
+		}
+		if strings.Contains(err.Error(), "file already closed") {
+			t.Fatalf("a delivery wrote to a swept process's pipe: %v", err)
+		}
+		if !errors.Is(err, errChildGone) {
+			t.Fatalf("a delivery failed with something other than a lost process: %v", err)
+		}
 	}
 }
