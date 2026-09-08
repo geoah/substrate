@@ -30,10 +30,12 @@ package engine
 //     created from the manifest when missing, sealed/ is loaded into the
 //     table, the missing entries are inserted with their checksums, and the
 //     fold is rebuilt from the files (the same replay `repository rebuild`
-//     runs). An `import_progress` row marks the repository from before the
-//     first batch of entries commits until the transaction that commits the
-//     last fold pass, so a boot that finds the row with equal heads resumes
-//     the fold, and no dataset opens while it is set (ErrImportIncomplete).
+//     runs), and every embeddable property is queued for the drain, because
+//     the vectors are not in the directory. An `import_progress` row marks
+//     the repository from before the first batch of entries commits until
+//     the transaction that commits the last fold pass, so a boot that finds
+//     the row with equal heads resumes the fold, and no dataset opens while
+//     it is set (ErrImportIncomplete).
 //  4. A seq in both with different checksums, a line whose sum does not
 //     verify, or a finished segment whose sidecar does not match: the boot
 //     refuses, naming the repository and the seq or file. Nothing is repaired.
@@ -925,11 +927,17 @@ func (ds *dataset) insertEntries(ctx context.Context, entries []changelogfile.En
 // (each clears the fold tables first). The registry load between them reads
 // the first pass's committed rows through the pool, which is why the two
 // passes need not share a transaction.
+//
+// The same transaction queues every embeddable property for the drain
+// (enqueueEmbeddable): the fold never reaches the live write's enqueueEmbed,
+// and the vectors are not in the directory, so the queue is what stands in
+// for them. Under the marker's transaction a resumed import queues too, and a
+// crash before the commit leaves nothing half-queued.
 func (ds *dataset) refoldFromFiles(ctx context.Context, log *changelogfile.Log) error {
-	replay := func(last bool) error {
+	replay := func(last bool) (int, error) {
 		tx, err := ds.db.BeginTx(ctx, nil)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		defer func() { _ = tx.Rollback() }()
 		t := &txn{
@@ -938,16 +946,20 @@ func (ds *dataset) refoldFromFiles(ctx context.Context, log *changelogfile.Log) 
 		}
 		var report RebuildReport
 		if err := t.rebuild(log, &report); err != nil {
-			return err
+			return 0, err
 		}
+		queued := 0
 		if last {
+			if queued, err = ds.enqueueEmbeddable(ctx, tx, nil); err != nil {
+				return 0, err
+			}
 			if _, err := t.exec(`DELETE FROM import_progress`); err != nil {
-				return fmt.Errorf("clear the import-progress marker: %w", err)
+				return 0, fmt.Errorf("clear the import-progress marker: %w", err)
 			}
 		}
-		return tx.Commit()
+		return queued, tx.Commit()
 	}
-	if err := replay(false); err != nil {
+	if _, err := replay(false); err != nil {
 		return fmt.Errorf("substrate/engine: import: first fold: %w", err)
 	}
 	if err := ds.importFault(importAfterFirstFold); err != nil {
@@ -956,8 +968,13 @@ func (ds *dataset) refoldFromFiles(ctx context.Context, log *changelogfile.Log) 
 	if err := ds.loadDeclarationsForReplay(ctx); err != nil {
 		return err
 	}
-	if err := replay(true); err != nil {
+	queued, err := replay(true)
+	if err != nil {
 		return fmt.Errorf("substrate/engine: import: second fold: %w", err)
+	}
+	if queued > 0 {
+		ds.svc.log.Info("substrate: import queued the repository's embeddable properties for the drain",
+			"repository", ds.scope.Repository, "username", ds.info.Name, "queued", queued)
 	}
 	return nil
 }

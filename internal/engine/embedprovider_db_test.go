@@ -238,13 +238,15 @@ func TestReembedReplacesVectorsAndResumes(t *testing.T) {
 
 	// The owner re-points the row at another model. Nothing re-embeds by
 	// itself: the old vectors are simply no longer the resolved pair's, so
-	// they stop being scored.
+	// they stop being scored, and with none from the new pair the semantic
+	// arm says it has nothing yet rather than answering "no matches".
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: typeProvider, ID: "vectors",
 		Properties: map[string]any{"embedModel": "text-embedding-ada-002"},
 	})
-	if got := semanticIDs(t, ds, "marmalade prose"); len(got) != 0 {
-		t.Fatalf("vectors from the old model were still scored: %v", got)
+	_, err := ds.Search(ctx, substrate.SearchInput{Q: "marmalade prose", Mode: substrate.SearchSemantic})
+	if !errors.Is(err, substrate.ErrUnavailable) || !strings.Contains(err.Error(), `"text-embedding-ada-002"`) {
+		t.Fatalf("semantic search with no vectors from the new model = %v, want ErrUnavailable naming it", err)
 	}
 
 	report, err := ds.Reembed(ctx, false)

@@ -105,6 +105,11 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) ([]subs
 			demoted[id] = demoted[id] || r.demoted
 		}
 	}
+	if mode == substrate.SearchSemantic {
+		if err := ds.requireVectors(ctx, provider); err != nil {
+			return nil, err
+		}
+	}
 	if mode == substrate.SearchSemantic || mode == substrate.SearchHybrid {
 		sem, err := ds.semantic(ctx, provider, q, types, k)
 		if err != nil {
@@ -216,6 +221,30 @@ func (ds *dataset) lexical(ctx context.Context, q string, types []string, k int)
 		out[id] = a
 	}
 	return out, rows.Err()
+}
+
+// requireVectors refuses a semantic search the resolved pair has no vectors
+// to answer: an empty embeddings table scores nothing, and without this a
+// repository restored from its directory (whose vectors were never in the
+// directory, only its queue rows are) would answer "no matches" until the
+// drain caught up. The refusal is substrate.ErrUnavailable, names the pair and
+// counts the pending queue, so a caller can tell "not yet" from "nothing
+// matched" and see the number fall. Hybrid is not held to it: its lexical arm
+// is the documented answer while the semantic arm has nothing.
+func (ds *dataset) requireVectors(ctx context.Context, provider *embedProvider) error {
+	var have bool
+	var pending int
+	if err := ds.db.QueryRowContext(ctx, `
+		SELECT EXISTS (SELECT 1 FROM embeddings WHERE provider = $1 AND model = $2),
+		       (SELECT count(*) FROM embed_queue)`,
+		provider.id, provider.model).Scan(&have, &pending); err != nil {
+		return fmt.Errorf("substrate/engine: semantic search: %w", err)
+	}
+	if have {
+		return nil
+	}
+	return fmt.Errorf("%w: semantic search has no vectors yet from llmprovider %q model %q: %d properties pending in the embed queue",
+		substrate.ErrUnavailable, provider.id, provider.model, pending)
 }
 
 func (ds *dataset) semantic(ctx context.Context, provider *embedProvider, q string, types []string, k int) (map[eref]arm, error) {

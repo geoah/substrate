@@ -159,7 +159,12 @@ arms, normalizes each against its own best hit, and merges. Every hit carries
 the record beside its raw per-arm scores, `lexical` and `semantic`, so a caller
 can threshold rather than trust a rank. In a repository that has named no
 embeddings provider, hybrid degrades to lexical and `semantic` reports an error
-rather than pretending.
+rather than pretending. While the resolved provider and model have no vectors
+yet (a repository [restored from its directory](operations.md#backups) before
+the drain has bought them, a row re-pointed at another model) `semantic`
+refuses with the `unavailable` code and the number of properties still queued,
+so "no vectors yet" never reads as "no matches"; hybrid returns its lexical arm
+alone.
 
 **Which model bought the vectors is data, per repository.** The one
 [`llmprovider`](agents.md#providers) row declaring `embedModel` is where a

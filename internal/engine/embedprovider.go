@@ -142,44 +142,69 @@ func (ds *dataset) Reembed(ctx context.Context, all bool) (substrate.ReembedRepo
 			substrate.ErrValidation, propEmbedModel)
 	}
 	report := substrate.ReembedReport{Provider: provider.id, Model: provider.model, All: all}
-	// Which properties are embeddable is the REGISTRY's answer, so a kind that
-	// gained an embeddable property since the last drain is included without
-	// anything else being told.
+	stale := provider
+	if all {
+		stale = nil
+	}
+	n, err := ds.enqueueEmbeddable(ctx, ds.db, stale)
+	report.Enqueued = n
+	return report, err
+}
+
+// enqueueEmbeddable queues every embeddable property of every live record
+// through q: all of them when stale is nil, else only those the stale pair
+// has no vector for. Which properties are embeddable is the REGISTRY's
+// answer, so a kind that gained an embeddable property since the last drain is
+// included without anything else being told.
+//
+// An import runs it, with no pair, in the transaction that completes its fold
+// (repodir.go refoldFromFiles): the vectors were never in the repository
+// directory (decision 0051), so what a restored repository gets is the queue,
+// and the drain buys the vectors once its llmprovider row resolves. No
+// provider is consulted for that, on purpose: a repository whose row does not
+// resolve keeps the rows pending, which is the recoverable state, where an
+// import that skipped them would leave semantic search empty with no way to
+// tell.
+func (ds *dataset) enqueueEmbeddable(ctx context.Context, q dbx, stale *embedProvider) (int, error) {
+	total := 0
 	for _, ty := range ds.registry().Kinds() {
 		for name, p := range ty.Props {
 			if p == nil || !p.Embed {
 				continue
 			}
-			n, err := ds.enqueueReembed(ctx, provider, ty.Identity, name, all)
+			n, err := enqueueReembed(ctx, q, ty.Identity, name, stale)
 			if err != nil {
-				return report, err
+				return total, err
 			}
-			report.Enqueued += n
+			total += n
 		}
 	}
-	return report, nil
+	return total, nil
 }
 
 // enqueueReembed queues one kind's one embeddable property. The stale test is
 // per property rather than per chunk: a property's chunks are written in one
 // transaction, so they share a pair, and "no chunk from the resolved pair"
-// covers both the property another pair embedded and the one nothing has.
-func (ds *dataset) enqueueReembed(ctx context.Context, provider *embedProvider, kind, prop string, all bool) (int, error) {
+// covers both the property another pair embedded and the one nothing has. A
+// nil stale pair queues every property. The row is written the way a live
+// edit writes it (rows.go enqueueEmbed): an existing row's generation is
+// bumped, never replaced.
+func enqueueReembed(ctx context.Context, q dbx, kind, prop string, stale *embedProvider) (int, error) {
 	args := []any{kind, prop}
-	stale := ``
-	if !all {
-		stale = `AND NOT EXISTS (
+	filter := ``
+	if stale != nil {
+		filter = `AND NOT EXISTS (
 		    SELECT 1 FROM embeddings em
 		     WHERE em.record_kind = r.kind AND em.record_id = r.id AND em.property = $2
 		       AND em.provider = $3 AND em.model = $4)`
-		args = append(args, provider.id, provider.model)
+		args = append(args, stale.id, stale.model)
 	}
-	res, err := ds.db.ExecContext(ctx, `
+	res, err := q.ExecContext(ctx, `
 		INSERT INTO embed_queue (record_kind, record_id, property, generation, enqueued_at)
 		SELECT r.kind, r.id, $2, 1, now()
 		  FROM records r
 		 WHERE r.kind = $1 AND r.deleted_at IS NULL
-		   AND coalesce(r.props->>$2, '') <> '' `+stale+`
+		   AND coalesce(r.props->>$2, '') <> '' `+filter+`
 		ON CONFLICT (repository, record_kind, record_id, property) DO UPDATE
 		    SET generation = embed_queue.generation + 1, enqueued_at = EXCLUDED.enqueued_at`,
 		args...)
