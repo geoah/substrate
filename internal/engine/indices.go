@@ -24,16 +24,37 @@ import (
 // records table, which every repository shares and every in-flight write
 // holds ROW EXCLUSIVE on, so the statement waits for those writes and they
 // wait for it. It runs ONCE PER PROCESS at Open, over the binary's shipped
-// vocabulary, and on every schema write over the kinds of the packages that
-// write touches, before its transaction opens (vocabularywrite.go). It is
+// vocabulary, and on every vocabulary apply over the kinds of the packages
+// the apply touches, before its transaction opens (vocabularywrite.go). It is
 // NOT on the repository-open path: opening a repository declares nothing.
+//
+// AN INDEX IS NAMED FOR ITS ORDINAL, so the name alone cannot say whether the
+// index behind it is the declaration's current definition: an apply creates
+// its indexes before its transaction, a transaction that then fails leaves
+// them, and a corrected retry that changes what the ordinal indexes would
+// find the stale one "already there". Each index therefore carries its
+// rendered statement as its COMMENT, and one whose comment differs (or is
+// missing, as every index built before this rule is) is dropped and rebuilt
+// in one statement group. Comparing our own rendering to our own rendering
+// is exact; comparing it to pg_indexes.indexdef would mean normalizing
+// Postgres's spelling of every expression.
 func ensureIndices(ctx context.Context, admin *sql.DB, types []*vocabulary.Kind) error {
 	stmts, err := indexStatements(types)
 	if err != nil {
 		return err
 	}
 	for _, s := range stmts {
-		if _, err := admin.ExecContext(ctx, s.stmt); err != nil {
+		var exists bool
+		var have sql.NullString
+		if err := admin.QueryRowContext(ctx,
+			`SELECT to_regclass($1) IS NOT NULL, obj_description(to_regclass($1), 'pg_class')`, s.name,
+		).Scan(&exists, &have); err != nil {
+			return fmt.Errorf("substrate/engine: inspect index for %s: %w", s.kind, err)
+		}
+		if exists && have.Valid && have.String == s.stmt {
+			continue
+		}
+		if err := s.rebuild(ctx, admin, exists); err != nil {
 			return fmt.Errorf("substrate/engine: create index for %s: %w", s.kind, err)
 		}
 	}
@@ -41,11 +62,33 @@ func ensureIndices(ctx context.Context, admin *sql.DB, types []*vocabulary.Kind)
 }
 
 type indexStmt struct {
-	kind, stmt string
+	kind, name, stmt string
+}
+
+// rebuild drops the stale index when one exists, creates the declared one and
+// stamps its statement as the comment, in one transaction on the admin pool.
+func (s indexStmt) rebuild(ctx context.Context, admin *sql.DB, exists bool) error {
+	tx, err := admin.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if exists {
+		if _, err := tx.ExecContext(ctx, `DROP INDEX IF EXISTS `+s.name); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, s.stmt); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `COMMENT ON INDEX `+s.name+` IS `+sqlLiteral(s.stmt)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // indexStatements renders every declared index as its CREATE INDEX statement
-// without running any. It is pure, so the schema write's staging step runs it
+// without running any. It is pure, so the apply's staging step runs it
 // too (stageVocabularyBatch): an index the engine cannot build is then an
 // admission failure the upgrade preview reports and the install refuses
 // alike, and the execution above starts only once every definition rendered,
@@ -69,7 +112,7 @@ func indexStatements(types []*vocabulary.Kind) ([]indexStmt, error) {
 				continue
 			}
 			name := "idx_" + derivedID(t.Identity, strconv.Itoa(i))
-			stmts = append(stmts, indexStmt{kind: t.Identity, stmt: `CREATE INDEX IF NOT EXISTS ` + name +
+			stmts = append(stmts, indexStmt{kind: t.Identity, name: name, stmt: `CREATE INDEX IF NOT EXISTS ` + name +
 				` ON records (repository, ` + strings.Join(exprs, ", ") + `) WHERE kind = ` + sqlLiteral(t.Identity)})
 		}
 	}
