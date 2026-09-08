@@ -9,11 +9,11 @@ which lists the agent surface under the `agents` feature carrying the
 stability `alpha`, and they may change, or be superseded, without counting as
 a v1 wire break. Treat agents as a preview.
 
-The REST features discovery lists (`triggers`, `functions`, `bundles`,
-`blobs`, `changefeed`) report `stable`: frozen for v1, additive only, so there
-is a frozen surface to retreat to. Read [discovery](api.md#discovery) for what
-each value promises, and pin the server version where an alpha break would
-cost you.
+The features of the supported REST surface (`triggers`, `functions`,
+`bundles`, `blobs`, `changefeed`) report `stable`: frozen for v1, additive
+only, so there is a frozen surface to retreat to. `embeddings` is the other
+`alpha` entry. Read [discovery](api.md#discovery) for what each value
+promises, and pin the server version where an alpha break would cost you.
 
 An `agent` is a callable whose body is an **LLM loop**, run host-side. It has
 one reference and the same four ways in as a [function](functions.md): a

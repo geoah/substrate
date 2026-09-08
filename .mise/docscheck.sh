@@ -75,13 +75,15 @@ if grep_docs -rniE 'seven mutations|structural half|@deprecated'; then
   flag "a page carries the retired GraphQL promise; all of GraphQL is preview (decision 0053)"
 fi
 
-# --- the stability the REST features reached ----------------------------
+# --- the stability the supported REST features reached ------------------
 #
-# Every REST feature reports `stable` since the release's wire changes landed
-# (decision 0053 scheduled the flip). The phrasings that said none did are
-# grepped for, because each is a claim discovery now contradicts.
+# Every feature of the supported REST surface reports `stable` since the
+# release's wire changes landed (decision 0053 scheduled the flip); `agents`
+# and `embeddings` stay alpha and `search` beta. The phrasings that said
+# nothing was stable are grepped for, because each is a claim discovery now
+# contradicts.
 if grep_docs -rniE 'nothing reports .stable|no (discovery )?feature reports .?stable|every other feature[a-z ]* reports .beta'; then
-  flag "a page says no feature is stable; the REST features report stable (decision 0053)"
+  flag "a page says no feature is stable; the supported REST features report stable (decision 0053)"
 fi
 
 # --- the task names the pages tell people to run ------------------------

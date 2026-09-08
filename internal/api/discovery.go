@@ -251,14 +251,17 @@ func (h *handler) features() []featureInfo {
 // by more than one seam names them all, because a client reads one entry and
 // gets every route behind it.
 //
-// Each stability is a promise about the feature's REST verbs, and `stable`
-// means frozen for v1: additive only, a break announced (see
-// substrate.StabilityStable). Every REST feature is stable: the wire changes
-// #360 tracked have landed, the changefeed's among them (the cursor of
-// decision 0056 and the change event of decision 0061). A feature served on
-// `graphql` too is stable on REST alone, because that surface is a preview
-// whatever the feature stamps (decision 0053), which is also why `search`,
-// served on GraphQL alone, stays beta.
+// Each stability says how far the feature's shape has settled, it binds on
+// the REST door alone, and `stable` means frozen for v1: additive only, a
+// break announced (see substrate.StabilityStable). Every feature of the
+// supported REST surface is
+// stable: the wire changes #360 tracked have landed, the changefeed's among
+// them (the cursor of decision 0056 and the change event of decision 0061).
+// The GraphQL door is `preview` for every feature whatever the feature stamps
+// (the `surfaces` object, decision 0053): a stable `changefeed` does not make
+// the `changelog` field stable, and `search`, served on GraphQL alone, stays
+// beta. `agents` and `embeddings` list `rest` and stay alpha, because their
+// shapes are still moving.
 //
 // Each entry's surfaces are the doors that actually exist today. Search is the
 // one the REST surface does not serve: REST filters (`?filter=`) and the
