@@ -32,11 +32,11 @@ const formatOneVocabularyDialect = 3
 func reopenWith(t *testing.T, dsn, root string, opts ...engine.Option) substrate.Service {
 	t.Helper()
 	all := []engine.Option{
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		engine.WithKindsDir(engine.CoreKindsDir),
 		engine.WithDataRoot(root),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 	}
-	svc, err := engine.Open(context.Background(), dsn, append(all, opts...)...)
+	svc, err := engine.OpenForTest(t, context.Background(), dsn, append(all, opts...)...)
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}

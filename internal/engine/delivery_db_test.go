@@ -362,8 +362,8 @@ func TestARestoredRepositoryResumesItsDeliveries(t *testing.T) {
 	if err := os.CopyFS(dst, os.DirFS(src)); err != nil {
 		t.Fatal(err)
 	}
-	svc2, err := Open(ctx, MigratedDSN(t), WithDataRoot(root2), WithCredentialKey(TestCredentialKey),
-		WithKindsDir("../../kinds/substrate.reamde.dev/core"))
+	svc2, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(root2), WithCredentialKey(TestCredentialKey),
+		WithKindsDir(CoreKindsDir))
 	if err != nil {
 		t.Fatalf("import the directory: %v", err)
 	}
@@ -618,8 +618,8 @@ func TestAFirstOpenAdoptsLegacyTriggerBookkeeping(t *testing.T) {
 	dsn := MigratedDSN(t)
 	root := t.TempDir()
 	open := func() *service {
-		svc, err := Open(ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey),
-			WithKindsDir("../../kinds/substrate.reamde.dev/core"))
+		svc, err := OpenForTest(t, ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey),
+			WithKindsDir(CoreKindsDir))
 		if err != nil {
 			t.Fatalf("open engine: %v", err)
 		}
@@ -674,8 +674,8 @@ func TestAFirstOpenAdoptsLegacyTriggerBookkeeping(t *testing.T) {
 	// and stamps nothing: the whole adoption is one transaction, so the next
 	// open adopts every trigger.
 	adopted := 0
-	faulty, err := Open(ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey),
-		WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+	faulty, err := OpenForTest(t, ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey),
+		WithKindsDir(CoreKindsDir),
 		func(o *options) {
 			o.adoptFault = func(string) error {
 				adopted++
@@ -1059,8 +1059,8 @@ func TestARestoredTriggerAppliesAnEditedSourceFromTheEdit(t *testing.T) {
 	if err := os.CopyFS(dst, os.DirFS(src)); err != nil {
 		t.Fatal(err)
 	}
-	svc2, err := Open(ctx, MigratedDSN(t), WithDataRoot(root2), WithCredentialKey(TestCredentialKey),
-		WithKindsDir("../../kinds/substrate.reamde.dev/core"))
+	svc2, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(root2), WithCredentialKey(TestCredentialKey),
+		WithKindsDir(CoreKindsDir))
 	if err != nil {
 		t.Fatalf("import the directory: %v", err)
 	}

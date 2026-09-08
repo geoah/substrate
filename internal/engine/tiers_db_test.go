@@ -49,9 +49,9 @@ func newTierDataset(t *testing.T) *dataset {
 	t.Helper()
 	ctx := context.Background()
 	dsn := MigratedDSN(t)
-	svc, err := Open(ctx, dsn,
+	svc, err := OpenForTest(t, ctx, dsn,
 		WithDataRoot(t.TempDir()),
-		WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"))
+		WithCredentialKey(TestCredentialKey), WithKindsDir(CoreKindsDir))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}

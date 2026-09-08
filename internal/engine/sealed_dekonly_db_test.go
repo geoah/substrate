@@ -139,9 +139,9 @@ func TestFirstOpenRekeysAndMarksAnUnmarkedRepository(t *testing.T) {
 	}
 	_ = svc.Close()
 
-	reopened, err := Open(ctx, dsn,
+	reopened, err := OpenForTest(t, ctx, dsn,
 		WithDataRoot(root),
-		WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		WithKindsDir(CoreKindsDir),
 		WithCredentialKey(TestCredentialKey))
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
@@ -206,9 +206,9 @@ func TestWrongHostKeyIsNamedById(t *testing.T) {
 	if _, err := rand.Read(other); err != nil {
 		t.Fatal(err)
 	}
-	_, err := Open(ctx, dsn,
+	_, err := OpenForTest(t, ctx, dsn,
 		WithDataRoot(root),
-		WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		WithKindsDir(CoreKindsDir),
 		WithCredentialKey(base64.StdEncoding.EncodeToString(other)))
 	if err == nil {
 		t.Fatal("a host with the wrong key booted over the database")
@@ -256,9 +256,9 @@ func TestFirstOpenRewrapsAWrapThatNamesNoKey(t *testing.T) {
 			}
 			_ = svc.Close()
 
-			reopened, err := Open(ctx, dsn,
+			reopened, err := OpenForTest(t, ctx, dsn,
 				WithDataRoot(root),
-				WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+				WithKindsDir(CoreKindsDir),
 				WithCredentialKey(TestCredentialKey))
 			if err != nil {
 				t.Fatalf("reopen: %v", err)
@@ -313,9 +313,9 @@ func TestBootNamesADamagedWrapUnderTheSameKey(t *testing.T) {
 	}
 	_ = ds.svc.Close()
 
-	_, err := Open(ctx, dsn,
+	_, err := OpenForTest(t, ctx, dsn,
 		WithDataRoot(root),
-		WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		WithKindsDir(CoreKindsDir),
 		WithCredentialKey(TestCredentialKey))
 	if err == nil {
 		t.Fatal("a damaged wrap booted")

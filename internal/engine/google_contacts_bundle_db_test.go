@@ -71,7 +71,7 @@ func TestGoogleContactsBundleAdmitsSchema(t *testing.T) {
 	// alone) plus the shipped VOCABULARY bundles this repository imported —
 	// what a closure declaring onto people/tasks/messaging/calendar/media
 	// needs present, and what `requires:` names.
-	reg, err := enginetest.SeededRegistry("../../kinds/substrate.reamde.dev/core")
+	reg, err := enginetest.SeededRegistry(CoreKindsDir)
 	if err != nil {
 		t.Fatalf("build the repository registry: %v", err)
 	}

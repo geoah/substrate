@@ -71,9 +71,9 @@ func TestOpenHealsADatabaseTheBranchBuildMigrated(t *testing.T) {
 		t.Fatal("the stranded schema still carries the constraint; the test proves nothing")
 	}
 
-	svc, err := engine.Open(context.Background(), dsn,
+	svc, err := engine.OpenForTest(t, context.Background(), dsn,
 		engine.WithDataRoot(t.TempDir()),
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		engine.WithKindsDir(engine.CoreKindsDir),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {
 		t.Fatalf("a database this repository's own branch build migrated was refused: %v", err)
@@ -108,9 +108,9 @@ func TestDroppingTheSigningStateIsANoOpWhereItIsAlreadyGone(t *testing.T) {
 	if constraintExists(t, db, "repositories_signed_from_positive") {
 		t.Fatal("the landed 0014 did not drop the constraint")
 	}
-	svc, err := engine.Open(context.Background(), dsn,
+	svc, err := engine.OpenForTest(t, context.Background(), dsn,
 		engine.WithDataRoot(t.TempDir()),
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		engine.WithKindsDir(engine.CoreKindsDir),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {
 		t.Fatalf("re-applying 0014 over a migrated schema failed: %v", err)
@@ -130,9 +130,9 @@ func TestOpenRefusesAnUnknownEditedMigration(t *testing.T) {
 	if _, err := db.Exec(`UPDATE schema_migrations SET sha256 = 'not-a-hash-anybody-shipped' WHERE version = 5`); err != nil {
 		t.Fatalf("edit the recorded hash: %v", err)
 	}
-	_, err := engine.Open(context.Background(), dsn,
+	_, err := engine.OpenForTest(t, context.Background(), dsn,
 		engine.WithDataRoot(t.TempDir()),
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		engine.WithKindsDir(engine.CoreKindsDir),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err == nil {
 		t.Fatal("a database whose 0005 nothing recognizes was opened")
@@ -202,10 +202,10 @@ func TestOpenRefusesADatabaseANewerBinaryMigrated(t *testing.T) {
 	} {
 		opts := append([]engine.Option{
 			engine.WithDataRoot(t.TempDir()),
-			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+			engine.WithKindsDir(engine.CoreKindsDir),
 			engine.WithCredentialKey(engine.TestCredentialKey),
 		}, extra...)
-		_, err := engine.Open(context.Background(), dsn, opts...)
+		_, err := engine.OpenForTest(t, context.Background(), dsn, opts...)
 		if err == nil {
 			t.Fatalf("%s open: a database recording migration 9999 was opened by a binary that does not carry it", name)
 		}

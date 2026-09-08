@@ -132,10 +132,10 @@ func openInternalDataset(t *testing.T, opts ...Option) *dataset {
 	t.Helper()
 	ctx := context.Background()
 	dsn := MigratedDSN(t)
-	svc, err := Open(ctx, dsn,
+	svc, err := OpenForTest(t, ctx, dsn,
 		append([]Option{
 			WithDataRoot(t.TempDir()),
-			WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+			WithKindsDir(CoreKindsDir),
 			WithCredentialKey(TestCredentialKey),
 		}, opts...)...)
 	if err != nil {
@@ -165,10 +165,10 @@ func openCoreDataset(t *testing.T, opts ...Option) *dataset {
 	t.Helper()
 	ctx := context.Background()
 	dsn := MigratedDSN(t)
-	svc, err := Open(ctx, dsn,
+	svc, err := OpenForTest(t, ctx, dsn,
 		append([]Option{
 			WithDataRoot(t.TempDir()),
-			WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+			WithKindsDir(CoreKindsDir),
 			WithCredentialKey(TestCredentialKey),
 		}, opts...)...)
 	if err != nil {

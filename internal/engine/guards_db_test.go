@@ -20,12 +20,12 @@ func newDatasetWithDB(t *testing.T, opts ...engine.Option) (substrate.Dataset, *
 	dsn := engine.MigratedDSN(t)
 	ctx := context.Background()
 	all := []engine.Option{
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		engine.WithKindsDir(engine.CoreKindsDir),
 		engine.WithDataRoot(t.TempDir()),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 	}
 	all = append(all, opts...)
-	svc, err := engine.Open(ctx, dsn, all...)
+	svc, err := engine.OpenForTest(t, ctx, dsn, all...)
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}

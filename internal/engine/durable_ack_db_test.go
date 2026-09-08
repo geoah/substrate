@@ -33,9 +33,9 @@ func openDurabilityService(t *testing.T, opts ...Option) (*service, Repository, 
 	ctx := context.Background()
 	root := t.TempDir()
 	dsn := MigratedDSN(t)
-	svcIface, err := Open(ctx, dsn, append([]Option{
+	svcIface, err := OpenForTest(t, ctx, dsn, append([]Option{
 		WithDataRoot(root), WithCredentialKey(TestCredentialKey),
-		WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		WithKindsDir(CoreKindsDir),
 	}, opts...)...)
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
@@ -105,8 +105,8 @@ func importCopy(t *testing.T, root, repoID string) (*service, Repository) {
 	if err := os.CopyFS(dst, os.DirFS(src)); err != nil {
 		t.Fatal(err)
 	}
-	svc2, err := Open(ctx, MigratedDSN(t), WithDataRoot(root2), WithCredentialKey(TestCredentialKey),
-		WithKindsDir("../../kinds/substrate.reamde.dev/core"))
+	svc2, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(root2), WithCredentialKey(TestCredentialKey),
+		WithKindsDir(CoreKindsDir))
 	if err != nil {
 		t.Fatalf("import the directory: %v", err)
 	}
@@ -399,7 +399,7 @@ func TestACrashBetweenTheSealedStageAndTheCommitRestoresTheOldPayload(t *testing
 	noPending(t, ds2.dir, "after the import opened the repository")
 
 	// The original database.
-	svc3, err := Open(ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"))
+	svc3, err := OpenForTest(t, ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsDir(CoreKindsDir))
 	if err != nil {
 		t.Fatalf("reboot: %v", err)
 	}
@@ -486,8 +486,8 @@ func TestAReadOnlyServiceRefusesToSpendATOTPStep(t *testing.T) {
 	filesBefore := sealedPayloads(t, dir)
 	_ = s.Close()
 
-	roIface, err := Open(ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey),
-		WithKindsDir("../../kinds/substrate.reamde.dev/core"), WithDirectoryReadOnly())
+	roIface, err := OpenForTest(t, ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey),
+		WithKindsDir(CoreKindsDir), WithDirectoryReadOnly())
 	if err != nil {
 		t.Fatalf("open read-only: %v", err)
 	}
@@ -577,7 +577,7 @@ func TestASealedOnlyCommitInDoubtLatchesUntilTheBootRewritesTheFile(t *testing.T
 		}
 		_ = s.Close()
 
-		svc2, err := Open(ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"))
+		svc2, err := OpenForTest(t, ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsDir(CoreKindsDir))
 		if err != nil {
 			t.Fatalf("reboot: %v", err)
 		}
@@ -636,7 +636,7 @@ func TestASealedOnlyCommitInDoubtLatchesUntilTheBootRewritesTheFile(t *testing.T
 		}
 		_ = s.Close()
 
-		svc2, err := Open(ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"))
+		svc2, err := OpenForTest(t, ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsDir(CoreKindsDir))
 		if err != nil {
 			t.Fatalf("reboot: %v", err)
 		}

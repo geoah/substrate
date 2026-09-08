@@ -85,7 +85,7 @@ func TestShippedUpgradePreviewReportsTheRefusedBootUpgrade(t *testing.T) {
 	})
 	bumpPackageVersion(t, tree, corePackage, "99")
 	var logs bytes.Buffer
-	svc, err = engine.Open(ctx, dsn,
+	svc, err = engine.OpenForTest(t, ctx, dsn,
 		engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithKindsDir(tree), engine.WithLogger(slog.New(slog.NewJSONHandler(&logs, nil))))
 	if err != nil {
@@ -170,7 +170,7 @@ func TestShippedUpgradePreviewReportsARetiredName(t *testing.T) {
 	addShippedKind(t, reusing, corePackage, "gadget", "gadgets")
 	bumpPackageVersion(t, reusing, corePackage, "100")
 	var logs bytes.Buffer
-	svc, err := engine.Open(ctx, dsn,
+	svc, err := engine.OpenForTest(t, ctx, dsn,
 		engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithKindsDir(reusing), engine.WithLogger(slog.New(slog.NewJSONHandler(&logs, nil))))
 	if err != nil {
@@ -215,7 +215,7 @@ func TestShippedUpgradePreviewMatchesTheLogWithEveryGuardKind(t *testing.T) {
 	})
 	bumpPackageVersion(t, tree, corePackage, "99")
 	var logs bytes.Buffer
-	svc, err := engine.Open(ctx, dsn,
+	svc, err := engine.OpenForTest(t, ctx, dsn,
 		engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithKindsDir(tree), engine.WithLogger(slog.New(slog.NewJSONHandler(&logs, nil))))
 	if err != nil {

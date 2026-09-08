@@ -147,8 +147,8 @@ func TestAResumedImportQueuesEmbeds(t *testing.T) {
 	root2 := copyRepositoryDir(t, root, id)
 	dsn2 := engine.MigratedDSN(t)
 	errKilled := errors.New("the process died here")
-	_, err := engine.Open(ctx, dsn2,
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+	_, err := engine.OpenForTest(t, ctx, dsn2,
+		engine.WithKindsDir(engine.CoreKindsDir),
 		engine.WithDataRoot(root2),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithTestImportFault(0, func(stage string) error {

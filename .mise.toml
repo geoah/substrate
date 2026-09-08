@@ -147,7 +147,7 @@ run = "go test -count=1 -p 1 -timeout 30m -skip '^TestLive' ./internal/blobbytes
 description = "The short suite under the race detector"
 # -short, so this is the suite that does NOT want a database. The engine's
 # database suites are where the interesting concurrency lives, but they are
-# also four minutes of container time, and -race multiplies that; this is the
+# also a minute or more of container time, and -race multiplies that; this is the
 # cheap gate that catches the runner's process reaping, the API's handlers and
 # the LLM wires. Run `go test -race ./internal/engine/...` by hand when you
 # have touched the engine's goroutines.

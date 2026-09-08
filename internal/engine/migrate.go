@@ -16,9 +16,14 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-// migrationLockID keys the advisory lock the runner serializes on; the value
-// only needs to be stable across processes ("SUBSTR01" as a pg_locks hint).
-const migrationLockID int64 = 0x5355425354523031
+// migrationLockKey, hashed with current_schema(), keys the advisory lock the
+// runner serializes on. An advisory lock knows nothing about schemas, so the
+// schema is folded into the key the way identity.go, repositories.go and
+// dialect.go fold it into theirs: a deployment has one schema per database
+// and notices nothing, and the test binaries that give every test a schema
+// of its own in one database migrate them side by side instead of one at a
+// time behind one lock.
+const migrationLockKey = "|migrate"
 
 type migration struct {
 	Version int
@@ -72,10 +77,12 @@ func migrate(ctx context.Context, db *sql.DB) error {
 	}
 	defer func() { _ = conn.Close() }()
 
-	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, migrationLockID); err != nil {
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock(hashtext(current_schema() || $1)::bigint)`, migrationLockKey); err != nil {
 		return fmt.Errorf("substrate/engine: migration lock: %w", err)
 	}
-	defer func() { _, _ = conn.ExecContext(ctx, `SELECT pg_advisory_unlock($1)`, migrationLockID) }()
+	defer func() {
+		_, _ = conn.ExecContext(ctx, `SELECT pg_advisory_unlock(hashtext(current_schema() || $1)::bigint)`, migrationLockKey)
+	}()
 
 	if _, err := conn.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (

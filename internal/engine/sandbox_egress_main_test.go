@@ -24,15 +24,7 @@ func TestMain(m *testing.M) {
 	if os.Getenv("SUBSTRATE_EGRESS_ALLOW") == "" {
 		_ = os.Setenv("SUBSTRATE_EGRESS_ALLOW", "127.0.0.0/8,::1/128")
 	}
-	// Every test's data root is a t.TempDir(), and every write fsyncs it
-	// (0062). Sixteen repositories fsyncing one ext4 journal wait on each
-	// other; on tmpfs they do not (measured: 84 s to 67 s for this binary).
-	cleanup := testdb.TempDirOnTmpfs()
-	code := m.Run()
-	// The migrated template (export_test.go migratedTemplate) is a database
-	// on whatever server the run used; a server that outlives the binary
-	// would otherwise keep one per run.
-	testdb.DropTemplates()
-	cleanup()
-	os.Exit(code)
+	// testdb.Main: the data roots on tmpfs, the run, then every database the
+	// run made dropped (the migrated template among them).
+	os.Exit(testdb.Main(m))
 }

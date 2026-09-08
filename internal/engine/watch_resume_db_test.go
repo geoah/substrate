@@ -19,8 +19,8 @@ func TestWatchResumesGaplesslyAcrossARestart(t *testing.T) {
 	ctx := context.Background()
 	dsn := engine.MigratedDSN(t)
 	open := func() (substrate.Service, substrate.Dataset) {
-		svc, err := engine.Open(ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
+		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
+			engine.WithKindsDir(engine.CoreKindsDir))
 		if err != nil {
 			t.Fatalf("open engine: %v", err)
 		}
@@ -31,8 +31,8 @@ func TestWatchResumesGaplesslyAcrossARestart(t *testing.T) {
 		return svc, ds
 	}
 
-	svc1, err := engine.Open(ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
+	svc1, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
+		engine.WithKindsDir(engine.CoreKindsDir))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}

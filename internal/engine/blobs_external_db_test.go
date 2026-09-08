@@ -301,9 +301,9 @@ func TestBootRefusesBytesLeftInThePostgresColumn(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	reopened, err := engine.Open(ctx, dsn,
+	reopened, err := engine.OpenForTest(t, ctx, dsn,
 		engine.WithDataRoot(t.TempDir()),
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		engine.WithKindsDir(engine.CoreKindsDir),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err == nil {
 		_ = reopened.Close()
@@ -341,10 +341,10 @@ func TestBlobFSReopenOnTheSameRootReadsTheBytes(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	again, err := engine.Open(ctx, dsn,
+	again, err := engine.OpenForTest(t, ctx, dsn,
 		engine.WithDataRoot(t.TempDir()),
 		engine.WithDataRoot(root),
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		engine.WithKindsDir(engine.CoreKindsDir),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {
 		t.Fatalf("reopen on the same root: %v", err)

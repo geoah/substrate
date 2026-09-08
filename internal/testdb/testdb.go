@@ -2,18 +2,22 @@
 // substrate integration tests run against: one container per test binary,
 // and per test either a throwaway Postgres SCHEMA (NewSchema, empty) or a
 // throwaway DATABASE copied from a template the suite prepared once
-// (Template.Clone), both dropped on cleanup.
+// (Template.Clone). Main wires the binary: the data roots on tmpfs, m.Run,
+// then every database the run made dropped in one batch.
 package testdb
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash/fnv"
 	"net"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,8 +36,17 @@ var (
 	pgOnce sync.Once
 	pgDSN  string
 	pgErr  error
+	// admin is the one pool every fixture's DDL rides: schemas, clones, the
+	// template, the sweep and the drops. Capped, so a burst of parallel
+	// tests cannot take the cluster's connections for CREATE DATABASE.
+	admin  *sql.DB
 	nameMu sync.Mutex
 	nameN  int
+	// runID names this binary's databases: the second it started and four
+	// random bytes, so two binaries on one server (a plain `go test ./...`,
+	// or two hosts) never mint one name, and the sweep can read the age of
+	// a leftover off its name.
+	runID = fmt.Sprintf("%d_%s", time.Now().Unix(), randHex(4))
 )
 
 // DSN returns the base Postgres+pgvector DSN. It skips under -short, honors
@@ -66,7 +79,8 @@ func DSN(t *testing.T) string {
 					// a checkpoint under 16 parallel tests fsyncs every dirty
 					// file (measured: 830 drops averaged 1.2 s, one took 26 s,
 					// 72% of Postgres's time). Every commit's WAL flush went
-					// the same way.
+					// the same way. A server somebody points the suite at
+					// (SUBSTRATE_TEST_DATABASE_URL) is never changed.
 					"-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off"),
 				testcontainers.WithWaitStrategy(
 					wait.ForLog("database system is ready to accept connections").
@@ -81,39 +95,23 @@ func DSN(t *testing.T) string {
 				return
 			}
 		}
-		// Install the Postgres extensions once, here, where nothing races: parallel
-		// CREATE EXTENSION statements hit Postgres's pg_extension_name_index
-		// race.
 		db, err := sql.Open("pgx", pgDSN)
 		if err != nil {
 			pgErr = err
 			return
 		}
-		defer func() { _ = db.Close() }()
+		db.SetMaxOpenConns(8)
+		// Install the Postgres extensions once, here, where nothing races: parallel
+		// CREATE EXTENSION statements hit Postgres's pg_extension_name_index
+		// race.
 		for _, ext := range []string{"vector", "pgcrypto"} {
 			if _, err := db.ExecContext(ctx, `CREATE EXTENSION IF NOT EXISTS `+ext+` SCHEMA public`); err != nil {
 				pgErr = err
+				_ = db.Close()
 				return
 			}
 		}
-		// A server somebody else points the suite at keeps its durability
-		// unless they say it is disposable (CI's service container is; a dev
-		// substrate's database is not, and fsync=off is a data-loss setting
-		// on a server that crashes). The container above got the same three
-		// on its command line.
-		if os.Getenv("SUBSTRATE_TEST_DATABASE_DISPOSABLE") != "" {
-			for _, stmt := range []string{
-				`ALTER SYSTEM SET fsync = off`,
-				`ALTER SYSTEM SET synchronous_commit = off`,
-				`ALTER SYSTEM SET full_page_writes = off`,
-				`SELECT pg_reload_conf()`,
-			} {
-				if _, err := db.ExecContext(ctx, stmt); err != nil {
-					pgErr = fmt.Errorf("SUBSTRATE_TEST_DATABASE_DISPOSABLE: %s: %w", stmt, err)
-					return
-				}
-			}
-		}
+		admin = db
 	})
 	if pgErr != nil {
 		t.Fatalf("start pgvector container: %v", pgErr)
@@ -127,7 +125,9 @@ func DSN(t *testing.T) string {
 // userland process relaying every byte of every connection: with sixteen
 // tests each running a thousand statements, that one process is the queue
 // they all wait in, and a round trip through it measured 76 µs against 48 µs
-// direct on an idle machine.
+// direct on an idle machine. The direct DSN is the published one with the
+// host swapped, so the credentials and parameters stay whatever the module
+// minted.
 func containerDSN(ctx context.Context, c *postgres.PostgresContainer) (string, error) {
 	published, err := c.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
@@ -135,68 +135,116 @@ func containerDSN(ctx context.Context, c *postgres.PostgresContainer) (string, e
 	}
 	ip, err := c.ContainerIP(ctx)
 	if err != nil || ip == "" {
+		fmt.Fprintln(os.Stderr, "testdb: connecting through the container's published port (no container IP)")
 		return published, nil
 	}
-	direct := fmt.Sprintf("postgres://postgres:postgres@%s/substrate?sslmode=disable", net.JoinHostPort(ip, "5432"))
+	u, err := url.Parse(published)
+	if err != nil {
+		return published, nil
+	}
+	u.Host = net.JoinHostPort(ip, "5432")
+	direct := u.String()
 	db, err := sql.Open("pgx", direct)
 	if err != nil {
 		return published, nil
 	}
 	defer func() { _ = db.Close() }()
-	pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	probe, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
 	defer cancel()
-	if err := db.PingContext(pingCtx); err != nil {
+	if err := db.PingContext(probe); err != nil {
+		fmt.Fprintf(os.Stderr, "testdb: connecting through the container's published port (%s unreachable: %v)\n", u.Host, err)
 		return published, nil
 	}
+	fmt.Fprintf(os.Stderr, "testdb: connecting to the container directly at %s\n", u.Host)
 	return direct, nil
 }
 
 // NewSchema creates a throwaway Postgres schema and returns a DSN whose
-// search_path is baked in. The schema is dropped when the test ends.
+// search_path is baked in. The schema is dropped when the test ends. This is
+// the from-empty fixture: whatever opens the DSN runs every migration.
 func NewSchema(t *testing.T) string {
 	t.Helper()
 	base := DSN(t)
-	name := uniqueName()
-
-	db, err := sql.Open("pgx", base)
-	if err != nil {
-		t.Fatalf("open postgres: %v", err)
-	}
+	name := schemaName()
 	ctx := context.Background()
-	if _, err := db.ExecContext(ctx, `CREATE SCHEMA `+name); err != nil {
-		_ = db.Close()
+	if _, err := admin.ExecContext(ctx, `CREATE SCHEMA `+name); err != nil {
 		t.Fatalf("create schema %s: %v", name, err)
 	}
 	t.Cleanup(func() {
-		defer func() { _ = db.Close() }()
-		if _, err := db.ExecContext(context.Background(), `DROP SCHEMA IF EXISTS `+name+` CASCADE`); err != nil {
+		if _, err := admin.ExecContext(context.Background(), `DROP SCHEMA IF EXISTS `+name+` CASCADE`); err != nil {
 			t.Logf("drop schema %s: %v", name, err)
 		}
 	})
 	return WithSearchPath(base, name)
 }
 
+// Main runs a test binary that uses this package: the data roots on tmpfs
+// where there is one (TempDirOnTmpfs), m.Run, then every database the run
+// made dropped, then the tmpfs directory removed. A TestMain is
+// `os.Exit(testdb.Main(m))`, so a package cannot adopt half of it.
+func Main(m *testing.M) int {
+	cleanup := TempDirOnTmpfs()
+	code := m.Run()
+	DropAll()
+	cleanup()
+	return code
+}
+
 // TempDirOnTmpfs points TMPDIR, and with it every t.TempDir() of the binary,
-// at a directory of its own under /dev/shm when that is a writable tmpfs, and
-// leaves it alone otherwise (macOS, a container without one). A suite calls
-// it from TestMain before m.Run and runs the returned cleanup after. The
-// engine fsyncs every changelog and sealed write, and sixteen parallel tests
+// at a directory of its own under /dev/shm when that is a tmpfs with at
+// least 512 MB free, and leaves it alone otherwise (macOS, a container whose
+// /dev/shm is Docker's 64 MB default, TMPDIR already set). A suite calls it
+// from TestMain before m.Run and runs the returned cleanup after. The engine
+// fsyncs every changelog and sealed write, and sixteen parallel tests
 // fsyncing one ext4 journal serialize on it; a tmpfs fsync is free, and the
 // tests assert what the files hold, never that a power cut would keep them.
+// `TMPDIR=/tmp` is the opt-out.
 func TempDirOnTmpfs() (cleanup func()) {
+	none := func() {}
 	if os.Getenv("TMPDIR") != "" {
-		return func() {}
+		return none
 	}
-	dir, err := os.MkdirTemp("/dev/shm", "substrate-test-")
+	const shm = "/dev/shm"
+	var st syscall.Statfs_t
+	if err := syscall.Statfs(shm, &st); err != nil || st.Type != tmpfsMagic {
+		return none
+	}
+	// Bavail and Bsize are the types the platform declares, and they differ
+	// across them, so the product is taken in uint64.
+	if free := uint64(st.Bavail) * uint64(st.Bsize); free < 512<<20 { //nolint:unconvert // the field types are per platform
+		return none
+	}
+	dir, err := os.MkdirTemp(shm, "substrate-test-")
 	if err != nil {
-		return func() {}
+		return none
 	}
 	if err := os.Setenv("TMPDIR", dir); err != nil {
 		_ = os.RemoveAll(dir)
-		return func() {}
+		return none
 	}
+	fmt.Fprintf(os.Stderr, "testdb: TMPDIR=%s (tmpfs; set TMPDIR=/tmp to opt out)\n", dir)
 	return func() { _ = os.RemoveAll(dir) }
 }
+
+// tmpfsMagic is TMPFS_MAGIC from linux/magic.h, what Statfs reports as the
+// type of a tmpfs mount.
+const tmpfsMagic = 0x01021994
+
+// WithSearchPath bakes a search_path into a DSN — never SET on a pooled
+// connection.
+//
+// The substrate has ONE schema now: this does not partition repositories, it
+// partitions TEST BINARIES, so a package's parallel tests each get their own
+// copy of the whole substrate in one shared cluster.
+func WithSearchPath(dsn, schema string) string {
+	sep := "?"
+	if strings.Contains(dsn, "?") {
+		sep = "&"
+	}
+	return dsn + sep + "search_path=" + schema + ",public"
+}
+
+// --- the template database and its clones -----------------------------------
 
 // Template is one database per test binary that a caller prepares once
 // (migrates, seeds, whatever its suite needs) and Clone copies per test with
@@ -206,13 +254,13 @@ func TempDirOnTmpfs() (cleanup func()) {
 //
 // The copy carries everything the template's catalog holds: tables, indexes,
 // policies, the grants to the cluster roles, the recorded migrations, the
-// extensions. It carries no connection: Clone waits until nothing is
-// connected to the template, because Postgres refuses to copy a database
-// anyone is using.
+// extensions. It carries no connection: build waits until nothing is
+// connected to the template and then refuses connections to it, because
+// Postgres refuses to copy a database anyone is using.
 //
-// The role the DSN names needs CREATEDB. A role without it (42501 on CREATE
-// DATABASE) gets the slow path instead: Clone hands out NewSchema, an empty
-// schema the caller's own open migrates, and says so once on stderr.
+// The role the DSN names needs CREATEDB, and the DSN has to be a postgres://
+// URL, so another database of the cluster can be addressed. Neither is
+// checked by falling back to something slower: Clone fails and says which.
 type Template struct {
 	key     string
 	prepare func(ctx context.Context, dsn string) error
@@ -221,15 +269,6 @@ type Template struct {
 	name string
 	err  error
 }
-
-// errNoCreateDB is build's answer when the role may not CREATE DATABASE.
-var errNoCreateDB = errors.New("the role may not CREATE DATABASE")
-
-// templates is every Template a binary built, for DropTemplates.
-var (
-	templatesMu sync.Mutex
-	templates   []*Template
-)
 
 // NewTemplate declares a template; nothing runs until the first Clone. key
 // names it in the cluster (one word, lowercase), and prepare runs once
@@ -240,45 +279,25 @@ func NewTemplate(key string, prepare func(ctx context.Context, dsn string) error
 }
 
 // Clone returns the DSN of a new database copied from the template, dropped
-// when the test ends. The first call in a binary builds the template.
+// when the test ends. The first call in a binary builds the template. (A
+// dropper goroutine taking the drops off the tests' path was measured at
+// 69 to 80 s against 67 s for the cleanup drop: DROP DATABASE's forced
+// checkpoint is cheap with fsync off, and the drops then compete with the
+// tests instead of pacing them.)
 func (tp *Template) Clone(t *testing.T) string {
 	t.Helper()
 	base := DSN(t)
-	tp.once.Do(func() {
-		tp.name, tp.err = tp.build(base)
-		if tp.err == nil {
-			templatesMu.Lock()
-			templates = append(templates, tp)
-			templatesMu.Unlock()
-		}
-		if errors.Is(tp.err, errNoCreateDB) {
-			fmt.Fprintf(os.Stderr, "testdb: %s, so every test migrates a fresh schema instead of copying the %s template; grant CREATEDB to the SUBSTRATE_TEST_DATABASE_URL role for the fast path\n", tp.err, tp.key)
-		}
-	})
-	if errors.Is(tp.err, errNoCreateDB) {
-		return NewSchema(t)
-	}
+	tp.once.Do(func() { tp.name, tp.err = tp.build(base) })
 	if tp.err != nil {
-		t.Fatalf("build the %s template database: %v", tp.key, tp.err)
+		t.Fatalf("the %s template database: %v", tp.key, tp.err)
 	}
-	name := uniqueName()
-	db, err := sql.Open("pgx", base)
-	if err != nil {
-		t.Fatalf("open postgres: %v", err)
-	}
+	name := cloneName()
 	ctx := context.Background()
-	if err := createFromTemplate(ctx, db, name, tp.name); err != nil {
-		_ = db.Close()
+	if _, err := admin.ExecContext(ctx, `CREATE DATABASE `+name+` TEMPLATE `+tp.name); err != nil {
 		t.Fatalf("create database %s from %s: %v", name, tp.name, err)
 	}
-	t.Cleanup(func() {
-		defer func() { _ = db.Close() }()
-		// FORCE: a pool a test forgot to close is not a reason to leave
-		// the database behind, and the service's own pools closed already.
-		if err := dropDatabase(context.Background(), db, name); err != nil {
-			t.Logf("drop database %s: %v", name, err)
-		}
-	})
+	register(name)
+	t.Cleanup(func() { dropOne(name) })
 	dsn, err := withDatabase(base, name)
 	if err != nil {
 		t.Fatal(err)
@@ -286,56 +305,34 @@ func (tp *Template) Clone(t *testing.T) string {
 	return dsn
 }
 
-// DropTemplates drops every template this binary built. A suite calls it
-// from TestMain after m.Run: the container case does not need it, a server
-// somebody points the suite at does, or every run leaves one more database
-// behind. Errors are printed, not returned; the tests already ran.
-func DropTemplates() {
-	templatesMu.Lock()
-	defer templatesMu.Unlock()
-	if len(templates) == 0 || pgDSN == "" {
-		return
-	}
-	db, err := sql.Open("pgx", pgDSN)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "testdb: drop the templates: %v\n", err)
-		return
-	}
-	defer func() { _ = db.Close() }()
-	for _, tp := range templates {
-		if err := dropDatabase(context.Background(), db, tp.name); err != nil {
-			fmt.Fprintf(os.Stderr, "testdb: drop the %s template %s: %v\n", tp.key, tp.name, err)
-		}
-	}
-	templates = nil
-}
-
 // build creates the template database, installs the extensions, runs the
-// caller's preparation and waits for its connections to go away. The name
-// carries the pid, so two binaries preparing the same key at once (a plain
-// `go test ./...`) never share one; a template an earlier binary left behind
-// (a crash, a kill before DropTemplates) is swept first.
+// caller's preparation and waits for its connections to go away. Leftovers
+// of earlier runs are swept first, and a template this build leaves half
+// made is dropped before the error is returned.
 func (tp *Template) build(base string) (string, error) {
 	ctx := context.Background()
-	name := fmt.Sprintf("sub_tpl_%s_%d", tp.key, os.Getpid())
-	admin, err := sql.Open("pgx", base)
+	name := "sub_tpl_" + tp.key + "_" + runID
+	// The DSN's shape, before anything is created under a name that needs it.
+	dsn, err := withDatabase(base, name)
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = admin.Close() }()
 	// Best effort: a leftover this role may not drop is somebody else's
 	// problem, not a reason to refuse this run its own template.
-	if err := sweepStaleTemplates(ctx, admin, tp.key); err != nil {
-		fmt.Fprintf(os.Stderr, "testdb: sweep stale %s templates: %v\n", tp.key, err)
+	if err := sweepStale(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "testdb: sweep stale test databases: %v\n", err)
 	}
 	if _, err := admin.ExecContext(ctx, `CREATE DATABASE `+name); err != nil {
 		if pgCode(err) == "42501" {
-			return "", fmt.Errorf("%w: %w", errNoCreateDB, err)
+			return "", fmt.Errorf("the role needs CREATEDB to copy a migrated database per test; grant it (ALTER ROLE ... CREATEDB) or run against the container: %w", err)
 		}
 		return "", fmt.Errorf("create the template: %w", err)
 	}
-	dsn, err := withDatabase(base, name)
-	if err != nil {
+	register(name)
+	fail := func(err error) (string, error) {
+		if derr := dropDatabase(ctx, name); derr != nil {
+			err = fmt.Errorf("%w (and dropping the half-built template failed: %w)", err, derr)
+		}
 		return "", err
 	}
 	if err := func() error {
@@ -351,50 +348,96 @@ func (tp *Template) build(base string) (string, error) {
 		}
 		return nil
 	}(); err != nil {
-		return "", err
+		return fail(err)
 	}
 	if err := tp.prepare(ctx, dsn); err != nil {
-		return "", fmt.Errorf("prepare: %w", err)
+		return fail(fmt.Errorf("prepare: %w", err))
 	}
 	// Closing a pool ends its connections from the client's side; the backends
 	// take a moment to notice, and CREATE DATABASE refuses a template with a
 	// backend still attached. Wait for the count, then refuse new ones so a
-	// straggler cannot reattach between a test's clones.
+	// straggler cannot reattach between two clones. CREATE DATABASE itself
+	// waits up to five seconds for a backend that is on its way out.
 	deadline := time.Now().Add(30 * time.Second)
 	for {
 		var n int
 		if err := admin.QueryRowContext(ctx,
 			`SELECT count(*) FROM pg_stat_activity WHERE datname = $1`, name).Scan(&n); err != nil {
-			return "", err
+			return fail(err)
 		}
 		if n == 0 {
 			break
 		}
 		if time.Now().After(deadline) {
-			return "", fmt.Errorf("%d connection(s) to the template are still open after prepare returned", n)
+			return fail(fmt.Errorf("%d connection(s) to the template are still open after prepare returned", n))
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	// Not IS_TEMPLATE: the owner may clone its own database without it, and
-	// a template database cannot be dropped without unmarking it first.
 	if _, err := admin.ExecContext(ctx, `ALTER DATABASE `+name+` WITH ALLOW_CONNECTIONS false`); err != nil {
-		return "", fmt.Errorf("mark the template: %w", err)
+		return fail(fmt.Errorf("refuse connections to the template: %w", err))
 	}
 	return name, nil
 }
 
-// sweepStaleTemplates drops the templates of this key that earlier binaries
-// left: one whose pid is not alive on this host and that nothing is
-// connected to. A binary running beside this one keeps its own, and so does
-// one on another host, whose pid this host cannot see (it may be alive).
-func sweepStaleTemplates(ctx context.Context, db *sql.DB, key string) error {
-	rows, err := db.QueryContext(ctx, `
+// --- the drop list -----------------------------------------------------------
+
+// Every database this binary creates is registered here and removed as it is
+// dropped; DropAll, after m.Run, drops whatever is left: the template, and a
+// clone whose test's cleanup did not get to run.
+var (
+	dropMu sync.Mutex
+	made   = map[string]bool{}
+)
+
+func register(name string) {
+	dropMu.Lock()
+	defer dropMu.Unlock()
+	made[name] = true
+}
+
+func dropOne(name string) {
+	if err := dropDatabase(context.Background(), name); err != nil {
+		fmt.Fprintf(os.Stderr, "testdb: drop database %s: %v\n", name, err)
+		return
+	}
+	dropMu.Lock()
+	delete(made, name)
+	dropMu.Unlock()
+}
+
+// DropAll drops every database the binary created and has not dropped yet.
+// The container case does not need it (the container dies with the binary);
+// a server somebody points the suite at does, or every run leaves databases
+// behind. Errors are printed, not returned: the tests already ran.
+func DropAll() {
+	if admin == nil {
+		return
+	}
+	dropMu.Lock()
+	names := make([]string, 0, len(made))
+	for n := range made {
+		names = append(names, n)
+	}
+	dropMu.Unlock()
+	for _, n := range names {
+		dropOne(n)
+	}
+}
+
+// staleName is a database this package named, with the second it was made.
+var staleName = regexp.MustCompile(`^sub_(?:tpl_[a-z0-9]+|test)_(\d{9,10})_`)
+
+// sweepStale drops the databases of an earlier run that nothing is connected
+// to and whose name says they are older than six hours: a binary killed
+// before DropAll ran. Age, not liveness: two hosts sharing a server cannot
+// see each other's processes, and a live run is never six hours old.
+func sweepStale(ctx context.Context) error {
+	rows, err := admin.QueryContext(ctx, `
 		SELECT d.datname FROM pg_database d
-		WHERE d.datname LIKE $1
-		  AND NOT EXISTS (SELECT 1 FROM pg_stat_activity a WHERE a.datname = d.datname)`,
-		`sub\_tpl\_`+key+`\_%`)
+		WHERE (d.datname LIKE 'sub\_tpl\_%' OR d.datname LIKE 'sub\_test\_%')
+		  AND NOT EXISTS (SELECT 1 FROM pg_stat_activity a WHERE a.datname = d.datname)`)
 	if err != nil {
-		return fmt.Errorf("list stale templates: %w", err)
+		return err
 	}
 	var stale []string
 	for rows.Next() {
@@ -403,8 +446,12 @@ func sweepStaleTemplates(ctx context.Context, db *sql.DB, key string) error {
 			_ = rows.Close()
 			return err
 		}
-		pid, err := strconv.Atoi(name[strings.LastIndexByte(name, '_')+1:])
-		if err != nil || pid == os.Getpid() || pidAlive(pid) {
+		m := staleName.FindStringSubmatch(name)
+		if m == nil {
+			continue
+		}
+		ts, err := strconv.ParseInt(m[1], 10, 64)
+		if err != nil || time.Since(time.Unix(ts, 0)) < 6*time.Hour {
 			continue
 		}
 		stale = append(stale, name)
@@ -413,53 +460,19 @@ func sweepStaleTemplates(ctx context.Context, db *sql.DB, key string) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	var errs []error
 	for _, name := range stale {
-		if err := dropDatabase(ctx, db, name); err != nil {
-			return fmt.Errorf("drop the stale template %s: %w", name, err)
+		if err := dropDatabase(ctx, name); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", name, err))
 		}
 	}
-	return nil
-}
-
-// pidAlive reports whether a process of that pid exists on this host: a
-// signal 0 that is delivered, or refused because the process is somebody
-// else's, both mean it is there.
-func pidAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	err := syscall.Kill(pid, 0)
-	return err == nil || errors.Is(err, syscall.EPERM)
+	return errors.Join(errs...)
 }
 
 // dropDatabase drops a database nothing should be using; FORCE ends a
 // straggler rather than failing on it.
-func dropDatabase(ctx context.Context, db *sql.DB, name string) error {
-	_, err := db.ExecContext(ctx, `DROP DATABASE IF EXISTS `+name+` WITH (FORCE)`)
-	return err
-}
-
-// pgCode is the SQLSTATE of a Postgres error, empty for any other error.
-func pgCode(err error) string {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		return pgErr.Code
-	}
-	return ""
-}
-
-// createFromTemplate copies the template. A backend that was still detaching
-// from it when the count read zero answers 55006 (object_in_use), which is
-// retried rather than failed: it is a timing, not a state.
-func createFromTemplate(ctx context.Context, db *sql.DB, name, template string) error {
-	var err error
-	for range 50 {
-		_, err = db.ExecContext(ctx, `CREATE DATABASE `+name+` TEMPLATE `+template)
-		if err == nil || pgCode(err) != "55006" {
-			return err
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+func dropDatabase(ctx context.Context, name string) error {
+	_, err := admin.ExecContext(ctx, `DROP DATABASE IF EXISTS `+name+` WITH (FORCE)`)
 	return err
 }
 
@@ -469,24 +482,19 @@ func createFromTemplate(ctx context.Context, db *sql.DB, name, template string) 
 func withDatabase(dsn, name string) (string, error) {
 	u, err := url.Parse(dsn)
 	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
-		return "", fmt.Errorf("testdb: the DSN must be a postgres:// URL to address another database, got %q", dsn)
+		return "", fmt.Errorf("testdb: the DSN must be a postgres:// URL to address another database of the cluster, got %q", dsn)
 	}
 	u.Path = "/" + name
 	return u.String(), nil
 }
 
-// WithSearchPath bakes a search_path into a DSN — never SET on a pooled
-// connection.
-//
-// The substrate has ONE schema now: this does not partition repositories, it
-// partitions TEST BINARIES, so a package's parallel tests each get their own
-// copy of the whole substrate in one shared cluster.
-func WithSearchPath(dsn, schema string) string {
-	sep := "?"
-	if strings.Contains(dsn, "?") {
-		sep = "&"
+// pgCode is the SQLSTATE of a Postgres error, empty for any other error.
+func pgCode(err error) string {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code
 	}
-	return dsn + sep + "search_path=" + schema + ",public"
+	return ""
 }
 
 // RepositoryID reads a user's repository id out of the control-plane table.
@@ -547,9 +555,28 @@ func Authority(t *testing.T) string {
 	return Username(t) + ".example.com"
 }
 
-func uniqueName() string {
+// schemaName names a NewSchema schema: the nanosecond and a counter, so
+// two binaries on one server do not collide.
+func schemaName() string {
 	nameMu.Lock()
 	defer nameMu.Unlock()
 	nameN++
 	return fmt.Sprintf("sub_test_%d_%d", time.Now().UnixNano(), nameN)
+}
+
+// cloneName names a Clone database: runID (the second the binary started
+// and four random bytes, which the sweep reads the age off) and a counter.
+func cloneName() string {
+	nameMu.Lock()
+	defer nameMu.Unlock()
+	nameN++
+	return fmt.Sprintf("sub_test_%s_%d", runID, nameN)
+}
+
+func randHex(n int) string {
+	raw := make([]byte, n)
+	if _, err := rand.Read(raw); err != nil {
+		panic("testdb: no entropy: " + err.Error())
+	}
+	return hex.EncodeToString(raw)
 }

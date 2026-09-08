@@ -36,12 +36,12 @@ func newW3Env(t *testing.T, opts ...engine.Option) (substrate.Service, substrate
 	t.Helper()
 	dsn := engine.MigratedDSN(t)
 	all := []engine.Option{
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		engine.WithKindsDir(engine.CoreKindsDir),
 		engine.WithDataRoot(t.TempDir()),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 	}
 	all = append(all, opts...)
-	svc, err := engine.Open(context.Background(), dsn, all...)
+	svc, err := engine.OpenForTest(t, context.Background(), dsn, all...)
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}
@@ -261,8 +261,8 @@ func TestW3OAuthStateReplayRefused(t *testing.T) {
 func TestW3OAuthEmptyStateKeyRefused(t *testing.T) {
 	t.Parallel()
 	dsn := engine.MigratedDSN(t)
-	_, err := engine.Open(context.Background(), dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+	_, err := engine.OpenForTest(t, context.Background(), dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
+		engine.WithKindsDir(engine.CoreKindsDir),
 		engine.WithOAuth("", "https://substrate.example/callback", nil),
 	)
 	if err == nil || !strings.Contains(err.Error(), "state key") {

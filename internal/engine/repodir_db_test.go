@@ -46,11 +46,10 @@ func repoDirOf(t *testing.T, svc substrate.Service, ds substrate.Dataset) string
 // shape of a restart.
 func reopen(t *testing.T, dsn, root string) (substrate.Service, error) {
 	t.Helper()
-	svc, err := engine.Open(context.Background(), dsn,
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+	svc, err := engine.OpenForTest(t, context.Background(), dsn,
+		engine.WithKindsDir(engine.CoreKindsDir),
 		engine.WithDataRoot(root),
-		engine.WithCredentialKey(engine.TestCredentialKey),
-		engine.WithTestClock(clockOf(t).now))
+		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err == nil {
 		t.Cleanup(func() { _ = svc.Close() })
 	}
@@ -859,8 +858,8 @@ func TestReadOnlyOpenLeavesDamageAndVerifyNamesIt(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	ro, err := engine.Open(ctx, dsn,
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+	ro, err := engine.OpenForTest(t, ctx, dsn,
+		engine.WithKindsDir(engine.CoreKindsDir),
 		engine.WithDataRoot(root),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithDirectoryReadOnly())
@@ -970,8 +969,8 @@ func TestImportRefusesADirectoryTheKeyCannotOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	_, err := engine.Open(ctx, dsn2,
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+	_, err := engine.OpenForTest(t, ctx, dsn2,
+		engine.WithKindsDir(engine.CoreKindsDir),
 		engine.WithDataRoot(root2),
 		engine.WithCredentialKey(base64.StdEncoding.EncodeToString(other)))
 	if err == nil {
@@ -1356,8 +1355,10 @@ func TestBootRefusesARowWhoseIdIsNotItsAuthority(t *testing.T) {
 	// Such a database recorded nothing from 0015 on, and the runner refuses
 	// a gap, so every migration from 0015 runs again at the boot: 0015 puts
 	// the constraint back NOT VALID over the old row, which a validating one
-	// could not, and the later ones are idempotent over a schema that has
-	// them.
+	// could not. This case therefore depends on 0015 through the last
+	// migration being re-runnable over a schema that already has them (each
+	// guards with IF NOT EXISTS or a catalog check); a later migration that
+	// is not must move the cut below it.
 	if _, err := db.Exec(`DELETE FROM schema_migrations WHERE version >= 15`); err != nil {
 		t.Fatalf("forget the migrations from 0015 on: %v", err)
 	}
@@ -1680,8 +1681,8 @@ func TestLegacyMoveRefusesWhileTheBucketHoldsTheOldPrefix(t *testing.T) {
 		fx.oldID: {{Digest: fx.digest, Size: 19}},
 	}}
 	open := func() (substrate.Service, error) {
-		return engine.Open(ctx, dsn2,
-			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		return engine.OpenForTest(t, ctx, dsn2,
+			engine.WithKindsDir(engine.CoreKindsDir),
 			engine.WithDataRoot(fx.root),
 			engine.WithCredentialKey(engine.TestCredentialKey),
 			engine.WithBlobStore(backend))
@@ -1806,8 +1807,8 @@ func TestAnInterruptedImportResumesAtTheNextBoot(t *testing.T) {
 			dsn2 := engine.MigratedDSN(t)
 			for i, c := range tc.crashes {
 				seen := 0
-				_, err := engine.Open(ctx, dsn2,
-					engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+				_, err := engine.OpenForTest(t, ctx, dsn2,
+					engine.WithKindsDir(engine.CoreKindsDir),
 					engine.WithDataRoot(root2),
 					engine.WithCredentialKey(engine.TestCredentialKey),
 					engine.WithTestImportFault(batch, func(stage string) error {
@@ -1836,8 +1837,8 @@ func TestAnInterruptedImportResumesAtTheNextBoot(t *testing.T) {
 				// What the crash left is not served, not even read-only: a
 				// second process beside the (dead) server meets the marker at
 				// the open and is told to boot the server.
-				ro, err := engine.Open(ctx, dsn2,
-					engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+				ro, err := engine.OpenForTest(t, ctx, dsn2,
+					engine.WithKindsDir(engine.CoreKindsDir),
 					engine.WithDataRoot(root2),
 					engine.WithCredentialKey(engine.TestCredentialKey),
 					engine.WithDirectoryReadOnly())
@@ -1915,8 +1916,8 @@ func TestAResumedImportFoldsWhatTheCatchUpAppended(t *testing.T) {
 	dsn2 := engine.MigratedDSN(t)
 	errKilled := errors.New("the process died here")
 	ctx := context.Background()
-	_, err := engine.Open(ctx, dsn2,
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+	_, err := engine.OpenForTest(t, ctx, dsn2,
+		engine.WithKindsDir(engine.CoreKindsDir),
 		engine.WithDataRoot(root2),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithTestImportFault(int(head), func(stage string) error {
@@ -2058,8 +2059,8 @@ func TestCatchUpAppendsWholeTransactions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc2, err := engine.Open(context.Background(), dsn,
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+	svc2, err := engine.OpenForTest(t, context.Background(), dsn,
+		engine.WithKindsDir(engine.CoreKindsDir),
 		engine.WithDataRoot(root),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithCatchUpBatch(3),

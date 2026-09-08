@@ -109,7 +109,7 @@ func seededRepository(t *testing.T) (dsn string) {
 func openMoved(t *testing.T, dsn, tree string) error {
 	t.Helper()
 	bumpPackageVersion(t, tree, corePackage, "99")
-	svc, err := engine.Open(context.Background(), dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(tree))
+	svc, err := engine.OpenForTest(t, context.Background(), dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(tree))
 	if err != nil {
 		return err
 	}
@@ -147,7 +147,7 @@ func TestBootUpgradeRefusesANarrowingWithLiveRows(t *testing.T) {
 func stillSpeaksTheOldShape(t *testing.T, dsn string) {
 	t.Helper()
 	ctx := context.Background()
-	svc, err := engine.Open(ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(shippedTree(t)))
+	svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(shippedTree(t)))
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestBootUpgradeRefusesAnUnstorableDefault(t *testing.T) {
 	// The declaration did not land: the property the bad default rode in on is
 	// not declared, so a write naming it is refused as undeclared.
 	ctx := context.Background()
-	svc, err := engine.Open(ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(shippedTree(t)))
+	svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(shippedTree(t)))
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
@@ -247,7 +247,7 @@ func TestBootUpgradeRefusesAnUnstorableDefault(t *testing.T) {
 func providerWrite(t *testing.T, dsn, id string, props map[string]any) error {
 	t.Helper()
 	ctx := context.Background()
-	svc, err := engine.Open(ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(shippedTree(t)))
+	svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(shippedTree(t)))
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
@@ -284,7 +284,7 @@ func openRefused(t *testing.T, dsn, tree string) string {
 			return a
 		},
 	}))
-	svc, err := engine.Open(context.Background(), dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(tree), engine.WithLogger(log))
+	svc, err := engine.OpenForTest(t, context.Background(), dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(tree), engine.WithLogger(log))
 	if err != nil {
 		t.Fatalf("a refused upgrade must not fail the open: %v", err)
 	}
@@ -498,7 +498,7 @@ func TestBootUpgradeRefusesARetiredName(t *testing.T) {
 	addShippedKind(t, appending, corePackage, "gadget", "gadgets")
 	bumpPackageVersion(t, appending, corePackage, "99")
 	var logs bytes.Buffer
-	svc, err := engine.Open(ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
+	svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithKindsDir(appending), engine.WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))
 	if err != nil {
 		t.Fatalf("open: %v", err)

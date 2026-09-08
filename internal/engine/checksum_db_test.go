@@ -208,8 +208,8 @@ func TestAWrongCredentialKeyIsRefusedAtBoot(t *testing.T) {
 		`UPDATE repositories SET dek = decode('61' || repeat('ff', 60), 'hex')`); err != nil {
 		t.Fatalf("spoil the stored wrap: %v", err)
 	}
-	_, err := engine.Open(ctx, dsn,
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+	_, err := engine.OpenForTest(t, ctx, dsn,
+		engine.WithKindsDir(engine.CoreKindsDir),
 		engine.WithDataRoot(t.TempDir()),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err == nil {
@@ -224,8 +224,8 @@ func TestAWrongCredentialKeyIsRefusedAtBoot(t *testing.T) {
 	if _, err := db.Exec(`UPDATE repositories SET dek = $1`, original); err != nil {
 		t.Fatalf("restore the stored wrap: %v", err)
 	}
-	svc2, err := engine.Open(ctx, dsn,
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+	svc2, err := engine.OpenForTest(t, ctx, dsn,
+		engine.WithKindsDir(engine.CoreKindsDir),
 		engine.WithDataRoot(t.TempDir()),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {

@@ -90,7 +90,7 @@ type options struct {
 	// a function's identity as its body is about to be invoked
 	// (runner.go runCallableRaw), so a test can act while the body runs.
 	invokeHook func(function string)
-	// now is the TOTP verifier's clock (export_test.go WithTestClock); the
+	// now is the TOTP verifier's clock (export_test.go WithTestTOTPClock); the
 	// wall clock when nil. Tests only: a test that spends one window's codes
 	// advances it instead of sleeping through a real 30 second step.
 	now func() time.Time

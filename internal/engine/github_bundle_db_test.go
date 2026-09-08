@@ -91,7 +91,7 @@ func TestGithubBundleAdmitsSchema(t *testing.T) {
 	// alone) plus the shipped VOCABULARY bundles this repository imported —
 	// what a closure declaring onto people/tasks/messaging/calendar/media
 	// needs present, and what `requires:` names.
-	reg, err := enginetest.SeededRegistry("../../kinds/substrate.reamde.dev/core")
+	reg, err := enginetest.SeededRegistry(CoreKindsDir)
 	if err != nil {
 		t.Fatalf("build the repository registry: %v", err)
 	}
@@ -571,9 +571,9 @@ func openGithubOAuthDataset(t *testing.T, hc *http.Client) *dataset {
 	t.Helper()
 	ctx := context.Background()
 	dsn := MigratedDSN(t)
-	svc, err := Open(ctx, dsn,
+	svc, err := OpenForTest(t, ctx, dsn,
 		WithDataRoot(t.TempDir()),
-		WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		WithCredentialKey(TestCredentialKey), WithKindsDir(CoreKindsDir),
 		WithOAuth("test-state-key", "https://substrate.example/api/v1/substrate.reamde.dev/core/oauth/callback", hc),
 		WithCredentialKey(TestCredentialKey))
 	if err != nil {
