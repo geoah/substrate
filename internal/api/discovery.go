@@ -251,11 +251,14 @@ func (h *handler) features() []featureInfo {
 // by more than one seam names them all, because a client reads one entry and
 // gets every route behind it.
 //
-// Each stability is stamped against the tickets still to land on that surface,
-// and `stable` means frozen for v1 (see substrate.StabilityStable). None of
-// these is: the P0 wire changes tracked in #360 still move responses below,
-// and #360 is where the list is kept. The REST surface's `supported` verdict
-// is the other axis and does not wait on them.
+// Each stability is a promise about the feature's REST verbs, and `stable`
+// means frozen for v1: additive only, a break announced (see
+// substrate.StabilityStable). Every REST feature is stable: the wire changes
+// #360 tracked have landed, the changefeed's among them (the cursor of
+// decision 0056 and the change event of decision 0061). A feature served on
+// `graphql` too is stable on REST alone, because that surface is a preview
+// whatever the feature stamps (decision 0053), which is also why `search`,
+// served on GraphQL alone, stays beta.
 //
 // Each entry's surfaces are the doors that actually exist today. Search is the
 // one the REST surface does not serve: REST filters (`?filter=`) and the
@@ -272,8 +275,8 @@ func features(seams substrate.Dataset, embeddings bool) []featureInfo {
 	// One seam serves both: AutomationOps carries the trigger verbs and
 	// CallFunction.
 	_, automation := seams.(substrate.AutomationOps)
-	add(automation, "triggers", substrate.StabilityBeta, []string{surfaceREST})
-	add(automation, "functions", substrate.StabilityBeta, []string{surfaceREST})
+	add(automation, "triggers", substrate.StabilityStable, []string{surfaceREST})
+	add(automation, "functions", substrate.StabilityStable, []string{surfaceREST})
 	// The bundle surface spans two seams: BundleOps serves the lifecycle verbs
 	// and BundleInstaller serves catalog install, which fails outright without
 	// it. BundleUpgradePlanner is NOT required: a dataset that cannot plan an
@@ -281,22 +284,20 @@ func features(seams substrate.Dataset, embeddings bool) []featureInfo {
 	// of the surface still works.
 	_, bundles := seams.(substrate.BundleOps)
 	_, installer := seams.(substrate.BundleInstaller)
-	add(bundles && installer, "bundles", substrate.StabilityBeta, []string{surfaceREST})
-	// Blobs are beta for a second reason beside the path: #97 moves the bytes
-	// out of the `blobs.bytes` column into a byte store, which reopens the
-	// 64 MiB cap and the missing range read that the wire currently implies.
+	add(bundles && installer, "bundles", substrate.StabilityStable, []string{surfaceREST})
 	_, blobs := seams.(substrate.BlobStore)
-	add(blobs, "blobs", substrate.StabilityBeta, []string{surfaceREST})
+	add(blobs, "blobs", substrate.StabilityStable, []string{surfaceREST})
 	// The changefeed is the one feature both surfaces read: REST pages it
 	// (`GET …/changes?before=`), resumes it forward (`?from=`) and tails it
 	// (`?watch=1`), GraphQL resumes it forward
 	// (`changelog(from, filter, first)`) but streams nothing, because there is
-	// no subscription.
+	// no subscription. The stamp freezes the REST routes; the GraphQL field
+	// stays a preview with the rest of its surface.
 	_, changefeed := seams.(substrate.ChangeFeedOps)
-	add(changefeed, "changefeed", substrate.StabilityBeta, []string{surfaceREST, surfaceGraphQL})
+	add(changefeed, "changefeed", substrate.StabilityStable, []string{surfaceREST, surfaceGraphQL})
 	// Search is not an extension: Search is on the frozen Dataset core, so
 	// every dataset serves it and it is listed unconditionally. What it is NOT
-	// is frozen, because the only door to it is the GraphQL schema, which is
+	// is stable, because the only door to it is the GraphQL schema, a preview
 	// generated per repository from that repository's kinds
 	// (docs/graphql-and-search.md).
 	add(true, "search", substrate.StabilityBeta, []string{surfaceGraphQL})

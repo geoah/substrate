@@ -78,7 +78,7 @@ func TestDiscoveryReportsVersionsFeaturesDialect(t *testing.T) {
 		stab[f.Name] = f.Stability
 	}
 	for name, want := range map[string]string{
-		"changefeed": substrate.StabilityBeta,
+		"changefeed": substrate.StabilityStable,
 		"search":     substrate.StabilityBeta,
 	} {
 		if stab[name] != want {
@@ -241,20 +241,22 @@ func discoveryFeatures(t *testing.T, svc substrate.Service) map[string]string {
 
 // A deployment whose datasets carry every seam advertises every feature, each
 // with the stability the surface has actually reached. `stable` means frozen
-// for v1 and nothing here is: the P0 wire changes tracked in #360 still move
-// responses. Change a stamp here and in features() together, and only with
-// the ticket that froze the surface.
+// for v1, and every REST feature is: the wire changes #360 tracked have
+// landed. `search` stays beta because its only door is the preview GraphQL
+// surface, and the alpha exclusions stand. Change a stamp here and in
+// features() together, and a stable one only with a decision record: it is
+// a promise a client has already read.
 func TestDiscoveryStampsEachFeatureStability(t *testing.T) {
 	svc := newFakeService()
 	svc.embeddings = true
 	got := discoveryFeatures(t, allSeamsService{svc})
 
 	want := map[string]string{
-		"triggers":              substrate.StabilityBeta,
-		"functions":             substrate.StabilityBeta,
-		"bundles":               substrate.StabilityBeta,
-		"blobs":                 substrate.StabilityBeta,
-		"changefeed":            substrate.StabilityBeta,
+		"triggers":              substrate.StabilityStable,
+		"functions":             substrate.StabilityStable,
+		"bundles":               substrate.StabilityStable,
+		"blobs":                 substrate.StabilityStable,
+		"changefeed":            substrate.StabilityStable,
 		"search":                substrate.StabilityBeta,
 		featureEmbeddings:       substrate.StabilityAlpha,
 		substrate.FeatureAgents: substrate.AgentStability,
