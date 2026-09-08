@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -160,6 +161,18 @@ type foldOp struct {
 	Ref  string   `json:"ref,omitempty"`
 	ID   string   `json:"id,omitempty"`
 
+	// Version is the version the record reached when the effect was applied,
+	// on a record, tombstone or bump effect (a purge leaves no row). The live
+	// fold stamps it after applying; a replay ignores it, since the fold
+	// produces the same number by construction (version is a count of these
+	// effects). It exists for the public change event (decision 0061), which
+	// names each affected record with its version and is projected from the
+	// stored effects at read. Absent on every effect written before it. It is
+	// a json.Number, not an int64, because the segment file's canonical JSON
+	// spells the integer 1 as `1E0`, which a typed integer field refuses to
+	// decode: the effect must read back from the file as well as the table.
+	Version json.Number `json:"version,omitempty"`
+
 	Delta *rowDelta `json:"delta,omitempty"`
 
 	// Finalizer is the hold a tombstone adds as it lands (merge's).
@@ -197,6 +210,9 @@ type foldResult struct {
 	changed bool
 	created bool
 	row     *erow
+	// version is what the record's version became, 0 where the effect leaves
+	// no row or does not touch one.
+	version int64
 }
 
 // fold applies one effect and records it on the transaction. Every write path
@@ -206,6 +222,9 @@ func (t *txn) fold(op foldOp) (foldResult, error) {
 	res, err := t.foldOne(op)
 	if err != nil || !res.changed {
 		return res, err
+	}
+	if res.version > 0 {
+		op.Version = json.Number(strconv.FormatInt(res.version, 10))
 	}
 	t.folded = append(t.folded, op)
 	return res, nil
@@ -271,16 +290,16 @@ func (t *txn) foldOne(op foldOp) (foldResult, error) {
 	case foldRecord:
 		return t.foldRecordOp(op)
 	case foldTombstone:
-		changed, err := t.applyTombstone(op.ref(), op.Finalizer)
-		return foldResult{changed: changed}, err
+		changed, version, err := t.applyTombstone(op.ref(), op.Finalizer)
+		return foldResult{changed: changed, version: version}, err
 	case foldPurge:
 		if err := t.applyPurge(op.ref()); err != nil {
 			return foldResult{}, err
 		}
 		return foldResult{changed: true}, nil
 	case foldBump:
-		changed, err := t.applyBump(op.ref())
-		return foldResult{changed: changed}, err
+		changed, version, err := t.applyBump(op.ref())
+		return foldResult{changed: changed, version: version}, err
 	case foldAnnotation:
 		var value any
 		if op.Value != nil {
@@ -374,7 +393,7 @@ func (t *txn) foldRecordOp(op foldOp) (foldResult, error) {
 			}
 		}
 	}
-	return foldResult{changed: changed, created: created, row: row}, nil
+	return foldResult{changed: changed, created: created, row: row, version: version}, nil
 }
 
 // foldFTS computes the row's weighted search bands. `fts` is an INDEX over the

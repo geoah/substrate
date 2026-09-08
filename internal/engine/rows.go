@@ -353,30 +353,36 @@ func (t *txn) tombstone(ref eref, finalizer string) (bool, error) {
 	return res.changed, err
 }
 
-func (t *txn) applyTombstone(ref eref, finalizer string) (bool, error) {
+// applyTombstone and applyBump each return the version the row reached, so
+// the effect that moved it can record the number the public event names.
+func (t *txn) applyTombstone(ref eref, finalizer string) (bool, int64, error) {
 	q := `UPDATE records SET deleted_at = $3, version = version + 1, updated_at = $3`
 	args := []any{ref.Kind, ref.ID, t.now}
 	if finalizer != "" {
 		q += `, finalizers = ARRAY(SELECT DISTINCT unnest(finalizers || ARRAY[$4::text]))`
 		args = append(args, finalizer)
 	}
-	q += ` WHERE kind = $1 AND id = $2 AND deleted_at IS NULL`
-	res, err := t.exec(q, args...)
-	if err != nil {
-		return false, err
-	}
-	n, err := res.RowsAffected()
-	return n > 0, err
+	q += ` WHERE kind = $1 AND id = $2 AND deleted_at IS NULL RETURNING version`
+	return t.bumpedVersion(q, args...)
 }
 
-func (t *txn) applyBump(ref eref) (bool, error) {
-	res, err := t.exec(`UPDATE records SET version = version + 1, updated_at = $3 WHERE kind = $1 AND id = $2`,
+func (t *txn) applyBump(ref eref) (bool, int64, error) {
+	return t.bumpedVersion(`UPDATE records SET version = version + 1, updated_at = $3 WHERE kind = $1 AND id = $2 RETURNING version`,
 		ref.Kind, ref.ID, t.now)
-	if err != nil {
-		return false, err
+}
+
+// bumpedVersion runs an UPDATE ... RETURNING version that matches at most one
+// row: (false, 0) when it matched none.
+func (t *txn) bumpedVersion(q string, args ...any) (bool, int64, error) {
+	var version int64
+	err := t.row(q, args...).Scan(&version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, 0, nil
 	}
-	n, err := res.RowsAffected()
-	return n > 0, err
+	if err != nil {
+		return false, 0, err
+	}
+	return true, version, nil
 }
 
 // --- former ids (merge trails, proposal §6.3) ---

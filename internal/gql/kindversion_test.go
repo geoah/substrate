@@ -23,7 +23,10 @@ func TestRecordObjectsCarryKindVersion(t *testing.T) {
 	var objects int
 	for _, ty := range schema.TypeMap() {
 		obj, ok := ty.(*graphql.Object)
-		if !ok || obj.Fields()["version"] == nil {
+		// A record object implements the Record interface. AffectedRecord
+		// carries a `version` too, the one a change moved a record to, and is
+		// an event, not a record (decision 0061).
+		if !ok || obj.Fields()["version"] == nil || !implementsRecord(obj) {
 			continue
 		}
 		objects++
@@ -47,4 +50,13 @@ func TestRecordObjectsCarryKindVersion(t *testing.T) {
 	if err != nil || absent != nil {
 		t.Fatalf("an unstamped record resolves kindVersion %v (%v), want null", absent, err)
 	}
+}
+
+func implementsRecord(obj *graphql.Object) bool {
+	for _, iface := range obj.Interfaces() {
+		if iface.Name() == "Record" {
+			return true
+		}
+	}
+	return false
 }

@@ -312,11 +312,12 @@ func TestRebuildKeeps64BitIntegers(t *testing.T) {
 }
 
 // TestLogEntryCarriesValues: v0's payload named the properties that moved and
-// nothing else, so nothing could replay it. An entry now carries what they
-// BECAME.
+// nothing else, so nothing could replay it. A STORED entry now carries what
+// they became. The stored entry is read off the segment file: the wire rows
+// `Changes` serves carry the public event and no effect (decision 0061).
 func TestLogEntryCarriesValues(t *testing.T) {
 	t.Parallel()
-	_, ds := newDataset(t)
+	svc, ds := newDataset(t)
 	before := maxSeq(t, ds)
 	e := mustPut(t, ds, owner, substrate.PutInput{
 		Kind:       "samples.substrate.reamde.dev/tasks/task",
@@ -324,7 +325,7 @@ func TestLogEntryCarriesValues(t *testing.T) {
 	})
 
 	var entry substrate.Change
-	for _, ch := range changesSince(t, ds, before) {
+	for _, ch := range storedChangesSince(t, svc, ds, before) {
 		if ch.RecordID == e.ID {
 			entry = ch
 		}
@@ -348,7 +349,7 @@ func TestLogEntryCarriesValues(t *testing.T) {
 	mustPatch(t, ds, owner, e.Kind, e.ID, substrate.PatchInput{
 		Properties: map[string]any{"description": "moved"},
 	})
-	for _, ch := range changesSince(t, ds, mid) {
+	for _, ch := range storedChangesSince(t, svc, ds, mid) {
 		if ch.RecordID != e.ID {
 			continue
 		}
@@ -586,6 +587,34 @@ func repositoryIDOf(t *testing.T, ds substrate.Dataset) string {
 func refTarget(e *substrate.Record, property string) string {
 	_, id, _ := vocabulary.SplitRecordPath(refPathValue(e, property))
 	return id
+}
+
+// storedChangesSince reads the entries after a seq as the segment file holds
+// them, payload and effects included: the shape a rebuild replays, which the
+// wire rows never carry.
+func storedChangesSince(t *testing.T, svc substrate.Service, ds substrate.Dataset, after int64) []substrate.Change {
+	t.Helper()
+	segments, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(repoDirOf(t, svc, ds)))
+	if err != nil {
+		t.Fatalf("open the changelog files: %v", err)
+	}
+	entries, err := segments.Read(after, 0)
+	if err != nil {
+		t.Fatalf("read the changelog files: %v", err)
+	}
+	out := make([]substrate.Change, 0, len(entries))
+	for _, en := range entries {
+		ch := substrate.Change{Seq: en.Seq, Op: substrate.Op(en.Op), Kind: en.Kind, RecordID: en.RecordID}
+		if len(en.Payload) > 0 {
+			dec := json.NewDecoder(strings.NewReader(string(en.Payload)))
+			dec.UseNumber()
+			if err := dec.Decode(&ch.Payload); err != nil {
+				t.Fatalf("decode seq %d: %v", en.Seq, err)
+			}
+		}
+		out = append(out, ch)
+	}
+	return out
 }
 
 // recordDeltaOf lifts the `set` half of an entry's record effect: the changed

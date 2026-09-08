@@ -39,6 +39,7 @@ import type { RegisterInput, RegisterResult } from "./auth"
 import type { RecordPatch } from "./records"
 import golden from "./wire.golden.json"
 import type {
+  AffectedRecord,
   BundleClosure,
   BundlePurged,
   BundleStatus,
@@ -226,7 +227,16 @@ const change: Shape<Change> = {
   recordId: true,
   kind: true,
   payload: false,
+  affected: false,
   hash: false,
+}
+
+/** The public change event nested in a Change (decision 0061). */
+const affectedRecord: Shape<AffectedRecord> = {
+  kind: true,
+  id: true,
+  version: false,
+  deleted: false,
 }
 
 const changeTrigger: Shape<ChangeTrigger> = {
@@ -495,6 +505,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   RecordFilter: recordFilter,
   KindInfo: kindInfo,
   Change: change,
+  AffectedRecord: affectedRecord,
   ChangeTrigger: changeTrigger,
   ChangeRow: changeRow,
   ChangePage: changePage,

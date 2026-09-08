@@ -5,14 +5,10 @@
  * `RowDetail` is the band itself — gutter-aligned, muted, bordered.
  * `ChangeDetail` is a change row spelled out whole: who committed it and when,
  * the changed properties (values where the payload carries them — states,
- * managers), the EFFECTS the write applied said in English, function stances,
- * and whatever else the wire said as JSON so nothing is dropped.
- *
- * The effects are the point. A write records what it did so a rebuild can
- * replay it, and that record used to reach the reader as a raw payload key
- * named after the mechanism. It doesn't any more: `changeEffects` translates it
- * (lib/changelog.ts) and the untranslated truth sits behind the `raw` toggle,
- * where debugging wants it and reading does not. */
+ * managers), the records the write moved with the version each reached
+ * (`affected`, decision 0061), function stances, and whatever else the wire
+ * said as JSON so nothing is dropped. The write's stored replay effects are
+ * not on the wire, so there is nothing of them to render or to hide. */
 
 import { useState } from "react"
 import { ChevronRightIcon } from "lucide-react"
@@ -23,7 +19,7 @@ import { Button } from "@/components/ui/button"
 import type { ChangeRow } from "@/lib/api/types"
 import { cellValue, shortDate, shortTime } from "@/lib/format"
 import {
-  changeEffects,
+  affectedLines,
   changedProperties,
   NAMED_PAYLOAD_KEYS,
 } from "@/lib/changelog"
@@ -131,7 +127,7 @@ export function ChangeDetail({ row }: { row: ChangeRow }) {
   const properties = changedProperties(row)
   const states = valuedEntries(row.payload, "states")
   const managers = valuedEntries(row.payload, "managers")
-  const effects = changeEffects(row)
+  const affected = affectedLines(row)
   const stateOf = new Map(states)
   const rest = Object.fromEntries(
     Object.entries(payload).filter(([k]) => !NAMED_PAYLOAD_KEYS.has(k))
@@ -194,28 +190,19 @@ export function ChangeDetail({ row }: { row: ChangeRow }) {
           </div>
         </DetailRow>
       )}
-      {effects.length > 0 && (
+      {affected.length > 0 && (
         <DetailRow
           label={
-            effects.length === 1 ? "1 change" : `${effects.length} changes`
+            affected.length === 1 ? "1 record" : `${affected.length} records`
           }
         >
           <ul className="flex flex-col gap-0.5">
-            {effects.map((effect, i) => (
-              <li key={i} className="min-w-0">
-                {effect.verb}
-                {effect.target && (
-                  <span className="data break-all" title={effect.target}>
-                    {" "}
-                    {effect.target}
-                  </span>
-                )}
-                {effect.detail && (
-                  <span className="text-muted-foreground">
-                    {" "}
-                    — {effect.detail}
-                  </span>
-                )}
+            {affected.map((line) => (
+              <li key={line.target} className="min-w-0">
+                <span className="data break-all" title={line.target}>
+                  {line.target}
+                </span>
+                <span className="text-muted-foreground"> · {line.verb}</span>
               </li>
             ))}
           </ul>

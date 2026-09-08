@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import type { ChangeRow, KindInfo } from "@/lib/api/types"
 
 import {
-  changeEffects,
+  affectedLines,
   changeSummary,
   changedProperties,
   EMPTY_LIVE_FEED,
@@ -80,214 +80,59 @@ describe("isVocabularyChange", () => {
   })
 })
 
-describe("the effects a write recorded", () => {
-  /** A row whose payload carries the recorded effects. The wire key is an
-   * INTERNAL name (engine/fold.go) — the test spells it because it is the wire,
-   * and nothing the console renders may. */
-  function withEffects(effects: unknown[]): ChangeRow {
-    return row({ seq: 1, payload: { fold: effects } })
-  }
-
-  it("reads a record delta as what was set, cleared and moved", () => {
+describe("the records a write moved", () => {
+  it("says where each affected record stands", () => {
     expect(
-      changeEffects(
-        withEffects([
-          {
-            kind: "record",
-            ref: "samples.substrate.reamde.dev/people/person",
-            id: "p1",
-            delta: {
-              set: { name: "Ada", email: "ada@example.com" },
-              del: ["nickname"],
-              title: "Ada",
-              states: { status: "active" },
-            },
-          },
-        ])
+      affectedLines(
+        row({
+          seq: 1,
+          affected: [
+            { kind: "k", id: "a", version: 3 },
+            { kind: "k", id: "b", version: 7, deleted: true },
+            { kind: "k", id: "c", deleted: true },
+            { kind: "k", id: "d" },
+          ],
+        })
       )
     ).toEqual([
-      {
-        verb: "updated",
-        target: "samples.substrate.reamde.dev/people/person/p1",
-        detail: "set name, email; cleared nickname; moved title, states",
-      },
+      { verb: "version 3", target: "k/a" },
+      { verb: "deleted", target: "k/b" },
+      { verb: "deleted", target: "k/c" },
+      { verb: "changed", target: "k/d" },
     ])
   })
 
-  it("names the kind version a write moved the row to", () => {
-    // A stamp-only entry (a forced write that re-validated the row under a
-    // newer declaration) must not render an empty detail.
+  it("is empty for a row that names none, and never throws on junk", () => {
+    expect(affectedLines(row({ seq: 1 }))).toEqual([])
+    expect(affectedLines(row({ seq: 1, affected: [] }))).toEqual([])
     expect(
-      changeEffects(
-        withEffects([
-          {
-            kind: "record",
-            ref: "samples.substrate.reamde.dev/people/person",
-            id: "p1",
-            delta: { set: { name: "Ada" }, kindVersion: 4 },
-          },
-          {
-            kind: "record",
-            ref: "samples.substrate.reamde.dev/people/person",
-            id: "p2",
-            delta: { force: true, kindVersion: 4 },
-          },
-        ])
+      affectedLines(
+        row({
+          seq: 1,
+          affected: "nonsense" as unknown as ChangeRow["affected"],
+        })
       )
-    ).toEqual([
-      {
-        verb: "updated",
-        target: "samples.substrate.reamde.dev/people/person/p1",
-        detail: "set name; kind version 4",
-      },
-      {
-        verb: "updated",
-        target: "samples.substrate.reamde.dev/people/person/p2",
-        detail: "kind version 4",
-      },
-    ])
-  })
-
-  it("distinguishes a creation from a restoration from an update", () => {
-    const verbs = changeEffects(
-      withEffects([
-        { kind: "record", ref: "k", id: "a", delta: { created: true } },
-        { kind: "record", ref: "k", id: "b", delta: { restored: true } },
-        { kind: "record", ref: "k", id: "c", delta: {} },
-      ])
-    ).map((e) => e.verb)
-    expect(verbs).toEqual(["created", "restored", "updated"])
-  })
-
-  it("says every effect kind the engine can record", () => {
-    expect(
-      changeEffects(
-        withEffects([
-          { kind: "tombstone", ref: "k", id: "a", finalizer: "merge" },
-          { kind: "purge", ref: "k", id: "b" },
-          { kind: "bump", ref: "k", id: "c" },
-          // The edge effects the fold no longer writes. A console that still
-          // rendered one would be claiming a mechanism this substrate does
-          // not have, so they degrade to the unrecognized line.
-          {
-            kind: "edge",
-            ref: "k",
-            id: "d",
-            rel: "member",
-            dstType: "o",
-            dst: "o1",
-          },
-          {
-            kind: "annotation",
-            ref: "k",
-            id: "g",
-            key: "owner/note",
-            value: "hi",
-          },
-          { kind: "annotation", ref: "k", id: "h", key: "owner/note" },
-          {
-            kind: "manager",
-            ref: "k",
-            id: "i",
-            property: "name",
-            actor: "sync",
-            tier: "bundle",
-          },
-          { kind: "manager", ref: "k", id: "j", property: "name" },
-          { kind: "former", ref: "k", formerId: "old", id: "new" },
-        ])
-      )
-    ).toEqual([
-      { verb: "deleted", target: "k/a", detail: "held by merge" },
-      {
-        verb: "purged",
-        target: "k/b",
-        detail: "and everything hanging off it",
-      },
-      { verb: "touched", target: "k/c", detail: "version only" },
-      { verb: "edge (unrecognized)", target: "k/d", detail: "" },
-      { verb: "annotated", target: "k/g", detail: "owner/note" },
-      { verb: "un-annotated", target: "k/h", detail: "owner/note" },
-      { verb: "reassigned", target: "k/i", detail: "name → sync (bundle)" },
-      { verb: "released", target: "k/j", detail: "name has no manager" },
-      { verb: "aliased", target: "k/old", detail: "now resolves to new" },
-    ])
-  })
-
-  it("counts what a resync restated, and over which records", () => {
-    expect(
-      changeEffects(
-        withEffects([
-          {
-            kind: "resync",
-            scope: [
-              {
-                kind: "samples.substrate.reamde.dev/people/person",
-                id: "winner",
-              },
-              {
-                kind: "samples.substrate.reamde.dev/people/person",
-                id: "loser",
-              },
-            ],
-            rows: {
-              annotations: [{}],
-              formerIds: [{}],
-            },
-          },
-        ])
-      )
-    ).toEqual([
-      {
-        verb: "restated",
-        target: "",
-        detail:
-          "1 annotation, 1 former id — on samples.substrate.reamde.dev/people/person/winner, samples.substrate.reamde.dev/people/person/loser",
-      },
-    ])
-  })
-
-  it("keeps falsy annotation values as values — only an absent one deletes", () => {
-    const verbs = changeEffects(
-      withEffects([
-        { kind: "annotation", ref: "k", id: "a", key: "n", value: false },
-        { kind: "annotation", ref: "k", id: "b", key: "n", value: 0 },
-        { kind: "annotation", ref: "k", id: "c", key: "n", value: "" },
-        { kind: "annotation", ref: "k", id: "d", key: "n", value: null },
-        { kind: "annotation", ref: "k", id: "e", key: "n" },
-      ])
-    ).map((e) => e.verb)
-    expect(verbs).toEqual([
-      "annotated",
-      "annotated",
-      "annotated",
-      "un-annotated",
-      "un-annotated",
-    ])
-  })
-
-  it("names an effect kind it does not know rather than dropping it", () => {
-    expect(
-      changeEffects(withEffects([{ kind: "teleport", ref: "k", id: "a" }]))
-    ).toEqual([{ verb: "teleport (unrecognized)", target: "k/a", detail: "" }])
-    expect(changeEffects(withEffects([{ ref: "k", id: "a" }]))).toEqual([
-      { verb: "unrecognized", target: "k/a", detail: "" },
-    ])
-  })
-
-  it("is empty for a row that recorded none, and never throws on junk", () => {
-    expect(changeEffects(row({ seq: 1 }))).toEqual([])
-    expect(changeEffects(row({ seq: 1, payload: {} }))).toEqual([])
-    expect(
-      changeEffects(row({ seq: 1, payload: { fold: "nonsense" } }))
     ).toEqual([])
-    expect(changeEffects(withEffects([null, 7, "x"]))).toEqual([])
+    expect(
+      affectedLines(
+        row({
+          seq: 1,
+          affected: [null, 7, { id: "a" }] as unknown as ChangeRow["affected"],
+        })
+      )
+    ).toEqual([])
   })
 
-  it("keeps the effects key out of the leftover JSON the detail dumps", () => {
-    // The detail band renders every unnamed payload key as raw JSON. The
-    // effects key is claimed here precisely so it never lands there.
-    expect(NAMED_PAYLOAD_KEYS.has("fold")).toBe(true)
+  it("claims every payload key the detail band renders by hand", () => {
+    // The detail band renders every unnamed payload key as raw JSON; these
+    // are the ones it spells out itself.
+    expect([...NAMED_PAYLOAD_KEYS].sort()).toEqual([
+      "created",
+      "managers",
+      "properties",
+      "restored",
+      "states",
+    ])
   })
 })
 

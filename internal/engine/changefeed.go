@@ -136,42 +136,111 @@ func (ds *dataset) queryChanges(ctx context.Context, b *builder, order string, l
 		if err != nil {
 			return nil, err
 		}
-		ds.redactChangePayload(&c)
+		projectAffected(&c)
 		out = append(out, c)
 	}
 	return out, rows.Err()
 }
 
-// redactChangePayload blanks sensitive property VALUES inside a change's
-// replayable fold effects before the row leaves the engine. The changelog
-// stores refs for secrets, but a digest, a ref, or a legacy plaintext
-// written before secrets moved into the store would otherwise ride the feed,
-// the watch stream and GraphQL in the clear: the one read surface recordOf's
-// redaction did not cover. The stored row is untouched: this shapes the
-// READ. Rebuild replays raw SQL rows and never comes through here, so the
-// fold still folds exactly what the log holds.
+// projectAffected turns a row's stored replay effects into the public change
+// event and takes the effects off the row: `affected` names every record the
+// entry moved, with the version each reached and whether it was tombstoned or
+// purged, and nothing else of the fold leaves the engine (decision 0061). The
+// stored row is untouched: this shapes the READ, and a rebuild reads the
+// table's own rows through foldEntry, never through here. Taking the effects
+// off is also what keeps a sensitive value out of the feed: the fold carries
+// a secret's opaque ref, a digest, or a legacy plaintext, and the event
+// carries no value of any property.
 //
-// A kind that no longer resolves (uninstalled bundle, quarantined authority)
-// fails CLOSED: with no declaration to say which properties are sensitive,
-// every string value in its delta redacts, because history written before an
-// uninstall is exactly where legacy plaintext hides.
-func (ds *dataset) redactChangePayload(c *substrate.Change) {
-	forEachRecordDeltaSet(c.Payload, func(kindRef, _ string, set map[string]any) {
-		ty, err := ds.resolveType(kindRef)
-		if err != nil || ty == nil {
-			for name, v := range set {
-				if _, isStr := v.(string); isStr {
-					set[name] = Redacted
-				}
-			}
-			return
+// One element per (kind, id), in first-touch order; a later effect on the same
+// record within the entry updates its version and deletion status, so a
+// record tombstoned and then purged in one entry reads once, deleted. A purge
+// leaves no row and so no version. Annotation, manager, former-id and resync
+// effects move no record of their own: the record they hang off is bumped or
+// rewritten by an effect beside them, or is the entry's addressed record.
+//
+// An entry that recorded no record-moving effect (written before the fold
+// carried them, or a rejection that moved nothing) names its addressed record
+// with no version, deleted when the op is a delete or a collection.
+func projectAffected(c *substrate.Change) {
+	effects, _ := c.Payload[foldPayloadKey].([]any)
+	if _, held := c.Payload[foldPayloadKey]; held {
+		delete(c.Payload, foldPayloadKey)
+		if len(c.Payload) == 0 {
+			c.Payload = nil
 		}
-		for name := range set {
-			if p, ok := ty.Prop(name); ok && p.Sensitive() {
-				set[name] = Redacted
-			}
+	}
+	var out []substrate.AffectedRecord
+	index := map[eref]int{}
+	for _, e := range effects {
+		op, ok := e.(map[string]any)
+		if !ok {
+			continue
 		}
-	})
+		kind, _ := op["kind"].(string)
+		switch foldKind(kind) {
+		case foldRecord, foldTombstone, foldPurge, foldBump:
+		default:
+			continue
+		}
+		ref := eref{Kind: stringOf(op["ref"]), ID: stringOf(op["id"])}
+		if ref.Kind == "" || ref.ID == "" {
+			continue
+		}
+		i, seen := index[ref]
+		if !seen {
+			i = len(out)
+			index[ref] = i
+			out = append(out, substrate.AffectedRecord{Kind: ref.Kind, ID: ref.ID})
+		}
+		switch foldKind(kind) {
+		case foldRecord:
+			out[i].Version, out[i].Deleted = versionOf(op["version"]), false
+		case foldTombstone:
+			out[i].Version, out[i].Deleted = versionOf(op["version"]), true
+		case foldPurge:
+			out[i].Version, out[i].Deleted = 0, true
+		case foldBump:
+			// No live write emits a bump today; the fold keeps the effect
+			// replayable (fold.go), and a history that holds one moved the
+			// record's version, so the event names it.
+			out[i].Version = versionOf(op["version"])
+		}
+	}
+	if len(out) == 0 {
+		out = []substrate.AffectedRecord{{
+			Kind: c.Kind, ID: c.RecordID,
+			Deleted: c.Op == substrate.OpDelete || c.Op == substrate.OpGC,
+		}}
+	}
+	c.Affected = out
+}
+
+func stringOf(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
+// versionOf reads an effect's stored version. The payload is decoded number
+// preserving (scanChange), so the value is a json.Number, spelled `1` by the
+// table's jsonb and `1E0` by the segment file's canonical JSON; both parse. A
+// float64 is the shape a plain decode would hand over, accepted so the
+// projection does not depend on which decoder ran.
+func versionOf(v any) int64 {
+	switch n := v.(type) {
+	case json.Number:
+		if i, err := n.Int64(); err == nil {
+			return i
+		}
+		if f, err := n.Float64(); err == nil {
+			return int64(f)
+		}
+	case float64:
+		return int64(n)
+	case int64:
+		return n
+	}
+	return 0
 }
 
 // ChangesBefore reads history newest-first: rows with seq < before, at most
