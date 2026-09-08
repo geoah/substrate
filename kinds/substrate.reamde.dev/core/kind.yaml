@@ -25,7 +25,9 @@ data:
   # gone, with the keys only it took.
   # version 15: `source` gains `published`, the origin a provider install
   # writes (decision record 0048).
-  version: 15
+  # version 16: `retired` declares the property names, enum values and states
+  # the kind has spent (decision record 0055). Additive.
+  version: 16
   names:
     singular: kind
   # the declarations this repository holds; id is the kind REFERENCE
@@ -107,8 +109,22 @@ data:
           repeated: true
           required: true
           description: the properties the index covers, in order
-    # THE ONE json LEAF IN THE META-KIND, and the reason is a self-reference no
-    # bounded schema escapes. A property declaration describes OBJECT FIELDS, and
+    # The names this kind has spent (decision record 0055). Authored, not
+    # managed: the author lists a name to retire it, the engine carries the
+    # block into every later declaration of the kind, and a listed name
+    # declared again is refused on every admission door. The second json
+    # leaf here, for the same reason as `properties`: `values` and `states`
+    # are maps of property name to a list of words, a shape the dialect
+    # cannot state, and the loader that admits the block is what holds it
+    # (vocabulary/retired.go).
+    retired:
+      type: json
+      description: the property names, enum values and states this kind retired
+        ({properties, values, states}); a listed name is refused if declared
+        again
+    # A json LEAF IN THE META-KIND (`retired`, above, is the other), and the
+    # reason here is a self-reference no bounded schema escapes. A property
+    # declaration describes OBJECT FIELDS, and
     # a field declaration is a property declaration again — so describing
     # `properties` needs a `fields` level, which puts a `fields` level into THIS
     # declaration's own row, which needs one more level to describe, and so on

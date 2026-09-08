@@ -196,10 +196,11 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 	// alone. A package with nothing to write is not touched at all.
 	upgrade := map[string]bool{}
 	keep := map[string]bool{}
-	// The kinds this upgrade will NOT rewrite, by identity: a declaration held
-	// at its stored version keeps whatever shape it has, so it is not the
-	// upgrade's business and must not be able to refuse the boot below.
-	keptKinds := map[string]bool{}
+	// The kinds and package headers this upgrade will NOT rewrite, by
+	// identity: a declaration held at its stored version keeps whatever shape
+	// it has, so it is not the upgrade's business and must not be able to
+	// refuse the boot below.
+	keptIdents := map[string]bool{}
 	for _, aname := range sortedKeys(shippedPackages(reg)) {
 		g, ok := reg.PackageByName(aname)
 		if !ok {
@@ -222,8 +223,8 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 				write = true // the shipped declaration moved forward
 			default:
 				keep[d.key()] = true // same or older than stored: never a downgrade
-				if d.typ == kindKind {
-					keptKinds[d.id] = true
+				if d.typ == kindKind || d.typ == kindPackage {
+					keptIdents[d.id] = true
 				}
 			}
 		}
@@ -244,7 +245,7 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 	// hand was refused; the boot upgrade projected it silently, leaving rows
 	// shaped one way under a declaration that said another, with nothing
 	// anywhere reporting it. A guard only one door honors is not a guard.
-	narrowings := classifyNarrowingsExcept(current, reg, upgrade, keptKinds)
+	narrowings := classifyNarrowingsExcept(current, reg, upgrade, keptIdents)
 
 	// The default check `/vocabulary/apply` takes, for the same reason the
 	// narrowing guards are here: a declared default no write could store would
@@ -252,6 +253,16 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 	// that refuses it by hand would have caught it. It needs no live rows, so it
 	// is decided before the transaction opens.
 	badDefaults := checkDeclaredDefaults(reg, upgrade)
+	// The retired-name check the same door takes (decision 0055): a shipped
+	// declaration that reuses a name this repository's stored closure retired,
+	// or a tree that dropped a stored retirement, is refused before any row
+	// moves. This door has no document merge in front of it, so a dropped list
+	// is refused here rather than carried forward.
+	retirements := retirementGuards(current, reg, upgrade, keptIdents)
+	// And the branch only this door needs: the tree retires a name this
+	// repository still declares. Nothing here prunes the kind, so the header
+	// would land beside it and the next open would refuse the stored closure.
+	retirements = append(retirements, heldRetirementGuards(current, reg, upgrade)...)
 
 	// REFUSING THE UPGRADE IS NOT REFUSING THE REPOSITORY. A guard that failed
 	// the open would take the repository down with it — and leave no way back
@@ -264,7 +275,7 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 	// This is the same answer /vocabulary/apply gives — the narrowing does not
 	// land — differing only in what it costs a caller who did not ask for it.
 	// A bad default is decided already, so the counting transaction never opens.
-	refused := badDefaults
+	refused := append(append([]string(nil), badDefaults...), retirements...)
 	if len(refused) == 0 {
 		err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 			if err := t.lockKey(registryDepKey(ds)); err != nil {
@@ -291,7 +302,7 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 		// The message is the entire interface for the migration it is asking
 		// for, so it names the repository, the kind, the property and the count.
 		ds.svc.log.Error("substrate: REFUSED to upgrade a repository's shipped vocabulary. Live rows hold the old shape, "+
-			"or a declared default no write could store. The stored declarations stand, "+
+			"a declared default no write could store, or a retired name is declared again or dropped. The stored declarations stand, "+
 			"and this binary's newer ones will not land until it is resolved",
 			"repository", ds.info.Name, "refused", strings.Join(refused, "; "))
 		return nil

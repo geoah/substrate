@@ -374,7 +374,7 @@ func TestSchemaDeleteRefusesWithInstances(t *testing.T) {
 //
 // An enum's values are the case that used to move: authored as bare scalars, they
 // were rewritten into {value, label} objects in place. The kind's own
-// `properties` is the meta-kind's one json leaf, so nothing about the row needs
+// `properties` is a json leaf of the meta-kind, so nothing about the row needs
 // them rewritten — and the stored row now says exactly what the manifest said.
 //
 // A PROPERTY TYPE's values are the one exception, and the meta-kind's declaration

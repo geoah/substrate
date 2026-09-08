@@ -17,7 +17,9 @@ package engine_test
 // harness — `shippedTree` plays binary N, the patched copy binary N+1).
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -415,4 +417,152 @@ func TestBundleUpgradeRefusesATightenedPatternWithLiveRows(t *testing.T) {
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, closure("^[a-z ]+$")); err != nil {
 		t.Fatalf("a pattern every stored value matches must land: %v", err)
 	}
+}
+
+// The boot door takes the retired-name check the apply verb takes (decision
+// 0055). A repository whose stored core header retired a kind name refuses a
+// binary that ships a kind by that name, and a binary whose tree dropped the
+// retirement: the upgrade is skipped, the open succeeds, the stored row keeps
+// the reservation.
+func TestBootUpgradeRefusesARetiredName(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := seededRepository(t)
+
+	// Binary N+1 retires `gadget` in core, an additive change that lands, and
+	// the stored header carries it.
+	retiring := shippedTree(t)
+	patchShipped(t, packageHeader(retiring, corePackage), func(doc string) string {
+		return retireShippedKind(t, doc, "gadget")
+	})
+	if err := openMoved(t, dsn, retiring); err != nil {
+		t.Fatalf("retiring a name is additive and must land: %v", err)
+	}
+	storedRetired := func(when string) {
+		t.Helper()
+		svc := openTree(t, dsn, shippedTree(t))
+		defer func() { _ = svc.Close() }()
+		ds, err := svc.Dataset(ctx, "geoah")
+		if err != nil {
+			t.Fatalf("%s: dataset: %v", when, err)
+		}
+		header := mustGet(t, ds, "substrate.reamde.dev/core/package", corePackage)
+		if got := fmt.Sprint(header.Properties["retired"]); got != "map[kinds:[gadget]]" {
+			t.Fatalf("%s: stored core header retired = %v", when, header.Properties["retired"])
+		}
+		if _, err := ds.KindByRef(ctx, corePackage+"/gadget"); err == nil {
+			t.Fatalf("%s: the retired kind is declared", when)
+		}
+	}
+	storedRetired("after the retirement landed")
+
+	// Binary N+2 ships a `gadget` kind under core, from a tree that no longer
+	// carries the retirement (a tree carrying both is refused by the loader
+	// before it opens anything): the upgrade is refused and the repository
+	// opens on the stored declarations.
+	reusing := shippedTree(t)
+	addShippedKind(t, reusing, corePackage, "gadget", "gadgets")
+	bumpPackageVersion(t, reusing, corePackage, "100")
+	svc := openTree(t, dsn, reusing)
+	if _, err := svc.Dataset(ctx, "geoah"); err != nil {
+		t.Fatalf("a refused upgrade must not fail the open: %v", err)
+	}
+	_ = svc.Close()
+	storedRetired("after a binary reused the name")
+
+	// Binary N+3 ships the tree without the block: a retirement is permanent,
+	// so the upgrade is refused whole and the stored header keeps it.
+	dropping := shippedTree(t)
+	bumpPackageVersion(t, dropping, corePackage, "101")
+	svc = openTree(t, dsn, dropping)
+	if _, err := svc.Dataset(ctx, "geoah"); err != nil {
+		t.Fatalf("a refused upgrade must not fail the open: %v", err)
+	}
+	_ = svc.Close()
+	storedRetired("after a binary dropped the retirement")
+
+	// The declared-again branch on its own: a tree at the STORED header version
+	// (99) adds gadget.yaml, a new declaration the upgrade would append while
+	// leaving the header exactly as stored, list included. Nothing drops the
+	// list, so the refusal has to come from the name being declared, and the
+	// log says so.
+	appending := shippedTree(t)
+	addShippedKind(t, appending, corePackage, "gadget", "gadgets")
+	bumpPackageVersion(t, appending, corePackage, "99")
+	var logs bytes.Buffer
+	svc, err := engine.Open(ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
+		engine.WithKindsDir(appending), engine.WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if _, err := svc.Dataset(ctx, "geoah"); err != nil {
+		t.Fatalf("a refused upgrade must not fail the open: %v", err)
+	}
+	_ = svc.Close()
+	if !strings.Contains(logs.String(), "kind substrate.reamde.dev/core/gadget: the name is retired in package substrate.reamde.dev/core; a retired name is never declared again") {
+		t.Fatalf("the refusal did not name the declared-again branch:\n%s", logs.String())
+	}
+	storedRetired("after a binary appended the retired kind")
+}
+
+// The boot upgrade never prunes, so a tree that retires a kind name this
+// repository still declares is refused: landing the header beside the kind row
+// would leave a stored closure the next open refuses as retired-and-declared.
+func TestBootUpgradeRefusesRetiringAHeldKind(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := seededRepository(t)
+
+	// Binary N+1 ships core/gadget: it lands and the repository declares it.
+	shipping := shippedTree(t)
+	addShippedKind(t, shipping, corePackage, "gadget", "gadgets")
+	if err := openMoved(t, dsn, shipping); err != nil {
+		t.Fatalf("shipping a new kind must land: %v", err)
+	}
+
+	// Binary N+2 stops shipping gadget and retires the name while this
+	// repository still holds the kind: refused, the open succeeds, the kind
+	// still resolves and the header carries no retirement.
+	retiring := shippedTree(t)
+	patchShipped(t, packageHeader(retiring, corePackage), func(doc string) string {
+		return retireShippedKind(t, doc, "gadget")
+	})
+	bumpPackageVersion(t, retiring, corePackage, "100")
+	svc := openTree(t, dsn, retiring)
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("a refused upgrade must not fail the open: %v", err)
+	}
+	if _, err := ds.KindByRef(ctx, corePackage+"/gadget"); err != nil {
+		t.Fatalf("the held kind must still resolve: %v", err)
+	}
+	header := mustGet(t, ds, "substrate.reamde.dev/core/package", corePackage)
+	if got, stored := header.Properties["retired"]; stored {
+		t.Fatalf("the retirement landed beside the held kind: %v", got)
+	}
+	_ = svc.Close()
+
+	// The repository opens again under the same tree: the stored closure is
+	// consistent, so nothing refuses the open.
+	svc = openTree(t, dsn, retiring)
+	if _, err := svc.Dataset(ctx, "geoah"); err != nil {
+		t.Fatalf("the repository must keep opening: %v", err)
+	}
+	_ = svc.Close()
+}
+
+// retireShippedKind adds `retired: {kinds: [name]}` to a shipped package
+// header, the first document of the file.
+func retireShippedKind(t *testing.T, doc, name string) string {
+	t.Helper()
+	header, rest, split := strings.Cut(doc, "\n---")
+	at := rePackageVersion.FindStringIndex(header)
+	if at == nil {
+		t.Fatal("the package header no longer declares a version")
+	}
+	header = header[:at[1]] + "\n  retired:\n    kinds:\n      - " + name + header[at[1]:]
+	if split {
+		return header + "\n---" + rest
+	}
+	return header
 }

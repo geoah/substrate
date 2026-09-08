@@ -20,7 +20,8 @@ package engine
 //     resolution to commit, an apply holds it exclusive, so no write lands a
 //     value against a declaration the apply is replacing;
 //   - deleting a type with live instances is refused, counted inside the same
-//     transaction; identities are never reused (history orphans by design);
+//     transaction; a dropped name may return unless the package retires it
+//     (history orphans by design);
 //   - repository open rebuilds the registry FROM the schema record rows, which
 //     is what retired the stored-manifest reload and its restart-to-activate
 //     hazard.
@@ -339,6 +340,7 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 			return err
 		}
 		guards = append(guards, st.strandedMappings...)
+		guards = append(guards, st.retirements...)
 		narrowed, err := narrowingGuards(t, st.narrowings)
 		if err != nil {
 			return err
@@ -448,6 +450,10 @@ type vocabularyStage struct {
 	// repository's own mapping reads `linear/issue` is refused until the
 	// mapping goes. One line per mapping, ready to join the guard list.
 	strandedMappings []string
+	// retirements names every retired name the candidate declares again, or
+	// drops from a stored list (decision 0055, retirement.go). No count: a
+	// retired name refuses whether or not a row exists.
+	retirements      []string
 	droppedCallables []droppedCallable
 	// reprojected names the kinds whose REFERENCE declarations moved, so the
 	// refs index is re-derived for their records in the apply's transaction
@@ -533,6 +539,10 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	if err != nil {
 		return nil, err
 	}
+	// Before the versions resolve: a stored retirement the incoming document
+	// omits is carried into it, so an unchanged re-apply compares equal and a
+	// retirement is never lifted by omission (decision 0055).
+	carryRetirements(&b, existing)
 	resolveDeclarationVersions(&b, existing)
 	merged := map[string]vocabulary.Document{}
 	for k, d := range existing {
@@ -655,6 +665,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		// callable loudly.
 		droppedTypes:     droppedTypes,
 		strandedMappings: strandedMappingGuards(candidate, droppedTypes),
+		retirements:      retirementGuards(current, candidate, touched, nil),
 		droppedCallables: droppedBundleCallables(current, candidate, touched),
 		reprojected:      reprojectedKinds(current, candidate, touched),
 		// Evolution-with-data: a NARROWING definition
@@ -745,11 +756,17 @@ func resolveDeclarationVersions(b *vocabularyBatch, existing map[string]vocabula
 		if stored == 0 {
 			continue
 		}
-		authority, name := vocabulary.SplitPackageRef(g)
-		b.docs = append(b.docs, vocabulary.Document{
-			Kind: vocabulary.DocPackage, ID: g,
-			Data: map[string]any{"authority": authority, "package": name, "version": stored + 1},
-		})
+		// The header travels as its STORED row says it, version moved: a bare
+		// header would drop the description and the retired kind names, and
+		// the retirement guard would then refuse the batch as un-retiring a
+		// name (decision 0055).
+		data := map[string]any{}
+		for k, v := range existing[vocabulary.DocPackage+"\x00"+g].Data {
+			data[k] = v
+		}
+		data["authority"], data["package"] = vocabulary.SplitPackageRef(g)
+		data["version"] = stored + 1
+		b.docs = append(b.docs, vocabulary.Document{Kind: vocabulary.DocPackage, ID: g, Data: data})
 		authorityVersion[g] = stored + 1
 	}
 
@@ -1145,6 +1162,11 @@ func packageDeclarations(g *vocabulary.Package) ([]declaration, error) {
 	}
 	if g.Description != "" {
 		header["description"] = g.Description
+	}
+	// The retired kind names ride the row like every other authored key, so
+	// the rebuild and the export carry the reservation (decision 0055).
+	if len(g.RetiredKinds) > 0 {
+		header["retired"] = map[string]any{"kinds": anyList(g.RetiredKinds)}
 	}
 	if err := add(vocabulary.DocPackage, kindPackage, g.Identity, header,
 		map[string]any{
