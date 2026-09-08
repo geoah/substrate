@@ -48,6 +48,10 @@ type options struct {
 	dataRoot  string
 	// segmentBytes is the changelog segment size (WithChangelogSegmentBytes).
 	segmentBytes int64
+	// catchUpBatch is the page size of the boot's table-to-file catch-up
+	// (appendFromTable); rebuildBatch when not positive. Only a test sets it
+	// (export_test.go), to put a transaction across a page boundary.
+	catchUpBatch int
 	blobs        blobbytes.Backend
 	log          *slog.Logger
 	// insecureAllowSuperuser downgrades the fail-closed role check to a warning
@@ -121,7 +125,7 @@ func WithChangelogSegmentBytes(n int64) Option { return func(o *options) { o.seg
 // server: the operator hat's `repository verify` and `reembed`. Open runs no
 // boot check and no orphan sweep, a dataset opens no changelog writer and
 // refuses every inTx write with ErrDirectoryReadOnly, and VerifyRepository
-// reports a torn tail or a table ahead of its file as findings instead of
+// reports an incomplete tail or a table ahead of its file as findings instead of
 // repairing them. Without this option a second process on the same data root
 // is a second writer, and the server's running writer refuses it with
 // ErrChangelogLocked at the first repository it opens for writing.
@@ -200,6 +204,8 @@ type service struct {
 	dataRoot string
 	// segmentBytes is the size every changelog writer rotates at.
 	segmentBytes int64
+	// catchUpBatch is the page size of the table-to-file catch-up.
+	catchUpBatch int
 	// blobs is where blob bytes live (WithBlobStore); the fs backend under
 	// the data root by default.
 	blobs blobbytes.Backend
@@ -281,6 +287,9 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 	if o.segmentBytes <= 0 {
 		o.segmentBytes = changelogfile.DefaultSegmentBytes
 	}
+	if o.catchUpBatch <= 0 {
+		o.catchUpBatch = rebuildBatch
+	}
 
 	admin, err := sql.Open("pgx", dsn)
 	if err != nil {
@@ -311,6 +320,7 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 		credKey:      credKey,
 		dataRoot:     o.dataRoot,
 		segmentBytes: o.segmentBytes,
+		catchUpBatch: o.catchUpBatch,
 		blobs:        o.blobs,
 		totpDisabled: o.insecureDisableTOTP,
 		readOnly:     o.dirReadOnly,

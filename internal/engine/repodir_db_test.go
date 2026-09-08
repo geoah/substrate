@@ -321,6 +321,11 @@ func TestChangelogFileFollowsEveryCommit(t *testing.T) {
 		if !bytes.Equal(sum[:], stamped[e.Seq]) {
 			t.Fatalf("seq %d: the line's checksum is not the row's", e.Seq)
 		}
+		// Every line this binary writes names its transaction (line format
+		// 2); a line without `txn` is the format v0.46.0 and v0.47.0 wrote.
+		if e.Txn < e.Seq {
+			t.Fatalf("seq %d carries txn %d: the line does not name its transaction", e.Seq, e.Txn)
+		}
 	}
 }
 
@@ -817,7 +822,7 @@ func TestBootRefusesAGarbledRowAboveTheFileHead(t *testing.T) {
 }
 
 // A read-only open (the operator's verify beside a running server) repairs
-// nothing: a torn tail stays on disk, a table ahead of its file stays ahead,
+// nothing: an incomplete tail stays on disk, a table ahead of its file stays ahead,
 // and VerifyRepository names both. A dataset opened this way refuses to write.
 func TestReadOnlyOpenLeavesDamageAndVerifyNamesIt(t *testing.T) {
 	t.Parallel()
@@ -864,8 +869,8 @@ func TestReadOnlyOpenLeavesDamageAndVerifyNamesIt(t *testing.T) {
 	if report.TruncatedBytes != int64(len(last)/2) {
 		t.Fatalf("truncatedBytes = %d, want %d", report.TruncatedBytes, len(last)/2)
 	}
-	if !findingContaining(report, "torn line") {
-		t.Fatalf("no finding names the torn tail: %v", report.Findings)
+	if !findingContaining(report, "incomplete transaction") {
+		t.Fatalf("no finding names the incomplete tail: %v", report.Findings)
 	}
 	if want := "the table's head is " + strconv.FormatInt(head, 10) + " and the file's is " + strconv.FormatInt(head-1, 10); !findingContaining(report, want) {
 		t.Fatalf("no finding says %q: %v", want, report.Findings)
@@ -1820,5 +1825,131 @@ func TestAResumedImportFoldsWhatTheCatchUpAppended(t *testing.T) {
 	}
 	if report := mustVerify(t, svc2, "geoah"); !report.OK || report.Head != head || report.FileHead != head {
 		t.Fatalf("the repository does not verify after the catch-up: %+v", report)
+	}
+}
+
+// lastTransaction is the seq range of the last transaction in a repository's
+// changelog files, read from the `txn` every line carries.
+func lastTransaction(t *testing.T, dir string) (first, last int64) {
+	t.Helper()
+	log, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir))
+	if err != nil {
+		t.Fatalf("open the changelog files: %v", err)
+	}
+	entries, err := log.Read(0, 0)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("the changelog is empty")
+	}
+	last = entries[len(entries)-1].Seq
+	first = last
+	for i := len(entries) - 1; i >= 0 && entries[i].Txn == last; i-- {
+		first = entries[i].Seq
+	}
+	return first, last
+}
+
+// A crash between the writer's write and its fsync can leave a prefix of a
+// transaction in the active segment. Open cuts the whole transaction back,
+// not only the torn line, so the file never opens with half a commit as
+// history; the table is then ahead by that transaction and the boot appends
+// it again, byte for byte.
+func TestBootReappendsATransactionCutInTheFile(t *testing.T) {
+	t.Parallel()
+	svc, ds, dsn := newDatasetWithDSN(t)
+	head := maxSeq(t, ds)
+	root := engine.DataRootOf(svc)
+	dir := repoDirOf(t, svc, ds)
+	_ = svc.Close()
+
+	first, last := lastTransaction(t, dir)
+	if last != head || last-first < 1 {
+		t.Fatalf("the last transaction is seq %d..%d at head %d; the test needs a multi-entry one at the head", first, last, head)
+	}
+	path := activeSegment(t, dir)
+	whole, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Tear the last line: every earlier line of the transaction is complete.
+	if err := os.WriteFile(path, whole[:len(whole)-1], 0o600); err != nil {
+		t.Fatal(err)
+	}
+	l, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.Head() != first-1 || l.TruncatedEntries != last-first {
+		t.Fatalf("after the tear: head = %d, %d complete lines cut; want %d and %d (the whole transaction)",
+			l.Head(), l.TruncatedEntries, first-1, last-first)
+	}
+
+	svc2 := mustReopen(t, dsn, root)
+	l, err = changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir))
+	if err != nil {
+		t.Fatalf("open after the boot: %v", err)
+	}
+	if l.Head() != head || l.TruncatedBytes != 0 {
+		t.Fatalf("the boot left the file at head %d (%d truncated bytes), the table is at %d", l.Head(), l.TruncatedBytes, head)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, whole) {
+		t.Fatal("the re-appended segment is not byte for byte the one the writer wrote")
+	}
+	if report := mustVerify(t, svc2, "geoah"); !report.OK {
+		t.Fatalf("verify after the boot: %+v", report)
+	}
+}
+
+// The boot's table-to-file catch-up pages the table; a page boundary inside a
+// transaction must not become an append boundary, because the segment rotates
+// after an append and a transaction never crosses a segment. Small pages and
+// a segment size every append exceeds make every page an append and every
+// append a segment, so a split would be visible to Verify's framing walk.
+func TestCatchUpAppendsWholeTransactions(t *testing.T) {
+	t.Parallel()
+	svc, ds, dsn := newDatasetWithDSN(t, engine.WithCatchUpBatch(3), engine.WithChangelogSegmentBytes(1))
+	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "one"}})
+	head := maxSeq(t, ds)
+	root := engine.DataRootOf(svc)
+	dir := repoDirOf(t, svc, ds)
+	first, last := lastTransaction(t, dir)
+	_ = svc.Close()
+	if first != last {
+		t.Fatalf("the last transaction is seq %d..%d; the test wants a one-entry transaction at the head", first, last)
+	}
+	// The whole file gone: the table is ahead by everything, and the seed and
+	// the vocabulary import are transactions of many more than three entries.
+	if err := os.RemoveAll(changelogfile.ChangelogDir(dir)); err != nil {
+		t.Fatal(err)
+	}
+
+	svc2, err := engine.Open(context.Background(), dsn,
+		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		engine.WithDataRoot(root),
+		engine.WithCredentialKey(engine.TestCredentialKey),
+		engine.WithCatchUpBatch(3),
+		engine.WithChangelogSegmentBytes(1))
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	t.Cleanup(func() { _ = svc2.Close() })
+	rep, err := changelogfile.Verify(changelogfile.ChangelogDir(dir))
+	if err != nil {
+		t.Fatalf("the caught-up files do not verify: %v (%+v)", err, rep)
+	}
+	if rep.Head != head || rep.Entries != head {
+		t.Fatalf("caught up to head %d with %d entries, the table is at %d", rep.Head, rep.Entries, head)
+	}
+	if rep.Segments >= int(head) {
+		t.Fatalf("%d segments for %d entries: the catch-up appended line by line", rep.Segments, head)
+	}
+	if report := mustVerify(t, svc2, "geoah"); !report.OK {
+		t.Fatalf("verify after the boot: %+v", report)
 	}
 }

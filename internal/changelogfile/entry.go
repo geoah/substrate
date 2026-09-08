@@ -28,6 +28,15 @@ const TSFormat = "2006-01-02T15:04:05.000000Z07:00"
 // prefix and never a silent change of meaning.
 const sumPrefix = "sha256:"
 
+// LineFormat is the line format this package writes. Format 2 lines carry
+// `txn`, the seq of the last entry of the transaction that appended them, so
+// a reader knows where a transaction ends and cuts an incomplete one whole.
+// Format 1, which v0.46.0 and v0.47.0 wrote, carried no `txn` and recorded no
+// boundary; this package still reads it, one line as one transaction, because
+// nothing can reconstruct a boundary that was never written. The manifest is
+// where a directory will name the format its lines need (#370).
+const LineFormat = 2
+
 // Entry is one changelog entry as the file carries it. Payload is the JSON
 // text Postgres stored (`payload::text`); Encode canonicalizes it, so the
 // caller never has to.
@@ -44,7 +53,56 @@ type Entry struct {
 	// only when set.
 	CausedBy   int64
 	CausedByOK bool
-	Payload    json.RawMessage
+	// Txn is the seq of the last entry of the transaction that appended this
+	// one: the line with Seq == Txn ends the transaction, and a line with
+	// Seq < Txn is followed by more of the same transaction. 0 on a format 1
+	// line, which recorded no boundary and is read as a transaction of its
+	// own (LineFormat).
+	Txn     int64
+	Payload json.RawMessage
+}
+
+// EndsTransaction reports whether this entry is the last of its transaction:
+// its Txn is its own Seq, or it carries none.
+func (e Entry) EndsTransaction() bool { return endsTransaction(e.Seq, e.Txn) }
+
+func endsTransaction(seq, txn int64) bool { return txn == 0 || txn == seq }
+
+// ErrTxnFraming is returned when a line's `txn` does not fit the transaction
+// around it: a `txn` below its own seq, or a line that does not continue the
+// transaction the line before it left open (a different `txn`, or none).
+var ErrTxnFraming = errors.New("changelogfile: line does not fit its transaction")
+
+// checkTxn refuses a `txn` below the line's own seq: a transaction cannot end
+// before an entry it contains. 0 is no frame and passes.
+func checkTxn(seq, txn int64) error {
+	if txn != 0 && txn < seq {
+		return fmt.Errorf("%w: seq %d ends its transaction at %d, before itself", ErrTxnFraming, seq, txn)
+	}
+	return nil
+}
+
+// txnFrame holds transaction boundaries across consecutive lines. open is the
+// `txn` of the transaction the last line left open, 0 when the last line
+// ended one. A segment starts with a closed frame, because a transaction
+// never crosses a segment.
+type txnFrame struct{ open int64 }
+
+// next admits the line (seq, txn) and reports whether it ends its
+// transaction.
+func (f *txnFrame) next(seq, txn int64) (ends bool, err error) {
+	if err := checkTxn(seq, txn); err != nil {
+		return false, err
+	}
+	if f.open != 0 && txn != f.open {
+		return false, fmt.Errorf("%w: seq %d carries txn %d inside the transaction ending at %d", ErrTxnFraming, seq, txn, f.open)
+	}
+	if endsTransaction(seq, txn) {
+		f.open = 0
+		return true, nil
+	}
+	f.open = txn
+	return false, nil
 }
 
 // ErrBadSum is returned by Decode when a line's `sum` does not match its
@@ -111,6 +169,8 @@ func Decode(line []byte) (Entry, [32]byte, error) {
 		case "causedBy":
 			err = json.Unmarshal(v, &e.CausedBy)
 			e.CausedByOK = err == nil
+		case "txn":
+			err = json.Unmarshal(v, &e.Txn)
 		case "payload":
 			e.Payload = append(json.RawMessage(nil), v...)
 		case "sum":
@@ -127,6 +187,9 @@ func Decode(line []byte) (Entry, [32]byte, error) {
 	}
 	if e.Payload == nil {
 		return Entry{}, sum, fmt.Errorf("changelogfile: seq %d has no payload", e.Seq)
+	}
+	if err := checkTxn(e.Seq, e.Txn); err != nil {
+		return Entry{}, sum, err
 	}
 	if !strings.HasPrefix(sumText, sumPrefix) {
 		return Entry{}, sum, fmt.Errorf("changelogfile: seq %d has no %s sum", e.Seq, sumPrefix)
@@ -156,6 +219,9 @@ func (e Entry) object() (map[string]any, error) {
 	if e.TS.IsZero() {
 		return nil, fmt.Errorf("changelogfile: seq %d has no timestamp", e.Seq)
 	}
+	if err := checkTxn(e.Seq, e.Txn); err != nil {
+		return nil, err
+	}
 	payload, err := decodeCanonical(e.Payload)
 	if err != nil {
 		return nil, fmt.Errorf("changelogfile: seq %d: payload: %w", e.Seq, err)
@@ -172,6 +238,9 @@ func (e Entry) object() (map[string]any, error) {
 	}
 	if e.CausedByOK {
 		obj["causedBy"] = e.CausedBy
+	}
+	if e.Txn != 0 {
+		obj["txn"] = e.Txn
 	}
 	return obj, nil
 }

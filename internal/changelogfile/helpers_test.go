@@ -9,21 +9,44 @@ import (
 	"time"
 )
 
-// entryAt is a well-formed entry at seq, with a payload that names the seq so
-// two entries never encode alike.
+// entryAt is a well-formed entry at seq, a transaction of its own, with a
+// payload that names the seq so two entries never encode alike.
 func entryAt(seq int64) Entry {
 	return Entry{
 		Seq: seq, TS: time.Date(2026, 9, 5, 10, 0, 0, int(seq)*1000, time.UTC),
 		Actor: "api", Principal: "k7abc", Op: "put",
 		RecordID: fmt.Sprintf("rec%d", seq), Kind: "ada.example.com/task",
+		Txn:     seq,
 		Payload: json.RawMessage(fmt.Sprintf(`{"seq":%d,"n":1.50}`, seq)),
 	}
 }
 
+// entriesFrom is n entries from first, each a transaction of its own.
 func entriesFrom(first, n int64) []Entry {
 	out := make([]Entry, 0, n)
 	for s := first; s < first+n; s++ {
 		out = append(out, entryAt(s))
+	}
+	return out
+}
+
+// txnFrom is n entries from first framed as ONE transaction: every entry's
+// Txn is the last seq.
+func txnFrom(first, n int64) []Entry {
+	out := entriesFrom(first, n)
+	for i := range out {
+		out[i].Txn = first + n - 1
+	}
+	return out
+}
+
+// unframed strips the transaction frame: the format 1 line v0.46.0 and
+// v0.47.0 wrote.
+func unframed(entries []Entry) []Entry {
+	out := make([]Entry, len(entries))
+	for i, e := range entries {
+		e.Txn = 0
+		out[i] = e
 	}
 	return out
 }

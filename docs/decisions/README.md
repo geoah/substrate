@@ -201,4 +201,5 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0054](0054-a-repository-moves-between-host-keys-through-an-offline-rewrap.md) | A repository moves between host keys through an offline rewrap of its manifest | accepted |
 | [0055](0055-a-retired-name-is-declared-and-never-inferred-from-a-prune.md) | A retired name is a declared reservation, never inferred from a prune | accepted |
 | [0056](0056-a-change-cursor-is-a-seq-under-a-history-generation.md) | A change cursor is a seq under a history generation | accepted |
+| [0057](0057-a-changelog-line-names-its-transaction-and-an-unfinished-one-is-cut-whole.md) | A changelog line names its transaction, and an unfinished transaction is cut whole | accepted |
 | [0058](0058-a-graphql-name-always-carries-the-authority.md) | A non-core kind's GraphQL name always carries its full authority | accepted |

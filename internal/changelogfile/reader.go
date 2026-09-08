@@ -33,8 +33,9 @@ type segment struct {
 	Segment
 	// last is the seq of the segment's last line, First-1 when it has none.
 	last int64
-	// end is how many bytes of the file hold complete lines. It is the size,
-	// except on an active segment with a torn tail that Verify left in place.
+	// end is how many bytes of the file hold complete transactions. It is the
+	// size, except on an active segment with an incomplete tail that
+	// OpenReadOnly left in place.
 	end int64
 }
 
@@ -45,35 +46,49 @@ type Log struct {
 	dir      string
 	segments []segment
 	head     int64
-	// TruncatedBytes is the length of the torn tail on the active segment:
-	// the bytes after its last newline, which a crash mid-append leaves
-	// behind. Open cut them from the file; OpenReadOnly and Verify only
-	// counted them.
+	// TruncatedBytes is the length of the incomplete tail on the active
+	// segment: every byte after the last line that ends a transaction, which
+	// is a torn last line and, before it, the complete lines of the same
+	// unfinished transaction. A crash between the writer's write and its
+	// fsync leaves such a tail. Open cut it from the file; OpenReadOnly and
+	// Verify only counted it.
 	TruncatedBytes int64
-	// repaired records that the torn tail, if any, was cut: only such a Log
-	// may back a Writer, because an append after a torn tail would glue two
-	// half-lines into one unreadable one.
+	// TruncatedEntries is how many complete lines the tail held: the entries
+	// of the unfinished transaction, which never became history.
+	TruncatedEntries int64
+	// repaired records that the incomplete tail, if any, was cut: only such
+	// a Log may back a Writer, because an append after a torn line would
+	// glue two half-lines into one unreadable one, and an append after a
+	// half transaction would make it whole history.
 	repaired bool
 }
 
 // Open reads a changelog directory and checks it: every finished segment
 // hashes to its sidecar, the segments are contiguous from seq 1, and every
-// line of the active segment decodes with a verified checksum and a gapless
-// seq. The one damage it repairs is a torn final line on the active segment,
-// which it truncates away and reports in TruncatedBytes. Any other damage is
-// a named error, and nothing is changed. A missing directory opens as an
-// empty log with head 0.
+// line of the active segment decodes with a verified checksum, a gapless seq
+// and a `txn` that fits the transaction around it. The one damage it repairs
+// is an incomplete final transaction on the active segment: a torn last line
+// and any complete lines of the same transaction before it, which it
+// truncates away together and reports in TruncatedBytes and
+// TruncatedEntries. The head is then the last seq of the last complete
+// transaction, so a caller that holds the whole transaction elsewhere (the
+// `changelog` table) appends it again from there, and one that does not has
+// lost exactly the transaction that never finished. Any other damage is a
+// named error, and nothing is changed. A missing directory opens as an empty
+// log with head 0.
 //
 // The truncation is a write, so it is done under the directory's writer lock
-// and refused with ErrLocked while another process holds it: a line that
-// looks torn to a second process may be one the live writer is still writing.
+// and refused with ErrLocked while another process holds it: a tail that
+// looks incomplete to a second process may be one the live writer is still
+// writing.
 func Open(dir string) (*Log, error) { return open(dir, true) }
 
 // OpenReadOnly reads and checks a changelog directory exactly as Open does
-// but changes nothing: a torn tail is counted in TruncatedBytes and left in
-// place, and Read and Walk stop before it. It is for readers that must not
-// write, an operator's verify or an inspection of a directory another process
-// may be appending to. A Log opened this way cannot back a Writer.
+// but changes nothing: an incomplete tail is counted in TruncatedBytes and
+// TruncatedEntries and left in place, and Read and Walk stop before it. It is
+// for readers that must not write, an operator's verify or an inspection of a
+// directory another process may be appending to. A Log opened this way cannot
+// back a Writer.
 func OpenReadOnly(dir string) (*Log, error) { return open(dir, false) }
 
 func open(dir string, repair bool) (*Log, error) {
@@ -112,16 +127,16 @@ func open(dir string, repair bool) (*Log, error) {
 			if i != len(list)-1 {
 				return nil, fmt.Errorf("%w: %s", ErrSegmentUnfinished, s.Name)
 			}
-			last, end, err := scanActive(path, s.Name, s.First)
+			last, end, cut, err := scanActive(path, s.Name, s.First)
 			if err != nil {
 				return nil, err
 			}
 			seg.last, seg.end = last, end
 			if end < s.Size {
-				l.TruncatedBytes = s.Size - end
+				l.TruncatedBytes, l.TruncatedEntries = s.Size-end, cut
 				if repair {
 					if err := truncateLocked(dir, path, end); err != nil {
-						return nil, fmt.Errorf("changelogfile: %s: cut torn tail: %w", s.Name, err)
+						return nil, fmt.Errorf("changelogfile: %s: cut incomplete tail: %w", s.Name, err)
 					}
 					seg.Size = end
 				}
@@ -135,40 +150,53 @@ func open(dir string, repair bool) (*Log, error) {
 }
 
 // scanActive decodes every complete line of the active segment, checking
-// checksums and that seqs run gaplessly from first. It returns the last seq
-// and the offset just past the last newline: bytes after it are a torn tail.
-func scanActive(path, name string, first int64) (last, end int64, err error) {
+// checksums, that seqs run gaplessly from first and that each line's `txn`
+// fits the transaction around it. It returns the last seq of the last
+// complete transaction, the offset just past that transaction's last newline,
+// and how many complete lines lie after it: those lines and the torn line
+// after them, if any, are the incomplete tail.
+func scanActive(path, name string, first int64) (last, end, cut int64, err error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	defer func() { _ = f.Close() }()
 	lr := newLineReader(f, MaxLineBytes)
 	expected := first
+	last = first - 1
+	var frame txnFrame
 	for {
 		line, start, complete, err := lr.next()
 		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
-			return 0, 0, fmt.Errorf("changelogfile: %s: line at byte %d: %w", name, start, err)
+			return 0, 0, 0, fmt.Errorf("changelogfile: %s: line at byte %d: %w", name, start, err)
 		}
 		if !complete {
-			// The torn tail: the only line a crash leaves behind, and the
-			// only one not held to the checksum.
+			// The torn line: the only one a crash leaves half written, and
+			// the only one not held to the checksum.
 			break
 		}
 		e, _, err := Decode(line)
 		if err != nil {
-			return 0, 0, fmt.Errorf("changelogfile: %s: line at byte %d: %w", name, start, err)
+			return 0, 0, 0, fmt.Errorf("changelogfile: %s: line at byte %d: %w", name, start, err)
 		}
 		if e.Seq != expected {
-			return 0, 0, fmt.Errorf("%w: %s: line at byte %d has seq %d, want %d", ErrSeqGap, name, start, e.Seq, expected)
+			return 0, 0, 0, fmt.Errorf("%w: %s: line at byte %d has seq %d, want %d", ErrSeqGap, name, start, e.Seq, expected)
+		}
+		ends, err := frame.next(e.Seq, e.Txn)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("%s: line at byte %d: %w", name, start, err)
 		}
 		expected++
-		end = lr.off
+		if ends {
+			last, end, cut = e.Seq, lr.off, 0
+		} else {
+			cut++
+		}
 	}
-	return expected - 1, end, nil
+	return last, end, cut, nil
 }
 
 // truncateLocked cuts path to size bytes under the directory's writer lock, so
@@ -260,19 +288,28 @@ func (l *Log) Read(after int64, limit int) ([]Entry, error) {
 }
 
 // Walk streams every entry from seq 1 to the head, verifying each line's
-// checksum and the seq sequence, and stops at the first error fn returns.
+// checksum, the seq sequence and the transaction framing (every line fits the
+// transaction before it, and no transaction crosses a segment), and stops at
+// the first error fn returns.
 func (l *Log) Walk(fn func(Entry) error) error {
 	var expected int64 = 1
+	var frame txnFrame
 	for _, seg := range l.segments {
 		err := l.scanSegment(seg, 0, func(e Entry) (bool, error) {
 			if e.Seq != expected {
 				return false, fmt.Errorf("%w: %s has seq %d, want %d", ErrSeqGap, seg.Name, e.Seq, expected)
+			}
+			if _, err := frame.next(e.Seq, e.Txn); err != nil {
+				return false, fmt.Errorf("%s: %w", seg.Name, err)
 			}
 			expected++
 			return true, fn(e)
 		})
 		if err != nil {
 			return err
+		}
+		if frame.open != 0 {
+			return fmt.Errorf("%w: %s ends inside the transaction ending at seq %d", ErrTxnFraming, seg.Name, frame.open)
 		}
 	}
 	return nil
@@ -325,9 +362,11 @@ type Report struct {
 	Entries int64
 	// Head is the seq of the last entry, 0 for an empty log.
 	Head int64
-	// TruncatedBytes is the length of a torn tail on the active segment, left
-	// in place: Verify changes nothing.
-	TruncatedBytes int64
+	// TruncatedBytes and TruncatedEntries are the incomplete tail on the
+	// active segment, left in place: Verify changes nothing. See
+	// Log.TruncatedBytes.
+	TruncatedBytes   int64
+	TruncatedEntries int64
 }
 
 // Verify checks a changelog directory the way Open does and then walks every
@@ -338,7 +377,7 @@ func Verify(dir string) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-	r := Report{Segments: len(l.segments), Head: l.head, TruncatedBytes: l.TruncatedBytes}
+	r := Report{Segments: len(l.segments), Head: l.head, TruncatedBytes: l.TruncatedBytes, TruncatedEntries: l.TruncatedEntries}
 	err = l.Walk(func(Entry) error {
 		r.Entries++
 		return nil

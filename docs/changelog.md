@@ -135,25 +135,42 @@ under `SUBSTRATE_DATA_ROOT`
 one object per line, keys sorted, the checksum in `sum`:
 
 ```json
-{"actor":"api","kind":"samples.substrate.reamde.dev/tasks/task","op":"put","payload":{"created":true,"properties":["name","dueAt"],"values":{"…":"…"}},"principal":"k7…","recordId":"kq3v9x2m41pf","seq":4190,"sum":"sha256:5f0c…","ts":"2026-08-04T10:00:00.183742Z"}
+{"actor":"api","kind":"samples.substrate.reamde.dev/tasks/task","op":"put","payload":{"created":true,"properties":["name","dueAt"],"values":{"…":"…"}},"principal":"k7…","recordId":"kq3v9x2m41pf","seq":4190,"sum":"sha256:5f0c…","ts":"2026-08-04T10:00:00.183742Z","txn":4191}
 ```
 
 `sum` is `sha256:` plus the hex digest of the same line with the `sum` key
 absent, and the `hash` column and the wire field hold the same 32 bytes.
-`causedBy` appears only on an entry a delivery caused. A segment is named by
-the seq of its first line (`000000000000001.ndjson`); the highest-numbered one
-is the active segment and grows. When it passes
+`causedBy` appears only on an entry a delivery caused. `txn` is the seq of the
+last entry of the transaction that appended the line: a transaction of one
+entry has `txn` equal to `seq`, and a merge, which writes the loser's
+tombstone and the winner's entry in one commit, gives both lines the second
+one's seq. The `changelog.txn` column holds the same value. A segment is named
+by the seq of its first line (`000000000000001.ndjson`); the highest-numbered
+one is the active segment and grows. When it passes
 `SUBSTRATE_CHANGELOG_SEGMENT_BYTES` (256 MiB by default) the writer finishes
 it with a `.sha256` sidecar holding the digest of the whole file and opens the
-next. A finished segment never changes.
+next. A finished segment never changes. One transaction is one append, and
+the segment rotates only after an append, so a transaction never crosses a
+segment, however large it is.
 
 Postgres commits first and the file follows, so a crash can leave the file one
 transaction behind; the server appends the missing entries at the next boot
 ([what happens at boot](operations.md#what-happens-at-boot)). A reader accepts
-exactly one kind of damage, a torn final line in the active segment, which it
-discards. A bad `sum`, a seq that does not follow the previous one, or a
-finished segment whose sidecar does not match is a named refusal, not a
-repair.
+exactly one kind of damage, an unfinished transaction at the end of the active
+segment: a torn last line and, before it, the complete lines that carry the
+same `txn`. It cuts them together, back to the last line that ends its
+transaction, so half a commit never opens as history; the server then appends
+the transaction again from the table, and a restore from a copy of the
+directory loses that transaction whole, never in part. A bad `sum`, a seq
+that does not follow the previous one, a line whose `txn` does not fit the
+transaction around it, or a finished segment whose sidecar does not match is
+a named refusal, not a repair.
+
+Segments written by v0.46.0 and v0.47.0 carry no `txn`. A reader takes such a
+line as a transaction of its own, which is how those releases read it: no
+boundary was recorded, and none is reconstructed. A directory this release
+writes does not open under either of them
+([decision 0057](decisions/0057-a-changelog-line-names-its-transaction-and-an-unfinished-one-is-cut-whole.md)).
 
 What the checksum proves: an entry is undamaged, in the file and in the table,
 and the two agree. What it does not prove: authenticity. Whoever can write the
@@ -187,7 +204,12 @@ mint a token, fails as an internal error.
 The refusal is the point. Without it an old binary opens a store it cannot
 replay, serves it for weeks, and fails only when somebody runs `repository
 rebuild`, the day the changelog had to be replayable. The changelog dialect is
-1 today, and a repository's stored dialect is never on the wire: what
+3 today: 1 was the changelog while `link` and `unlink` were ops, 2 the changelog after
+references replaced them, and 3 the entry that names its transaction (`txn`,
+covered by the checksum), which a dialect 2 binary would silently re-stamp
+away at boot
+([decision 0057](decisions/0057-a-changelog-line-names-its-transaction-and-an-unfinished-one-is-cut-whole.md)).
+A repository's stored dialect is never on the wire: what
 [API discovery](api.md#discovery) reports is the binary's maximum.
 
 `repository rebuild` reads the stamp again, under the changelog lock and

@@ -236,8 +236,10 @@ on the box, through the DSN.
 - **The data root is reconciled with the `repositories` table**, directory
   by directory and row by row, before anything else writes. Five cases: a
   directory and a row whose heads and last checksums agree open; a table ahead
-  of its file (a crash between commit and append) has the missing entries
-  appended to the file and its sealed files rewritten from the table; a file
+  of its file (a crash between commit and append, or an unfinished
+  transaction at the end of the active segment, which the open cuts whole)
+  has the missing entries appended to the file, whole transactions at a time,
+  and its sealed files rewritten from the table; a file
   ahead of its table, or a directory with no row, is **imported**, which
   creates the row from `repository.json`, loads `sealed/` into the table,
   inserts the missing entries with their checksums and folds them through
@@ -405,8 +407,9 @@ backup.
 **Copy the root at any moment, then verify the copy.** Finished segments and
 blobs never change, the active segment only grows, and the manifest, the
 sidecars and the sealed files are replaced atomically, so a copy taken
-mid-write is usually consistent or short by one torn last line, which the
-importer discards. Two windows remain: a copy that reads a segment while the
+mid-write is usually consistent or short by its last transaction, which the
+importer cuts whole (every line names the seq its transaction ends at, so a
+prefix of one is never taken for history). Two windows remain: a copy that reads a segment while the
 server finishes it can hold the segment with a sidecar that does not match
 yet, and a copy that reads `sealed/` before `changelog/` can hold a line whose
 sealed file it missed. So a copy is a backup once `repository verify` passes
@@ -581,8 +584,8 @@ directly and hold no token. They need `--dsn` (or `DATABASE_URL`) and
 **Three of them run beside a live server; three need it stopped; one takes no
 database.** `repository list`, `repository inspect` and `repository verify`
 read: `verify` opens the engine read-only, so it runs no boot check, appends
-nothing and reports a torn tail or a table ahead of its file as a finding
-instead of repairing it. `repository rebuild`, `repository rotate-generation`
+nothing and reports an unfinished final transaction or a table ahead of its file
+as a finding instead of repairing it. `repository rebuild`, `repository rotate-generation`
 and `user reset` write, so each opens the repository as its changelog writer,
 and a running server holds that lock: the command refuses, naming the lock,
 until the server is stopped. `repository rewrap` acts on a copied directory

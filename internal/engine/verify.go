@@ -33,12 +33,15 @@ type VerifyReport struct {
 	Head    int64 `json:"head"`
 	// HeadHash is the head entry's checksum, hex.
 	HeadHash string `json:"headHash,omitempty"`
-	// FileHead, Segments and TruncatedBytes are the changelog files': the
-	// last seq, the number of segment files, and a torn tail left on the
-	// active segment (which the next Open cuts).
-	FileHead       int64 `json:"fileHead"`
-	Segments       int   `json:"segments"`
-	TruncatedBytes int64 `json:"truncatedBytes,omitempty"`
+	// FileHead, Segments, TruncatedBytes and TruncatedEntries are the
+	// changelog files': the last seq of the last complete transaction, the
+	// number of segment files, and the incomplete tail left on the active
+	// segment (its bytes and the complete lines among them), which the next
+	// Open cuts.
+	FileHead         int64 `json:"fileHead"`
+	Segments         int   `json:"segments"`
+	TruncatedBytes   int64 `json:"truncatedBytes,omitempty"`
+	TruncatedEntries int64 `json:"truncatedEntries,omitempty"`
 	// SealedRows and SealedFiles count the sealed table and its mirror.
 	SealedRows  int           `json:"sealedRows"`
 	SealedFiles int           `json:"sealedFiles"`
@@ -106,12 +109,16 @@ func (s *service) VerifyRepository(ctx context.Context, username string) (Verify
 	// sequence. A directory that does not open is one finding, and the table
 	// is still walked so the report says what the table holds.
 	fileReport, fileErr := changelogfile.Verify(changelogfile.ChangelogDir(dir))
-	report.FileHead, report.Segments, report.TruncatedBytes = fileReport.Head, fileReport.Segments, fileReport.TruncatedBytes
+	report.FileHead, report.Segments = fileReport.Head, fileReport.Segments
+	report.TruncatedBytes, report.TruncatedEntries = fileReport.TruncatedBytes, fileReport.TruncatedEntries
 	if fileErr != nil {
 		found(fmt.Sprintf("file: %v", fileErr))
 	}
+	// A finding, not a refusal: beside a live server the tail can be a
+	// transaction the writer is still writing, and verify repairs nothing.
 	if report.TruncatedBytes > 0 {
-		found(fmt.Sprintf("file: the active segment ends in a torn line of %d bytes", report.TruncatedBytes))
+		found(fmt.Sprintf("file: the active segment ends in an incomplete transaction: %d bytes past the last complete one, %d complete line(s) among them",
+			report.TruncatedBytes, report.TruncatedEntries))
 	}
 	var log *changelogfile.Log
 	if fileErr == nil {
@@ -122,8 +129,10 @@ func (s *service) VerifyRepository(ctx context.Context, username string) (Verify
 	}
 
 	// The table, row by row, each checksum recomputed and, where the file has
-	// the seq, compared with the line's.
+	// the seq, compared with the line's; and the transaction frame, so a
+	// `txn` the boot's writer would refuse is named here first.
 	expected := int64(1)
+	var openTxn int64
 	for {
 		page, err := scanChecksumPage(ctx, tx, expected-1, rebuildBatch)
 		if err != nil {
@@ -152,6 +161,18 @@ func (s *service) VerifyRepository(ctx context.Context, username string) (Verify
 				expected = row.entry.Seq
 			}
 			expected++
+			switch txn := row.entry.Txn; {
+			case txn != 0 && txn < row.entry.Seq:
+				found(fmt.Sprintf("seq %d ends its transaction at %d, before itself", row.entry.Seq, txn))
+				openTxn = 0
+			case openTxn != 0 && txn != openTxn:
+				found(fmt.Sprintf("seq %d carries txn %d inside the transaction ending at %d", row.entry.Seq, txn, openTxn))
+				openTxn = 0
+			case txn == 0 || txn == row.entry.Seq:
+				openTxn = 0
+			default:
+				openTxn = txn
+			}
 			report.Entries++
 			report.Head = row.entry.Seq
 			report.HeadHash = ""
@@ -183,6 +204,9 @@ func (s *service) VerifyRepository(ctx context.Context, username string) (Verify
 				found(fmt.Sprintf("seq %d: the file's checksum is not the table's", row.entry.Seq))
 			}
 		}
+	}
+	if openTxn != 0 {
+		found(fmt.Sprintf("the table ends inside the transaction ending at seq %d", openTxn))
 	}
 	if log != nil && report.FileHead != report.Head {
 		found(fmt.Sprintf("the table's head is %d and the file's is %d", report.Head, report.FileHead))
@@ -230,7 +254,7 @@ type checksumRow struct {
 // text.
 func scanChecksumPage(ctx context.Context, db dbx, after int64, limit int) ([]checksumRow, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT seq, ts, actor, principal, op, record_id, kind, payload::text, caused_by, hash FROM changelog
+		SELECT seq, ts, actor, principal, op, record_id, kind, payload::text, caused_by, txn, hash FROM changelog
 		WHERE seq > $1 ORDER BY seq LIMIT $2`, after, limit)
 	if err != nil {
 		return nil, err
@@ -240,13 +264,16 @@ func scanChecksumPage(ctx context.Context, db dbx, after int64, limit int) ([]ch
 	for rows.Next() {
 		var r checksumRow
 		var ts time.Time
-		var causedBy sql.NullInt64
+		var causedBy, txn sql.NullInt64
 		if err := rows.Scan(&r.entry.Seq, &ts, &r.entry.Actor, &r.entry.Principal, &r.entry.Op, &r.entry.RecordID,
-			&r.entry.Kind, &r.entry.PayloadText, &causedBy, &r.hash); err != nil {
+			&r.entry.Kind, &r.entry.PayloadText, &causedBy, &txn, &r.hash); err != nil {
 			return nil, err
 		}
 		r.entry.TS = ts.UTC()
 		r.entry.CausedBy, r.entry.CausedByOK = causedBy.Int64, causedBy.Valid
+		// NULL on a row v0.46.0 or v0.47.0 stamped: no boundary was recorded,
+		// and the line is written without one (changelogfile.LineFormat).
+		r.entry.Txn = txn.Int64
 		out = append(out, r)
 	}
 	return out, rows.Err()

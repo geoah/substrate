@@ -132,7 +132,7 @@ func writerErr(err error) error {
 	return err
 }
 
-// directoryOpenErr is writerErr for changelogfile.Open, whose torn-tail cut
+// directoryOpenErr is writerErr for changelogfile.Open, whose tail cut
 // runs under the lock: locked is locked, anything else is divergence.
 func directoryOpenErr(err error) error {
 	if errors.Is(err, changelogfile.ErrLocked) {
@@ -168,8 +168,10 @@ type reconcileOutcome struct {
 	// Entries is how many entries moved: appended to the file, or imported
 	// into the table.
 	Entries int64
-	// TruncatedBytes is the torn tail Open cut from the active segment.
-	TruncatedBytes int64
+	// TruncatedBytes and TruncatedEntries are the incomplete tail Open cut
+	// from the active segment: its bytes, and the complete lines among them.
+	TruncatedBytes   int64
+	TruncatedEntries int64
 	// StrayRepositoryID is the id of a live self-description record that is
 	// not the repository's id: what the changelog of a pre-authority binary
 	// holds, under the random id it minted. correctSelfDescription moves it.
@@ -473,7 +475,7 @@ func (s *service) logReconcile(out reconcileOutcome) {
 		attrs = append(attrs, "entries", out.Entries)
 	}
 	if out.TruncatedBytes > 0 {
-		attrs = append(attrs, "truncatedBytes", out.TruncatedBytes)
+		attrs = append(attrs, "truncatedBytes", out.TruncatedBytes, "truncatedEntries", out.TruncatedEntries)
 	}
 	if out.Action == reconcileSkipped {
 		s.log.Warn("substrate: repository directory has no row and no manifest; left alone", attrs...)
@@ -541,7 +543,7 @@ func (s *service) bareDataset(repo Repository, db *sql.DB, dir string) *dataset 
 }
 
 // reconcileDir is the head comparison and its consequences over the dataset's
-// directory: it opens the changelog (repairing a torn tail), compares heads and
+// directory: it opens the changelog (cutting an incomplete tail), compares heads and
 // the common tail, appends what the table has and the file lacks, imports what
 // the file has and the table lacks when allowed, and then mirrors the sealed
 // store in the same direction. It runs on a bare dataset, which has no writer:
@@ -556,7 +558,7 @@ func (ds *dataset) reconcileDir(ctx context.Context, out *reconcileOutcome, allo
 	if err != nil {
 		return directoryOpenErr(err)
 	}
-	out.TruncatedBytes = log.TruncatedBytes
+	out.TruncatedBytes, out.TruncatedEntries = log.TruncatedBytes, log.TruncatedEntries
 	fileHead := log.Head()
 	if err := compareTails(ctx, ds.db, log, min(tableHead, fileHead)); err != nil {
 		return err
@@ -568,7 +570,7 @@ func (ds *dataset) reconcileDir(ctx context.Context, out *reconcileOutcome, allo
 		if err != nil {
 			return writerErr(err)
 		}
-		n, err := appendFromTable(ctx, ds.db, w, fileHead)
+		n, err := appendFromTable(ctx, ds.db, w, fileHead, ds.svc.catchUpBatch)
 		if cerr := w.Close(); err == nil {
 			err = cerr
 		}
@@ -675,7 +677,17 @@ func compareTails(ctx context.Context, q dbx, log *changelogfile.Log, head int64
 }
 
 // appendFromTable appends every table row above the writer's head (after) to
-// the file, in pages, and returns how many it wrote.
+// the file, in pages of batch rows, and returns how many it wrote.
+//
+// Every append is whole transactions: the writer refuses anything else, and
+// rotating only after an append is what keeps a transaction inside one
+// segment. A page is trimmed back to its last row that ends a transaction, so
+// a batch stays at most batch rows and the trimmed rows lead the next page;
+// only a page with no boundary at all, one transaction longer than the batch,
+// is extended forward to that transaction's `txn`. The rows the table holds
+// are always whole transactions (a transaction commits or it does not), so
+// the page always reaches its `txn`; a `txn` the table cannot reach is
+// divergence.
 //
 // A row whose stamped `hash` is not the checksum of what it holds is
 // RE-STAMPED only while the file is EMPTY (after == 0). That is the one-time
@@ -686,21 +698,52 @@ func compareTails(ctx context.Context, q dbx, log *changelogfile.Log, head int64
 // by this format, so a mismatch is a row whose content or stamp changed after
 // commit, and it is refused as divergence (case 4) rather than written out as
 // history.
-func appendFromTable(ctx context.Context, q dbx, w *changelogfile.Writer, after int64) (int64, error) {
+func appendFromTable(ctx context.Context, q dbx, w *changelogfile.Writer, after int64, batch int) (int64, error) {
 	migrating := after == 0
+	head, err := tableChangelogHead(ctx, q)
+	if err != nil {
+		return 0, err
+	}
 	var n int64
 	for {
-		page, err := scanChecksumPage(ctx, q, after, rebuildBatch)
+		page, err := scanChecksumPage(ctx, q, after, batch)
 		if err != nil {
 			return n, err
 		}
 		if len(page) == 0 {
 			return n, nil
 		}
-		entries := make([]changelogfile.Entry, 0, len(page))
+		end := len(page)
+		for end > 0 && !page[end-1].entry.fileEntry().EndsTransaction() {
+			end--
+		}
+		if end > 0 {
+			page = page[:end]
+		} else {
+			// The CHECK holds `txn` at or above its seq and nothing else, so a
+			// `txn` past the head is refused before it sizes a query.
+			last := page[len(page)-1].entry
+			if last.Txn > head {
+				return n, fmt.Errorf("%w: seq %d ends its transaction at %d, past the table's head %d",
+					ErrChangelogDiverged, last.Seq, last.Txn, head)
+			}
+			rest, err := scanChecksumPage(ctx, q, last.Seq, int(last.Txn-last.Seq))
+			if err != nil {
+				return n, err
+			}
+			if int64(len(rest)) != last.Txn-last.Seq {
+				return n, fmt.Errorf("%w: seq %d ends its transaction at %d and the table holds %d of the %d rows between them",
+					ErrChangelogDiverged, last.Seq, last.Txn, len(rest), last.Txn-last.Seq)
+			}
+			page = append(page, rest...)
+		}
+		// The line encoded for the checksum check is the line the file gets,
+		// as mirrorAfterCommit hands the writer the bytes settleChecksums
+		// stamped: one canonicalization per row, not two.
+		lines := make([]changelogfile.Line, 0, len(page))
 		for _, row := range page {
 			e := row.entry.fileEntry()
-			_, sum, err := changelogfile.Encode(e)
+			line, sum, err := changelogfile.Encode(e)
 			if err != nil {
 				return n, fmt.Errorf("substrate/engine: seq %d does not encode as a changelog line: %w", e.Seq, err)
 			}
@@ -712,13 +755,13 @@ func appendFromTable(ctx context.Context, q dbx, w *changelogfile.Writer, after 
 					return n, fmt.Errorf("substrate/engine: re-stamp the checksum of seq %d: %w", e.Seq, err)
 				}
 			}
-			entries = append(entries, e)
+			lines = append(lines, changelogfile.Line{Seq: e.Seq, Txn: e.Txn, Bytes: line})
 			after = e.Seq
 		}
-		if err := w.Append(entries); err != nil {
-			return n, fmt.Errorf("substrate/engine: append seq %d..%d to the changelog file: %w", entries[0].Seq, after, err)
+		if err := w.AppendLines(lines); err != nil {
+			return n, fmt.Errorf("substrate/engine: append seq %d..%d to the changelog file: %w", lines[0].Seq, after, err)
 		}
-		n += int64(len(entries))
+		n += int64(len(lines))
 	}
 }
 
@@ -847,14 +890,17 @@ func (ds *dataset) insertEntries(ctx context.Context, entries []changelogfile.En
 		if err != nil {
 			return fmt.Errorf("%w: seq %d: %w", ErrChangelogDiverged, e.Seq, err)
 		}
-		var causedBy sql.NullInt64
+		var causedBy, txn sql.NullInt64
 		if e.CausedByOK {
 			causedBy = sql.NullInt64{Int64: e.CausedBy, Valid: true}
 		}
+		if e.Txn != 0 {
+			txn = sql.NullInt64{Int64: e.Txn, Valid: true}
+		}
 		if _, err := t.exec(`
-			INSERT INTO changelog (seq, ts, actor, principal, op, record_id, kind, payload, caused_by, hash)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)`,
-			e.Seq, e.TS, e.Actor, e.Principal, e.Op, e.RecordID, e.Kind, []byte(e.Payload), causedBy, sum[:]); err != nil {
+			INSERT INTO changelog (seq, ts, actor, principal, op, record_id, kind, payload, caused_by, txn, hash)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11)`,
+			e.Seq, e.TS, e.Actor, e.Principal, e.Op, e.RecordID, e.Kind, []byte(e.Payload), causedBy, txn, sum[:]); err != nil {
 			return fmt.Errorf("substrate/engine: import seq %d: %w", e.Seq, err)
 		}
 	}
@@ -1205,7 +1251,7 @@ func loadSealedFiles(ctx context.Context, q dbx, dir string) error {
 // the running server's lock (ErrChangelogLocked).
 //
 // A read-only service opens the directory read-only and stops at the
-// comparison: it repairs no torn tail, appends nothing, mirrors nothing and
+// comparison: it repairs no tail, appends nothing, mirrors nothing and
 // opens no writer. Either head may be ahead of the other, because the server
 // that owns the directory may be between a commit and its append, and only the
 // common tail is held to agree.
@@ -1247,7 +1293,7 @@ func (ds *dataset) openDirectory(ctx context.Context) error {
 	}
 	ds.writer = w
 	if tableHead > log.Head() {
-		n, err := appendFromTable(ctx, ds.db, w, log.Head())
+		n, err := appendFromTable(ctx, ds.db, w, log.Head(), ds.svc.catchUpBatch)
 		if err != nil {
 			return err
 		}
@@ -1286,7 +1332,7 @@ func (ds *dataset) mirrorAfterCommit(t *txn) {
 	if len(t.pending) > 0 {
 		lines := make([]changelogfile.Line, 0, len(t.pending))
 		for _, e := range t.pending {
-			lines = append(lines, changelogfile.Line{Seq: e.Seq, Bytes: e.Line})
+			lines = append(lines, changelogfile.Line{Seq: e.Seq, Txn: e.Txn, Bytes: e.Line})
 		}
 		if err := ds.writer.AppendLines(lines); err != nil {
 			ds.latchDirectoryErr(fmt.Errorf("append seq %d..%d: %w", lines[0].Seq, lines[len(lines)-1].Seq, err))
