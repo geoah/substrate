@@ -8,16 +8,20 @@ package testdb
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"net"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -205,6 +209,10 @@ func TempDirOnTmpfs() (cleanup func()) {
 // extensions. It carries no connection: Clone waits until nothing is
 // connected to the template, because Postgres refuses to copy a database
 // anyone is using.
+//
+// The role the DSN names needs CREATEDB. A role without it (42501 on CREATE
+// DATABASE) gets the slow path instead: Clone hands out NewSchema, an empty
+// schema the caller's own open migrates, and says so once on stderr.
 type Template struct {
 	key     string
 	prepare func(ctx context.Context, dsn string) error
@@ -213,6 +221,15 @@ type Template struct {
 	name string
 	err  error
 }
+
+// errNoCreateDB is build's answer when the role may not CREATE DATABASE.
+var errNoCreateDB = errors.New("the role may not CREATE DATABASE")
+
+// templates is every Template a binary built, for DropTemplates.
+var (
+	templatesMu sync.Mutex
+	templates   []*Template
+)
 
 // NewTemplate declares a template; nothing runs until the first Clone. key
 // names it in the cluster (one word, lowercase), and prepare runs once
@@ -227,7 +244,20 @@ func NewTemplate(key string, prepare func(ctx context.Context, dsn string) error
 func (tp *Template) Clone(t *testing.T) string {
 	t.Helper()
 	base := DSN(t)
-	tp.once.Do(func() { tp.name, tp.err = tp.build(base) })
+	tp.once.Do(func() {
+		tp.name, tp.err = tp.build(base)
+		if tp.err == nil {
+			templatesMu.Lock()
+			templates = append(templates, tp)
+			templatesMu.Unlock()
+		}
+		if errors.Is(tp.err, errNoCreateDB) {
+			fmt.Fprintf(os.Stderr, "testdb: %s, so every test migrates a fresh schema instead of copying the %s template; grant CREATEDB to the SUBSTRATE_TEST_DATABASE_URL role for the fast path\n", tp.err, tp.key)
+		}
+	})
+	if errors.Is(tp.err, errNoCreateDB) {
+		return NewSchema(t)
+	}
 	if tp.err != nil {
 		t.Fatalf("build the %s template database: %v", tp.key, tp.err)
 	}
@@ -245,7 +275,7 @@ func (tp *Template) Clone(t *testing.T) string {
 		defer func() { _ = db.Close() }()
 		// FORCE: a pool a test forgot to close is not a reason to leave
 		// the database behind, and the service's own pools closed already.
-		if _, err := db.ExecContext(context.Background(), `DROP DATABASE IF EXISTS `+name+` WITH (FORCE)`); err != nil {
+		if err := dropDatabase(context.Background(), db, name); err != nil {
 			t.Logf("drop database %s: %v", name, err)
 		}
 	})
@@ -256,11 +286,35 @@ func (tp *Template) Clone(t *testing.T) string {
 	return dsn
 }
 
+// DropTemplates drops every template this binary built. A suite calls it
+// from TestMain after m.Run: the container case does not need it, a server
+// somebody points the suite at does, or every run leaves one more database
+// behind. Errors are printed, not returned; the tests already ran.
+func DropTemplates() {
+	templatesMu.Lock()
+	defer templatesMu.Unlock()
+	if len(templates) == 0 || pgDSN == "" {
+		return
+	}
+	db, err := sql.Open("pgx", pgDSN)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "testdb: drop the templates: %v\n", err)
+		return
+	}
+	defer func() { _ = db.Close() }()
+	for _, tp := range templates {
+		if err := dropDatabase(context.Background(), db, tp.name); err != nil {
+			fmt.Fprintf(os.Stderr, "testdb: drop the %s template %s: %v\n", tp.key, tp.name, err)
+		}
+	}
+	templates = nil
+}
+
 // build creates the template database, installs the extensions, runs the
 // caller's preparation and waits for its connections to go away. The name
 // carries the pid, so two binaries preparing the same key at once (a plain
-// `go test ./...`) never share one, and a template a killed binary leaves
-// behind is as visible as the schemas were.
+// `go test ./...`) never share one; a template an earlier binary left behind
+// (a crash, a kill before DropTemplates) is swept first.
 func (tp *Template) build(base string) (string, error) {
 	ctx := context.Background()
 	name := fmt.Sprintf("sub_tpl_%s_%d", tp.key, os.Getpid())
@@ -269,10 +323,15 @@ func (tp *Template) build(base string) (string, error) {
 		return "", err
 	}
 	defer func() { _ = admin.Close() }()
-	if _, err := admin.ExecContext(ctx, `DROP DATABASE IF EXISTS `+name+` WITH (FORCE)`); err != nil {
-		return "", fmt.Errorf("drop a stale template: %w", err)
+	// Best effort: a leftover this role may not drop is somebody else's
+	// problem, not a reason to refuse this run its own template.
+	if err := sweepStaleTemplates(ctx, admin, tp.key); err != nil {
+		fmt.Fprintf(os.Stderr, "testdb: sweep stale %s templates: %v\n", tp.key, err)
 	}
 	if _, err := admin.ExecContext(ctx, `CREATE DATABASE `+name); err != nil {
+		if pgCode(err) == "42501" {
+			return "", fmt.Errorf("%w: %w", errNoCreateDB, err)
+		}
 		return "", fmt.Errorf("create the template: %w", err)
 	}
 	dsn, err := withDatabase(base, name)
@@ -316,10 +375,77 @@ func (tp *Template) build(base string) (string, error) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	if _, err := admin.ExecContext(ctx, `ALTER DATABASE `+name+` WITH ALLOW_CONNECTIONS false IS_TEMPLATE true`); err != nil {
+	// Not IS_TEMPLATE: the owner may clone its own database without it, and
+	// a template database cannot be dropped without unmarking it first.
+	if _, err := admin.ExecContext(ctx, `ALTER DATABASE `+name+` WITH ALLOW_CONNECTIONS false`); err != nil {
 		return "", fmt.Errorf("mark the template: %w", err)
 	}
 	return name, nil
+}
+
+// sweepStaleTemplates drops the templates of this key that earlier binaries
+// left: one whose pid is not alive on this host and that nothing is
+// connected to. A binary running beside this one keeps its own, and so does
+// one on another host, whose pid this host cannot see (it may be alive).
+func sweepStaleTemplates(ctx context.Context, db *sql.DB, key string) error {
+	rows, err := db.QueryContext(ctx, `
+		SELECT d.datname FROM pg_database d
+		WHERE d.datname LIKE $1
+		  AND NOT EXISTS (SELECT 1 FROM pg_stat_activity a WHERE a.datname = d.datname)`,
+		`sub\_tpl\_`+key+`\_%`)
+	if err != nil {
+		return fmt.Errorf("list stale templates: %w", err)
+	}
+	var stale []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		pid, err := strconv.Atoi(name[strings.LastIndexByte(name, '_')+1:])
+		if err != nil || pid == os.Getpid() || pidAlive(pid) {
+			continue
+		}
+		stale = append(stale, name)
+	}
+	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, name := range stale {
+		if err := dropDatabase(ctx, db, name); err != nil {
+			return fmt.Errorf("drop the stale template %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// pidAlive reports whether a process of that pid exists on this host: a
+// signal 0 that is delivered, or refused because the process is somebody
+// else's, both mean it is there.
+func pidAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
+}
+
+// dropDatabase drops a database nothing should be using; FORCE ends a
+// straggler rather than failing on it.
+func dropDatabase(ctx context.Context, db *sql.DB, name string) error {
+	_, err := db.ExecContext(ctx, `DROP DATABASE IF EXISTS `+name+` WITH (FORCE)`)
+	return err
+}
+
+// pgCode is the SQLSTATE of a Postgres error, empty for any other error.
+func pgCode(err error) string {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code
+	}
+	return ""
 }
 
 // createFromTemplate copies the template. A backend that was still detaching
@@ -329,7 +455,7 @@ func createFromTemplate(ctx context.Context, db *sql.DB, name, template string) 
 	var err error
 	for range 50 {
 		_, err = db.ExecContext(ctx, `CREATE DATABASE `+name+` TEMPLATE `+template)
-		if err == nil || !strings.Contains(err.Error(), "55006") {
+		if err == nil || pgCode(err) != "55006" {
 			return err
 		}
 		time.Sleep(100 * time.Millisecond)

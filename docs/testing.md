@@ -39,7 +39,13 @@ not care which:
   needs nothing but Docker.
 - **A server you point it at.** Set `SUBSTRATE_TEST_DATABASE_URL` and `testdb`
   uses that instead. This is how CI runs, against a service container the
-  runner keeps alive.
+  runner keeps alive. The role needs `CREATEDB` for the engine's fast path
+  (a template database copied per test); without it `testdb` says so once on
+  stderr and every test migrates a fresh schema instead, which works and is
+  slower. The engine's `TestMain` drops the template when the binary exits
+  (`testdb.DropTemplates`), and the next run sweeps a `sub_tpl_engine_<pid>`
+  a killed binary left behind, so a persistent server does not accumulate
+  them.
 
 ```bash
 mise run test:db                                        # a container per binary
@@ -78,8 +84,8 @@ database package. The cut is described under [What CI runs](#what-ci-runs).
 
 Almost every engine test opens its own service, creates a repository and
 imports the sample vocabulary. The database it opens is a copy of one
-template (`testdb.Template`, prepared by `engineTemplate` in
-`helpers_db_test.go`): `engine.Open` ran on the template once with no
+template (`testdb.Template`, prepared by `migratedTemplate` in
+`internal/engine/export_test.go`): `engine.Open` ran on the template once with no
 repository, so a copy holds the recorded migrations, the roles' grants and
 the shipped indexes, and `CREATE DATABASE ... TEMPLATE` hands it out per
 test. `engine.Open` still runs every boot step on the copy; what it skips is
@@ -112,7 +118,7 @@ sixteen repositories fsyncing one ext4 journal serialize on it (84 s to
 To see what a run spent, capture it as JSON once and read it:
 
 ```bash
-go test -count=1 -p 1 -json ./internal/engine/... > timing.json
+go test -count=1 -p 1 -skip '^TestLive' -json ./internal/engine/... > timing.json
 mise run test:timing -- timing.json     # per-package wall, then the 30 slowest tests
 ```
 

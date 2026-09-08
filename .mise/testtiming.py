@@ -1,6 +1,6 @@
 """Print where a `go test -json` run spent its time.
 
-    go test -count=1 -p 1 -json ./internal/engine/... > timing.json
+    go test -count=1 -p 1 -skip '^TestLive' -json ./internal/engine/... > timing.json
     mise run test:timing -- timing.json          # or: python3 .mise/testtiming.py timing.json 30
 
 One line per package (wall time, test count, sum and median of the top-level

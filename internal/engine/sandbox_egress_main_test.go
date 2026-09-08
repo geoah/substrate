@@ -29,6 +29,10 @@ func TestMain(m *testing.M) {
 	// other; on tmpfs they do not (measured: 84 s to 67 s for this binary).
 	cleanup := testdb.TempDirOnTmpfs()
 	code := m.Run()
+	// The migrated template (export_test.go migratedTemplate) is a database
+	// on whatever server the run used; a server that outlives the binary
+	// would otherwise keep one per run.
+	testdb.DropTemplates()
 	cleanup()
 	os.Exit(code)
 }
