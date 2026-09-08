@@ -42,7 +42,9 @@ var (
 	// sidecar: only the highest segment may be active.
 	ErrSegmentUnfinished = errors.New("changelogfile: a segment below the highest has no sidecar")
 	// ErrSegmentEmpty is returned when a finished segment holds no line. The
-	// writer never finishes an empty segment, so one is damage.
+	// writer never finishes an empty segment, so one is damage. An ACTIVE
+	// segment may be empty: Open cuts an unfinished transaction that was the
+	// segment's whole content back to zero bytes.
 	ErrSegmentEmpty = errors.New("changelogfile: finished segment holds no entries")
 )
 

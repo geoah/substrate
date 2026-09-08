@@ -64,6 +64,11 @@ func ImportIncomplete(ctx context.Context, db dbx) (bool, error) {
 	return incomplete, err
 }
 
+// WithCatchUpBatch sets how many changelog rows one page of the boot's
+// table-to-file catch-up reads (appendFromTable), so a test can put a
+// transaction across a page boundary without writing five hundred entries.
+func WithCatchUpBatch(n int) Option { return func(o *options) { o.catchUpBatch = n } }
+
 // AdvisoryKeySQL is the engine's advisory-lock key expression (identity.go),
 // for a test that takes one of the engine's locks by hand: a barrier test that
 // composed the key itself would park on a lock nothing else takes.

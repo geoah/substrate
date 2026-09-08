@@ -10,6 +10,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -88,7 +89,7 @@ func TestChecksumStampedOnWriteMatchesTheFileEncoding(t *testing.T) {
 	})
 	db := rawDB(t, dsn)
 	rows, err := db.Query(`
-		SELECT seq, ts, actor, principal, op, record_id, kind, payload::text, caused_by, hash
+		SELECT seq, ts, actor, principal, op, record_id, kind, payload::text, caused_by, txn, hash
 		FROM changelog ORDER BY seq`)
 	if err != nil {
 		t.Fatalf("read the changelog: %v", err)
@@ -98,13 +99,15 @@ func TestChecksumStampedOnWriteMatchesTheFileEncoding(t *testing.T) {
 	for rows.Next() {
 		var e changelogfile.Entry
 		var ts time.Time
-		var causedBy sql.NullInt64
+		var causedBy, txn sql.NullInt64
 		var payload, hash []byte
-		if err := rows.Scan(&e.Seq, &ts, &e.Actor, &e.Principal, &e.Op, &e.RecordID, &e.Kind, &payload, &causedBy, &hash); err != nil {
+		if err := rows.Scan(&e.Seq, &ts, &e.Actor, &e.Principal, &e.Op, &e.RecordID, &e.Kind, &payload, &causedBy, &txn, &hash); err != nil {
 			t.Fatalf("scan: %v", err)
 		}
 		e.TS = ts.UTC()
 		e.CausedBy, e.CausedByOK = causedBy.Int64, causedBy.Valid
+		// The frame is a column the line carries, so the checksum covers it.
+		e.Txn = txn.Int64
 		e.Payload = json.RawMessage(payload)
 		line, sum, err := changelogfile.Encode(e)
 		if err != nil {
@@ -230,5 +233,29 @@ func TestAWrongCredentialKeyIsRefusedAtBoot(t *testing.T) {
 	t.Cleanup(func() { _ = svc2.Close() })
 	if report := mustVerify(t, svc2, "geoah"); !report.OK {
 		t.Fatalf("the store did not survive the refused boot: %+v", report.Findings)
+	}
+}
+
+// Verify frames the table as well as the file: a row whose `txn` runs past
+// the head is named as a table that ends inside a transaction, before a
+// boot's writer would refuse the row.
+func TestVerifyNamesATableTransactionThatNeverEnds(t *testing.T) {
+	t.Parallel()
+	svc, ds, dsn := newDatasetWithDSN(t)
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind:       "samples.substrate.reamde.dev/tasks/task",
+		Properties: map[string]any{"name": "framed"},
+	})
+	head := maxSeq(t, ds)
+	if _, err := rawDB(t, dsn).Exec(`UPDATE changelog SET txn = seq + 3 WHERE seq = $1`, head); err != nil {
+		t.Fatalf("tamper with the frame: %v", err)
+	}
+	report := mustVerify(t, svc, "geoah")
+	if report.OK {
+		t.Fatalf("a table ending inside a transaction verified: %+v", report)
+	}
+	want := fmt.Sprintf("the table ends inside the transaction ending at seq %d", head+3)
+	if !findingContaining(report, want) {
+		t.Fatalf("no finding says %q: %v", want, report.Findings)
 	}
 }

@@ -48,7 +48,7 @@ disk, in the database and on the wire
  "authority": "ada.example.com",
  "username": "ada",
  "createdAt": "2026-09-05T10:00:00.000000Z",
- "changelogDialect": 2,
+ "changelogDialect": 3,
  "dek": "<base64 of the DEK wrapped under SUBSTRATE_CREDENTIAL_KEY, the repositories.dek bytes>"}
 ```
 
@@ -67,11 +67,17 @@ the old `chain.go`, kept). The payload is the canonical form of what Postgres
 stored (`payload::text`), so the file and the table agree by construction.
 
 ```json
-{"actor":"api","causedBy":4188,"kind":"samples.substrate.reamde.dev/tasks/task","op":"put","payload":{...},"principal":"k7…","recordId":"kq3v9x2m41pf","seq":4190,"sum":"sha256:5f0c…","ts":"2026-08-04T10:00:00.183742Z"}
+{"actor":"api","causedBy":4188,"kind":"samples.substrate.reamde.dev/tasks/task","op":"put","payload":{...},"principal":"k7…","recordId":"kq3v9x2m41pf","seq":4190,"sum":"sha256:5f0c…","ts":"2026-08-04T10:00:00.183742Z","txn":4191}
 ```
 
 - `causedBy` is present only when set; `ts` is UTC with microseconds
   (`2006-01-02T15:04:05.000000Z`), the precision `timestamptz` stores.
+- `txn` is the seq of the last entry of the transaction that appended the
+  line (line format 2, `changelogfile.LineFormat`); the `changelog.txn`
+  column holds the same value, stamped at commit beside `hash`. The line
+  with `seq` equal to `txn` ends the transaction. Lines v0.46.0 and v0.47.0
+  wrote have no `txn` and are read as one transaction each
+  ([decision 0057](../decisions/0057-a-changelog-line-names-its-transaction-and-an-unfinished-one-is-cut-whole.md)).
 - `sum` is `sha256:` plus the lowercase hex SHA-256 of the canonical
   encoding of the same object with the `sum` key absent. It detects
   corruption and lets the boot check compare file and table entry by entry.
@@ -83,10 +89,16 @@ stored (`payload::text`), so the file and the table agree by construction.
   (default 256 MiB): the writer fsyncs, writes `<name>.sha256` (the hex
   digest of the finished file, one line), and opens the next file named by
   its first seq. A segment with a sidecar is finished and never changes.
-- A reader accepts exactly one kind of damage: a truncated final line in the
-  active segment, which it discards. Anything else, a bad `sum`, a seq that
-  does not follow the previous one, a finished segment whose sidecar digest
-  does not match, is a named error.
+- A reader accepts exactly one kind of damage: an unfinished transaction at
+  the end of the active segment, a torn final line and the complete lines of
+  the same transaction before it, which it cuts together so that no prefix
+  of a transaction is ever history. Anything else, a bad `sum`, a seq that
+  does not follow the previous one, a `txn` that does not fit the transaction
+  around it, a finished segment whose sidecar digest does not match, is a
+  named error.
+- One append is whole transactions and the segment rotates only after an
+  append, so a transaction never crosses a segment. The boot's table-to-file
+  catch-up pages the table on transaction boundaries for the same reason.
 
 Parquet was considered and rejected: its footer is written at close, so an
 actively written file is unreadable and a cron copy of it is not a valid
@@ -103,7 +115,12 @@ then the checksum is stamped. Right after `tx.Commit()` in `inTx`, the
 dataset's one file writer appends the finalized lines and fsyncs before
 watchers are signaled. The advisory lock that serializes appends already
 guarantees a single writer per repository. A crash between commit and append
-leaves the file one transaction behind, which the boot check heals.
+leaves the file one transaction behind, and a crash between the writer's
+`write()` and its `fsync()` can leave a prefix of that transaction, which the
+next open cuts back to the transaction before it; in both cases the file is
+one transaction behind the table and the boot check appends it. Without the
+table (a restore from a copy of the directory) that transaction is lost
+whole, never in part.
 
 The sealed store mirrors the same way: every insert, update and delete on
 the `sealed` table writes or removes `sealed/<ref>.json` after commit. The

@@ -12,18 +12,22 @@ package engine
 // changing what lands in a payload is not.
 
 import (
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"strings"
 	"testing"
 )
 
-// dialectTwoOps and dialectTwoEffects are the changelog vocabulary at
-// maxChangelogDialect == 2, where references absorbed edges (decision 0044):
-// `link` and `unlink` stopped being ops and `edge`/`unedge`/`edge1` stopped
-// being effects. Dialect 1 entries carrying any of the five are refused at the
-// fold by name (fold.go foldRefuses) rather than replayed into a store with no
-// pointers in it.
+// dialectTwoOps and dialectTwoEffects are the changelog vocabulary since
+// dialect 2, where references absorbed edges (decision 0044): `link` and
+// `unlink` stopped being ops and `edge`/`unedge`/`edge1` stopped being
+// effects. Dialect 1 entries carrying any of the five are refused at the fold
+// by name (fold.go foldRefuses) rather than replayed into a store with no
+// pointers in it. Dialect 3 (maxChangelogDialect) keeps this vocabulary
+// unchanged: its rung is the `txn` frame on every entry and the checksum over
+// it (decision 0057), not a spelling.
 var (
 	dialectTwoOps = []string{
 		"put", "patch", "delete", "merge", "split", "gc",
@@ -99,4 +103,28 @@ func declaredStrings(t *testing.T, file, typeName string) []string {
 		t.Fatalf("%s declares no %s constants — did the type move?", file, typeName)
 	}
 	return out
+}
+
+// A repository this binary stamps (3) is refused by a binary whose maximum is
+// 2, which is v0.46.0 and v0.47.0: the frame is invisible to their fold, so
+// the dialect is what stops their boot catch-up from re-stamping every
+// `changelog.hash` without `txn` (changelogdialect.go, rung three).
+func TestChangelogDialectThreeIsRefusedByADialectTwoBinary(t *testing.T) {
+	t.Parallel()
+	if maxChangelogDialect != 3 {
+		t.Fatalf("maxChangelogDialect = %d; the txn frame is rung 3", maxChangelogDialect)
+	}
+	err := admitChangelogDialect("geoah", maxChangelogDialect, 2)
+	if !errors.Is(err, ErrChangelogDialectNewer) {
+		t.Fatalf("a dialect 2 binary admitted a repository stamped 3: %v", err)
+	}
+	if !strings.Contains(err.Error(), "dialect 3, this binary replays <= 2") {
+		t.Fatalf("the refusal must name both numbers: %v", err)
+	}
+	if err := admitChangelogDialect("geoah", 2, maxChangelogDialect); err != nil {
+		t.Fatalf("a repository stamped 2 must open under this binary: %v", err)
+	}
+	if err := admitChangelogDialect("geoah", 0, maxChangelogDialect); err != nil {
+		t.Fatalf("an unstamped repository must open: %v", err)
+	}
 }

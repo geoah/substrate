@@ -43,6 +43,12 @@ type pendingEntry struct {
 	Kind       string
 	CausedBy   int64
 	CausedByOK bool
+	// Txn is the seq of the transaction's last entry, the same on every entry
+	// one commit appended, stamped by settleChecksums once the transaction
+	// has appended everything it will. The line carries it as `txn`, so the
+	// file's reader cuts an unfinished transaction back whole and the boot
+	// catch-up appends one whole.
+	Txn int64
 	// PayloadText is the jsonb column's own rendering (payload::text), never
 	// the bytes Go sent.
 	PayloadText []byte
@@ -55,15 +61,17 @@ func (e pendingEntry) fileEntry() changelogfile.Entry {
 		Seq: e.Seq, TS: e.TS, Actor: e.Actor, Principal: e.Principal,
 		Op: e.Op, RecordID: e.RecordID, Kind: e.Kind,
 		CausedBy: e.CausedBy, CausedByOK: e.CausedByOK,
+		Txn:     e.Txn,
 		Payload: e.PayloadText,
 	}
 }
 
-// settleChecksums stamps the checksum of every entry this transaction
-// appended, in seq order. It runs at commit (inTx), after settleFold has
-// made the last payload final, so the checksum covers the payload as stored.
-// The pending entries stay on the transaction, each with its encoded line,
-// for the segment writer that runs after commit.
+// settleChecksums stamps the checksum and the transaction frame of every
+// entry this transaction appended, in seq order. It runs at commit (inTx),
+// after settleFold has made the last payload final, so the checksum covers
+// the payload as stored and the frame covers every entry the transaction
+// appended. The pending entries stay on the transaction, each with its
+// encoded line, for the segment writer that runs after commit.
 //
 // Every refusal the writer could give the line is given HERE, before commit:
 // a line over changelogfile.MaxLineBytes rolls the transaction back, because
@@ -79,8 +87,16 @@ func (t *txn) settleChecksums() error {
 	if err := t.stampChangelogDialect(); err != nil {
 		return err
 	}
+	// The changelog lock is held from the first append to commit, so the
+	// transaction's seqs are contiguous and its last one frames them all: the
+	// file's reader knows the transaction is whole when it has read this seq.
+	txnEnd := t.pending[len(t.pending)-1].Seq
 	for i := range t.pending {
 		e := &t.pending[i]
+		if e.Seq != t.pending[0].Seq+int64(i) {
+			return fmt.Errorf("substrate/engine: the transaction's entries are not contiguous: seq %d follows %d", e.Seq, t.pending[0].Seq+int64(i)-1)
+		}
+		e.Txn = txnEnd
 		line, sum, err := changelogfile.Encode(e.fileEntry())
 		if err != nil {
 			return fmt.Errorf("substrate/engine: checksum seq %d: %w", e.Seq, err)
@@ -89,7 +105,7 @@ func (t *txn) settleChecksums() error {
 			return fmt.Errorf("%w: %w: the entry for %s %s/%s is %d bytes as a changelog line and the cap is %d",
 				substrate.ErrValidation, changelogfile.ErrLineTooLong, e.Op, e.Kind, e.RecordID, len(line), changelogfile.MaxLineBytes)
 		}
-		res, err := t.exec(`UPDATE changelog SET hash = $2 WHERE seq = $1`, e.Seq, sum[:])
+		res, err := t.exec(`UPDATE changelog SET hash = $2, txn = $3 WHERE seq = $1`, e.Seq, sum[:], txnEnd)
 		if err != nil {
 			return fmt.Errorf("substrate/engine: stamp the checksum of seq %d: %w", e.Seq, err)
 		}

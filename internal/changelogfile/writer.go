@@ -15,6 +15,13 @@ const DefaultSegmentBytes int64 = 256 << 20
 // ErrWriterClosed is returned by Append after Close.
 var ErrWriterClosed = errors.New("changelogfile: writer is closed")
 
+// ErrTxnIncomplete is returned by Append and AppendLines for a batch whose
+// last line does not end its transaction. One append is one write and one
+// fsync, and the segment rotates only after it, so a batch of whole
+// transactions is what keeps a transaction inside one write and one segment;
+// the writer refuses to start what it cannot finish.
+var ErrTxnIncomplete = errors.New("changelogfile: append does not end at a transaction boundary")
+
 // WriterOptions tunes a Writer.
 type WriterOptions struct {
 	// SegmentBytes is the size at or past which the active segment is
@@ -42,7 +49,10 @@ type Writer struct {
 	lock         *dirLock
 	// file is the active segment, nil when none is open: a fresh directory,
 	// or right after a rotation. The next Append creates the segment named
-	// head+1, so an empty segment never exists on disk.
+	// head+1, so the writer never creates an empty segment; the one empty
+	// segment that can exist is an active one Open cut back to nothing (an
+	// unfinished transaction that was its whole content), which the next
+	// Append fills.
 	file   *os.File
 	name   string
 	size   int64
@@ -52,9 +62,12 @@ type Writer struct {
 
 // Line is one entry as Encode rendered it, without the trailing newline, for
 // AppendLines: a caller that encoded the entry to stamp its checksum hands the
-// same bytes to the file rather than encoding twice.
+// same bytes to the file rather than encoding twice. Txn is the entry's Txn,
+// so the writer holds the batch to transaction boundaries without decoding
+// the bytes.
 type Line struct {
 	Seq   int64
+	Txn   int64
 	Bytes []byte
 }
 
@@ -131,9 +144,13 @@ func (w *Writer) TruncatedBytes() int64 { return w.truncated }
 
 // Append encodes the entries and writes them as lines in one write, then
 // fsyncs. The first entry's seq must be Head()+1 and each following one must
-// add one, or ErrSeqGap is returned and nothing is written. After a
-// successful append at or past SegmentBytes the active segment is finished:
-// its sidecar is written and the next Append starts a new segment.
+// add one, or ErrSeqGap is returned and nothing is written. The entries must
+// be whole transactions: each line continues the transaction before it or
+// starts one (ErrTxnFraming), and the last one ends its transaction
+// (ErrTxnIncomplete). After a successful append at or past SegmentBytes the
+// active segment is finished: its sidecar is written and the next Append
+// starts a new segment. A transaction therefore never crosses a segment,
+// however large it is.
 func (w *Writer) Append(entries []Entry) error {
 	if err := w.ready(); err != nil {
 		return err
@@ -147,14 +164,14 @@ func (w *Writer) Append(entries []Entry) error {
 		if err != nil {
 			return err
 		}
-		lines = append(lines, Line{Seq: e.Seq, Bytes: line})
+		lines = append(lines, Line{Seq: e.Seq, Txn: e.Txn, Bytes: line})
 	}
 	return w.AppendLines(lines)
 }
 
 // AppendLines is Append for entries the caller has already encoded with
 // Encode. The same checks apply: gapless seqs from Head()+1, no line over
-// MaxLineBytes, nothing written when any is refused.
+// MaxLineBytes, whole transactions, nothing written when any is refused.
 func (w *Writer) AppendLines(lines []Line) error {
 	if err := w.ready(); err != nil {
 		return err
@@ -164,6 +181,7 @@ func (w *Writer) AppendLines(lines []Line) error {
 	}
 	var buf bytes.Buffer
 	next := w.head + 1
+	var frame txnFrame
 	for _, l := range lines {
 		if l.Seq != next {
 			return fmt.Errorf("%w: got seq %d, want %d (the head is %d)", ErrSeqGap, l.Seq, next, w.head)
@@ -171,9 +189,15 @@ func (w *Writer) AppendLines(lines []Line) error {
 		if len(l.Bytes) > MaxLineBytes {
 			return fmt.Errorf("%w: seq %d is %d bytes", ErrLineTooLong, l.Seq, len(l.Bytes))
 		}
+		if _, err := frame.next(l.Seq, l.Txn); err != nil {
+			return err
+		}
 		buf.Write(l.Bytes)
 		buf.WriteByte('\n')
 		next++
+	}
+	if frame.open != 0 {
+		return fmt.Errorf("%w: the last line is seq %d and its transaction ends at %d", ErrTxnIncomplete, next-1, frame.open)
 	}
 	created := false
 	if w.file == nil {

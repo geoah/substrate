@@ -350,7 +350,7 @@ This command only reads.`,
 
 // printChangelogFiles reports the repository directory's half of the
 // changelog: the data root, the file head and the segment count. The walk is
-// read-only (changelogfile.Verify), so an inspect never repairs a torn tail.
+// read-only (changelogfile.Verify), so an inspect never repairs an incomplete tail.
 // A missing SUBSTRATE_DATA_ROOT is reported, not fatal: the table half of the
 // report stands on its own.
 func printChangelogFiles(out io.Writer, repoID string) {
@@ -372,7 +372,8 @@ func printChangelogFiles(out io.Writer, repoID string) {
 	}
 	fmt.Fprintf(out, "  changelog files: head %d (%d entries, %d segment(s))\n", rep.Head, rep.Entries, rep.Segments)
 	if rep.TruncatedBytes > 0 {
-		fmt.Fprintf(out, "  changelog files: the active segment ends in a torn line of %d bytes (the next open cuts it)\n", rep.TruncatedBytes)
+		fmt.Fprintf(out, "  changelog files: the active segment ends in an incomplete transaction: %d bytes past the last complete one, %d complete line(s) among them (the next open cuts them)\n",
+			rep.TruncatedBytes, rep.TruncatedEntries)
 	}
 }
 
@@ -442,8 +443,9 @@ carries. Both heads must agree, and every sealed row must have its file and
 every sealed file its row.
 
 It never repairs or touches the repository it judges, and it runs beside a live
-server: the engine opens read-only against the data root, so a torn tail or a
-table ahead of its file is reported as a finding, never cut or caught up
+server: the engine opens read-only against the data root, so an incomplete
+final transaction or a table ahead of its file is reported as a finding, never
+cut or caught up
 (opening the engine still applies any pending schema migration, as every
 operator command does). Against a server that is mid-write a finding about the
 heads can be a transaction in flight; run it again before believing it.

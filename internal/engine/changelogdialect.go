@@ -28,12 +28,20 @@ package engine
 // replayer needs), and the stamped column is what makes that refinement
 // possible later without guessing at unstamped history.
 //
-// THE LADDER HAS TWO RUNGS. Dialect 1 was the changelog while edges existed:
+// THE LADDER HAS THREE RUNGS. Dialect 1 was the changelog while edges existed:
 // `link`/`unlink` ops and `edge`/`unedge`/`edge1` fold effects. Dialect 2 is the
-// changelog as it stands, after references absorbed the edge (decision 0044): those
-// five spellings are gone and this binary refuses any entry carrying one
-// (fold.go foldRefuses), because a reference's meaning now lives in the source
-// record's own properties, which no such entry carries.
+// changelog after references absorbed the edge (decision 0044): those five
+// spellings are gone and this binary refuses any entry carrying one (fold.go
+// foldRefuses), because a reference's meaning now lives in the source record's
+// own properties, which no such entry carries. Dialect 3 keeps dialect 2's ops
+// and effects and changes the ENTRY: every row and line names its transaction
+// (`txn`, decision 0057) and the checksum in `hash` covers it. The rung exists
+// for the table, not the fold: a dialect 2 binary reads the rows without
+// error, but its boot catch-up over an empty file (repodir.go appendFromTable,
+// `after == 0`) recomputes every checksum without `txn` and RE-STAMPS
+// `changelog.hash` to that encoding, after which no binary agrees with the
+// file. The stamp of 3 makes that binary refuse at open, before it touches a
+// row.
 //
 // A STORE BELOW THE MAXIMUM IS PROBED, NOT ASSUMED. Migration 0010 drops the
 // edges table, so a store whose changelog holds `link`/`unlink` entries has
@@ -79,7 +87,7 @@ var ErrChangelogPredatesReferences = errors.New("substrate/engine: the changelog
 // maxChangelogDialect is the newest changelog dialect this binary can replay.
 // It is what this binary stamps when it appends; a repository stored above it
 // refuses to open.
-const maxChangelogDialect = 2
+const maxChangelogDialect = 3
 
 // MaxChangelogDialect is the newest changelog dialect this binary can replay,
 // the value GET /.well-known/substrate/server.json reports as the binary
@@ -99,8 +107,8 @@ func (ds *dataset) gateChangelogDialect(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if stored > maxChangelogDialect {
-		return newerChangelogDialect(ds.info.Name, stored)
+	if err := admitChangelogDialect(ds.info.Name, stored, maxChangelogDialect); err != nil {
+		return err
 	}
 	// A store already at this binary's maximum needs no stamp from it, which
 	// is the common case: remember that, so the first append does not run the
@@ -142,15 +150,23 @@ func (t *txn) refuseNewerChangelogDialect() error {
 	if err != nil {
 		return err
 	}
-	if stored > maxChangelogDialect {
-		return newerChangelogDialect(t.ds.info.Name, stored)
+	return admitChangelogDialect(t.ds.info.Name, stored, maxChangelogDialect)
+}
+
+// admitChangelogDialect is the one comparison every gate makes: a repository
+// stamped above the binary's maximum is refused, everything at or below it is
+// admitted. It takes the maximum as a parameter so a test can hold a binary
+// whose maximum is 2 to a repository this one stamped 3.
+func admitChangelogDialect(repository string, stored, max int) error {
+	if stored > max {
+		return fmt.Errorf("%w: repository %s stores changelog dialect %d, this binary replays <= %d: upgrade the substrate",
+			ErrChangelogDialectNewer, repository, stored, max)
 	}
 	return nil
 }
 
 func newerChangelogDialect(repository string, stored int) error {
-	return fmt.Errorf("%w: repository %s stores changelog dialect %d, this binary replays <= %d: upgrade the substrate",
-		ErrChangelogDialectNewer, repository, stored, maxChangelogDialect)
+	return admitChangelogDialect(repository, stored, maxChangelogDialect)
 }
 
 // readChangelogDialect reads the repository's stamp through a pool or a
