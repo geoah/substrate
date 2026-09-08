@@ -145,7 +145,9 @@ two arms:
   string-family property index into full-text search, weighted in three bands
   (title first, then declared string properties, then the rest), and `q` takes
   web-search syntax: bare words, quoted phrases, `-exclusions`. A property opts
-  out with `fts: false`; secret-typed properties never index.
+  out with `fts: false`; secret-typed properties never index. Changing what a
+  kind indexes re-indexes its existing records in the same apply, without
+  moving their `version` or `updatedAt`.
 - **Semantic**, strictly opt-in per property with `embed: true` (the shipped
   vocabulary opts in long prose: message and mail bodies, task and event
   descriptions, and transcripts). Opted-in text is chunked into overlapping windows

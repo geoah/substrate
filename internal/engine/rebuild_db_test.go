@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -628,8 +629,31 @@ func recordDeltaOf(t *testing.T, ch substrate.Change) map[string]any {
 }
 
 // firstDifference reports where two fold snapshots part company, so a failure
-// names the row rather than dumping two documents.
+// names the section (`records`, `fts`, `refs`, ...) and the row rather than
+// dumping two documents.
 func firstDifference(a, b []byte) string {
+	var sa, sb map[string]json.RawMessage
+	if json.Unmarshal(a, &sa) == nil && json.Unmarshal(b, &sb) == nil {
+		var names []string
+		for name := range sa {
+			names = append(names, name)
+		}
+		for name := range sb {
+			if _, ok := sa[name]; !ok {
+				names = append(names, name)
+			}
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			if string(sa[name]) != string(sb[name]) {
+				return "section " + name + ":\n" + firstByteDifference(sa[name], sb[name])
+			}
+		}
+	}
+	return firstByteDifference(a, b)
+}
+
+func firstByteDifference(a, b []byte) string {
 	as, bs := string(a), string(b)
 	for i := 0; i < len(as) && i < len(bs); i++ {
 		if as[i] == bs[i] {
