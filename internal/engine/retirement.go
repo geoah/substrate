@@ -327,7 +327,7 @@ func anyList(values []string) []any {
 }
 
 func unionKeys(a, b map[string]any) map[string]any {
-	out := make(map[string]any, len(a)+len(b))
+	out := make(map[string]any, len(a))
 	for k := range a {
 		out[k] = nil
 	}
@@ -345,7 +345,7 @@ func missingStrings(stored, cand []string) []string {
 
 // unionStrings lists a's members then b's additions, without duplicates.
 func unionStrings(a, b []string) []string {
-	seen := make(map[string]bool, len(a)+len(b))
+	seen := make(map[string]bool, len(a))
 	var out []string
 	for _, list := range [][]string{a, b} {
 		for _, s := range list {
