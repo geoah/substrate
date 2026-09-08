@@ -151,13 +151,18 @@ export function upgradeBlocked(row: Pick<BundleRow, "upgrade">): boolean {
   return Boolean(row.upgrade?.blockers?.length)
 }
 
-/** The shipped packages whose boot upgrade the server refused: what the
- * Registry states above its sections. An entry with nothing to move, or one
- * the boot admitted, is not news. */
-export function withheldShippedUpgrades(
+/** The shipped packages whose upgrade has not landed here: what the Registry
+ * states above its sections. `available` is the whole test: the binary ships
+ * a newer declaration than the repository stores. With blockers the boot
+ * refused it and the guard lines say what to migrate; without them the
+ * upgrade is admitted, but the boot runs at a repository's first open under
+ * a binary, so it lands only when the server starts again. Filtering on the
+ * blockers alone would drop the notice the moment the last blocking record
+ * is migrated, while the stored declarations stay old. */
+export function pendingShippedUpgrades(
   items: ShippedUpgrade[]
 ): ShippedUpgrade[] {
-  return items.filter((item) => (item.upgrade.blockers?.length ?? 0) > 0)
+  return items.filter((item) => item.upgrade.available)
 }
 
 /** The sidebar badge's number: installed bundles whose shipped closure moved,

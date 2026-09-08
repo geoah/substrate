@@ -183,13 +183,15 @@ stands on each.
              sample (imported under your own authority)
   INSTALLED  whether this repository holds it
   VERSION    the version the binary ships it at
-  UPGRADE    the motion an upgrade would make here ("16 -> 17"), and
-             "blocked" when the server refuses it
+  UPGRADE    the motion an upgrade would make here ("16 -> 17"); "blocked"
+             when the server refuses it; for core, "lands at restart" when
+             it is admitted and waiting for the server to start again
 
 A blocked upgrade prints its guard lines under the table. Each names a kind, a
 property and the count of live records still holding the old shape; the
 upgrade lands once those records are migrated or deleted. For core that is
-the boot upgrade, which the server retries at its next start; for a provider
+the boot upgrade, which runs at the server's next start and not before, so
+an admitted core upgrade reads "lands at restart" until then; for a provider
 it is ` + "`substratectl install <provider>`" + ` again. A sample is never
 offered an upgrade: what it landed is yours.`,
 		Args: cobra.NoArgs,
@@ -243,7 +245,7 @@ func printCatalogTable(w io.Writer, rows []catalogRow) error {
 	tw := newTable(w)
 	fmt.Fprintln(tw, "PACKAGE\tTIER\tINSTALLED\tVERSION\tUPGRADE")
 	for _, r := range rows {
-		fmt.Fprintf(tw, "%s\t%s\t%t\t%d\t%s\n", r.ID, r.Tier, r.Installed, r.Version, upgradeCell(r.Upgrade))
+		fmt.Fprintf(tw, "%s\t%s\t%t\t%d\t%s\n", r.ID, r.Tier, r.Installed, r.Version, upgradeCell(r.Tier, r.Upgrade))
 	}
 	if err := tw.Flush(); err != nil {
 		return err
@@ -262,8 +264,11 @@ func printCatalogTable(w io.Writer, rows []catalogRow) error {
 
 // upgradeCell is the UPGRADE column: the motion when the server previewed
 // one, and "blocked" when it refuses. A preview that could not run has no
-// motion and one blocker, so it reads "blocked" alone.
-func upgradeCell(up *substrate.BundleUpgrade) string {
+// motion and one blocker, so it reads "blocked" alone. The seeded package has
+// a third state a catalog tier does not: admitted with nothing to block it,
+// which still lands only when the server starts again, so it says so rather
+// than reading like a provider's one-command upgrade.
+func upgradeCell(tier string, up *substrate.BundleUpgrade) string {
 	if up == nil {
 		return ""
 	}
@@ -275,10 +280,12 @@ func upgradeCell(up *substrate.BundleUpgrade) string {
 		motion = fmt.Sprintf("%d", up.To)
 	}
 	switch {
-	case len(up.Blockers) == 0:
-		return motion
-	case motion == "":
+	case len(up.Blockers) > 0 && motion == "":
 		return "blocked"
+	case len(up.Blockers) > 0:
+		return motion + ", blocked"
+	case tier == tierSeed && up.Available:
+		return motion + ", lands at restart"
 	}
-	return motion + ", blocked"
+	return motion
 }

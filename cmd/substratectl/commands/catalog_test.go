@@ -108,6 +108,28 @@ func TestCatalogListsWithoutAShippedPreview(t *testing.T) {
 	}
 }
 
+// Core's other pending state: the last blocking record is migrated, the
+// preview has no blockers, and the store stays old until the server starts
+// again. The row says a restart lands it rather than reading like a
+// provider's one-command upgrade.
+func TestCatalogSaysAnAdmittedCoreUpgradeLandsAtRestart(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.fake.shipped = []substrate.ShippedUpgrade{
+		{
+			Package: "substrate.reamde.dev/core",
+			Upgrade: substrate.BundleUpgrade{Available: true, From: 16, To: 17},
+		},
+	}
+	stdout, _ := h.mustRun("catalog")
+	if !strings.Contains(stdout, "16 -> 17, lands at restart") {
+		t.Fatalf("an admitted core upgrade does not say a restart lands it:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "blocked") {
+		t.Fatalf("an admitted upgrade reads as blocked:\n%s", stdout)
+	}
+}
+
 func TestCatalogJSONCarriesTheBlockers(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()

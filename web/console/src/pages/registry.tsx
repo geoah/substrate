@@ -115,7 +115,7 @@ import {
   upgradeAvailable,
   upgradeBlocked,
   upgradeMotion,
-  withheldShippedUpgrades,
+  pendingShippedUpgrades,
   type BundleRow,
   type Requirement,
   type SuggestedMappingRow,
@@ -998,12 +998,12 @@ export function RegistryPage() {
   const statuses = useQuery(bundleStatusesQueryOptions)
   const catalog = useQuery(catalogQueryOptions)
   // The boot upgrade's preview, for the one package no catalog entry carries:
-  // core. The server refused to move it when this carries blockers, and the
-  // repository is running on its stored declarations. Not waited on and not
-  // fatal: a read that fails leaves the banner off, the sections stand.
+  // core. An available entry has not landed here: refused with blockers, or
+  // admitted and waiting for the server to start again. Not waited on and not
+  // fatal: a read that fails leaves the notice off, the sections stand.
   const shipped = useQuery(shippedUpgradesQueryOptions)
-  const withheld = useMemo(
-    () => withheldShippedUpgrades(shipped.data ?? []),
+  const pending = useMemo(
+    () => pendingShippedUpgrades(shipped.data ?? []),
     [shipped.data]
   )
   // The repository's own record answers ONE question: the authority this
@@ -1115,8 +1115,8 @@ export function RegistryPage() {
           every other kind it records into comes from here. Expand a row to see
           what it adds.
         </p>
-        {withheld.map((item) => (
-          <WithheldUpgradeNotice key={item.package} item={item} />
+        {pending.map((item) => (
+          <PendingUpgradeNotice key={item.package} item={item} />
         ))}
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
@@ -1167,13 +1167,20 @@ export function RegistryPage() {
   )
 }
 
-/** A shipped package whose boot upgrade the server refused, stated where the
- * upgrades live: this binary ships a newer core than the repository holds, and
- * the refuse-breakage guards would strand live records, so the stored
- * declarations stand. The lines are the server's own, naming the kind, the
- * property and the count: what to migrate before the next start lands it. */
-function WithheldUpgradeNotice({ item }: { item: ShippedUpgrade }) {
+/** A shipped package whose upgrade has not landed here, stated where the
+ * upgrades live. Two states, told apart by the blockers. REFUSED: the boot
+ * upgrade ran and the refuse-breakage guards refused it, so the stored
+ * declarations stand; the lines are the server's own, naming the kind, the
+ * property and the count, which is what to migrate. ADMITTED: nothing blocks
+ * any more (or nothing ever did), but the boot upgrade runs only at a
+ * repository's first open under a binary, so the newer declarations land when
+ * the server starts again. Without the second state the notice would vanish
+ * the moment the last blocking record is migrated, with the store still old
+ * and nobody told a restart is what finishes it. */
+function PendingUpgradeNotice({ item }: { item: ShippedUpgrade }) {
   const motion = upgradeMotion(item.upgrade)
+  const blockers = item.upgrade.blockers ?? []
+  const refused = blockers.length > 0
   return (
     <div
       role="alert"
@@ -1189,18 +1196,20 @@ function WithheldUpgradeNotice({ item }: { item: ShippedUpgrade }) {
               (<span className="data">{motion}</span>)
             </>
           ) : null}{" "}
-          was refused when the server started. The stored declarations stand
-          until what the lines below name is resolved and the server starts
-          again.
+          {refused
+            ? "was refused when the server started. The stored declarations stand until what the lines below name is resolved and the server starts again."
+            : "is admitted and lands when the server starts again. Until then this repository runs on the declarations it stores."}
         </span>
       </p>
-      <div className="mt-1 space-y-0.5 pl-5">
-        {item.upgrade.blockers?.map((b) => (
-          <p key={b} className="data text-muted-foreground">
-            {b}
-          </p>
-        ))}
-      </div>
+      {refused && (
+        <div className="mt-1 space-y-0.5 pl-5">
+          {blockers.map((b) => (
+            <p key={b} className="data text-muted-foreground">
+              {b}
+            </p>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

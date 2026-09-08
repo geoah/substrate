@@ -653,12 +653,35 @@ describe("RegistryPage", () => {
       expect(within(notice).getByText(guard)).toBeTruthy()
     })
 
-    it("an admitted or absent core upgrade states nothing", async () => {
+    it("an admitted core upgrade says a restart lands it", async () => {
+      // The owner migrated the last blocking record: the preview has no
+      // blockers, but the store is still old until the server starts again,
+      // and the notice has to say so instead of vanishing.
       serve({
         shipped: [
           {
             package: "substrate.reamde.dev/core",
             upgrade: { available: true, from: 16, to: 17 },
+          },
+        ],
+      })
+      renderPage(<RegistryPage />)
+      await screen.findByText("people")
+      const notice = screen.getByRole("alert")
+      expect(within(notice).getByText("substrate.reamde.dev/core")).toBeTruthy()
+      expect(within(notice).getByText("16 → 17")).toBeTruthy()
+      expect(
+        within(notice).getByText(/lands when the server starts again/)
+      ).toBeTruthy()
+      expect(within(notice).queryByText(/was refused/)).toBeNull()
+    })
+
+    it("a core package at the shipped version states nothing", async () => {
+      serve({
+        shipped: [
+          {
+            package: "substrate.reamde.dev/core",
+            upgrade: { available: false, from: 17, to: 17 },
           },
         ],
       })

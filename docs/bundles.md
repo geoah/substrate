@@ -146,12 +146,16 @@ The seeded `core` package is not a catalog entry, so its preview is its own
 read: `GET /api/v1/vocabulary/upgrade` answers one entry per package the
 binary ships and seeds, `{package, upgrade}`, with the same `upgrade` shape.
 It is the boot upgrade's decision computed at read against the running
-binary: when a guard refused the boot upgrade, the repository opened on its
-stored declarations and `blockers` carries the guard lines the server logged,
-until the records they name are migrated and the server restarts. The
-Registry states a withheld core upgrade above its sections, and
-`substratectl catalog` prints every package's motion and guard lines in one
-table.
+binary, and `available` says the upgrade has not landed here. Two states
+follow from `blockers`. Refused: a guard refused the boot upgrade, the
+repository opened on its stored declarations and `blockers` carries the guard
+lines the server logged, which name the records to migrate. Admitted:
+`blockers` is empty (the last blocking record was migrated, or nothing ever
+blocked) but the boot upgrade runs only at a repository's first open under a
+binary, so the stored declarations stay old until the server starts again.
+The Registry states both above its sections (the guard lines, or "lands when
+the server starts again"), and `substratectl catalog` prints every package's
+motion with `blocked` or, for core, `lands at restart`.
 
 A changed declaration therefore **must** ship a changed version, or no
 repository ever learns it moved; CI enforces that (`mise run kinds:check`,

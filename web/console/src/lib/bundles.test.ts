@@ -28,7 +28,7 @@ import {
   upgradableBundleCount,
   upgradeBlocked,
   upgradeMotion,
-  withheldShippedUpgrades,
+  pendingShippedUpgrades,
 } from "./bundles"
 
 function status(over: Partial<BundleStatus> = {}): BundleStatus {
@@ -310,7 +310,7 @@ describe("the upgrade preview helpers", () => {
     ).toBe(true)
   })
 
-  it("a withheld shipped upgrade is one the boot refused", () => {
+  it("a pending shipped upgrade is one the binary ships and the store lacks", () => {
     const refused = {
       package: "substrate.reamde.dev/core",
       upgrade: {
@@ -320,16 +320,20 @@ describe("the upgrade preview helpers", () => {
         blockers: ["a guard line"],
       },
     }
+    // Admitted but not landed: the last blocking record was migrated and the
+    // boot has not run again. Still news, or the owner never learns a restart
+    // is what lands it.
+    const admitted = {
+      package: "substrate.reamde.dev/core",
+      upgrade: { available: true, from: 16, to: 17 },
+    }
     expect(
-      withheldShippedUpgrades([
+      pendingShippedUpgrades([
         { package: "substrate.reamde.dev/core", upgrade: { available: false } },
-        {
-          package: "substrate.reamde.dev/core",
-          upgrade: { available: true, from: 16, to: 17 },
-        },
+        admitted,
         refused,
       ])
-    ).toEqual([refused])
+    ).toEqual([admitted, refused])
   })
 
   it("renders the version motion, tolerating a store with no version", () => {
