@@ -164,10 +164,8 @@ func Username(t *testing.T) string {
 			b.WriteRune(r)
 		}
 	}
+	// A test's name begins with Test, so the prefix begins with a letter.
 	prefix := b.String()
-	if prefix == "" || prefix[0] < 'a' {
-		prefix = "t" + prefix
-	}
 	// 20 readable characters and 8 of hash leave room under the 30-byte cap
 	// for a test that needs a second repository (Username(t) + "2").
 	if len(prefix) > 20 {

@@ -28,7 +28,7 @@ import (
 // process) keys function processes on the repository id, and the id is the
 // authority, so two tests registering one username would share function
 // processes and either one's Close would retire the other's mid-delivery.
-// No test here may register a fixed username.
+// A test that runs function bodies must not register a fixed username.
 //
 // The exceptions are the tests that write a PACKAGE-LEVEL var: BlobUploadGrace
 // (the blob GC tests) and maxPagesPerDrain / maxDrainEffects / pagedSweepGrace
