@@ -217,6 +217,12 @@ type Runner struct {
 	// queues on the process its caller is blocking.
 	pys map[string]*proc
 	gos map[string]*proc
+	// retired holds the installation keys Reconcile retired and nothing has
+	// re-admitted since: a start under the key (the engine asking for the
+	// body again) or a later Reconcile listing it live clears the mark. It is
+	// what lets Invoke's retry tell a swept process, which restarts, from a
+	// retired one, which must not: the registry no longer has that body.
+	retired map[string]struct{}
 	// sandbox confines every child. Built once, because it probes the kernel.
 	sandbox  *sandbox.Confiner
 	cacheDir string
@@ -243,7 +249,10 @@ func New() *Runner {
 		// An unreadable setting must not silently mean "off".
 		mode = sandbox.ModeEnforce
 	}
-	return &Runner{pys: map[string]*proc{}, gos: map[string]*proc{}, sandbox: sandbox.New(mode)}
+	return &Runner{
+		pys: map[string]*proc{}, gos: map[string]*proc{}, retired: map[string]struct{}{},
+		sandbox: sandbox.New(mode),
+	}
 }
 
 // Sandbox is the confiner every child goes through, for the boot log, which
@@ -292,9 +301,13 @@ func (r *Runner) Reconcile(_ context.Context, repository string, live []Spec) {
 		for key, p := range live {
 			if strings.HasPrefix(key, prefix) && !keep[key] {
 				delete(live, key)
+				r.retired[key] = struct{}{}
 				stop = append(stop, p)
 			}
 		}
+	}
+	for key := range keep {
+		delete(r.retired, key)
 	}
 	r.mu.Unlock()
 
@@ -326,8 +339,6 @@ func (r *Runner) Invoke(ctx context.Context, spec Spec, in Input, backend Backen
 	if spec.ReadCalls > 0 || spec.ReadRows > 0 {
 		in.Budgets = &Budgets{Calls: spec.ReadCalls, Rows: spec.ReadRows}
 	}
-	ictx, cancel := context.WithTimeout(ctx, spec.timeout())
-	defer cancel()
 	// The lookup and the write are two steps under two locks, and a kill can
 	// land between them: the idle sweep, a Reconcile retiring the installation
 	// (another dataset of the same repository closing, in a test binary), or a
@@ -338,31 +349,51 @@ func (r *Runner) Invoke(ctx context.Context, spec Spec, in Input, backend Backen
 	// entry and restarts. Once, not until it works: a second loss in a row
 	// means something is killing the installation faster than it starts, and
 	// the dispatcher's retry-then-park is the right place for that.
-	for attempt := 0; ; attempt++ {
-		p, err := r.proc(ictx, spec)
-		if err != nil {
-			return nil, err
-		}
-		if r.afterLookup != nil {
-			r.afterLookup(p)
-		}
-		state := &readState{spec: spec, backend: backend}
-		resp, err := p.roundtrip(ictx, spec.timeout(),
-			frame{Op: "invoke", ID: spec.Key(), Input: &in}, state)
-		if errors.Is(err, errChildGone) && attempt == 0 {
-			continue
-		}
-		if state.tripped != nil {
-			return nil, state.tripped
-		}
-		if err != nil {
-			return nil, err
-		}
-		if !resp.OK {
-			return nil, fmt.Errorf("runner: %s", resp.Error)
-		}
-		return &Result{Output: resp.Output, Effects: resp.Effects, Logs: resp.Logs, More: resp.More}, nil
+	//
+	// The one kill that must NOT restart is Reconcile's: the registry no
+	// longer has this installation (removed, or replaced under a new content
+	// hash), and a restart would run the retired body under its former
+	// sandbox policy until the next sweep. The retry re-checks admission the
+	// way the lookup did, under r.mu, and answers ErrRetired instead.
+	res, err := r.invokeOnce(ctx, spec, in, backend)
+	if !errors.Is(err, errChildGone) {
+		return res, err
 	}
+	r.mu.Lock()
+	_, retired := r.retired[spec.Key()]
+	r.mu.Unlock()
+	if retired {
+		return nil, fmt.Errorf("%w: %s", ErrRetired, spec.Function)
+	}
+	return r.invokeOnce(ctx, spec, in, backend)
+}
+
+// invokeOnce is one attempt under its own manifest deadline: a restart's
+// register roundtrip is paid by the attempt that needed it, never out of the
+// retry's invocation budget.
+func (r *Runner) invokeOnce(ctx context.Context, spec Spec, in Input, backend Backend) (*Result, error) {
+	ictx, cancel := context.WithTimeout(ctx, spec.timeout())
+	defer cancel()
+	p, err := r.proc(ictx, spec)
+	if err != nil {
+		return nil, err
+	}
+	if r.afterLookup != nil {
+		r.afterLookup(p)
+	}
+	state := &readState{spec: spec, backend: backend}
+	resp, err := p.roundtrip(ictx, spec.timeout(),
+		frame{Op: "invoke", ID: spec.Key(), Input: &in}, state)
+	if state.tripped != nil {
+		return nil, state.tripped
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !resp.OK {
+		return nil, fmt.Errorf("runner: %s", resp.Error)
+	}
+	return &Result{Output: resp.Output, Effects: resp.Effects, Logs: resp.Logs, More: resp.More}, nil
 }
 
 // proc returns the live process for one installation, starting it if needed.
@@ -413,6 +444,8 @@ func (r *Runner) goProc(ctx context.Context, spec Spec) (*proc, error) {
 				return cur, nil
 			}
 			r.gos[key] = p
+			// A start is the engine admitting the installation again.
+			delete(r.retired, key)
 			r.reap()
 			r.mu.Unlock()
 			return p, nil
@@ -649,9 +682,10 @@ func (r *Runner) reap() {
 // same lock), and only then take proc.mu. Every kill closes stdin before it
 // releases the lock, so that caller finds the process not alive, or its first
 // write fails with os.ErrClosed. roundtrip turns both into errChildGone, and
-// Invoke restarts the process and retries once, so the window never parks a
-// delivery. A kill MUST keep taking proc.mu around itself: that is what
-// guarantees the frame either reached a live child or never left.
+// Invoke restarts the process and retries once (or, after a Reconcile, refuses
+// with ErrRetired), so the window never parks a delivery on the closed pipe. A
+// kill MUST keep taking proc.mu around itself: that is what guarantees the
+// frame either reached a live child or never left.
 func (r *Runner) sweep(now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

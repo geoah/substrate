@@ -88,6 +88,8 @@ func (r *Runner) pythonProc(ctx context.Context, spec Spec) (*proc, error) {
 	}
 	p.registered[key] = true
 	r.pys[key] = p
+	// A start is the engine admitting the installation again.
+	delete(r.retired, key)
 	r.reap()
 	r.mu.Unlock()
 	return p, nil
