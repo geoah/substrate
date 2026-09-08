@@ -109,6 +109,16 @@ func (s *S3) Repository(repository string, _ DB) (Store, error) {
 	return &s3Store{s3: s, prefix: s.cfg.Prefix + repository + "/"}, nil
 }
 
+// Location is the object prefix of one repository, `s3://<bucket>/<prefix><repository>/`
+// (Locator): what a snapshot records so a restore knows which bucket to copy
+// the listed digests from.
+func (s *S3) Location(repository string) (string, error) {
+	if err := checkRepository(repository); err != nil {
+		return "", err
+	}
+	return "s3://" + s.cfg.Bucket + "/" + s.cfg.Prefix + repository + "/", nil
+}
+
 type s3Store struct {
 	s3     *S3
 	prefix string

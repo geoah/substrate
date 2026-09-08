@@ -3,20 +3,31 @@ package engine
 // The verification walk: the repository directory's changelog files, line by
 // line and sidecar by sidecar (changelogfile.Verify), the changelog table row
 // by row with every checksum recomputed from the stored columns, the two
-// held to each other seq by seq, both heads, and the sealed files against the
-// sealed rows. It MUTATES NOTHING: the files are opened read-only and the
-// table is read inside one repeatable-read transaction, so a concurrent write
-// cannot make it stitch two states into one report.
+// held to each other seq by seq, both heads, the sealed files against the
+// sealed rows, the recorded recovery point against the files, every stored
+// blob's bytes against its digest, every live secret reference against the
+// sealed files and, under the credential key, every sealed file opened. It
+// MUTATES NOTHING: the files are opened read-only and the table is read
+// inside one repeatable-read transaction, so a concurrent write cannot make
+// it stitch two states into one report.
 
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
+	"os"
+	"strings"
 	"time"
 
+	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/changelogfile"
+	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // verifyFindingCap bounds the report: after this many findings the walk
@@ -43,12 +54,34 @@ type VerifyReport struct {
 	TruncatedBytes   int64 `json:"truncatedBytes,omitempty"`
 	TruncatedEntries int64 `json:"truncatedEntries,omitempty"`
 	// SealedRows and SealedFiles count the sealed table and its mirror.
-	SealedRows  int           `json:"sealedRows"`
-	SealedFiles int           `json:"sealedFiles"`
-	Findings    []string      `json:"findings,omitempty"`
-	Truncated   bool          `json:"truncated,omitempty"`
-	OK          bool          `json:"ok"`
-	Took        time.Duration `json:"took"`
+	SealedRows  int `json:"sealedRows"`
+	SealedFiles int `json:"sealedFiles"`
+	// SealedOpened is how many sealed files opened under the repository's
+	// DEK: every one, or the walk found the rest; 0 with no credential key,
+	// when nothing is opened.
+	SealedOpened int `json:"sealedOpened"`
+	// SecretRefs is how many secret references live records hold, each held
+	// to a sealed file.
+	SecretRefs int `json:"secretRefs"`
+	// Blobs and BlobBytes are the `stored` blob manifests, each one's bytes
+	// read from the store and hashed against its digest.
+	Blobs     int   `json:"blobs"`
+	BlobBytes int64 `json:"blobBytes"`
+	// Snapshot is the recovery point `snapshot.json` records when the
+	// directory is a snapshot or was restored from one; nil otherwise.
+	Snapshot  *RecoveryPoint `json:"snapshot,omitempty"`
+	Findings  []string       `json:"findings,omitempty"`
+	Truncated bool           `json:"truncated,omitempty"`
+	OK        bool           `json:"ok"`
+	Took      time.Duration  `json:"took"`
+}
+
+// RecoveryPoint is the committed point a snapshot recorded: the head seq, its
+// checksum in hex, and when the snapshot was taken.
+type RecoveryPoint struct {
+	Head     int64     `json:"head"`
+	HeadHash string    `json:"headHash"`
+	TakenAt  time.Time `json:"takenAt"`
 }
 
 // Verifier is the operator hat's verification seam, off substrate.Service
@@ -248,9 +281,221 @@ func (s *service) VerifyRepository(ctx context.Context, username string) (Verify
 	for _, name := range pending {
 		found(fmt.Sprintf("sealed/%s: a staged write that has not committed", name))
 	}
+
+	// The recorded recovery point, when the directory is a snapshot or was
+	// restored from one: the entry it names must be in the files, as recorded.
+	verifySnapshotPoint(dir, log, &report, found)
+
+	// The side stores against the fold: a `stored` manifest whose bytes are
+	// missing or not its digest's, and a live secret reference with no
+	// sealed file, are what a copy that missed a file looks like after an
+	// import, which upserts whatever files it finds.
+	if err := s.verifyBlobs(ctx, tx, db, repo, &report, found); err != nil {
+		return report, err
+	}
+	if err := s.verifySecretRefs(ctx, tx, db, repo, dir, seen, &report, found); err != nil {
+		return report, err
+	}
+	// Under the credential key, every sealed file opened: the table and the
+	// file agreeing byte for byte says nothing about whether the bytes are
+	// ciphertext the DEK opens, and an import loads what it finds.
+	s.verifySealedOpen(repo, files, &report, found)
+
 	report.OK = len(report.Findings) == 0
 	report.Took = time.Since(started)
 	return report, nil
+}
+
+// verifySnapshotPoint holds the files to the recovery point `snapshot.json`
+// recorded, when there is one: the entry at the recorded head must be in the
+// files and carry the recorded checksum. A head past the point is not a
+// finding, because a restored repository keeps writing.
+func verifySnapshotPoint(dir string, log *changelogfile.Log, report *VerifyReport, found func(string)) {
+	snap, err := changelogfile.ReadSnapshot(dir)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return
+	case err != nil:
+		found(fmt.Sprintf("snapshot: %v", err))
+		return
+	}
+	report.Snapshot = &RecoveryPoint{Head: snap.Head, HeadHash: hex.EncodeToString(snap.HeadHash[:]), TakenAt: snap.TakenAt}
+	if log == nil || snap.Head == 0 {
+		return
+	}
+	if snap.Head > log.Head() {
+		found(fmt.Sprintf("snapshot: records head %d and the files end at %d: the copy is short of the point it claims", snap.Head, log.Head()))
+		return
+	}
+	entries, err := log.Read(snap.Head-1, 1)
+	if err != nil || len(entries) != 1 || entries[0].Seq != snap.Head {
+		found(fmt.Sprintf("snapshot: reading the recorded head %d: %v", snap.Head, err))
+		return
+	}
+	if _, sum, err := changelogfile.Encode(entries[0]); err != nil || sum != snap.HeadHash {
+		found(fmt.Sprintf("snapshot: the entry at seq %d is not the one recorded: the files are another history than the snapshot's", snap.Head))
+	}
+}
+
+// storedBlob is one `stored` blob manifest: the digest that is its id and
+// the size its properties claim, -1 when they claim none.
+type storedBlob struct {
+	digest string
+	size   int64
+}
+
+// storedBlobs lists the live `stored` blob manifests, by digest. Only that
+// status promises bytes (0030): a `pending` manifest is an upload that did
+// not finish, and the sweep's to collect.
+func storedBlobs(ctx context.Context, q dbx) ([]storedBlob, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT id, COALESCE((props ->> $1)::bigint, -1) FROM records
+		WHERE kind = $2 AND deleted_at IS NULL AND states ->> $3 = $4 ORDER BY id`,
+		blobPropSize, kindBlob, blobStateStatus, string(substrate.BlobStored))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []storedBlob
+	for rows.Next() {
+		var b storedBlob
+		if err := rows.Scan(&b.digest, &b.size); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
+// verifyBlobs reads every `stored` blob's bytes out of the store and hashes
+// them against the digest that names them. A store that cannot be reached at
+// all is one finding and ends the walk, not one finding per blob.
+func (s *service) verifyBlobs(ctx context.Context, tx dbx, db *sql.DB, repo Repository, report *VerifyReport, found func(string)) error {
+	blobs, err := storedBlobs(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if len(blobs) == 0 {
+		return nil
+	}
+	store, err := s.blobs.Repository(repo.ID, db)
+	if err != nil {
+		return err
+	}
+	for _, b := range blobs {
+		report.Blobs++
+		n, digest, err := hashBlob(ctx, store, b.digest)
+		switch {
+		case errors.Is(err, blobbytes.ErrNotStored):
+			found(fmt.Sprintf("blob %s: the manifest is stored and the %s store holds no bytes", b.digest, store.Backend()))
+			continue
+		case err != nil:
+			found(fmt.Sprintf("blob %s: reading the %s store: %v", b.digest, store.Backend(), err))
+			return nil
+		}
+		report.BlobBytes += n
+		if digest != b.digest {
+			found(fmt.Sprintf("blob %s: the stored bytes hash to %s", b.digest, digest))
+			continue
+		}
+		if b.size >= 0 && n != b.size {
+			found(fmt.Sprintf("blob %s: %d bytes stored, the manifest says %d", b.digest, n, b.size))
+		}
+	}
+	return nil
+}
+
+// hashBlob streams one blob out of the store and returns its length and the
+// digest of what it read.
+func hashBlob(ctx context.Context, store blobbytes.Store, digest string) (int64, string, error) {
+	rc, err := store.Open(ctx, digest)
+	if err != nil {
+		return 0, "", err
+	}
+	defer func() { _ = rc.Close() }()
+	h := sha256.New()
+	n, err := io.Copy(h, rc)
+	if err != nil {
+		return 0, "", err
+	}
+	return n, substrate.BlobDigestPrefix + hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// verifySecretRefs walks every secret-typed property of every live record
+// and holds each reference it finds to the sealed files. The kinds come from
+// the repository's own declaration rows, as a replay loads them, so a
+// property the repository declares secret is checked whatever package it is
+// in. A value that is not an engine-minted ref (`secret:`, `auth:`) is a
+// legacy plaintext or the retired inline-sealed form, which references
+// nothing. References only in historical payloads are not walked: rotation
+// deletes their rows and files on purpose.
+func (s *service) verifySecretRefs(ctx context.Context, tx dbx, db *sql.DB, repo Repository, dir string, fileRefs map[string]bool, report *VerifyReport, found func(string)) error {
+	bare := s.bareDataset(repo, db, dir)
+	if err := bare.loadDeclarationsForReplay(ctx); err != nil {
+		return err
+	}
+	for _, ty := range bare.registry().Kinds() {
+		for _, name := range ty.PropOrder {
+			p := ty.Props[name]
+			if p.Datatype != vocabulary.DatatypeSecret {
+				continue
+			}
+			q := `SELECT id, props ->> $1 FROM records
+			       WHERE kind = $2 AND deleted_at IS NULL AND jsonb_typeof(props -> $1) = 'string' ORDER BY id`
+			if p.Repeated {
+				q = `SELECT id, jsonb_array_elements_text(props -> $1) FROM records
+				     WHERE kind = $2 AND deleted_at IS NULL AND jsonb_typeof(props -> $1) = 'array' ORDER BY id`
+			}
+			rows, err := tx.QueryContext(ctx, q, name, ty.Identity)
+			if err != nil {
+				return err
+			}
+			for rows.Next() {
+				var id, value string
+				if err := rows.Scan(&id, &value); err != nil {
+					_ = rows.Close()
+					return err
+				}
+				if !strings.HasPrefix(value, secretRefPrefix) && !strings.HasPrefix(value, sealedAuthPrefix) {
+					continue
+				}
+				report.SecretRefs++
+				if !fileRefs[value] {
+					found(fmt.Sprintf("secret %s: %s %s names it in %s and sealed/ has no file for it", value, ty.Identity, id, name))
+				}
+			}
+			if err := rows.Err(); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			_ = rows.Close()
+		}
+	}
+	return nil
+}
+
+// verifySealedOpen opens every sealed file under the repository's DEK, the
+// way a read of the record would, and names each that does not open. It runs
+// only under a credential key, since the DEK is wrapped under it; a
+// repository with no DEK yet (never opened by a keyed server) has nothing to
+// open under.
+func (s *service) verifySealedOpen(repo Repository, files []changelogfile.SealedRecord, report *VerifyReport, found func(string)) {
+	if len(s.credKey) == 0 || len(repo.DEK) == 0 || len(files) == 0 {
+		return
+	}
+	dek, err := s.unwrapDEK(repo.DEK, repo.ID, repo.DEKKeyID)
+	if err != nil {
+		found(fmt.Sprintf("sealed: the repository's DEK does not open, so no sealed file can: %v", err))
+		return
+	}
+	for _, f := range files {
+		if _, err := openRepoPayload(f.Payload, dek, s.credKey, sealedAAD(f.Ref, f.RecordKind, f.RecordID), repo.SealedDEKOnly); err != nil {
+			found(fmt.Sprintf("sealed/%s (%s %s): does not open under the DEK: %v",
+				changelogfile.SealedFileName(f.Ref), f.RecordKind, f.RecordID, err))
+			continue
+		}
+		report.SealedOpened++
+	}
 }
 
 // checksumRow is one stored entry with its stamped checksum.

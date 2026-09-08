@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,8 +41,88 @@ func (a *app) repositoryCommand() *cobra.Command {
 	}
 	cmd.AddCommand(a.repositoryListCommand(), a.repositoryInspectCommand(),
 		a.repositoryRebuildCommand(), a.repositoryReembedCommand(),
-		a.repositoryVerifyCommand(), a.repositoryRewrapCommand(),
-		a.repositoryRotateGenerationCommand())
+		a.repositoryVerifyCommand(), a.repositorySnapshotCommand(),
+		a.repositoryRewrapCommand(), a.repositoryRotateGenerationCommand())
+	return cmd
+}
+
+func (a *app) repositorySnapshotCommand() *cobra.Command {
+	var output string
+	cmd := &cobra.Command{
+		Use:   "snapshot <username> <destination root>",
+		Short: "Write a verified copy of a repository's directory that records the point it holds",
+		Long: `Copy one repository's directory into a destination root, verified before and
+after, with snapshot.json recording the committed point the copy holds.
+
+The copy lands at <destination root>/repositories/<authority>/, the layout a
+data root has, so a restore copies it straight under SUBSTRATE_DATA_ROOT. It
+holds the manifest, every changelog segment and sidecar, every committed
+sealed file and, under the fs blob store, the bytes of every stored blob,
+each hashed against its digest on the way. Under the s3 blob store the bytes
+stay in the bucket: snapshot.json lists the objects the copy needs and where
+they are, and the restore copies them. snapshot.json is written last and
+names the head seq, its checksum and when the copy was taken; 'repository
+verify' on the restored repository prints it and holds the files to it.
+
+Before anything is copied the repository is verified whole: the changelog in
+both places, every stored blob's bytes, every live secret reference and, under
+SUBSTRATE_CREDENTIAL_KEY, every sealed file opened. A finding refuses the
+snapshot and is printed. The key is required for that reason. A destination
+that already holds a directory for the repository is refused: a snapshot is
+a fresh copy, never a merge over an older one.
+
+STOP THE SERVER FIRST. The snapshot opens the repository as its changelog
+writer so that no write can land while it copies, and a running server holds
+that lock; the command refuses rather than copy beside it.
+
+  SUBSTRATE_CREDENTIAL_KEY=… substratectl repository snapshot ada /srv/substrate-backup/2026-09-08`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if output != "" && output != "text" && output != "json" {
+				return fmt.Errorf("unknown output format %q: use text or json", output)
+			}
+			// The key before the DSN: the refusal names what is missing
+			// before anything is opened.
+			if os.Getenv(credentialKeyEnv) == "" {
+				return fmt.Errorf("refusing to snapshot: set %s to the key the server runs with; the snapshot proves every sealed file opens under it before it copies", credentialKeyEnv)
+			}
+			dest, err := filepath.Abs(args[1])
+			if err != nil {
+				return err
+			}
+			svc, err := a.openEngineWrite(cmd.Context())
+			if err != nil {
+				return err
+			}
+			defer func() { _ = svc.Close() }()
+			sn, ok := svc.(engine.Snapshotter)
+			if !ok {
+				return seamMissing("SnapshotRepository")
+			}
+			report, err := sn.SnapshotRepository(cmd.Context(), args[0], dest)
+			if err != nil {
+				return lockHint(err)
+			}
+			if output == "json" {
+				return printJSON(a.out, report)
+			}
+			fmt.Fprintf(a.out, "repository %s snapshot written\n", report.Username)
+			fmt.Fprintf(a.out, "  authority: %s\n", report.Repository)
+			fmt.Fprintf(a.out, "  directory: %s\n", report.Directory)
+			fmt.Fprintf(a.out, "  point:     seq %d, checksum %s\n", report.Head, report.HeadHash)
+			fmt.Fprintf(a.out, "  changelog: %d segment(s)\n", report.Segments)
+			fmt.Fprintf(a.out, "  sealed:    %d file(s), every one opened under %s\n", report.SealedFiles, credentialKeyEnv)
+			if report.BlobLocation != "" {
+				fmt.Fprintf(a.out, "  blobs:     %d object(s) listed in %s under %s; copy them with the directory\n",
+					report.Blobs, changelogfile.SnapshotName, report.BlobLocation)
+			} else {
+				fmt.Fprintf(a.out, "  blobs:     %d copied (%d bytes), each hashed against its digest\n", report.Blobs, report.BlobBytes)
+			}
+			fmt.Fprintf(a.out, "  took:      %s\n", report.Took.Round(time.Millisecond))
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&output, "output", "o", "", "output format: text|json")
 	return cmd
 }
 
@@ -444,13 +525,23 @@ equal the one stamped when the entry was written and the one the file's line
 carries. Both heads must agree, and every sealed row must have its file and
 every sealed file its row.
 
+The side stores are held to the fold: every blob whose manifest says stored is
+read out of the configured blob store and hashed against its digest, and every
+secret reference a live record holds must have its sealed file. With
+SUBSTRATE_CREDENTIAL_KEY set, every sealed file is opened under the
+repository's key; without it the files are compared with the rows and nothing
+is opened. A directory that is a snapshot, or was restored from one, carries
+snapshot.json: its recorded point is printed and the entry it names must be in
+the files with the recorded checksum.
+
 It never repairs or touches the repository it judges, and it runs beside a live
 server: the engine opens read-only against the data root, so an incomplete
 final transaction or a table ahead of its file is reported as a finding, never
 cut or caught up
 (opening the engine still applies any pending schema migration, as every
 operator command does). Against a server that is mid-write a finding about the
-heads can be a transaction in flight; run it again before believing it.
+heads, or about a blob the sweep collected a moment ago, can be a write in
+flight; run it again before believing it.
 
 The checksum catches corruption, not tampering: whoever holds the disk can
 rewrite a line and its checksum together.
@@ -481,8 +572,19 @@ Exits nonzero when anything does not verify.`,
 				fmt.Fprintf(a.out, "  table:    %d entries, head %d\n", report.Entries, report.Head)
 				fmt.Fprintf(a.out, "  files:    head %d in %d segment(s)\n", report.FileHead, report.Segments)
 				fmt.Fprintf(a.out, "  sealed:   %d rows, %d files\n", report.SealedRows, report.SealedFiles)
+				if report.SealedOpened > 0 || os.Getenv(credentialKeyEnv) != "" {
+					fmt.Fprintf(a.out, "  sealed:   %d file(s) opened under %s\n", report.SealedOpened, credentialKeyEnv)
+				} else {
+					fmt.Fprintf(a.out, "  sealed:   not opened (set %s to prove every file opens)\n", credentialKeyEnv)
+				}
+				fmt.Fprintf(a.out, "  secrets:  %d live reference(s) held to the sealed files\n", report.SecretRefs)
+				fmt.Fprintf(a.out, "  blobs:    %d stored, %d bytes hashed\n", report.Blobs, report.BlobBytes)
 				if report.HeadHash != "" {
 					fmt.Fprintf(a.out, "  head checksum: %s\n", report.HeadHash)
+				}
+				if report.Snapshot != nil {
+					fmt.Fprintf(a.out, "  recovery point: seq %d, checksum %s, taken %s\n",
+						report.Snapshot.Head, report.Snapshot.HeadHash, report.Snapshot.TakenAt.Format(time.RFC3339))
 				}
 				for _, f := range report.Findings {
 					fmt.Fprintf(a.out, "  FINDING:  %s\n", f)

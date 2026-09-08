@@ -119,6 +119,18 @@ func (a *app) openEngineWithKey(ctx context.Context, credKey string, readOnly bo
 	if err != nil {
 		return nil, err
 	}
+	// The blob store the server runs with, from the same variables:
+	// `repository verify` reads every stored blob's bytes and `repository
+	// snapshot` copies or lists them, and under `s3` the engine's default
+	// (fs under the data root) would hold none of them.
+	blobs, err := config.LoadBlobs()
+	if err != nil {
+		return nil, err
+	}
+	store, err := blobs.Backend(data.Root)
+	if err != nil {
+		return nil, err
+	}
 	// The engine logs its boot at info; an operator command's output is its
 	// own report, so only warnings and worse reach stderr.
 	log := slog.New(slog.NewTextHandler(a.errOut, &slog.HandlerOptions{Level: slog.LevelWarn}))
@@ -127,6 +139,7 @@ func (a *app) openEngineWithKey(ctx context.Context, credKey string, readOnly bo
 		engine.WithDataRoot(data.Root),
 		engine.WithChangelogSegmentBytes(data.ChangelogSegmentBytes),
 		engine.WithCredentialKey(credKey),
+		engine.WithBlobStore(store),
 		engine.WithLogger(log),
 	}
 	if readOnly {
@@ -146,7 +159,7 @@ func lockHint(err error) error {
 	if err == nil || !errors.Is(err, changelogfile.ErrLocked) {
 		return err
 	}
-	return fmt.Errorf("%w\n(a server is running against this data root: `repository inspect` and `repository verify` run beside it; `repository rebuild`, `repository rotate-generation`, `repository rewrap` and `user reset` need it stopped first)", err)
+	return fmt.Errorf("%w\n(a server is running against this data root: `repository inspect` and `repository verify` run beside it; `repository rebuild`, `repository rotate-generation`, `repository snapshot`, `repository rewrap` and `user reset` need it stopped first)", err)
 }
 
 // controlPlane opens a plain connection for the ONE control-plane table
