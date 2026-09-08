@@ -204,12 +204,16 @@ mint a token, fails as an internal error.
 The refusal is the point. Without it an old binary opens a store it cannot
 replay, serves it for weeks, and fails only when somebody runs `repository
 rebuild`, the day the changelog had to be replayable. The changelog dialect is
-3 today: 1 was the changelog while `link` and `unlink` were ops, 2 the changelog after
-references replaced them, and 3 the entry that names its transaction (`txn`,
-covered by the checksum), which a dialect 2 binary would silently re-stamp
-away at boot
-([decision 0057](decisions/0057-a-changelog-line-names-its-transaction-and-an-unfinished-one-is-cut-whole.md)).
-A repository's stored dialect is never on the wire: what
+4 today: 1 was the changelog while `link` and `unlink` were ops, 2 the
+changelog after references replaced them, 3 the entry that names its
+transaction (`txn`, covered by the checksum), which a dialect 2 binary would
+silently re-stamp away at boot
+([decision 0057](decisions/0057-a-changelog-line-names-its-transaction-and-an-unfinished-one-is-cut-whole.md)),
+and 4 the `record` delta that carries `kindVersion`, the kind declaration
+version that wrote the row
+([decision 0060](decisions/0060-a-record-carries-the-kind-version-that-last-wrote-it.md)),
+which a dialect 3 binary would drop at replay, folding every record to 0 with
+nothing refusing. A repository's stored dialect is never on the wire: what
 [API discovery](api.md#discovery) reports is the binary's maximum. It is in
 the repository directory, as `changelogDialect` in `repository.json`, which
 the transaction that records the claim rewrites before it appends, so a copy

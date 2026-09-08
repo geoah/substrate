@@ -260,6 +260,20 @@ func TestKindVersionIsAValueTheDeltaCarries(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"kindVersion":1.5E0}`), &filed); err == nil {
 		t.Fatal("a fractional kind version decoded; it must be refused")
 	}
+	if err := json.Unmarshal([]byte(`{"kindVersion":0}`), &filed); err == nil {
+		t.Fatal("a kind version of 0 decoded; a version is at least 1")
+	}
+	// `null` is absent, as it is for every other delta field: the row's stamp
+	// stays and the replay of the entry goes on.
+	nulled := before.clone()
+	var withNull rowDelta
+	if err := json.Unmarshal([]byte(`{"set":{"description":"x"},"kindVersion":null}`), &withNull); err != nil {
+		t.Fatalf("a null kind version refused the delta: %v", err)
+	}
+	withNull.applyTo(nulled)
+	if nulled.KindVersion != 3 {
+		t.Fatalf("a null kind version moved the stamp to %d, want 3 kept", nulled.KindVersion)
+	}
 
 	// An unstamped writer moves a property and leaves the stamp where it was.
 	unstamped := before.clone()

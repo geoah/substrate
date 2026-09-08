@@ -114,6 +114,40 @@ describe("the effects a write recorded", () => {
     ])
   })
 
+  it("names the kind version a write moved the row to", () => {
+    // A stamp-only entry (a forced write that re-validated the row under a
+    // newer declaration) must not render an empty detail.
+    expect(
+      changeEffects(
+        withEffects([
+          {
+            kind: "record",
+            ref: "samples.substrate.reamde.dev/people/person",
+            id: "p1",
+            delta: { set: { name: "Ada" }, kindVersion: 4 },
+          },
+          {
+            kind: "record",
+            ref: "samples.substrate.reamde.dev/people/person",
+            id: "p2",
+            delta: { force: true, kindVersion: 4 },
+          },
+        ])
+      )
+    ).toEqual([
+      {
+        verb: "updated",
+        target: "samples.substrate.reamde.dev/people/person/p1",
+        detail: "set name; kind version 4",
+      },
+      {
+        verb: "updated",
+        target: "samples.substrate.reamde.dev/people/person/p2",
+        detail: "kind version 4",
+      },
+    ])
+  })
+
   it("distinguishes a creation from a restoration from an update", () => {
     const verbs = changeEffects(
       withEffects([

@@ -35,8 +35,11 @@ A kind's effective version is its own pin, else its package's
 
 Chosen: one stamp per record, the kind's effective version, moved only by a
 write that moves the row. `records.kind_version bigint NOT NULL DEFAULT 0`
-(migration `0021`) holds it; the writer sets it on the row it produced
-(`apply` from `sp.ty.Version`, merge and split from the kind they resolved);
+(migration `0021`) holds it; `apply` sets it on the row it produced, from
+`sp.ty.Version`, and no other writer moves it: merge and split rewrite a row
+without validating a property (a merge does not migrate properties, and a
+split revives a tombstoned loser whose values the narrowing guard never
+counted), so each carries the stamp the row already holds;
 `diffRow` carries it as `kindVersion` on the `record` delta when it moved;
 `applyTo` restores it; `upsertRecord` writes it whenever any other column
 moves and leaves the row alone otherwise. Nothing recomputes it from the live
@@ -49,9 +52,9 @@ that moved, so a per-property stamp is the record stamp joined with the
 changelog, at a fraction of the cost. The pair was rejected because the
 effective version is the one the loader applies, and a package move that
 leaves a pinned kind's declaration unchanged changed nothing about the
-record. Deriving at replay was rejected because the fold is deliberately
-schema-free about data (`fold.go`): every decision the declaration made at
-write time is in the delta as a value, and the stamp is one more. Moving the
+record. Deriving at replay was rejected because the fold reads no declaration
+(`fold.go`): every decision the declaration made at write time is in the
+delta as a value, and the stamp is one more. Moving the
 stamp on every fold was rejected because an identical re-put must stay silent
 (no edit-counter bump, no changelog entry), and a stamp that moved alone would
 either break that or leave the row saying one thing and the changelog another.
@@ -63,11 +66,14 @@ carries no `kindVersion` reads 0, and nothing reconstructs the history. A
 writer that resolved no declaration leaves the stamp where it was; no delta
 ever carries a stamp of 0.
 
-The key is not a changelog dialect bump. `foldOpsOf` decodes without
-`DisallowUnknownFields`, so a binary older than the key replays the entry,
-drops the stamp and folds the row to 0: the same reading it gives every entry
-older than the key, and neither a refusal nor a misread value. The dialect
-rung (`changelogdialect.go`) stays at 2.
+The key is a changelog dialect bump. `foldOpsOf` decodes without
+`DisallowUnknownFields`, so a binary older than the key replays the entry and
+drops the stamp: a data root this binary wrote, imported by that one, folds
+every row to 0, and after an upgrade back the fold and the changelog disagree
+with nothing refusing. The dialect header (`changelogdialect.go`) names a
+payload shape an old decoder reads differently as a bump, so
+`maxChangelogDialect` moves and an older binary refuses the files at the
+gate instead of dropping the key.
 
 ### Consequences
 
@@ -76,14 +82,16 @@ rung (`changelogdialect.go`) stays at 2.
   registry.
 - Good, because the stamp costs one column and one optional key, and the
   identical-re-put invariant holds unchanged.
-- Bad, because history older than the stamp is 0 forever; a record nobody
-  writes again never learns its version, and a conversion has to treat 0 as
-  "unknown, assume the oldest".
+- Bad, because history older than the stamp is 0 forever: a record nobody
+  writes again keeps 0, and a conversion has to treat 0 as "unknown, assume
+  the oldest".
 - Bad, because a label-only or annotation-forced write re-validates the
   properties and moves the stamp to the current version without a property
-  moving. That is the honest reading (the row was written under that
-  declaration), but a reader expecting the stamp to move only with the
-  properties will be surprised.
+  moving. The row was written under that declaration, so the stamp says so,
+  but a reader expecting the stamp to move only with the properties will be
+  surprised.
+- Bad, because the bump bars every older binary from a data root this one
+  has written, for one optional key.
 - Bad, because the stamp rides the raw delta the `/changes` feed serves, and
   that payload is not a client contract
   ([#377](https://github.com/geoah/substrate/issues/377)); it is documented
@@ -94,7 +102,9 @@ rung (`changelogdialect.go`) stays at 2.
 `TestARecordCarriesTheKindVersionThatWroteIt` (`internal/engine/kindversion_db_test.go`)
 writes under two versions of one kind, checks the identical re-put stays
 silent, and rebuilds the repository against the fold snapshot, which now
-includes `kind_version`. `TestKindVersionIsAValueTheDeltaCarries`
+includes `kind_version`. `TestMergeAndSplitCarryTheStampUnchanged` in the
+same file merges and splits under a newer declaration and reads both stamps
+back unmoved. `TestKindVersionIsAValueTheDeltaCarries`
 (`internal/engine/fold_internal_test.go`) pins the three spellings: carried
 when moved, absent means unchanged, never 0. `TestWireGolden` and the console's
 `wire.golden.test.ts` hold `kindVersion` on the wire.

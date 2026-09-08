@@ -93,7 +93,8 @@ data:
     project:                      # a reference, always an object
       ref: samples.substrate.reamde.dev/tasks/project/infra7
 status:                           # server-set, ignored on input
-  version: 4
+  version: 4                      # the edit counter
+  kindVersion: 3                  # the kind declaration that last wrote it
   createdAt: "2026-08-04T09:00:00Z"
   updatedAt: "2026-08-04T09:12:00Z"
 ```

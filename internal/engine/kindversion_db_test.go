@@ -121,3 +121,55 @@ func TestARecordCarriesTheKindVersionThatWroteIt(t *testing.T) {
 		}
 	}
 }
+
+// Merge and split rewrite rows without validating a property: a merge does
+// not migrate properties, and a split revives a tombstoned loser whose values
+// the narrowing guard never counted (it counts live rows). Neither may claim
+// the current declaration validated the row, so each carries the stamp the
+// row already holds, and the winner and the revived loser read back the
+// version that wrote them.
+func TestMergeAndSplitCarryTheStampUnchanged(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newCoreDataset(t)
+	const widget = kvPackage + "/widget"
+	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(kvPackage, 0),
+		kvWidget(map[string]any{"name": map[string]any{"type": "string"}}),
+	}); err != nil {
+		t.Fatalf("declare the widget kind: %v", err)
+	}
+	v1 := kindVersion(t, ds, widget)
+	mustPut(t, ds, owner, substrate.PutInput{Kind: widget, ID: "w1", Properties: map[string]any{"name": "one"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: widget, ID: "w2", Properties: map[string]any{"name": "two"}})
+
+	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(kvPackage, 0),
+		kvWidget(map[string]any{
+			"name": map[string]any{"type": "string"},
+			"note": map[string]any{"type": "string"},
+		}),
+	}); err != nil {
+		t.Fatalf("re-declare the widget kind: %v", err)
+	}
+	if v2 := kindVersion(t, ds, widget); v2 <= v1 {
+		t.Fatalf("re-declaring the kind left its version at %d", v2)
+	}
+
+	merged, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: widget, Winner: "w1", Loser: "w2"})
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	if got := mustGet(t, ds, widget, "w1").KindVersion; got != v1 {
+		t.Fatalf("the merge stamped the winner with kind version %d, want %d kept", got, v1)
+	}
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: merged.ID}); err != nil {
+		t.Fatalf("split: %v", err)
+	}
+	if got := mustGet(t, ds, widget, "w2").KindVersion; got != v1 {
+		t.Fatalf("the split stamped the revived loser with kind version %d, want %d kept", got, v1)
+	}
+	if got := mustGet(t, ds, widget, "w1").KindVersion; got != v1 {
+		t.Fatalf("the split stamped the winner with kind version %d, want %d kept", got, v1)
+	}
+}

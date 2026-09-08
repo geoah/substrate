@@ -235,9 +235,6 @@ func (t *txn) mergeRecordIf(winnerRef, loserRef eref, winnerVersion, loserVersio
 		return nil, err
 	}
 	winner.Title = title
-	// The merged properties were assembled under this declaration; the row
-	// says so (migration 0021).
-	winner.KindVersion = ty.Version
 	if _, err := t.foldRow(winnerBefore, winner, true, false); err != nil {
 		return nil, err
 	}
@@ -666,7 +663,6 @@ func (t *txn) splitIf(mergeID string, ifVersion *int64) (*substrate.Record, erro
 		return nil, err
 	}
 	loser.Title = title
-	loser.KindVersion = loserTy.Version
 	if _, err := t.foldRow(loserBefore, loser, true, true); err != nil {
 		return nil, err
 	}
@@ -680,7 +676,6 @@ func (t *txn) splitIf(mergeID string, ifVersion *int64) (*substrate.Record, erro
 			return nil, err
 		}
 		winner.Title = wtitle
-		winner.KindVersion = winnerTy.Version
 		if _, err := t.foldRow(winnerBefore, winner, true, false); err != nil {
 			return nil, err
 		}

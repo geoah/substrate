@@ -324,10 +324,14 @@ func (b *schemaBuilder) recordFields() graphql.Fields {
 		// absent has to be spelled null.
 		"canonicalId": &graphql.Field{Type: graphql.ID, Resolve: resolveCanonicalID},
 		// The ids merges fused into this one, server-set.
-		"formerIds":   &graphql.Field{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
-		"title":       &graphql.Field{Type: graphql.String},
-		"body":        &graphql.Field{Type: graphql.String},
-		"version":     &graphql.Field{Type: graphql.NewNonNull(longScalar)},
+		"formerIds": &graphql.Field{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
+		"title":     &graphql.Field{Type: graphql.String},
+		"body":      &graphql.Field{Type: graphql.String},
+		"version":   &graphql.Field{Type: graphql.NewNonNull(longScalar)},
+		// The kind declaration version that last wrote the record (decision
+		// 0060). Null, not 0, on a record not written since the stamp existed:
+		// REST omits the key there, and null is how GraphQL spells absent.
+		"kindVersion": &graphql.Field{Type: longScalar, Resolve: resolveKindVersion},
 		"createdAt":   &graphql.Field{Type: graphql.NewNonNull(graphql.DateTime)},
 		"updatedAt":   &graphql.Field{Type: graphql.NewNonNull(graphql.DateTime)},
 		"deletedAt":   &graphql.Field{Type: graphql.DateTime},
@@ -819,6 +823,14 @@ func resolveCanonicalID(p graphql.ResolveParams) (any, error) {
 		return nil, nil
 	}
 	return e.CanonicalID, nil
+}
+
+func resolveKindVersion(p graphql.ResolveParams) (any, error) {
+	e := recordOf(p)
+	if e == nil || e.KindVersion == 0 {
+		return nil, nil
+	}
+	return e.KindVersion, nil
 }
 
 // resolvePropertyMeta answers null when the read carried none: lists never

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -112,9 +111,11 @@ type rowDelta struct {
 
 	// KindVersion is the effective version of the kind declaration the writer
 	// validated the row against (its own pin, else its package's), carried
-	// when the write moved it. It is a VALUE like every other field here: the
-	// fold restores it and never asks the registry, so a rebuild stamps each
-	// row with the version that wrote it, not the version it holds today. An
+	// when the write moved it. Only `apply` sets it: merge and split rewrite a
+	// row without validating a property, so they carry the stamp each row
+	// already holds. It is a VALUE like every other field here: the fold
+	// restores it and never asks the registry, so a rebuild stamps each row
+	// with the version that wrote it, not the version it holds today. An
 	// absent key is "unchanged", and 0 is never written, so history older than
 	// the stamp folds to the column's default of 0 (decision 0060).
 	KindVersion foldVersion `json:"kindVersion,omitempty"`
@@ -125,17 +126,29 @@ type rowDelta struct {
 // payload, and the payload has two spellings of a number: Postgres prints
 // `18`, and the segment file canonicalizes the same value to `1.8E1`
 // (changelogfile.canonicalNumber), which encoding/json refuses for a bare
-// int64. The replay reads the file, so the fold decodes exactly, through
-// big.Rat, and refuses a lexeme that is not a whole number rather than round
-// it.
+// int64. The replay reads the file, so the fold reads the lexeme the way every
+// integer property is read (asInt, decision 0012): a whole number within the
+// safe-integer bound, and a fraction is refused rather than rounded. A version
+// is at least 1 (vocabulary parseVersion), so a value below 1 is refused too:
+// nothing writes one, and folding it would spell "absent" as a stamp. `null`
+// reads as absent, as every other delta field reads it.
 type foldVersion int64
 
 func (v *foldVersion) UnmarshalJSON(b []byte) error {
-	r, ok := new(big.Rat).SetString(string(b))
-	if !ok || !r.IsInt() || !r.Num().IsInt64() {
-		return fmt.Errorf("kindVersion %s is not a whole number", b)
+	if string(b) == "null" {
+		return nil
 	}
-	*v = foldVersion(r.Num().Int64())
+	if len(b) == 0 || b[0] == '"' {
+		return fmt.Errorf("kindVersion %s is not a number", b)
+	}
+	n, err := asInt(json.Number(b))
+	if err != nil {
+		return fmt.Errorf("kindVersion %s: %w", b, err)
+	}
+	if n < 1 {
+		return fmt.Errorf("kindVersion %d: a version is at least 1", n)
+	}
+	*v = foldVersion(n)
 	return nil
 }
 

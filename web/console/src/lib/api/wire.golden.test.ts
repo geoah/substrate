@@ -124,7 +124,7 @@ const substrateRecord: Shape<SubstrateRecord> = {
   labels: true,
   annotations: false,
   version: true,
-  kindVersion: true,
+  kindVersion: false,
   createdAt: true,
   updatedAt: true,
   deletedAt: false,
