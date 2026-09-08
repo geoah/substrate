@@ -73,9 +73,11 @@ var migratedTemplate = testdb.NewTemplate("engine", func(ctx context.Context, ds
 })
 
 // MigratedDSN is a fresh database of the test's own on which the shipped
-// migrations have already run, dropped when the test ends. It is what a
-// test opens unless the test is about the from-empty migration itself
-// (migrate_db_test.go), which opens testdb.NewSchema and migrates.
+// migrations have already run, dropped when the test ends. It is what every
+// test opens, migrate_db_test.go's included (those tamper with a migrated
+// database and open it again). The two that open testdb.NewSchema and
+// migrate from empty are TestRepositoryProvisioningAndProjections and
+// TestAssertPoolPrincipalRejectsSuperuser.
 func MigratedDSN(t *testing.T) string {
 	t.Helper()
 	return migratedTemplate.Clone(t)

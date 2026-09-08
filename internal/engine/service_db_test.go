@@ -18,8 +18,9 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	// An EMPTY schema, not the migrated template every other fixture copies:
-	// this case is the suite's one boot from nothing, migrations included,
-	// beside the template build itself.
+	// this case and TestAssertPoolPrincipalRejectsSuperuser are the suite's
+	// two boots from nothing, migrations included, beside the template build
+	// itself.
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
 		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
