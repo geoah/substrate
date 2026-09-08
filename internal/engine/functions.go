@@ -135,6 +135,10 @@ func (ds *dataset) ProcessTriggers(ctx context.Context) (int, error) {
 	if err := ds.sweepPagedCursors(ctx); err != nil {
 		ds.svc.log.Warn("substrate: sweeping orphaned paged cursors", "error", err)
 	}
+	// The webhook requests the door recorded and nothing fired: a stop after
+	// the 202 or mid-fire, a restore, a trigger that runs again. Detached,
+	// so a slow fire does not hold the pass (webhooks.go resumeWebhooks).
+	ds.resumeWebhooks()
 	triggers, err := ds.loadTriggers(ctx)
 	if err != nil {
 		return 0, err
@@ -416,6 +420,12 @@ type settlement struct {
 	acknowledge func(t *txn) error
 	// retire is the parked failure a retry re-runs, 0 on a dispatch.
 	retire int64
+	// pending is the admitted request a webhook fire runs (webhooks.go
+	// admitWebhook), the row `retire` names: a dispatch that is also a
+	// retry. An agent fire's claim rewrites it as in flight, so a crash
+	// mid-loop leaves a claim for a hand and not a pending entry the next
+	// open would run again; nil everywhere else.
+	pending *foldFailure
 	// record writes the run record; nil on a retry.
 	record func(t *txn, res deliverResult) error
 }
@@ -459,6 +469,22 @@ func (s *settlement) settle(t *txn, res deliverResult) error {
 // completion retires.
 func (s *settlement) claim(t *txn) (int64, error) {
 	if s.retire != 0 {
+		if s.pending != nil {
+			// The caller clears pending once this commits (claimAgentDelivery),
+			// so a later attempt of the same fire skips the rewrite and a
+			// rolled-back one repeats it.
+			if err := t.lockFailure(s.trigger, s.retire); err != nil {
+				return 0, err
+			}
+			row := *s.pending
+			row.LastError = inFlightError
+			if err := t.parkTx(s.trigger, row); err != nil {
+				return 0, err
+			}
+			if err := t.settleDelivery(s.trigger); err != nil {
+				return 0, err
+			}
+		}
 		return s.retire, nil
 	}
 	if s.claimed != 0 {
@@ -784,7 +810,7 @@ func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger)
 	}
 	ran := 0
 	for _, at := range due {
-		n, err := ds.deliverFire(ctx, lt.trigger, runner.ModeSchedule, fireID(at), at, &lastFire, nil)
+		n, err := ds.deliverFire(ctx, lt.trigger, runner.ModeSchedule, fireID(at), at, &lastFire, nil, nil)
 		ran += n
 		if err != nil {
 			return ran, err
@@ -820,13 +846,24 @@ func (ds *dataset) fireSettlement(tr *trigger, mode, fid string, at time.Time, l
 // concurrent dispatcher cannot double-fire an occurrence, which is what
 // makes the stable fire id idempotent. envelope is the delivery's envelope
 // when the caller built one (a public webhook delivery carries its request);
-// nil means the bare fire envelope.
-func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid string, at time.Time, lastFire *time.Time, envelope map[string]any) (int, error) {
+// nil means the bare fire envelope. pending is the ledger row an admitted
+// webhook request stands in (webhooks.go admitWebhook): the settlement
+// retires it with the effects, and a park rewrites it under its own id
+// rather than reserving another; nil for every other fire.
+func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid string, at time.Time, lastFire *time.Time, envelope map[string]any, pending *foldFailure) (int, error) {
 	started := nowUTC()
 	var lastErr error
 	attempts := triggerAttempts
 	settle := ds.fireSettlement(tr, mode, fid, at, lastFire, started)
 	defer settle.release()
+	if pending != nil {
+		settle.retire, settle.pending = int64(pending.ID), pending
+		// Held before anything runs: a resume racing the door's own spawn,
+		// or a hand's retry, loses the swap and starts no body.
+		if err := settle.acquire(settle.retire); err != nil {
+			return 0, err
+		}
+	}
 	for attempt := range triggerAttempts {
 		if attempt > 0 {
 			select {
@@ -873,6 +910,11 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 			// and rolled back whole.
 			return 0, nil
 		}
+		if pending != nil && errors.Is(err, errFailureRetired) {
+			// The admitted request's row is gone: a hand retired it, so its
+			// delivery landed, and there is nothing to run again or park.
+			return 0, err
+		}
 		if ctx.Err() != nil {
 			return 0, ctx.Err()
 		}
@@ -886,17 +928,34 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 	// the schedule state still moves — a poisoned occurrence never wedges the
 	// ones behind it. A built envelope parks with the row in its parked form
 	// (webhooks.go parkedEnvelope), so a retry re-delivers the request that
-	// arrived rather than a bare fire.
-	payload, err := ds.parkedEnvelope(ctx, envelope)
-	if err != nil {
-		return 0, err
+	// arrived rather than a bare fire. A pending row already holds that form,
+	// and the delivered envelope is not read back into one: the fire read
+	// the body into it (fireEnvelope), and the bytes must not enter the
+	// changelog.
+	var payload json.RawMessage
+	if pending != nil {
+		payload = pending.Payload
+	} else {
+		var err error
+		if payload, err = ds.parkedEnvelope(ctx, envelope); err != nil {
+			return 0, err
+		}
 	}
-	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+	err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 		// An agent fire already claimed the occurrence (settlement.claim):
 		// the park rewrites the claim and moves the fire state no further.
 		id, claimed, err := t.claimedFailure(tr.ID, 0, fid)
 		if err != nil {
 			return err
+		}
+		if !claimed && pending != nil {
+			// The admitted request's own row, held FOR UPDATE so a row a
+			// hand retired meanwhile is not brought back: the park rewrites
+			// it, and no fire state moves.
+			if err := t.lockFailure(tr.ID, int64(pending.ID)); err != nil {
+				return err
+			}
+			id, claimed = int64(pending.ID), true
 		}
 		if !claimed {
 			if id, err = t.reserveSeq(); err != nil {
@@ -1663,7 +1722,9 @@ func (ds *dataset) causalDepth(ctx context.Context, seq int64) (int, error) {
 
 // TriggerStatuses computes per-trigger delivery state: nothing is stored on
 // the trigger record itself — status derives from the cursor (or fire
-// state), the head and the parked count.
+// state), the head and the parked count. An admitted webhook request whose
+// fire has not settled (webhooks.go pendingWebhookError) is counted as
+// pending, not parked: a healthy door is not a trigger giving up.
 func (ds *dataset) TriggerStatuses(ctx context.Context) ([]substrate.TriggerStatus, error) {
 	var head int64
 	if err := ds.db.QueryRowContext(ctx,
@@ -1720,8 +1781,9 @@ func (ds *dataset) TriggerStatuses(ctx context.Context) ([]substrate.TriggerStat
 			st.Kind = substrate.TriggerKindWebhook
 			st.WebhookPath = webhookPath(ds.Repository().Authority, lt.ID)
 		}
-		if err := ds.db.QueryRowContext(ctx,
-			`SELECT count(*) FROM trigger_failures WHERE trigger_id = $1`, lt.ID).Scan(&st.Parked); err != nil {
+		if err := ds.db.QueryRowContext(ctx, `
+			SELECT count(*) FILTER (WHERE last_error <> $2), count(*) FILTER (WHERE last_error = $2)
+			FROM trigger_failures WHERE trigger_id = $1`, lt.ID, pendingWebhookError).Scan(&st.Parked, &st.Pending); err != nil {
 			return nil, err
 		}
 		out = append(out, st)
@@ -1828,7 +1890,7 @@ func (ds *dataset) WakeTrigger(ctx context.Context, id string) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		return ds.deliverFire(ctx, tr, runner.ModeWebhook, "wake-"+wid, nowUTC(), nil, nil)
+		return ds.deliverFire(ctx, tr, runner.ModeWebhook, "wake-"+wid, nowUTC(), nil, nil, nil)
 	case tr.Record != nil:
 		return ds.processRecordTrigger(ctx, tr)
 	case tr.Schedule != nil:

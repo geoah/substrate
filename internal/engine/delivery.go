@@ -30,6 +30,11 @@ import (
 // changefeed.go ChangesBefore), a trigger's own read hides it from the source
 // match (functions.go matchChanges), and it is never on the wire.
 //
+// The public webhook door writes the ledger too: a request it admits is a
+// parked failure carrying pendingWebhookError from before the 202 until its
+// fire settles, and the fire is that row's retry (webhooks.go admitWebhook,
+// fireWebhook, resumeWebhooks; decision 0068).
+//
 // One position is deliberately not in the ledger: the SCAN position a record
 // trigger moves past rows that did not match its source (functions.go
 // advanceCursor). It acknowledges nothing, and recording it would append one
@@ -271,11 +276,18 @@ func (t *txn) claimedFailure(triggerID string, seq int64, fireID string) (int64,
 	return id, true, nil
 }
 
+// errFailureRetired is lockFailure finding the row gone: another hand retired
+// it, so its delivery landed. It wraps ErrNotFound for the API and is named
+// so a fire that meets it stops (functions.go deliverFire) rather than
+// running the callable again and failing to park.
+var errFailureRetired = errors.New("substrate/engine: the parked failure was retired")
+
 // lockFailure holds a parked failure's row FOR UPDATE, after the changelog
 // lock, for a retry about to retire or rewrite it. A row that is gone was
 // retired by another hand: the retry that finds it gone writes nothing and
-// answers not found, so two retries of one failure cannot both repeat its
-// effects on the tables, and a delivered failure never comes back.
+// answers not found (errFailureRetired), so two retries of one failure
+// cannot both repeat its effects on the tables, and a delivered failure
+// never comes back.
 func (t *txn) lockFailure(triggerID string, id int64) error {
 	if err := t.lockChangelog(); err != nil {
 		return err
@@ -283,7 +295,7 @@ func (t *txn) lockFailure(triggerID string, id int64) error {
 	var one int
 	err := t.row(`SELECT 1 FROM trigger_failures WHERE trigger_id = $1 AND id = $2 FOR UPDATE`, triggerID, id).Scan(&one)
 	if errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("%w: trigger %s has no parked failure %d", substrate.ErrNotFound, triggerID, id)
+		return fmt.Errorf("%w: %w: trigger %s has no parked failure %d", errFailureRetired, substrate.ErrNotFound, triggerID, id)
 	}
 	return err
 }

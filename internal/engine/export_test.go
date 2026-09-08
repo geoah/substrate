@@ -96,6 +96,13 @@ func WithTestSnapshotFault(fn func(stage, dir string) error) Option {
 	return func(o *options) { o.snapshotFault = fn }
 }
 
+// WithTestInvokeHook runs fn with a function's identity as the runner is
+// about to invoke its body (runner.go runCallableRaw): the moment a test
+// that must act mid-fire (cancel it, retry it by hand) can wait for.
+func WithTestInvokeHook(fn func(function string)) Option {
+	return func(o *options) { o.invokeHook = fn }
+}
+
 // The snapshot stages WithTestSnapshotFault reports, in the order they run.
 const (
 	SnapshotAfterChangelog = snapshotAfterChangelog
@@ -240,8 +247,20 @@ func refID(e *substrate.Record, name string) string {
 // rather than handed to the background supervisor, so a test asserts on what
 // the delivery wrote the moment the call returns.
 func ReceiveWebhookSync(ctx context.Context, svc substrate.Service, authority, trigger, key string, req substrate.WebhookRequest) (string, error) {
-	return svc.(*service).receiveWebhook(ctx, authority, trigger, key, req, true)
+	return svc.(*service).receiveWebhook(ctx, authority, trigger, key, req, webhookFireInline)
 }
+
+// ReceiveWebhookHeld is the public webhook door stopped right after its
+// answer: the request is admitted and recorded, the fire id returned, and
+// nothing fires, the state a process leaves when it dies after the 202. A
+// test reopens the service to show the next open resumes it.
+func ReceiveWebhookHeld(ctx context.Context, svc substrate.Service, authority, trigger, key string, req substrate.WebhookRequest) (string, error) {
+	return svc.(*service).receiveWebhook(ctx, authority, trigger, key, req, webhookFireHeld)
+}
+
+// WebhookPendingError is the error a recorded webhook request carries under
+// the trigger's parked failures until its fire settles.
+const WebhookPendingError = pendingWebhookError
 
 // SetDatasetDEKOnly overrides an open dataset's DEK-only marker, so a test can
 // present a dataset the open did not mark to a path that requires the marker.

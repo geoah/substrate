@@ -722,7 +722,12 @@ copy taken before it still opens under the old host key.
 every cursor advance, schedule fire, parked failure and paged-drain page is a
 `delivery` changelog entry
 ([decision 0064](decisions/0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md)),
-folded back into the trigger tables on import with the rest of the changelog.
+folded back into the trigger tables on import with the rest of the changelog,
+and so is every webhook request the door answered `202` to whose fire had not
+settled: the server's first trigger dispatcher pass over the restored
+repository runs each one under its original fire id, with the body read back
+from the blob store
+([decision 0068](decisions/0068-an-accepted-webhook-is-a-pending-entry-in-the-delivery-ledger.md)).
 A record trigger comes back at the last delivery it acknowledged, or at its
 last edit if that is later, and the next pass re-reads the rows after it,
 which matched nothing under the source that scanned them, so nothing is

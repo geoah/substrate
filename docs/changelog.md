@@ -42,10 +42,11 @@ transition moved one, `winner` and `loser` on a merge or a split, and
 ([vocabulary](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)).
 `affected` is the change event ([below](#the-change-event)).
 One op is stored and never served: `delivery`, the engine's own entry
-carrying a trigger's cursor advance, schedule fire, parked failure or
-paged-drain page, appended in the transaction that commits the effects it
-acknowledges
-([decision 0064](decisions/0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md)).
+carrying a trigger's cursor advance, schedule fire, parked failure,
+paged-drain page or accepted webhook request, appended in the transaction
+that commits the effects it acknowledges
+([decision 0064](decisions/0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md),
+[0068](decisions/0068-an-accepted-webhook-is-a-pending-entry-in-the-delivery-ledger.md)).
 Every read here skips those rows, and a resume cursor still moves past them.
 
 Beneath the wire row, the stored entry also carries the write's **values** as

@@ -39,19 +39,46 @@ func webhookPath(authority, triggerID string) string {
 	return "/webhooks/" + authority + "/" + triggerID
 }
 
+// pendingWebhookError is the error an ADMITTED webhook request carries in
+// trigger_failures from the door's 202 until its fire settles. The request is
+// recorded as a parked failure whose retry is the fire itself, so one row,
+// one blob hold (blobs.go parkedBlobsSQL) and one set of ledger effects cover
+// an accepted delivery, a running one and a parked one, and a rebuild or a
+// restore reproduces all three. A process that stops while a row still
+// carries it, before the fire or mid-fire before its effects committed,
+// leaves it for the trigger dispatcher's next pass over the repository
+// (resumeWebhooks), which runs the fire under the same id. An agent
+// fire rewrites it to inFlightError at its claim (settlement.claim), and a
+// row left that way waits for a hand, as every interrupted agent delivery
+// does (decision 0064). Decision 0068 records the design.
+const pendingWebhookError = "delivery accepted: the fire has not settled, and a restart resumes it"
+
+// webhookFire says what receiveWebhook does with an admitted request: hand
+// the fire to the background supervisor (the door), run it inline (tests
+// asserting on what the delivery wrote) or leave it pending (tests standing
+// in for a process that stopped right after the 202).
+type webhookFire int
+
+const (
+	webhookFireDetached webhookFire = iota
+	webhookFireInline
+	webhookFireHeld
+)
+
 // ReceiveWebhook is the public door (substrate.WebhookReceiver): resolve the
 // repository by its authority, the trigger by id, check the key when the
-// trigger declares one, spool the file parts into the blob store, then hand
+// trigger declares one, spool the file parts and the body into the blob
+// store, record the request as a pending delivery in the ledger, then hand
 // the fire to the background supervisor and return. The sender gets its
-// answer in milliseconds while an agent callable may run for minutes, and a
-// fire that has STARTED is durable through deliverFire's park.
+// answer in milliseconds while an agent callable may run for minutes, and
+// the answer is given only once the request is durable: a process that stops
+// after it leaves the fire to the dispatcher's next pass.
 func (s *service) ReceiveWebhook(ctx context.Context, authority, triggerID, key string, req substrate.WebhookRequest) (string, error) {
-	return s.receiveWebhook(ctx, authority, triggerID, key, req, false)
+	return s.receiveWebhook(ctx, authority, triggerID, key, req, webhookFireDetached)
 }
 
-// receiveWebhook is ReceiveWebhook with the fire either detached (the door)
-// or run inline (tests asserting on what the delivery wrote).
-func (s *service) receiveWebhook(ctx context.Context, authority, triggerID, key string, req substrate.WebhookRequest, inline bool) (string, error) {
+// receiveWebhook is ReceiveWebhook with the fire detached, inline or held.
+func (s *service) receiveWebhook(ctx context.Context, authority, triggerID, key string, req substrate.WebhookRequest, fire webhookFire) (string, error) {
 	repo, err := s.repositoryByAuthority(ctx, authority)
 	if err != nil {
 		if errors.Is(err, substrate.ErrNotFound) {
@@ -70,61 +97,245 @@ func (s *service) receiveWebhook(ctx context.Context, authority, triggerID, key 
 			"authority", logSafeID(authority), "error", err)
 		return "", errWebhookRefused
 	}
-	tr, fid, at, envelope, err := ds.admitWebhook(ctx, triggerID, key, req)
+	tr, row, err := ds.admitWebhook(ctx, triggerID, key, req)
 	if err != nil {
 		return "", err
 	}
-	if inline {
-		ds.fireWebhook(ctx, tr, fid, at, envelope)
-		return fid, nil
+	switch fire {
+	case webhookFireInline:
+		ds.fireWebhook(ctx, tr, row)
+	case webhookFireDetached:
+		// The request is recorded and answered whether or not the supervisor
+		// takes the fire: one it refuses (shutdown has begun) stays pending
+		// and the next dispatcher pass runs it, so the sender is not asked to
+		// redeliver a request the substrate already holds.
+		if !ds.spawn("webhook fire", func(ctx context.Context) { ds.fireWebhook(ctx, tr, row) }) {
+			ds.svc.log.Info("substrate: webhook fire left pending, the service is shutting down",
+				"repository", ds.Repository().Name, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID))
+		}
 	}
-	if !ds.spawn("webhook fire", func(ctx context.Context) {
-		ds.fireWebhook(ctx, tr, fid, at, envelope)
-	}) {
-		return "", errors.New("substrate: webhook refused, the service is shutting down")
-	}
-	return fid, nil
+	return row.FireID, nil
 }
 
 // admitWebhook is the synchronous half of a delivery: the checks, the blob
-// spool and the envelope. Every check that fails answers errWebhookRefused.
-func (ds *dataset) admitWebhook(ctx context.Context, triggerID, key string, req substrate.WebhookRequest) (*trigger, string, time.Time, map[string]any, error) {
+// spool and the pending entry. Every check that fails answers
+// errWebhookRefused. Past the checks the request is written into the ledger
+// as a parked failure carrying pendingWebhookError, in its parked form
+// (parkedEnvelope: the body spooled by digest, the headers narrowed, the
+// query dropped), with the fire id and the receipt time, on a delivery entry
+// of its own whose seq is the row's id. The door answers once that
+// transaction has committed, which the write path makes durable (decision
+// 0062), so a 202 names a request the substrate holds. The row returned is
+// what the fire runs and what a restart resumes.
+func (ds *dataset) admitWebhook(ctx context.Context, triggerID, key string, req substrate.WebhookRequest) (*trigger, foldFailure, error) {
 	tr, _, err := ds.triggerByID(ctx, triggerID)
 	if err != nil {
 		if errors.Is(err, substrate.ErrNotFound) || errors.Is(err, substrate.ErrValidation) {
-			return nil, "", time.Time{}, nil, errWebhookRefused
+			return nil, foldFailure{}, errWebhookRefused
 		}
-		return nil, "", time.Time{}, nil, err
+		return nil, foldFailure{}, err
 	}
 	if !tr.Webhook || !tr.Enabled || !tr.runnable() {
-		return nil, "", time.Time{}, nil, errWebhookRefused
+		return nil, foldFailure{}, errWebhookRefused
 	}
 	if tr.WebhookKey != "" && subtle.ConstantTimeCompare([]byte(tr.WebhookKey), []byte(key)) != 1 {
-		return nil, "", time.Time{}, nil, errWebhookRefused
+		return nil, foldFailure{}, errWebhookRefused
 	}
 	parts, err := ds.spoolWebhookParts(ctx, req.Parts)
 	if err != nil {
-		return nil, "", time.Time{}, nil, err
+		return nil, foldFailure{}, err
 	}
 	wid, err := newID()
 	if err != nil {
-		return nil, "", time.Time{}, nil, err
+		return nil, foldFailure{}, err
 	}
 	fid := webhookFirePrefix + wid
 	at := nowUTC()
 	envelope := runner.FireEnvelope(fid, at, ds.Repository().Name, ds.Repository().Authority)
 	envelope["request"] = webhookRequestEnvelope(req, parts)
-	return tr, fid, at, envelope, nil
+	payload, err := ds.parkedEnvelope(ctx, envelope)
+	if err != nil {
+		return nil, foldFailure{}, err
+	}
+	row := foldFailure{FireID: fid, LastError: pendingWebhookError, ParkedAt: at, Payload: payload}
+	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		id, err := t.reserveSeq()
+		if err != nil {
+			return err
+		}
+		row.ID = foldInt(id)
+		if err := t.parkTx(tr.ID, row); err != nil {
+			return err
+		}
+		return t.appendDeliveryAt(tr.ID, id)
+	})
+	if err != nil {
+		return nil, foldFailure{}, fmt.Errorf("substrate: webhook %s: record the request: %w", tr.ID, err)
+	}
+	return tr, row, nil
 }
 
-// fireWebhook is the detached half: one deliverFire, mode webhook, with the
-// built envelope. Failures park inside deliverFire; what reaches here is the
-// infrastructure kind, logged because nobody is left to answer.
-func (ds *dataset) fireWebhook(ctx context.Context, tr *trigger, fid string, at time.Time, envelope map[string]any) {
-	if _, err := ds.deliverFire(ctx, tr, runner.ModeWebhook, fid, at, nil, envelope); err != nil {
-		ds.svc.log.Warn("substrate: webhook fire failed",
-			"repository", ds.Repository().Name, "trigger", tr.ID, "fire", fid, "error", err)
+// fireWebhook is the detached half: the pending entry's fire, one
+// deliverFire in mode webhook that holds the row in runningClaims from before
+// anything runs, retires it in the transaction that commits its effects, or
+// rewrites it as parked. The envelope is read back from the row, so the first
+// fire and a resumed one run the same bytes. The hold is compare-and-swap
+// (settlement.acquire), so a resume racing the door's own spawn, or a hand's
+// retry, loses it and starts nothing, and a row a hand retired meanwhile
+// ends the fire at its first settlement (errFailureRetired). Failures park
+// inside deliverFire; what reaches here is the infrastructure kind, logged
+// because nobody is left to answer, and a canceled context (shutdown) leaves
+// the row pending for the next dispatcher pass. The log names the trigger
+// and the minted fire id, both through logSafeID because the row was built
+// beside the request's payload, and classifies the error to a fixed word
+// (webhookFireOutcome): an error built from the request (a body the callable
+// raised on, a header a decoder quoted) is sender-controlled text and never
+// enters the log.
+func (ds *dataset) fireWebhook(ctx context.Context, tr *trigger, row foldFailure) {
+	var envelope map[string]any
+	if err := json.Unmarshal(row.Payload, &envelope); err != nil {
+		ds.svc.log.Error("substrate: webhook fire cannot read its recorded request, the entry stays pending",
+			"repository", ds.Repository().Name, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID), "failure", int64(row.ID))
+		return
 	}
+	_, err := ds.deliverFire(ctx, tr, runner.ModeWebhook, row.FireID, row.ParkedAt, nil, envelope, &row)
+	if err == nil {
+		return
+	}
+	outcome := webhookFireOutcome(err)
+	attrs := []any{"repository", ds.Repository().Name, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID), "failure", int64(row.ID), "outcome", outcome}
+	switch outcome {
+	case fireOutcomeRunning, fireOutcomeRetired:
+		ds.svc.log.Info("substrate: webhook fire not run, another hand holds or delivered it", attrs...)
+	case fireOutcomeCanceled:
+		ds.svc.log.Info("substrate: webhook fire interrupted, the entry stays pending", attrs...)
+	default:
+		ds.svc.log.Warn("substrate: webhook fire failed", attrs...)
+	}
+}
+
+// The fixed words a webhook fire's error is logged as.
+const (
+	fireOutcomeRunning     = "running"     // this process already runs the entry
+	fireOutcomeRetired     = "retired"     // a hand delivered the entry meanwhile
+	fireOutcomeCanceled    = "canceled"    // the context ended (shutdown)
+	fireOutcomeUnavailable = "unavailable" // the store refused the write
+	fireOutcomeError       = "error"       // everything else
+)
+
+// webhookFireOutcome classifies a fire's error to one of the fixed words,
+// so a log line carries the class and never the text.
+func webhookFireOutcome(err error) string {
+	switch {
+	case errors.Is(err, substrate.ErrConflict):
+		return fireOutcomeRunning
+	case errors.Is(err, errFailureRetired):
+		return fireOutcomeRetired
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return fireOutcomeCanceled
+	case errors.Is(err, substrate.ErrUnavailable):
+		return fireOutcomeUnavailable
+	}
+	return fireOutcomeError
+}
+
+// resumeWebhooks runs the admitted webhook requests whose fire has not
+// settled: the rows carrying pendingWebhookError, oldest first, one after
+// another in one detached task per dispatcher pass (ProcessTriggers). It is
+// the recovery half of the door, and it runs only where the dispatcher
+// runs: a process that stopped after the 202 and before the fire's effects
+// committed, or a directory imported into an empty database, leaves the row
+// pending, and the server's first pass over the repository runs it under its
+// original fire id, while an operator's process (a rebuild, a reset) opens
+// the repository and fires nothing. A row whose trigger is disabled or does
+// not resolve stays pending, listed under the trigger's parked failures, and
+// the pass after the trigger runs again picks it up. A pass that finds the
+// previous walk still running starts none. A read-only process appends
+// nothing.
+func (ds *dataset) resumeWebhooks() {
+	if ds.svc.readOnly || !ds.resumingWebhooks.CompareAndSwap(false, true) {
+		return
+	}
+	if !ds.spawn("webhook resume", func(ctx context.Context) {
+		defer ds.resumingWebhooks.Store(false)
+		ds.runPendingWebhooks(ctx)
+	}) {
+		ds.resumingWebhooks.Store(false)
+	}
+}
+
+// runPendingWebhooks is one walk of the pending rows. Each row is read again
+// right before its fire, so one a hand retired since the walk began is left
+// alone, and one this process is already running (the door's own spawn, a
+// hand's retry) is skipped; the fire's own hold (settlement.acquire) settles
+// the race the read cannot. The triggers that do not run are named once
+// each, with the rows they hold back.
+func (ds *dataset) runPendingWebhooks(ctx context.Context) {
+	pending, err := ds.pendingWebhooks(ctx, 0)
+	if err != nil {
+		ds.svc.log.Error("substrate: pending webhook deliveries could not be read",
+			"repository", ds.Repository().Name, "error", err)
+		return
+	}
+	held := map[string]int{}
+	for _, p := range pending {
+		if ctx.Err() != nil {
+			return
+		}
+		if _, running := ds.runningClaims.Load(int64(p.row.ID)); running {
+			continue
+		}
+		tr, _, err := ds.triggerByID(ctx, p.trigger)
+		if err != nil || !tr.Webhook || !tr.Enabled || !tr.runnable() {
+			held[p.trigger]++
+			continue
+		}
+		current, err := ds.pendingWebhooks(ctx, int64(p.row.ID))
+		if err != nil {
+			ds.svc.log.Error("substrate: pending webhook delivery could not be read again",
+				"repository", ds.Repository().Name, "trigger", logSafeID(p.trigger), "fire", p.row.FireID, "failure", int64(p.row.ID), "error", err)
+			return
+		}
+		if len(current) == 0 {
+			continue
+		}
+		ds.fireWebhook(ctx, tr, current[0].row)
+	}
+	for trigger, n := range held {
+		ds.svc.log.Warn("substrate: webhook deliveries left pending, their trigger does not run",
+			"repository", ds.Repository().Name, "trigger", logSafeID(trigger), "pending", n)
+	}
+}
+
+// pendingWebhook is one admitted request the ledger still holds: the trigger
+// it was addressed to and its row.
+type pendingWebhook struct {
+	trigger string
+	row     foldFailure
+}
+
+// pendingWebhooks reads the admitted requests whose fire has not settled,
+// oldest first: every one, or the one row id names when it is not zero.
+func (ds *dataset) pendingWebhooks(ctx context.Context, id int64) ([]pendingWebhook, error) {
+	rows, err := ds.db.QueryContext(ctx, `
+		SELECT id, trigger_id, fire_id, attempts, parked_at, payload
+		FROM trigger_failures WHERE last_error = $1 AND ($2 = 0 OR id = $2) ORDER BY id`, pendingWebhookError, id)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []pendingWebhook
+	for rows.Next() {
+		p := pendingWebhook{row: foldFailure{LastError: pendingWebhookError}}
+		var payload []byte
+		if err := rows.Scan(&p.row.ID, &p.trigger, &p.row.FireID, &p.row.Attempts, &p.row.ParkedAt, &payload); err != nil {
+			return nil, err
+		}
+		p.row.ParkedAt = p.row.ParkedAt.UTC()
+		p.row.Payload = json.RawMessage(payload)
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }
 
 // spoolWebhookParts stores every file part content-addressed and returns the
@@ -239,19 +450,19 @@ func parkedHeaderKept(name string) bool {
 }
 
 // parkedEnvelope is the parked form of a built envelope, the JSON the failure
-// row and the changelog carry, or nil when the fire carried none. What differs
-// from the delivered envelope is the policy for a payload that lives in
-// append-only history: the request's headers narrow to the ones
+// row and the changelog carry, or nil when the fire carried none. It is what
+// the door records at admission (admitWebhook) and what a park rewrites. What
+// differs from the delivered envelope is the policy for a payload that lives
+// in append-only history: the request's headers narrow to the ones
 // parkedHeaderKept admits, the query string is dropped, a multipart request's
 // inline part values leave the envelope for the blob store like its file
 // parts already have (spoolParkedParts), and the raw body leaves the envelope
-// for the blob
-// store, referenced by digest as `body: {blob, encoding}`. The bytes then
-// live where every other attachment lives, plaintext in the repository's
-// blob store (decision 0031), recoverable with the directory, held against
-// the orphan sweep while the failure is parked (blobs.go parkedBlobsSQL) and
-// collected once it retires. The changelog line holds the digest and never
-// the body.
+// for the blob store, referenced by digest as `body: {blob, encoding}`. The
+// bytes then live where every other attachment lives, plaintext in the
+// repository's blob store (decision 0031), recoverable with the directory,
+// held against the orphan sweep while the row stands (blobs.go
+// parkedBlobsSQL) and collected once it retires. The changelog line holds
+// the digest and never the body.
 func (ds *dataset) parkedEnvelope(ctx context.Context, envelope map[string]any) (json.RawMessage, error) {
 	if envelope == nil {
 		return nil, nil

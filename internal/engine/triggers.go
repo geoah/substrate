@@ -501,7 +501,11 @@ func logSafeID(s string) string {
 			return "(unloggable id)"
 		}
 	}
-	return s
+	// A no-op after the loop, which already refused every control character:
+	// it is the newline replacement a static scanner recognizes as the
+	// log-injection sanitizer, where the loop above is only what makes the
+	// value safe.
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\n", ""), "\r", "")
 }
 
 // --- loading ---------------------------------------------------------------------
