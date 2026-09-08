@@ -95,8 +95,9 @@ across a crash.
 - Good, because an acknowledgement means the directory holds the write: a
   copy of the directory taken after the response holds every acknowledged
   write.
-- Good, because a write the sealed store refused is retryable: the caller
-  sees `ErrDirectoryWrite`, an `ErrUnavailable`, and neither store took it. A
+- Good, because a write the sealed store or the manifest refused is
+  retryable: the caller sees `ErrDirectoryWrite`, an `ErrUnavailable`, and
+  neither store took it. A
   write the changelog writer refused is not, because the writer stays failed
   until a restart, and it is latched as `ErrChangelogFileBehind` for that
   reason.

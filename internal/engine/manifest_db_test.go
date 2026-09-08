@@ -437,8 +437,8 @@ func TestAFailedManifestWriteRefusesTheStampingWrite(t *testing.T) {
 	}
 	tableHead, fHead := changelogHead(t, db), fileHead(t, dir)
 	fail.Store(true)
-	if _, _, err := ds.MintToken(ctx, "test", nil); !errors.Is(err, injected) {
-		t.Fatalf("the stamping write with the manifest unwritable: err = %v", err)
+	if _, _, err := ds.MintToken(ctx, "test", nil); !errors.Is(err, injected) || !errors.Is(err, engine.ErrDirectoryWrite) || !errors.Is(err, substrate.ErrUnavailable) {
+		t.Fatalf("the stamping write with the manifest unwritable: err = %v, want the injected error as ErrDirectoryWrite, an ErrUnavailable", err)
 	}
 	if m := readManifest(t, dir); m.ChangelogDialect != 2 {
 		t.Fatalf("manifest after the refused write = %+v", m)

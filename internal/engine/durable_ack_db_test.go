@@ -366,8 +366,17 @@ func TestACrashBetweenTheSealedStageAndTheCommitRestoresTheOldPayload(t *testing
 	}
 	_ = s.Close()
 
-	// The fresh database.
+	// The fresh database: the import itself drops the pending files, so a
+	// verify right after it, before any dataset open, reports none.
 	s2, repo2 := importCopy(t, root, repo.ID)
+	dir2, err := changelogfile.RepoDir(s2.dataRoot, repo2.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	noPending(t, dir2, "right after the import")
+	if report, err := s2.VerifyRepository(ctx, "geoah"); err != nil || !report.OK {
+		t.Fatalf("verify right after the import: %+v, %v", report, err)
+	}
 	ds2, err := s2.open(ctx, repo2)
 	if err != nil {
 		t.Fatal(err)
@@ -513,70 +522,131 @@ func TestAReadOnlyServiceRefusesToSpendATOTPStep(t *testing.T) {
 // A sealed-only transaction whose commit reports failure after Postgres
 // committed has no changelog line whose seq gap would catch it, so the
 // refusal latches at once: the caller gets ErrChangelogFileBehind, every
-// later write meets the latch, the pending file is discarded and the record's
-// file stays the old one, and the next boot rewrites it from the table.
+// later write meets the latch, and the next boot writes sealed/ from the
+// table. For a write, the pending file is discarded and the record's file
+// stays the old one until the boot rewrites it; for a delete, the row is gone
+// and the file stays until the boot removes it, so a restored copy never
+// loads material the table dropped.
 func TestASealedOnlyCommitInDoubtLatchesUntilTheBootRewritesTheFile(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
-	ctx := context.Background()
-	fault := &oneShotFault{}
-	s, repo, _, dsn, root := openDurabilityService(t, WithTestCommitFault(fault.hook))
-	ds, err := s.open(ctx, repo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	putProviderSecret(t, ds, "acked", "sk-acked")
-	mat, err := s.authMaterialOf(ctx, repo.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	step := mat.totp.Step + 5
-	filesBefore := sealedPayloads(t, ds.dir)
+	t.Run("update", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+		fault := &oneShotFault{}
+		s, repo, _, dsn, root := openDurabilityService(t, WithTestCommitFault(fault.hook))
+		ds, err := s.open(ctx, repo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		putProviderSecret(t, ds, "acked", "sk-acked")
+		mat, err := s.authMaterialOf(ctx, repo.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		step := mat.totp.Step + 5
+		filesBefore := sealedPayloads(t, ds.dir)
 
-	fault.arm(commitInDoubt)
-	won, err := s.consumeTOTPStep(ctx, repo, mat.totpRef, step)
-	if !errors.Is(err, ErrChangelogFileBehind) || won {
-		t.Fatalf("a sealed-only commit in doubt: won=%v err=%v, want ErrChangelogFileBehind", won, err)
-	}
-	if errors.Is(err, substrate.ErrUnavailable) {
-		t.Fatalf("a latched refusal must not ask for a retry: %v", err)
-	}
-	after, err := s.authMaterialOf(ctx, repo.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if after.totp.Step != step {
-		t.Fatalf("the table's step is %d, want %d: the seam did not commit", after.totp.Step, step)
-	}
-	noPending(t, ds.dir, "after the doubted commit")
-	if string(sealedPayloads(t, ds.dir)[mat.totpRef]) != string(filesBefore[mat.totpRef]) {
-		t.Fatal("the record's file moved under a commit whose answer was lost")
-	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: bindingProviderKind, ID: "latched",
-		Properties: map[string]any{"label": "latched", "wire": "openai", "baseURL": "https://llm.example.com/v1", "apiKey": "sk-latched"},
-	}); !errors.Is(err, ErrChangelogFileBehind) {
-		t.Fatalf("a write after the latch: err = %v, want ErrChangelogFileBehind", err)
-	}
-	_ = s.Close()
+		fault.arm(commitInDoubt)
+		won, err := s.consumeTOTPStep(ctx, repo, mat.totpRef, step)
+		if !errors.Is(err, ErrChangelogFileBehind) || won {
+			t.Fatalf("a sealed-only commit in doubt: won=%v err=%v, want ErrChangelogFileBehind", won, err)
+		}
+		if errors.Is(err, substrate.ErrUnavailable) {
+			t.Fatalf("a latched refusal must not ask for a retry: %v", err)
+		}
+		after, err := s.authMaterialOf(ctx, repo.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if after.totp.Step != step {
+			t.Fatalf("the table's step is %d, want %d: the seam did not commit", after.totp.Step, step)
+		}
+		noPending(t, ds.dir, "after the doubted commit")
+		if string(sealedPayloads(t, ds.dir)[mat.totpRef]) != string(filesBefore[mat.totpRef]) {
+			t.Fatal("the record's file moved under a commit whose answer was lost")
+		}
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+			Kind: bindingProviderKind, ID: "latched",
+			Properties: map[string]any{"label": "latched", "wire": "openai", "baseURL": "https://llm.example.com/v1", "apiKey": "sk-latched"},
+		}); !errors.Is(err, ErrChangelogFileBehind) {
+			t.Fatalf("a write after the latch: err = %v, want ErrChangelogFileBehind", err)
+		}
+		_ = s.Close()
 
-	svc2, err := Open(ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"))
-	if err != nil {
-		t.Fatalf("reboot: %v", err)
-	}
-	t.Cleanup(func() { _ = svc2.Close() })
-	s2 := svc2.(*service)
-	report, err := s2.VerifyRepository(ctx, "geoah")
-	if err != nil || !report.OK {
-		t.Fatalf("after the reboot: %+v, %v", report, err)
-	}
-	ds2, err := s2.open(ctx, repo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(sealedPayloads(t, ds2.dir)[mat.totpRef]) == string(filesBefore[mat.totpRef]) {
-		t.Fatal("the boot did not rewrite the record's file from the table")
-	}
+		svc2, err := Open(ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"))
+		if err != nil {
+			t.Fatalf("reboot: %v", err)
+		}
+		t.Cleanup(func() { _ = svc2.Close() })
+		s2 := svc2.(*service)
+		report, err := s2.VerifyRepository(ctx, "geoah")
+		if err != nil || !report.OK {
+			t.Fatalf("after the reboot: %+v, %v", report, err)
+		}
+		ds2, err := s2.open(ctx, repo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(sealedPayloads(t, ds2.dir)[mat.totpRef]) == string(filesBefore[mat.totpRef]) {
+			t.Fatal("the boot did not rewrite the record's file from the table")
+		}
+	})
+	t.Run("delete", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+		fault := &oneShotFault{}
+		s, repo, _, dsn, root := openDurabilityService(t, WithTestCommitFault(fault.hook))
+		ds, err := s.open(ctx, repo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		account := eref{Kind: bindingProviderKind, ID: "acked"}
+		putProviderSecret(t, ds, account.ID, "sk-acked")
+		const credRef = "cred-acked"
+		if err := ds.inTx(ctx, substrate.ActorSystem, true, func(tx *txn) error {
+			return tx.putCredential(credRef, account, &oauth2.Token{AccessToken: "first", RefreshToken: "r", Expiry: nowUTC().Add(time.Hour)})
+		}); err != nil {
+			t.Fatalf("put credential: %v", err)
+		}
+		if _, ok := sealedPayloads(t, ds.dir)[credRef]; !ok {
+			t.Fatal("the credential has no sealed file")
+		}
+
+		fault.arm(commitInDoubt)
+		err = ds.deleteCredentialsFor(ctx, account)
+		if !errors.Is(err, ErrChangelogFileBehind) || errors.Is(err, substrate.ErrUnavailable) {
+			t.Fatalf("a delete-only commit in doubt: err = %v, want ErrChangelogFileBehind and not a retry", err)
+		}
+		if _, _, _, err := ds.getCredential(ctx, credRef); !errors.Is(err, errCredentialGone) {
+			t.Fatalf("the table still holds the row the seam committed a delete of: %v", err)
+		}
+		if _, ok := sealedPayloads(t, ds.dir)[credRef]; !ok {
+			t.Fatal("the file went before the boot decided from the table")
+		}
+		noPending(t, ds.dir, "after the doubted delete")
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+			Kind: bindingProviderKind, ID: "latched",
+			Properties: map[string]any{"label": "latched", "wire": "openai", "baseURL": "https://llm.example.com/v1", "apiKey": "sk-latched"},
+		}); !errors.Is(err, ErrChangelogFileBehind) {
+			t.Fatalf("a write after the latch: err = %v, want ErrChangelogFileBehind", err)
+		}
+		_ = s.Close()
+
+		svc2, err := Open(ctx, dsn, WithDataRoot(root), WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"))
+		if err != nil {
+			t.Fatalf("reboot: %v", err)
+		}
+		t.Cleanup(func() { _ = svc2.Close() })
+		s2 := svc2.(*service)
+		report, err := s2.VerifyRepository(ctx, "geoah")
+		if err != nil || !report.OK {
+			t.Fatalf("after the reboot: %+v, %v", report, err)
+		}
+		if _, ok := sealedPayloads(t, ds.dir)[credRef]; ok {
+			t.Fatal("the boot left the file of a row the table dropped")
+		}
+	})
 }

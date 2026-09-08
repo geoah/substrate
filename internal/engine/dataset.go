@@ -595,9 +595,10 @@ func (ds *dataset) commitAndMirror(tx *sql.Tx, t *txn) error {
 		ds.discardStaged(staged)
 		// A commit that errors may have committed. With lines, the next
 		// write's prepare meets the seq gap and latches then; without them
-		// nothing would, so a sealed-only transaction latches here, and the
-		// boot rewrites the records from the table.
-		if !prepared && len(staged) > 0 {
+		// nothing would, so a sealed-only transaction latches here, whether
+		// it staged files the table may now hold or deleted rows whose files
+		// are still there, and the boot rewrites sealed/ from the table.
+		if !prepared && (len(staged) > 0 || len(deletes) > 0) {
 			ds.latchDirectoryErr(fmt.Errorf("commit of a sealed-only transaction failed and may have committed: %w", err))
 			return ds.fileErr
 		}

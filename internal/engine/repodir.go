@@ -87,7 +87,8 @@ import (
 )
 
 // ErrDirectoryWrite is the refusal a write meets when a sealed file could not
-// be staged BEFORE its transaction committed (dataset.go commitAndMirror):
+// be staged or the manifest could not be written BEFORE its transaction
+// committed (dataset.go commitAndMirror, repodir.go writeManifestBeforeCommit):
 // the transaction rolled back, nothing is durable anywhere, and the caller
 // may retry, which is why it is an ErrUnavailable (a 503 with Retry-After on
 // the wire) and the latched ErrChangelogFileBehind is not. A changelog writer
@@ -603,7 +604,7 @@ func (ds *dataset) reconcileDir(ctx context.Context, out *reconcileOutcome, allo
 			return err
 		}
 		out.Action, out.Entries = reconcileImported, n
-		return nil
+		return discardPendingSealed(ds.dir)
 	}
 	// Equal heads say the rows are all there and nothing about the fold: an
 	// import that died after its last batch left the marker, and the fold is
@@ -630,7 +631,16 @@ func (ds *dataset) reconcileDir(ctx context.Context, out *reconcileOutcome, allo
 		return err
 	}
 	out.Action = reconcileResumed
-	return nil
+	return discardPendingSealed(ds.dir)
+}
+
+// discardPendingSealed drops the pending files of a directory an import just
+// took as the truth: each is a write the server that wrote the copy never
+// committed, nobody's record (ReadSealed skipped it), and dropped here so a
+// verify right after the import reports none rather than at the next open.
+func discardPendingSealed(dir string) error {
+	_, err := changelogfile.DiscardPendingSealed(dir)
+	return err
 }
 
 // tableChangelogHead is the table's head, 0 for an empty changelog.
@@ -1617,13 +1627,16 @@ func (ds *dataset) writeManifestBeforeCommit(dialect int) error {
 	if ds.manifest.ChangelogDialect == dialect {
 		return nil
 	}
+	// A manifest that cannot be written rolls the transaction back with
+	// nothing durable anywhere, the sealed store's shape of refusal, so it
+	// is the retryable ErrDirectoryWrite and not a plain failure.
 	if err := ds.svc.commitFault(commitBeforeManifest); err != nil {
-		return fmt.Errorf("substrate/engine: write %s with changelog dialect %d before the first entry in it: %w", changelogfile.ManifestName, dialect, err)
+		return fmt.Errorf("%w: repository %s: write %s with changelog dialect %d before the first entry in it: %w", ErrDirectoryWrite, ds.info.Name, changelogfile.ManifestName, dialect, err)
 	}
 	m := ds.manifest
 	m.ChangelogDialect = dialect
 	if err := changelogfile.WriteManifest(ds.dir, m); err != nil {
-		return fmt.Errorf("substrate/engine: write %s with changelog dialect %d before the first entry in it: %w", changelogfile.ManifestName, dialect, err)
+		return fmt.Errorf("%w: repository %s: write %s with changelog dialect %d before the first entry in it: %w", ErrDirectoryWrite, ds.info.Name, changelogfile.ManifestName, dialect, err)
 	}
 	ds.manifest = m
 	return ds.svc.commitFault(commitAfterManifest)
