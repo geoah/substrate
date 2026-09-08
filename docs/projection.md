@@ -309,7 +309,16 @@ stale data. Three guarantees:
 - **Ids are never reused within a kind, and never re-derived.** A tombstoned
   loser's id stays a former id of its winner forever, so notes, annotations,
   and an agent's memory can hold a full (kind, id) pair without a validity
-  window.
+  window. A purged id is reserved the same way: once garbage collection has
+  hard-deleted a tombstone, a `put` at that kind and id answers `409
+  conflict`, and a reference that still names it keeps dangling instead of
+  resolving to a new record. Purging a merge winner keeps its losers' trails,
+  so their ids stay refused too. The blob manifest is the one exception: its
+  id is the content digest, so the same bytes uploaded again land at the same
+  id. The reservation is an effect of the `gc` changelog entry, so a
+  repository whose purges predate this rule gains them at its next
+  `substratectl repository rebuild` or fresh import from its directory, not at
+  a binary upgrade.
 
 ### Split, the undo
 

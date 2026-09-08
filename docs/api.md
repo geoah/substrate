@@ -161,7 +161,11 @@ change once the record exists; create-time resolution, `merge` and `split` are
 what move it.
 
 A `put` onto a tombstone restores that record: same id, same row, one
-changelog row saying so. It is undelete, not id reuse.
+changelog row saying so. It is undelete, not id reuse. Once garbage collection
+has purged the tombstone the id is reserved: a `put` at it answers `409
+conflict`, and a reference that still names it keeps dangling. Recreating a
+purged record means a new id. The blob manifest is the exception, because its
+id is the content digest ([merges](projection.md#merges)).
 
 `put` and `patch` take an optional `ifVersion`: the write applies only if the
 addressed record's stored version equals it (a non-existent record is version

@@ -54,7 +54,8 @@ Ids the server mints are 12 characters of lowercase base32. A writer may
 supply its own id on create, which is how an integration composes a stable id
 out of a provider's own key; supplied ids allow a wider character set (RFC 3986
 unreserved plus `:`, `@` and `/`, up to 128 characters). Ids are never derived
-from content and never reused.
+from content and never reused: a purged id is refused with `409` rather than
+reissued ([merges](projection.md#merges)).
 
 Three more words, used precisely on every page:
 
@@ -488,7 +489,8 @@ keyed reference.
 **Ownership.** `onDelete: cascade` says the referent OWNS this record, so
 collecting the referent tombstones everything that names it. Absent, a
 reference detaches: the value stays, and it dangles once the referent is
-purged. Cascade is declarable on a kind's own single-valued, top-level
+purged, for good: the purged id is never reissued. Cascade is declarable on a
+kind's own single-valued, top-level
 reference, pinned or not: a repeated or keyed pointer names no single owner,
 and a pointer nested in an object is a field of a value rather than the
 record's own claim. A `trait:` pin is what lets a provider-agnostic kind own

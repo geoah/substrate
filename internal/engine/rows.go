@@ -366,20 +366,39 @@ func (t *txn) applyBump(ref eref) (bool, error) {
 	return n > 0, err
 }
 
-// --- former ids (merge trails, proposal §6.3) ---
+// --- former ids (merge trails, proposal §6.3, and purge reservations) ---
 //
 // A former id resolves WITHIN ITS TYPE: merge only ever joins two records of
-// one type, so the trail row carries that type and a lookup names it.
+// one type, so the trail row carries that type and a lookup names it. The
+// same table holds the ids a purge retired: a row whose record_id is
+// purgedTarget says the id denoted a record once and denotes nothing now.
 
-// formerTarget returns the record a former id now denotes within one type,
-// "" when the id is nobody's former id there.
-func (t *txn) formerTarget(typ, formerID string) (string, error) {
+// purgedTarget is the record_id of a purge reservation. The empty string is
+// never a record id (vocabulary.ValidID refuses it), so a trail row and a
+// reservation cannot be confused, and canonicalOf stops at it exactly as it
+// stops at an id with no row.
+const purgedTarget = ""
+
+// formerRow reads one trail row: the record the id now denotes within the
+// type (purgedTarget when a purge reserved it) and whether a row exists.
+func (t *txn) formerRow(typ, formerID string) (string, bool, error) {
 	var id string
 	err := t.row(`SELECT record_id FROM former_ids WHERE record_kind = $1 AND former_id = $2`,
 		typ, formerID).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
+		return "", false, nil
 	}
+	if err != nil {
+		return "", false, err
+	}
+	return id, true, nil
+}
+
+// formerTarget returns the record a former id now denotes within one type,
+// "" when the id is nobody's former id there or was purged: a read at either
+// stops at the id itself.
+func (t *txn) formerTarget(typ, formerID string) (string, error) {
+	id, _, err := t.formerRow(typ, formerID)
 	return id, err
 }
 
@@ -627,7 +646,6 @@ func (t *txn) applyPurge(ref eref) error {
 		// pointer at a purged record dangles; that is what an absent
 		// `onDelete:` means.
 		`DELETE FROM refs WHERE src_kind = $1 AND src = $2`,
-		`DELETE FROM former_ids WHERE record_kind = $1 AND (record_id = $2 OR former_id = $2)`,
 		`DELETE FROM annotations WHERE record_kind = $1 AND record_id = $2`,
 		`DELETE FROM property_managers WHERE record_kind = $1 AND record_id = $2`,
 		`DELETE FROM property_offers WHERE record_kind = $1 AND record_id = $2`,
@@ -638,6 +656,32 @@ func (t *txn) applyPurge(ref eref) error {
 		if _, err := t.exec(q, ref.Kind, ref.ID); err != nil {
 			return fmt.Errorf("substrate/engine: hard delete %s %s: %w", ref.Kind, ref.ID, err)
 		}
+	}
+	return t.reserveID(ref)
+}
+
+// reserveID is the purge's last word on the identity: the id stays in the
+// former-id trail, denoting nothing, so checkID refuses a later put at it and
+// a pointer that still names the purged record keeps dangling instead of
+// resolving to a stranger wearing its id. The record's own losers keep their
+// trail rows, pointing at the purged winner: their ids stay refused as former
+// ids, and a put at one cannot resurrect a merged-away tombstone without a
+// split. Both hold on a rebuild, because this runs inside the purge effect
+// the `gc` entry carries.
+//
+// A blob manifest reserves nothing: its id IS the content digest (blobs.go),
+// so the same bytes uploaded again must land at the same id, and nothing else
+// can wear it.
+func (t *txn) reserveID(ref eref) error {
+	if ref.Kind == kindBlob {
+		return nil
+	}
+	_, err := t.exec(`
+		INSERT INTO former_ids (record_kind, former_id, record_id, created_at) VALUES ($1, $2, $3, $4)
+		ON CONFLICT (repository, record_kind, former_id) DO UPDATE SET record_id = EXCLUDED.record_id`,
+		ref.Kind, ref.ID, purgedTarget, t.now)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: reserve %s %s: %w", ref.Kind, ref.ID, err)
 	}
 	return nil
 }

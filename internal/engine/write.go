@@ -245,7 +245,9 @@ func (t *txn) putSpec(ty *vocabulary.Kind, in substrate.PutInput) (*applySpec, e
 // checkID polices the id itself, whatever the write does with it: one
 // URL path segment, and never somebody's former id WITHIN THIS TYPE —
 // addressing a write at a merged-away id would silently write the winner of
-// a merge the writer never made. Another type holding the
+// a merge the writer never made. A purged id is refused the same way: a new
+// record wearing it would be what every surviving pointer at the old one
+// resolves to (rows.go reserveID). Another type holding the
 // same id is no collision: identity is the (type, id) pair.
 func (t *txn) checkID(typ, id string) error {
 	if !vocabulary.ValidID(id) {
@@ -259,14 +261,18 @@ func (t *txn) checkID(typ, id string) error {
 	if err := t.lockRecord(eref{Kind: typ, ID: id}); err != nil {
 		return err
 	}
-	former, err := t.formerTarget(typ, id)
+	former, found, err := t.formerRow(typ, id)
 	if err != nil {
 		return err
 	}
-	if former != "" {
+	switch {
+	case !found:
+		return nil
+	case former == purgedTarget:
+		return fmt.Errorf("%w: %s was purged; ids are never reused", substrate.ErrConflict, id)
+	default:
 		return fmt.Errorf("%w: %s is a former id of %s; ids are never reused", substrate.ErrConflict, id, former)
 	}
-	return nil
 }
 
 // checkCreateID enforces proposal §6's naming rule, which is about WHO NAMES a
