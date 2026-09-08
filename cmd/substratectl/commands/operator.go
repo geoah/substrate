@@ -146,7 +146,7 @@ func lockHint(err error) error {
 	if err == nil || !errors.Is(err, changelogfile.ErrLocked) {
 		return err
 	}
-	return fmt.Errorf("%w\n(a server is running against this data root: `repository inspect` and `repository verify` run beside it; `repository rebuild` and `user reset` need it stopped first)", err)
+	return fmt.Errorf("%w\n(a server is running against this data root: `repository inspect` and `repository verify` run beside it; `repository rebuild`, `repository rewrap` and `user reset` need it stopped first)", err)
 }
 
 // controlPlane opens a plain connection for the ONE control-plane table

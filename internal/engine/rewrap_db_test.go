@@ -125,6 +125,20 @@ func TestRewrapRestoresARepositoryUnderANewCredentialKey(t *testing.T) {
 		t.Fatal("a refused rewrap changed the manifest")
 	}
 
+	// A copy that lost sealed/ is refused by name: the recovered DEK has
+	// nothing to prove itself against, and the login credential is gone.
+	root3 := copyRepositoryDir(t, root, id)
+	dir3, err := changelogfile.RepoDir(root3, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(changelogfile.SealedDir(dir3)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.RewrapRepositoryDir(dir3, identity, other); err == nil || !strings.Contains(err.Error(), "sealed/") {
+		t.Fatalf("a copy with no sealed files was not refused by name: %v", err)
+	}
+
 	report, err := engine.RewrapRepositoryDir(dir2, identity, other)
 	if err != nil {
 		t.Fatalf("rewrap: %v", err)

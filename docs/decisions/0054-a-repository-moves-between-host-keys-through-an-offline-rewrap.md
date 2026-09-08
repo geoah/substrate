@@ -4,7 +4,7 @@ date: 2026-09-08
 decision-makers: George Antoniadis
 ---
 
-# 0053. A repository moves between host keys through an offline rewrap of its manifest
+# 0054. A repository moves between host keys through an offline rewrap of its manifest
 
 ## Context and Problem Statement
 

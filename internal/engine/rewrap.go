@@ -49,7 +49,8 @@ var ErrNoRecoveryKey = errors.New("substrate/engine: the repository never enroll
 // directory whose sealed store was not re-keyed, or a damaged file refuses the
 // whole rewrap. It refuses a directory with no manifest or no recoverykey
 // record rather than guess at either, and it takes the directory's writer
-// lock so a running server is refused (changelogfile.ErrLocked).
+// lock for the write, so a server that has opened the repository is refused
+// (changelogfile.ErrLocked). Nothing is written before that lock is held.
 func RewrapRepositoryDir(repoDir, identity, newKey string) (RewrapReport, error) {
 	var report RewrapReport
 	hostKey, err := deriveCredentialKey(newKey)
@@ -59,9 +60,11 @@ func RewrapRepositoryDir(repoDir, identity, newKey string) (RewrapReport, error)
 	if len(hostKey) == 0 {
 		return report, errors.New("substrate/engine: SUBSTRATE_CREDENTIAL_KEY is unset: the rewrap needs the key the repository will boot under (generate one with: openssl rand -base64 32)")
 	}
+	// age's parse error can echo a prefix of the string it was handed, and a
+	// mis-pasted line is still a secret, so the refusal carries no detail.
 	id, err := age.ParseX25519Identity(identity)
 	if err != nil {
-		return report, fmt.Errorf("substrate/engine: the recovery key is not an age identity (AGE-SECRET-KEY-1...): %w", err)
+		return report, errors.New("substrate/engine: the recovery key is not an age identity (AGE-SECRET-KEY-1...)")
 	}
 	m, err := changelogfile.ReadManifest(repoDir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -71,12 +74,6 @@ func RewrapRepositoryDir(repoDir, identity, newKey string) (RewrapReport, error)
 		return report, err
 	}
 	report.Repository, report.Username = m.Authority, m.Username
-
-	release, err := changelogfile.LockWriter(changelogfile.ChangelogDir(repoDir))
-	if err != nil {
-		return report, err
-	}
-	defer func() { _ = release() }()
 
 	seq, sealedKey, err := lastRecoveryKey(repoDir)
 	if err != nil {
@@ -100,6 +97,16 @@ func RewrapRepositoryDir(repoDir, identity, newKey string) (RewrapReport, error)
 	if m.DEK, err = sealWith(aead, dek, dekAAD(m.Authority)); err != nil {
 		return report, err
 	}
+	// The lock is taken only now, once every refusal is behind: a refused
+	// rewrap leaves the directory exactly as it found it, lock file included.
+	// A server that has opened the repository holds this lock and is refused;
+	// one that has not yet opened it is not detected, which is why the
+	// procedure says to stop the server.
+	release, err := changelogfile.LockWriter(changelogfile.ChangelogDir(repoDir))
+	if err != nil {
+		return report, err
+	}
+	defer func() { _ = release() }()
 	if err := changelogfile.WriteManifest(repoDir, m); err != nil {
 		return report, err
 	}
@@ -167,11 +174,17 @@ func unwrapDEKWithIdentity(id *age.X25519Identity, sealedKey string) ([]byte, er
 // sealedStoreOpens opens every file under sealed/ with dek, each under its
 // own row binding, and returns how many there were. The first file that does
 // not open refuses the rewrap by ref: a manifest written over a DEK that does
-// not open the store would import a repository no login can open.
+// not open the store would import a repository no login can open. No file at
+// all is refused too: every registered repository seals at least its password
+// hash and TOTP seed, so an empty or missing sealed/ is a copy that lost them,
+// and a DEK nothing has tested is not one to write a manifest over.
 func sealedStoreOpens(repoDir string, dek []byte) (int, error) {
 	files, err := changelogfile.ReadSealed(repoDir)
 	if err != nil {
 		return 0, err
+	}
+	if len(files) == 0 {
+		return 0, fmt.Errorf("substrate/engine: %s has no files under sealed/; a registered repository seals at least its login credential, so this copy is incomplete", repoDir)
 	}
 	for _, f := range files {
 		if _, err := OpenPayloadWithKey(dek, f.Payload, sealedAAD(f.Ref, f.RecordKind, f.RecordID)); err != nil {

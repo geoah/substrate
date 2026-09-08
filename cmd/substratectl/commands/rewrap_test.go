@@ -65,4 +65,52 @@ func TestRepositoryRewrapRefusesADirectoryWithNoManifest(t *testing.T) {
 			t.Fatalf("the recovery key reached the output: %q", s)
 		}
 	}
+	// A refused rewrap leaves the directory as it found it: no changelog/
+	// and no lock file appear.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("the refused rewrap wrote into the directory: %v", entries)
+	}
+}
+
+// The identity file may be the one `age-keygen -o` writes: comment lines
+// before the key. The refusal that follows names the manifest, which proves
+// the key was read past the comments, and a file holding no key is refused
+// without echoing its content.
+func TestRepositoryRewrapReadsAnAgeKeygenFile(t *testing.T) {
+	h := newHarness(t)
+	key := make([]byte, 32)
+	t.Setenv("SUBSTRATE_CREDENTIAL_KEY", base64.StdEncoding.EncodeToString(key))
+	dir := filepath.Join(t.TempDir(), "ada.example.com")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	id, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyFile := filepath.Join(t.TempDir(), "recovery.key")
+	content := "# created: 2026-09-08T00:00:00Z\n# public key: " + id.Recipient().String() + "\n" + id.String() + "\n"
+	if err := os.WriteFile(keyFile, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = h.run("repository", "rewrap", dir, "--identity-file", keyFile)
+	if err == nil || !strings.Contains(err.Error(), "repository.json") {
+		t.Fatalf("the keygen file was not read through to the manifest check: %v", err)
+	}
+
+	const junk = "not-a-key-at-all-ZZZ"
+	if err := os.WriteFile(keyFile, []byte(junk+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = h.run("repository", "rewrap", dir, "--identity-file", keyFile)
+	if err == nil {
+		t.Fatal("a file with no identity was accepted")
+	}
+	if strings.Contains(err.Error(), junk) {
+		t.Fatalf("the refusal echoed the file's content: %v", err)
+	}
 }

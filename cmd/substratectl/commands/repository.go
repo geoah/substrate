@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"filippo.io/age"
 	"github.com/spf13/cobra"
 
 	"github.com/geoah/substrate/internal/changelogfile"
@@ -69,8 +70,16 @@ which must be named by the repository's authority, as a copy of
 <root>/repositories/<authority> is. The recovery key is read from --identity-file
 or from stdin, never from an argument, and neither it nor the data-encryption
 key is printed or logged. A directory with no manifest, or whose changelog
-holds no recoverykey record, is refused: nothing is synthesized. A running
-server holding the directory is refused too.
+holds no recoverykey record, is refused: nothing is synthesized, and a refused
+rewrap leaves the directory as it was. The manifest is written under the
+changelog writer lock, so a server that has opened the repository is refused;
+stop the server either way, because one that has not opened it yet is not.
+
+The destination database must hold no row for the repository: the boot
+imports a directory that has no row, and a directory that has one is
+reconciled FROM the row, which writes the row's wrap back over the manifest.
+Rewrap the copy in a restore location, move it under the data root of a
+server whose database has never held this repository, then boot.
 
   SUBSTRATE_CREDENTIAL_KEY=… substratectl repository rewrap /srv/restore/repositories/ada.example.com
   SUBSTRATE_CREDENTIAL_KEY=… substratectl repository rewrap ./ada.example.com --identity-file ./recovery.key`,
@@ -115,27 +124,44 @@ server holding the directory is refused too.
 
 // recoveryIdentity resolves the recovery key for a rewrap: the named file,
 // else stdin, else a prompt that does not echo. Never an argument, where it
-// would land in the shell history and the process table.
+// would land in the shell history and the process table. The file is read as
+// age reads an identity file (`age-keygen -o` writes comment lines before the
+// key), and stdin is one line.
 func (a *app) recoveryIdentity(file string, fromStdin bool) (string, error) {
 	if file != "" {
-		raw, err := os.ReadFile(file)
+		f, err := os.Open(file)
 		if err != nil {
 			return "", fmt.Errorf("read the recovery key: %w", err)
 		}
-		id := strings.TrimSpace(string(raw))
-		if id == "" {
-			return "", fmt.Errorf("%s holds no recovery key", file)
-		}
-		return id, nil
+		defer func() { _ = f.Close() }()
+		return parseRecoveryIdentity(f)
 	}
-	id, err := a.secret(fromStdin, "Recovery key: ")
+	line, err := a.secret(fromStdin, "Recovery key: ")
 	if err != nil {
 		return "", err
 	}
-	if id == "" {
+	if line == "" {
 		return "", errors.New("a recovery key is required: the AGE-SECRET-KEY-1... line kept at registration")
 	}
-	return id, nil
+	return parseRecoveryIdentity(strings.NewReader(line))
+}
+
+// parseRecoveryIdentity reads exactly one age X25519 identity out of r. The
+// refusals carry no part of what was read: a mis-pasted line is still a
+// secret.
+func parseRecoveryIdentity(r io.Reader) (string, error) {
+	ids, err := age.ParseIdentities(r)
+	if err != nil {
+		return "", errors.New("the recovery key is not an age identity file: expected one AGE-SECRET-KEY-1... line, comments allowed")
+	}
+	if len(ids) != 1 {
+		return "", fmt.Errorf("the recovery key must be exactly one age identity, got %d", len(ids))
+	}
+	id, ok := ids[0].(*age.X25519Identity)
+	if !ok {
+		return "", errors.New("the recovery key is not an X25519 age identity (AGE-SECRET-KEY-1...)")
+	}
+	return id.String(), nil
 }
 
 func (a *app) repositoryReembedCommand() *cobra.Command {
