@@ -1439,6 +1439,7 @@ func decodeKeyset(cur string) (*keyset, error) {
 func (ds *dataset) Changes(ctx context.Context, after int64, f substrate.ChangeFilter, limit int) ([]substrate.Change, error) {
 	b := &builder{}
 	b.add(`seq > ` + b.arg(after))
+	hideDeliveryEntries(b)
 	if err := ds.buildChangeFilter(b, f); err != nil {
 		return nil, err
 	}

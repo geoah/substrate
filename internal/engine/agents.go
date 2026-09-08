@@ -16,16 +16,25 @@ import (
 // branch on the trigger's callable kind.
 
 // deliverToAgent runs one record delivery through the loop (deliver()'s
-// agent branch, after the guard passed): the envelope becomes the first user
-// message, the loop's writes land incrementally under the agent's actor with
-// caused_by stamped, and the cursor advances AFTER the loop settles —
-// compare-and-swap, so a concurrent dispatcher's duplicate rolls its cursor
-// motion back, but agent deliveries are at-least-once by construction (the
-// loop's writes are not one transaction; a retried delivery is a new
-// thread). A loop error rides the ordinary retries and parks.
-func (ds *dataset) deliverToAgent(ctx context.Context, tr *trigger, ch substrate.Change, from int64, depth int, envelope map[string]any, mode string) (deliverResult, error) {
+// agent branch, after the guard passed): the delivery is CLAIMED first
+// (settlement.claim: the cursor's compare-and-swap and the delivery recorded
+// as in flight, one transaction), then the envelope becomes the first user
+// message and the loop's writes land incrementally under the agent's actor
+// with caused_by stamped, and the claim is COMPLETED inside the transaction
+// that settles the thread (agentloop.go settle, agentInvocation.complete):
+// the thread's terminal status, the claim's retirement, the delivery entry
+// and the run record are one commit. A concurrent dispatcher's duplicate
+// loses the claim's swap and runs nothing. A loop error rides the ordinary
+// retries, which find the claim, and parks by rewriting it. A crash mid-loop
+// leaves the claim, listed as in flight and retried by hand: the loop's
+// effects are never committed without a recorded delivery state, and nothing
+// redelivers by itself.
+func (ds *dataset) deliverToAgent(ctx context.Context, tr *trigger, ch substrate.Change, depth int, envelope map[string]any, mode string, advance bool, settle *settlement) (deliverResult, error) {
 	var res deliverResult
-	advance := from >= 0
+	claim, err := ds.claimAgentDelivery(ctx, settle)
+	if err != nil {
+		return res, err
+	}
 	user, err := json.Marshal(envelope)
 	if err != nil {
 		return res, err
@@ -37,62 +46,94 @@ func (ds *dataset) deliverToAgent(ctx context.Context, tr *trigger, ch substrate
 		// tool idempotency keys derive from it, so a RETRIED delivery — a
 		// fresh thread by construction — reproduces the same keys.
 		delivery: fmt.Sprintf("%s/%s/%d", ds.Repository().Name, tr.ID, ch.Seq),
+		complete: agentCompletion(settle, claim, advance),
 	})
 	if err != nil {
 		return res, err
 	}
-	if advance {
-		if err := ds.advanceCursor(ctx, tr.ID, from, ch.Seq); err != nil {
-			return res, err
-		}
-		res.moved = true
+	return agentResult(advance, ares), nil
+}
+
+// claimAgentDelivery writes an agent delivery's claim in its own transaction
+// (settlement.claim); nil settles nothing and claims nothing.
+func (ds *dataset) claimAgentDelivery(ctx context.Context, settle *settlement) (int64, error) {
+	if settle == nil {
+		return 0, nil
 	}
-	res.effects = ares.EffectsByAction
+	var claim int64
+	err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		id, err := settle.claim(t)
+		claim = id
+		return err
+	})
+	if err != nil {
+		// A claim the transaction took and rolled back is given back.
+		settle.release()
+		return 0, err
+	}
+	if settle.retire == 0 {
+		settle.claimed = claim
+	}
+	return claim, nil
+}
+
+// agentCompletion is the hook the loop runs inside the thread's settling
+// transaction (agentloop.go settle): the claim retires with the run record
+// there. nil when nothing settles.
+func agentCompletion(settle *settlement, claim int64, advance bool) func(t *txn, ares *substrate.AgentResult) error {
+	if settle == nil {
+		return nil
+	}
+	return func(t *txn, ares *substrate.AgentResult) error {
+		return settle.complete(t, claim, agentResult(advance, ares))
+	}
+}
+
+// agentResult is a settled agent delivery's outcome: ran when the loop
+// applied any effect, moved when the dispatch owned the cursor.
+func agentResult(advance bool, ares *substrate.AgentResult) deliverResult {
+	res := deliverResult{moved: advance, effects: ares.EffectsByAction}
 	if ares.Effects > 0 {
 		res.ran = 1
 	}
-	return res, nil
+	return res
 }
 
-// agentFire runs one schedule/webhook fire through the loop — deliverFire's
-// agent branch. The fire-state CAS lands after the loop settles: a lost swap
-// means a concurrent dispatcher fired the occurrence too, and this one's
-// writes stand as at-least-once duplicates (function fires stay
-// effectively-once; agent fires are at-least-once by construction).
-func (ds *dataset) agentFire(ctx context.Context, tr *trigger, mode, fid string, at time.Time, lastFire *time.Time, envelope map[string]any) (map[string]int, int, error) {
-	// Admission under the lifecycle fence, held through the loop's writes and
-	// the fire-state CAS below (bundles.go, review #2).
+// agentFire runs one schedule/webhook fire through the loop, deliverFire's
+// agent branch, under the same claim-then-complete protocol as
+// deliverToAgent: the fire state moves with the claim before the loop, so a
+// concurrent dispatcher's duplicate loses the swap there and runs nothing.
+func (ds *dataset) agentFire(ctx context.Context, tr *trigger, mode, fid string, at time.Time, envelope map[string]any, settle *settlement) (int, error) {
+	// Admission under the lifecycle fence, held through the claim, the
+	// loop's writes and the completion below (bundles.go, review #2).
 	ctx, release, err := ds.admitCallable(ctx, tr.Agent.Package, tr.Agent.Identity())
 	if err != nil {
-		return nil, 0, err
+		return 0, err
 	}
 	defer release()
-	user, err := json.Marshal(fireEnvelope(envelope, fid, at, ds.Repository().Name, ds.Repository().Authority))
+	claim, err := ds.claimAgentDelivery(ctx, settle)
 	if err != nil {
-		return nil, 0, err
+		return 0, err
+	}
+	env, err := ds.fireEnvelope(ctx, envelope, fid, at)
+	if err != nil {
+		return 0, err
+	}
+	user, err := json.Marshal(env)
+	if err != nil {
+		return 0, err
 	}
 	ares, err := ds.runAgent(ctx, tr.Agent, agentInvocation{
 		mode: mode, user: string(user),
 		// Stable per occurrence: a retried fire reuses the fire id, so tool
 		// keys survive the retry (the functionFire key shape).
 		delivery: fmt.Sprintf("%s/%s/%s", ds.Repository().Name, tr.ID, fid),
+		complete: agentCompletion(settle, claim, false),
 	})
 	if err != nil {
-		return nil, 0, err
+		return 0, err
 	}
-	if lastFire != nil {
-		err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
-			return t.advanceScheduleTx(tr.ID, *lastFire, at)
-		})
-		if err != nil {
-			return nil, 0, err
-		}
-	}
-	applied := 0
-	if ares.Effects > 0 {
-		applied = 1
-	}
-	return ares.EffectsByAction, applied, nil
+	return agentResult(false, ares).ran, nil
 }
 
 // The callable lifecycle gate for agents is callableGroupBlocked (bundles.go),

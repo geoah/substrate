@@ -49,7 +49,26 @@ data:
       type: string
       required: true
       description: what the item is called
+---
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: ` + eventRef + `/noop
+data:
+  authority: ` + eventAuthority + `
+  package: feed
+  description: delivers nothing, so a trigger can name it
+  runtime: python
+  permissions:
+    writes: [` + eventRef + `/item]
+  source: |
+    def main(input, host):
+        return {"effects": []}
 `
+
+// triggerPath is a trigger record the test writes: creating one appends a
+// `delivery` entry, the engine's own ledger row (decision 0064), which no
+// surface may serve.
+const triggerPath = "/api/v1/substrate.reamde.dev/core/trigger/watch-items"
 
 // eventRow is the part of a change row this test reads: the payload whole, so
 // a leaked key is seen, and the event.
@@ -84,6 +103,19 @@ func wantEvent(t *testing.T, surface string, row eventRow, wantID string, wantVe
 func TestEveryChangeSurfaceServesTheEventAndNoEffects(t *testing.T) {
 	e := testenv.Start(t)
 	e.ApplyVocabularyYAML(eventVocabulary)
+
+	// A disabled trigger: its creation records its starting cursor as a
+	// `delivery` entry and it never dispatches, so the ledger has one row
+	// here and the item's history stays the three writes below.
+	if status, body := e.Do(http.MethodPut, triggerPath, map[string]any{
+		"properties": map[string]any{
+			"enabled":  false,
+			"source":   map[string]any{"record": map[string]any{"kinds": []any{eventRef + "/item"}}},
+			"callable": "substrate.reamde.dev/core/function/" + eventRef + "/noop",
+		},
+	}); status/100 != 2 {
+		t.Fatalf("put trigger: %d %s", status, body)
+	}
 
 	// Three writes to one record: created at version 1, updated to 2,
 	// deleted at 3. Each surface below reads the same three rows back.
@@ -181,6 +213,43 @@ func TestEveryChangeSurfaceServesTheEventAndNoEffects(t *testing.T) {
 		t.Fatalf("graphql history: %v", hist.Errors)
 	}
 	check("graphql history", hist.Data.Record.History)
+
+	// Unfiltered, every surface serves the trigger's own write and never the
+	// ledger entry beside it. This guards the HIDING: it cannot see the
+	// engine's tables, so it does not prove the entry exists (the engine's
+	// own tests do), and a binary that wrote no ledger would pass it too.
+	noLedger := func(surface string, rows []eventRow) {
+		t.Helper()
+		sawTrigger := false
+		for _, r := range rows {
+			if r.Op == "delivery" {
+				t.Fatalf("%s: seq %d is a delivery entry", surface, r.Seq)
+			}
+			if r.Op == "put" && r.RecordID == "watch-items" {
+				sawTrigger = true
+			}
+		}
+		if !sawTrigger {
+			t.Fatalf("%s: the trigger's own write is missing, so the surface was not read whole", surface)
+		}
+	}
+	var all struct {
+		Changes []eventRow `json:"changes"`
+	}
+	mustDecode(t, e, http.MethodGet, "/api/v1/changes?first=1000", nil, &all)
+	noLedger("history page", all.Changes)
+	status, raw = e.Do(http.MethodGet, "/api/v1/changes?from=0", nil)
+	if status != http.StatusOK {
+		t.Fatalf("forward read: %d %s", status, raw)
+	}
+	noLedger("forward read", ndjsonRows(t, strings.Split(strings.TrimSpace(string(raw)), "\n")))
+	mustDecode(t, e, http.MethodPost, "/api/v1/graphql", map[string]any{
+		"query": `{ changelog(first: 1000) { changes ` + fields + ` } }`,
+	}, &gql)
+	if len(gql.Errors) > 0 {
+		t.Fatalf("graphql changelog: %v", gql.Errors)
+	}
+	noLedger("graphql changelog", gql.Data.Changelog.Changes)
 }
 
 // mustDecode performs a request that has to succeed and decodes its body.

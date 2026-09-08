@@ -655,7 +655,10 @@ data:
   `coalesce: true` keeps only the latest matched change per record in a batch.
 - A **`schedule`** arm fires the callable on an RRULE `recurrence` (with a
   `timezone` and optional `startsAt`), with no changelog entry underneath and no
-  guard.
+  guard. Every occurrence fires once, oldest first: a trigger that missed
+  occurrences (the server down, the trigger disabled, a repository restored
+  to an older fire state) catches up at most ten per dispatcher pass, and none
+  is coalesced away.
 - A **`webhook`** arm is a public endpoint: `POST
   /webhooks/{authority}/{trigger}`, where `authority` is the repository's
   authority and `trigger` the record's id,
@@ -687,9 +690,14 @@ is the function body.
 - **Idempotent by construction.** A function composes its own ids, `put`
   upserts, and identical writes are suppressed. Replaying a trigger over the
   whole changelog is a no-op where it already ran. The dispatcher advances a
-  record trigger's cursor in the same transaction as the effects, so
-  substrate-side consequences are effectively-once; external consumers get an
-  at-least-once floor, made safe by the same id composition.
+  record trigger's cursor and writes its run record in the same transaction
+  as a function's effects, so substrate-side consequences are effectively-once
+  and no crash leaves effects with no record of the delivery. An
+  [agent](agents.md) delivery claims the cursor before its loop runs and
+  completes the claim after: a crash mid-loop leaves the delivery listed under
+  `…/parked` as in flight, to retry by hand, and never redelivers by itself.
+  External consumers get an at-least-once floor, made safe by the same id
+  composition.
 - **No loops.** Every function-authored write records the change that caused
   it, and a trigger never delivers writes carrying its own callable's actor.
   That actor is `function:<authority>:<package>:<name>` (an agent's is
@@ -725,12 +733,24 @@ repository.
   handed to the background, and one `404` for every refusal (no such trigger,
   disabled, wrong key). The callable's output is never the response.
 - `GET …/triggers/{id}/parked` lists the deliveries the trigger gave up on,
-  and `POST …/triggers/{id}/parked/{failureId}/retry` re-runs one.
+  and `POST …/triggers/{id}/parked/{failureId}/retry` re-runs one. A
+  failure's id is the seq of the changelog entry that parked it, so it
+  survives a restore ([backups](operations.md#backups)). A parked webhook
+  keeps the request it arrived with, minus what a replay does not need: only
+  the headers that describe the body (`content-type`, `content-length`,
+  `content-encoding`, `user-agent`, `date`) and the exact provider headers
+  the shipped webhook bodies read (GitHub, Stripe, Slack, Linear, Standard
+  Webhooks, `idempotency-key`, `x-request-id`, `x-pebble-mode`) are kept, the
+  query string is dropped, and the body and every inline multipart value are
+  stored in the blob store rather than in the changelog; the retry delivers
+  the request with those headers, an empty query, and the body and parts as
+  they arrived.
 
 `replay` answers the cursor it set; `run`, `wake` and `retry` answer
 `{"ran": n}`, the number of deliveries that applied effects. Every settled
 dispatched delivery writes a `substrate.reamde.dev/core/run` row under the
-`substrate` actor: the trigger, the callable, the mode, the seq or fire id,
+`substrate` actor, in the transaction that commits its effects and its cursor
+or fire-state motion: the trigger, the callable, the mode, the seq or fire id,
 the status (`ok`, `skipped` or `parked`), the attempt count and the
 applied-effects summary. Parked runs are kept; the newest twenty non-parked
 runs per trigger stay and older ones tombstone. The direct invocations — a

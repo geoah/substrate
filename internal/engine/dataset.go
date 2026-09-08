@@ -145,6 +145,27 @@ type dataset struct {
 	// after that transaction commits, never before: a rolled-back stamp that
 	// left this true would let a later append land with nothing claiming it.
 	changelogStamped atomic.Bool
+	// runningClaims holds the failure ids this process is running a delivery
+	// under: a dispatch's claim from inside the transaction that writes it
+	// until its completion or park ends, and a retry's failure from before
+	// anything runs until its retirement or re-park ends (functions.go
+	// acquireClaim). The insert is compare-and-swap (sync.Map.LoadOrStore), so
+	// two hands on one failure cannot both start a loop: the second answers
+	// ErrConflict. A crash empties it, and the claim it leaves behind is
+	// retryable.
+	runningClaims sync.Map
+	// stampHeld, set on the opening goroutine only, keeps the appends the
+	// ledger adoption makes BEFORE its own transaction (the blob spool of a
+	// legacy park's body) from stamping the dialect: the stamp must commit
+	// with the adoption or not at all, so a failed adoption is repeated at the
+	// next open (delivery.go adoptLegacyLedger). A blob manifest's put is an
+	// entry a dialect 5 binary replays, so the hold costs nothing it covers.
+	stampHeld bool
+	// adoptLedger is set by the dialect gate when the stored dialect is
+	// below the delivery ledger's rung: the open then records the trigger
+	// tables' rows as ledger entries once (delivery.go adoptLegacyLedger).
+	// Set and read on the opening goroutine only.
+	adoptLedger bool
 
 	mu   sync.RWMutex
 	reg  *vocabulary.Registry
@@ -156,6 +177,11 @@ type dataset struct {
 	// published, then signaled") are observable nowhere else without a race.
 	beforePublish func(t *txn)
 	beforeSignal  func(t *txn)
+	// deliveryFault, under mu, is set only by tests: it runs at the start of
+	// a dispatched delivery's settlement (functions.go dispatchSettlement),
+	// after the effects applied and before the cursor moves, so a test can
+	// fail the write there and show that neither committed.
+	deliveryFault func(t *txn) error
 	// blobSweepAfter is the blob orphan sweep's cursor: the last digest the
 	// previous pass looked at, so a store with more objects than one batch is
 	// walked whole instead of the sweep restarting at the front every time.

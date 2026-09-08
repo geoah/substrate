@@ -69,6 +69,10 @@ type options struct {
 	// so a small history spans more than one batch. Tests only.
 	importFault func(stage string) error
 	importBatch int
+	// adoptFault is the ledger adoption's test seam (delivery.go
+	// adoptLegacyLedger): a hook run after each trigger's rows are recorded,
+	// inside the one transaction, so a test can fail it mid-way. Tests only.
+	adoptFault func(triggerID string) error
 	// commitFault is a write's test seam (export_test.go): a hook run at
 	// each durable step of commitAndMirror, around the manifest write that
 	// precedes the first append in a new changelog dialect and around the
@@ -252,6 +256,8 @@ type service struct {
 	// (repodir.go importEntries, refoldFromFiles). Tests only.
 	testImportFault func(stage string) error
 	testImportBatch int
+	// testAdoptFault is the option's adoption seam. Tests only.
+	testAdoptFault func(triggerID string) error
 	// testCommitFault is the options' commit seam (dataset.go
 	// commitAndMirror, repodir.go writeManifestBeforeCommit). Tests only.
 	testCommitFault func(stage string) error
@@ -350,6 +356,7 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 
 		testImportFault:   o.importFault,
 		testImportBatch:   o.importBatch,
+		testAdoptFault:    o.adoptFault,
 		testCommitFault:   o.commitFault,
 		testSnapshotFault: o.snapshotFault,
 	}
@@ -738,6 +745,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	// shipped-vocabulary upgrade append what a newer binary added (seed.go).
 	for _, step := range []func(context.Context) error{
 		ds.loadStoredVocabulary,
+		ds.adoptLegacyLedger,
 		ds.upgradeShippedVocabulary,
 		ds.ensureTriggerCursors,
 	} {

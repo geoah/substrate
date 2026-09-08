@@ -567,7 +567,7 @@ so losing the host key leaves the sealed files inert only for a user who also
 lost the recovery key.
 
 **A database dump is optional, and it is not a restore.** The tables hold
-nothing the directory lacks except runtime state (below). Take one beside the
+nothing the directory lacks except the runtime state named below. Take one beside the
 copy before an upgrade, because a dump plus the matching directory is the
 fastest way back to a known state, but a fresh database and the directory are
 enough.
@@ -681,13 +681,32 @@ opened the repository; a server that has not opened it yet holds nothing, so
 stop the server rather than rely on the refusal. The rewrap revokes nothing: a
 copy taken before it still opens under the old host key.
 
-**What does not come back.** Runtime state is not in the directory: trigger
-cursors, paged cursors, embedding vectors and OAuth flows in flight. On an
-import into an empty database triggers start at the head, so a delivery that
-had not settled before the copy does not run. On an import of a newer
-directory over an older database dump the cursors the dump holds stay where
-they were, so every entry since the dump is delivered again. A consent flow in
-flight is started again. A user's tokens are records, so they come back.
+**What comes back, and what does not.** Trigger state is in the directory:
+every cursor advance, schedule fire, parked failure and paged-drain page is a
+`delivery` changelog entry
+([decision 0064](decisions/0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md)),
+folded back into the trigger tables on import with the rest of the changelog.
+A record trigger comes back at the last delivery it acknowledged, or at its
+last edit if that is later, and the next pass re-reads the rows after it,
+which matched nothing under the source that scanned them, so nothing is
+delivered twice and nothing an older source skipped is delivered late; a schedule trigger comes back at the occurrence it last fired
+and fires the ones it missed, oldest first, at most ten per pass; a parked
+failure keeps the id `…/parked` listed, so a saved retry still names it, and
+a parked drain resumes from its last committed page. On an import of a newer
+directory over an older database dump the entries fold over the dump's rows,
+so the triggers land where the directory says, not where the dump did.
+A repository's first open under changelog dialect 6 records the trigger state
+its tables already held as ledger entries, so an upgraded repository keeps it
+through a rebuild or a restore. A directory written before dialect 6 and never
+opened under it carries no ledger: restored into an empty database, it starts
+its triggers at the head, its parked failures are gone (their `run` records
+survive), and nothing reconstructs the positions from the changelog alone.
+
+Runtime state is not in the directory: embedding vectors (queued again,
+below), OAuth flows in flight, and a record trigger's scan position past rows
+that matched nothing. A consent flow in flight is started again: it is a nonce
+and a PKCE verifier with an expiry, and the callback fails once, so the user
+starts the flow over. A user's tokens are records, so they come back.
 Change cursors that clients saved (the console's tail, `substratectl watch
 --from`, an integration's bookmark) are refused once after an import: the row
 comes back with a new history generation, and a resume under the old one
@@ -839,9 +858,13 @@ the exec path needs nothing open at all.
   relabel after the rebuild. A clear that rode along with a property change in
   the same write leaves no mark that tells it from the property change alone,
   and nothing lists those. It does not touch blobs or sealed files, which were
-  never in the changelog, and it leaves runtime state (trigger cursors, OAuth
-  flows) alone, because a cursor is a consumer's position in the changelog,
-  not a fold of it. Stop the server
+  never in the changelog. It replays the delivery ledger with the rest of the
+  fold: each trigger's cursor lands at the last delivery it acknowledged, its
+  parked failures and a paged drain's resume row come back, and the next pass
+  re-reads the rows after the cursor, which deliver nothing. Trigger state
+  from before changelog dialect 6 was recorded into the ledger at the
+  repository's first open under it, so a rebuild keeps it. OAuth flows in
+  flight are left alone. Stop the server
   first: it opens the repository as its changelog writer and refuses while
   the server holds the lock.
 - **`blobs migrate`** moves blob bytes from one store to another, one

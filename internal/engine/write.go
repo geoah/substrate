@@ -1155,6 +1155,15 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 			if err := t.initTriggerBookkeeping(sp.id, row.Props); err != nil {
 				return nil, err
 			}
+		} else if sp.ty.Identity == typeTrigger {
+			// An edited trigger (its source, its guard, its enabled flag,
+			// an upgrade of the bundle that declares it) pins its scan
+			// position into the ledger here, so a replay applies the new
+			// definition from this write on and never to the rows the old
+			// one scanned past (delivery.go pinTriggerCursor).
+			if err := t.pinTriggerCursor(sp.id); err != nil {
+				return nil, err
+			}
 		}
 	}
 

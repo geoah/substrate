@@ -1,8 +1,8 @@
 package engine
 
 // The trigger machinery's internal regressions: a schedule fire is idempotent
-// under stable fire ids with missed ticks coalescing to one, and a host Call
-// at the causal-depth cap refuses. (The dispatcher's per-repository
+// under stable fire ids and missed occurrences drain in order, and a host
+// Call at the causal-depth cap refuses. (The dispatcher's per-repository
 // independence and its self-actor exclusion are proved end to end, through the
 // public surface, in functions_db_test.go.)
 
@@ -27,14 +27,26 @@ func maxSeqOf(t *testing.T, ds *dataset) int64 {
 	return seq
 }
 
-func TestScheduleFireIdempotentAndCoalesced(t *testing.T) {
-	t.Parallel()
-	// Missed ticks coalesce to ONE fire with a stable id, the fire state
-	// advances compare-and-swap in the delivery's transaction, and a second
-	// pass at the same instant fires nothing.
+// withScheduleDrain lowers the per-pass occurrence bound for one test.
+// Package-level, like withMaxPages: a caller MUST NOT call t.Parallel.
+func withScheduleDrain(n int) func() {
+	prev := scheduleDrainPerPass
+	scheduleDrainPerPass = n
+	return func() { scheduleDrainPerPass = prev }
+}
+
+func TestScheduleFiresMissedOccurrencesInOrder(t *testing.T) {
+	// Missed occurrences each fire, oldest first, under stable ids, at most
+	// scheduleDrainPerPass of them per pass; the fire state advances
+	// compare-and-swap in each delivery's transaction to the occurrence
+	// fired, and a pass with nothing due fires nothing.
+	defer withScheduleDrain(2)()
 	ctx := context.Background()
 	ds := openCursorDataset(t)
 	const pkg = "widgets.test.dev/widgets"
+	// Anchored three and a half hours back: four occurrences lie between the
+	// anchor and now once the fire state is rewound to it.
+	startsAt := nowUTC().Add(-3*time.Hour - 30*time.Minute).Truncate(time.Minute)
 
 	_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: typeTrigger,
@@ -70,7 +82,7 @@ def main(input, host):
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source": map[string]any{"schedule": map[string]any{
-				"recurrence": "FREQ=HOURLY", "timezone": "UTC",
+				"recurrence": "FREQ=HOURLY", "timezone": "UTC", "startsAt": startsAt.Format(time.RFC3339),
 			}},
 			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", pkg+"/hourly"),
 		},
@@ -87,36 +99,70 @@ def main(input, host):
 		t.Fatalf("a fresh schedule backfilled: %d tasks", n)
 	}
 
-	// Rewind the fire state three-and-a-bit hours: several occurrences are
-	// now overdue, and they must coalesce to exactly ONE fire — the newest.
+	// Rewind the fire state to just before the anchor: four occurrences are
+	// now overdue. Two fire per pass, oldest first, none coalesced away, and
+	// the fire state is the last occurrence fired, not the clock.
 	if _, err := ds.db.ExecContext(ctx, `
-		UPDATE trigger_schedule SET fired_at = fired_at - interval '190 minutes'
-		WHERE trigger_id = $1`, tr.ID); err != nil {
+		UPDATE trigger_schedule SET fired_at = $2 WHERE trigger_id = $1`, tr.ID, startsAt.Add(-time.Minute)); err != nil {
 		t.Fatalf("rewind: %v", err)
+	}
+	firedAt := func() time.Time {
+		var at time.Time
+		if err := ds.db.QueryRowContext(ctx, `SELECT fired_at FROM trigger_schedule WHERE trigger_id = $1`, tr.ID).Scan(&at); err != nil {
+			t.Fatal(err)
+		}
+		return at.UTC()
 	}
 	if _, err := ds.ProcessTriggers(ctx); err != nil {
 		t.Fatalf("process: %v", err)
 	}
-	if n := countLiveOf(t, ds, "samples.substrate.reamde.dev/tasks/task"); n != 1 {
-		t.Fatalf("missed ticks did not coalesce: %d tasks", n)
+	if n := countLiveOf(t, ds, "samples.substrate.reamde.dev/tasks/task"); n != 2 {
+		t.Fatalf("the first pass fired %d occurrences, want the bound of 2", n)
 	}
-	// The fire id is the occurrence instant — stable, not a random mint.
-	var fid string
-	if err := ds.db.QueryRowContext(ctx, `
+	if got := firedAt(); !got.Equal(startsAt.Add(time.Hour)) {
+		t.Fatalf("fire state after the first pass %s, want %s", got, startsAt.Add(time.Hour))
+	}
+	if _, err := ds.ProcessTriggers(ctx); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	if n := countLiveOf(t, ds, "samples.substrate.reamde.dev/tasks/task"); n != 4 {
+		t.Fatalf("four missed occurrences fired %d times over two passes", n)
+	}
+	if got := firedAt(); !got.Equal(startsAt.Add(3 * time.Hour)) {
+		t.Fatalf("fire state after the drain %s, want %s", got, startsAt.Add(3*time.Hour))
+	}
+	// The fire ids are the occurrence instants, stable rather than random
+	// mints, and the run ledger holds them in the order they were due.
+	rows, err := ds.db.QueryContext(ctx, `
 		SELECT props->>'fireId' FROM records
 		WHERE kind = $1 AND props->>'status' = 'ok' AND deleted_at IS NULL
-		ORDER BY created_at DESC LIMIT 1`, typeRun).Scan(&fid); err != nil {
-		t.Fatalf("run row: %v", err)
-	}
-	at, err := time.Parse(time.RFC3339, fid)
+		ORDER BY created_at, id`, typeRun)
 	if err != nil {
-		t.Fatalf("fire id %q is not an occurrence instant: %v", fid, err)
+		t.Fatalf("run rows: %v", err)
 	}
-	if since := time.Since(at); since < 0 || since > time.Hour {
-		t.Fatalf("the coalesced fire is not the newest occurrence: %s", fid)
+	var fires []time.Time
+	for rows.Next() {
+		var fid string
+		if err := rows.Scan(&fid); err != nil {
+			t.Fatal(err)
+		}
+		at, err := time.Parse(time.RFC3339, fid)
+		if err != nil {
+			t.Fatalf("fire id %q is not an occurrence instant: %v", fid, err)
+		}
+		if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "fire-"+fid); err != nil {
+			t.Fatalf("the body did not see the stable fire id %s: %v", fid, err)
+		}
+		fires = append(fires, at)
 	}
-	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "fire-"+fid); err != nil {
-		t.Fatalf("the body did not see the stable fire id: %v", err)
+	_ = rows.Close()
+	if len(fires) != 4 {
+		t.Fatalf("run rows: %d, want 4", len(fires))
+	}
+	for i, at := range fires {
+		if want := startsAt.Add(time.Duration(i) * time.Hour); !at.Equal(want) {
+			t.Fatalf("fire %d at %s, want %s: the occurrences did not fire oldest first", i, at, want)
+		}
 	}
 
 	// Idempotence: the same instant fires nothing twice.

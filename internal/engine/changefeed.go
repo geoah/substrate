@@ -15,6 +15,17 @@ import (
 // state. Read-only over the changelog and the trigger bookkeeping — nothing
 // here writes.
 
+// hideDeliveryEntries adds the predicate every public read carries: a
+// `delivery` entry is the engine's own bookkeeping (delivery.go) and never
+// leaves it. A continuation still moves past the hidden rows, because a
+// cursor is a seq: a client resuming below a hidden entry reads nothing
+// twice and misses nothing, and the head it is held to counts every entry.
+// The dispatcher's own read (functions.go changesPast) is the one reader that
+// does not carry it, so its scan position covers the entries too.
+func hideDeliveryEntries(b *builder) {
+	b.add(`op <> ` + b.arg(string(substrate.OpDelivery)))
+}
+
 // buildChangeFilter appends a ChangeFilter's predicates; the caller owns the
 // seq bound and the ordering.
 func (ds *dataset) buildChangeFilter(b *builder, f substrate.ChangeFilter) error {
@@ -136,7 +147,14 @@ func (ds *dataset) queryChanges(ctx context.Context, b *builder, order string, l
 		if err != nil {
 			return nil, err
 		}
-		projectAffected(&c)
+		if c.Op == substrate.OpDelivery {
+			// The ledger's own entry (delivery.go) moves no record and has
+			// no event: it reaches only the dispatcher's read (functions.go
+			// changesPast), and it leaves with neither effects nor `affected`.
+			c.Payload = nil
+		} else {
+			projectAffected(&c)
+		}
 		out = append(out, c)
 	}
 	return out, rows.Err()
@@ -252,6 +270,7 @@ func (ds *dataset) ChangesBefore(ctx context.Context, before int64, f substrate.
 	} else {
 		b.add(`TRUE`)
 	}
+	hideDeliveryEntries(b)
 	if err := ds.buildChangeFilter(b, f); err != nil {
 		return nil, err
 	}

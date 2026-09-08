@@ -22,13 +22,17 @@ import (
 // shared runner, and applies the returned effects through the ordinary write
 // path under the CALLABLE's actor, cursor advance in the SAME transaction. A
 // schedule-sourced trigger owns a fire state instead: due RRULE occurrences
-// (missed ticks coalesced to one, stable fire ids) enter the same delivery
-// path with mode `schedule` and no changelog row underneath. Serial per
-// trigger; a failed delivery retries and then parks-and-advances, so one
+// (oldest first, a bounded number per pass, stable fire ids) enter the same
+// delivery path with mode `schedule` and no changelog row underneath. Serial
+// per trigger; a failed delivery retries and then parks-and-advances, so one
 // poisoned record never wedges a trigger's lag. Every settled delivery
 // attempt writes one `run` record (ok / skipped / parked) under the system
-// actor; parked runs are kept, everything else prunes to the newest
-// runRetention per trigger.
+// actor, in the transaction that commits the effects and the cursor motion
+// it describes; parked runs are kept, everything else prunes to the newest
+// runRetention per trigger. The cursor, the fire state, the parked failures
+// and a paged drain's resume row are the DELIVERY LEDGER (delivery.go):
+// every motion is a fold effect on a `delivery` changelog entry, so a
+// restore folds them back.
 
 const (
 	// triggerBatch bounds one changelog read; the loop drains to head.
@@ -49,6 +53,12 @@ const (
 // triggerRetryBackoff spaces the retries; short, because a delivery is one
 // bounded evaluation plus one transaction.
 var triggerRetryBackoff = []time.Duration{25 * time.Millisecond, 100 * time.Millisecond}
+
+// scheduleDrainPerPass bounds the occurrences one pass fires for one schedule
+// trigger, oldest first. A trigger that was down, disabled or restored fires
+// every occurrence it missed, but over passes rather than in one burst at
+// startup; nothing is coalesced away. A var, so a test can lower it.
+var scheduleDrainPerPass = 10
 
 // The paged-checkpoint drain budget. A body that keeps
 // returning `more` must be bounded on every axis, and the bound must span the
@@ -194,12 +204,12 @@ func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger) (int, 
 			}
 			cursor = next
 		}
-		// Trailing rows the source skipped still advance the cursor; a crash
-		// before this line only re-reads rows that either do not match or
-		// no-op under replay.
+		// Trailing rows the source skipped move the SCAN position, the one
+		// cursor motion outside the ledger (delivery.go): a crash or a
+		// restore before this line only re-reads rows that do not match.
 		last := changes[len(changes)-1].Seq
 		if last > cursor {
-			if err := ds.advanceCursor(ctx, tr.ID, cursor, last); err != nil {
+			if err := ds.advanceCursor(ctx, tr, cursor, last); err != nil {
 				if errors.Is(err, errCursorMoved) {
 					return ran, nil
 				}
@@ -216,15 +226,16 @@ func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger) (int, 
 
 // matchChanges filters one batch by the trigger's record source. Exclusion
 // is by the CALLABLE's actor — a callable never sees its own writes,
-// whatever trigger delivers them — and by the run type: every delivery
-// writes a run row, so a `*` subscription over runs would feed itself.
+// whatever trigger delivers them, by the run type, since every delivery
+// writes a run row and a `*` subscription over runs would feed itself, and by
+// the delivery entry, which is the ledger's own bookkeeping (delivery.go).
 // (An agent's thread/message rows carry the agent's actor, so the same
 // exclusion keeps an agent off its own transcript.)
 func matchChanges(tr *trigger, changes []substrate.Change) []substrate.Change {
 	self := substrate.Actor(tr.callableActor())
 	var out []substrate.Change
 	for _, ch := range changes {
-		if ch.Actor == self || ch.Kind == typeRun {
+		if ch.Actor == self || ch.Kind == typeRun || ch.Op == substrate.OpDelivery {
 			continue
 		}
 		if !tr.Record.matches(ch.Kind, runner.OpOf(ch)) {
@@ -282,7 +293,12 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 	var lastErr error
 	attempts := triggerAttempts
 	chain := ds.recordChainKey(tr.ID, ch.Seq)
+	settle := ds.dispatchSettlement(tr, ch, from, started)
+	// The claim an agent attempt takes is held through every attempt and
+	// the park, so a retry by hand cannot start a second loop between them.
+	defer settle.release()
 	for attempt := range triggerAttempts {
+		settle.attempt = attempt + 1
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
@@ -299,32 +315,28 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 		if rerr != nil {
 			return 0, from, rerr
 		}
-		res, err := ds.deliver(ctx, tr, ch, from, depth, resume)
+		res, err := ds.deliver(ctx, tr, ch, from, depth, resume, settle)
 		if err == nil {
 			if res.skipped {
 				// The guard said no: a skip is a settled attempt — record it
 				// and advance the cursor in one transaction.
-				if err := ds.recordSkipAndAdvance(ctx, tr, ch, from, started); err != nil {
-					if errors.Is(err, errCursorMoved) {
-						return 0, from, err
-					}
+				if err := ds.recordSkipAndAdvance(ctx, tr, ch, from, started, ""); err != nil {
 					return 0, from, err
 				}
 				return 0, ch.Seq, nil
 			}
-			if res.moved {
-				ds.recordRun(ctx, runRecord{
-					trigger: tr.ID, callable: tr.CallableID, mode: runner.ModeRecord,
-					seq: ch.Seq, recordID: ch.RecordID, status: runStatusOK,
-					attempt: attempt + 1, startedAt: started, effects: res.effects,
-					pages: res.pages,
-				})
-				return res.ran, ch.Seq, nil
-			}
-			return res.ran, from, nil
+			return res.ran, ch.Seq, nil
 		}
 		if errors.Is(err, errCursorMoved) {
 			return 0, from, err
+		}
+		if errors.Is(err, errClaimedElsewhere) {
+			// Another dispatch holds this delivery: it runs it, this pass
+			// moves past it and says so.
+			if err := ds.recordSkipAndAdvance(ctx, tr, ch, from, started, err.Error()); err != nil {
+				return 0, from, err
+			}
+			return 0, ch.Seq, nil
 		}
 		// Only the DISPATCHER's context ending aborts the pass: a
 		// per-invocation runner timeout is a delivery failure that rides the
@@ -359,15 +371,214 @@ type deliverResult struct {
 	pages   int // committed pages when the body paged; 1 for a single-shot body
 }
 
+// settledResult is a delivery's outcome from its effect summary: ran when
+// anything applied, moved when the dispatch owned the cursor.
+func settledResult(advance bool, summary map[string]int, pages int) deliverResult {
+	res := deliverResult{moved: advance, effects: summary, pages: pages}
+	if len(summary) > 0 {
+		res.ran = 1
+	}
+	return res
+}
+
+// settlement is what a delivery writes to complete: the ledger motion that
+// acknowledges it (a cursor or fire-state advance), the retirement of the
+// failure a retry re-runs, the delivery entry those ride, and the run record.
+// A function delivery writes all of it in the transaction that commits its
+// LAST effects (settle), so a crash cannot commit effects with no completion
+// recorded. An agent delivery cannot: the loop's writes are many
+// transactions across model turns. It writes the acknowledgement FIRST
+// (claim), recording the delivery as in flight under a parked failure, then
+// runs the loop, then retires the claim with the run record (complete). A
+// crash between the two leaves the delivery listed under the trigger's
+// parked failures as in flight, retried by hand; nothing redelivers by
+// itself and no effect commits without a recorded delivery state. nil
+// settles nothing: a manual run mints nothing durable.
+type settlement struct {
+	ds      *dataset
+	trigger string
+	// attempt is the attempt the run record names; the dispatch updates it
+	// per try, the settlement living across the tries.
+	attempt int
+	// claimed is the claim this dispatch wrote on an earlier try, 0 before
+	// the first; a claim found in the tables that is not this one is another
+	// dispatch's (errClaimedElsewhere).
+	claimed int64
+	// held is the failure id this settlement holds in runningClaims, 0 when
+	// it holds none; release gives it back.
+	held int64
+	// seq and fireID name the delivery: a record change's seq, or a fire's
+	// id. A claim is found again by them (claimedFailure).
+	seq    int64
+	fireID string
+	// acknowledge moves the cursor or fire state; nil on a retry, whose
+	// failure is retired instead.
+	acknowledge func(t *txn) error
+	// retire is the parked failure a retry re-runs, 0 on a dispatch.
+	retire int64
+	// record writes the run record; nil on a retry.
+	record func(t *txn, res deliverResult) error
+}
+
+// settle is the function path: everything in one transaction with the
+// effects.
+func (s *settlement) settle(t *txn, res deliverResult) error {
+	if s == nil {
+		return nil
+	}
+	if err := s.ds.settlementFault(t); err != nil {
+		return err
+	}
+	if s.acknowledge != nil {
+		if err := s.acknowledge(t); err != nil {
+			return err
+		}
+	}
+	if s.retire != 0 {
+		if err := t.lockFailure(s.trigger, s.retire); err != nil {
+			return err
+		}
+		if err := t.unparkTx(s.trigger, s.retire); err != nil {
+			return err
+		}
+	}
+	if err := t.settleDelivery(s.trigger); err != nil {
+		return err
+	}
+	if s.record != nil {
+		return s.record(t, res)
+	}
+	return nil
+}
+
+// claim is the agent path's first transaction, before the loop: the
+// acknowledgement, and the delivery recorded as in flight under a parked
+// failure whose id is the claim's own delivery entry. An attempt that follows
+// a failed one finds the claim the first attempt wrote and writes nothing; a
+// retry's claim is the failure it re-runs. It returns the failure id the
+// completion retires.
+func (s *settlement) claim(t *txn) (int64, error) {
+	if s.retire != 0 {
+		return s.retire, nil
+	}
+	if s.claimed != 0 {
+		return s.claimed, nil
+	}
+	if id, ok, err := t.claimedFailure(s.trigger, s.seq, s.fireID); err != nil {
+		return 0, err
+	} else if ok {
+		return 0, fmt.Errorf("%w: failure %d", errClaimedElsewhere, id)
+	}
+	id, err := t.reserveSeq()
+	if err != nil {
+		return 0, err
+	}
+	if s.acknowledge != nil {
+		if err := s.acknowledge(t); err != nil {
+			return 0, err
+		}
+	}
+	if err := t.parkTx(s.trigger, foldFailure{
+		ID: foldInt(id), Seq: foldInt(s.seq), FireID: s.fireID, LastError: inFlightError, ParkedAt: t.now,
+	}); err != nil {
+		return 0, err
+	}
+	// Held BEFORE the claim commits: a retry reads the row only after the
+	// commit, and by then the id is taken.
+	if err := s.acquire(id); err != nil {
+		return 0, err
+	}
+	return id, t.appendDeliveryAt(s.trigger, id)
+}
+
+// acquire takes the in-process claim on a failure id (dataset.runningClaims):
+// compare-and-swap, so a second hand on the same id answers ErrConflict and
+// starts nothing. release gives it back; a settlement holds at most one.
+func (s *settlement) acquire(id int64) error {
+	if s.held == id {
+		return nil
+	}
+	if s.held != 0 {
+		return fmt.Errorf("substrate/engine: settlement of trigger %s already holds failure %d", s.trigger, s.held)
+	}
+	if _, taken := s.ds.runningClaims.LoadOrStore(id, struct{}{}); taken {
+		return fmt.Errorf("%w: trigger %s failure %d is a delivery this process is still running", substrate.ErrConflict, s.trigger, id)
+	}
+	s.held = id
+	return nil
+}
+
+// release gives the held claim back, once the completion, the park or the
+// retry that held it has ended.
+func (s *settlement) release() {
+	if s == nil || s.held == 0 {
+		return
+	}
+	s.ds.runningClaims.Delete(s.held)
+	s.held = 0
+}
+
+// complete is the agent path's last transaction, after the loop settled: the
+// claim retires, and the run record lands beside the delivery entry.
+func (s *settlement) complete(t *txn, claim int64, res deliverResult) error {
+	if err := s.ds.settlementFault(t); err != nil {
+		return err
+	}
+	if err := t.lockFailure(s.trigger, claim); err != nil {
+		return err
+	}
+	if err := t.unparkTx(s.trigger, claim); err != nil {
+		return err
+	}
+	if err := t.settleDelivery(s.trigger); err != nil {
+		return err
+	}
+	if s.record != nil {
+		return s.record(t, res)
+	}
+	return nil
+}
+
+// dispatchSettlement settles a dispatched record delivery: the cursor advance
+// from the position the pass read to the change's seq, then the OK run
+// record.
+func (ds *dataset) dispatchSettlement(tr *trigger, ch substrate.Change, from int64, started time.Time) *settlement {
+	s := &settlement{
+		ds: ds, trigger: tr.ID, seq: ch.Seq,
+		acknowledge: func(t *txn) error { return t.advanceCursorTx(tr.ID, from, ch.Seq) },
+	}
+	s.record = func(t *txn, res deliverResult) error {
+		return t.putSystemRun(runRecord{
+			trigger: tr.ID, callable: tr.CallableID, mode: runner.ModeRecord,
+			seq: ch.Seq, recordID: ch.RecordID, status: runStatusOK,
+			attempt: s.attempt, startedAt: started, effects: res.effects, pages: res.pages,
+		}, true)
+	}
+	return s
+}
+
+// settlementFault runs the test seam a test installed (dataset.deliveryFault),
+// nothing otherwise.
+func (ds *dataset) settlementFault(t *txn) error {
+	ds.mu.RLock()
+	fault := ds.deliveryFault
+	ds.mu.RUnlock()
+	if fault == nil {
+		return nil
+	}
+	return fault(t)
+}
+
 // deliver evaluates one change against current state and applies the
-// effects. A dispatch delivery advances the cursor from `from` to the
-// change's seq inside the effects transaction; a manual run and a parked
-// retry pass a negative `from` and leave the cursor alone. `resume` is the
-// paged-checkpoint seed cursor — nil for a fresh delivery, the last committed
-// page for a retry of a parked drain. The guard and the body run — and the
-// record loads — BEFORE the transaction opens: nothing evaluates while the
-// changelog append lock is held.
-func (ds *dataset) deliver(ctx context.Context, tr *trigger, ch substrate.Change, from int64, depth int, resume pagedProgress) (deliverResult, error) {
+// effects. `from` is the cursor the dispatch read; a manual run and a parked
+// retry pass a negative one, which selects the manual mode. `settle` commits
+// with the last effects (dispatchSettlement, a retry's unpark), or nil for a
+// run that settles nothing. `resume` is the paged-checkpoint seed cursor:
+// nil for a fresh delivery, the last committed page for a retry of a parked
+// drain. The guard, the body and the record load all run BEFORE the
+// transaction opens: nothing evaluates while the changelog append lock is
+// held.
+func (ds *dataset) deliver(ctx context.Context, tr *trigger, ch substrate.Change, from int64, depth int, resume pagedProgress, settle *settlement) (deliverResult, error) {
 	var res deliverResult
 	advance := from >= 0
 	envelope, err := ds.deliveryEnvelope(ctx, ch)
@@ -397,7 +608,7 @@ func (ds *dataset) deliver(ctx context.Context, tr *trigger, ch substrate.Change
 			return res, err
 		}
 		defer release()
-		return ds.deliverToAgent(lctx, tr, ch, from, depth, envelope, mode)
+		return ds.deliverToAgent(lctx, tr, ch, depth, envelope, mode, advance, settle)
 	}
 	// Admission under the bundle lifecycle fence, held from here through the
 	// effect commit below: disable/uninstall/purge take the exclusive side,
@@ -431,32 +642,22 @@ func (ds *dataset) deliver(ctx context.Context, tr *trigger, ch substrate.Change
 	actor := substrate.Actor(tr.Callable.Actor())
 	// Paged path: the body returned a page (or this is a resumed drain). The
 	// pages commit off the causal chain — each page's effects with its resume
-	// cursor, the final page clearing the cursor and (dispatch only) advancing
-	// the trigger cursor from `from` to ch.Seq.
+	// cursor, the final page clearing the cursor and settling the delivery.
 	if more != nil || resume.exists {
-		var commit func(t *txn) error
-		if advance {
-			commit = func(t *txn) error { return t.advanceCursorTx(tr.ID, from, ch.Seq) }
-		}
 		owner := pagedOwner{triggerID: tr.ID, kind: pagedKindRecord, identity: strconv.FormatInt(ch.Seq, 10)}
 		summary, pages, derr := ds.pagedDrain(ctx, tr.Callable, in, actor, ch.Seq, tr.Callable.Caps.Emit,
-			owner, resume, pagedPage{effects: effects, more: more}, commit)
+			owner, resume, pagedPage{effects: effects, more: more}, pagedSettlement(advance, settle))
 		if derr != nil {
 			return res, derr
 		}
-		res.moved = advance
-		res.effects = summary
-		res.pages = pages
-		if len(summary) > 0 {
-			res.ran = 1
-		}
+		return settledResult(advance, summary, pages), nil
+	}
+	// Non-paged: the ordinary single transaction, effects and the settlement
+	// committing together.
+	if len(effects) == 0 && settle == nil {
 		return res, nil
 	}
-	// Non-paged: the ordinary single transaction, unchanged — effects and the
-	// cursor advance commit together.
-	if len(effects) == 0 && !advance {
-		return res, nil
-	}
+	res = settledResult(advance, effectsSummary(effects), 1)
 	err = ds.inTx(ctx, actor, false, func(t *txn) error {
 		t.causedBy = ch.Seq
 		t.setEffectEmit(tr.Callable.Caps.Emit)
@@ -468,20 +669,23 @@ func (ds *dataset) deliver(ctx context.Context, tr *trigger, ch substrate.Change
 				return err
 			}
 		}
-		if advance {
-			return t.advanceCursorTx(tr.ID, from, ch.Seq)
-		}
-		return nil
+		return settle.settle(t, res)
 	})
 	if err != nil {
-		return res, err
-	}
-	res.moved = advance
-	res.effects = effectsSummary(effects)
-	if len(effects) > 0 {
-		res.ran = 1
+		return deliverResult{}, err
 	}
 	return res, nil
+}
+
+// pagedSettlement adapts a settlement to the drain's final page, which knows
+// the whole chain's summary and page count.
+func pagedSettlement(advance bool, settle *settlement) func(t *txn, summary map[string]int, pages int) error {
+	if settle == nil {
+		return nil
+	}
+	return func(t *txn, summary map[string]int, pages int) error {
+		return settle.settle(t, settledResult(advance, summary, pages))
+	}
 }
 
 // evalWhen runs the trigger's guard against the envelope's three bindings; a
@@ -495,23 +699,44 @@ func evalWhen(ctx context.Context, tr *trigger, envelope map[string]any) (bool, 
 
 // parkAndAdvance records the failure, the parked run and the cursor motion
 // past the change in one transaction, so a crash cannot double-park — and
-// the same compare-and-swap that guards a delivery guards the park.
+// the same compare-and-swap that guards a delivery guards the park. The
+// failure's id is the seq of the delivery entry that parks it. An agent
+// delivery already claimed the change (settlement.claim): its cursor moved
+// then, so the park rewrites the claim with the error and moves nothing.
 func (ds *dataset) parkAndAdvance(ctx context.Context, tr *trigger, ch substrate.Change, from int64, attempts int, started time.Time, cause error) error {
 	err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
-		if _, err := t.exec(`
-			INSERT INTO trigger_failures (trigger_id, seq, fire_id, record_id, attempts, last_error, parked_at)
-			VALUES ($1, $2, '', $3, $4, $5, $6)`,
-			tr.ID, ch.Seq, ch.RecordID, attempts, cause.Error(), t.now); err != nil {
+		id, claimed, err := t.claimedFailure(tr.ID, ch.Seq, "")
+		if err != nil {
 			return err
 		}
-		if err := t.putRun(runRecord{
-			trigger: tr.ID, callable: tr.CallableID, mode: runner.ModeRecord,
-			seq: ch.Seq, recordID: ch.RecordID, status: runStatusParked,
-			attempt: attempts, startedAt: started, errMsg: cause.Error(),
+		if !claimed {
+			if id, err = t.reserveSeq(); err != nil {
+				return err
+			}
+		}
+		if err := t.parkTx(tr.ID, foldFailure{
+			ID: foldInt(id), Seq: foldInt(ch.Seq), RecordID: ch.RecordID,
+			Attempts: foldInt(attempts), LastError: cause.Error(), ParkedAt: t.now,
 		}); err != nil {
 			return err
 		}
-		return t.advanceCursorTx(tr.ID, from, ch.Seq)
+		if claimed {
+			if err := t.settleDelivery(tr.ID); err != nil {
+				return err
+			}
+		} else {
+			if err := t.advanceCursorTx(tr.ID, from, ch.Seq); err != nil {
+				return err
+			}
+			if err := t.appendDeliveryAt(tr.ID, id); err != nil {
+				return err
+			}
+		}
+		return t.putRun(runRecord{
+			trigger: tr.ID, callable: tr.CallableID, mode: runner.ModeRecord,
+			seq: ch.Seq, recordID: ch.RecordID, status: runStatusParked,
+			attempt: attempts, startedAt: started, errMsg: cause.Error(),
+		})
 	})
 	if err != nil {
 		return err
@@ -523,37 +748,69 @@ func (ds *dataset) parkAndAdvance(ctx context.Context, tr *trigger, ch substrate
 
 // recordSkipAndAdvance writes the skipped run and moves the cursor in one
 // transaction: a guard-false is a settled attempt, not lag.
-func (ds *dataset) recordSkipAndAdvance(ctx context.Context, tr *trigger, ch substrate.Change, from int64, started time.Time) error {
+func (ds *dataset) recordSkipAndAdvance(ctx context.Context, tr *trigger, ch substrate.Change, from int64, started time.Time, reason string) error {
 	return ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		if err := t.advanceCursorTx(tr.ID, from, ch.Seq); err != nil {
+			return err
+		}
+		if err := t.settleDelivery(tr.ID); err != nil {
+			return err
+		}
 		if err := t.putRun(runRecord{
 			trigger: tr.ID, callable: tr.CallableID, mode: runner.ModeRecord,
 			seq: ch.Seq, recordID: ch.RecordID, status: runStatusSkipped,
-			attempt: 1, startedAt: started,
+			attempt: 1, startedAt: started, errMsg: reason,
 		}); err != nil {
 			return err
 		}
-		if err := t.pruneRuns(tr.ID); err != nil {
-			return err
-		}
-		return t.advanceCursorTx(tr.ID, from, ch.Seq)
+		return t.pruneRuns(tr.ID)
 	})
 }
 
 // --- schedule-sourced delivery ----------------------------------------------------
 
+// processScheduleTrigger fires the occurrences due since the last one the
+// trigger acknowledged, oldest first and at most scheduleDrainPerPass of
+// them: each fire advances the fire state to its occurrence, so a pass that
+// stops early (an error, a lost swap) leaves the rest due for the next.
 func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger) (int, error) {
 	lastFire, err := ds.ensureScheduleState(ctx, lt.ID)
 	if err != nil {
 		return 0, err
 	}
-	due, err := lt.Schedule.dueFire(lt.CreatedAt, lastFire, nowUTC())
+	due, err := lt.Schedule.dueFires(lt.CreatedAt, lastFire, nowUTC(), scheduleDrainPerPass)
 	if err != nil {
 		return 0, err
 	}
-	if due.IsZero() {
-		return 0, nil
+	ran := 0
+	for _, at := range due {
+		n, err := ds.deliverFire(ctx, lt.trigger, runner.ModeSchedule, fireID(at), at, &lastFire, nil)
+		ran += n
+		if err != nil {
+			return ran, err
+		}
+		lastFire = at
 	}
-	return ds.deliverFire(ctx, lt.trigger, runner.ModeSchedule, fireID(due), due, &lastFire, nil)
+	return ran, nil
+}
+
+// fireSettlement settles a dispatched fire: for a schedule occurrence the
+// fire-state advance from the occurrence the pass read, then the OK run
+// record. A webhook fire has no fire state, so on the function path its run
+// record is the whole settlement and no delivery entry is appended.
+func (ds *dataset) fireSettlement(tr *trigger, mode, fid string, at time.Time, lastFire *time.Time, started time.Time) *settlement {
+	s := &settlement{ds: ds, trigger: tr.ID, fireID: fid}
+	s.record = func(t *txn, res deliverResult) error {
+		return t.putSystemRun(runRecord{
+			trigger: tr.ID, callable: tr.CallableID, mode: mode,
+			fireID: fid, status: runStatusOK, attempt: s.attempt,
+			startedAt: started, effects: res.effects, pages: res.pages,
+		}, true)
+	}
+	if lastFire != nil {
+		s.acknowledge = func(t *txn) error { return t.advanceScheduleTx(tr.ID, *lastFire, at) }
+	}
+	return s
 }
 
 // deliverFire runs one schedule occurrence or webhook fire through the
@@ -568,6 +825,8 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 	started := nowUTC()
 	var lastErr error
 	attempts := triggerAttempts
+	settle := ds.fireSettlement(tr, mode, fid, at, lastFire, started)
+	defer settle.release()
 	for attempt := range triggerAttempts {
 		if attempt > 0 {
 			select {
@@ -576,21 +835,38 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 			case <-time.After(triggerRetryBackoff[min(attempt-1, len(triggerRetryBackoff)-1)]):
 			}
 		}
-		var summary map[string]int
+		settle.attempt = attempt + 1
 		var applied int
 		var err error
 		if tr.Agent != nil {
-			summary, applied, err = ds.agentFire(ctx, tr, mode, fid, at, lastFire, envelope)
+			applied, err = ds.agentFire(ctx, tr, mode, fid, at, envelope, settle)
 		} else {
-			summary, applied, err = ds.functionFire(ctx, tr, mode, fid, at, lastFire, envelope)
+			applied, err = ds.functionFire(ctx, tr, mode, fid, at, envelope, settle)
 		}
 		if err == nil {
-			ds.recordRun(ctx, runRecord{
-				trigger: tr.ID, callable: tr.CallableID, mode: mode,
-				fireID: fid, status: runStatusOK, attempt: attempt + 1,
-				startedAt: started, effects: summary,
-			})
 			return applied, nil
+		}
+		if errors.Is(err, errClaimedElsewhere) {
+			// Another dispatch holds this fire: move the fire state past it
+			// and say so.
+			skip := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+				if lastFire != nil {
+					if err := t.advanceScheduleTx(tr.ID, *lastFire, at); err != nil {
+						return err
+					}
+				}
+				if err := t.settleDelivery(tr.ID); err != nil {
+					return err
+				}
+				return t.putRun(runRecord{
+					trigger: tr.ID, callable: tr.CallableID, mode: mode, fireID: fid,
+					status: runStatusSkipped, attempt: 1, startedAt: started, errMsg: err.Error(),
+				})
+			})
+			if errors.Is(skip, errCursorMoved) {
+				return 0, nil
+			}
+			return 0, skip
 		}
 		if errors.Is(err, errCursorMoved) {
 			// Another dispatcher fired this occurrence; ours is a duplicate
@@ -608,30 +884,50 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 	}
 	// Park-and-advance, fire-shaped: the failure row keeps the fire id, and
 	// the schedule state still moves — a poisoned occurrence never wedges the
-	// ones behind it. A built envelope parks with the row, so a retry
-	// re-delivers the request that arrived rather than a bare fire.
-	payload, err := fireEnvelopePayload(envelope)
+	// ones behind it. A built envelope parks with the row in its parked form
+	// (webhooks.go parkedEnvelope), so a retry re-delivers the request that
+	// arrived rather than a bare fire.
+	payload, err := ds.parkedEnvelope(ctx, envelope)
 	if err != nil {
 		return 0, err
 	}
 	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
-		if _, err := t.exec(`
-			INSERT INTO trigger_failures (trigger_id, seq, fire_id, record_id, attempts, last_error, parked_at, payload)
-			VALUES ($1, 0, $2, '', $3, $4, $5, $6)`,
-			tr.ID, fid, attempts, lastErr.Error(), t.now, payload); err != nil {
+		// An agent fire already claimed the occurrence (settlement.claim):
+		// the park rewrites the claim and moves the fire state no further.
+		id, claimed, err := t.claimedFailure(tr.ID, 0, fid)
+		if err != nil {
 			return err
 		}
-		if err := t.putRun(runRecord{
-			trigger: tr.ID, callable: tr.CallableID, mode: mode,
-			fireID: fid, status: runStatusParked, attempt: attempts,
-			startedAt: started, errMsg: lastErr.Error(),
+		if !claimed {
+			if id, err = t.reserveSeq(); err != nil {
+				return err
+			}
+		}
+		if err := t.parkTx(tr.ID, foldFailure{
+			ID: foldInt(id), FireID: fid, Attempts: foldInt(attempts),
+			LastError: lastErr.Error(), ParkedAt: t.now, Payload: payload,
 		}); err != nil {
 			return err
 		}
-		if lastFire != nil {
-			return t.advanceScheduleTx(tr.ID, *lastFire, at)
+		if claimed {
+			if err := t.settleDelivery(tr.ID); err != nil {
+				return err
+			}
+		} else {
+			if lastFire != nil {
+				if err := t.advanceScheduleTx(tr.ID, *lastFire, at); err != nil {
+					return err
+				}
+			}
+			if err := t.appendDeliveryAt(tr.ID, id); err != nil {
+				return err
+			}
 		}
-		return nil
+		return t.putRun(runRecord{
+			trigger: tr.ID, callable: tr.CallableID, mode: mode,
+			fireID: fid, status: runStatusParked, attempt: attempts,
+			startedAt: started, errMsg: lastErr.Error(),
+		})
 	})
 	if err != nil {
 		if errors.Is(err, errCursorMoved) {
@@ -644,54 +940,16 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 	return 0, nil
 }
 
-// fireEnvelope is the envelope a fire delivers: the one the caller built
-// (a webhook delivery carrying its request) or, absent that, the bare fire.
-// A stored envelope restored from trigger_failures.payload was written by
-// whatever binary parked it, so a park from before the repository carried an
-// authority holds `repository: {owner}` alone. The current names fill what it
-// lacks: a body that reads repository.authority must not see an empty string
-// on a retry, and one that indexes it must not fail.
-func fireEnvelope(envelope map[string]any, fid string, at time.Time, owner, authority string) map[string]any {
-	if envelope == nil {
-		return runner.FireEnvelope(fid, at, owner, authority)
-	}
-	repo, _ := envelope["repository"].(map[string]any)
-	if repo == nil {
-		repo = map[string]any{}
-		envelope["repository"] = repo
-	}
-	if name, _ := repo["owner"].(string); name == "" {
-		repo["owner"] = owner
-	}
-	if name, _ := repo["authority"].(string); name == "" {
-		repo["authority"] = authority
-	}
-	return envelope
-}
-
-// fireEnvelopePayload is the parked form of a built envelope: its JSON for
-// the failure row's payload column, or SQL NULL when the fire carried none.
-func fireEnvelopePayload(envelope map[string]any) (any, error) {
-	if envelope == nil {
-		return nil, nil
-	}
-	raw, err := json.Marshal(envelope)
-	if err != nil {
-		return nil, fmt.Errorf("substrate: parked fire envelope: %w", err)
-	}
-	return string(raw), nil
-}
-
 // functionFire runs one schedule/webhook fire through the runner: effects
-// and the fire-state CAS in one transaction — the effectively-once half. A
-// paged body (a scheduled backfill) drains off the causal chain, the fire
-// state advancing only when the drain finishes.
-func (ds *dataset) functionFire(ctx context.Context, tr *trigger, mode, fid string, at time.Time, lastFire *time.Time, envelope map[string]any) (map[string]int, int, error) {
+// and the settlement in one transaction, the effectively-once half. A paged
+// body (a scheduled backfill) drains off the causal chain, the settlement
+// landing only when the drain finishes.
+func (ds *dataset) functionFire(ctx context.Context, tr *trigger, mode, fid string, at time.Time, envelope map[string]any, settle *settlement) (int, error) {
 	// The lifecycle fence's shared side, admission through effect + fire-state
 	// commit (bundles.go, review #2).
 	ctx, release, err := ds.admitCallable(ctx, tr.Callable.Package, tr.Callable.Identity())
 	if err != nil {
-		return nil, 0, err
+		return 0, err
 	}
 	defer release()
 	// Load the committed resume cursor before invoking: a fire
@@ -701,37 +959,36 @@ func (ds *dataset) functionFire(ctx context.Context, tr *trigger, mode, fid stri
 	key := ds.fireChainKey(tr.ID, fid)
 	resume, err := ds.loadPagedProgress(ctx, key)
 	if err != nil {
-		return nil, 0, err
+		return 0, err
+	}
+	env, err := ds.fireEnvelope(ctx, envelope, fid, at)
+	if err != nil {
+		return 0, err
 	}
 	in := runner.Input{
 		Mode:           mode,
-		Envelope:       fireEnvelope(envelope, fid, at, ds.Repository().Name, ds.Repository().Authority),
+		Envelope:       env,
 		IdempotencyKey: key,
 		Resume:         resume.cursor,
 	}
 	effects, _, more, err := ds.runCallableRaw(ctx, tr.Callable, in)
 	if err != nil {
-		return nil, 0, err
+		return 0, err
 	}
 	actor := substrate.Actor(tr.Callable.Actor())
-	commit := func(t *txn) error {
-		if lastFire != nil {
-			return t.advanceScheduleTx(tr.ID, *lastFire, at)
-		}
-		return nil
-	}
 	if more != nil || resume.exists {
 		owner := pagedOwner{triggerID: tr.ID, kind: pagedKindFire, identity: fid}
 		summary, _, derr := ds.pagedDrain(ctx, tr.Callable, in, actor, 0, tr.Callable.Caps.Emit,
-			owner, resume, pagedPage{effects: effects, more: more}, commit)
+			owner, resume, pagedPage{effects: effects, more: more}, pagedSettlement(false, settle))
 		if derr != nil {
-			return nil, 0, derr
+			return 0, derr
 		}
-		if len(summary) > 0 {
-			return summary, 1, nil
-		}
-		return nil, 0, nil
+		return settledResult(false, summary, 0).ran, nil
 	}
+	if len(effects) == 0 && settle == nil {
+		return 0, nil
+	}
+	res := settledResult(false, effectsSummary(effects), 1)
 	err = ds.inTx(ctx, actor, false, func(t *txn) error {
 		t.setEffectEmit(tr.Callable.Caps.Emit)
 		if err := t.lockEffectTargets(effects); err != nil {
@@ -742,41 +999,54 @@ func (ds *dataset) functionFire(ctx context.Context, tr *trigger, mode, fid stri
 				return err
 			}
 		}
-		return commit(t)
+		return settle.settle(t, res)
 	})
 	if err != nil {
-		return nil, 0, err
+		return 0, err
 	}
-	if len(effects) > 0 {
-		return effectsSummary(effects), 1, nil
-	}
-	return nil, 0, nil
+	return res.ran, nil
 }
 
 // ensureScheduleState reads a schedule trigger's fire state, creating it AT
-// NOW on first sight: the first fire is the next occurrence after the
-// trigger is first seen, never a backfill. Creation normally happens in the
-// trigger row's own transaction (initTriggerBookkeeping); this is the
-// dispatch-time backstop.
+// NOW on first sight and recording that in the ledger: the first fire is the
+// next occurrence after the trigger is first seen, never a backfill, and a
+// restore comes back to the occurrence last acknowledged, not to now.
+// Creation normally happens in the trigger row's own transaction
+// (initTriggerBookkeeping); this is the dispatch-time backstop, and a
+// read-only process, which appends nothing, answers now without recording.
 func (ds *dataset) ensureScheduleState(ctx context.Context, id string) (time.Time, error) {
-	if _, err := ds.db.ExecContext(ctx, `
-		INSERT INTO trigger_schedule (trigger_id, fired_at, updated_at) VALUES ($1, $2, $2)
-		ON CONFLICT (repository, trigger_id) DO NOTHING`, id, nowUTC()); err != nil {
-		return time.Time{}, err
-	}
 	var at time.Time
 	err := ds.db.QueryRowContext(ctx,
 		`SELECT fired_at FROM trigger_schedule WHERE trigger_id = $1`, id).Scan(&at)
+	if err == nil {
+		return at.UTC(), nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, err
+	}
+	if ds.svc.readOnly {
+		return nowUTC(), nil
+	}
+	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		// Under the changelog lock, look again: a concurrent pass may have
+		// initialized it since the read above.
+		if err := t.lockChangelog(); err != nil {
+			return err
+		}
+		err := t.row(`SELECT fired_at FROM trigger_schedule WHERE trigger_id = $1`, id).Scan(&at)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		at = t.now
+		if err := t.setScheduleTx(id, at); err != nil {
+			return err
+		}
+		return t.settleDelivery(id)
+	})
 	return at.UTC(), err
-}
-
-// advanceScheduleTx is the fire-state motion, compare-and-swap on the
-// occurrence the pass read — the schedule twin of advanceCursorTx.
-func (t *txn) advanceScheduleTx(id string, from, to time.Time) error {
-	res, err := t.exec(`
-		UPDATE trigger_schedule SET fired_at = $3, updated_at = $4
-		WHERE trigger_id = $1 AND fired_at = $2`, id, from, to, t.now)
-	return cursorMoved(res, err)
 }
 
 // --- run rows -----------------------------------------------------------------
@@ -846,20 +1116,24 @@ func (t *txn) putRun(r runRecord) error {
 	return err
 }
 
-// recordRun writes a settled attempt's run row (and prunes) OUTSIDE the
-// delivery transaction, under the system actor: the cursor is delivery's
-// durable record, the run ledger is observability — a crash between the two
-// loses a run row, never a delivery.
-func (ds *dataset) recordRun(ctx context.Context, r runRecord) {
-	err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+// putSystemRun writes a run record from inside another hand's transaction
+// (a callable's effects, a retry's), as the engine's own write under the
+// system actor, and prunes the trigger's ledger when asked. The delivery
+// transaction carries it beside the effects it describes, so a crash cannot
+// commit effects with no completion recorded.
+func (t *txn) putSystemRun(r runRecord, prune bool) error {
+	prevInternal := t.internal
+	t.internal = true
+	defer func() { t.internal = prevInternal }()
+	return t.asActor(substrate.ActorSystem, func() error {
 		if err := t.putRun(r); err != nil {
 			return err
 		}
+		if !prune {
+			return nil
+		}
 		return t.pruneRuns(r.trigger)
 	})
-	if err != nil {
-		ds.svc.log.Warn("substrate: recording a trigger run", "trigger", r.trigger, "error", err)
-	}
 }
 
 // pruneRuns enforces the retention: the newest runRetention non-parked runs
@@ -909,12 +1183,18 @@ func effectsSummary(effects []effect) map[string]int {
 	return out
 }
 
-// mergeEffectsSummary folds one page's effects into a running summary — the
-// paged drain's cross-page effect tally.
-func mergeEffectsSummary(dst map[string]int, effects []effect) {
-	for _, ef := range effects {
-		dst[ef.Action]++
+// mergedSummary is a running summary plus one page's effects, as a new map:
+// the paged drain's cross-page effect tally, computed before the page's
+// transaction so the final page's settlement records the whole chain.
+func mergedSummary(summary map[string]int, effects []effect) map[string]int {
+	out := make(map[string]int, len(summary)+1)
+	for k, v := range summary {
+		out[k] = v
 	}
+	for _, ef := range effects {
+		out[ef.Action]++
+	}
+	return out
 }
 
 // --- paged-checkpoint drain --------------------------------------
@@ -965,14 +1245,14 @@ type pagedProgress struct {
 // idempotency key) — its Resume is rewritten per page and its CausalDepth is
 // held CONSTANT across the whole chain. `owner` stamps the row's lifecycle
 // identity; `resume` seeds the CAS fence and the cumulative budget from the
-// persisted row (zero value for a fresh chain). `commit` is the delivery's own
-// cursor or fire-state motion, run inside the FINAL page's transaction only
-// (nil for a manual run or a webhook with no durable state). It returns the
-// merged effect summary and the number of pages committed THIS pass. A returned
-// error parked mid-chain: errCursorMoved yields (the pass no longer owns the
-// chain), errPagedParked parks with the last committed cursor intact, and a
-// fresh pre-commit error rides the caller's ordinary retry.
-func (ds *dataset) pagedDrain(ctx context.Context, fn *vocabulary.Function, baseInput runner.Input, actor substrate.Actor, causedBy int64, emit []string, owner pagedOwner, resume pagedProgress, first pagedPage, commit func(t *txn) error) (map[string]int, int, error) {
+// persisted row (zero value for a fresh chain). `commit` is the delivery's
+// settlement, run inside the FINAL page's transaction only with the whole
+// chain's summary and this pass's page count (nil for a manual run). It
+// returns the merged effect summary and the number of pages committed THIS
+// pass. A returned error parked mid-chain: errCursorMoved yields (the pass no
+// longer owns the chain), errPagedParked parks with the last committed cursor
+// intact, and a fresh pre-commit error rides the caller's ordinary retry.
+func (ds *dataset) pagedDrain(ctx context.Context, fn *vocabulary.Function, baseInput runner.Input, actor substrate.Actor, causedBy int64, emit []string, owner pagedOwner, resume pagedProgress, first pagedPage, commit func(t *txn, summary map[string]int, pages int) error) (map[string]int, int, error) {
 	key := baseInput.IdempotencyKey
 	summary := map[string]int{}
 	page := first
@@ -1017,6 +1297,7 @@ func (ds *dataset) pagedDrain(ctx context.Context, fn *vocabulary.Function, base
 			}
 		}
 
+		merged := mergedSummary(summary, effects)
 		err := ds.inTx(ctx, actor, false, func(t *txn) error {
 			t.causedBy = causedBy
 			t.setEffectEmit(emit)
@@ -1031,27 +1312,34 @@ func (ds *dataset) pagedDrain(ctx context.Context, fn *vocabulary.Function, base
 			if done {
 				// Drained: drop the resume cursor — under the SAME version
 				// CAS, so a chain another dispatcher advanced is not cleared
-				// out from under it — and move the delivery's own cursor/fire
-				// state. Effects and completion commit together.
+				// out from under it, and settle the delivery. Effects and
+				// completion commit together; the settlement's delivery entry
+				// carries the unpage, or settleDelivery below does.
 				if haveRow {
 					if err := t.clearPagedCursorCAS(key, version); err != nil {
 						return err
 					}
 				}
 				if commit != nil {
-					return commit(t)
+					if err := commit(t, merged, pages+1); err != nil {
+						return err
+					}
 				}
-				return nil
+				return t.settleDelivery(owner.triggerID)
 			}
 			// A middle page advances only the RESUME cursor, never the delivery
 			// cursor. The first page of a fresh chain claims an absent row; every
 			// later page swaps from the version it last saw. A missed swap is
 			// errCursorMoved — two dispatchers draining one chain cannot both
-			// commit.
+			// commit. The row's motion rides this page's delivery entry.
 			if !haveRow {
-				return t.claimPagedCursor(key, owner, cursor, nextPages, nextEffects, nextBytes, startedAt, t.now)
+				if err := t.claimPagedCursor(key, owner, cursor, nextPages, nextEffects, nextBytes, startedAt); err != nil {
+					return err
+				}
+			} else if err := t.advancePagedCursor(key, version, cursor, nextPages, nextEffects, nextBytes); err != nil {
+				return err
 			}
-			return t.advancePagedCursor(key, version, cursor, nextPages, nextEffects, nextBytes)
+			return t.settleDelivery(owner.triggerID)
 		})
 		if err != nil {
 			if errors.Is(err, errCursorMoved) {
@@ -1066,7 +1354,7 @@ func (ds *dataset) pagedDrain(ctx context.Context, fn *vocabulary.Function, base
 			// A fresh chain that committed nothing can safely retry from zero.
 			return summary, pages, err
 		}
-		mergeEffectsSummary(summary, effects)
+		summary = merged
 		pages++
 		cumPages, cumEffects, cumBytes = nextPages, nextEffects, nextBytes
 		committedAny = true
@@ -1122,47 +1410,6 @@ func drainOverBudget(fn *vocabulary.Function, pages, effects, bytes int64, deadl
 	return nil
 }
 
-// claimPagedCursor claims an ABSENT chain for a fresh drain's first middle
-// page: the insert fails silently on conflict, and no affected row means
-// another dispatcher already owns the chain — errCursorMoved rolls this page
-// back. The claimed row starts at version 1.
-func (t *txn) claimPagedCursor(chain string, owner pagedOwner, cursor any, pages, effects, bytes int64, startedAt, now time.Time) error {
-	raw, err := json.Marshal(cursor)
-	if err != nil {
-		return fmt.Errorf("paged cursor: %w", err)
-	}
-	res, err := t.exec(`
-		INSERT INTO paged_cursors (chain, cursor, pages, version, effects, bytes, started_at, trigger_id, kind, identity, updated_at)
-		VALUES ($1, $2, $3, 1, $4, $5, $6, $7, $8, $9, $10)
-		ON CONFLICT (repository, chain) DO NOTHING`,
-		chain, raw, pages, effects, bytes, startedAt, owner.triggerID, owner.kind, owner.identity, now)
-	return cursorMoved(res, err)
-}
-
-// advancePagedCursor moves an OWNED chain to the next page under its version
-// CAS: the swap matches only the exact version this drain last
-// saw and bumps it. A missed swap is errCursorMoved.
-func (t *txn) advancePagedCursor(chain string, version int64, cursor any, pages, effects, bytes int64) error {
-	raw, err := json.Marshal(cursor)
-	if err != nil {
-		return fmt.Errorf("paged cursor: %w", err)
-	}
-	res, err := t.exec(`
-		UPDATE paged_cursors
-		SET cursor = $3, pages = $4, effects = $5, bytes = $6, version = version + 1, updated_at = $7
-		WHERE chain = $1 AND version = $2`,
-		chain, version, raw, pages, effects, bytes, t.now)
-	return cursorMoved(res, err)
-}
-
-// clearPagedCursorCAS drops a drained chain's row — the final page — requiring
-// the version this drain owns, so a chain a concurrent
-// dispatcher advanced is never cleared under it.
-func (t *txn) clearPagedCursorCAS(chain string, version int64) error {
-	res, err := t.exec(`DELETE FROM paged_cursors WHERE chain = $1 AND version = $2`, chain, version)
-	return cursorMoved(res, err)
-}
-
 // loadPagedProgress reads a chain's persisted resume cursor, CAS version and
 // cumulative budget counters; a zero value with exists=false when no row. Every
 // delivery of an existing chain — retry, redispatch, replay — reads this before
@@ -1190,15 +1437,11 @@ func (ds *dataset) loadPagedProgress(ctx context.Context, chain string) (pagedPr
 	return p, nil
 }
 
-// sweepPagedCursors collects paged rows with no lifecycle owner:
-// a row whose trigger no longer lives, or a stale row (untouched past the sweep
-// grace, so not an in-flight drain) whose trigger keeps no matching parked
-// failure to resume it. A finding-#1 race that leaves a row behind an advanced
-// delivery cursor is caught by the same stale-and-unreferenced arm.
-func (ds *dataset) sweepPagedCursors(ctx context.Context) error {
-	_, err := ds.db.ExecContext(ctx, `
-		DELETE FROM paged_cursors pc
-		WHERE NOT EXISTS (
+// orphanPagedSQL selects a paged row with no lifecycle owner, over the alias
+// `pc` with the staleness horizon in $1: a row whose trigger no longer lives,
+// or a stale row (untouched past the sweep grace, so not an in-flight drain)
+// whose trigger keeps no matching parked failure to resume it.
+const orphanPagedSQL = `(NOT EXISTS (
 			SELECT 1 FROM records e
 			WHERE e.kind = 'substrate.reamde.dev/core/trigger' AND e.id = pc.trigger_id AND e.deleted_at IS NULL)
 		   OR (pc.updated_at < $1
@@ -1206,9 +1449,56 @@ func (ds *dataset) sweepPagedCursors(ctx context.Context) error {
 			SELECT 1 FROM trigger_failures f
 			WHERE f.trigger_id = pc.trigger_id
 			  AND ((pc.kind = 'record' AND f.seq::text = pc.identity)
-			    OR (pc.kind = 'fire' AND f.fire_id = pc.identity))))`,
-		nowUTC().Add(-pagedSweepGrace))
-	return err
+			    OR (pc.kind = 'fire' AND f.fire_id = pc.identity)))))`
+
+// sweepPagedCursors collects paged rows with no lifecycle owner, one ledger
+// entry per trigger they named: a row's removal is a fold effect like its
+// claim, so a restore does not bring an orphan back. A finding-#1 race that
+// leaves a row behind an advanced delivery cursor is caught by the same
+// stale-and-unreferenced arm. Each row is checked again under its lock
+// before it goes, so a drain that took the row back since the scan keeps it.
+func (ds *dataset) sweepPagedCursors(ctx context.Context) error {
+	horizon := nowUTC().Add(-pagedSweepGrace)
+	rows, err := ds.db.QueryContext(ctx, `SELECT chain, trigger_id FROM paged_cursors pc WHERE `+orphanPagedSQL, horizon)
+	if err != nil {
+		return err
+	}
+	byTrigger := map[string][]string{}
+	for rows.Next() {
+		var chain, triggerID string
+		if err := rows.Scan(&chain, &triggerID); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		byTrigger[triggerID] = append(byTrigger[triggerID], chain)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	_ = rows.Close()
+	for _, triggerID := range sortedKeys(byTrigger) {
+		chains := byTrigger[triggerID]
+		if err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+			for _, chain := range chains {
+				var one int
+				err := t.row(`SELECT 1 FROM paged_cursors pc WHERE chain = $2 AND `+orphanPagedSQL+` FOR UPDATE`, horizon, chain).Scan(&one)
+				if errors.Is(err, sql.ErrNoRows) {
+					continue
+				}
+				if err != nil {
+					return err
+				}
+				if err := t.unpageTx(triggerID, chain); err != nil {
+					return err
+				}
+			}
+			return t.settleDelivery(triggerID)
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // recordChainKey is the paged-cursor key for a record-change delivery, and its
@@ -1224,28 +1514,60 @@ func (ds *dataset) fireChainKey(triggerID, fireID string) string {
 
 // --- cursors ---------------------------------------------------------------
 
-// ensureCursor reads a trigger's cursor, creating it AT HEAD on first sight:
-// a newly created trigger reacts to what happens next; history is an
-// explicit replay. Creation normally happens in the trigger row's own
-// transaction (initTriggerBookkeeping), so a write between creation and the
-// first dispatch is never skipped; this is the dispatch-time backstop.
+// ensureCursor reads a trigger's cursor, creating it AT HEAD on first sight
+// and recording that in the ledger: a newly created trigger reacts to what
+// happens next, history is an explicit replay, and a restore comes back to
+// the position last acknowledged rather than to the restored head. The
+// position is the delivery entry's own seq, so the entry never reads as
+// pending. Creation normally happens in the trigger row's own transaction
+// (initTriggerBookkeeping), so a write between creation and the first
+// dispatch is never skipped; this is the dispatch-time backstop, and a
+// read-only process, which appends nothing, answers the head without
+// recording.
 func (ds *dataset) ensureCursor(ctx context.Context, triggerID string) (int64, error) {
-	if _, err := ds.db.ExecContext(ctx, `
-		INSERT INTO trigger_cursors (trigger_id, seq, updated_at)
-		VALUES ($1, COALESCE((SELECT max(seq) FROM changelog), 0), $2)
-		ON CONFLICT (repository, trigger_id) DO NOTHING`, triggerID, nowUTC()); err != nil {
-		return 0, err
-	}
 	var seq int64
 	err := ds.db.QueryRowContext(ctx,
 		`SELECT seq FROM trigger_cursors WHERE trigger_id = $1`, triggerID).Scan(&seq)
+	if err == nil {
+		return seq, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return 0, err
+	}
+	if ds.svc.readOnly {
+		return tableChangelogHead(ctx, ds.db)
+	}
+	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		next, err := t.reserveSeq()
+		if err != nil {
+			return err
+		}
+		// Under the changelog lock, look again: a concurrent pass may have
+		// initialized it since the read above.
+		err = t.row(`SELECT seq FROM trigger_cursors WHERE trigger_id = $1`, triggerID).Scan(&seq)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		seq = next
+		if err := t.setCursorTx(triggerID, next); err != nil {
+			return err
+		}
+		return t.appendDeliveryAt(triggerID, next)
+	})
 	return seq, err
 }
 
 // ensureTriggerCursors initializes every live trigger's bookkeeping at the
 // current head. Runs at repository-open — the backstop for rows that predate the
-// in-transaction initialization.
+// in-transaction initialization. A read-only process appends nothing, so it
+// leaves the backstop to the server.
 func (ds *dataset) ensureTriggerCursors(ctx context.Context) error {
+	if ds.svc.readOnly {
+		return nil
+	}
 	triggers, err := ds.loadTriggers(ctx)
 	if err != nil {
 		return err
@@ -1268,24 +1590,27 @@ func (ds *dataset) ensureTriggerCursors(ctx context.Context) error {
 	return nil
 }
 
-// advanceCursorSQL is the one cursor motion: compare-and-swap on the seq the
-// pass read, so a replay's reset (the deliberate rewind) or a concurrent
-// dispatcher's advance is never clobbered by an in-flight pass.
-const advanceCursorSQL = `
-	UPDATE trigger_cursors SET seq = $3, updated_at = $4
-	WHERE trigger_id = $1 AND seq = $2`
-
-// advanceCursor moves the cursor forward outside a delivery (skipped rows,
-// batch tails). A missed swap is errCursorMoved.
-func (ds *dataset) advanceCursor(ctx context.Context, triggerID string, from, to int64) error {
-	res, err := ds.db.ExecContext(ctx, advanceCursorSQL, triggerID, from, to, nowUTC())
-	return cursorMoved(res, err)
-}
-
-// advanceCursorTx is the same motion inside the effects transaction — the
-// once-delivery guarantee: a delivery whose swap misses rolls back whole.
-func (t *txn) advanceCursorTx(triggerID string, from, to int64) error {
-	res, err := t.exec(advanceCursorSQL, triggerID, from, to, t.now)
+// advanceCursor moves the SCAN position: the cursor past a batch tail whose
+// rows matched nothing, compare-and-swap on the seq the pass read so a
+// replay's reset (the deliberate rewind) or a concurrent dispatcher's advance
+// is never clobbered by an in-flight pass. It is the one cursor motion
+// outside the ledger (delivery.go): it acknowledges no delivery, and a
+// restore that loses it re-reads rows that deliver nothing. The
+// acknowledging motion is advanceCursorTx, inside the effects transaction.
+//
+// It is also fenced on the trigger record's version the pass loaded: an edit
+// of the trigger pins the cursor into the ledger (delivery.go
+// pinTriggerCursor) and bumps the record, so a pass that scanned rows under
+// the OLD source and lands its advance after the pin would leave the table
+// past what the ledger says, and a restore would deliver those rows under the
+// new source. With the version in the swap, that pass ends with
+// errCursorMoved and the next one re-scans under the new definition.
+func (ds *dataset) advanceCursor(ctx context.Context, tr *trigger, from, to int64) error {
+	res, err := ds.db.ExecContext(ctx, `
+		UPDATE trigger_cursors SET seq = $3, updated_at = $4
+		WHERE trigger_id = $1 AND seq = $2
+		  AND EXISTS (SELECT 1 FROM records WHERE kind = $5 AND id = $1 AND version = $6 AND deleted_at IS NULL)`,
+		tr.ID, from, to, nowUTC(), typeTrigger, tr.Version)
 	return cursorMoved(res, err)
 }
 
@@ -1304,10 +1629,13 @@ func cursorMoved(res sql.Result, err error) error {
 	return nil
 }
 
-// changesPast reads one raw batch past a cursor — the same plain read the
-// watch takes, no advisory lock.
+// changesPast reads one raw batch past a cursor: every entry, the ledger's
+// own `delivery` entries included, so the scan position moves past them and
+// lag reads zero; matchChanges drops them. The public read hides them.
 func (ds *dataset) changesPast(ctx context.Context, after int64) ([]substrate.Change, error) {
-	return ds.Changes(ctx, after, substrate.ChangeFilter{}, triggerBatch)
+	b := &builder{}
+	b.add(`seq > ` + b.arg(after))
+	return ds.queryChanges(ctx, b, `seq`, triggerBatch)
 }
 
 // causalDepth walks caused_by from a change to the direct write that started
@@ -1414,18 +1742,40 @@ func (ds *dataset) ReplayTrigger(ctx context.Context, id string, from int64) err
 	if from < 0 {
 		return fmt.Errorf("%w: replay from %d — the cursor is a seq, at least 0", substrate.ErrValidation, from)
 	}
-	if _, err := ds.db.ExecContext(ctx, `
-		INSERT INTO trigger_cursors (trigger_id, seq, updated_at) VALUES ($1, $2, $3)
-		ON CONFLICT (repository, trigger_id) DO UPDATE SET seq = EXCLUDED.seq, updated_at = EXCLUDED.updated_at`,
-		id, from, nowUTC()); err != nil {
-		return err
-	}
-	// A replay rewinds the delivery cursor, so any in-flight paged chain for
-	// this trigger's record deliveries is obsolete: drop it, and
-	// the re-delivery mints a fresh chain from the new cursor.
-	_, err = ds.db.ExecContext(ctx,
-		`DELETE FROM paged_cursors WHERE trigger_id = $1 AND kind = $2`, id, pagedKindRecord)
-	return err
+	// The reset and the drop below are one ledger entry, so a restore comes
+	// back to the rewound position and not to the delivery it undid.
+	return ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		if err := t.setCursorTx(id, from); err != nil {
+			return err
+		}
+		// A replay rewinds the delivery cursor, so any in-flight paged chain
+		// for this trigger's record deliveries is obsolete: drop it, and the
+		// re-delivery mints a fresh chain from the new cursor.
+		rows, err := t.query(`SELECT chain FROM paged_cursors WHERE trigger_id = $1 AND kind = $2`, id, pagedKindRecord)
+		if err != nil {
+			return err
+		}
+		var chains []string
+		for rows.Next() {
+			var chain string
+			if err := rows.Scan(&chain); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			chains = append(chains, chain)
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		_ = rows.Close()
+		for _, chain := range chains {
+			if err := t.unpageTx(id, chain); err != nil {
+				return err
+			}
+		}
+		return t.settleDelivery(id)
+	})
 }
 
 // RunTrigger synthesizes one delivery of a record's current state through a
@@ -1453,7 +1803,7 @@ func (ds *dataset) RunTrigger(ctx context.Context, id, recordKind, recordID stri
 	if err != nil {
 		return 0, err
 	}
-	res, err := ds.deliver(ctx, tr, ch, -1, depth, pagedProgress{})
+	res, err := ds.deliver(ctx, tr, ch, -1, depth, pagedProgress{}, nil)
 	return res.ran, err
 }
 
@@ -1488,12 +1838,13 @@ func (ds *dataset) WakeTrigger(ctx context.Context, id string) (int, error) {
 }
 
 // latestChangeOf reads the newest changelog row for one record, addressed by
-// its full (type, id) identity.
+// its full (type, id) identity. A trigger's own delivery entries are
+// addressed to it and are not changes to it.
 func (ds *dataset) latestChangeOf(ctx context.Context, typ, recordID string) (substrate.Change, error) {
 	return ds.oneChange(ctx, `
 		SELECT seq, ts, actor, op, record_id, kind, payload, hash FROM changelog
-		WHERE kind = $1 AND record_id = $2 ORDER BY seq DESC LIMIT 1`,
-		fmt.Sprintf("record %s has no changes", recordID), typ, recordID)
+		WHERE kind = $1 AND record_id = $2 AND op <> $3 ORDER BY seq DESC LIMIT 1`,
+		fmt.Sprintf("record %s has no changes", recordID), typ, recordID, string(substrate.OpDelivery))
 }
 
 // TriggerFailures lists a trigger's parked deliveries, oldest first.
@@ -1521,8 +1872,9 @@ func (ds *dataset) TriggerFailures(ctx context.Context, id string) ([]substrate.
 }
 
 // RetryTriggerFailure re-runs one parked delivery against current state: on
-// success the row is deleted, on failure it stays with the new error. The
-// cursor (or fire state) is already past it, so nothing advances.
+// success the failure retires in the transaction that commits the retry's
+// last effects, on failure it stays with the new error and attempt count.
+// The cursor (or fire state) is already past it, so nothing advances.
 func (ds *dataset) RetryTriggerFailure(ctx context.Context, id string, failureID int64) (int, error) {
 	tr, _, err := ds.triggerByID(ctx, id)
 	if err != nil {
@@ -1531,31 +1883,39 @@ func (ds *dataset) RetryTriggerFailure(ctx context.Context, id string, failureID
 	if !tr.runnable() {
 		return 0, fmt.Errorf("%w: trigger %s: callable %s does not resolve", substrate.ErrValidation, id, tr.CallableID)
 	}
-	var seq int64
-	var fid string
-	var attempts int
-	var payload sql.NullString
+	f := foldFailure{ID: foldInt(failureID)}
+	var payload []byte
 	err = ds.db.QueryRowContext(ctx, `
-		SELECT seq, fire_id, attempts, payload FROM trigger_failures WHERE id = $1 AND trigger_id = $2`,
-		failureID, id).Scan(&seq, &fid, &attempts, &payload)
+		SELECT seq, fire_id, record_id, attempts, last_error, payload FROM trigger_failures WHERE id = $1 AND trigger_id = $2`,
+		failureID, id).Scan(&f.Seq, &f.FireID, &f.RecordID, &f.Attempts, &f.LastError, &payload)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, fmt.Errorf("%w: trigger %s has no parked failure %d", substrate.ErrNotFound, id, failureID)
 	}
 	if err != nil {
 		return 0, err
 	}
+	f.Payload = json.RawMessage(payload)
+	settle := &settlement{ds: ds, trigger: tr.ID, seq: int64(f.Seq), fireID: f.FireID, retire: failureID}
+	// The failure is held in this process before anything runs and until the
+	// retirement or the re-park ends: a second retry of the same failure, or
+	// a retry of a claim whose dispatch is still running, answers conflict
+	// and starts no body and no loop.
+	if err := settle.acquire(failureID); err != nil {
+		return 0, err
+	}
+	defer settle.release()
 	var n int
 	var derr error
-	if fid != "" {
+	if f.FireID != "" {
 		var envelope map[string]any
-		if payload.Valid {
-			if err := json.Unmarshal([]byte(payload.String), &envelope); err != nil {
+		if len(payload) > 0 {
+			if err := json.Unmarshal(payload, &envelope); err != nil {
 				return 0, fmt.Errorf("substrate: parked failure %d: envelope: %w", failureID, err)
 			}
 		}
-		n, derr = ds.retryFire(ctx, tr, fid, envelope)
+		n, derr = ds.retryFire(ctx, tr, f.FireID, envelope, settle)
 	} else {
-		ch, err := ds.changeAt(ctx, seq)
+		ch, err := ds.changeAt(ctx, int64(f.Seq))
 		if err != nil {
 			return 0, err
 		}
@@ -1571,28 +1931,48 @@ func (ds *dataset) RetryTriggerFailure(ctx context.Context, id string, failureID
 			return 0, err
 		}
 		var res deliverResult
-		res, derr = ds.deliver(ctx, tr, ch, -1, depth, resume)
+		res, derr = ds.deliver(ctx, tr, ch, -1, depth, resume, settle)
 		n = res.ran
 	}
 	if derr != nil {
-		if _, uerr := ds.db.ExecContext(ctx, `
-			UPDATE trigger_failures SET attempts = $2, last_error = $3, parked_at = $4
-			WHERE id = $1`, failureID, attempts+1, derr.Error(), nowUTC()); uerr != nil {
+		// The same failure, one attempt older: the ledger rewrites the row
+		// under its id, so a restore holds the count and the error the last
+		// retry left. A row another retry retired meanwhile is left gone,
+		// and this retry answers not found.
+		// The payload goes back through the parking policy: a row a binary
+		// before the ledger parked holds every header, the query and the
+		// body, none of which may enter the changelog.
+		scrubbed, perr := ds.parkedPayload(ctx, f.Payload)
+		if perr != nil {
+			return 0, perr
+		}
+		f.Payload = scrubbed
+		uerr := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+			if err := t.lockFailure(tr.ID, failureID); err != nil {
+				return err
+			}
+			f.Attempts++
+			f.LastError = derr.Error()
+			f.ParkedAt = t.now
+			if err := t.parkTx(tr.ID, f); err != nil {
+				return err
+			}
+			return t.settleDelivery(tr.ID)
+		})
+		if uerr != nil {
 			return 0, uerr
 		}
 		return 0, derr
-	}
-	if _, err := ds.db.ExecContext(ctx, `DELETE FROM trigger_failures WHERE id = $1`, failureID); err != nil {
-		return n, err
 	}
 	return n, nil
 }
 
 // retryFire re-invokes one parked schedule/webhook fire, same fire id, fire
-// state untouched (it advanced when the park did). envelope is the parked
-// delivery's own envelope when the row kept one, so a webhook retry carries
-// the request that arrived.
-func (ds *dataset) retryFire(ctx context.Context, tr *trigger, fid string, envelope map[string]any) (int, error) {
+// state untouched (it advanced when the park did): the settlement is the
+// caller's, retiring the failure. envelope is the parked delivery's own
+// envelope when the row kept one, so a webhook retry carries the request
+// that arrived.
+func (ds *dataset) retryFire(ctx context.Context, tr *trigger, fid string, envelope map[string]any, settle *settlement) (int, error) {
 	mode := runner.ModeWebhook
 	if tr.Schedule != nil {
 		mode = runner.ModeSchedule
@@ -1602,65 +1982,9 @@ func (ds *dataset) retryFire(ctx context.Context, tr *trigger, fid string, envel
 		at = t
 	}
 	if tr.Agent != nil {
-		_, applied, err := ds.agentFire(ctx, tr, mode, fid, at, nil, envelope)
-		return applied, err
+		return ds.agentFire(ctx, tr, mode, fid, at, envelope, settle)
 	}
-	// The lifecycle fence's shared side, admission through effect commit
-	// (bundles.go, review #2).
-	ctx, release, err := ds.admitCallable(ctx, tr.Callable.Package, tr.Callable.Identity())
-	if err != nil {
-		return 0, err
-	}
-	defer release()
-	key := ds.fireChainKey(tr.ID, fid)
-	// Resume a parked paged fire from its last committed page; the fire state
-	// already advanced when the park did, so nothing here moves it.
-	resume, err := ds.loadPagedProgress(ctx, key)
-	if err != nil {
-		return 0, err
-	}
-	in := runner.Input{
-		Mode:           mode,
-		Envelope:       fireEnvelope(envelope, fid, at, ds.Repository().Name, ds.Repository().Authority),
-		IdempotencyKey: key,
-		Resume:         resume.cursor,
-	}
-	effects, _, more, err := ds.runCallableRaw(ctx, tr.Callable, in)
-	if err != nil {
-		return 0, err
-	}
-	actor := substrate.Actor(tr.Callable.Actor())
-	if more != nil || resume.exists {
-		owner := pagedOwner{triggerID: tr.ID, kind: pagedKindFire, identity: fid}
-		summary, _, derr := ds.pagedDrain(ctx, tr.Callable, in, actor, 0, tr.Callable.Caps.Emit,
-			owner, resume, pagedPage{effects: effects, more: more}, nil)
-		if derr != nil {
-			return 0, derr
-		}
-		if len(summary) > 0 {
-			return 1, nil
-		}
-		return 0, nil
-	}
-	err = ds.inTx(ctx, actor, false, func(t *txn) error {
-		t.setEffectEmit(tr.Callable.Caps.Emit)
-		if err := t.lockEffectTargets(effects); err != nil {
-			return err
-		}
-		for _, ef := range effects {
-			if err := t.applyEffect(ef); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return 0, err
-	}
-	if len(effects) > 0 {
-		return 1, nil
-	}
-	return 0, nil
+	return ds.functionFire(ctx, tr, mode, fid, at, envelope, settle)
 }
 
 // changeAt reads one changelog row by seq.
