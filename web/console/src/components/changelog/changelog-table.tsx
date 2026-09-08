@@ -202,10 +202,14 @@ export function ChangelogTable({
   useEffect(() => {
     headRef.current = headSeq
   }, [headSeq])
+  // The ref keeps the LAST KNOWN generation: on a facet change the pages are
+  // not in yet, and a tail opened bare would miss a write landing between the
+  // old page's snapshot and the new head read. A retained pair from before a
+  // restore is refused and recovers through onCompacted.
   const generation = history.data?.pages[0]?.generation
   const generationRef = useRef<string | undefined>(undefined)
   useEffect(() => {
-    generationRef.current = generation
+    if (generation !== undefined) generationRef.current = generation
   }, [generation])
   useEffect(() => {
     dispatch({ kind: "reset" })
@@ -214,8 +218,8 @@ export function ChangelogTable({
       return
     }
     const reset = resetRef.current
-    // A cursor travels only with its generation: on a facet change the pages
-    // are not in yet, and a bare `from` would be refused and flash a reset.
+    // A cursor travels only with its generation; before the first page has
+    // ever landed there is none, and the tail opens at the head.
     const resume = !reset && generationRef.current !== undefined
     resetRef.current = false
     const handle = watchChanges({

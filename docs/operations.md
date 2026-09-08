@@ -470,7 +470,9 @@ that comes back. The import above does it by itself: creating the row from the
 manifest mints a new generation. A database dump does not: the row comes back
 with the generation the dump held, whether the matching directory is restored
 beside it or the directory is written from the tables. So after any restore
-that starts from a dump, rotate each repository before the server boots:
+that starts from a dump, boot once so the boot check lands (a directory ahead
+of the dump is imported into the table, one behind it is written from the
+table), stop the server, and rotate each repository:
 
 ```
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rotate-generation ada

@@ -101,7 +101,7 @@ three doors.
 `TestHistoryGenerationHoldsAcrossRestartAndRebuildAndRotatesOnImport`
 (internal/engine) holds the row's lifecycle against a real import of an older
 directory. `TestListRefusesACursorFromAnotherHistory` (internal/engine) holds
-the list cursor. `TestRotateHistoryGenerationPersistsAndResetsCursors` and
+the list cursor. `TestRotateHistoryGenerationHoldsTheHeadAndSurvivesARestart` and
 `TestRotateHistoryGenerationRefusesWhileTheServerHoldsTheLock` hold the
 operator rotation and its refusal beside a live server.
 

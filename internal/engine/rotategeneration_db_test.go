@@ -14,7 +14,7 @@ import (
 // operator rotates by hand (decision 0056): the new generation is on the row,
 // a restart reads it back, and a cursor saved under the old one no longer
 // matches the head clients are held to.
-func TestRotateHistoryGenerationPersistsAndResetsCursors(t *testing.T) {
+func TestRotateHistoryGenerationHoldsTheHeadAndSurvivesARestart(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, ds, dsn := newDatasetWithDSN(t)
