@@ -180,12 +180,18 @@ var (
 	ErrReadForbidden = errors.New("read outside the reads allowlist")
 	ErrReadBudget    = errors.New("read budget exhausted")
 	ErrCallForbidden = errors.New("call outside the call allowlist")
+	// ErrRetired: Reconcile retired the installation between the delivery's
+	// process lookup and its write, so the registry no longer has this body.
+	// Deterministic, because a dispatcher retry carries the same spec and
+	// would start the retired body again; parking is the honest outcome, and
+	// the trigger's next delivery loads whatever replaced it.
+	ErrRetired = errors.New("installation retired mid-delivery")
 )
 
 // Deterministic reports whether the error is a trip a retry would reproduce.
 func Deterministic(err error) bool {
 	return errors.Is(err, ErrReadForbidden) || errors.Is(err, ErrReadBudget) ||
-		errors.Is(err, ErrCallForbidden)
+		errors.Is(err, ErrCallForbidden) || errors.Is(err, ErrRetired)
 }
 
 // Envelope assembles the level-triggered envelope for one delivery: the

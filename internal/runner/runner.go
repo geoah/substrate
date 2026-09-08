@@ -217,6 +217,12 @@ type Runner struct {
 	// queues on the process its caller is blocking.
 	pys map[string]*proc
 	gos map[string]*proc
+	// retired holds the installation keys Reconcile retired and nothing has
+	// re-admitted since: a start under the key (the engine asking for the
+	// body again) or a later Reconcile listing it live clears the mark. It is
+	// what lets Invoke's retry tell a swept process, which restarts, from a
+	// retired one, which must not: the registry no longer has that body.
+	retired map[string]struct{}
 	// sandbox confines every child. Built once, because it probes the kernel.
 	sandbox  *sandbox.Confiner
 	cacheDir string
@@ -224,6 +230,10 @@ type Runner struct {
 	// first process rather than with the runner, so a substrate that never
 	// runs a function never has the goroutine.
 	reaping bool
+	// afterLookup, when set, runs in Invoke between the process lookup and
+	// the roundtrip: the window a sweep or a Reconcile can kill in. A test
+	// seam for forcing that interleaving; nil in every production runner.
+	afterLookup func(p *proc)
 }
 
 // Shared is the process-wide runner every dataset dispatches through.
@@ -239,7 +249,10 @@ func New() *Runner {
 		// An unreadable setting must not silently mean "off".
 		mode = sandbox.ModeEnforce
 	}
-	return &Runner{pys: map[string]*proc{}, gos: map[string]*proc{}, sandbox: sandbox.New(mode)}
+	return &Runner{
+		pys: map[string]*proc{}, gos: map[string]*proc{}, retired: map[string]struct{}{},
+		sandbox: sandbox.New(mode),
+	}
 }
 
 // Sandbox is the confiner every child goes through, for the boot log, which
@@ -288,9 +301,13 @@ func (r *Runner) Reconcile(_ context.Context, repository string, live []Spec) {
 		for key, p := range live {
 			if strings.HasPrefix(key, prefix) && !keep[key] {
 				delete(live, key)
+				r.retired[key] = struct{}{}
 				stop = append(stop, p)
 			}
 		}
+	}
+	for key := range keep {
+		delete(r.retired, key)
 	}
 	r.mu.Unlock()
 
@@ -322,23 +339,47 @@ func (r *Runner) Invoke(ctx context.Context, spec Spec, in Input, backend Backen
 	if spec.ReadCalls > 0 || spec.ReadRows > 0 {
 		in.Budgets = &Budgets{Calls: spec.ReadCalls, Rows: spec.ReadRows}
 	}
+	// The lookup and the write are two steps under two locks, and a kill can
+	// land between them: the idle sweep, a Reconcile retiring the installation
+	// (another dataset of the same repository closing, in a test binary), or a
+	// sibling roundtrip's timeout on the same process. The process that came
+	// out of the map is then dead before this frame reaches it. That is not a
+	// failed delivery, the body never saw the frame, so it is retried ONCE
+	// against a fresh process through the same lookup, which sees the dead
+	// entry and restarts. Once, not until it works: a second loss in a row
+	// means something is killing the installation faster than it starts, and
+	// the dispatcher's retry-then-park is the right place for that.
+	//
+	// The one kill that must NOT restart is Reconcile's: the registry no
+	// longer has this installation (removed, or replaced under a new content
+	// hash), and a restart would run the retired body under its former
+	// sandbox policy until the next sweep. The retry re-checks admission the
+	// way the lookup did, under r.mu, and answers ErrRetired instead.
+	res, err := r.invokeOnce(ctx, spec, in, backend)
+	if !errors.Is(err, errChildGone) {
+		return res, err
+	}
+	r.mu.Lock()
+	_, retired := r.retired[spec.Key()]
+	r.mu.Unlock()
+	if retired {
+		return nil, fmt.Errorf("%w: %s", ErrRetired, spec.Function)
+	}
+	return r.invokeOnce(ctx, spec, in, backend)
+}
+
+// invokeOnce is one attempt under its own manifest deadline: a restart's
+// register roundtrip is paid by the attempt that needed it, never out of the
+// retry's invocation budget.
+func (r *Runner) invokeOnce(ctx context.Context, spec Spec, in Input, backend Backend) (*Result, error) {
 	ictx, cancel := context.WithTimeout(ctx, spec.timeout())
 	defer cancel()
-	var p *proc
-	var err error
-	switch spec.Runtime {
-	case vocabulary.RuntimePython:
-		// One process per installation, serving this body alone: a nested Call
-		// is a different function, so it lands on a different process and can
-		// never queue behind the caller that is blocking on it.
-		p, err = r.pythonProc(ictx, spec)
-	case vocabulary.RuntimeGo:
-		p, err = r.goProc(ictx, spec)
-	default:
-		return nil, fmt.Errorf("runner: unknown runtime %q", spec.Runtime)
-	}
+	p, err := r.proc(ictx, spec)
 	if err != nil {
 		return nil, err
+	}
+	if r.afterLookup != nil {
+		r.afterLookup(p)
 	}
 	state := &readState{spec: spec, backend: backend}
 	resp, err := p.roundtrip(ictx, spec.timeout(),
@@ -353,6 +394,21 @@ func (r *Runner) Invoke(ctx context.Context, spec Spec, in Input, backend Backen
 		return nil, fmt.Errorf("runner: %s", resp.Error)
 	}
 	return &Result{Output: resp.Output, Effects: resp.Effects, Logs: resp.Logs, More: resp.More}, nil
+}
+
+// proc returns the live process for one installation, starting it if needed.
+func (r *Runner) proc(ctx context.Context, spec Spec) (*proc, error) {
+	switch spec.Runtime {
+	case vocabulary.RuntimePython:
+		// One process per installation, serving this body alone: a nested Call
+		// is a different function, so it lands on a different process and can
+		// never queue behind the caller that is blocking on it.
+		return r.pythonProc(ctx, spec)
+	case vocabulary.RuntimeGo:
+		return r.goProc(ctx, spec)
+	default:
+		return nil, fmt.Errorf("runner: unknown runtime %q", spec.Runtime)
+	}
 }
 
 //go:embed host.py
@@ -388,6 +444,8 @@ func (r *Runner) goProc(ctx context.Context, spec Spec) (*proc, error) {
 				return cur, nil
 			}
 			r.gos[key] = p
+			// A start is the engine admitting the installation again.
+			delete(r.retired, key)
 			r.reap()
 			r.mu.Unlock()
 			return p, nil
@@ -619,14 +677,15 @@ func (r *Runner) reap() {
 // caller that is ALREADY inside roundtrip finishes first: that lock is held for
 // the whole exchange.
 //
-// It does not make lookup-and-use atomic, and the comment should not pretend
-// otherwise. A caller can take a pointer out of the map, lose the race to this
-// sweep, and then write to a process that is already dead; roundtrip does not
-// restart anything, it returns "child exited mid-request" and the dispatcher
-// retries the delivery, which starts a fresh process through the ordinary path.
-// The window is between a map lookup and the next line of the same function,
-// against a process that has been idle for the TTL, so a delivery losing it is
-// a rarity that costs one retry.
+// It does not make lookup-and-use atomic. A caller can take a pointer out of
+// the map, lose the race to this sweep (or to Reconcile, which kills under the
+// same lock), and only then take proc.mu. Every kill closes stdin before it
+// releases the lock, so that caller finds the process not alive, or its first
+// write fails with os.ErrClosed. roundtrip turns both into errChildGone, and
+// Invoke restarts the process and retries once (or, after a Reconcile, refuses
+// with ErrRetired), so the window never parks a delivery on the closed pipe. A
+// kill MUST keep taking proc.mu around itself: that is what guarantees the
+// frame either reached a live child or never left.
 func (r *Runner) sweep(now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -832,15 +891,33 @@ func (p *proc) stderrTail() string {
 	return " (stderr: " + tail + ")"
 }
 
+// errChildGone is roundtrip's answer when the child was dead before the
+// request frame reached it: killed between the caller's map lookup and its
+// turn on proc.mu (the idle sweep, Reconcile, a sibling roundtrip's timeout),
+// or exited on its own. Nothing was delivered, so the body did not run and a
+// caller may start a fresh process and send the same frame again without
+// double-running anything. Any failure AFTER the first write is not this
+// error: the child may have acted on the frame.
+var errChildGone = errors.New("runner: child gone before the request was written")
+
 // roundtrip sends one frame and reads to its final response, serving
 // interleaved host calls from state. Frames are matched by kind and request
 // id: a stale response, a stray line or an undecodable frame is a protocol
 // desync that kills the process — its state is unknowable — as does the
 // context deadline (the invocation timeout) or a torn pipe. The error rides
-// the dispatcher's ordinary retry-then-park.
+// the dispatcher's ordinary retry-then-park, except errChildGone, which
+// Invoke absorbs with one restart.
 func (p *proc) roundtrip(ctx context.Context, timeout time.Duration, f frame, state *readState) (*response, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	// The sweep, Reconcile and a sibling roundtrip all kill under proc.mu, so
+	// a process that is alive here is not retired by any of them until this
+	// exchange ends. One that is not alive was retired in the lookup-and-use
+	// window. The reader goroutine's kill on a torn frame takes no lock; the
+	// write below catches that one.
+	if !p.alive() {
+		return nil, errChildGone
+	}
 	p.touch()
 	f.ReqID = p.reqID.Add(1)
 
@@ -849,8 +926,10 @@ func (p *proc) roundtrip(ctx context.Context, timeout time.Duration, f frame, st
 		return nil, err
 	}
 	if _, err := p.stdin.Write(append(raw, '\n')); err != nil {
+		// A closed pipe (a kill that raced the alive check) or a broken one (a
+		// child that exited on its own): either way the frame went nowhere.
 		p.kill()
-		return nil, fmt.Errorf("runner: write to child: %w", err)
+		return nil, fmt.Errorf("%w: %w", errChildGone, err)
 	}
 	for {
 		select {
