@@ -1,13 +1,15 @@
 # GraphQL and search
 
-**The schema is a per-repository projection, and it is not frozen.** It is
+**All of GraphQL is a preview.** The schema is a per-repository projection,
 generated from the kinds that repository has loaded, so two repositories on one
 deployment serve different types, and installing a bundle changes yours.
 Introspect it; do not hold a copy. The generation rules below (the naming arms,
-the scalars, the interfaces) are also pre-v1: they may change with the
-vocabulary, which is why the `search` feature reports `beta` in
-[discovery](api.md#what-a-features-stability-means). The frozen-for-v1 promise
-belongs to [REST](api.md), when it is made at all.
+the scalars, the interfaces) and the root operations may change without a v1
+wire break, which is what `"compatibility": "preview"` on the `graphql`
+surface in [discovery](api.md#discovery) says. The supported interface is
+[REST](api.md#rest-and-graphql). `search` is the one operation only this
+surface serves, and the feature reports `beta` in
+[discovery](api.md#what-a-features-stability-means).
 
 The whole read/write surface also serves at one endpoint,
 `POST /api/v1/graphql`. Filters take the same JSON grammar as
@@ -153,8 +155,8 @@ which the server's drain loop buys a batch at a time.
 There are two honest boundaries. There is no REST search endpoint: filtering is
 REST's job (`?filter=`), ranking is the GraphQL query's, and discovery says so
 rather than leaving a client to try a route: the `search` feature reports
-`"surfaces": ["graphql"]` (and `embeddings`, listed only where an embedder is
-configured, reports the same), and
+`"surfaces": ["graphql"]` (`embeddings`, listed only where an embedder is
+configured, lists both surfaces, because `reembed` is a REST verb), and
 [REST and GraphQL](api.md#rest-and-graphql) lists every other difference
 between the two surfaces. And the substrate does
 retrieval only: it returns typed records with scores, and anything generative

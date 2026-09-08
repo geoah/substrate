@@ -32,6 +32,12 @@ type discoveryDoc struct {
 	Changelog changelogInfo `json:"changelog"`
 	// Features is the feature list a client reads instead of feature-probing.
 	Features []featureInfo `json:"features"`
+	// Surfaces is the compatibility verdict per request surface, keyed by the
+	// same names a feature's `surfaces` carries. It is a different axis from
+	// a feature's stability: stability says how far ONE feature's shape has
+	// settled, compatibility says which surface a client builds on at all
+	// (decision 0053).
+	Surfaces surfacesInfo `json:"surfaces"`
 	// Grammar is how this deployment spells a kind and a record reference —
 	// the one thing a client must agree with the substrate about before it can
 	// address anything.
@@ -76,6 +82,38 @@ type grammarInfo struct {
 	Actors []string `json:"actors"`
 }
 
+// surfacesInfo names the two request surfaces with their endpoint and their
+// compatibility. REST is the supported developer interface; every part of
+// GraphQL, the generated types and the root operations and scalars alike, is
+// a preview that may change without a v1 wire break (decision 0053). Both are
+// served today: the verdict is about what a client may pin, never about
+// whether the door is open.
+type surfacesInfo struct {
+	REST    surfaceInfo `json:"rest"`
+	GraphQL surfaceInfo `json:"graphql"`
+}
+
+type surfaceInfo struct {
+	// Endpoint is the path the surface is served under, so a preview surface
+	// is locatable from discovery alone.
+	Endpoint string `json:"endpoint"`
+	// Compatibility is compatibilitySupported or compatibilityPreview.
+	Compatibility string `json:"compatibility"`
+}
+
+// The compatibility values a surface carries. They are NOT stability values:
+// a feature's stability is stamped per feature and answers a different
+// question, so "preview" is never a fourth entry in substrate/stability.go.
+const (
+	compatibilitySupported = "supported"
+	compatibilityPreview   = "preview"
+)
+
+// graphqlRoute is the GraphQL door under the version prefix. The router mounts
+// it and discovery advertises it from this one spelling, so the two cannot
+// drift.
+const graphqlRoute = "/graphql"
+
 type endpointsInfo struct {
 	Register string `json:"register"`
 	Login    string `json:"login"`
@@ -116,9 +154,10 @@ type changelogInfo struct {
 // StabilityBeta or StabilityStable, and it describes CHANGE, not quality:
 // everything listed is served today.
 //
-// The two surfaces are not equivalent: REST is the v1 contract, GraphQL is the
-// per-repository projection over the same records (decision 0022), so a feature
-// only one of them serves has to say so here. Surfaces is never empty.
+// The two surfaces are not equivalent: REST is the supported interface, GraphQL
+// is a preview projection over the same records (decision 0053), so a feature
+// only one of them serves has to say so here. Surfaces is never empty, and each
+// name is a key of the document's top-level `surfaces` object.
 //
 // Surfaces are about the feature's OWN operations, never about its records: a
 // trigger and a blob manifest are ordinary records, readable through
@@ -163,6 +202,10 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 		},
 		Changelog: changelogInfo{Horizon: retentionHorizon(), MaxDialect: h.maxChangelog},
 		Features:  h.features(),
+		Surfaces: surfacesInfo{
+			REST:    surfaceInfo{Endpoint: "/api/" + APIVersion, Compatibility: compatibilitySupported},
+			GraphQL: surfaceInfo{Endpoint: "/api/" + APIVersion + graphqlRoute, Compatibility: compatibilityPreview},
+		},
 		Grammar: grammarInfo{
 			Kind:       "<authority>/<package>/<name>",
 			Record:     "<authority>/<package>/<kind>/<id>",
@@ -210,16 +253,15 @@ func (h *handler) features() []featureInfo {
 //
 // Each stability is stamped against the tickets still to land on that surface,
 // and `stable` means frozen for v1 (see substrate.StabilityStable). None of
-// these is: #202 drops the plural from every collection segment and reserves a
-// segment for verbs, which moves every path below, and carries the v1 surface
-// reduction, which decides which of them survive at all.
+// these is: the P0 wire changes tracked in #360 still move responses below,
+// and #360 is where the list is kept. The REST surface's `supported` verdict
+// is the other axis and does not wait on them.
 //
-// Each entry's surfaces are the doors that actually exist today. Search and
-// embeddings are the two the REST surface does not serve: REST filters
-// (`?filter=`), the GraphQL `search(q, mode, kinds, k)` query ranks, and
-// embeddings reach a caller only as that query's semantic arm. The changefeed
-// is read on both. Everything else is a set of REST verbs with no GraphQL
-// field.
+// Each entry's surfaces are the doors that actually exist today. Search is the
+// one the REST surface does not serve: REST filters (`?filter=`) and the
+// GraphQL `search(q, mode, kinds, k)` query ranks. The changefeed and
+// embeddings are read on both. Everything else is a set of REST verbs with no
+// GraphQL field.
 func features(seams substrate.Dataset, embeddings bool) []featureInfo {
 	out := make([]featureInfo, 0, 8)
 	add := func(present bool, name, stability string, surfaces []string) {
@@ -258,10 +300,11 @@ func features(seams substrate.Dataset, embeddings bool) []featureInfo {
 	// generated per repository from that repository's kinds
 	// (docs/graphql-and-search.md).
 	add(true, "search", substrate.StabilityBeta, []string{surfaceGraphQL})
-	// Embeddings are alpha: no route serves them directly, they reach a caller
-	// only as the semantic arm of that same query, and the vector width is a
-	// constant in the engine (vectorDim) that no declaration can move.
-	add(embeddings, featureEmbeddings, substrate.StabilityAlpha, []string{surfaceGraphQL})
+	// Embeddings are alpha: they reach a caller as the semantic arm of that
+	// same query and through one REST verb, `POST /embeddings/reembed`, which
+	// requeues a repository's vectors, and the vector width is a constant in
+	// the engine (vectorDim) that no declaration can move.
+	add(embeddings, featureEmbeddings, substrate.StabilityAlpha, []string{surfaceREST, surfaceGraphQL})
 	_, agents := seams.(substrate.AgentOps)
 	add(agents, substrate.FeatureAgents, substrate.AgentStability, []string{surfaceREST})
 	return out

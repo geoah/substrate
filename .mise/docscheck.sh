@@ -62,6 +62,19 @@ if grep_docs -rnE '^[[:space:]]*(apiVersion|spec):'; then
   flag "an example writes a retired envelope key; the four are kind/metadata/data/status"
 fi
 
+# --- the retired GraphQL promise ----------------------------------------
+#
+# Decision 0053 made every part of GraphQL a preview: REST is the supported
+# interface, and nothing on the GraphQL surface carries an additive promise or
+# a deprecation marker. The phrases that carried the old promise are grepped
+# for, because each is a claim the server does not keep: `structural half`
+# named the part of the schema that was frozen, `@deprecated` was the marker a
+# leaving element was promised to wear and the schema emits none, and `seven
+# mutations` is the count the old promise was written against (there are five).
+if grep_docs -rniE 'seven mutations|structural half|@deprecated'; then
+  flag "a page carries the retired GraphQL promise; all of GraphQL is preview (decision 0053)"
+fi
+
 # --- the task names the pages tell people to run ------------------------
 #
 # A page naming `mise run something-that-was-renamed` is a broken instruction

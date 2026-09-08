@@ -1,5 +1,5 @@
 // Package engine implements substrate.Service and substrate.Dataset over
-// Postgres: ONE schema shared by every repository, the seven mutations,
+// Postgres: ONE schema shared by every repository, the five mutations,
 // machines, mapping recompute, search and the changelog.
 //
 // Isolation is enforced, not disciplined. Every
