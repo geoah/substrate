@@ -5,10 +5,10 @@
  * muted tone, data in mono.
  *
  * Two honesty rules survive the migration (owner redline, 2026-08-06):
- * - Former ids are part of the record: the wire's `recordId` filter is an
- *   exact match, so a merged record's pre-merge history lives under its
- *   former ids — those slices are fetched and stitched in after the live
- *   id's history is fully paged.
+ * - Former ids are part of the record: the wire's `recordId` scope follows
+ *   one id (plus the merge and split entries that name it), so a merged
+ *   record's pre-merge history lives under its former ids — those slices are
+ *   fetched and stitched in after the live id's history is fully paged.
  * - Creation is always shown when derivable: when no `created` change row
  *   exists (history predates the retained changelog), a terminal band speaks
  *   `metadata.createdAt` and says plainly that the trail is incomplete. */
@@ -42,10 +42,29 @@ import { changedProperties, verbOf } from "@/lib/changelog"
 
 const RAIL_PAGE = 25
 
+/** A merge or split entry changes two records and the scope returns it for
+ * both, so the verb says which side this record was. The payload's `winner`
+ * and `loser` decide, never the row's own `recordId`: a merge is addressed to
+ * the winner and a split to the loser. */
+function pairVerb(row: ChangeRow, recordId: string): string {
+  const winner = String(row.payload?.winner ?? "")
+  const loser = String(row.payload?.loser ?? "")
+  if (row.op === "merge") {
+    return recordId === loser ? `merged into ${winner}` : `merged ${loser} in`
+  }
+  return recordId === winner ? `split ${loser} off` : `split from ${winner}`
+}
+
 /** time, actor, action — the rail's compact vocabulary. The action cell
  * reads like the rest of the console: a plain verb, the touched-property
- * count, and the former id when the row predates a merge. */
-function activityColumns(recordId: string): DataTableColumn<ChangeRow>[] {
+ * count, and the former id when the row predates a merge. "as <id>" is said
+ * only for an id in `record.formerIds`: a merge or split row also arrives
+ * under the other record's id, and that one is not a former id of this
+ * record, so `pairVerb` names the side instead. */
+function activityColumns(
+  recordId: string,
+  formerIds: string[]
+): DataTableColumn<ChangeRow>[] {
   return [
     timeColumn<ChangeRow>({
       id: "time",
@@ -66,11 +85,12 @@ function activityColumns(recordId: string): DataTableColumn<ChangeRow>[] {
         <DataTableColumnHeader column={column} title="action" />
       ),
       cell: ({ row }) => {
-        const changed = changedProperties(row.original).length
-        const former =
-          row.original.recordId !== recordId ? row.original.recordId : undefined
+        const r = row.original
+        const changed = changedProperties(r).length
+        const pair = r.op === "merge" || r.op === "split"
+        const former = formerIds.includes(r.recordId) ? r.recordId : undefined
         const text = [
-          verbOf(row.original),
+          pair ? pairVerb(r, recordId) : verbOf(r),
           changed > 0
             ? `${changed} ${changed === 1 ? "property" : "properties"}`
             : "",
@@ -156,7 +176,10 @@ export function ActivityRail({ record }: { record: SubstrateRecord }) {
           (page - wirePages.length) * RAIL_PAGE
         )
 
-  const columns = useMemo(() => activityColumns(record.id), [record.id])
+  const columns = useMemo(
+    () => activityColumns(record.id, formerIds),
+    [record.id, formerIds]
+  )
   const table = useDataTable({
     columns,
     data: rows,

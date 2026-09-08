@@ -622,9 +622,23 @@ func xqCaseRecordHistory(c *C) {
 	all := xqReadFeed(c, url.Values{})
 	c.requiref(len(all) > 0, "the changelog is empty")
 	head := all[len(all)-1].Seq
+	// A row is about the record when it is the record's own, or a merge or
+	// split entry whose payload names the id as winner or loser: that entry
+	// is addressed to the other side of the pair and the scope returns it to
+	// both.
+	about := func(row changeRow) bool {
+		if row.Kind != xqTaskKind {
+			return false
+		}
+		if row.RecordID == id {
+			return true
+		}
+		return (row.Op == "merge" || row.Op == "split") &&
+			(row.Payload["winner"] == id || row.Payload["loser"] == id)
+	}
 	want := map[int64]bool{}
 	for _, row := range all {
-		if row.RecordID == id && row.Kind == xqTaskKind {
+		if about(row) {
 			want[row.Seq] = true
 		}
 	}
@@ -637,8 +651,8 @@ func xqCaseRecordHistory(c *C) {
 			continue
 		}
 		got++
-		c.requiref(row.RecordID == id && row.Kind == xqTaskKind,
-			"the narrowed feed returned `%s`/`%s` at seq %d", row.Kind, row.RecordID, row.Seq)
+		c.requiref(about(row),
+			"the narrowed feed returned `%s`/`%s` (%s) at seq %d", row.Kind, row.RecordID, row.Op, row.Seq)
 		c.requiref(want[row.Seq], "the narrowed feed returned seq %d, which is not a row of `%s`", row.Seq, id)
 	}
 	c.requiref(got == len(want),

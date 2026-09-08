@@ -50,6 +50,8 @@ export function verbOf(row: ChangeRow): string {
       return "deleted"
     case "merge":
       return "merged"
+    case "split":
+      return "split"
     case "gc":
       return "collected"
     default:

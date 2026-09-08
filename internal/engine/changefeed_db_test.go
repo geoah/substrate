@@ -2,6 +2,8 @@ package engine_test
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"testing"
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
@@ -191,11 +193,6 @@ func TestRecordFilterMatchesMergeAndSplitForBothRecords(t *testing.T) {
 		t.Fatalf("split: %v", err)
 	}
 
-	// The API always pairs recordId with recordKind (parseChangeFilter), so
-	// the scope here carries both.
-	scope := func(id string) substrate.ChangeFilter {
-		return substrate.ChangeFilter{RecordID: id, Kinds: []string{winner.Kind}}
-	}
 	opsOf := func(changes []substrate.Change) map[substrate.Op]int {
 		out := map[substrate.Op]int{}
 		for _, c := range changes {
@@ -203,49 +200,34 @@ func TestRecordFilterMatchesMergeAndSplitForBothRecords(t *testing.T) {
 		}
 		return out
 	}
+	both := map[substrate.Op]int{substrate.OpPut: 1, substrate.OpMerge: 1, substrate.OpSplit: 1}
 	for _, tc := range []struct {
 		name string
 		id   string
-		want bool
+		want map[substrate.Op]int
 	}{
-		{"winner", winner.ID, true},
-		{"loser", loser.ID, true},
-		{"unrelated", other.ID, false},
+		{"winner", winner.ID, both},
+		{"loser", loser.ID, both},
+		{"unrelated", other.ID, map[substrate.Op]int{substrate.OpPut: 1}},
 	} {
-		forward, err := ds.Changes(ctx, 0, scope(tc.id), 500)
+		// The API always pairs recordId with recordKind (parseChangeFilter),
+		// so the scope here carries both.
+		scope := substrate.ChangeFilter{RecordID: tc.id, Kinds: []string{winner.Kind}}
+		forward, err := ds.Changes(ctx, 0, scope, 500)
 		if err != nil {
 			t.Fatalf("%s: changes: %v", tc.name, err)
 		}
-		backward, err := feed.ChangesBefore(ctx, 0, scope(tc.id), 500)
+		if got := opsOf(forward); !maps.Equal(got, tc.want) {
+			t.Fatalf("%s: ops = %v, want %v", tc.name, got, tc.want)
+		}
+		backward, err := feed.ChangesBefore(ctx, 0, scope, 500)
 		if err != nil {
 			t.Fatalf("%s: changes before: %v", tc.name, err)
 		}
-		for _, got := range []struct {
-			read string
-			ops  map[substrate.Op]int
-		}{{"forward", opsOf(forward)}, {"backward", opsOf(backward)}} {
-			wantN := 0
-			if tc.want {
-				wantN = 1
-			}
-			if got.ops[substrate.OpMerge] != wantN || got.ops[substrate.OpSplit] != wantN {
-				t.Fatalf("%s %s: merge=%d split=%d, want %d each (ops %v)",
-					tc.name, got.read, got.ops[substrate.OpMerge], got.ops[substrate.OpSplit], wantN, got.ops)
-			}
-		}
-		// Every row the scope returns is about this record: its own entries,
-		// or a merge or split that names it. Nothing else leaks through the
-		// widened predicate.
-		for _, c := range forward {
-			if c.RecordID == tc.id {
-				continue
-			}
-			if c.Op != substrate.OpMerge && c.Op != substrate.OpSplit {
-				t.Fatalf("%s: foreign row %d op=%s record=%s", tc.name, c.Seq, c.Op, c.RecordID)
-			}
-			if c.Payload["winner"] != tc.id && c.Payload["loser"] != tc.id {
-				t.Fatalf("%s: %s row %d names neither side as %s: %v", tc.name, c.Op, c.Seq, tc.id, c.Payload)
-			}
+		want := seqsOf(forward)
+		slices.Reverse(want)
+		if got := seqsOf(backward); !slices.Equal(got, want) {
+			t.Fatalf("%s: backward seqs = %v, want %v", tc.name, got, want)
 		}
 	}
 }

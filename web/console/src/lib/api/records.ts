@@ -376,8 +376,9 @@ async function fetchRecordHistory(
   return rows
 }
 
-/** The history a merge hid: the wire's `recordId` filter is an exact match,
- * so rows written before a merge live under the loser's FORMER id and never
+/** The history a merge hid: the wire's `recordId` scope follows one id (plus
+ * the merge and split entries naming it, never the winner's later writes), so
+ * rows written before a merge live under the loser's FORMER id and never
  * answer a query for the canonical one. This reads each former id's slice
  * whole (former ids are retired — their slices no longer grow) so the activity
  * rail can stitch the full record. A merge joins records of ONE kind, so the

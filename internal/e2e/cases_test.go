@@ -369,6 +369,9 @@ type changeRow struct {
 	Kind     string `json:"kind"`
 	RecordID string `json:"recordId"`
 	Hash     string `json:"hash"`
+	// Payload is read for a merge or split entry's `winner` and `loser`, the
+	// pair the record-scoped feed matches on besides RecordID.
+	Payload map[string]any `json:"payload"`
 }
 
 // caseChangelog reads the feed forward, watches a live write land, resumes

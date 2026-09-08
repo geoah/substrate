@@ -58,7 +58,12 @@ type ChangeFilter struct {
 	ExcludeKinds  []string `json:"excludeKinds,omitempty"`
 	ExcludeOps    []Op     `json:"excludeOps,omitempty"`
 	ExcludeActors []Actor  `json:"excludeActors,omitempty"`
-	RecordID      string   `json:"recordId,omitempty"`
+	// RecordID scopes the feed to one record: rows whose RecordID is the id,
+	// plus a merge or split entry whose payload names the id as `winner` or
+	// `loser`, because each of those changes two records under one entry
+	// addressed to one of them. The scope follows the addressed pair only,
+	// never the winner's later writes under a merged-away id.
+	RecordID string `json:"recordId,omitempty"`
 	// Q is a case-insensitive substring matched against the row's type,
 	// actor, record id and payload text — the feed's one search box, a
 	// cheap ILIKE at personal scale.

@@ -12,6 +12,14 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
+// The names a merge or split entry's payload gives its pair. The record-scoped
+// change feed reads them back (changefeed.go) and migration 0016 indexes them,
+// so a rename here is a filter that stops matching every stored entry.
+const (
+	payloadWinner = "winner"
+	payloadLoser  = "loser"
+)
+
 // corePackage names the substrate's own machinery: none of it merges (§6).
 const corePackage = "substrate.reamde.dev/core"
 
@@ -214,7 +222,7 @@ func (t *txn) mergeRecord(winnerRef, loserRef eref) (*substrate.Record, error) {
 		return nil, err
 	}
 	if err := t.appendChange(t.actor, substrate.OpMerge, winnerID, winner.Kind, map[string]any{
-		"winner": winnerID, "loser": loserID, "moved": moved,
+		payloadWinner: winnerID, payloadLoser: loserID, "moved": moved,
 	}); err != nil {
 		return nil, err
 	}
@@ -625,7 +633,7 @@ func (t *txn) split(mergeID string) (*substrate.Record, error) {
 			return nil, err
 		}
 	}
-	result := map[string]any{"winner": winnerID, "loser": loserID, "moved": moved}
+	result := map[string]any{payloadWinner: winnerID, payloadLoser: loserID, "moved": moved}
 	if len(skippedLabels) > 0 || len(skippedAnnotations) > 0 {
 		result["skipped"] = map[string]any{
 			"labels": skippedLabels, "annotations": skippedAnnotations,
