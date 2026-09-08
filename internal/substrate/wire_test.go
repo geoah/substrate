@@ -93,6 +93,9 @@ var wireTypes = map[string]any{
 	// calls these `BundleClosure` and `ShippedRecord`, while the Go types
 	// carry the `Catalog` prefix that keeps them apart in this package.
 	"CatalogBundle": CatalogBundle{},
+	// The entry as the API serves it: the bundle's fields promoted, then
+	// `installed` and `upgrade`. The console's CatalogItem extends its
+	// CatalogBundle, so its key set is this flattened list.
 	"CatalogItem":   CatalogItem{},
 	"CatalogInput":  CatalogInput{},
 	"BundleClosure": CatalogClosure{},
@@ -101,17 +104,18 @@ var wireTypes = map[string]any{
 	// sections: a sample's card lists what it would project, a provider's
 	// lists the samples waiting on it (decision record 0049).
 	"SuggestedMapping": SuggestedMapping{},
-
-	// The installed bundle's computed status, its upgrade preview, and the
-	// lifecycle replies.
-	"BundleStatus":        BundleStatus{},
-	"InputStatus":         InputStatus{},
-	"SetupItem":           SetupItem{},
+	// The upgrade preview: a catalog entry carries one for an installed
+	// provider. The Registry renders the motion and the blockers.
 	"BundleUpgrade":       BundleUpgrade{},
 	"BundleUpgradeChange": BundleUpgradeChange{},
-	"BundleUninstalled":   BundleUninstalled{},
-	"BundlePurged":        BundlePurged{},
-	"OAuthStarted":        OAuthStarted{},
+
+	// The installed bundle's computed status and the lifecycle replies.
+	"BundleStatus":      BundleStatus{},
+	"InputStatus":       InputStatus{},
+	"SetupItem":         SetupItem{},
+	"BundleUninstalled": BundleUninstalled{},
+	"BundlePurged":      BundlePurged{},
+	"OAuthStarted":      OAuthStarted{},
 
 	// The automation replies and the webhook door's 202.
 	"TriggerReplayed": TriggerReplayed{},
