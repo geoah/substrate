@@ -221,7 +221,7 @@ func carryRetirements(b *vocabularyBatch, existing map[string]vocabulary.Documen
 		if present && retiredBlocksEqual(merged, incomingBlock) {
 			continue
 		}
-		data := make(map[string]any, len(d.Data)+1)
+		data := make(map[string]any, len(d.Data))
 		for k, v := range d.Data {
 			data[k] = v
 		}
