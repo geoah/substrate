@@ -343,6 +343,13 @@ func (tp *Template) build(base string) (string, error) {
 		defer func() { _ = db.Close() }()
 		for _, ext := range []string{"vector", "pgcrypto"} {
 			if _, err := db.ExecContext(ctx, `CREATE EXTENSION IF NOT EXISTS `+ext+` SCHEMA public`); err != nil {
+				// A new database is a copy of template1, and vector is not a
+				// trusted extension, so CREATEDB alone cannot install it there.
+				if pgCode(err) == "42501" {
+					return fmt.Errorf("the role may not create the %s extension in a new database: run the suite as a superuser, "+
+						"or install vector and pgcrypto into template1 once (connect to template1 and CREATE EXTENSION each), "+
+						"after which CREATEDB is enough because every new database inherits them: %w", ext, err)
+				}
 				return fmt.Errorf("create extension %s: %w", ext, err)
 			}
 		}

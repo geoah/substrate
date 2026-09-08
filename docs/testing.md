@@ -42,7 +42,11 @@ not care which:
   runner keeps alive. Two requirements, both refused with a message rather
   than worked around: the URL is a `postgres://` URL, and its role has
   `CREATEDB`, because the engine suite copies a migrated template database
-  per test. The server is never changed (no `ALTER SYSTEM`); every database
+  per test. The template also needs the `vector` and `pgcrypto` extensions,
+  and `vector` is not a trusted extension, so either the role is a superuser
+  or you install both into `template1` once (connect to `template1` and
+  `CREATE EXTENSION` each), after which every new database inherits them and
+  `CREATEDB` is enough. The server is never changed (no `ALTER SYSTEM`); every database
   the run makes is dropped when the binary exits (`testdb.Main`), and a
   `sub_tpl_*` or `sub_test_*` database older than six hours with nothing
   connected is dropped at the next run's start, so a killed binary does not
