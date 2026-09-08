@@ -507,8 +507,9 @@ export interface CatalogBundle {
    * the catalog by authority, then by package. */
   package: string
   description: string
-  /** The owned package's incremental declaration version. A sample's decides
-   * nothing: it has no upgrade path. */
+  /** The owned package's incremental declaration version. A sample has no
+   * upgrade path, so its version is offered to nothing; an import records it
+   * as the copy's `originVersion`. */
   version: number
   /** `provider` or `sample`: which section the Registry lists it under and
    * which door its button takes. */
@@ -527,6 +528,14 @@ export interface CatalogBundle {
    * and will not deliver. Absent for every provider: a provider declares no
    * mapping at all. */
   suggestedMappings?: SuggestedMapping[]
+  /** The HELD copy's provenance in this repository, copied from its
+   * BundleStatus per request: the shipped id it was imported from, the
+   * shipped version it was taken at, and whether its declarations have moved
+   * since. Absent while the repository does not hold the bundle, on a
+   * provider, and on a copy imported before the stamp existed. */
+  origin?: string
+  originVersion?: number
+  modified?: boolean
   closure: BundleClosure
 }
 
@@ -648,4 +657,13 @@ export interface BundleStatus {
   quarantined?: boolean
   /** The admission error that quarantined the bundle. */
   quarantineReason?: string
+  /** The shipped bundle id an imported SAMPLE was copied from
+   * (`samples.substrate.reamde.dev/tasks`). Absent on a provider, on a
+   * hand-applied closure, and on a sample imported before the stamp existed. */
+  origin?: string
+  /** The shipped package version the copy was taken at. */
+  originVersion?: number
+  /** True when the copy's declarations no longer match what the import
+   * landed: something edited, added or removed since. */
+  modified?: boolean
 }

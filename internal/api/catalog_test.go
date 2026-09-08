@@ -387,6 +387,7 @@ type heldDataset struct {
 func (d heldDataset) BundleStatuses(context.Context) ([]substrate.BundleStatus, error) {
 	return []substrate.BundleStatus{{
 		ID: d.id, Name: "web", Installed: true, Enabled: true,
+		Origin: webBundleID, OriginVersion: 8, Modified: true,
 	}}, nil
 }
 
@@ -477,6 +478,37 @@ func TestCatalogReportsAnImportedSampleInstalled(t *testing.T) {
 	env := newHeldEnv(t, "geoah.example.com/web")
 	if !installedFor(t, env, webBundleID) {
 		t.Error("an imported sample reads as available, so the console offers it again")
+	}
+}
+
+// The held copy's provenance rides the listing entry: which shipped id it was
+// imported from, at which version, and whether it has been edited since. The
+// status computed it; the entry carries it so the Registry can say "imported
+// at 8, edited" without a second read.
+func TestCatalogCarriesTheHeldCopyProvenance(t *testing.T) {
+	env := newHeldEnv(t, "geoah.example.com/web")
+	tok := env.svc.token("geoah")
+	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	body := decodeJSON[struct {
+		Items []struct {
+			ID            string `json:"id"`
+			Origin        string `json:"origin"`
+			OriginVersion int64  `json:"originVersion"`
+			Modified      bool   `json:"modified"`
+		} `json:"items"`
+	}](t, rec)
+	for _, item := range body.Items {
+		switch item.ID {
+		case webBundleID:
+			if item.Origin != webBundleID || item.OriginVersion != 8 || !item.Modified {
+				t.Errorf("held web entry provenance = %+v, want origin %s v8 modified", item, webBundleID)
+			}
+		default:
+			if item.Origin != "" || item.OriginVersion != 0 || item.Modified {
+				t.Errorf("%s is not held and still carries provenance: %+v", item.ID, item)
+			}
+		}
 	}
 }
 

@@ -40,6 +40,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"sync"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -805,6 +806,39 @@ func (ds *dataset) quarantinedBundleStatuses(ctx context.Context) ([]substrate.B
 	return out, rows.Err()
 }
 
+// packageOrigin reads the provenance a SAMPLE import stamped on the package
+// row (vocabularywrite.go stampOrigin) onto the status, and decides Modified
+// by recomputing the closure digest from the stored declarations: equal means
+// the copy is what the import landed, anything else means a declaration was
+// edited, added or removed since. A row with no origin (a provider, a hand
+// apply, a copy imported before the stamp) leaves all three zero.
+func (ds *dataset) packageOrigin(ctx context.Context, pkg string, st *substrate.BundleStatus) error {
+	var origin, version, digest string
+	err := ds.db.QueryRowContext(ctx, `
+		SELECT COALESCE(props->>$3, ''), COALESCE(props->>$4, ''), COALESCE(props->>$5, '')
+		FROM records WHERE kind = $1 AND id = $2 AND deleted_at IS NULL`,
+		kindPackage, pkg, propPackageOrigin, propPackageOriginVersion, propPackageOriginDigest,
+	).Scan(&origin, &version, &digest)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && origin == "") {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	st.Origin = origin
+	if version != "" {
+		if v, perr := strconv.ParseInt(version, 10, 64); perr == nil {
+			st.OriginVersion = v
+		}
+	}
+	current, err := ds.packageClosureDigest(ctx, pkg)
+	if err != nil {
+		return err
+	}
+	st.Modified = digest == "" || current != digest
+	return nil
+}
+
 // BundleStatus computes one bundle's runtime state.
 func (ds *dataset) BundleStatus(ctx context.Context, id string) (substrate.BundleStatus, error) {
 	b, err := ds.bundleByID(id)
@@ -835,6 +869,9 @@ func (ds *dataset) bundleStatus(ctx context.Context, b *vocabulary.Bundle) (subs
 	}
 	st.Functions = len(g.FunctionOrder)
 	st.Kinds = len(g.KindOrder)
+	if err := ds.packageOrigin(ctx, b.Package, &st); err != nil {
+		return st, err
+	}
 	for _, tn := range g.KindOrder {
 		t := g.Kinds[tn]
 		var n int64

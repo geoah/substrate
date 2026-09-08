@@ -29,7 +29,9 @@ package engine
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -102,6 +104,14 @@ type vocabularyBatch struct {
 	// promotes one a previous install left `installed`. Nothing else sets it,
 	// so a hand `apply -f` of the same closure stays the repository's own.
 	published bool
+	// origin and originVersion are a SAMPLE import's provenance (catalog
+	// Import): the shipped bundle id and the shipped package version. The
+	// projection stamps them, with a digest of the landed closure, on the
+	// package row the origin names. Empty on every other batch, which leaves
+	// a stamped row's provenance alone: the keys are engine-owned, so a
+	// re-projection preserves them.
+	origin        string
+	originVersion int64
 	// beforeGuards runs INSIDE the batch transaction, right after the
 	// registry-dependency lock and BEFORE the refuse-breakage guards: a bundle
 	// uninstall tears its delivery wiring (triggers referencing the owned
@@ -186,8 +196,10 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 		return nil, err
 	}
 	written, err := ds.applyVocabularyBatch(ctx, actor, vocabularyBatch{
-		docs:      docs,
-		published: opts.Published,
+		docs:          docs,
+		published:     opts.Published,
+		origin:        opts.Origin,
+		originVersion: opts.OriginVersion,
 		extra: func(t *txn, candidate *vocabulary.Registry) error {
 			for _, in := range dataDocs {
 				// A trigger's callable is validated against the CANDIDATE here:
@@ -325,7 +337,9 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		if err := t.checkSchemaCAS(b.meta); err != nil {
 			return err
 		}
-		got, err := t.projectPackages(candidate, touched, projectOpts{meta: b.meta, prune: true})
+		got, err := t.projectPackages(candidate, touched, projectOpts{
+			meta: b.meta, prune: true, origin: b.origin, originVersion: b.originVersion,
+		})
 		if err != nil {
 			return err
 		}
@@ -821,6 +835,11 @@ type projectOpts struct {
 	// PRUNE: the embedded tree is a source, the repository's own
 	// changelog is the truth, and re-assert-and-prune is dead.
 	prune bool
+	// origin and originVersion, when set, are stamped on the package row
+	// whose name the origin's package segment spells, with the digest of the
+	// declarations this pass projects for it (vocabularyBatch.origin).
+	origin        string
+	originVersion int64
 }
 
 // projectPackages writes the touched packages' declarations as record rows
@@ -840,7 +859,11 @@ func (t *txn) projectPackages(reg *vocabulary.Registry, authorities map[string]b
 	// Enumerate before writing: which kinds' OWN declarations this pass writes
 	// decides what every row of the pass is validated against, so the set has to
 	// be complete before the first row lands (projectionKind).
-	var passes [][]declaration
+	type pass struct {
+		g     *vocabulary.Package
+		decls []declaration
+	}
+	var passes []pass
 	projecting := map[string]bool{}
 	for _, aname := range names {
 		g, ok := reg.PackageByName(aname)
@@ -851,7 +874,7 @@ func (t *txn) projectPackages(reg *vocabulary.Registry, authorities map[string]b
 		if err != nil {
 			return nil, err
 		}
-		passes = append(passes, decls)
+		passes = append(passes, pass{g: g, decls: decls})
 		for _, d := range decls {
 			if d.typ != kindKind || (opts.skip != nil && opts.skip(d.key())) {
 				continue
@@ -867,8 +890,15 @@ func (t *txn) projectPackages(reg *vocabulary.Registry, authorities map[string]b
 	prevReg := t.writeReg
 	t.writeReg = reg
 	defer func() { t.writeReg = prevReg }()
-	for _, decls := range passes {
-		if err := t.projectPackage(reg, projecting, decls, live, opts, out); err != nil {
+	for _, p := range passes {
+		if err := t.projectPackage(reg, projecting, p.decls, live, opts, out); err != nil {
+			return nil, err
+		}
+	}
+	// The origin stamp reads the rows the pass just WROTE, so it comes after
+	// every declaration of the package has landed.
+	for _, p := range passes {
+		if err := t.stampOrigin(reg, projecting, p.g, p.decls, opts, out); err != nil {
 			return nil, err
 		}
 	}
@@ -1220,6 +1250,123 @@ const propDeclarationVersion = "version"
 func engineOwned(short, prop string) bool {
 	return !vocabulary.DeclarationDataKeys(short)[prop] && !retiredDeclarationProps(short)[prop] &&
 		!columnBackedProp[prop]
+}
+
+// The provenance a SAMPLE import stamps on the package row it lands (decision
+// record 0048): the shipped bundle id, the shipped package version, and the
+// digest of the closure as landed. They are `managed` on the core `package`
+// kind and no document key, so `engineOwned` keeps them across every later
+// re-projection of the package, and only a batch carrying an origin writes
+// them.
+const (
+	propPackageOrigin        = "origin"
+	propPackageOriginVersion = "originVersion"
+	propPackageOriginDigest  = "originDigest"
+)
+
+// stampOrigin writes the import's provenance onto the package row of g when
+// opts carry an origin whose package segment is g's name: the rehome changes
+// the authority and keeps the package word, so that is what ties
+// `samples.substrate.reamde.dev/tasks` to `ada.example.com/tasks`.
+//
+// The digest is over the rows the pass just wrote (`out`), not over the
+// documents it was handed: the write path rewrites every reference-typed
+// value canonical (a function's `writes`, an agent's `provider`, a bundle
+// input's `kind` land as `{ref}` objects), and the status recomputes the
+// digest from those rows (packageClosureDigest). Hashing the authored
+// spelling would read every sample with a function or an agent as modified
+// the moment it landed. The stamp is therefore a second put on the header
+// row, after the projection's own, and a re-import whose stamp is unchanged
+// writes nothing.
+func (t *txn) stampOrigin(reg *vocabulary.Registry, projecting map[string]bool, g *vocabulary.Package, decls []declaration, opts projectOpts, out map[string]*substrate.Record) error {
+	if opts.origin == "" || g.IsAuthority() {
+		return nil
+	}
+	if _, name := vocabulary.SplitPackageRef(opts.origin); name == "" || name != g.Name {
+		return nil
+	}
+	docs := make([]vocabulary.Document, 0, len(decls))
+	for _, d := range decls {
+		e := out[d.short+"\x00"+d.id]
+		if e == nil {
+			return fmt.Errorf("substrate/engine: stamp the origin of %s: %s %s was not projected", g.Identity, d.short, d.id)
+		}
+		docs = append(docs, vocabulary.Document{Kind: d.short, ID: d.id, Data: declarationData(d.short, e.Properties)})
+	}
+	digest, err := closureDigest(docs)
+	if err != nil {
+		return err
+	}
+	ty, err := t.projectionKind(reg, projecting, kindPackage)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: stamp the origin of %s: %w", g.Identity, err)
+	}
+	e, err := t.putKind(ty, substrate.PutInput{Kind: kindPackage, ID: g.Identity, Properties: map[string]any{
+		propPackageOrigin:        opts.origin,
+		propPackageOriginVersion: opts.originVersion,
+		propPackageOriginDigest:  digest,
+	}})
+	if err != nil {
+		return fmt.Errorf("substrate/engine: stamp the origin of %s: %w", g.Identity, err)
+	}
+	out[vocabulary.DocPackage+"\x00"+g.Identity] = e
+	return nil
+}
+
+// closureDigest fingerprints a package's declarations as DOCUMENTS: each one
+// as its loader-admitted data minus `version`, keyed by kind and id and
+// sorted, so a kind, trait, property type, mapping, function, agent or bundle
+// document that is edited, added or removed changes it and a version alone
+// does not (a re-import that puts an edited copy back moves versions and
+// nothing else). Actor documents are left out because the read side
+// synthesizes the package-named one (vocabularyDocumentRows) and the
+// projection writes none for it, and an actor is declared by nothing but its
+// own row anyway.
+//
+// Both sides hash rows read back from the store, and json.Marshal sorts map
+// keys and renders an integral float and an int the same, so the record a
+// put returned and the jsonb a later read decodes hash alike; it is the same
+// comparison declarationDataEqual rests on.
+func closureDigest(docs []vocabulary.Document) (string, error) {
+	type entry struct {
+		Kind string         `json:"kind"`
+		ID   string         `json:"id"`
+		Data map[string]any `json:"data"`
+	}
+	entries := make([]entry, 0, len(docs))
+	for _, d := range docs {
+		if d.Kind == vocabulary.DocActor {
+			continue
+		}
+		entries = append(entries, entry{Kind: d.Kind, ID: d.ID, Data: minusVersionKey(d.Data)})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].Kind != entries[j].Kind {
+			return entries[i].Kind < entries[j].Kind
+		}
+		return entries[i].ID < entries[j].ID
+	})
+	raw, err := json.Marshal(entries)
+	if err != nil {
+		return "", fmt.Errorf("substrate/engine: digest closure: %w", err)
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// packageClosureDigest is closureDigest over what the repository STORES for
+// one package: the same document read-back the registry is rebuilt from at
+// open, so it is the stored side of the import's stamp.
+func (ds *dataset) packageClosureDigest(ctx context.Context, pkg string) (string, error) {
+	rows, err := ds.vocabularyDocumentRows(ctx, map[string]bool{pkg: true})
+	if err != nil {
+		return "", err
+	}
+	docs := make([]vocabulary.Document, 0, len(rows))
+	for _, key := range sortedKeys(rows) {
+		docs = append(docs, rows[key])
+	}
+	return closureDigest(docs)
 }
 
 // pruneSchemaRows tombstones schema record rows of the touched packages the

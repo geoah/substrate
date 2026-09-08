@@ -149,6 +149,75 @@ func TestRebuildReproducesTheFold(t *testing.T) {
 	}
 }
 
+// TestRebuildReproducesTheOriginStamp: the provenance a sample import stamps
+// on its package row (origin, originVersion, originDigest) is three
+// properties like any other, so the changelog carries them and a rebuild
+// hands them back, and the status computed off the rebuilt fold still reads
+// the copy as unmodified.
+func TestRebuildReproducesTheOriginStamp(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds := newDataset(t)
+	inst, ok := ds.(substrate.BundleInstaller)
+	if !ok {
+		t.Fatal("dataset does not implement the closure-install seam")
+	}
+	const (
+		pkg    = "geoah.example.com/gizmo"
+		origin = "samples.example.com/gizmo"
+	)
+	closure := []map[string]any{
+		vocabulary.PackageManifest(pkg, 0),
+		vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
+		vocabulary.BundleManifest(pkg, map[string]any{
+			"description": "a copied sample", "installs": []any{pkg + "/gizmo"},
+		}),
+		vocabulary.KindManifest(pkg, map[string]any{"singular": "gizmo"},
+			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
+	}
+	if _, err := inst.InstallBundleClosure(ctx, substrate.BundleActor(vocabulary.SplitPackageRef(pkg)), closure, nil,
+		substrate.BundleInstall{Origin: origin, OriginVersion: 3}); err != nil {
+		t.Fatalf("install the closure with an origin: %v", err)
+	}
+	ops, ok := ds.(interface {
+		BundleStatus(context.Context, string) (substrate.BundleStatus, error)
+	})
+	if !ok {
+		t.Fatal("dataset computes no bundle status")
+	}
+	check := func(when string) {
+		t.Helper()
+		row := mustGet(t, ds, "substrate.reamde.dev/core/package", pkg)
+		if got, _ := row.Properties["origin"].(string); got != origin {
+			t.Errorf("%s: package row origin = %q, want %q", when, got, origin)
+		}
+		if got, _ := vocabulary.VersionValue(row.Properties["originVersion"]); got != 3 {
+			t.Errorf("%s: package row originVersion = %d, want 3", when, got)
+		}
+		if got, _ := row.Properties["originDigest"].(string); got == "" {
+			t.Errorf("%s: package row carries no originDigest", when)
+		}
+		st, err := ops.BundleStatus(ctx, pkg)
+		if err != nil {
+			t.Fatalf("%s: bundle status: %v", when, err)
+		}
+		if st.Origin != origin || st.OriginVersion != 3 || st.Modified {
+			t.Errorf("%s: status origin = %q v%d modified=%v, want %q v3 modified=false",
+				when, st.Origin, st.OriginVersion, st.Modified, origin)
+		}
+	}
+	check("before the rebuild")
+
+	before := foldOf(t, ds)
+	if _, err := svc.(rebuilder).RebuildRepository(ctx, "geoah"); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if after := foldOf(t, ds); string(before) != string(after) {
+		t.Fatalf("the rebuilt fold is not the fold\n%s", firstDifference(before, after))
+	}
+	check("after the rebuild")
+}
+
 // TestRebuildIsIdempotent: rebuilding a rebuilt repository changes nothing.
 // The fold is a function of the changelog, so applying it twice must land in the
 // same place — anything else means an effect is being replayed relative to

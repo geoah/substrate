@@ -158,6 +158,9 @@ const catalogBundle: Keys<CatalogBundle> = {
   inputs: true,
   requires: true,
   suggestedMappings: true,
+  origin: true,
+  originVersion: true,
+  modified: true,
   closure: true,
 }
 

@@ -40,7 +40,8 @@ type CatalogBundle struct {
 	// Description is the bundle document's description.
 	Description string `json:"description"`
 	// Version is the owned package's version. Zero means the closure declares
-	// none. A sample's version decides nothing: it has no upgrade path.
+	// none. A sample has no upgrade path, so its version is offered to
+	// nothing; the import records it as the copy's OriginVersion.
 	Version int64 `json:"version"`
 	// Tier is "provider" or "sample": which of the two doors this closure
 	// takes, and which of the two authorities it lands under.
@@ -62,6 +63,15 @@ type CatalogBundle struct {
 	// so a reader can see what an import will and will not deliver. Empty for
 	// every provider: a provider declares no mapping at all.
 	SuggestedMappings []SuggestedMapping `json:"suggestedMappings,omitempty"`
+	// Origin, OriginVersion and Modified are the HELD copy's provenance in
+	// this repository, copied from its BundleStatus per request the way
+	// SuggestedMappings is: which shipped id it was imported from, the
+	// shipped version it was taken at, and whether its declarations have
+	// moved since. Absent while the repository does not hold the bundle, on
+	// a provider, and on a copy imported before the stamp existed.
+	Origin        string `json:"origin,omitempty"`
+	OriginVersion int64  `json:"originVersion,omitempty"`
+	Modified      bool   `json:"modified,omitempty"`
 	// Closure enumerates what taking this bundle lands, for the detail preview.
 	Closure CatalogClosure `json:"closure"`
 }

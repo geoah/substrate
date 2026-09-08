@@ -18,6 +18,9 @@
     "inputs",
     "requires",
     "suggestedMappings",
+    "origin",
+    "originVersion",
+    "modified",
     "closure"
   ],
   "Change": [

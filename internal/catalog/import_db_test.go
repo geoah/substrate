@@ -85,10 +85,34 @@ func TestImportLandsASampleUnderTheRepositoryAuthority(t *testing.T) {
 	if !st.Installed || st.Kinds != 3 {
 		t.Errorf("status = %+v, want installed with 3 kinds", st)
 	}
+	// THE COPY KNOWS WHERE IT CAME FROM: the shipped id and the shipped version
+	// are stamped on the landed package row, and a copy nobody has edited
+	// reads unmodified. Without the stamp `geoah.example.com/tasks` would be
+	// indistinguishable from a package the user declared by hand.
+	if b.Version == 0 {
+		t.Fatal("the tasks sample ships no package version, so the stamp cannot be checked")
+	}
+	wantOrigin(t, st, tasksSampleID, b.Version, false)
+	pkg, err := ds.Get(ctx, kindPackageRef, homeAuthority+"/tasks")
+	if err != nil {
+		t.Fatalf("read the landed package row: %v", err)
+	}
+	if got, _ := pkg.Properties["origin"].(string); got != tasksSampleID {
+		t.Errorf("package row origin = %q, want %q", got, tasksSampleID)
+	}
+	if got, _ := vocabulary.VersionValue(pkg.Properties["originVersion"]); got != b.Version {
+		t.Errorf("package row originVersion = %d, want %d", got, b.Version)
+	}
+	if got, _ := pkg.Properties["originDigest"].(string); got == "" {
+		t.Error("package row carries no originDigest, so nothing can say whether the copy was edited")
+	}
 
-	// THE PLACEHOLDER NEVER REACHES THE CHANGELOG. The changelog is the truth
-	// a rebuild reads, so a mention there is vocabulary under an authority the
-	// repository does not own, folded back on every rebuild.
+	// THE PLACEHOLDER NEVER REACHES THE CHANGELOG AS VOCABULARY. The changelog
+	// is the truth a rebuild reads, so a declaration there under the
+	// placeholder is vocabulary under an authority the repository does not
+	// own, folded back on every rebuild. The one sanctioned mention is the
+	// `origin` stamp on the package row, a string naming where the copy came
+	// from, which declares nothing.
 	changes, err := ds.Changes(ctx, 0, substrate.ChangeFilter{}, 5000)
 	if err != nil {
 		t.Fatalf("changes: %v", err)
@@ -101,7 +125,11 @@ func TestImportLandsASampleUnderTheRepositoryAuthority(t *testing.T) {
 		if err != nil {
 			t.Fatalf("marshal change %d: %v", ch.Seq, err)
 		}
-		if strings.Contains(string(raw), samplesPlacehldr) {
+		var decoded any
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			t.Fatalf("decode change %d: %v", ch.Seq, err)
+		}
+		if mentionsOutsideOrigin(decoded, samplesPlacehldr) {
 			t.Fatalf("changelog entry %d still names %s: %s", ch.Seq, samplesPlacehldr, raw)
 		}
 	}
@@ -124,6 +152,185 @@ func TestImportLandsASampleUnderTheRepositoryAuthority(t *testing.T) {
 	if len(after) != before {
 		t.Errorf("re-import wrote %d changelog entries, want none", len(after)-before)
 	}
+	wantOrigin(t, st2, tasksSampleID, b.Version, false)
+
+	// ONE KIND EDIT, THROUGH THE ORDINARY APPLY, and the copy reads modified.
+	// The package's version does not move for a kind edit (the kind's own
+	// does), so this is what the digest is for. The provenance itself stays:
+	// the edit re-projects the package row and the stamp is the engine's.
+	editKind(t, ds, homeAuthority+"/tasks/task", "mine")
+	st3, err := ds.(bundleStatuser).BundleStatus(ctx, b.LandedID(homeAuthority))
+	if err != nil {
+		t.Fatalf("bundle status after the edit: %v", err)
+	}
+	wantOrigin(t, st3, tasksSampleID, b.Version, true)
+
+	// A re-import REPLACES the package (record 0048), edits included, and
+	// re-stamps it: the copy is the shipped closure again and reads so, even
+	// though its versions now sit above the shipped ones.
+	importSamples(t, c, ds, tasksSampleID)
+	st4, err := ds.(bundleStatuser).BundleStatus(ctx, b.LandedID(homeAuthority))
+	if err != nil {
+		t.Fatalf("bundle status after the second re-import: %v", err)
+	}
+	wantOrigin(t, st4, tasksSampleID, b.Version, false)
+	if _, still := declaredProperties(t, ds, homeAuthority+"/tasks/task")["mine"]; still {
+		t.Error("the re-import kept the local edit, so the copy is not the shipped closure")
+	}
+}
+
+// declaredProperties reads a kind declaration's stored `properties` map.
+func declaredProperties(t *testing.T, ds substrate.Dataset, ref string) map[string]any {
+	t.Helper()
+	rec, err := ds.Get(context.Background(), kindKindRef, ref)
+	if err != nil {
+		t.Fatalf("read the %s declaration: %v", ref, err)
+	}
+	return mapOf(rec.Properties["properties"])
+}
+
+// Every sample the tree ships lands as a copy that compares equal to itself:
+// the digest the import stamps is the digest the status recomputes from the
+// stored rows, across kinds, traits, property types, mappings, functions,
+// agents and bundle documents alike. One sample whose read-back differs from
+// its projection would read modified the moment it landed.
+func TestEveryImportedSampleReadsUnmodified(t *testing.T) {
+	ds := newDataset(t)
+	c := loadCatalog(t)
+	ctx := context.Background()
+
+	// `requires:` forces an order; a refused import is retried after the rest
+	// of the pass, so the loop needs no knowledge of the graph.
+	var pending []*catalog.Bundle
+	for _, b := range c.Bundles() {
+		if b.Tier == substrate.TierSample {
+			pending = append(pending, b)
+		}
+	}
+	for len(pending) > 0 {
+		var next []*catalog.Bundle
+		for _, b := range pending {
+			if _, _, err := c.Import(ctx, substrate.ActorAPI, b.ID, ds); err != nil {
+				next = append(next, b)
+			}
+		}
+		if len(next) == len(pending) {
+			t.Fatalf("no sample imports: %d left", len(next))
+		}
+		pending = next
+	}
+	for _, b := range c.Bundles() {
+		if b.Tier != substrate.TierSample {
+			continue
+		}
+		st, err := ds.(bundleStatuser).BundleStatus(ctx, b.LandedID(homeAuthority))
+		if err != nil {
+			t.Fatalf("bundle status %s: %v", b.ID, err)
+		}
+		wantOrigin(t, st, b.ID, b.Version, false)
+	}
+}
+
+// A closure applied BY HAND has no origin to name: it is the repository's own
+// package from the first write, and its status says so by carrying no
+// provenance at all.
+func TestAHandAppliedClosureCarriesNoOrigin(t *testing.T) {
+	ds := newDataset(t)
+	ctx := context.Background()
+	applier, ok := ds.(substrate.VocabularyApplier)
+	if !ok {
+		t.Fatal("dataset does not support ApplyVocabularyDocuments")
+	}
+	const pkg = homeAuthority + "/hand"
+	closure := []map[string]any{
+		vocabulary.PackageManifest(pkg, 0),
+		vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
+		vocabulary.BundleManifest(pkg, map[string]any{
+			"description": "declared by hand",
+			"installs":    []any{pkg + "/widget"},
+		}),
+		vocabulary.KindManifest(pkg, map[string]any{"singular": "widget"},
+			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
+	}
+	if _, err := applier.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, closure); err != nil {
+		t.Fatalf("apply a closure by hand: %v", err)
+	}
+	st, err := ds.(bundleStatuser).BundleStatus(ctx, pkg)
+	if err != nil {
+		t.Fatalf("bundle status: %v", err)
+	}
+	wantOrigin(t, st, "", 0, false)
+}
+
+// wantOrigin holds a status to the provenance it should carry.
+func wantOrigin(t *testing.T, st substrate.BundleStatus, origin string, version int64, modified bool) {
+	t.Helper()
+	if st.Origin != origin || st.OriginVersion != version || st.Modified != modified {
+		t.Errorf("%s: origin = %q v%d modified=%v, want %q v%d modified=%v",
+			st.ID, st.Origin, st.OriginVersion, st.Modified, origin, version, modified)
+	}
+}
+
+// editKind adds one string property to a landed kind through the ordinary
+// vocabulary apply, from the declaration as the registry holds it.
+func editKind(t *testing.T, ds substrate.Dataset, ref, property string) {
+	t.Helper()
+	ctx := context.Background()
+	info, err := ds.KindByRef(ctx, ref)
+	if err != nil {
+		t.Fatalf("kind %s: %v", ref, err)
+	}
+	data := make(map[string]any, len(info.Definition))
+	for k, v := range info.Definition {
+		data[k] = v
+	}
+	props := map[string]any{}
+	for k, v := range mapOf(data["properties"]) {
+		props[k] = v
+	}
+	props[property] = map[string]any{"type": "string"}
+	data["properties"] = props
+	applier, ok := ds.(substrate.VocabularyApplier)
+	if !ok {
+		t.Fatal("dataset does not support ApplyVocabularyDocuments")
+	}
+	if _, err := applier.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{{
+		"kind":     kindKindRef,
+		"metadata": map[string]any{"id": ref},
+		"data":     data,
+	}}); err != nil {
+		t.Fatalf("edit %s: %v", ref, err)
+	}
+}
+
+func mapOf(v any) map[string]any {
+	m, _ := v.(map[string]any)
+	return m
+}
+
+// mentionsOutsideOrigin walks a decoded JSON value and reports whether any
+// string in it, other than the value under an `origin` key, contains needle.
+func mentionsOutsideOrigin(v any, needle string) bool {
+	switch x := v.(type) {
+	case string:
+		return strings.Contains(x, needle)
+	case []any:
+		for _, item := range x {
+			if mentionsOutsideOrigin(item, needle) {
+				return true
+			}
+		}
+	case map[string]any:
+		for k, item := range x {
+			if k == "origin" {
+				continue
+			}
+			if mentionsOutsideOrigin(item, needle) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // The two doors are not interchangeable, and the PROVIDER door still works:
@@ -156,4 +363,7 @@ func TestImportRefusesAProviderAndInstallStillWorks(t *testing.T) {
 	if !st.Installed {
 		t.Error("the provider is not marked installed")
 	}
+	// A provider is published, not copied: it lands the id it was asked for
+	// and records no origin.
+	wantOrigin(t, st, "", 0, false)
 }

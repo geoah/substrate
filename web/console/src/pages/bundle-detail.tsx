@@ -1502,6 +1502,18 @@ export function BundleDetailPage() {
             {item?.version ? (
               <span className="data">· {item.version}</span>
             ) : null}
+            {bundle.origin ? (
+              <span>
+                imported from <span className="data">{bundle.origin}</span>
+                {bundle.originVersion ? (
+                  <>
+                    {" "}
+                    at <span className="data">{bundle.originVersion}</span>
+                  </>
+                ) : null}
+                {bundle.modified ? ", edited since" : ""}
+              </span>
+            ) : null}
           </p>
           {item?.description && (
             <p className="mt-1 max-w-2xl text-xs text-muted-foreground">

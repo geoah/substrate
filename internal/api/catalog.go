@@ -38,7 +38,7 @@ func (h *handler) getCatalog(w http.ResponseWriter, r *http.Request) {
 		}
 		home := homeAuthority(r.Context())
 		for _, b := range h.catalog.Bundles() {
-			items = append(items, h.catalogItemFor(r.Context(), b, b.HeldID(installed, home) != ""))
+			items = append(items, h.catalogItemFor(r.Context(), b, installed[b.HeldID(heldIDs(installed), home)]))
 		}
 	}
 	writeJSON(w, http.StatusOK, substrate.Listed(items))
@@ -73,22 +73,30 @@ func (h *handler) getCatalogItem(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, err)
 		return
 	}
-	held := b.HeldID(installed, homeAuthority(r.Context())) != ""
+	held := installed[b.HeldID(heldIDs(installed), homeAuthority(r.Context()))]
 	writeJSON(w, http.StatusOK, h.catalogItemFor(r.Context(), b, held))
 }
 
 // catalogItemFor assembles one wire entry, asking the catalog for the upgrade
-// preview only where it can mean anything: an installed bundle. The preview is
-// attached only when it moves something, so an up-to-date bundle marshals
-// exactly as before.
+// preview only where it can mean anything: an installed bundle. `held` is the
+// status of the bundle this repository holds for the entry, nil when it holds
+// none; the preview is attached only when it moves something, so an up-to-date
+// bundle marshals exactly as before.
 //
 // A preview that FAILS costs that entry its upgrade offer and nothing else.
 // The listing is what the console's Registry (and now its sidebar badge, on
 // every page) reads, so one unpreviewable closure must not blank it — the
 // same reason catalog.Load drops a broken directory instead of bricking the
 // shipped set. The offer is an extra; the listing is the promise.
-func (h *handler) catalogItemFor(ctx context.Context, b *catalog.Bundle, installed bool) catalogItem {
+func (h *handler) catalogItemFor(ctx context.Context, b *catalog.Bundle, held *substrate.BundleStatus) catalogItem {
+	installed := held != nil
 	item := catalogItem{CatalogBundle: b.CatalogBundle, Installed: installed}
+	// The held copy's provenance, when it has one: which shipped id it was
+	// imported from, at which version, and whether it has been edited since.
+	// The status computed it; the entry only carries it to the console.
+	if held != nil {
+		item.Origin, item.OriginVersion, item.Modified = held.Origin, held.OriginVersion, held.Modified
+	}
 	// Each suggested mapping's state in THIS repository (decision record
 	// 0049): whether the declaration is here, whether the provider it reads
 	// is, and whether it fits the version installed. The shipped closure
@@ -182,13 +190,13 @@ type bundleTaken struct {
 	SuggestedMappings []substrate.SuggestedMapping `json:"suggestedMappings,omitempty"`
 }
 
-// installedBundles is the set of bundle ids installed in this repository. A dataset
-// that runs no bundle lifecycle has none — an empty set, no error. A status
-// READ that fails is a fault (repository/database), returned as an error so the
-// caller fails with the normal substrate error shape instead of silently
-// reporting installed integrations as available.
-func (h *handler) installedBundles(ctx context.Context) (map[string]bool, error) {
-	out := map[string]bool{}
+// installedBundles is every bundle installed in this repository, its status
+// by id. A dataset that runs no bundle lifecycle has none: an empty set, no
+// error. A status READ that fails is a fault (repository/database), returned
+// as an error so the caller fails with the normal substrate error shape
+// instead of silently reporting installed integrations as available.
+func (h *handler) installedBundles(ctx context.Context) (map[string]*substrate.BundleStatus, error) {
+	out := map[string]*substrate.BundleStatus{}
 	ops, ok := bundlesFrom(ctx)
 	if !ok {
 		return out, nil
@@ -197,10 +205,19 @@ func (h *handler) installedBundles(ctx context.Context) (map[string]bool, error)
 	if err != nil {
 		return nil, err
 	}
-	for _, st := range statuses {
-		if st.Installed {
-			out[st.ID] = true
+	for i := range statuses {
+		if statuses[i].Installed {
+			out[statuses[i].ID] = &statuses[i]
 		}
 	}
 	return out, nil
+}
+
+// heldIDs is the id set the catalog's HeldID lookup takes, off the statuses.
+func heldIDs(installed map[string]*substrate.BundleStatus) map[string]bool {
+	out := make(map[string]bool, len(installed))
+	for id := range installed {
+		out[id] = true
+	}
+	return out
 }

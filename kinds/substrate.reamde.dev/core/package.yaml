@@ -10,7 +10,9 @@ data:
   # version 17: `source` gains `published`. A provider install writes it, and
   # it is what closes the package to the repository's own token (decision
   # record 0048).
-  version: 17
+  # version 18: `origin`, `originVersion` and `originDigest`, the provenance a
+  # sample import stamps on the copy it lands.
+  version: 18
   description: >-
     One package whose kinds this repository holds: the group a declaration
     is versioned, owned and quarantined in. The row says who may write under
@@ -76,4 +78,25 @@ data:
       type: string
       managed: true
       description: the admission error that quarantined the package
+    # A SAMPLE import's provenance (decision record 0048): the copy lands as
+    # the repository's own package, so without these three nothing could tell
+    # it from a package the user declared by hand. The import stamps them; the
+    # provider install and a hand apply write none, and a re-projection of the
+    # package (a kind edit, a re-import) leaves them in place. The digest is
+    # what says whether the copy has been edited: a kind edit moves the kind's
+    # version and not the package's, and an addition moves no version at all,
+    # so the versions alone cannot.
+    origin:
+      type: string
+      managed: true
+      description: the shipped bundle id this package was imported from
+    originVersion:
+      type: int
+      managed: true
+      description: the shipped package version the import copied
+    originDigest:
+      type: string
+      managed: true
+      description: the digest of the closure the import landed, which the
+        bundle status compares the stored declarations against
     # No sourceYAML (record 61): declaration rows store parsed facts only.
