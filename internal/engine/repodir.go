@@ -452,12 +452,12 @@ func (s *service) legacyBlobsMoved(ctx context.Context, oldID, authority string)
 	return nil
 }
 
-// rewrapLegacyDEK renders a pre-authority manifest as the format-1 manifest,
-// with the DEK re-wrapped from the old id's binding to the authority's and
-// the wrap naming this host's key. An empty DEK (a pre-DEK repository) is
-// carried as is.
+// rewrapLegacyDEK renders a pre-authority manifest as the manifest this
+// binary writes, with the DEK re-wrapped from the old id's binding to the
+// authority's and the wrap naming this host's key. An empty DEK (a pre-DEK
+// repository) is carried as is.
 func (s *service) rewrapLegacyDEK(lm changelogfile.LegacyManifest) (changelogfile.Manifest, error) {
-	m := lm.Manifest
+	m := currentManifest(lm.Manifest)
 	if len(lm.Manifest.DEK) == 0 {
 		return m, nil
 	}
@@ -530,7 +530,7 @@ func (s *service) reconcileRow(ctx context.Context, repo Repository, allowImport
 	if fresh && out.Action == reconcileCaughtUp {
 		out.Action = reconcileWroteDir
 	}
-	if err := s.ensureManifest(ctx, dir, repo, ds.db); err != nil {
+	if _, err := s.ensureManifest(ctx, dir, repo, ds.db); err != nil {
 		return out, err
 	}
 	return out, nil
@@ -785,15 +785,18 @@ const (
 // fold (completeImport). No row is ever inserted twice, because `seq` is the
 // key and the resume starts above what the table holds.
 func (ds *dataset) importEntries(ctx context.Context, log *changelogfile.Log, tableHead int64) (int64, error) {
+	batch := rebuildBatch
+	if ds.svc.testImportBatch > 0 {
+		batch = ds.svc.testImportBatch
+	}
+	if err := refuseRetiredEntriesInFiles(ds.info.Name, log, tableHead, batch); err != nil {
+		return 0, err
+	}
 	if err := loadSealedFiles(ctx, ds.db, ds.dir); err != nil {
 		return 0, err
 	}
 	if err := markImportIncomplete(ctx, ds.db, log.Head()); err != nil {
 		return 0, err
-	}
-	batch := rebuildBatch
-	if ds.svc.testImportBatch > 0 {
-		batch = ds.svc.testImportBatch
 	}
 	var n int64
 	after := tableHead
@@ -818,6 +821,40 @@ func (ds *dataset) importEntries(ctx context.Context, log *changelogfile.Log, ta
 		return n, err
 	}
 	return n, nil
+}
+
+// refuseRetiredEntriesInFiles is the import's half of refuseRetiredLinkEntries:
+// it reads the entries an import is about to insert, those above tableHead,
+// and refuses a dialect-1 `link` or `unlink` op among them. It runs twice on
+// a directory with no row: in importRepositoryDir BEFORE the `repositories`
+// row and the dialect rows exist, so a refused directory reserves nothing,
+// and in importEntries before the first batch commits, which is the one gate
+// a row's own directory running ahead of its table passes through. The fold
+// would refuse the same entry (fold.go foldRefuses), but only after
+// insertEntries had written rows and set the import marker, leaving a
+// repository no boot can finish importing. The manifest's dialect cannot
+// stand in for this probe: a directory a pre-gate binary wrote from its
+// tables carries whatever stamp that store had, entries included. An import
+// is a restore, and the extra reads are the price of refusing with the
+// database untouched.
+func refuseRetiredEntriesInFiles(repository string, log *changelogfile.Log, tableHead int64, batch int) error {
+	after := tableHead
+	for {
+		entries, err := log.Read(after, batch)
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
+		}
+		if len(entries) == 0 {
+			return nil
+		}
+		for _, e := range entries {
+			if e.Op == opLinkRetired || e.Op == opUnlinkRetired {
+				return fmt.Errorf("%w: repository %s: seq %d in the repository directory is a `%s` entry, which dialect 1 wrote and migration 0010 left nothing to fold into; there is no rung that translates it (decision 0044), so the directory cannot be imported",
+					ErrChangelogPredatesReferences, repository, e.Seq, e.Op)
+			}
+		}
+		after = entries[len(entries)-1].Seq
+	}
 }
 
 // completeImport finishes an import whose rows are all in the table and whose
@@ -1036,8 +1073,15 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 	if err := validRepositoryID(m.Authority); err != nil {
 		return out, fmt.Errorf("the manifest names an authority that cannot be a repository id: %w", err)
 	}
-	if m.ChangelogDialect > maxChangelogDialect {
-		return out, newerChangelogDialect(m.Username, m.ChangelogDialect)
+	// Both reader requirements are checked here, before the row and before
+	// insertEntries writes anything: a refusal from the fold, with the rows
+	// already committed, is the outage the manifest exists to prevent.
+	m = currentManifest(m)
+	if err := newerChangelogDialect(m.Username, m.ChangelogDialect); err != nil {
+		return out, err
+	}
+	if err := admitVocabularyDialect(m.Username, m.VocabularyDialect); err != nil {
+		return out, err
 	}
 	if len(m.DEK) > 0 {
 		dek, err := s.unwrapDEK(m.DEK, m.Authority, m.DEKKeyID)
@@ -1064,6 +1108,17 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 	if other, err := s.repositoryByUsername(ctx, m.Username); err == nil {
 		return out, fmt.Errorf("the manifest names username %q, which repository %s already holds", m.Username, other.ID)
 	} else if !errors.Is(err, substrate.ErrNotFound) {
+		return out, err
+	}
+	// The entries' own gate, still before the row: a `link` entry refuses the
+	// directory here, so it reserves neither the username nor the authority,
+	// and a later boot finds no row to export an empty repository from. The
+	// read-only open cuts nothing; reconcileDir opens the log again to repair.
+	log, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir))
+	if err != nil {
+		return out, directoryOpenErr(err)
+	}
+	if err := refuseRetiredEntriesInFiles(m.Username, log, 0, rebuildBatch); err != nil {
 		return out, err
 	}
 	// The directory is listed because no row has its authority as id, and the
@@ -1094,56 +1149,108 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 		nullString(repo.DEKKeyID), repo.SealedDEKOnly); err != nil {
 		return out, fmt.Errorf("create the row from the manifest: %w", err)
 	}
-	if m.ChangelogDialect > 0 {
-		db, err := openScoped(s.dsn, repo.scope(), s.appRole)
-		if err != nil {
-			return out, err
-		}
-		_, err = db.ExecContext(ctx, changelogDialectStamp, m.ChangelogDialect)
-		_ = db.Close()
-		if err != nil {
-			return out, fmt.Errorf("stamp changelog dialect %d from the manifest: %w", m.ChangelogDialect, err)
-		}
+	if err := s.stampDialectsFromManifest(ctx, repo, m); err != nil {
+		return out, err
 	}
 	return s.reconcileRow(ctx, repo, true)
 }
 
-// manifestOf renders the row as its manifest, with the changelog dialect
-// read from the repository's own stamp.
+// stampDialectsFromManifest stamps the imported repository with the dialects
+// its manifest recorded, so the store carries the WRITER's requirements: the
+// changelog gate then probes or refuses what the writer stamped, and the
+// vocabulary ladder judges the rows' shape rather than assuming this binary's
+// maximum. A dialect the manifest left at 0 (a changelog nobody had claimed)
+// stamps nothing, as the writer had not.
+func (s *service) stampDialectsFromManifest(ctx context.Context, repo Repository, m changelogfile.Manifest) error {
+	if m.ChangelogDialect == 0 && m.VocabularyDialect == 0 {
+		return nil
+	}
+	db, err := openScoped(s.dsn, repo.scope(), s.appRole)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+	if m.ChangelogDialect > 0 {
+		if _, err := db.ExecContext(ctx, changelogDialectStamp, m.ChangelogDialect); err != nil {
+			return fmt.Errorf("stamp changelog dialect %d from the manifest: %w", m.ChangelogDialect, err)
+		}
+	}
+	if m.VocabularyDialect > 0 {
+		if _, err := db.ExecContext(ctx, vocabularyDialectStamp, m.VocabularyDialect); err != nil {
+			return fmt.Errorf("stamp vocabulary dialect %d from the manifest: %w", m.VocabularyDialect, err)
+		}
+	}
+	return nil
+}
+
+// manifestOf renders the row as its manifest, with both dialects read from the
+// repository's own stamps: the manifest is the directory's record of what a
+// binary must understand to read it, so it says what the stamps say.
 func (s *service) manifestOf(ctx context.Context, repo Repository, q dbx) (changelogfile.Manifest, error) {
-	dialect, err := readChangelogDialect(ctx, q)
+	changelog, err := readChangelogDialect(ctx, q)
+	if err != nil {
+		return changelogfile.Manifest{}, err
+	}
+	vocabulary, err := readVocabularyDialect(ctx, q)
 	if err != nil {
 		return changelogfile.Manifest{}, err
 	}
 	return changelogfile.Manifest{
 		Format: changelogfile.ManifestFormat, Username: repo.Username,
-		Authority: repo.Authority, CreatedAt: repo.CreatedAt, ChangelogDialect: dialect, DEK: repo.DEK,
+		Authority: repo.Authority, CreatedAt: repo.CreatedAt,
+		ChangelogDialect: changelog, VocabularyDialect: vocabulary, DEK: repo.DEK,
 		DEKKeyID: repo.DEKKeyID, SealedDEKOnly: repo.SealedDEKOnly,
 	}, nil
 }
 
-// ensureManifest writes the repository's manifest when it is missing or when
-// what the row says has moved (a DEK adopted, a dialect stamped, the store
-// marked DEK-only). The row is the truth for a repository that has one.
-func (s *service) ensureManifest(ctx context.Context, dir string, repo Repository, q dbx) error {
+// ensureManifest writes the repository's manifest when it is missing, when it
+// is in an older format or when what the row says has moved (a DEK adopted, a
+// dialect stamped, the store marked DEK-only), and returns the manifest the
+// directory now holds. The row is the truth for a repository that has one.
+func (s *service) ensureManifest(ctx context.Context, dir string, repo Repository, q dbx) (changelogfile.Manifest, error) {
 	want, err := s.manifestOf(ctx, repo, q)
 	if err != nil {
-		return err
+		return changelogfile.Manifest{}, err
 	}
 	have, err := changelogfile.ReadManifest(dir)
 	if err == nil && manifestsEqual(have, want) {
-		return nil
+		return want, nil
 	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+		return changelogfile.Manifest{}, err
 	}
-	return changelogfile.WriteManifest(dir, want)
+	if err := changelogfile.WriteManifest(dir, want); err != nil {
+		return changelogfile.Manifest{}, err
+	}
+	return want, nil
 }
 
 func manifestsEqual(a, b changelogfile.Manifest) bool {
 	return a.Format == b.Format && a.Username == b.Username && a.Authority == b.Authority &&
-		a.CreatedAt.Equal(b.CreatedAt) && a.ChangelogDialect == b.ChangelogDialect && bytes.Equal(a.DEK, b.DEK) &&
+		a.CreatedAt.Equal(b.CreatedAt) && a.ChangelogDialect == b.ChangelogDialect &&
+		a.VocabularyDialect == b.VocabularyDialect && bytes.Equal(a.DEK, b.DEK) &&
 		a.DEKKeyID == b.DEKKeyID && a.SealedDEKOnly == b.SealedDEKOnly
+}
+
+// formatOneVocabularyDialect is the vocabulary dialect of every directory
+// whose manifest is format 1. The format recorded none, and every release
+// that wrote it, v0.46.0 through v0.53.0, stored declarations in dialect 3
+// (decision 0047 landed before the manifest did), so a format-1 manifest
+// says 3 by its format alone. This is the writer's format read off the
+// directory, not the running binary's maximum: a binary whose maximum has
+// moved on still stamps such an import at 3 and lets the ladder judge it.
+const formatOneVocabularyDialect = 3
+
+// currentManifest is the manifest as this binary writes it: a manifest read
+// in format 1 gains the vocabulary dialect its format implies and the format
+// this binary writes; one already in ManifestFormat is returned as read.
+func currentManifest(m changelogfile.Manifest) changelogfile.Manifest {
+	if m.Format == changelogfile.ManifestFormat {
+		return m
+	}
+	m.Format = changelogfile.ManifestFormat
+	m.VocabularyDialect = formatOneVocabularyDialect
+	return m
 }
 
 // --- the sealed mirror ------------------------------------------------------
@@ -1393,6 +1500,48 @@ func (ds *dataset) mirrorAfterCommit(t *txn) {
 	if err := applySealedMirror(ds.dir, deletes); err != nil {
 		ds.latchDirectoryErr(err)
 	}
+}
+
+// The stamping commit's fault stages (WithTestCommitFault).
+const (
+	commitBeforeManifest = "before-manifest"
+	commitAfterManifest  = "after-manifest"
+)
+
+// commitFault runs the test seam at one of the stamping commit's steps; a nil
+// hook is the server.
+func (s *service) commitFault(stage string) error {
+	if s.testCommitFault == nil {
+		return nil
+	}
+	return s.testCommitFault(stage)
+}
+
+// writeManifestBeforeCommit rewrites the manifest with the changelog dialect
+// the transaction is about to claim, BEFORE that transaction commits or
+// appends: its lines are the first in the file the dialect covers, so the
+// manifest must say so before they are there. Called by commitAndMirror with
+// writerMu held, on the one transaction that stamps (txn.claimsChangelogDialect),
+// and a step of its own so a commit path that orders its durable steps
+// differently keeps it ahead of the first append. A failure refuses the
+// transaction: nothing has committed, nothing is appended, and the next write
+// claims again. A rollback after a successful write leaves a manifest that
+// OVERSTATES until the next claim or boot, which an older binary meets as a
+// refusal to import and never as a fold over entries it cannot read.
+func (ds *dataset) writeManifestBeforeCommit(dialect int) error {
+	if ds.manifest.ChangelogDialect == dialect {
+		return nil
+	}
+	if err := ds.svc.commitFault(commitBeforeManifest); err != nil {
+		return fmt.Errorf("substrate/engine: write %s with changelog dialect %d before the first entry in it: %w", changelogfile.ManifestName, dialect, err)
+	}
+	m := ds.manifest
+	m.ChangelogDialect = dialect
+	if err := changelogfile.WriteManifest(ds.dir, m); err != nil {
+		return fmt.Errorf("substrate/engine: write %s with changelog dialect %d before the first entry in it: %w", changelogfile.ManifestName, dialect, err)
+	}
+	ds.manifest = m
+	return ds.svc.commitFault(commitAfterManifest)
 }
 
 // splitSealedOps separates a transaction's sealed writes from its deletes,

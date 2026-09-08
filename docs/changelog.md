@@ -210,7 +210,11 @@ covered by the checksum), which a dialect 2 binary would silently re-stamp
 away at boot
 ([decision 0057](decisions/0057-a-changelog-line-names-its-transaction-and-an-unfinished-one-is-cut-whole.md)).
 A repository's stored dialect is never on the wire: what
-[API discovery](api.md#discovery) reports is the binary's maximum.
+[API discovery](api.md#discovery) reports is the binary's maximum. It is in
+the repository directory, as `changelogDialect` in `repository.json`, which
+the transaction that records the claim rewrites before it appends, so a copy
+of the directory never holds segments its manifest understates
+([the repository directory](operations.md#the-repository-directory)).
 
 `repository rebuild` reads the stamp again, under the changelog lock and
 before it touches anything: it replays every entry, and a process that opened

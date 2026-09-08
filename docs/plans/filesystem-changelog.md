@@ -44,13 +44,19 @@ disk, in the database and on the wire
 `repository.json`:
 
 ```json
-{"format": 1,
+{"format": 2,
  "authority": "ada.example.com",
  "username": "ada",
  "createdAt": "2026-09-05T10:00:00.000000Z",
  "changelogDialect": 3,
+ "vocabularyDialect": 3,
  "dek": "<base64 of the DEK wrapped under SUBSTRATE_CREDENTIAL_KEY, the repositories.dek bytes>"}
 ```
+
+Format 1 (v0.46.0 through v0.53.0, with v0.46.0's carrying an `id` key and
+v0.53.0's `dekKeyId` and `sealedDekOnly`) had no `vocabularyDialect`; format 2
+added it so the directory records both reader requirements, and a format-1
+manifest is still read.
 
 The host-wrapped DEK rides in the manifest so a restore onto a host that
 holds the same `SUBSTRATE_CREDENTIAL_KEY` needs nothing else. It is

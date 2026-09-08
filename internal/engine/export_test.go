@@ -57,6 +57,23 @@ const (
 	ImportAfterFirstFold = importAfterFirstFold
 )
 
+// WithTestCommitFault runs fn around the manifest write that precedes the
+// first append in a new changelog dialect (repodir.go
+// writeManifestBeforeCommit): with CommitBeforeManifest just before the write,
+// where an error stands for the write failing, and with CommitAfterManifest
+// once the manifest is written and before the transaction commits or appends,
+// where an error is the process dying in between. Either error rolls the
+// transaction back.
+func WithTestCommitFault(fn func(stage string) error) Option {
+	return func(o *options) { o.commitFault = fn }
+}
+
+// The commit stages WithTestCommitFault reports.
+const (
+	CommitBeforeManifest = commitBeforeManifest
+	CommitAfterManifest  = commitAfterManifest
+)
+
 // ImportIncomplete reports whether the repository's import-progress marker
 // is set, read through the tamperer's seat.
 func ImportIncomplete(ctx context.Context, db dbx) (bool, error) {
