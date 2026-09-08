@@ -238,18 +238,28 @@ once. The narrowing diffs that refuse:
   widening back to `any` narrows nothing)
 - tightening a keyed map's `keyPattern:` while records hold a key the new
   contract refuses, since a key is not rewritable in place
+- changing or adding a `pattern:` while records hold a value the new
+  expression refuses. Any change to the expression counts, because whether one
+  regular expression admits everything another does is not decidable, so the
+  guard asks the rows instead, and a change every stored value still matches
+  admits. The values are matched with the same compiled expression the write
+  path uses, never with Postgres' own regex dialect
+- raising or adding `min:`, and lowering or adding `max:`, while records hold
+  a number outside the new bound; a `decimal` compares exactly
 - every one of those inside an object property's declared `fields:`, at each
   level the dialect nests: a dropped field, a field whose datatype or container
-  changed, a field's removed enum value, a field's tightened keys, a field
-  reference's narrowed target, each counted where the value actually sits
+  changed, a field's removed enum value, a field's tightened keys, a field's
+  changed pattern or tightened bound, a field reference's narrowed target, each
+  counted where the value actually sits
 - adding `required:` to a property a record lacks, and declaring a **new**
   property `required:`, which strands every live record at once: none of them
   can carry a property no declaration had
 - adding `mustExist:` to a reference whose stored values name records that are
   not there
-- the same four shapes on a reference's own
+- the same shapes on a reference's own
   [link properties](#reference-properties) (dropped, retyped, an enum value
-  removed, `required:` added), counted over the stored values that carry them
+  removed, `required:` added, a pattern changed or a bound tightened), counted
+  over the stored values that carry them
 
 Widening diffs (a new kind, a new optional property, a new enum value, a new
 state or transition, removing `required:`) always admit. The guard counts, it

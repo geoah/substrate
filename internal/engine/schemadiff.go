@@ -23,17 +23,23 @@ package engine
 //     unpatchable);
 //   - a reference repointing its pin, gaining `mustExist:`, or narrowing one of
 //     its declared link properties — each counted over the refs index
-//     (referenceNarrowings), which reads every value shape and every depth.
+//     (referenceNarrowings), which reads every value shape and every depth;
+//   - a value constraint tightened: a `pattern` changed or added, a `min`
+//     raised or added, a `max` lowered or added, on a property, an object field
+//     at any depth or a link property (constraintNarrowings). The write path
+//     enforces all three (coerceScalar), so a value outside the new constraint
+//     is refused on its next write; the count is the rows holding one.
 //
 // Additive changes — new type, new optional property, new enum value, new
 // state, new transition, required removed, presentational keys — admit
-// freely. Constraint refinements the ruling did not name (pattern, min/max)
-// are not classified.
+// freely.
 
 import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math/big"
+	"regexp"
 	"sort"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -43,11 +49,50 @@ import (
 // narrowing is one refused diff found by classification: the guard message
 // (format carries one %d for the live-row count) and the count query that
 // runs inside the batch transaction.
+//
+// A narrowing with `strands` set counts in Go instead: its query answers one
+// jsonb column per live row, the value rooted at the property, and the row
+// counts when strands finds a value under the declared path the candidate
+// refuses. The pattern class needs it. The write path matches with Go's RE2
+// regexp, and Postgres' ARE dialect reads several of its escapes differently
+// (`\b`, `\z`, `\pL`, named groups), so a count in SQL could admit a value the
+// next write refuses, which is the disagreement this file exists to prevent.
 type narrowing struct {
-	format string
-	query  string
-	args   []any
+	format  string
+	query   string
+	args    []any
+	strands func(root []byte) bool
 }
+
+// count runs the narrowing's query: the scalar count, or the value stream
+// strands judges row by row.
+func (n narrowing) count(q sqlReader) (int64, error) {
+	if n.strands == nil {
+		var count int64
+		err := q.row(n.query, n.args...).Scan(&count)
+		return count, err
+	}
+	rows, err := q.query(n.query, n.args...)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	var count int64
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return 0, err
+		}
+		if n.strands(raw) {
+			count++
+		}
+	}
+	return count, rows.Err()
+}
+
+// propValuesQuery streams the value of one property over the live rows that
+// carry it, for a narrowing counted in Go.
+const propValuesQuery = `SELECT props->$2 FROM records WHERE kind = $1 AND deleted_at IS NULL AND props ? $2`
 
 // countPropQuery counts live rows of a type carrying a value for a property
 // (a nulled property's key is deleted from props, so presence is a value).
@@ -308,6 +353,8 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 					query: q, args: args,
 				})
 			}
+			out = append(out, constraintNarrowings(ident, fmt.Sprintf("property %q", pname),
+				containerPath(nil, curP, pname), curP, candP)...)
 			// An object property that drops or kind-changes a declared field
 			// strands rows holding that field, at every declared level.
 			if curP.Datatype == vocabulary.DatatypeObject {
@@ -496,6 +543,7 @@ func linkPropNarrowings(ident, pname string, curP, candP *vocabulary.Property) [
 				query: countMissingLinkPropQuery, args: []any{ident, pname, lname},
 			})
 		}
+		out = append(out, linkConstraintNarrowings(ident, pname, lname, curL, candL)...)
 	}
 	// A link property the candidate ADDS as required strands every stored value,
 	// for the same reason it does on a record: a write is refused without it and
@@ -531,8 +579,8 @@ type sqlReader interface {
 func narrowingGuards(q sqlReader, narrowings []narrowing) ([]string, error) {
 	var guards []string
 	for _, n := range narrowings {
-		var count int64
-		if err := q.row(n.query, n.args...).Scan(&count); err != nil {
+		count, err := n.count(q)
+		if err != nil {
 			return nil, err
 		}
 		if count > 0 {
@@ -875,6 +923,7 @@ func objectFieldNarrowings(ident string, path []fieldStep, curP, candP *vocabula
 			})
 		}
 		next := containerPath(path, curF, fname)
+		out = append(out, constraintNarrowings(ident, fmt.Sprintf("object %q field %q", label, fname), next, curF, candF)...)
 		if curF.Datatype == vocabulary.DatatypeReference && refTargetNarrows(curF.To, candF.To) {
 			q, args := refOutsidePath(ident, next, candF.To)
 			out = append(out, narrowing{
@@ -940,6 +989,245 @@ func keyPatternTightens(curP, candP *vocabulary.Property) bool {
 		return false
 	}
 	return curP.KeyPattern != candP.KeyPattern
+}
+
+// constraintNarrowings classifies the three value constraints the write path
+// enforces after a value's datatype (coerceScalar): `pattern`, `min` and `max`.
+// It runs once the datatype and container are known to be unchanged, for a
+// kind's own property and for an object field at any depth; `subject` is the
+// position as the guard line names it, and `path` addresses its values, leaf
+// container included.
+//
+// Any change to a pattern counts. Whether one regular expression admits every
+// string another does is undecidable, so the guard asks the rows instead, and a
+// change every stored value still matches admits. A bound narrows only in one
+// direction, and only where the write path reads it: `min`/`max` on a string
+// and `pattern` on a number are stored and inert, so a change to them strands
+// nothing.
+func constraintNarrowings(ident, subject string, path []fieldStep, curP, candP *vocabulary.Property) []narrowing {
+	var out []narrowing
+	if patternTightens(curP, candP) {
+		out = append(out, narrowing{
+			format: fmt.Sprintf("type %s: %s changes its pattern to %s while %%d live records hold a value it refuses; rewrite them first",
+				ident, subject, candP.Pattern),
+			query: propValuesQuery, args: []any{ident, path[0].key},
+			strands: patternStrands(path, candP.Pattern),
+		})
+	}
+	if minRaises(curP, candP) {
+		q, args := boundOutsidePath(ident, path, candP.Datatype, "<", *candP.Min)
+		out = append(out, narrowing{
+			format: fmt.Sprintf("type %s: %s requires values >= %v while %%d live records hold a smaller one; rewrite them first",
+				ident, subject, *candP.Min),
+			query: q, args: args,
+		})
+	}
+	if maxLowers(curP, candP) {
+		q, args := boundOutsidePath(ident, path, candP.Datatype, ">", *candP.Max)
+		out = append(out, narrowing{
+			format: fmt.Sprintf("type %s: %s requires values <= %v while %%d live records hold a larger one; rewrite them first",
+				ident, subject, *candP.Max),
+			query: q, args: args,
+		})
+	}
+	return out
+}
+
+// linkPropValuesQuery streams one link property's value over the live
+// references that carry it, for a narrowing counted in Go.
+const linkPropValuesQuery = `SELECT r.props->$3 ` + linkFrom + ` AND r.props ? $3`
+
+// linkConstraintNarrowings is constraintNarrowings for one declared link
+// property, whose values live in the refs index as one flat scalar each.
+func linkConstraintNarrowings(ident, pname, lname string, curL, candL *vocabulary.Property) []narrowing {
+	var out []narrowing
+	if patternTightens(curL, candL) {
+		out = append(out, narrowing{
+			format: fmt.Sprintf("type %s: reference %q changes link property %q's pattern to %s while %%d live references hold a value it refuses; rewrite them first",
+				ident, pname, lname, candL.Pattern),
+			query: linkPropValuesQuery, args: []any{ident, pname, lname},
+			strands: patternStrands([]fieldStep{{key: lname}}, candL.Pattern),
+		})
+	}
+	if minRaises(curL, candL) {
+		q, args := linkBoundOutside(ident, pname, lname, candL.Datatype, "<", *candL.Min)
+		out = append(out, narrowing{
+			format: fmt.Sprintf("type %s: reference %q requires link property %q >= %v while %%d live references hold a smaller one; rewrite them first",
+				ident, pname, lname, *candL.Min),
+			query: q, args: args,
+		})
+	}
+	if maxLowers(curL, candL) {
+		q, args := linkBoundOutside(ident, pname, lname, candL.Datatype, ">", *candL.Max)
+		out = append(out, narrowing{
+			format: fmt.Sprintf("type %s: reference %q requires link property %q <= %v while %%d live references hold a larger one; rewrite them first",
+				ident, pname, lname, *candL.Max),
+			query: q, args: args,
+		})
+	}
+	return out
+}
+
+// patternTightens reports whether the candidate holds values to a pattern the
+// current declaration did not: added, or a different expression. Dropping the
+// pattern admits everything and cannot narrow.
+func patternTightens(cur, cand *vocabulary.Property) bool {
+	if cand.Pattern == nil || !patternApplies(cand.Datatype) {
+		return false
+	}
+	return cur.Pattern == nil || cur.Pattern.String() != cand.Pattern.String()
+}
+
+// minRaises and maxLowers report a bound moving in its narrowing direction:
+// added where there was none, or moved to exclude values the old one admitted.
+func minRaises(cur, cand *vocabulary.Property) bool {
+	if cand.Min == nil || !boundsApply(cand.Datatype) {
+		return false
+	}
+	return cur.Min == nil || *cand.Min > *cur.Min
+}
+
+func maxLowers(cur, cand *vocabulary.Property) bool {
+	if cand.Max == nil || !boundsApply(cand.Datatype) {
+		return false
+	}
+	return cur.Max == nil || *cand.Max < *cur.Max
+}
+
+// patternApplies reports whether coerceScalar matches a datatype's values
+// against a declared pattern: the string family, minus the datatypes that
+// return before the match (datetime, blobref). A sensitive value is excluded
+// too: a secret is stored sealed, so no stored value can be matched, and a
+// digest is minted by the server, never authored.
+func patternApplies(dt vocabulary.Datatype) bool {
+	switch dt {
+	case vocabulary.DatatypeObject, vocabulary.DatatypeReference, vocabulary.DatatypeJSON,
+		vocabulary.DatatypeBool, vocabulary.DatatypeInt, vocabulary.DatatypeFloat, vocabulary.DatatypeDecimal,
+		vocabulary.DatatypeDatetime, vocabulary.DatatypeBlobRef, vocabulary.DatatypeState,
+		vocabulary.DatatypeSecret, vocabulary.DatatypeDigest:
+		return false
+	}
+	return true
+}
+
+// boundsApply reports whether coerceScalar holds a datatype's values to `min`
+// and `max`: the three numbers.
+func boundsApply(dt vocabulary.Datatype) bool {
+	return dt == vocabulary.DatatypeInt || dt == vocabulary.DatatypeFloat || dt == vocabulary.DatatypeDecimal
+}
+
+// patternStrands judges one stored root value for a pattern narrowing: true
+// when a string under the declared path fails the candidate pattern. A stored
+// value that is not a string is not this guard's business; the write path
+// refuses it whatever the pattern says.
+func patternStrands(path []fieldStep, re *regexp.Regexp) func([]byte) bool {
+	return func(raw []byte) bool {
+		var root any
+		if err := json.Unmarshal(raw, &root); err != nil {
+			return false
+		}
+		for _, leaf := range leavesAtPath(root, path) {
+			if s, ok := leaf.(string); ok && !re.MatchString(s) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// leavesAtPath is descendPath in Go: the values at the end of a declared path
+// inside one stored root value, with the same tolerances. A repeated level
+// takes an array's elements and boxes a stored scalar; a null or absent level
+// holds nothing; a keyed level takes an object's values and nothing else; a
+// key is taken only from an object. THE TWO MUST AGREE, or a value one door
+// counts is a value the other cannot see.
+func leavesAtPath(v any, path []fieldStep) []any {
+	step := path[0]
+	var members []any
+	switch {
+	case step.repeated:
+		switch t := v.(type) {
+		case []any:
+			members = t
+		case nil:
+		default:
+			members = []any{v}
+		}
+	case step.keyed:
+		if m, ok := v.(map[string]any); ok {
+			for _, k := range sortedKeys(m) {
+				members = append(members, m[k])
+			}
+		}
+	default:
+		if v != nil {
+			members = []any{v}
+		}
+	}
+	if len(path) == 1 {
+		return members
+	}
+	var out []any
+	for _, m := range members {
+		obj, ok := m.(map[string]any)
+		if !ok {
+			continue
+		}
+		next, held := obj[path[1].key]
+		if !held {
+			continue
+		}
+		out = append(out, leavesAtPath(next, path[1:])...)
+	}
+	return out
+}
+
+// boundOutsidePath counts the live rows holding a number at the path that a
+// bound refuses: `op` is "<" against a raised `min`, ">" against a lowered
+// `max`. The comparison is the write path's, per datatype. An int or float is
+// compared as float8, which is how checkRange reads both; a decimal is compared
+// exactly as numeric against the bound's own exact value, which is how
+// coerceDecimal reads it (big.Rat.SetFloat64). A stored value of another JSON
+// type is not counted: the write path refuses it before any bound is read.
+func boundOutsidePath(ident string, path []fieldStep, dt vocabulary.Datatype, op string, bound float64) (string, []any) {
+	return countAtPath(ident, path, func(expr string, a *sqlArgs) string {
+		return boundPredicate(expr, dt, op, bound, a)
+	})
+}
+
+// linkBoundOutside is boundOutsidePath over one link property's flat value in
+// the refs index.
+func linkBoundOutside(ident, pname, lname string, dt vocabulary.Datatype, op string, bound float64) (string, []any) {
+	a := &sqlArgs{args: []any{ident, pname, lname}}
+	return `SELECT count(*) ` + linkFrom + ` AND r.props ? $3 AND ` +
+		boundPredicate("(r.props->$3)", dt, op, bound, a), a.args
+}
+
+// boundPredicate renders the comparison of the value `expr` addresses against
+// the bound, in the datatype's own arithmetic.
+func boundPredicate(expr string, dt vocabulary.Datatype, op string, bound float64, a *sqlArgs) string {
+	if dt == vocabulary.DatatypeDecimal {
+		// The grammar guard keeps a string the write path would refuse anyway
+		// from failing the cast, and with it the whole count.
+		return fmt.Sprintf(
+			"jsonb_typeof(%s) = 'string' AND (%s #>> '{}') ~ '^[+-]?[0-9]+(\\.[0-9]+)?$' AND (%s #>> '{}')::numeric %s %s::numeric",
+			expr, expr, expr, op, a.add(exactDecimal(bound)))
+	}
+	return fmt.Sprintf("jsonb_typeof(%s) = 'number' AND (%s #>> '{}')::float8 %s %s::float8",
+		expr, expr, op, a.add(bound))
+}
+
+// exactDecimal renders a float64 bound as the decimal digits of its exact
+// binary value, which is the number coerceDecimal compares a decimal against.
+// A float64 is a dyadic rational, so the expansion is finite. The shortest
+// spelling ("0.1") would name a different number, and a count over it could
+// admit a value the next write refuses.
+func exactDecimal(f float64) string {
+	r := new(big.Rat).SetFloat64(f)
+	if r == nil {
+		return fmt.Sprint(f)
+	}
+	return r.FloatString(r.Denom().BitLen() - 1)
 }
 
 // renamedTo reports the candidate property (if any) that declares the given

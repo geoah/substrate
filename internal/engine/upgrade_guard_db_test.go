@@ -18,6 +18,8 @@ package engine_test
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -26,6 +28,7 @@ import (
 
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 const corePackage = "substrate.reamde.dev/core"
@@ -231,4 +234,182 @@ func TestBootUpgradeRefusesAnUnstorableDefault(t *testing.T) {
 		Kind: "substrate.reamde.dev/core/llmprovider", ID: "after",
 		Properties: map[string]any{"label": "still writable", "wire": "openai"},
 	})
+}
+
+// providerWrite opens the database under the real tree and writes one
+// llmprovider row, answering what the write said.
+func providerWrite(t *testing.T, dsn, id string, props map[string]any) error {
+	t.Helper()
+	ctx := context.Background()
+	svc, err := engine.Open(ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(shippedTree(t)))
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer func() { _ = svc.Close() }()
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("dataset: %v", err)
+	}
+	_, err = ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "substrate.reamde.dev/core/llmprovider", ID: id, Properties: props,
+	})
+	return err
+}
+
+// openMovedRefused is openMoved with the engine log's `refused` attribute
+// captured, so a test can read the guard line the refused upgrade writes: the
+// count is the operator's whole interface to the migration it asks for.
+func openMovedRefused(t *testing.T, dsn, tree string) string {
+	t.Helper()
+	bumpPackageVersion(t, tree, corePackage, "99")
+	var refused string
+	log := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{
+		ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
+			if a.Key == "refused" {
+				refused = a.Value.String()
+			}
+			return a
+		},
+	}))
+	svc, err := engine.Open(context.Background(), dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(tree), engine.WithLogger(log))
+	if err != nil {
+		t.Fatalf("a refused upgrade must not fail the open: %v", err)
+	}
+	defer func() { _ = svc.Close() }()
+	if _, err := svc.Dataset(context.Background(), "geoah"); err != nil {
+		t.Fatalf("a refused upgrade must not fail the open: %v", err)
+	}
+	return refused
+}
+
+// wantRefusedUpgrade asserts the boot refused the upgrade with the guard line.
+func wantRefusedUpgrade(t *testing.T, refused string, fragments ...string) {
+	t.Helper()
+	if refused == "" {
+		t.Fatal("the boot did not refuse the upgrade")
+	}
+	for _, f := range fragments {
+		if !strings.Contains(refused, f) {
+			t.Fatalf("the refusal must name %q, got: %s", f, refused)
+		}
+	}
+}
+
+// The value constraints at the boot door. Every shipped declaration below pins
+// version 99 so the authority bump re-projects it; the guard, and nothing else,
+// is what keeps the tightened shape out.
+func TestBootUpgradeRefusesATightenedPatternWithLiveRows(t *testing.T) {
+	t.Parallel()
+	dsn := seededRepository(t)
+	tree := shippedTree(t)
+	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
+		const from = "    label:\n      type: string\n"
+		if !strings.Contains(doc, from) {
+			t.Fatal("llmprovider no longer declares `label` as a plain string")
+		}
+		return pinVersion(t, strings.Replace(doc, from, from+"      pattern: \"^[a-z]+$\"\n", 1), "99")
+	})
+	// The seeded row's label carries a space, which the pattern refuses.
+	refused := openMovedRefused(t, dsn, tree)
+	wantRefusedUpgrade(t, refused, `property "label" changes its pattern to ^[a-z]+$`, "1 live records")
+	stillSpeaksTheOldShape(t, dsn)
+}
+
+func TestBootUpgradeRefusesALoweredMaxWithLiveRows(t *testing.T) {
+	t.Parallel()
+	dsn := seededRepository(t)
+	// A float field at depth: `defaults.temperature` is bounded 0..2.
+	numbers := map[string]any{"label": "numbers", "wire": "openai", "defaults": map[string]any{"temperature": 1.5}}
+	if err := providerWrite(t, dsn, "numbers", numbers); err != nil {
+		t.Fatalf("put the numbered row: %v", err)
+	}
+	tree := shippedTree(t)
+	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
+		const from = "          max: 2\n"
+		if strings.Count(doc, from) != 1 {
+			t.Fatal("llmprovider no longer bounds `defaults.temperature` at 2, once")
+		}
+		return pinVersion(t, strings.Replace(doc, from, "          max: 1\n", 1), "99")
+	})
+	refused := openMovedRefused(t, dsn, tree)
+	wantRefusedUpgrade(t, refused, `object "defaults" field "temperature" requires values <= 1`, "1 live records")
+	// The stored bound still admits the value the tightened one refused.
+	if err := providerWrite(t, dsn, "again", numbers); err != nil {
+		t.Fatalf("the old bound must still be writable, so the narrowing landed anyway: %v", err)
+	}
+}
+
+func TestBootUpgradeRefusesARaisedDecimalMinWithLiveRows(t *testing.T) {
+	t.Parallel()
+	dsn := seededRepository(t)
+	// A decimal field inside a repeated object: `pricing[].inputPer1M` is
+	// bounded at 0.
+	numbers := map[string]any{"label": "numbers", "wire": "openai", "pricing": []any{
+		map[string]any{"model": "m", "inputPer1M": "0.50"},
+	}}
+	if err := providerWrite(t, dsn, "numbers", numbers); err != nil {
+		t.Fatalf("put the numbered row: %v", err)
+	}
+	tree := shippedTree(t)
+	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
+		const from = "        inputPer1M:\n          type: decimal\n          min: 0\n"
+		if !strings.Contains(doc, from) {
+			t.Fatal("llmprovider no longer declares `pricing.inputPer1M` as a decimal bounded at 0")
+		}
+		return pinVersion(t, strings.Replace(doc, from, "        inputPer1M:\n          type: decimal\n          min: 1\n", 1), "99")
+	})
+	refused := openMovedRefused(t, dsn, tree)
+	wantRefusedUpgrade(t, refused, `object "pricing" field "inputPer1M" requires values >= 1`, "1 live records")
+	if err := providerWrite(t, dsn, "again", numbers); err != nil {
+		t.Fatalf("the old bound must still be writable, so the narrowing landed anyway: %v", err)
+	}
+}
+
+// The bundle door: an upgrade of an installed closure that tightens a pattern is
+// refused with the count, the preview names the same blocker, and a pattern
+// every stored value satisfies lands.
+func TestBundleUpgradeRefusesATightenedPatternWithLiveRows(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := installMailBundle(t)
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: mbItemType, ID: "kept", Properties: map[string]any{"name": "keep me"},
+	})
+	closure := func(pattern string) []map[string]any {
+		item := vocabulary.KindManifest(mbPackage,
+			map[string]any{"singular": "mailitem", "plural": "mailitems"},
+			map[string]any{"properties": map[string]any{
+				"name": map[string]any{"type": "string", "pattern": pattern},
+			}})
+		docs := mbDocs(nil, mbConfigTypeDoc(), mbAccountTypeDoc(), item, mbMessageTypeDoc(),
+			mbFnDoc("mark", mbMarkSource), mbFnDoc("echo", mbEchoSource))
+		docs[0] = vocabulary.PackageManifest(mbPackage, 2)
+		return docs
+	}
+	want := `type ` + mbItemType + `: property "name" changes its pattern to ^[a-z]+$`
+
+	planner, ok := ds.(substrate.BundleUpgradePlanner)
+	if !ok {
+		t.Fatal("dataset does not plan bundle upgrades")
+	}
+	plan, err := planner.PlanBundleUpgrade(ctx, closure("^[a-z]+$"))
+	if err != nil {
+		t.Fatalf("plan the upgrade: %v", err)
+	}
+	blocked := false
+	for _, b := range plan.Blockers {
+		if strings.Contains(b, want) && strings.Contains(b, "1 live records") {
+			blocked = true
+		}
+	}
+	if !blocked {
+		t.Fatalf("the preview must carry the guard line %q, got %+v", want, plan.Blockers)
+	}
+
+	_, err = applier(t, ds).ApplyVocabularyDocuments(ctx, owner, closure("^[a-z]+$"))
+	wantNarrowingGuard(t, err, want, "1 live records")
+
+	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, closure("^[a-z ]+$")); err != nil {
+		t.Fatalf("a pattern every stored value matches must land: %v", err)
+	}
 }
