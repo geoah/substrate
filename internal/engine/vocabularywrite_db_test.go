@@ -327,7 +327,7 @@ func TestSchemaDeleteRefusesWithInstances(t *testing.T) {
 		Kind: swPackage + "/widget", Properties: map[string]any{"name": "keep"},
 	})
 
-	_, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/kind", swPackage+"/widget")
+	_, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/kind", swPackage+"/widget", substrate.DeleteInput{})
 	if err == nil {
 		t.Fatal("type deletion with live instances must refuse")
 	}
@@ -340,10 +340,10 @@ func TestSchemaDeleteRefusesWithInstances(t *testing.T) {
 		t.Fatalf("refused delete uninstalled the type: %v", err)
 	}
 
-	if _, err := ds.Delete(ctx, owner, w.Kind, w.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, w.Kind, w.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete instance: %v", err)
 	}
-	gone, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/kind", swPackage+"/widget")
+	gone, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/kind", swPackage+"/widget", substrate.DeleteInput{})
 	if err != nil {
 		t.Fatalf("delete type: %v", err)
 	}
@@ -627,7 +627,7 @@ func TestGenericWritesRouteThroughAdmission(t *testing.T) {
 		},
 	})
 	wantErr(t, err, substrate.ErrForbidden, "builtin package write")
-	_, err = ds.Delete(ctx, owner, "substrate.reamde.dev/core/kind", "substrate.reamde.dev/core/token")
+	_, err = ds.Delete(ctx, owner, "substrate.reamde.dev/core/kind", "substrate.reamde.dev/core/token", substrate.DeleteInput{})
 	wantErr(t, err, substrate.ErrForbidden, "builtin package delete")
 }
 
@@ -933,7 +933,7 @@ def main(input, host):
 
 	// The function dies; a widget changes while the callable is gone. The
 	// trigger is skipped — no delivery, no cursor motion, no park.
-	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/function", swPackage+"/mirror"); err != nil {
+	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/function", swPackage+"/mirror", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete function: %v", err)
 	}
 	b := mustPut(t, ds, owner, substrate.PutInput{Kind: swPackage + "/widget", Properties: map[string]any{"name": "b"}})

@@ -2404,12 +2404,12 @@ func (t *txn) applyMergeRequest(req *erow) error {
 	return nil
 }
 
-func (ds *dataset) Delete(ctx context.Context, actor substrate.Actor, typ, id string) (*substrate.Record, error) {
-	return ds.deleteBounded(ctx, actor, typ, id, nil)
+func (ds *dataset) Delete(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.DeleteInput) (*substrate.Record, error) {
+	return ds.deleteBounded(ctx, actor, typ, id, in, nil)
 }
 
 // deleteBounded is Delete with an optional effect ceiling.
-func (ds *dataset) deleteBounded(ctx context.Context, actor substrate.Actor, typ, id string, ceiling *effectCeiling) (*substrate.Record, error) {
+func (ds *dataset) deleteBounded(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.DeleteInput, ceiling *effectCeiling) (*substrate.Record, error) {
 	ty, err := ds.resolveType(typ)
 	if err != nil {
 		return nil, err
@@ -2422,16 +2422,16 @@ func (ds *dataset) deleteBounded(ctx context.Context, actor substrate.Actor, typ
 		if err != nil {
 			return nil, err
 		}
-		return ds.deleteVocabularyRecord(ctx, actor, existing)
+		return ds.deleteVocabularyRecord(ctx, actor, existing, in.IfVersion)
 	}
-	return ds.deleteWith(ctx, actor, eref{Kind: ty.Identity, ID: id}, false, ceiling)
+	return ds.deleteWith(ctx, actor, eref{Kind: ty.Identity, ID: id}, false, in.IfVersion, ceiling)
 }
 
-func (ds *dataset) deleteWith(ctx context.Context, actor substrate.Actor, ref eref, internal bool, ceiling *effectCeiling) (*substrate.Record, error) {
+func (ds *dataset) deleteWith(ctx context.Context, actor substrate.Actor, ref eref, internal bool, ifVersion *int64, ceiling *effectCeiling) (*substrate.Record, error) {
 	var out *substrate.Record
 	err := ds.inTx(ctx, actor, internal, func(t *txn) error {
 		ceiling.stamp(t)
-		e, err := t.softDelete(ref)
+		e, err := t.softDeleteIf(ref, ifVersion)
 		out = e
 		return err
 	})
@@ -2443,8 +2443,15 @@ func (ds *dataset) deleteWith(ctx context.Context, actor substrate.Actor, ref er
 
 // softDelete tombstones one record inside the caller's transaction — the
 // delete path proper, shared by the Delete mutation and a function's delete
-// effect.
+// effect. It is softDeleteIf with no version precondition.
 func (t *txn) softDelete(ref eref) (*substrate.Record, error) {
+	return t.softDeleteIf(ref, nil)
+}
+
+// softDeleteIf is softDelete under an optional version precondition, checked
+// against the canonical row under its lock: a former id resolves first, so the
+// version compared is the record the tombstone lands on.
+func (t *txn) softDeleteIf(ref eref, ifVersion *int64) (*substrate.Record, error) {
 	// The shared registry-dependency lock before the record lock and the
 	// kind resolution below, as a put takes it: a delete resolves its kind
 	// inside the transaction, and it must not read a declaration a
@@ -2488,6 +2495,12 @@ func (t *txn) softDelete(ref eref) (*substrate.Record, error) {
 	if !t.internal && t.isBundleOwnerGated(ty) && t.tier != substrate.TierOwner {
 		return nil, fmt.Errorf("%w: only the owner may delete a %s — connections are owner-managed",
 			substrate.ErrForbidden, ty.Name)
+	}
+	// Before the tombstone: it bumps the version, so a check after it would
+	// compare against the write it was meant to guard. An already-deleted row
+	// fails a stale version too, exactly as a replayed put under IfVersion does.
+	if err := checkCAS(row, ifVersion); err != nil {
+		return nil, err
 	}
 	if row.DeletedAt == nil {
 		if _, err := t.tombstone(ref, ""); err != nil {

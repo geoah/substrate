@@ -108,7 +108,7 @@ func TestReviewGoogleConfigAccountCreateOwnerGated(t *testing.T) {
 	} else {
 		wantErr(t, err, substrate.ErrForbidden, "non-owner account create")
 	}
-	if _, err := ds.Delete(ctx, connector, account.Kind, account.ID); err == nil {
+	if _, err := ds.Delete(ctx, connector, account.Kind, account.ID, substrate.DeleteInput{}); err == nil {
 		t.Fatal("a non-owner deleted an account record")
 	} else {
 		wantErr(t, err, substrate.ErrForbidden, "non-owner account delete")

@@ -214,7 +214,7 @@ func TestPagedParkResumesFromCursor(t *testing.T) {
 	// Erase the already-committed pages: a resume must leave them erased, a
 	// restart-from-zero would recreate them.
 	for _, id := range []string{"p-0", "p-1"} {
-		if _, err := ds.Delete(ctx, substrate.ActorAPI, "samples.substrate.reamde.dev/tasks/task", id); err != nil {
+		if _, err := ds.Delete(ctx, substrate.ActorAPI, "samples.substrate.reamde.dev/tasks/task", id, substrate.DeleteInput{}); err != nil {
 			t.Fatalf("delete %s: %v", id, err)
 		}
 	}

@@ -285,7 +285,7 @@ func TestTriggerEffectResolvesFormerID(t *testing.T) {
 
 	// The owner merges the function's task away into their own.
 	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"name": "the real task"}})
-	if _, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, "t-"+w.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: "t-" + w.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 

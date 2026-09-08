@@ -43,7 +43,7 @@ func TestMergeLeavesTheLosersLinkDataAlone(t *testing.T) {
 		},
 	})
 
-	rec, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID)
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestMergeLeavesTheLosersLinkDataAlone(t *testing.T) {
 	if got := memberRole(t, ds, winner.Kind, winner.ID, team.ID); got != "guest" {
 		t.Fatalf("the merge rewrote the winner's link data: role=%q, want guest", got)
 	}
-	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	le := memberLink(t, ds, loser.Kind, loser.ID, team.ID)
@@ -99,11 +99,11 @@ func TestMergeKeepsAPointerInsideTheMergedPair(t *testing.T) {
 	winner := mkMsg("root", nil)
 	loser := mkMsg("dup", map[string]any{"replyTo": winner.ID})
 
-	rec, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID)
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID})
 	if err != nil {
 		t.Fatalf("merge of two messages: %v", err)
 	}
-	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	got := mustGet(t, ds, loser.Kind, loser.ID)

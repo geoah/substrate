@@ -185,11 +185,11 @@ func TestRecordFilterMatchesMergeAndSplitForBothRecords(t *testing.T) {
 	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Nina Ray"}})
 	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "N. Ray"}})
 	other := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Someone Else"}})
-	rec, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID)
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
-	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 

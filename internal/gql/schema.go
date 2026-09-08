@@ -758,23 +758,29 @@ func (b *schemaBuilder) mutationType() *graphql.Object {
 			"delete": &graphql.Field{
 				Type: b.recordIF,
 				Args: graphql.FieldConfigArgument{
-					"kind": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)},
-					"id":   &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.ID)},
+					"kind":      &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)},
+					"id":        &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.ID)},
+					"ifVersion": &graphql.ArgumentConfig{Type: longScalar, Description: "Delete only if the record's stored version equals this; a former id compares the canonical record."},
 				},
 				Resolve: resolveDelete,
 			},
 			"merge": &graphql.Field{
 				Type: b.recordIF,
 				Args: graphql.FieldConfigArgument{
-					"kind":   &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)},
-					"winner": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.ID)},
-					"loser":  &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.ID)},
+					"kind":          &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)},
+					"winner":        &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.ID)},
+					"loser":         &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.ID)},
+					"winnerVersion": &graphql.ArgumentConfig{Type: longScalar, Description: "Merge only if the winner's stored version equals this."},
+					"loserVersion":  &graphql.ArgumentConfig{Type: longScalar, Description: "Merge only if the loser's stored version equals this."},
 				},
 				Resolve: resolveMerge,
 			},
 			"split": &graphql.Field{
-				Type:    b.recordIF,
-				Args:    graphql.FieldConfigArgument{"mergeId": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.ID)}},
+				Type: b.recordIF,
+				Args: graphql.FieldConfigArgument{
+					"mergeId":   &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.ID)},
+					"ifVersion": &graphql.ArgumentConfig{Type: longScalar, Description: "Split only if the recordmerge record's stored version equals this."},
+				},
 				Resolve: resolveSplit,
 			},
 		},
@@ -1082,8 +1088,10 @@ func resolveDelete(p graphql.ResolveParams) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	var in substrate.DeleteInput
+	in.IfVersion = optionalInt64Arg(p.Args, "ifVersion")
 	typ := p.Args["kind"].(string)
-	return ds.Delete(p.Context, actor, typ, p.Args["id"].(string))
+	return ds.Delete(p.Context, actor, typ, p.Args["id"].(string), in)
 }
 
 func resolveMerge(p graphql.ResolveParams) (any, error) {
@@ -1091,8 +1099,13 @@ func resolveMerge(p graphql.ResolveParams) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	typ := p.Args["kind"].(string)
-	return ds.Merge(p.Context, actor, typ, p.Args["winner"].(string), p.Args["loser"].(string))
+	return ds.Merge(p.Context, actor, substrate.MergeInput{
+		Kind:          p.Args["kind"].(string),
+		Winner:        p.Args["winner"].(string),
+		Loser:         p.Args["loser"].(string),
+		WinnerVersion: optionalInt64Arg(p.Args, "winnerVersion"),
+		LoserVersion:  optionalInt64Arg(p.Args, "loserVersion"),
+	})
 }
 
 func resolveSplit(p graphql.ResolveParams) (any, error) {
@@ -1100,5 +1113,17 @@ func resolveSplit(p graphql.ResolveParams) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ds.Split(p.Context, actor, p.Args["mergeId"].(string))
+	return ds.Split(p.Context, actor, substrate.SplitInput{
+		Merge:     p.Args["mergeId"].(string),
+		IfVersion: optionalInt64Arg(p.Args, "ifVersion"),
+	})
+}
+
+// optionalInt64Arg is argInt64 as the pointer an optional version precondition
+// is: nil when the argument was not sent, so an absent one checks nothing.
+func optionalInt64Arg(args map[string]any, key string) *int64 {
+	if n, ok := argInt64(args, key); ok {
+		return &n
+	}
+	return nil
 }

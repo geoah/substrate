@@ -21,29 +21,29 @@ func TestMergeRejectsTombstonedAndAlreadyMerged(t *testing.T) {
 	}
 	a, b, c, d := mk("A"), mk("B"), mk("C"), mk("D")
 
-	if _, err := ds.Delete(ctx, owner, b.Kind, b.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, b.Kind, b.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	_, err := ds.Merge(ctx, owner, a.Kind, a.ID, b.ID)
+	_, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: a.Kind, Winner: a.ID, Loser: b.ID})
 	wantErr(t, err, substrate.ErrConflict, "merging a tombstoned loser")
-	_, err = ds.Merge(ctx, owner, b.Kind, b.ID, a.ID)
+	_, err = ds.Merge(ctx, owner, substrate.MergeInput{Kind: b.Kind, Winner: b.ID, Loser: a.ID})
 	wantErr(t, err, substrate.ErrConflict, "merging into a tombstoned winner")
 
-	rec, err := ds.Merge(ctx, owner, a.Kind, a.ID, c.ID)
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: a.Kind, Winner: a.ID, Loser: c.ID})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 	// Re-merging the same loser into the same winner is a VERIFIED no-op
 	// returning the existing record (replay idempotence) — while merging the
 	// loser into a THIRD record is still a conflict.
-	again, err := ds.Merge(ctx, owner, a.Kind, a.ID, c.ID)
+	again, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: a.Kind, Winner: a.ID, Loser: c.ID})
 	if err != nil {
 		t.Fatalf("re-merging the same loser: %v", err)
 	}
 	if again.ID != rec.ID {
 		t.Fatalf("re-merge minted a new record: %s, want %s", again.ID, rec.ID)
 	}
-	_, err = ds.Merge(ctx, owner, d.Kind, d.ID, c.ID)
+	_, err = ds.Merge(ctx, owner, substrate.MergeInput{Kind: d.Kind, Winner: d.ID, Loser: c.ID})
 	wantErr(t, err, substrate.ErrConflict, "merging a loser into a third record")
 
 	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/recordmerge"}}})
@@ -54,7 +54,7 @@ func TestMergeRejectsTombstonedAndAlreadyMerged(t *testing.T) {
 		t.Fatalf("expected one merge record, got %d", len(page.Records))
 	}
 	// The one merge stays reversible, identifiers and all.
-	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	if back := mustGet(t, ds, c.Kind, c.ID); back.DeletedAt != nil {
@@ -77,7 +77,7 @@ func TestSplitKeepsPostMergeOwnerWrites(t *testing.T) {
 		Labels:      map[string]any{"owner/shelf": "audio", "owner/format": "mp3"},
 		Annotations: map[string]any{"owner/note": "loser newer", "owner/extra": 7},
 	})
-	rec, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID)
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestSplitKeepsPostMergeOwnerWrites(t *testing.T) {
 		},
 	})
 
-	split, err := ds.Split(ctx, owner, rec.ID)
+	split, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID})
 	if err != nil {
 		t.Fatalf("split: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestMergeRejectsSystemTypes(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	_, err := ds.Merge(ctx, owner, "substrate.reamde.dev/core/kind", "samples.substrate.reamde.dev/people/person", "samples.substrate.reamde.dev/people/organization")
+	_, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: "substrate.reamde.dev/core/kind", Winner: "samples.substrate.reamde.dev/people/person", Loser: "samples.substrate.reamde.dev/people/organization"})
 	wantErr(t, err, substrate.ErrForbidden, "merging two type projections")
 	if ty := mustGet(t, ds, "substrate.reamde.dev/core/kind", "samples.substrate.reamde.dev/people/organization"); ty.DeletedAt != nil {
 		t.Fatal("a type projection was tombstoned by merge")
@@ -146,7 +146,7 @@ func TestMergeRejectsSystemTypes(t *testing.T) {
 	// exist among people — the refusal is a not-found, and nothing merges.
 	x := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "X"}})
 	org := mustPut(t, ds, owner, substrate.PutInput{Kind: "organization", Properties: map[string]any{"name": "O"}})
-	_, err = ds.Merge(ctx, owner, x.Kind, x.ID, org.ID)
+	_, err = ds.Merge(ctx, owner, substrate.MergeInput{Kind: x.Kind, Winner: x.ID, Loser: org.ID})
 	wantErr(t, err, substrate.ErrNotFound, "merging across types")
 	if o := mustGet(t, ds, org.Kind, org.ID); o.DeletedAt != nil {
 		t.Fatal("the organization was touched by a refused cross-type merge")
@@ -154,7 +154,7 @@ func TestMergeRejectsSystemTypes(t *testing.T) {
 
 	// Control: two records of one type still merge manually.
 	y := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Y"}})
-	if _, err := ds.Merge(ctx, owner, x.Kind, x.ID, y.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: x.Kind, Winner: x.ID, Loser: y.ID}); err != nil {
 		t.Fatalf("manual merge of one type: %v", err)
 	}
 }
@@ -186,14 +186,14 @@ func TestMergeSplitLeavesLinkDataWhereItIs(t *testing.T) {
 			}},
 		},
 	})
-	rec, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID)
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 	if p := linkDataOf(t, ds, winner.Kind, winner.ID, "memberOf", team.ID); p["role"] != "guest" {
 		t.Fatalf("merge rewrote the winner's link data: %v", p)
 	}
-	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	back := linkDataOf(t, ds, loser.Kind, loser.ID, "memberOf", team.ID)
@@ -256,11 +256,11 @@ func TestMergeSplitKeepsThePairInternalReference(t *testing.T) {
 			},
 		},
 	})
-	rec, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID)
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
-	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	// `peer` is single-valued, so its whole value is the object: the pointer

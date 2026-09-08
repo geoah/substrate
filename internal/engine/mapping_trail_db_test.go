@@ -31,7 +31,7 @@ func TestSyncAfterASubjectMergeMintsNothing(t *testing.T) {
 	ada := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "person", Properties: map[string]any{"name": "Ada Lovelace"},
 	})
-	if _, err := ds.Merge(ctx, owner, typePerson, ada.ID, shell); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: typePerson, Winner: ada.ID, Loser: shell}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 

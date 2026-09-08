@@ -174,7 +174,7 @@ func TestDefaultTriggerCreateOnlyHonorsOwnerState(t *testing.T) {
 	}
 
 	// The owner deletes it; re-registration must not resurrect the tombstone.
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, typeTrigger, triggerID); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, typeTrigger, triggerID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, w2Manifest(true)); err != nil {

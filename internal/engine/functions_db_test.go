@@ -756,7 +756,7 @@ def main(input, host):
 	mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, ID: "t-" + w.ID, Properties: map[string]any{"name": "w"}})
 	process(t, ops)
 
-	if _, err := ds.Delete(ctx, fnActor, w.Kind, w.ID); err != nil {
+	if _, err := ds.Delete(ctx, fnActor, w.Kind, w.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete widget: %v", err)
 	}
 	process(t, ops)

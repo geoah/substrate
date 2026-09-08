@@ -2118,7 +2118,11 @@ func (ds *dataset) patchSchemaRecord(ctx context.Context, actor substrate.Actor,
 // deleteVocabularyRecord removes one declaration through admission: the closure
 // must still hold without it (an authority header outlives its members; a type
 // with live instances refuses).
-func (ds *dataset) deleteVocabularyRecord(ctx context.Context, actor substrate.Actor, existing *substrate.Record) (*substrate.Record, error) {
+//
+// ifVersion is the delete's precondition, checked against the declaration's
+// row inside the batch (checkSchemaCAS) so a conditioned delete of a
+// declaration refuses a stale version exactly as a data record's does.
+func (ds *dataset) deleteVocabularyRecord(ctx context.Context, actor substrate.Actor, existing *substrate.Record, ifVersion *int64) (*substrate.Record, error) {
 	doc, ok, err := rowDocument(existing.ID, existing.Kind, existing.Properties)
 	if err != nil {
 		return nil, err
@@ -2133,7 +2137,11 @@ func (ds *dataset) deleteVocabularyRecord(ctx context.Context, actor substrate.A
 			},
 		}
 	}
-	if _, err := ds.applyVocabularyBatch(ctx, actor, vocabularyBatch{deletes: []vocabulary.Document{doc}}); err != nil {
+	b := vocabularyBatch{deletes: []vocabulary.Document{doc}}
+	if ifVersion != nil {
+		b.meta = map[string]vocabularyDocMeta{docKey(doc): {ifVersion: ifVersion}}
+	}
+	if _, err := ds.applyVocabularyBatch(ctx, actor, b); err != nil {
 		return nil, err
 	}
 	return ds.Get(ctx, existing.Kind, existing.ID)

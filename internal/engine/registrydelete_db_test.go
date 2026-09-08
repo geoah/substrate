@@ -115,7 +115,7 @@ func TestADeleteParksAtTheRegistryDepLockBeforeItsRecordLock(t *testing.T) {
 	}
 	_, err = ds.applyVocabularyBatch(ctx, substrate.ActorAPI, vocabularyBatch{docs: docs, extra: func(*txn) error {
 		go func() {
-			_, err := ds.Delete(ctx, substrate.ActorAPI, kind, "doomed")
+			_, err := ds.Delete(ctx, substrate.ActorAPI, kind, "doomed", substrate.DeleteInput{})
 			deleted <- err
 		}()
 		if err := waitParkedOn(t, ds, registryDepKey(ds), changelogLockKey); err != nil {
@@ -177,7 +177,7 @@ func TestASplitParksAtTheRegistryDepLockBeforeItsRowLock(t *testing.T) {
 			t.Fatalf("put %s: %v", id, err)
 		}
 	}
-	merged, err := ds.Merge(ctx, substrate.ActorAPI, kind, "keep", "gone")
+	merged, err := ds.Merge(ctx, substrate.ActorAPI, substrate.MergeInput{Kind: kind, Winner: "keep", Loser: "gone"})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -192,7 +192,7 @@ func TestASplitParksAtTheRegistryDepLockBeforeItsRowLock(t *testing.T) {
 	}
 	_, err = ds.applyVocabularyBatch(ctx, substrate.ActorAPI, vocabularyBatch{docs: docs, extra: func(*txn) error {
 		go func() {
-			_, err := ds.Split(ctx, substrate.ActorAPI, merged.ID)
+			_, err := ds.Split(ctx, substrate.ActorAPI, substrate.SplitInput{Merge: merged.ID})
 			split <- err
 		}()
 		if err := waitParkedOn(t, ds, registryDepKey(ds), changelogLockKey); err != nil {

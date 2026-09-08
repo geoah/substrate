@@ -358,7 +358,7 @@ func TestAProvidersRecordsAndLifecycleStayTheUsers(t *testing.T) {
 	}
 
 	// A record of a provider kind deletes like any other.
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, whoopID+"/account", "mine"); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, whoopID+"/account", "mine", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete a record of a published kind: %v", err)
 	}
 

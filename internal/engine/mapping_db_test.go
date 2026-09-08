@@ -482,7 +482,7 @@ func TestSamScenario(t *testing.T) {
 
 	// The owner decides they are one person. Managers migrate where the
 	// winner lacks the property; recompute respects the owner's holds.
-	rec, err := ds.Merge(ctx, owner, sam.Kind, sam.ID, second)
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: sam.Kind, Winner: sam.ID, Loser: second})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -521,7 +521,7 @@ func TestSamScenario(t *testing.T) {
 
 	// Split reverses it: the slack record and its managers go back, and both
 	// sides recompute from the sources they now have.
-	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	if got := personOf(t, ds, s); got != second {
@@ -789,7 +789,7 @@ func TestUnlinkedSourceGetsAShell(t *testing.T) {
 	if _, err := raw.ExecContext(ctx, `DELETE FROM refs WHERE src = $1 AND property = 'person'`, g.ID); err != nil {
 		t.Fatalf("strip the subject from the index: %v", err)
 	}
-	if _, err := ds.Delete(ctx, owner, typePerson, pid); err != nil {
+	if _, err := ds.Delete(ctx, owner, typePerson, pid, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the orphaned person: %v", err)
 	}
 
@@ -833,7 +833,7 @@ func TestDeletedTargetDoesNotStripItsSources(t *testing.T) {
 
 	src := syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alex")})
 	gone := personOf(t, ds, src)
-	if _, err := ds.Delete(ctx, owner, typePerson, gone); err != nil {
+	if _, err := ds.Delete(ctx, owner, typePerson, gone, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 
@@ -866,7 +866,7 @@ func TestDeletingASourceRecomputes(t *testing.T) {
 	syncSource(t, ds, slack, typeSlackUser, "s-U1", map[string]any{"realName": "alex"}, pid)
 	mustPatch(t, ds, owner, typePerson, pid, substrate.PatchInput{Properties: map[string]any{"displayName": "Al"}})
 
-	if _, err := ds.Delete(ctx, owner, g.Kind, g.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, g.Kind, g.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete source: %v", err)
 	}
 	person := mustGet(t, ds, typePerson, pid)
@@ -879,7 +879,7 @@ func TestDeletingASourceRecomputes(t *testing.T) {
 
 	// The last source goes too: the machine-held properties go with it, and
 	// the owner's own write stays.
-	if _, err := ds.Delete(ctx, owner, typeSlackUser, mustGet(t, ds, typeSlackUser, "s-U1").ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, typeSlackUser, mustGet(t, ds, typeSlackUser, "s-U1").ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete source: %v", err)
 	}
 	person = mustGet(t, ds, typePerson, pid)
@@ -906,7 +906,7 @@ func TestResurrectedSourceRecomputes(t *testing.T) {
 	pid := personOf(t, ds, src)
 
 	// The contact goes to Trash: its contributions go with it.
-	if _, err := ds.Delete(ctx, people, src.Kind, src.ID); err != nil {
+	if _, err := ds.Delete(ctx, people, src.Kind, src.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	if got := mustGet(t, ds, typePerson, pid); got.DeletedAt != nil || got.Properties["name"] != nil {
@@ -940,7 +940,7 @@ func TestNestedMergeSplitKeepsOneSubject(t *testing.T) {
 	b := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "B"}})
 	c := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "C"}})
 
-	m1, err := ds.Merge(ctx, owner, b.Kind, b.ID, a)
+	m1, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: b.Kind, Winner: b.ID, Loser: a})
 	if err != nil {
 		t.Fatalf("merge a into b: %v", err)
 	}
@@ -952,7 +952,7 @@ func TestNestedMergeSplitKeepsOneSubject(t *testing.T) {
 	if got := mustGet(t, ds, typePerson, a).CanonicalID; got != b.ID {
 		t.Fatalf("the source's subject resolves to %q, want the winner %s", got, b.ID)
 	}
-	m2, err := ds.Merge(ctx, owner, c.Kind, c.ID, b.ID)
+	m2, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: c.Kind, Winner: c.ID, Loser: b.ID})
 	if err != nil {
 		t.Fatalf("merge b into c: %v", err)
 	}
@@ -961,12 +961,12 @@ func TestNestedMergeSplitKeepsOneSubject(t *testing.T) {
 	}
 
 	// Split the OUTER merge first — the order nothing forbids.
-	if _, err := ds.Split(ctx, owner, m1.ID); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: m1.ID}); err != nil {
 		t.Fatalf("split the first merge: %v", err)
 	}
 	// personOf fails outright on a second value.
 	first := personOf(t, ds, src)
-	if _, err := ds.Split(ctx, owner, m2.ID); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: m2.ID}); err != nil {
 		t.Fatalf("split the nested merge: %v", err)
 	}
 	second := personOf(t, ds, src)

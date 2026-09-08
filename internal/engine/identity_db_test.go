@@ -25,7 +25,7 @@ func TestManualMergeMovesLabelsAndAnnotations(t *testing.T) {
 		Labels:      map[string]any{"owner/shelf": "audio"},
 		Annotations: map[string]any{"owner/note": "second", "owner/extra": 7},
 	})
-	rec, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID)
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestManualMergeMovesLabelsAndAnnotations(t *testing.T) {
 		t.Fatal("merge must not merge properties")
 	}
 
-	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	w := mustGet(t, ds, winner.Kind, winner.ID)
@@ -75,7 +75,7 @@ func TestMergeLoserSurvivesGC(t *testing.T) {
 	_, ds := newDataset(t)
 	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "organization", Properties: map[string]any{"name": "A"}})
 	b := mustPut(t, ds, owner, substrate.PutInput{Kind: "organization", Properties: map[string]any{"name": "B"}})
-	if _, err := ds.Merge(ctx, owner, a.Kind, a.ID, b.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: a.Kind, Winner: a.ID, Loser: b.ID}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ds.RunGC(ctx); err != nil {

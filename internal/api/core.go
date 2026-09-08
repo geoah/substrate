@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/geoah/substrate/internal/strictjson"
+	"github.com/geoah/substrate/internal/substrate"
 )
 
 // Nothing in core has endpoint-shaped collection behavior any more: the
@@ -21,16 +22,12 @@ import (
 // and nothing else. The repository-management endpoints went with
 // the control plane in B1.
 
-type mergeInput struct {
-	// Kind is the merged records' kind reference: identity is the (kind, id)
-	// pair, so a merge names the kind beside the two ids.
-	Kind   string `json:"kind"`
-	Winner string `json:"winner"`
-	Loser  string `json:"loser"`
-}
-
+// The merge and split bodies ARE the engine's inputs (substrate.MergeInput,
+// substrate.SplitInput): the kind beside the two ids, the merge record's id, and
+// the optional version preconditions, decoded strictly so a misspelled
+// `winnerVersion` is refused by name rather than dropped.
 func (h *handler) postMerges(w http.ResponseWriter, r *http.Request) {
-	var req mergeInput
+	var req substrate.MergeInput
 	if err := decodeBody(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
@@ -41,7 +38,7 @@ func (h *handler) postMerges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	ent, err := DatasetFrom(ctx).Merge(ctx, ActorFrom(ctx), req.Kind, req.Winner, req.Loser)
+	ent, err := DatasetFrom(ctx).Merge(ctx, ActorFrom(ctx), req)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
@@ -49,18 +46,14 @@ func (h *handler) postMerges(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, ent)
 }
 
-type splitRequest struct {
-	Merge string `json:"merge"`
-}
-
 func (h *handler) postSplits(w http.ResponseWriter, r *http.Request) {
-	var req splitRequest
+	var req substrate.SplitInput
 	if err := decodeBody(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
 	}
 	ctx := r.Context()
-	ent, err := DatasetFrom(ctx).Split(ctx, ActorFrom(ctx), req.Merge)
+	ent, err := DatasetFrom(ctx).Split(ctx, ActorFrom(ctx), req)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return

@@ -296,7 +296,7 @@ func TestOAuthAccountDeletionRevokes(t *testing.T) {
 	if _, err := svc.(substrate.OAuthCompleter).CompleteOAuth(ctx, stateFrom(t, consent), "code-123"); err != nil {
 		t.Fatalf("callback: %v", err)
 	}
-	if _, err := ds.Delete(ctx, owner, account.Kind, account.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, account.Kind, account.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete account: %v", err)
 	}
 	// The tombstone waits on the facility's hold; the pass revokes, drops

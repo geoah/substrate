@@ -242,7 +242,7 @@ func TestFinalizersAndCascadeGC(t *testing.T) {
 	// The connector holds a finalizer while it manages the conversation.
 	mustPatch(t, ds, beeper, conv.Kind, conv.ID, substrate.PatchInput{AddFinalizers: []string{"beeper.connectors.substrate.reamde.dev/beeper/teardown"}})
 
-	del, err := ds.Delete(ctx, owner, acc.Kind, acc.ID)
+	del, err := ds.Delete(ctx, owner, acc.Kind, acc.ID, substrate.DeleteInput{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +250,7 @@ func TestFinalizersAndCascadeGC(t *testing.T) {
 		t.Fatal("delete should stamp deleted_at")
 	}
 	before := maxSeq(t, ds)
-	again, err := ds.Delete(ctx, owner, acc.Kind, acc.ID)
+	again, err := ds.Delete(ctx, owner, acc.Kind, acc.ID, substrate.DeleteInput{})
 	if err != nil {
 		t.Fatal(err)
 	}

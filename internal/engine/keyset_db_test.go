@@ -55,7 +55,7 @@ func TestListKeysetWalkSeesEachRowOnce(t *testing.T) {
 				if del >= 3 {
 					break
 				}
-				if _, err := ds.Delete(ctx, owner, "person", id); err != nil {
+				if _, err := ds.Delete(ctx, owner, "person", id, substrate.DeleteInput{}); err != nil {
 					t.Fatalf("delete: %v", err)
 				}
 				delete(stable, id) // no longer exists for the whole walk

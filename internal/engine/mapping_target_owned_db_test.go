@@ -419,7 +419,7 @@ func TestDroppingAMappedSourceKindIsRefusedAtEveryDoor(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("install the second provider: %v", err)
 	}
-	_, err = ds.Delete(ctx, owner, "substrate.reamde.dev/core/kind", plainRowType)
+	_, err = ds.Delete(ctx, owner, "substrate.reamde.dev/core/kind", plainRowType, substrate.DeleteInput{})
 	wantErr(t, err, substrate.ErrGuard, "deleting a mapped source kind")
 	if !strings.Contains(err.Error(), tmHomePackage+"/rowtask") ||
 		!strings.Contains(err.Error(), plainRowType) {
@@ -460,7 +460,7 @@ func TestUninstallRefusesWhileAMappingNamesTheProvidersKind(t *testing.T) {
 	}
 	mustGet(t, ds, tmMappingKind, tmMapping)
 
-	if _, err := ds.Delete(ctx, owner, tmMappingKind, tmMapping); err != nil {
+	if _, err := ds.Delete(ctx, owner, tmMappingKind, tmMapping, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the mapping: %v", err)
 	}
 	if err := ops.UninstallBundle(ctx, tmPackage); err != nil {

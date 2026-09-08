@@ -158,7 +158,7 @@ func TestProviderRowsAreOutsideTheMergeSurface(t *testing.T) {
 		t.Fatalf("put the completions row: %v", err)
 	}
 
-	_, err := ds.Merge(ctx, owner, typeProvider, "completions", "vectors")
+	_, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: typeProvider, Winner: "completions", Loser: "vectors"})
 	if err == nil || !errors.Is(err, substrate.ErrForbidden) {
 		t.Fatalf("an llmprovider row was merged: %v", err)
 	}
