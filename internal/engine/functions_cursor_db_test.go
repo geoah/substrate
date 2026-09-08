@@ -56,7 +56,9 @@ func TestTriggerCursorSwapLosesToReplay(t *testing.T) {
 	}
 	// …and the stale delivery loses whole: errCursorMoved, the effect rolled
 	// back, the reset cursor intact.
-	if _, err := ds.deliver(ctx, tr, ch, cursor, 0, pagedProgress{}); !errors.Is(err, errCursorMoved) {
+	settle := ds.dispatchSettlement(tr, ch, cursor, nowUTC())
+	settle.attempt = 1
+	if _, err := ds.deliver(ctx, tr, ch, cursor, 0, pagedProgress{}, settle); !errors.Is(err, errCursorMoved) {
 		t.Fatalf("stale delivery returned %v, want errCursorMoved", err)
 	}
 	if got := taskTitle(t, ds, "t-"+w.ID); got != "one" {
@@ -66,7 +68,7 @@ func TestTriggerCursorSwapLosesToReplay(t *testing.T) {
 		t.Fatalf("stale delivery clobbered the replay: cursor %d", got)
 	}
 	// The stale pass's batch-tail advance loses the same way.
-	if err := ds.advanceCursor(ctx, triggerID, cursor, ch.Seq); !errors.Is(err, errCursorMoved) {
+	if err := ds.advanceCursor(ctx, tr, cursor, ch.Seq); !errors.Is(err, errCursorMoved) {
 		t.Fatalf("stale tail advance returned %v, want errCursorMoved", err)
 	}
 	if got := cursorSeq(t, ds, triggerID); got != 0 {

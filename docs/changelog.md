@@ -41,6 +41,12 @@ transition moved one, `winner` and `loser` on a merge or a split, and
 `renamed` (old name to new) on the `patch` a property rename writes per record
 ([vocabulary](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)).
 `affected` is the change event ([below](#the-change-event)).
+One op is stored and never served: `delivery`, the engine's own entry
+carrying a trigger's cursor advance, schedule fire, parked failure or
+paged-drain page, appended in the transaction that commits the effects it
+acknowledges
+([decision 0064](decisions/0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md)).
+Every read here skips those rows, and a resume cursor still moves past them.
 
 Beneath the wire row, the stored entry also carries the write's **values** as
 the fold effects it applied, under the payload key `fold`, which is what makes
@@ -256,7 +262,7 @@ mint a token, fails as an internal error.
 The refusal is the point. Without it an old binary opens a store it cannot
 replay, serves it for weeks, and fails only when somebody runs `repository
 rebuild`, the day the changelog had to be replayable. The changelog dialect is
-5 today: 1 was the changelog while `link` and `unlink` were ops, 2 the
+6 today: 1 was the changelog while `link` and `unlink` were ops, 2 the
 changelog after references replaced them, 3 the entry that names its
 transaction (`txn`, covered by the checksum), which a dialect 2 binary would
 silently re-stamp away at boot
@@ -269,7 +275,10 @@ nothing refusing, and 5 the `manager` effect that carries `updatedAt`, the
 stamp of a manager row a property rename moved
 ([decision 0063](decisions/0063-a-property-rename-is-ordinary-record-writes.md)),
 which a dialect 4 binary would drop the same way, stamping the replay's own
-time. A repository's stored dialect is not on the wire, and
+time, and 6 the delivery ledger: the `delivery` op and the seven fold
+effects a trigger's bookkeeping replays through
+([decision 0064](decisions/0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md)).
+A repository's stored dialect is not on the wire, and
 neither are the entries written in it: what
 [API discovery](api.md#discovery) reports is the binary's maximum. The dialect
 is in the repository directory, as `changelogDialect` in `repository.json`,
@@ -392,7 +401,9 @@ horizon, and the horizon is where policy lives.
 
 - **Triggers** ride it: every record-sourced trigger owns a cursor, and each
   row is checked against every enabled trigger. The feed reports each trigger's
-  stance on each row ([functions](functions.md)).
+  stance on each row ([functions](functions.md)), and the trigger records
+  where it stands as `delivery` entries in the same changelog, which the feed
+  never shows.
 - **Watchers**: the stream above, and `substratectl watch` is that stream in a
   terminal ([substratectl](substratectl.md)). Integrations reconcile from it.
 - **The console's events page** is the same feed, paged backward through

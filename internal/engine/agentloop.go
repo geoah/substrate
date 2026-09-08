@@ -79,6 +79,13 @@ type agentInvocation struct {
 	// depth is the agentDepth: 0 at the root, +1 per sub-agent hop. A
 	// separate counter from causalDepth on purpose.
 	depth int
+	// complete, when set, runs inside the transaction that settles the
+	// thread on the loop's returning path (settle): a trigger delivery's
+	// completion (functions.go settlement.complete), so the thread's terminal
+	// status, the claim's retirement, the delivery entry and the run record
+	// are one commit. The loop's tool writes before it are their own
+	// transactions and stay at-least-once (decision 0064).
+	complete func(t *txn, res *substrate.AgentResult) error
 	// causedBy stamps every row the loop writes; 0 on direct invocations.
 	causedBy int64
 	// causalDepth rides into function-tool sub-calls so the changelog chain
@@ -401,7 +408,7 @@ loop:
 		l.turns++
 		res, err := l.complete(lctx, messages)
 		if err != nil {
-			serr := l.settle(ctx, threadError, err.Error(), reply)
+			serr := l.settle(ctx, threadError, err.Error(), reply, nil)
 			return nil, errors.Join(fmt.Errorf("agent %s: llm: %w", l.ag.Identity(), err), serr)
 		}
 		content, calls, usage := res.Content, res.ToolCalls, res.Usage
@@ -484,14 +491,6 @@ loop:
 	if status == threadOverBudget && reason == "" {
 		reason = fmt.Sprintf("max turns reached (%d)", l.ag.Budgets.MaxTurns)
 	}
-	if err := l.settle(ctx, status, reason, reply); err != nil {
-		return nil, err
-	}
-	// The settle-time re-check: a resolution that landed MID-turn lost the
-	// lease to this very run, so its resume was dropped. The rows are right
-	// there — pick them up with a fresh continuation instead of waiting for
-	// the sweep (agentdecision.go).
-	l.recheckResolutions(ctx)
 	res := &substrate.AgentResult{
 		Reply: reply, Thread: l.threadID, Status: status, Reason: reason,
 		Turns: l.turns, ToolCalls: l.toolCalls,
@@ -508,6 +507,25 @@ loop:
 		res.CostUSD = l.cost
 	}
 	res.TotalTokens = res.PromptTokens + res.CompletionTokens
+	// The delivery's completion rides the thread's settling transaction.
+	var complete func(t *txn) error
+	if l.in.complete != nil {
+		complete = func(t *txn) error { return l.in.complete(t, res) }
+	}
+	if err := l.settle(ctx, status, reason, reply, complete); err != nil {
+		// The terminal patch rolled back with the completion: settle the
+		// thread as an error in a transaction of its own, so it does not
+		// stay `running` under its lease.
+		if serr := l.settle(ctx, threadError, err.Error(), reply, nil); serr != nil {
+			l.ds.svc.log.Warn("substrate: settling a thread whose completion failed", "thread", l.threadID, "error", serr)
+		}
+		return nil, err
+	}
+	// The settle-time re-check: a resolution that landed MID-turn lost the
+	// lease to this very run, so its resume was dropped. The rows are right
+	// there — pick them up with a fresh continuation instead of waiting for
+	// the sweep (agentdecision.go).
+	l.recheckResolutions(ctx)
 	l.event(substrate.AgentEvent{Kind: substrate.AgentEventDone, Result: res})
 	return res, nil
 }
@@ -778,8 +796,10 @@ func (l *agentLoop) putMessage(ctx context.Context, actor substrate.Actor, props
 // total; the root thread additionally absorbs the whole chain's tally (cost
 // rolls up — children settled before their caller's loop continues). The
 // read-and-add runs under the row lock in ONE transaction, so no concurrent
-// settle can lose an increment.
-func (l *agentLoop) settle(ctx context.Context, status, reason, reply string) error {
+// settle can lose an increment. `then` runs after the patch, in the same
+// transaction: the delivery's completion on the returning path, nil
+// otherwise.
+func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, then func(t *txn) error) error {
 	prompt, completion, cost := l.prompt, l.completion, l.cost
 	if l.in.parent == "" && l.in.mode != agentModeSubagent {
 		prompt, completion, cost = l.in.tally.prompt, l.in.tally.completion, l.in.tally.cost
@@ -825,8 +845,13 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string) er
 		if reason != "" {
 			props["reason"] = reason
 		}
-		_, err = t.patch(eref{Kind: typeThread, ID: l.threadID}, substrate.PatchInput{Properties: props})
-		return err
+		if _, err := t.patch(eref{Kind: typeThread, ID: l.threadID}, substrate.PatchInput{Properties: props}); err != nil {
+			return err
+		}
+		if then != nil {
+			return then(t)
+		}
+		return nil
 	})
 }
 

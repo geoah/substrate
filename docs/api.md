@@ -354,7 +354,7 @@ its stability and the `surfaces` that serve it (`rest`, `graphql`, or both):
 {"versions": [{"name": "v1", "status": "served"}],
  "server": {"version": "…", "build": "…"},
  "vocabulary": {"maxDialect": 3, "note": "…"},
- "changelog": {"horizon": 0, "maxDialect": 1},
+ "changelog": {"horizon": 0, "maxDialect": 6},
  "features": [{"name": "triggers", "stability": "stable", "surfaces": ["rest"]},
               {"name": "changefeed", "stability": "stable", "surfaces": ["rest", "graphql"]},
               {"name": "search", "stability": "beta", "surfaces": ["graphql"]},

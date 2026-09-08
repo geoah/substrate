@@ -30,6 +30,15 @@ import (
 //	annotations        written by the same entries
 //	property_managers  ditto — who last had a write accepted, per property
 //	former_ids         ditto — merge's trail
+//	trigger_cursors, trigger_schedule, trigger_failures, paged_cursors
+//	                   the delivery ledger (delivery.go): every motion is an
+//	                   effect on a `delivery` entry, so a trigger comes back at
+//	                   the position it last acknowledged, with its parked
+//	                   failures and its drain's resume row. The one motion
+//	                   outside the ledger is the scan position past rows that
+//	                   matched nothing (functions.go advanceCursor): a replay
+//	                   leaves the cursor at the last acknowledged delivery and
+//	                   the next pass re-reads rows that deliver nothing.
 //
 // property_offers is neither replayed nor kept: it is recompute's projection
 // of what each live source offers each target (mapping.go syncOffers), the
@@ -47,10 +56,9 @@ import (
 //   - embeddings, embed_queue — DERIVED FROM THE RECORDS, not from the changelog,
 //     and expensive: the vectors of a reproduced row are still that row's, so
 //     they are kept rather than re-bought from the provider.
-//   - trigger_cursors, trigger_failures, trigger_schedule, oauth_flows,
-//     paged_cursors — RUNTIME STATE. A cursor is a consumer's position in the
-//     changelog, not a fold of it: clearing them would redeliver history, and a
-//     half-finished oauth flow or drain has no meaning in the changelog at all.
+//   - oauth_flows, RUNTIME STATE: a consent flow in flight is a nonce and a
+//     PKCE verifier with an expiry, which has no meaning in the changelog; an
+//     interrupted flow is started again.
 //   - vocabulary_dialect, vocabulary_promotions — the STORE SHAPE's ledger, about the
 //     tables rather than about their contents.
 //   - changelog_dialect — what dialect the entries being replayed are written
@@ -71,11 +79,12 @@ type RebuildReport struct {
 	Took       time.Duration `json:"took"`
 }
 
-// foldTables are cleared and replayed, in this order: a purge effect walks the
-// same list, and nothing here is referenced by anything else.
-var foldTables = []string{
+// foldTables are cleared and replayed, in this order: the record fold, then
+// the delivery ledger's four (delivery.go). Nothing here is referenced by
+// anything else.
+var foldTables = append([]string{
 	"refs", "former_ids", "annotations", "property_managers", "records",
-}
+}, deliveryTables...)
 
 // rebuildBatch bounds one page of the replay: a transaction cannot iterate a
 // cursor while it writes, so the changelog is read a page at a time by seq.
@@ -383,6 +392,18 @@ func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 		"property_offers": `SELECT to_jsonb(o) FROM (
 				SELECT record_kind, record_id, property, actor, value, updated_at
 				FROM property_offers ORDER BY record_kind, record_id, property, actor) o`,
+		// The delivery ledger's three replayable tables. trigger_cursors is
+		// left out: its scan position is written outside the ledger
+		// (functions.go advanceCursor), so a rebuild reproduces the
+		// acknowledged position and not the row.
+		"trigger_schedule": `SELECT to_jsonb(s) - 'repository' FROM (
+				SELECT trigger_id, fired_at, updated_at FROM trigger_schedule ORDER BY trigger_id) s`,
+		"trigger_failures": `SELECT to_jsonb(f) - 'repository' FROM (
+				SELECT id, trigger_id, seq, fire_id, record_id, attempts, last_error, parked_at, payload
+				FROM trigger_failures ORDER BY id) f`,
+		"paged_cursors": `SELECT to_jsonb(p) - 'repository' FROM (
+				SELECT chain, cursor, pages, version, effects, bytes, started_at, trigger_id, kind, identity, updated_at
+				FROM paged_cursors ORDER BY chain) p`,
 	}
 	for name, q := range queries {
 		rows, err := db.QueryContext(ctx, q)

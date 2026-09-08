@@ -33,7 +33,7 @@ def echo(input, host, rid):
     headers = req.get("headers") or {}
     host.effects.put(WIDGET, rid, properties={
         "name": body or val,
-        "want": headers.get("x-test") or "",
+        "want": headers.get("x-github-event") or "",
         "mode": input.get("mode") or "",
         "target": blob,
         "op": req.get("method") or "",
@@ -78,7 +78,7 @@ func webhookSource(key string) map[string]any {
 func jsonHook(body, header string) substrate.WebhookRequest {
 	return substrate.WebhookRequest{
 		Method: "POST", ContentType: "application/json",
-		Headers: map[string]string{"x-test": header, "content-type": "application/json"},
+		Headers: map[string]string{"x-github-event": header, "content-type": "application/json"},
 		Query:   map[string][]string{},
 		Body:    []byte(body),
 	}
@@ -179,7 +179,7 @@ func TestWebhookDelivery(t *testing.T) {
 		audio := []byte{0, 0, 0, 0x1c, 'f', 't', 'y', 'p', 'M', '4', 'A', ' ', 1, 2, 3}
 		req := substrate.WebhookRequest{
 			Method: "POST", ContentType: "multipart/form-data",
-			Headers: map[string]string{"x-test": "multi"},
+			Headers: map[string]string{"x-github-event": "multi"},
 			Parts: []substrate.WebhookPart{
 				{Name: "transcription", Value: "buy milk"},
 				{Name: "audio", Filename: "recording.m4a", MediaType: "audio/mp4", Data: audio},
@@ -293,7 +293,7 @@ func TestWebhookParkedRetryReplaysRequest(t *testing.T) {
 	audio := []byte("not really audio, but bytes all the same")
 	req := substrate.WebhookRequest{
 		Method: "POST", ContentType: "multipart/form-data",
-		Headers: map[string]string{"x-test": "parked"},
+		Headers: map[string]string{"x-github-event": "parked"},
 		Parts: []substrate.WebhookPart{
 			{Name: "transcription", Value: "call the dentist"},
 			{Name: "audio", MediaType: "audio/mp4", Data: audio},

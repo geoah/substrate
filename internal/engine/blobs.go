@@ -818,18 +818,32 @@ func (t *txn) blobReferenced(digest string) (bool, error) {
 	return true, nil
 }
 
-// The digests parked webhook payloads name, through request.parts[].blob.
+// The digests parked webhook payloads name: a multipart file part's bytes
+// through request.parts[].blob, an inline part's value through
+// request.parts[].valueBlob, and a parked raw body through request.body.blob
+// (webhooks.go parkedEnvelope).
 const (
 	parkedBlobsSQL = `SELECT DISTINCT p ->> 'blob' FROM trigger_failures,
 	     jsonb_array_elements(payload -> 'request' -> 'parts') p
 	     WHERE payload IS NOT NULL
 	       AND jsonb_typeof(payload -> 'request' -> 'parts') = 'array'
-	       AND jsonb_typeof(p -> 'blob') = 'string'`
-	parkedBlobExistsSQL = `SELECT 1 FROM trigger_failures,
+	       AND jsonb_typeof(p -> 'blob') = 'string'
+	     UNION
+	     SELECT DISTINCT p ->> 'valueBlob' FROM trigger_failures,
 	     jsonb_array_elements(payload -> 'request' -> 'parts') p
 	     WHERE payload IS NOT NULL
 	       AND jsonb_typeof(payload -> 'request' -> 'parts') = 'array'
-	       AND p ->> 'blob' = $1 LIMIT 1`
+	       AND jsonb_typeof(p -> 'valueBlob') = 'string'
+	     UNION
+	     SELECT payload -> 'request' -> 'body' ->> 'blob' FROM trigger_failures
+	     WHERE jsonb_typeof(payload -> 'request' -> 'body' -> 'blob') = 'string'`
+	parkedBlobExistsSQL = `SELECT 1 FROM trigger_failures
+	     WHERE payload IS NOT NULL
+	       AND (payload -> 'request' -> 'body' ->> 'blob' = $1
+	         OR (jsonb_typeof(payload -> 'request' -> 'parts') = 'array'
+	             AND EXISTS (SELECT 1 FROM jsonb_array_elements(payload -> 'request' -> 'parts') p
+	                         WHERE p ->> 'blob' = $1 OR p ->> 'valueBlob' = $1)))
+	     LIMIT 1`
 )
 
 // referencedDigests gathers every blob digest named by a live record through a

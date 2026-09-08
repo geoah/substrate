@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -168,6 +170,267 @@ func blobNameOf(filename string) string {
 		return ""
 	}
 	return base
+}
+
+// fireEnvelope is the envelope a fire delivers: the one the caller built (a
+// webhook delivery carrying its request) or, absent that, the bare fire. A
+// parked envelope (parkedEnvelope) comes back with its body referenced, and
+// the bytes are read back into it here so the callable sees the request as
+// it arrived. A stored envelope was written by whatever binary parked it, so
+// a park from before the repository carried an authority holds `repository:
+// {owner}` alone; the current names fill what it lacks, since a body that
+// reads repository.authority must not see an empty string on a retry.
+func (ds *dataset) fireEnvelope(ctx context.Context, envelope map[string]any, fid string, at time.Time) (map[string]any, error) {
+	owner, authority := ds.Repository().Name, ds.Repository().Authority
+	if envelope == nil {
+		return runner.FireEnvelope(fid, at, owner, authority), nil
+	}
+	repo, _ := envelope["repository"].(map[string]any)
+	if repo == nil {
+		repo = map[string]any{}
+		envelope["repository"] = repo
+	}
+	if name, _ := repo["owner"].(string); name == "" {
+		repo["owner"] = owner
+	}
+	if name, _ := repo["authority"].(string); name == "" {
+		repo["authority"] = authority
+	}
+	if err := ds.restoreParkedRequest(ctx, envelope); err != nil {
+		return nil, err
+	}
+	return envelope, nil
+}
+
+// parkedHeaderNames are the headers a parked envelope keeps, by exact name.
+// The changelog is history nothing can scrub, so the parked copy of a request
+// carries only what a retry needs to deliver the request again and nothing
+// that could be a credential: the headers that describe the body, and the
+// headers the providers whose webhooks the shipped kinds receive use to
+// identify and sign a delivery. It is a closed list, never a pattern: a name
+// that merely contains a known word (`x-event-authorization`) is not on it.
+// Every other header is dropped from the parked copy and absent on the retry.
+// The webhook arm declares no header of its own; its one field is the
+// substrate's own `key`, which the door checks and never forwards. A provider
+// whose header is missing here is added here, by name.
+var parkedHeaderNames = map[string]bool{
+	// The body.
+	"content-type": true, "content-length": true, "content-encoding": true, "user-agent": true, "date": true,
+	// GitHub.
+	"x-github-event": true, "x-github-delivery": true, "x-github-hook-id": true,
+	"x-hub-signature": true, "x-hub-signature-256": true,
+	// Stripe.
+	"stripe-signature": true,
+	// Slack.
+	"x-slack-signature": true, "x-slack-request-timestamp": true,
+	// Linear.
+	"linear-event": true, "linear-delivery": true, "linear-signature": true,
+	// Standard Webhooks (Svix, Notion and others).
+	"webhook-id": true, "webhook-timestamp": true, "webhook-signature": true,
+	// Request identity a sender attaches for its own retries.
+	"idempotency-key": true, "x-request-id": true,
+	// The Pebble sample's webhook reads its mode from this header.
+	"x-pebble-mode": true,
+}
+
+// parkedHeaderKept reports a header the parked copy of a request keeps.
+func parkedHeaderKept(name string) bool {
+	return parkedHeaderNames[strings.ToLower(name)]
+}
+
+// parkedEnvelope is the parked form of a built envelope, the JSON the failure
+// row and the changelog carry, or nil when the fire carried none. What differs
+// from the delivered envelope is the policy for a payload that lives in
+// append-only history: the request's headers narrow to the ones
+// parkedHeaderKept admits, the query string is dropped, a multipart request's
+// inline part values leave the envelope for the blob store like its file
+// parts already have (spoolParkedParts), and the raw body leaves the envelope
+// for the blob
+// store, referenced by digest as `body: {blob, encoding}`. The bytes then
+// live where every other attachment lives, plaintext in the repository's
+// blob store (decision 0031), recoverable with the directory, held against
+// the orphan sweep while the failure is parked (blobs.go parkedBlobsSQL) and
+// collected once it retires. The changelog line holds the digest and never
+// the body.
+func (ds *dataset) parkedEnvelope(ctx context.Context, envelope map[string]any) (json.RawMessage, error) {
+	if envelope == nil {
+		return nil, nil
+	}
+	parked := make(map[string]any, len(envelope))
+	for k, v := range envelope {
+		parked[k] = v
+	}
+	if req, ok := envelope["request"].(map[string]any); ok {
+		copied := make(map[string]any, len(req))
+		for k, v := range req {
+			copied[k] = v
+		}
+		if headers, ok := req["headers"].(map[string]any); ok {
+			kept := make(map[string]any, len(headers))
+			for name, v := range headers {
+				if parkedHeaderKept(name) {
+					kept[name] = v
+				}
+			}
+			copied["headers"] = kept
+		}
+		// The query string goes whole: no shipped webhook body reads it, and
+		// `?token=` is where a sender that cannot set headers puts its
+		// credential. The retry delivers the request with an empty query.
+		if _, ok := req["query"]; ok {
+			copied["query"] = map[string]any{}
+		}
+		if body, ok := req["body"].(map[string]any); ok {
+			spooled, err := ds.spoolParkedBody(ctx, body, req)
+			if err != nil {
+				return nil, err
+			}
+			copied["body"] = spooled
+		}
+		if parts, ok := req["parts"].([]any); ok {
+			spooled, err := ds.spoolParkedParts(ctx, parts)
+			if err != nil {
+				return nil, err
+			}
+			copied["parts"] = spooled
+		}
+		parked["request"] = copied
+	}
+	raw, err := json.Marshal(parked)
+	if err != nil {
+		return nil, fmt.Errorf("substrate: parked fire envelope: %w", err)
+	}
+	return raw, nil
+}
+
+// parkedPayload runs a STORED failure payload through parkedEnvelope: the
+// legacy row a binary before the ledger parked holds every header, the query
+// and the body, and none of that may enter the changelog when the row is
+// adopted (delivery.go adoptLegacyLedger) or rewritten by a retry. A payload
+// already in the parked form passes through unchanged; an empty one stays
+// empty.
+func (ds *dataset) parkedPayload(ctx context.Context, payload json.RawMessage) (json.RawMessage, error) {
+	if len(payload) == 0 {
+		return nil, nil
+	}
+	var envelope map[string]any
+	if err := json.Unmarshal(payload, &envelope); err != nil {
+		return nil, fmt.Errorf("substrate: parked payload: %w", err)
+	}
+	return ds.parkedEnvelope(ctx, envelope)
+}
+
+// spoolParkedBody stores a delivered body's bytes content-addressed under
+// the webhook actor and returns the reference the parked envelope carries:
+// `{blob, encoding}`, the encoding saying whether the callable read it as
+// `text` or `base64`, so the retry rebuilds the same shape. A body already
+// referenced (a re-park of a retried failure) passes through.
+func (ds *dataset) spoolParkedBody(ctx context.Context, body, req map[string]any) (map[string]any, error) {
+	if _, referenced := body["blob"]; referenced {
+		return body, nil
+	}
+	var data []byte
+	encoding := ""
+	switch {
+	case body["text"] != nil:
+		text, _ := body["text"].(string)
+		data, encoding = []byte(text), "text"
+	case body["base64"] != nil:
+		enc, _ := body["base64"].(string)
+		decoded, err := base64.StdEncoding.DecodeString(enc)
+		if err != nil {
+			return nil, fmt.Errorf("substrate: parked body: %w", err)
+		}
+		data, encoding = decoded, "base64"
+	default:
+		return body, nil
+	}
+	mediaType, _ := req["contentType"].(string)
+	info, err := ds.PutBlob(ctx, actorWebhook, substrate.BlobUpload{MediaType: mediaType}, data, "")
+	if err != nil {
+		return nil, fmt.Errorf("substrate: parked body: %w", err)
+	}
+	return map[string]any{"blob": info.Digest, "encoding": encoding}, nil
+}
+
+// spoolParkedParts is the multipart half of the parking policy: a file part
+// already names its bytes by digest (spoolWebhookParts), and an inline part's
+// value, which is where a form sender puts a token as readily as a
+// transcript, goes the same way, stored content-addressed and named as
+// `valueBlob`. Name, filename, media type and size stay in the entry; no
+// value does. A part already referenced (a re-park) passes through.
+func (ds *dataset) spoolParkedParts(ctx context.Context, parts []any) ([]any, error) {
+	out := make([]any, 0, len(parts))
+	for _, raw := range parts {
+		part, ok := raw.(map[string]any)
+		if !ok {
+			out = append(out, raw)
+			continue
+		}
+		value, inline := part["value"].(string)
+		if !inline {
+			out = append(out, part)
+			continue
+		}
+		info, err := ds.PutBlob(ctx, actorWebhook, substrate.BlobUpload{MediaType: "text/plain"}, []byte(value), "")
+		if err != nil {
+			return nil, fmt.Errorf("substrate: parked part %q: %w", part["name"], err)
+		}
+		copied := make(map[string]any, len(part))
+		for k, v := range part {
+			if k != "value" {
+				copied[k] = v
+			}
+		}
+		copied["valueBlob"] = info.Digest
+		out = append(out, copied)
+	}
+	return out, nil
+}
+
+// restoreParkedRequest reads a parked envelope's body and inline part values
+// back from the blob store into the shape the callable read at delivery. A
+// request nothing references (a live delivery, a fire with no body) is left
+// alone.
+func (ds *dataset) restoreParkedRequest(ctx context.Context, envelope map[string]any) error {
+	req, _ := envelope["request"].(map[string]any)
+	if body, _ := req["body"].(map[string]any); body != nil {
+		if digest, _ := body["blob"].(string); digest != "" {
+			_, data, err := ds.GetBlob(ctx, digest)
+			if err != nil {
+				return fmt.Errorf("substrate: parked body %s: %w", digest, err)
+			}
+			if encoding, _ := body["encoding"].(string); encoding == "base64" {
+				req["body"] = map[string]any{"base64": base64.StdEncoding.EncodeToString(data)}
+			} else {
+				req["body"] = map[string]any{"text": string(data)}
+			}
+		}
+	}
+	parts, _ := req["parts"].([]any)
+	for i, raw := range parts {
+		part, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		digest, _ := part["valueBlob"].(string)
+		if digest == "" {
+			continue
+		}
+		_, data, err := ds.GetBlob(ctx, digest)
+		if err != nil {
+			return fmt.Errorf("substrate: parked part %q %s: %w", part["name"], digest, err)
+		}
+		restored := make(map[string]any, len(part))
+		for k, v := range part {
+			if k != "valueBlob" {
+				restored[k] = v
+			}
+		}
+		restored["value"] = string(data)
+		parts[i] = restored
+	}
+	return nil
 }
 
 // webhookRequestEnvelope is the `request` the callable reads: method, media

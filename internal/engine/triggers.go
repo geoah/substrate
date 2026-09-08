@@ -24,7 +24,8 @@ import (
 // write-time admission (a trigger row that cannot dispatch never lands), the
 // parse the dispatcher runs on, and the compiled-guard cache. The cursors,
 // parked failures and schedule fire state stay engine tables (0007), never
-// records, so no `*` subscription can match the bookkeeping.
+// records, so no `*` subscription can match the bookkeeping; they are folded
+// from the delivery ledger (delivery.go), so a restore brings them back.
 
 const (
 	typeTrigger = "substrate.reamde.dev/core/trigger"
@@ -45,6 +46,11 @@ const (
 type trigger struct {
 	ID      string
 	Enabled bool
+	// Version is the trigger record's version when it was loaded: the scan
+	// advance a pass makes is fenced on it (functions.go advanceCursor), so a
+	// pass that loaded the trigger before an edit cannot move the cursor the
+	// edit pinned.
+	Version int64
 
 	// Exactly one source arm is set.
 	Record   *recordSource
@@ -182,20 +188,30 @@ func (s *scheduleSource) rule(createdAt time.Time) (*rrule.RRule, error) {
 	return rrule.NewRRule(*opt)
 }
 
-// dueFire computes the newest occurrence in (after, now]: missed ticks
-// coalesce to exactly one fire. The zero time means nothing is due.
-func (s *scheduleSource) dueFire(createdAt, after, now time.Time) (time.Time, error) {
+// dueFires lists the occurrences in (after, now], oldest first, at most limit
+// of them. Nothing is coalesced: a trigger that missed occurrences (the
+// server down, the trigger disabled, a repository restored to an older fire
+// state) fires each one, and the bound is what keeps a pass from turning a
+// long gap into one burst. The rule is walked once, from its anchor, so a
+// rule with many occurrences behind `after` costs one pass over them.
+func (s *scheduleSource) dueFires(createdAt, after, now time.Time, limit int) ([]time.Time, error) {
 	r, err := s.rule(createdAt)
 	if err != nil {
-		return time.Time{}, err
+		return nil, err
 	}
-	due := r.Between(after, now, true)
-	for i := len(due) - 1; i >= 0; i-- {
-		if due[i].After(after) {
-			return due[i].UTC(), nil
+	next := r.Iterator()
+	var out []time.Time
+	for len(out) < limit {
+		at, ok := next()
+		if !ok || at.After(now) {
+			break
 		}
+		if !at.After(after) {
+			continue
+		}
+		out = append(out, at.UTC())
 	}
-	return time.Time{}, nil
+	return out, nil
 }
 
 // fireID is the stable identity of one schedule occurrence.
@@ -501,7 +517,7 @@ type loadedTrigger struct {
 
 func (ds *dataset) loadTriggers(ctx context.Context) ([]loadedTrigger, error) {
 	rows, err := ds.db.QueryContext(ctx, `
-		SELECT id, props, created_at FROM records
+		SELECT id, props, created_at, version FROM records
 		WHERE kind = $1 AND deleted_at IS NULL ORDER BY id`, typeTrigger)
 	if err != nil {
 		return nil, err
@@ -518,7 +534,8 @@ func (ds *dataset) loadTriggers(ctx context.Context) ([]loadedTrigger, error) {
 		var id string
 		var raw []byte
 		var createdAt time.Time
-		if err := rows.Scan(&id, &raw, &createdAt); err != nil {
+		var version int64
+		if err := rows.Scan(&id, &raw, &createdAt, &version); err != nil {
 			return nil, err
 		}
 		var props map[string]any
@@ -535,6 +552,7 @@ func (ds *dataset) loadTriggers(ctx context.Context) ([]loadedTrigger, error) {
 			out = append(out, lt)
 			continue
 		}
+		t.Version = version
 		lt.trigger = t
 		if t.Record != nil && t.Record.When != "" {
 			prog, err := ds.whenProgram(t.Record.When)
@@ -565,6 +583,7 @@ func (ds *dataset) triggerByID(ctx context.Context, id string) (*trigger, time.T
 	if err != nil {
 		return nil, time.Time{}, fmt.Errorf("%w: trigger %s: %w", substrate.ErrValidation, id, err)
 	}
+	t.Version = row.Version
 	if t.Record != nil && t.Record.When != "" {
 		prog, err := ds.whenProgram(t.Record.When)
 		if err != nil {
@@ -622,12 +641,14 @@ func (ds *dataset) whenProgram(src string) (cel.Program, error) {
 // changelog seq — the trigger reacts to what happens next, and a write
 // between creation and the first dispatch is never skipped — and a schedule
 // source's fire state initializes at now, so the first fire is the next
-// occurrence. One exception beats the creation seq: a DEFAULT trigger
-// (`on-<callable identity>`) whose callable still owns a pre-wave-1 cursor
-// ADOPTS that position and its parked failures atomically, so a subscription
-// that lived on the function itself — dropped whole by the run-arm cleanup
-// or a stored-blob promotion before the trigger existed — resumes exactly
-// where it stood instead of restarting at head.
+// occurrence. Both are ledger effects on a delivery entry of their own, so a
+// restore brings the trigger back at the position it started from. One
+// exception beats the creation seq: a DEFAULT trigger (`on-<callable
+// identity>`) whose callable still owns a pre-wave-1 cursor ADOPTS that
+// position and its parked failures atomically, so a subscription that lived
+// on the function itself (dropped whole by the run-arm cleanup or a
+// stored-blob promotion before the trigger existed) resumes exactly where it
+// stood instead of restarting at head.
 func (t *txn) initTriggerBookkeeping(id string, props map[string]any) error {
 	seq := t.maxSeq
 	if legacy, ok := t.adoptableLegacyCursor(id, props); ok {
@@ -640,33 +661,57 @@ func (t *txn) initTriggerBookkeeping(id string, props map[string]any) error {
 			return err
 		default:
 			seq = old.Int64
-			if _, err := t.exec(`DELETE FROM trigger_cursors WHERE trigger_id = $1`, legacy); err != nil {
+			// The legacy failures move under the new id: read whole, the
+			// legacy rows forgotten, then parked again under this trigger
+			// with the ids they had.
+			failures, err := t.failuresOf(legacy)
+			if err != nil {
 				return err
 			}
-			if _, err := t.exec(`
-				UPDATE trigger_failures SET trigger_id = $2 WHERE trigger_id = $1`,
-				legacy, id); err != nil {
+			if err := t.forgetTx(legacy); err != nil {
 				return err
+			}
+			for _, f := range failures {
+				if err := t.parkTx(id, f); err != nil {
+					return err
+				}
 			}
 		}
 	}
-	if _, err := t.exec(`
-		INSERT INTO trigger_cursors (trigger_id, seq, updated_at) VALUES ($1, $2, $3)
-		ON CONFLICT (repository, trigger_id) DO UPDATE SET seq = EXCLUDED.seq, updated_at = EXCLUDED.updated_at`,
-		id, seq, t.now); err != nil {
+	if err := t.setCursorTx(id, seq); err != nil {
 		return err
 	}
 	if src, _ := props["source"].(map[string]any); src != nil {
 		if _, has := src["schedule"]; has {
-			if _, err := t.exec(`
-				INSERT INTO trigger_schedule (trigger_id, fired_at, updated_at) VALUES ($1, $2, $2)
-				ON CONFLICT (repository, trigger_id) DO UPDATE SET fired_at = EXCLUDED.fired_at, updated_at = EXCLUDED.updated_at`,
-				id, t.now); err != nil {
+			if err := t.setScheduleTx(id, t.now); err != nil {
 				return err
 			}
 		}
 	}
-	return nil
+	return t.settleDelivery(id)
+}
+
+// failuresOf reads a trigger's parked failures whole, in the ledger's shape.
+func (t *txn) failuresOf(triggerID string) ([]foldFailure, error) {
+	rows, err := t.query(`
+		SELECT id, seq, fire_id, record_id, attempts, last_error, parked_at, payload
+		FROM trigger_failures WHERE trigger_id = $1 ORDER BY id`, triggerID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []foldFailure
+	for rows.Next() {
+		var f foldFailure
+		var payload []byte
+		if err := rows.Scan(&f.ID, &f.Seq, &f.FireID, &f.RecordID, &f.Attempts, &f.LastError, &f.ParkedAt, &payload); err != nil {
+			return nil, err
+		}
+		f.ParkedAt = f.ParkedAt.UTC()
+		f.Payload = json.RawMessage(payload)
+		out = append(out, f)
+	}
+	return out, rows.Err()
 }
 
 // adoptableLegacyCursor reports the callable identity whose legacy delivery
@@ -694,18 +739,11 @@ func (t *txn) adoptableLegacyCursor(id string, props map[string]any) (string, bo
 
 // dropTriggerBookkeeping runs inside the transaction that tombstones a
 // trigger row: cursor, parked failures, fire state and any in-flight paged
-// cursors die with it. A restore re-initializes at its own
-// moment.
+// cursors die with it, as one ledger effect on a delivery entry of its own.
+// A restore re-initializes at its own moment.
 func (t *txn) dropTriggerBookkeeping(id string) error {
-	for _, q := range []string{
-		`DELETE FROM trigger_cursors WHERE trigger_id = $1`,
-		`DELETE FROM trigger_failures WHERE trigger_id = $1`,
-		`DELETE FROM trigger_schedule WHERE trigger_id = $1`,
-		`DELETE FROM paged_cursors WHERE trigger_id = $1`,
-	} {
-		if _, err := t.exec(q, id); err != nil {
-			return err
-		}
+	if err := t.forgetTx(id); err != nil {
+		return err
 	}
-	return nil
+	return t.settleDelivery(id)
 }

@@ -15,6 +15,13 @@ const (
 	OpMerge  Op = "merge"
 	OpSplit  Op = "split"
 	OpGC     Op = "gc"
+	// OpDelivery is the engine's delivery ledger: the entry a trigger's
+	// bookkeeping rides (a cursor or fire-state advance, a parked failure, a
+	// paged drain's resume row), appended in the transaction that commits the
+	// effects it acknowledges and folded back into the delivery tables on
+	// replay. It is internal: every read a client reaches skips it, so it is
+	// never on the wire and never matches a trigger's source.
+	OpDelivery Op = "delivery"
 )
 
 // Change is one changelog row — the ordered, resumable record of every

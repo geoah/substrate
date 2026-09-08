@@ -70,6 +70,25 @@ const (
 	// records: merge's and split's effect, the one snapshot among the deltas
 	// (see "the resync effect" below).
 	foldResync foldKind = "resync"
+
+	// The delivery ledger's effects (delivery.go): a trigger's bookkeeping,
+	// folded into the four delivery tables. Ref and ID name the trigger.
+	//
+	// foldCursor sets a record trigger's acknowledged cursor (Seq).
+	foldCursor foldKind = "cursor"
+	// foldSchedule sets a schedule trigger's last fired occurrence (At).
+	foldSchedule foldKind = "schedule"
+	// foldPark writes a parked failure, whole, keyed by its id (Failure).
+	foldPark foldKind = "park"
+	// foldUnpark retires a parked failure by its id (Failure.ID).
+	foldUnpark foldKind = "unpark"
+	// foldPage writes a paged drain's resume row, whole, by its chain (Page).
+	foldPage foldKind = "page"
+	// foldUnpage drops a paged drain's resume row (Page.Chain).
+	foldUnpage foldKind = "unpage"
+	// foldForget drops every delivery row a trigger owns: its cursor, fire
+	// state, parked failures and resume rows. A tombstoned trigger's.
+	foldForget foldKind = "forget"
 )
 
 // rowDelta is one record's change as VALUES: what its columns became, against
@@ -204,6 +223,74 @@ type foldOp struct {
 	// effect re-states wholly, and the rows they hold once it has.
 	Scope []foldRef `json:"scope,omitempty"`
 	Rows  *foldRows `json:"rows,omitempty"`
+
+	// Seq and At carry a cursor or schedule position. Pointers, because seq 0
+	// (a replay from the start) is a position a replay may not drop.
+	Seq *foldInt   `json:"seq,omitempty"`
+	At  *time.Time `json:"at,omitempty"`
+	// Failure carries a parked failure (park, unpark).
+	Failure *foldFailure `json:"failure,omitempty"`
+	// Page carries a paged drain's resume row (page, unpage).
+	Page *foldPageRow `json:"page,omitempty"`
+}
+
+// foldInt is an integer the ledger carries: a cursor seq, a failure id, a
+// drain's counters. It decodes from ANY JSON number lexeme, because the
+// payload has two spellings of a number: Postgres prints `18`, and the
+// segment file canonicalizes the same value to `1.8E1`
+// (changelogfile.canonicalNumber), which encoding/json refuses for a bare
+// int64, and a replay reads the file. It reads the lexeme the way every
+// integer property is read (asInt, decision 0012): a whole number within the
+// safe-integer bound, a fraction refused rather than rounded.
+type foldInt int64
+
+func (v *foldInt) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		return nil
+	}
+	if len(b) == 0 || b[0] == '"' {
+		return fmt.Errorf("%s is not a number", b)
+	}
+	n, err := asInt(json.Number(b))
+	if err != nil {
+		return fmt.Errorf("%s: %w", b, err)
+	}
+	*v = foldInt(n)
+	return nil
+}
+
+// foldFailure is a parked failure as the ledger carries it: the row, whole,
+// so a replay writes the same row. ID is the seq of the delivery entry that
+// parked it (delivery.go parkTx), which makes it unique per repository,
+// monotonic and reproducible; the retry API takes it. Payload is the parked
+// envelope a fire's retry redelivers (webhooks.go parkedEnvelope), absent for
+// a record delivery, whose envelope is rebuilt from the changelog.
+type foldFailure struct {
+	ID        foldInt         `json:"id"`
+	Seq       foldInt         `json:"seq,omitempty"`
+	FireID    string          `json:"fireId,omitempty"`
+	RecordID  string          `json:"recordId,omitempty"`
+	Attempts  foldInt         `json:"attempts,omitempty"`
+	LastError string          `json:"lastError,omitempty"`
+	ParkedAt  time.Time       `json:"parkedAt,omitzero"`
+	Payload   json.RawMessage `json:"payload,omitempty"`
+}
+
+// foldPageRow is a paged drain's resume row as the ledger carries it
+// (functions.go pagedDrain): the chain key, the body's opaque cursor, the
+// compare-and-swap version and the cumulative budget counters, plus the
+// lifecycle owner beside the trigger in Ref and ID. StartedAt is the chain's
+// first page, carried because the drain deadline is measured from it.
+type foldPageRow struct {
+	Chain     string          `json:"chain"`
+	Cursor    json.RawMessage `json:"cursor,omitempty"`
+	Version   foldInt         `json:"version,omitempty"`
+	Pages     foldInt         `json:"pages,omitempty"`
+	Effects   foldInt         `json:"effects,omitempty"`
+	Bytes     foldInt         `json:"bytes,omitempty"`
+	StartedAt time.Time       `json:"startedAt,omitzero"`
+	Kind      string          `json:"kind,omitempty"`
+	Identity  string          `json:"identity,omitempty"`
 }
 
 func (op foldOp) ref() eref { return eref{Kind: op.Ref, ID: op.ID} }
@@ -329,6 +416,9 @@ func (t *txn) foldOne(op foldOp) (foldResult, error) {
 			return foldResult{}, err
 		}
 		return foldResult{changed: true}, nil
+	case foldCursor, foldSchedule, foldPark, foldUnpark, foldPage, foldUnpage, foldForget:
+		changed, err := t.applyDelivery(op)
+		return foldResult{changed: changed}, err
 	}
 	return foldResult{}, fmt.Errorf("substrate/engine: the fold does not know the effect %q", op.Kind)
 }

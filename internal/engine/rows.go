@@ -309,11 +309,8 @@ func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ
 	if err != nil {
 		return err
 	}
-	if !t.seqLocked {
-		if err := t.lockKey(changelogLockKey); err != nil {
-			return err
-		}
-		t.seqLocked = true
+	if err := t.lockChangelog(); err != nil {
+		return err
 	}
 	// caused_by is NULL on every write a function did not author, so the
 	// causal-depth walk terminates on the first direct write.
@@ -341,7 +338,12 @@ func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ
 	if seq > t.maxSeq {
 		t.maxSeq = seq
 	}
-	t.entries = append(t.entries, changeEntry{seq: seq, op: op, kind: typ, id: recordID})
+	// A delivery entry is the ledger's own (delivery.go), not a record a
+	// dispatch wrote: it stays off the entries a thread's message stamps and
+	// a resolution names.
+	if op != substrate.OpDelivery {
+		t.entries = append(t.entries, changeEntry{seq: seq, op: op, kind: typ, id: recordID})
+	}
 	t.pending = append(t.pending, pendingEntry{
 		Seq: seq, TS: t.now, Actor: string(actor), Principal: t.principal,
 		Op: string(op), RecordID: recordID, Kind: typ,

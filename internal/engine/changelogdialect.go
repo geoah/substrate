@@ -28,7 +28,7 @@ package engine
 // replayer needs), and the stamped column is what makes that refinement
 // possible later without guessing at unstamped history.
 //
-// THE LADDER HAS FIVE RUNGS. Dialect 1 was the changelog while edges existed:
+// THE LADDER HAS SIX RUNGS. Dialect 1 was the changelog while edges existed:
 // `link`/`unlink` ops and `edge`/`unedge`/`edge1` fold effects. Dialect 2 is the
 // changelog after references absorbed the edge (decision 0044): those five
 // spellings are gone and this binary refuses any entry carrying one (fold.go
@@ -41,8 +41,7 @@ package engine
 // `after == 0`) recomputes every checksum without `txn` and RE-STAMPS
 // `changelog.hash` to that encoding, after which no binary agrees with the
 // file. The stamp of 3 makes that binary refuse at open, before it touches a
-// row.
-// Dialect 4 keeps dialect 3's ops, effects and entry frame and changes the
+// row. Dialect 4 keeps dialect 3's ops, effects and entry frame and changes the
 // RECORD DELTA: it carries `kindVersion`, the kind declaration version that
 // wrote the row (decision 0060). The rung exists because a dialect 3 binary
 // does not refuse the key, it drops it: foldOpsOf decodes without
@@ -58,6 +57,11 @@ package engine
 // replay's own time, and its fold disagrees with the author's on when the
 // value was last written, with nothing saying so. The stamp of 5 makes it
 // refuse instead.
+// Dialect 6 adds the delivery ledger (delivery.go, decision 0064): the
+// `delivery` op and the seven effects a trigger's bookkeeping folds through
+// (cursor, schedule, park, unpark, page, unpage, forget). A dialect 5 binary
+// replays the op without complaint and refuses the first effect at the fold,
+// on the day somebody rebuilds; the stamp of 6 makes it refuse at open.
 //
 // A STORE BELOW THE MAXIMUM IS PROBED, NOT ASSUMED. Migration 0010 drops the
 // edges table, so a store whose changelog holds `link`/`unlink` entries has
@@ -103,7 +107,13 @@ var ErrChangelogPredatesReferences = errors.New("substrate/engine: the changelog
 // maxChangelogDialect is the newest changelog dialect this binary can replay.
 // It is what this binary stamps when it appends; a repository stored above it
 // refuses to open.
-const maxChangelogDialect = 5
+const maxChangelogDialect = 6
+
+// deliveryLedgerDialect is the rung the delivery ledger arrived at. A
+// repository stamped below it holds its trigger bookkeeping in the tables
+// alone, and the open adopts it into the ledger (delivery.go
+// adoptLegacyLedger) before anything else appends.
+const deliveryLedgerDialect = 6
 
 // MaxChangelogDialect is the newest changelog dialect this binary can replay,
 // the value GET /.well-known/substrate/server.json reports as the binary
@@ -133,6 +143,7 @@ func (ds *dataset) gateChangelogDialect(ctx context.Context) error {
 		ds.changelogStamped.Store(true)
 		return nil
 	}
+	ds.adoptLedger = stored < deliveryLedgerDialect
 	return ds.refuseRetiredLinkEntries(ctx)
 }
 
@@ -218,7 +229,7 @@ const changelogDialectStamp = `
 // writeManifestBeforeCommit): the manifest is what an import reads for the
 // dialect, so it must say what the segments require before they require it.
 func (t *txn) stampChangelogDialect() error {
-	if t.ds.changelogStamped.Load() {
+	if t.ds.changelogStamped.Load() || t.ds.stampHeld {
 		return nil
 	}
 	if _, err := t.exec(changelogDialectStamp, maxChangelogDialect); err != nil {

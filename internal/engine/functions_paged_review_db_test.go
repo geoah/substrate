@@ -54,7 +54,8 @@ func pagedVersion(t *testing.T, ds *dataset, chain string) (int64, bool) {
 // Two dispatchers draining the same chain cannot both commit — a fresh claim of
 // a chain another already owns, an advance from a stale version, and a delete
 // under a stale version all miss and return errCursorMoved, so the loser's page
-// transaction rolls back whole.
+// transaction rolls back whole. Each motion is a ledger effect, so the
+// transaction that makes one appends the delivery entry it rides.
 func TestPagedCursorOwnershipCAS(t *testing.T) {
 	t.Parallel()
 	ds := openInternalDataset(t)
@@ -62,9 +63,17 @@ func TestPagedCursorOwnershipCAS(t *testing.T) {
 	chain := "owner.test.dev/owner/on-cas/1"
 	owner := pagedOwner{triggerID: "on-cas", kind: pagedKindRecord, identity: "1"}
 
-	claim := func() error {
+	motion := func(fn func(tx *txn) error) error {
 		return ds.inTx(ctx, substrate.ActorSystem, true, func(tx *txn) error {
-			return tx.claimPagedCursor(chain, owner, 1, 1, 1, 1, nowUTC(), tx.now)
+			if err := fn(tx); err != nil {
+				return err
+			}
+			return tx.settleDelivery(owner.triggerID)
+		})
+	}
+	claim := func() error {
+		return motion(func(tx *txn) error {
+			return tx.claimPagedCursor(chain, owner, 1, 1, 1, 1, nowUTC())
 		})
 	}
 	// First dispatcher claims the absent chain; the second, also starting fresh,
@@ -80,7 +89,7 @@ func TestPagedCursorOwnershipCAS(t *testing.T) {
 	}
 
 	advance := func(from int64) error {
-		return ds.inTx(ctx, substrate.ActorSystem, true, func(tx *txn) error {
+		return motion(func(tx *txn) error {
 			return tx.advancePagedCursor(chain, from, 2, 2, 2, 2)
 		})
 	}
@@ -98,7 +107,7 @@ func TestPagedCursorOwnershipCAS(t *testing.T) {
 
 	// The final delete requires the current version: a stale delete misses and
 	// cannot clear a chain the winner still owns.
-	if err := ds.inTx(ctx, substrate.ActorSystem, true, func(tx *txn) error {
+	if err := motion(func(tx *txn) error {
 		return tx.clearPagedCursorCAS(chain, 1)
 	}); !errors.Is(err, errCursorMoved) {
 		t.Fatalf("stale clear returned %v, want errCursorMoved", err)
@@ -106,7 +115,7 @@ func TestPagedCursorOwnershipCAS(t *testing.T) {
 	if _, ok := pagedCursor(t, ds, chain); !ok {
 		t.Fatalf("a stale delete cleared the chain — the fence failed")
 	}
-	if err := ds.inTx(ctx, substrate.ActorSystem, true, func(tx *txn) error {
+	if err := motion(func(tx *txn) error {
 		return tx.clearPagedCursorCAS(chain, 2)
 	}); err != nil {
 		t.Fatalf("version-matched clear: %v", err)
