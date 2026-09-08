@@ -15,6 +15,7 @@ package engine
 import (
 	"archive/tar"
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -31,10 +32,18 @@ import (
 
 var _ substrate.Exporter = (*dataset)(nil)
 
-// ErrExportNoWriter is the refusal of a dataset that is not the directory's
-// writer: a read-only process cannot pin a point, because the writer it does
-// not hold may be mid-transaction.
-var ErrExportNoWriter = errors.New("substrate/engine: the export needs the repository's changelog writer, which a read-only process does not hold")
+var (
+	// ErrExportNoWriter is the refusal of a dataset that is not the
+	// directory's writer: a read-only process cannot pin a point, because
+	// the writer it does not hold may be mid-transaction. Unavailable, not a
+	// fault: the same repository exports from the process that writes it.
+	ErrExportNoWriter = fmt.Errorf("%w: the export needs the repository's changelog writer, which a read-only process does not hold", substrate.ErrUnavailable)
+	// ErrExportInProgress is the refusal of a second export while one
+	// streams: an export holds a blob open and a tar half written for as long
+	// as the slowest client takes, so one per repository bounds what a
+	// repository's exports can hold at once.
+	ErrExportInProgress = fmt.Errorf("%w: an export of this repository is already streaming; wait for it to finish", substrate.ErrConflict)
+)
 
 // export is one pinned export: what Export read under the writer mutex, and
 // what WriteTo streams from it.
@@ -62,21 +71,45 @@ type export struct {
 // the sealed files and the stored blob manifests it reads are one state. A
 // directory latched behind the tables is refused: an export of it would miss
 // committed writes.
+//
+// The pool connection the pin reads through is taken BEFORE the mutex. Every
+// write holds a connection from inTx to commitAndMirror, where it takes the
+// mutex, and the writers behind it wait on the changelog advisory lock inside
+// their own transactions, connections held; with the pool full, an export
+// that took the mutex first and then asked for a connection would wait for
+// one that no writer can release until the mutex is free.
 func (ds *dataset) Export(ctx context.Context) (substrate.Export, error) {
 	if ds.svc.readOnly || ds.writer == nil {
 		return nil, ErrExportNoWriter
 	}
+	if !ds.exporting.CompareAndSwap(false, true) {
+		return nil, ErrExportInProgress
+	}
+	e, err := ds.pinExport(ctx)
+	if err != nil {
+		ds.exporting.Store(false)
+		return nil, err
+	}
+	return e, nil
+}
+
+func (ds *dataset) pinExport(ctx context.Context) (*export, error) {
+	conn, err := ds.db.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = conn.Close() }()
 	ds.writerMu.Lock()
 	defer ds.writerMu.Unlock()
 	if ds.fileErr != nil {
-		return nil, ds.fileErr
+		return nil, fmt.Errorf("%w: %w", substrate.ErrUnavailable, ds.fileErr)
 	}
 	e := &export{ds: ds, ctx: ctx}
 	head := ds.writer.Head()
 	var headHash [32]byte
 	if head > 0 {
 		var raw []byte
-		if err := ds.db.QueryRowContext(ctx, `SELECT hash FROM changelog WHERE seq = $1`, head).Scan(&raw); err != nil {
+		if err := conn.QueryRowContext(ctx, `SELECT hash FROM changelog WHERE seq = $1`, head).Scan(&raw); err != nil {
 			return nil, fmt.Errorf("substrate/engine: read the checksum of seq %d: %w", head, err)
 		}
 		if len(raw) != 32 {
@@ -117,11 +150,14 @@ func (ds *dataset) Export(ctx context.Context) (substrate.Export, error) {
 	if e.sealed, err = changelogfile.ReadSealed(ds.dir); err != nil {
 		return nil, err
 	}
-	if e.blobs, err = storedBlobs(ctx, ds.db); err != nil {
+	if e.blobs, err = storedBlobs(ctx, conn); err != nil {
 		return nil, err
 	}
 	digests := make([]string, 0, len(e.blobs))
 	for _, b := range e.blobs {
+		if b.size < 0 {
+			return nil, fmt.Errorf("substrate/engine: blob %s is stored and its manifest declares no size, so its archive entry cannot be sized", b.digest)
+		}
 		digests = append(digests, b.digest)
 	}
 	taken := nowUTC()
@@ -145,11 +181,13 @@ func (ds *dataset) Export(ctx context.Context) (substrate.Export, error) {
 // Point is the pinned point (substrate.Export).
 func (e *export) Point() substrate.ExportPoint { return e.point }
 
-// WriteTo streams the tar (substrate.Export). The order is the order a
+// WriteTo streams the tar (substrate.Export) and releases the repository's
+// export slot when it returns, however it returns. The order is the order a
 // restore needs and the order the operator's snapshot copies: the manifest,
 // the changelog, the sealed files, the blob bytes, and snapshot.json last, so
 // an archive that ends early lacks the file that vouches for it.
 func (e *export) WriteTo(w io.Writer) (int64, error) {
+	defer e.ds.exporting.Store(false)
 	cw := &countingWriter{w: w}
 	tw := tar.NewWriter(cw)
 	err := e.write(tw)
@@ -206,18 +244,7 @@ func (e *export) write(tw *tar.Writer) error {
 			return err
 		}
 		for _, b := range e.blobs {
-			// Whole, as the snapshot copies them: a blob is at most the upload
-			// cap, and the digest is checked before the bytes enter the
-			// archive, so a damaged store is a refusal and never a copy of
-			// the damage.
-			data, err := readStoredBlob(e.ctx, store, b)
-			if err != nil {
-				return fmt.Errorf("substrate/engine: read blob %s: %w", b.digest, err)
-			}
-			if got := blobDigest(data); got != b.digest {
-				return fmt.Errorf("substrate/engine: blob %s read back as %s", b.digest, got)
-			}
-			if err := e.writeBytes(tw, path.Join(blobs, b.digest), data); err != nil {
+			if err := e.writeBlob(tw, path.Join(blobs, b.digest), store, b); err != nil {
 				return err
 			}
 		}
@@ -231,14 +258,19 @@ func (e *export) write(tw *tar.Writer) error {
 
 // writeBytes adds one regular file of known content.
 func (e *export) writeBytes(tw *tar.Writer, name string, data []byte) error {
-	if err := tw.WriteHeader(&tar.Header{
-		Typeflag: tar.TypeReg, Name: name, Mode: 0o600, Size: int64(len(data)),
-		ModTime: e.point.TakenAt, Format: tar.FormatPAX,
-	}); err != nil {
+	if err := e.header(tw, name, int64(len(data))); err != nil {
 		return err
 	}
 	_, err := tw.Write(data)
 	return err
+}
+
+// header adds one regular file's header.
+func (e *export) header(tw *tar.Writer, name string, size int64) error {
+	return tw.WriteHeader(&tar.Header{
+		Typeflag: tar.TypeReg, Name: name, Mode: 0o600, Size: size,
+		ModTime: e.point.TakenAt, Format: tar.FormatPAX,
+	})
 }
 
 // writeFile adds one regular file from disk: the whole file when size is
@@ -260,28 +292,46 @@ func (e *export) writeFile(tw *tar.Writer, name, src string, size int64) error {
 	} else if info.Size() < size {
 		return fmt.Errorf("substrate/engine: %s is %d bytes, the point needs %d", filepath.Base(src), info.Size(), size)
 	}
-	if err := tw.WriteHeader(&tar.Header{
-		Typeflag: tar.TypeReg, Name: name, Mode: 0o600, Size: size,
-		ModTime: e.point.TakenAt, Format: tar.FormatPAX,
-	}); err != nil {
+	if err := e.header(tw, name, size); err != nil {
 		return err
 	}
 	_, err = io.CopyN(tw, f, size)
 	return err
 }
 
-// readStoredBlob reads one stored blob whole, held to the size its manifest
-// declares when it declares one.
-func readStoredBlob(ctx context.Context, store blobbytes.Store, b storedBlob) ([]byte, error) {
-	if b.size >= 0 {
-		return blobbytes.ReadAll(ctx, store, b.digest, b.size)
+// writeBlob streams one stored blob out of the store into the archive,
+// hashing it on the way: the header takes the size the manifest declares, so
+// nothing is held in memory but the copy buffer, and the digest is checked
+// once the bytes are through. A store that answers other bytes fails the
+// export here, which ends the stream, so a restore never holds a blob that is
+// not its digest's; the archive is already committed to the entry by then, so
+// the failure is the export's and not a shorter archive.
+func (e *export) writeBlob(tw *tar.Writer, name string, store blobbytes.Store, b storedBlob) error {
+	rc, err := store.Open(e.ctx, b.digest)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: read blob %s: %w", b.digest, err)
 	}
-	return readBlob(ctx, store, b.digest)
+	defer func() { _ = rc.Close() }()
+	if err := e.header(tw, name, b.size); err != nil {
+		return err
+	}
+	h := sha256.New()
+	// One byte past the declared size tells a longer object from an exact
+	// one; the tar writer refuses the overrun, and the message names the blob.
+	n, err := io.CopyN(tw, io.TeeReader(rc, h), b.size)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: blob %s: %d of %d bytes copied: %w", b.digest, n, b.size, err)
+	}
+	if extra, err := io.ReadFull(rc, make([]byte, 1)); extra > 0 || (err != nil && !errors.Is(err, io.EOF)) {
+		return fmt.Errorf("substrate/engine: blob %s holds more than the %d bytes its manifest declares", b.digest, b.size)
+	}
+	if got := substrate.BlobDigestPrefix + hex.EncodeToString(h.Sum(nil)); got != b.digest {
+		return fmt.Errorf("substrate/engine: blob %s read back as %s", b.digest, got)
+	}
+	return nil
 }
 
-// countingWriter counts the bytes that reached w, so a caller can tell an
-// export that failed before its first byte (a refusal it can still answer)
-// from one that failed mid-stream.
+// countingWriter counts the bytes that reached w.
 type countingWriter struct {
 	w io.Writer
 	n int64

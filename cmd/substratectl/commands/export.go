@@ -160,7 +160,12 @@ func readExport(r io.Reader) (exportReport, error) {
 	counted := &countingReader{r: r}
 	tr := tar.NewReader(counted)
 	var report exportReport
-	var last string
+	// snapshot is set when the entry just read was the layout's own
+	// snapshot.json, `repositories/<authority>/snapshot.json`, and cleared by
+	// any entry after it, so the archive is complete only when that file is
+	// last; a snapshot.json anywhere else is a blob or a stray and vouches
+	// for nothing.
+	snapshot := false
 	for {
 		h, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -187,20 +192,27 @@ func readExport(r io.Reader) (exportReport, error) {
 		} else if parts[1] != report.authority {
 			return report, fmt.Errorf("the archive holds two repositories, %s and %s", report.authority, parts[1])
 		}
-		last = name
+		snapshot = false
 		if h.Typeflag == tar.TypeDir {
 			continue
 		}
 		dir, file := path.Dir(name), path.Base(name)
 		switch {
 		case len(parts) == 3 && file == changelogfile.SnapshotName:
-			raw, err := io.ReadAll(io.LimitReader(tr, 1<<20))
+			// The file lists every stored blob's digest, so it grows with
+			// the repository; the header says how long it is, and the bound
+			// is against an archive that lies about that, not a large one.
+			if h.Size > maxSnapshotBytes {
+				return report, fmt.Errorf("the archive's %s is %d bytes, more than the %d this client reads", changelogfile.SnapshotName, h.Size, maxSnapshotBytes)
+			}
+			raw, err := io.ReadAll(tr)
 			if err != nil {
 				return report, err
 			}
 			if err := json.Unmarshal(raw, &report.snapshot); err != nil {
 				return report, fmt.Errorf("the archive's %s does not read: %w", changelogfile.SnapshotName, err)
 			}
+			snapshot = true
 		case path.Base(dir) == changelogfile.ChangelogSubdir && strings.HasSuffix(file, ".ndjson"):
 			report.segments++
 		case path.Base(dir) == changelogfile.SealedSubdir:
@@ -218,11 +230,16 @@ func readExport(r io.Reader) (exportReport, error) {
 		return report, err
 	}
 	report.bytes = counted.n
-	if path.Base(last) != changelogfile.SnapshotName {
+	if !snapshot {
 		return report, fmt.Errorf("the export ended before %s, so it is incomplete: run it again", changelogfile.SnapshotName)
 	}
 	return report, nil
 }
+
+// maxSnapshotBytes bounds the snapshot.json the client reads whole: 512 MiB
+// is millions of digests, past any repository, and short of what an archive
+// that lies about the entry's size could make the client allocate.
+const maxSnapshotBytes = 512 << 20
 
 // countingReader counts the bytes read through it.
 type countingReader struct {

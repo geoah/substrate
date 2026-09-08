@@ -61,12 +61,24 @@ stop every write for as long as the slowest client took, and refusing when a
 segment rolled would make a busy repository unexportable.
 
 The blob bytes ride in the archive under `s3` too, read through the same
-`Store.Open` the fs path uses and hashed against their digest before they
-enter the tar. 0065 lists the objects instead of copying them because an
-operator has the bucket; an owner does not, and an export that named objects
-they cannot fetch would not be a recovery export. The archive's
-`snapshot.json` therefore records `blobStore: fs` and no location: it
-describes the copy, which is laid out for fs.
+`Store.Open` the fs path uses. Each blob is streamed from the store into the
+tar under a header sized by its manifest, hashed on the way and held to its
+digest once through, so an export holds one copy buffer per blob and never a
+blob; a store that answers other bytes fails the export. 0065 lists the
+objects instead of copying them because an operator has the bucket; an owner
+does not, and an export that named objects they cannot fetch would not be a
+recovery export. The archive's `snapshot.json` therefore records
+`blobStore: fs` and no location: it describes the copy, which is laid out
+for fs. One export streams per repository at a time: a second `Export` while
+one streams is refused (`409 conflict`), because an export holds a blob open
+and a tar half written for as long as the slowest client takes.
+
+The pin takes its pool connection before the writer mutex. Every write holds
+a connection from its start to the commit that runs under the mutex, and the
+writers behind it wait on the changelog advisory lock inside their own
+transactions, connections held; an export that took the mutex first and then
+asked the pool would wait for a connection no writer can release until the
+mutex is free.
 
 The bearer token is enough. A token has full access to its repository: it
 reads every record and every blob the archive carries, through `GET` and
@@ -107,6 +119,8 @@ reads the archive back on the way to disk and removes one that ended before
   taken again.
 - Bad, because a leaked token now yields the whole repository in one
   request. It already yielded it in many.
+- Bad, because one export per repository means a second client waits or
+  retries, and a client that stalls holds the slot until its request ends.
 - Bad, because the archive is not verified before it is taken, unlike
   `repository snapshot`: a live server cannot open every sealed file and hash
   every blob under the writer mutex, so a restore runs `repository verify`
@@ -119,9 +133,13 @@ downloads the export from a running service, checks the archive's entries,
 extracts it under a fresh data root, boots over it with an empty database
 and asserts the fold, the blob, the secret, the token, `repository verify`
 at the recorded point and a write past it.
-`TestExportPinsAPointWhileWritesContinue` downloads while a writer appends
-and asserts the archive's changelog ends at the recorded head and verifies
-there. `TestExportStreamsTheArchiveUnderTheBearerToken`,
+`TestExportPinsAPointWhileWritesContinue` pins a point, commits writes
+before and during `WriteTo` (the stream blocked at its first byte), and
+asserts the archive's changelog ends at the pinned head and verifies there.
+`TestExportPinsWithEveryPoolConnectionHeld` fills the repository pool with
+writes waiting behind the pinned export and asserts it completes.
+`TestExportStreamsBlobsOutOfS3` exports a repository whose bytes live in a
+MinIO bucket and restores it onto an fs host. `TestExportStreamsTheArchiveUnderTheBearerToken`,
 `TestExportRefusesWithAStatusBeforeTheFirstByte` and
 `TestExportAbortsTheResponseWhenTheStreamFailsMidway` (internal/api) hold
 the route; `TestExportRefusesAnArchiveThatEndedEarly`

@@ -131,6 +131,26 @@ func TestExportRefusesAnArchiveThatEndedEarly(t *testing.T) {
 	}
 }
 
+// A snapshot.json anywhere but the layout's root is a blob or a stray, not
+// the completion marker: an archive ending in one is still incomplete.
+func TestExportAcceptsSnapshotOnlyAtTheLayoutRoot(t *testing.T) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	for _, name := range []string{"repositories/ada.example.com/repository.json", "repositories/ada.example.com/blobs/snapshot.json"} {
+		body := `{"format":1,"head":7}`
+		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o600, Size: int64(len(body)), Typeflag: tar.TypeReg}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write([]byte(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = tw.Close()
+	if _, err := readExport(&buf); err == nil || !strings.Contains(err.Error(), "ended before snapshot.json") {
+		t.Fatalf("a nested snapshot.json must not complete the archive, got %v", err)
+	}
+}
+
 // An entry that climbs out of repositories/ is refused before it is trusted.
 func TestExportRefusesAnArchiveThatClimbsOut(t *testing.T) {
 	var buf bytes.Buffer

@@ -566,7 +566,12 @@ in the changelog holds the DEK wrapped to the owner's recovery key, which is
 what opens the archive anywhere else. The blob bytes ride in the archive
 whatever store the server runs, `s3` included, so `snapshot.json` records
 `fs` and no location: an export is self-contained, because its owner has no
-bucket. An archive that ends before `snapshot.json` was cut short;
+bucket. Restoring an export onto an `s3` host takes one more step: upload
+the extracted `blobs/*` to the bucket under the repository's prefix
+(`<prefix><authority>/<digest>`) before the boot that imports the directory,
+or `repository verify` names every blob whose bytes the bucket lacks. One
+export streams per repository at a time; a second request while one is
+running answers `409 conflict`. An archive that ends before `snapshot.json` was cut short;
 `substratectl export` refuses and removes one, and the server aborts the
 response rather than finish a tar it could not complete.
 
