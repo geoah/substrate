@@ -209,3 +209,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0062](0062-a-write-is-on-disk-before-its-commit-and-its-final-newline-is-the-commit-marker.md) | A write is on disk before its commit, and its final newline is the commit marker | accepted |
 | [0063](0063-a-property-rename-is-ordinary-record-writes.md) | A property rename is ordinary record writes, never a fold-time conversion | accepted |
 | [0065](0065-a-snapshot-is-a-stopped-server-copy-that-records-its-head.md) | A snapshot is a stopped-server copy that records its head and lists what it needs | accepted |
+| [0066](0066-a-backfill-and-an-enum-remap-are-ordinary-record-writes.md) | A backfill and an enum remap are ordinary record writes, composed with the rename | accepted |
