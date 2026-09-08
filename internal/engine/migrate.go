@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"embed"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -25,6 +26,22 @@ type migration struct {
 	UpSQL   string
 	SHA256  string
 }
+
+// recorded is one schema_migrations row: the name says which release wrote
+// it, the hash says which file ran.
+type recorded struct {
+	Name   string
+	SHA256 string
+}
+
+// ErrDatabaseNewer is the database's downgrade refusal, beside the two
+// per-repository ones (ErrVocabularyDialectNewer, ErrChangelogDialectNewer):
+// schema_migrations records a migration this binary does not carry, so a
+// newer binary migrated the database. Every boot step after the runner writes
+// to the schema (the orphan sweep, the declared indexes, the data root
+// import), so the open refuses before applying or serving anything. The
+// operator commands open the engine the same way and refuse the same way.
+var ErrDatabaseNewer = errors.New("substrate/engine: the database applied migrations this binary does not carry")
 
 // supersededSHA256 lists, per version, the hashes a migration's file carried
 // on an unmerged branch before it landed. A database an in-development build
@@ -77,8 +94,9 @@ func migrate(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	// Every recorded hash is checked before anything is applied: a pending
-	// migration must not land on a schema this binary has already refused.
+	// Every recorded row is checked before anything is applied: a pending
+	// migration must not land on a schema this binary has already refused,
+	// and nothing at all may land on a schema a newer binary built.
 	if err := checkRecorded(migrations, applied); err != nil {
 		return err
 	}
@@ -96,29 +114,69 @@ func migrate(ctx context.Context, db *sql.DB) error {
 // checkRecorded compares what the database recorded against what this binary
 // embeds, and names EVERY divergence rather than the first: a tree behind by
 // several edited migrations otherwise learns about them one boot at a time.
-func checkRecorded(migrations []migration, applied map[int]string) error {
-	var drift []string
+//
+// Three shapes refuse. A recorded version the binary does not embed is a
+// newer binary's migration (ErrDatabaseNewer). An embedded version recorded
+// under another hash is an edited migration. An embedded version unrecorded
+// below the highest recorded one is a gap: the runner applies in order, so
+// that migration would land on a schema its successors already changed.
+func checkRecorded(migrations []migration, applied map[int]recorded) error {
+	embedded := map[int]bool{}
+	highest := 0
 	for _, m := range migrations {
-		sum, ok := applied[m.Version]
-		if !ok || sum == "" || sum == m.SHA256 {
+		embedded[m.Version] = true
+		highest = max(highest, m.Version)
+	}
+	highestRecorded := 0
+	var newer []string
+	for v, r := range applied {
+		highestRecorded = max(highestRecorded, v)
+		if !embedded[v] {
+			newer = append(newer, fmt.Sprintf("  %d (%s)", v, r.Name))
+		}
+	}
+	sort.Strings(newer)
+	var drift, gap []string
+	for _, m := range migrations {
+		r, ok := applied[m.Version]
+		if !ok {
+			if m.Version < highestRecorded {
+				gap = append(gap, fmt.Sprintf("  %d (%s)", m.Version, m.Name))
+			}
 			continue
 		}
-		if superseded(m.Version, sum) {
+		if r.SHA256 == "" || r.SHA256 == m.SHA256 || superseded(m.Version, r.SHA256) {
 			continue
 		}
-		drift = append(drift, fmt.Sprintf("  %d (%s): recorded %s, file %s", m.Version, m.Name, sum, m.SHA256))
+		drift = append(drift, fmt.Sprintf("  %d (%s): recorded %s, file %s", m.Version, m.Name, r.SHA256, m.SHA256))
 	}
-	if len(drift) == 0 {
-		return nil
+	var errs []error
+	if len(newer) > 0 {
+		errs = append(errs, fmt.Errorf(`%w: %d recorded, and this binary carries migrations up to %d, so a newer binary `+
+			`migrated this database. Nothing is applied or served, because every later boot step writes to a schema `+
+			`this binary does not know. Run the binary that wrote them, or a later one; to run this one, restore the `+
+			`database from the copy taken before that binary ran. What the database recorded:`+"\n%s",
+			ErrDatabaseNewer, len(newer), highest, strings.Join(newer, "\n")))
 	}
-	return fmt.Errorf(`substrate/engine: %d migration(s) this database applied are not the ones this binary carries. `+
-		`The recorded hash is the file that actually ran, so it differs when the database was migrated by a build `+
-		`whose migration has changed since, in practice a build from a branch that was still editing it. `+
-		`Nothing pending is applied, because a new migration must not land on a schema its predecessors did not build. `+
-		`A development database is thrown away with mise run dev:wipe, and anything else is restored from a dump a `+
-		`matching binary wrote. A migration corrected before it landed is accepted instead by naming its old hash in `+
-		`supersededSHA256, together with the later migration that closes the gap. What diverges:`+"\n%s",
-		len(drift), strings.Join(drift, "\n"))
+	if len(drift) > 0 {
+		errs = append(errs, fmt.Errorf(`substrate/engine: %d migration(s) this database applied are not the ones this binary carries. `+
+			`The recorded hash is the file that actually ran, so it differs when the database was migrated by a build `+
+			`whose migration has changed since, in practice a build from a branch that was still editing it. `+
+			`Nothing pending is applied, because a new migration must not land on a schema its predecessors did not build. `+
+			`A development database is thrown away with mise run dev:wipe, and anything else is restored from a dump a `+
+			`matching binary wrote. A migration corrected before it landed is accepted instead by naming its old hash in `+
+			`supersededSHA256, together with the later migration that closes the gap. What diverges:`+"\n%s",
+			len(drift), strings.Join(drift, "\n")))
+	}
+	if len(gap) > 0 {
+		errs = append(errs, fmt.Errorf(`substrate/engine: %d migration(s) this binary carries are pending below the highest `+
+			`one this database recorded (%d). The runner applies in order, so a pending migration must not land on a `+
+			`schema its successors already changed: a schema_migrations row was removed by hand, or the database was `+
+			`migrated by a build whose numbering differs. Nothing is applied. Restore the database from a dump a `+
+			`matching binary wrote. What is pending out of order:`+"\n%s",
+			len(gap), highestRecorded, strings.Join(gap, "\n")))
+	}
+	return errors.Join(errs...)
 }
 
 func superseded(version int, sum string) bool {
@@ -130,20 +188,20 @@ func superseded(version int, sum string) bool {
 	return false
 }
 
-func appliedMigrations(ctx context.Context, conn *sql.Conn) (map[int]string, error) {
-	rows, err := conn.QueryContext(ctx, `SELECT version, sha256 FROM schema_migrations`)
+func appliedMigrations(ctx context.Context, conn *sql.Conn) (map[int]recorded, error) {
+	rows, err := conn.QueryContext(ctx, `SELECT version, name, sha256 FROM schema_migrations`)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	out := map[int]string{}
+	out := map[int]recorded{}
 	for rows.Next() {
 		var v int
-		var sum string
-		if err := rows.Scan(&v, &sum); err != nil {
+		var r recorded
+		if err := rows.Scan(&v, &r.Name, &r.SHA256); err != nil {
 			return nil, err
 		}
-		out[v] = sum
+		out[v] = r
 	}
 	return out, rows.Err()
 }

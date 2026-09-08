@@ -321,10 +321,12 @@ Beside the vocabulary stamp each repository carries a
 [changelog dialect](changelog.md#the-dialect-a-changelog-is-written-in): what a
 binary must understand to replay its entries. A binary claims it in the first
 transaction it appends with, so an older binary meeting a newer stamp refuses
-the open instead of serving a history it could not rebuild, while a new binary
-that opened a repository and wrote nothing leaves the rollback open. Nothing is
-rewritten and there is no promotion step: a changelog is append-only, so old
-entries keep the spelling they were written in.
+the open instead of serving a history it could not rebuild. A new binary that
+opened a repository and wrote nothing leaves that stamp alone, but the rollback
+stays open only if the binary also carried no new schema migration: applying
+one closes it for the whole database (below). Nothing is rewritten and there is
+no promotion step: a changelog is append-only, so old entries keep the spelling
+they were written in.
 
 **The promotion refuses rather than guesses.** It translates every declaration
 row this repository holds, and if one installed closure no longer parses under
@@ -342,13 +344,30 @@ later open under a binary that relaxed the contract) clears the marker.
 Quarantine is a state a migrated repository may reach, never one it may be
 migrated in.
 
-**A migration this binary does not recognize stops the boot.** The runner
-records each migration's sha256 as it applies it, and every boot compares the
-recorded hashes against the files the binary carries. A difference means the
-database applied a migration whose text has changed since, so the binary
-refuses before applying anything pending: a new migration must not land on a
-schema its predecessors did not build. The refusal names every migration that
-diverges, with both hashes, rather than the first one it meets.
+**A migration this binary does not carry stops the boot.** The runner records
+each migration's version, name and sha256 in `schema_migrations` as it applies
+it, and every boot reads that table back before applying anything. A recorded
+version the binary does not embed means a newer binary migrated the database,
+and the binary refuses to open it: every step after the runner (the orphan
+sweep, the declared indexes, the data root import) writes to the schema, and
+an older binary does not know the shape it would be writing to. The refusal
+names each such row; the name says which release wrote it. The repair is to
+run that binary or a later one, or to restore the database from the copy taken
+before the upgrade. This is the database's own downgrade refusal, beside the
+two per-repository ones above, and it closes the rollback even when no
+repository was written: a new binary that carries a migration applies it at its
+first boot. Every operator command opens the engine the same way, so an older
+`substratectl repository verify` or `rebuild` refuses the same database.
+
+**A migration this binary does not recognize stops the boot too.** The same
+read compares the recorded hashes against the files the binary carries. A
+difference means the database applied a migration whose text has changed
+since, so the binary refuses before applying anything pending: a new migration
+must not land on a schema its predecessors did not build. The refusal names
+every migration that diverges, with both hashes, rather than the first one it
+meets. A pending migration numbered below one the database already recorded
+refuses for the same reason: the runner applies in order, and that migration
+would land on a schema its successors already changed.
 
 A released binary never triggers this, because a landed migration is never
 edited. What does trigger it is a database migrated by a build from a branch
