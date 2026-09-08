@@ -293,7 +293,7 @@ func validationError(problems []string) error {
 // closure ships at.
 var packageDataKeys = map[string]bool{
 	"authority": true, "package": true, "description": true, "version": true,
-	// `retired` is the package's spent kind names (decision 0053): parsed by
+	// `retired` is the package's spent kind names (decision 0055): parsed by
 	// parsePackageRetired, refused on every admission door if declared again.
 	"retired": true,
 }
@@ -843,7 +843,7 @@ var typeDataKeys = map[string]bool{
 	"traits": true, "indices": true,
 	"description": true, "version": true,
 	// `retired` is the kind's spent property names, enum values and states
-	// (decision 0053): parsed by parseKindRetirement, refused on every
+	// (decision 0055): parsed by parseKindRetirement, refused on every
 	// admission door if declared again.
 	"retired": true,
 }

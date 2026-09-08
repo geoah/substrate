@@ -20,7 +20,7 @@
 //     wiring): the package version must bump. Data documents carry no version
 //     of their own, and the install upserts them along with the closure — so
 //     without a bump the wiring change is one no repository is ever offered.
-//   - a `retired:` entry (decision 0053) the base carries must stay in head,
+//   - a `retired:` entry (decision 0055) the base carries must stay in head,
 //     and head may not declare a kind, property, enum value or state a
 //     retirement names. The boot upgrade refuses both at every repository's
 //     open; this refuses them before the tree ships.
@@ -261,7 +261,7 @@ func diffTrees(base, head *tree) []string {
 	return append(out, retirementViolations(base, head)...)
 }
 
-// retirementViolations holds the tree to decision 0053: a `retired:` entry the
+// retirementViolations holds the tree to decision 0055: a `retired:` entry the
 // base tree carries stays in head, and no declaration in head names a retired
 // kind, property, enum value or state. The boot upgrade refuses both at the
 // open of every repository; this refuses them before the tree ships, where

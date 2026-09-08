@@ -47,7 +47,7 @@ func evoApply(t *testing.T, ds substrate.Dataset, props map[string]any) error {
 }
 
 // evoApplyRetiring is evoApply with a `retired:` block beside the properties
-// (decision 0053).
+// (decision 0055).
 func evoApplyRetiring(t *testing.T, ds substrate.Dataset, props, retired map[string]any) error {
 	t.Helper()
 	_, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, []map[string]any{
@@ -196,7 +196,7 @@ func TestSchemaEvolutionAdditiveAdmits(t *testing.T) {
 
 	// Removing an enum value NO live row holds admits: the guard counts, it
 	// does not blanket-refuse the class. Removing it does not spend it either:
-	// `low` comes back below, then is RETIRED (decision 0053), and only then
+	// `low` comes back below, then is RETIRED (decision 0055), and only then
 	// is its return refused.
 	props := evoBaseProps()
 	props["level"] = map[string]any{"type": "enum", "values": []any{"high"}}

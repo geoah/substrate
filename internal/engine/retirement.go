@@ -1,6 +1,6 @@
 package engine
 
-// Retired names (decision 0053). A package header's `retired.kinds` and a
+// Retired names (decision 0055). A package header's `retired.kinds` and a
 // kind's `retired.{properties,values,states}` are reservations the author
 // writes; this file is what makes them bind across declarations:
 //

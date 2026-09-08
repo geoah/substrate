@@ -417,7 +417,7 @@ func TestBundleUpgradeRefusesATightenedPatternWithLiveRows(t *testing.T) {
 		t.Fatalf("a pattern every stored value matches must land: %v", err)
 	}
 // The boot door takes the retired-name check the apply verb takes (decision
-// 0053). A repository whose stored core header retired a kind name refuses a
+// 0055). A repository whose stored core header retired a kind name refuses a
 // binary that ships a kind by that name, and a binary whose tree dropped the
 // retirement: the upgrade is skipped, the open succeeds, the stored row keeps
 // the reservation.

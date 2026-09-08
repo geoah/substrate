@@ -1,6 +1,6 @@
 package engine_test
 
-// Retired names (decision 0053) on the doors that admit a declaration at run
+// Retired names (decision 0055) on the doors that admit a declaration at run
 // time: the apply verb and InstallBundleClosure. A retirement is written by the
 // author, stored on the declaration row, carried into every later document of
 // its package or kind, survives a rebuild from the changelog, and refuses a
@@ -173,6 +173,22 @@ func TestRetirementRefusesOnEveryDoor(t *testing.T) {
 	assertStored("after a re-apply that omitted the block")
 	refusedOnApply()
 
+	// A retired value or state spends the NAME, not the property's shape:
+	// `level` may stop being an enum and `phase` a machine, the entries lie
+	// dormant, and they bite again the moment either declares the name.
+	reshaped := map[string]any{
+		"level": map[string]any{"type": "string"},
+		"phase": map[string]any{"type": "string"},
+	}
+	if err := apply(retKindDoc(retPackage, "widget", reshaped, nil)); err != nil {
+		t.Fatalf("a retired value must not pin the property's datatype: %v", err)
+	}
+	if err := apply(retKindDoc(retPackage, "widget", retWidgetNarrowed(), nil)); err != nil {
+		t.Fatalf("the property may become an enum and a machine again: %v", err)
+	}
+	assertStored("after the properties changed shape and back")
+	refusedOnApply()
+
 	// The install door: a published closure retires a kind, a later closure
 	// that declares it again is refused, and one that omits the block keeps
 	// it. The same admission the catalog's install and import ride.
@@ -210,6 +226,19 @@ func TestRetirementRefusesOnEveryDoor(t *testing.T) {
 		"kind acme.example.com/mirror/other is retired and declared")
 	wantRetiredRefusal(t, install(closure(packageDocRetiring(pkg), thing, other)),
 		"kind acme.example.com/mirror/other is retired and declared")
+	// The upgrade preview reports the same line the install refuses on,
+	// without writing anything.
+	planner, ok := ds.(substrate.BundleUpgradePlanner)
+	if !ok {
+		t.Fatal("dataset does not plan bundle upgrades")
+	}
+	plan, err := planner.PlanBundleUpgrade(ctx, closure(packageDocRetiring(pkg), thing, other))
+	if err != nil {
+		t.Fatalf("plan the upgrade: %v", err)
+	}
+	if !strings.Contains(strings.Join(plan.Blockers, "; "), "kind acme.example.com/mirror/other is retired and declared") {
+		t.Fatalf("the preview did not report the retirement: %+v", plan.Blockers)
+	}
 	if err := install(closure(packageDocRetiring(pkg), thing)); err != nil {
 		t.Fatalf("an upgrade that omits the block must admit: %v", err)
 	}

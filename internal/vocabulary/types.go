@@ -580,7 +580,7 @@ type TraitBinding struct {
 }
 
 // Kind is one declared kind of thing.
-// KindRetirement is a kind's `retired:` block, parsed (decision 0053). Each
+// KindRetirement is a kind's `retired:` block, parsed (decision 0055). Each
 // list is a reservation and needs no live subject: a property in Values or
 // States may itself be dropped or retired, and its entries stay spent.
 type KindRetirement struct {
@@ -626,7 +626,7 @@ type Kind struct {
 	Traits  []TraitBinding
 	Indices [][]string
 
-	// Retired is the kind's `retired:` block (decision 0053): the property
+	// Retired is the kind's `retired:` block (decision 0055): the property
 	// names, enum values and states this kind has spent. A name listed here is
 	// refused if the kind declares it again, on every admission door, and the
 	// engine carries a stored list into every later declaration of the kind.
@@ -783,7 +783,7 @@ type Package struct {
 	Agents        map[string]*Agent
 	AgentOrder    []string
 	// RetiredKinds is the package header's `retired.kinds` list (decision
-	// 0053): the kind names this package has spent. A name listed here is
+	// 0055): the kind names this package has spent. A name listed here is
 	// refused if the package declares a kind by it again, on every door, and
 	// the engine carries a stored list into every later header of the package.
 	RetiredKinds []string

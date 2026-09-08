@@ -39,7 +39,7 @@ data:
     description:
       type: markdown
       description: what this package is for, in its own words
-    # The kind names this package has spent (decision record 0053). Authored,
+    # The kind names this package has spent (decision record 0055). Authored,
     # not managed: the author writes a name here to retire it, the engine
     # carries the list into every later header of the package, and a kind
     # declared by a listed name is refused on every admission door. The

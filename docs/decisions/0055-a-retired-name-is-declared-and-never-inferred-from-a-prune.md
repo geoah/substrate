@@ -4,7 +4,7 @@ date: 2026-09-08
 decision-makers: George Antoniadis (via the issue-384 agent session)
 ---
 
-# 0053. A retired name is a declared reservation, never inferred from a prune
+# 0055. A retired name is a declared reservation, never inferred from a prune
 
 ## Context and Problem Statement
 
@@ -127,9 +127,13 @@ spends names nobody meant to spend. Doing nothing leaves the defect.
 `TestRetiredReserved` (internal/vocabulary/retired_test.go) holds the
 loader's validation. `TestRetirementRefusesOnEveryDoor`
 (internal/engine/retirement_db_test.go) retires a kind, a property, an enum
-value and a state, rebuilds the repository, and re-declares each on the apply
-door and the install door; `TestBootUpgradeRefusesARetiredName`
-(internal/engine/upgrade_guard_db_test.go) does the same on the boot door.
+value and a state, rebuilds the repository, re-declares each on the apply
+door, the install door and the upgrade preview, and moves a property whose
+value was retired to another datatype and back;
+`TestBootUpgradeRefusesARetiredName`
+(internal/engine/upgrade_guard_db_test.go) does the same on the boot door,
+and `TestImportRefusesARetiredKindName` (internal/catalog/retired_db_test.go)
+on a rehomed sample import.
 `TestSchemaEvolutionAdditiveAdmits` (internal/engine/evolution_db_test.go)
 holds that a removed but unretired value returns and a retired one does not.
 `TestRetiredNameReuseIsRefused` (cmd/vocabularydiff/main_test.go) holds the

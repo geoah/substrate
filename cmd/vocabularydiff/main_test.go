@@ -225,7 +225,7 @@ func TestVersionNeverMovesBackward(t *testing.T) {
 	}
 }
 
-// --- retired names (decision 0053) -------------------------------------------
+// --- retired names (decision 0055) -------------------------------------------
 
 // retiredBundle is baseBundle with `gone` retired in the package header.
 const retiredBundle = `kind: substrate.reamde.dev/core/package

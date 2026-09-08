@@ -26,7 +26,7 @@ data:
   # version 15: `source` gains `published`, the origin a provider install
   # writes (decision record 0048).
   # version 16: `retired` declares the property names, enum values and states
-  # the kind has spent (decision record 0053). Additive.
+  # the kind has spent (decision record 0055). Additive.
   version: 16
   names:
     singular: kind
@@ -109,7 +109,7 @@ data:
           repeated: true
           required: true
           description: the properties the index covers, in order
-    # The names this kind has spent (decision record 0053). Authored, not
+    # The names this kind has spent (decision record 0055). Authored, not
     # managed: the author lists a name to retire it, the engine carries the
     # block into every later declaration of the kind, and a listed name
     # declared again is refused on every admission door. The second json

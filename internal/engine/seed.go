@@ -253,7 +253,7 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 	// that refuses it by hand would have caught it. It needs no live rows, so it
 	// is decided before the transaction opens.
 	badDefaults := checkDeclaredDefaults(reg, upgrade)
-	// The retired-name check the same door takes (decision 0053): a shipped
+	// The retired-name check the same door takes (decision 0055): a shipped
 	// declaration that reuses a name this repository's stored closure retired,
 	// or a tree that dropped a stored retirement, is refused before any row
 	// moves. This door has no document merge in front of it, so a dropped list

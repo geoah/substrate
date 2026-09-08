@@ -1,6 +1,6 @@
 package vocabulary
 
-// The `retired:` block (decision 0053): a declaration's spent names. A package
+// The `retired:` block (decision 0055): a declaration's spent names. A package
 // header retires kind names; a kind retires its own property names, enum
 // values by property and states by property. Retirement is an act the author
 // performs by writing the name here, never inferred from a prune, and it is
@@ -92,8 +92,12 @@ func (l *loader) parseKindRetirement(where string, d map[string]any, t *Kind) {
 	// live under that property is the same contradiction as a declared name.
 	t.Retired.Values = l.retiredByProperty(bwhere+".values", m, "values")
 	t.Retired.States = l.retiredByProperty(bwhere+".states", m, "states")
-	// Only the kind's own properties are consulted: a retired property, or one
-	// the kind never declared, reserves its entries with nothing to check.
+	// Only the kind's own properties are consulted, and only in the shape the
+	// entry reserves: a retired value bites while the property is an enum, a
+	// retired state while it is a machine. Under any other datatype, or with the
+	// property gone or retired, the entry lies dormant and the declaration is
+	// free to move; it bites again the moment the property becomes an enum or a
+	// machine that declares the name.
 	for _, key := range []string{"values", "states"} {
 		byProp := t.Retired.Values
 		if key == "states" {
@@ -104,30 +108,21 @@ func (l *loader) parseKindRetirement(where string, d map[string]any, t *Kind) {
 			if p == nil || p.Implicit {
 				continue
 			}
-			live, problem := map[string][]string{}, ""
-			switch key {
-			case "values":
-				if p.Datatype != DatatypeEnum {
-					problem = "not an enum property; only an enum retires values"
-				}
+			live := map[string]bool{}
+			switch {
+			case key == "values" && p.Datatype == DatatypeEnum:
 				for _, ev := range p.Values {
-					live[ev.Value] = nil
+					live[ev.Value] = true
 				}
-			case "states":
-				if p.Machine == nil {
-					problem = "not a state property; only a state property retires states"
-				} else {
-					for _, s := range p.Machine.States {
-						live[s] = nil
-					}
+			case key == "states" && p.Machine != nil:
+				for _, s := range p.Machine.States {
+					live[s] = true
 				}
-			}
-			if problem != "" {
-				l.errf("%s.%s.%s: %s", bwhere, key, pname, problem)
+			default:
 				continue
 			}
 			for _, v := range byProp[pname] {
-				if _, held := live[v]; held {
+				if live[v] {
 					l.errf("%s.%s.%s: %q is retired and declared; %s", bwhere, key, pname, v, retiredDeclaredAgain)
 				}
 			}

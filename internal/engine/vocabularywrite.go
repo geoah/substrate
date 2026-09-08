@@ -450,7 +450,7 @@ type vocabularyStage struct {
 	// mapping goes. One line per mapping, ready to join the guard list.
 	strandedMappings []string
 	// retirements names every retired name the candidate declares again, or
-	// drops from a stored list (decision 0053, retirement.go). No count: a
+	// drops from a stored list (decision 0055, retirement.go). No count: a
 	// retired name refuses whether or not a row exists.
 	retirements      []string
 	droppedCallables []droppedCallable
@@ -540,7 +540,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	}
 	// Before the versions resolve: a stored retirement the incoming document
 	// omits is carried into it, so an unchanged re-apply compares equal and a
-	// retirement is never lifted by omission (decision 0053).
+	// retirement is never lifted by omission (decision 0055).
 	carryRetirements(&b, existing)
 	resolveDeclarationVersions(&b, existing)
 	merged := map[string]vocabulary.Document{}
@@ -1157,7 +1157,7 @@ func packageDeclarations(g *vocabulary.Package) ([]declaration, error) {
 		header["description"] = g.Description
 	}
 	// The retired kind names ride the row like every other authored key, so
-	// the rebuild and the export carry the reservation (decision 0053).
+	// the rebuild and the export carry the reservation (decision 0055).
 	if len(g.RetiredKinds) > 0 {
 		header["retired"] = map[string]any{"kinds": anyList(g.RetiredKinds)}
 	}

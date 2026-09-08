@@ -1,6 +1,6 @@
 package vocabulary_test
 
-// The `retired:` block (decision 0053): a package header's spent kind names
+// The `retired:` block (decision 0055): a package header's spent kind names
 // and a kind's spent property names, enum values and states. The loader holds
 // the block's shape and the one contradiction a single document can carry, a
 // name both retired and declared. What the block binds across documents (a
@@ -140,11 +140,30 @@ func TestRetiredReserved(t *testing.T) {
 			"  retired:\n    values:\n      level: low\n":        "a list of names",
 			"  retired:\n    values:\n      level: [Low]\n":      `"Low" must be a lowercase word`,
 			"  retired:\n    values:\n      level: [low, low]\n": `"low" is listed twice`,
-			"  retired:\n    values:\n      label: [low]\n":      "not an enum property; only an enum retires values",
-			"  retired:\n    states:\n      label: [done]\n":     "not a state property; only a state property retires states",
 			"  retired:\n    values:\n      Level: [low]\n":      `property "Level" must be camelCase`,
 		} {
 			loadThingErr(t, "  properties:\n    label: {type: string}\n"+body, want)
+		}
+	})
+
+	t.Run("an entry is dormant under another datatype", func(t *testing.T) {
+		// After retiring `level: low` the property may still change shape: a
+		// retired value bites only while the property is an enum, a retired
+		// state only while it is a machine. Only the name is spent.
+		ty := loadThing(t, `  properties:
+    level: {type: string}
+    phase: {type: string}
+  retired:
+    values:
+      level: [low]
+    states:
+      phase: [archived]
+`)
+		if got := ty.Retired.Values["level"]; len(got) != 1 || got[0] != "low" {
+			t.Fatalf("retired values = %v", ty.Retired.Values)
+		}
+		if got := ty.Retired.States["phase"]; len(got) != 1 || got[0] != "archived" {
+			t.Fatalf("retired states = %v", ty.Retired.States)
 		}
 	})
 

@@ -327,7 +327,7 @@ Removing a declaration does not spend its name: a dropped kind, property,
 enum value or state may be declared again later, and nothing stops the new
 declaration from meaning something else while history and tombstoned records
 still carry the old meaning. `retired:` is how an author spends a name
-([decision 0053](decisions/0053-a-retired-name-is-declared-and-never-inferred-from-a-prune.md)).
+([decision 0055](decisions/0055-a-retired-name-is-declared-and-never-inferred-from-a-prune.md)).
 A package header retires kind names; a kind retires its own property names,
 enum values by property and states by property:
 
