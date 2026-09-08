@@ -147,7 +147,7 @@ run = "go test -count=1 -p 1 -timeout 30m -skip '^TestLive' ./internal/blobbytes
 description = "The short suite under the race detector"
 # -short, so this is the suite that does NOT want a database. The engine's
 # database suites are where the interesting concurrency lives, but they are
-# also four minutes of container time, and -race multiplies that; this is the
+# also a minute or more of container time, and -race multiplies that; this is the
 # cheap gate that catches the runner's process reaping, the API's handlers and
 # the LLM wires. Run `go test -race ./internal/engine/...` by hand when you
 # have touched the engine's goroutines.
@@ -172,6 +172,17 @@ run = [
     go tool cover -func=coverage.out | tail -1
     """,
 ]
+
+[tasks."test:timing"]
+description = "Where a `go test -json` run spent its time: per-package wall and the 30 slowest tests"
+# The engine suite is 800 tests on one Postgres, so one slow fixture is 800
+# slow tests and no single case looks guilty. Capture a run once, then read it:
+#   go test -count=1 -p 1 -skip '^TestLive' -json ./internal/engine/... > timing.json
+#   mise run test:timing -- timing.json
+# -skip '^TestLive' because a dev box has provider keys in its environment,
+# and a timing run must not buy completions.
+# Not a gate: the numbers are the machine's. It is how a regression is found.
+run = "python3 .mise/testtiming.py"
 
 [tasks."test:llm"]
 description = "The LIVE suite: real completions from real providers, when the keys are there"
@@ -277,7 +288,7 @@ description = "ruff over the runner's Python host"
 # internal/runner/host.py is the long-lived child every `runtime: python`
 # function body is exec'd into: a syntax slip there takes out every Python
 # function at once, and no Go test compiles it. Config is .ruff.toml.
-run = "ruff check internal/runner/host.py"
+run = "ruff check internal/runner/host.py .mise/testtiming.py"
 
 [tasks."lint:migrations"]
 description = "The shape of internal/engine/migrations: naming, numbering, no gaps"

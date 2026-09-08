@@ -23,14 +23,14 @@ import (
 func w2Opener(t *testing.T) (open func() *dataset, closeSvc func()) {
 	t.Helper()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := MigratedDSN(t)
 	var last substrate.Service
 	created := false
 	imported := false
 	open = func() *dataset {
-		svc, err := Open(ctx, dsn,
+		svc, err := OpenForTest(t, ctx, dsn,
 			WithDataRoot(t.TempDir()),
-			WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"))
+			WithCredentialKey(TestCredentialKey), WithKindsDir(CoreKindsDir))
 		if err != nil {
 			t.Fatalf("open engine: %v", err)
 		}

@@ -39,7 +39,18 @@ not care which:
   needs nothing but Docker.
 - **A server you point it at.** Set `SUBSTRATE_TEST_DATABASE_URL` and `testdb`
   uses that instead. This is how CI runs, against a service container the
-  runner keeps alive.
+  runner keeps alive. Two requirements, both refused with a message rather
+  than worked around: the URL is a `postgres://` URL, and its role has
+  `CREATEDB`, because the engine suite copies a migrated template database
+  per test. The template also needs the `vector` and `pgcrypto` extensions,
+  and `vector` is not a trusted extension, so either the role is a superuser
+  or you install both into `template1` once (connect to `template1` and
+  `CREATE EXTENSION` each), after which every new database inherits them and
+  `CREATEDB` is enough. The server is never changed (no `ALTER SYSTEM`); every database
+  the run makes is dropped when the binary exits (`testdb.Main`), and a
+  `sub_tpl_*` or `sub_test_*` database older than six hours with nothing
+  connected is dropped at the next run's start, so a killed binary does not
+  accumulate them.
 
 ```bash
 mise run test:db                                        # a container per binary
@@ -58,19 +69,82 @@ concurrently. A `*_db_test.go` failure that looks arbitrary usually is, so
 confirm it alone before believing it:
 
 ```bash
-mise run test:db:engine                # 2 to 8 minutes by machine; the answer you can trust
+mise run test:db:engine                # about 70 s on 16 cores; the answer you can trust
 go test ./internal/engine/ -run TestFold -v
 ```
 
-The engine package is 825 top-level tests: about two minutes of wall time on a
-16 core machine and six to eight on a 4 vCPU CI runner (measured 2026-09-08),
-so the budget in the comment above is the spread, not a promise.
+The engine package is 830 top-level tests: about 70 s of wall time on a 16
+core machine (measured 2026-09-08, down from 134 s the same day; the section
+below says where the time went), and longer on a 4 vCPU CI runner (six to
+eight minutes before that change; a shard's log says what it is now), so the
+comment above is this machine's number, not a promise.
 
 `test:db:engine` is the engine package with `test:db`'s flags, and it is also
 the task CI shards: with `SHARD` and `SHARDS` in the environment it runs one
 slice of the package (`SHARD=3 SHARDS=8 mise run test:db:engine`), which is
 how a red shard is reproduced by number. `test:db:rest` is every other
 database package. The cut is described under [What CI runs](#what-ci-runs).
+
+### The engine fixture, and where the time goes
+
+Almost every engine test opens its own service, creates a repository and
+imports the sample vocabulary. Four things the harness does keep that under
+a minute and a half on 16 cores; each was measured on its own, and
+`docs/testing.md` is the one place that explains them (the code comments
+point here).
+
+**A migrated template database, copied per test.** `engine.Open` runs once
+per binary on a template (`migratedTemplate` in
+`internal/engine/export_test.go`, a `testdb.Template`) with no repository, so
+the template holds the recorded migrations, the roles' grants and the
+shipped indexes and nothing else; `engine.MigratedDSN(t)` hands each test a
+`CREATE DATABASE ... TEMPLATE` copy. `engine.Open` still runs every boot step
+on the copy and skips only the DDL. A copy beside an empty data root is
+exactly a fresh install: nothing on either side. Before this, every test
+migrated a fresh schema, and the migration runner's advisory lock was
+keyed on one constant, so the parallel suite ran its migrations one test at
+a time: 90% of Postgres's time in a run was that lock. The lock is keyed on
+`current_schema()` now, like the engine's other three (no effect on a
+deployment, one schema per database), which is what the packages still on
+`testdb.NewSchema` (catalog, testenv, substratectl) get. The from-empty
+migration still runs three times per engine binary: the template build,
+`TestRepositoryProvisioningAndProjections` and
+`TestAssertPoolPrincipalRejectsSuperuser`.
+
+**One opener.** `engine.OpenForTest(t, ctx, dsn, opts...)` is `engine.Open`
+with the shipped core kinds (`engine.CoreKindsDir`), the binary's credential
+key and the test's TOTP clock; every test open goes through it, and a
+caller's options win where they name the same thing. The clock
+(`engine.ClockOf(t)`, keyed on the full test name and forgotten when the
+test ends) is what `waitStep` advances by one `engine.TOTPPeriod` where it
+used to sleep through a real 30 second window.
+
+**The container, and how it is reached.** The pgvector container `testdb`
+starts runs with `fsync=off`, `synchronous_commit=off` and
+`full_page_writes=off` on its command line: it dies with the binary, and
+`DROP DATABASE` forces a checkpoint that fsync makes slow. `testdb` connects
+to the container's own IP where the host can route to it, else the published
+port: the published port is docker-proxy, one process relaying every
+connection, and it was the queue every test waited in (98 s to 84 s). Each
+test drops its copy in its cleanup and `testdb.Main` drops what is left after
+`m.Run` (a dropper goroutine off the tests' path measured no gain: 69 to
+80 s against 67 s). CI's service containers keep their data directory on a
+tmpfs (`--tmpfs` in the job's `options`), no GUC spelled anywhere.
+
+**The data roots on tmpfs.** Every changelog write fsyncs
+([0062](decisions/0062-a-write-is-on-disk-before-its-commit-and-its-final-newline-is-the-commit-marker.md)),
+and sixteen repositories fsyncing one ext4 journal serialize on it (84 s to
+67 s). `testdb.Main` puts `TMPDIR`, and with it every `t.TempDir()`, under
+`/dev/shm` when that is a tmpfs with at least 512 MB free, and says so once
+on stderr. A container's 64 MB `/dev/shm` falls back to the default;
+`TMPDIR=/tmp` opts out.
+
+To see what a run spent, capture it as JSON once and read it:
+
+```bash
+go test -count=1 -p 1 -skip '^TestLive' -json ./internal/engine/... > timing.json
+mise run test:timing -- timing.json     # per-package wall, then the 30 slowest tests
+```
 
 ### Testing the boot upgrade
 

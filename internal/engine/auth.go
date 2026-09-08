@@ -465,7 +465,7 @@ func (s *service) registrationSeed(in substrate.RegisterInput) (string, int64, e
 	if s.totpDisabled {
 		return seed, 0, nil
 	}
-	step, ok := totpVerify(key, in.TOTPCode, nowUTC(), 0)
+	step, ok := totpVerify(key, in.TOTPCode, s.now(), 0)
 	if !ok {
 		return "", 0, fmt.Errorf("%w: that code does not match the enrollment", substrate.ErrAuth)
 	}
@@ -592,7 +592,7 @@ func (s *service) verifyFactors(ctx context.Context, in substrate.LoginInput) (R
 		}
 	}
 	passwordOK := verifyPassword(material.passwordHash, in.Password)
-	step, codeOK := totpVerify(key, in.TOTPCode, nowUTC(), material.totp.Step)
+	step, codeOK := totpVerify(key, in.TOTPCode, s.now(), material.totp.Step)
 	// The dev escape hatch (WithInsecureDisableTOTP): the code is still
 	// evaluated above, so the work and the timing are unchanged, and only the
 	// VERDICT is dropped. Nothing is consumed either — a step spent here would
@@ -698,7 +698,7 @@ func (s *service) ReenrollTOTP(ctx context.Context, in substrate.LoginInput, new
 		return fmt.Errorf("%w: the totp secret must decode to at least %d bytes",
 			substrate.ErrValidation, totpMinSeedBytes)
 	}
-	step, ok := totpVerify(key, newCode, nowUTC(), 0)
+	step, ok := totpVerify(key, newCode, s.now(), 0)
 	if !ok {
 		return fmt.Errorf("%w: that code does not match the new enrollment", substrate.ErrAuth)
 	}

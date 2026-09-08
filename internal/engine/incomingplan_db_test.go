@@ -29,10 +29,10 @@ const (
 func planDataset(t *testing.T) *dataset {
 	t.Helper()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
-	svc, err := Open(ctx, dsn,
+	dsn := MigratedDSN(t)
+	svc, err := OpenForTest(t, ctx, dsn,
 		WithDataRoot(t.TempDir()),
-		WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		WithKindsDir(CoreKindsDir),
 		WithCredentialKey(TestCredentialKey))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)

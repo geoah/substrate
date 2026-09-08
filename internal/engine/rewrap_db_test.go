@@ -21,7 +21,6 @@ import (
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
-	"github.com/geoah/substrate/internal/testdb"
 )
 
 // registerWithIdentity walks the registration flow with a client-minted age
@@ -65,8 +64,8 @@ func otherCredentialKey(t *testing.T) ([]byte, string) {
 // key, the shape of the restoring host's boot.
 func openWithKey(t *testing.T, dsn, root, key string) (substrate.Service, error) {
 	t.Helper()
-	svc, err := engine.Open(context.Background(), dsn,
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+	svc, err := engine.OpenForTest(t, context.Background(), dsn,
+		engine.WithKindsDir(engine.CoreKindsDir),
 		engine.WithDataRoot(root),
 		engine.WithCredentialKey(key))
 	if err == nil {
@@ -100,7 +99,7 @@ func TestRewrapRestoresARepositoryUnderANewCredentialKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	otherRaw, other := otherCredentialKey(t)
-	dsn2 := testdb.NewSchema(t)
+	dsn2 := engine.MigratedDSN(t)
 
 	// Without the rewrap the copy is inert on this host: the import refuses.
 	if _, err := openWithKey(t, dsn2, root2, other); err == nil {
@@ -234,7 +233,7 @@ func TestRewrapOpensAFormatOneDirectory(t *testing.T) {
 		t.Fatalf("the rewritten manifest does not open under the new key: %v", err)
 	}
 
-	dsn2 := testdb.NewSchema(t)
+	dsn2 := engine.MigratedDSN(t)
 	svc2, err := openWithKey(t, dsn2, root2, other)
 	if err != nil {
 		t.Fatalf("boot on the rewrapped format-1 directory: %v", err)

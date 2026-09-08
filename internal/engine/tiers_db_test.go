@@ -48,10 +48,10 @@ func actorManifestTier(pkg, actor, tier string) map[string]any {
 func newTierDataset(t *testing.T) *dataset {
 	t.Helper()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
-	svc, err := Open(ctx, dsn,
+	dsn := MigratedDSN(t)
+	svc, err := OpenForTest(t, ctx, dsn,
 		WithDataRoot(t.TempDir()),
-		WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/substrate.reamde.dev/core"))
+		WithCredentialKey(TestCredentialKey), WithKindsDir(CoreKindsDir))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}

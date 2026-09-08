@@ -113,9 +113,9 @@ func TestProposeCardOpsMatchTheDispatcher(t *testing.T) {
 // (M1); against the stored one it is refused and the open fails.
 func TestBootUpgradeDeliversTheHostFunctions(t *testing.T) {
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := MigratedDSN(t)
 	openWith := func(dir string) substrate.Service {
-		svc, err := Open(ctx, dsn, WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey), WithKindsDir(dir))
+		svc, err := OpenForTest(t, ctx, dsn, WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey), WithKindsDir(dir))
 		if err != nil {
 			t.Fatalf("open with %s: %v", dir, err)
 		}
@@ -140,7 +140,7 @@ func TestBootUpgradeDeliversTheHostFunctions(t *testing.T) {
 	_ = svc.Close()
 
 	// This binary's tree: the open runs the upgrade.
-	svc2 := openWith("../../kinds/substrate.reamde.dev/core")
+	svc2 := openWith(CoreKindsDir)
 	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("the boot upgrade could not deliver the host functions: %v", err)
@@ -170,7 +170,7 @@ func TestBootUpgradeDeliversTheHostFunctions(t *testing.T) {
 // `host` value and whose `source` is required.
 func preHostKindsDir(t *testing.T) string {
 	t.Helper()
-	const src = "../../kinds/substrate.reamde.dev/core"
+	const src = CoreKindsDir
 	dir := t.TempDir()
 	entries, err := os.ReadDir(src)
 	if err != nil {

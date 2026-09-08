@@ -21,10 +21,10 @@ import (
 func TestSchemaDialectLadder(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := engine.MigratedDSN(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
+		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
+			engine.WithKindsDir(engine.CoreKindsDir))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -203,10 +203,10 @@ var declarationKindRefs = []string{
 func assertDefinitionBlobRefusesTheOpen(t *testing.T, declKind string, blob any) bool {
 	t.Helper()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := engine.MigratedDSN(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
+		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
+			engine.WithKindsDir(engine.CoreKindsDir))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -299,10 +299,10 @@ func assertDefinitionBlobRefusesTheOpen(t *testing.T, declKind string, blob any)
 func TestStampedStoreRefusesANullDefinitionAtTheRow(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := engine.MigratedDSN(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
+		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
+			engine.WithKindsDir(engine.CoreKindsDir))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -357,10 +357,10 @@ func TestStampedStoreRefusesANullDefinitionAtTheRow(t *testing.T) {
 func TestStampedStoreRefusesAnInterimGrantRow(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := engine.MigratedDSN(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
+		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
+			engine.WithKindsDir(engine.CoreKindsDir))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}

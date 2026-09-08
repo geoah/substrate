@@ -16,7 +16,6 @@ import (
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
-	"github.com/geoah/substrate/internal/testdb"
 )
 
 func TestFirstLoginOfAPreDEKRepositoryMirrorsTheReKeyedStep(t *testing.T) {
@@ -127,7 +126,7 @@ func TestFirstLoginOfAPreDEKRepositoryMirrorsTheReKeyedStep(t *testing.T) {
 	// A copy taken now imports as a marked repository, and its login works.
 	_ = svc.Close()
 	root2 := copyRepositoryDir(t, root, id)
-	svc2 := mustReopen(t, testdb.NewSchema(t), root2)
+	svc2 := mustReopen(t, engine.MigratedDSN(t), root2)
 	waitStep(t)
 	if _, _, err := svc2.Login(ctx, substrate.LoginInput{
 		Username: "eve", Password: testPassword, TOTPCode: u.code(t), Label: "after import",
@@ -188,7 +187,7 @@ func TestImportRefusesAMarkedDirectoryWhoseFilesDoNotOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dsn2 := testdb.NewSchema(t)
+	dsn2 := engine.MigratedDSN(t)
 	_, err = openWithKey(t, dsn2, root2, engine.TestCredentialKey)
 	if err == nil {
 		t.Fatal("a marked directory whose file does not open under the DEK imported")

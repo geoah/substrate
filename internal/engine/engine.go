@@ -90,6 +90,10 @@ type options struct {
 	// a function's identity as its body is about to be invoked
 	// (runner.go runCallableRaw), so a test can act while the body runs.
 	invokeHook func(function string)
+	// now is the TOTP verifier's clock (export_test.go WithTestTOTPClock); the
+	// wall clock when nil. Tests only: a test that spends one window's codes
+	// advances it instead of sleeping through a real 30 second step.
+	now func() time.Time
 }
 
 // Option configures Open.
@@ -248,6 +252,8 @@ type service struct {
 	// totpDisabled stops verifying the second factor (WithInsecureDisableTOTP):
 	// the password is then the whole credential. Dev only.
 	totpDisabled bool
+	// now is the clock the TOTP verifier reads; nowUTC outside a test.
+	now func() time.Time
 	// readOnly is WithDirectoryReadOnly: this process is not the repository
 	// directories' writer and must not become one (repodir.go).
 	readOnly bool
@@ -291,7 +297,7 @@ type service struct {
 // runs the shared schema's DDL. It provisions nothing: a repository exists
 // once its control-plane row does.
 func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, error) {
-	o := options{log: slog.Default()}
+	o := options{log: slog.Default(), now: nowUTC}
 	for _, fn := range opts {
 		fn(&o)
 	}
@@ -374,6 +380,7 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 
 		conversionCeiling: o.conversionCeiling,
 		totpDisabled:      o.insecureDisableTOTP,
+		now:               o.now,
 		readOnly:          o.dirReadOnly,
 		log:               o.log,
 		gqlSchemas:        gql.NewCache(),

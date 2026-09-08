@@ -107,7 +107,7 @@ func cvReplays(t *testing.T, svc substrate.Service, ds substrate.Dataset) {
 	root := engine.DataRootOf(svc)
 	_ = svc.Close()
 	root2 := copyRepositoryDir(t, root, id)
-	svc2 := mustReopen(t, testdb.NewSchema(t), root2)
+	svc2 := mustReopen(t, engine.MigratedDSN(t), root2)
 	defer func() { _ = svc2.Close() }()
 	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {

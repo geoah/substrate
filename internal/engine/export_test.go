@@ -6,9 +6,14 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"os"
+	"sync"
+	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -42,6 +47,41 @@ func mustDecodeTestCredentialKey(key string) []byte {
 // DataRootOf is the data root a service was opened with, so a test can find
 // a repository's directory (changelogfile.RepoDir) and damage or copy it.
 func DataRootOf(svc substrate.Service) string { return svc.(*service).dataRoot }
+
+// migratedTemplate is the database MigratedDSN copies for each test
+// (testdb.Template): Open ran on it once, with no repository, so the copy
+// holds the recorded migrations, the roles' grants and the shipped indexes
+// and nothing else. A copy beside an empty data root is exactly a fresh
+// install (nothing on either side), and Open on the copy runs every boot
+// step over it; what it skips is the DDL. The from-empty migration still
+// runs three times per binary: here, in TestRepositoryProvisioningAndProjections
+// and in TestAssertPoolPrincipalRejectsSuperuser, which open testdb.NewSchema.
+var migratedTemplate = testdb.NewTemplate("engine", func(ctx context.Context, dsn string) error {
+	root, err := os.MkdirTemp("", "substrate-template-")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(root) }()
+	svc, err := Open(ctx, dsn,
+		WithKindsDir(CoreKindsDir),
+		WithDataRoot(root),
+		WithCredentialKey(TestCredentialKey))
+	if err != nil {
+		return err
+	}
+	return svc.Close()
+})
+
+// MigratedDSN is a fresh database of the test's own on which the shipped
+// migrations have already run, dropped when the test ends. It is what every
+// test opens, migrate_db_test.go's included (those tamper with a migrated
+// database and open it again). The two that open testdb.NewSchema and
+// migrate from empty are TestRepositoryProvisioningAndProjections and
+// TestAssertPoolPrincipalRejectsSuperuser.
+func MigratedDSN(t *testing.T) string {
+	t.Helper()
+	return migratedTemplate.Clone(t)
+}
 
 // WithTestImportFault runs fn at each durable step of a boot import
 // (repodir.go importEntries): after every batch of changelog rows commits,
@@ -94,6 +134,73 @@ const (
 // mid-copy; a nil hook is the production path.
 func WithTestSnapshotFault(fn func(stage, dir string) error) Option {
 	return func(o *options) { o.snapshotFault = fn }
+}
+
+// WithTestTOTPClock is the clock the TOTP verifier reads (auth.go totpVerify
+// callers), and nothing else: the record timestamps stay on the wall clock.
+// A test that has spent one window's codes advances it one step instead of
+// sleeping through a real 30 second window. OpenForTest installs it, so every
+// service a test opens verifies against the same clock ClockOf(t) reads.
+func WithTestTOTPClock(now func() time.Time) Option {
+	return func(o *options) { o.now = now }
+}
+
+// TOTPPeriod is the verifier's step, for a test that moves its clock one.
+const TOTPPeriod = totpPeriod
+
+// CoreKindsDir is the shipped core package, relative to this package: what
+// every test open loads unless it brings a patched tree.
+const CoreKindsDir = "../../kinds/substrate.reamde.dev/core"
+
+// TestClock is one test's TOTP clock: the wall clock plus what Advance has
+// added. Keyed on the full test name (ClockOf), so a subtest and a repeated
+// run (-count=N) start at zero.
+type TestClock struct {
+	mu     sync.Mutex
+	offset time.Duration
+}
+
+var testClocks sync.Map
+
+// ClockOf is the test's clock, made on first use and forgotten when the test
+// ends.
+func ClockOf(t *testing.T) *TestClock {
+	t.Helper()
+	key := t.Name()
+	c, loaded := testClocks.LoadOrStore(key, &TestClock{})
+	if !loaded {
+		t.Cleanup(func() { testClocks.Delete(key) })
+	}
+	return c.(*TestClock)
+}
+
+// Now is the wall clock plus the advance.
+func (c *TestClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return time.Now().Add(c.offset).UTC()
+}
+
+// Advance moves the clock forward by d.
+func (c *TestClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.offset += d
+}
+
+// OpenForTest is the ONE way a test opens a service: Open with the shipped
+// core kinds, the binary's credential key and the test's TOTP clock, then the
+// caller's options, which win where they name the same thing (a patched
+// kinds tree, another key). It does not close the service: the callers
+// differ on when.
+func OpenForTest(t *testing.T, ctx context.Context, dsn string, opts ...Option) (substrate.Service, error) {
+	t.Helper()
+	all := append([]Option{
+		WithKindsDir(CoreKindsDir),
+		WithCredentialKey(TestCredentialKey),
+		WithTestTOTPClock(ClockOf(t).Now),
+	}, opts...)
+	return Open(ctx, dsn, all...)
 }
 
 // WithTestInvokeHook runs fn with a function's identity as the runner is

@@ -17,10 +17,14 @@ import (
 func TestRepositoryProvisioningAndProjections(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
+	// An EMPTY schema, not the migrated template every other fixture copies:
+	// this case and TestAssertPoolPrincipalRejectsSuperuser are the suite's
+	// two boots from nothing, migrations included, beside the template build
+	// itself.
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
+		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
+			engine.WithKindsDir(engine.CoreKindsDir))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -187,10 +191,10 @@ func TestRepositoryDatasetIsolation(t *testing.T) {
 func TestSchemaRowsStoreNoSourceYAML(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := engine.MigratedDSN(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
+		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
+			engine.WithKindsDir(engine.CoreKindsDir))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}

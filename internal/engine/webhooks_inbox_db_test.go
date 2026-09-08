@@ -446,7 +446,7 @@ func TestWebhookAcceptedRequestRestoresIntoAFreshDatabase(t *testing.T) {
 	if err := os.CopyFS(dst, os.DirFS(src)); err != nil {
 		t.Fatal(err)
 	}
-	svc2 := mustReopen(t, testdb.NewSchema(t), root2)
+	svc2 := mustReopen(t, engine.MigratedDSN(t), root2)
 	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open the restored repository: %v", err)

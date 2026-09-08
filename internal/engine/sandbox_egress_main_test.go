@@ -3,6 +3,8 @@ package engine_test
 import (
 	"os"
 	"testing"
+
+	"github.com/geoah/substrate/internal/testdb"
 )
 
 // Two gates refuse loopback by default, and the engine suites lean on both
@@ -22,5 +24,7 @@ func TestMain(m *testing.M) {
 	if os.Getenv("SUBSTRATE_EGRESS_ALLOW") == "" {
 		_ = os.Setenv("SUBSTRATE_EGRESS_ALLOW", "127.0.0.0/8,::1/128")
 	}
-	os.Exit(m.Run())
+	// testdb.Main: the data roots on tmpfs, the run, then every database the
+	// run made dropped (the migrated template among them).
+	os.Exit(testdb.Main(m))
 }

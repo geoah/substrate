@@ -38,7 +38,7 @@ func TestImportQueuesEveryEmbeddableProperty(t *testing.T) {
 	_ = svc.Close()
 
 	root2 := copyRepositoryDir(t, root, id)
-	dsn2 := testdb.NewSchema(t)
+	dsn2 := engine.MigratedDSN(t)
 	svc2 := mustReopen(t, dsn2, root2)
 	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
@@ -104,7 +104,7 @@ func TestImportQueuesEmbedsWithoutAProvider(t *testing.T) {
 	_ = svc.Close()
 
 	root2 := copyRepositoryDir(t, root, id)
-	dsn2 := testdb.NewSchema(t)
+	dsn2 := engine.MigratedDSN(t)
 	svc2 := mustReopen(t, dsn2, root2)
 	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
@@ -145,10 +145,10 @@ func TestAResumedImportQueuesEmbeds(t *testing.T) {
 	_ = svc.Close()
 
 	root2 := copyRepositoryDir(t, root, id)
-	dsn2 := testdb.NewSchema(t)
+	dsn2 := engine.MigratedDSN(t)
 	errKilled := errors.New("the process died here")
-	_, err := engine.Open(ctx, dsn2,
-		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+	_, err := engine.OpenForTest(t, ctx, dsn2,
+		engine.WithKindsDir(engine.CoreKindsDir),
 		engine.WithDataRoot(root2),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithTestImportFault(0, func(stage string) error {
@@ -233,7 +233,7 @@ func TestImportConvergesTheVectorsAnOlderDatabaseHolds(t *testing.T) {
 	// The directory moves on in another database: one blurb is rewritten,
 	// one cleared, one record tombstoned, the rest left alone.
 	root2 := copyRepositoryDir(t, root, id)
-	svc2 := mustReopen(t, testdb.NewSchema(t), root2)
+	svc2 := mustReopen(t, engine.MigratedDSN(t), root2)
 	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
@@ -329,7 +329,7 @@ func TestImportRequeuesWhenTheDirectoryRepointsTheModel(t *testing.T) {
 	// The directory moves on in another database: the row is re-pointed,
 	// the blurb is not touched.
 	root2 := copyRepositoryDir(t, root, id)
-	svc2 := mustReopen(t, testdb.NewSchema(t), root2)
+	svc2 := mustReopen(t, engine.MigratedDSN(t), root2)
 	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
@@ -409,7 +409,7 @@ func TestImportDropsTheVectorsOfAPropertyNoLongerEmbedded(t *testing.T) {
 	// The directory moves on in another database: the shelf closure is
 	// declared again with the blurb no longer embeddable.
 	root2 := copyRepositoryDir(t, root, id)
-	svc2 := mustReopen(t, testdb.NewSchema(t), root2)
+	svc2 := mustReopen(t, engine.MigratedDSN(t), root2)
 	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)

@@ -20,10 +20,10 @@ import (
 func TestOpenRefusesAChangelogThatPredatesReferences(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := engine.MigratedDSN(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"))
+		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
+			engine.WithKindsDir(engine.CoreKindsDir))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}

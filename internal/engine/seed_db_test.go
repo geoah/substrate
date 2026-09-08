@@ -119,7 +119,7 @@ func addShippedKind(t *testing.T, tree, pkg, singular, plural string) {
 
 func openTree(t *testing.T, dsn, tree string) substrate.Service {
 	t.Helper()
-	svc, err := engine.Open(context.Background(), dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(tree))
+	svc, err := engine.OpenForTest(t, context.Background(), dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(tree))
 	if err != nil {
 		t.Fatalf("open the substrate: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := engine.MigratedDSN(t)
 	tree := shippedTree(t)
 
 	// --- binary N: two repositories are created and their seed is the tree.
@@ -454,7 +454,7 @@ func plantKindDeclarationsWithout(t *testing.T, ds substrate.Dataset, prop strin
 func TestBootUpgradeHoldsRowsToADeclarationItKeeps(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := engine.MigratedDSN(t)
 	tree := shippedTree(t)
 
 	svc1 := openTree(t, dsn, tree)
@@ -542,7 +542,7 @@ func TestBootUpgradeHoldsRowsToADeclarationItKeeps(t *testing.T) {
 func TestBootUpgradeNeverDowngrades(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	dsn := testdb.NewSchema(t)
+	dsn := engine.MigratedDSN(t)
 	tree := shippedTree(t)
 	addShippedKind(t, tree, "substrate.reamde.dev/core", "widget", "widgets")
 	bumpPackageVersion(t, tree, "substrate.reamde.dev/core", "99")

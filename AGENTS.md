@@ -123,7 +123,8 @@ key refuses to boot.
 each start a pgvector testcontainer, and they starve under a full-tree parallel
 run — `go test ./...` can fail there while `go test ./internal/engine/...` passes
 clean. A `*_db_test.go` failure that looks arbitrary usually is; confirm it
-alone before believing it. The full engine suite takes ~4 minutes.
+alone before believing it. The full engine suite takes about 70 s on a
+16 core machine (docs/testing.md says where the time goes).
 
 **`mise run test:llm` is the live suite** — the wire adapters and one whole
 agent chain against the REAL OpenAI and Anthropic APIs. It runs when
