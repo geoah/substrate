@@ -53,15 +53,21 @@ seed web/console/src/lib/api/wire.golden.json '{}'
 seed web/console/src/lib/record-schema.ts 'export {}'
 g add -A && g commit --quiet -m base
 
-# gate <env...>: run the gate in the repository's working tree with the given
-# environment; capture stdout, the exit status and the GITHUB_OUTPUT lines.
+# gate <env...>: run the gate in the repository's working tree with a
+# CONTROLLED environment; capture stdout, the exit status and the
+# GITHUB_OUTPUT lines. Every variable changescheck.sh reads is unset first and
+# a scenario sets exactly what it means to: this test runs inside the lint job
+# on a push to main, where the runner's own GITHUB_EVENT_NAME=push would make
+# every scenario answer "a push runs every job" and its CI=true would turn the
+# laptop fallback into a refusal. The PR runs never saw that, main did.
+scrub=(env -u GITHUB_EVENT_NAME -u GITHUB_BASE_REF -u GITHUB_REF -u CI -u GITHUB_OUTPUT -u CHANGES_CHECK_BASE)
 gate_out=""
 gate_status=0
 gate_output_lines=0
 gate() {
   local output="$tmp/output"
   : >"$output"
-  gate_out="$(cd "$repo" && env GITHUB_OUTPUT="$output" "$@" "$changescheck" 2>"$tmp/stderr")"
+  gate_out="$(cd "$repo" && "${scrub[@]}" GITHUB_OUTPUT="$output" "$@" "$changescheck" 2>"$tmp/stderr")"
   gate_status=$?
   gate_output_lines="$(grep -c . "$output")"
 }
@@ -143,7 +149,7 @@ git init --quiet --initial-branch=work "$lone"
 printf 'x\n' >"$lone/f"
 git -C "$lone" -c user.name=ci -c user.email=ci@example.com -c commit.gpgsign=false add -A
 git -C "$lone" -c user.name=ci -c user.email=ci@example.com -c commit.gpgsign=false commit --quiet -m lone
-if (cd "$lone" && CI=1 GITHUB_OUTPUT="$tmp/lone-output" "$changescheck" >/dev/null 2>&1); then
+if (cd "$lone" && "${scrub[@]}" CI=1 GITHUB_OUTPUT="$tmp/lone-output" "$changescheck" >/dev/null 2>&1); then
   flag "CI without a base branch: exit 0, expected a refusal"
 fi
 
