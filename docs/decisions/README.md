@@ -211,3 +211,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0064](0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md) | Trigger bookkeeping is a delivery ledger folded from the changelog | accepted |
 | [0065](0065-a-snapshot-is-a-stopped-server-copy-that-records-its-head.md) | A snapshot is a stopped-server copy that records its head and lists what it needs | accepted |
 | [0066](0066-a-backfill-and-an-enum-remap-are-ordinary-record-writes.md) | A backfill and an enum remap are ordinary record writes, composed with the rename | accepted |
+| [0069](0069-the-owner-export-is-the-snapshot-streamed-as-a-tar.md) | The owner's export is the snapshot, streamed as a tar under the bearer token | accepted |

@@ -155,7 +155,7 @@ func TestHelpListsEveryCommand(t *testing.T) {
 	out, _ := h.mustRun("--help")
 	for _, want := range []string{
 		"register", "login", "logout", "token", "kinds", "get", "apply",
-		"delete", "edit", "watch", "user", "repository", "version",
+		"delete", "edit", "watch", "export", "user", "repository", "version",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("--help output missing %q:\n%s", want, out)

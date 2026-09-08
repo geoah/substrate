@@ -46,11 +46,14 @@ type Snapshot struct {
 	// SealedFiles is how many files under sealed/ the copy holds, every one
 	// of them opened under the repository's DEK when the snapshot was taken.
 	SealedFiles int
-	// BlobStore names the blob backend the source ran (fs or s3), and
-	// BlobLocation where the repository's objects live when they are not in
-	// the directory: empty under fs, where they are `blobs/<digest>`, and the
-	// object prefix under s3 (`s3://<bucket>/<prefix><authority>/`), where
-	// each object is that prefix plus the digest.
+	// BlobStore names the blob backend the copy is laid out for (fs or s3),
+	// and BlobLocation where the repository's objects live when they are not
+	// in the directory: empty under fs, where they are `blobs/<digest>`, and
+	// the object prefix under s3 (`s3://<bucket>/<prefix><authority>/`),
+	// where each object is that prefix plus the digest. An operator's
+	// snapshot records the backend the source ran; the owner's export
+	// records fs whatever the source ran, because it carries the bytes
+	// under blobs/.
 	BlobStore    string
 	BlobLocation string
 	// Blobs is every digest a `stored` blob manifest named at Head, sorted:
@@ -138,14 +141,25 @@ func ReadSnapshot(repoDir string) (Snapshot, error) {
 // WriteSnapshot writes the snapshot atomically into the repository
 // directory, replacing any there.
 func WriteSnapshot(repoDir string, s Snapshot) error {
-	if s.Format != SnapshotFormat {
-		return fmt.Errorf("%w: writing format %d, this package writes %d", ErrSnapshotFormat, s.Format, SnapshotFormat)
-	}
-	data, err := json.MarshalIndent(s, "", "  ")
+	data, err := EncodeSnapshot(s)
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(repoDir, SnapshotName, append(data, '\n'))
+	return writeFileAtomic(repoDir, SnapshotName, data)
+}
+
+// EncodeSnapshot renders the snapshot as the bytes of its file, indented JSON
+// and a final newline. WriteSnapshot writes them into a directory and the
+// export streams them into a tar, so the two copies carry one encoding.
+func EncodeSnapshot(s Snapshot) ([]byte, error) {
+	if s.Format != SnapshotFormat {
+		return nil, fmt.Errorf("%w: writing format %d, this package writes %d", ErrSnapshotFormat, s.Format, SnapshotFormat)
+	}
+	data, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
 }
 
 // CopyChangelog copies the changelog of the repository directory src into the

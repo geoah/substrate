@@ -546,6 +546,40 @@ reads each one out of the bucket and hashes it, and names every object that
 is missing or is not its digest's bytes. Under `fs` the bytes are in the
 copy's `blobs/` and `blobLocation` is empty.
 
+**An owner downloads the same snapshot from a running server.**
+`GET /api/v1/export`, or `substratectl export`, streams the repository as a
+tar laid out as a data root: `repositories/<authority>/` with
+`repository.json`, `changelog/` (every finished segment with its sidecar and
+the active segment cut at the point), `sealed/`, `blobs/` and, as the last
+entry, `snapshot.json` recording the head seq and checksum the archive holds
+([decision 0069](decisions/0069-the-owner-export-is-the-snapshot-streamed-as-a-tar.md)).
+The bearer token is the whole credential: a token already reads every record
+and blob the archive carries, and the sealed files in it are ciphertext under
+the repository's DEK. The server pins the point under the repository's writer
+lock, which every commit holds from its first byte to its final newline, and
+streams the files afterwards, so writes go on during the download and the
+archive still holds one committed state. It carries no host key:
+`repository.json` keeps the DEK wrapped under this server's
+`SUBSTRATE_CREDENTIAL_KEY`, ciphertext that opens nothing without the key and
+lets a same-key restore boot with nothing else, and the `recoverykey` record
+in the changelog holds the DEK wrapped to the owner's recovery key, which is
+what opens the archive anywhere else. The blob bytes ride in the archive
+whatever store the server runs, `s3` included, so `snapshot.json` records
+`fs` and no location: an export is self-contained, because its owner has no
+bucket. Restoring an export onto an `s3` host takes one more step: upload
+the extracted `blobs/*` to the bucket under the repository's prefix
+(`<prefix><authority>/<digest>`) before the boot that imports the directory,
+or `repository verify` names every blob whose bytes the bucket lacks. One
+export streams per repository at a time; a second request while one is
+running answers `409 conflict`. An archive that ends before `snapshot.json` was cut short;
+`substratectl export` refuses and removes one, and the server aborts the
+response rather than finish a tar it could not complete.
+
+```
+substratectl export                       # writes <authority>-<head>.tar, never over an existing file
+tar -x -C "$SUBSTRATE_DATA_ROOT" -f ada.example.com-1234.tar   # on a stopped server with the same key, then boot
+```
+
 On the compose deployment the root is the `substrate-data` volume mounted at
 `/var/lib/substrate`, so copy it out of the container, or point the volume at a
 host directory the backup already covers:
@@ -573,7 +607,9 @@ fastest way back to a known state, but a fresh database and the directory are
 enough.
 
 **Restore.** Stop the server. Copy the repository directories into a fresh
-server's data root, set the same `SUBSTRATE_CREDENTIAL_KEY`, and boot: a
+server's data root (an export extracts straight into it: `tar -x -C
+"$SUBSTRATE_DATA_ROOT" -f ada.example.com-1234.tar`), set the same
+`SUBSTRATE_CREDENTIAL_KEY`, and boot: a
 directory with no row in `repositories` is imported, which creates the row from
 its manifest, loads `sealed/` into the table, inserts every changelog entry
 with its checksum and folds them through `fold.go`. The import is the same
@@ -644,9 +680,10 @@ second artifact: copy the objects `snapshot.json` lists back into the bucket
 
 A directory copied to a host whose `SUBSTRATE_CREDENTIAL_KEY` is not the one
 it was written under is opened with the user's recovery key instead: the
-`AGE-SECRET-KEY-1…` line kept at registration or at `recovery enroll`. Run
-`repository rewrap` on the copy, in its restore location, with the new host's
-key in the environment. It reads the last `recoverykey` record out of the
+`AGE-SECRET-KEY-1…` line kept at registration or at `recovery enroll`. An
+export is such a copy once extracted anywhere (`tar -x -C /srv/restore -f
+ada.example.com-1234.tar`). Run `repository rewrap` on the copy, in its
+restore location, with the new host's key in the environment. It reads the last `recoverykey` record out of the
 changelog files, opens its `sealedKey` with the recovery key, checks that the
 data-encryption key it recovered opens every file under `sealed/`, wraps that
 key under `SUBSTRATE_CREDENTIAL_KEY` and rewrites `repository.json`. Then move

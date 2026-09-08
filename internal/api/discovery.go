@@ -181,6 +181,9 @@ const (
 // is not a seam: the embedder is configuration, not a method set.
 const featureEmbeddings = "embeddings"
 
+// featureExport is the recovery export's entry, served by substrate.Exporter.
+const featureExport = "export"
+
 // embeddingsEnabled asks the service whether it can embed at all, through
 // substrate.EmbeddingsReporter: the seam is asserted at runtime like the
 // dataset seams, so Service stays frozen and discovery carries no second copy
@@ -290,6 +293,12 @@ func features(seams substrate.Dataset, embeddings bool) []featureInfo {
 	add(bundles && installer, "bundles", substrate.StabilityStable, []string{surfaceREST})
 	_, blobs := seams.(substrate.BlobStore)
 	add(blobs, "blobs", substrate.StabilityStable, []string{surfaceREST})
+	// The recovery export is one REST verb, `GET /export`, streaming a tar
+	// in the snapshot format (decision 0069). Beta: the archive's layout is
+	// the repository directory's and its snapshot.json is the operator's,
+	// both settled, but this is the surface's first release.
+	_, exporter := seams.(substrate.Exporter)
+	add(exporter, featureExport, substrate.StabilityBeta, []string{surfaceREST})
 	// The changefeed is the one feature both surfaces read: REST pages it
 	// (`GET …/changes?before=`), resumes it forward (`?from=`) and tails it
 	// (`?watch=1`), GraphQL resumes it forward

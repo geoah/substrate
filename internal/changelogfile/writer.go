@@ -160,6 +160,20 @@ func (l *Log) Writer(opts WriterOptions) (*Writer, error) {
 // Head is the seq of the last entry written or found, 0 for an empty log.
 func (w *Writer) Head() int64 { return w.head }
 
+// Active is the segment the writer holds open, by name, with the bytes of it
+// that are committed history: the file's length while no transaction is
+// prepared, and the length before the prepared bytes while one is. ok is
+// false when no segment is open: a fresh directory, or the moment after a
+// rotation and before the next Prepare creates one. The export pins its point
+// through this under the engine's writer mutex, where no prepare is in
+// flight, so the size it takes ends at a transaction boundary.
+func (w *Writer) Active() (name string, size int64, ok bool) {
+	if w.file == nil {
+		return "", 0, false
+	}
+	return w.name, w.size, true
+}
+
 // Err is the writer's standing refusal: the I/O error that failed it, or
 // ErrWriterClosed, or nil while it still appends. A failed writer stays
 // failed until the process reopens the directory, so a caller that would

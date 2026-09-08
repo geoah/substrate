@@ -379,8 +379,9 @@ records: a trigger and a blob manifest are ordinary records and read on both
 surfaces whatever the entry says, while `["rest"]` means the feature's verbs
 (a replay, an install, a function call, a blob's bytes) have REST paths and no
 GraphQL field. The example above is abridged; the full roster a deployment may
-report is `triggers`, `functions`, `bundles`, `blobs`, `changefeed`, `search`,
-`embeddings` and `agents`, and which of them a given deployment lists is
+report is `triggers`, `functions`, `bundles`, `blobs`, `export`,
+`changefeed`, `search`, `embeddings` and `agents`, and which of them a given
+deployment lists is
 [what it implements](#what-a-features-stability-means).
 
 `surfaces` is the verdict per request surface, and it is a different axis from
@@ -417,15 +418,19 @@ is served and works today.
 | `beta` | Served and supported, and the shape is still moving before v1 freezes it. A break is announced, never silent. |
 | `stable` | Frozen for v1. Changes are additive only. |
 
-**Every feature of the supported REST surface reports `stable`**
-([decision 0053](decisions/0053-rest-is-supported-all-of-graphql-is-preview.md)):
-`triggers`, `functions`, `bundles`, `blobs` and `changefeed` froze once the
-release's wire changes landed. The
+**Every feature of the supported REST surface that
+[decision 0053](decisions/0053-rest-is-supported-all-of-graphql-is-preview.md)
+names reports `stable`**: `triggers`, `functions`, `bundles`, `blobs` and
+`changefeed` froze once the release's wire changes landed. The
 changefeed's were the last two: a change cursor bound to a history generation
 ([decision 0056](decisions/0056-a-change-cursor-is-a-seq-under-a-history-generation.md))
 and a change event that names the affected records
 ([decision 0061](decisions/0061-a-change-event-names-the-affected-records-and-clients-fetch-them.md)).
 `search` reports `beta`: its only door is the preview GraphQL surface.
+`export` is new and reports `beta`: `GET /api/v1/export` streams the
+repository's recovery export, a tar of its directory in the snapshot format
+([backups](operations.md#backups)), and 0053 did not name it; it freezes by a
+decision of its own, not by age.
 `agents` and `embeddings` report `alpha`: their shapes are still moving, and
 the `rest` in their `surfaces` says where they are served, not that they are
 frozen.

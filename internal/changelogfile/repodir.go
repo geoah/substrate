@@ -17,9 +17,9 @@ import (
 // (decision 0046) is its id, so the directory is named by it.
 const (
 	RepositoriesDir = "repositories"
-	changelogSubdir = "changelog"
-	blobsSubdir     = "blobs"
-	sealedSubdir    = "sealed"
+	ChangelogSubdir = "changelog"
+	BlobsSubdir     = "blobs"
+	SealedSubdir    = "sealed"
 )
 
 // ErrRepositoryAuthority is returned for a repository id that is not an
@@ -70,13 +70,13 @@ func RepoDir(root, id string) (string, error) {
 }
 
 // ChangelogDir is the changelog directory of a repository directory.
-func ChangelogDir(repoDir string) string { return filepath.Join(repoDir, changelogSubdir) }
+func ChangelogDir(repoDir string) string { return filepath.Join(repoDir, ChangelogSubdir) }
 
 // BlobsDir is the blob bytes directory of a repository directory.
-func BlobsDir(repoDir string) string { return filepath.Join(repoDir, blobsSubdir) }
+func BlobsDir(repoDir string) string { return filepath.Join(repoDir, BlobsSubdir) }
 
 // SealedDir is the sealed records directory of a repository directory.
-func SealedDir(repoDir string) string { return filepath.Join(repoDir, sealedSubdir) }
+func SealedDir(repoDir string) string { return filepath.Join(repoDir, SealedSubdir) }
 
 // EnsureRepoDir creates the repository directory and its three
 // subdirectories, mode 0700, and returns the repository directory. Existing

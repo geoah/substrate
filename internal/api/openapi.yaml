@@ -98,6 +98,9 @@ tags:
     description: Recurring records expanded into instants at read.
   - name: embeddings
     description: The re-embed verb. Alpha.
+  - name: export
+    description: The owner's recovery export, a tar of the repository directory.
+      Beta.
   - name: webhooks
     description: The public webhook door. No bearer; the trigger's key is
       the credential.
@@ -713,6 +716,55 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReembedReport"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/export:
+    get:
+      tags: [export]
+      summary: Download the repository's recovery export
+      description: |-
+        BETA. Streams the repository's directory as of one committed point
+        as a tar laid out as a data root: `repositories/<authority>/` with
+        `repository.json`, `changelog/` (every finished segment with its
+        `.sha256` sidecar and the active segment cut at the point),
+        `sealed/`, `blobs/` (the bytes of every stored blob, whatever store
+        the server runs) and, as the last entry, `snapshot.json` recording
+        the head seq and checksum the archive holds. The point is pinned
+        under the repository's writer lock and the files are streamed
+        afterwards, so writes go on during the download. The archive
+        carries no host key: its sealed files are ciphertext under the
+        repository's data key, which `repository.json` holds wrapped under
+        the server's `SUBSTRATE_CREDENTIAL_KEY` and the `recoverykey`
+        record holds wrapped to the owner's recovery key. A stream that
+        ends before `snapshot.json` is incomplete; download it again.
+        `Content-Disposition` names the file `<authority>-<head>.tar`.
+      operationId: exportRepository
+      responses:
+        "200":
+          description: The archive.
+          headers:
+            Content-Disposition:
+              description: "`attachment; filename=<authority>-<head>.tar`."
+              schema:
+                type: string
+          content:
+            application/x-tar:
+              schema:
+                type: string
+                format: binary
+        "409":
+          description: An export of this repository is already streaming (`conflict`);
+            one streams at a time.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "501":
+          description: This deployment does not export a repository (`unsupported`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         default:
           $ref: "#/components/responses/Error"
   /api/v1/merge:

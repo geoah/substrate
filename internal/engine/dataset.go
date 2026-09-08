@@ -84,6 +84,7 @@ var (
 	_ substrate.ShippedUpgradePlanner = (*dataset)(nil)
 	_ substrate.OAuthMaintainer       = (*dataset)(nil)
 	_ substrate.BlobStore             = (*dataset)(nil)
+	_ substrate.Exporter              = (*dataset)(nil)
 )
 
 type dataset struct {
@@ -182,6 +183,11 @@ type dataset struct {
 	// after the effects applied and before the cursor moves, so a test can
 	// fail the write there and show that neither committed.
 	deliveryFault func(t *txn) error
+	// exporting is the repository's one export slot (export.go): set by
+	// Export when it pins a point, cleared when WriteTo returns, so a second
+	// export is refused while one streams.
+	exporting atomic.Bool
+
 	// blobSweepAfter is the blob orphan sweep's cursor: the last digest the
 	// previous pass looked at, so a store with more objects than one batch is
 	// walked whole instead of the sweep restarting at the front every time.
