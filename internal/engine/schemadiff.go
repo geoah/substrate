@@ -173,9 +173,13 @@ const countStateValuesQuery = `SELECT count(*) FROM records
 // to the coercion a WRITE puts a value through, and answers one problem per
 // default that would not survive it. The loader has already checked the
 // literal's shape (parseDefault); what is left is the value's own rules (a
-// pattern, a bound, an instant's range), which live with the write path. A kind
-// whose default no create could store is refused here, once, instead of at
-// every create of it.
+// pattern, a bound, an instant's range), which live with the write path, and
+// the one rule `required` adds: an empty value is no value (emptyValue), so a
+// required property's default may not be one, or a create would fill it and
+// refuse it in the same write, and a backfill (convert.go) would commit rows
+// every later write refuses. A kind whose default no create could store is
+// refused here, once, instead of at every create of it, and both doors run
+// this: the apply (stageVocabularyBatch) and the boot (stageShippedUpgrade).
 func checkDeclaredDefaults(candidate *vocabulary.Registry, touched map[string]bool) []string {
 	var problems []string
 	for aname := range touched {
@@ -188,6 +192,11 @@ func checkDeclaredDefaults(candidate *vocabulary.Registry, touched map[string]bo
 			for _, pname := range ty.PropOrder {
 				p := ty.Props[pname]
 				if p.Default == nil {
+					continue
+				}
+				if p.Required && emptyValue(p.Default) {
+					problems = append(problems, fmt.Sprintf("kind %s: property %q: default %v: a required property's default holds a value, and an empty one is what having none means",
+						ty.Identity, pname, jsonLiteral(p.Default)))
 					continue
 				}
 				if _, err := coerceValue(p, p.Default); err != nil {
@@ -1429,6 +1438,13 @@ func removedStrings(cur, cand []string) []string {
 // jsonArray renders values as a JSON array literal for the ::jsonb casts.
 func jsonArray(values []string) string {
 	raw, _ := json.Marshal(values)
+	return string(raw)
+}
+
+// jsonLiteral renders one declared literal for a guard message, so `""`, `[]`
+// and `{}` read as what the author wrote rather than as Go's empty spellings.
+func jsonLiteral(v any) string {
+	raw, _ := json.Marshal(v)
 	return string(raw)
 }
 

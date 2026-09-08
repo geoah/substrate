@@ -1503,7 +1503,7 @@ func (l *loader) checkValueRenames(where string, values []EnumValue) {
 			continue
 		}
 		if declared[rf] {
-			l.errf("%s.values: %q.renamedFrom: %q is still declared in the list — a rename drops the old value", where, v.Value, rf)
+			l.errf("%s.values: %q.renamedFrom: %q is still declared in the list: a rename drops the old value", where, v.Value, rf)
 		}
 		if other, dup := taken[rf]; dup {
 			l.errf("%s.values: %q.renamedFrom: %q is also the previous value of %q, and one value takes a renamed record", where, v.Value, rf, other)
