@@ -754,6 +754,63 @@ describe("RegistryPage", () => {
       })
     })
 
+    it("a lossy refusal at the same head re-reads the preview, and a lossless re-read closes the dialog", async () => {
+      const step = {
+        step: "null" as const,
+        kind: "providers.substrate.reamde.dev/google/contact",
+        property: "middleName",
+        records: 3,
+        lossy: true,
+      }
+      const lossy = {
+        ...MOVED,
+        upgrade: {
+          ...MOVED.upgrade,
+          work: 3,
+          lossy: true,
+          planHash: "cafe",
+          changelogSeq: 41,
+          steps: [step],
+        },
+      }
+      const wire: Wire = {
+        statuses: [googleStatus()],
+        catalog: [lossy, PEOPLE],
+      }
+      let installs = 0
+      wire.take = () => {
+        installs++
+        // The server changed under the same records: the plan reads
+        // differently and, re-read, removes nothing.
+        wire.catalog = [MOVED, PEOPLE]
+        return jsonResponse(403, {
+          error: {
+            code: "lossy",
+            message: "the confirmation is for another plan",
+          },
+        })
+      }
+      serve(wire)
+      renderPage(<RegistryPage />)
+      const google = await rowOf("google")
+      fireEvent.click(within(google).getByRole("button", { name: /Upgrade/ }))
+      const dialog = await screen.findByRole("dialog", {
+        name: /and lose values/,
+      })
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: /accept the loss/ })
+      )
+      await waitFor(() => expect(installs).toBe(1))
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("dialog", { name: /and lose values/ })
+        ).toBeNull()
+      )
+      expect(
+        within(google).getByRole("button", { name: /Upgrade/ })
+      ).toBeTruthy()
+    })
+
     it("a blocked upgrade is stated, never offered", async () => {
       serve({
         statuses: [googleStatus()],

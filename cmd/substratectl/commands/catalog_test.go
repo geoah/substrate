@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -281,17 +282,39 @@ func TestInstallConfirmsALossyUpgradeItPreviewed(t *testing.T) {
 }
 
 // Without the flag the install is the bare POST it always was: no preview is
-// read and no body is sent, so a lossy upgrade is the server's refusal.
-func TestInstallWithoutTheFlagSendsNoConfirmation(t *testing.T) {
+// read and no body is sent, so a lossy upgrade is the server's 403, which the
+// CLI renders with the hint naming the flag this command carries.
+func TestInstallWithoutTheFlagIsRefusedWithTheHint(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.fake.catalog = []substrate.CatalogItem{lossyGoogle()}
-	h.mustRun("install", googleProvider)
+	h.fake.installRefusesLossy = true
+	_, _, err := h.run("install", googleProvider)
+	if err == nil {
+		t.Fatal("a lossy install without the flag must fail")
+	}
 	if contains(h.fake.doorRequests(), "GET /api/v1/catalog") {
 		t.Errorf("a bare install read the catalog: %v", h.fake.doorRequests())
 	}
 	if _, ok := lastConfirm(t, h); ok {
 		t.Fatal("a bare install sent a confirmation")
+	}
+	// Rendered as the binary renders it (renderError), the refusal names the
+	// flag this command carries.
+	var rendered bytes.Buffer
+	renderError(&rendered, err)
+	for _, want := range []string{
+		"error: the schema change removes values from stored records and needs a confirmation",
+		"hint: re-run `substratectl install <provider> --allow-data-loss`",
+	} {
+		if !strings.Contains(rendered.String(), want) {
+			t.Errorf("the refusal did not render %q:\n%s", want, rendered.String())
+		}
+	}
+	// With the flag the same install confirms the previewed plan and lands.
+	h.mustRun("install", googleProvider, "--allow-data-loss")
+	if confirm, ok := lastConfirm(t, h); !ok || confirm.PlanHash != "cafe" {
+		t.Fatalf("the flagged install carried confirmation %+v (present=%v)", confirm, ok)
 	}
 }
 

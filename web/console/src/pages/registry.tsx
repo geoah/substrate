@@ -30,7 +30,7 @@
  * `…/catalog/{id}/import` for a sample. enable/disable/uninstall are a
  * DIFFERENT lifecycle and keep their own words. */
 
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
 import type { DataTableColumn } from "@/components/data-table/data-table"
@@ -503,7 +503,14 @@ function LossyUpgradeDialog({
       refetchBundleStateSoon(queryClient)
     },
     onError: (error) => {
-      if (error instanceof ApiError && error.status === 409) {
+      // A 409 says records changed since the preview; a 403 `lossy` at the
+      // same head says the plan itself reads differently now (the server
+      // changed under the same records). Either way the consent named a
+      // plan the server no longer counts: read the preview again.
+      if (
+        error instanceof ApiError &&
+        (error.status === 409 || error.code === "lossy")
+      ) {
         setStale(true)
         void queryClient.invalidateQueries({
           queryKey: catalogQueryOptions.queryKey,
@@ -517,7 +524,20 @@ function LossyUpgradeDialog({
       })
     },
   })
-  if (!row) return null
+  // A re-read plan that removes nothing has nothing to consent to: the
+  // dialog closes and the row's Upgrade button installs it as a lossless
+  // upgrade, rather than sitting open with no steps and a dead button.
+  const lossless = Boolean(row && !(upgrade?.lossy && upgrade.planHash))
+  useEffect(() => {
+    if (!lossless) return
+    onClose()
+    toast.add({
+      type: "success",
+      title: `The re-read plan for ${row?.name} removes no values`,
+      description: "Upgrade installs it without a confirmation.",
+    })
+  }, [lossless, onClose, row?.name])
+  if (!row || lossless) return null
   const losses = lossyStepLines(upgrade)
   return (
     <Dialog

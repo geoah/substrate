@@ -297,6 +297,20 @@ func (t *txn) backfillValues(kc *kindConversion) error {
 	return nil
 }
 
+// storedName is the name live rows hold a candidate property under before the
+// rewrite: the old name where the property takes a rename's values (the rename
+// runs first, convertRecord), the property's own name otherwise. Every count
+// and every id query reads the rows as they are, so it reads them under this
+// name; the candidate's name is what the rows hold only after the rename.
+func (kc *kindConversion) storedName(prop string) string {
+	for _, r := range kc.renames {
+		if r.to == prop {
+			return r.from
+		}
+	}
+	return prop
+}
+
 // byKind groups the plan's steps by the kind they rewrite, in identity order,
 // so a record several steps touch is rewritten once and the steps are listed
 // in one order everywhere.
@@ -383,7 +397,10 @@ func (p conversionPlan) wire(q sqlReader) (substrate.ConversionPlan, error) {
 			}
 		}
 		for _, b := range kc.backfills {
-			n, err := count(countMissingPropQuery, ident, b.prop)
+			// Counted under the name the rows hold NOW (storedName): a
+			// backfill of a rename's target fills only the rows the old name
+			// was missing on, because the rename moves the rest first.
+			n, err := count(countMissingPropQuery, ident, kc.storedName(b.prop))
 			if err := add(substrate.ConversionStep{Step: substrate.StepBackfill, Kind: ident, Property: b.prop}, n, err); err != nil {
 				return plan, err
 			}
@@ -391,8 +408,9 @@ func (p conversionPlan) wire(q sqlReader) (substrate.ConversionPlan, error) {
 		for _, m := range kc.remaps {
 			// Counted in the property's own container, element by element in
 			// a list and value by value in a keyed map, exactly as the
-			// narrowing counts a removed value (schemadiff.go valuesAtPath).
-			path := containerPath(nil, kc.kind.Props[m.prop], m.prop)
+			// narrowing counts a removed value (schemadiff.go valuesAtPath),
+			// under the name the rows hold now.
+			path := containerPath(nil, kc.kind.Props[m.prop], kc.storedName(m.prop))
 			query, args := valuesAtPath(ident, path, []string{m.from})
 			n, err := count(query, args...)
 			if err != nil {
@@ -594,12 +612,15 @@ func (t *txn) convertKind(kc *kindConversion) (int64, error) {
 	for _, r := range kc.renames {
 		holds = append(holds, "props ? "+bind(r.from))
 	}
+	// A backfilled or remapped property is read under the name the rows hold
+	// now (storedName), because the rename that gives it the candidate's name
+	// runs inside convertRecord, after this query selected the rows.
 	for _, b := range kc.backfills {
-		p := bind(b.prop)
+		p := bind(kc.storedName(b.prop))
 		holds = append(holds, "(NOT props ? "+p+" OR props->"+p+" IN "+emptyJSONValues+")")
 	}
 	for _, m := range kc.remaps {
-		holds = append(holds, "props ? "+bind(m.prop))
+		holds = append(holds, "props ? "+bind(kc.storedName(m.prop)))
 	}
 	for _, n := range kc.nulls {
 		holds = append(holds, "props ? "+bind(n.prop))

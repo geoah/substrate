@@ -537,6 +537,113 @@ func TestRemapOntoARetainedValueNobodyHoldsIsLossless(t *testing.T) {
 	}
 }
 
+// A remap on a property the same apply renames is counted under the name the
+// records hold now, the old one. `level: [low, high]` with one record at each,
+// then `grade: {renamedFrom: level, values: [{value: low, renamedFrom:
+// high}]}`: the plan is a rename of two and a lossy remap of one (`high` onto
+// the `low` a record holds), so it refuses unconfirmed, and confirmed by the
+// preview's hash it lands both records at `grade: low`. Counted under the
+// candidate's name the remap would be a step of zero, the plan lossless, and
+// the collapse would land with nobody asked.
+func TestRemapOnARenamedPropertyCountsUnderTheOldName(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	if err := cvApply(t, ds, map[string]any{
+		"level": map[string]any{"type": "enum", "values": []any{"low", "high"}},
+	}); err != nil {
+		t.Fatalf("install the package: %v", err)
+	}
+	high := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"level": "high"}})
+	low := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"level": "low"}})
+	renamed := map[string]any{
+		"grade": map[string]any{"type": "enum", "renamedFrom": "level", "values": []any{
+			map[string]any{"value": "low", "renamedFrom": "high"},
+		}},
+	}
+	docs := cvDocs(renamed)
+	planner := cvPlanner(t, ds)
+	plan, err := planner.PlanVocabularyApply(ctx, owner, docs)
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if !plan.Lossy || plan.Work != 3 || len(plan.Steps) != 2 {
+		t.Fatalf("the remap on the renamed property was not counted: %+v", plan)
+	}
+	var remap *substrate.ConversionStep
+	for i := range plan.Steps {
+		if plan.Steps[i].Step == substrate.StepRemap {
+			remap = &plan.Steps[i]
+		}
+	}
+	if remap == nil || remap.Property != "grade" || remap.From != "high" || remap.To != "low" || remap.Records != 1 || !remap.Lossy {
+		t.Fatalf("remap step = %+v", remap)
+	}
+	wantLossyRefusal(t, ds, cvApply(t, ds, renamed), high, `value "high" rewritten to "low" on 1 live records`)
+	confirm := substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
+	if _, err := planner.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &confirm}); err != nil {
+		t.Fatalf("the door must recount the plan the preview hashed: %v", err)
+	}
+	for _, r := range []*substrate.Record{high, low} {
+		got := mustGet(t, ds, cvWidget, r.ID)
+		if got.Properties["grade"] != "low" || got.Properties["level"] != nil {
+			t.Fatalf("%s = %v", r.ID, got.Properties)
+		}
+	}
+}
+
+// A backfill of a rename's target counts the rows the OLD name is missing on:
+// with every record carrying `size`, `dimensions: {renamedFrom: size,
+// required, default}` renames them all and backfills none, so the plan has no
+// backfill step and its work is the rename count. The plan is made lossy by a
+// dropped property beside it, so the confirmation proves the door's recount is
+// the preview's hash.
+func TestBackfillOfARenamedPropertyCountsUnderTheOldName(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	if err := cvApply(t, ds, map[string]any{
+		"size":  map[string]any{"type": "string"},
+		"color": map[string]any{"type": "string"},
+	}); err != nil {
+		t.Fatalf("install the package: %v", err)
+	}
+	a := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"size": "big", "color": "red"}})
+	b := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"size": "small", "color": "blue"}})
+	docs := cvDocs(map[string]any{
+		"dimensions": map[string]any{"type": "string", "required": true, "default": "unsized", "renamedFrom": "size"},
+	})
+	planner := cvPlanner(t, ds)
+	plan, err := planner.PlanVocabularyApply(ctx, owner, docs)
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if !plan.Lossy || plan.Work != 4 || len(plan.Steps) != 2 {
+		t.Fatalf("plan = %+v (want a rename of 2 and a null of 2, no backfill)", plan)
+	}
+	for _, s := range plan.Steps {
+		if s.Step == substrate.StepBackfill {
+			t.Fatalf("a backfill the rename leaves nothing for was planned: %+v", s)
+		}
+		if s.Records != 2 {
+			t.Fatalf("step = %+v", s)
+		}
+	}
+	other := substrate.ConversionConfirm{PlanHash: "0000", ChangelogSeq: plan.ChangelogSeq}
+	_, err = planner.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &other})
+	wantLossyRefusal(t, ds, err, a, "the confirmation is for another plan")
+	confirm := substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
+	if _, err := planner.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &confirm}); err != nil {
+		t.Fatalf("the door must recount the plan the preview hashed: %v", err)
+	}
+	if got := mustGet(t, ds, cvWidget, a.ID); got.Properties["dimensions"] != "big" || got.Properties["color"] != nil {
+		t.Fatalf("a = %v", got.Properties)
+	}
+	if got := mustGet(t, ds, cvWidget, b.ID); got.Properties["dimensions"] != "small" {
+		t.Fatalf("b = %v", got.Properties)
+	}
+}
+
 // Dropping a property live records carry is the null step: lossy, so it runs
 // only confirmed, and what it leaves is what a clearing patch leaves. The key
 // is gone from the fold, the manager row, the embedding queue row and the

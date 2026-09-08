@@ -77,6 +77,9 @@ type fakeSubstrate struct {
 	// plan is POST /api/v1/vocabulary/plan's answer: the conversion plan the
 	// apply would run, which `apply --allow-data-loss` confirms by its hash.
 	plan substrate.VocabularyPlan
+	// installRefusesLossy makes a bare POST .../install (no confirmation in
+	// the body) answer the server's 403 `lossy`, as a lossy plan does.
+	installRefusesLossy bool
 
 	requests  []string
 	lastBody  map[string]json.RawMessage
@@ -391,6 +394,14 @@ func (f *fakeSubstrate) handleCatalog(w http.ResponseWriter, r *http.Request) {
 // the id the request named, and the status comes back.
 func (f *fakeSubstrate) handleCatalogInstall(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
+	f.mu.Lock()
+	_, confirmed := f.lastBody["confirm"]
+	refuse := f.installRefusesLossy && !confirmed
+	f.mu.Unlock()
+	if refuse {
+		writeError(w, http.StatusForbidden, "lossy", "the change removes values from the fold and runs only with a confirmation carrying the previewed planHash and changelogSeq", nil)
+		return
+	}
 	id := r.PathValue("id")
 	pkg := id
 	if _, after, ok := strings.Cut(id, "/"); ok {

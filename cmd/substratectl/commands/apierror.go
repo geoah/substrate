@@ -91,9 +91,7 @@ func (e *apiError) hint() string {
 	case e.Code == "guard":
 		return guardHint(e.Path)
 	case e.Code == "lossy":
-		// The consent is bound to a preview, so the flag previews first and
-		// confirms exactly what it printed (decision 0067).
-		return "re-run with --allow-data-loss: it previews the plan, prints the steps that remove values and confirms exactly those"
+		return lossyHint(e.Path)
 	case e.Status == 403 || e.Code == "forbidden":
 		// A token has FULL access to its repository — there are no scopes and
 		// no ACLs — so a forbidden is never about the token's reach. It is the
@@ -102,6 +100,21 @@ func (e *apiError) hint() string {
 		return "this write is refused on principle, not for lack of access: credentials and tokens change only through `substratectl login`, `substratectl user password` and `substratectl token`, and the substrate's own actors cannot be claimed"
 	}
 	return ""
+}
+
+// lossyHint names the command that carries --allow-data-loss for the door
+// that refused (decision 0067): the consent is bound to a preview, so the flag
+// previews first and confirms exactly what it printed. A sample re-import has
+// no preview to bind to yet (issue #386), so its hint names the route that
+// works rather than a flag `import` does not carry.
+func lossyHint(path string) string {
+	switch {
+	case strings.Contains(path, "/vocabulary/apply"):
+		return "re-run `substratectl apply --allow-data-loss`: it previews the plan, prints the steps that remove values and confirms exactly those"
+	case strings.Contains(path, "/catalog/") && strings.HasSuffix(path, "/import"):
+		return "a sample re-import has no preview to confirm against yet: rewrite the records the message names first, or apply the rehomed closure yourself with `substratectl apply --as-mine --allow-data-loss`"
+	}
+	return "re-run `substratectl install <provider> --allow-data-loss`: it reads the preview, prints the steps that remove values and confirms exactly those"
 }
 
 // guardHint branches on what was actually refused. A `guard` on a record

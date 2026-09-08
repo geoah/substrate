@@ -14,6 +14,7 @@ export type ErrorCode =
   | "auth"
   | "forbidden"
   | "guard"
+  | "lossy"
   | "not_found"
   | "conflict"
   | "compacted"
