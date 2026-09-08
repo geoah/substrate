@@ -44,10 +44,12 @@ if [ -n "$subpackages" ]; then
 fi
 
 # -list prints one name per line and then the package's `ok` line; only the
-# names are wanted. The list is built even for a single shard, so a bad SHARD
-# is refused the same way whatever SHARDS says; the binary it compiles is the
-# one the run below reuses.
-names="$(go test -list '.*' ./internal/engine/ | grep -E '^(Test|Example)')"
+# names are wanted. Test, Example and Fuzz: a fuzz target's seed corpus runs
+# as an ordinary test under -run, so it has a shard like any other, and a
+# Benchmark does not run without -bench. The list is built even for a single
+# shard, so a bad SHARD is refused the same way whatever SHARDS says; the
+# binary it compiles is the one the run below reuses.
+names="$(go test -list '.*' ./internal/engine/ | grep -E '^(Test|Example|Fuzz)')"
 mine="$(printf '%s\n' "$names" | SHARD="$shard" SHARDS="$shards" .mise/shardselect.sh)"
 total="$(printf '%s\n' "$names" | grep -c .)"
 count="$(printf '%s\n' "$mine" | grep -c .)"

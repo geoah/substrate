@@ -1,10 +1,12 @@
 # Every push and every PR, as a set of jobs so a failure names itself.
 #
-# This file holds NO commands. Each job runs one `mise run ci:*` task, and
-# those tasks are defined once in .mise.toml — so `mise run ci` on a laptop is
-# the same pipeline, not an approximation of it. A check that passes locally
-# and fails here would have to be a difference in the machine, never in the
-# definition. Add a step to .mise.toml; this file does not change.
+# This file holds ONE command, the `go gate` step, and it is there only because
+# what it reads is GitHub's `needs` results, which no laptop has. Every other
+# job runs one `mise run ci:*` task, and those tasks are defined once in
+# .mise.toml — so `mise run ci` on a laptop is the same pipeline, not an
+# approximation of it. A check that passes locally and fails here would have
+# to be a difference in the machine, never in the definition. Add a step to
+# .mise.toml; this file does not change.
 #
 # Every third-party action is pinned to a COMMIT SHA with its version in a
 # trailing comment. A tag is mutable and these jobs are the trust boundary of
@@ -241,21 +243,27 @@ jobs:
     timeout-minutes: 5
     env:
       CHANGES: ${{ needs.changes.result }}
+      ANSWER: ${{ needs.changes.outputs.go }}
       GO: ${{ needs.go.result }}
       ENGINE: ${{ needs.engine.result }}
     steps:
+      # The verdict is tied to the classifier's answer, not to the jobs'
+      # results alone: `changes` must have succeeded AND written exactly
+      # `true` or `false` (an empty answer means ci:changes wrote no line,
+      # which is a failure whatever its exit status); on `true` both gated
+      # jobs must have run and passed, on `false` both must have been skipped.
       # `needs.engine.result` is the matrix as a whole: `failure` if any shard
-      # failed (fail-fast is off, so every shard still reports). A gated job
-      # may be `skipped` only because `changes` succeeded with go=false; a
-      # failed or cancelled `changes` fails this job first.
+      # failed (fail-fast is off, so every shard still reports).
       - run: |
-          echo "changes=$CHANGES go=$GO engine=$ENGINE"
+          echo "changes=$CHANGES answer=$ANSWER go=$GO engine=$ENGINE"
           [ "$CHANGES" = success ] || { echo "the changes job did not succeed, so nothing was gated"; exit 1; }
+          case "$ANSWER" in
+            true) want=success ;;
+            false) want=skipped ;;
+            *) echo "the changes job answered '$ANSWER', not true or false"; exit 1 ;;
+          esac
           for result in "$GO" "$ENGINE"; do
-            case "$result" in
-              success | skipped) ;;
-              *) echo "a gated job ended $result"; exit 1 ;;
-            esac
+            [ "$result" = "$want" ] || { echo "a gated job ended $result, expected $want for go=$ANSWER"; exit 1; }
           done
 
   coverage:
