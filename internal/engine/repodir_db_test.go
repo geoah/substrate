@@ -468,7 +468,7 @@ func TestBootImportsARepositoryDirectory(t *testing.T) {
 	}
 }
 
-// A change cursor is a seq under a history generation (decision 0053). The
+// A change cursor is a seq under a history generation (decision 0056). The
 // generation is the row's and the row survives a rebuild and a restart, so a
 // cursor saved against a live repository stays good across both; an import
 // of a directory into a database with no row for it mints a new one, so a

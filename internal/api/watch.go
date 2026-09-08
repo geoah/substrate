@@ -218,7 +218,7 @@ type resume struct {
 // and the seq is at or below the head: an imported directory recreates a
 // repository under the same authority with seqs that restart below whatever
 // cursors clients saved, and a bare seq cannot tell that history from this one
-// (decision 0053). Seq 0 is the start of every history and names no entry, so
+// (decision 0056). Seq 0 is the start of every history and names no entry, so
 // it needs no generation. Anything else answers 410 `compacted` naming the
 // head to re-list from; a parse failure is the 400 it always was. ok is false
 // once the response has been written.

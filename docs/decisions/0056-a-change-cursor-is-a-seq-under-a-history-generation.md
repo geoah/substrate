@@ -4,7 +4,7 @@ date: 2026-09-08
 decision-makers: George Antoniadis
 ---
 
-# 0053. A change cursor is a seq under a history generation
+# 0056. A change cursor is a seq under a history generation
 
 ## Context and Problem Statement
 

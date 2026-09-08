@@ -44,7 +44,7 @@ type Change struct {
 // generation changes when a repository's history is imported into a database
 // that did not hold it, and holds across a restart and a rebuild, so a cursor
 // saved from a history that was since replaced is refused instead of
-// silently skipping the replacement's writes (decision 0053).
+// silently skipping the replacement's writes (decision 0056).
 type ChangelogHead struct {
 	Seq        int64  `json:"seq"`
 	Generation string `json:"generation"`

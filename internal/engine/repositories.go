@@ -42,7 +42,7 @@ type Repository struct {
 	DEK []byte
 	// HistoryGeneration names the numbering of this repository's changelog:
 	// a change cursor is resumable only under the generation it was read
-	// from (decision 0053). It is minted where the row is written, at
+	// from (decision 0056). It is minted where the row is written, at
 	// registration and at import, and nothing else changes it, so a restart
 	// and a rebuild keep every cursor while an import resets them once.
 	HistoryGeneration string

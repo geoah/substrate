@@ -5,7 +5,7 @@
 -- recreates the row under the same authority, and the imported history's
 -- seqs restart below whatever cursors clients saved from the history the
 -- database held before; a bare seq cannot tell the two apart (decision
--- record 0053).
+-- record 0056).
 --
 -- The engine mints a fresh value whenever it writes the row: at registration
 -- and at import. A restart and `repository rebuild` leave the row alone, so

@@ -11,7 +11,7 @@ import (
 // A list cursor carries the head of the history it was minted in, and that
 // head is the watch handoff. A cursor minted before an import replaced the
 // changelog would hand the client a head the new history never reached, so
-// List refuses a cursor whose generation is not the dataset's (decision 0053).
+// List refuses a cursor whose generation is not the dataset's (decision 0056).
 func TestListRefusesACursorFromAnotherHistory(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

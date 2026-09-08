@@ -990,7 +990,7 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 	// may be an older copy of a history this database's clients hold cursors
 	// into, and a bare seq cannot tell the two apart. Every cursor saved
 	// against the history that was here before is refused once and re-lists
-	// (decision 0053).
+	// (decision 0056).
 	if repo.HistoryGeneration, err = newHistoryGeneration(); err != nil {
 		return out, err
 	}
