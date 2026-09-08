@@ -72,7 +72,7 @@ description = "Run the server (wants DATABASE_URL)"
 run = "go run ./cmd/substrated"
 
 [tasks.test]
-description = "The whole Go suite, the way ci:go runs it"
+description = "The whole Go suite, sequential: what ci:coverage runs on main"
 # SEQUENTIAL, not `depends`. mise runs dependencies in PARALLEL, and running
 # the short suite alongside the container suite starves the pgvector container
 # on a small machine — it dies mid-run and every remaining case fails with
@@ -124,6 +124,24 @@ description = "The suites that want a database: a pgvector container, or SUBSTRA
 # machine, and Go's default of 10m has killed it on a slow CI runner with no
 # test failing. The CI job's own budget is 40 minutes; this stays inside it.
 run = "go test -count=1 -p 1 -timeout 30m -skip '^TestLive' ./internal/engine/... ./internal/blobbytes/... ./internal/catalog/... ./internal/testenv/... ./cmd/substratectl/..."
+
+# `test:db` cut in two for the runner. The engine package is most of the
+# suite's time, so CI runs it as parallel shards and every other database
+# package in one job beside them; the two tasks below are those pieces, with
+# `test:db`'s flags, and `test:db` itself stays the one sequential run a
+# laptop wants. The whole engine package, `mise run test:db:engine`, is the
+# run AGENTS.md recommends when working in the engine.
+[tasks."test:db:engine"]
+description = "The engine suite alone, or one shard of it: SHARD and SHARDS from the environment"
+# `go test -list` in the script, the cut itself in .mise/shardselect.sh
+# (sorted, round robin), which `lint:ci` holds to disjoint and complete.
+run = ".mise/engineshard.sh"
+
+[tasks."test:db:rest"]
+description = "Every database package but the engine: blobbytes, catalog, testenv, substratectl"
+# -p 1 for the same reason `test:db` has it: one binary at a time against one
+# server, so no two race on CREATE EXTENSION.
+run = "go test -count=1 -p 1 -timeout 30m -skip '^TestLive' ./internal/blobbytes/... ./internal/catalog/... ./internal/testenv/... ./cmd/substratectl/..."
 
 [tasks."test:race"]
 description = "The short suite under the race detector"
@@ -213,7 +231,7 @@ run = [
 # eslint from `lint` would drag pnpm into the lint job and run it twice.
 
 [tasks.lint]
-description = "Every linter: Go, YAML, shell, Python, the docs, the migrations, the toolchain pins and the sandbox gate"
+description = "Every linter: Go, YAML, shell, Python, the docs, the migrations, the toolchain pins, the sandbox gate and the CI scripts"
 depends = [
   "lint:go",
   "lint:yaml",
@@ -223,6 +241,7 @@ depends = [
   "lint:migrations",
   "lint:sandboxgate",
   "lint:toolchain",
+  "lint:ci",
 ]
 
 [tasks."lint:go"]
@@ -279,6 +298,17 @@ description = "The CI tasks still set SUBSTRATE_TEST_REQUIRE_SANDBOX, and still 
 # themselves on a kernel that lost Landlock, with nothing to see. Same class of
 # problem as the tests it protects, one level up.
 run = ".mise/sandboxgatecheck.sh"
+
+[tasks."lint:ci"]
+description = "The CI scripts' own tests: the path gate's verdicts and the shard partition"
+# .mise/changescheck.sh decides whether the database suite runs at all and
+# .mise/shardselect.sh decides which tests each engine shard runs, so a wrong
+# answer from either is a green build that tested nothing, and nothing else
+# would see it. Each gate scenario is a throwaway git repository with the
+# verdict it must give (an unresolvable base must FAIL, never answer false);
+# the partition runs over a fixed list that the shards together must
+# reproduce exactly once. No Go is compiled, so it is cheap enough for `lint`.
+run = ".mise/cicheck.sh"
 
 [tasks."lint:toolchain"]
 description = "The version pins written twice: .mise.toml against the Dockerfiles"
@@ -618,22 +648,46 @@ description = "CI job `cross` — the cross-compile check, on a runner of its ow
 # test run only delayed the answer.
 depends = ["cross"]
 
+[tasks."ci:changes"]
+description = "CI job `changes`: does this PR touch anything a Go test reads? go=true|false"
+# The first job of the workflow. Its answer gates `ci:go` and `ci:engine`, so
+# a PR that edits only docs/, the console or a linter config gets its lint,
+# console, cross and audit jobs and no database suite. A push runs everything.
+run = ".mise/changescheck.sh"
+
 [tasks."ci:go"]
-description = "CI job `go test` — the suite in its two halves, with a coverage profile"
-# See `test` above: the two halves MUST NOT run concurrently. This runs them
-# through `test:coverage` so the gate also produces the profile CI keeps as an
-# artifact; `mise run test` is the same two halves without the instrumentation,
-# and stays the inner loop.
+description = "CI job `go test`: the short suite, then every database package but the engine"
+# The engine package is the other job (`ci:engine`, sharded), so this one is
+# the short suite and the four small database packages: together they are
+# about a minute of test time, which is why the short suite rides here rather
+# than on a runner of its own that would spend half its life on setup.
 #
 # SUBSTRATE_TEST_REQUIRE_SANDBOX: internal/sandbox and internal/runner skip
 # their confinement cases where the kernel offers no Landlock or no seccomp, so
 # an image, kernel or `lsm=` change that removes either would take those cases
 # from passing to skipping with no red build. Here they fail instead. It is set
-# on the CI task and not on `test:coverage`, so a laptop without Landlock still
+# on the CI task and not on `test:short`, so a laptop without Landlock still
 # runs the rest of the suite.
 #
 # `run`, not `depends`: mise gives a dependency task its own environment, so a
-# variable set here would never reach `test:coverage`.
+# variable set here would never reach the test task. Sequential for the reason
+# `test` is: the two halves must not share one small machine at once.
+env = { SUBSTRATE_TEST_REQUIRE_SANDBOX = "1" }
+run = ["mise run test:short", "mise run test:db:rest"]
+
+[tasks."ci:engine"]
+description = "CI job `engine N/M`: one shard of the engine suite; SHARD and SHARDS from the environment"
+# One matrix job per shard. The matrix in .github/workflows/ci.yml is the one
+# place the shard count is written; this task reads it from the environment.
+# No sandbox variable: the engine has no confinement cases.
+depends = ["test:db:engine"]
+
+[tasks."ci:coverage"]
+description = "CI job `coverage`: the whole suite, unsharded, with the profile; runs on main"
+# The profile CI keeps as an artifact. Unsharded because merging the shards'
+# partial profiles buys nothing a push to main cannot wait for: this job runs
+# on `push`, so a PR never waits on it. It is `test:coverage` with the sandbox
+# gate armed, see `ci:go`.
 env = { SUBSTRATE_TEST_REQUIRE_SANDBOX = "1" }
 run = "mise run test:coverage"
 
@@ -668,10 +722,12 @@ run = "docker build -t $IMAGE:ci ."
 
 [tasks.ci]
 description = "Every CI job, locally. This is the whole pipeline."
+# `ci:coverage` and not `ci:go` plus the shards: it is the same tests as
+# `ci:go` and every `ci:engine` shard together, run once, with the profile.
 depends = [
   "ci:lint",
   "ci:cross",
-  "ci:go",
+  "ci:coverage",
   "ci:race",
   "ci:audit",
   "ci:console",

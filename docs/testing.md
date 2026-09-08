@@ -58,9 +58,15 @@ concurrently. A `*_db_test.go` failure that looks arbitrary usually is, so
 confirm it alone before believing it:
 
 ```bash
-go test ./internal/engine/...          # ~4 minutes, and the answer you can trust
+mise run test:db:engine                # ~4 minutes, and the answer you can trust
 go test ./internal/engine/ -run TestFold -v
 ```
+
+`test:db:engine` is the engine package with `test:db`'s flags, and it is also
+the task CI shards: with `SHARD` and `SHARDS` in the environment it runs one
+slice of the package (`SHARD=3 SHARDS=8 mise run test:db:engine`), which is
+how a red shard is reproduced by number. `test:db:rest` is every other
+database package. The cut is described under [What CI runs](#what-ci-runs).
 
 ### Testing the boot upgrade
 
@@ -118,13 +124,13 @@ toolchain, which is slow and has a VCS-stamping failure mode of its own; every
 confinement case runs in the short suite, which is also the only half of
 `ci:go` that reaches `internal/runner`.
 
-`ci:go` and `ci:race` set the variable; `mise run test` does not, so a laptop
-with Landlock left out of its `lsm=` list still runs the rest of the suite. On
-macOS there is no Landlock and no seccomp at all, so do not set it there. That
-those two tasks still set it, and still reach the suite through `run` rather
-than a `depends` entry (which mise gives an environment of its own), is what
-`mise run lint:sandboxgate` holds: this gate's own failure mode is a green
-build, so it gets a guard.
+`ci:go`, `ci:race` and `ci:coverage` set the variable; `mise run test` does
+not, so a laptop with Landlock left out of its `lsm=` list still runs the rest
+of the suite. On macOS there is no Landlock and no seccomp at all, so do not
+set it there. That those three tasks still set it, and still reach the suite
+through `run` rather than a `depends` entry (which mise gives an environment
+of its own), is what `mise run lint:sandboxgate` holds: this gate's own
+failure mode is a green build, so it gets a guard.
 
 A `-run` or `-skip` relaxes the exact count, because a filter can only shrink
 the set, but it does not lift the gate: with the variable set, a filter that
@@ -140,8 +146,10 @@ go tool cover -html=coverage.out
 There is **no threshold and no badge**, deliberately. A number that fails a
 build teaches people to write tests that move the number. What the profile is
 for is the opposite question: which paths does nothing exercise at all. CI
-keeps `coverage.out` as an artifact on every run, so a reviewer can answer
-"is that new branch covered" without running anything.
+keeps `coverage.out` as an artifact of every push to `main` (the `coverage`
+job), so a reviewer can answer "is that new branch covered" without running
+anything. A PR's runs carry no profile: the PR jobs are sharded, and merging
+their partial profiles would buy nothing a push to `main` cannot wait for.
 
 ## The console
 
@@ -308,21 +316,82 @@ suite's key gate.
 
 ## What CI runs
 
-Seven jobs, each one `mise run ci:<job>`, defined once in `.mise.toml` so the
+Every job is one `mise run ci:<job>`, defined once in `.mise.toml` so the
 pipeline is reproducible on a laptop:
 
-| Job | Task | Is |
-| --- | ---- | -- |
-| lint | `ci:lint` | formatting, every linter, the release config, and the two diff guards: the `kinds/` and `samples/` version bump (`kinds:check`) and the write-once files (`frozen:check`) |
-| cross compile | `ci:cross` | build and vet for linux and darwin, amd64 and arm64 |
-| go test | `ci:go` | both halves, with the coverage profile kept as an artifact |
-| race | `ci:race` | the short suite under `-race` |
-| audit | `ci:audit` | govulncheck and pnpm audit |
-| console | `ci:console` | typecheck, lint, format, test, build |
-| image builds | `ci:image` | the image builds from a clean tree |
+| Job | Task | Is | Runs |
+| --- | ---- | -- | ---- |
+| lint | `ci:lint` | formatting, every linter, the release config, and the two diff guards: the `kinds/` and `samples/` version bump (`kinds:check`) and the write-once files (`frozen:check`) | always |
+| cross compile | `ci:cross` | build and vet for linux and darwin, amd64 and arm64 | always |
+| changes | `ci:changes` | reads the diff against the base branch and answers `go=true` or `go=false`: does any changed file reach a Go test? | always |
+| go test | `ci:go` | the short suite, then every database package but the engine (`test:db:rest`) | when `go=true` |
+| engine 1/8 to 8/8 | `ci:engine` | one shard of the engine package each (`test:db:engine` with `SHARD` and `SHARDS`) | when `go=true` |
+| go gate | (in the workflow) | the one check to require: red unless `changes` succeeded and `go test` and every shard succeeded or were skipped by its answer | always |
+| coverage | `ci:coverage` | the whole suite, unsharded, with the coverage profile kept as an artifact | push to `main` |
+| race | `ci:race` | the short suite under `-race` | always |
+| audit | `ci:audit` | govulncheck and pnpm audit | always |
+| console | `ci:console` | typecheck, lint, format, test, build | always |
+| image builds | `ci:image` | the image builds from a clean tree | always |
 
 CodeQL runs beside them in its own workflow, on a schedule as well as on
 changes, because its queries change even when the code does not.
+
+### The database suite, cut for the runner
+
+The engine package alone is 380 to 500 seconds on the 4 vCPU runner, and
+under contention it has passed Go's 10 minute default with no test failing.
+CI therefore runs it as eight matrix jobs. `.mise/engineshard.sh` lists the
+package's top-level tests with `go test -list`, sorts the names and gives
+shard `k` every eighth name starting from the `k`th, as one `-run` regex
+anchored at both ends. Every test lands in exactly one shard by construction,
+a new test lands in one without anybody editing a list, and the same tree cuts
+the same way on every machine, so `SHARD=3 SHARDS=8 mise run test:db:engine`
+reruns exactly what shard 3 ran. The shard count is written once, as the
+`shard:` matrix in `.github/workflows/ci.yml`; the job name and `SHARDS` both
+read `strategy.job-total`.
+
+The short suite rides in `go test` with the four small database packages
+rather than on a runner of its own: together they are about a minute of test
+time, and a job's setup (checkout, toolchain, cache, service container) is
+half of that again.
+
+`changes` is the path gate. `.mise/changescheck.sh` diffs the merge base with
+the PR's base branch against the tree and answers `go=false` only when every
+changed file matches a pattern nothing a Go test reads: `docs/`,
+`web/console/`, `.github/` other than `ci.yml`, `*.md`, and the root linter,
+release and image configs. `kinds/` and `samples/` are embedded whole, so any
+file under them counts, and an unmatched file counts, because a needless run
+is cheaper than a red test merged green. The diff is read with `--no-renames`,
+so a Go file moved onto an inert path is seen on both sides, and a base the
+script cannot resolve fails the job rather than answering `false`. `go test`
+and the engine shards carry `if: needs.changes.outputs.go == 'true'`. A push
+to `main` answers `true` without diffing, and runs `coverage` besides.
+
+`go gate` is the check to require. GitHub counts a skipped job as passing for
+a required check, the gated jobs are skipped both when `changes` answers
+`false` and when `changes` itself fails, and a skipped matrix is one `engine`
+job rather than eight named shards, so a ruleset naming `go test` or a shard
+would let a PR whose gate crashed merge untested. `go gate` runs after all of
+them with `if: always()` and fails unless `changes` succeeded and `go test`
+and the engine matrix each succeeded or were skipped. On a docs-only PR it is
+green with no suite run; on a Go PR it is the suite's verdict.
+
+A shard runs under `-timeout 12m` inside a 15 minute job, so a hang dies by
+Go's timeout with a goroutine dump rather than by the runner's with nothing.
+The script also refuses to run if a package under `internal/engine/` has
+grown tests of its own, since the shards run only the root package and
+`test:db` runs the tree.
+
+`mise run lint:ci` (`.mise/cicheck.sh`, part of `lint`) holds both scripts:
+each path-gate scenario is a throwaway git repository with the verdict it
+must give, including the unresolvable base that must fail, and the shard
+partition (`.mise/shardselect.sh`) is run over a fixed list that the eight
+shards together must reproduce exactly once.
+
+`mise run test`, `test:db` and `test:coverage` are untouched by the cut: each
+is still the whole suite, sequential, on one machine, and `mise run ci` runs
+`ci:coverage` in place of `ci:go` and the shards, because it is the same tests
+once with the profile.
 
 Next: the [built-in kinds](builtin-kinds.md), the vocabulary a repository
 can import.

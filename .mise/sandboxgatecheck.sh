@@ -6,10 +6,11 @@
 # assert what a function body cannot do wherever the kernel offers no Landlock
 # or no seccomp, and only SUBSTRATE_TEST_REQUIRE_SANDBOX turns those skips into
 # failures. A disarmed gate is a GREEN build, so nothing else here would report
-# either of the two edits that disarm it: dropping the `env` line from `ci:go`
-# or `ci:race`, and turning either task back into `depends = [...]`, which mise
-# runs with an environment of its own so the variable never reaches the test
-# binary.
+# either of the two edits that disarm it: dropping the `env` line from `ci:go`,
+# `ci:race` or `ci:coverage` (the three tasks that run the short suite, which
+# is where the confinement cases live), and turning any of them back into
+# `depends = [...]`, which mise runs with an environment of its own so the
+# variable never reaches the test binary.
 #
 # It reads `mise task info` rather than the TOML, so it holds what mise will
 # actually do with the task.
@@ -26,7 +27,7 @@ flag() {
   printf 'lint:sandboxgate: %s\n' "$*" >&2
 }
 
-for task in ci:go ci:race; do
+for task in ci:go ci:race ci:coverage; do
   info="$(mise task info "$task" 2>/dev/null)"
   if [ -z "$info" ]; then
     flag "no ${task} task, so this guard holds nothing"

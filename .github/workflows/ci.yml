@@ -1,16 +1,50 @@
-# Every push and every PR, as seven jobs so a failure names itself.
+# Every push and every PR, as a set of jobs so a failure names itself.
 #
-# This file holds NO commands. Each job runs one `mise run ci:*` task, and
-# those tasks are defined once in .mise.toml — so `mise run ci` on a laptop is
-# the same pipeline, not an approximation of it. A check that passes locally
-# and fails here would have to be a difference in the machine, never in the
-# definition. Add a step to .mise.toml; this file does not change.
+# This file holds ONE command, the `go gate` step, and it is there only because
+# what it reads is GitHub's `needs` results, which no laptop has. Every other
+# job runs one `mise run ci:*` task, and those tasks are defined once in
+# .mise.toml — so `mise run ci` on a laptop is the same pipeline, not an
+# approximation of it. A check that passes locally and fails here would have
+# to be a difference in the machine, never in the definition. Add a step to
+# .mise.toml; this file does not change.
 #
 # Every third-party action is pinned to a COMMIT SHA with its version in a
 # trailing comment. A tag is mutable and these jobs are the trust boundary of
 # the whole repository, so a compromised `v4` would otherwise be a compromised
 # release. The comment is what dependabot reads to keep them current, and it is
 # also what proposes the major upgrades none of these are on yet.
+#
+# The database suite is cut for the runner, and gated. `changes` runs first
+# and answers one question through .mise/changescheck.sh: does the diff touch
+# anything a Go test reads? On a docs-only, console-only or linter-config PR
+# the answer is no, and `go test` and the engine shards are skipped by their
+# `if:` (the matrix `if:` is evaluated before it expands, so that run shows
+# one skipped `engine` job, not eight `engine k/8`). A workflow-level `paths:`
+# filter would never create those checks at all and would leave a required
+# one pending forever. A push to main runs everything.
+#
+# `go gate` is the ONE name a ruleset should require for the Go suite. The
+# shard names exist only on a run that needed them, GitHub counts a skipped
+# job as passing for a required check, and `go test` and the shards are
+# skipped both when `changes` said no AND when `changes` itself failed, so
+# requiring any of them would let a PR whose gate crashed merge with no
+# database test run. `go gate` always runs: it fails unless `changes`
+# succeeded and every gated job either succeeded or was skipped by its
+# answer. It is also the one job whose step is written here and not in
+# .mise.toml, because what it reads is GitHub's `needs` results, which have
+# no laptop equivalent; `mise run ci` runs the suite itself instead.
+#
+# The engine package is 380 to 500 seconds on the runner on its own and has
+# passed Go's 10 minute default under contention, so it runs as a matrix of
+# shards, each `mise run ci:engine` with SHARD and SHARDS from the matrix.
+# .mise/engineshard.sh cuts the package by test name (`go test -list`, sorted,
+# round robin), so every test lands in exactly one shard and a new test lands
+# in one without anybody editing a list. The `shard:` list under `engine` is
+# the ONE place the count is written: `strategy.job-total` feeds SHARDS and the
+# job name. Every other database package runs in `go test` after the short
+# suite. The unsharded suite with its coverage profile is the `coverage` job,
+# which runs on push to main only: a PR never waits on it, and main still
+# keeps the artifact.
 #
 # The actions/cache steps below are the one thing that IS about the machine and
 # so belongs here rather than in .mise.toml: a laptop keeps ~/.cache and
@@ -27,7 +61,9 @@
 # Keys are per-job on purpose. A cache entry is immutable once written, so two
 # jobs sharing one key means whichever finishes first wins and the other
 # uploads nothing; the lint job's golangci-lint build cache and the test job's
-# `go test` build cache are different working sets anyway.
+# `go test` build cache are different working sets anyway. The engine shards
+# are the one deliberate exception: they build the same test binary, so any
+# shard's upload serves every other.
 name: ci
 
 on:
@@ -86,10 +122,30 @@ jobs:
           restore-keys: ${{ runner.os }}-go-cross-
       - run: mise run ci:cross
 
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      go: ${{ steps.changes.outputs.go }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          experimental: true
+          version: 2026.9.2
+      # The script diffs against the merge base with the PR's base branch,
+      # fetching the history the shallow checkout lacks, and writes `go=` to
+      # $GITHUB_OUTPUT. On a push it answers true without diffing.
+      - id: changes
+        run: mise run ci:changes
+
   go:
     name: go test
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 20
     # The database suites start their own pgvector container through
     # testcontainers when they have to, which is right on a laptop. On a runner
     # it is fragile — the container has died mid-suite, and every remaining case
@@ -133,6 +189,116 @@ jobs:
           key: ${{ runner.os }}-go-test-${{ hashFiles('go.sum') }}
           restore-keys: ${{ runner.os }}-go-test-
       - run: mise run ci:go
+
+  engine:
+    name: engine ${{ matrix.shard }}/${{ strategy.job-total }}
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      # Every shard reports: one red shard must not cancel the seven that
+      # would have said which other tests failed.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    # The same service container as `go test`, for the same reason; one per
+    # shard, because a shard is a runner of its own.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: substrate
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d substrate" --health-interval
+          5s --health-timeout 5s --health-retries 20
+    env:
+      SUBSTRATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/substrate?sslmode=disable
+      SHARD: ${{ matrix.shard }}
+      SHARDS: ${{ strategy.job-total }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          experimental: true
+          version: 2026.9.2
+      # One key for every shard: they all build the one engine test binary, so
+      # the first to finish uploads what the rest would have.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-engine-${{ hashFiles('go.sum') }}
+          restore-keys: ${{ runner.os }}-go-engine-
+      - run: mise run ci:engine
+
+  gate:
+    name: go gate
+    needs: [changes, go, engine]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CHANGES: ${{ needs.changes.result }}
+      ANSWER: ${{ needs.changes.outputs.go }}
+      GO: ${{ needs.go.result }}
+      ENGINE: ${{ needs.engine.result }}
+    steps:
+      # The verdict is tied to the classifier's answer, not to the jobs'
+      # results alone: `changes` must have succeeded AND written exactly
+      # `true` or `false` (an empty answer means ci:changes wrote no line,
+      # which is a failure whatever its exit status); on `true` both gated
+      # jobs must have run and passed, on `false` both must have been skipped.
+      # `needs.engine.result` is the matrix as a whole: `failure` if any shard
+      # failed (fail-fast is off, so every shard still reports).
+      - run: |
+          echo "changes=$CHANGES answer=$ANSWER go=$GO engine=$ENGINE"
+          [ "$CHANGES" = success ] || { echo "the changes job did not succeed, so nothing was gated"; exit 1; }
+          case "$ANSWER" in
+            true) want=success ;;
+            false) want=skipped ;;
+            *) echo "the changes job answered '$ANSWER', not true or false"; exit 1 ;;
+          esac
+          for result in "$GO" "$ENGINE"; do
+            [ "$result" = "$want" ] || { echo "a gated job ended $result, expected $want for go=$ANSWER"; exit 1; }
+          done
+
+  coverage:
+    name: coverage
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: substrate
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d substrate" --health-interval
+          5s --health-timeout 5s --health-retries 20
+    env:
+      SUBSTRATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/substrate?sslmode=disable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          experimental: true
+          version: 2026.9.2
+      # Its own key: -covermode=atomic instruments every package, so the
+      # objects `go test` and the shards cache are of no use here.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-coverage-${{ hashFiles('go.sum') }}
+          restore-keys: ${{ runner.os }}-go-coverage-
+      - run: mise run ci:coverage
       # The profile, kept as an artifact rather than sent to a coverage
       # service. There is no threshold and no badge on purpose (see
       # `test:coverage` in .mise.toml): this is here so a reviewer asking "is
