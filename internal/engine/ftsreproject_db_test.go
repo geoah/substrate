@@ -96,7 +96,7 @@ func TestAKindEditReindexesItsRowsAndTheRebuildAgrees(t *testing.T) {
 		Kind: ftsNote, ID: "gone",
 		Properties: map[string]any{"name": "deleted", "remark": "a quokka nobody finds"},
 	})
-	if _, err := ds.Delete(ctx, owner, gone.Kind, gone.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, gone.Kind, gone.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	if got := idsOfHits(lexicalHits(t, ds, "quokka")); !reflect.DeepEqual(got, []string{"titled"}) {
@@ -181,7 +181,7 @@ func TestARebuildAgreesAfterAnUninstallLeavesTombstones(t *testing.T) {
 	g := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: gizmo, Properties: map[string]any{"name": "Widget", "notes": "kept in the fold as a tombstone"},
 	})
-	if _, err := ds.Delete(ctx, owner, g.Kind, g.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, g.Kind, g.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	if err := bundler(t, ds).UninstallBundle(ctx, pkg); err != nil {
