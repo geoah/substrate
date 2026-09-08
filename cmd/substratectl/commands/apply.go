@@ -73,6 +73,12 @@ importing a shipped sample by hand takes (` + "`substratectl import`" + ` does
 the same server-side). ` + "`--as-mine`" + ` uses the authority this context
 logged in with. The input must be authored under a single authority, the
 target must be one a repository may own, and core references are untouched.
+When the input carries a package document, the request names the package it
+was authored as (` + "`origin`" + `), and the server stamps the landed copy
+with it as an import would: the catalog then previews the copy's upgrades,
+and a later --as apply over a copy you edited since is refused until it is
+confirmed, exactly like a re-import. One package per run: an input carrying
+several package documents is refused, because one request names one origin.
 
 A schema change that removes values from stored records (a dropped property
 records still carry, an enum value renamed onto one the declaration keeps) is
@@ -101,8 +107,13 @@ The removed values stay in the changelog.`,
 					return err
 				}
 			}
+			// The origin a rehomed input claims (decision record 0070): the
+			// package it was authored as, which the server stamps on the
+			// landed copy exactly as `substratectl import` does. Empty when
+			// nothing is rehomed or the input carries no package document.
+			var origin string
 			if as != "" {
-				if err := rehomeInput(docs, vocabularyDocs, as); err != nil {
+				if origin, err = rehomeInput(docs, vocabularyDocs, as); err != nil {
 					return err
 				}
 			}
@@ -117,7 +128,7 @@ The removed values stay in the changelog.`,
 			// admitted or none — so the record documents behind them can use
 			// the types they declare.
 			if len(vocabularyDocs) > 0 {
-				if err := a.applySchemaDocuments(cmd.Context(), cl, vocabularyDocs, allowDataLoss); err != nil {
+				if err := a.applySchemaDocuments(cmd.Context(), cl, vocabularyDocs, allowDataLoss, origin); err != nil {
 					return err
 				}
 			}
@@ -157,21 +168,28 @@ func (a *app) contextAuthority() (string, error) {
 // under to `to`, in place: the client-side half of a sample import (decision
 // record 0048). The walk is the server's own (vocabulary.RehomeAuthority) over
 // the WHOLE document, labels and annotations included, so a file applied this
-// way lands exactly what `substratectl import` would.
-func rehomeInput(docs []*document, vocabularyDocs []map[string]any, to string) error {
+// way lands exactly what `substratectl import` would. It answers the ORIGIN
+// the rehomed input claims (decision record 0070): the one package document's
+// id as authored, or "" when the input carries none or several, since the
+// stamp lands on one package row.
+func rehomeInput(docs []*document, vocabularyDocs []map[string]any, to string) (string, error) {
 	if err := rehomeTarget(to); err != nil {
-		return err
+		return "", err
 	}
 	from, err := authoredAuthority(vocabularyDocs)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if from == to {
-		return nil
+		return "", nil
+	}
+	origin, err := authoredPackage(vocabularyDocs)
+	if err != nil {
+		return "", err
 	}
 	rehomedVocabulary, err := vocabulary.RehomeAuthority(vocabularyDocs, from, to)
 	if err != nil {
-		return err
+		return "", err
 	}
 	copy(vocabularyDocs, rehomedVocabulary)
 	for _, d := range docs {
@@ -188,7 +206,7 @@ func rehomeInput(docs []*document, vocabularyDocs []map[string]any, to string) e
 		}
 		rehomedDoc, err := vocabulary.RehomeAuthority([]map[string]any{wrapped}, from, to)
 		if err != nil {
-			return err
+			return "", err
 		}
 		out := rehomedDoc[0]
 		d.Kind, _ = out["kind"].(string)
@@ -197,7 +215,34 @@ func rehomeInput(docs []*document, vocabularyDocs []map[string]any, to string) e
 		d.Metadata.Annotations, _ = out["annotations"].(map[string]any)
 		d.Data.Properties, _ = out["properties"].(map[string]any)
 	}
-	return nil
+	return origin, nil
+}
+
+// authoredPackage is the id of the ONE package document the input carries, as
+// authored: the origin a rehomed copy claims. An input with no package
+// document lands no package row to stamp and answers "". One with several is
+// several copies, which the request's one `origin` cannot name, and letting
+// it through would replace every one of them unstamped and unconfirmed
+// (decision record 0070), so it is refused: one package per run.
+func authoredPackage(vocabularyDocs []map[string]any) (string, error) {
+	var found []string
+	for _, d := range vocabularyDocs {
+		if kind, _ := d["kind"].(string); kind != corePackage+"/"+vocabulary.DocPackage {
+			continue
+		}
+		if id := mapString(d["metadata"], "id"); id != "" {
+			found = append(found, id)
+		}
+	}
+	switch len(found) {
+	case 0:
+		return "", nil
+	case 1:
+		return found[0], nil
+	default:
+		sort.Strings(found)
+		return "", fmt.Errorf("--as rehomes one package per run, and the input carries %s: apply one package per run, so each copy is stamped with its origin and confirmed on its own", strings.Join(found, " and "))
+	}
 }
 
 // rehomeTarget holds `--as` to an authority a REPOSITORY may own. The grammar
@@ -325,20 +370,25 @@ func isSchemaDocument(node *yaml.Node) bool {
 }
 
 // applySchemaDocuments sends one schema batch and prints what landed. With
-// allowDataLoss it previews the batch first and, where the plan is lossy,
-// prints the steps that remove values and confirms that plan and no other:
-// the consent the server takes is the preview's hash and changelog head, so a
-// bare "yes" is never sent (decision 0067). A lossless plan needs no consent
-// and is applied as it is.
-func (a *app) applySchemaDocuments(ctx context.Context, cl *client, docs []map[string]any, allowDataLoss bool) error {
+// allowDataLoss it previews the batch first and, where the plan is lossy or
+// replaces a copy edited since its origin stamp (decision record 0070), prints
+// what goes and confirms that plan and no other: the consent the server takes
+// is the preview's hash and changelog head, so a bare "yes" is never sent
+// (decision 0067). A plan that loses nothing needs no consent and is applied
+// as it is. `origin` is the package a rehomed input was authored as, or "".
+func (a *app) applySchemaDocuments(ctx context.Context, cl *client, docs []map[string]any, allowDataLoss bool, origin string) error {
 	var confirm *substrate.ConversionConfirm
 	if allowDataLoss {
-		plan, err := cl.planVocabulary(ctx, docs)
+		plan, err := cl.planVocabulary(ctx, docs, origin)
 		if err != nil {
 			return err
 		}
-		if plan.Lossy {
-			fmt.Fprintf(a.out, "confirming plan %s at changelog seq %d, which removes values:\n", plan.PlanHash, plan.ChangelogSeq)
+		if plan.Lossy || plan.DiscardsEdits {
+			fmt.Fprintf(a.out, "confirming plan %s at changelog seq %d, which %s:\n", plan.PlanHash, plan.ChangelogSeq,
+				lossWords(&substrate.BundleUpgrade{ConversionPlan: plan.ConversionPlan, DiscardsEdits: plan.DiscardsEdits}))
+			if plan.DiscardsEdits {
+				fmt.Fprintf(a.out, "  replaces your copy of %s whole: the declarations edited since it was imported go with it\n", origin)
+			}
 			for _, s := range plan.Steps {
 				if s.Lossy {
 					fmt.Fprintf(a.out, "  %s\n", stepLine(s))
@@ -347,7 +397,7 @@ func (a *app) applySchemaDocuments(ctx context.Context, cl *client, docs []map[s
 			confirm = &substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
 		}
 	}
-	ents, err := cl.applyVocabulary(ctx, docs, confirm)
+	ents, err := cl.applyVocabulary(ctx, docs, confirm, origin)
 	if err != nil {
 		return err
 	}

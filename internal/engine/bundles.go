@@ -821,20 +821,39 @@ func (ds *dataset) quarantinedBundleStatuses(ctx context.Context) ([]substrate.B
 // (a provider, a hand apply, a copy imported before the stamp) leaves all
 // three zero.
 func (ds *dataset) packageOrigin(ctx context.Context, pkg string, st *substrate.BundleStatus) error {
-	var origin, digest string
-	var rawVersion []byte
+	stamp, err := ds.packageStamp(ctx, pkg)
+	if err != nil {
+		return err
+	}
+	return ds.applyOriginStamp(ctx, st, stamp.origin, stamp.rawVersion, stamp.digest)
+}
+
+// originStamp is the provenance one package row carries, as stored: the
+// origin, the version as jsonb bytes (originVersionOf decodes it) and the
+// digest. All empty for a row with no stamp, and for no row at all.
+type originStamp struct {
+	origin     string
+	rawVersion []byte
+	digest     string
+}
+
+// packageStamp reads the stamp off one package row. The bundle status, the
+// upgrade preview and the door's edited-copy check all read it here, so the
+// three cannot disagree about what a copy claims.
+func (ds *dataset) packageStamp(ctx context.Context, pkg string) (originStamp, error) {
+	var s originStamp
 	err := ds.db.QueryRowContext(ctx, `
 		SELECT COALESCE(props->>$3, ''), props->$4, COALESCE(props->>$5, '')
 		FROM records WHERE kind = $1 AND id = $2 AND deleted_at IS NULL`,
 		kindPackage, pkg, propPackageOrigin, propPackageOriginVersion, propPackageOriginDigest,
-	).Scan(&origin, &rawVersion, &digest)
+	).Scan(&s.origin, &s.rawVersion, &s.digest)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil
+		return originStamp{}, nil
 	}
 	if err != nil {
-		return err
+		return originStamp{}, err
 	}
-	return ds.applyOriginStamp(ctx, st, origin, rawVersion, digest)
+	return s, nil
 }
 
 // applyOriginStamp puts one package row's stamp on its status and decides
@@ -911,6 +930,7 @@ func (ds *dataset) bundleStatus(ctx context.Context, b *vocabulary.Bundle) (subs
 	}
 	st.Functions = len(g.FunctionOrder)
 	st.Kinds = len(g.KindOrder)
+	st.Version = g.Version
 	if err := ds.packageOrigin(ctx, b.Package, &st); err != nil {
 		return st, err
 	}

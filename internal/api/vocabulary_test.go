@@ -30,7 +30,13 @@ func (d *fakeDataset) ApplyVocabularyDocuments(_ context.Context, actor substrat
 
 // PlanVocabularyApply answers the plan the test seeded, so what is under test
 // is the handler's pass-through and the codes it maps.
-func (d *fakeDataset) PlanVocabularyApply(_ context.Context, _ substrate.Actor, docs []map[string]any) (substrate.VocabularyPlan, error) {
+func (d *fakeDataset) PlanVocabularyApply(ctx context.Context, actor substrate.Actor, docs []map[string]any) (substrate.VocabularyPlan, error) {
+	return d.PlanVocabularyApplyWith(ctx, actor, docs, substrate.VocabularyApply{})
+}
+
+// PlanVocabularyApplyWith records the origin the preview was asked under, so a
+// test can see the body's `origin` arrive at the seam.
+func (d *fakeDataset) PlanVocabularyApplyWith(_ context.Context, _ substrate.Actor, docs []map[string]any, opts substrate.VocabularyApply) (substrate.VocabularyPlan, error) {
 	if err := d.fail("PlanVocabularyApply"); err != nil {
 		return substrate.VocabularyPlan{}, err
 	}
@@ -40,6 +46,7 @@ func (d *fakeDataset) PlanVocabularyApply(_ context.Context, _ substrate.Actor, 
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.lastVocabularyDocs = docs
+	d.lastOrigin = opts.Origin
 	return d.plan, nil
 }
 
@@ -51,6 +58,7 @@ func (d *fakeDataset) ApplyVocabularyDocumentsWith(ctx context.Context, actor su
 	}
 	d.mu.Lock()
 	d.lastConfirm = opts.Confirm
+	d.lastOrigin = opts.Origin
 	d.mu.Unlock()
 	return d.ApplyVocabularyDocuments(ctx, actor, docs)
 }
@@ -122,6 +130,45 @@ func TestSchemaApplyCarriesTheConfirmation(t *testing.T) {
 		"confirm":   map[string]any{"planHash": "0000", "changelogSeq": 41},
 	})
 	wantErrorCode(t, rec, http.StatusForbidden, codeLossy)
+}
+
+// A hand-rehomed closure names the package it was authored as (`origin`), and
+// both verbs hand the claim to the dataset (decision record 0070): the apply
+// so the copy is stamped, the plan so its preview hashes as the apply will. A
+// bare apply claims nothing.
+func TestSchemaApplyAndPlanCarryTheOrigin(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token("geoah")
+	ds := env.svc.datasets["geoah"]
+	const origin = "samples.substrate.reamde.dev/tasks"
+	doc := map[string]any{
+		"kind":     corePackage + "/package",
+		"metadata": map[string]any{"id": "geoah.example.com/tasks"},
+		"data":     map[string]any{"authority": "geoah.example.com", "package": "tasks", "version": 7},
+	}
+	rec := env.do(t, http.MethodPost, "/api/v1/vocabulary/apply", tok, map[string]any{
+		"documents": []map[string]any{doc},
+		"origin":    origin,
+	})
+	wantStatus(t, rec, http.StatusOK)
+	if ds.lastOrigin != origin {
+		t.Fatalf("the apply handed the dataset origin %q, want %q", ds.lastOrigin, origin)
+	}
+	ds.lastOrigin = ""
+	rec = env.do(t, http.MethodPost, "/api/v1/vocabulary/plan", tok, map[string]any{
+		"documents": []map[string]any{doc},
+		"origin":    origin,
+	})
+	wantStatus(t, rec, http.StatusOK)
+	if ds.lastOrigin != origin {
+		t.Fatalf("the plan handed the dataset origin %q, want %q", ds.lastOrigin, origin)
+	}
+	ds.lastOrigin = "unset"
+	rec = env.do(t, http.MethodPost, "/api/v1/vocabulary/apply", tok, map[string]any{"documents": []map[string]any{doc}})
+	wantStatus(t, rec, http.StatusOK)
+	if ds.lastOrigin != "unset" {
+		t.Fatalf("a bare apply took the confirmed path and handed the dataset origin %q", ds.lastOrigin)
+	}
 }
 
 // The batch schema verb: one POST, every document admitted or none, the

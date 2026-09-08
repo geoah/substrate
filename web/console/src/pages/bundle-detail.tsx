@@ -1461,7 +1461,7 @@ export function BundleDetailPage() {
   // present when some reconciled kind carries it, which is the check the
   // server's admission makes.
   const requirements = requirementsOf(
-    { requires: item?.requires ?? [] },
+    { requires: item?.requires ?? [], requiresAtLeast: item?.requiresAtLeast },
     presentPackages([], types)
   )
 

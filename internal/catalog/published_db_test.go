@@ -445,7 +445,7 @@ func TestPublishedPackageStillUpgrades(t *testing.T) {
 	if _, _, err := c.Install(ctx, substrate.ActorAPI, whoopID, ds); err != nil {
 		t.Fatalf("install %s: %v", whoopID, err)
 	}
-	plan, err := c.Upgrade(ctx, whoopID, ds)
+	plan, err := c.Upgrade(ctx, whoopID, ds, nil)
 	if err != nil {
 		t.Fatalf("upgrade preview: %v", err)
 	}

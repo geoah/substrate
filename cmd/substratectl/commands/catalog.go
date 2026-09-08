@@ -53,10 +53,11 @@ func (a *app) takeBundle(cmd *cobra.Command, id, verb, past string, allowDataLos
 }
 
 // confirmedUpgrade reads the catalog's preview of one bundle and, where its
-// conversion plan is lossy, prints the steps that remove values and answers
-// the confirmation bound to that preview (decision 0067). A bundle with no
-// preview, or a lossless one, answers nil: there is nothing to consent to, and
-// the door runs the plan as it stands.
+// conversion plan is lossy or the re-import would replace declarations edited
+// since the copy was imported (decision record 0070), prints what is lost and
+// answers the confirmation bound to that preview (decision 0067). A bundle
+// with no preview, or one that loses nothing, answers nil: there is nothing
+// to consent to, and the door runs the plan as it stands.
 func (a *app) confirmedUpgrade(ctx context.Context, cl *client, id string) (*substrate.ConversionConfirm, error) {
 	var cat substrate.OperationalList[substrate.CatalogItem]
 	if err := cl.do(ctx, http.MethodGet, apiPrefix+"/catalog", nil, nil, &cat); err != nil {
@@ -66,19 +67,35 @@ func (a *app) confirmedUpgrade(ctx context.Context, cl *client, id string) (*sub
 		if e.ID != id {
 			continue
 		}
-		if e.Upgrade == nil || !e.Upgrade.Lossy || e.Upgrade.PlanHash == "" {
-			fmt.Fprintf(a.out, "%s: the upgrade removes no values, so --allow-data-loss confirms nothing\n", id)
+		up := e.Upgrade
+		if up == nil || up.PlanHash == "" || (!up.Lossy && !up.DiscardsEdits) {
+			fmt.Fprintf(a.out, "%s: the upgrade removes no values and replaces no edits, so --allow-data-loss confirms nothing\n", id)
 			return nil, nil
 		}
-		fmt.Fprintf(a.out, "%s: confirming plan %s at changelog seq %d, which removes values:\n", id, e.Upgrade.PlanHash, e.Upgrade.ChangelogSeq)
-		for _, s := range e.Upgrade.Steps {
+		fmt.Fprintf(a.out, "%s: confirming plan %s at changelog seq %d, which %s:\n", id, up.PlanHash, up.ChangelogSeq, lossWords(up))
+		if up.DiscardsEdits {
+			fmt.Fprintf(a.out, "  replaces your copy of %s whole: the declarations edited since it was imported go with it\n", id)
+		}
+		for _, s := range up.Steps {
 			if s.Lossy {
 				fmt.Fprintf(a.out, "  %s\n", stepLine(s))
 			}
 		}
-		return &substrate.ConversionConfirm{PlanHash: e.Upgrade.PlanHash, ChangelogSeq: e.Upgrade.ChangelogSeq}, nil
+		return &substrate.ConversionConfirm{PlanHash: up.PlanHash, ChangelogSeq: up.ChangelogSeq}, nil
 	}
 	return nil, nil
+}
+
+// lossWords names what a confirmation consents to: values, edits, or both.
+func lossWords(up *substrate.BundleUpgrade) string {
+	switch {
+	case up.Lossy && up.DiscardsEdits:
+		return "removes values and replaces edits"
+	case up.DiscardsEdits:
+		return "replaces edits"
+	default:
+		return "removes values"
+	}
 }
 
 // stepLine renders one conversion step the way the console does: what moves,
@@ -150,7 +167,8 @@ func suggestedMappingLine(m substrate.SuggestedMapping, sample string) string {
 // own authority and admits it there, so `samples.substrate.reamde.dev/tasks`
 // lands as `<your authority>/tasks` and is yours to edit afterwards.
 func (a *app) importCommand() *cobra.Command {
-	return &cobra.Command{
+	var allowDataLoss bool
+	cmd := &cobra.Command{
 		Use:   "import <sample>",
 		Short: "Copy a shipped sample under your own authority",
 		Long: `Import one of the shipped SAMPLE packages into this repository.
@@ -162,16 +180,26 @@ before admitting it, so
   substratectl import samples.substrate.reamde.dev/tasks
 
 lands ` + "`<your authority>/tasks/task`" + `: your kind, writable through the
-API and never offered an upgrade. A sample that declares against another is
-refused until that one is imported, naming what to import first.
+API. A sample that declares against another is refused until that one is
+imported at the version it needs, naming what to import first.
+
+The copy records where it came from, so when a later binary ships the sample
+at a newer version ` + "`substratectl catalog`" + ` offers the upgrade, and
+importing again is how it lands. A re-import REPLACES your copy: where you
+edited it since, or where the new closure removes values from your records,
+it is refused until it is confirmed. --allow-data-loss reads the preview
+again, prints what goes, and confirms exactly that plan; a write that lands
+in between, or a plan that reads differently, is refused again.
 
 Providers take the other door, ` + "`substratectl install`" + `, and land under
 the authority that publishes them. Importing a provider is refused, naming it.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.takeBundle(cmd, args[0], "import", "imported", false)
+			return a.takeBundle(cmd, args[0], "import", "imported", allowDataLoss)
 		},
 	}
+	cmd.Flags().BoolVar(&allowDataLoss, "allow-data-loss", false, "confirm the previewed re-import even where it replaces your edits or removes values from records")
+	return cmd
 }
 
 // installCommand is the PROVIDER door: the closure lands verbatim, under the
@@ -260,14 +288,16 @@ property and the count of live records still holding the old shape; the
 upgrade lands once those records are migrated or deleted. For core that is
 the boot upgrade, which runs at the server's next start and not before, so
 an admitted core upgrade reads "lands at restart" until then; for a provider
-it is ` + "`substratectl install <provider>`" + ` again. A sample is never
-offered an upgrade: what it landed is yours.
+it is ` + "`substratectl install <provider>`" + ` again, and for a sample
+` + "`substratectl import <sample>`" + ` again, which replaces your copy.
 
 An upgrade that rewrites records prints its steps under the table too, each
 with the live records it touches. A step marked lossy removes values from the
-fold (they stay in the changelog); a provider upgrade with one runs only with
-` + "`substratectl install <provider> --allow-data-loss`" + `, and the boot
-upgrade never runs one.`,
+fold (they stay in the changelog); an upgrade with one runs only with
+--allow-data-loss on the install or the import, and the boot upgrade never
+runs one. A sample copy you edited since importing it says so under the
+table as well: importing it again replaces those edits, and takes the same
+flag.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cl, err := a.client()
@@ -347,16 +377,24 @@ func printCatalogTable(w io.Writer, rows []catalogRow) error {
 	}
 	// The conversion plan, step by step: what the upgrade rewrites and how
 	// many live records each step touches, so the loss a lossy step means is
-	// read here before anybody confirms it (decision 0067).
+	// read here before anybody confirms it (decision 0067). A sample copy
+	// edited since it was imported is said the same way (decision record
+	// 0070): importing it again replaces the edits, under the same flag.
 	for _, r := range rows {
-		if r.Upgrade == nil || len(r.Upgrade.Steps) == 0 {
+		if r.Upgrade == nil {
+			continue
+		}
+		if r.Upgrade.DiscardsEdits {
+			fmt.Fprintf(w, "\n%s: your copy was edited since it was imported; importing it again replaces those edits, confirm it with `substratectl import %s --allow-data-loss`\n", r.ID, r.ID)
+		}
+		if len(r.Upgrade.Steps) == 0 {
 			continue
 		}
 		switch {
 		case r.Upgrade.Lossy && r.Tier == tierSeed:
 			fmt.Fprintf(w, "\n%s: the upgrade rewrites %d live records and removes values; the boot upgrade never runs a lossy step, so rewrite the records it names first\n", r.ID, r.Upgrade.Work)
 		case r.Upgrade.Lossy:
-			fmt.Fprintf(w, "\n%s: the upgrade rewrites %d live records and removes values; confirm it with `substratectl install %s --allow-data-loss`\n", r.ID, r.Upgrade.Work, r.ID)
+			fmt.Fprintf(w, "\n%s: the upgrade rewrites %d live records and removes values; confirm it with `substratectl %s %s --allow-data-loss`\n", r.ID, r.Upgrade.Work, takeVerb(r.Tier), r.ID)
 		default:
 			fmt.Fprintf(w, "\n%s: the upgrade rewrites %d live records\n", r.ID, r.Upgrade.Work)
 		}
@@ -365,6 +403,15 @@ func printCatalogTable(w io.Writer, rows []catalogRow) error {
 		}
 	}
 	return nil
+}
+
+// takeVerb is the command that takes a tier's closure again: a sample is
+// imported, everything else installed.
+func takeVerb(tier string) string {
+	if tier == substrate.TierSample {
+		return "import"
+	}
+	return "install"
 }
 
 // upgradeCell is the UPGRADE column: the motion when the server previewed
@@ -398,6 +445,13 @@ func upgradeCell(tier string, up *substrate.BundleUpgrade) string {
 		return motion + ", blocked"
 	case tier == tierSeed && up.Available:
 		return motion + ", lands at restart"
+	case up.DiscardsEdits && motion == "":
+		// A sample copy edited since it was imported, with nothing newer
+		// shipped: the preview is here for the re-import's confirmation, and
+		// the column says why the row carries one.
+		return "edited copy"
+	case up.DiscardsEdits:
+		return motion + ", edited copy"
 	}
 	return motion
 }

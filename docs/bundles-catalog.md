@@ -13,10 +13,11 @@ stating its limits.
 
 **Four samples**: LLM, notes, the web harvester and Firecrawl. Each is a worked
 example to read and copy, imported under the repository's own authority and
-owned by it afterwards. It is never offered an upgrade, so a fix here never reaches
-a repository that imported it
-([0015](decisions/0015-unproven-kinds-stay-out-of-the-stable-set.md) is what
-that amends).
+owned by it afterwards. A fix here reaches a repository that imported it as
+an upgrade offer read off the copy's origin stamp, taken by importing again
+([0070](decisions/0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md);
+[0015](decisions/0015-unproven-kinds-stay-out-of-the-stable-set.md) is what
+0048 amends).
 
 **No provider ships a mapping.** A mapping onto a kind is declared by the
 package that owns that kind

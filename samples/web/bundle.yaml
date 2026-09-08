@@ -39,7 +39,9 @@ data:
   # (issue 51).
   # version 8: `page.source` is an unpinned `type: reference` property with
   # `mustExist: true`, the link back to whatever carried the URL.
-  version: 8
+  # version 9: the bundle pins the floor under the package it requires
+  # (`requiresAtLeast`, decision record 0070). Additive.
+  version: 9
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
@@ -67,6 +69,8 @@ data:
   # messaging vocabulary has to be imported first.
   requires:
     - samples.substrate.reamde.dev/messaging
+  requiresAtLeast:
+    samples.substrate.reamde.dev/messaging: 5
   installs:
     - samples.substrate.reamde.dev/web/config
     - samples.substrate.reamde.dev/web/page

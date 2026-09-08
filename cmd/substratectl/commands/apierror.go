@@ -103,16 +103,16 @@ func (e *apiError) hint() string {
 }
 
 // lossyHint names the command that carries --allow-data-loss for the door
-// that refused (decision 0067): the consent is bound to a preview, so the flag
-// previews first and confirms exactly what it printed. A sample re-import has
-// no preview to bind to yet (issue #386), so its hint names the route that
-// works rather than a flag `import` does not carry.
+// that refused (decisions 0067 and 0070): the consent is bound to a preview,
+// so the flag previews first and confirms exactly what it printed. A sample
+// re-import's preview is the catalog's, read off the copy's origin stamp, and
+// it covers the edits the re-import replaces as well as the values it removes.
 func lossyHint(path string) string {
 	switch {
 	case strings.Contains(path, "/vocabulary/apply"):
 		return "re-run `substratectl apply --allow-data-loss`: it previews the plan, prints the steps that remove values and confirms exactly those"
 	case strings.Contains(path, "/catalog/") && strings.HasSuffix(path, "/import"):
-		return "a sample re-import has no preview to confirm against yet: rewrite the records the message names first, or apply the closure yourself with `substratectl apply --as-mine --allow-data-loss` from the sample's documents under `samples/` in the substrate tree"
+		return "re-run `substratectl import <sample> --allow-data-loss`: it reads the preview, prints what goes (the values a step removes, the edits the re-import replaces) and confirms exactly that plan"
 	}
 	return "re-run `substratectl install <provider> --allow-data-loss`: it reads the preview, prints the steps that remove values and confirms exactly those"
 }

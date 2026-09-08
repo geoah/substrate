@@ -43,7 +43,9 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: pebble
-  version: 2
+  # version 3: the bundle pins the floor under the package it requires
+  # (`requiresAtLeast`, decision record 0070). Additive.
+  version: 3
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -59,6 +61,8 @@ data:
   # first.
   requires:
     - samples.substrate.reamde.dev/tasks
+  requiresAtLeast:
+    samples.substrate.reamde.dev/tasks: 7
   installs:
     - samples.substrate.reamde.dev/pebble/recording
     - samples.substrate.reamde.dev/pebble/instruction

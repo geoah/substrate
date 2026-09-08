@@ -173,7 +173,8 @@ func (ds *dataset) ApplyVocabularyDocuments(ctx context.Context, actor substrate
 }
 
 // ApplyVocabularyDocumentsWith is ApplyVocabularyDocuments carrying the
-// caller's decisions: the confirmation a lossy plan needs (decision 0067).
+// caller's decisions: the confirmation a lossy plan needs (decision 0067),
+// and the origin a hand-rehomed sample claims (decision record 0070).
 func (ds *dataset) ApplyVocabularyDocumentsWith(ctx context.Context, actor substrate.Actor, raw []map[string]any, opts substrate.VocabularyApply) ([]*substrate.Record, error) {
 	if len(raw) == 0 {
 		return nil, fmt.Errorf("%w: no documents", substrate.ErrValidation)
@@ -182,7 +183,11 @@ func (ds *dataset) ApplyVocabularyDocumentsWith(ctx context.Context, actor subst
 	if err != nil {
 		return nil, err
 	}
-	written, err := ds.applyVocabularyBatch(ctx, actor, vocabularyBatch{docs: docs, confirm: opts.Confirm})
+	b := vocabularyBatch{docs: docs, confirm: opts.Confirm}
+	if b.origin, b.originVersion, err = claimedOrigin(opts.Origin, docs); err != nil {
+		return nil, err
+	}
+	written, err := ds.applyVocabularyBatch(ctx, actor, b)
 	if err != nil {
 		return nil, err
 	}
@@ -203,11 +208,25 @@ func (ds *dataset) ApplyVocabularyDocumentsWith(ctx context.Context, actor subst
 // write) is the same error here, because a preview of an inadmissible batch
 // is that refusal.
 func (ds *dataset) PlanVocabularyApply(ctx context.Context, actor substrate.Actor, raw []map[string]any) (substrate.VocabularyPlan, error) {
+	return ds.PlanVocabularyApplyWith(ctx, actor, raw, substrate.VocabularyApply{})
+}
+
+// PlanVocabularyApplyWith is PlanVocabularyApply for a batch that claims an
+// origin (decision record 0070): the preview says whether the apply would
+// replace a copy edited since its stamp, and its hash is bound to that edited
+// state exactly as the door's is, so the confirmation it hands out is the one
+// the door accepts. A confirmation in opts is ignored: a preview has nothing
+// to consent to.
+func (ds *dataset) PlanVocabularyApplyWith(ctx context.Context, actor substrate.Actor, raw []map[string]any, opts substrate.VocabularyApply) (substrate.VocabularyPlan, error) {
 	var plan substrate.VocabularyPlan
 	if len(raw) == 0 {
 		return plan, fmt.Errorf("%w: no documents", substrate.ErrValidation)
 	}
 	docs, err := parseVocabularyDocs(raw)
+	if err != nil {
+		return plan, err
+	}
+	origin, _, err := claimedOrigin(opts.Origin, docs)
 	if err != nil {
 		return plan, err
 	}
@@ -222,10 +241,49 @@ func (ds *dataset) PlanVocabularyApply(ctx context.Context, actor substrate.Acto
 	if plan.ConversionPlan, err = st.conversions.wire(q); err != nil {
 		return plan, err
 	}
+	edited, err := ds.editedCopy(ctx, origin, docs)
+	if err != nil {
+		return plan, err
+	}
+	plan.DiscardsEdits = bindEditedCopy(&plan.ConversionPlan, edited)
 	if line := ceilingGuard(plan.ConversionPlan, ds.svc.conversionCeiling); line != "" {
 		plan.Blockers = append(plan.Blockers, line)
 	}
 	return plan, nil
+}
+
+// claimedOrigin validates the origin a hand apply claims and answers the stamp
+// the batch lands: the origin as given and the version of the package document
+// the batch carries for it. The engine records the claim; what it holds the
+// claim to is its shape. The origin is a package identity, and the batch
+// carries the package document of the package its word names (as the batch
+// spells it, the authority being what a rehome moves), because the stamp
+// lands on that row and its version is what the stamp says the copy was taken
+// at. A batch with no origin answers empty, which stamps nothing.
+func claimedOrigin(origin string, docs []vocabulary.Document) (string, int64, error) {
+	if origin == "" {
+		return "", 0, nil
+	}
+	authority, word := vocabulary.SplitPackageRef(origin)
+	if !vocabulary.ValidAuthority(authority) || !vocabulary.ValidPackage(word) {
+		return "", 0, fmt.Errorf("%w: origin %q must be a package identity, <authority>/<package>", substrate.ErrValidation, origin)
+	}
+	pkg := originPackage(origin, docs)
+	if pkg == "" {
+		return "", 0, fmt.Errorf("%w: origin %s names package %q, and the batch carries no package or bundle document for it", substrate.ErrValidation, origin, word)
+	}
+	if pkg == origin {
+		return "", 0, fmt.Errorf("%w: origin %s is the package the batch declares: a copy's origin is the id it was copied from", substrate.ErrValidation, origin)
+	}
+	version := vocabulary.DefaultVersion
+	for _, d := range docs {
+		if d.Kind == vocabulary.DocPackage && d.DeclaredPackage() == pkg {
+			if v, ok := vocabulary.VersionValue(d.Data["version"]); ok && v > 0 {
+				version = v
+			}
+		}
+	}
+	return origin, version, nil
 }
 
 // InstallBundleClosure admits a bundle's schema closure AND its shipped data
@@ -405,7 +463,15 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		if err != nil {
 			return err
 		}
-		if err := admitConversion(plan, ds.svc.conversionCeiling, b.confirm); err != nil {
+		// A batch naming an origin over a copy edited since its stamp
+		// replaces the edits (convert.go editedCopy, decision record 0070):
+		// the same consent, bound to the edited state.
+		edited, err := ds.editedCopy(ctx, b.origin, b.docs)
+		if err != nil {
+			return err
+		}
+		bindEditedCopy(&plan, edited)
+		if err := admitConversion(plan, ds.svc.conversionCeiling, b.confirm, edited); err != nil {
 			return err
 		}
 		if err := t.checkSchemaCAS(b.meta); err != nil {

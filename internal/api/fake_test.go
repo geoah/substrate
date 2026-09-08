@@ -343,6 +343,7 @@ type fakeDataset struct {
 	// lastConfirm is the consent the confirmed apply verb received; plan is
 	// what the preview answers.
 	lastConfirm    *substrate.ConversionConfirm
+	lastOrigin     string
 	plan           substrate.VocabularyPlan
 	lastDeleteType string
 	lastDeleteID   string

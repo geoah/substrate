@@ -682,7 +682,7 @@ The code set is closed. The client-error codes:
 | `validation`   | 422  | An undeclared property, a malformed value, a type mismatch.                                      |
 | `conflict`     | 409  | A version check failed (`ifVersion`); re-read and retry.                                         |
 | `guard`        | 403  | A refused state transition, or a protected operation (a subject reference, a kind with live records). |
-| `lossy`        | 403  | A declaration change would remove values from the fold and no confirmation for that plan came with it; preview the plan and confirm it ([bundles](bundles.md#install-and-lifecycle)). |
+| `lossy`        | 403  | A declaration change would remove values from the fold, or a re-import would replace a sample copy edited since it was imported, and no confirmation for that plan came with it; preview the plan and confirm it ([bundles](bundles.md#install-and-lifecycle)). |
 | `forbidden`    | 403  | The caller may not do this at all.                                                               |
 | `auth`         | 401  | Missing, invalid, or expired token, or a refused login.                                          |
 | `not_found`    | 404  | No such record; a former id is not this, it resolves ([merges](projection.md#merges)).          |

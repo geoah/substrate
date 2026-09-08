@@ -253,6 +253,75 @@ func lastConfirm(t *testing.T, h *harness) (substrate.ConversionConfirm, bool) {
 	return c, true
 }
 
+const tasksSample = "samples.substrate.reamde.dev/tasks"
+
+// editedTasks is a held sample copy the reader edited since importing it: the
+// server keeps a preview on it with nothing shipped moved, so the re-import's
+// confirmation has a hash to name (decision record 0070).
+func editedTasks() substrate.CatalogItem {
+	return substrate.CatalogItem{
+		CatalogBundle: substrate.CatalogBundle{
+			ID: tasksSample, Name: "tasks", Authority: "samples.substrate.reamde.dev",
+			Package: "tasks", Version: 7, Tier: substrate.TierSample,
+			Origin: tasksSample, OriginVersion: 7, Modified: true,
+		},
+		Installed: true,
+		Upgrade: &substrate.BundleUpgrade{
+			DiscardsEdits:  true,
+			ConversionPlan: substrate.ConversionPlan{PlanHash: "d15c", ChangelogSeq: 9},
+		},
+	}
+}
+
+// `import --allow-data-loss` over an edited copy reads the preview, says the
+// edits go, and confirms exactly that plan.
+func TestImportConfirmsAReimportThatReplacesEdits(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.fake.catalog = []substrate.CatalogItem{editedTasks()}
+	stdout, _ := h.mustRun("import", tasksSample, "--allow-data-loss")
+	for _, want := range []string{"GET /api/v1/catalog", "POST /api/v1/catalog/" + tasksSample + "/import"} {
+		if !contains(h.fake.doorRequests(), want) {
+			t.Errorf("import did not call %s: %v", want, h.fake.doorRequests())
+		}
+	}
+	confirm, ok := lastConfirm(t, h)
+	if !ok || confirm != (substrate.ConversionConfirm{PlanHash: "d15c", ChangelogSeq: 9}) {
+		t.Fatalf("the import body carried confirmation %+v (present=%v)", confirm, ok)
+	}
+	for _, want := range []string{
+		tasksSample + ": confirming plan d15c at changelog seq 9, which replaces edits:",
+		"replaces your copy of " + tasksSample + " whole: the declarations edited since it was imported go with it",
+		"geoah.example.com/tasks imported",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("import did not print %q:\n%s", want, stdout)
+		}
+	}
+	// Without the flag the import is the bare POST, and the server's refusal
+	// is the answer.
+	h.mustRun("import", tasksSample)
+	if _, ok := lastConfirm(t, h); ok {
+		t.Fatal("a bare import sent a confirmation")
+	}
+}
+
+// `substratectl catalog` says an edited copy is one, and which command
+// replaces the edits.
+func TestCatalogSaysAnEditedCopyTakesImportAgain(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.fake.catalog = []substrate.CatalogItem{editedTasks()}
+	stdout, _ := h.mustRun("catalog")
+	if !regexp.MustCompile(`(?m)^samples\.substrate\.reamde\.dev/tasks\s+sample\s+true\s+7\s+edited copy$`).MatchString(stdout) {
+		t.Errorf("the UPGRADE column does not say the copy was edited:\n%s", stdout)
+	}
+	want := tasksSample + ": your copy was edited since it was imported; importing it again replaces those edits, confirm it with `substratectl import " + tasksSample + " --allow-data-loss`"
+	if !strings.Contains(stdout, want) {
+		t.Errorf("catalog did not print %q:\n%s", want, stdout)
+	}
+}
+
 // `install --allow-data-loss` binds the consent to the preview: it reads the
 // catalog, prints the steps that remove values and sends that preview's hash
 // and changelog head as the confirmation, never a bare yes.

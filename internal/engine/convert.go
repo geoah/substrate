@@ -64,6 +64,7 @@ package engine
 // is above it, on both doors.
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -538,21 +539,110 @@ func ceilingGuard(plan substrate.ConversionPlan, ceiling int64) string {
 		plan.Work, ceiling)
 }
 
+// editedCopy is the second thing a batch can lose besides record values: a
+// batch that names an ORIGIN (a sample re-import, a hand apply saying where
+// its closure came from) replaces the package whole, and when the stored copy
+// was edited since its stamp (its closure digest is no longer the stamped
+// `originDigest`), every edit goes with the replacement (decision record
+// 0070). The current digest is what the consent binds to: bindEditedCopy
+// folds it into the plan hash, so a confirmation read off a preview covers
+// exactly the edited state the preview saw, and one more edit refuses it the
+// way one more write does through the changelog head.
+type editedCopy struct {
+	pkg    string
+	digest string
+}
+
+// bindEditedCopy binds the plan's hash to the edited state a batch discards,
+// and reports whether it discards one. Nil is a batch that discards nothing,
+// which leaves the plan as the steps alone hashed it.
+func bindEditedCopy(plan *substrate.ConversionPlan, edited *editedCopy) bool {
+	if edited == nil {
+		return false
+	}
+	h := sha256.New()
+	fmt.Fprintf(h, "%s\x1fdiscards\x1f%s\x1f%s\n", plan.PlanHash, edited.pkg, edited.digest)
+	plan.PlanHash = hex.EncodeToString(h.Sum(nil))
+	return true
+}
+
+// editedCopy answers whether a batch naming origin replaces a copy edited
+// since its stamp: the package the origin's package segment names, as the
+// batch spells it, carries a stamp whose digest is no longer the stored
+// closure's. A batch with no origin, a package with no stamp and a pristine
+// copy all answer nil. The digest is read the way the bundle status reads it
+// (packageClosureDigest), under the schema-write mutex every caller holds, so
+// the rows it hashes are the rows the replacement is about to prune.
+func (ds *dataset) editedCopy(ctx context.Context, origin string, docs []vocabulary.Document) (*editedCopy, error) {
+	pkg := originPackage(origin, docs)
+	if pkg == "" {
+		return nil, nil
+	}
+	stamp, err := ds.packageStamp(ctx, pkg)
+	if err != nil {
+		return nil, err
+	}
+	if stamp.origin == "" || stamp.digest == "" {
+		return nil, nil
+	}
+	current, err := ds.packageClosureDigest(ctx, pkg)
+	if err != nil {
+		return nil, err
+	}
+	if current == stamp.digest {
+		return nil, nil
+	}
+	return &editedCopy{pkg: pkg, digest: current}, nil
+}
+
+// originPackage is the package in docs that an origin lands on: the one whose
+// package word is the origin's, spelled under whatever authority the batch
+// declares (the rehome keeps the word and moves the authority). Empty when
+// there is no origin or no such package in the batch.
+func originPackage(origin string, docs []vocabulary.Document) string {
+	if origin == "" {
+		return ""
+	}
+	_, word := vocabulary.SplitPackageRef(origin)
+	if word == "" {
+		return ""
+	}
+	for _, d := range docs {
+		if d.Kind != vocabulary.DocPackage && d.Kind != vocabulary.DocBundle {
+			continue
+		}
+		if pkg := d.DeclaredPackage(); pkg != "" {
+			if _, name := vocabulary.SplitPackageRef(pkg); name == word {
+				return pkg
+			}
+		}
+	}
+	return ""
+}
+
 // admitConversion is the plan's own guard, after the refuse-breakage guards
-// passed: the work ceiling, then the confirmation a lossy plan needs. The
+// passed: the work ceiling, then the confirmation a lossy plan needs, and a
+// batch that discards a copy's edits needs the same one (editedCopy). The
 // confirmation is bound to what was previewed: the changelog head must still
 // be the one the preview counted at (any write moves it, so the counts may
 // have too) and the hash must be the one the door just recomputed (the
-// consent covers that plan and no other). A lossless plan ignores a
-// confirmation: there is nothing to consent to.
-func admitConversion(plan substrate.ConversionPlan, ceiling int64, confirm *substrate.ConversionConfirm) error {
+// consent covers that plan and no other). A lossless plan that discards
+// nothing ignores a confirmation: there is nothing to consent to.
+func admitConversion(plan substrate.ConversionPlan, ceiling int64, confirm *substrate.ConversionConfirm, edited *editedCopy) error {
 	if line := ceilingGuard(plan, ceiling); line != "" {
 		return fmt.Errorf("%w: %s", substrate.ErrGuard, line)
 	}
-	if !plan.Lossy {
+	if !plan.Lossy && edited == nil {
 		return nil
 	}
 	switch {
+	case confirm == nil && edited != nil:
+		loses := "the declarations edited since the copy was imported"
+		if plan.Lossy {
+			loses += ", and values from the fold (" + strings.Join(lossyLines(plan), "; ") + ")"
+		}
+		return fmt.Errorf("%w: %w: the batch replaces %s whole and removes %s; it runs only with a confirmation carrying the previewed planHash and changelogSeq (planHash %s at changelogSeq %d)",
+			substrate.ErrGuard, substrate.ErrLossyConversion, edited.pkg, loses, plan.PlanHash, plan.ChangelogSeq)
 	case confirm == nil:
 		return fmt.Errorf("%w: %w: the change removes values from the fold and runs only with a confirmation carrying the previewed planHash and changelogSeq (planHash %s at changelogSeq %d): %s",
 			substrate.ErrGuard, substrate.ErrLossyConversion, plan.PlanHash, plan.ChangelogSeq, strings.Join(lossyLines(plan), "; "))

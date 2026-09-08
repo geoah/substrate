@@ -113,7 +113,10 @@ data:
   # authority (decision record 0058). The `graphql` host function card stops
   # spelling a generated type name and points at introspection instead; it
   # pins no version of its own and takes this one.
-  version: 20
+  # version 21: the bundle document gains `requiresAtLeast`, the floor a
+  # closure puts under a package it requires (decision record 0070). The
+  # `bundle` kind pins no version of its own and takes this one. Additive.
+  version: 21
 ---
 # The substrate's own actors: the doors a human write comes through, and the
 # engine's own hand. Attribution, not authorization (§3). The machine hands

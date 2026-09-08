@@ -602,10 +602,11 @@ export interface ConversionConfirm {
   changelogSeq: number
 }
 
-/** What re-importing a bundle's shipped closure would do here
+/** What taking a bundle's shipped closure again would do here
  * (substrate.BundleUpgrade): the version motion, the guard lines the server
  * would refuse on, and the conversion plan it would run. The upgrade verb IS
- * the install verb; this is its preview. */
+ * the door's verb (install for a provider, import for a sample); this is its
+ * preview. */
 export interface BundleUpgrade extends ConversionPlan {
   available: boolean
   /** Stored and shipped versions of the bundle's owned package; absent
@@ -613,6 +614,12 @@ export interface BundleUpgrade extends ConversionPlan {
   from?: number
   to?: number
   changes?: BundleUpgradeChange[]
+  /** The re-import replaces a sample copy edited since it was imported
+   * (decision record 0070), so the edits go with it. Like `lossy`, it runs
+   * only with a ConversionConfirm naming `planHash` and `changelogSeq`, and
+   * the server keeps the preview on the entry for it even when nothing
+   * shipped moved (`available` false). */
+  discardsEdits?: boolean
   /** The refuse-breakage guard lines the import would refuse on, with live
    * row counts, and a plan above the work ceiling. Non-empty means the
    * upgrade is BLOCKED: the console shows the lines and offers no button,
@@ -639,6 +646,9 @@ export interface BundleUpgradeRename {
  * `POST /api/v1/vocabulary/plan`: the guard lines and the conversion plan. */
 export interface VocabularyPlan extends ConversionPlan {
   blockers?: string[]
+  /** The batch claims an origin and replaces a copy edited since its stamp
+   * (BundleUpgrade.discardsEdits). */
+  discardsEdits?: boolean
 }
 
 /** One package the binary ships and seeds (core), and what this binary's boot
@@ -690,6 +700,12 @@ export interface CatalogBundle {
    * import while one of them is absent from the repository, naming what to
    * import first, so the console shows them before the button is pressed. */
   requires?: string[]
+  /** The floor under a required package (decision record 0070): the least
+   * version of it this closure declares against, by package identity. A
+   * package with no entry is satisfied by any version. Admission refuses
+   * while the repository holds it below the floor, so the console reads it
+   * against the held bundle's `version` before the button is pressed. */
+  requiresAtLeast?: Record<string, number>
   /** The mappings this closure declares onto its OWN kinds from another
    * package's, each with the state it has in this repository. A sample ships
    * one per provider it knows and the import keeps only the ones whose
@@ -752,10 +768,12 @@ export type SuggestedMappingState = "landed" | "ready" | "waiting" | "blocked"
  * golden with the bundle's keys promoted. */
 export interface CatalogItem extends CatalogBundle {
   installed: boolean
-  /** Present on an installed PROVIDER whose shipped closure moved past the
-   * stored one (what re-installing would change, or why it is blocked) and on
-   * one whose preview could not run (one fixed blocker line, no motion). A
-   * sample is never offered one. */
+  /** Present on an installed bundle whose shipped closure moved past the
+   * stored one (what taking it again would change, or why it is blocked), on
+   * one whose preview could not run (one fixed blocker line, no motion), and
+   * on a sample copy edited since it was imported (`discardsEdits`, so the
+   * re-import can be confirmed). A sample is previewed only through the
+   * origin stamp its import left (decision record 0070). */
   upgrade?: BundleUpgrade
 }
 
@@ -812,6 +830,10 @@ export interface BundleStatus {
   /** False only for a quarantined bundle surfaced from its stored rows; an
    * uninstalled bundle has no status at all (uninstall tears its rows down). */
   installed: boolean
+  /** The owned package's stored version: what a closure's `requiresAtLeast`
+   * floor is compared against (decision record 0070). Absent (0 is omitted on
+   * the wire) for a quarantined bundle read off its rows. */
+  version?: number
   /** False when disabled: execution is stopped. */
   enabled: boolean
   /** Each declared input's resolution, name order. Omitted when the bundle

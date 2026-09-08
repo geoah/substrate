@@ -46,6 +46,11 @@ type BundleStatus struct {
 	Quarantined bool `json:"quarantined,omitempty"`
 	// QuarantineReason is the admission error that quarantined the bundle.
 	QuarantineReason string `json:"quarantineReason,omitempty"`
+	// Version is the owned package's stored version: what a closure's
+	// `requiresAtLeast:` floor is compared against (decision record 0070), so
+	// a reader can tell a requirement the repository holds too old from one
+	// it lacks. Zero, and omitted, for a quarantined bundle read off its rows.
+	Version int64 `json:"version,omitempty"`
 	// Origin is the shipped bundle id an imported SAMPLE was copied from
 	// ("samples.substrate.reamde.dev/tasks"), read off the owned package
 	// row where the import stamped it (decision record 0048's copy, with its
@@ -89,6 +94,16 @@ type BundleUpgrade struct {
 	// a conversion above the work ceiling. Empty means the upgrade would be
 	// admitted, with a confirmation where Lossy says so.
 	Blockers []string `json:"blockers,omitempty"`
+	// DiscardsEdits reports the re-import replaces declarations this
+	// repository edited since the copy was taken (BundleStatus.Modified, the
+	// stored closure's digest against the stamped `originDigest`), so a kind,
+	// property, function or mapping the owner added or changed goes with it
+	// (decision record 0070). Like a lossy plan it runs only with a
+	// ConversionConfirm carrying this preview's PlanHash and ChangelogSeq;
+	// the hash binds the edited state, so an edit after the preview refuses
+	// the confirmation. Set only on a copy that carries an origin stamp; a
+	// provider and a hand-declared package never discard anything here.
+	DiscardsEdits bool `json:"discardsEdits,omitempty"`
 	// The record rewrites the upgrade performs, counted against the live
 	// records (decision 0067).
 	ConversionPlan

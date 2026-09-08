@@ -18,6 +18,11 @@ type vocabularyApplyRequest struct {
 	// lossy batch is refused with the `lossy` code; a lossless one runs
 	// either way.
 	Confirm *substrate.ConversionConfirm `json:"confirm,omitempty"`
+	// Origin is the shipped bundle id the batch is a hand-rehomed copy of
+	// (decision record 0070), which the engine records on the landed package
+	// row as the import door records its own. Absent, the apply stamps
+	// nothing.
+	Origin string `json:"origin,omitempty"`
 }
 
 type vocabularyApplyResponse struct {
@@ -25,9 +30,11 @@ type vocabularyApplyResponse struct {
 }
 
 // vocabularyPlanRequest is the preview's body: the documents the apply would
-// take, and nothing else, because a preview has nothing to confirm.
+// take and the origin it would claim, and no confirmation, because a preview
+// has nothing to confirm.
 type vocabularyPlanRequest struct {
 	Documents []map[string]any `json:"documents"`
+	Origin    string           `json:"origin,omitempty"`
 }
 
 // applyVocabulary is POST /api/v1/vocabulary/apply: the one verb that applies
@@ -51,15 +58,17 @@ func (h *handler) applyVocabulary(w http.ResponseWriter, r *http.Request) {
 	}
 	var ents []*substrate.Record
 	var err error
-	if req.Confirm != nil {
+	if req.Confirm != nil || req.Origin != "" {
 		// A confirmation is meaningful only where the dataset plans: one that
 		// cannot has no lossy plan to confirm, and a bare apply is the answer.
+		// An origin claim rides the same seam, because the plan is what says
+		// whether the claimed copy was edited.
 		planner, ok := sa.(substrate.VocabularyPlanner)
 		if !ok {
-			writeUnsupported(w, "this service does not plan a vocabulary apply, so there is nothing to confirm")
+			writeUnsupported(w, "this service does not plan a vocabulary apply, so there is nothing to confirm and no origin to record")
 			return
 		}
-		ents, err = planner.ApplyVocabularyDocumentsWith(ctx, ActorFrom(ctx), req.Documents, substrate.VocabularyApply{Confirm: req.Confirm})
+		ents, err = planner.ApplyVocabularyDocumentsWith(ctx, ActorFrom(ctx), req.Documents, substrate.VocabularyApply{Confirm: req.Confirm, Origin: req.Origin})
 	} else {
 		ents, err = sa.ApplyVocabularyDocuments(ctx, ActorFrom(ctx), req.Documents)
 	}
@@ -87,7 +96,7 @@ func (h *handler) planVocabulary(w http.ResponseWriter, r *http.Request) {
 		writeUnsupported(w, "this service does not plan a vocabulary apply")
 		return
 	}
-	plan, err := planner.PlanVocabularyApply(ctx, ActorFrom(ctx), req.Documents)
+	plan, err := planner.PlanVocabularyApplyWith(ctx, ActorFrom(ctx), req.Documents, substrate.VocabularyApply{Origin: req.Origin})
 	if err != nil {
 		writeSubstrateError(w, err)
 		return

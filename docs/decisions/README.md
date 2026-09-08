@@ -214,3 +214,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0067](0067-a-lossy-conversion-runs-only-with-a-confirmation-bound-to-its-preview.md) | A lossy conversion runs only with a confirmation bound to its preview | accepted |
 | [0068](0068-an-accepted-webhook-is-a-pending-entry-in-the-delivery-ledger.md) | An accepted webhook request is a pending entry in the delivery ledger before its `202` | accepted |
 | [0069](0069-the-owner-export-is-the-snapshot-streamed-as-a-tar.md) | The owner's export is the snapshot, streamed as a tar under the bearer token | accepted |
+| [0070](0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md) | A sample copy is upgraded through its origin stamp, and `requiresAtLeast` pins a floor under a requirement | accepted |

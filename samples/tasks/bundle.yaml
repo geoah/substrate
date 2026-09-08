@@ -35,7 +35,10 @@ data:
   # (docs/decisions/0049), so the projection the linear provider used to run
   # as a function is this package's declaration now, and the import drops it
   # while that provider is absent.
-  version: 7
+  # version 8: the bundle pins the floor under each package it requires
+  # (`requiresAtLeast`, decision record 0070): the versions this closure was
+  # verified against. Additive.
+  version: 8
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A SAMPLE bundle (see samples.substrate.reamde.dev/people): kinds and one
@@ -60,6 +63,9 @@ data:
   requires:
     - samples.substrate.reamde.dev/people
     - samples.substrate.reamde.dev/scheduling
+  requiresAtLeast:
+    samples.substrate.reamde.dev/people: 4
+    samples.substrate.reamde.dev/scheduling: 2
   installs:
     - samples.substrate.reamde.dev/tasks/project
     - samples.substrate.reamde.dev/tasks/task

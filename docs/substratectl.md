@@ -157,9 +157,23 @@ source on its manifest, so it installs with the ordinary `apply`.
 [samples](bundles.md#the-catalog): the server rewrites the closure's
 placeholder authority to the one this repository owns and admits it there, so
 `import samples.substrate.reamde.dev/tasks` lands `<your authority>/tasks/task`
-which is your kind, writable, never offered an upgrade. It prints the id the sample
-landed under, which is not the one typed. A provider takes the other door and
+which is your kind, writable. It prints the id the sample landed under, which
+is not the one typed. The copy records where it came from, so `substratectl
+catalog` offers the upgrade when a later binary ships the sample at a newer
+version, and importing again is how it lands; over a copy you edited since,
+or where the new closure removes values from records, the re-import is
+refused until `import <sample> --allow-data-loss` reads the preview, prints
+what goes and confirms exactly that plan
+([bundles](bundles.md#the-two-doors)). A provider takes the other door and
 installs under the authority that publishes it.
+
+`substratectl apply --as <authority>` (or `--as-mine`) rehomes a shipped
+sample's files by hand. When the input carries its package document the
+request names the package it was authored as, and the server stamps the
+landed copy with it exactly as an import would; a later `--as` apply over a
+copy you edited since is refused the same way, and `--allow-data-loss`
+confirms it. One package per run: an input carrying several package documents
+is refused, because one request names one origin.
 
 `substratectl bundle list` / `status` report a [bundle](bundles.md)'s computed
 state, and `disable` / `enable` / `uninstall` / `purge` move it through its
@@ -176,10 +190,13 @@ is admitted and waits for the boot upgrade. Each blocked upgrade's guard lines p
 under the table; they name the kind, the property and the count of live
 records holding the old shape, which is what to migrate before the upgrade
 lands. So do the conversion steps an upgrade would run, each with the live
-records it rewrites; a step marked lossy removes values from the fold, and a
-provider upgrade with one runs only as `substratectl install <provider>
---allow-data-loss`, which reads the preview again, prints the steps and
-confirms exactly that plan ([bundles](bundles.md#install-and-lifecycle)).
+records it rewrites; a step marked lossy removes values from the fold, and an
+upgrade with one runs only with `--allow-data-loss` on `install <provider>` or
+`import <sample>`, which reads the preview again, prints the steps and
+confirms exactly that plan ([bundles](bundles.md#install-and-lifecycle)). A
+sample copy edited since it was imported reads `edited copy` in the column
+and says under the table that importing it again replaces those edits, under
+the same flag.
 `substratectl apply --allow-data-loss` does the same for a schema change of
 your own. `-o json` prints the same rows.
 

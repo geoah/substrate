@@ -20,7 +20,9 @@ data:
   # version 5: `rdates` lands with the `recurring` trait's move.
   # version 6: every link is a `type: reference` property carrying
   # `mustExist: true`, and an owning one carries `onDelete: cascade`.
-  version: 6
+  # version 7: the bundle pins the floor under the package it requires
+  # (`requiresAtLeast`, decision record 0070). Additive.
+  version: 7
 ---
 # ---- the bundle document: the import unit -----------------------------------
 # A SAMPLE bundle: kinds only, imported from the registry.
@@ -36,6 +38,8 @@ data:
     computed from absence, never stored.
   requires:
     - samples.substrate.reamde.dev/scheduling
+  requiresAtLeast:
+    samples.substrate.reamde.dev/scheduling: 2
   installs:
     - samples.substrate.reamde.dev/routines/routine
     - samples.substrate.reamde.dev/routines/routinelog

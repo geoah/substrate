@@ -603,7 +603,7 @@ func TestErrorRenderingProblemsAndHints(t *testing.T) {
 		{
 			name: "lossy import",
 			err:  &apiError{Status: 403, Code: "lossy", Path: "/api/v1/catalog/samples.substrate.reamde.dev%2Ftasks/import"},
-			want: []string{"hint: a sample re-import has no preview to confirm against yet", "`substratectl apply --as-mine --allow-data-loss`"},
+			want: []string{"hint: re-run `substratectl import <sample> --allow-data-loss`", "the edits the re-import replaces"},
 		},
 	}
 	for _, tc := range cases {

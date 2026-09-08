@@ -84,6 +84,45 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 	}
 	plan.From = packageRow.version
 
+	// The copy's stamp (decision record 0070): a package row an import
+	// stamped says which shipped version the copy was taken at and what it
+	// looked like when it landed. Two things follow for the preview. The
+	// closure moved since the copy when its version is past the stamped one,
+	// whatever the per-declaration diff says (a copy whose own versions ran
+	// ahead of the shipped ones diffs as current while its content is not).
+	// And the copy was EDITED when the stored closure no longer hashes to the
+	// stamped digest, which the re-import would discard: that preview is
+	// computed even when nothing moved, because the re-import door still
+	// needs a confirmation to read the hash from. A row with no stamp (a
+	// provider, a package the user declared) has neither.
+	stamp, err := ds.packageStamp(ctx, bundlePackage)
+	if err != nil {
+		return plan, err
+	}
+	// A stamped copy's motion starts from the version it was TAKEN at, not
+	// the stored package version: an edit moves the stored version (the
+	// engine lands a changed header at stored+1), so a copy edited once and
+	// previewed against the next shipped version would read "8 -> 8".
+	var copied int64
+	if stamp.origin != "" {
+		if copied, err = originVersionOf(bundlePackage, stamp.rawVersion); err != nil {
+			return plan, err
+		}
+		if copied > 0 {
+			plan.From = copied
+		}
+	}
+	var edited *editedCopy
+	if stamp.origin != "" && stamp.digest != "" {
+		current, err := ds.packageClosureDigest(ctx, bundlePackage)
+		if err != nil {
+			return plan, err
+		}
+		if current != stamp.digest {
+			edited = &editedCopy{pkg: bundlePackage, digest: current}
+		}
+	}
+
 	// The version diff, exactly as the boot upgrade computes it (seed.go).
 	byPackage := map[string][]vocabulary.Document{}
 	for _, d := range docs {
@@ -154,7 +193,11 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 			Kind: vocabularyRecordKinds[typ], ID: id, From: s.version,
 		})
 	}
-	if len(plan.Changes) == 0 {
+	plan.Available = len(plan.Changes) > 0
+	if stamp.origin != "" && vocabulary.CompareVersions(plan.To, copied) > 0 {
+		plan.Available = true
+	}
+	if !plan.Available && edited == nil {
 		return plan, nil
 	}
 	sort.Slice(plan.Changes, func(i, j int) bool {
@@ -163,7 +206,6 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 		}
 		return plan.Changes[i].ID < plan.Changes[j].ID
 	})
-	plan.Available = true
 
 	// The blockers: the same staging and the same guard counts the install
 	// door runs, minus the transaction. A closure this repository cannot even
@@ -191,6 +233,9 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 		return plan, err
 	}
 	plan.Renames = legacyRenames(plan.Steps) //nolint:staticcheck // the deprecated field is produced here for readers that still read it
+	// An edited copy binds the hash to its edited state, exactly as the
+	// import door does before it compares a confirmation (convert.go).
+	plan.DiscardsEdits = bindEditedCopy(&plan.ConversionPlan, edited)
 	if line := ceilingGuard(plan.ConversionPlan, ds.svc.conversionCeiling); line != "" {
 		plan.Blockers = append(plan.Blockers, line)
 	}

@@ -56,6 +56,14 @@ type CatalogBundle struct {
 	// core alone), so the console shows this before the button is pressed and
 	// admission refuses while one is absent, naming what to take first.
 	Requires []string `json:"requires,omitempty"`
+	// RequiresAtLeast is the floor the closure puts under a required package
+	// (decision record 0070): the least version of it that satisfies the
+	// requirement, keyed by the package identity Requires lists. A package
+	// with no entry is satisfied by any version. Admission refuses while the
+	// repository holds the package below its floor, naming both versions, so
+	// the console reads the floor against BundleStatus.Version before the
+	// button is pressed.
+	RequiresAtLeast map[string]int64 `json:"requiresAtLeast,omitempty"`
 	// SuggestedMappings are the mappings this closure declares onto its own
 	// kinds FROM another package's, each with the state it has in this
 	// repository (below). A sample ships them for the providers it knows and
