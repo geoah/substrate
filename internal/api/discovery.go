@@ -109,6 +109,11 @@ const (
 	compatibilityPreview   = "preview"
 )
 
+// graphqlRoute is the GraphQL door under the version prefix. The router mounts
+// it and discovery advertises it from this one spelling, so the two cannot
+// drift.
+const graphqlRoute = "/graphql"
+
 type endpointsInfo struct {
 	Register string `json:"register"`
 	Login    string `json:"login"`
@@ -199,7 +204,7 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 		Features:  h.features(),
 		Surfaces: surfacesInfo{
 			REST:    surfaceInfo{Endpoint: "/api/" + APIVersion, Compatibility: compatibilitySupported},
-			GraphQL: surfaceInfo{Endpoint: "/api/" + APIVersion + "/graphql", Compatibility: compatibilityPreview},
+			GraphQL: surfaceInfo{Endpoint: "/api/" + APIVersion + graphqlRoute, Compatibility: compatibilityPreview},
 		},
 		Grammar: grammarInfo{
 			Kind:       "<authority>/<package>/<name>",
@@ -248,11 +253,9 @@ func (h *handler) features() []featureInfo {
 //
 // Each stability is stamped against the tickets still to land on that surface,
 // and `stable` means frozen for v1 (see substrate.StabilityStable). None of
-// these is: the P0 wire changes tracked in #360 still move responses below
-// (the changefeed's public event contract in #377 and its resume rules in #373
-// and #374, purged-id reservation in #372, `Idempotency-Key` in #378), and the
-// REST compatibility text a `stable` stamp would point at is #131. The REST
-// surface's `supported` verdict is the other axis and does not wait on them.
+// these is: the P0 wire changes tracked in #360 still move responses below,
+// and #360 is where the list is kept. The REST surface's `supported` verdict
+// is the other axis and does not wait on them.
 //
 // Each entry's surfaces are the doors that actually exist today. Search is the
 // one the REST surface does not serve: REST filters (`?filter=`) and the

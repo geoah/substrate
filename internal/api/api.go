@@ -254,7 +254,7 @@ func (h *handler) mountResources(r chi.Router) {
 			// paths shadowed — `substrate.reamde.dev/core/recordmerge` and
 			// `/recordsplit` are reachable now that merge and split moved here
 			// (#202).
-			r.Post("/graphql", h.postGraphQL)
+			r.Post(graphqlRoute, h.postGraphQL)
 			// The batch vocabulary verb (a declaration is a record): every
 			// document admitted or none, one transaction, activation on commit.
 			// It stays distinct because a batch of declarations is not record

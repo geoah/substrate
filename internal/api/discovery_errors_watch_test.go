@@ -242,8 +242,8 @@ func discoveryFeatures(t *testing.T, svc substrate.Service) map[string]string {
 // A deployment whose datasets carry every seam advertises every feature, each
 // with the stability the surface has actually reached. `stable` means frozen
 // for v1 and nothing here is: the P0 wire changes tracked in #360 still move
-// responses, and the REST compatibility text is #131. Change a stamp here and
-// in features() together, and only with the ticket that froze the surface.
+// responses. Change a stamp here and in features() together, and only with
+// the ticket that froze the surface.
 func TestDiscoveryStampsEachFeatureStability(t *testing.T) {
 	svc := newFakeService()
 	svc.embeddings = true
