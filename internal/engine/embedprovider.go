@@ -265,16 +265,20 @@ func (ds *dataset) reconcileEmbeddings(ctx context.Context, q dbx, at time.Time)
 	return total, nil
 }
 
-// pruneUnembeddable deletes the chunks, and the queue rows, of every
-// (kind, property) the database holds vectors for that the registry no longer
-// embeds: the directory turned `embed` off, dropped the property, or dropped
-// the kind. Nothing else would ever remove them (`reembed` walks the same
-// registry), and semantic() would keep scoring them. A kind the registry does
-// not know is left alone: that is a parked closure, whose records are neither
-// reconciled nor queued (reconcileEmbeddings), and whose vectors are its own
-// until it admits.
+// pruneUnembeddable deletes the chunks and the queue rows of every
+// (kind, property) the database holds either of for that the registry no
+// longer embeds: the directory turned `embed` off, dropped the property, or
+// dropped the kind. Nothing else would ever remove them (`reembed` walks the
+// same registry), semantic() would keep scoring the vectors, and a queue row
+// nothing bought yet would stand as a false pending count until a drain, which
+// without a provider never comes. A kind the registry does not know is left
+// alone: that is a parked closure, whose records are neither reconciled nor
+// queued (reconcileEmbeddings), and whose vectors are its own until it admits.
 func pruneUnembeddable(ctx context.Context, q dbx, reg *vocabulary.Registry, embeddable map[[2]string]bool) error {
-	rows, err := q.QueryContext(ctx, `SELECT DISTINCT record_kind, property FROM embeddings`)
+	rows, err := q.QueryContext(ctx, `
+		SELECT record_kind, property FROM embeddings
+		UNION
+		SELECT record_kind, property FROM embed_queue`)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: list embedded pairs: %w", err)
 	}
@@ -348,11 +352,22 @@ func reconcileEmbeddable(ctx context.Context, q dbx, kind, prop string, pair *em
 			return 0, err
 		}
 	}
+	// A queue row for a record the desired set no longer holds (purged, or
+	// its value gone) is not work: without this it would stand as a false
+	// pending count until a drain dropped it, and with no provider that drain
+	// never comes.
+	live := make([]string, 0, len(want))
 	queue := make([]string, 0, len(want))
 	for id := range want {
+		live = append(live, id)
 		if !current[id] {
 			queue = append(queue, id)
 		}
+	}
+	if _, err := q.ExecContext(ctx,
+		`DELETE FROM embed_queue WHERE record_kind = $1 AND property = $2 AND NOT (record_id = ANY($3))`,
+		kind, prop, live); err != nil {
+		return 0, err
 	}
 	if len(queue) == 0 {
 		return 0, nil

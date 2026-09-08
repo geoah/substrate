@@ -178,8 +178,8 @@ func TestAResumedImportQueuesEmbeds(t *testing.T) {
 // (nothing would ever re-queue it, so it would be scored for good), the
 // rewritten one's goes and the property is queued, the unchanged one is
 // neither deleted nor queued nor bought again, a tombstone keeps its vectors
-// the way the live path does until a purge, and a blank value is queued for
-// nobody.
+// the way the live path does until a purge, a blank value is queued for
+// nobody, and a queue row for a value since cleared goes with the value.
 func TestImportConvergesTheVectorsAnOlderDatabaseHolds(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -218,6 +218,11 @@ func TestImportConvergesTheVectorsAnOlderDatabaseHolds(t *testing.T) {
 	if n := countRows(t, raw0(t, dsn), "embeddings"); n != 4 {
 		t.Fatalf("%d vectors before the copy, want 4 (the blank blurb has none)", n)
 	}
+	// Queued after the drain and cleared in the directory: a queue row with
+	// nothing behind it and nothing ahead of it.
+	queuedThenCleared := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "book", Properties: map[string]any{"title": "Queued", "description": "zeta harpsichord gazette column"},
+	})
 	if got := semanticIDs(t, ds, "tangerine dictionary"); len(got) == 0 || got[0] != cleared.ID {
 		t.Fatalf("before the copy: %v", got)
 	}
@@ -237,6 +242,7 @@ func TestImportConvergesTheVectorsAnOlderDatabaseHolds(t *testing.T) {
 		Kind: "book", ID: rewritten.ID, Properties: map[string]any{"description": "beta zeppelin narrative here"},
 	})
 	mustPatch(t, ds2, owner, "book", cleared.ID, substrate.PatchInput{Properties: map[string]any{"description": nil}})
+	mustPatch(t, ds2, owner, "book", queuedThenCleared.ID, substrate.PatchInput{Properties: map[string]any{"description": nil}})
 	if _, err := ds2.Delete(ctx, owner, "book", tombstoned.ID); err != nil {
 		t.Fatalf("tombstone: %v", err)
 	}
@@ -362,11 +368,12 @@ func TestImportRequeuesWhenTheDirectoryRepointsTheModel(t *testing.T) {
 }
 
 // The directory's later declaration of the same closure turns `embed` off on
-// the property the older database holds vectors for. Nothing queues them, so
-// nothing would ever replace them, and the semantic arm would keep scoring
-// them: the import deletes them with their queue rows, because the registry
-// no longer embeds the pair. (A kind the registry does not know at all is a
-// parked closure and is left alone.)
+// the property the older database holds vectors for, and a queue row nothing
+// bought yet. Nothing queues or drains them again, so the vectors would be
+// scored for good and the queue row would count as pending for good: the
+// import deletes both, because the registry no longer embeds the pair. (A
+// kind the registry does not know at all is a parked closure and is left
+// alone.)
 func TestImportDropsTheVectorsOfAPropertyNoLongerEmbedded(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -382,11 +389,18 @@ func TestImportDropsTheVectorsOfAPropertyNoLongerEmbedded(t *testing.T) {
 	importVocabulary(t, ds, "people")
 	installShelf(t, ds)
 	installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
-	book := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "book", Properties: map[string]any{"title": "Same", "description": "alpha unique marmalade prose"},
+	bought := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "book", Properties: map[string]any{"title": "Bought", "description": "alpha unique marmalade prose"},
 	})
 	if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != 1 {
 		t.Fatalf("drain = %d, %v, want 1, nil", n, err)
+	}
+	// Queued after the drain: a row with no vector behind it.
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "book", Properties: map[string]any{"title": "Queued", "description": "beta zeppelin narrative here"},
+	})
+	if n := countRows(t, raw0(t, dsn), "embed_queue"); n != 1 {
+		t.Fatalf("%d queue rows before the copy, want the undrained one", n)
 	}
 	id := repositoryIDOf(t, ds)
 	root := engine.DataRootOf(svc)
@@ -415,14 +429,14 @@ func TestImportDropsTheVectorsOfAPropertyNoLongerEmbedded(t *testing.T) {
 		t.Fatalf("%d vectors of a property no longer embedded outlived the import", n)
 	}
 	if n := countRows(t, raw, "embed_queue"); n != 0 {
-		t.Fatalf("%d queue rows for a property no longer embedded", n)
+		t.Fatalf("%d queue rows for a property no longer embedded outlived the import", n)
 	}
 	// Nothing embeddable, nothing queued, nothing stored: an empty answer.
 	res, err := ds3.Search(ctx, substrate.SearchInput{Q: "marmalade prose", Mode: substrate.SearchSemantic})
 	if err != nil || len(res.Hits) != 0 || res.Pending != 0 {
 		t.Fatalf("semantic search = %+v, %v; want an empty answer", res, err)
 	}
-	_ = book
+	_ = bought
 }
 
 // A provider and nothing embeddable is an empty answer, not a refusal: the
