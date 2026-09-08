@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -197,7 +198,7 @@ func (ds *dataset) enqueueReembed(ctx context.Context, provider *embedProvider, 
 		SELECT r.kind, r.id, $2, 1, now()
 		  FROM records r
 		 WHERE r.kind = $1 AND r.deleted_at IS NULL
-		   AND coalesce(r.props->>$2, '') <> '' `+stale+`
+		   AND coalesce(btrim(r.props->>$2), '') <> '' `+stale+`
 		ON CONFLICT (repository, record_kind, record_id, property) DO UPDATE
 		    SET generation = embed_queue.generation + 1, enqueued_at = EXCLUDED.enqueued_at`,
 		args...)
@@ -214,7 +215,7 @@ func (ds *dataset) enqueueReembed(ctx context.Context, provider *embedProvider, 
 // reconcileEmbeddings converges the vectors a database already holds with the
 // records an import folded, and queues what is missing, all through q, the
 // import's transaction. Per embeddable property: a stored chunk whose record
-// is gone, whose property is now empty or whose text_hash is not the current
+// is purged, whose property is now empty or whose text_hash is not the current
 // chunk's is deleted, and a property without a complete set of current-hash
 // chunks is queued, stamped `at` (the import's clock, so every live edit after
 // it sorts ahead in the drain). Into an empty database that is every property;
@@ -321,21 +322,35 @@ func reconcileEmbeddable(ctx context.Context, q dbx, kind, prop string, pair *em
 	return len(queue), nil
 }
 
-// currentChunkHashes is every live record's chunk hashes for one property,
-// by record id; a record whose property is empty is absent.
+// currentChunkHashes is every record's chunk hashes for one property, by
+// record id, hashed from the value the way the drain hashes it
+// (computeEmbedding: scalarString, then chunkText), so a repeated property
+// compares as its joined text and not as JSON array text. A record whose
+// value is absent or blank is left out: chunkText would give it no chunks, so
+// queuing it would only have the drain drop the row. Tombstones are included:
+// the live path keeps a tombstone's vectors until the purge, so the import
+// does too, and an undelete comes back searchable.
 func currentChunkHashes(ctx context.Context, q dbx, kind, prop string) (map[string][]string, error) {
-	rows, err := q.QueryContext(ctx, `
-		SELECT id, props->>$2 FROM records
-		 WHERE kind = $1 AND deleted_at IS NULL AND coalesce(props->>$2, '') <> ''`, kind, prop)
+	rows, err := q.QueryContext(ctx,
+		`SELECT id, props->$2 FROM records WHERE kind = $1 AND props ? $2`, kind, prop)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 	out := map[string][]string{}
 	for rows.Next() {
-		var id, text string
-		if err := rows.Scan(&id, &text); err != nil {
+		var id string
+		var raw []byte
+		if err := rows.Scan(&id, &raw); err != nil {
 			return nil, err
+		}
+		var v any
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return nil, fmt.Errorf("decode %s of %s: %w", prop, id, err)
+		}
+		text := scalarString(v)
+		if strings.TrimSpace(text) == "" {
+			continue
 		}
 		out[id] = chunkHashes(text)
 	}

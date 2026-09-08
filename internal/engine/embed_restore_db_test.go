@@ -175,8 +175,10 @@ func TestAResumedImportQueuesEmbeds(t *testing.T) {
 // vectors for values the directory has since rewritten or cleared, and for
 // values it has not. The import converges: the cleared property's vector goes
 // (nothing would ever re-queue it, so it would be scored for good), the
-// rewritten one's goes and the property is queued, and the unchanged one is
-// neither deleted nor queued nor bought again.
+// rewritten one's goes and the property is queued, the unchanged one is
+// neither deleted nor queued nor bought again, a tombstone keeps its vectors
+// the way the live path does until a purge, and a blank value is queued for
+// nobody.
 func TestImportConvergesTheVectorsAnOlderDatabaseHolds(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -201,8 +203,19 @@ func TestImportConvergesTheVectorsAnOlderDatabaseHolds(t *testing.T) {
 	kept := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "book", Properties: map[string]any{"title": "Kept", "description": "delta saxophone almanac chapter"},
 	})
-	if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != 3 {
-		t.Fatalf("drain = %d, %v, want 3, nil", n, err)
+	tombstoned := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "book", Properties: map[string]any{"title": "Tombstoned", "description": "epsilon lighthouse ledger entry"},
+	})
+	// Whitespace alone: chunkText gives it no chunks, so the drain drops the
+	// row without a vector.
+	blank := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "book", Properties: map[string]any{"title": "Blank", "description": "   "},
+	})
+	if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != 5 {
+		t.Fatalf("drain = %d, %v, want 5, nil", n, err)
+	}
+	if n := countRows(t, raw0(t, dsn), "embeddings"); n != 4 {
+		t.Fatalf("%d vectors before the copy, want 4 (the blank blurb has none)", n)
 	}
 	if got := semanticIDs(t, ds, "tangerine dictionary"); len(got) == 0 || got[0] != cleared.ID {
 		t.Fatalf("before the copy: %v", got)
@@ -212,7 +225,7 @@ func TestImportConvergesTheVectorsAnOlderDatabaseHolds(t *testing.T) {
 	_ = svc.Close()
 
 	// The directory moves on in another database: one blurb is rewritten,
-	// one cleared, one left alone.
+	// one cleared, one record tombstoned, the rest left alone.
 	root2 := copyRepositoryDir(t, root, id)
 	svc2 := mustReopen(t, testdb.NewSchema(t), root2)
 	ds2, err := svc2.Dataset(ctx, "geoah")
@@ -223,6 +236,9 @@ func TestImportConvergesTheVectorsAnOlderDatabaseHolds(t *testing.T) {
 		Kind: "book", ID: rewritten.ID, Properties: map[string]any{"description": "beta zeppelin narrative here"},
 	})
 	mustPatch(t, ds2, owner, "book", cleared.ID, substrate.PatchInput{Properties: map[string]any{"description": nil}})
+	if _, err := ds2.Delete(ctx, owner, "book", tombstoned.ID); err != nil {
+		t.Fatalf("tombstone: %v", err)
+	}
 	_ = svc2.Close()
 
 	// The first database is the older dump: its vectors are the old texts'.
@@ -232,13 +248,16 @@ func TestImportConvergesTheVectorsAnOlderDatabaseHolds(t *testing.T) {
 		t.Fatalf("open the repository restored over the older database: %v", err)
 	}
 	raw := scopedDB(t, dsn, "geoah")
-	if n := countRows(t, raw, "embeddings"); n != 1 {
-		t.Fatalf("%d vectors after the import, want exactly the unchanged blurb's", n)
+	if n := countRows(t, raw, "embeddings"); n != 2 {
+		t.Fatalf("%d vectors after the import, want the unchanged blurb's and the tombstone's", n)
 	}
-	var keptVectors int
-	if err := raw.QueryRow(`SELECT count(*) FROM embeddings WHERE record_id = $1`, kept.ID).Scan(&keptVectors); err != nil || keptVectors != 1 {
-		t.Fatalf("the unchanged blurb's vector did not survive the import: %d, %v", keptVectors, err)
+	for _, id := range []string{kept.ID, tombstoned.ID} {
+		var n int
+		if err := raw.QueryRow(`SELECT count(*) FROM embeddings WHERE record_id = $1`, id).Scan(&n); err != nil || n != 1 {
+			t.Fatalf("the vector of %s did not survive the import: %d, %v", id, n, err)
+		}
 	}
+	_ = blank
 	assertQueued(t, raw, []string{rewritten.ID})
 
 	// Vectors exist, so the semantic arm answers; the cleared blurb is not in
@@ -353,6 +372,13 @@ func TestSemanticSearchWithNothingEmbeddableIsEmpty(t *testing.T) {
 	if err != nil || len(hits) != 0 {
 		t.Fatalf("semantic search with nothing embeddable = %v, %v; want an empty answer", hitIDs(hits), err)
 	}
+}
+
+// raw0 is the scoped pool of the repository the test wrote first, before it
+// is copied anywhere.
+func raw0(t *testing.T, dsn string) *sql.DB {
+	t.Helper()
+	return scopedDB(t, dsn, "geoah")
 }
 
 // shelfRepository is a repository with the shelf fixture installed:
