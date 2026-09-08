@@ -71,6 +71,24 @@ func TestDeltaRoundTripsThroughTheLog(t *testing.T) {
 			},
 		},
 		{
+			// The clear of a record's last label is the case `omitempty` on a
+			// bare map lost: the empty map encoded as nothing and the fold
+			// read nothing as "unchanged", so a rebuild restored the label.
+			name: "the last label and the last state clear",
+			before: &erow{
+				ID: "t1", Kind: "task", Title: "Ship it",
+				States: map[string]string{"status": "open"},
+				Props:  map[string]any{"description": "a delta"},
+				Labels: map[string]any{"owner/pinned": true},
+			},
+			after: &erow{
+				ID: "t1", Kind: "task", Title: "Ship it",
+				States: map[string]string{},
+				Props:  map[string]any{"description": "a delta"},
+				Labels: map[string]any{},
+			},
+		},
+		{
 			name: "a write that changes nothing describes nothing",
 			before: &erow{
 				ID: "t1", Kind: "task", Title: "Ship it",
@@ -130,6 +148,37 @@ func TestDeltaRoundTripsThroughTheLog(t *testing.T) {
 				t.Fatalf("the delta did not reproduce the row\ngot  %+v\nwant %+v\ndelta %s", got, want, raw)
 			}
 		})
+	}
+}
+
+// TestAClearedMapIsSpelledOnTheWire pins the two spellings the fold tells
+// apart: `"labels":{}` is the clear, and no `labels` key is "unchanged". An
+// older binary reads both the same way, which is why the change is not a
+// dialect bump; history that already holds the bare `{}` a lost clear left
+// behind keeps replaying as it did.
+func TestAClearedMapIsSpelledOnTheWire(t *testing.T) {
+	before := &erow{
+		ID: "t1", Kind: "task",
+		States: map[string]string{"status": "open"},
+		Labels: map[string]any{"owner/pinned": true},
+	}
+	after := &erow{ID: "t1", Kind: "task", States: map[string]string{}, Labels: map[string]any{}}
+	raw, err := json.Marshal(diffRow(before, after))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != `{"states":{},"labels":{}}` {
+		t.Fatalf("the clear of the last label and state encodes as %s", raw)
+	}
+
+	var unchanged rowDelta
+	if err := json.Unmarshal([]byte(`{}`), &unchanged); err != nil {
+		t.Fatal(err)
+	}
+	row := before.clone()
+	unchanged.applyTo(row)
+	if !reflect.DeepEqual(row.Labels, before.Labels) || !reflect.DeepEqual(row.States, before.States) {
+		t.Fatalf("an absent key moved the row: labels %v, states %v", row.Labels, row.States)
 	}
 }
 

@@ -544,7 +544,7 @@ func TestRoundTripDirectoryRestoresARepository(t *testing.T) {
 		t.Fatal(err)
 	}
 	importVocabulary(t, ds, "tasks")
-	writeSomeHistory(t, ds)
+	cleared := writeSomeHistory(t, ds)
 	ref := putProvider(t, ds, dsn, "openai", "sk-round-trip")
 	digest := putBlob(t, ds, []byte("round trip bytes"))
 	before := foldOf(t, ds)
@@ -564,6 +564,7 @@ func TestRoundTripDirectoryRestoresARepository(t *testing.T) {
 	if after := foldOf(t, ds2); string(after) != string(before) {
 		t.Fatalf("the restored fold is not the original\n%s", firstDifference(before, after))
 	}
+	wantLabelsAndVersion(t, ds2, cleared)
 	if got := getBlob(t, ds2, digest); string(got) != "round trip bytes" {
 		t.Fatalf("blob bytes = %q", got)
 	}
@@ -588,6 +589,7 @@ func TestRoundTripDirectoryRestoresARepository(t *testing.T) {
 	if after := foldOf(t, ds2); string(after) != string(before) {
 		t.Fatalf("the rebuilt fold is not the original\n%s", firstDifference(before, after))
 	}
+	wantLabelsAndVersion(t, ds2, cleared)
 }
 
 // Rotating a secret deletes the old sealed row; the mirror follows, so

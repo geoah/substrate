@@ -518,10 +518,14 @@ the exec path needs nothing open at all.
   fold, in one transaction, under that repository's own lock, after running
   the same check the boot runs. It reproduces the fold bit for bit and appends
   nothing, so it is safe to run on a healthy repository, and it is the proof
-  that the directory alone reproduces the records. It does not touch blobs or
-  sealed files, which were never in the changelog, and it leaves runtime
-  state (trigger cursors, OAuth flows) alone, because a cursor is a
-  consumer's position in the changelog, not a fold of it. Stop the server
+  that the directory alone reproduces the records. One exception is already
+  written: v0.46.0 and v0.47.0 stored the removal of a record's last label as
+  an empty delta, so replaying such an entry brings that label back and skips
+  the `version` bump the live write made. Nothing reconstructs the clear from
+  the changelog alone; remove the label again after the rebuild. It does not
+  touch blobs or sealed files, which were never in the changelog, and it
+  leaves runtime state (trigger cursors, OAuth flows) alone, because a cursor
+  is a consumer's position in the changelog, not a fold of it. Stop the server
   first: it opens the repository as its changelog writer and refuses while
   the server holds the lock.
 - **`blobs migrate`** moves blob bytes from one store to another, one
