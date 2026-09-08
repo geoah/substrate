@@ -2,10 +2,8 @@ package engine
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"database/sql/driver"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -48,15 +46,15 @@ type Repository struct {
 	HistoryGeneration string
 }
 
-// newHistoryGeneration mints a history generation: 8 random bytes, hex. It is
-// a marker clients compare for equality, never a proof, so it needs to be
-// unguessable only to the extent that two imports never collide.
+// newHistoryGeneration mints a history generation: a random id in the record
+// id alphabet, compared for equality and never a proof, so two imports never
+// collide and nothing else is asked of it.
 func newHistoryGeneration() (string, error) {
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
+	g, err := newID()
+	if err != nil {
 		return "", fmt.Errorf("substrate/engine: mint a history generation: %w", err)
 	}
-	return hex.EncodeToString(b[:]), nil
+	return g, nil
 }
 
 // scope is the repository's query scope.

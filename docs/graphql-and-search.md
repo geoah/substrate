@@ -36,7 +36,8 @@ keys, the condition operators and a worked date range without leaving the
 endpoint; a filter key the grammar does not have is a `validation` error that
 names the keys it does. `cursor`
 is the same opaque keyset token REST returns (pass it back as `after`), and
-`head` is the changelog head seq at the snapshot, for a gapless handoff to
+`head` is the changelog head seq at the snapshot and `generation` the history
+generation it belongs to, the pair a gapless handoff to
 `watch`. There is no `total`: a keyset walk counts nothing, so the page tells
 you what it read and whether there is more, never how many there are. The `changelog(from, filter, first)` query
 resumes forward from a transparent `seq` (the arg is `from`, not an opaque

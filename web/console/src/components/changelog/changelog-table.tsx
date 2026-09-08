@@ -214,10 +214,13 @@ export function ChangelogTable({
       return
     }
     const reset = resetRef.current
+    // A cursor travels only with its generation: on a facet change the pages
+    // are not in yet, and a bare `from` would be refused and flash a reset.
+    const resume = !reset && generationRef.current !== undefined
     resetRef.current = false
     const handle = watchChanges({
-      from: reset ? undefined : headRef.current,
-      generation: reset ? undefined : generationRef.current,
+      from: resume ? headRef.current : undefined,
+      generation: resume ? generationRef.current : undefined,
       filter: JSON.parse(filterKey) as ChangeFeedFilter,
       onRow: (row) =>
         dispatch({

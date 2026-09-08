@@ -198,7 +198,7 @@ func (ds *dataset) Head(ctx context.Context) (substrate.ChangelogHead, error) {
 	if err != nil {
 		return substrate.ChangelogHead{}, err
 	}
-	return substrate.ChangelogHead{Seq: seq, Generation: ds.generation}, nil
+	return substrate.ChangelogHead{Seq: seq, Generation: ds.historyGeneration()}, nil
 }
 
 func (ds *dataset) registry() *vocabulary.Registry {

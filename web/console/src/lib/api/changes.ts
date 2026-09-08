@@ -208,7 +208,7 @@ export async function seekBoundary(
   return lo + 1
 }
 
-/** Immutable answer — history never moves under a fixed instant. The answer
+/** Immutable answer: history never moves under a fixed instant. The answer
  * carries the generation the probes ran under, so the pages that follow it
  * resume in the same history. */
 export function seekQueryOptions(untilMs: number) {

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -464,16 +465,28 @@ func (c *C) readChangesForward(from int64) []changeRow {
 
 func (c *C) readChangesForwardAs(token string, from int64) []changeRow {
 	c.t.Helper()
+	return c.readChangesForwardWith(token, from, nil)
+}
+
+// readChangesForwardWith is the forward read under extra query parameters
+// (the feed's filters); every page carries the cursor pair.
+func (c *C) readChangesForwardWith(token string, from int64, v url.Values) []changeRow {
+	c.t.Helper()
 	var rows []changeRow
 	generation := ""
 	if from > 0 {
 		_, generation = c.changelogHead()
 	}
 	for {
-		path := fmt.Sprintf("/api/v1/changes?from=%d", from)
-		if generation != "" {
-			path += "&generation=" + generation
+		q := url.Values{}
+		for name, vals := range v {
+			q[name] = vals
 		}
+		q.Set("from", strconv.FormatInt(from, 10))
+		if generation != "" {
+			q.Set("generation", generation)
+		}
+		path := "/api/v1/changes?" + q.Encode()
 		status, raw := c.doAs(token, http.MethodGet, path, nil, nil)
 		c.requiref(status == http.StatusOK, "GET %s answered %d: %s", path, status, raw)
 		page := 0
@@ -638,10 +651,13 @@ func (r *run) appendix() {
 	}
 
 	b.WriteString("### The changelog\n\n| seq | op | kind | record | actor | hash |\n| --- | --- | --- | --- | --- | --- |\n")
-	from := int64(0)
+	from, generation := int64(0), ""
 	for {
-		status, raw, err := httpJSON(r.hc, r.base, r.token, http.MethodGet,
-			fmt.Sprintf("/api/v1/changes?from=%d", from), nil)
+		path := fmt.Sprintf("/api/v1/changes?from=%d", from)
+		if generation != "" {
+			path += "&generation=" + generation
+		}
+		status, raw, err := httpJSON(r.hc, r.base, r.token, http.MethodGet, path, nil)
 		if err != nil || status != http.StatusOK {
 			fmt.Fprintf(&b, "\nReading the changelog failed: status %d, %v\n", status, err)
 			break
@@ -650,6 +666,10 @@ func (r *run) appendix() {
 		for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
 			var row changeRow
 			if json.Unmarshal([]byte(line), &row) != nil || row.Seq == 0 {
+				// The bookmark names the generation the next page resends.
+				if g := bookmarkGeneration(line); g != "" {
+					generation = g
+				}
 				continue
 			}
 			fmt.Fprintf(&b, "| %d | %s | %s | `%s` | %s | `%s` |\n",

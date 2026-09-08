@@ -80,7 +80,7 @@ func (h *handler) getChangesPage(w http.ResponseWriter, r *http.Request, ds subs
 		writeCompacted(w, head, fmt.Sprintf("generation %q is not this changelog's %q: the history was replaced since the cursor was saved; re-list and resume from the head", generation, head.Generation))
 		return
 	case before > 0 && generation == "":
-		writeCompacted(w, head, fmt.Sprintf("before=%d names an entry and needs the generation it was read under; re-list and resume from the head", before))
+		writeCompacted(w, head, fmt.Sprintf("before=%d names an entry and needs the generation it was read under; the head is %d under generation %q; re-list and resume from it", before, head.Seq, head.Generation))
 		return
 	}
 	first, err := parseFirstParam(r)

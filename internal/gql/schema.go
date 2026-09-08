@@ -669,6 +669,9 @@ func (b *schemaBuilder) queryType() *graphql.Object {
 			// from: resume the watch from it for a gapless,
 			// no-double-see list→watch handoff.
 			"head": &graphql.Field{Type: longScalar},
+			// generation is the history generation head belongs to; the watch
+			// resume takes the pair, never the seq alone.
+			"generation": &graphql.Field{Type: graphql.String},
 		},
 	})
 	hit := graphql.NewObject(graphql.ObjectConfig{
@@ -999,7 +1002,7 @@ func resolveRecords(p graphql.ResolveParams) (any, error) {
 		return nil, err
 	}
 	return map[string]any{
-		"nodes": page.Records, "cursor": page.Cursor, "head": page.Head,
+		"nodes": page.Records, "cursor": page.Cursor, "head": page.Head, "generation": page.Generation,
 	}, nil
 }
 

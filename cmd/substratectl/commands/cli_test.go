@@ -180,6 +180,7 @@ func TestHelpSpeaksTheV1Vocabulary(t *testing.T) {
 		{"repository", "--help"},
 		{"repository", "inspect", "--help"},
 		{"repository", "rebuild", "--help"},
+		{"repository", "rotate-generation", "--help"},
 	} {
 		out, _ := h.mustRun(args...)
 		all.WriteString(out)

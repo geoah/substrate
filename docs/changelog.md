@@ -217,8 +217,10 @@ remembering the pair is all a resume needs.
 The **history generation** is an opaque string the server mints for a
 repository when it registers, and mints again when its directory is imported
 into a database that holds no row for it, which is what a
-[restore](operations.md#backups) is. A restart and `repository rebuild` keep
-it. A seq is a position in one generation only: an older copy of the directory
+[restore](operations.md#backups) into a fresh database is. A database dump
+keeps the row and its generation, so a restore that starts from a dump runs
+`substratectl repository rotate-generation` once per repository. A restart and
+`repository rebuild` keep it. A seq is a position in one generation only: an older copy of the directory
 imported over an emptied database restarts the numbering below whatever
 cursors clients saved, and a bare seq cannot tell the two histories apart. So
 `from` or `before` above 0 carries the `generation` it was read under, and the server

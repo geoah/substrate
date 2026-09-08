@@ -50,6 +50,15 @@ generation with `410 compacted` naming the current head and generation;
 of the head it was minted with and is refused across a change, so a `head`
 from one history never reaches a watch on another.
 
+Which restores rotate: importing a directory into a database with no row for
+it mints a generation by construction, so the documented fresh-database
+restore resets every cursor by itself. Restoring a database dump, with or
+without the matching directory, keeps the row and the generation the dump
+held, and nothing in the tables can tell that from a restart; the operator
+runs `substratectl repository rotate-generation` once per repository as a
+step of that restore, and the command refuses while a server holds the
+repository. A restart and `repository rebuild` never rotate.
+
 The checksum binding was not chosen because it verifies one entry rather than
 the numbering: it needs an entry read on every resume, a list page would have
 to fetch its head entry's hash to hand off, and a bare `from` with no hash
@@ -79,6 +88,9 @@ belongs to. It is a marker and not a proof, which is what 0050 allows.
   generation.
 - Bad, because a second value rides every handoff, and the console, the CLI
   and every integration must carry the pair together.
+- Bad, because a dump restore depends on an operator remembering one command:
+  a forgotten `rotate-generation` is the original defect for every client
+  with a cursor above the restored head.
 
 ### Confirmation
 
@@ -89,7 +101,9 @@ three doors.
 `TestHistoryGenerationHoldsAcrossRestartAndRebuildAndRotatesOnImport`
 (internal/engine) holds the row's lifecycle against a real import of an older
 directory. `TestListRefusesACursorFromAnotherHistory` (internal/engine) holds
-the list cursor.
+the list cursor. `TestRotateHistoryGenerationPersistsAndResetsCursors` and
+`TestRotateHistoryGenerationRefusesWhileTheServerHoldsTheLock` hold the
+operator rotation and its refusal beside a live server.
 
 ## More Information
 

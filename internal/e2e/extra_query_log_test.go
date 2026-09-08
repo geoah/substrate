@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -200,36 +199,7 @@ func xqSeqSet(rows []changeRow) map[int64]bool {
 // exactly as readChangesForward does.
 func xqReadFeed(c *C, v url.Values) []changeRow {
 	c.t.Helper()
-	var rows []changeRow
-	from := int64(0)
-	for {
-		q := url.Values{}
-		for name, vals := range v {
-			q[name] = vals
-		}
-		q.Set("from", strconv.FormatInt(from, 10))
-		path := xqChanges + "?" + q.Encode()
-		status, raw := xqGet(c, path, nil)
-		c.requiref(status == http.StatusOK, "GET %s answered %d: %s", path, status, raw)
-		page := 0
-		for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
-			if line == "" {
-				continue
-			}
-			var row changeRow
-			c.requiref(json.Unmarshal([]byte(line), &row) == nil, "undecodable ndjson line: %s", line)
-			if row.Seq == 0 {
-				c.requiref(!strings.Contains(line, `"error"`), "the feed ended with an error frame: %s", line)
-				continue
-			}
-			rows = append(rows, row)
-			page++
-			from = row.Seq
-		}
-		if page == 0 {
-			return rows
-		}
-	}
+	return c.readChangesForwardWith(c.r.token, 0, v)
 }
 
 // xqStream is one open ndjson stream. The request carries the deadline, so a

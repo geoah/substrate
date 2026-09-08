@@ -244,7 +244,7 @@ func resumeCursor(w http.ResponseWriter, r *http.Request, ds substrate.Dataset) 
 	case generation != "" && generation != head.Generation:
 		return refuse(fmt.Sprintf("generation %q is not this changelog's %q: the history was replaced since the cursor was saved", generation, head.Generation))
 	case hasFrom && from > 0 && generation == "":
-		return refuse(fmt.Sprintf("from=%d names an entry and needs the generation it was read under", from))
+		return refuse(fmt.Sprintf("from=%d names an entry and needs the generation it was read under; the head is %d under generation %q", from, head.Seq, head.Generation))
 	case hasFrom && from > head.Seq:
 		return refuse(fmt.Sprintf("seq %d is above the head %d: this changelog never reached the cursor", from, head.Seq))
 	}

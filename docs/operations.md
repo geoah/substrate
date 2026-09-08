@@ -462,6 +462,24 @@ DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository list
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository verify ada     # once per repository
 ```
 
+**Restoring a dump takes one more step.** A change cursor is a seq under the
+repository's history generation
+([the changelog](changelog.md#watching)), and the restore has to change that
+generation whenever the history clients saved cursors against is not the one
+that comes back. The import above does it by itself: creating the row from the
+manifest mints a new generation. A database dump does not: the row comes back
+with the generation the dump held, whether the matching directory is restored
+beside it or the directory is written from the tables. So after any restore
+that starts from a dump, rotate each repository before the server boots:
+
+```
+DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rotate-generation ada
+```
+
+Every client then re-lists once at its next resume instead of continuing past
+writes the restored history never had. A restart and `repository rebuild`
+change nothing here.
+
 Each directory under `repositories/` is one repository, named by its
 authority: `./substrate-backup/repositories/ada.example.com/` is Ada's, and
 its `repository.json` names the username the operator commands take.
@@ -543,8 +561,9 @@ records, so they come back. Change cursors that clients saved (the console's
 tail, `substratectl watch --from`, an integration's bookmark) are refused once
 after an import: the row comes back with a new history generation, and a
 resume under the old one answers `410 compacted` naming the head to re-list
-from ([the changelog](changelog.md#frames-and-the-horizon)). A restart and a
-rebuild keep the generation, so neither costs a client its cursor.
+from ([the changelog](changelog.md#frames-and-the-horizon)). A dump keeps the
+row's generation, which is what `repository rotate-generation` above is for. A
+restart and a rebuild keep it too, and neither costs a client its cursor.
 
 **Encrypt the copy.** The changelog and the blobs are plaintext in the
 directory, on the backup host and in the dump alike. The substrate does not
@@ -557,21 +576,23 @@ Operator commands (the "operator hat" of
 directly and hold no token. They need `--dsn` (or `DATABASE_URL`) and
 `SUBSTRATE_DATA_ROOT`, and refuse before touching anything without them.
 
-**Three of them run beside a live server; two need it stopped; one takes no
+**Three of them run beside a live server; three need it stopped; one takes no
 database.** `repository list`, `repository inspect` and `repository verify`
 read: `verify` opens the engine read-only, so it runs no boot check, appends
 nothing and reports a torn tail or a table ahead of its file as a finding
-instead of repairing it. `repository rebuild` and `user reset` write, so each
-opens the repository as its changelog writer, and a running server holds that
-lock: the command refuses, naming the lock, until the server is stopped.
-`repository rewrap` acts on a copied directory before any boot has imported
-it, so it needs `SUBSTRATE_CREDENTIAL_KEY` and the directory, and no DSN.
+instead of repairing it. `repository rebuild`, `repository rotate-generation`
+and `user reset` write, so each opens the repository as its changelog writer,
+and a running server holds that lock: the command refuses, naming the lock,
+until the server is stopped. `repository rewrap` acts on a copied directory
+before any boot has imported it, so it needs `SUBSTRATE_CREDENTIAL_KEY` and
+the directory, and no DSN.
 
 ```
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository list
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository inspect ada
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository verify ada
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rebuild ada
+DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rotate-generation ada
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl user reset ada
 SUBSTRATE_CREDENTIAL_KEY=… substratectl repository rewrap ./repositories/ada.example.com --identity-file ./recovery.key
 ```
