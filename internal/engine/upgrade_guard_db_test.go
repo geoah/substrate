@@ -1010,7 +1010,7 @@ func TestBootUpgradeRefusesAShippedLossyRemap(t *testing.T) {
 	// records, so the collapse needs a record to lose.
 	{
 		svc := openTree(t, dsn, shippedTree(t))
-		ds, err := svc.Dataset(ctx, "geoah")
+		ds, err := svc.Dataset(ctx, testdb.Username(t))
 		if err != nil {
 			t.Fatalf("dataset: %v", err)
 		}
@@ -1083,7 +1083,7 @@ func TestBootUpgradeConvertsARemapOntoARetainedValueNobodyHolds(t *testing.T) {
 	// `openai` when the remap lands on it.
 	{
 		svc := openTree(t, dsn, shippedTree(t))
-		ds, err := svc.Dataset(ctx, "geoah")
+		ds, err := svc.Dataset(ctx, testdb.Username(t))
 		if err != nil {
 			t.Fatalf("dataset: %v", err)
 		}
@@ -1108,7 +1108,7 @@ func TestBootUpgradeConvertsARemapOntoARetainedValueNobodyHolds(t *testing.T) {
 	}
 	svc := openTree(t, dsn, tree)
 	defer func() { _ = svc.Close() }()
-	ds, err := svc.Dataset(ctx, "geoah")
+	ds, err := svc.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
