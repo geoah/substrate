@@ -211,6 +211,43 @@ type kindConversion struct {
 	renames   []propertyRename
 	backfills []propertyBackfill
 	remaps    []enumRemap
+	// filled is each backfilled property's value as the rows receive it: the
+	// declared default coerced and, for a reference, validated and normalized
+	// as a write's would be (backfillValues). One value per property, computed
+	// once, because every row receives the same one.
+	filled map[string]any
+}
+
+// backfillValues computes what each backfill writes, exactly as a create that
+// fell back to the default would store it: coerced (coerceValue) and put
+// through the write path's reference validation (validateReferences), so a
+// default naming a kind the registry does not hold, a record outside the
+// declared pin or a `mustExist` target that is not there would refuse the
+// apply as it refuses the create. No reference-holding property can declare a
+// default today (referencePropKeys has no `default`, and a default is one
+// scalar, never an object), so the reference half holds nothing yet; it is
+// here so that reserving the key is not also a hole in the backfill. The
+// default is one value for every row, so it is validated once per kind rather
+// than once per record. checkDeclaredDefaults admitted the literal, so the
+// coercion cannot refuse.
+func (t *txn) backfillValues(kc *kindConversion) error {
+	if len(kc.backfills) == 0 {
+		return nil
+	}
+	values := make(map[string]any, len(kc.backfills))
+	for _, b := range kc.backfills {
+		p := kc.kind.Props[b.prop]
+		value, err := coerceValue(p, p.Default)
+		if err != nil {
+			return fmt.Errorf("backfill %q: %w", b.prop, err)
+		}
+		values[b.prop] = value
+	}
+	if err := t.validateReferences(kc.kind, values); err != nil {
+		return fmt.Errorf("backfill: %w", err)
+	}
+	kc.filled = values
+	return nil
 }
 
 // convertRecords performs every conversion a batch declares and reports how
@@ -270,6 +307,9 @@ func (t *txn) convertRecords(candidate *vocabulary.Registry, plan conversionPlan
 // holds the old spelling is decided in Go, value by value, where the
 // container shapes are).
 func (t *txn) convertKind(kc *kindConversion) (int64, error) {
+	if err := t.backfillValues(kc); err != nil {
+		return 0, err
+	}
 	args := []any{kc.kind.Identity}
 	var holds []string
 	bind := func(v string) string {
@@ -367,15 +407,10 @@ func (t *txn) convertRecord(kc *kindConversion, ref eref) (bool, error) {
 		if !emptyValue(row.Props[b.prop]) {
 			continue
 		}
-		p := kind.Props[b.prop]
-		// Coerced as a create's default is (withDefaults, then coerceValue), so
-		// the backfilled row holds exactly what a create would have stored.
-		// checkDeclaredDefaults admitted the literal, so this cannot refuse.
-		value, err := coerceValue(p, p.Default)
-		if err != nil {
-			return false, fmt.Errorf("backfill %q: %w", b.prop, err)
-		}
-		row.Props[b.prop] = value
+		// The value every row receives, coerced and validated once for the kind
+		// (backfillValues), so the backfilled row holds exactly what a create
+		// that fell back to the default would have stored.
+		row.Props[b.prop] = kc.filled[b.prop]
 		backfilled = append(backfilled, b.prop)
 		touched[b.prop] = true
 	}

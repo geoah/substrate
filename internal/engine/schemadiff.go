@@ -449,7 +449,7 @@ func propertyNarrowings(ident, pname string, curP, candP *vocabulary.Property, c
 		if !curP.Required && candP.Required && !backfillable(candT, candP) {
 			q, args := missingValueCount(candT, ident, pname)
 			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: property %q becomes required while %%d live records lack it — declare a default to backfill them, or write them first", ident, pname),
+				format: fmt.Sprintf("type %s: property %q becomes required while %%d live records lack it: declare a default to backfill them, or write them first", ident, pname),
 				query:  q, args: args,
 			})
 		}

@@ -62,8 +62,12 @@ declaration itself nominates. A second key could only agree with the first or
 contradict it. A `default:` alone still rewrites nothing: it seeds creates.
 `required:` without a default keeps refusing with the count, and the message
 now says to declare one. The backfilled value is coerced as a create's default
-is and stored under the actor that applied the declaration, at the
-transaction's tier, so its manager row reads as a create's would. A required
+is, and put through the write path's reference validation once per kind, so a
+default a create would refuse refuses the apply; no reference property can
+declare a default today (the key is not in its set), and the check is what
+keeps reserving it from opening a hole. It is stored under
+the actor that applied the declaration, at the transaction's tier, so its
+manager row reads as a create's would. A required
 property's default may not be an empty value (`""`, `[]`, `{}`), because
 `required` refuses those on every write: `checkDeclaredDefaults` refuses the
 pair at both doors, and `backfillable` treats such a default as none, so the

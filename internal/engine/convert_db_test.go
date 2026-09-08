@@ -271,6 +271,32 @@ func TestRemapRewritesEveryRecordHoldingTheOldValue(t *testing.T) {
 	cvReplays(t, svc, ds)
 }
 
+// A backfill can never write a reference nothing validated: a reference
+// property declares no `default` at all (referencePropKeys), so the loader
+// refuses the pair before any row is read, and the record is untouched. The
+// backfill still puts every value through the write path's reference
+// validation (backfillValues), so reserving the key would not open a hole.
+func TestBackfillCannotDeclareAReferenceDefault(t *testing.T) {
+	t.Parallel()
+	_, ds := newDataset(t)
+	const holder = cvPackage + "/holder"
+	name := map[string]any{"type": "string"}
+	if err := cvApply(t, ds, map[string]any{"name": name}); err != nil {
+		t.Fatalf("install the package: %v", err)
+	}
+	orphan := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"name": "a"}})
+
+	err := cvApply(t, ds, map[string]any{"name": name, "holder": map[string]any{
+		"type": "reference", "kind": holder, "required": true, "mustExist": true, "default": holder + "/nobody",
+	}})
+	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), `unknown key "default"`) {
+		t.Fatalf("a reference with a default must refuse at the loader, got: %v", err)
+	}
+	if got := mustGet(t, ds, cvWidget, orphan.ID); got.Version != orphan.Version || got.Properties["holder"] != nil {
+		t.Fatalf("a refused declaration touched the record: %+v", got)
+	}
+}
+
 // cvMappedClosure is the widget beside a source kind describing it: the source
 // carries a `status` value set and a subject reference, and the mapping
 // projects its status onto the widget's. values is the status set both kinds
