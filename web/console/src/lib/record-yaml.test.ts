@@ -26,6 +26,7 @@ const agentKind: KindInfo = {
   version: 0,
   plural: "agents",
   source: "builtin",
+  description: "",
   definition: {
     properties: {
       prompt: {
@@ -102,6 +103,7 @@ describe("templateYAML", () => {
       version: 0,
       plural: "kinds",
       source: "builtin",
+      description: "",
       definition: {
         properties: {
           authority: { type: "string", required: true },
@@ -224,6 +226,7 @@ describe("validateApplyDoc: the declaration id", () => {
     version: 0,
     plural: "agents",
     source: "builtin",
+    description: "",
     definition: { properties: { model: { type: "string" } } },
   }
   const withId = `kind: substrate.reamde.dev/core/agent
@@ -408,6 +411,7 @@ const taskKind: KindInfo = {
   version: 0,
   plural: "tasks",
   source: "installed",
+  description: "",
   definition: {
     properties: {
       title: { type: "string", required: true },

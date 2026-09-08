@@ -399,6 +399,8 @@ const KINDS: KindInfo[] = [
     version: 0,
     plural: "issues",
     source: "installed",
+    description: "",
+    definition: {},
   },
   {
     identity: "samples.substrate.reamde.dev/people/person",
@@ -408,6 +410,8 @@ const KINDS: KindInfo[] = [
     version: 0,
     plural: "people",
     source: "builtin",
+    description: "",
+    definition: {},
   },
 ]
 

@@ -77,7 +77,13 @@ function bundle(over: Partial<CatalogItem>): CatalogItem {
     description: "",
     version: 1,
     tier: "provider",
-    closure: {},
+    closure: {
+      kinds: null,
+      functions: null,
+      agents: null,
+      mappings: null,
+      records: null,
+    },
     installed: false,
     ...over,
   }
@@ -94,6 +100,10 @@ const PEOPLE = bundle({
   description: "The shipped vocabulary for humans.",
   tier: "sample",
   closure: {
+    functions: null,
+    agents: null,
+    mappings: null,
+    records: null,
     kinds: [
       "samples.substrate.reamde.dev/people/person",
       "samples.substrate.reamde.dev/people/personmerge",
@@ -109,7 +119,13 @@ const TASKS = bundle({
   description: "What is owed.",
   tier: "sample",
   requires: ["samples.substrate.reamde.dev/people"],
-  closure: { kinds: ["samples.substrate.reamde.dev/tasks/task"] },
+  closure: {
+    functions: null,
+    agents: null,
+    mappings: null,
+    records: null,
+    kinds: ["samples.substrate.reamde.dev/tasks/task"],
+  },
 })
 
 const GOOGLE = bundle({
@@ -131,6 +147,8 @@ const GOOGLE = bundle({
     "samples.substrate.reamde.dev/calendar",
   ],
   closure: {
+    agents: null,
+    mappings: null,
     kinds: [
       "providers.substrate.reamde.dev/google/config",
       "providers.substrate.reamde.dev/google/account",
@@ -151,6 +169,8 @@ const CORE_KIND: KindInfo = {
   version: 1,
   plural: "bundles",
   source: "builtin",
+  description: "",
+  definition: {},
 }
 
 /** The person kind as it exists AFTER the import: under this repository's own
@@ -163,11 +183,15 @@ const PERSON_KIND: KindInfo = {
   version: 1,
   plural: "persons",
   source: "installed",
+  description: "",
+  definition: {},
 }
 
 /** The status of the people sample once imported: its id is the LANDED one. */
 function peopleStatus(): BundleStatus {
   return {
+    accounts: 0,
+    functions: 0,
     id: `${HOME}/people`,
     name: "people",
     authority: HOME,
@@ -330,6 +354,10 @@ describe("RegistryPage", () => {
     serve({
       statuses: [
         {
+          accounts: 0,
+          functions: 0,
+          kinds: 0,
+          liveRecords: 0,
           id: GOOGLE.id,
           name: "google",
           authority: "providers.substrate.reamde.dev",
@@ -551,6 +579,10 @@ describe("RegistryPage", () => {
 
     function googleStatus(): BundleStatus {
       return {
+        accounts: 0,
+        functions: 0,
+        kinds: 0,
+        liveRecords: 0,
         id: GOOGLE.id,
         name: "google",
         authority: "providers.substrate.reamde.dev",

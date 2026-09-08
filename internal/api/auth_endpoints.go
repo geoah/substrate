@@ -55,8 +55,7 @@ type registerRequest struct {
 // registerResponse is the one response that may carry a server-minted
 // recovery identity, shown exactly once like the token secret beside it.
 type registerResponse struct {
-	Token  substrate.TokenInfo `json:"token"`
-	Secret string              `json:"secret"`
+	substrate.MintedToken
 	// Authority is the one the repository was created with, so a client that
 	// sent none learns the default it got.
 	Authority         string `json:"authority"`
@@ -95,11 +94,6 @@ type totpRequest struct {
 type mintRequest struct {
 	Label     string     `json:"label"`
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
-}
-
-type tokenResponse struct {
-	Token  substrate.TokenInfo `json:"token"`
-	Secret string              `json:"secret"`
 }
 
 // --- the shared gate ---
@@ -221,7 +215,8 @@ func (h *handler) postRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, registerResponse{
-		Token: res.Token, Secret: res.Secret, Authority: res.Authority,
+		MintedToken: substrate.MintedToken{Token: res.Token, Secret: res.Secret},
+		Authority:   res.Authority,
 		RecoveryKey: res.RecoveryKey, RecoveryPublicKey: res.RecoveryPublicKey,
 	})
 }
@@ -248,7 +243,7 @@ func (h *handler) postLogin(w http.ResponseWriter, r *http.Request) {
 		writeAuthFailure(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, tokenResponse{Token: info, Secret: secret})
+	writeJSON(w, http.StatusCreated, substrate.MintedToken{Token: info, Secret: secret})
 }
 
 // --- the credential changes (the password-factor rule) ---
@@ -368,7 +363,7 @@ func (h *handler) postMintToken(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, tokenResponse{Token: info, Secret: secret})
+	writeJSON(w, http.StatusCreated, substrate.MintedToken{Token: info, Secret: secret})
 }
 
 type recoveryEnrollRequest struct {

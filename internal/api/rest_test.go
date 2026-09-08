@@ -262,13 +262,13 @@ func TestRESTErrorEnvelopeMapping(t *testing.T) {
 	defer delete(ds.errs, "Put")
 	rec := env.do(t, http.MethodPost, peoplePath, tok, map[string]any{"properties": map[string]any{"title": "x"}})
 	wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
-	env2 := decodeJSON[errorEnvelope](t, rec)
+	env2 := decodeJSON[substrate.ErrorEnvelope](t, rec)
 	if len(env2.Error.Problems) != 2 || env2.Error.Problems[0] != "name: required" {
 		t.Fatalf("problems = %v", env2.Error.Problems)
 	}
 	// The structured sibling splits each problem on its first ": " so a form
 	// maps it to the field it concerns without parsing prose.
-	want := []problemDetail{{Path: "name", Message: "required"}, {Path: "asin", Message: "malformed"}}
+	want := []substrate.ProblemDetail{{Path: "name", Message: "required"}, {Path: "asin", Message: "malformed"}}
 	if !reflect.DeepEqual(env2.Error.ProblemDetails, want) {
 		t.Fatalf("problemDetails = %v, want %v", env2.Error.ProblemDetails, want)
 	}

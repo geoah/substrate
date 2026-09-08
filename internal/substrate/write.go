@@ -6,7 +6,9 @@ package substrate
 // mapping points at is always server-assigned, so an id there is refused
 // .
 type PutInput struct {
-	Kind string `json:"kind"`
+	// Kind is omitted when empty: a REST body never needs it, the collection
+	// path names the kind and the handler overwrites whatever the body said.
+	Kind string `json:"kind,omitempty"`
 	ID   string `json:"id,omitempty"`
 
 	// Properties carries everything authored — `title`, `body` and the

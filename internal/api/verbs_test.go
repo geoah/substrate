@@ -93,7 +93,7 @@ func TestRESTRefusesAnEdgesKeyNamingItsReplacement(t *testing.T) {
 			"edges":      edges,
 		})
 		wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
-		msg := decodeJSON[errorEnvelope](t, rec).Error.Message
+		msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message
 		for _, want := range []string{`"edges"`, "data.properties", "type: reference"} {
 			if !strings.Contains(msg, want) {
 				t.Fatalf("%s error must name %s: %q", method, want, msg)
@@ -160,7 +160,7 @@ func TestWatchRejectsListParams(t *testing.T) {
 	tok := env.svc.token("geoah")
 	rec := env.do(t, http.MethodGet, peopleV1+"?watch=1&orderBy=at:desc", tok, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
-	if msg := decodeJSON[errorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "orderBy") {
+	if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "orderBy") {
 		t.Fatalf("error must name orderBy: %q", msg)
 	}
 }
@@ -171,7 +171,7 @@ func TestIncomingRejectsListParams(t *testing.T) {
 	env.svc.datasets["geoah"].records["p1"] = &substrate.Record{ID: "p1", Kind: "samples.substrate.reamde.dev/people/person"}
 	rec := env.do(t, http.MethodGet, peopleV1+"/p1/incoming?filter=%7B%7D", tok, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
-	if msg := decodeJSON[errorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "filter") {
+	if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "filter") {
 		t.Fatalf("error must name filter: %q", msg)
 	}
 }

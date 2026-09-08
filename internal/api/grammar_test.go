@@ -27,7 +27,7 @@ func TestPostToRecordPathIsMethodNotAllowed(t *testing.T) {
 	if ds.lastPut.Kind != "" {
 		t.Fatalf("POST %s wrote %+v; a refused method writes nothing", path, ds.lastPut)
 	}
-	if msg := decodeJSON[errorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "PUT "+path) {
+	if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "PUT "+path) {
 		t.Fatalf("POST %s said %q; it must name the PUT that writes this record", path, msg)
 	}
 }
@@ -46,7 +46,7 @@ func TestPutToCollectionPathIsMethodNotAllowed(t *testing.T) {
 	if ds.lastPut.Kind != "" {
 		t.Fatalf("PUT %s wrote %+v; a refused method writes nothing", peoplePath, ds.lastPut)
 	}
-	if msg := decodeJSON[errorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "POST "+peoplePath) {
+	if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "POST "+peoplePath) {
 		t.Fatalf("PUT %s said %q; it must name the POST that creates", peoplePath, msg)
 	}
 	// PATCH and DELETE address a record too, and used to reach the engine with

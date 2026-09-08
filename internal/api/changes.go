@@ -9,18 +9,10 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// changeRow is the /changes wire row: the change plus each enabled trigger's
-// stance on it. Triggers is omitted when no trigger matches — absence means
-// "nothing listens", never "unknown".
-type changeRow struct {
-	substrate.Change
-	Triggers []substrate.ChangeTrigger `json:"triggers,omitempty"`
-}
-
 // annotateChanges attaches per-trigger delivery states through the feed
 // seam; a dataset without it serves plain rows rather than failing the read.
-func annotateChanges(ctx context.Context, ds substrate.Dataset, changes []substrate.Change) ([]changeRow, error) {
-	rows := make([]changeRow, len(changes))
+func annotateChanges(ctx context.Context, ds substrate.Dataset, changes []substrate.Change) ([]substrate.ChangeRow, error) {
+	rows := make([]substrate.ChangeRow, len(changes))
 	for i := range changes {
 		rows[i].Change = changes[i]
 	}
@@ -93,7 +85,7 @@ func (h *handler) getChangesPage(w http.ResponseWriter, r *http.Request, ds subs
 	}
 	// One storage read per page: every row the filter matches is readable, so
 	// the page the query returns is the page the client gets.
-	kept := []changeRow{}
+	kept := []substrate.ChangeRow{}
 	cur := before
 	exhausted := false
 	changes, err := ops.ChangesBefore(r.Context(), cur, f, first)
@@ -121,19 +113,18 @@ func (h *handler) getChangesPage(w http.ResponseWriter, r *http.Request, ds subs
 	// `head` and `generation` are the watch handoff, as on a list envelope:
 	// `watch?from={head}&generation={generation}` tails what this page did not
 	// hold.
-	body := map[string]any{"changes": kept, "head": head.Seq, "generation": head.Generation}
+	body := substrate.ChangePage{Changes: kept, Head: head.Seq, Generation: head.Generation}
 	switch {
 	case len(kept) > first:
 		// Overshoot: return the first `first` readable rows and set the cursor to
 		// the LAST returned row's seq, so the walk resumes strictly below it —
 		// the trimmed readable rows are re-fetched next page, never skipped.
-		kept = kept[:first]
-		body["changes"] = kept
-		body["cursor"] = kept[first-1].Seq
+		body.Changes = kept[:first]
+		body.Cursor = kept[first-1].Seq
 	case !exhausted:
 		// A full page with more rows below: resume under the oldest seq
 		// consumed.
-		body["cursor"] = cur
+		body.Cursor = cur
 	}
 	writeJSON(w, http.StatusOK, body)
 }

@@ -41,6 +41,14 @@ type TokenInfo struct {
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 }
 
+// MintedToken is what a login and a `POST /tokens` answer with: the token
+// record and its secret, shown this once. Registration answers the same two
+// fields with the recovery material beside them.
+type MintedToken struct {
+	Token  TokenInfo `json:"token"`
+	Secret string    `json:"secret"`
+}
+
 // TOTPEnrollment is a candidate second factor: the base32 seed and the
 // otpauth:// URI a password manager imports. Issuing one creates NOTHING
 // durable — the caller proves possession by returning the seed with one code,

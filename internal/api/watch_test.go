@@ -177,7 +177,7 @@ func seedPeople(ds *fakeDataset, n int) int64 {
 // a recorder because the failure it guards against is a stream that OPENS on
 // a bad cursor: a 200 arrives as soon as the bookmark flushes and is reported
 // as the status it is, where a recorder would wait on the tail forever.
-func resumeRefusal(t *testing.T, srv *httptest.Server, path, token string) (int, errorPayload) {
+func resumeRefusal(t *testing.T, srv *httptest.Server, path, token string) (int, substrate.ErrorPayload) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -192,9 +192,9 @@ func resumeRefusal(t *testing.T, srv *httptest.Server, path, token string) (int,
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusGone {
-		return resp.StatusCode, errorPayload{}
+		return resp.StatusCode, substrate.ErrorPayload{}
 	}
-	var env errorEnvelope
+	var env substrate.ErrorEnvelope
 	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
 		t.Fatalf("decode the 410 body: %v", err)
 	}
@@ -203,7 +203,7 @@ func resumeRefusal(t *testing.T, srv *httptest.Server, path, token string) (int,
 
 // wantReset asserts a 410 `compacted` problem object names the head and
 // generation the client re-lists from.
-func wantReset(t *testing.T, status int, got errorPayload, head int64, generation string) {
+func wantReset(t *testing.T, status int, got substrate.ErrorPayload, head int64, generation string) {
 	t.Helper()
 	if status != http.StatusGone || got.Code != codeCompacted {
 		t.Fatalf("status %d code %q, want 410 %s", status, got.Code, codeCompacted)

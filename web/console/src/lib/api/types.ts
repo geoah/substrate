@@ -34,6 +34,19 @@ export interface ProblemDetail {
   message: string
 }
 
+/** The refusal inside the REST error envelope (`substrate.ErrorPayload`,
+ * served as `{error: ErrorPayload}`). `head` and `generation` ride a
+ * `compacted` refusal only: the changelog head and history generation to
+ * re-list from and resume at. */
+export interface ErrorPayload {
+  code: Exclude<ErrorCode, "network">
+  message: string
+  problems?: string[]
+  problemDetails?: ProblemDetail[]
+  head?: number
+  generation?: string
+}
+
 /** The one error shape every call rejects with: the REST envelope's
  * `{code, message, problems, problemDetails}` plus the HTTP status that
  * carried it. */
@@ -136,12 +149,15 @@ export function readReference(
   return { path, properties }
 }
 
+/** One property's provenance (`substrate.PropertyMeta`). Every field is
+ * omitted at its zero value, so a row with no recorded manager carries
+ * neither `manager` nor `updatedAt`. */
 export interface PropertyMeta {
-  manager: string
+  manager?: string
   /** The manager's standing against recompute: `machine` may be replaced,
    * `owner` and `bundle` hold. Absent on rows written before the tiers. */
   tier?: "owner" | "bundle" | "machine"
-  updatedAt: string
+  updatedAt?: string
   alternatives?: PropertyAlternative[]
 }
 
@@ -174,8 +190,8 @@ export interface PutInput {
 export interface Page<T = SubstrateRecord> {
   records: T[]
   cursor?: string
-  head?: number
-  generation?: string
+  head: number
+  generation: string
 }
 
 /** The envelope every OPERATIONAL list answers with — tokens, the catalog,
@@ -268,8 +284,8 @@ export interface ChangeRow extends Change {
 export interface ChangePage {
   changes: ChangeRow[]
   cursor?: number
-  head?: number
-  generation?: string
+  head: number
+  generation: string
 }
 
 /** One predicate of the filter grammar (`substrate.Cond`). The console writes
@@ -286,14 +302,19 @@ export interface Cond {
   exists?: boolean
 }
 
-/** The subset of `substrate.Filter` the console writes (`?filter=` —
- * URL-encoded JSON). A state property filters through `properties` like any
+/** The filter grammar (`substrate.Filter`, `?filter=` as URL-encoded JSON).
+ * The console writes `properties` and `labels`; the rest rides along so the
+ * mirror is whole. A state property filters through `properties` like any
  * other. `kinds` is refused on a collection read (the path names the kind) and
- * is how a repository-wide GraphQL list narrows. */
+ * is how a repository-wide GraphQL list narrows; `implements` intersects with
+ * it; `deleted` absent means live records only. */
 export interface RecordFilter {
   kinds?: string[]
+  implements?: string
+  ids?: string[]
   properties?: Record<string, Cond>
   labels?: Record<string, Cond>
+  deleted?: boolean
 }
 
 /** One reverse pointer (`substrate.IncomingReference`): some other live
@@ -382,11 +403,11 @@ export interface KindInfo {
   source: string
   /** What the kind is for, as its declaration says it — a sentence or two,
    * read above the collection. Empty when the declaration carries none. */
-  description?: string
+  description: string
   /** The reconciled declaration — the `data` of the `substrate.reamde.dev/core/kind`
    * manifest that declares it (`authority`, `package`, `names`,
    * `properties`, …), key order lost to jsonb. */
-  definition?: Record<string, unknown>
+  definition: Record<string, unknown>
 }
 
 /** One token record's metadata — never the hash, never the secret. A token has
@@ -407,6 +428,35 @@ export interface MintedToken {
   secret: string
 }
 
+/** What an OAuth start answers: the provider consent URL to open. */
+export interface OAuthStarted {
+  url: string
+}
+
+/** What a public webhook door answers with `202`: the fire id the delivery
+ * runs under. The callable's output is never a response. */
+export interface WebhookAccepted {
+  fire: string
+}
+
+/** What a trigger replay answers: the seq the cursor was reset to. */
+export interface TriggerReplayed {
+  from: number
+}
+
+/** What a trigger run, wake and retry answer alike: how many deliveries the
+ * verb ran. Zero is an answer, not an error. */
+export interface TriggerRan {
+  ran: number
+}
+
+/** What a function call answers: the body's output, verbatim (`null`
+ * included), and how many effects it applied. */
+export interface FunctionCalled {
+  output: unknown
+  effects: number
+}
+
 /** The TOTP enrollment a registration or a re-enrollment hands back: the seed
  * the caller holds until it proves one code, and the URI an authenticator
  * reads. Nothing is written until the code comes back. */
@@ -420,20 +470,22 @@ export interface TOTPEnrollment {
  * of the core meta-kinds, and `records` are the data rows the same install
  * writes beside them. */
 export interface BundleClosure {
-  kinds?: string[]
+  /** Every list is always written, and each is `null` rather than `[]` when
+   * the closure has none of that member: the catalog appends to a Go slice
+   * it never allocates. Read them with `?? []`. */
+  kinds: string[] | null
   /** Each kind's declared description, keyed by identity — what the closure's
    * kinds ARE before an install has put them in the registry. Absent for a
    * kind that declares none, and from an older server whole. */
   kindDescriptions?: Record<string, string>
-  functions?: string[]
-  agents?: string[]
-  /** Record mappings (source-kind → subject-kind projections). Optional so the
-   * detail surface renders them when a catalog grows the list. */
-  mappings?: string[]
+  functions: string[] | null
+  agents: string[] | null
+  /** Record mappings (source-kind → subject-kind projections). */
+  mappings: string[] | null
   /** The DATA records the install writes after the declarations land — an
    * extension's triggers, the llm example's keyless provider rows. Ordinary
    * records afterward, and often the ones the reader has to go and edit. */
-  records?: ShippedRecord[]
+  records: ShippedRecord[] | null
 }
 
 /** One data record a bundle ships. A data record is addressed by its KIND and
@@ -667,11 +719,11 @@ export interface BundleStatus {
   /** What stands between the bundle and every runtime path it ships. Omitted
    * when ready; lifecycle is separate from setup. */
   setup?: SetupItem[]
-  accounts?: number
-  functions?: number
-  kinds?: number
+  accounts: number
+  functions: number
+  kinds: number
   /** Live data rows across the owned package — what a purge would tombstone. */
-  liveRecords?: number
+  liveRecords: number
   quarantined?: boolean
   /** The admission error that quarantined the bundle. */
   quarantineReason?: string
@@ -684,4 +736,15 @@ export interface BundleStatus {
   /** True when the copy's declarations no longer match what the import
    * landed: something edited, added or removed since. */
   modified?: boolean
+}
+
+/** What an uninstall answers. The bundle has no status afterwards, so the
+ * reply is the fact alone. */
+export interface BundleUninstalled {
+  uninstalled: boolean
+}
+
+/** What a purge answers: how many live data rows it tombstoned. */
+export interface BundlePurged {
+  purged: number
 }

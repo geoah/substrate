@@ -71,7 +71,13 @@ function bundle(over: Partial<CatalogItem>): CatalogItem {
     description: "",
     version: 1,
     tier: "provider",
-    closure: {},
+    closure: {
+      kinds: null,
+      functions: null,
+      agents: null,
+      mappings: null,
+      records: null,
+    },
     installed: true,
     ...over,
   }
@@ -85,7 +91,13 @@ const PEOPLE = bundle({
   description: "The shipped vocabulary for humans.",
   version: 1,
   tier: "sample",
-  closure: { kinds: ["samples.substrate.reamde.dev/people/person"] },
+  closure: {
+    functions: null,
+    agents: null,
+    mappings: null,
+    records: null,
+    kinds: ["samples.substrate.reamde.dev/people/person"],
+  },
 })
 
 const GOOGLE = bundle({
@@ -105,6 +117,9 @@ const GOOGLE = bundle({
     "samples.substrate.reamde.dev/messaging",
   ],
   closure: {
+    agents: null,
+    mappings: null,
+    records: null,
     kinds: [
       "providers.substrate.reamde.dev/google/config",
       "providers.substrate.reamde.dev/google/contact",
@@ -122,6 +137,8 @@ function kind(over: Partial<KindInfo>): KindInfo {
     version: 1,
     plural: "persons",
     source: "builtin",
+    description: "",
+    definition: {},
     ...over,
   }
 }
@@ -153,6 +170,8 @@ function status(over: Partial<BundleStatus>): BundleStatus {
     package: "people",
     installed: true,
     enabled: true,
+    accounts: 0,
+    functions: 0,
     kinds: 1,
     liveRecords: 0,
     ...over,

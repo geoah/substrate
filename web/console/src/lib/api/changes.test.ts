@@ -5,10 +5,9 @@ import {
   changesSearch,
   parseWatchLine,
   seekBoundary,
-  type ChangesPage,
   type SeekProbe,
 } from "./changes"
-import type { ChangeRow } from "./types"
+import type { ChangePage, ChangeRow } from "./types"
 
 const T0 = Date.parse("2026-08-05T12:00:00Z")
 
@@ -67,12 +66,13 @@ describe("changesInfiniteOptions paging", () => {
   const opts = changesInfiniteOptions({}, { first: 3 })
   // Every page names the history generation it was read in; the continuation
   // carries it back so the next page walks the same history.
-  const page = (changes: ChangeRow[], cursor?: number): ChangesPage => ({
+  const page = (changes: ChangeRow[], cursor?: number): ChangePage => ({
     changes,
     cursor,
+    head: changes[0]?.seq ?? 0,
     generation: "gen-1",
   })
-  const next = (p: ChangesPage) =>
+  const next = (p: ChangePage) =>
     opts.getNextPageParam(p, [p], { before: 0 }, [{ before: 0 }])
 
   it("continues on the server cursor, not on a full page", () => {

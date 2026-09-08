@@ -36,6 +36,36 @@ var (
 	ErrUnavailable = errors.New("substrate: not available yet")
 )
 
+// ErrorEnvelope is the one body every refused request answers with.
+type ErrorEnvelope struct {
+	Error ErrorPayload `json:"error"`
+}
+
+// ErrorPayload is the refusal itself: a code from the closed wire set, a
+// message, and for a validation refusal the problems twice, as the engine's
+// strings and split into ProblemDetails. Head and Generation ride a
+// `compacted` refusal only: the changelog head and history generation the
+// client re-lists from and resumes at, so a refused cursor names its
+// replacement. Head is a pointer so an empty changelog's 0 is still written.
+type ErrorPayload struct {
+	Code           string          `json:"code"`
+	Message        string          `json:"message"`
+	Problems       []string        `json:"problems,omitempty"`
+	ProblemDetails []ProblemDetail `json:"problemDetails,omitempty"`
+	Head           *int64          `json:"head,omitempty"`
+	Generation     string          `json:"generation,omitempty"`
+}
+
+// ProblemDetail is the field-addressable form of one validation problem. The
+// engine emits problems as "path: message" strings (`props.name: required`);
+// the API splits each on its first ": " so a form maps a problem to the input
+// it concerns without parsing prose. A string without the separator keeps its
+// whole text as the message and an empty path.
+type ProblemDetail struct {
+	Path    string `json:"path"`
+	Message string `json:"message"`
+}
+
 // ValidationError carries per-field detail for the UI's YAML editor.
 type ValidationError struct {
 	Problems []string

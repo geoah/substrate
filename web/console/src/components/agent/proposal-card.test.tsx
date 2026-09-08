@@ -53,6 +53,7 @@ const KINDS: KindInfo[] = [
     version: 1,
     plural: "tasks",
     source: "installed",
+    description: "",
     definition: { properties: { summary: { type: "string" } } },
   },
 ]

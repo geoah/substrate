@@ -79,6 +79,26 @@ type AutomationOps interface {
 	CallFunction(ctx context.Context, name string, args any) (any, int, error)
 }
 
+// TriggerReplayed is the reply to a replay: the seq the trigger's cursor was
+// reset to, echoed so the caller sees what the dispatcher will walk from.
+type TriggerReplayed struct {
+	From int64 `json:"from"`
+}
+
+// TriggerRan is the reply to a run, a wake and a retry alike: how many
+// deliveries the verb ran. Zero is an answer (nothing was due), not an error.
+type TriggerRan struct {
+	Ran int `json:"ran"`
+}
+
+// FunctionCalled is the reply to a call: the function's output, verbatim, and
+// how many effects it applied under its own actor. Output is whatever the body
+// returned, so it is always on the wire, null included.
+type FunctionCalled struct {
+	Output  any `json:"output"`
+	Effects int `json:"effects"`
+}
+
 // TriggerDispatcher is the dispatcher pass the service loop drives, an
 // optional Dataset extension (see Dataset): each enabled trigger drains its
 // changelog backlog to head or fires its due occurrence. It is separate from

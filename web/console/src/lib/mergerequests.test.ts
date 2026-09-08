@@ -97,6 +97,7 @@ const personType: KindInfo = {
   version: 0,
   plural: "people",
   source: "installed",
+  description: "",
   definition: {
     properties: {
       name: { type: "string", description: "the person's name" },

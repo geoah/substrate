@@ -30,7 +30,7 @@ func retentionHorizon() int64 { return 0 }
 
 // ndjson control-frame rule: a line WITHOUT `seq` is a control
 // frame identified by its key. `bookmark` opens a stream (with the history
-// `generation` beside it), `{}` is an idle heartbeat, and the errorEnvelope
+// `generation` beside it), `{}` is an idle heartbeat, and the substrate.ErrorEnvelope
 // (`{"error":{…}}`) is the reserved TERMINAL error frame: a mid-stream
 // failure travels as one problem object rather than a silent EOF.
 //
@@ -38,7 +38,7 @@ func retentionHorizon() int64 { return 0 }
 // swallowed: there is no one left to tell.
 func writeWatchError(enc *json.Encoder, flusher http.Flusher, err error) {
 	_, p := problemFor(err)
-	if encErr := enc.Encode(errorEnvelope{Error: p}); encErr != nil {
+	if encErr := enc.Encode(substrate.ErrorEnvelope{Error: p}); encErr != nil {
 		return
 	}
 	flusher.Flush()
@@ -143,7 +143,7 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 			if err != nil {
 				return err
 			}
-			rows := make([]changeRow, len(changes))
+			rows := make([]substrate.ChangeRow, len(changes))
 			for i := range changes {
 				rows[i].Change = changes[i]
 			}

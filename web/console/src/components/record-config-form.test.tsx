@@ -23,6 +23,7 @@ const accountKind: KindInfo = {
   version: 0,
   plural: "accounts",
   source: "installed",
+  description: "",
   definition: {
     properties: {
       email: { type: "email", writer: "oauth" },

@@ -56,7 +56,7 @@ func TestRegisterThenLogin(t *testing.T) {
 	rec = env.do(t, http.MethodPost, loginPath, "",
 		loginBody("ada", "correct-horse-battery-staple", fakeCode("ada")))
 	wantStatus(t, rec, http.StatusCreated)
-	if login := decodeJSON[tokenResponse](t, rec); login.Secret == out.Secret {
+	if login := decodeJSON[substrate.MintedToken](t, rec); login.Secret == out.Secret {
 		t.Fatal("login handed back the registration's secret")
 	}
 }

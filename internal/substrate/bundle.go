@@ -187,6 +187,24 @@ type BundleOps interface {
 	TypesImplementing(ctx context.Context, trait string) ([]KindInfo, error)
 }
 
+// BundleUninstalled is the reply to an uninstall. The bundle has no status
+// afterwards (uninstall tears its rows down), so the reply is the fact alone.
+type BundleUninstalled struct {
+	Uninstalled bool `json:"uninstalled"`
+}
+
+// BundlePurged is the reply to a purge: how many live data rows of the owned
+// package it tombstoned.
+type BundlePurged struct {
+	Purged int `json:"purged"`
+}
+
+// OAuthStarted is the reply to StartOAuth: the provider consent URL the
+// browser visits next.
+type OAuthStarted struct {
+	URL string `json:"url"`
+}
+
 // BundleInstaller is the atomic install verb an installable target must
 // offer, an optional Dataset extension (see Dataset): the vocabulary closure
 // AND the shipped delivery wiring admitted as ONE repository transaction, so

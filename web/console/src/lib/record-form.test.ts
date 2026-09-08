@@ -27,6 +27,7 @@ function typeWith(
     version: 0,
     plural: "accounts",
     source: "installed",
+    description: "",
     definition: { properties },
   }
 }

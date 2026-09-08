@@ -28,6 +28,7 @@ const agentKind: KindInfo = {
   version: 0,
   plural: "agents",
   source: "builtin",
+  description: "",
   definition: {
     properties: {
       prompt: {
@@ -61,6 +62,7 @@ const wideKind: KindInfo = {
   version: 0,
   plural: "wides",
   source: "builtin",
+  description: "",
   definition: {
     properties: {
       apiKey: { type: "secret", description: "bearer for the endpoint" },

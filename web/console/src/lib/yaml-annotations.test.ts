@@ -84,6 +84,7 @@ describe("keyDocsOf", () => {
     version: 0,
     plural: "people",
     source: "builtin",
+    description: "",
     definition: {
       properties: {
         name: { type: "string", description: "the full name, one string" },

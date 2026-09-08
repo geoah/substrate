@@ -327,8 +327,11 @@ discharged.
   `web/console/src/lib/api/types.ts` is written to match the structs in
   `internal/substrate`; nothing generates it. `wire.golden.json` is where the
   two meet: `internal/substrate/wire_test.go` writes the field names Go
-  serializes, and a vitest asserts the TypeScript carries exactly those. Move a
-  wire field and the Go test fails; regenerate with
+  serializes and whether each is always present (`omitempty` is optional),
+  and a vitest asserts the TypeScript carries exactly those, `?` where the
+  server may omit and nowhere else. Every interface `types.ts` exports is
+  pinned, so an API reply is a named struct in `internal/substrate`, never a
+  bare `map[string]any`. Move a wire field and the Go test fails; regenerate with
   `go test ./internal/substrate/ -run TestWireGolden -update` and the console's
   test fails until `types.ts` follows. Do not edit the golden by hand.
 - **Comments carry constraints, not narration.** Say why a thing must be so,

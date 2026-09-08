@@ -306,7 +306,7 @@ func bundleFromDocs(docs []map[string]any) (*Bundle, error) {
 			b.Authority = mstr(data, "authority")
 			b.Package = mstr(data, "package")
 			b.Description = mstr(data, "description")
-			b.Inputs = mmap(data, "inputs")
+			b.Inputs = catalogInputs(mmap(data, "inputs"))
 			for _, rv := range mslice(data, "requires") {
 				b.Requires = append(b.Requires, fmt.Sprint(rv))
 			}
@@ -622,6 +622,24 @@ func mslice(m any, key string) []any {
 		return nil
 	}
 	out, _ := mm[key].([]any)
+	return out
+}
+
+// catalogInputs types the manifest's `inputs:` map. The loader has already
+// held each input to its closed key set, so a key it does not name is not
+// dropped here by accident: it never reached this point.
+func catalogInputs(raw map[string]any) map[string]substrate.CatalogInput {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make(map[string]substrate.CatalogInput, len(raw))
+	for name, v := range raw {
+		out[name] = substrate.CatalogInput{
+			Kind:        mstr(v, "kind"),
+			Inject:      mstr(v, "inject"),
+			Description: mstr(v, "description"),
+		}
+	}
 	return out
 }
 

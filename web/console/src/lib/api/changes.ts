@@ -23,7 +23,12 @@ import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query"
 
 import { rootPath, envelopeError, request } from "./http"
 import { getToken, sessionExpired } from "./session"
-import { ApiError, type ChangeRow, type ProblemDetail } from "./types"
+import {
+  ApiError,
+  type ChangePage,
+  type ChangeRow,
+  type ProblemDetail,
+} from "./types"
 
 // ── filter ──────────────────────────────────────────────────────────────────
 
@@ -72,20 +77,6 @@ function filterKey(filter: ChangeFeedFilter) {
 
 export const CHANGELOG_PAGE = 200
 
-/** One history page: the rows plus the server's CONTINUATION cursor (the
- * oldest seq on the page). The cursor is the next
- * `before` — it advances past scope-filtered rows, so a short page is NOT the
- * end; the walk continues while a cursor comes back and stops when it is
- * omitted (exhausted). */
-export interface ChangesPage {
-  changes: ChangeRow[]
-  cursor?: number
-  /** The changelog head at the read and the history generation it belongs
-   * to: what a tail opened after this page resumes with. */
-  head?: number
-  generation?: string
-}
-
 export async function fetchChangesPage(opts: {
   /** Rows strictly below this seq; absent/0 = from the head. */
   before?: number
@@ -95,27 +86,23 @@ export async function fetchChangesPage(opts: {
   first?: number
   filter?: ChangeFeedFilter
   signal?: AbortSignal
-}): Promise<ChangesPage> {
+}): Promise<ChangePage> {
   const params = changesSearch(opts.filter)
   params.set("first", String(opts.first ?? CHANGELOG_PAGE))
   if (opts.before && opts.before > 0) {
     params.set("before", String(opts.before))
     if (opts.generation) params.set("generation", opts.generation)
   }
-  const res = await request<{
-    changes?: ChangeRow[]
-    cursor?: number
-    head?: number
-    generation?: string
-  }>("GET", `${rootPath("changes")}?${params}`, undefined, {
-    signal: opts.signal,
-  })
-  return {
-    changes: res.changes ?? [],
-    cursor: res.cursor,
-    head: res.head,
-    generation: res.generation,
-  }
+  // The page is the wire shape itself: the cursor is the CONTINUATION (the
+  // oldest seq on the page, the next `before`), and it advances past
+  // scope-filtered rows, so a short page is NOT the end; the walk continues
+  // while a cursor comes back and stops when it is omitted.
+  return request<ChangePage>(
+    "GET",
+    `${rootPath("changes")}?${params}`,
+    undefined,
+    { signal: opts.signal }
+  )
 }
 
 export interface ChangesFeedOpts {

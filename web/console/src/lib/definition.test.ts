@@ -25,6 +25,7 @@ const person: KindInfo = {
   version: 0,
   plural: "people",
   source: "builtin",
+  description: "",
   definition: {
     authority: "samples.substrate.reamde.dev",
     package: "people",
@@ -67,6 +68,7 @@ const event: KindInfo = {
   version: 0,
   plural: "calendarevents",
   source: "builtin",
+  description: "",
   definition: { traits: ["temporal(range)"], properties: {} },
 }
 
@@ -91,7 +93,7 @@ describe("declaredProperties", () => {
   })
 
   it("handles a kind with no definition at all", () => {
-    expect(declaredProperties({ ...person, definition: undefined })).toEqual([])
+    expect(declaredProperties({ ...person, definition: {} })).toEqual([])
   })
 })
 
@@ -158,6 +160,8 @@ describe("kind resolution", () => {
     version: 0,
     plural: "organizations",
     source: "builtin",
+    description: "",
+    definition: {},
   }
   const kinds = [person, org, event]
 
@@ -231,6 +235,7 @@ describe("declaration detail", () => {
     version: 0,
     plural: "configs",
     source: "installed",
+    description: "",
     definition: {
       properties: {
         token: { type: "secret", required: true },

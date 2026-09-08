@@ -12,6 +12,8 @@ function kindInfo(overrides: Partial<KindInfo>): KindInfo {
     version: 0,
     plural: "persons",
     source: "builtin",
+    description: "",
+    definition: {},
     ...overrides,
   }
 }

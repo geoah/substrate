@@ -102,10 +102,10 @@ export function landedCatalog(item: CatalogItem, home: string): CatalogItem {
       : undefined,
     closure: {
       ...closure,
-      kinds: closure.kinds?.map(rehome),
-      functions: closure.functions?.map(rehome),
-      agents: closure.agents?.map(rehome),
-      mappings: closure.mappings?.map(rehome),
+      kinds: closure.kinds?.map(rehome) ?? null,
+      functions: closure.functions?.map(rehome) ?? null,
+      agents: closure.agents?.map(rehome) ?? null,
+      mappings: closure.mappings?.map(rehome) ?? null,
       kindDescriptions: closure.kindDescriptions
         ? Object.fromEntries(
             Object.entries(closure.kindDescriptions).map(([k, v]) => [
@@ -114,7 +114,8 @@ export function landedCatalog(item: CatalogItem, home: string): CatalogItem {
             ])
           )
         : undefined,
-      records: closure.records?.map((r) => ({ ...r, kind: rehome(r.kind) })),
+      records:
+        closure.records?.map((r) => ({ ...r, kind: rehome(r.kind) })) ?? null,
     },
   }
 }
