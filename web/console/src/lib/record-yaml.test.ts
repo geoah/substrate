@@ -431,6 +431,7 @@ const taskKind: KindInfo = {
         kind: "samples.substrate.reamde.dev/people/person",
         properties: { round: { type: "int" } },
       },
+      attachment: { type: "blobref" },
     },
   },
 }
@@ -464,6 +465,37 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
     expect(
       validateApplyDoc(yaml, taskKind).filter((p) => p.severity === "error")
     ).toHaveLength(0)
+  })
+
+  it("passes the blob manifest a read handed back, and sends it whole", () => {
+    // A blob-ref reads as its manifest and stores as the digest; the server
+    // takes the digest out of the object, so the edit seed of a record with
+    // an attachment validates clean and applies back unchanged.
+    const digest = "blob-sha256-" + "a".repeat(64)
+    const attached: SubstrateRecord = {
+      ...openTask,
+      properties: {
+        ...openTask.properties,
+        attachment: {
+          digest,
+          name: "layout.png",
+          mediaType: "image/png",
+          size: 2048,
+          status: "stored",
+        },
+      },
+    }
+    const yaml = applyManifestYAML(attached, taskKind)
+    expect(yaml).toContain("size: 2048")
+    expect(
+      validateApplyDoc(yaml, taskKind, { record: attached }).filter(
+        (p) => p.severity === "error"
+      )
+    ).toHaveLength(0)
+    const parsed = parseApplyDoc(yaml).value!
+    expect(toPutInput(parsed, taskKind).properties?.attachment).toEqual(
+      attached.properties.attachment
+    )
   })
 
   it("refuses a kind that is not this collection's", () => {

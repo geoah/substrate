@@ -82,8 +82,20 @@ const wideKind: KindInfo = {
       },
       hidden: { type: "string", writer: "oauth" },
       code: { type: "string", pattern: "^[a-z]{3}$" },
+      attachment: { type: "blobref" },
+      attachments: { type: "blobref", repeated: true },
     },
   },
+}
+
+const DIGEST = "blob-sha256-" + "a".repeat(64)
+/** What a read hands back for a blob-ref: the manifest, never the bytes. */
+const MANIFEST = {
+  digest: DIGEST,
+  name: "layout.png",
+  mediaType: "image/png",
+  size: 2048,
+  status: "stored",
 }
 
 function spec(kind: KindInfo, name: string): PropSpec {
@@ -292,6 +304,40 @@ describe("checkValue", () => {
         round: 2,
       })
     ).toMatch(/not a declared link property/)
+  })
+})
+
+describe("blobref: the read shape applies back", () => {
+  it("admits the digest string and the manifest a read handed back", () => {
+    const one = spec(wideKind, "attachment")
+    expect(checkValue(one, DIGEST)).toBeUndefined()
+    expect(checkValue(one, MANIFEST)).toBeUndefined()
+    // A blob whose manifest is gone reads as the bare {digest}.
+    expect(checkValue(one, { digest: DIGEST })).toBeUndefined()
+    const many = spec(wideKind, "attachments")
+    expect(checkValue(many, [MANIFEST, DIGEST])).toBeUndefined()
+  })
+
+  it("refuses an object that names no blob, on the item it sits in", () => {
+    const one = spec(wideKind, "attachment")
+    expect(checkValue(one, { name: "layout.png" })).toMatch(/under `digest`/)
+    expect(checkValue(one, { digest: 7 })).toMatch(/under `digest`/)
+    expect(checkValue(one, { digest: "sha256:abc" })).toMatch(/blob digest/)
+    expect(checkValue(one, 7)).toMatch(/string/)
+    expect(checkValue(spec(wideKind, "attachments"), [DIGEST, {}])).toMatch(
+      /\[1\]/
+    )
+  })
+
+  it("edits as the digest: the manifest's other keys are not the author's", () => {
+    expect(formatValue(spec(wideKind, "attachment"), MANIFEST)).toBe(DIGEST)
+    expect(formatValue(spec(wideKind, "attachment"), DIGEST)).toBe(DIGEST)
+    expect(formatValue(spec(wideKind, "attachments"), [MANIFEST, DIGEST])).toBe(
+      `${DIGEST}\n${DIGEST}`
+    )
+    expect(parseValue(spec(wideKind, "attachment"), DIGEST)).toEqual({
+      value: DIGEST,
+    })
   })
 })
 

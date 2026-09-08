@@ -508,10 +508,13 @@ live in the repository's content-addressed blob store
 (`PUT /api/v1/blobs`, `GET /api/v1/blobs/{digest}`), and their metadata is an
 ordinary `substrate.reamde.dev/core/blob` record whose id **is** the digest, so the same
 bytes always mint the same blob. A read resolves the ref to
-`{digest, name, mediaType, size, status}`, never to the bytes inline. The
-manifest is always a record in Postgres; where the BYTES sit is an operator's
-choice of backend ([the blob store](operations.md#the-blob-store)), and nothing
-on the wire changes with it.
+`{digest, name, mediaType, size, status}`, never to the bytes inline. A write
+accepts that same object and uses only its `digest`, so a document read with
+`get -o yaml` applies back unchanged; the other keys are the manifest's own,
+and writing them changes nothing. The manifest is always a record in Postgres;
+where the BYTES sit is an operator's choice of backend
+([the blob store](operations.md#the-blob-store)), and nothing on the wire
+changes with it.
 
 A blob's `name` and `mediaType` are both **optional and descriptive**. The
 upload says them — the name as `?name=` or a `Content-Disposition` filename,

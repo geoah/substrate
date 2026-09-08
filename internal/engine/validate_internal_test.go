@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -193,5 +194,58 @@ func TestCoerceDatetimeStaysInPostgresRange(t *testing.T) {
 	var ve *substrate.ValidationError
 	if !errors.As(err, &ve) || len(ve.Problems) != 1 || !strings.Contains(ve.Problems[0], "props.at") {
 		t.Fatalf("got %v, want a ValidationError naming props.at", err)
+	}
+}
+
+// The blob-ref contract: a read hands back the manifest ({digest, name,
+// mediaType, size, status}) and the store holds the digest string, so a write
+// carrying the read shape takes its `digest` and nothing else. Resolved
+// metadata is not writable authority: a `name` or `size` in the object changes
+// nothing, and an object with no digest names no blob.
+func TestCoerceBlobRefTakesTheDigestFromTheReadShape(t *testing.T) {
+	digest := substrate.BlobDigestPrefix + strings.Repeat("a", 64)
+	other := substrate.BlobDigestPrefix + strings.Repeat("b", 64)
+	manifest := map[string]any{
+		"digest": digest, "name": "layout.png", "mediaType": "image/png",
+		"size": json.Number("2048"), "status": "stored",
+	}
+	single := &vocabulary.Property{Name: "attachment", Datatype: vocabulary.DatatypeBlobRef}
+	repeated := &vocabulary.Property{Name: "attachments", Datatype: vocabulary.DatatypeBlobRef, Repeated: true}
+
+	for _, tc := range []struct {
+		name string
+		p    *vocabulary.Property
+		in   any
+		want any
+	}{
+		{"the digest string", single, digest, digest},
+		{"the read shape", single, manifest, digest},
+		{"the bare manifest of a missing blob", single, map[string]any{"digest": digest}, digest},
+		{"a list of digests", repeated, []any{digest, other}, []any{digest, other}},
+		{"a list mixing the two shapes", repeated, []any{manifest, other}, []any{digest, other}},
+	} {
+		got, err := coerceValue(tc.p, tc.in)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Fatalf("%s: got %#v, want %#v", tc.name, got, tc.want)
+		}
+	}
+	for _, tc := range []struct {
+		name string
+		p    *vocabulary.Property
+		in   any
+		want string
+	}{
+		{"an object with no digest", single, map[string]any{"name": "layout.png"}, `under "digest"`},
+		{"an object whose digest is not a string", single, map[string]any{"digest": 7}, `under "digest"`},
+		{"an object whose digest is malformed", single, map[string]any{"digest": "sha256:abc"}, "expected a blob digest"},
+		{"a number", single, 7, "expected a string"},
+		{"a list item with no digest", repeated, []any{map[string]any{"size": json.Number("1")}}, "[0]"},
+	} {
+		if _, err := coerceValue(tc.p, tc.in); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("%s: got %v, want it to name %q", tc.name, err, tc.want)
+		}
 	}
 }

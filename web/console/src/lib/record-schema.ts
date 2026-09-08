@@ -587,6 +587,18 @@ export function checkItem(spec: PropSpec, value: unknown): string | undefined {
     return undefined
   }
 
+  // A blob-ref READS as its manifest ({digest, name, mediaType, size,
+  // status}) and STORES as the digest string, so a document read and applied
+  // back carries the object. The server takes the digest and ignores the
+  // rest, and this mirror does the same.
+  if (spec.kind === "blobref" && isPlainObject(value)) {
+    const digest = value.digest
+    if (typeof digest !== "string") {
+      return "expected a blob digest (blob-sha256-<64 hex>) under `digest`"
+    }
+    return checkItem(spec, digest)
+  }
+
   if (typeof value !== "string") return "expected a string"
   const s = value
 
@@ -724,15 +736,34 @@ export function checkValue(spec: PropSpec, value: unknown): string | undefined {
 export function formatValue(spec: PropSpec, value: unknown): string {
   if (value === null || value === undefined) return ""
   if (controlFor(spec) === "secret") return ""
-  if (Array.isArray(value)) {
-    return value
+  // A blob-ref is edited as its digest: the manifest a read hands back is
+  // resolved metadata, and the write carries the digest alone either way.
+  const shown =
+    spec.kind === "blobref"
+      ? Array.isArray(value)
+        ? value.map(blobRefDigest)
+        : blobRefDigest(value)
+      : value
+  if (Array.isArray(shown)) {
+    return shown
       .map((v) =>
         typeof v === "object" && v !== null ? JSON.stringify(v) : String(v)
       )
       .join("\n")
   }
-  if (typeof value === "object") return JSON.stringify(value, null, 2)
-  return String(value)
+  if (typeof shown === "object") return JSON.stringify(shown, null, 2)
+  return String(shown)
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+/** The digest under a blob-ref's read shape, or the value as it came. */
+function blobRefDigest(value: unknown): unknown {
+  return isPlainObject(value) && typeof value.digest === "string"
+    ? value.digest
+    : value
 }
 
 export interface ParsedValue {
