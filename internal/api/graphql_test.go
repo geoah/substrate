@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -470,7 +471,7 @@ func TestGraphQLLinkDataReferenceIsItsOwnType(t *testing.T) {
 		}
 		got[field["name"].(string)] = name
 	}
-	for field, want := range map[string]string{"ref": "Reference", "since": "Int", "target": "Record"} {
+	for field, want := range map[string]string{"ref": "Reference", "since": "Long", "target": "Record"} {
 		if got[field] != want {
 			t.Fatalf("%s field %q = %q, want %q", "ConversationmessageAuthorReference", field, got[field], want)
 		}
@@ -714,8 +715,9 @@ func TestGraphQLLongScalarRoundTripsPast2e31(t *testing.T) {
 	}
 }
 
-// propertyType wraps repeated kinds in a LIST for every element type, and an
-// object property is JSON, not String.
+// propertyType wraps repeated kinds in a LIST for every element type, an
+// object property is JSON, not String, an int is the 64-bit Long scalar and a
+// decimal stays the exact digit String.
 func TestGraphQLPropertyTypesListAndObject(t *testing.T) {
 	widget := substrate.KindInfo{
 		Identity: "tools.substrate.reamde.dev/tools/widget", Name: "widget", Authority: "tools.substrate.reamde.dev",
@@ -725,6 +727,7 @@ func TestGraphQLPropertyTypesListAndObject(t *testing.T) {
 			"tags":    map[string]any{"type": "string", "repeated": true},
 			"address": map[string]any{"type": "object", "fields": map[string]any{"city": map[string]any{"type": "string"}}},
 			"count":   map[string]any{"type": "int"},
+			"price":   map[string]any{"type": "decimal"},
 		}},
 	}
 	schema, err := gql.BuildSchema([]substrate.KindInfo{widget})
@@ -738,8 +741,8 @@ func TestGraphQLPropertyTypesListAndObject(t *testing.T) {
 	fields := obj.Fields()
 
 	scores, ok := fields["scores"].Type.(*graphql.List)
-	if !ok || scores.OfType != graphql.Int {
-		t.Fatalf("repeated int `scores` = %v, want [Int]", fields["scores"].Type)
+	if !ok || scores.OfType.Name() != "Long" {
+		t.Fatalf("repeated int `scores` = %v, want [Long]", fields["scores"].Type)
 	}
 	tags, ok := fields["tags"].Type.(*graphql.List)
 	if !ok || tags.OfType != graphql.String {
@@ -748,8 +751,121 @@ func TestGraphQLPropertyTypesListAndObject(t *testing.T) {
 	if fields["address"].Type.Name() != "JSON" {
 		t.Fatalf("object `address` = %v, want the JSON scalar (not String)", fields["address"].Type)
 	}
-	if fields["count"].Type != graphql.Int {
-		t.Fatalf("scalar int `count` = %v, want Int", fields["count"].Type)
+	if fields["count"].Type.Name() != "Long" {
+		t.Fatalf("scalar int `count` = %v, want Long", fields["count"].Type)
+	}
+	if fields["price"].Type != graphql.String {
+		t.Fatalf("decimal `price` = %v, want String", fields["price"].Type)
+	}
+}
+
+const widgetRef = "tools.substrate.reamde.dev/tools/widget"
+
+// widgetKind declares the numeric shapes the scalar table carries: a scalar
+// int, a repeated int, a float and an exact decimal.
+func widgetKind() substrate.KindInfo {
+	return substrate.KindInfo{
+		Identity: widgetRef, Name: "widget", Authority: "tools.substrate.reamde.dev", Package: "tools",
+		Version: 1, Plural: "widgets", Source: "builtin",
+		Definition: map[string]any{"properties": map[string]any{
+			"count":  map[string]any{"type": "int"},
+			"scores": map[string]any{"type": "int", "repeated": true},
+			"ratio":  map[string]any{"type": "float"},
+			"price":  map[string]any{"type": "decimal"},
+		}},
+	}
+}
+
+// wireInt64 reads a JSON number out of a decoded GraphQL response. The test
+// decoder rides float64, which is exact up to 2^53-1, the bound under test.
+func wireInt64(t *testing.T, v any) int64 {
+	t.Helper()
+	f, ok := v.(float64)
+	if !ok {
+		t.Fatalf("value = %v (%T), want a JSON number", v, v)
+	}
+	return int64(f)
+}
+
+// An int property is the Long scalar. The engine admits |value| <= 2^53-1
+// (decision 0012), and graphql-go's 32-bit Int serialized every stored value
+// past 2^31-1 as null with no error. The bound holds on a scalar int, a
+// repeated int and a reference's link property, through a GraphQL put and
+// back; one past it is the engine's refusal, not a rounded value.
+func TestGraphQLIntPropertyRoundTripsSafeIntegers(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token("geoah")
+	ds := env.svc.datasets["geoah"]
+	ds.types = append(ds.types, widgetKind())
+
+	const maxSafe = int64(1<<53 - 1)
+	const message = "samples.substrate.reamde.dev/messaging/conversationmessage"
+	for _, n := range []int64{maxSafe, -maxSafe} {
+		env.gql(t, tok, `mutation ($in: JSON!) { put(input: $in) { id } }`,
+			map[string]any{"in": map[string]any{
+				"kind": widgetRef, "id": "w1",
+				"properties": map[string]any{"count": n, "scores": []int64{n, 1}, "price": "19.90"},
+			}})
+		env.gql(t, tok, `mutation ($in: JSON!) { put(input: $in) { id } }`,
+			map[string]any{"in": map[string]any{
+				"kind": message, "id": "m1",
+				"properties": map[string]any{
+					"text":   "hi",
+					"author": map[string]any{"ref": "samples.substrate.reamde.dev/people/person/p1", "since": n},
+				},
+			}})
+
+		res := env.gql(t, tok, `{
+			w: record(kind: "`+widgetRef+`", id: "w1") { ... on Widget { count scores price } }
+			m: record(kind: "`+message+`", id: "m1") { ... on Conversationmessage { author { since } } }
+		}`, nil)
+		w, _ := res.Data["w"].(map[string]any)
+		if got := wireInt64(t, w["count"]); got != n {
+			t.Fatalf("count read back as %d, want %d", got, n)
+		}
+		scores, _ := w["scores"].([]any)
+		if len(scores) != 2 || wireInt64(t, scores[0]) != n || wireInt64(t, scores[1]) != 1 {
+			t.Fatalf("scores read back as %v, want [%d 1]", w["scores"], n)
+		}
+		if w["price"] != "19.90" {
+			t.Fatalf("decimal price read back as %v (%T), want the digit string \"19.90\"", w["price"], w["price"])
+		}
+		m, _ := res.Data["m"].(map[string]any)
+		author, _ := m["author"].(map[string]any)
+		if got := wireInt64(t, author["since"]); got != n {
+			t.Fatalf("link property since read back as %d, want %d", got, n)
+		}
+	}
+
+	res := env.gqlRaw(t, tok, `mutation ($in: JSON!) { put(input: $in) { id } }`,
+		map[string]any{"in": map[string]any{
+			"kind": widgetRef, "id": "w1",
+			"properties": map[string]any{"count": maxSafe + 1},
+		}})
+	if len(res.Errors) == 0 || !strings.Contains(res.Errors[0].Message, "safe integer") {
+		t.Fatalf("put of 2^53 was not refused as a safe-integer violation: %v", res.Errors)
+	}
+}
+
+// A number in an inline JSON literal reaches the dataset as a number. It used
+// to arrive as the literal's AST string, so an inline `count: 5` failed the
+// engine's `expected a number` while the same value in a variable passed.
+func TestGraphQLInlineNumberLiteralStoresANumber(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token("geoah")
+	ds := env.svc.datasets["geoah"]
+	ds.types = append(ds.types, widgetKind())
+
+	res := env.gql(t, tok, `mutation { put(input: {kind: "`+widgetRef+`", id: "w1", properties: {count: 5, scores: [1, 2], ratio: 1.5}}) { ... on Widget { count } } }`, nil)
+	want := map[string]any{"count": float64(5), "scores": []any{float64(1), float64(2)}, "ratio": 1.5}
+	for name, v := range want {
+		if got := ds.lastPut.Properties[name]; !reflect.DeepEqual(got, v) {
+			t.Fatalf("inline %s reached the dataset as %#v, want the number %#v", name, got, v)
+		}
+	}
+	put, _ := res.Data["put"].(map[string]any)
+	if got := wireInt64(t, put["count"]); got != 5 {
+		t.Fatalf("count = %d, want 5", got)
 	}
 }
 

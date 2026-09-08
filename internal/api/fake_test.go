@@ -520,6 +520,47 @@ func (d *fakeDataset) normalizeReferences(kind string, props map[string]any) map
 	return props
 }
 
+// fakeMaxSafeInt is the engine's int bound (decision 0012): 2^53-1.
+const fakeMaxSafeInt = 1<<53 - 1
+
+// refuseUnsafeInts mirrors the engine's int bound on a kind's top-level `int`
+// properties, scalar or repeated. The GraphQL door re-encodes its input before
+// the engine sees it, and this is the fake's proof that a value past the bound
+// still arrives past it, rather than rounded into range. Nested sites and the
+// wording of the refusal are the engine's and are tested there.
+func (d *fakeDataset) refuseUnsafeInts(kind string, props map[string]any) error {
+	ty, err := d.KindByRef(context.Background(), kind)
+	if err != nil {
+		return nil
+	}
+	defs, _ := ty.Definition["properties"].(map[string]any)
+	for name, raw := range defs {
+		pd, _ := raw.(map[string]any)
+		if dt, _ := pd["type"].(string); dt != "int" {
+			continue
+		}
+		values := []any{props[name]}
+		if list, ok := props[name].([]any); ok {
+			values = list
+		}
+		for _, v := range values {
+			var f float64
+			switch n := v.(type) {
+			case float64:
+				f = n
+			case int64:
+				f = float64(n)
+			default:
+				continue
+			}
+			if f > fakeMaxSafeInt || f < -fakeMaxSafeInt {
+				return fmt.Errorf("%w: %s: an int is a safe integer (|value| <= %d)", substrate.ErrValidation, name, int64(fakeMaxSafeInt))
+			}
+		}
+	}
+	return nil
+}
+
 func (d *fakeDataset) put(e *substrate.Record) {
 	d.records[e.ID] = e
 	d.changes = append(d.changes, substrate.Change{
@@ -532,6 +573,9 @@ func (d *fakeDataset) Put(ctx context.Context, actor substrate.Actor, in substra
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if err := d.fail("Put"); err != nil {
+		return nil, err
+	}
+	if err := d.refuseUnsafeInts(in.Kind, in.Properties); err != nil {
 		return nil, err
 	}
 	d.lastPut, d.lastActor = in, actor
@@ -577,6 +621,9 @@ func (d *fakeDataset) Patch(ctx context.Context, actor substrate.Actor, typ, id 
 	e, ok := d.records[id]
 	if !ok || (typ != "" && e.Kind != typ) {
 		return nil, fmt.Errorf("%w: %s", substrate.ErrNotFound, id)
+	}
+	if err := d.refuseUnsafeInts(e.Kind, in.Properties); err != nil {
+		return nil, err
 	}
 	if title, ok := in.Properties[substrate.PropTitle].(string); ok {
 		e.Title = title
