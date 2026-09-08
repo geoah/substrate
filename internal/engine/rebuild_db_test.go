@@ -14,6 +14,7 @@ import (
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -247,7 +248,7 @@ func TestRebuildReproducesTheFold(t *testing.T) {
 	if _, err := rawDB(t, dsn).Exec(`DELETE FROM property_offers`); err != nil {
 		t.Fatalf("empty property_offers: %v", err)
 	}
-	report, err := rb.RebuildRepository(context.Background(), "geoah")
+	report, err := rb.RebuildRepository(context.Background(), testdb.Username(t))
 	if err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
@@ -287,10 +288,8 @@ func TestRebuildReproducesTheOriginStamp(t *testing.T) {
 	if !ok {
 		t.Fatal("dataset does not implement the closure-install seam")
 	}
-	const (
-		pkg    = "geoah.example.com/gizmo"
-		origin = "samples.example.com/gizmo"
-	)
+	pkg := testdb.Authority(t) + "/gizmo"
+	const origin = "samples.example.com/gizmo"
 	closure := []map[string]any{
 		vocabulary.PackageManifest(pkg, 0),
 		vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
@@ -334,7 +333,7 @@ func TestRebuildReproducesTheOriginStamp(t *testing.T) {
 	check("before the rebuild")
 
 	before := foldOf(t, ds)
-	if _, err := svc.(rebuilder).RebuildRepository(ctx, "geoah"); err != nil {
+	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Username(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	if after := foldOf(t, ds); string(before) != string(after) {
@@ -353,11 +352,11 @@ func TestRebuildIsIdempotent(t *testing.T) {
 	writeSomeHistory(t, ds)
 	rb := svc.(rebuilder)
 
-	if _, err := rb.RebuildRepository(context.Background(), "geoah"); err != nil {
+	if _, err := rb.RebuildRepository(context.Background(), testdb.Username(t)); err != nil {
 		t.Fatalf("first rebuild: %v", err)
 	}
 	once := foldOf(t, ds)
-	if _, err := rb.RebuildRepository(context.Background(), "geoah"); err != nil {
+	if _, err := rb.RebuildRepository(context.Background(), testdb.Username(t)); err != nil {
 		t.Fatalf("second rebuild: %v", err)
 	}
 	if twice := foldOf(t, ds); string(once) != string(twice) {
@@ -389,7 +388,7 @@ func TestRebuildKeeps64BitIntegers(t *testing.T) {
 		t.Fatalf("the live fold does not hold %s: the value rounded before the rebuild could", exact)
 	}
 
-	if _, err := svc.(rebuilder).RebuildRepository(context.Background(), "geoah"); err != nil {
+	if _, err := svc.(rebuilder).RebuildRepository(context.Background(), testdb.Username(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	after := foldOf(t, ds)
@@ -532,7 +531,7 @@ func TestRebuildReproducesAMerge(t *testing.T) {
 
 	before := foldOf(t, ds)
 	head := maxSeq(t, ds)
-	report, err := svc.(rebuilder).RebuildRepository(ctx, "geoah")
+	report, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("rebuild a merged repository: %v", err)
 	}
@@ -571,7 +570,7 @@ func TestRebuildReproducesASplit(t *testing.T) {
 	}
 
 	before := foldOf(t, ds)
-	if _, err := svc.(rebuilder).RebuildRepository(ctx, "geoah"); err != nil {
+	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Username(t)); err != nil {
 		t.Fatalf("rebuild a split repository: %v", err)
 	}
 	if after := foldOf(t, ds); string(before) != string(after) {
@@ -579,7 +578,7 @@ func TestRebuildReproducesASplit(t *testing.T) {
 	}
 	// And twice lands in the same place: the resync is a snapshot, so applying
 	// it again must not drift.
-	if _, err := svc.(rebuilder).RebuildRepository(ctx, "geoah"); err != nil {
+	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Username(t)); err != nil {
 		t.Fatalf("second rebuild: %v", err)
 	}
 	if after := foldOf(t, ds); string(before) != string(after) {
@@ -595,10 +594,10 @@ func TestRebuildRefusesWhatItCannotReplay(t *testing.T) {
 	t.Parallel()
 	svc, dsn := newService(t)
 	ctx := context.Background()
-	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, "geoah")
+	ds, err := svc.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
@@ -615,7 +614,7 @@ func TestRebuildRefusesWhatItCannotReplay(t *testing.T) {
 	// A merge entry as an older binary wrote it: the moved sets, no resync.
 	stripResyncEffects(t, svc, dsn, ds)
 
-	if _, err := svc.(rebuilder).RebuildRepository(ctx, "geoah"); err == nil {
+	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Username(t)); err == nil {
 		t.Fatal("the rebuild replayed a merge nothing describes")
 	}
 	// And it refused without touching the fold.

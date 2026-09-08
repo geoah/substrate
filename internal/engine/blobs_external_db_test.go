@@ -20,6 +20,7 @@ import (
 	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 )
 
 // blobDigestOf is the digest the engine derives, spelled out here so a test
@@ -276,10 +277,10 @@ func TestBootRefusesBytesLeftInThePostgresColumn(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, dsn := newService(t)
-	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, "geoah")
+	ds, err := svc.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
@@ -321,10 +322,10 @@ func TestBlobFSReopenOnTheSameRootReadsTheBytes(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	svc, dsn := newService(t, engine.WithDataRoot(root))
-	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, "geoah")
+	ds, err := svc.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
@@ -349,7 +350,7 @@ func TestBlobFSReopenOnTheSameRootReadsTheBytes(t *testing.T) {
 		t.Fatalf("reopen on the same root: %v", err)
 	}
 	t.Cleanup(func() { _ = again.Close() })
-	ds2, err := again.Dataset(ctx, "geoah")
+	ds2, err := again.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open dataset again: %v", err)
 	}

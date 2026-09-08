@@ -25,10 +25,10 @@ func TestSk3MergeSystemTypes(t *testing.T) {
 		return svc
 	}
 	svc := open()
-	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, "geoah")
+	ds, err := svc.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestSk3MergeSystemTypes(t *testing.T) {
 	_ = svc.Close()
 	svc2 := open()
 	t.Cleanup(func() { _ = svc2.Close() })
-	ds2, err := svc2.Dataset(ctx, "geoah")
+	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("dataset after restart: %v", err)
 	}

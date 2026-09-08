@@ -30,15 +30,15 @@ func newDatasetWithDB(t *testing.T, opts ...engine.Option) (substrate.Dataset, *
 		t.Fatalf("open engine: %v", err)
 	}
 	t.Cleanup(func() { _ = svc.Close() })
-	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, "geoah")
+	ds, err := svc.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
 	importVocabulary(t, ds)
-	raw, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, "geoah"), engine.RoleApp)
+	raw, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, testdb.Username(t)), engine.RoleApp)
 	if err != nil {
 		t.Fatalf("open raw: %v", err)
 	}

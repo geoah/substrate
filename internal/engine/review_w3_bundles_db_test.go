@@ -47,14 +47,14 @@ func newW3Env(t *testing.T, opts ...engine.Option) (substrate.Service, substrate
 	}
 	t.Cleanup(func() { _ = svc.Close() })
 	ctx := context.Background()
-	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, "geoah")
+	ds, err := svc.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
-	db, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, "geoah"), engine.RoleApp)
+	db, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, testdb.Username(t)), engine.RoleApp)
 	if err != nil {
 		t.Fatalf("open raw db: %v", err)
 	}

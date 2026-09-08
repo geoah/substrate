@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"hash/fnv"
 	"os"
 	"strings"
 	"sync"
@@ -142,6 +143,47 @@ func RepositoryID(t *testing.T, dsn, username string) string {
 		t.Fatalf("look up repository %q: %v", username, err)
 	}
 	return id
+}
+
+// Username is the username a test registers its repository under: the
+// test's name folded to the username grammar ([a-z][a-z0-9]{1,29}) with a
+// hash of the whole name behind it, so no two tests in a binary share one.
+// Every test used to register "geoah", which was harmless while the runner
+// keyed function processes on a minted id. The authority is the repository
+// id now (decision record 0052), so two parallel tests registering one
+// username share one id in the process-wide runner.Shared, and either
+// test's Close (Reconcile against an empty live set) retires the other's
+// function process mid-delivery. A subtest's name is its own, so a subtest
+// that opens the repository its parent created takes the parent's name.
+func Username(t *testing.T) string {
+	t.Helper()
+	name := t.Name()
+	var b strings.Builder
+	for _, r := range strings.ToLower(name) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	prefix := b.String()
+	if prefix == "" || prefix[0] < 'a' {
+		prefix = "t" + prefix
+	}
+	// 20 readable characters and 8 of hash leave room under the 30-byte cap
+	// for a test that needs a second repository (Username(t) + "2").
+	if len(prefix) > 20 {
+		prefix = prefix[:20]
+	}
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(name))
+	return prefix + fmt.Sprintf("%08x", h.Sum32())
+}
+
+// Authority is the repository authority a test registers, and so its
+// repository id: Username(t) as a label under example.com, the shape
+// DefaultRepositoryAuthority mints at a real registration.
+func Authority(t *testing.T) string {
+	t.Helper()
+	return Username(t) + ".example.com"
 }
 
 func uniqueName() string {

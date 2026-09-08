@@ -396,7 +396,7 @@ func TestSnapshotRefusesTheLockAndADamagedRepository(t *testing.T) {
 		t.Fatalf("a second process could not boot beside the server: %v", err)
 	}
 	dest := t.TempDir()
-	_, err = second.(snapshotter).SnapshotRepository(ctx, "geoah", dest)
+	_, err = second.(snapshotter).SnapshotRepository(ctx, testdb.Username(t), dest)
 	if !errors.Is(err, engine.ErrChangelogLocked) || !errors.Is(err, changelogfile.ErrLocked) {
 		t.Fatalf("beside a running server the refusal must be the lock's: %v", err)
 	}
@@ -411,7 +411,7 @@ func TestSnapshotRefusesTheLockAndADamagedRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 	operator := mustReopen(t, dsn, root)
-	_, err = operator.(snapshotter).SnapshotRepository(ctx, "geoah", dest)
+	_, err = operator.(snapshotter).SnapshotRepository(ctx, testdb.Username(t), dest)
 	if !errors.Is(err, engine.ErrSnapshotUnverified) || !strings.Contains(err.Error(), digest) {
 		t.Fatalf("a repository short of a blob's bytes must refuse the snapshot and name the blob: %v", err)
 	}

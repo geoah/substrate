@@ -450,10 +450,10 @@ func TestBootImportsARepositoryDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(repos) != 1 || repos[0].ID != id || repos[0].Name != "geoah" || repos[0].Authority != "geoah.example.com" {
+	if len(repos) != 1 || repos[0].ID != id || repos[0].Name != testdb.Username(t) || repos[0].Authority != testdb.Authority(t) {
 		t.Fatalf("repositories after the import = %+v", repos)
 	}
-	ds2, err := svc2.Dataset(ctx, "geoah")
+	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open the imported repository: %v", err)
 	}
@@ -508,7 +508,7 @@ func TestHistoryGenerationHoldsAcrossRestartAndRebuildAndRotatesOnImport(t *test
 	// head, so the restore leaves it above the new head.
 	saved := copyHead + 2
 
-	if _, err := svc.(rebuilder).RebuildRepository(ctx, "geoah"); err != nil {
+	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Username(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	if after, err := ds.Head(ctx); err != nil || after.Generation != before.Generation || after.Seq != copyHead+4 {
@@ -517,7 +517,7 @@ func TestHistoryGenerationHoldsAcrossRestartAndRebuildAndRotatesOnImport(t *test
 
 	_ = svc.Close()
 	svc2 := mustReopen(t, dsn, root)
-	ds2, err := svc2.Dataset(ctx, "geoah")
+	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("reopen the repository: %v", err)
 	}
@@ -529,7 +529,7 @@ func TestHistoryGenerationHoldsAcrossRestartAndRebuildAndRotatesOnImport(t *test
 	// The older copy over an emptied database: the row is recreated from the
 	// manifest, and with it the generation.
 	svc3 := mustReopen(t, testdb.NewSchema(t), olderRoot)
-	ds3, err := svc3.Dataset(ctx, "geoah")
+	ds3, err := svc3.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open the imported repository: %v", err)
 	}
@@ -702,10 +702,10 @@ func TestSealedMirrorFollowsRotation(t *testing.T) {
 	t.Parallel()
 	svc, dsn := newService(t)
 	ctx := context.Background()
-	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, "geoah")
+	ds, err := svc.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -762,7 +762,7 @@ func TestBootMigratesRowsWithChainHashes(t *testing.T) {
 	}
 
 	svc2 := mustReopen(t, dsn, root)
-	report := mustVerify(t, svc2, "geoah")
+	report := mustVerify(t, svc2, testdb.Username(t))
 	if !report.OK || report.Head != head || report.FileHead != head {
 		t.Fatalf("the migrated store does not verify: %+v", report)
 	}
@@ -870,7 +870,7 @@ func TestReadOnlyOpenLeavesDamageAndVerifyNamesIt(t *testing.T) {
 	if after, _ := os.ReadFile(path); !bytes.Equal(after, damaged) {
 		t.Fatal("a read-only open changed the segment")
 	}
-	report := mustVerify(t, ro, "geoah")
+	report := mustVerify(t, ro, testdb.Username(t))
 	if report.OK {
 		t.Fatalf("a torn, behind file verified: %+v", report)
 	}
@@ -888,7 +888,7 @@ func TestReadOnlyOpenLeavesDamageAndVerifyNamesIt(t *testing.T) {
 	}
 
 	// The dataset opens beside the damage and refuses to write.
-	ro2, err := ro.Dataset(ctx, "geoah")
+	ro2, err := ro.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open the dataset read-only: %v", err)
 	}
@@ -905,7 +905,7 @@ func TestReadOnlyOpenLeavesDamageAndVerifyNamesIt(t *testing.T) {
 
 	// The server's own boot cuts the tail and catches the file up.
 	svc3 := mustReopen(t, dsn, root)
-	if report := mustVerify(t, svc3, "geoah"); !report.OK || report.FileHead != head {
+	if report := mustVerify(t, svc3, testdb.Username(t)); !report.OK || report.FileHead != head {
 		t.Fatalf("after the writing boot: %+v", report)
 	}
 }
@@ -930,7 +930,7 @@ func TestASecondProcessRefusesRebuildWhileTheServerHoldsTheLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a second process could not boot beside the server: %v", err)
 	}
-	_, err = second.(rebuilder).RebuildRepository(ctx, "geoah")
+	_, err = second.(rebuilder).RebuildRepository(ctx, testdb.Username(t))
 	if err == nil {
 		t.Fatal("a second process rebuilt a repository the server holds the writer lock on")
 	}
@@ -942,7 +942,7 @@ func TestASecondProcessRefusesRebuildWhileTheServerHoldsTheLock(t *testing.T) {
 	head := maxSeq(t, ds)
 	_ = svc.Close()
 
-	report, err := second.(rebuilder).RebuildRepository(ctx, "geoah")
+	report, err := second.(rebuilder).RebuildRepository(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("with the server stopped the rebuild must run: %v", err)
 	}
@@ -1080,7 +1080,7 @@ func TestACrashBetweenPrepareAndCommitFoldsNoUncommittedLine(t *testing.T) {
 	_ = svc.Close()
 
 	svc2 := mustReopen(t, dsn, root)
-	report := mustVerify(t, svc2, "geoah")
+	report := mustVerify(t, svc2, testdb.Username(t))
 	if !report.OK || report.Head != head || report.FileHead != head || report.TruncatedBytes != 0 {
 		t.Fatalf("after the boot: %+v", report)
 	}
@@ -1090,7 +1090,7 @@ func TestACrashBetweenPrepareAndCommitFoldsNoUncommittedLine(t *testing.T) {
 	if pending, _ := changelogfile.PendingSealed(dir); len(pending) != 0 {
 		t.Fatalf("the boot left the staged file of a transaction that never committed: %v", pending)
 	}
-	ds2, err := svc2.Dataset(ctx, "geoah")
+	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1098,7 +1098,7 @@ func TestACrashBetweenPrepareAndCommitFoldsNoUncommittedLine(t *testing.T) {
 		t.Fatalf("the uncommitted write is readable after the boot: err = %v", err)
 	}
 	mustPut(t, ds2, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "after"}})
-	if report := mustVerify(t, svc2, "geoah"); !report.OK || report.Head != head+1 || report.FileHead != head+1 {
+	if report := mustVerify(t, svc2, testdb.Username(t)); !report.OK || report.Head != head+1 || report.FileHead != head+1 {
 		t.Fatalf("the next write did not continue from the head before the crash: %+v", report)
 	}
 }
@@ -1136,11 +1136,11 @@ func TestACrashBetweenCommitAndTheNewlineIsCaughtUpAtTheNextOpen(t *testing.T) {
 	_ = svc.Close()
 
 	svc2 := mustReopen(t, dsn, root)
-	report := mustVerify(t, svc2, "geoah")
+	report := mustVerify(t, svc2, testdb.Username(t))
 	if !report.OK || report.Head != head+1 || report.FileHead != head+1 || report.TruncatedBytes != 0 {
 		t.Fatalf("the boot did not append the committed transaction again: %+v", report)
 	}
-	ds2, err := svc2.Dataset(ctx, "geoah")
+	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1749,6 +1749,9 @@ func TestAnInterruptedImportResumesAtTheNextBoot(t *testing.T) {
 	head := maxSeq(t, ds)
 	rows := tableChangelog(t, dsn)
 	id := repositoryIDOf(t, ds)
+	// The subtests import a copy of THIS repository, whose name derives from
+	// the parent's t.
+	username := testdb.Username(t)
 	root := engine.DataRootOf(svc)
 	_ = svc.Close()
 
@@ -1829,12 +1832,12 @@ func TestAnInterruptedImportResumesAtTheNextBoot(t *testing.T) {
 				if err != nil {
 					t.Fatalf("open read-only after boot %d: %v", i+1, err)
 				}
-				if _, err := ro.Dataset(ctx, "geoah"); !errors.Is(err, engine.ErrImportIncomplete) {
+				if _, err := ro.Dataset(ctx, username); !errors.Is(err, engine.ErrImportIncomplete) {
 					t.Fatalf("a read-only open after boot %d = %v, want ErrImportIncomplete", i+1, err)
 				}
 				// The files and the rows agree, so verify would say OK; the
 				// report names the unfinished import instead.
-				report := mustVerify(t, ro, "geoah")
+				report := mustVerify(t, ro, username)
 				if report.OK || !findingContaining(report, "import of the repository directory has not completed") {
 					t.Fatalf("verify after boot %d does not name the unfinished import: %+v", i+1, report)
 				}
@@ -1842,7 +1845,7 @@ func TestAnInterruptedImportResumesAtTheNextBoot(t *testing.T) {
 			}
 
 			svc2 := mustReopen(t, dsn2, root2)
-			ds2, err := svc2.Dataset(ctx, "geoah")
+			ds2, err := svc2.Dataset(ctx, username)
 			if err != nil {
 				t.Fatalf("open the repository after the import resumed: %v", err)
 			}
@@ -1871,7 +1874,7 @@ func TestAnInterruptedImportResumesAtTheNextBoot(t *testing.T) {
 			if got := openSecret(t, dsn2, ref); got != "sk-survives-the-crash" {
 				t.Fatalf("secret after the resumed import = %q", got)
 			}
-			if report := mustVerify(t, svc2, "geoah"); !report.OK || report.Head != head {
+			if report := mustVerify(t, svc2, username); !report.OK || report.Head != head {
 				t.Fatalf("the resumed repository does not verify: %+v", report)
 			}
 		})
@@ -1930,14 +1933,14 @@ func TestAResumedImportFoldsWhatTheCatchUpAppended(t *testing.T) {
 	}
 
 	svc2 := mustReopen(t, dsn2, root2)
-	ds2, err := svc2.Dataset(ctx, "geoah")
+	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open after the catch-up and the resumed import: %v", err)
 	}
 	if after := foldOf(t, ds2); string(after) != string(before) {
 		t.Fatalf("the resumed fold lacks what the catch-up appended\n%s", firstDifference(before, after))
 	}
-	if report := mustVerify(t, svc2, "geoah"); !report.OK || report.Head != head || report.FileHead != head {
+	if report := mustVerify(t, svc2, testdb.Username(t)); !report.OK || report.Head != head || report.FileHead != head {
 		t.Fatalf("the repository does not verify after the catch-up: %+v", report)
 	}
 }
@@ -2015,7 +2018,7 @@ func TestBootReappendsATransactionCutInTheFile(t *testing.T) {
 	if !bytes.Equal(after, whole) {
 		t.Fatal("the re-appended segment is not byte for byte the one the writer wrote")
 	}
-	if report := mustVerify(t, svc2, "geoah"); !report.OK {
+	if report := mustVerify(t, svc2, testdb.Username(t)); !report.OK {
 		t.Fatalf("verify after the boot: %+v", report)
 	}
 }
@@ -2063,7 +2066,7 @@ func TestCatchUpAppendsWholeTransactions(t *testing.T) {
 	if rep.Segments >= int(head) {
 		t.Fatalf("%d segments for %d entries: the catch-up appended line by line", rep.Segments, head)
 	}
-	if report := mustVerify(t, svc2, "geoah"); !report.OK {
+	if report := mustVerify(t, svc2, testdb.Username(t)); !report.OK {
 		t.Fatalf("verify after the boot: %+v", report)
 	}
 }
@@ -2110,11 +2113,11 @@ func TestACommitInDoubtLatchesUntilTheBootCatchesUp(t *testing.T) {
 	_ = svc.Close()
 
 	svc2 := mustReopen(t, dsn, root)
-	report := mustVerify(t, svc2, "geoah")
+	report := mustVerify(t, svc2, testdb.Username(t))
 	if !report.OK || report.Head != head+1 || report.FileHead != head+1 {
 		t.Fatalf("the boot did not catch the file up: %+v", report)
 	}
-	ds2, err := svc2.Dataset(ctx, "geoah")
+	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
 	}

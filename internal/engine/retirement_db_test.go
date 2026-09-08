@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -163,7 +164,7 @@ func TestRetirementRefusesOnEveryDoor(t *testing.T) {
 
 	// The marker is a declaration key like any other: it rides the changelog,
 	// so a rebuild from the segment files carries it.
-	if _, err := svc.(rebuilder).RebuildRepository(ctx, "geoah"); err != nil {
+	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Username(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	assertStored("after the rebuild")

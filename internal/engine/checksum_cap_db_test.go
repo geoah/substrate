@@ -14,6 +14,7 @@ import (
 
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 )
 
 func TestSettleChecksumsRefusesALineOverTheCapBeforeCommit(t *testing.T) {
@@ -32,8 +33,9 @@ func TestSettleChecksumsRefusesALineOverTheCapBeforeCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	kind := testdb.Authority(t) + "/p/thing"
 	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
-		return t.appendChange(substrate.ActorSystem, substrate.OpPut, "big", "geoah.example.com/p/thing",
+		return t.appendChange(substrate.ActorSystem, substrate.OpPut, "big", kind,
 			map[string]any{"blob": strings.Repeat("a", changelogfile.MaxLineBytes)})
 	})
 	if err == nil {
@@ -63,7 +65,7 @@ func TestSettleChecksumsRefusesALineOverTheCapBeforeCommit(t *testing.T) {
 		t.Fatalf("the refusal latched the dataset: %v", err)
 	}
 	if err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
-		return t.appendChange(substrate.ActorSystem, substrate.OpPut, "small", "geoah.example.com/p/thing", map[string]any{"ok": true})
+		return t.appendChange(substrate.ActorSystem, substrate.OpPut, "small", kind, map[string]any{"ok": true})
 	}); err != nil {
 		t.Fatalf("the next write after a refused one: %v", err)
 	}

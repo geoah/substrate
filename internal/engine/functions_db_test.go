@@ -8,6 +8,7 @@ import (
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -310,7 +311,7 @@ func TestTriggerWhenGuard(t *testing.T) {
 	})
 	mine := mustPut(t, ds, fnActor, substrate.PutInput{
 		Kind:       widgetType,
-		Properties: map[string]any{"name": "mine", "assignee": "geoah"},
+		Properties: map[string]any{"name": "mine", "assignee": testdb.Username(t)},
 	})
 	process(t, ops)
 
@@ -975,8 +976,8 @@ def main(input, host):
 		}
 		return ds, ops
 	}
-	one, opsOne := install("geoah")
-	two, opsTwo := install("ada")
+	one, opsOne := install(testdb.Username(t))
+	two, opsTwo := install(testdb.Username(t) + "2")
 
 	mustPut(t, one, owner, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "only here"}})
 	if n := process(t, opsOne); n != 1 {

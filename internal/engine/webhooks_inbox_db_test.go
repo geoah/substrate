@@ -80,10 +80,10 @@ func newHeldHookDataset(t *testing.T, released bool) (substrate.Service, substra
 			}
 		}
 	}))
-	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, "geoah")
+	ds, err := svc.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
@@ -290,7 +290,7 @@ func TestWebhookAcceptedRequestSurvivesAStopBeforeTheFire(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
 			svc, ds, ops, dsn, root, _ := newHeldHookDataset(t, true)
-			fid, err := engine.ReceiveWebhookHeld(ctx, svc, "geoah.example.com", "hook-held", "", shape.req)
+			fid, err := engine.ReceiveWebhookHeld(ctx, svc, testdb.Authority(t), "hook-held", "", shape.req)
 			if err != nil {
 				t.Fatalf("receive: %v", err)
 			}
@@ -330,7 +330,7 @@ func TestWebhookAcceptedRequestSurvivesAStopBeforeTheFire(t *testing.T) {
 				t.Fatalf("close: %v", err)
 			}
 			svc2 := mustReopen(t, dsn, root)
-			ds2, err := svc2.Dataset(ctx, "geoah")
+			ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 			if err != nil {
 				t.Fatalf("reopen the repository: %v", err)
 			}
@@ -343,7 +343,7 @@ func TestWebhookAcceptedRequestSurvivesAStopBeforeTheFire(t *testing.T) {
 				t.Fatalf("close: %v", err)
 			}
 			svc3 := mustReopen(t, dsn, root)
-			ds3, err := svc3.Dataset(ctx, "geoah")
+			ds3, err := svc3.Dataset(ctx, testdb.Username(t))
 			if err != nil {
 				t.Fatalf("reopen the repository: %v", err)
 			}
@@ -380,7 +380,7 @@ func TestWebhookFireCancelledMidRunResumesAtTheNextOpen(t *testing.T) {
 			}
 			done := make(chan answer, 1)
 			go func() {
-				fid, err := engine.ReceiveWebhookSync(fctx, svc, "geoah.example.com", "hook-held", "", shape.req)
+				fid, err := engine.ReceiveWebhookSync(fctx, svc, testdb.Authority(t), "hook-held", "", shape.req)
 				done <- answer{fid, err}
 			}()
 			awaitInvoked(t, invoked)
@@ -400,7 +400,7 @@ func TestWebhookFireCancelledMidRunResumesAtTheNextOpen(t *testing.T) {
 				t.Fatalf("close: %v", err)
 			}
 			svc2 := mustReopen(t, dsn, root)
-			ds2, err := svc2.Dataset(ctx, "geoah")
+			ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 			if err != nil {
 				t.Fatalf("reopen the repository: %v", err)
 			}
@@ -420,7 +420,7 @@ func TestWebhookAcceptedRequestRestoresIntoAFreshDatabase(t *testing.T) {
 	ctx := context.Background()
 	shape := heldRequests["a multipart request"]
 	svc, ds, ops, _, root, _ := newHeldHookDataset(t, true)
-	fid, err := engine.ReceiveWebhookHeld(ctx, svc, "geoah.example.com", "hook-held", "", shape.req)
+	fid, err := engine.ReceiveWebhookHeld(ctx, svc, testdb.Authority(t), "hook-held", "", shape.req)
 	if err != nil {
 		t.Fatalf("receive: %v", err)
 	}
@@ -447,7 +447,7 @@ func TestWebhookAcceptedRequestRestoresIntoAFreshDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc2 := mustReopen(t, testdb.NewSchema(t), root2)
-	ds2, err := svc2.Dataset(ctx, "geoah")
+	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open the restored repository: %v", err)
 	}
@@ -466,7 +466,7 @@ func TestWebhookPendingEntryRetiredByAHandIsNotResumed(t *testing.T) {
 	ctx := context.Background()
 	shape := heldRequests["a json body"]
 	svc, ds, ops, dsn, _, _ := newHeldHookDataset(t, true)
-	fid, err := engine.ReceiveWebhookHeld(ctx, svc, "geoah.example.com", "hook-held", "", shape.req)
+	fid, err := engine.ReceiveWebhookHeld(ctx, svc, testdb.Authority(t), "hook-held", "", shape.req)
 	if err != nil {
 		t.Fatalf("receive: %v", err)
 	}
@@ -510,7 +510,7 @@ func TestWebhookPendingEntryRefusesAHandRetryWhileItRuns(t *testing.T) {
 	defer cancel()
 	done := make(chan struct{})
 	go func() {
-		_, _ = engine.ReceiveWebhookSync(fctx, svc, "geoah.example.com", "hook-held", "", heldRequests["a json body"].req)
+		_, _ = engine.ReceiveWebhookSync(fctx, svc, testdb.Authority(t), "hook-held", "", heldRequests["a json body"].req)
 		close(done)
 	}()
 	// The body is running: the fire holds the entry, and the entry is the

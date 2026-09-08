@@ -51,12 +51,12 @@ func openDurabilityService(t *testing.T, opts ...Option) (*service, Repository, 
 		t.Fatal(err)
 	}
 	if _, err := s.Register(ctx, substrate.RegisterInput{
-		Username: "geoah", Authority: "geoah.example.com", Password: durabilityPassword,
+		Username: testdb.Username(t), Authority: testdb.Authority(t), Password: durabilityPassword,
 		TOTPSecret: seed, TOTPCode: code, Label: "cli",
 	}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	repo, err := s.repositoryByUsername(ctx, "geoah")
+	repo, err := s.repositoryByUsername(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func importCopy(t *testing.T, root, repoID string) (*service, Repository) {
 	}
 	t.Cleanup(func() { _ = svc2.Close() })
 	s2 := svc2.(*service)
-	repo2, err := s2.repositoryByUsername(ctx, "geoah")
+	repo2, err := s2.repositoryByUsername(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +375,7 @@ func TestACrashBetweenTheSealedStageAndTheCommitRestoresTheOldPayload(t *testing
 		t.Fatal(err)
 	}
 	noPending(t, dir2, "right after the import")
-	if report, err := s2.VerifyRepository(ctx, "geoah"); err != nil || !report.OK {
+	if report, err := s2.VerifyRepository(ctx, testdb.Username(t)); err != nil || !report.OK {
 		t.Fatalf("verify right after the import: %+v, %v", report, err)
 	}
 	ds2, err := s2.open(ctx, repo2)
@@ -497,7 +497,7 @@ func TestAReadOnlyServiceRefusesToSpendATOTPStep(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = ro.Login(ctx, substrate.LoginInput{Username: "geoah", Password: durabilityPassword, TOTPCode: code, Label: "ro"})
+	_, _, err = ro.Login(ctx, substrate.LoginInput{Username: testdb.Username(t), Password: durabilityPassword, TOTPCode: code, Label: "ro"})
 	if !errors.Is(err, ErrDirectoryReadOnly) {
 		t.Fatalf("a login on a read-only service: err = %v, want ErrDirectoryReadOnly", err)
 	}
@@ -583,7 +583,7 @@ func TestASealedOnlyCommitInDoubtLatchesUntilTheBootRewritesTheFile(t *testing.T
 		}
 		t.Cleanup(func() { _ = svc2.Close() })
 		s2 := svc2.(*service)
-		report, err := s2.VerifyRepository(ctx, "geoah")
+		report, err := s2.VerifyRepository(ctx, testdb.Username(t))
 		if err != nil || !report.OK {
 			t.Fatalf("after the reboot: %+v, %v", report, err)
 		}
@@ -648,7 +648,7 @@ func TestASealedOnlyCommitInDoubtLatchesUntilTheBootRewritesTheFile(t *testing.T
 		// purge and never prunes, so a live record naming a secret with no
 		// row is reachable, and verify names exactly that dangling
 		// reference and nothing else.
-		report, err := s2.VerifyRepository(ctx, "geoah")
+		report, err := s2.VerifyRepository(ctx, testdb.Username(t))
 		if err != nil || len(report.Findings) != 1 || !strings.Contains(report.Findings[0], account.ID+" names it in apiKey") {
 			t.Fatalf("after the reboot: %+v, %v", report, err)
 		}

@@ -297,7 +297,7 @@ func TestBootImportsAFormatOneDirectory(t *testing.T) {
 		t.Fatalf("manifest after the import = %+v", m)
 	}
 
-	ds2, err := svc2.Dataset(ctx, "geoah")
+	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open the imported repository: %v", err)
 	}
@@ -307,7 +307,7 @@ func TestBootImportsAFormatOneDirectory(t *testing.T) {
 	if got := openSecret(t, dsn2, ref); got != "sk-format-one" {
 		t.Fatalf("secret = %q", got)
 	}
-	report := mustVerify(t, svc2, "geoah")
+	report := mustVerify(t, svc2, testdb.Username(t))
 	if !report.OK || report.Head != head || report.FileHead != head {
 		t.Fatalf("the imported directory does not verify: %+v", report)
 	}

@@ -152,10 +152,10 @@ func TestSk1MergedTypeSurvivesRestart(t *testing.T) {
 		return svc
 	}
 	svc := open()
-	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
 		t.Fatalf("repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, "geoah")
+	ds, err := svc.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestSk1MergedTypeSurvivesRestart(t *testing.T) {
 
 	svc2 := open()
 	defer func() { _ = svc2.Close() }()
-	ds2, err := svc2.Dataset(ctx, "geoah")
+	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
 	}

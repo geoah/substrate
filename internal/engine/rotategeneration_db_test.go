@@ -8,6 +8,7 @@ import (
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 )
 
 // A database restored from a dump keeps the row and its generation, so the
@@ -25,7 +26,7 @@ func TestRotateHistoryGenerationHoldsTheHeadAndSurvivesARestart(t *testing.T) {
 	}
 	root := engine.DataRootOf(svc)
 
-	report, err := svc.(engine.GenerationRotator).RotateHistoryGeneration(ctx, "geoah")
+	report, err := svc.(engine.GenerationRotator).RotateHistoryGeneration(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("rotate: %v", err)
 	}
@@ -41,7 +42,7 @@ func TestRotateHistoryGenerationHoldsTheHeadAndSurvivesARestart(t *testing.T) {
 
 	_ = svc.Close()
 	svc2 := mustReopen(t, dsn, root)
-	ds2, err := svc2.Dataset(ctx, "geoah")
+	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +61,7 @@ func TestRotateHistoryGenerationRefusesWhileTheServerHoldsTheLock(t *testing.T) 
 	if err != nil {
 		t.Fatalf("a second process could not boot beside the server: %v", err)
 	}
-	_, err = second.(engine.GenerationRotator).RotateHistoryGeneration(ctx, "geoah")
+	_, err = second.(engine.GenerationRotator).RotateHistoryGeneration(ctx, testdb.Username(t))
 	if err == nil {
 		t.Fatal("a rotation landed beside a running server")
 	}

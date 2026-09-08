@@ -16,6 +16,7 @@ import (
 
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -498,10 +499,10 @@ func TestStoredNestedReferenceDeclarationSurvivesAReopen(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, dsn := newService(t)
-	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, "geoah")
+	ds, err := svc.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
@@ -542,7 +543,7 @@ func TestStoredNestedReferenceDeclarationSurvivesAReopen(t *testing.T) {
 		t.Fatalf("reopen the service: %v", err)
 	}
 	t.Cleanup(func() { _ = svc2.Close() })
-	ds2, err := svc2.Dataset(ctx, "geoah")
+	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("a stored declaration with a nested reference must still open: %v", err)
 	}

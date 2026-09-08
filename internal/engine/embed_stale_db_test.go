@@ -20,10 +20,10 @@ func TestEmbedQueueDoesNotPublishStaleVectors(t *testing.T) {
 	ctx := context.Background()
 	emb := newFakeEmbedServer(t)
 	svc, dsn := newService(t)
-	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, "geoah")
+	ds, err := svc.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestEmbedQueueDoesNotPublishStaleVectors(t *testing.T) {
 		t.Fatalf("a stale job was applied (%d); the edit's generation must win", n)
 	}
 
-	repoID := testdb.RepositoryID(t, dsn, "geoah")
+	repoID := testdb.RepositoryID(t, dsn, testdb.Username(t))
 	raw, err := engine.OpenScopedDB(dsn, repoID, engine.RoleApp)
 	if err != nil {
 		t.Fatalf("open scoped pool: %v", err)

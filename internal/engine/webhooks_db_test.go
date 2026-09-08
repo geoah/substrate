@@ -10,6 +10,7 @@ import (
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -125,9 +126,12 @@ func TestWebhookDelivery(t *testing.T) {
 		pyFn("hookecho", map[string]any{}, []any{widgetType}, hookEchoSource),
 		pyFn("hooknoop", map[string]any{}, []any{}, "def main(input, host):\n    return {}\n"),
 	)
+	// The subtests address the repository the PARENT registered, whose name
+	// derives from the parent's t.
+	username, authority := testdb.Username(t), testdb.Authority(t)
 
 	t.Run("open endpoint delivers the request", func(t *testing.T) {
-		fid, err := engine.ReceiveWebhookSync(ctx, svc, "geoah.example.com", "hook-open", "", jsonHook(`{"hello":"wörld"}`, "yes"))
+		fid, err := engine.ReceiveWebhookSync(ctx, svc, authority, "hook-open", "", jsonHook(`{"hello":"wörld"}`, "yes"))
 		if err != nil {
 			t.Fatalf("receive: %v", err)
 		}
@@ -145,11 +149,11 @@ func TestWebhookDelivery(t *testing.T) {
 
 	t.Run("a keyed endpoint checks its key", func(t *testing.T) {
 		for _, key := range []string{"", "wrong-key-wrong-key", hookKey + "x"} {
-			if _, err := engine.ReceiveWebhookSync(ctx, svc, "geoah.example.com", "hook-keyed", key, jsonHook("no", "no")); !errors.Is(err, substrate.ErrNotFound) {
+			if _, err := engine.ReceiveWebhookSync(ctx, svc, authority, "hook-keyed", key, jsonHook("no", "no")); !errors.Is(err, substrate.ErrNotFound) {
 				t.Fatalf("key %q: err = %v, want ErrNotFound", key, err)
 			}
 		}
-		if _, err := engine.ReceiveWebhookSync(ctx, svc, "geoah.example.com", "hook-keyed", hookKey, jsonHook("keyed", "k")); err != nil {
+		if _, err := engine.ReceiveWebhookSync(ctx, svc, authority, "hook-keyed", hookKey, jsonHook("keyed", "k")); err != nil {
 			t.Fatalf("the right key was refused: %v", err)
 		}
 		if got := hookEcho(t, ds, "hook-echo")["name"]; got != "keyed" {
@@ -162,11 +166,11 @@ func TestWebhookDelivery(t *testing.T) {
 			"unknown authority": {"nobody.example.com", "hook-open"},
 			// The door takes the authority alone: the username is not a valid
 			// path segment here.
-			"the username":      {"geoah", "hook-open"},
-			"unknown trigger":   {"geoah.example.com", "hook-missing"},
-			"disabled trigger":  {"geoah.example.com", "hook-off"},
-			"a record trigger":  {"geoah.example.com", "hook-record"},
-			"the wrong hat key": {"geoah.example.com", "hook-keyed"},
+			"the username":      {username, "hook-open"},
+			"unknown trigger":   {authority, "hook-missing"},
+			"disabled trigger":  {authority, "hook-off"},
+			"a record trigger":  {authority, "hook-record"},
+			"the wrong hat key": {authority, "hook-keyed"},
 		}
 		for name, c := range cases {
 			if _, err := engine.ReceiveWebhookSync(ctx, svc, c[0], c[1], "", jsonHook("x", "x")); !errors.Is(err, substrate.ErrNotFound) {
@@ -185,7 +189,7 @@ func TestWebhookDelivery(t *testing.T) {
 				{Name: "audio", Filename: "recording.m4a", MediaType: "audio/mp4", Data: audio},
 			},
 		}
-		if _, err := engine.ReceiveWebhookSync(ctx, svc, "geoah.example.com", "hook-open", "", req); err != nil {
+		if _, err := engine.ReceiveWebhookSync(ctx, svc, authority, "hook-open", "", req); err != nil {
 			t.Fatalf("receive: %v", err)
 		}
 		got := hookEcho(t, ds, "hook-echo")
@@ -224,7 +228,7 @@ func TestWebhookDelivery(t *testing.T) {
 		for _, st := range statuses {
 			paths[st.ID] = st.WebhookPath
 		}
-		if paths["hook-open"] != "/webhooks/geoah.example.com/hook-open" || paths["hook-keyed"] != "/webhooks/geoah.example.com/hook-keyed" {
+		if paths["hook-open"] != "/webhooks/"+authority+"/hook-open" || paths["hook-keyed"] != "/webhooks/"+authority+"/hook-keyed" {
 			t.Fatalf("webhook paths = %v", paths)
 		}
 		if paths["hook-record"] != "" {
@@ -237,7 +241,7 @@ func TestWebhookDelivery(t *testing.T) {
 		if !ok {
 			t.Fatal("service does not implement the webhook seam")
 		}
-		if _, err := rc.ReceiveWebhook(ctx, "geoah.example.com", "hook-open", "", jsonHook("detached", "bg")); err != nil {
+		if _, err := rc.ReceiveWebhook(ctx, authority, "hook-open", "", jsonHook("detached", "bg")); err != nil {
 			t.Fatalf("receive: %v", err)
 		}
 		deadline := time.Now().Add(15 * time.Second)
@@ -299,7 +303,7 @@ func TestWebhookParkedRetryReplaysRequest(t *testing.T) {
 			{Name: "audio", MediaType: "audio/mp4", Data: audio},
 		},
 	}
-	fid, err := engine.ReceiveWebhookSync(ctx, svc, "geoah.example.com", "hook-gated", "", req)
+	fid, err := engine.ReceiveWebhookSync(ctx, svc, testdb.Authority(t), "hook-gated", "", req)
 	if err != nil {
 		t.Fatalf("receive: %v", err)
 	}

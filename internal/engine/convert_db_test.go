@@ -61,7 +61,7 @@ func cvReplays(t *testing.T, svc substrate.Service, ds substrate.Dataset) {
 	if !ok {
 		t.Fatal("the service cannot rebuild a repository")
 	}
-	if _, err := rb.RebuildRepository(ctx, "geoah"); err != nil {
+	if _, err := rb.RebuildRepository(ctx, testdb.Username(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	if got := foldOf(t, ds); string(got) != string(before) {
@@ -73,7 +73,7 @@ func cvReplays(t *testing.T, svc substrate.Service, ds substrate.Dataset) {
 	root2 := copyRepositoryDir(t, root, id)
 	svc2 := mustReopen(t, testdb.NewSchema(t), root2)
 	defer func() { _ = svc2.Close() }()
-	ds2, err := svc2.Dataset(ctx, "geoah")
+	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open the imported repository: %v", err)
 	}

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -190,7 +191,7 @@ func TestTheRebuiltIndexMatchesTheLiveOne(t *testing.T) {
 	}
 
 	before := foldOf(t, ds)
-	if _, err := svc.(rebuilder).RebuildRepository(ctx, "geoah"); err != nil {
+	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Username(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	if after := foldOf(t, ds); !bytes.Equal(before, after) {

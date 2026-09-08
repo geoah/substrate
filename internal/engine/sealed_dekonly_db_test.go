@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/internal/changelogfile"
+	"github.com/geoah/substrate/internal/testdb"
 )
 
 // plantSealed overwrites one sealed row's payload through the scoped pool.
@@ -146,7 +147,7 @@ func TestFirstOpenRekeysAndMarksAnUnmarkedRepository(t *testing.T) {
 		t.Fatalf("reopen: %v", err)
 	}
 	t.Cleanup(func() { _ = reopened.Close() })
-	d, err := reopened.Dataset(ctx, "geoah")
+	d, err := reopened.Dataset(ctx, testdb.Username(t))
 	if err != nil {
 		t.Fatalf("open the repository: %v", err)
 	}
@@ -263,7 +264,7 @@ func TestFirstOpenRewrapsAWrapThatNamesNoKey(t *testing.T) {
 				t.Fatalf("reopen: %v", err)
 			}
 			t.Cleanup(func() { _ = reopened.Close() })
-			d, err := reopened.Dataset(ctx, "geoah")
+			d, err := reopened.Dataset(ctx, testdb.Username(t))
 			if err != nil {
 				t.Fatalf("open the repository: %v", err)
 			}

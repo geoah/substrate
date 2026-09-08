@@ -147,7 +147,7 @@ func TestRenameMovesTheValueOfEveryLiveRecord(t *testing.T) {
 	blurbHash := sha256.Sum256([]byte("alpha prose"))
 	if _, err := db.Exec(`INSERT INTO embeddings (repository, record_kind, record_id, property, chunk, text_hash, provider, model)
 		VALUES ($1, $2, $3, 'blurb', 0, $4, 'vectors', 'text-embedding-3-small')`,
-		testdb.RepositoryID(t, dsn, "geoah"), rnGizmo, full.ID, hex.EncodeToString(blurbHash[:])); err != nil {
+		testdb.RepositoryID(t, dsn, testdb.Username(t)), rnGizmo, full.ID, hex.EncodeToString(blurbHash[:])); err != nil {
 		t.Fatalf("store the blurb's vector row: %v", err)
 	}
 	// The value is indexed under the old name before the rename.
@@ -322,7 +322,7 @@ func TestRenameMovesTheValueOfEveryLiveRecord(t *testing.T) {
 	if !ok {
 		t.Fatal("the service cannot rebuild a repository")
 	}
-	if _, err := rb.RebuildRepository(ctx, "geoah"); err != nil {
+	if _, err := rb.RebuildRepository(ctx, testdb.Username(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	if got := foldOf(t, ds); string(got) != string(before) {
