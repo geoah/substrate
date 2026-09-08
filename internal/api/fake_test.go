@@ -815,12 +815,12 @@ func (d *fakeDataset) List(_ context.Context, q substrate.Query) (*substrate.Pag
 	return &substrate.Page{Records: out, Cursor: "", Head: int64(len(d.changes)), Generation: d.generation}, nil
 }
 
-func (d *fakeDataset) Search(_ context.Context, in substrate.SearchInput) ([]substrate.Hit, error) {
+func (d *fakeDataset) Search(_ context.Context, in substrate.SearchInput) (substrate.SearchResult, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.lastSearch = in
 	if err := d.fail("Search"); err != nil {
-		return nil, err
+		return substrate.SearchResult{}, err
 	}
 	var hits []substrate.Hit
 	for _, id := range sortedRecordIDs(d.records) {
@@ -829,7 +829,7 @@ func (d *fakeDataset) Search(_ context.Context, in substrate.SearchInput) ([]sub
 			hits = append(hits, substrate.Hit{Record: e, Lexical: 0.5})
 		}
 	}
-	return hits, nil
+	return substrate.SearchResult{Hits: hits}, nil
 }
 
 func (d *fakeDataset) Changes(_ context.Context, after int64, f substrate.ChangeFilter, limit int) ([]substrate.Change, error) {

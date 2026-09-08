@@ -928,16 +928,22 @@ func (ds *dataset) insertEntries(ctx context.Context, entries []changelogfile.En
 // the first pass's committed rows through the pool, which is why the two
 // passes need not share a transaction.
 //
-// The same transaction queues every embeddable property for the drain
-// (enqueueEmbeddable): the fold never reaches the live write's enqueueEmbed,
-// and the vectors are not in the directory, so the queue is what stands in
-// for them. Under the marker's transaction a resumed import queues too, and a
-// crash before the commit leaves nothing half-queued.
+// The same transaction converges the vectors with the fold and queues what is
+// missing (reconcileEmbeddings): the fold never reaches the live write's
+// enqueueEmbed, and the vectors are not in the directory, so the queue is what
+// stands in for them. Into an empty database that queues every embeddable
+// property; over an older database dump restored beside a newer directory it
+// deletes the vectors of values the directory has since changed or cleared
+// (a cleared property is not enqueued, so its vector would otherwise be
+// scored for good) and queues only what changed. Under the marker's
+// transaction a resumed import queues too, and a crash before the commit
+// leaves nothing half-done.
 func (ds *dataset) refoldFromFiles(ctx context.Context, log *changelogfile.Log) error {
-	replay := func(last bool) (int, error) {
+	queued := 0
+	replay := func(last bool) error {
 		tx, err := ds.db.BeginTx(ctx, nil)
 		if err != nil {
-			return 0, err
+			return err
 		}
 		defer func() { _ = tx.Rollback() }()
 		t := &txn{
@@ -946,20 +952,21 @@ func (ds *dataset) refoldFromFiles(ctx context.Context, log *changelogfile.Log) 
 		}
 		var report RebuildReport
 		if err := t.rebuild(log, &report); err != nil {
-			return 0, err
+			return err
 		}
-		queued := 0
 		if last {
-			if queued, err = ds.enqueueEmbeddable(ctx, tx, nil); err != nil {
-				return 0, err
+			n, err := ds.reconcileEmbeddings(ctx, tx, t.now)
+			if err != nil {
+				return err
 			}
+			queued = n
 			if _, err := t.exec(`DELETE FROM import_progress`); err != nil {
-				return 0, fmt.Errorf("clear the import-progress marker: %w", err)
+				return fmt.Errorf("clear the import-progress marker: %w", err)
 			}
 		}
-		return queued, tx.Commit()
+		return tx.Commit()
 	}
-	if _, err := replay(false); err != nil {
+	if err := replay(false); err != nil {
 		return fmt.Errorf("substrate/engine: import: first fold: %w", err)
 	}
 	if err := ds.importFault(importAfterFirstFold); err != nil {
@@ -968,8 +975,7 @@ func (ds *dataset) refoldFromFiles(ctx context.Context, log *changelogfile.Log) 
 	if err := ds.loadDeclarationsForReplay(ctx); err != nil {
 		return err
 	}
-	queued, err := replay(true)
-	if err != nil {
+	if err := replay(true); err != nil {
 		return fmt.Errorf("substrate/engine: import: second fold: %w", err)
 	}
 	if queued > 0 {

@@ -16,8 +16,8 @@ import (
 // directory is the backup unit (decision 0051), so a repository restored into
 // an empty database has neither. The import queues every embeddable property
 // in the transaction that completes its fold, at generation 1, and the drain
-// buys the vectors back; until it has, semantic search says "no vectors yet"
-// rather than answering "no matches".
+// buys the vectors back; until it has, semantic search returns ErrUnavailable
+// with the pending count rather than an empty answer.
 func TestImportQueuesEveryEmbeddableProperty(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -49,33 +49,47 @@ func TestImportQueuesEveryEmbeddableProperty(t *testing.T) {
 		t.Fatalf("the restore brought %d vectors; the directory holds none", n)
 	}
 
-	// Before the drain the semantic arm has nothing, and says so with the
-	// count, instead of an empty answer.
-	_, err = ds2.Search(ctx, substrate.SearchInput{Q: "marmalade prose", Mode: substrate.SearchSemantic})
+	// Before the drain semantic search returns ErrUnavailable with the count,
+	// not an empty answer.
+	_, err = searchHits(ds2.Search(ctx, substrate.SearchInput{Q: "marmalade prose", Mode: substrate.SearchSemantic}))
 	if !errors.Is(err, substrate.ErrUnavailable) || !strings.Contains(err.Error(), "3 properties pending") {
 		t.Fatalf("semantic search before the drain = %v, want ErrUnavailable naming 3 pending", err)
 	}
-	// Hybrid still answers with its lexical arm.
-	hits, err := ds2.Search(ctx, substrate.SearchInput{Q: "marmalade"})
-	if err != nil || len(hits) == 0 || hits[0].Record.ID != ids[0] {
-		t.Fatalf("hybrid search before the drain = %v, %v", hitIDs(hits), err)
+	// Hybrid still answers with its lexical arm, and says how much the
+	// semantic arm is missing.
+	res, err := ds2.Search(ctx, substrate.SearchInput{Q: "marmalade"})
+	if err != nil || len(res.Hits) == 0 || res.Hits[0].Record.ID != ids[0] || res.Pending != len(ids) {
+		t.Fatalf("hybrid search before the drain = %v, pending %d, %v; want pending %d", hitIDs(res.Hits), res.Pending, err, len(ids))
 	}
 
-	if n, err := ds2.ProcessEmbedQueue(ctx, 20); err != nil || n != len(ids) {
-		t.Fatalf("drain after the restore = %d, %v, want %d, nil", n, err, len(ids))
+	// Mid-drain the semantic arm answers over a partial index and the answer
+	// carries the backlog, so a caller can tell partial coverage from full.
+	if n, err := ds2.ProcessEmbedQueue(ctx, 1); err != nil || n != 1 {
+		t.Fatalf("first drained batch = %d, %v, want 1, nil", n, err)
+	}
+	res, err = ds2.Search(ctx, substrate.SearchInput{Q: "marmalade prose", Mode: substrate.SearchSemantic})
+	if err != nil || res.Pending != len(ids)-1 {
+		t.Fatalf("semantic search mid-drain = %+v, %v; want pending %d", res, err, len(ids)-1)
+	}
+	if n, err := ds2.ProcessEmbedQueue(ctx, 20); err != nil || n != len(ids)-1 {
+		t.Fatalf("drain after the restore = %d, %v, want %d, nil", n, err, len(ids)-1)
 	}
 	if n := countRows(t, raw, "embed_queue"); n != 0 {
 		t.Fatalf("%d queue rows outlived the drain", n)
 	}
-	got := semanticIDs(t, ds2, "marmalade prose")
+	res, err = ds2.Search(ctx, substrate.SearchInput{Q: "marmalade prose", Mode: substrate.SearchSemantic})
+	if err != nil || res.Pending != 0 {
+		t.Fatalf("semantic search after the drain = %+v, %v; want pending 0", res, err)
+	}
+	got := hitIDs(res.Hits)
 	if !sameSet(got, want) || got[0] != want[0] {
 		t.Fatalf("semantic search after the restore = %v, want %v", got, want)
 	}
 }
 
 // With no llmprovider row the import queues the properties all the same, and
-// they stay pending: the drain idles over them, semantic search names the
-// missing row, and the first row that resolves buys them.
+// they stay pending: the drain idles over them, semantic search returns the
+// error naming the missing row, and the first row that resolves buys them.
 func TestImportQueuesEmbedsWithoutAProvider(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -101,7 +115,7 @@ func TestImportQueuesEmbedsWithoutAProvider(t *testing.T) {
 		t.Fatalf("drain with no provider after the restore = %d, %v, want 0, nil", n, err)
 	}
 	assertQueued(t, raw, ids)
-	_, err = ds2.Search(ctx, substrate.SearchInput{Q: "marmalade prose", Mode: substrate.SearchSemantic})
+	_, err = searchHits(ds2.Search(ctx, substrate.SearchInput{Q: "marmalade prose", Mode: substrate.SearchSemantic}))
 	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "embedModel") {
 		t.Fatalf("semantic search with no provider = %v, want the missing row named", err)
 	}
@@ -155,6 +169,118 @@ func TestAResumedImportQueuesEmbeds(t *testing.T) {
 		t.Fatalf("open the repository after the import resumed: %v", err)
 	}
 	assertQueued(t, raw, ids)
+}
+
+// A newer directory restored over an older database dump: the dump holds
+// vectors for values the directory has since rewritten or cleared, and for
+// values it has not. The import converges: the cleared property's vector goes
+// (nothing would ever re-queue it, so it would be scored for good), the
+// rewritten one's goes and the property is queued, and the unchanged one is
+// neither deleted nor queued nor bought again.
+func TestImportConvergesTheVectorsAnOlderDatabaseHolds(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	emb := newFakeEmbedServer(t)
+	svc, dsn := newService(t)
+	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatal(err)
+	}
+	importVocabulary(t, ds, "people")
+	installShelf(t, ds)
+	installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
+	rewritten := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "book", Properties: map[string]any{"title": "Rewritten", "description": "alpha unique marmalade prose"},
+	})
+	cleared := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "book", Properties: map[string]any{"title": "Cleared", "description": "gamma tangerine dictionary volume"},
+	})
+	kept := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "book", Properties: map[string]any{"title": "Kept", "description": "delta saxophone almanac chapter"},
+	})
+	if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != 3 {
+		t.Fatalf("drain = %d, %v, want 3, nil", n, err)
+	}
+	if got := semanticIDs(t, ds, "tangerine dictionary"); len(got) == 0 || got[0] != cleared.ID {
+		t.Fatalf("before the copy: %v", got)
+	}
+	id := repositoryIDOf(t, ds)
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+
+	// The directory moves on in another database: one blurb is rewritten,
+	// one cleared, one left alone.
+	root2 := copyRepositoryDir(t, root, id)
+	svc2 := mustReopen(t, testdb.NewSchema(t), root2)
+	ds2, err := svc2.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustPut(t, ds2, owner, substrate.PutInput{
+		Kind: "book", ID: rewritten.ID, Properties: map[string]any{"description": "beta zeppelin narrative here"},
+	})
+	mustPatch(t, ds2, owner, "book", cleared.ID, substrate.PatchInput{Properties: map[string]any{"description": nil}})
+	_ = svc2.Close()
+
+	// The first database is the older dump: its vectors are the old texts'.
+	svc3 := mustReopen(t, dsn, root2)
+	ds3, err := svc3.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("open the repository restored over the older database: %v", err)
+	}
+	raw := scopedDB(t, dsn, "geoah")
+	if n := countRows(t, raw, "embeddings"); n != 1 {
+		t.Fatalf("%d vectors after the import, want exactly the unchanged blurb's", n)
+	}
+	var keptVectors int
+	if err := raw.QueryRow(`SELECT count(*) FROM embeddings WHERE record_id = $1`, kept.ID).Scan(&keptVectors); err != nil || keptVectors != 1 {
+		t.Fatalf("the unchanged blurb's vector did not survive the import: %d, %v", keptVectors, err)
+	}
+	assertQueued(t, raw, []string{rewritten.ID})
+
+	// Vectors exist, so the semantic arm answers; the cleared blurb is not in
+	// it, and the answer says one property is still pending.
+	res, err := ds3.Search(ctx, substrate.SearchInput{Q: "tangerine dictionary", Mode: substrate.SearchSemantic})
+	if err != nil || res.Pending != 1 {
+		t.Fatalf("semantic search before the drain = %+v, %v; want pending 1", res, err)
+	}
+	for _, h := range res.Hits {
+		if h.Record.ID == cleared.ID {
+			t.Fatal("the cleared blurb is still found by its old text")
+		}
+	}
+	// The search above embedded its query; from here every text the fake
+	// sees is a chunk the drain bought.
+	_, textsBefore := emb.counts()
+	if n, err := ds3.ProcessEmbedQueue(ctx, 20); err != nil || n != 1 {
+		t.Fatalf("drain = %d, %v, want 1, nil", n, err)
+	}
+	if _, textsAfter := emb.counts(); textsAfter-textsBefore != 1 {
+		t.Fatalf("the drain embedded %d texts after the import, want 1 (the rewritten blurb alone)", textsAfter-textsBefore)
+	}
+	if got := semanticIDs(t, ds3, "zeppelin narrative"); len(got) == 0 || got[0] != rewritten.ID {
+		t.Fatalf("the rewritten blurb is not found by its current text: %v", got)
+	}
+	if got := semanticIDs(t, ds3, "saxophone almanac"); len(got) == 0 || got[0] != kept.ID {
+		t.Fatalf("the unchanged blurb is not found: %v", got)
+	}
+}
+
+// A provider and nothing embeddable is an empty answer, not a refusal: the
+// unavailable signal needs work in the queue, or a 503 would never clear.
+func TestSemanticSearchWithNothingEmbeddableIsEmpty(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	emb := newFakeEmbedServer(t)
+	_, ds := shelfRepository(t)
+	installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
+	hits, err := searchHits(ds.Search(ctx, substrate.SearchInput{Q: "marmalade prose", Mode: substrate.SearchSemantic}))
+	if err != nil || len(hits) != 0 {
+		t.Fatalf("semantic search with nothing embeddable = %v, %v; want an empty answer", hitIDs(hits), err)
+	}
 }
 
 // shelfRepository is a repository with the shelf fixture installed:

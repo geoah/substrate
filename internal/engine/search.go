@@ -40,10 +40,11 @@ var _ substrate.EmbeddingsReporter = (*service)(nil)
 // discovery still drops the feature for it.
 func (*service) EmbeddingsEnabled() bool { return true }
 
-func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) ([]substrate.Hit, error) {
+func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) (substrate.SearchResult, error) {
+	var out substrate.SearchResult
 	q := strings.TrimSpace(in.Q)
 	if q == "" {
-		return nil, fmt.Errorf("%w: search needs a query", substrate.ErrValidation)
+		return out, fmt.Errorf("%w: search needs a query", substrate.ErrValidation)
 	}
 	k := in.K
 	if k <= 0 {
@@ -61,12 +62,18 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) ([]subs
 	if mode != substrate.SearchLexical {
 		p, err := ds.resolveEmbedProvider(ctx)
 		if err != nil {
-			return nil, err
+			return out, err
 		}
 		provider = p
+		// The queue is counted for every search that asked for the semantic
+		// arm, provider or not: it is the one number that says how much of
+		// the index the ranking below did not see.
+		if out.Pending, err = ds.embedPending(ctx); err != nil {
+			return out, err
+		}
 		if provider == nil {
 			if mode == substrate.SearchSemantic {
-				return nil, fmt.Errorf("%w: semantic search needs an embeddings provider: no llmprovider row declares %s",
+				return out, fmt.Errorf("%w: semantic search needs an embeddings provider: no llmprovider row declares %s",
 					substrate.ErrValidation, propEmbedModel)
 			}
 			mode = substrate.SearchLexical
@@ -77,7 +84,7 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) ([]subs
 	for _, name := range in.Kinds {
 		t, err := reg.Resolve(name)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+			return out, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
 		}
 		types = append(types, t.Identity)
 	}
@@ -98,7 +105,7 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) ([]subs
 	if mode == substrate.SearchLexical || mode == substrate.SearchHybrid {
 		lex, err := ds.lexical(ctx, q, types, k)
 		if err != nil {
-			return nil, err
+			return out, err
 		}
 		for id, r := range lex {
 			touch(id).Lexical = r.score
@@ -106,14 +113,14 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) ([]subs
 		}
 	}
 	if mode == substrate.SearchSemantic {
-		if err := ds.requireVectors(ctx, provider); err != nil {
-			return nil, err
+		if err := ds.requireVectors(ctx, provider, out.Pending); err != nil {
+			return out, err
 		}
 	}
 	if mode == substrate.SearchSemantic || mode == substrate.SearchHybrid {
 		sem, err := ds.semantic(ctx, provider, q, types, k)
 		if err != nil {
-			return nil, err
+			return out, err
 		}
 		for id, r := range sem {
 			touch(id).Semantic = r.score
@@ -121,7 +128,7 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) ([]subs
 		}
 	}
 	if len(order) == 0 {
-		return nil, nil
+		return out, nil
 	}
 
 	// Max-normalise each arm so the two scales merge without tuning.
@@ -162,7 +169,7 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) ([]subs
 	if len(order) > k {
 		order = order[:k]
 	}
-	out := make([]substrate.Hit, 0, len(order))
+	out.Hits = make([]substrate.Hit, 0, len(order))
 	for _, id := range order {
 		row, err := scanRecord(ds.db.QueryRowContext(ctx,
 			`SELECT `+recordCols+` FROM records WHERE kind = $1 AND id = $2 AND deleted_at IS NULL`, id.Kind, id.ID))
@@ -171,11 +178,11 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) ([]subs
 		}
 		e, err := ds.hydrate(ctx, ds.db, row, false)
 		if err != nil {
-			return nil, err
+			return out, err
 		}
 		h := scores[id]
 		h.Record = e
-		out = append(out, *h)
+		out.Hits = append(out.Hits, *h)
 	}
 	return out, nil
 }
@@ -223,28 +230,53 @@ func (ds *dataset) lexical(ctx context.Context, q string, types []string, k int)
 	return out, rows.Err()
 }
 
-// requireVectors refuses a semantic search the resolved pair has no vectors
-// to answer: an empty embeddings table scores nothing, and without this a
-// repository restored from its directory (whose vectors were never in the
-// directory, only its queue rows are) would answer "no matches" until the
-// drain caught up. The refusal is substrate.ErrUnavailable, names the pair and
-// counts the pending queue, so a caller can tell "not yet" from "nothing
-// matched" and see the number fall. Hybrid is not held to it: its lexical arm
-// is the documented answer while the semantic arm has nothing.
-func (ds *dataset) requireVectors(ctx context.Context, provider *embedProvider) error {
+// embedPending is how many (record, property) pairs wait in the repository's
+// embed queue: the semantic index's backlog, reported beside every ranking
+// that asked for the semantic arm (substrate.SearchResult.Pending).
+func (ds *dataset) embedPending(ctx context.Context) (int, error) {
+	var n int
+	if err := ds.db.QueryRowContext(ctx, `SELECT count(*) FROM embed_queue`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("substrate/engine: count the embed queue: %w", err)
+	}
+	return n, nil
+}
+
+// requireVectors refuses a semantic search the resolved pair cannot answer,
+// and says why, so an empty index is never read as "no matches". A pair with
+// vectors searches, and that one EXISTS is the whole cost on the happy path.
+// Work in the queue (pending, counted by the caller) is substrate.ErrUnavailable
+// with the count: a repository restored from its directory (whose vectors were
+// never in the directory, only its queue rows are) or a re-embed the drain has
+// not reached, and the number falls as the drain buys. No work and vectors
+// from another pair is a row re-pointed at a model nobody ran `reembed` for:
+// nothing will change by itself, so that is substrate.ErrValidation naming the
+// command, as the missing-row refusal above names the property. No work and no
+// vectors at all is a repository with nothing embeddable: an empty answer.
+// Hybrid is not held to any of this: its lexical arm is the documented answer
+// while the semantic arm has nothing, and Pending says how much it is missing.
+func (ds *dataset) requireVectors(ctx context.Context, provider *embedProvider, pending int) error {
 	var have bool
-	var pending int
-	if err := ds.db.QueryRowContext(ctx, `
-		SELECT EXISTS (SELECT 1 FROM embeddings WHERE provider = $1 AND model = $2),
-		       (SELECT count(*) FROM embed_queue)`,
-		provider.id, provider.model).Scan(&have, &pending); err != nil {
+	if err := ds.db.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM embeddings WHERE provider = $1 AND model = $2)`,
+		provider.id, provider.model).Scan(&have); err != nil {
 		return fmt.Errorf("substrate/engine: semantic search: %w", err)
 	}
 	if have {
 		return nil
 	}
-	return fmt.Errorf("%w: semantic search has no vectors yet from llmprovider %q model %q: %d properties pending in the embed queue",
-		substrate.ErrUnavailable, provider.id, provider.model, pending)
+	if pending > 0 {
+		return fmt.Errorf("%w: semantic search has no vectors yet from llmprovider %q model %q: %d properties pending in the embed queue",
+			substrate.ErrUnavailable, provider.id, provider.model, pending)
+	}
+	var others bool
+	if err := ds.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM embeddings)`).Scan(&others); err != nil {
+		return fmt.Errorf("substrate/engine: semantic search: %w", err)
+	}
+	if others {
+		return fmt.Errorf("%w: semantic search has no vectors from llmprovider %q model %q and the stored vectors are another pair's: run reembed to replace them",
+			substrate.ErrValidation, provider.id, provider.model)
+	}
+	return nil
 }
 
 func (ds *dataset) semantic(ctx context.Context, provider *embedProvider, q string, types []string, k int) (map[eref]arm, error) {
@@ -399,8 +431,7 @@ func (ds *dataset) computeEmbedding(ctx context.Context, provider *embedProvider
 	chunks := chunkText(scalarString(row.Props[prop]))
 	plan := &embedPlan{deleteBeyond: len(chunks)}
 	for i, c := range chunks {
-		sum := sha256.Sum256([]byte(c))
-		hash := hex.EncodeToString(sum[:])
+		hash := chunkHash(c)
 		var have, haveProvider, haveModel string
 		err := ds.db.QueryRowContext(ctx,
 			`SELECT text_hash, provider, model FROM embeddings WHERE record_kind = $1 AND record_id = $2 AND property = $3 AND chunk = $4`,
@@ -496,6 +527,24 @@ func (ds *dataset) commitEmbedding(ctx context.Context, provider *embedProvider,
 		return false, err
 	}
 	return true, tx.Commit()
+}
+
+// chunkHash is the text_hash an embeddings row stores for one chunk: what the
+// drain skips on (computeEmbedding) and what an import compares against
+// (reconcileEmbeddings), so the two can never disagree about "unchanged".
+func chunkHash(chunk string) string {
+	sum := sha256.Sum256([]byte(chunk))
+	return hex.EncodeToString(sum[:])
+}
+
+// chunkHashes is chunkHash over every chunk of a property's text, in order.
+func chunkHashes(text string) []string {
+	chunks := chunkText(text)
+	out := make([]string, len(chunks))
+	for i, c := range chunks {
+		out[i] = chunkHash(c)
+	}
+	return out
 }
 
 // chunkText splits prose into overlapping windows.

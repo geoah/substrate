@@ -1039,11 +1039,11 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 		} else {
 			in.Kinds = scope.kinds
 		}
-		hits, err := ds.Search(ctx, in)
+		res, err := ds.Search(ctx, in)
 		if err != nil {
 			return toolError(err.Error()), false, 0
 		}
-		return toolJSON(map[string]any{"hits": hits}), true, len(hits)
+		return toolJSON(map[string]any{"hits": res.Hits, "pending": res.Pending}), true, len(res.Hits)
 	}
 	ident, _ := args["kind"].(string)
 	if ident == "" {

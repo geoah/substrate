@@ -573,16 +573,23 @@ changelog](changelog.md#frames-and-the-horizon)). A dump keeps the row's
 generation, which is what `repository rotate-generation` above is for. A
 restart and a rebuild keep it too, and neither costs a client its cursor.
 
-**Embedding vectors are bought again, not restored.** The import queues every
-embeddable property of every live record in the transaction that completes it
-(the boot logs `import queued the repository's embeddable properties` with
-the count), and the drain loop buys the vectors a batch at a time once the
-repository's `llmprovider` row resolves; with no such row the queue rows wait
-for one. Until the first vectors land, a `semantic` search refuses with the
-`unavailable` code and the number of properties still queued, and a `hybrid`
-search returns its lexical arm alone. The new vectors come from new provider
-calls, so a ranking may differ from before the copy. `reembed` is not part of
-a restore; it is for a row re-pointed at another model.
+**The import queues the embeddable properties and the drain buys the vectors
+again.** In the transaction that completes it, the import compares the vectors
+the database already holds with the records it folded: a vector for a record
+or a value that is gone is deleted, a vector whose text is unchanged is kept,
+and every property without a current vector is queued (the boot logs `import
+queued the repository's embeddable properties` with the count). Into an empty
+database that is every property; a newer directory restored over an older
+database dump queues only what changed, so it does not re-buy the repository.
+The drain loop then buys the vectors a batch at a time once the repository's
+`llmprovider` row resolves; with no such row the queue rows wait for one.
+Until the first vectors land, a `semantic` search refuses with the
+`unavailable` code and the number of properties still queued; from then on
+every `semantic` and `hybrid` answer carries `pending`, the number still
+queued, so a client can tell a ranking over a partial index from a full one.
+The new vectors come from new provider calls, so a ranking may differ from
+before the copy. `reembed` is not part of a restore; it is for a row
+re-pointed at another model.
 
 **Encrypt the copy.** The changelog and the blobs are plaintext in the
 directory, on the backup host and in the dump alike. The substrate does not

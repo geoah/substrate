@@ -59,9 +59,9 @@ func (f *fakeBackend) List(_ context.Context, q substrate.Query) (*substrate.Pag
 	return &substrate.Page{Records: out}, nil
 }
 
-func (f *fakeBackend) Search(_ context.Context, in substrate.SearchInput) ([]substrate.Hit, error) {
+func (f *fakeBackend) Search(_ context.Context, in substrate.SearchInput) (substrate.SearchResult, error) {
 	f.lastK = in.K
-	return nil, nil
+	return substrate.SearchResult{}, nil
 }
 
 func (f *fakeBackend) Call(_ context.Context, function string, args any) (any, error) {

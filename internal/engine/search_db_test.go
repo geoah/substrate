@@ -50,7 +50,7 @@ func TestLexicalSearch(t *testing.T) {
 		},
 	})
 
-	hits, err := ds.Search(ctx, substrate.SearchInput{Q: "rack layout", Mode: substrate.SearchLexical})
+	hits, err := searchHits(ds.Search(ctx, substrate.SearchInput{Q: "rack layout", Mode: substrate.SearchLexical}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,9 +65,9 @@ func TestLexicalSearch(t *testing.T) {
 		t.Fatalf("raw lexical score missing: %+v", hits[0])
 	}
 	// Type narrowing.
-	hits, err = ds.Search(ctx, substrate.SearchInput{
+	hits, err = searchHits(ds.Search(ctx, substrate.SearchInput{
 		Q: "rack layout", Mode: substrate.SearchLexical, Kinds: []string{"conversationmessage"},
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestLexicalSearch(t *testing.T) {
 		t.Fatalf("type filter ignored: %v", hitIDs(hits))
 	}
 	// Without an embedder, hybrid degrades to lexical rather than failing.
-	hits, err = ds.Search(ctx, substrate.SearchInput{Q: "rack layout"})
+	hits, err = searchHits(ds.Search(ctx, substrate.SearchInput{Q: "rack layout"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestEmbedQueueAndHybridSearch(t *testing.T) {
 		t.Fatalf("queue not drained: %d %v", again, err)
 	}
 
-	hits, err := ds.Search(ctx, substrate.SearchInput{Q: "datacentre rack layout", Mode: substrate.SearchSemantic})
+	hits, err := searchHits(ds.Search(ctx, substrate.SearchInput{Q: "datacentre rack layout", Mode: substrate.SearchSemantic}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestEmbedQueueAndHybridSearch(t *testing.T) {
 		t.Fatalf("cosine looks wrong: %v", hits[0].Semantic)
 	}
 	// Hybrid exposes both raw arms.
-	hits, err = ds.Search(ctx, substrate.SearchInput{Q: "datacentre rack layout", Mode: substrate.SearchHybrid})
+	hits, err = searchHits(ds.Search(ctx, substrate.SearchInput{Q: "datacentre rack layout", Mode: substrate.SearchHybrid}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,6 +174,12 @@ func TestEmbedQueueAndHybridSearch(t *testing.T) {
 	if after-before >= firstChunks {
 		t.Fatalf("unchanged chunks were re-embedded: %d of %d", after-before, firstChunks)
 	}
+}
+
+// searchHits unwraps a Search answer to its hits, for the assertions that are
+// about the ranking and not about the pending count.
+func searchHits(res substrate.SearchResult, err error) ([]substrate.Hit, error) {
+	return res.Hits, err
 }
 
 func hitIDs(hits []substrate.Hit) []string {

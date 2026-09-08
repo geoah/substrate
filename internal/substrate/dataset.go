@@ -57,7 +57,7 @@ type Dataset interface {
 	// resolves within the type.
 	Get(ctx context.Context, typ, id string) (*Record, error)
 	List(ctx context.Context, q Query) (*Page, error)
-	Search(ctx context.Context, in SearchInput) ([]Hit, error)
+	Search(ctx context.Context, in SearchInput) (SearchResult, error)
 	Changes(ctx context.Context, after int64, f ChangeFilter, limit int) ([]Change, error)
 	// Head is the changelog's highest committed seq and its history
 	// generation, the pair a `from` cursor is held to before it resumes.

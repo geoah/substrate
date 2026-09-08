@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/geoah/substrate/internal/embed"
 	"github.com/geoah/substrate/internal/llm"
@@ -142,69 +144,44 @@ func (ds *dataset) Reembed(ctx context.Context, all bool) (substrate.ReembedRepo
 			substrate.ErrValidation, propEmbedModel)
 	}
 	report := substrate.ReembedReport{Provider: provider.id, Model: provider.model, All: all}
-	stale := provider
-	if all {
-		stale = nil
-	}
-	n, err := ds.enqueueEmbeddable(ctx, ds.db, stale)
-	report.Enqueued = n
-	return report, err
-}
-
-// enqueueEmbeddable queues every embeddable property of every live record
-// through q: all of them when stale is nil, else only those the stale pair
-// has no vector for. Which properties are embeddable is the REGISTRY's
-// answer, so a kind that gained an embeddable property since the last drain is
-// included without anything else being told.
-//
-// An import runs it, with no pair, in the transaction that completes its fold
-// (repodir.go refoldFromFiles): the vectors were never in the repository
-// directory (decision 0051), so what a restored repository gets is the queue,
-// and the drain buys the vectors once its llmprovider row resolves. No
-// provider is consulted for that, on purpose: a repository whose row does not
-// resolve keeps the rows pending, which is the recoverable state, where an
-// import that skipped them would leave semantic search empty with no way to
-// tell.
-func (ds *dataset) enqueueEmbeddable(ctx context.Context, q dbx, stale *embedProvider) (int, error) {
-	total := 0
+	// Which properties are embeddable is the REGISTRY's answer, so a kind that
+	// gained an embeddable property since the last drain is included without
+	// anything else being told.
 	for _, ty := range ds.registry().Kinds() {
 		for name, p := range ty.Props {
 			if p == nil || !p.Embed {
 				continue
 			}
-			n, err := enqueueReembed(ctx, q, ty.Identity, name, stale)
+			n, err := ds.enqueueReembed(ctx, provider, ty.Identity, name, all)
 			if err != nil {
-				return total, err
+				return report, err
 			}
-			total += n
+			report.Enqueued += n
 		}
 	}
-	return total, nil
+	return report, nil
 }
 
 // enqueueReembed queues one kind's one embeddable property. The stale test is
 // per property rather than per chunk: a property's chunks are written in one
 // transaction, so they share a pair, and "no chunk from the resolved pair"
-// covers both the property another pair embedded and the one nothing has. A
-// nil stale pair queues every property. The row is written the way a live
-// edit writes it (rows.go enqueueEmbed): an existing row's generation is
-// bumped, never replaced.
-func enqueueReembed(ctx context.Context, q dbx, kind, prop string, stale *embedProvider) (int, error) {
+// covers both the property another pair embedded and the one nothing has.
+func (ds *dataset) enqueueReembed(ctx context.Context, provider *embedProvider, kind, prop string, all bool) (int, error) {
 	args := []any{kind, prop}
-	filter := ``
-	if stale != nil {
-		filter = `AND NOT EXISTS (
+	stale := ``
+	if !all {
+		stale = `AND NOT EXISTS (
 		    SELECT 1 FROM embeddings em
 		     WHERE em.record_kind = r.kind AND em.record_id = r.id AND em.property = $2
 		       AND em.provider = $3 AND em.model = $4)`
-		args = append(args, stale.id, stale.model)
+		args = append(args, provider.id, provider.model)
 	}
-	res, err := q.ExecContext(ctx, `
+	res, err := ds.db.ExecContext(ctx, `
 		INSERT INTO embed_queue (record_kind, record_id, property, generation, enqueued_at)
 		SELECT r.kind, r.id, $2, 1, now()
 		  FROM records r
 		 WHERE r.kind = $1 AND r.deleted_at IS NULL
-		   AND coalesce(r.props->>$2, '') <> '' `+filter+`
+		   AND coalesce(r.props->>$2, '') <> '' `+stale+`
 		ON CONFLICT (repository, record_kind, record_id, property) DO UPDATE
 		    SET generation = embed_queue.generation + 1, enqueued_at = EXCLUDED.enqueued_at`,
 		args...)
@@ -216,6 +193,163 @@ func enqueueReembed(ctx context.Context, q dbx, kind, prop string, stale *embedP
 		return 0, err
 	}
 	return int(n), nil
+}
+
+// reconcileEmbeddings converges the vectors a database already holds with the
+// records an import folded, and queues what is missing, all through q, the
+// import's transaction. Per embeddable property: a stored chunk whose record
+// is gone, whose property is now empty or whose text_hash is not the current
+// chunk's is deleted, and a property without a complete set of current-hash
+// chunks is queued, stamped `at` (the import's clock, so every live edit after
+// it sorts ahead in the drain). Into an empty database that is every property;
+// over an older dump restored beside a newer directory it is only what
+// changed, so a restore does not re-buy a repository. The pair is not
+// consulted: whether the vectors are the resolved pair's is `reembed`'s
+// question, not the import's. Returns how many properties were queued.
+//
+// The registry decides what is embeddable, and it is also the gap: a closure
+// the import parks (loadDeclarationsForReplay leaves out what does not admit)
+// has no kinds here, so its records are neither reconciled nor queued until
+// the closure admits and a `reembed` runs. The live write skips the same
+// records for the same reason.
+func (ds *dataset) reconcileEmbeddings(ctx context.Context, q dbx, at time.Time) (int, error) {
+	total := 0
+	for _, ty := range ds.registry().Kinds() {
+		for name, p := range ty.Props {
+			if p == nil || !p.Embed {
+				continue
+			}
+			n, err := reconcileEmbeddable(ctx, q, ty.Identity, name, at)
+			if err != nil {
+				return total, fmt.Errorf("substrate/engine: reconcile embeddings of %s.%s: %w", ty.Identity, name, err)
+			}
+			total += n
+		}
+	}
+	return total, nil
+}
+
+func reconcileEmbeddable(ctx context.Context, q dbx, kind, prop string, at time.Time) (int, error) {
+	want, err := currentChunkHashes(ctx, q, kind, prop)
+	if err != nil {
+		return 0, err
+	}
+	have, err := storedChunkHashes(ctx, q, kind, prop)
+	if err != nil {
+		return 0, err
+	}
+	var gone []string
+	current := map[string]bool{}
+	for id, stored := range have {
+		hashes, live := want[id]
+		if !live {
+			gone = append(gone, id)
+			continue
+		}
+		if chunksCurrent(stored, hashes) {
+			current[id] = true
+			continue
+		}
+		// Only the chunks that no longer match go; the drain keeps the rest
+		// through the same hash and buys what is missing.
+		for i, h := range stored {
+			if i < len(hashes) && hashes[i] == h {
+				continue
+			}
+			if _, err := q.ExecContext(ctx,
+				`DELETE FROM embeddings WHERE record_kind = $1 AND record_id = $2 AND property = $3 AND chunk = $4`,
+				kind, id, prop, i); err != nil {
+				return 0, err
+			}
+		}
+	}
+	if len(gone) > 0 {
+		if _, err := q.ExecContext(ctx,
+			`DELETE FROM embeddings WHERE record_kind = $1 AND property = $2 AND record_id = ANY($3)`,
+			kind, prop, gone); err != nil {
+			return 0, err
+		}
+	}
+	queue := make([]string, 0, len(want))
+	for id := range want {
+		if !current[id] {
+			queue = append(queue, id)
+		}
+	}
+	if len(queue) == 0 {
+		return 0, nil
+	}
+	sort.Strings(queue)
+	// Written the way a live edit writes it (rows.go enqueueEmbed): a row the
+	// dump already held is bumped, never replaced.
+	if _, err := q.ExecContext(ctx, `
+		INSERT INTO embed_queue (record_kind, record_id, property, generation, enqueued_at)
+		SELECT $1, unnest($2::text[]), $3, 1, $4
+		ON CONFLICT (repository, record_kind, record_id, property) DO UPDATE
+		    SET generation = embed_queue.generation + 1, enqueued_at = EXCLUDED.enqueued_at`,
+		kind, queue, prop, at); err != nil {
+		return 0, err
+	}
+	return len(queue), nil
+}
+
+// currentChunkHashes is every live record's chunk hashes for one property,
+// by record id; a record whose property is empty is absent.
+func currentChunkHashes(ctx context.Context, q dbx, kind, prop string) (map[string][]string, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT id, props->>$2 FROM records
+		 WHERE kind = $1 AND deleted_at IS NULL AND coalesce(props->>$2, '') <> ''`, kind, prop)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string][]string{}
+	for rows.Next() {
+		var id, text string
+		if err := rows.Scan(&id, &text); err != nil {
+			return nil, err
+		}
+		out[id] = chunkHashes(text)
+	}
+	return out, rows.Err()
+}
+
+// storedChunkHashes is every stored chunk's text_hash for one property, by
+// record id then chunk index.
+func storedChunkHashes(ctx context.Context, q dbx, kind, prop string) (map[string]map[int]string, error) {
+	rows, err := q.QueryContext(ctx,
+		`SELECT record_id, chunk, text_hash FROM embeddings WHERE record_kind = $1 AND property = $2`, kind, prop)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]map[int]string{}
+	for rows.Next() {
+		var id, hash string
+		var chunk int
+		if err := rows.Scan(&id, &chunk, &hash); err != nil {
+			return nil, err
+		}
+		if out[id] == nil {
+			out[id] = map[int]string{}
+		}
+		out[id][chunk] = hash
+	}
+	return out, rows.Err()
+}
+
+// chunksCurrent reports whether the stored chunks are exactly the current
+// text's: one row per chunk, each with its hash, none beyond.
+func chunksCurrent(stored map[int]string, hashes []string) bool {
+	if len(stored) != len(hashes) {
+		return false
+	}
+	for i, h := range hashes {
+		if stored[i] != h {
+			return false
+		}
+	}
+	return true
 }
 
 // checkEmbedWire refuses a row whose wire sells no embeddings. Only the openai

@@ -169,7 +169,7 @@ type Continuation struct {
 type Backend interface {
 	Get(ctx context.Context, typ, id string) (*substrate.Record, error)
 	List(ctx context.Context, q substrate.Query) (*substrate.Page, error)
-	Search(ctx context.Context, in substrate.SearchInput) ([]substrate.Hit, error)
+	Search(ctx context.Context, in substrate.SearchInput) (substrate.SearchResult, error)
 	Call(ctx context.Context, function string, args any) (any, error)
 	ResolveKind(name string) string
 }

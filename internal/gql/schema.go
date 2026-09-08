@@ -537,6 +537,7 @@ func (b *schemaBuilder) reservedNames() (map[string]string, error) {
 		"Reference":        "the Reference scalar",
 		"RecordConnection": "the list connection type",
 		"SearchHit":        "the search hit type",
+		"SearchResult":     "the search answer type",
 		"ChangePage":       "the changelog page type",
 		"Query":            "the query root",
 		"Mutation":         "the mutation root",
@@ -665,6 +666,16 @@ func (b *schemaBuilder) queryType() *graphql.Object {
 			"semantic": &graphql.Field{Type: graphql.Float},
 		},
 	})
+	searchResult := graphql.NewObject(graphql.ObjectConfig{
+		Name: "SearchResult",
+		Fields: graphql.Fields{
+			"hits": &graphql.Field{Type: graphql.NewList(graphql.NewNonNull(hit))},
+			"pending": &graphql.Field{
+				Type:        graphql.Int,
+				Description: "Properties the drain has yet to buy vectors for. Non-zero means the semantic arm ranked over a partial index: a restore or a re-embed still in progress.",
+			},
+		},
+	})
 	changePage := graphql.NewObject(graphql.ObjectConfig{
 		Name: "ChangePage",
 		Fields: graphql.Fields{
@@ -701,7 +712,7 @@ func (b *schemaBuilder) queryType() *graphql.Object {
 				Resolve: resolveRecords,
 			},
 			"search": &graphql.Field{
-				Type: graphql.NewList(graphql.NewNonNull(hit)),
+				Type: searchResult,
 				Args: graphql.FieldConfigArgument{
 					"q":     &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)},
 					"mode":  &graphql.ArgumentConfig{Type: graphql.String},
@@ -1006,11 +1017,11 @@ func resolveSearch(p graphql.ResolveParams) (any, error) {
 		}
 	}
 	in.K, _ = p.Args["k"].(int)
-	hits, err := ds.Search(p.Context, in)
+	res, err := ds.Search(p.Context, in)
 	if err != nil {
 		return nil, err
 	}
-	return hits, nil
+	return map[string]any{"hits": res.Hits, "pending": res.Pending}, nil
 }
 
 func resolveChangelog(p graphql.ResolveParams) (any, error) {

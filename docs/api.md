@@ -634,7 +634,9 @@ opened answers `unavailable`, never a masked `401`, so a store the binary
 cannot serve is diagnosable instead of looking like a bad credential; and a
 `semantic` search over a repository whose vectors have not been bought yet
 answers `unavailable` with the number of properties still queued, so an empty
-index is never mistaken for an empty match.
+index is never mistaken for an empty match; search has no REST route, so that
+one reaches a client as the GraphQL error's `extensions.code`, or as the
+function host's error.
 
 The same problem object appears under `extensions` in a GraphQL error and in the
 [watch stream](changelog.md)'s terminal error frame, so an error means the same

@@ -163,11 +163,11 @@ func problemFor(err error) (int, errorPayload) {
 // envelope; unknown errors are 500 without leaking their text shape.
 func writeSubstrateError(w http.ResponseWriter, err error) {
 	status, p := problemFor(err)
-	switch {
-	case status == http.StatusServiceUnavailable:
-		// Ruling A6: every unavailable carries Retry-After.
-		w.Header().Set("Retry-After", "1")
-	case status >= http.StatusInternalServerError:
+	if status == http.StatusServiceUnavailable {
+		writeUnavailable(w, time.Second, p.Message)
+		return
+	}
+	if status >= http.StatusInternalServerError {
 		slog.Error("request failed", "error", err)
 	}
 	writeJSON(w, status, errorEnvelope{Error: p})

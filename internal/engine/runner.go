@@ -258,7 +258,7 @@ func (b *callBackend) List(ctx context.Context, q substrate.Query) (*substrate.P
 	return b.inv.ds.List(ctx, q)
 }
 
-func (b *callBackend) Search(ctx context.Context, in substrate.SearchInput) ([]substrate.Hit, error) {
+func (b *callBackend) Search(ctx context.Context, in substrate.SearchInput) (substrate.SearchResult, error) {
 	return b.inv.ds.Search(ctx, in)
 }
 

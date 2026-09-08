@@ -506,7 +506,9 @@ Python has no need of.
 **Reads.** `host.records.get(kind, id)`,
 `host.records.list(kinds, where?, first?, after?, order?)`,
 `host.records.search(q, kinds, k?, mode?)` (`mode` is `lexical`, `semantic`
-or `hybrid`, and defaults to `hybrid`), and
+or `hybrid`, and defaults to `hybrid`; the host's answer carries `hits` and
+`pending`, the number of properties the drain has yet to buy vectors for, and
+the typed readers return the hits), and
 `host.functions.call(function, input?)`. `get` addresses one record by its
 full reference, the (kind, id) pair; a bare id names nothing and the frame is
 refused. Reads see committed state, never this delivery's own staged effects,
