@@ -131,7 +131,7 @@ func (h *handler) catalogItemFor(ctx context.Context, b *catalog.Bundle, held *s
 	if !installed {
 		return item
 	}
-	up, err := h.catalog.Upgrade(ctx, b.ID, DatasetFrom(ctx))
+	up, err := h.catalog.Upgrade(ctx, b.ID, DatasetFrom(ctx), held)
 	if err != nil {
 		slog.Error("catalog: upgrade preview failed", "bundle", b.ID, "error", err)
 		item.Upgrade = &substrate.BundleUpgrade{Blockers: []string{failedPreviewBlocker}}
@@ -140,8 +140,10 @@ func (h *handler) catalogItemFor(ctx context.Context, b *catalog.Bundle, held *s
 	// A preview with nothing to move and nothing to say is no offer. One that
 	// could not even build the shipped closure answers not-available WITH
 	// blockers (engine PlanBundleUpgrade), and those are kept: they are the
-	// reason the upgrade cannot be taken.
-	if up == nil || (!up.Available && len(up.Blockers) == 0) {
+	// reason the upgrade cannot be taken. One over an EDITED copy is kept
+	// even when nothing moved (decision record 0070): a re-import of that
+	// copy needs a confirmation, and this preview is where its hash is read.
+	if up == nil || (!up.Available && len(up.Blockers) == 0 && !up.DiscardsEdits) {
 		return item
 	}
 	item.Upgrade = up

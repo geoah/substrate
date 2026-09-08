@@ -181,6 +181,8 @@ interface Wire {
 describe("Registry suggested mappings", () => {
   const fetchMock = vi.fn<typeof fetch>()
   const imported: string[] = []
+  /** The confirmation each import's body carried, undefined for a bare POST. */
+  const confirms: unknown[] = []
 
   function serve(wire: Wire) {
     fetchMock.mockImplementation(async (url, init) => {
@@ -212,6 +214,12 @@ describe("Registry suggested mappings", () => {
             path.slice(CATALOG_PATH.length + 1, -"/import".length)
           )
         )
+        const raw = (init as RequestInit | undefined)?.body
+        confirms.push(
+          raw
+            ? (JSON.parse(String(raw)) as { confirm?: unknown }).confirm
+            : undefined
+        )
         return jsonResponse(200, peopleStatus())
       }
       return jsonResponse(200, {})
@@ -223,6 +231,7 @@ describe("Registry suggested mappings", () => {
     navigate.mockClear()
     localStorage.clear()
     imported.length = 0
+    confirms.length = 0
   })
 
   afterEach(() => {
@@ -346,6 +355,39 @@ describe("Registry suggested mappings", () => {
     )
     await waitFor(() =>
       expect(imported).toEqual(["samples.substrate.reamde.dev/people"])
+    )
+  })
+
+  // The server keeps a preview on an EDITED copy even when nothing shipped
+  // moved (decision record 0070), because the re-import needs the
+  // confirmation it hands out: the click sends it, never a bare POST.
+  it("Import again over an edited copy confirms the previewed plan", async () => {
+    serve({
+      statuses: [{ ...peopleStatus(), modified: true }],
+      catalog: [
+        {
+          ...people([mapping({ state: "ready" })], true),
+          upgrade: {
+            available: false,
+            work: 0,
+            lossy: false,
+            discardsEdits: true,
+            planHash: "d15c",
+            changelogSeq: 9,
+          },
+        },
+        githubEntry,
+      ],
+    })
+    renderPage(<RegistryPage />)
+    const row = await rowOf("people")
+    fireEvent.click(within(row).getByRole("button", { name: /Import again/ }))
+    const dialog = await screen.findByRole("dialog")
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: /^Import again$/ })
+    )
+    await waitFor(() =>
+      expect(confirms).toEqual([{ planHash: "d15c", changelogSeq: 9 }])
     )
   })
 

@@ -55,6 +55,7 @@ vi.mock("@/router", () => ({
 import { BundleDetailPage } from "./bundle-detail"
 
 const CATALOG_PATH = "/api/v1/catalog"
+const STATUSES_PATH = "/api/v1/substrate.reamde.dev/core/bundle/status"
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(body === undefined ? null : JSON.stringify(body), {
@@ -206,11 +207,19 @@ describe("BundleDetailPage", () => {
 
   function serve(
     bundleStatus: BundleStatus,
-    opts: { configs?: SubstrateRecord[] } = {}
+    opts: {
+      configs?: SubstrateRecord[]
+      /** Every held bundle's status, the list the floor check reads. */
+      statuses?: BundleStatus[]
+      catalog?: CatalogItem[]
+    } = {}
   ) {
     fetchMock.mockImplementation(async (url, init) => {
       const method = (init as RequestInit | undefined)?.method ?? "GET"
       const path = String(url)
+      if (path === STATUSES_PATH) {
+        return jsonResponse(200, { items: opts.statuses ?? [bundleStatus] })
+      }
       if (path.includes("/bundle/") && path.endsWith("/status")) {
         return jsonResponse(200, bundleStatus)
       }
@@ -225,7 +234,7 @@ describe("BundleDetailPage", () => {
         return jsonResponse(200, { kinds: KINDS })
       }
       if (path === CATALOG_PATH) {
-        return jsonResponse(200, { items: [PEOPLE, GOOGLE] })
+        return jsonResponse(200, { items: opts.catalog ?? [PEOPLE, GOOGLE] })
       }
       if (
         path.startsWith("/api/v1/providers.substrate.reamde.dev/google/config")
@@ -332,6 +341,33 @@ describe("BundleDetailPage", () => {
       expect(
         screen.getByText(
           /Not in this repository: samples\.substrate\.reamde\.dev\/messaging/
+        )
+      ).toBeTruthy()
+    })
+
+    // The floor under a requirement (decision record 0070) is read against
+    // the version the held bundle's status reports, as the Registry page and
+    // the server read it: a package held below it is unmet here too.
+    it("marks a requirement held below the closure's floor unmet, naming both versions", async () => {
+      serve(googleStatus(), {
+        catalog: [
+          PEOPLE,
+          {
+            ...GOOGLE,
+            requiresAtLeast: { "samples.substrate.reamde.dev/people": 5 },
+          },
+        ],
+        statuses: [googleStatus(), status({ version: 4 })],
+      })
+      renderPage(<BundleDetailPage />)
+      await screen.findByText("google")
+      const note = screen.getByText("Requires").closest("div") as HTMLElement
+      await within(note).findByTitle(
+        "samples.substrate.reamde.dev/people is imported at version 4; this bundle needs version 5 or later"
+      )
+      expect(
+        screen.getByText(
+          /samples\.substrate\.reamde\.dev\/people is imported at version 4, and this bundle needs version 5 or later: import that package's bundle again first\./
         )
       ).toBeTruthy()
     })

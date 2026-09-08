@@ -385,6 +385,7 @@ const catalogBundle: Shape<CatalogBundle> = {
   tier: true,
   inputs: false,
   requires: false,
+  requiresAtLeast: false,
   suggestedMappings: false,
   origin: false,
   originVersion: false,
@@ -444,6 +445,7 @@ const bundleStatus: Shape<BundleStatus> = {
   liveRecords: true,
   quarantined: false,
   quarantineReason: false,
+  version: false,
   origin: false,
   originVersion: false,
   modified: false,
@@ -499,6 +501,7 @@ const bundleUpgrade: Shape<BundleUpgrade> = {
   changes: false,
   blockers: false,
   renames: false,
+  discardsEdits: false,
 }
 
 const bundleUpgradeRename: Shape<BundleUpgradeRename> = {
@@ -511,6 +514,7 @@ const bundleUpgradeRename: Shape<BundleUpgradeRename> = {
 const vocabularyPlan: Shape<VocabularyPlan> = {
   ...conversionPlan,
   blockers: false,
+  discardsEdits: false,
 }
 
 const bundleUpgradeChange: Shape<BundleUpgradeChange> = {

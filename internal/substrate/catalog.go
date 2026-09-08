@@ -14,7 +14,8 @@ package substrate
 //     each change with a version bump the upgrade preview offers.
 //   - TierSample is a package the user copies (samples/). It IMPORTS under the
 //     repository's own authority and is the user's afterwards: writable through
-//     the API, never offered an upgrade.
+//     the API, and offered the shipped upgrade through the origin stamp its
+//     import left, taken by importing again (decision record 0070).
 const (
 	TierProvider = "provider"
 	TierSample   = "sample"
@@ -40,8 +41,9 @@ type CatalogBundle struct {
 	// Description is the bundle document's description.
 	Description string `json:"description"`
 	// Version is the owned package's version. Zero means the closure declares
-	// none. A sample has no upgrade path, so its version is offered to
-	// nothing; the import records it as the copy's OriginVersion.
+	// none. The import records a sample's as the copy's OriginVersion, and the
+	// preview compares the two to say the shipped sample moved (decision
+	// record 0070).
 	Version int64 `json:"version"`
 	// Tier is "provider" or "sample": which of the two doors this closure
 	// takes, and which of the two authorities it lands under.
@@ -56,6 +58,14 @@ type CatalogBundle struct {
 	// core alone), so the console shows this before the button is pressed and
 	// admission refuses while one is absent, naming what to take first.
 	Requires []string `json:"requires,omitempty"`
+	// RequiresAtLeast is the floor the closure puts under a required package
+	// (decision record 0070): the least version of it that satisfies the
+	// requirement, keyed by the package identity Requires lists. A package
+	// with no entry is satisfied by any version. Admission refuses while the
+	// repository holds the package below its floor, naming both versions, so
+	// the console reads the floor against BundleStatus.Version before the
+	// button is pressed.
+	RequiresAtLeast map[string]int64 `json:"requiresAtLeast,omitempty"`
 	// SuggestedMappings are the mappings this closure declares onto its own
 	// kinds FROM another package's, each with the state it has in this
 	// repository (below). A sample ships them for the providers it knows and

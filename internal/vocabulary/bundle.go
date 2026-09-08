@@ -79,6 +79,13 @@ type Bundle struct {
 	// naming what to import first, instead of letting the closure fail on an
 	// unresolvable reference pin.
 	Requires []string
+	// RequiresAtLeast is the floor `requiresAtLeast:` puts under a required
+	// package: the least package version that satisfies the requirement,
+	// keyed by the package identity (decision record 0070). A package in
+	// Requires with no entry here is satisfied by any version. resolveBundle
+	// refuses the install while the repository holds the package below its
+	// floor, naming the version it holds and the one the closure needs.
+	RequiresAtLeast map[string]int64
 	// Modules are the bundle's SHARED library modules, filename → inline
 	// source, that its functions import to dedup helpers (a shared http
 	// client, provider auth, normalizers) instead of each ≤256 KiB body
@@ -163,6 +170,7 @@ func (b *Bundle) Identity() string { return b.Package }
 var bundleDataKeys = map[string]bool{
 	"authority": true, "package": true, "description": true, "inputs": true,
 	"installs": true, "modules": true, "oauth2": true, "requires": true,
+	"requiresAtLeast": true,
 }
 
 // featureScopeKeys is one feature toggle's entry: the scopes enabling it
@@ -237,6 +245,7 @@ func (l *loader) buildBundle(gd *packageDocs) {
 	}
 	l.parseBundleInputs(where, b, d.Data)
 	b.Requires = l.parseBundleRequires(where, g.Identity, d.Data)
+	b.RequiresAtLeast = l.parseBundleRequiresAtLeast(where, b.Requires, d.Data)
 	for i, iv := range mslice(d.Data, "installs") {
 		id := fmt.Sprint(iv)
 		if !Qualified(id) {
@@ -370,6 +379,55 @@ func (l *loader) parseBundleRequires(where, own string, data map[string]any) []s
 			seen[pkg] = true
 			out = append(out, pkg)
 		}
+	}
+	return out
+}
+
+// parseBundleRequiresAtLeast reads the optional `requiresAtLeast:` map, the
+// FLOOR a bundle puts under a package it requires: `<package identity>: N`
+// (decision record 0070). A minimum is the one constraint the grammar has: a
+// copy's version only ever rises, so an exact pin or a ceiling would refuse
+// the next fix to the very package the closure depends on. Every key names a
+// package the same document lists in `requires:`, so one list says what is
+// needed and this map says how new; every value is an integer of at least 1,
+// the first version there is (DefaultVersion).
+func (l *loader) parseBundleRequiresAtLeast(where string, requires []string, data map[string]any) map[string]int64 {
+	raw, has := data["requiresAtLeast"]
+	if !has {
+		return nil
+	}
+	entries, isMap := raw.(map[string]any)
+	if !isMap {
+		l.errf("%s: data.requiresAtLeast must be a map of package identity to the least version that satisfies it", where)
+		return nil
+	}
+	if len(entries) == 0 {
+		l.errf("%s: data.requiresAtLeast is present but empty: omit it or name at least one package", where)
+		return nil
+	}
+	required := map[string]bool{}
+	for _, pkg := range requires {
+		required[pkg] = true
+	}
+	out := map[string]int64{}
+	for _, pkg := range sortedMapKeys(entries) {
+		w := fmt.Sprintf("%s: data.requiresAtLeast[%q]", where, pkg)
+		if !required[pkg] {
+			l.errf("%s: names a package data.requires does not list: the floor belongs to a declared requirement", w)
+			continue
+		}
+		v, ok := VersionValue(entries[pkg])
+		switch {
+		case !ok:
+			l.errf("%s: %v is not a version: an integer of at least %d", w, entries[pkg], DefaultVersion)
+		case v < DefaultVersion:
+			l.errf("%s: %d is below %d, the first version there is", w, v, DefaultVersion)
+		default:
+			out[pkg] = v
+		}
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }
@@ -568,10 +626,22 @@ func (r *Registry) resolveBundle(g *Package) []string {
 	// first, instead of an unresolvable reference pin or mapping `to:` deeper in
 	// the same admission.
 	for _, req := range b.Requires {
-		if _, ok := r.PackageByName(req); !ok {
+		held, ok := r.PackageByName(req)
+		if !ok {
 			problems = append(problems, fmt.Sprintf(
 				"%s: data.requires names %s, which this repository does not have — import that package's bundle first",
 				where, req))
+			continue
+		}
+		// THE FLOOR (decision record 0070): the requirement is met by the
+		// package at the least version the closure declares against, or any
+		// later one. The stored package version is what is compared, through
+		// the one comparator, so a repository holding the package below the
+		// floor is told which version it holds and which it needs.
+		if floor, pinned := b.RequiresAtLeast[req]; pinned && CompareVersions(held.Version, floor) < 0 {
+			problems = append(problems, fmt.Sprintf(
+				"%s: data.requiresAtLeast needs %s at version %d or later, and this repository holds version %d: upgrade or import that package's bundle again first",
+				where, req, floor, held.Version))
 		}
 	}
 	required := map[string]bool{PackageCore: true, g.Identity: true}

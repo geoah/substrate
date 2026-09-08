@@ -68,6 +68,97 @@ data:
 	}
 }
 
+// A rehomed input that carries its package document names the package it was
+// authored as, so the server stamps the landed copy with its origin exactly as
+// an import would (decision record 0070). An input with no package document
+// lands no package row to stamp, and claims nothing.
+func TestApplyAsSendsTheOrigin(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	dir := t.TempDir()
+	kindDoc := `kind: substrate.reamde.dev/core/kind
+metadata:
+  id: samples.substrate.reamde.dev/tasks/task
+data:
+  authority: samples.substrate.reamde.dev
+  package: tasks
+  names:
+    singular: task
+  properties:
+    name:
+      type: string
+`
+	packageDoc := `kind: substrate.reamde.dev/core/package
+metadata:
+  id: samples.substrate.reamde.dev/tasks
+data:
+  authority: samples.substrate.reamde.dev
+  package: tasks
+  version: 7
+---
+`
+	closure := filepath.Join(dir, "closure.yaml")
+	if err := os.WriteFile(closure, []byte(packageDoc+kindDoc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, stderr, err := h.run("apply", "-f", closure, "--as", "ada.example.com"); err != nil {
+		t.Fatalf("apply --as: %v %s", err, stderr)
+	}
+	var origin string
+	if err := json.Unmarshal(h.fake.lastBody["origin"], &origin); err != nil || origin != "samples.substrate.reamde.dev/tasks" {
+		t.Errorf("the apply named origin %q (%v), want the package as authored", origin, err)
+	}
+
+	alone := filepath.Join(dir, "kind.yaml")
+	if err := os.WriteFile(alone, []byte(kindDoc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, stderr, err := h.run("apply", "-f", alone, "--as", "ada.example.com"); err != nil {
+		t.Fatalf("apply --as one kind: %v %s", err, stderr)
+	}
+	if _, claimed := h.fake.lastBody["origin"]; claimed {
+		t.Errorf("an input with no package document claimed an origin: %s", h.fake.lastBody["origin"])
+	}
+}
+
+// One request names one origin, so an input carrying several package documents
+// is refused before anything is sent: letting it through would replace every
+// copy unstamped and unconfirmed (decision record 0070).
+func TestApplyAsRefusesSeveralPackages(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	packageDoc := func(word string) string {
+		return `kind: substrate.reamde.dev/core/package
+metadata:
+  id: samples.substrate.reamde.dev/` + word + `
+data:
+  authority: samples.substrate.reamde.dev
+  package: ` + word + `
+  version: 2
+`
+	}
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "a.yaml"), filepath.Join(dir, "b.yaml")
+	if err := os.WriteFile(a, []byte(packageDoc("tasks")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(b, []byte(packageDoc("people")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := h.run("apply", "-f", a, "-f", b, "--as", "ada.example.com")
+	if err == nil {
+		t.Fatal("apply --as admitted two package documents in one run")
+	}
+	for _, want := range []string{"one package per run", "samples.substrate.reamde.dev/people and samples.substrate.reamde.dev/tasks"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not say %q: %s", want, err)
+		}
+	}
+	if contains(h.fake.doorRequests(), "POST /api/v1/vocabulary/apply") {
+		t.Errorf("the refused apply still reached the server: %v", h.fake.doorRequests())
+	}
+}
+
 // `substratectl import` calls the sample door and reports what LANDED: the
 // package under this repository's own authority, not the shipped id typed.
 func TestImportCallsTheSampleDoor(t *testing.T) {
@@ -226,7 +317,7 @@ func TestRehomeInputReachesLabelsAndAnnotations(t *testing.T) {
 	}
 	docs := []*document{record}
 	vocabularyDocs := []map[string]any{declaration}
-	if err := rehomeInput(docs, vocabularyDocs, "ada.example.com"); err != nil {
+	if _, err := rehomeInput(docs, vocabularyDocs, "ada.example.com"); err != nil {
 		t.Fatalf("rehome: %v", err)
 	}
 	raw, err := json.Marshal([]any{vocabularyDocs, docs})

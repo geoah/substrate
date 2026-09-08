@@ -85,6 +85,14 @@ export function landedCatalog(item: CatalogItem, home: string): CatalogItem {
     ...item,
     authority: home,
     requires: item.requires?.map(rehome),
+    requiresAtLeast: item.requiresAtLeast
+      ? Object.fromEntries(
+          Object.entries(item.requiresAtLeast).map(([pkg, floor]) => [
+            rehome(pkg),
+            floor,
+          ])
+        )
+      : undefined,
     // A suggested mapping's id and TARGET are this package's, so both land
     // under this repository's authority; `from` is the provider's own kind
     // and is left exactly as published (decision record 0049).
@@ -157,9 +165,18 @@ export function installBundle(
 /** Import a SAMPLE under this repository's own authority (decision record
  * 0048). The server rehomes the closure before admitting it, so the status it
  * answers with carries the LANDED id (`<your authority>/<package>`), not the
- * shipped one this call names. */
-export function importBundle(id: string): Promise<BundleStatus> {
-  return request<BundleStatus>("POST", `${CATALOG}/${seg(id)}/import`)
+ * shipped one this call names. A re-import over a copy this repository edited,
+ * or one whose plan is lossy, needs the confirmation its preview handed out
+ * (decision records 0067 and 0070). */
+export function importBundle(
+  id: string,
+  confirm?: ConversionConfirm
+): Promise<BundleStatus> {
+  return request<BundleStatus>(
+    "POST",
+    `${CATALOG}/${seg(id)}/import`,
+    confirm && { confirm }
+  )
 }
 
 /** The door a catalog entry takes, by tier. */

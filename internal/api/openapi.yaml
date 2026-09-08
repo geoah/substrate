@@ -1060,8 +1060,10 @@ paths:
         Rehomes the shipped closure onto this repository's own authority and
         applies it, so what lands is `<authority>/<package>`. A provider id
         is refused here, naming install. The optional body is the install's:
-        a re-import replaces the package, and one whose conversion plan is
-        lossy runs only with a confirmation.
+        a re-import replaces the package, and one whose preview (`upgrade`
+        on the catalog read) is `lossy` or `discardsEdits` (the copy was
+        edited since it was imported) runs only with a confirmation naming
+        that preview's `planHash` and `changelogSeq`.
       operationId: importCatalogItem
       parameters:
         - $ref: "#/components/parameters/catalogID"
@@ -3139,6 +3141,13 @@ components:
             additionalProperties: true
         confirm:
           $ref: "#/components/schemas/ConversionConfirm"
+        origin:
+          type: string
+          description: The shipped bundle id this batch is a hand-rehomed
+            copy of (`substratectl apply --as`). The server stamps it on the
+            landed package row as the import door stamps its own; the batch
+            must carry that package's document. Over a copy edited since its
+            stamp the apply replaces the edits and needs `confirm`.
     VocabularyApplyResponse:
       type: object
       required: [records]
@@ -3158,6 +3167,10 @@ components:
           items:
             type: object
             additionalProperties: true
+        origin:
+          type: string
+          description: The origin the apply would claim, so the preview says
+            whether it replaces an edited copy and hashes as the apply will.
     VocabularyPlan:
       type: object
       description: "The preview of one apply: the guard lines it would refuse
@@ -3168,6 +3181,11 @@ components:
           type: array
           items:
             type: string
+        discardsEdits:
+          type: boolean
+          description: The change replaces a copy edited since its origin
+            stamp, so the edits go with it. Like `lossy`, it runs only with
+            a `ConversionConfirm` naming this preview.
         steps:
           type: array
           items:
@@ -3291,6 +3309,14 @@ components:
           type: array
           items:
             type: string
+        requiresAtLeast:
+          type: object
+          description: The least version of a required package this closure
+            declares against, by package identity. Admission refuses while
+            the repository holds the package below it.
+          additionalProperties:
+            type: integer
+            format: int64
         suggestedMappings:
           type: array
           items:
@@ -3335,6 +3361,14 @@ components:
           type: array
           items:
             type: string
+        requiresAtLeast:
+          type: object
+          description: The least version of a required package this closure
+            declares against, by package identity. Admission refuses while
+            the repository holds the package below it.
+          additionalProperties:
+            type: integer
+            format: int64
         suggestedMappings:
           type: array
           items:
@@ -3440,6 +3474,11 @@ components:
           type: array
           items:
             type: string
+        discardsEdits:
+          type: boolean
+          description: The change replaces a copy edited since its origin
+            stamp, so the edits go with it. Like `lossy`, it runs only with
+            a `ConversionConfirm` naming this preview.
         steps:
           type: array
           items:
@@ -3538,6 +3577,11 @@ components:
           type: boolean
         quarantineReason:
           type: string
+        version:
+          type: integer
+          format: int64
+          description: The owned package's stored version, what a closure's
+            `requiresAtLeast` is compared against.
         origin:
           type: string
         originVersion:
@@ -3585,6 +3629,11 @@ components:
           type: boolean
         quarantineReason:
           type: string
+        version:
+          type: integer
+          format: int64
+          description: The owned package's stored version, what a closure's
+            `requiresAtLeast` is compared against.
         origin:
           type: string
         originVersion:

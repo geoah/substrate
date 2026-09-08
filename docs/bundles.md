@@ -13,7 +13,7 @@ The catalog it comes from has **two doors**, one per tier
 | Word            | Means                                                                  |
 | --------------- | ---------------------------------------------------------------------- |
 | **provider**    | a package a publisher owns (`providers.substrate.reamde.dev/google`). It INSTALLS under the authority that publishes it, and the publisher ships each change with a version bump the upgrade preview offers |
-| **sample**      | a package the user copies (`samples/`). It IMPORTS under the repository's own authority (`samples.substrate.reamde.dev/tasks/task` lands as `ada.example.com/tasks/task`) and is the repository's afterwards: writable, never offered an upgrade |
+| **sample**      | a package the user copies (`samples/`). It IMPORTS under the repository's own authority (`samples.substrate.reamde.dev/tasks/task` lands as `ada.example.com/tasks/task`) and is the repository's afterwards: writable, and offered an upgrade through the origin stamp its import left |
 | **account**     | one configured connection to a provider: a record of an `accountconfig`-trait kind. The console lists these under **Connections** |
 
 ## What a bundle ships
@@ -135,11 +135,17 @@ lines the install would refuse on as `blockers`. A preview that cannot run at
 all (a database fault, a closure this repository cannot admit) still leaves
 the entry in the listing, with one fixed blocker line ("the upgrade preview
 failed; see the server log") and no version motion; the error itself goes to
-the server log, never to a repository token. Of the two catalog tiers only a
-PROVIDER is previewed: a sample's closure landed under the repository's own
-authority and belongs to it, so the catalog answers not-available before the
-dataset is asked
-([0048](decisions/0048-providers-are-published-samples-are-copied.md)).
+the server log, never to a repository token. A PROVIDER is previewed as
+shipped. A SAMPLE is previewed as the import door would land it, rehomed onto
+the repository's own authority, and only through the origin stamp its import
+left on the copy
+([0070](decisions/0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md)):
+the shipped sample moved when its version is past the copy's `originVersion`,
+and the copy was edited when its stored declarations no longer hash to
+`originDigest`, in which case the preview says `discardsEdits: true` and the
+re-import takes the same confirmation a lossy plan does (below). A package
+with no stamp is one the user declared or a copy taken before the stamp
+existed, and the shipped sample claims no upgrade over it.
 
 The preview also carries the **conversion plan** the install would run
 ([decision 0067](decisions/0067-a-lossy-conversion-runs-only-with-a-confirmation-bound-to-its-preview.md)):
@@ -431,6 +437,23 @@ repository that has not imported `people` is **refused** by the ordinary
 admission, before anything is touched, with a problem naming what to import
 first. Nothing resolves the dependency for you — the order is yours.
 
+`requiresAtLeast` is the floor under a requirement
+([0070](decisions/0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md)):
+a map on the bundle document from a package `requires` lists to the least
+package version that satisfies it, `samples.substrate.reamde.dev/people: 4`.
+A minimum is the whole grammar: a copy's version only rises, so an exact pin
+or a ceiling would refuse the next fix to the very package the closure needs.
+Admission compares the floor against the stored package version and refuses
+while the repository holds the package below it, naming both versions; the
+loader refuses a key `requires` does not list, a value that is not an integer
+of at least 1, and any other constraint key. The shipped samples pin the
+versions they were verified against, so importing `tasks` over a `people`
+copy imported before version 4 says to import `people` again first, and the
+console reads the floor against each held bundle's `version` before the button
+is pressed. `requiresAtLeast` is a dialect key
+([0020](decisions/0020-dialect-keys-are-reserved-not-tolerated.md)): a binary
+from before it refuses a closure that carries one.
+
 `GET …/catalog` lists every shipped bundle under an `{items}`
 envelope, each flagged `installed` for this repository;
 `GET …/catalog/{id}` is one entry with its closure, and an
@@ -463,9 +486,10 @@ admission. A document that still mentions the placeholder afterwards is
 refused. So `samples.substrate.reamde.dev/tasks/task` lands as
 `ada.example.com/tasks/task`, `source: installed` and writable through the API,
 and the bundle record it lands as is `ada.example.com/tasks`, not the id the
-request named. A sample is never offered an upgrade: what it landed belongs to
-the repository. `requires:` is rehomed with everything else, so importing
-`tasks` before `people` is refused by the ordinary admission naming
+request named. What it landed belongs to the repository; the upgrade a later
+binary offers it is a re-import, previewed through the stamp below. `requires:`
+and `requiresAtLeast:` are rehomed with everything else, so importing `tasks`
+before `people` is refused by the ordinary admission naming
 `<your authority>/people`, the sample to import first.
 
 The copy records where it came from. The import stamps three managed
@@ -479,14 +503,36 @@ function, agent or bundle document edited, added or removed since the import
 reads `modified: true`. Versions alone could not say so, because a kind edit
 moves the kind's version and not the package's, and an addition moves nothing.
 `modified` covers declaration data only: labels, annotations and the data
-records a sample ships beside its closure do not flip it, and
-[#386](https://github.com/geoah/substrate/issues/386) owns the definition of a
-local modification.
-The provider door and a hand `apply -f` stamp nothing, so a package with no
-`origin` is either a provider or the repository's own from the start. A
-re-import replaces the package as before and re-stamps it, so an edited copy
-reads pristine again once its edits are gone. A sample imported before the
-stamp existed has no origin, and nothing reconstructs one.
+records a sample ships beside its closure do not flip it.
+The provider door stamps nothing, and neither does a hand `apply -f` unless
+the request names an `origin`: `substratectl apply --as <authority>` sends
+the package the input was authored as when the input carries its package
+document (one package per run; an input carrying several is refused, since
+one request names one origin), and the server records the claim as the import door records its
+own, with a digest of what landed
+([0070](decisions/0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md)).
+So a package with no `origin` is a provider, the repository's own from the
+start, or a copy imported before the stamp existed, which nothing reconstructs.
+
+**The stamp is the sample's upgrade path.** The catalog previews a stamped
+copy against the shipped sample, rehomed, exactly as the provider preview
+above: `upgrade.available` when the shipped version is past `originVersion`
+(or a declaration moved), the same `changes`, `blockers` and conversion plan,
+and `discardsEdits: true` when the copy was edited since its stamp, because a
+re-import replaces the package whole (record 0048) and every edit goes with
+it. That preview stays on the entry even when nothing shipped moved, so the
+re-import can be confirmed. The import door refuses a re-import over an
+edited copy the way it refuses a lossy plan, `403 lossy`, until the body
+carries `confirm: {planHash, changelogSeq}` from that preview; the hash binds
+the edited state, so one more edit refuses it as one more write does. A
+confirmed re-import re-stamps the copy, and it reads pristine again. The
+console's Registry offers Upgrade on a moved sample through the import door,
+asks first where the copy was edited, and sends the confirmation on Import
+again too; `substratectl import <sample> --allow-data-loss` reads the preview,
+says what goes and confirms exactly that plan. A hand `apply --as` over an
+edited copy is refused the same way, and `apply --as --allow-data-loss`
+previews with the origin (`POST /api/v1/vocabulary/plan` takes `origin` too)
+and confirms.
 
 `import` on a provider id is refused naming `install`. `install` on a sample id
 still admits the closure verbatim, under the placeholder authority: nothing

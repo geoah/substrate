@@ -23,7 +23,9 @@ data:
   # version 7: every declared link in this closure is a reference property,
   # carrying `mustExist: true` and `onDelete: cascade` where the referent
   # owns the record.
-  version: 7
+  # version 8: the bundle pins the floor under the package it requires
+  # (`requiresAtLeast`, decision record 0070). Additive.
+  version: 8
 ---
 # ---- the bundle document: the import unit -----------------------------------
 # A SAMPLE bundle: kinds only, imported from the registry.
@@ -39,6 +41,8 @@ data:
     workout.
   requires:
     - samples.substrate.reamde.dev/scheduling
+  requiresAtLeast:
+    samples.substrate.reamde.dev/scheduling: 2
   installs:
     - samples.substrate.reamde.dev/fitness/exercise
     - samples.substrate.reamde.dev/fitness/workout

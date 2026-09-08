@@ -39,7 +39,34 @@ var tasksRequires = []string{
 // with each named file rewritten: binary N+1's tree, against a repository
 // binary N installed into. Passing no mutation loads the shipped closure
 // unchanged, which is binary N's own tree.
+//
+// The copy is loaded as a PROVIDER root: the provider preview is what these
+// tests hold, while the closure it is made of stays the tasks closure the
+// tree ships. movedTasksSampleCatalog loads the same copy as the sample it
+// is.
 func movedTasksCatalog(t *testing.T, mutate map[string]func(string) string) *catalog.Catalog {
+	t.Helper()
+	c, err := catalog.Load(catalog.ProviderRoot(os.DirFS(movedTasksRoot(t, mutate))))
+	if err != nil {
+		t.Fatalf("load moved catalog: %v", err)
+	}
+	return c
+}
+
+// movedTasksSampleCatalog is movedTasksCatalog under the SAMPLE tier: binary
+// N+1's samples tree, which is what a copy imported from binary N is
+// previewed against (decision record 0070).
+func movedTasksSampleCatalog(t *testing.T, mutate map[string]func(string) string) *catalog.Catalog {
+	t.Helper()
+	c, err := catalog.Load(catalog.SampleRoot(os.DirFS(movedTasksRoot(t, mutate))))
+	if err != nil {
+		t.Fatalf("load moved sample catalog: %v", err)
+	}
+	return c
+}
+
+// movedTasksRoot writes the copied samples tree the two loaders read.
+func movedTasksRoot(t *testing.T, mutate map[string]func(string) string) string {
 	t.Helper()
 	// The copy mirrors the samples root: the authority manifest at the root,
 	// the tasks package directory beside it.
@@ -74,14 +101,7 @@ func movedTasksCatalog(t *testing.T, mutate map[string]func(string) string) *cat
 	}
 	copyManifests(samplesRoot, root)
 	copyManifests(filepath.Join(samplesRoot, tasksPackage), dst)
-	// The copy is loaded as a PROVIDER root: only a published package is
-	// offered an upgrade (decision record 0048), so the copy stands in for one
-	// while the closure it is made of stays the tasks closure the tree ships.
-	c, err := catalog.Load(catalog.ProviderRoot(os.DirFS(root)))
-	if err != nil {
-		t.Fatalf("load moved catalog: %v", err)
-	}
-	return c
+	return root
 }
 
 // mustReplace is strings.Replace that fails the test when the needle is
@@ -146,7 +166,7 @@ func TestUpgradePreview(t *testing.T) {
 	current := movedTasksCatalog(t, nil)
 
 	// Not installed: nothing to upgrade, only to install.
-	up, err := current.Upgrade(ctx, tasksBundleID, ds)
+	up, err := current.Upgrade(ctx, tasksBundleID, ds, nil)
 	if err != nil {
 		t.Fatalf("preview before install: %v", err)
 	}
@@ -157,7 +177,7 @@ func TestUpgradePreview(t *testing.T) {
 	importVocabulary(t, c, ds, append(tasksRequires, tasksBundleID)...)
 
 	// Installed and current: the shipped closure moves nothing.
-	up, err = current.Upgrade(ctx, tasksBundleID, ds)
+	up, err = current.Upgrade(ctx, tasksBundleID, ds, nil)
 	if err != nil {
 		t.Fatalf("preview after install: %v", err)
 	}
@@ -165,14 +185,16 @@ func TestUpgradePreview(t *testing.T) {
 		t.Fatalf("an up-to-date bundle previews an upgrade: %+v", up)
 	}
 
-	// A SAMPLE is never offered one: what it landed belongs to the repository,
-	// so the catalog answers no preview at all before the dataset is asked.
-	sample, err := c.Upgrade(ctx, tasksBundleID, ds)
+	// A SAMPLE is previewed only through the copy's origin stamp (decision
+	// record 0070): with no held copy to read one off, the catalog answers no
+	// preview at all before the dataset is asked. The verbatim install above
+	// stamped nothing, so a status for the shipped id is such a copy.
+	sample, err := c.Upgrade(ctx, tasksBundleID, ds, &substrate.BundleStatus{ID: tasksBundleID, Installed: true})
 	if err != nil {
 		t.Fatalf("preview of a sample: %v", err)
 	}
 	if sample != nil {
-		t.Errorf("a sample previews an upgrade: %+v", sample)
+		t.Errorf("a sample held without an origin stamp previews an upgrade: %+v", sample)
 	}
 
 	// Binary N+1 ships the package a version ahead with a new optional
@@ -188,7 +210,7 @@ func TestUpgradePreview(t *testing.T) {
 				"    upgradeProbe:\n      type: string\n      description: a property this binary added\n    status:")
 		},
 	})
-	up, err = moved.Upgrade(ctx, tasksBundleID, ds)
+	up, err = moved.Upgrade(ctx, tasksBundleID, ds, nil)
 	if err != nil {
 		t.Fatalf("preview of the moved closure: %v", err)
 	}
@@ -216,7 +238,7 @@ func TestUpgradePreview(t *testing.T) {
 	if _, _, err := moved.Install(ctx, substrate.ActorAPI, tasksBundleID, ds); err != nil {
 		t.Fatalf("install the moved closure: %v", err)
 	}
-	up, err = moved.Upgrade(ctx, tasksBundleID, ds)
+	up, err = moved.Upgrade(ctx, tasksBundleID, ds, nil)
 	if err != nil {
 		t.Fatalf("preview after upgrade: %v", err)
 	}
@@ -255,7 +277,7 @@ func TestUpgradePreviewReportsBlockers(t *testing.T) {
 				"    name:\n      type: string\n      required: true\n      description: the task's heading, one line\n")
 		},
 	})
-	up, err := blocked.Upgrade(ctx, tasksBundleID, ds)
+	up, err := blocked.Upgrade(ctx, tasksBundleID, ds, nil)
 	if err != nil {
 		t.Fatalf("preview of the narrowing closure: %v", err)
 	}
@@ -284,7 +306,7 @@ func TestUpgradePreviewReportsBlockers(t *testing.T) {
 			return mustReplace(t, bumpTaskPin(t, doc), urlDecl, "")
 		},
 	})
-	if up, err = lossy.Upgrade(ctx, tasksBundleID, ds); err != nil {
+	if up, err = lossy.Upgrade(ctx, tasksBundleID, ds, nil); err != nil {
 		t.Fatalf("preview of the lossy closure: %v", err)
 	}
 	if up == nil || !up.Available || len(up.Blockers) != 0 || !up.Lossy || up.Work != 1 || up.PlanHash == "" {

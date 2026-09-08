@@ -72,6 +72,7 @@ import {
   ACCOUNT_CONFIG_TRAIT,
   bindBundleInput,
   bundleState,
+  bundleStatusesQueryOptions,
   bundleStatusQueryOptions,
   parseSubstrateOAuthMessage,
   purgeBundle,
@@ -108,6 +109,8 @@ import {
   installedKindRows,
   isInputSetupCode,
   oauthConnectBlocked,
+  heldVersions,
+  mergeBundles,
   presentPackages,
   requirementsOf,
   type Requirement,
@@ -190,7 +193,9 @@ function RequiresNote({ requirements }: { requirements: Requirement[] }) {
             title={
               req.present
                 ? `${req.package} is imported`
-                : `${req.package} is not imported`
+                : req.held !== undefined
+                  ? `${req.package} is imported at version ${req.held}; this bundle needs version ${req.atLeast} or later`
+                  : `${req.package} is not imported`
             }
           >
             {req.present ? (
@@ -207,15 +212,36 @@ function RequiresNote({ requirements }: { requirements: Requirement[] }) {
       </div>
       <p className="pt-1.5 text-xs text-muted-foreground">
         {missing.length
-          ? `Not in this repository: ${missing
-              .map((r) => r.package)
-              .join(
-                ", "
-              )}. This bundle's mappings and references point at it — re-import that package's bundle from the registry.`
+          ? requiresNoteText(missing)
           : "The vocabulary this bundle's mappings, references and trigger subscriptions point at. All of it is imported."}
       </p>
     </div>
   )
+}
+
+/** What stands in the way, in one paragraph: the packages this repository
+ * lacks, then the ones it holds below the closure's floor (decision record
+ * 0070), each with both versions, since importing that package AGAIN is the
+ * fix rather than importing it. */
+function requiresNoteText(missing: Requirement[]): string {
+  const absent = missing.filter((r) => r.held === undefined)
+  const old = missing.filter((r) => r.held !== undefined)
+  const parts: string[] = []
+  if (absent.length) {
+    parts.push(
+      `Not in this repository: ${absent
+        .map((r) => r.package)
+        .join(
+          ", "
+        )}. This bundle's mappings and references point at it — re-import that package's bundle from the registry.`
+    )
+  }
+  for (const r of old) {
+    parts.push(
+      `${r.package} is imported at version ${r.held}, and this bundle needs version ${r.atLeast} or later: import that package's bundle again first.`
+    )
+  }
+  return parts.join(" ")
 }
 
 // ── the lifecycle verbs ─────────────────────────────────────────────────────
@@ -1410,6 +1436,10 @@ function RecordsSection({
 export function BundleDetailPage() {
   const { id } = bundleDetailRoute.useParams()
   const status = useQuery(bundleStatusQueryOptions(id))
+  // Every held bundle's status, for the versions a requirement's floor is
+  // read against. Not waited on: a read still in flight leaves every floor
+  // met for a frame, which is what the server decides anyway.
+  const statuses = useQuery(bundleStatusesQueryOptions)
   const registry = useQuery(kindsQueryOptions)
   // The repository record says which authority this repository owns, which is
   // the id an imported SAMPLE landed under: without it the shipped closure
@@ -1459,10 +1489,14 @@ export function BundleDetailPage() {
     (bundle.inputs?.length ?? 0) > 0 || (bundle.setup?.length ?? 0) > 0
   // The requirements are checked against the LIVE registry: a package is
   // present when some reconciled kind carries it, which is the check the
-  // server's admission makes.
+  // server's admission makes. A floor (`requiresAtLeast`, decision record
+  // 0070) is checked against the version each held bundle's status reports,
+  // the same map the Registry page builds, so the two pages and the server
+  // agree on a package held too old.
   const requirements = requirementsOf(
-    { requires: item?.requires ?? [] },
-    presentPackages([], types)
+    { requires: item?.requires ?? [], requiresAtLeast: item?.requiresAtLeast },
+    presentPackages([], types),
+    heldVersions(mergeBundles(statuses.data ?? [], []))
   )
 
   return (

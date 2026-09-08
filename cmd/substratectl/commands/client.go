@@ -304,12 +304,14 @@ func (c *client) delete(ctx context.Context, pkg, kind, id string) (*substrate.R
 // every document admitted or none, one transaction, activation on commit. A
 // confirmation, when given, is the consent to a lossy conversion plan the
 // server previewed (planVocabulary), bound to that preview's hash and
-// changelog head.
-func (c *client) applyVocabulary(ctx context.Context, docs []map[string]any, confirm *substrate.ConversionConfirm) ([]*substrate.Record, error) {
+// changelog head. An origin, when given, is the package a rehomed input was
+// authored as, which the server stamps on the landed copy (decision record
+// 0070).
+func (c *client) applyVocabulary(ctx context.Context, docs []map[string]any, confirm *substrate.ConversionConfirm, origin string) ([]*substrate.Record, error) {
 	var out struct {
 		Records []*substrate.Record `json:"records"`
 	}
-	body := map[string]any{"documents": docs}
+	body := vocabularyBody(docs, origin)
 	if confirm != nil {
 		body["confirm"] = confirm
 	}
@@ -321,13 +323,26 @@ func (c *client) applyVocabulary(ctx context.Context, docs []map[string]any, con
 
 // planVocabulary asks what applying the batch would refuse and rewrite,
 // without applying it: the conversion steps with their counts, whether the
-// plan is lossy, and the hash and changelog head a confirmation names.
-func (c *client) planVocabulary(ctx context.Context, docs []map[string]any) (*substrate.VocabularyPlan, error) {
+// plan is lossy or replaces an edited copy, and the hash and changelog head a
+// confirmation names. The origin rides along so the preview hashes as the
+// apply will.
+func (c *client) planVocabulary(ctx context.Context, docs []map[string]any, origin string) (*substrate.VocabularyPlan, error) {
 	var out substrate.VocabularyPlan
-	if err := c.do(ctx, http.MethodPost, pathVocabularyPlan, nil, map[string]any{"documents": docs}, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, pathVocabularyPlan, nil, vocabularyBody(docs, origin), &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
+}
+
+// vocabularyBody is the two vocabulary verbs' shared request: the documents,
+// and the origin only when there is one, so a plain apply is the body it
+// always was.
+func vocabularyBody(docs []map[string]any, origin string) map[string]any {
+	body := map[string]any{"documents": docs}
+	if origin != "" {
+		body["origin"] = origin
+	}
+	return body
 }
 
 // --- the door: register, login, the credential changes, tokens -------------

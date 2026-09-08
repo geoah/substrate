@@ -48,8 +48,8 @@ func TestCatalogListsShippedBundle(t *testing.T) {
 	if b.Package != "web" {
 		t.Errorf("package = %q, want web", b.Package)
 	}
-	if b.Version != 8 {
-		t.Errorf("version = %d, want 8", b.Version)
+	if b.Version != 9 {
+		t.Errorf("version = %d, want 9", b.Version)
 	}
 	if _, ok := b.Inputs["connector"]; !ok {
 		t.Errorf("inputs = %v, want a connector input", b.Inputs)

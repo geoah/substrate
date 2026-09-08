@@ -754,6 +754,111 @@ describe("RegistryPage", () => {
       })
     })
 
+    /** A held SAMPLE copy: imported at 4, stamped with its origin, and the
+     * binary now ships the sample at 5 (decision record 0070). */
+    function heldPeople(upgrade: CatalogItem["upgrade"]): CatalogItem {
+      return {
+        ...PEOPLE,
+        version: 5,
+        installed: true,
+        origin: PEOPLE.id,
+        originVersion: 4,
+        upgrade,
+      }
+    }
+
+    /** peopleStatus with the stamp and version the copy carries. */
+    function heldPeopleStatus(): BundleStatus {
+      return {
+        ...peopleStatus(),
+        version: 4,
+        origin: PEOPLE.id,
+        originVersion: 4,
+      }
+    }
+
+    /** The import requests made so far, each with the confirmation its body
+     * carried (undefined for a bare POST). */
+    function importCalls(): { id: string; confirm?: unknown }[] {
+      return fetchMock.mock.calls
+        .filter(
+          ([url, init]) =>
+            String(url).endsWith("/import") &&
+            (init as RequestInit | undefined)?.method === "POST"
+        )
+        .map(([url, init]) => {
+          const raw = (init as RequestInit | undefined)?.body
+          const body = raw
+            ? (JSON.parse(String(raw)) as { confirm?: unknown })
+            : {}
+          return {
+            id: decodeURIComponent(
+              String(url).slice(CATALOG_PATH.length + 1, -"/import".length)
+            ),
+            confirm: body.confirm,
+          }
+        })
+    }
+
+    it("offers Upgrade on a moved sample copy and rides the import verb", async () => {
+      serve({
+        statuses: [heldPeopleStatus()],
+        catalog: [
+          heldPeople({
+            available: true,
+            from: 4,
+            to: 5,
+            work: 0,
+            lossy: false,
+          }),
+        ],
+      })
+      renderPage(<RegistryPage />)
+      const people = await rowOf("people")
+      expect(within(people).getByText("update 4 → 5")).toBeTruthy()
+      fireEvent.click(within(people).getByRole("button", { name: /Upgrade/ }))
+      await waitFor(() =>
+        expect(importCalls()).toEqual([{ id: PEOPLE.id, confirm: undefined }])
+      )
+    })
+
+    it("an edited sample copy asks before its edits are replaced, and confirms the previewed plan", async () => {
+      serve({
+        statuses: [{ ...heldPeopleStatus(), modified: true }],
+        catalog: [
+          heldPeople({
+            available: true,
+            from: 4,
+            to: 5,
+            work: 0,
+            lossy: false,
+            discardsEdits: true,
+            planHash: "d15c",
+            changelogSeq: 9,
+          }),
+        ],
+      })
+      renderPage(<RegistryPage />)
+      const people = await rowOf("people")
+      fireEvent.click(within(people).getByRole("button", { name: /Upgrade/ }))
+      const dialog = await screen.findByRole("dialog")
+      expect(
+        within(dialog).getByText(/Upgrade people and replace your edits\?/)
+      ).toBeTruthy()
+      expect(dialog.textContent).toContain(`You edited ${HOME}/people`)
+      expect(importCalls()).toEqual([])
+      fireEvent.click(
+        within(dialog).getByRole("button", {
+          name: /Upgrade and replace my edits/,
+        })
+      )
+      await waitFor(() =>
+        expect(importCalls()).toEqual([
+          { id: PEOPLE.id, confirm: { planHash: "d15c", changelogSeq: 9 } },
+        ])
+      )
+    })
+
     it("a lossy refusal at the same head re-reads the preview, and a lossless re-read closes the dialog", async () => {
       const step = {
         step: "null" as const,

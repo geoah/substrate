@@ -310,6 +310,17 @@ func bundleFromDocs(docs []map[string]any) (*Bundle, error) {
 			for _, rv := range mslice(data, "requires") {
 				b.Requires = append(b.Requires, fmt.Sprint(rv))
 			}
+			// The floor under each requirement (decision record 0070), read
+			// through the one version reader; the loader has already held
+			// every key to a listed requirement and every value to a version.
+			for pkg, raw := range mmap(data, "requiresAtLeast") {
+				if v, ok := vocabulary.VersionValue(raw); ok && v > 0 {
+					if b.RequiresAtLeast == nil {
+						b.RequiresAtLeast = map[string]int64{}
+					}
+					b.RequiresAtLeast[pkg] = v
+				}
+			}
 		case vocabulary.DocPackage:
 			if v := mversion(data, "version"); v > 0 {
 				version = v
@@ -429,7 +440,9 @@ func (c *Catalog) InstallConfirmed(ctx context.Context, actor substrate.Actor, i
 // Install runs, over a closure rehomed onto the repository's OWN authority
 // first. `samples.substrate.reamde.dev/tasks/task` lands as
 // `ada.example.com/tasks/task`, owned by the repository that imported it:
-// `source: installed`, writable through the API, never offered an upgrade.
+// `source: installed`, writable through the API, and offered the shipped
+// upgrade through the stamp below, which a re-import takes (decision record
+// 0070).
 //
 // The rehoming is a walk over the decoded documents, so it reaches every
 // string one carries: the ids, the declared authority, the reference pins,
@@ -551,34 +564,68 @@ func install(ctx context.Context, ds substrate.Dataset, actor substrate.Actor, v
 	return err
 }
 
-// Upgrade previews what re-installing a shipped bundle over ds's stored
+// Upgrade previews what taking a shipped bundle again over ds's stored
 // declarations would do: the version motion and the blockers, computed by the
-// dataset against the same closure Install applies. A dataset that offers no
+// dataset against the same closure the door applies. A dataset that offers no
 // preview answers nil, not an error: the catalog still lists and installs
 // there, it just cannot say what an install would change.
 //
-// A SAMPLE has no upgrade to preview, ever: what it landed belongs to the
-// repository, which may have edited it, and re-importing would replace the
-// package wholesale rather than merge (decision record 0048). So the answer is
-// nil before the dataset is asked, and no offer reaches the console.
-func (c *Catalog) Upgrade(ctx context.Context, id string, ds substrate.Dataset) (*substrate.BundleUpgrade, error) {
+// A PROVIDER is previewed as shipped: its closure landed verbatim and the
+// install verb re-applies it verbatim. A SAMPLE is previewed as the import
+// door would land it, rehomed onto the repository's own authority, and only
+// when `held`, the status of the copy this repository holds for the entry, is
+// stamped with this entry's id as its origin (decision record 0070): a package
+// with no stamp is one the user declared by hand, or a copy taken before the
+// stamp existed, and neither is anything the shipped sample may claim to
+// upgrade. The plan then reads the stamp itself: the closure moved since the
+// copy when the shipped version is past `originVersion`, and the copy was
+// edited when its stored digest is no longer `originDigest`, which the
+// re-import would discard (BundleUpgrade.DiscardsEdits). `held` is ignored
+// for a provider.
+func (c *Catalog) Upgrade(ctx context.Context, id string, ds substrate.Dataset, held *substrate.BundleStatus) (*substrate.BundleUpgrade, error) {
 	b, ok := c.byID[id]
 	if !ok {
 		return nil, fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
-	}
-	if b.Tier == substrate.TierSample {
-		return nil, nil
 	}
 	p, ok := ds.(substrate.BundleUpgradePlanner)
 	if !ok {
 		return nil, nil
 	}
+	var vocabularyDocs []map[string]any
+	if b.Tier == substrate.TierSample {
+		if held == nil || held.Origin != b.ID {
+			return nil, nil
+		}
+		home := ds.Repository().Authority
+		if home == "" {
+			return nil, nil
+		}
+		// The same closure Import lands: the suggested mappings this
+		// repository can resolve, rehomed. A closure that still names the
+		// placeholder afterwards is one Import refuses, so it blocks here.
+		kept, _, err := b.admitted(ctx, ds, viewRehomed)
+		if err != nil {
+			return nil, err
+		}
+		if vocabularyDocs, err = vocabulary.RehomeAuthority(kept, b.Authority, home); err != nil {
+			return &substrate.BundleUpgrade{Blockers: []string{err.Error()}}, nil
+		}
+		if left := vocabulary.AuthorityMentions(vocabularyDocs, b.Authority); len(left) > 0 {
+			return &substrate.BundleUpgrade{Blockers: []string{fmt.Sprintf(
+				"%s still mentions %s after the rehome, so it would declare under an authority this repository does not own",
+				strings.Join(left, ", "), b.Authority)}}, nil
+		}
+		plan, err := p.PlanBundleUpgrade(ctx, vocabularyDocs)
+		if err != nil {
+			return nil, err
+		}
+		return &plan, nil
+	}
 	// The preview is of what the DOOR would apply, so it runs over the same
-	// filtered closure. In the shipped tree the filter changes nothing here,
-	// because only a provider is previewed (the tier gate above) and a
-	// provider declares no suggested mapping; it is not a no-op in general,
-	// and the version-motion fixtures that load a sample closure as a
-	// provider root are where the difference shows: previewing a dropped
+	// filtered closure. In the shipped tree the filter changes nothing for a
+	// provider, which declares no suggested mapping; it is not a no-op in
+	// general, and the version-motion fixtures that load a sample closure as
+	// a provider root are where the difference shows: previewing a dropped
 	// mapping reports it as a blocker and hides the real ones.
 	vocabularyDocs, _, err := b.admitted(ctx, ds, viewShipped)
 	if err != nil {

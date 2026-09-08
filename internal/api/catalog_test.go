@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -273,7 +274,7 @@ func TestCatalogListReturnsShippedBundles(t *testing.T) {
 	for _, item := range body.Items {
 		if item.ID == webBundleID {
 			found = true
-			if item.Name != "web" || item.Authority != "samples.substrate.reamde.dev" || item.Package != "web" || item.Version != 8 {
+			if item.Name != "web" || item.Authority != "samples.substrate.reamde.dev" || item.Package != "web" || item.Version != 9 {
 				t.Errorf("web entry fields = %+v", item)
 			}
 			if item.Installed {
@@ -418,6 +419,9 @@ type heldDataset struct {
 	*fakeDataset
 	id     string
 	origin string
+	// plan is what the upgrade preview answers for the held bundle; nil is a
+	// preview with nothing to say, which the entry drops.
+	plan *substrate.BundleUpgrade
 }
 
 func (d heldDataset) BundleStatuses(context.Context) ([]substrate.BundleStatus, error) {
@@ -426,6 +430,13 @@ func (d heldDataset) BundleStatuses(context.Context) ([]substrate.BundleStatus, 
 		st.Origin, st.OriginVersion, st.Modified = d.origin, 8, true
 	}
 	return []substrate.BundleStatus{st}, nil
+}
+
+func (d heldDataset) PlanBundleUpgrade(context.Context, []map[string]any) (substrate.BundleUpgrade, error) {
+	if d.plan == nil {
+		return substrate.BundleUpgrade{}, nil
+	}
+	return *d.plan, nil
 }
 
 func (d heldDataset) BundleStatus(_ context.Context, id string) (substrate.BundleStatus, error) {
@@ -454,12 +465,16 @@ func (d heldDataset) TypesImplementing(context.Context, string) ([]substrate.Kin
 	return nil, nil
 }
 
-var _ substrate.BundleOps = heldDataset{}
+var (
+	_ substrate.BundleOps            = heldDataset{}
+	_ substrate.BundleUpgradePlanner = heldDataset{}
+)
 
 type heldService struct {
 	*fakeService
 	id     string
 	origin string
+	plan   *substrate.BundleUpgrade
 }
 
 func (s *heldService) Authenticate(ctx context.Context, secret string) (substrate.Dataset, substrate.TokenInfo, error) {
@@ -467,7 +482,7 @@ func (s *heldService) Authenticate(ctx context.Context, secret string) (substrat
 	if err != nil {
 		return nil, info, err
 	}
-	return heldDataset{fakeDataset: ds.(*fakeDataset), id: s.id, origin: s.origin}, info, nil
+	return heldDataset{fakeDataset: ds.(*fakeDataset), id: s.id, origin: s.origin, plan: s.plan}, info, nil
 }
 
 // newHeldEnv is a catalog env whose repository holds exactly one bundle, under
@@ -489,13 +504,83 @@ func newHeldEnv(t *testing.T, id string) *testEnv {
 // newHeldEnvFor is newHeldEnv over a given catalog and origin stamp.
 func newHeldEnvFor(t *testing.T, cat *catalog.Catalog, id, origin string) *testEnv {
 	t.Helper()
+	return newHeldEnvWithPlan(t, cat, id, origin, nil)
+}
+
+// newHeldEnvWithPlan is newHeldEnvFor with the upgrade preview the held
+// bundle's dataset answers.
+func newHeldEnvWithPlan(t *testing.T, cat *catalog.Catalog, id, origin string, plan *substrate.BundleUpgrade) *testEnv {
+	t.Helper()
 	base := newFakeService()
-	svc := &heldService{fakeService: base, id: id, origin: origin}
+	svc := &heldService{fakeService: base, id: id, origin: origin, plan: plan}
 	clock := &testClock{}
 	return &testEnv{
 		svc:   base,
 		h:     New(Config{Service: svc, Now: clock.now, Catalog: cat}),
 		clock: clock,
+	}
+}
+
+// The preview of a sample copy EDITED since it was imported stays on the entry
+// even when nothing shipped moved (decision record 0070): `available` false,
+// `discardsEdits` true, and the hash the re-import's confirmation names. A
+// preview with nothing to offer, block or discard is dropped as before.
+func TestCatalogKeepsThePreviewOfAnEditedCopy(t *testing.T) {
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	read := func(env *testEnv) *substrate.BundleUpgrade {
+		t.Helper()
+		tok := env.svc.token("geoah")
+		rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
+		wantStatus(t, rec, http.StatusOK)
+		body := decodeJSON[struct {
+			Items []struct {
+				ID      string                   `json:"id"`
+				Upgrade *substrate.BundleUpgrade `json:"upgrade"`
+			} `json:"items"`
+		}](t, rec)
+		for _, item := range body.Items {
+			if item.ID == webBundleID {
+				return item.Upgrade
+			}
+		}
+		t.Fatalf("the listing does not carry %s", webBundleID)
+		return nil
+	}
+	edited := &substrate.BundleUpgrade{
+		DiscardsEdits:  true,
+		ConversionPlan: substrate.ConversionPlan{PlanHash: "d15c", ChangelogSeq: 9},
+	}
+	up := read(newHeldEnvWithPlan(t, cat, "geoah.example.com/web", webBundleID, edited))
+	if up == nil || !up.DiscardsEdits || up.Available || up.PlanHash != "d15c" || up.ChangelogSeq != 9 {
+		t.Fatalf("an edited copy's entry carries %+v, want the discarding preview with its hash", up)
+	}
+	if up := read(newHeldEnvWithPlan(t, cat, "geoah.example.com/web", webBundleID, &substrate.BundleUpgrade{})); up != nil {
+		t.Errorf("a preview with nothing to say rides the entry: %+v", up)
+	}
+}
+
+// A closure's `requiresAtLeast` floors ride the catalog entry beside
+// `requires` (decision record 0070), so the console can read them against the
+// held bundles' versions before the button is pressed.
+func TestCatalogCarriesTheRequiresFloors(t *testing.T) {
+	env := newCatalogEnv(t)
+	tok := env.svc.token("geoah")
+	rec := env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape("samples.substrate.reamde.dev/tasks"), tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	item := decodeJSON[struct {
+		Requires        []string         `json:"requires"`
+		RequiresAtLeast map[string]int64 `json:"requiresAtLeast"`
+	}](t, rec)
+	if item.RequiresAtLeast["samples.substrate.reamde.dev/people"] == 0 {
+		t.Errorf("the tasks entry carries no floor under people: requires %v, requiresAtLeast %v", item.Requires, item.RequiresAtLeast)
+	}
+	for pkg := range item.RequiresAtLeast {
+		if !slices.Contains(item.Requires, pkg) {
+			t.Errorf("floor %s is under a package requires does not list: %v", pkg, item.Requires)
+		}
 	}
 }
 

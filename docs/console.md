@@ -119,8 +119,14 @@ authority that publishes them; the upgrade offer lands here. **Samples** are
 the vocabulary to copy (people, tasks, calendar, and the worked LLM, notes,
 web and pebble examples) and their button is *Import as yours*, with the row
 previewing the identity it will land under (`ada.example.com/tasks`) before it
-is pressed. A bundle applied outside the shipped catalog has no tier and is
-listed on its own.
+is pressed. A held copy is offered *Upgrade* too, through the import door,
+when the binary ships the sample at a newer version than the copy was taken
+at; where the copy was edited since, the dialog says the edits are replaced
+before it sends the preview's confirmation
+([0070](decisions/0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md)).
+A requirement the repository holds below the closure's `requiresAtLeast`
+floor disables the button, naming both versions. A bundle applied outside
+the shipped catalog has no tier and is listed on its own.
 Taking one shows what the closure added. An installed bundle carries its
 lifecycle verbs — disable, enable, uninstall, and the purge that a refused
 uninstall points you at — and its connections: one row per configured provider

@@ -7,9 +7,11 @@
  * them, and their upgrades are offered here. SAMPLES are vocabulary to copy:
  * importing one rewrites it onto THIS repository's authority, so the row
  * previews the identity it will land under before the button is pressed, and
- * nothing upstream can change it afterwards. A bundle applied outside the
- * shipped catalog has no tier and is listed on its own rather than guessed
- * into one.
+ * nothing upstream changes it afterwards: when the binary ships the sample
+ * at a newer version the copy's origin stamp earns it an upgrade OFFER here,
+ * taken through the import door and confirmed first where the copy was
+ * edited (decision record 0070). A bundle applied outside the shipped catalog
+ * has no tier and is listed on its own rather than guessed into one.
  *
  * EVERY ROW DISCLOSES ITS CLOSURE (owner ask): a fresh repository holds
  * `substrate.reamde.dev/core` and nothing else, so the reader meets this page before they
@@ -95,16 +97,24 @@ import {
 import { repositoryQueryOptions } from "@/lib/api/repository"
 import { CORE_PACKAGE } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
-import { ApiError, type KindInfo, type ShippedUpgrade } from "@/lib/api/types"
+import {
+  ApiError,
+  type BundleStatus,
+  type KindInfo,
+  type ShippedUpgrade,
+} from "@/lib/api/types"
 import { splitKind } from "@/lib/definition"
 import {
   bundleRecordRows,
   bundleSections,
+  confirmationOf,
+  heldVersions,
   importFailureText,
   installedKindRows,
   lossyStepLines,
   mergeBundles,
   missingRequirements,
+  needsConfirmation,
   presentPackages,
   previewFailed,
   requirementsOf,
@@ -256,8 +266,8 @@ function TakeButton({
 }
 
 /** IMPORT AGAIN: the one action that lands a suggested mapping a first import
- * dropped (decision record 0049). A sample is never offered an upgrade, so
- * without this a reader who installs Linear after importing `tasks` has
+ * dropped (decision record 0049) while the shipped closure has not moved. A
+ * reader who installs Linear after importing `tasks` would otherwise have
  * nothing to press: the mapping stays `ready` forever and the projection never
  * runs.
  *
@@ -265,7 +275,9 @@ function TakeButton({
  * the package wholesale (decision record 0048), so a kind or a property the
  * reader added since is dropped by it, or the narrowing guard refuses the
  * import while live records still hold the old shape. That cost is the
- * dialog's whole text. */
+ * dialog's whole text. Where the server's preview says the copy WAS edited
+ * (`discardsEdits`, decision record 0070) the click also sends that
+ * preview's `planHash` and `changelogSeq`, which the door requires. */
 function ImportAgainButton({
   row,
   ready,
@@ -276,7 +288,8 @@ function ImportAgainButton({
   const queryClient = useQueryClient()
   const [confirming, setConfirming] = useState(false)
   const importing = useMutation({
-    mutationFn: () => importBundle(row.catalog?.id ?? row.id),
+    mutationFn: () =>
+      importBundle(row.catalog?.id ?? row.id, confirmationOf(row.upgrade)),
     onSuccess: (status) => {
       setConfirming(false)
       toast.add({
@@ -375,22 +388,24 @@ function ImportAgainButton({
   )
 }
 
-/** Upgrade: re-install the shipped closure, which is the provider's own
- * upgrade verb (`…/catalog/{id}/install`). Offered only when the server's
- * preview says the closure moved AND nothing blocks it; a BLOCKED upgrade
- * renders as UpgradeBlockedChip instead, because the server would refuse it,
- * so the console never offers the click (owner decision: no force). A SAMPLE
- * never reaches here: the server attaches no preview to one, because what it
- * landed belongs to the repository (decision record 0048).
+/** Upgrade: take the shipped closure again through the row's own door, which
+ * is the upgrade verb: `…/catalog/{id}/install` for a provider, and for a
+ * sample `…/catalog/{id}/import`, which lands the closure rehomed over the
+ * copy this repository holds (decision record 0070). Offered only when the
+ * server's preview says the closure moved AND nothing blocks it; a BLOCKED
+ * upgrade renders as UpgradeBlockedChip instead, because the server would
+ * refuse it, so the console never offers the click (owner decision: no
+ * force).
  *
- * A LOSSY preview (decision 0067) asks first: the click hands the row to the
- * section's LossyUpgradeDialog, which lists the steps that remove values from
- * the fold and sends the preview's `planHash` and `changelogSeq` as the
- * confirmation, so the consent covers exactly what was shown and the server
- * refuses it once anything moved. The dialog lives in the section rather than
- * in this cell because a catalog refetch rebuilds the table's columns and
- * remounts every cell, which would close a dialog kept here. A lossless
- * upgrade installs on the click, as before. */
+ * A preview that LOSES something asks first: a lossy plan (decision 0067), or
+ * a re-import that replaces a sample copy the reader edited (`discardsEdits`,
+ * decision record 0070). The click hands the row to the section's
+ * LossyUpgradeDialog, which says what goes and sends the preview's `planHash`
+ * and `changelogSeq` as the confirmation, so the consent covers exactly what
+ * was shown and the server refuses it once anything moved. The dialog lives
+ * in the section rather than in this cell because a catalog refetch rebuilds
+ * the table's columns and remounts every cell, which would close a dialog
+ * kept here. An upgrade that loses nothing lands on the click, as before. */
 function UpgradeButton({
   row,
   onConfirmLoss,
@@ -400,9 +415,9 @@ function UpgradeButton({
 }) {
   const queryClient = useQueryClient()
   const upgrade = row.upgrade
-  const lossy = Boolean(upgrade?.lossy && upgrade.planHash)
+  const asks = needsConfirmation(upgrade)
   const upgrading = useMutation({
-    mutationFn: () => installBundle(row.catalog?.id ?? row.id),
+    mutationFn: () => takeAgain(row),
     onSuccess: (status) => {
       toast.add({
         type: "success",
@@ -436,7 +451,7 @@ function UpgradeButton({
             disabled={upgrading.isPending}
             onClick={(e) => {
               e.stopPropagation()
-              if (lossy) onConfirmLoss(row)
+              if (asks) onConfirmLoss(row)
               else upgrading.mutate()
             }}
           />
@@ -463,12 +478,22 @@ function UpgradeButton({
   )
 }
 
-/** The consent to a lossy upgrade (decision 0067), rendered by the section for
- * the row the reader clicked, so it outlives the table's re-render. It reads
- * the row's CURRENT preview: after a `409` (records changed since the preview
- * was read, so the server no longer counts that plan) the catalog is read
- * again, the dialog stays open, says so, and its next click confirms the fresh
- * `planHash` and `changelogSeq`, never the stale pair again. */
+/** Take a row's shipped closure again through its own door, with the consent
+ * its preview needs: the install verb for a provider, the import verb for a
+ * sample, whose closure lands rehomed over the copy this repository holds
+ * (decision record 0070). */
+function takeAgain(row: BundleRow): Promise<BundleStatus> {
+  const door = row.tier === "sample" ? importBundle : installBundle
+  return door(row.catalog?.id ?? row.id, confirmationOf(row.upgrade))
+}
+
+/** The consent to an upgrade that loses something (decisions 0067 and 0070),
+ * rendered by the section for the row the reader clicked, so it outlives the
+ * table's re-render. It reads the row's CURRENT preview: after a `409`
+ * (records changed since the preview was read, so the server no longer counts
+ * that plan) the catalog is read again, the dialog stays open, says so, and
+ * its next click confirms the fresh `planHash` and `changelogSeq`, never the
+ * stale pair again. */
 function LossyUpgradeDialog({
   row,
   onClose,
@@ -486,13 +511,10 @@ function LossyUpgradeDialog({
   const stale = row !== undefined && staleFor === row.id
   const upgrading = useMutation({
     mutationFn: () => {
-      if (!row || !upgrade?.planHash) {
-        throw new Error("no lossy plan to confirm")
+      if (!row || !needsConfirmation(upgrade)) {
+        throw new Error("no plan to confirm")
       }
-      return installBundle(row.catalog?.id ?? row.id, {
-        planHash: upgrade.planHash,
-        changelogSeq: upgrade.changelogSeq ?? 0,
-      })
+      return takeAgain(row)
     },
     onSuccess: (status) => {
       setStaleFor(null)
@@ -529,17 +551,17 @@ function LossyUpgradeDialog({
       })
     },
   })
-  // A re-read plan that removes nothing has nothing to consent to: the
-  // dialog closes and the row's Upgrade button installs it as a lossless
-  // upgrade, rather than sitting open with no steps and a dead button.
-  const lossless = Boolean(row && !(upgrade?.lossy && upgrade.planHash))
+  // A re-read plan that removes nothing and replaces no edits has nothing to
+  // consent to: the dialog closes and the row's Upgrade button takes it
+  // unconfirmed, rather than sitting open with no steps and a dead button.
+  const lossless = Boolean(row && !needsConfirmation(upgrade))
   useEffect(() => {
     if (!lossless) return
     onClose()
     toast.add({
       type: "success",
-      title: `The re-read plan for ${row?.name} removes no values`,
-      description: "Upgrade installs it without a confirmation.",
+      title: `The re-read plan for ${row?.name} loses nothing`,
+      description: "Upgrade takes it without a confirmation.",
     })
   }, [lossless, onClose, row?.name])
   if (!row || lossless) return null
@@ -555,12 +577,21 @@ function LossyUpgradeDialog({
     >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Upgrade {row.name} and lose values?</DialogTitle>
+          <DialogTitle>
+            {upgrade?.discardsEdits
+              ? `Upgrade ${row.name} and replace your edits?`
+              : `Upgrade ${row.name} and lose values?`}
+          </DialogTitle>
           <DialogDescription>
-            {`This upgrade rewrites ${upgrade?.work ?? 0} live ${
-              upgrade?.work === 1 ? "record" : "records"
-            }, and some of the rewrites remove values from your records. ` +
-              `The removed values stay in the changelog; nothing is erased. ` +
+            {(upgrade?.discardsEdits
+              ? `You edited ${row.id} since it was imported. This upgrade REPLACES the package with the shipped closure, so those edits go with it; your records are untouched. `
+              : "") +
+              (upgrade?.lossy
+                ? `This upgrade rewrites ${upgrade?.work ?? 0} live ${
+                    upgrade?.work === 1 ? "record" : "records"
+                  }, and some of the rewrites remove values from your records. ` +
+                  `The removed values stay in the changelog; nothing is erased. `
+                : "") +
               `The confirmation covers exactly this plan: if anything is written before it lands, the server refuses it and the preview is read again.`}
           </DialogDescription>
         </DialogHeader>
@@ -596,7 +627,9 @@ function LossyUpgradeDialog({
             }}
           >
             {upgrading.isPending && <Spinner className="size-3.5" />}
-            Upgrade and accept the loss
+            {upgrade?.discardsEdits
+              ? "Upgrade and replace my edits"
+              : "Upgrade and accept the loss"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -746,10 +779,10 @@ function buildColumns(
             </div>
           ) : row.original.tier === "sample" &&
             readySuggestedMappings(mappings(row.original)).length > 0 ? (
-            // A held SAMPLE is never offered an upgrade (decision record
-            // 0048), so this is the one action that lands a mapping the first
-            // import dropped: re-import the closure, now that the provider it
-            // reads is here.
+            // A held SAMPLE whose shipped closure has not moved is offered no
+            // upgrade, so this is the one action that lands a mapping the
+            // first import dropped: re-import the closure, now that the
+            // provider it reads is here.
             //
             // THE TIER IS PART OF THE GATE. A provider row's mappings are the
             // INBOUND ones (which samples project onto it), so without this a
@@ -1217,11 +1250,17 @@ export function RegistryPage() {
     () => presentPackages(allRows, kinds),
     [allRows, kinds]
   )
+  // A requirement is also met only at or above the floor the closure puts
+  // under it (`requiresAtLeast`, decision record 0070), read against the
+  // version each held bundle's status reports.
+  const versions = useMemo(() => heldVersions(allRows), [allRows])
   const requirements = useMemo(() => {
     const byId = new Map<string, Requirement[]>()
-    for (const row of allRows) byId.set(row.id, requirementsOf(row, present))
+    for (const row of allRows) {
+      byId.set(row.id, requirementsOf(row, present, versions))
+    }
     return (row: BundleRow) => byId.get(row.id) ?? []
-  }, [allRows, present])
+  }, [allRows, present, versions])
   // The suggested mappings, from whichever side a row sits on: a sample's own
   // (what an import would project, and what is waiting), a provider's inbound
   // (which samples are waiting for exactly this install). Computed over EVERY

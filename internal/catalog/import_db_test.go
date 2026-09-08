@@ -166,8 +166,10 @@ func TestImportLandsASampleUnderTheRepositoryAuthority(t *testing.T) {
 	wantOrigin(t, st3, tasksSampleID, b.Version, true)
 
 	// An ACTOR declared into the package is an edit too: the digest keeps every
-	// actor row but the two the package itself stands for.
-	importSamples(t, c, ds, tasksSampleID)
+	// actor row but the two the package itself stands for. A re-import over
+	// the edited copy takes the confirmation its preview hands out (decision
+	// record 0070; sampleupgrade_db_test.go holds the refusal without one).
+	reimportConfirmed(t, c, ds, tasksSampleID)
 	applier, ok := ds.(substrate.VocabularyApplier)
 	if !ok {
 		t.Fatal("dataset does not support ApplyVocabularyDocuments")
@@ -183,10 +185,10 @@ func TestImportLandsASampleUnderTheRepositoryAuthority(t *testing.T) {
 	}
 	wantOrigin(t, stActor, tasksSampleID, b.Version, true)
 
-	// A re-import REPLACES the package (record 0048), edits included, and
-	// re-stamps it: the copy is the shipped closure again and reads so, even
-	// though its versions now sit above the shipped ones.
-	importSamples(t, c, ds, tasksSampleID)
+	// A confirmed re-import REPLACES the package (record 0048), edits included,
+	// and re-stamps it: the copy is the shipped closure again and reads so,
+	// even though its versions now sit above the shipped ones.
+	reimportConfirmed(t, c, ds, tasksSampleID)
 	st4, err := ds.(bundleStatuser).BundleStatus(ctx, b.LandedID(homeAuthority))
 	if err != nil {
 		t.Fatalf("bundle status after the second re-import: %v", err)
@@ -194,6 +196,33 @@ func TestImportLandsASampleUnderTheRepositoryAuthority(t *testing.T) {
 	wantOrigin(t, st4, tasksSampleID, b.Version, false)
 	if _, still := declaredProperties(t, ds, homeAuthority+"/tasks/task")["mine"]; still {
 		t.Error("the re-import kept the local edit, so the copy is not the shipped closure")
+	}
+}
+
+// reimportConfirmed takes a sample again over a copy this repository may have
+// edited: it reads the preview off the held copy's status and confirms exactly
+// that plan, as the console and `substratectl import --allow-data-loss` do.
+func reimportConfirmed(t *testing.T, c *catalog.Catalog, ds substrate.Dataset, id string) {
+	t.Helper()
+	ctx := context.Background()
+	b, ok := c.ByID(id)
+	if !ok {
+		t.Fatalf("no shipped bundle %s", id)
+	}
+	held, err := ds.(bundleStatuser).BundleStatus(ctx, b.LandedID(homeAuthority))
+	if err != nil {
+		t.Fatalf("bundle status %s: %v", id, err)
+	}
+	up, err := c.Upgrade(ctx, id, ds, &held)
+	if err != nil {
+		t.Fatalf("preview %s: %v", id, err)
+	}
+	var confirm *substrate.ConversionConfirm
+	if up != nil && up.PlanHash != "" {
+		confirm = &substrate.ConversionConfirm{PlanHash: up.PlanHash, ChangelogSeq: up.ChangelogSeq}
+	}
+	if _, _, err := c.ImportConfirmed(ctx, substrate.ActorAPI, id, ds, confirm); err != nil {
+		t.Fatalf("re-import %s: %v", id, err)
 	}
 }
 

@@ -19,6 +19,7 @@ import { CORE_PACKAGE } from "@/lib/api/http"
 import type {
   BundleUpgrade,
   CatalogTier,
+  ConversionConfirm,
   ConversionPlan,
   KindInfo,
   ShippedUpgrade,
@@ -52,9 +53,14 @@ export interface BundleRow {
    * what the server will look for. Admission refuses while one is missing
    * (catalog.Bundle.requires). */
   requires: string[]
-  /** The upgrade preview, present only when the shipped closure moved past
-   * what this repository stores (server-computed, catalog read). A sample is
-   * never offered one. */
+  /** The floor under each required package (decision record 0070), keyed as
+   * `requires` names them: the least version that satisfies the requirement.
+   * Absent where the closure declares none. */
+  requiresAtLeast?: Record<string, number>
+  /** The upgrade preview (server-computed, catalog read): present when the
+   * shipped closure moved past what this repository stores, when the server
+   * could not preview it, and, for a sample copy edited since it was
+   * imported, so the re-import can confirm it (decision record 0070). */
   upgrade?: BundleUpgrade
 }
 
@@ -92,6 +98,7 @@ export function mergeBundles(
       installed: item.installed,
       tier: item.tier,
       requires: item.requires ?? [],
+      requiresAtLeast: item.requiresAtLeast ?? {},
       upgrade: item.upgrade,
     })
   }
@@ -107,6 +114,7 @@ export function mergeBundles(
       installed: status.installed,
       tier: existing?.tier,
       requires: existing?.requires ?? [],
+      requiresAtLeast: existing?.requiresAtLeast ?? {},
       upgrade: existing?.upgrade,
     })
   }
@@ -238,12 +246,32 @@ export function upgradeMotion(upgrade: BundleUpgrade): string {
 // ── requirements: what must be imported first ───────────────────────────────
 
 /** One entry of a closure's `requires:` — a PACKAGE it declares against —
- * resolved against what this repository already holds. */
+ * resolved against what this repository already holds, and against the floor
+ * the closure puts under it (`requiresAtLeast`, decision record 0070). */
 export interface Requirement {
   /** The required package identity, exactly as the closure names it. */
   package: string
-  /** This repository already has it, so admission will not refuse for it. */
+  /** This repository has it at a version that satisfies the floor, so
+   * admission will not refuse for it. */
   present: boolean
+  /** The least version the closure declares against, when it pins one. */
+  atLeast?: number
+  /** The version this repository holds the package at, when its bundle
+   * status says; absent for a package known only to the kind registry. */
+  held?: number
+}
+
+/** The stored version of each package this repository holds through a
+ * bundle, by identity: what a floor is compared against. A package the kind
+ * registry knows but no bundle status reports has no version here, and a
+ * floor on it is taken as met, since the server is the one that refuses. */
+export function heldVersions(rows: BundleRow[]): Map<string, number> {
+  const out = new Map<string, number>()
+  for (const row of rows) {
+    if (row.installed && row.status?.version)
+      out.set(row.id, row.status.version)
+  }
+  return out
 }
 
 /** The packages this repository HOLDS, from the two reads the registry page
@@ -266,15 +294,25 @@ export function presentPackages(
   return out
 }
 
-/** One row's requirements, each marked present or missing. */
+/** One row's requirements, each marked present or missing. A package the
+ * repository holds below the closure's floor is missing too: the server
+ * refuses the same import, naming both versions. */
 export function requirementsOf(
-  row: Pick<BundleRow, "requires">,
-  present: ReadonlySet<string>
+  row: Pick<BundleRow, "requires" | "requiresAtLeast">,
+  present: ReadonlySet<string>,
+  versions: ReadonlyMap<string, number> = new Map()
 ): Requirement[] {
-  return row.requires.map((identity) => ({
-    package: identity,
-    present: present.has(identity),
-  }))
+  return row.requires.map((identity) => {
+    const atLeast = row.requiresAtLeast?.[identity]
+    const held = versions.get(identity)
+    const tooOld = atLeast !== undefined && held !== undefined && held < atLeast
+    return {
+      package: identity,
+      present: present.has(identity) && !tooOld,
+      ...(atLeast !== undefined && { atLeast }),
+      ...(held !== undefined && { held }),
+    }
+  })
 }
 
 export function missingRequirements(
@@ -290,14 +328,50 @@ function andList(names: string[]): string {
 }
 
 /** The refusal stated BEFORE the server states it: what to import first, named
- * the way the server names it (packages, which are also the bundle ids). Empty
- * string when nothing is missing — the caller shows no hint at all. */
+ * the way the server names it (packages, which are also the bundle ids). A
+ * package held below its floor is named with both versions, since importing
+ * it AGAIN is the fix, not importing it. Empty string when nothing is
+ * missing — the caller shows no hint at all. */
 export function requiresHint(missing: Requirement[]): string {
   if (!missing.length) return ""
-  const names = andList(missing.map((r) => r.package))
-  return missing.length === 1
-    ? `Import ${names} first — this bundle declares against it.`
-    : `Import ${names} first — this bundle declares against them.`
+  const tooOld = (r: Requirement) =>
+    r.atLeast !== undefined && r.held !== undefined && r.held < r.atLeast
+  const absent = missing.filter((r) => !tooOld(r))
+  const old = missing.filter(tooOld)
+  const parts: string[] = []
+  if (absent.length) {
+    const names = andList(absent.map((r) => r.package))
+    parts.push(
+      absent.length === 1
+        ? `Import ${names} first — this bundle declares against it.`
+        : `Import ${names} first — this bundle declares against them.`
+    )
+  }
+  for (const r of old) {
+    parts.push(
+      `Import ${r.package} again first: this bundle needs it at version ${r.atLeast} or later, and this repository holds version ${r.held}.`
+    )
+  }
+  return parts.join(" ")
+}
+
+/** Whether taking the upgrade needs the reader's consent first: the plan
+ * removes values from the fold (decision 0067) or replaces a sample copy the
+ * reader edited (decision record 0070). Either way the click sends the
+ * preview's `planHash` and `changelogSeq`, never a bare yes. */
+export function needsConfirmation(upgrade: BundleUpgrade | undefined): boolean {
+  return Boolean(upgrade?.planHash && (upgrade.lossy || upgrade.discardsEdits))
+}
+
+/** The confirmation a preview hands out, or undefined when it needs none. */
+export function confirmationOf(
+  upgrade: BundleUpgrade | undefined
+): ConversionConfirm | undefined {
+  if (!needsConfirmation(upgrade) || !upgrade?.planHash) return undefined
+  return {
+    planHash: upgrade.planHash,
+    changelogSeq: upgrade.changelogSeq ?? 0,
+  }
 }
 
 // ── suggested mappings (decision record 0049) ──────────────────────────────
@@ -404,8 +478,8 @@ export function samplesMappingOnto(
 
 /** The mappings a RE-IMPORT would land: their provider is here and they fit
  * it, and only the import is missing. This is what earns an installed sample
- * an "Import again" action, since a sample is never offered an upgrade
- * (decision record 0048). */
+ * whose shipped closure has not moved an "Import again" action (decision
+ * record 0049); a moved one is offered the upgrade, which is the same door. */
 export function readySuggestedMappings(
   rows: SuggestedMappingRow[]
 ): SuggestedMappingRow[] {

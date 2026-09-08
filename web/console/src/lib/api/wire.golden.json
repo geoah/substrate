@@ -59,7 +59,8 @@
     "package": true,
     "quarantineReason": false,
     "quarantined": false,
-    "setup": false
+    "setup": false,
+    "version": false
   },
   "BundleUninstalled": {
     "uninstalled": true
@@ -69,6 +70,7 @@
     "blockers": false,
     "changelogSeq": false,
     "changes": false,
+    "discardsEdits": false,
     "from": false,
     "lossy": true,
     "planHash": false,
@@ -101,6 +103,7 @@
     "originVersion": false,
     "package": true,
     "requires": false,
+    "requiresAtLeast": false,
     "suggestedMappings": false,
     "tier": true,
     "version": true
@@ -123,6 +126,7 @@
     "originVersion": false,
     "package": true,
     "requires": false,
+    "requiresAtLeast": false,
     "suggestedMappings": false,
     "tier": true,
     "upgrade": false,
@@ -398,6 +402,7 @@
   "VocabularyPlan": {
     "blockers": false,
     "changelogSeq": false,
+    "discardsEdits": false,
     "lossy": true,
     "planHash": false,
     "steps": false,

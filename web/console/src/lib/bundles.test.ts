@@ -28,6 +28,9 @@ import {
   FAILED_PREVIEW_BLOCKER,
   requirementsOf,
   requiresHint,
+  heldVersions,
+  needsConfirmation,
+  confirmationOf,
   stepLines,
   upgradableBundleCount,
   upgradeBlocked,
@@ -603,6 +606,106 @@ describe("requirementsOf / requiresHint — what to import first", () => {
     ).toBe(
       "Import samples.substrate.reamde.dev/messaging and samples.substrate.reamde.dev/calendar first — this bundle declares against them."
     )
+  })
+})
+
+describe("requiresAtLeast: the floor under a requirement (decision record 0070)", () => {
+  const present = new Set([
+    "ada.example.com/people",
+    "ada.example.com/scheduling",
+  ])
+  const versions = new Map([
+    ["ada.example.com/people", 3],
+    ["ada.example.com/scheduling", 2],
+  ])
+  const row = {
+    requires: ["ada.example.com/people", "ada.example.com/scheduling"],
+    requiresAtLeast: { "ada.example.com/people": 4 },
+  }
+
+  it("marks a package held below its floor missing, with both versions", () => {
+    const reqs = requirementsOf(row, present, versions)
+    expect(reqs).toEqual([
+      {
+        package: "ada.example.com/people",
+        present: false,
+        atLeast: 4,
+        held: 3,
+      },
+      { package: "ada.example.com/scheduling", present: true, held: 2 },
+    ])
+    expect(requiresHint(missingRequirements(reqs))).toBe(
+      "Import ada.example.com/people again first: this bundle needs it at version 4 or later, and this repository holds version 3."
+    )
+  })
+
+  it("is met at the floor and above it", () => {
+    for (const held of [4, 5]) {
+      const reqs = requirementsOf(
+        row,
+        present,
+        new Map([["ada.example.com/people", held]])
+      )
+      expect(reqs[0].present).toBe(true)
+    }
+  })
+
+  it("takes a package the kind registry alone knows as meeting the floor", () => {
+    // No bundle status reports a version for it, so the console cannot say
+    // it is too old; the server's admission is the one that refuses.
+    expect(requirementsOf(row, present, new Map())[0].present).toBe(true)
+  })
+
+  it("names an absent package and a too-old one in one hint", () => {
+    const reqs = requirementsOf(
+      row,
+      new Set(["ada.example.com/people"]),
+      versions
+    )
+    expect(requiresHint(missingRequirements(reqs))).toBe(
+      "Import ada.example.com/scheduling first — this bundle declares against it. " +
+        "Import ada.example.com/people again first: this bundle needs it at version 4 or later, and this repository holds version 3."
+    )
+  })
+
+  it("reads the held versions off the installed rows' statuses", () => {
+    const rows = mergeBundles(
+      [status({ id: "ada.example.com/people", version: 3 })],
+      [
+        catalog({ id: "ada.example.com/people", installed: true }),
+        catalog({ id: "ada.example.com/tasks", installed: false }),
+      ]
+    )
+    expect([...heldVersions(rows)]).toEqual([["ada.example.com/people", 3]])
+  })
+})
+
+describe("needsConfirmation: what a click has to consent to", () => {
+  const base: BundleUpgrade = {
+    available: true,
+    work: 0,
+    lossy: false,
+    planHash: "d15c",
+    changelogSeq: 9,
+  }
+
+  it("asks for a lossy plan and for one that replaces edits, never otherwise", () => {
+    expect(needsConfirmation(base)).toBe(false)
+    expect(needsConfirmation({ ...base, lossy: true })).toBe(true)
+    expect(needsConfirmation({ ...base, discardsEdits: true })).toBe(true)
+    expect(needsConfirmation(undefined)).toBe(false)
+    // A preview with no hash has nothing a confirmation could name.
+    expect(
+      needsConfirmation({ ...base, discardsEdits: true, planHash: undefined })
+    ).toBe(false)
+  })
+
+  it("hands back exactly the previewed hash and head", () => {
+    expect(confirmationOf({ ...base, discardsEdits: true })).toEqual({
+      planHash: "d15c",
+      changelogSeq: 9,
+    })
+    expect(confirmationOf(base)).toBeUndefined()
   })
 })
 

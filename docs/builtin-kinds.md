@@ -15,8 +15,10 @@ no `person` kind until you ask for one, and the one it gets is its own.
 Importing is one action per sample (`substratectl import <sample>`, or the
 console's Registry page), and a sample that declares onto another says so in
 its `requires:`. Importing `tasks` before `people` is refused, naming what to
-import first under your own authority. A sample is never offered an upgrade:
-what it landed belongs to you. Every declaration is queryable in your own
+import first under your own authority. What it landed belongs to you, and the
+copy records where it came from, so a later binary's newer sample is offered
+as an upgrade you take by importing again
+([bundles](bundles.md#the-two-doors)). Every declaration is queryable in your own
 repository (`substratectl kinds`, or `GET …/substrate.reamde.dev/core/kind`),
 descriptions included, so this page is the map, not the source of truth.
 
