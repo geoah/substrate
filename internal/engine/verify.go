@@ -90,6 +90,18 @@ func (s *service) VerifyRepository(ctx context.Context, username string) (Verify
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// The import-progress marker (repodir.go) first: a repository whose
+	// import began and did not complete has files and rows that agree, and a
+	// fold that is not theirs, so a report with no finding would be a lie an
+	// operator acts on.
+	markedHead, incomplete, err := importIncomplete(ctx, tx)
+	if err != nil {
+		return report, err
+	}
+	if incomplete {
+		found(fmt.Sprintf("import: the import of the repository directory has not completed (marked at file head %d): the fold is not the changelog's until the server's next boot resumes it", markedHead))
+	}
+
 	// The files first, whole: every line's sum, every sidecar, the seq
 	// sequence. A directory that does not open is one finding, and the table
 	// is still walked so the report says what the table holds.

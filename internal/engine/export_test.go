@@ -59,7 +59,10 @@ const (
 
 // ImportIncomplete reports whether the repository's import-progress marker
 // is set, read through the tamperer's seat.
-func ImportIncomplete(ctx context.Context, db dbx) (bool, error) { return importIncomplete(ctx, db) }
+func ImportIncomplete(ctx context.Context, db dbx) (bool, error) {
+	_, incomplete, err := importIncomplete(ctx, db)
+	return incomplete, err
+}
 
 // AdvisoryKeySQL is the engine's advisory-lock key expression (identity.go),
 // for a test that takes one of the engine's locks by hand: a barrier test that

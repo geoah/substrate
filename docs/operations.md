@@ -244,9 +244,9 @@ on the box, through the DSN.
   `fold.go` (this is the restore path, and the only one). The import writes
   an `import_progress` row before its first batch of entries commits and
   deletes it in the transaction that commits the last fold pass. A boot that
-  dies in between leaves the row; the next boot resumes the import from the
-  table's head, inserting no entry twice and appending nothing, and until it
-  does no open of the repository is served, read-only included; a seq present in
+  dies in between leaves the row, and the next boot check resumes the import
+  from the table's head: no entry is inserted twice and nothing is appended.
+  Until then a read-only open of the repository refuses; a seq present in
   both with different checksums, a line whose `sum` does not verify or a
   finished segment whose sidecar does not match **refuses the boot**, naming
   the repository and the seq or the file, and repairs nothing (one refusal an
@@ -442,14 +442,16 @@ its `repository.json` names the username the operator commands take.
 in `import_progress` before the first changelog entry lands and clears the
 mark only when the last fold pass commits. A boot that dies in between (the
 entries all inserted but not folded, or folded once without the references
-and the weighted search index the second pass adds) leaves the mark, and the
-next boot logs `resuming an interrupted import` and finishes: entries already
-in the table are not inserted again, and nothing is appended. Until that boot
-runs, opening the repository from the server or from `repository rebuild`,
-`user reset` or a read-only process refuses with `the import of the
-repository directory has not completed; restart the server so the boot check
-resumes it`. A repository a release before this one served empty after such
-a crash is repaired with `repository rebuild`.
+and the weighted search index the second pass adds) leaves the mark. The next
+boot check finishes the import and logs `resuming an interrupted import`:
+entries already in the table are not inserted again, and nothing is appended.
+The server runs that check when it starts, and so do `repository rebuild` and
+`user reset`, which open the engine the same way, so each resumes the import
+before its own work. A read-only process runs no boot check: opening the
+repository there refuses with `the import of the repository directory has not
+completed`, and `repository verify` reports the unfinished import as a finding
+while the files and the rows still verify. A repository a release before this
+one served empty after such a crash is repaired with `repository rebuild`.
 
 A directory whose files do not verify (a bad `sum`, a sidecar that does not
 match) refuses the boot with the repository and the seq or the file named;

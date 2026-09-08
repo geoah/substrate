@@ -152,6 +152,9 @@ const (
 	reconcileCaughtUp = "caught up"
 	reconcileImported = "imported"
 	reconcileWroteDir = "wrote directory"
+	// reconcileResumed is an import a previous boot began and did not
+	// complete, finished from the rows already in the table.
+	reconcileResumed = "resumed import"
 	// reconcileSkipped is a directory with no row and no manifest: nothing
 	// says whose it is, so it is neither imported nor deleted.
 	reconcileSkipped = "skipped: no manifest"
@@ -586,25 +589,30 @@ func (ds *dataset) reconcileDir(ctx context.Context, out *reconcileOutcome, allo
 	}
 	// Equal heads say the rows are all there and nothing about the fold: an
 	// import that died after its last batch left the marker, and the fold is
-	// rebuilt before anything reads it. The catch-up above cannot have run
-	// over a marked repository (no dataset opens on one, so nothing appends),
-	// but the marker is checked after it regardless: the check is about the
-	// fold, whatever the heads did.
-	incomplete, err := importIncomplete(ctx, ds.db)
+	// rebuilt before anything reads it. A catch-up above a marked repository
+	// is what a binary from before the marker leaves when it served one and
+	// died between a commit and its append; the Log opened above predates
+	// that append, so it is opened again and the refold sees every row.
+	markedHead, incomplete, err := importIncomplete(ctx, ds.db)
 	if err != nil {
 		return err
 	}
-	if incomplete {
-		if !allowImport {
-			return fmt.Errorf("%w: repository %s", ErrImportIncomplete, ds.info.Name)
-		}
-		if err := ds.completeImport(ctx, log, fileHead); err != nil {
-			return err
-		}
-		out.Action = reconcileImported
-		return nil
+	if !incomplete {
+		return mirrorSealedFromTable(ctx, ds.db, ds.dir)
 	}
-	return mirrorSealedFromTable(ctx, ds.db, ds.dir)
+	if !allowImport {
+		return importIncompleteErr(ds.info.Name, markedHead)
+	}
+	if out.Action == reconcileCaughtUp {
+		if log, err = changelogfile.Open(changelogfile.ChangelogDir(ds.dir)); err != nil {
+			return directoryOpenErr(err)
+		}
+	}
+	if err := ds.completeImport(ctx, log, markedHead); err != nil {
+		return err
+	}
+	out.Action = reconcileResumed
+	return nil
 }
 
 // tableChangelogHead is the table's head, 0 for an empty changelog.
@@ -769,10 +777,11 @@ func (ds *dataset) importEntries(ctx context.Context, log *changelogfile.Log, ta
 // marker is still set: a boot that died between the last batch and the last
 // fold pass. sealed/ is loaded again because the direction is still the
 // import's (the files are what is being restored), and the upsert is
-// idempotent.
-func (ds *dataset) completeImport(ctx context.Context, log *changelogfile.Log, head int64) error {
+// idempotent. markedHead is the file head the marker recorded; the log's own
+// head is what the refold folds, and the two differ after a catch-up.
+func (ds *dataset) completeImport(ctx context.Context, log *changelogfile.Log, markedHead int64) error {
 	ds.svc.log.Warn("substrate: resuming an interrupted import of the repository directory",
-		"repository", ds.scope.Repository, "username", ds.info.Name, "head", head)
+		"repository", ds.scope.Repository, "username", ds.info.Name, "markedHead", markedHead, "fileHead", log.Head())
 	if err := loadSealedFiles(ctx, ds.db, ds.dir); err != nil {
 		return err
 	}
@@ -789,18 +798,24 @@ func (ds *dataset) importFault(stage string) error {
 }
 
 // importIncomplete reports whether the repository's import-progress marker is
-// set: an import began and the transaction that completes it has not
-// committed.
-func importIncomplete(ctx context.Context, q dbx) (bool, error) {
-	var one int
-	err := q.QueryRowContext(ctx, `SELECT 1 FROM import_progress`).Scan(&one)
+// set (an import began and the transaction that completes it has not
+// committed) and the file head the marker recorded.
+func importIncomplete(ctx context.Context, q dbx) (int64, bool, error) {
+	var head int64
+	err := q.QueryRowContext(ctx, `SELECT file_head FROM import_progress`).Scan(&head)
 	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
+		return 0, false, nil
 	}
 	if err != nil {
-		return false, fmt.Errorf("substrate/engine: read the import-progress marker: %w", err)
+		return 0, false, fmt.Errorf("substrate/engine: read the import-progress marker: %w", err)
 	}
-	return true, nil
+	return head, true, nil
+}
+
+// importIncompleteErr is the refusal a marked repository meets, naming the
+// repository and the file head its import was bringing the table to.
+func importIncompleteErr(repository string, markedHead int64) error {
+	return fmt.Errorf("%w: repository %s, marked at file head %d", ErrImportIncomplete, repository, markedHead)
 }
 
 // markImportIncomplete sets the marker, or moves its head when a resumed
@@ -1190,12 +1205,12 @@ func (ds *dataset) openDirectory(ctx context.Context) error {
 	// Before either shape: a fold an import has not finished is not served,
 	// read-only or not, and the open ladder behind this (the vocabulary
 	// upgrade appends) must not run over it.
-	incomplete, err := importIncomplete(ctx, ds.db)
+	markedHead, incomplete, err := importIncomplete(ctx, ds.db)
 	if err != nil {
 		return err
 	}
 	if incomplete {
-		return fmt.Errorf("%w: repository %s", ErrImportIncomplete, ds.info.Name)
+		return importIncompleteErr(ds.info.Name, markedHead)
 	}
 	tableHead, err := tableChangelogHead(ctx, ds.db)
 	if err != nil {

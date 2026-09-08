@@ -1620,6 +1620,12 @@ func TestAnInterruptedImportResumesAtTheNextBoot(t *testing.T) {
 				if _, err := ro.Dataset(ctx, "geoah"); !errors.Is(err, engine.ErrImportIncomplete) {
 					t.Fatalf("a read-only open after boot %d = %v, want ErrImportIncomplete", i+1, err)
 				}
+				// The files and the rows agree, so verify would say OK; the
+				// report names the unfinished import instead.
+				report := mustVerify(t, ro, "geoah")
+				if report.OK || !findingContaining(report, "import of the repository directory has not completed") {
+					t.Fatalf("verify after boot %d does not name the unfinished import: %+v", i+1, report)
+				}
 				_ = ro.Close()
 			}
 
@@ -1657,5 +1663,69 @@ func TestAnInterruptedImportResumesAtTheNextBoot(t *testing.T) {
 				t.Fatalf("the resumed repository does not verify: %+v", report)
 			}
 		})
+	}
+}
+
+// A binary from before the marker serves a marked repository and dies between
+// a commit and its append, so the next boot of this binary finds the table
+// ahead of the file AND the marker set. The catch-up appends the row, and the
+// resumed fold must include it: a refold over the changelog as it was opened
+// before the catch-up would fold one entry short and still clear the marker.
+func TestAResumedImportFoldsWhatTheCatchUpAppended(t *testing.T) {
+	t.Parallel()
+	svc, ds, dsn := newDatasetWithDSN(t)
+	writeSomeHistory(t, ds)
+	putProvider(t, ds, dsn, "openai", "sk-appended-last")
+	before := foldOf(t, ds)
+	head := maxSeq(t, ds)
+	id := repositoryIDOf(t, ds)
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+
+	// The import dies after its last batch: every row in the table, the
+	// marker set, the fold empty.
+	root2 := copyRepositoryDir(t, root, id)
+	dsn2 := testdb.NewSchema(t)
+	errKilled := errors.New("the process died here")
+	ctx := context.Background()
+	_, err := engine.Open(ctx, dsn2,
+		engine.WithKindsDir("../../kinds/substrate.reamde.dev/core"),
+		engine.WithDataRoot(root2),
+		engine.WithCredentialKey(engine.TestCredentialKey),
+		engine.WithTestImportFault(int(head), func(stage string) error {
+			if stage == engine.ImportAfterBatch {
+				return errKilled
+			}
+			return nil
+		}))
+	if !errors.Is(err, errKilled) {
+		t.Fatalf("the import did not die after its last batch: %v", err)
+	}
+	// The file loses its last line, which is what a commit with no append
+	// leaves: the table one ahead of the file.
+	dir, err := changelogfile.RepoDir(root2, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := activeSegment(t, dir)
+	whole, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cut := whole[:bytes.LastIndexByte(whole[:len(whole)-1], '\n')+1]
+	if err := os.WriteFile(path, cut, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	svc2 := mustReopen(t, dsn2, root2)
+	ds2, err := svc2.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("open after the catch-up and the resumed import: %v", err)
+	}
+	if after := foldOf(t, ds2); string(after) != string(before) {
+		t.Fatalf("the resumed fold lacks what the catch-up appended\n%s", firstDifference(before, after))
+	}
+	if report := mustVerify(t, svc2, "geoah"); !report.OK || report.Head != head || report.FileHead != head {
+		t.Fatalf("the repository does not verify after the catch-up: %+v", report)
 	}
 }
