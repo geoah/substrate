@@ -58,6 +58,9 @@ type Dataset interface {
 	List(ctx context.Context, q Query) (*Page, error)
 	Search(ctx context.Context, in SearchInput) ([]Hit, error)
 	Changes(ctx context.Context, after int64, f ChangeFilter, limit int) ([]Change, error)
+	// Head is the changelog's highest committed seq and its history
+	// generation, the pair a `from` cursor is held to before it resumes.
+	Head(ctx context.Context) (ChangelogHead, error)
 	// WatchSignal delivers a coalesced head-change signal: each value is the
 	// highest committed changelog seq known when the signal fired, coalesced
 	// over a short window (~300ms) so a burst of writes wakes a consumer once.

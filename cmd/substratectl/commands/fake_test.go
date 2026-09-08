@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -64,9 +65,10 @@ type fakeSubstrate struct {
 	// changes is the ndjson watch payload (one substrate.Change per row).
 	changes []substrate.Change
 
-	requests []string
-	lastBody map[string]json.RawMessage
-	lastAuth string
+	requests  []string
+	lastBody  map[string]json.RawMessage
+	lastAuth  string
+	lastQuery url.Values
 }
 
 func newFake(t *testing.T) (*fakeSubstrate, *httptest.Server) {
@@ -113,6 +115,7 @@ func (f *fakeSubstrate) noteRequest(r *http.Request) {
 	defer f.mu.Unlock()
 	f.requests = append(f.requests, r.Method+" "+r.URL.Path)
 	f.lastAuth = r.Header.Get("Authorization")
+	f.lastQuery = r.URL.Query()
 	f.lastBody = nil
 	if r.Body != nil {
 		var body map[string]json.RawMessage
@@ -617,7 +620,7 @@ func (f *fakeSubstrate) handleChanges(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.WriteHeader(http.StatusOK)
 	enc := json.NewEncoder(w)
-	_ = enc.Encode(map[string]any{"bookmark": 41})
+	_ = enc.Encode(map[string]any{"bookmark": 41, "generation": "gen-test"})
 	for _, c := range f.changes {
 		_ = enc.Encode(c)
 	}

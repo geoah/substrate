@@ -7,8 +7,12 @@
  * - **Time seek**: the wire has no time-range parameter, but seq order is time
  *   order, so "history until T" is a binary search over the seq axis — a dozen
  *   one-row probes finding the newest row at or before T.
- * - **Live tail**: `watch=1`, chunked HTTP ndjson — one `{"bookmark":N}` line,
- *   then one JSON row per committed change, `{}` heartbeats while idle.
+ * - **Live tail**: `watch=1`, chunked HTTP ndjson: one
+ *   `{"bookmark":N,"generation":"…"}` line, then one JSON row per committed
+ *   change, `{}` heartbeats while idle. A resume hands back the pair: a seq
+ *   is a position in ONE history generation, and the server refuses a cursor
+ *   from a generation it does not hold (a restore of an older repository
+ *   directory) instead of skipping the writes in between.
  *
  * Server-side facets (parseChangeFilter): `kinds`, `actors`, `ops`,
  * `recordId`+`recordKind`, `q` — history and watch honor the same set. Time is
@@ -76,6 +80,10 @@ export const CHANGELOG_PAGE = 200
 export interface ChangesPage {
   changes: ChangeRow[]
   cursor?: number
+  /** The changelog head at the read and the history generation it belongs
+   * to: what a tail opened after this page resumes with. */
+  head?: number
+  generation?: string
 }
 
 export async function fetchChangesPage(opts: {
@@ -88,13 +96,20 @@ export async function fetchChangesPage(opts: {
   const params = changesSearch(opts.filter)
   params.set("first", String(opts.first ?? CHANGELOG_PAGE))
   if (opts.before && opts.before > 0) params.set("before", String(opts.before))
-  const res = await request<{ changes?: ChangeRow[]; cursor?: number }>(
-    "GET",
-    `${rootPath("changes")}?${params}`,
-    undefined,
-    { signal: opts.signal }
-  )
-  return { changes: res.changes ?? [], cursor: res.cursor }
+  const res = await request<{
+    changes?: ChangeRow[]
+    cursor?: number
+    head?: number
+    generation?: string
+  }>("GET", `${rootPath("changes")}?${params}`, undefined, {
+    signal: opts.signal,
+  })
+  return {
+    changes: res.changes ?? [],
+    cursor: res.cursor,
+    head: res.head,
+    generation: res.generation,
+  }
 }
 
 export interface ChangesFeedOpts {
@@ -189,9 +204,11 @@ export function seekQueryOptions(untilMs: number) {
 
 // ── the live tail ───────────────────────────────────────────────────────────
 
-/** `compacted` = a resume fell below the retention horizon; the client must
- * re-list from a fresh head. `stopped` = a terminal error frame (or a
- * non-retriable open failure) ended the stream — no silent reconnect loop. */
+/** `compacted` = the resume cursor no longer addresses this changelog (it fell
+ * below the retention horizon, or the history was replaced and its generation
+ * is not the server's); the client must re-list from a fresh head. `stopped`
+ * = a terminal error frame (or a non-retriable open failure) ended the
+ * stream, with no silent reconnect loop. */
 export type WatchStatus =
   "connecting" | "live" | "retrying" | "compacted" | "stopped" | "off"
 
@@ -207,15 +224,18 @@ export interface WatchError {
 export interface WatchLine {
   row?: ChangeRow
   bookmark?: number
+  /** The history generation the bookmark's seq belongs to; a resume sends
+   * both back. */
+  generation?: string
   /** The reserved terminal error control frame — a mid-stream failure travels
    * as this one problem object rather than a silent EOF. */
   error?: WatchError
 }
 
 /** One ndjson line: a line WITH a `seq` is a change row;
- * a line WITHOUT is a CONTROL frame keyed by its single field — `bookmark`
- * opens, `{}` is the idle heartbeat, `error` is the terminal failure. Blank
- * lines, heartbeats and garbage read as nothing. */
+ * a line WITHOUT is a CONTROL frame keyed by its field: `bookmark` opens
+ * (with `generation` beside it), `{}` is the idle heartbeat, `error` is the
+ * terminal failure. Blank lines, heartbeats and garbage read as nothing. */
 export function parseWatchLine(line: string): WatchLine | null {
   const trimmed = line.trim()
   if (!trimmed) return null
@@ -230,7 +250,13 @@ export function parseWatchLine(line: string): WatchLine | null {
   if (typeof obj.seq === "number" && typeof obj.ts === "string") {
     return { row: parsed as ChangeRow }
   }
-  if (typeof obj.bookmark === "number") return { bookmark: obj.bookmark }
+  if (typeof obj.bookmark === "number") {
+    return {
+      bookmark: obj.bookmark,
+      generation:
+        typeof obj.generation === "string" ? obj.generation : undefined,
+    }
+  }
   if (obj.error && typeof obj.error === "object") {
     const e = obj.error as Record<string, unknown>
     return {
@@ -263,12 +289,18 @@ const RETRY_DELAY_MS = 3_000
  * `request` cannot carry it (the body never ends); this reads the stream.
  *
  * Two terminal signals stop the loop instead of reconnecting silently:
- * - HTTP 410 `compacted` — the resume seq fell below the retention horizon.
+ * - HTTP 410 `compacted`: the resume cursor no longer addresses this
+ *   changelog (below the retention horizon, above the head, or from a history
+ *   generation the server does not hold).
  * - a terminal error control frame — a mid-stream failure sent as a problem
  *   object. The status flips to `stopped` with the problem's message. */
 export function watchChanges(opts: {
   /** Resume above this seq; absent = the server starts at the head. */
   from?: number
+  /** The history generation `from` was read under (a list page's or a
+   * history page's `generation`, or an earlier bookmark's). A `from` above 0
+   * without it is refused by the server. */
+  generation?: string
   filter?: ChangeFeedFilter
   onRow: (row: ChangeRow) => void
   onStatus?: (status: WatchStatus, detail?: string) => void
@@ -278,6 +310,7 @@ export function watchChanges(opts: {
 }): WatchHandle {
   const ctrl = new AbortController()
   let cursor = opts.from
+  let generation = opts.generation
 
   const compacted = (detail: string) => {
     opts.onStatus?.("compacted", detail)
@@ -291,7 +324,10 @@ export function watchChanges(opts: {
       try {
         const params = changesSearch(opts.filter)
         params.set("watch", "1")
-        if (cursor !== undefined) params.set("from", String(cursor))
+        if (cursor !== undefined) {
+          params.set("from", String(cursor))
+          if (generation !== undefined) params.set("generation", generation)
+        }
         const headers: Record<string, string> = {
           Accept: "application/x-ndjson",
           "X-Substrate-Actor": "console",
@@ -307,7 +343,7 @@ export function watchChanges(opts: {
           opts.onStatus?.("off", "session expired")
           return
         }
-        // A below-horizon resume is refused before the stream opens (a 410, not
+        // An unresumable cursor is refused before the stream opens (a 410, not
         // a frame). Re-listing is the only recovery — do not reconnect in a loop.
         if (res.status === 410) {
           const err = envelopeError(res.status, await parseBody(res))
@@ -342,8 +378,11 @@ export function watchChanges(opts: {
               terminated = true
               break
             }
-            if (line.bookmark !== undefined && cursor === undefined) {
-              cursor = line.bookmark
+            if (line.bookmark !== undefined) {
+              // The bookmark names the generation every later reconnect
+              // resumes under; the seq is taken only when none was supplied.
+              if (cursor === undefined) cursor = line.bookmark
+              if (line.generation !== undefined) generation = line.generation
             }
             if (line.row) {
               cursor = line.row.seq

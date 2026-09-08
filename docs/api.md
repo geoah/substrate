@@ -107,7 +107,7 @@ is below):
 GET /api/v1/samples.substrate.reamde.dev/tasks/task
       ?filter={"properties":{"status":{"eq":"open"}}}&orderBy=dueAt
 
-→ {"records": [...], "cursor": "eyJv…", "head": 4207}
+→ {"records": [...], "cursor": "eyJv…", "head": 4207, "generation": "7f3a0c2e9b1d4e6f"}
 ```
 
 Complete one. A state change is just a patch, and the
@@ -258,10 +258,10 @@ returned as `after`:
 
 ```http
 GET /api/v1/samples.substrate.reamde.dev/tasks/task?first=50
-→ {"records": [...], "cursor": "eyJv…", "head": 4211}
+→ {"records": [...], "cursor": "eyJv…", "head": 4211, "generation": "7f3a0c2e9b1d4e6f"}
 
 GET /api/v1/samples.substrate.reamde.dev/tasks/task?first=50&after=eyJv…
-→ {"records": [...], "cursor": "eyJv…", "head": 4211}
+→ {"records": [...], "cursor": "eyJv…", "head": 4211, "generation": "7f3a0c2e9b1d4e6f"}
 ```
 
 The cursor is **opaque**, so treat it as a token and never parse it. Its
@@ -286,10 +286,13 @@ lists use an opaque cursor, passed back as `after`.
 
 Every list response also carries the changelog **head** seq captured at the snapshot
 it was served from, pinned once at the walk's start and carried through the
-cursor, so every page of one walk reports the same head. Page a collection,
-then resume a [watch](changelog.md) from `head`: every listed row's change is
-at or before `head`, and the watch replays exactly the changes after it, so the
-handoff has no gap and no double-see.
+cursor, so every page of one walk reports the same head, and the history
+**generation** that head belongs to. Page a collection, then resume a
+[watch](changelog.md#watching) with `from={head}&generation={generation}`:
+every listed row's change is at or before `head`, and the watch replays exactly
+the changes after it, so the handoff has no gap and no double-see. A cursor
+minted under one generation is refused after a restore replaces the history
+(`422 validation`): list again.
 
 ## Discovery
 
@@ -624,9 +627,11 @@ thing wherever it surfaces. An unmatched path under an API prefix is that same
 object with `404 not_found` — never the console's HTML with a 200.
 
 One more code lives on the changelog surface: `compacted` (410) answers a
-`from=` below the retention [horizon](changelog.md#frames-and-the-horizon),
-telling a consumer that has fallen too far behind to re-list rather than
-silently miss rows.
+`from=` the changelog cannot resume, below the retention
+[horizon](changelog.md#frames-and-the-horizon), above the head, or under a
+history generation the server does not hold. Its problem object names the
+current `head` and `generation`, telling a consumer that has fallen too far
+behind, or resumes after a restore, to re-list rather than silently miss rows.
 
 Every code a request can receive is above; those thirteen strings are the whole
 closed set, and nothing else appears in `error.code`. The

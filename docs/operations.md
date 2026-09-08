@@ -539,7 +539,12 @@ settled before the copy does not run. On an import of a newer directory over
 an older database dump the cursors the dump holds stay where they were, so
 every entry since the dump is delivered again. Embeddings are re-bought by the
 drain loop; a consent flow in flight is started again. A user's tokens are
-records, so they come back.
+records, so they come back. Change cursors that clients saved (the console's
+tail, `substratectl watch --from`, an integration's bookmark) are refused once
+after an import: the row comes back with a new history generation, and a
+resume under the old one answers `410 compacted` naming the head to re-list
+from ([the changelog](changelog.md#frames-and-the-horizon)). A restart and a
+rebuild keep the generation, so neither costs a client its cursor.
 
 **Encrypt the copy.** The changelog and the blobs are plaintext in the
 directory, on the backup host and in the dump alike. The substrate does not

@@ -146,6 +146,8 @@ func TestSupportedListParamsStillWork(t *testing.T) {
 	}
 	// The watch mode's own parameters: the switch and the resume cursor.
 	wantNotRefused(t, env, peoplePath+"?watch=1&from=0", tok)
+	generation := env.svc.datasets["geoah"].generation
+	wantNotRefused(t, env, peoplePath+"?watch=1&from=1&generation="+generation, tok)
 }
 
 // wantNotRefused drives a WATCH request to completion: the stream would
@@ -207,7 +209,8 @@ func TestSupportedChangeParamsStillWork(t *testing.T) {
 		rec := env.do(t, http.MethodGet, changesPath+query, tok, nil)
 		wantStatus(t, rec, http.StatusOK)
 	}
-	wantNotRefused(t, env, changesPath+"?watch=1&from=3&kinds=samples.substrate.reamde.dev/people/person", tok)
+	generation := env.svc.datasets["geoah"].generation
+	wantNotRefused(t, env, changesPath+"?watch=1&from=3&generation="+generation+"&kinds=samples.substrate.reamde.dev/people/person", tok)
 }
 
 // --- discovery's schema note ------------------------------------------------

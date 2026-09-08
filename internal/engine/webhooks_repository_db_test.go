@@ -114,8 +114,8 @@ func TestWebhookRefusesARepositoryThatWillNotOpen(t *testing.T) {
 	// resolves, and the open fails unwrapping it, which is the shape of a
 	// credential or storage fault without one being staged.
 	if _, err := rawDB(t, dsn).ExecContext(ctx,
-		`INSERT INTO repositories (id, username, authority, dek) VALUES ($1, $2, $3, $4)`,
-		"ghost.example.com", "ghost", "ghost.example.com", []byte("not a wrapped dek")); err != nil {
+		`INSERT INTO repositories (id, username, authority, dek, history_generation) VALUES ($1, $2, $3, $4, $5)`,
+		"ghost.example.com", "ghost", "ghost.example.com", []byte("not a wrapped dek"), "ghost-generation"); err != nil {
 		t.Fatalf("plant the repository row: %v", err)
 	}
 	if _, err := engine.ReceiveWebhookSync(ctx, svc, "ghost.example.com", "hook-open", "", jsonHook("x", "x")); !errors.Is(err, substrate.ErrNotFound) {

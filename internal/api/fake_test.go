@@ -313,6 +313,9 @@ type fakeDataset struct {
 	// formers maps a merged-away id to the record that now wears its data.
 	formers map[string]string
 	changes []substrate.Change
+	// generation is the history generation the changes above are numbered
+	// under; restore rotates it the way a boot import does.
+	generation string
 	// trStates is the canned answer of the change-feed seam: per seq, the
 	// trigger chips the engine would compute.
 	trStates map[int64][]substrate.ChangeTrigger
@@ -353,6 +356,7 @@ func newFakeDataset(name string) *fakeDataset {
 		incoming:   map[string][]substrate.IncomingReference{},
 		formers:    map[string]string{},
 		trStates:   map[int64][]substrate.ChangeTrigger{},
+		generation: "gen-" + name + "-1",
 		signals:    make(chan int64, 8),
 		errs:       map[string]error{},
 		traits:     map[string][]string{},
@@ -808,7 +812,7 @@ func (d *fakeDataset) List(_ context.Context, q substrate.Query) (*substrate.Pag
 		}
 		out = append(out, e)
 	}
-	return &substrate.Page{Records: out, Cursor: ""}, nil
+	return &substrate.Page{Records: out, Cursor: "", Head: int64(len(d.changes)), Generation: d.generation}, nil
 }
 
 func (d *fakeDataset) Search(_ context.Context, in substrate.SearchInput) ([]substrate.Hit, error) {
@@ -958,6 +962,17 @@ func (d *fakeDataset) WatchSignal(ctx context.Context) <-chan int64 {
 	return out
 }
 
+// Head is the changelog's position: the fake's seqs are dense from 1, so the
+// head is the count.
+func (d *fakeDataset) Head(_ context.Context) (substrate.ChangelogHead, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err := d.fail("Head"); err != nil {
+		return substrate.ChangelogHead{}, err
+	}
+	return substrate.ChangelogHead{Seq: int64(len(d.changes)), Generation: d.generation}, nil
+}
+
 // commit appends a change and wakes watchers.
 func (d *fakeDataset) commit(c substrate.Change) {
 	d.mu.Lock()
@@ -966,6 +981,18 @@ func (d *fakeDataset) commit(c substrate.Change) {
 	seq := c.Seq
 	d.mu.Unlock()
 	d.signals <- seq
+}
+
+// restore is what a boot does when an OLDER copy of the repository directory
+// lands over an emptied database: the changelog is the copy's (its first
+// `keep` entries) and the row is recreated with a fresh history generation.
+// Cursors saved against the longer history now point above the head or at
+// entries the copy numbered differently.
+func (d *fakeDataset) restore(keep int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.changes = d.changes[:keep]
+	d.generation += "-restored"
 }
 
 func (d *fakeDataset) MintToken(_ context.Context, label string, expiresAt *time.Time) (substrate.TokenInfo, string, error) {

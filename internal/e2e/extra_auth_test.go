@@ -145,33 +145,7 @@ func xaSend(c *C, token, method, path string, body any, header map[string]string
 // ISO-01 has to read the other user's changelog.
 func xaChangesForward(c *C, token string) []changeRow {
 	c.t.Helper()
-	var rows []changeRow
-	from := int64(0)
-	for {
-		path := fmt.Sprintf("/api/v1/changes?from=%d", from)
-		status, raw := c.doAs(token, http.MethodGet, path, nil, nil)
-		c.requiref(status == http.StatusOK, "GET %s answered %d: %s", path, status, raw)
-		page := 0
-		for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
-			if line == "" {
-				continue
-			}
-			var row changeRow
-			c.requiref(json.Unmarshal([]byte(line), &row) == nil, "undecodable ndjson line: %s", line)
-			if row.Seq == 0 {
-				// A control frame: the bookmark or a heartbeat is fine, the
-				// reserved terminal error frame is a failure, never a skip.
-				c.requiref(!strings.Contains(line, `"error"`), "the feed ended with an error frame: %s", line)
-				continue
-			}
-			rows = append(rows, row)
-			page++
-			from = row.Seq
-		}
-		if page == 0 {
-			return rows
-		}
-	}
+	return c.readChangesForwardAs(token, 0)
 }
 
 // xaTOTPRequired is what the deployment says about its own door. Every case

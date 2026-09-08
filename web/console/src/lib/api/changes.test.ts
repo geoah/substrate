@@ -144,6 +144,11 @@ describe("parseWatchLine", () => {
     expect(parseWatchLine('{"bookmark":32700}')?.bookmark).toBe(32700)
   })
 
+  it("reads the history generation beside the bookmark", () => {
+    const line = parseWatchLine('{"bookmark":32700,"generation":"7f3a0c2e"}')
+    expect(line).toEqual({ bookmark: 32700, generation: "7f3a0c2e" })
+  })
+
   it("reads the terminal error control frame", () => {
     const line = JSON.stringify({
       error: { code: "compacted", message: "below the horizon", problems: [] },

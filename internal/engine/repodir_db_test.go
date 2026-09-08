@@ -468,6 +468,90 @@ func TestBootImportsARepositoryDirectory(t *testing.T) {
 	}
 }
 
+// A change cursor is a seq under a history generation (decision 0053). The
+// generation is the row's and the row survives a rebuild and a restart, so a
+// cursor saved against a live repository stays good across both; an import
+// of a directory into a database with no row for it mints a new one, so a
+// cursor saved against the history that database held before is refused
+// instead of resuming against numbering it never saw. The fixture is the
+// ticket's case: an OLDER copy of the directory, taken before the writes the
+// cursor points into, restored over an emptied database.
+func TestHistoryGenerationHoldsAcrossRestartAndRebuildAndRotatesOnImport(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds, dsn := newDatasetWithDSN(t)
+	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "in the copy"}})
+	before, err := ds.Head(ctx)
+	if err != nil {
+		t.Fatalf("head: %v", err)
+	}
+	if before.Generation == "" || before.Seq != maxSeq(t, ds) {
+		t.Fatalf("head = %+v, want the changelog's max seq under a generation", before)
+	}
+	id := repositoryIDOf(t, ds)
+	root := engine.DataRootOf(svc)
+	// The writer syncs every committed line before the commit returns, so a
+	// copy taken between writes is a complete older directory.
+	olderRoot := copyRepositoryDir(t, root, id)
+	copyHead := before.Seq
+
+	for i := range 4 {
+		mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "after the copy " + strconv.Itoa(i)}})
+	}
+	// The cursor a client saved from the longer history: past the copy's
+	// head, so the restore leaves it above the new head.
+	saved := copyHead + 2
+
+	if _, err := svc.(rebuilder).RebuildRepository(ctx, "geoah"); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if after, err := ds.Head(ctx); err != nil || after.Generation != before.Generation || after.Seq != copyHead+4 {
+		t.Fatalf("head after the rebuild = %+v (%v), want generation %q at seq %d", after, err, before.Generation, copyHead+4)
+	}
+
+	_ = svc.Close()
+	svc2 := mustReopen(t, dsn, root)
+	ds2, err := svc2.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("reopen the repository: %v", err)
+	}
+	if after, err := ds2.Head(ctx); err != nil || after.Generation != before.Generation || after.Seq != copyHead+4 {
+		t.Fatalf("head after the restart = %+v (%v), want generation %q at seq %d", after, err, before.Generation, copyHead+4)
+	}
+	_ = svc2.Close()
+
+	// The older copy over an emptied database: the row is recreated from the
+	// manifest, and with it the generation.
+	svc3 := mustReopen(t, testdb.NewSchema(t), olderRoot)
+	ds3, err := svc3.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("open the imported repository: %v", err)
+	}
+	restored, err := ds3.Head(ctx)
+	if err != nil {
+		t.Fatalf("head after the import: %v", err)
+	}
+	if restored.Generation == before.Generation {
+		t.Fatal("the import kept the generation: a cursor saved against the longer history would resume against numbering the copy never saw")
+	}
+	if restored.Seq != copyHead || saved <= restored.Seq {
+		t.Fatalf("restored head = %d, want the copy's %d with the saved cursor %d above it", restored.Seq, copyHead, saved)
+	}
+	// A client that re-lists at the restored head and tails from there sees
+	// every replacement write, the seqs the old cursor would have skipped
+	// included.
+	for i := range 3 {
+		mustPut(t, ds3, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "replacement " + strconv.Itoa(i)}})
+	}
+	got := changesSince(t, ds3, restored.Seq)
+	if len(got) != 3 || got[0].Seq != restored.Seq+1 || got[2].Seq != restored.Seq+3 {
+		t.Fatalf("tailing from the restored head %d replayed %d rows (%v), want seqs %d to %d", restored.Seq, len(got), seqsOf(got), restored.Seq+1, restored.Seq+3)
+	}
+	if grown, _ := ds3.Head(ctx); grown.Generation != restored.Generation {
+		t.Fatalf("the generation moved from %q to %q under ordinary writes", restored.Generation, grown.Generation)
+	}
+}
+
 // A file the table does not agree with refuses the boot and names the seq:
 // once as a line whose checksum no longer verifies, once as a self-consistent
 // line that is not what the table stamped.

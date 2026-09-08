@@ -10,7 +10,8 @@ import (
 )
 
 // streamChanges prints one line per change from an ndjson watch stream.
-// Heartbeat lines ("{}") are skipped; the leading bookmark is reported once.
+// Heartbeat lines ("{}") are skipped; the leading bookmark is reported once,
+// with the history generation a resume must hand back beside its seq.
 func streamChanges(w io.Writer, r io.Reader) error {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 8<<20)
@@ -21,14 +22,19 @@ func streamChanges(w io.Writer, r io.Reader) error {
 			continue
 		}
 		var probe struct {
-			Bookmark *int64 `json:"bookmark"`
-			Seq      *int64 `json:"seq"`
+			Bookmark   *int64 `json:"bookmark"`
+			Generation string `json:"generation"`
+			Seq        *int64 `json:"seq"`
 		}
 		if err := json.Unmarshal(line, &probe); err != nil {
 			continue
 		}
 		if probe.Bookmark != nil {
-			fmt.Fprintf(w, "# watching from seq %d\n", *probe.Bookmark)
+			if probe.Generation != "" {
+				fmt.Fprintf(w, "# watching from seq %d, generation %s\n", *probe.Bookmark, probe.Generation)
+			} else {
+				fmt.Fprintf(w, "# watching from seq %d\n", *probe.Bookmark)
+			}
 			continue
 		}
 		if probe.Seq == nil {

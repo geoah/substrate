@@ -87,9 +87,10 @@ func init() {
 // xqPage is the list wire shape: the records, the keyset cursor ("" once the
 // walk is exhausted) and the changelog head the page was read at.
 type xqPage struct {
-	Records []record `json:"records"`
-	Cursor  string   `json:"cursor"`
-	Head    int64    `json:"head"`
+	Records    []record `json:"records"`
+	Cursor     string   `json:"cursor"`
+	Head       int64    `json:"head"`
+	Generation string   `json:"generation"`
 }
 
 // xqError is the wire's problem shape, which every refusal below is pinned
@@ -453,9 +454,10 @@ func xqCaseListWatchHandoff(c *C) {
 	page := xqListTasks(c, xqValues("first", "1"))
 	head := page.Head
 	c.requiref(head > 0, "the list page carries head %d, and the stories wrote hundreds of rows", head)
-	c.stepf("a task list page answered head %d, the changelog seq it was read at", head)
+	c.requiref(page.Generation != "", "the list page carries no history generation beside head %d", head)
+	c.stepf("a task list page answered head %d under generation %s, the changelog position it was read at", head, page.Generation)
 
-	st := xqOpenStream(c, fmt.Sprintf("%s?watch=1&from=%d", xqChanges, head), 30*time.Second)
+	st := xqOpenStream(c, fmt.Sprintf("%s?watch=1&from=%d&generation=%s", xqChanges, head, page.Generation), 30*time.Second)
 	defer st.close()
 	c.requiref(st.bookmark(c) == head, "the watch bookmarked a different seq than the list's head %d", head)
 

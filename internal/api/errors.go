@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -30,7 +29,7 @@ const (
 	codeInternal    = "internal"     // 500 — a genuine, unexpected server fault
 	codeUnsupported = "unsupported"  // 501 — a capability absent from this deployment
 	codeUnavailable = "unavailable"  // 503 — transient; ALWAYS with Retry-After
-	codeCompacted   = "compacted"    // 410 — from= below the retention horizon; re-list
+	codeCompacted   = "compacted"    // 410: a change cursor the changelog cannot resume; re-list
 	// codeFunctionFailed is 500: a callable's body faulted while running. It is
 	// distinct from codeValidation (422) so a caller tells its own bad
 	// arguments from the function failing to execute (substrate.ErrFunctionFault).
@@ -71,6 +70,12 @@ type errorPayload struct {
 	Message        string          `json:"message"`
 	Problems       []string        `json:"problems,omitempty"`
 	ProblemDetails []problemDetail `json:"problemDetails,omitempty"`
+	// Head and Generation ride a `compacted` problem only: the changelog
+	// head and history generation the client re-lists from and resumes at,
+	// so a refused cursor names its replacement. Head is a pointer so an
+	// empty changelog's 0 is still written.
+	Head       *int64 `json:"head,omitempty"`
+	Generation string `json:"generation,omitempty"`
 }
 
 type errorEnvelope struct {
@@ -110,13 +115,18 @@ func writeUnavailable(w http.ResponseWriter, retryAfter time.Duration, msg strin
 	writeError(w, http.StatusServiceUnavailable, codeUnavailable, msg)
 }
 
-// writeCompacted is the 410 emit for a `from=`/`before=` seq below the
-// retention horizon: the requested history is gone, so the client
-// must re-list and resume from a fresh cursor. It is a distinct, stable signal
-// a client MUST handle, never a silent gap.
-func writeCompacted(w http.ResponseWriter, horizon int64) {
-	writeError(w, http.StatusGone, codeCompacted,
-		fmt.Sprintf("requested seq is below the retention horizon %d; re-list and resume", horizon))
+// writeCompacted is the 410 emit for a change cursor the changelog cannot
+// resume: a `from=`/`before=` seq below the retention horizon, or a `from`
+// above the head, under another history generation, or with no generation at
+// all (watch.go resumeCursor). The history the cursor addressed is not the
+// one this changelog holds, so the client must re-list and resume from the
+// head the problem object names. It is a distinct, stable signal a client
+// MUST handle, never a silent gap.
+func writeCompacted(w http.ResponseWriter, head substrate.ChangelogHead, msg string) {
+	seq := head.Seq
+	writeJSON(w, http.StatusGone, errorEnvelope{Error: errorPayload{
+		Code: codeCompacted, Message: msg, Head: &seq, Generation: head.Generation,
+	}})
 }
 
 // problemFor maps an engine sentinel error onto the wire status + problem

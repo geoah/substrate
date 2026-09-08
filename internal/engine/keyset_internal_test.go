@@ -71,7 +71,7 @@ func TestSeekPredicate(t *testing.T) {
 // signature and the key values (nil = NULL), and a corrupt token is rejected.
 func TestKeysetRoundTrip(t *testing.T) {
 	v := "hello"
-	tok := encodeKeyset("created_at DESC NULLS LAST, id DESC", []*string{&v, nil}, 42)
+	tok := encodeKeyset("created_at DESC NULLS LAST, id DESC", []*string{&v, nil}, 42, "gen-1")
 	got, err := decodeKeyset(tok)
 	if err != nil {
 		t.Fatalf("decode: %v", err)
@@ -83,9 +83,11 @@ func TestKeysetRoundTrip(t *testing.T) {
 		t.Fatalf("token keys = %v", got.K)
 	}
 	// The first page's head rides the cursor (codex regress #3) so every page of
-	// one walk reports the same head.
-	if got.H != 42 {
-		t.Fatalf("token head = %d, want 42", got.H)
+	// one walk reports the same head, and the history generation that head
+	// belongs to rides beside it so List can refuse a cursor minted against a
+	// history an import has since replaced.
+	if got.H != 42 || got.G != "gen-1" {
+		t.Fatalf("token head/generation = %d/%q, want 42/gen-1", got.H, got.G)
 	}
 	if _, err := decodeKeyset("!!!not base64!!!"); err == nil {
 		t.Fatalf("expected a bad-cursor error")
