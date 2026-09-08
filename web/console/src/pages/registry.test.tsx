@@ -773,16 +773,30 @@ describe("RegistryPage", () => {
           steps: [step],
         },
       }
+      // A second lossy provider in the same section: the dialog it opens
+      // afterwards must not inherit the first one's "changed" notice.
+      const linear = {
+        ...lossy,
+        id: "providers.substrate.reamde.dev/linear",
+        name: "linear",
+        package: "linear",
+      }
+      const linearStatus = {
+        ...googleStatus(),
+        id: linear.id,
+        name: "linear",
+        package: "linear",
+      }
       const wire: Wire = {
-        statuses: [googleStatus()],
-        catalog: [lossy, PEOPLE],
+        statuses: [googleStatus(), linearStatus],
+        catalog: [lossy, linear, PEOPLE],
       }
       let installs = 0
       wire.take = () => {
         installs++
         // The server changed under the same records: the plan reads
         // differently and, re-read, removes nothing.
-        wire.catalog = [MOVED, PEOPLE]
+        wire.catalog = [MOVED, linear, PEOPLE]
         return jsonResponse(403, {
           error: {
             code: "lossy",
@@ -809,6 +823,17 @@ describe("RegistryPage", () => {
       expect(
         within(google).getByRole("button", { name: /Upgrade/ })
       ).toBeTruthy()
+
+      const linearRow = await rowOf("linear")
+      fireEvent.click(
+        within(linearRow).getByRole("button", { name: /Upgrade/ })
+      )
+      const next = await screen.findByRole("dialog", {
+        name: /Upgrade linear and lose values/,
+      })
+      expect(
+        within(next).queryByText(/Records changed since this preview/)
+      ).toBeNull()
     })
 
     it("a blocked upgrade is stated, never offered", async () => {

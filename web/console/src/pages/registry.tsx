@@ -477,8 +477,13 @@ function LossyUpgradeDialog({
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
-  const [stale, setStale] = useState(false)
+  // staleFor is the row whose last confirmation named a plan the server no
+  // longer counts, so the notice below belongs to that row alone: the dialog
+  // stays mounted with no row once closed, and keying on the id keeps a later
+  // row from opening as "changed".
+  const [staleFor, setStaleFor] = useState<string | null>(null)
   const upgrade = row?.upgrade
+  const stale = row !== undefined && staleFor === row.id
   const upgrading = useMutation({
     mutationFn: () => {
       if (!row || !upgrade?.planHash) {
@@ -490,7 +495,7 @@ function LossyUpgradeDialog({
       })
     },
     onSuccess: (status) => {
-      setStale(false)
+      setStaleFor(null)
       onClose()
       toast.add({
         type: "success",
@@ -511,7 +516,7 @@ function LossyUpgradeDialog({
         error instanceof ApiError &&
         (error.status === 409 || error.code === "lossy")
       ) {
-        setStale(true)
+        setStaleFor(row?.id ?? null)
         void queryClient.invalidateQueries({
           queryKey: catalogQueryOptions.queryKey,
         })
@@ -544,7 +549,7 @@ function LossyUpgradeDialog({
       open
       onOpenChange={(open) => {
         if (open || upgrading.isPending) return
-        setStale(false)
+        setStaleFor(null)
         onClose()
       }}
     >
@@ -577,7 +582,7 @@ function LossyUpgradeDialog({
             disabled={upgrading.isPending}
             onClick={(e) => {
               e.stopPropagation()
-              setStale(false)
+              setStaleFor(null)
               onClose()
             }}
           >
@@ -1119,6 +1124,9 @@ function BundleSection({
   // confirmation shows the fresh plan (LossyUpgradeDialog).
   const [lossyID, setLossyID] = useState<string | null>(null)
   const confirmLoss = useCallback((row: BundleRow) => setLossyID(row.id), [])
+  // Stable, because the dialog's lossless-re-read effect lists it as a
+  // dependency.
+  const closeLoss = useCallback(() => setLossyID(null), [])
   const columns = useMemo(
     () => buildColumns(requirements, mappings, confirmLoss),
     [requirements, mappings, confirmLoss]
@@ -1169,7 +1177,7 @@ function BundleSection({
       />
       <LossyUpgradeDialog
         row={rows.find((r) => r.id === lossyID)}
-        onClose={() => setLossyID(null)}
+        onClose={closeLoss}
       />
     </section>
   )

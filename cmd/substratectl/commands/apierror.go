@@ -112,7 +112,7 @@ func lossyHint(path string) string {
 	case strings.Contains(path, "/vocabulary/apply"):
 		return "re-run `substratectl apply --allow-data-loss`: it previews the plan, prints the steps that remove values and confirms exactly those"
 	case strings.Contains(path, "/catalog/") && strings.HasSuffix(path, "/import"):
-		return "a sample re-import has no preview to confirm against yet: rewrite the records the message names first, or apply the rehomed closure yourself with `substratectl apply --as-mine --allow-data-loss`"
+		return "a sample re-import has no preview to confirm against yet: rewrite the records the message names first, or apply the closure yourself with `substratectl apply --as-mine --allow-data-loss` from the sample's documents under `samples/` in the substrate tree"
 	}
 	return "re-run `substratectl install <provider> --allow-data-loss`: it reads the preview, prints the steps that remove values and confirms exactly those"
 }
