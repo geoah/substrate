@@ -510,9 +510,11 @@ ordinary `substrate.reamde.dev/core/blob` record whose id **is** the digest, so 
 bytes always mint the same blob. A read resolves the ref to
 `{digest, name, mediaType, size, status}`, never to the bytes inline. A write
 accepts that same object and uses only its `digest`, so a document read with
-`get -o yaml` applies back unchanged; the other keys are the manifest's own,
-and writing them changes nothing. The manifest is always a record in Postgres;
-where the BYTES sit is an operator's choice of backend
+`get -o yaml` applies back unchanged while the attachment's manifest exists;
+the other keys are the manifest's own, and writing them changes nothing. A
+digest whose manifest is gone reads as the bare `{digest}` and is refused on
+write as before (`blob … is unknown`). The manifest is always a record in
+Postgres; where the BYTES sit is an operator's choice of backend
 ([the blob store](operations.md#the-blob-store)), and nothing on the wire
 changes with it.
 

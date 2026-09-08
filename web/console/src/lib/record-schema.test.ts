@@ -10,6 +10,7 @@ import type { KindInfo } from "@/lib/api/types"
 import {
   checkValue,
   controlFor,
+  editableValue,
   exampleFor,
   formatValue,
   parseValue,
@@ -329,15 +330,19 @@ describe("blobref: the read shape applies back", () => {
     )
   })
 
-  it("edits as the digest: the manifest's other keys are not the author's", () => {
-    expect(formatValue(spec(wideKind, "attachment"), MANIFEST)).toBe(DIGEST)
-    expect(formatValue(spec(wideKind, "attachment"), DIGEST)).toBe(DIGEST)
-    expect(formatValue(spec(wideKind, "attachments"), [MANIFEST, DIGEST])).toBe(
-      `${DIGEST}\n${DIGEST}`
-    )
-    expect(parseValue(spec(wideKind, "attachment"), DIGEST)).toEqual({
-      value: DIGEST,
-    })
+  it("edits as the digest, reads as the whole manifest", () => {
+    const one = spec(wideKind, "attachment")
+    const many = spec(wideKind, "attachments")
+    // The editable control seeds the digest alone: the other keys are not
+    // the author's to type over.
+    expect(editableValue(one, MANIFEST)).toBe(DIGEST)
+    expect(editableValue(one, DIGEST)).toBe(DIGEST)
+    expect(editableValue(many, [MANIFEST, DIGEST])).toEqual([DIGEST, DIGEST])
+    expect(formatValue(one, editableValue(one, MANIFEST))).toBe(DIGEST)
+    expect(parseValue(one, DIGEST)).toEqual({ value: DIGEST })
+    // A read-only rendering keeps name, mediaType, size and status.
+    expect(formatValue(one, MANIFEST)).toContain('"name": "layout.png"')
+    expect(formatValue(one, MANIFEST)).toContain('"size": 2048')
   })
 })
 

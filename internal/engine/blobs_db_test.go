@@ -380,7 +380,7 @@ func TestBlobRefReadShapeAppliesBackUnchanged(t *testing.T) {
 			_, ds, dsn := newDatasetWithDSN(t)
 			bs := blobStoreOf(t, ds)
 			if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, blobDocDocs(tc.prop, tc.repeated)); err != nil {
-				t.Fatalf("install doc type: %v", err)
+				t.Fatalf("install doc kind: %v", err)
 			}
 			a, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "image/png", Name: "a.png"}, []byte("first"), "")
 			if err != nil {

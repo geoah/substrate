@@ -736,23 +736,24 @@ export function checkValue(spec: PropSpec, value: unknown): string | undefined {
 export function formatValue(spec: PropSpec, value: unknown): string {
   if (value === null || value === undefined) return ""
   if (controlFor(spec) === "secret") return ""
-  // A blob-ref is edited as its digest: the manifest a read hands back is
-  // resolved metadata, and the write carries the digest alone either way.
-  const shown =
-    spec.kind === "blobref"
-      ? Array.isArray(value)
-        ? value.map(blobRefDigest)
-        : blobRefDigest(value)
-      : value
-  if (Array.isArray(shown)) {
-    return shown
+  if (Array.isArray(value)) {
+    return value
       .map((v) =>
         typeof v === "object" && v !== null ? JSON.stringify(v) : String(v)
       )
       .join("\n")
   }
-  if (typeof shown === "object") return JSON.stringify(shown, null, 2)
-  return String(shown)
+  if (typeof value === "object") return JSON.stringify(value, null, 2)
+  return String(value)
+}
+
+/** The value an EDITABLE control is seeded with. A blob-ref reads as its
+ * manifest and is edited as its digest: the other keys are resolved metadata
+ * the write carries no authority over, so typing over them would change
+ * nothing. A read-only rendering keeps the whole manifest (`formatValue`). */
+export function editableValue(spec: PropSpec, value: unknown): unknown {
+  if (spec.kind !== "blobref") return value
+  return Array.isArray(value) ? value.map(blobRefDigest) : blobRefDigest(value)
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

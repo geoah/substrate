@@ -37,6 +37,7 @@ import {
   checkKey,
   checkValue,
   controlFor,
+  editableValue,
   elementSpec,
   emptyContainer,
   exampleFor,
@@ -243,7 +244,9 @@ export function seedField(
       if (stored === null || stored === undefined) {
         return creating && field.defaultValue ? field.defaultValue : ""
       }
-      return formatValue(field.spec, stored)
+      // A blob-ref is edited as its digest; the read-only rendering in
+      // property-field.tsx keeps the manifest and calls formatValue directly.
+      return formatValue(field.spec, editableValue(field.spec, stored))
   }
 }
 

@@ -11,9 +11,11 @@ import (
 
 // A blob-ref reads as its manifest ({digest, name, mediaType, size, status})
 // and is stored as the digest, and the server takes the digest out of the
-// object on a write. The CLI's part is to hand the object back whole and
-// typed: `get -o yaml | apply -f` on a record with an attachment must land the
-// same document, with `size` still an integer rather than a string.
+// object on a write: that half is proven by the engine's
+// TestBlobRefReadShapeAppliesBackUnchanged. This test pins only the CLI's
+// half, against a fake that echoes what it was seeded: `get -o yaml | apply
+// -f` must put the object back whole, `digest` intact and `size` still an
+// integer rather than a string, and print the same document afterwards.
 func TestBlobRefManifestSurvivesTheRoundTrip(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
@@ -38,10 +40,7 @@ func TestBlobRefManifestSurvivesTheRoundTrip(t *testing.T) {
 	}
 
 	h.stdin.WriteString(first)
-	applied, _ := h.mustRun("apply", "-f", "-")
-	if !strings.Contains(applied, "unchanged") {
-		t.Fatalf("re-applying get output should be unchanged, got:\n%s", applied)
-	}
+	h.mustRun("apply", "-f", "-")
 	if got := h.lastRequest(); got != "PUT /api/v1/samples.substrate.reamde.dev/tasks/task/t9" {
 		t.Fatalf("last request = %q, want the put", got)
 	}
