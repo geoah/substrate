@@ -69,10 +69,11 @@ type options struct {
 	// so a small history spans more than one batch. Tests only.
 	importFault func(stage string) error
 	importBatch int
-	// commitFault is the stamping commit's test seam (export_test.go): a hook
-	// run on either side of the manifest write that precedes the first append
-	// in a new changelog dialect, so a test can fail the write or stop the
-	// process between the write and the append. Tests only.
+	// commitFault is a write's test seam (export_test.go): a hook run at
+	// each durable step of commitAndMirror, around the manifest write that
+	// precedes the first append in a new changelog dialect and around the
+	// Postgres commit, so a test can fail a step or stop the process there.
+	// Tests only.
 	commitFault func(stage string) error
 }
 
@@ -248,8 +249,8 @@ type service struct {
 	// (repodir.go importEntries, refoldFromFiles). Tests only.
 	testImportFault func(stage string) error
 	testImportBatch int
-	// testCommitFault is the options' commit seam (repodir.go
-	// writeManifestBeforeCommit). Tests only.
+	// testCommitFault is the options' commit seam (dataset.go
+	// commitAndMirror, repodir.go writeManifestBeforeCommit). Tests only.
 	testCommitFault func(stage string) error
 }
 

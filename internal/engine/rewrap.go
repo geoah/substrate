@@ -116,6 +116,12 @@ func RewrapRepositoryDir(repoDir, identity, newKey string) (RewrapReport, error)
 	if err := changelogfile.WriteManifest(repoDir, m); err != nil {
 		return report, err
 	}
+	// A pending file is a write the copy's server had staged and not
+	// committed: it is nobody's record, and it is sealed under the DEK this
+	// copy is leaving behind.
+	if _, err := changelogfile.DiscardPendingSealed(repoDir); err != nil {
+		return report, err
+	}
 	return report, nil
 }
 

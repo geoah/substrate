@@ -108,9 +108,14 @@ func (ds *dataset) updateCredential(ctx context.Context, ref string, account ere
 	if err != nil {
 		return false, err
 	}
+	tx, err := ds.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
 	var expiresAt sql.NullTime
 	var updated time.Time
-	err = ds.db.QueryRowContext(ctx, `
+	err = tx.QueryRowContext(ctx, `
 		UPDATE sealed SET payload = $4, expires_at = $5, updated_at = now()
 		WHERE ref = $1 AND record_kind = $2 AND record_id = $3 AND updated_at = $6
 		  AND EXISTS (SELECT 1 FROM records e WHERE e.kind = $2 AND e.id = $3 AND e.deleted_at IS NULL)
@@ -122,8 +127,11 @@ func (ds *dataset) updateCredential(ctx context.Context, ref string, account ere
 	if err != nil {
 		return false, fmt.Errorf("substrate/engine: update credential: %w", err)
 	}
-	// Outside inTx, so the mirror runs here, right after the row landed.
-	ds.mirrorSealedNow([]sealedMirrorOp{{rec: sealedRecordOf(ref, account.Kind, account.ID, payload, expiresAt, updated)}})
+	// Outside inTx, so the file is written here, before the row commits.
+	rec := sealedRecordOf(ref, account.Kind, account.ID, payload, expiresAt, updated)
+	if err := ds.commitSealed(tx, []sealedMirrorOp{{rec: rec}}); err != nil {
+		return false, err
+	}
 	return true, nil
 }
 
@@ -159,25 +167,39 @@ var errCredentialGone = errors.New("substrate/engine: credential not found")
 
 // deleteCredentialsFor drops every credential a record holds — teardown.
 func (ds *dataset) deleteCredentialsFor(ctx context.Context, account eref) error {
-	rows, err := ds.db.QueryContext(ctx, `DELETE FROM sealed WHERE record_kind = $1 AND record_id = $2 RETURNING ref`,
+	tx, err := ds.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	ops, err := deleteCredentialRows(ctx, tx, account)
+	if err != nil {
+		return err
+	}
+	// Outside inTx, so the files go with the row commit here: a delete lands
+	// after the rows commit, and a failure to remove one is reported and
+	// latched, never silently left for the boot check.
+	return ds.commitSealed(tx, ops)
+}
+
+// deleteCredentialRows deletes every sealed row a record holds inside tx and
+// returns the file deletes that follow the commit.
+func deleteCredentialRows(ctx context.Context, tx *sql.Tx, account eref) ([]sealedMirrorOp, error) {
+	rows, err := tx.QueryContext(ctx, `DELETE FROM sealed WHERE record_kind = $1 AND record_id = $2 RETURNING ref`,
 		account.Kind, account.ID)
 	if err != nil {
-		return fmt.Errorf("substrate/engine: delete credentials: %w", err)
+		return nil, fmt.Errorf("substrate/engine: delete credentials: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	var ops []sealedMirrorOp
 	for rows.Next() {
 		var ref string
 		if err := rows.Scan(&ref); err != nil {
-			return err
+			return nil, err
 		}
 		ops = append(ops, sealedMirrorOp{rec: changelogfile.SealedRecord{Ref: ref}, delete: true})
 	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	ds.mirrorSealedNow(ops)
-	return nil
+	return ops, rows.Err()
 }
 
 // expiringCredentials lists refs whose tokens expire before the horizon —

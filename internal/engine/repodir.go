@@ -86,12 +86,24 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// ErrChangelogFileBehind is the refusal every write meets after an append or
-// a sealed mirror failed AFTER its transaction committed: the tables hold a
-// write the directory does not, and the dataset stops taking writes until
-// the process restarts and the boot check catches the directory up. Nothing
-// repairs inline, because a repair racing the next append is how two writers
-// interleave lines.
+// ErrDirectoryWrite is the refusal a write meets when a sealed file could not
+// be staged BEFORE its transaction committed (dataset.go commitAndMirror):
+// the transaction rolled back, nothing is durable anywhere, and the caller
+// may retry, which is why it is an ErrUnavailable (a 503 with Retry-After on
+// the wire) and the latched ErrChangelogFileBehind is not. A changelog writer
+// that fails is not retryable, because it refuses every later prepare until
+// the process restarts, so that failure latches instead (prepareLines).
+var ErrDirectoryWrite = fmt.Errorf("%w: the repository directory could not be written, so the write was rolled back", substrate.ErrUnavailable)
+
+// ErrChangelogFileBehind is the refusal every write meets once the dataset
+// needs a restart: a step that runs AFTER its transaction committed failed
+// (a rename into place, the newline that ends the transaction in the file, a
+// sealed delete), a commit's answer was lost after it committed, or the
+// changelog writer failed. In every case the tables may hold a write the
+// directory does not, the caller got the error, and the dataset stops taking
+// writes until the process restarts and the boot check catches the directory
+// up. Nothing repairs inline, because a repair racing the next append is how
+// two writers interleave lines.
 var ErrChangelogFileBehind = errors.New("substrate/engine: the repository directory is behind the tables after a failed write; restart the server so the boot check catches it up")
 
 // ErrChangelogDiverged is the boot check's refusal (case 4): the file and the
@@ -742,7 +754,7 @@ func appendFromTable(ctx context.Context, q dbx, w *changelogfile.Writer, after 
 			page = append(page, rest...)
 		}
 		// The line encoded for the checksum check is the line the file gets,
-		// as mirrorAfterCommit hands the writer the bytes settleChecksums
+		// as prepareLines hands the writer the bytes settleChecksums
 		// stamped: one canonicalization per row, not two.
 		lines := make([]changelogfile.Line, 0, len(page))
 		for _, row := range page {
@@ -1285,15 +1297,59 @@ func sealedRecordOf(ref, recordKind, recordID string, payload []byte, expiresAt 
 	return rec
 }
 
+// sealedStore is the sealed directory as the mirror writes it: one file per
+// ref, replaced atomically or removed. changelogfile's is the one
+// implementation the server has; a test swaps in one that fails, so a write's
+// refusal on a sealed-file failure is checked without a failing filesystem
+// (export_test.go BreakSealedStore).
+type sealedStore interface {
+	// Write replaces the record's file in one step: the boot's direction,
+	// where the table already committed what is written.
+	Write(repoDir string, rec changelogfile.SealedRecord) error
+	// Stage writes the record's pending file and Commit renames it into
+	// place: a live write's two steps around its Postgres commit.
+	Stage(repoDir string, rec changelogfile.SealedRecord) error
+	Commit(repoDir, ref string) error
+	Delete(repoDir, ref string) error
+}
+
+// fileSealedStore is the sealed directory itself.
+type fileSealedStore struct{}
+
+func (fileSealedStore) Write(repoDir string, rec changelogfile.SealedRecord) error {
+	return changelogfile.WriteSealed(repoDir, rec)
+}
+
+func (fileSealedStore) Stage(repoDir string, rec changelogfile.SealedRecord) error {
+	return changelogfile.StageSealed(repoDir, rec)
+}
+
+func (fileSealedStore) Commit(repoDir, ref string) error {
+	return changelogfile.CommitSealed(repoDir, ref)
+}
+
+func (fileSealedStore) Delete(repoDir, ref string) error {
+	return changelogfile.DeleteSealed(repoDir, ref)
+}
+
+// sealedFiles is the dataset's sealed store: the files, unless a test seam
+// replaced them.
+func (ds *dataset) sealedFiles() sealedStore {
+	if ds.sealed != nil {
+		return ds.sealed
+	}
+	return fileSealedStore{}
+}
+
 // applySealedMirror runs the collected sealed operations against the
 // directory.
-func applySealedMirror(dir string, ops []sealedMirrorOp) error {
+func applySealedMirror(store sealedStore, dir string, ops []sealedMirrorOp) error {
 	for _, op := range ops {
 		var err error
 		if op.delete {
-			err = changelogfile.DeleteSealed(dir, op.rec.Ref)
+			err = store.Delete(dir, op.rec.Ref)
 		} else {
-			err = changelogfile.WriteSealed(dir, op.rec)
+			err = store.Write(dir, op.rec)
 		}
 		if err != nil {
 			return fmt.Errorf("substrate/engine: mirror sealed %s: %w", op.rec.Ref, err)
@@ -1368,7 +1424,16 @@ func mirrorSealedFromTable(ctx context.Context, q dbx, dir string) error {
 			ops = append(ops, sealedMirrorOp{rec: want[ref]})
 		}
 	}
-	return applySealedMirror(dir, ops)
+	if err := applySealedMirror(fileSealedStore{}, dir, ops); err != nil {
+		return err
+	}
+	// A pending file is a write staged before a commit the directory never
+	// saw finish: its transaction rolled back or the process died before it
+	// committed, and the record's file above is now the row either way, so
+	// a payload the table carries is already in place and one it does not
+	// is dropped here. Nothing loads a pending file (ReadSealed skips it).
+	_, err = changelogfile.DiscardPendingSealed(dir)
+	return err
 }
 
 // loadSealedFiles upserts every file under sealed/ into the table: the import
@@ -1461,60 +1526,80 @@ func (ds *dataset) openDirectory(ctx context.Context) error {
 	return mirrorSealedFromTable(ctx, ds.db, ds.dir)
 }
 
-// directoryErr is the standing refusal after a failed post-commit mirror.
+// directoryErr is the standing refusal after a post-commit step failed.
 func (ds *dataset) directoryErr() error {
 	ds.writerMu.Lock()
 	defer ds.writerMu.Unlock()
 	return ds.fileErr
 }
 
-// mirrorAfterCommit appends the transaction's entries and applies its sealed
-// operations. It runs with writerMu held, right after tx.Commit(), so file
-// order is commit order. A failure is logged and latched: the commit already
-// happened, so the caller's write is durable in the tables, and every later
-// write is refused until a restart lets the boot check catch the directory
-// up.
-//
-// THE ORDER IS THE INVARIANT: sealed writes, then the changelog lines, then
-// sealed deletes, so that at every instant the sealed directory is a superset
-// of what the log references. A copy that reads sealed/ and then changelog/
-// (an rsync mid-flight, a crash between the three) can therefore hold a line
-// naming a ref whose file is already there, and never a line whose file is
-// not yet written or already gone.
-func (ds *dataset) mirrorAfterCommit(t *txn) {
-	writes, deletes := splitSealedOps(t.sealedMirror)
-	if err := applySealedMirror(ds.dir, writes); err != nil {
-		ds.latchDirectoryErr(err)
-		return
-	}
-	if len(t.pending) > 0 {
-		lines := make([]changelogfile.Line, 0, len(t.pending))
-		for _, e := range t.pending {
-			lines = append(lines, changelogfile.Line{Seq: e.Seq, Txn: e.Txn, Bytes: e.Line})
-		}
-		if err := ds.writer.AppendLines(lines); err != nil {
-			ds.latchDirectoryErr(fmt.Errorf("append seq %d..%d: %w", lines[0].Seq, lines[len(lines)-1].Seq, err))
-			return
-		}
-	}
-	if err := applySealedMirror(ds.dir, deletes); err != nil {
-		ds.latchDirectoryErr(err)
-	}
-}
+// --- the steps of a commit (dataset.go commitAndMirror) ------------------------
 
-// The stamping commit's fault stages (WithTestCommitFault).
+// The stages of commitAndMirror at which a test seam fails a step or stops
+// the process (export_test.go WithTestCommitFault), in the order they run.
 const (
 	commitBeforeManifest = "before-manifest"
 	commitAfterManifest  = "after-manifest"
+	commitAfterPrepare   = "after the sealed files are staged and the changelog lines are prepared"
+	commitInDoubt        = "the commit reported failure after committing"
+	commitAfterCommit    = "after the transaction committed"
 )
 
-// commitFault runs the test seam at one of the stamping commit's steps; a nil
-// hook is the server.
+// commitFault runs the test seam at one of the commit's steps; a nil hook is
+// the server.
 func (s *service) commitFault(stage string) error {
 	if s.testCommitFault == nil {
 		return nil
 	}
 	return s.testCommitFault(stage)
+}
+
+// commitSealed commits a transaction that touched the sealed table and no
+// changelog row, outside inTx (a refreshed token, a teardown's deletes, a
+// TOTP step consume), in commitAndMirror's order: the files are durable
+// before the row commits, or the caller gets the error and no row. A
+// read-only process is refused as inTx refuses it: it has no writer, and a
+// row it committed would be one the directory never receives, a TOTP step
+// spent in a database its backup does not know.
+func (ds *dataset) commitSealed(tx *sql.Tx, ops []sealedMirrorOp) error {
+	if ds.svc.readOnly {
+		return ErrDirectoryReadOnly
+	}
+	return ds.commitAndMirror(tx, &txn{ds: ds, tx: tx, sealedMirror: ops})
+}
+
+// stageSealedBeforeCommit writes a transaction's sealed writes to their
+// pending files: on disk and fsynced, and not the records until
+// commitStagedSealed renames them into place after the Postgres commit. The
+// record's own file is untouched, so an import that never sees the commit
+// loads the payload the table held. Every ref is recorded BEFORE its stage
+// runs, so a stage that renamed and then failed its fsync is still
+// discarded. A failure part way discards what was staged and returns the
+// error; the transaction has not committed, so nothing is lost. Called with
+// writerMu held.
+func (ds *dataset) stageSealedBeforeCommit(writes []sealedMirrorOp) ([]string, error) {
+	staged := make([]string, 0, len(writes))
+	for _, op := range writes {
+		staged = append(staged, op.rec.Ref)
+		if err := ds.sealedFiles().Stage(ds.dir, op.rec); err != nil {
+			ds.discardStaged(staged)
+			return nil, fmt.Errorf("%w: repository %s: stage sealed %s: %w", ErrDirectoryWrite, ds.info.Name, op.rec.Ref, err)
+		}
+	}
+	return staged, nil
+}
+
+// discardStaged removes the pending files of a transaction that did not
+// commit. A pending file this cannot remove is one the next boot removes
+// (mirrorSealedFromTable), and it is read by nothing until then, so nothing is
+// latched: no store holds the write. Called with writerMu held.
+func (ds *dataset) discardStaged(staged []string) {
+	for _, ref := range staged {
+		if err := changelogfile.DiscardSealed(ds.dir, ref); err != nil {
+			ds.svc.log.Error("substrate: could not discard a staged sealed file whose transaction did not commit; the next boot removes it",
+				"repository", ds.scope.Repository, "username", ds.info.Name, "ref", ref, "error", err)
+		}
+	}
 }
 
 // writeManifestBeforeCommit rewrites the manifest with the changelog dialect
@@ -1544,8 +1629,95 @@ func (ds *dataset) writeManifestBeforeCommit(dialect int) error {
 	return ds.svc.commitFault(commitAfterManifest)
 }
 
+// commitStagedSealed renames a committed transaction's pending files into
+// place, in the order they were staged. A failure is latched: the table holds
+// the row and the record's file is still the old one, which the boot check
+// rewrites from the table. Called with writerMu held.
+func (ds *dataset) commitStagedSealed(staged []string) error {
+	for _, ref := range staged {
+		if err := ds.sealedFiles().Commit(ds.dir, ref); err != nil {
+			ds.latchDirectoryErr(fmt.Errorf("commit the staged sealed file %s: %w", ref, err))
+			return ds.fileErr
+		}
+	}
+	return nil
+}
+
+// prepareLines writes a transaction's changelog lines through the writer's
+// Prepare: on disk and fsynced, and not history until commitLines writes the
+// final newline. It reports whether it prepared anything, so the steps after
+// the commit know whether there is a transaction to end. Called with writerMu
+// held.
+//
+// Two refusals here are the latch's and not a retry's. A seq gap is the
+// table ahead of the file: a commit that reported failure after Postgres had
+// committed (an in-doubt commit) had its lines cut as if it rolled back, and
+// this transaction's first seq now follows a row the file lacks. A writer
+// that failed (an I/O error, on this prepare or an earlier one) refuses every
+// prepare until the process reopens the directory, so a retry cannot
+// succeed. Both name the restart; the boot's catch-up is the repair for the
+// first and the reopen for the second.
+func (ds *dataset) prepareLines(pending []pendingEntry) (bool, error) {
+	if len(pending) == 0 {
+		return false, nil
+	}
+	lines := make([]changelogfile.Line, 0, len(pending))
+	for _, e := range pending {
+		lines = append(lines, changelogfile.Line{Seq: e.Seq, Txn: e.Txn, Bytes: e.Line})
+	}
+	if err := ds.writer.Prepare(lines); err != nil {
+		if errors.Is(err, changelogfile.ErrSeqGap) || ds.writer.Err() != nil {
+			ds.latchDirectoryErr(fmt.Errorf("prepare seq %d..%d: %w", lines[0].Seq, lines[len(lines)-1].Seq, err))
+			return false, ds.fileErr
+		}
+		return false, fmt.Errorf("%w: repository %s: prepare seq %d..%d: %w", ErrDirectoryWrite, ds.info.Name, lines[0].Seq, lines[len(lines)-1].Seq, err)
+	}
+	return true, nil
+}
+
+// abortLines cuts the prepared lines back off the segment after the
+// transaction did not commit. A failure to cut leaves a tail the next open
+// cuts, and the writer refuses every later prepare with the same error, so
+// nothing is latched: no write reached one store and not the other. Called
+// with writerMu held.
+func (ds *dataset) abortLines(prepared bool) {
+	if !prepared {
+		return
+	}
+	if err := ds.writer.Abort(); err != nil {
+		ds.svc.log.Error("substrate: could not cut a prepared transaction that did not commit; the next open cuts it",
+			"repository", ds.scope.Repository, "username", ds.info.Name, "error", err)
+	}
+}
+
+// commitLines writes the newline that ends the prepared transaction in the
+// file, after Postgres committed it. A failure is latched: the tables hold
+// the write and the file does not, and the boot check appends it from the
+// table. Called with writerMu held.
+func (ds *dataset) commitLines(prepared bool) error {
+	if !prepared {
+		return nil
+	}
+	if err := ds.writer.Commit(); err != nil {
+		ds.latchDirectoryErr(fmt.Errorf("end the prepared transaction in the file: %w", err))
+		return ds.fileErr
+	}
+	return nil
+}
+
+// deleteSealedAfterCommit removes the sealed files a committed transaction
+// deleted the rows of. A failure is latched: a file with no row is one the
+// boot check removes. Called with writerMu held.
+func (ds *dataset) deleteSealedAfterCommit(deletes []sealedMirrorOp) error {
+	if err := applySealedMirror(ds.sealedFiles(), ds.dir, deletes); err != nil {
+		ds.latchDirectoryErr(err)
+		return ds.fileErr
+	}
+	return nil
+}
+
 // splitSealedOps separates a transaction's sealed writes from its deletes,
-// each in the order recorded, for mirrorAfterCommit's ordering.
+// each in the order recorded, for commitAndMirror's ordering.
 func splitSealedOps(ops []sealedMirrorOp) (writes, deletes []sealedMirrorOp) {
 	for _, op := range ops {
 		if op.delete {
@@ -1555,24 +1727,6 @@ func splitSealedOps(ops []sealedMirrorOp) (writes, deletes []sealedMirrorOp) {
 		}
 	}
 	return writes, deletes
-}
-
-// mirrorSealedNow applies sealed operations for a write that ran outside
-// inTx (a refreshed token, a teardown's deletes, a TOTP step consume), under
-// the same mutex and the same latch. A dataset with no writer (read-only, or
-// the creation dataset) mirrors nothing; the boot check writes the table out.
-func (ds *dataset) mirrorSealedNow(ops []sealedMirrorOp) {
-	if ds.writer == nil || len(ops) == 0 {
-		return
-	}
-	ds.writerMu.Lock()
-	defer ds.writerMu.Unlock()
-	if ds.fileErr != nil {
-		return
-	}
-	if err := applySealedMirror(ds.dir, ops); err != nil {
-		ds.latchDirectoryErr(err)
-	}
 }
 
 // latchDirectoryErr records the first post-commit failure. Called with

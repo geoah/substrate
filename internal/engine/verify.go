@@ -238,6 +238,16 @@ func (s *service) VerifyRepository(ctx context.Context, username string) (Verify
 			found(fmt.Sprintf("sealed %s: a row with no file", ref))
 		}
 	}
+	// A pending file is a staged write that had not committed when the
+	// directory was read: beside a live server, one in flight; in a copy,
+	// one the import ignores and the boot removes.
+	pending, err := changelogfile.PendingSealed(dir)
+	if err != nil {
+		found(fmt.Sprintf("sealed: %v", err))
+	}
+	for _, name := range pending {
+		found(fmt.Sprintf("sealed/%s: a staged write that has not committed", name))
+	}
 	report.OK = len(report.Findings) == 0
 	report.Took = time.Since(started)
 	return report, nil

@@ -116,9 +116,17 @@ releases refuse a format-2 manifest, so a rollback to one of them fails at
 boot for every repository this binary has opened; the remedy is to delete
 each `repository.json`, which the older binary rewrites from the row.
 
-Postgres is the commit point and the live index: every write commits to the
-`changelog` table first, and the repository's one writer then appends the same
-entries to the active segment and mirrors the `sealed` table to `sealed/`.
+Postgres is the commit point and the live index, and the directory is written
+first: the repository's one writer stages the write's sealed files under
+`sealed/<file>.json.pending` and its changelog lines, every byte but the last
+line's newline, in the active segment and fsyncs them; the write commits to
+the `changelog` table; the writer then renames the pending files into place
+and writes that newline. A write is acknowledged only after all of it. A
+pending sealed file and a transaction without its final newline are not the
+directory's records: every reader skips them, and whether Postgres committed
+them is the boot catch-up's to decide from the table, which writes a committed
+one out again and drops an uncommitted one
+([0062](decisions/0062-a-write-is-on-disk-before-its-commit-and-its-final-newline-is-the-commit-marker.md)).
 Blob bytes go straight to `blobs/`. At boot the server compares every
 directory with every `repositories` row ([what happens at boot](#what-happens-at-boot)).
 
@@ -278,8 +286,10 @@ on the box, through the DSN.
 - **The data root is reconciled with the `repositories` table**, directory
   by directory and row by row, before anything else writes. Five cases: a
   directory and a row whose heads and last checksums agree open; a table ahead
-  of its file (a crash between commit and append, or an unfinished
-  transaction at the end of the active segment, which the open cuts whole)
+  of its file (a crash between the commit and the newline that ends the
+  transaction in the file, or an unfinished transaction at the end of the
+  active segment, which the open cuts whole: one the process died before
+  committing, or the prefix a torn write left)
   has the missing entries appended to the file, whole transactions at a time,
   and its sealed files rewritten from the table; a file
   ahead of its table, or a directory with no row, is **imported**, which
@@ -453,14 +463,19 @@ changelog, its sealed store and (on the `fs` blob store) its blob bytes
 database is needed to bring it back: the `changelog` table is an index of the
 files, the `records` table is their fold, and both are rebuilt on import. A
 copy of the directory and the key that opens its sealed files is a complete
-backup.
+backup. A write is acknowledged only once its changelog lines and sealed files
+are on disk, so a copy taken after a response holds every write the server
+acknowledged; a write the directory could not take is refused and rolled back
+([0062](decisions/0062-a-write-is-on-disk-before-its-commit-and-its-final-newline-is-the-commit-marker.md)).
 
 **Copy the root at any moment, then verify the copy.** Finished segments and
 blobs never change, the active segment only grows, and the manifest, the
 sidecars and the sealed files are replaced atomically, so a copy taken
 mid-write is usually consistent or short by its last transaction, which the
 importer cuts whole (every line names the seq its transaction ends at, so a
-prefix of one is never taken for history). Two windows remain: a copy that reads a segment while the
+prefix of one is never taken for history, and a transaction still missing its
+final newline, like a `.pending` file under `sealed/`, is a write the
+directory has not committed, which the importer ignores). Two windows remain: a copy that reads a segment while the
 server finishes it can hold the segment with a sidecar that does not match
 yet, and a copy that reads `sealed/` before `changelog/` can hold a line whose
 sealed file it missed. So a copy is a backup once `repository verify` passes

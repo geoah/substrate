@@ -194,11 +194,12 @@ func (s *service) retireLegacySealed(ctx context.Context, ds *dataset, repo Repo
 				"repository", repo.ID, "payloads", n)
 		}
 		// The re-keyed files must be on disk before the row says the store is
-		// DEK-only: mirrorAfterCommit latches a failed file write (fileErr)
-		// rather than returning it, and a marker written over stale host-key
-		// files would be a manifest that lies until the next boot rewrites
-		// them. The open fails here instead, unmarked, and the boot check's
-		// rewrite of sealed/ from the table is the repair.
+		// DEK-only: a file the re-key could not write fails its transaction
+		// above (ErrDirectoryWrite), and a failure after the commit is
+		// latched (fileErr) and caught here, so a marker is never written
+		// over stale host-key files, which would be a manifest that lies
+		// until the next boot rewrites them. The open fails, unmarked, and
+		// the boot check's rewrite of sealed/ from the table is the repair.
 		if err := ds.directoryErr(); err != nil {
 			return repo, fmt.Errorf("the re-keyed sealed files did not reach the directory: %w", err)
 		}

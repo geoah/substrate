@@ -450,3 +450,225 @@ func TestWriterAppendLines(t *testing.T) {
 		t.Fatal("AppendLines did not write the given bytes verbatim")
 	}
 }
+
+// linesOf encodes entries as the Lines the engine hands the writer.
+func linesOf(t *testing.T, entries []Entry) []Line {
+	t.Helper()
+	out := make([]Line, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, Line{Seq: e.Seq, Txn: e.Txn, Bytes: encodeLine(t, e)})
+	}
+	return out
+}
+
+// A prepared transaction is on disk and is not history: a read-only open
+// counts every byte of it as the incomplete tail and stops before it, and
+// the head does not move. Commit writes one byte, the final newline, and
+// the same open then reads the whole transaction.
+func TestAPreparedTransactionIsCutUntilCommitted(t *testing.T) {
+	dir := t.TempDir()
+	appendAll(t, dir, WriterOptions{}, entriesFrom(1, 2))
+	w, err := OpenWriter(dir, WriterOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = w.Close() }()
+	lines := linesOf(t, txnFrom(3, 3))
+	before := fileSize(t, filepath.Join(dir, SegmentName(1)))
+	if err := w.Prepare(lines); err != nil {
+		t.Fatal(err)
+	}
+	if w.Head() != 2 {
+		t.Fatalf("head moved to %d at prepare", w.Head())
+	}
+	var want int64
+	for _, l := range lines {
+		want += int64(len(l.Bytes)) + 1
+	}
+	if got := fileSize(t, filepath.Join(dir, SegmentName(1))) - before; got != want-1 {
+		t.Fatalf("prepare wrote %d bytes, want %d (every byte but the last newline)", got, want-1)
+	}
+	ro, err := OpenReadOnly(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ro.Head() != 2 || ro.TruncatedBytes != want-1 || ro.TruncatedEntries != 2 {
+		t.Fatalf("read-only open of a prepared transaction: head %d, truncated %d bytes, %d entries",
+			ro.Head(), ro.TruncatedBytes, ro.TruncatedEntries)
+	}
+	if err := w.Prepare(linesOf(t, entriesFrom(6, 1))); !errors.Is(err, ErrTxnPending) {
+		t.Fatalf("a second prepare: err = %v, want ErrTxnPending", err)
+	}
+	if err := w.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if w.Head() != 5 {
+		t.Fatalf("head = %d after commit, want 5", w.Head())
+	}
+	if got := fileSize(t, filepath.Join(dir, SegmentName(1))) - before; got != want {
+		t.Fatalf("commit left %d bytes, want %d", got, want)
+	}
+	if err := w.Commit(); !errors.Is(err, ErrNoTxnPending) {
+		t.Fatalf("a second commit: err = %v, want ErrNoTxnPending", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	l, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.TruncatedBytes != 0 {
+		t.Fatalf("open cut %d bytes from a committed transaction", l.TruncatedBytes)
+	}
+	got, err := l.Read(0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !equalSeqs(seqs(got), 1, 5) {
+		t.Fatalf("read %v", seqs(got))
+	}
+}
+
+// A writer closed with a transaction prepared (the process died between the
+// prepare and its commit) leaves the tail on disk, and the next Open cuts it
+// whole: nothing of the transaction becomes history, and the next writer
+// continues from the seq before it.
+func TestAPreparedTransactionLeftByACrashIsCutAtTheNextOpen(t *testing.T) {
+	dir := t.TempDir()
+	appendAll(t, dir, WriterOptions{}, entriesFrom(1, 2))
+	w, err := OpenWriter(dir, WriterOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Prepare(linesOf(t, txnFrom(3, 2))); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	w2, err := OpenWriter(dir, WriterOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = w2.Close() }()
+	if w2.Head() != 2 || w2.TruncatedBytes() == 0 {
+		t.Fatalf("after the crash: head %d, truncated %d", w2.Head(), w2.TruncatedBytes())
+	}
+	if err := w2.AppendLines(linesOf(t, entriesFrom(3, 1))); err != nil {
+		t.Fatal(err)
+	}
+	if w2.Head() != 3 {
+		t.Fatalf("head = %d, want 3", w2.Head())
+	}
+}
+
+// Abort puts the segment back as it was, on an existing segment and on one
+// the prepare created (which is removed, so no empty segment stays), and
+// the writer goes on appending.
+func TestAbortLeavesTheSegmentAsItWas(t *testing.T) {
+	dir := t.TempDir()
+	w, err := OpenWriter(dir, WriterOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = w.Close() }()
+	if err := w.Abort(); !errors.Is(err, ErrNoTxnPending) {
+		t.Fatalf("abort with nothing prepared: err = %v, want ErrNoTxnPending", err)
+	}
+	if err := w.Prepare(linesOf(t, entriesFrom(1, 1))); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Abort(); err != nil {
+		t.Fatal(err)
+	}
+	if segs, _ := Segments(dir); len(segs) != 0 {
+		t.Fatalf("an aborted prepare left %v", segs)
+	}
+	if err := w.AppendLines(linesOf(t, entriesFrom(1, 2))); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, SegmentName(1))
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Prepare(linesOf(t, txnFrom(3, 2))); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Abort(); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("abort did not put the segment back")
+	}
+	if err := w.AppendLines(linesOf(t, entriesFrom(3, 1))); err != nil {
+		t.Fatal(err)
+	}
+	if w.Head() != 3 {
+		t.Fatalf("head = %d, want 3", w.Head())
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	l, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := l.Read(0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !equalSeqs(seqs(got), 1, 3) || l.TruncatedBytes != 0 {
+		t.Fatalf("read %v, truncated %d", seqs(got), l.TruncatedBytes)
+	}
+}
+
+// The segment finishes at Commit, never at Prepare: a transaction that
+// carries the segment past SegmentBytes is whole in it, and a sidecar is
+// written only for bytes that are history.
+func TestCommitFinishesTheSegmentWhenDue(t *testing.T) {
+	dir := t.TempDir()
+	w, err := OpenWriter(dir, WriterOptions{SegmentBytes: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = w.Close() }()
+	if err := w.Prepare(linesOf(t, txnFrom(1, 2))); err != nil {
+		t.Fatal(err)
+	}
+	segs, err := Segments(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(segs) != 1 || segs[0].Finished {
+		t.Fatalf("after prepare: %+v", segs)
+	}
+	if err := w.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	segs, err = Segments(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(segs) != 1 || !segs[0].Finished {
+		t.Fatalf("after commit: %+v", segs)
+	}
+	if err := w.AppendLines(linesOf(t, entriesFrom(3, 1))); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	l, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.Head() != 3 || len(l.segments) != 2 {
+		t.Fatalf("head %d, %d segments", l.Head(), len(l.segments))
+	}
+}

@@ -27,7 +27,7 @@ import (
 // pendingEntry is one changelog row this transaction appended, as the
 // checksum sees it: every column the line carries, with the payload as the
 // STORED text. Line holds the encoded line once settleChecksums has run, and
-// the segment writer appends exactly those bytes (mirrorAfterCommit), so what
+// the segment writer appends exactly those bytes (prepareLines), so what
 // was checked before commit is what lands after it.
 type pendingEntry struct {
 	Seq   int64

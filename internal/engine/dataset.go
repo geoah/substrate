@@ -116,7 +116,8 @@ type dataset struct {
 	// the manifest, the changelog segments, the blob bytes and the sealed
 	// mirror.
 	dir string
-	// writer appends committed entries to the changelog segments. It is nil
+	// writer holds the changelog segments: a write prepares its lines through
+	// it before tx.Commit() and ends them after (commitAndMirror). It is nil
 	// on the creation dataset, whose directory is written from the tables
 	// once the control-plane row exists. writerMu serializes every use of it
 	// and of the sealed mirror; inTx takes it BEFORE tx.Commit() so file
@@ -124,8 +125,11 @@ type dataset struct {
 	// the order RebuildRepository takes them too.
 	writer   *changelogfile.Writer
 	writerMu sync.Mutex
-	// fileErr, under writerMu, is the latched refusal after a post-commit
-	// append or mirror failed (ErrChangelogFileBehind): the directory is
+	// sealed is the sealed directory's writer, nil for the files themselves;
+	// a test seam sets one that fails (repodir.go sealedStore).
+	sealed sealedStore
+	// fileErr, under writerMu, is the latched refusal after a step that runs
+	// after the commit failed (ErrChangelogFileBehind): the directory is
 	// behind the tables and only the boot check repairs it.
 	fileErr error
 	// manifest, under writerMu, is the manifest the directory holds, as the
@@ -501,21 +505,55 @@ func (ds *dataset) inTx(ctx context.Context, actor substrate.Actor, internal boo
 	return nil
 }
 
-// commitAndMirror commits the transaction and, when it appended entries or
-// touched the sealed table, writes them into the repository directory under
-// writerMu. The mutex is taken BEFORE the commit: the changelog advisory lock
-// that orders appends is released at commit, so without it two committed
-// transactions could reach the writer in the other order. A dataset with no
-// writer (the creation dataset) commits and mirrors nothing; its directory is
-// written from the tables afterwards.
+// commitAndMirror commits the transaction with its changelog lines and sealed
+// files durable first
+// ([0062](../../docs/decisions/0062-a-write-is-on-disk-before-its-commit-and-its-final-newline-is-the-commit-marker.md)).
+// It runs under writerMu, taken BEFORE the commit because the changelog
+// advisory lock that orders appends is released at commit, so without it two
+// committed transactions could reach the writer in the other order. The
+// steps, each its own function in repodir.go:
 //
-// The transaction that claims the changelog dialect rewrites the manifest
-// FIRST, before the commit and before the append (writeManifestBeforeCommit):
-// its lines are the first the new dialect covers, and a manifest written
-// after them would leave a window, a crash or a copy between the append and
-// the rewrite, in which the directory understates what its segments require.
-// A manifest that fails to write refuses the transaction, which rolls back
-// with nothing appended and nothing to latch.
+//  0. the transaction that claims the changelog dialect rewrites the
+//     manifest (writeManifestBeforeCommit): its lines are the first the new
+//     dialect covers, and a manifest written after them would leave a window,
+//     a crash or a copy between the append and the rewrite, in which the
+//     directory understates what its segments require; a manifest that fails
+//     to write refuses the transaction with nothing to roll back;
+//  1. the sealed writes are staged: each payload written and fsynced to its
+//     pending file, the record's own file untouched;
+//  2. the changelog lines are prepared: written and fsynced without the last
+//     line's newline, so every reader cuts them as an unfinished transaction;
+//  3. Postgres commits, which is the commit point;
+//  4. the pending files are renamed into place, which makes them the records;
+//  5. the final newline lands, which makes the lines history in the file;
+//  6. the sealed deletes land.
+//
+// A failure before step 3 rolls the directory back (the pending files
+// discarded, the prepared bytes cut) and returns ErrDirectoryWrite with
+// nothing durable anywhere: the caller may retry. A changelog writer that
+// failed is the exception: it refuses every later prepare until a restart,
+// so that failure latches (prepareLines). A failure after step 3 is latched
+// (ErrChangelogFileBehind): the tables hold the write, the directory does not
+// yet, the caller gets the error, and every later write is refused until a
+// restart lets the boot check catch the directory up from the table; inTx's
+// after-commit work (the watch signal, the change sink, the afterCommit
+// hooks) does not run for that write, which the latch makes moot. A commit
+// that reports failure after committing (a connection lost at the answer) is
+// rolled back here like a failure and may have left the table ahead: with
+// lines, the next write's prepare meets a seq gap and latches (prepareLines);
+// without them, this path latches at once. The restart heals either way.
+// A crash at any point leaves the two stores to agree at the next open: an
+// unfinished tail is cut whole (0057), a pending file is dropped once the
+// records are written from the table, a table ahead of the file is appended
+// to it. An import into an empty database sees the same directory and takes
+// only what was committed in it: the lines with their newline, the records
+// under their own names.
+//
+// Sealed files before the lines and sealed deletes after them keep sealed/ a
+// superset of what the changelog references at every instant, so a copy that reads
+// sealed/ and then changelog/ never holds a line naming a file it missed. A
+// dataset with no writer (the creation dataset) commits and mirrors nothing;
+// its directory is written from the tables afterwards.
 func (ds *dataset) commitAndMirror(tx *sql.Tx, t *txn) error {
 	if ds.writer == nil || (len(t.pending) == 0 && len(t.sealedMirror) == 0) {
 		return ds.commitAndPublish(tx, t)
@@ -530,11 +568,51 @@ func (ds *dataset) commitAndMirror(tx *sql.Tx, t *txn) error {
 			return err
 		}
 	}
-	if err := ds.commitAndPublish(tx, t); err != nil {
+	writes, deletes := splitSealedOps(t.sealedMirror)
+	staged, err := ds.stageSealedBeforeCommit(writes)
+	if err != nil {
 		return err
 	}
-	ds.mirrorAfterCommit(t)
-	return nil
+	prepared, err := ds.prepareLines(t.pending)
+	if err != nil {
+		ds.discardStaged(staged)
+		return err
+	}
+	// The seam is where a test's process dies: nothing below it runs, and
+	// the deferred rollback in inTx is what a crash does to the transaction.
+	if err := ds.svc.commitFault(commitAfterPrepare); err != nil {
+		return err
+	}
+	err = ds.commitAndPublish(tx, t)
+	if err == nil {
+		// The seam for a commit whose answer was lost after Postgres
+		// committed: the error path below runs as it would for one that
+		// rolled back.
+		err = ds.svc.commitFault(commitInDoubt)
+	}
+	if err != nil {
+		ds.abortLines(prepared)
+		ds.discardStaged(staged)
+		// A commit that errors may have committed. With lines, the next
+		// write's prepare meets the seq gap and latches then; without them
+		// nothing would, so a sealed-only transaction latches here, and the
+		// boot rewrites the records from the table.
+		if !prepared && len(staged) > 0 {
+			ds.latchDirectoryErr(fmt.Errorf("commit of a sealed-only transaction failed and may have committed: %w", err))
+			return ds.fileErr
+		}
+		return err
+	}
+	if err := ds.svc.commitFault(commitAfterCommit); err != nil {
+		return err
+	}
+	if err := ds.commitStagedSealed(staged); err != nil {
+		return err
+	}
+	if err := ds.commitLines(prepared); err != nil {
+		return err
+	}
+	return ds.deleteSealedAfterCommit(deletes)
 }
 
 // commitAndPublish commits the transaction and, when it carries a registry to
