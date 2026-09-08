@@ -580,6 +580,23 @@ type TraitBinding struct {
 }
 
 // Kind is one declared kind of thing.
+// KindRetirement is a kind's `retired:` block, parsed (decision 0053). Each
+// list is a reservation and needs no live subject: a property in Values or
+// States may itself be dropped or retired, and its entries stay spent.
+type KindRetirement struct {
+	// Properties are the retired top-level property names.
+	Properties []string
+	// Values are the retired enum values, by property name.
+	Values map[string][]string
+	// States are the retired machine states, by state property name.
+	States map[string][]string
+}
+
+// Empty reports whether the block reserves nothing.
+func (r KindRetirement) Empty() bool {
+	return len(r.Properties) == 0 && len(r.Values) == 0 && len(r.States) == 0
+}
+
 type Kind struct {
 	Name string
 	// Package is the identity of the package that declares the kind — the
@@ -608,6 +625,12 @@ type Kind struct {
 
 	Traits  []TraitBinding
 	Indices [][]string
+
+	// Retired is the kind's `retired:` block (decision 0053): the property
+	// names, enum values and states this kind has spent. A name listed here is
+	// refused if the kind declares it again, on every admission door, and the
+	// engine carries a stored list into every later declaration of the kind.
+	Retired KindRetirement
 
 	// HotColumns lists the hot properties this type's capabilities bind, in
 	// {"at","endsAt","dueAt"} terms.
@@ -759,6 +782,11 @@ type Package struct {
 	FunctionOrder []string
 	Agents        map[string]*Agent
 	AgentOrder    []string
+	// RetiredKinds is the package header's `retired.kinds` list (decision
+	// 0053): the kind names this package has spent. A name listed here is
+	// refused if the package declares a kind by it again, on every door, and
+	// the engine carries a stored list into every later header of the package.
+	RetiredKinds []string
 	// Bundle is the package's bundle document, set only on the packages a
 	// bundle is named for (bundle.go).
 	Bundle *Bundle

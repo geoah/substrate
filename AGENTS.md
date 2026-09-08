@@ -315,6 +315,11 @@ more, which is 0014's last reservation discharged.
   `edges.<rel>.properties` was reserved with them and is now live: an edge
   write carrying a property the rel does not declare is refused
   ([0027](docs/decisions/0027-an-edge-outlives-a-tombstone-and-dies-with-a-purge.md)).
+  `retired` is live too: a package header lists the kind names it has spent
+  and a kind lists its spent property names, enum values and states, the
+  list is carried forward and never shrinks, and declaring a listed name
+  again is refused on every door. A prune alone spends nothing
+  ([0053](docs/decisions/0053-a-retired-name-is-declared-and-never-inferred-from-a-prune.md)).
 - **The console mirrors the wire by hand, and a golden file holds it to it.**
   `web/console/src/lib/api/types.ts` is written to match the structs in
   `internal/substrate`; nothing generates it. `wire.golden.json` is where the

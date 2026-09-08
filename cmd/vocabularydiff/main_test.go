@@ -224,3 +224,115 @@ func TestVersionNeverMovesBackward(t *testing.T) {
 		}
 	}
 }
+
+// --- retired names (decision 0053) -------------------------------------------
+
+// retiredBundle is baseBundle with `gone` retired in the package header.
+const retiredBundle = `kind: substrate.reamde.dev/core/package
+metadata: {id: t.example.com/t}
+data:
+  authority: t.example.com
+  package: t
+  version: 2
+  retired:
+    kinds: [gone]
+---
+kind: substrate.reamde.dev/core/bundle
+metadata: {id: t.example.com/t}
+data:
+  authority: t.example.com
+  package: t
+  installs: [t.example.com/t/thing, t.example.com/t/other]
+`
+
+// retiredThing is baseThing with a property, an enum value and a state
+// retired.
+const retiredThing = `kind: substrate.reamde.dev/core/kind
+metadata: {id: t.example.com/t/thing}
+data:
+  authority: t.example.com
+  package: t
+  names: {singular: thing, plural: things}
+  properties:
+    label: {type: string}
+    level: {type: enum, values: [high]}
+    phase:
+      type: state
+      states: [open, done]
+      initial: open
+      transitions:
+        - {from: open, to: done}
+  retired:
+    properties: [size]
+    values:
+      level: [low]
+    states:
+      phase: [archived]
+`
+
+func retiredFiles() map[string]string {
+	files := baseFiles()
+	files["t.example.com/t/bundle.yaml"] = retiredBundle
+	files["t.example.com/t/thing.yaml"] = retiredThing
+	return files
+}
+
+func wantViolation(t *testing.T, got []string, want string) {
+	t.Helper()
+	for _, v := range got {
+		if strings.Contains(v, want) {
+			return
+		}
+	}
+	t.Fatalf("no violation says %q: %v", want, got)
+}
+
+func TestRetiredNameReuseIsRefused(t *testing.T) {
+	t.Run("a retired tree is stable", func(t *testing.T) {
+		if got := diffTrees(writeTree(t, retiredFiles()), writeTree(t, retiredFiles())); len(got) != 0 {
+			t.Fatalf("an unchanged tree with retirements violates: %v", got)
+		}
+	})
+
+	t.Run("a retired kind name declared again", func(t *testing.T) {
+		head := retiredFiles()
+		head["t.example.com/t/gone.yaml"] = strings.ReplaceAll(baseOther, "other", "gone")
+		head["t.example.com/t/bundle.yaml"] = strings.Replace(retiredBundle, "version: 2", "version: 3", 1)
+		got := diffTrees(writeTree(t, retiredFiles()), writeTree(t, head))
+		wantViolation(t, got, "kind t.example.com/t/gone is retired in package t.example.com/t; a retired name is never declared again")
+	})
+
+	t.Run("a retired kind name dropped from the list", func(t *testing.T) {
+		head := retiredFiles()
+		head["t.example.com/t/bundle.yaml"] = strings.Replace(baseBundle, "version: 1", "version: 3", 1)
+		got := diffTrees(writeTree(t, retiredFiles()), writeTree(t, head))
+		wantViolation(t, got, `package t.example.com/t drops retired kind name "gone"; a retirement is permanent`)
+	})
+
+	t.Run("a retired property, value or state declared again", func(t *testing.T) {
+		head := retiredFiles()
+		head["t.example.com/t/thing.yaml"] = strings.Replace(retiredThing,
+			"    label: {type: string}\n",
+			"    label: {type: string}\n    size: {type: int}\n", 1)
+		head["t.example.com/t/thing.yaml"] = strings.Replace(head["t.example.com/t/thing.yaml"],
+			"values: [high]", "values: [high, {value: low, label: Low}]", 1)
+		head["t.example.com/t/thing.yaml"] = strings.Replace(head["t.example.com/t/thing.yaml"],
+			"states: [open, done]", "states: [open, done, archived]", 1)
+		head["t.example.com/t/bundle.yaml"] = strings.Replace(retiredBundle, "version: 2", "version: 3", 1)
+		got := diffTrees(writeTree(t, retiredFiles()), writeTree(t, head))
+		wantViolation(t, got, `declares retired property "size"`)
+		wantViolation(t, got, `declares retired values "low" on property "level"`)
+		wantViolation(t, got, `declares retired states "archived" on property "phase"`)
+	})
+
+	t.Run("a retired property, value or state dropped from the list", func(t *testing.T) {
+		head := retiredFiles()
+		head["t.example.com/t/thing.yaml"] = strings.Replace(baseThing, "    label: {type: string}\n",
+			"    label: {type: string}\n    level: {type: enum, values: [high]}\n", 1)
+		head["t.example.com/t/bundle.yaml"] = strings.Replace(retiredBundle, "version: 2", "version: 3", 1)
+		got := diffTrees(writeTree(t, retiredFiles()), writeTree(t, head))
+		wantViolation(t, got, `drops retired property "size"; a retirement is permanent`)
+		wantViolation(t, got, `drops retired values "low" of property "level"`)
+		wantViolation(t, got, `drops retired states "archived" of property "phase"`)
+	})
+}

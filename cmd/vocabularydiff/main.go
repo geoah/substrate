@@ -20,6 +20,10 @@
 //     wiring): the package version must bump. Data documents carry no version
 //     of their own, and the install upserts them along with the closure — so
 //     without a bump the wiring change is one no repository is ever offered.
+//   - a `retired:` entry (decision 0053) the base carries must stay in head,
+//     and head may not declare a kind, property, enum value or state a
+//     retirement names. The boot upgrade refuses both at every repository's
+//     open; this refuses them before the tree ships.
 //
 // Comment-only edits decode to identical data and pass free.
 //
@@ -253,7 +257,143 @@ func diffTrees(base, head *tree) []string {
 				h.file, h.kind, h.id, bv, hv, bv))
 		}
 	}
-	return append(out, dataDocViolations(base, head)...)
+	out = append(out, dataDocViolations(base, head)...)
+	return append(out, retirementViolations(base, head)...)
+}
+
+// retirementViolations holds the tree to decision 0053: a `retired:` entry the
+// base tree carries stays in head, and no declaration in head names a retired
+// kind, property, enum value or state. The boot upgrade refuses both at the
+// open of every repository; this refuses them before the tree ships, where
+// the author can still choose another name.
+func retirementViolations(base, head *tree) []string {
+	var out []string
+	keys := make([]string, 0, len(head.decls))
+	for k := range head.decls {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		h := head.decls[k]
+		b, inBase := base.decls[k]
+		switch h.kind {
+		case vocabulary.DocPackage:
+			var stored []string
+			if inBase {
+				stored = anyStrings(retiredBlock(b.data)["kinds"])
+			}
+			current := anyStrings(retiredBlock(h.data)["kinds"])
+			for _, name := range missing(stored, current) {
+				out = append(out, fmt.Sprintf("%s: package %s drops retired kind name %q; a retirement is permanent", h.file, h.id, name))
+			}
+			for _, name := range union(stored, current) {
+				if kd, declared := head.decls[declKey(vocabulary.DocKind, h.id+"/"+name)]; declared {
+					out = append(out, fmt.Sprintf("%s: kind %s is retired in package %s; a retired name is never declared again", kd.file, kd.id, h.id))
+				}
+			}
+		case vocabulary.DocKind:
+			var stored map[string]any
+			if inBase {
+				stored = retiredBlock(b.data)
+			}
+			current := retiredBlock(h.data)
+			props, _ := h.data["properties"].(map[string]any)
+			for _, name := range missing(anyStrings(stored["properties"]), anyStrings(current["properties"])) {
+				out = append(out, fmt.Sprintf("%s: kind %s drops retired property %q; a retirement is permanent", h.file, h.id, name))
+			}
+			for _, name := range union(anyStrings(stored["properties"]), anyStrings(current["properties"])) {
+				if _, declared := props[name]; declared {
+					out = append(out, fmt.Sprintf("%s: kind %s declares retired property %q; a retired name is never declared again", h.file, h.id, name))
+				}
+			}
+			for _, key := range []string{"values", "states"} {
+				sm, _ := stored[key].(map[string]any)
+				cm, _ := current[key].(map[string]any)
+				for _, pname := range union(mapKeys(sm), mapKeys(cm)) {
+					for _, v := range missing(anyStrings(sm[pname]), anyStrings(cm[pname])) {
+						out = append(out, fmt.Sprintf("%s: kind %s drops retired %s %q of property %q; a retirement is permanent", h.file, h.id, key, v, pname))
+					}
+					p, _ := props[pname].(map[string]any)
+					live := declaredWords(p[key])
+					for _, v := range union(anyStrings(sm[pname]), anyStrings(cm[pname])) {
+						if live[v] {
+							out = append(out, fmt.Sprintf("%s: kind %s declares retired %s %q on property %q; a retired name is never declared again", h.file, h.id, key, v, pname))
+						}
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
+// retiredBlock reads a declaration's `retired:` map, empty when absent.
+func retiredBlock(data map[string]any) map[string]any {
+	m, _ := data["retired"].(map[string]any)
+	return m
+}
+
+// declaredWords reads an enum's `values:` or a machine's `states:` as a set: a
+// value is a bare word or a `{value, label}` mapping.
+func declaredWords(v any) map[string]bool {
+	out := map[string]bool{}
+	items, _ := v.([]any)
+	for _, item := range items {
+		if m, ok := item.(map[string]any); ok {
+			out[fmt.Sprint(m["value"])] = true
+			continue
+		}
+		out[fmt.Sprint(item)] = true
+	}
+	return out
+}
+
+func anyStrings(v any) []string {
+	items, _ := v.([]any)
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		out = append(out, fmt.Sprint(item))
+	}
+	return out
+}
+
+func mapKeys(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// missing lists the members of stored that current no longer carries.
+func missing(stored, current []string) []string {
+	keep := map[string]bool{}
+	for _, s := range current {
+		keep[s] = true
+	}
+	var out []string
+	for _, s := range stored {
+		if !keep[s] {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// union lists a's members then b's additions, without duplicates.
+func union(a, b []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, list := range [][]string{a, b} {
+		for _, s := range list {
+			if !seen[s] {
+				seen[s] = true
+				out = append(out, s)
+			}
+		}
+	}
+	return out
 }
 
 // dataDocViolations holds a directory's DELIVERY WIRING to its package

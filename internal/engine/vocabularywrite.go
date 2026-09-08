@@ -339,6 +339,7 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 			return err
 		}
 		guards = append(guards, st.strandedMappings...)
+		guards = append(guards, st.retirements...)
 		narrowed, err := narrowingGuards(t, st.narrowings)
 		if err != nil {
 			return err
@@ -448,6 +449,10 @@ type vocabularyStage struct {
 	// repository's own mapping reads `linear/issue` is refused until the
 	// mapping goes. One line per mapping, ready to join the guard list.
 	strandedMappings []string
+	// retirements names every retired name the candidate declares again, or
+	// drops from a stored list (decision 0053, retirement.go). No count: a
+	// retired name refuses whether or not a row exists.
+	retirements      []string
 	droppedCallables []droppedCallable
 	// reprojected names the kinds whose REFERENCE declarations moved, so the
 	// refs index is re-derived for their records in the apply's transaction
@@ -533,6 +538,10 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	if err != nil {
 		return nil, err
 	}
+	// Before the versions resolve: a stored retirement the incoming document
+	// omits is carried into it, so an unchanged re-apply compares equal and a
+	// retirement is never lifted by omission (decision 0053).
+	carryRetirements(&b, existing)
 	resolveDeclarationVersions(&b, existing)
 	merged := map[string]vocabulary.Document{}
 	for k, d := range existing {
@@ -655,6 +664,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		// callable loudly.
 		droppedTypes:     droppedTypes,
 		strandedMappings: strandedMappingGuards(candidate, droppedTypes),
+		retirements:      retirementGuards(current, candidate, touched, nil),
 		droppedCallables: droppedBundleCallables(current, candidate, touched),
 		reprojected:      reprojectedKinds(current, candidate, touched),
 		// Evolution-with-data: a NARROWING definition
@@ -1145,6 +1155,11 @@ func packageDeclarations(g *vocabulary.Package) ([]declaration, error) {
 	}
 	if g.Description != "" {
 		header["description"] = g.Description
+	}
+	// The retired kind names ride the row like every other authored key, so
+	// the rebuild and the export carry the reservation (decision 0053).
+	if len(g.RetiredKinds) > 0 {
+		header["retired"] = map[string]any{"kinds": anyList(g.RetiredKinds)}
 	}
 	if err := add(vocabulary.DocPackage, kindPackage, g.Identity, header,
 		map[string]any{

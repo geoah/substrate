@@ -193,8 +193,9 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
 Three guardrails worth knowing:
 
 - **Deleting a kind with live records is refused**, with the count, inside
-  the same transaction. Cascade is never a default, and kind references are
-  never reused: history orphans by design and stays readable.
+  the same transaction. Cascade is never a default, and a dropped kind's
+  history orphans by design and stays readable. The name is free to be
+  declared again unless the package [retires it](#retiring-a-name).
 - **Narrowing a kind that has live records is refused**, with the count. The
   next section is the contract.
 - **Shipped vocabulary refuses a generic API write**; the repository's own
@@ -319,6 +320,66 @@ nothing rewrites records today, so a rename whose old name live records still
 carry refuses like any other narrowing change. It is reserved so that when
 the rewrite arrives, the declaration is already in the manifest dialect and
 nothing changes shape on the wire.
+
+## Retiring a name
+
+Removing a declaration does not spend its name: a dropped kind, property,
+enum value or state may be declared again later, and nothing stops the new
+declaration from meaning something else while history and tombstoned records
+still carry the old meaning. `retired:` is how an author spends a name
+([decision 0053](decisions/0053-a-retired-name-is-declared-and-never-inferred-from-a-prune.md)).
+A package header retires kind names; a kind retires its own property names,
+enum values by property and states by property:
+
+```yaml
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: geoah.example.com/shop
+data:
+  authority: geoah.example.com
+  package: shop
+  retired:
+    kinds: [gadget]
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: geoah.example.com/shop/widget
+data:
+  authority: geoah.example.com
+  package: shop
+  names:
+    singular: widget
+  properties:
+    level:
+      type: enum
+      values: [high]
+  retired:
+    properties: [size]
+    values:
+      level: [low]
+    states:
+      phase: [archived]
+```
+
+Retirement is explicit: a prune without the entry keeps today's behavior, and
+a name is spent only when it is written here. It is also permanent. The block
+is stored on the declaration row, so a rebuild and `get -o yaml` carry it; the
+engine copies a stored entry into every later document of the same package or
+kind, so a document that omits the list does not lift it; and a declaration
+of a retired name is refused on every door with the same sentence, `a retired
+name is never declared again`: the apply verb, a bundle install or a sample
+import (a rehomed sample that declares a name the repository retired under
+the same package is refused too), the boot upgrade of the shipped tree, and
+`mise run kinds:check` for the tree itself. A retired name is not a
+`deprecated:` one: `deprecated:` keeps the name usable and asks clients to
+stop offering it.
+
+The block's shape is held at load: every entry is a valid name, no entry is
+listed twice, and a name both declared and retired in the same document is
+refused. An entry needs no live subject, so `values.level` may name a property
+the kind no longer declares. Nested object fields, a reference's link
+properties, traits, property types, functions and agents have no reservation
+today. Names removed before this landed carry none either.
 
 ## The reserved keys
 

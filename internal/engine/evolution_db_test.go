@@ -46,6 +46,19 @@ func evoApply(t *testing.T, ds substrate.Dataset, props map[string]any) error {
 	return err
 }
 
+// evoApplyRetiring is evoApply with a `retired:` block beside the properties
+// (decision 0053).
+func evoApplyRetiring(t *testing.T, ds substrate.Dataset, props, retired map[string]any) error {
+	t.Helper()
+	_, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, []map[string]any{
+		vocabulary.PackageManifest(evoPackage, 0),
+		vocabulary.KindManifest(evoPackage,
+			map[string]any{"singular": "gizmo", "plural": "gizmos"},
+			map[string]any{"properties": props, "retired": retired}),
+	})
+	return err
+}
+
 // wantNarrowingGuard asserts a refused apply: a guard error naming the class
 // and carrying the live-row count.
 func wantNarrowingGuard(t *testing.T, err error, fragments ...string) {
@@ -182,17 +195,31 @@ func TestSchemaEvolutionAdditiveAdmits(t *testing.T) {
 	})
 
 	// Removing an enum value NO live row holds admits: the guard counts, it
-	// does not blanket-refuse the class.
+	// does not blanket-refuse the class. Removing it does not spend it either:
+	// `low` comes back below, then is RETIRED (decision 0053), and only then
+	// is its return refused.
 	props := evoBaseProps()
 	props["level"] = map[string]any{"type": "enum", "values": []any{"high"}}
 	if err := evoApply(t, ds, props); err != nil {
 		t.Fatalf("removing an unheld enum value must admit: %v", err)
 	}
+	props["level"] = map[string]any{"type": "enum", "values": []any{"high", "low"}}
+	if err := evoApply(t, ds, props); err != nil {
+		t.Fatalf("a removed but unretired enum value must be free to return: %v", err)
+	}
+	props["level"] = map[string]any{"type": "enum", "values": []any{"high"}}
+	if err := evoApplyRetiring(t, ds, props, map[string]any{"values": map[string]any{"level": []any{"low"}}}); err != nil {
+		t.Fatalf("retiring an unheld enum value must admit: %v", err)
+	}
+	props["level"] = map[string]any{"type": "enum", "values": []any{"high", "low"}}
+	if err := evoApply(t, ds, props); err == nil || !strings.Contains(err.Error(), "a retired name is never declared again") {
+		t.Fatalf("a retired enum value must refuse to return, got: %v", err)
+	}
 
-	// Purely additive: a new optional property, a returned enum value, a new
-	// state with its transition, a new type version of nothing else.
+	// Purely additive: a new optional property, a new enum value, a new state
+	// with its transition, a new type version of nothing else.
 	props["weight"] = map[string]any{"type": "float"}
-	props["level"] = map[string]any{"type": "enum", "values": []any{"high", "low", "mid"}}
+	props["level"] = map[string]any{"type": "enum", "values": []any{"high", "mid"}}
 	props["phase"] = map[string]any{
 		"type": "state", "states": []any{"open", "done", "archived"}, "initial": "open",
 		"transitions": []any{

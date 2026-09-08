@@ -293,7 +293,19 @@ func validationError(problems []string) error {
 // closure ships at.
 var packageDataKeys = map[string]bool{
 	"authority": true, "package": true, "description": true, "version": true,
+	// `retired` is the package's spent kind names (decision 0053): parsed by
+	// parsePackageRetired, refused on every admission door if declared again.
+	"retired": true,
 }
+
+// packageRetiredKeys is the package header's `retired:` block: the kind names
+// the package has spent. One sub-key today; a later one (a trait, a property
+// type) is an addition to this set, not a second top-level key.
+var packageRetiredKeys = map[string]bool{"kinds": true}
+
+// kindRetiredKeys is a kind's `retired:` block: property names, enum values by
+// property and states by property.
+var kindRetiredKeys = map[string]bool{"properties": true, "values": true, "states": true}
 
 // authorityDataKeys is the authority row's closed key set. It owns the packages
 // published under it and says what it is; a closure's version, its ownership
@@ -554,6 +566,8 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 		g.KindOrder = append(g.KindOrder, t.Name)
 	}
 	sort.Strings(g.KindOrder)
+	// After the kinds: a retired name that is also declared is refused here.
+	l.parsePackageRetired(where, gd.header.Data, g)
 
 	// Mappings, after kinds: `from` must be a kind this package declares;
 	// everything about the target is deferred to Finalize/Install.
@@ -828,6 +842,10 @@ var typeDataKeys = map[string]bool{
 	"authority": true, "package": true, "names": true, "displayTemplate": true, "properties": true,
 	"traits": true, "indices": true,
 	"description": true, "version": true,
+	// `retired` is the kind's spent property names, enum values and states
+	// (decision 0053): parsed by parseKindRetirement, refused on every
+	// admission door if declared again.
+	"retired": true,
 }
 
 // namesKeys is the `names` block's key set. `plural` is retired: the collection
@@ -940,6 +958,8 @@ func (l *loader) parseType(doc Document) *Kind {
 		t.PropOrder = append(t.PropOrder, n)
 	}
 	sort.Strings(t.PropOrder)
+	// After the properties: a retired name that is also declared is refused.
+	l.parseKindRetirement(where, d, t)
 
 	// renamedFrom's sibling half (reserved, ticket 003): the previous name may
 	// not be one the type still declares — both present is not a rename — and

@@ -12,7 +12,9 @@ data:
   # record 0048).
   # version 18: `origin`, `originVersion` and `originDigest`, the provenance a
   # sample import stamps on the copy it lands.
-  version: 18
+  # version 19: `retired` declares the kind names the package has spent
+  # (decision record 0055). Additive.
+  version: 19
   description: >-
     One package whose kinds this repository holds: the group a declaration
     is versioned, owned and quarantined in. The row says who may write under
@@ -37,6 +39,20 @@ data:
     description:
       type: markdown
       description: what this package is for, in its own words
+    # The kind names this package has spent (decision record 0053). Authored,
+    # not managed: the author writes a name here to retire it, the engine
+    # carries the list into every later header of the package, and a kind
+    # declared by a listed name is refused on every admission door. The
+    # loader holds the block's shape.
+    retired:
+      type: object
+      description: the kind names this package retired; a listed name is refused
+        if declared again
+      fields:
+        kinds:
+          type: string
+          repeated: true
+          description: the retired kind names, one lowercase word each
     version:
       type: int
       managed: true
