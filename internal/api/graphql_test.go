@@ -992,3 +992,42 @@ func TestGraphQLSearch(t *testing.T) {
 		t.Fatalf("search input = %+v", ds.lastSearch)
 	}
 }
+
+// AffectedRecord.version is null where REST omits it: a purge and an entry
+// written before the effects recorded a version carry none, and the struct's
+// zero must not read as version 0.
+func TestGraphQLAffectedVersionIsNullWhenAbsent(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token("geoah")
+	ds := env.svc.datasets["geoah"]
+	const kind = "samples.substrate.reamde.dev/people/person"
+	ds.changes = append(ds.changes, substrate.Change{
+		Seq: 1, TS: time.Unix(1, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut, RecordID: "p1", Kind: kind,
+		Affected: []substrate.AffectedRecord{{Kind: kind, ID: "p1", Version: 3}},
+	}, substrate.Change{
+		Seq: 2, TS: time.Unix(2, 0).UTC(), Actor: substrate.ActorSystem, Op: substrate.OpGC, RecordID: "p1", Kind: kind,
+		Affected: []substrate.AffectedRecord{{Kind: kind, ID: "p1", Deleted: true}},
+	})
+
+	res := env.gql(t, tok, `{ changelog(first: 10) { changes { seq affected { id version deleted } } } }`, nil)
+	page, _ := res.Data["changelog"].(map[string]any)
+	changes, _ := page["changes"].([]any)
+	if len(changes) != 2 {
+		t.Fatalf("changes = %v", changes)
+	}
+	versionOf := func(i int) any {
+		row, _ := changes[i].(map[string]any)
+		affected, _ := row["affected"].([]any)
+		if len(affected) != 1 {
+			t.Fatalf("row %d affected = %v", i, affected)
+		}
+		a, _ := affected[0].(map[string]any)
+		return a["version"]
+	}
+	if got := versionOf(0); got != float64(3) {
+		t.Fatalf("versioned row: version = %v, want 3", got)
+	}
+	if got := versionOf(1); got != nil {
+		t.Fatalf("purge row: version = %v, want null", got)
+	}
+}

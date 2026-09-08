@@ -276,9 +276,20 @@ func (b *schemaBuilder) build() (graphql.Schema, error) {
 	affected := graphql.NewObject(graphql.ObjectConfig{
 		Name: "AffectedRecord",
 		Fields: graphql.Fields{
-			"kind":    &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"id":      &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"version": &graphql.Field{Type: longScalar},
+			"kind": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"id":   &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			// Null where REST omits it (a purge, an entry written before the
+			// effects recorded a version): the struct's zero is not a version.
+			"version": &graphql.Field{
+				Type: longScalar,
+				Resolve: func(p graphql.ResolveParams) (any, error) {
+					a, ok := p.Source.(substrate.AffectedRecord)
+					if !ok || a.Version == 0 {
+						return nil, nil
+					}
+					return a.Version, nil
+				},
+			},
 			"deleted": &graphql.Field{Type: graphql.Boolean},
 		},
 	})

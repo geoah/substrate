@@ -58,7 +58,9 @@ one element per record, in the order the entry touched them.
 
 ```json
 {"seq": 4207, "op": "merge", "kind": "samples.substrate.reamde.dev/people/person", "recordId": "p1",
- "payload": {"winner": "p1", "loser": "p2", "moved": ["email"]},
+ "payload": {"winner": "p1", "loser": "p2",
+             "moved": {"formerIds": [], "managers": {}, "labels": {}, "annotations": {},
+                       "applied": ["email"], "overwritten": []}},
  "affected": [
    {"kind": "samples.substrate.reamde.dev/people/person", "id": "p1", "version": 6},
    {"kind": "samples.substrate.reamde.dev/people/person", "id": "p2", "version": 3, "deleted": true}]}
@@ -68,8 +70,8 @@ one element per record, in the order the entry touched them.
   /api/v1/{kind}/{id}` takes.
 - `version` is the version the record reached in this entry, the number a
   read of the record returns until its next change. It is absent on a purge
-  (a `gc` entry: the record has no version afterwards) and on an entry written
-  before the effects recorded one (v0.47.0 and earlier).
+  (a `gc` entry: the record has no version afterwards) and on every entry
+  written before this change, whose effects recorded no version.
 - `deleted` is `true` when the entry tombstoned or purged the record. A read
   of a tombstoned record still answers, with `deletedAt` set; a purged one is
   `not_found`.

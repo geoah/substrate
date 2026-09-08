@@ -194,10 +194,20 @@ func TestAClientKeepsACurrentCopyFromTheStreamAlone(t *testing.T) {
 	if _, err := ds.Delete(ctx, owner, gone.Kind, gone.ID); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
+	// Deleted and then put back: `deleted` flips true and then false again,
+	// and the copy has to follow both.
+	back := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Back"}})
+	if _, err := ds.Delete(ctx, owner, back.Kind, back.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	back = mustPut(t, ds, owner, substrate.PutInput{Kind: "person", ID: back.ID, Properties: map[string]any{"name": "Back again"}})
+	if back.DeletedAt != nil {
+		t.Fatalf("the put did not restore the record: %+v", back)
+	}
 	if _, err := ds.RunGC(ctx); err != nil {
 		t.Fatalf("gc: %v", err)
 	}
-	touched := []string{ada.ID, bob.ID, dup.ID, gone.ID}
+	touched := []string{ada.ID, bob.ID, dup.ID, gone.ID, back.ID}
 
 	// The client: a copy keyed by id, fed from the stream with no value read
 	// off it. A fetch of a record the stream says is deleted is not needed,
@@ -263,11 +273,15 @@ func TestAClientKeepsACurrentCopyFromTheStreamAlone(t *testing.T) {
 			t.Fatalf("%s: copy v%d %v, repository v%d %v", id, held.Version, held.Properties, rec.Version, rec.Properties)
 		}
 	}
-	// Two records live at the end, and the client fetched each live version
-	// once: the create and the patch of ada, the create and the merge of bob.
-	// The stream named dup and gone deleted, so neither cost a fetch.
-	if len(copyOf) != 2 || fetches != 4 {
-		t.Fatalf("copy holds %d records after %d fetches, want 2 after 4", len(copyOf), fetches)
+	// Three records live at the end (ada, bob, back), and the client fetched
+	// six times: the five creates, whose versions the copy did not hold, and
+	// back's restoring put, which followed a delete that dropped it from the
+	// copy. Ada's patch and bob's merge cost nothing: each create's fetch
+	// read the record after every write to it had landed, so the copy was
+	// already at or past the version those rows named. The stream named dup,
+	// gone and back's tombstone deleted, so none of those cost a fetch.
+	if len(copyOf) != 3 || fetches != 6 {
+		t.Fatalf("copy holds %d records after %d fetches, want 3 after 6", len(copyOf), fetches)
 	}
 }
 

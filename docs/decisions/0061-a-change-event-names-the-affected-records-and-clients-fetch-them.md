@@ -59,8 +59,7 @@ contract to the delta grammar: the next retired effect kind would be the
 dialect-2 break again, and redaction would have to follow every value shape.
 An opt-in for `fold` was rejected because its one consumer, the console, is
 the client this decision moves off it; an operator reads the effects in the
-segment files and through `repository verify`, and a preview door can be
-added if a need appears. Counting effects at read was rejected because it is
+segment files, and a preview door can be added if a need appears. Counting effects at read was rejected because it is
 a scan of the changelog per page for a number the write already knows.
 
 ### Consequences
@@ -74,9 +73,9 @@ a scan of the changelog per page for a number the write already knows.
 - Bad, because `fold` leaving `payload` is a wire break for any client that
   decoded it; the console was the only known one, and `changefeed` is still
   `beta`.
-- Bad, because entries written before this release (v0.47.0 and earlier)
-  carry no `version` in their effects, so their events name records without
-  one and a client fetches every time; nothing backfills them.
+- Bad, because entries written before this change carry no `version` in
+  their effects, so their events name records without one and a client
+  fetches every time; nothing backfills them.
 - Bad, because a record's history cannot be reconstructed from public rows;
   a consumer that needs values at each step must read the record on every
   event or wait for the optional event detail that is filed separately.

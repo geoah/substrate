@@ -594,11 +594,11 @@ func refTarget(e *substrate.Record, property string) string {
 // wire rows never carry.
 func storedChangesSince(t *testing.T, svc substrate.Service, ds substrate.Dataset, after int64) []substrate.Change {
 	t.Helper()
-	log, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(repoDirOf(t, svc, ds)))
+	segments, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(repoDirOf(t, svc, ds)))
 	if err != nil {
 		t.Fatalf("open the changelog files: %v", err)
 	}
-	entries, err := log.Read(after, 0)
+	entries, err := segments.Read(after, 0)
 	if err != nil {
 		t.Fatalf("read the changelog files: %v", err)
 	}

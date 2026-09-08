@@ -201,6 +201,9 @@ func projectAffected(c *substrate.Change) {
 		case foldPurge:
 			out[i].Version, out[i].Deleted = 0, true
 		case foldBump:
+			// No live write emits a bump today; the fold keeps the effect
+			// replayable (fold.go), and a history that holds one moved the
+			// record's version, so the event names it.
 			out[i].Version = versionOf(op["version"])
 		}
 	}
