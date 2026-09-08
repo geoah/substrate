@@ -85,9 +85,15 @@ type rowDelta struct {
 	EndsAt *string `json:"endsAt,omitempty"`
 	DueAt  *string `json:"dueAt,omitempty"`
 
-	States     map[string]string `json:"states,omitempty"`
-	Labels     map[string]any    `json:"labels,omitempty"`
-	Finalizers *[]string         `json:"finalizers,omitempty"`
+	// The two whole-column maps are POINTERS, like the slice beside them, so
+	// that `omitempty` cannot erase a clear: a bare map that emptied encodes as
+	// nothing at all, and the fold reads an absent key as "unchanged", so the
+	// last label of a record would come back on every rebuild. A pointer to the
+	// empty map encodes as `{}`, which is the cleared form; an absent key stays
+	// "unchanged".
+	States     *map[string]string `json:"states,omitempty"`
+	Labels     *map[string]any    `json:"labels,omitempty"`
+	Finalizers *[]string          `json:"finalizers,omitempty"`
 }
 
 // foldOp is one effect: a fold kind, the record REFERENCE it lands on, and
@@ -599,16 +605,18 @@ func diffRow(before, after *erow) *rowDelta {
 		}
 	}
 	if !sameStates(before.States, after.States) {
-		d.States = map[string]string{}
+		states := make(map[string]string, len(after.States))
 		for k, v := range after.States {
-			d.States[k] = v
+			states[k] = v
 		}
+		d.States = &states
 	}
 	if !jsonEqual(nonNilMap(before.Labels), nonNilMap(after.Labels)) {
-		d.Labels = map[string]any{}
+		labels := make(map[string]any, len(after.Labels))
 		for k, v := range after.Labels {
-			d.Labels[k] = v
+			labels[k] = v
 		}
+		d.Labels = &labels
 	}
 	if !jsonEqual(nonNilStrings(before.Finalizers), nonNilStrings(after.Finalizers)) {
 		fin := append([]string{}, after.Finalizers...)
@@ -655,13 +663,13 @@ func (d *rowDelta) applyTo(row *erow) {
 	}
 	if d.States != nil {
 		row.States = map[string]string{}
-		for k, v := range d.States {
+		for k, v := range *d.States {
 			row.States[k] = v
 		}
 	}
 	if d.Labels != nil {
 		row.Labels = map[string]any{}
-		for k, v := range d.Labels {
+		for k, v := range *d.Labels {
 			row.Labels[k] = v
 		}
 	}

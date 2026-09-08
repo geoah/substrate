@@ -3,6 +3,7 @@ package engine_test
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -49,8 +50,9 @@ func foldOf(t *testing.T, ds substrate.Dataset) []byte {
 // writeSomeHistory drives the ordinary write surface — creates, property
 // changes, a state transition, labels, annotations, edges, a delete and the
 // put that restores it — so the changelog under test holds one of everything the
-// fold has to replay.
-func writeSomeHistory(t *testing.T, ds substrate.Dataset) {
+// fold has to replay. It returns the record whose last label it removed, the
+// write a replay once lost (#362).
+func writeSomeHistory(t *testing.T, ds substrate.Dataset) *substrate.Record {
 	t.Helper()
 	ctx := context.Background()
 	due := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Second)
@@ -87,6 +89,14 @@ func writeSomeHistory(t *testing.T, ds substrate.Dataset) {
 	mustPatch(t, ds, owner, first.Kind, first.ID, substrate.PatchInput{
 		Properties: map[string]any{"status": "done"},
 	})
+	// The last label goes, so the record's labels are the empty map: the one
+	// column value a delta could not spell while its maps were bare.
+	cleared := mustPatch(t, ds, owner, first.Kind, first.ID, substrate.PatchInput{
+		Labels: map[string]any{"owner/urgent": nil},
+	})
+	if len(cleared.Labels) != 0 {
+		t.Fatalf("the last label did not clear: %v", cleared.Labels)
+	}
 	// A reference, written by a patch rather than at the record's creation, so
 	// the replay has to reach the refs index through a delta and not a birth.
 	mustPatch(t, ds, owner, second.Kind, second.ID, substrate.PatchInput{
@@ -99,11 +109,34 @@ func writeSomeHistory(t *testing.T, ds substrate.Dataset) {
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: third.Kind, ID: third.ID,
 		Properties: map[string]any{"name": "Collect me", "description": "restored"},
+		Labels:     map[string]any{"owner/kept": true},
 	})
 	// And one that stays deleted.
 	if _, err := ds.Delete(ctx, owner, second.Kind, second.ID); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
+	return cleared
+}
+
+// wantLabelsAndVersion reads a record back and holds its labels and version
+// to the live write's. The fold snapshot compares these too, but as the bytes
+// of the whole table; this names the two columns #362 lost.
+func wantLabelsAndVersion(t *testing.T, ds substrate.Dataset, want *substrate.Record) {
+	t.Helper()
+	got := mustGet(t, ds, want.Kind, want.ID)
+	if !reflect.DeepEqual(nonNilLabels(got.Labels), nonNilLabels(want.Labels)) {
+		t.Fatalf("replay gave %s labels %v, the live write left %v", want.ID, got.Labels, want.Labels)
+	}
+	if got.Version != want.Version {
+		t.Fatalf("replay gave %s version %d, the live write left %d", want.ID, got.Version, want.Version)
+	}
+}
+
+func nonNilLabels(m map[string]any) map[string]any {
+	if m == nil {
+		return map[string]any{}
+	}
+	return m
 }
 
 // TestRebuildReproducesTheFold is the containment test: clear the records
@@ -114,7 +147,7 @@ func writeSomeHistory(t *testing.T, ds substrate.Dataset) {
 func TestRebuildReproducesTheFold(t *testing.T) {
 	t.Parallel()
 	svc, ds := newDataset(t)
-	writeSomeHistory(t, ds)
+	cleared := writeSomeHistory(t, ds)
 
 	before := foldOf(t, ds)
 	head := maxSeq(t, ds)
@@ -138,6 +171,7 @@ func TestRebuildReproducesTheFold(t *testing.T) {
 	if string(before) != string(after) {
 		t.Fatalf("the rebuilt fold is not the fold\n%s", firstDifference(before, after))
 	}
+	wantLabelsAndVersion(t, ds, cleared)
 
 	// A rebuild is a replay, never a write: it appends nothing to the changelog.
 	if got := maxSeq(t, ds); got != head {
