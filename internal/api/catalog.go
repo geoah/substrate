@@ -39,7 +39,7 @@ func (h *handler) getCatalog(w http.ResponseWriter, r *http.Request) {
 		}
 		home := homeAuthority(r.Context())
 		for _, b := range h.catalog.Bundles() {
-			items = append(items, h.catalogItemFor(r.Context(), b, heldCopy(b, installed, home)))
+			items = append(items, h.catalogItemFor(r.Context(), b, installed.copyOf(b, home)))
 		}
 	}
 	writeJSON(w, http.StatusOK, substrate.Listed(items))
@@ -74,39 +74,36 @@ func (h *handler) getCatalogItem(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, h.catalogItemFor(r.Context(), b, heldCopy(b, installed, homeAuthority(r.Context()))))
+	writeJSON(w, http.StatusOK, h.catalogItemFor(r.Context(), b, installed.copyOf(b, homeAuthority(r.Context()))))
 }
 
-// heldCopy is the installed bundle that IS catalog entry b in this
-// repository, or nil. A copy that carries an origin is matched on it: two
-// authorities may each publish a sample of one package word, and both land
-// under the repository's authority as `<home>/<package>`, so the landed id
-// alone would read both entries as installed after either import and hand
-// both the one copy's provenance. Only a copy stamped before the origin
-// existed, and a provider (which is never stamped), fall back to the id
-// lookup HeldID does.
-func heldCopy(b *catalog.Bundle, installed map[string]*substrate.BundleStatus, home string) *substrate.BundleStatus {
-	for _, id := range sortedStatusIDs(installed) {
-		if st := installed[id]; st.Origin == b.ID {
+// installedSet is every bundle installed in this repository, read once per
+// request: the statuses by id, the ids in one order, and the id set the
+// catalog's HeldID lookup takes.
+type installedSet struct {
+	byID map[string]*substrate.BundleStatus
+	ids  []string
+	held map[string]bool
+}
+
+// copyOf is the installed bundle that IS catalog entry b in this repository,
+// or nil. A copy that carries an origin is matched on it: two authorities may
+// each publish a sample of one package word, and both land under the
+// repository's authority as `<home>/<package>`, so the landed id alone would
+// read both entries as installed after either import and hand both the one
+// copy's provenance. Only a copy stamped before the origin existed, and a
+// provider (which is never stamped), fall back to the id lookup HeldID does.
+func (s installedSet) copyOf(b *catalog.Bundle, home string) *substrate.BundleStatus {
+	for _, id := range s.ids {
+		if st := s.byID[id]; st.Origin == b.ID {
 			return st
 		}
 	}
-	st := installed[b.HeldID(heldIDs(installed), home)]
+	st := s.byID[b.HeldID(s.held, home)]
 	if st == nil || st.Origin != "" {
 		return nil
 	}
 	return st
-}
-
-// sortedStatusIDs is the map's keys in one order, so the match above is the
-// same on every read.
-func sortedStatusIDs(installed map[string]*substrate.BundleStatus) []string {
-	ids := make([]string, 0, len(installed))
-	for id := range installed {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	return ids
 }
 
 // catalogItemFor assembles one wire entry, asking the catalog for the upgrade
@@ -222,34 +219,28 @@ type bundleTaken struct {
 	SuggestedMappings []substrate.SuggestedMapping `json:"suggestedMappings,omitempty"`
 }
 
-// installedBundles is every bundle installed in this repository, its status
-// by id. A dataset that runs no bundle lifecycle has none: an empty set, no
-// error. A status READ that fails is a fault (repository/database), returned
-// as an error so the caller fails with the normal substrate error shape
-// instead of silently reporting installed integrations as available.
-func (h *handler) installedBundles(ctx context.Context) (map[string]*substrate.BundleStatus, error) {
-	out := map[string]*substrate.BundleStatus{}
+// installedBundles is every bundle installed in this repository. A dataset
+// that runs no bundle lifecycle has none: an empty set, no error. A status
+// READ that fails is a fault (repository/database), returned as an error so
+// the caller fails with the normal substrate error shape instead of silently
+// reporting installed providers as available.
+func (h *handler) installedBundles(ctx context.Context) (installedSet, error) {
+	out := installedSet{byID: map[string]*substrate.BundleStatus{}, held: map[string]bool{}}
 	ops, ok := bundlesFrom(ctx)
 	if !ok {
 		return out, nil
 	}
 	statuses, err := ops.BundleStatuses(ctx)
 	if err != nil {
-		return nil, err
+		return installedSet{}, err
 	}
 	for i := range statuses {
 		if statuses[i].Installed {
-			out[statuses[i].ID] = &statuses[i]
+			out.byID[statuses[i].ID] = &statuses[i]
+			out.held[statuses[i].ID] = true
+			out.ids = append(out.ids, statuses[i].ID)
 		}
 	}
+	sort.Strings(out.ids)
 	return out, nil
-}
-
-// heldIDs is the id set the catalog's HeldID lookup takes, off the statuses.
-func heldIDs(installed map[string]*substrate.BundleStatus) map[string]bool {
-	out := make(map[string]bool, len(installed))
-	for id := range installed {
-		out[id] = true
-	}
-	return out
 }

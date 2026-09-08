@@ -85,10 +85,10 @@ func TestImportLandsASampleUnderTheRepositoryAuthority(t *testing.T) {
 	if !st.Installed || st.Kinds != 3 {
 		t.Errorf("status = %+v, want installed with 3 kinds", st)
 	}
-	// THE COPY KNOWS WHERE IT CAME FROM: the shipped id and the shipped version
-	// are stamped on the landed package row, and a copy nobody has edited
-	// reads unmodified. Without the stamp `geoah.example.com/tasks` would be
-	// indistinguishable from a package the user declared by hand.
+	// The import stamps the shipped id and the shipped version on the landed
+	// package row, and a copy nobody has edited reads unmodified. Without the
+	// stamp `geoah.example.com/tasks` would be indistinguishable from a
+	// package the user declared by hand.
 	if b.Version == 0 {
 		t.Fatal("the tasks sample ships no package version, so the stamp cannot be checked")
 	}
@@ -111,8 +111,8 @@ func TestImportLandsASampleUnderTheRepositoryAuthority(t *testing.T) {
 	// is the truth a rebuild reads, so a declaration there under the
 	// placeholder is vocabulary under an authority the repository does not
 	// own, folded back on every rebuild. The one sanctioned mention is the
-	// `origin` stamp on the package row, a string naming where the copy came
-	// from, which declares nothing.
+	// `origin` stamp the package row's delta sets, a string naming where the
+	// copy came from, which declares nothing; nowhere else, on no other kind.
 	changes, err := ds.Changes(ctx, 0, substrate.ChangeFilter{}, 5000)
 	if err != nil {
 		t.Fatalf("changes: %v", err)
@@ -129,7 +129,7 @@ func TestImportLandsASampleUnderTheRepositoryAuthority(t *testing.T) {
 		if err := json.Unmarshal(raw, &decoded); err != nil {
 			t.Fatalf("decode change %d: %v", ch.Seq, err)
 		}
-		if mentionsOutsideOrigin(decoded, samplesPlacehldr) {
+		if mentionsPlaceholder(decoded, nil, samplesPlacehldr, ch.Kind == kindPackageRef) {
 			t.Fatalf("changelog entry %d still names %s: %s", ch.Seq, samplesPlacehldr, raw)
 		}
 	}
@@ -326,24 +326,29 @@ func mapOf(v any) map[string]any {
 	return m
 }
 
-// mentionsOutsideOrigin walks a decoded JSON value and reports whether any
-// string in it, other than the value under an `origin` key, contains needle.
-func mentionsOutsideOrigin(v any, needle string) bool {
+// mentionsPlaceholder walks a decoded changelog entry, `path` being the keys
+// above v, and reports whether any string in it contains needle. The one
+// exemption is the `origin` the PACKAGE row's delta sets (`…delta.set.origin`
+// on an entry whose kind is the package kind); an `origin` anywhere else, or
+// on any other kind, is a mention like any other.
+func mentionsPlaceholder(v any, path []string, needle string, packageRow bool) bool {
 	switch x := v.(type) {
 	case string:
 		return strings.Contains(x, needle)
 	case []any:
 		for _, item := range x {
-			if mentionsOutsideOrigin(item, needle) {
+			if mentionsPlaceholder(item, path, needle, packageRow) {
 				return true
 			}
 		}
 	case map[string]any:
+		n := len(path)
+		underSet := n >= 2 && path[n-2] == "delta" && path[n-1] == "set"
 		for k, item := range x {
-			if k == "origin" {
+			if k == "origin" && packageRow && underSet {
 				continue
 			}
-			if mentionsOutsideOrigin(item, needle) {
+			if mentionsPlaceholder(item, append(path, k), needle, packageRow) {
 				return true
 			}
 		}

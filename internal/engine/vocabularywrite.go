@@ -1276,8 +1276,9 @@ const (
 // digest from those rows (packageClosureDigest). Hashing the authored
 // spelling would read every sample with a function or an agent as modified
 // the moment it landed. The stamp is therefore a second put on the header
-// row, after the projection's own, and a re-import whose stamp is unchanged
-// writes nothing.
+// row, after the projection's own and in the same transaction: a fresh import
+// writes two changelog entries for the package row (the row, then its stamp),
+// and a re-import whose stamp is unchanged writes none.
 func (t *txn) stampOrigin(reg *vocabulary.Registry, projecting map[string]bool, g *vocabulary.Package, decls []declaration, opts projectOpts, out map[string]*substrate.Record) error {
 	if opts.origin == "" || g.IsAuthority() {
 		return nil
@@ -1366,9 +1367,11 @@ func closureDigest(pkg string, docs []vocabulary.Document) (string, error) {
 
 // packageClosureDigest is closureDigest over what the repository STORES for
 // one package: the same document read-back the registry is rebuilt from at
-// open, so it is the stored side of the import's stamp.
+// open, so it is the stored side of the import's stamp. It reads that one
+// package's rows (packageDocumentRows): the status computes this on every
+// listing, and the console polls the listing.
 func (ds *dataset) packageClosureDigest(ctx context.Context, pkg string) (string, error) {
-	rows, err := ds.vocabularyDocumentRows(ctx, map[string]bool{pkg: true})
+	rows, err := ds.packageDocumentRows(ctx, pkg)
 	if err != nil {
 		return "", err
 	}
@@ -1470,15 +1473,37 @@ func rowPackage(typeIdent, id string, authority, pkg *string) string {
 // vocabularyDocumentRows reads the touched packages' schema record rows back as
 // loader documents — the store is the source the candidate rebuilds from.
 func (ds *dataset) vocabularyDocumentRows(ctx context.Context, authorities map[string]bool) (map[string]vocabulary.Document, error) {
-	args := make([]any, 0, len(vocabularyKindRefs))
+	return ds.vocabularyDocumentRowsWhere(ctx, authorities, "")
+}
+
+// packageDocumentRows is vocabularyDocumentRows for ONE package, with the
+// package predicate in the SQL: every declaration row carries its `authority`
+// and `package` as properties (the package row and the actor rows included),
+// so the status reads can fetch one package's rows without decoding every
+// declaration in the repository. The Go-side filter still runs, so the two
+// agree on what a package's document is.
+func (ds *dataset) packageDocumentRows(ctx context.Context, pkg string) (map[string]vocabulary.Document, error) {
+	authority, name := vocabulary.SplitPackageRef(pkg)
+	n := len(vocabularyKindRefs)
+	return ds.vocabularyDocumentRowsWhere(ctx, map[string]bool{pkg: true},
+		"AND props->>'authority' = $"+strconv.Itoa(n+1)+" AND props->>'package' = $"+strconv.Itoa(n+2),
+		authority, name)
+}
+
+// vocabularyDocumentRowsWhere is the one query behind the two readers above:
+// `where` is appended to the kind and liveness predicate, its placeholders
+// numbered after the kind list, and `extra` are its arguments.
+func (ds *dataset) vocabularyDocumentRowsWhere(ctx context.Context, authorities map[string]bool, where string, extra ...any) (map[string]vocabulary.Document, error) {
+	args := make([]any, 0, len(vocabularyKindRefs)+len(extra))
 	ph := make([]string, 0, len(vocabularyKindRefs))
 	for i, ident := range vocabularyKindRefs {
 		args = append(args, ident)
 		ph = append(ph, "$"+strconv.Itoa(i+1))
 	}
+	args = append(args, extra...)
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT id, kind, props FROM records
-		WHERE kind IN (`+strings.Join(ph, ", ")+`) AND deleted_at IS NULL
+		WHERE kind IN (`+strings.Join(ph, ", ")+`) AND deleted_at IS NULL `+where+`
 		ORDER BY id`, args...)
 	if err != nil {
 		return nil, err

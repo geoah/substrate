@@ -425,6 +425,10 @@ the digest from the stored declarations: a kind, trait, property type, mapping,
 function, agent or bundle document edited, added or removed since the import
 reads `modified: true`. Versions alone could not say so, because a kind edit
 moves the kind's version and not the package's, and an addition moves nothing.
+`modified` covers declaration data only: labels, annotations and the data
+records a sample ships beside its closure do not flip it, and
+[#386](https://github.com/geoah/substrate/issues/386) owns the definition of a
+local modification.
 The provider door and a hand `apply -f` stamp nothing, so a package with no
 `origin` is either a provider or the repository's own from the start. A
 re-import replaces the package as before and re-stamps it, so an edited copy
