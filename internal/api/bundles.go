@@ -200,6 +200,14 @@ func has(m map[string]any, key string) bool {
 	return ok
 }
 
+// bindRequest is the bind body: the declared input to point, and the record
+// to point it at. Record is omitempty because absence clears the choice, and
+// the OpenAPI document reads its required set off these tags.
+type bindRequest struct {
+	Input  string `json:"input"`
+	Record string `json:"record,omitempty"`
+}
+
 // postBundleBind points one input at a chosen record, or clears the choice
 // (record "" or absent), then answers with the refreshed status so the
 // caller sees the resolution it just changed.
@@ -212,10 +220,7 @@ func (h *handler) postBundleBind(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.bundleLifecycleGate(w, r, ops); !ok {
 		return
 	}
-	var body struct {
-		Input  string `json:"input"`
-		Record string `json:"record"`
-	}
+	var body bindRequest
 	if err := decodeBody(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
