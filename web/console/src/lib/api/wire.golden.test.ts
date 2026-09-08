@@ -46,6 +46,7 @@ import type {
   BundleUninstalled,
   BundleUpgrade,
   BundleUpgradeChange,
+  BundleUpgradeRename,
   CatalogBundle,
   CatalogInput,
   CatalogItem,
@@ -467,6 +468,7 @@ const bundleUpgrade: Shape<BundleUpgrade> = {
   to: false,
   changes: false,
   blockers: false,
+  renames: false,
 }
 
 const bundleUpgradeChange: Shape<BundleUpgradeChange> = {
@@ -474,6 +476,13 @@ const bundleUpgradeChange: Shape<BundleUpgradeChange> = {
   id: true,
   from: false,
   to: false,
+}
+
+const bundleUpgradeRename: Shape<BundleUpgradeRename> = {
+  kind: true,
+  from: true,
+  to: true,
+  records: true,
 }
 
 const shippedUpgrade: Shape<ShippedUpgrade> = {
@@ -534,6 +543,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   SetupItem: setupItem,
   BundleUpgrade: bundleUpgrade,
   BundleUpgradeChange: bundleUpgradeChange,
+  BundleUpgradeRename: bundleUpgradeRename,
   ShippedUpgrade: shippedUpgrade,
   BundleUninstalled: bundleUninstalled,
   BundlePurged: bundlePurged,

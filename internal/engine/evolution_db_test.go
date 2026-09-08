@@ -3,7 +3,9 @@ package engine_test
 // Evolution-with-data: schema admission classifies
 // the definition diff against the stored definition and refuses every
 // NARROWING class with the live-row count, while additive changes admit
-// freely and renamedFrom is admitted, stored and round-tripped as reserved.
+// freely and a renamedFrom naming a property no row ever carried is admitted,
+// stored and round-tripped. The rename that moves live values is
+// rename_db_test.go's.
 
 import (
 	"context"
@@ -97,13 +99,8 @@ func TestSchemaEvolutionNarrowingRefused(t *testing.T) {
 			`property "size" dropped`, "1 live records")
 	})
 
-	t.Run("property renamed via renamedFrom is still refused", func(t *testing.T) {
-		props := evoBaseProps()
-		delete(props, "size")
-		props["dimensions"] = map[string]any{"type": "string", "renamedFrom": "size"}
-		wantNarrowingGuard(t, evoApply(t, ds, props),
-			`renamed to "dimensions"`, "reserved and not yet acted on", "1 live records")
-	})
+	// A property renamed with `renamedFrom` is not in this list: the apply moves
+	// the live values to the new name instead (rename_db_test.go).
 
 	t.Run("kind changed", func(t *testing.T) {
 		props := evoBaseProps()

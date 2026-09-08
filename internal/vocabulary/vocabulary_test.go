@@ -3087,11 +3087,12 @@ func contains(ss []string, s string) bool {
 	return false
 }
 
-// --- renamedFrom (reserved, ticket 003) ------------------------------------
+// --- renamedFrom ------------------------------------------------------------
 
-// renamedFrom is admitted and stored — reserved manifest room for declared
-// evolution — but shape-checked at load: camelCase, never the property
-// itself, never a still-declared sibling, never a built-in, never a field.
+// renamedFrom is admitted and stored, and shape-checked at load for what the
+// engine's rewrite could not honor: camelCase, never the property itself,
+// never a still-declared sibling, never a built-in, never a field, never
+// `body` on either side, never on a state, and one property per previous name.
 func TestRenamedFromReserved(t *testing.T) {
 	mk := func(props string) fstest.MapFS {
 		return fstest.MapFS{"g.yaml": &fstest.MapFile{Data: []byte(`kind: substrate.reamde.dev/core/package
@@ -3149,6 +3150,38 @@ data:
 	t.Run("field is an error", func(t *testing.T) {
 		_, err := vocabulary.LoadFS(mk("    spec: {type: object, fields: {label: {type: string, renamedFrom: caption}}}\n"))
 		if err == nil || !strings.Contains(err.Error(), "not a field") {
+			t.Fatalf("error = %v", err)
+		}
+	})
+
+	// The rewrite moves a key of `props`: body lives in its own column and a
+	// state in the states column, so neither renames, in either direction.
+	t.Run("body on either side is an error", func(t *testing.T) {
+		for _, props := range []string{
+			"    body: {type: text, renamedFrom: caption}\n",
+			"    label: {type: string, renamedFrom: body}\n",
+		} {
+			_, err := vocabulary.LoadFS(mk(props))
+			if err == nil || !strings.Contains(err.Error(), "body is column-backed and never renames") {
+				t.Fatalf("%s: error = %v", strings.TrimSpace(props), err)
+			}
+		}
+	})
+
+	// A regression guard, not a new rule: a state's value lives in the states
+	// column, so the rewrite (engine/rename.go) never meets one, and that holds
+	// only while the state key set keeps refusing the marker. A `renamedFrom`
+	// admitted on a state would be stored and rename nothing.
+	t.Run("state property is an error", func(t *testing.T) {
+		_, err := vocabulary.LoadFS(mk("    phase: {type: state, states: [open, done], initial: open, transitions: [{from: open, to: done}], renamedFrom: stage}\n"))
+		if err == nil || !strings.Contains(err.Error(), `unknown key "renamedFrom"`) {
+			t.Fatalf("error = %v", err)
+		}
+	})
+
+	t.Run("two properties naming one previous name is an error", func(t *testing.T) {
+		_, err := vocabulary.LoadFS(mk("    heading: {type: string, renamedFrom: caption}\n    label: {type: string, renamedFrom: caption}\n"))
+		if err == nil || !strings.Contains(err.Error(), `"caption" is also the previous name of "heading"`) {
 			t.Fatalf("error = %v", err)
 		}
 	})

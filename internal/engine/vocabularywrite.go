@@ -350,6 +350,7 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		}
 		guards = append(guards, st.strandedMappings...)
 		guards = append(guards, st.retirements...)
+		guards = append(guards, st.renameGuards...)
 		narrowed, err := narrowingGuards(t, st.narrowings)
 		if err != nil {
 			return err
@@ -374,6 +375,13 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		}
 		for k, e := range got {
 			written[k] = e
+		}
+		// The renames the candidate declares, as record writes against it
+		// (rename.go): after the declaration rows, so the entries follow the
+		// declaration they answer to, and before the refs index re-derives,
+		// so it reads the renamed properties.
+		if _, err := t.renameProperties(candidate, st.renames); err != nil {
+			return err
 		}
 		// The refs index is the reverse projection of stored reference values
 		// against the DECLARATION (refs.go), so a declaration that adds, drops
@@ -495,6 +503,11 @@ type vocabularyStage struct {
 	// can be seen through, dropped kinds included.
 	reprojectedFTS []string
 	narrowings     []narrowing
+	// renames are the property renames the candidate declares (rename.go),
+	// performed inside the transaction after the projection; renameGuards
+	// names what would keep reading the old name and refuses the batch.
+	renames      []propertyRename
+	renameGuards []string
 }
 
 // stageVocabularyBatch builds the batch's candidate registry and classifies
@@ -687,6 +700,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
 	}
 
+	renames := classifyRenames(current, candidate, touched, nil)
 	return &vocabularyStage{
 		candidate: candidate,
 		touched:   touched,
@@ -703,11 +717,16 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		reprojected:      reprojectedKinds(current, candidate, touched),
 		reprojectedFTS:   reprojectedFTSKinds(current, candidate, touched),
 		// Evolution-with-data: a NARROWING definition
-		// diff — property dropped/renamed/kind-changed, enum value or state
+		// diff — property dropped/kind-changed, enum value or state
 		// removed, required added — is classified here against the currently
 		// stored definitions and refused while live rows would be stranded,
 		// with the count. Additive changes pass through untouched (schemadiff.go).
 		narrowings: classifyNarrowings(current, candidate, touched),
+		// A rename is neither: the transaction moves the live values to the
+		// new name (rename.go), and only a reader of the old name the
+		// candidate cannot see refuses it.
+		renames:      renames,
+		renameGuards: renameGuards(current, candidate, renames),
 	}, nil
 }
 

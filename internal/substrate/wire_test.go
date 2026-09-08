@@ -127,6 +127,7 @@ var wireTypes = map[string]any{
 	// provider. The Registry renders the motion and the blockers.
 	"BundleUpgrade":       BundleUpgrade{},
 	"BundleUpgradeChange": BundleUpgradeChange{},
+	"BundleUpgradeRename": BundleUpgradeRename{},
 	// `GET /api/v1/vocabulary/upgrade` carries one upgrade preview per shipped
 	// package. The Registry renders the motion and the blockers.
 	"ShippedUpgrade": ShippedUpgrade{},

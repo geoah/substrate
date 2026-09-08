@@ -19,6 +19,7 @@ import (
 	"go/token"
 	"strings"
 	"testing"
+	"time"
 )
 
 // dialectTwoOps and dialectTwoEffects are the changelog vocabulary since
@@ -30,6 +31,8 @@ import (
 // `txn` frame on every entry and the checksum over it (decision 0057), not a
 // spelling. Dialect 4 keeps it unchanged too: its rung is the `kindVersion`
 // key on the record delta (decision 0060, TestTheKindVersionStampIsDialectFour),
+// and dialect 5 its rung is the `updatedAt` key on the manager effect
+// (decision 0063, TestTheManagerStampIsDialectFive),
 // so the lists hold.
 var (
 	dialectTwoOps = []string{
@@ -79,10 +82,10 @@ func TestChangelogDialectCoversTheChangelogVocabulary(t *testing.T) {
 // keep the number.
 func TestTheKindVersionStampIsDialectFour(t *testing.T) {
 	t.Parallel()
-	if maxChangelogDialect != 4 {
+	if maxChangelogDialect < 4 {
 		t.Fatalf("maxChangelogDialect = %d; the kindVersion stamp is rung 4", maxChangelogDialect)
 	}
-	if err := admitChangelogDialect("geoah", maxChangelogDialect, 3); !errors.Is(err, ErrChangelogDialectNewer) {
+	if err := admitChangelogDialect("geoah", 4, 3); !errors.Is(err, ErrChangelogDialectNewer) {
 		t.Fatalf("a dialect 3 binary admitted a repository stamped 4: %v", err)
 	}
 	if err := admitChangelogDialect("geoah", 3, maxChangelogDialect); err != nil {
@@ -94,6 +97,41 @@ func TestTheKindVersionStampIsDialectFour(t *testing.T) {
 	}
 	if string(raw) != `{"kindVersion":4}` {
 		t.Fatalf("the record delta spells the stamp as %s; dialect 4 is the key `kindVersion`", raw)
+	}
+}
+
+// Dialect 5 is the `manager` effect carrying `updatedAt` (decision 0063): a
+// property rename moves a manager row with its original stamp, and a dialect
+// 4 binary, which decodes the key as absent and stamps the replay's own time,
+// must refuse a store stamped 5 rather than fold it differently from the
+// author. A store stamped 4 opens under this binary.
+func TestTheManagerStampIsDialectFive(t *testing.T) {
+	t.Parallel()
+	if maxChangelogDialect != 5 {
+		t.Fatalf("maxChangelogDialect = %d; the manager stamp is rung 5", maxChangelogDialect)
+	}
+	if err := admitChangelogDialect("geoah", maxChangelogDialect, 4); !errors.Is(err, ErrChangelogDialectNewer) {
+		t.Fatalf("a dialect 4 binary admitted a repository stamped 5: %v", err)
+	}
+	if err := admitChangelogDialect("geoah", 4, maxChangelogDialect); err != nil {
+		t.Fatalf("a repository stamped 4 must open under this binary: %v", err)
+	}
+	at := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
+	raw, err := json.Marshal(foldOp{Kind: foldManager, Ref: "k", ID: "r", Property: "p", Actor: "api", Tier: "owner", UpdatedAt: &at})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"updatedAt":"2026-09-08T12:00:00Z"`) {
+		t.Fatalf("the manager effect spells its stamp as %s; dialect 5 is the key `updatedAt`", raw)
+	}
+	// Without a stamp the key is absent, so every manager effect written
+	// before the rung still decodes to "the transaction's clock".
+	raw, err = json.Marshal(foldOp{Kind: foldManager, Ref: "k", ID: "r", Property: "p", Actor: "api", Tier: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "updatedAt") {
+		t.Fatalf("a manager effect without a stamp spells one: %s", raw)
 	}
 }
 

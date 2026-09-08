@@ -570,6 +570,19 @@ export interface BundleUpgrade {
    * preview the server could not run at all carries one fixed line ("the
    * upgrade preview failed; see the server log") and no motion. */
   blockers?: string[]
+  /** The property renames the upgrade performs (`renamedFrom`), each with the
+   * number of live records it rewrites. */
+  renames?: BundleUpgradeRename[]
+}
+
+/** One property rename an upgrade performs (substrate.BundleUpgradeRename):
+ * every live record of `kind` carrying `from` is rewritten to `to`, one
+ * changelog entry each. */
+export interface BundleUpgradeRename {
+  kind: string
+  from: string
+  to: string
+  records: number
 }
 
 /** One package the binary ships and seeds (core), and what this binary's boot

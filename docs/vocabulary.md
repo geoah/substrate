@@ -236,8 +236,8 @@ existing data is refused at admission, as a `guard` error naming every
 narrowed property with the count of live records affected, all problems at
 once. The narrowing diffs that refuse:
 
-- dropping a property a record still carries
-- renaming a property (`renamedFrom:`, below)
+- dropping a property a record still carries (renaming it with
+  `renamedFrom:`, below, is not a drop: the values move)
 - changing a property's datatype, or its container: a `repeated:` flip and a
   `keyed:` flip both count, because a map is not a list and neither is a scalar,
   and no stored value converts between them
@@ -307,8 +307,8 @@ no value for it, by the same rule the write path refuses them. Nothing converts
 or discards your records behind your back; they are yours to migrate, and the
 refusal tells you how many stand in the way.
 
-**Renaming: `renamedFrom:` is reserved.** A property may declare the name it
-replaces:
+**Renaming: `renamedFrom:` moves the values.** A property may declare the name
+it replaces:
 
 ```yaml
 properties:
@@ -317,12 +317,55 @@ properties:
     renamedFrom: size
 ```
 
-The key is admitted, validated (it may not name the property itself, a name
-the kind still declares, or a built-in) and stored, but **not yet acted on**:
-nothing rewrites records today, so a rename whose old name live records still
-carry refuses like any other narrowing change. It is reserved so that when
-the rewrite arrives, the declaration is already in the manifest dialect and
-nothing changes shape on the wire.
+Admitting the declaration moves every live record's `size` value to
+`dimensions` in the same transaction, as ordinary record writes: one changelog
+entry per record, a `patch` whose payload carries `renamed: {size: dimensions}`
+beside the two property names, so a rebuild replays the rename as values and
+never reads the declaration
+([decision 0063](decisions/0063-a-property-rename-is-ordinary-record-writes.md)).
+Each rewritten record moves its `version`, and a record that did not carry the
+old name is left alone. So is a tombstoned one: it keeps the old name, and a
+put that restores it revives the value under a name the kind no longer
+declares, exactly as a dropped property does; move it by hand or leave the
+record dead. What travels with the value:
+the property's manager row (who last wrote it, at which tier), the offer rows a
+mapping wrote onto it, and the embeddings of an `embed: true` property, which
+are rekeyed and re-enqueued under the new name so no vector is bought twice. A
+secret moves as its sealed reference. The key stays on the stored declaration
+afterwards; nothing acts on it again, because no live record carries the old
+name.
+
+A rename moves values and changes nothing else about them. Whatever else the
+new declaration changes is classified against the old one and counted under
+the old name: `dimensions: {type: int, renamedFrom: size}` while records hold
+strings refuses as `property "size" changes kind string → int`, and
+`required: true` on the new property counts the records that lack `size`. The
+rename is also refused while something still reads the old name: a mapping
+whose `map:` or `match:` names it (every mapping from or onto the kind is
+re-resolved against the new declaration, so rewrite a mapping in the kind's own
+package in the same apply; a mapping in another package, such as yours from a
+provider's mirror kind, cannot name the new property before the rename lands,
+because its path is type-checked against the stored declaration, so delete it,
+let the rename land, and declare it again on the new name), the kind's own
+`displayTemplate`, and another kind's `displayTemplate`
+reading it through a reference that can resolve to the kind (`{gizmo.size}` over
+a reference pinned at the kind, at nothing, or at a trait it implements). A
+rename also takes a name the stored kind does not declare, and one no live
+record carries (a restored tombstone may hold a dropped name): a destination
+that exists would merge two properties, and is refused, the live case with
+the count. A trigger's or a policy's CEL guard naming the old property is not
+checked, because an expression is compiled against the record it runs on and
+not against a declaration: rewrite it with the rename. `body`
+never renames in either direction, because it is a column and not a key of the
+record's properties; a state property carries no `renamedFrom:`; and two
+properties may not name the same previous name.
+
+The cost is the live count: a kind with a thousand records carrying the old
+name rewrites a thousand rows and appends a thousand entries in one
+transaction, holding the repository's vocabulary write lock for the duration,
+and nothing caps it. The boot upgrade of the shipped tree converts the same
+way, at the first open of a repository under the binary that ships the rename,
+and reports the count as `renamedRecords`.
 
 ## Retiring a name
 
@@ -398,10 +441,10 @@ either.
 
 A declaration's key set is closed, so a key one binary does not know
 [quarantines](#quarantine) the package that ships it. That makes adding a
-key an upgrade of every binary that might read the closure, which is why these
-three are in the dialect before anything acts on them. Each is admitted,
-validated at load and stored on the declaration; none of them changes a write.
-`renamedFrom:`, above, is the third.
+key an upgrade of every binary that might read the closure, which is why a key
+enters the dialect before anything acts on it. Two are reserved today: each is
+admitted, validated at load and stored on the declaration, and neither changes
+a write. `renamedFrom:`, above, was reserved the same way and is acted on now.
 
 **`unique:` marks one value per record.** At most one live record of the kind
 carries any given value, which is the constraint behind "one person per email"

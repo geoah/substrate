@@ -603,7 +603,7 @@ func (t *txn) deleteManager(ref eref, property string) error {
 	return err
 }
 
-func (t *txn) applyManager(ref eref, property string, actor substrate.Actor, tier substrate.Tier, principal string) (bool, error) {
+func (t *txn) applyManager(ref eref, property string, actor substrate.Actor, tier substrate.Tier, principal string, at time.Time) (bool, error) {
 	if actor == "" {
 		res, err := t.exec(`DELETE FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property = $3`,
 			ref.Kind, ref.ID, property)
@@ -625,7 +625,7 @@ func (t *txn) applyManager(ref eref, property string, actor substrate.Actor, tie
 		WHERE property_managers.actor     IS DISTINCT FROM EXCLUDED.actor
 		   OR property_managers.tier      IS DISTINCT FROM EXCLUDED.tier
 		   OR property_managers.principal IS DISTINCT FROM EXCLUDED.principal`,
-		ref.Kind, ref.ID, property, string(actor), string(tier), principal, t.now)
+		ref.Kind, ref.ID, property, string(actor), string(tier), principal, at)
 	if err != nil {
 		return false, err
 	}

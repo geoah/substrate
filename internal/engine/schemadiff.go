@@ -8,9 +8,11 @@ package engine
 // with the count taken inside the batch transaction and one query per
 // narrowed property. The refused classes:
 //
-//   - property dropped (a rename without machinery is a drop — a declared
-//     `renamedFrom:` is recorded but NOT yet acted on, so it refuses the same
-//     way, naming the reservation);
+//   - property dropped. A property the candidate declares under a new name
+//     with `renamedFrom:` is NOT a drop: the apply moves every live record's
+//     value to the new name in its own transaction (rename.go, decision 0063),
+//     and the new declaration is classified against the old one below, so a
+//     rename that also narrows refuses with the count under the old name;
 //   - property kind changed (container flips count: a list is not a scalar and
 //     a keyed map is neither), at every declared level of an object's fields;
 //   - a keyed map's key contract tightened while rows hold the map;
@@ -233,19 +235,35 @@ func classifyNarrowingsExcept(
 func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 	var out []narrowing
 	ident := curT.Identity
+	// renamed names the candidate properties that take a stored property's
+	// values (rename.go): each is classified below against the declaration it
+	// replaces, so the added-as-required loop at the end must not count it as
+	// a property no row can carry.
+	renamed := map[string]bool{}
 	for _, pname := range curT.PropOrder {
 		curP := curT.Props[pname]
 		candP := candT.Props[pname]
-		switch {
-		case candP == nil:
-			// Dropped — or renamed away, which without the (reserved) rewrite
-			// is the same narrowing wearing a declared intent.
+		if candP == nil {
 			if to := renamedTo(candT, pname); to != "" {
+				// The apply moves every live value to the new name, so the
+				// drop strands nothing. Whatever else the new declaration
+				// changes is classified against the old one, counted under
+				// the name the rows still carry: a rename that also retypes,
+				// removes a value or adds `required` refuses exactly as the
+				// same change under the old name would.
+				renamed[to] = true
+				// The destination must be empty on every live record. The
+				// stored declaration not naming it (renameGuards) is not
+				// enough: a record tombstoned while the name was declared,
+				// and restored after it was dropped, carries the value
+				// undeclared, and the move would replace it and collide the
+				// manager, offer and embedding rows keyed on the two names.
 				out = append(out, narrowing{
-					format: fmt.Sprintf("type %s: property %q renamed to %q, but renamedFrom is reserved and not yet acted on — %%d live records still carry %q; migrate them first",
-						ident, pname, to, pname),
-					query: countPropQuery, args: []any{ident, pname},
+					format: fmt.Sprintf("type %s: property %q renamed to %q while %%d live records already carry a value under %q — clear it on them first",
+						ident, pname, to, to),
+					query: countPropQuery, args: []any{ident, to},
 				})
+				out = append(out, propertyNarrowings(ident, pname, curP, candT.Props[to], candT)...)
 				continue
 			}
 			if curP.IsState() {
@@ -259,67 +277,107 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 				format: fmt.Sprintf("type %s: property %q dropped while %%d live records still carry it — null it on them first", ident, pname),
 				query:  countPropQuery, args: []any{ident, pname},
 			})
-		case curP.IsState() != candP.IsState():
-			// A machine turned value (or a value turned machine) is a kind
-			// change; the stranded side is wherever the old shape lives.
-			q, what := countPropQuery, "a value"
-			if curP.IsState() {
-				q, what = countStateQuery, "a state"
-			}
+			continue
+		}
+		out = append(out, propertyNarrowings(ident, pname, curP, candP, candT)...)
+	}
+	// A property the candidate ADDS as required is the same stranding as one
+	// that becomes required, and was the one shape of it nothing classified: the
+	// loop above walks the CURRENT type's properties, so a name that did not
+	// exist before never reached it. Live rows cannot carry a property no
+	// declaration had, so every one of them is missing it the moment it is
+	// declared required.
+	for _, pname := range candT.PropOrder {
+		candP := candT.Props[pname]
+		if !candP.Required || candP.IsState() || renamed[pname] {
+			continue
+		}
+		if _, existed := curT.Props[pname]; existed {
+			continue // the `becomes required` case above owns it
+		}
+		q, args := missingValueCount(candT, ident, pname)
+		out = append(out, narrowing{
+			format: fmt.Sprintf("type %s: property %q is added as required while %%d live records lack it — backfill or delete them first",
+				ident, pname),
+			query: q, args: args,
+		})
+	}
+	return out
+}
+
+// propertyNarrowings classifies the diff of one property: curP as stored,
+// candP as the candidate declares it, counted under pname, the name live rows
+// carry. On a rename candP is the declaration under the NEW name and pname the
+// old one, which is why the counts key on pname rather than on candP.Name.
+func propertyNarrowings(ident, pname string, curP, candP *vocabulary.Property, candT *vocabulary.Kind) []narrowing {
+	var out []narrowing
+	switch {
+	case curP.IsState() != candP.IsState():
+		// A machine turned value (or a value turned machine) is a kind
+		// change; the stranded side is wherever the old shape lives.
+		q, what := countPropQuery, "a value"
+		if curP.IsState() {
+			q, what = countStateQuery, "a state"
+		}
+		out = append(out, narrowing{
+			format: fmt.Sprintf("type %s: property %q changes kind (state and value do not convert) while %%d live records hold %s — migrate them first",
+				ident, pname, what),
+			query: q, args: []any{ident, pname},
+		})
+	case curP.IsState():
+		if removed := removedStrings(curP.Machine.States, candP.Machine.States); len(removed) > 0 {
 			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: property %q changes kind (state and value do not convert) while %%d live records hold %s — migrate them first",
-					ident, pname, what),
-				query: q, args: []any{ident, pname},
+				format: fmt.Sprintf("type %s: state property %q removes state(s) %s while %%d live records occupy one — transition them first",
+					ident, pname, quotedList(removed)),
+				query: countStateValuesQuery, args: []any{ident, pname, jsonArray(removed)},
 			})
-		case curP.IsState():
-			if removed := removedStrings(curP.Machine.States, candP.Machine.States); len(removed) > 0 {
+		}
+	default:
+		// A container flip is a kind change: a map is not a list and neither
+		// is a scalar, and no stored value converts between them.
+		// A flip is classified once, by the values it strands; the checks that
+		// compare two declarations of one shape (values, pins, keys, bounds,
+		// fields) do not apply across it. `required` applies either way, so
+		// the flip falls through to it: a retype that also becomes required
+		// must count the rows lacking the property, not only the rows whose
+		// value does not convert.
+		flipped := curP.Datatype != candP.Datatype || curP.Repeated != candP.Repeated || curP.Keyed != candP.Keyed
+		if flipped {
+			from, to := kindShape(curP), kindShape(candP)
+			switch {
+			// A scalar retype to `int` strands only the rows whose stored
+			// value is not already an integral number: a backfill can
+			// rewrite the values first and the declaration then follows
+			// them (the declaration-version migration is the one that
+			// needed this). Every other flip keeps the presence count —
+			// nothing converts a list into a map or a string into a bool.
+			case candP.Datatype == vocabulary.DatatypeInt &&
+				!curP.Repeated && !curP.Keyed && !candP.Repeated && !candP.Keyed:
 				out = append(out, narrowing{
-					format: fmt.Sprintf("type %s: state property %q removes state(s) %s while %%d live records occupy one — transition them first",
-						ident, pname, quotedList(removed)),
-					query: countStateValuesQuery, args: []any{ident, pname, jsonArray(removed)},
+					format: fmt.Sprintf("type %s: property %q changes kind %s → %s while %%d live records hold values that are not integers — migrate them first",
+						ident, pname, from, to),
+					query: countNonIntPropQuery, args: []any{ident, pname},
 				})
-			}
-		default:
-			// A container flip is a kind change: a map is not a list and neither
-			// is a scalar, and no stored value converts between them.
-			if curP.Datatype != candP.Datatype || curP.Repeated != candP.Repeated || curP.Keyed != candP.Keyed {
-				from, to := kindShape(curP), kindShape(candP)
-				// A scalar retype to `int` strands only the rows whose stored
-				// value is not already an integral number: a backfill can
-				// rewrite the values first and the declaration then follows
-				// them (the declaration-version migration is the one that
-				// needed this). Every other flip keeps the presence count —
-				// nothing converts a list into a map or a string into a bool.
-				if candP.Datatype == vocabulary.DatatypeInt &&
-					!curP.Repeated && !curP.Keyed && !candP.Repeated && !candP.Keyed {
-					out = append(out, narrowing{
-						format: fmt.Sprintf("type %s: property %q changes kind %s → %s while %%d live records hold values that are not integers — migrate them first",
-							ident, pname, from, to),
-						query: countNonIntPropQuery, args: []any{ident, pname},
-					})
-					continue
-				}
-				// A string retype to `enum` strands only the rows whose stored
-				// value is outside the declared set, for the same reason: a set
-				// the engine already held its writes to (a run's status, a
-				// thread's mode) can be declared after the fact, the values
-				// leading and the declaration following them.
-				if stringToEnum(curP, candP) {
-					q, args := valuesOutsidePath(ident, containerPath(nil, curP, pname), candP.ValueStrings())
-					out = append(out, narrowing{
-						format: fmt.Sprintf("type %s: property %q changes kind %s → %s while %%d live records hold a value outside %s; rewrite them first",
-							ident, pname, from, to, quotedList(candP.ValueStrings())),
-						query: q, args: args,
-					})
-					continue
-				}
+			// A string retype to `enum` strands only the rows whose stored
+			// value is outside the declared set, for the same reason: a set
+			// the engine already held its writes to (a run's status, a
+			// thread's mode) can be declared after the fact, the values
+			// leading and the declaration following them.
+			case stringToEnum(curP, candP):
+				q, args := valuesOutsidePath(ident, containerPath(nil, curP, pname), candP.ValueStrings())
+				out = append(out, narrowing{
+					format: fmt.Sprintf("type %s: property %q changes kind %s → %s while %%d live records hold a value outside %s; rewrite them first",
+						ident, pname, from, to, quotedList(candP.ValueStrings())),
+					query: q, args: args,
+				})
+			default:
 				out = append(out, narrowing{
 					format: fmt.Sprintf("type %s: property %q changes kind %s → %s while %%d live records hold values of the old kind — migrate them first",
 						ident, pname, from, to),
 					query: countPropQuery, args: []any{ident, pname},
 				})
-				continue
 			}
+		} else {
 			// Every value count below walks the property's own container, so a
 			// keyed enum and a repeated one are counted in their own shape rather
 			// than compared as whole containers against a value list.
@@ -361,35 +419,14 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 				out = append(out, objectFieldNarrowings(ident,
 					[]fieldStep{{key: pname, repeated: curP.Repeated, keyed: curP.Keyed}}, curP, candP)...)
 			}
-			if !curP.Required && candP.Required {
-				q, args := missingValueCount(candT, ident, pname)
-				out = append(out, narrowing{
-					format: fmt.Sprintf("type %s: property %q becomes required while %%d live records lack it — backfill them first", ident, pname),
-					query:  q, args: args,
-				})
-			}
 		}
-	}
-	// A property the candidate ADDS as required is the same stranding as one
-	// that becomes required, and was the one shape of it nothing classified: the
-	// loop above walks the CURRENT type's properties, so a name that did not
-	// exist before never reached it. Live rows cannot carry a property no
-	// declaration had, so every one of them is missing it the moment it is
-	// declared required.
-	for _, pname := range candT.PropOrder {
-		candP := candT.Props[pname]
-		if !candP.Required || candP.IsState() {
-			continue
+		if !curP.Required && candP.Required {
+			q, args := missingValueCount(candT, ident, pname)
+			out = append(out, narrowing{
+				format: fmt.Sprintf("type %s: property %q becomes required while %%d live records lack it — backfill them first", ident, pname),
+				query:  q, args: args,
+			})
 		}
-		if _, existed := curT.Props[pname]; existed {
-			continue // the `becomes required` case above owns it
-		}
-		q, args := missingValueCount(candT, ident, pname)
-		out = append(out, narrowing{
-			format: fmt.Sprintf("type %s: property %q is added as required while %%d live records lack it — backfill or delete them first",
-				ident, pname),
-			query: q, args: args,
-		})
 	}
 	return out
 }
@@ -1260,6 +1297,133 @@ func renamedTo(candT *vocabulary.Kind, from string) string {
 		}
 	}
 	return ""
+}
+
+// propertyRename is one rename a batch declares against the stored
+// declaration: the kind as the candidate declares it, the name live rows still
+// carry, and the property that takes their values (rename.go).
+type propertyRename struct {
+	kind *vocabulary.Kind
+	from string
+	to   string
+}
+
+// classifyRenames lists the renames a batch declares: a stored property the
+// candidate no longer declares while one of its properties names it as
+// `renamedFrom`. It walks the kinds classifyNarrowingsExcept walks and skips
+// the same ones, so a kind the boot upgrade holds at its stored version renames
+// nothing. A `renamedFrom` naming a property no stored declaration had is not
+// a rename: it is stored and does nothing, as it did before the rewrite.
+func classifyRenames(current, candidate *vocabulary.Registry, touched, skip map[string]bool) []propertyRename {
+	var out []propertyRename
+	for _, aname := range sortedKeys(touched) {
+		cur, _ := current.PackageByName(aname)
+		cand, _ := candidate.PackageByName(aname)
+		if cur == nil || cand == nil {
+			continue
+		}
+		for _, tn := range cur.KindOrder {
+			candT := cand.Kinds[tn]
+			if candT == nil || skip[candT.Identity] {
+				continue
+			}
+			curT := cur.Kinds[tn]
+			for _, pname := range curT.PropOrder {
+				if candT.Props[pname] != nil {
+					continue
+				}
+				if to := renamedTo(candT, pname); to != "" {
+					out = append(out, propertyRename{kind: candT, from: pname, to: to})
+				}
+			}
+		}
+	}
+	return out
+}
+
+// renameGuards names what a rename cannot carry and the candidate does not
+// refuse on its own. No count: what it refuses is a declaration, not a row.
+//
+// A destination the STORED declaration already declares. The loader sees one
+// document at a time, so `size` dropped and `dimensions: {renamedFrom: size}`
+// added compiles even when the stored kind declares both; the move would then
+// overwrite every record's `dimensions` with its `size`, and the manager, offer
+// and embedding rows keyed on the two names would collide. A rename takes a
+// name the stored kind does not have.
+//
+// A displayTemplate of another kind reading the old name THROUGH a reference
+// that can resolve to the renamed kind. The renamed kind's own template and
+// every mapping from or onto it are re-resolved when the candidate compiles
+// (checkTemplate, resolveMapping and crossPackageMappingProblems each refuse a
+// path or a token naming an undeclared property), but `{author.size}` renders
+// the referent's property by name at read time and never consults the
+// referent's declaration. The reference can resolve to the kind when it pins
+// it, pins nothing (`kind: any`, or no `kind:` at all) or pins a trait the
+// kind implements, so every one of those shapes refuses.
+func renameGuards(current, candidate *vocabulary.Registry, renames []propertyRename) []string {
+	var out []string
+	for _, r := range renames {
+		if cur, ok := current.ByIdentity(r.kind.Identity); ok {
+			if _, declared := cur.Props[r.to]; declared {
+				out = append(out, fmt.Sprintf("type %s: property %q renamed to %q, which the stored declaration already declares; a rename takes a name the kind does not have, so drop %q or pick another name",
+					r.kind.Identity, r.from, r.to, r.to))
+			}
+		}
+		for _, g := range candidate.PackageList() {
+			for _, tn := range g.KindOrder {
+				ty := g.Kinds[tn]
+				if ty.Template == nil {
+					continue
+				}
+				for _, ref := range ty.Template.Refs() {
+					if ref.Ref == "" || ref.Prop != r.from {
+						continue
+					}
+					if p, ok := ty.Props[ref.Ref]; !ok || !referenceMayName(p, r.kind) {
+						continue
+					}
+					out = append(out, fmt.Sprintf("kind %s: displayTemplate {%s.%s} reads property %q of %s, which this apply renames to %q; rewrite the template first",
+						ty.Identity, ref.Ref, ref.Prop, r.from, r.kind.Identity, r.to))
+				}
+			}
+		}
+	}
+	return out
+}
+
+// renamePlans reports each rename with the live count it would rewrite, read
+// through q: the upgrade previews' answer (PlanBundleUpgrade,
+// PlanShippedUpgrade), so an operator sees the rewrite before the door runs it.
+func renamePlans(q sqlReader, renames []propertyRename) ([]substrate.BundleUpgradeRename, error) {
+	var out []substrate.BundleUpgradeRename
+	for _, r := range renames {
+		var n int64
+		if err := q.row(countPropQuery, r.kind.Identity, r.from).Scan(&n); err != nil {
+			return nil, err
+		}
+		out = append(out, substrate.BundleUpgradeRename{Kind: r.kind.Identity, From: r.from, To: r.to, Records: n})
+	}
+	return out, nil
+}
+
+// referenceMayName reports whether a stored value of the reference property p
+// can name a record of kind: the pin admits it, or there is no pin. It reads
+// the declaration and never the stored values, so it is conservative on
+// purpose: an unpinned reference no value ever pointed at the renamed kind
+// still refuses, because the next write may point one there and the template
+// would render nothing. The declaration is what the author can rewrite; the
+// values are not.
+func referenceMayName(p *vocabulary.Property, kind *vocabulary.Kind) bool {
+	if p.Datatype != vocabulary.DatatypeReference {
+		return false
+	}
+	switch {
+	case p.ToTrait != "":
+		return kind.Implements(p.ToTrait)
+	case p.To == "" || p.To == vocabulary.ToAny:
+		return true
+	}
+	return p.To == kind.Identity
 }
 
 // removedStrings lists the members of cur that cand no longer carries, in

@@ -20,6 +20,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -45,6 +46,17 @@ type shippedUpgradeStage struct {
 	// first, then the counted narrowings; the boot and the preview both read
 	// that one list.
 	refused []string
+	// renames are the property renames the shipped tree declares against the
+	// stored declarations (rename.go): the boot performs them in the
+	// transaction that projects the declarations, and a reader of the old name
+	// the candidate cannot refuse lands in refused.
+	renames []propertyRename
+	// candidate is the registry the boot would publish (shippedCandidate): the
+	// stored one with the upgraded packages replaced by the shipped ones. The
+	// rename rewrites run against it, so a stored user kind a renamed record
+	// references still resolves. Nil when the closure does not compile, and
+	// refused then carries the problems.
+	candidate *vocabulary.Registry
 	// plans is the version motion per shipped PACKAGE this repository holds as
 	// shipped vocabulary, sorted by identity. The authority row beside the
 	// packages is diffed and projected with them but is not a package, so it
@@ -119,8 +131,8 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 	}
 
 	// The SAME refuse-breakage guards `/vocabulary/apply` takes
-	// (vocabularywrite.go): a narrowing declaration diff (a property dropped,
-	// renamed or kind-changed, an enum value or state removed, required added)
+	// (vocabularywrite.go): a narrowing declaration diff (a property dropped
+	// or kind-changed, an enum value or state removed, required added)
 	// is refused while live rows still hold the old shape, with the count.
 	//
 	// The two doors used to disagree. An operator applying the same change by
@@ -145,7 +157,101 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 	// repository still declares. Nothing here prunes the kind, so the header
 	// would land beside it and the next open would refuse the stored closure.
 	st.refused = append(st.refused, heldRetirementGuards(current, reg, st.upgrade)...)
+	// The apply door refuses what its candidate cannot compile; this door had
+	// no candidate, so a shipped change a stored package could not re-resolve
+	// against (a mapping path naming a property the tree dropped or renamed)
+	// landed, and admissibleSubset quarantined the user's package at the next
+	// load for a change the tree made. The candidate is built on EVERY upgrade
+	// (shippedCandidate: the stored registry with the upgraded packages
+	// replaced by the shipped ones) and its problems refuse the boot. The cost
+	// is one parse of the upgraded packages from their projected documents,
+	// the same work every open does for every stored package.
+	candidate, problems, err := ds.shippedCandidate(ctx, current, reg, st.upgrade, st.keep)
+	if err != nil {
+		return nil, err
+	}
+	st.refused = append(st.refused, problems...)
+	st.candidate = candidate
+	// A shipped rename is not a narrowing: the boot moves the live values in
+	// the same transaction, against the candidate (rename.go, decision 0063).
+	// What refuses it beyond the compile is a stored template reading the old
+	// name through a reference (renameGuards), read through the candidate.
+	st.renames = classifyRenames(current, reg, st.upgrade, keptIdents)
+	if candidate != nil {
+		st.refused = append(st.refused, renameGuards(current, candidate, st.renames)...)
+	}
 	return st, nil
+}
+
+// shippedCandidate is the registry the boot upgrade would publish: the stored
+// one with each upgraded package replaced by what the boot projects, built
+// from the same projected documents the transaction writes (packageDeclarations
+// and rowDocument, the projection's write and read halves). A closure that does
+// not compile answers its problems and no registry, exactly as the apply door
+// refuses a batch whose candidate does not compile.
+func (ds *dataset) shippedCandidate(ctx context.Context, current, reg *vocabulary.Registry, upgrade, keep map[string]bool) (*vocabulary.Registry, []string, error) {
+	candidate := current.Clone()
+	// EXACTLY THE PROJECTED SET. The projection writes a shipped declaration
+	// only where it moves the stored one forward and keeps every declaration
+	// in `keep` (a stored one at the same or a newer version) and every stored
+	// declaration the tree does not ship (the boot never prunes). A candidate
+	// built from the shipped packages whole compiled the embedded declaration
+	// where the kept stored one would stand, so a mixed package refused a
+	// valid boot, or passed staging and failed the reload. The stored
+	// documents of the upgraded packages come first; a shipped declaration
+	// replaces its stored twin unless the key is kept.
+	merged, err := ds.vocabularyDocumentRows(ctx, upgrade)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, aname := range sortedKeys(upgrade) {
+		g, ok := reg.PackageByName(aname)
+		if !ok {
+			continue
+		}
+		candidate.Remove(aname)
+		decls, err := packageDeclarations(g)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, d := range decls {
+			if keep[d.key()] {
+				continue // the stored declaration stands, as the projection leaves it
+			}
+			// A projected null deletes the key from the row (the put merges), so
+			// the row rowDocument reads never carries it; its blob check is by
+			// presence, and would read the null as the blob.
+			stored := make(map[string]any, len(d.props))
+			for k, v := range d.props {
+				if v != nil {
+					stored[k] = v
+				}
+			}
+			doc, ok, err := rowDocument(d.id, d.typ, stored)
+			if err != nil {
+				return nil, nil, err
+			}
+			if ok {
+				merged[docKey(doc)] = doc
+			}
+		}
+	}
+	docs := make([]vocabulary.Document, 0, len(merged))
+	for _, k := range sortedKeys(merged) {
+		docs = append(docs, merged[k])
+	}
+	pkgs, err := vocabulary.BuildPackages(docs, vocabulary.SourceBuiltin)
+	if err == nil {
+		err = candidate.InstallAll(pkgs)
+	}
+	if err != nil {
+		var ve *substrate.ValidationError
+		if errors.As(err, &ve) {
+			return nil, ve.Problems, nil
+		}
+		return nil, nil, err
+	}
+	return candidate, nil, nil
 }
 
 // guards is every guard line the staged upgrade refuses on: the ones decided
@@ -173,13 +279,26 @@ func (ds *dataset) PlanShippedUpgrade(ctx context.Context) ([]substrate.ShippedU
 	if len(st.upgrade) == 0 {
 		return st.plans, nil
 	}
-	blockers, err := st.guards(dbReader{ctx: ctx, db: ds.db})
+	q := dbReader{ctx: ctx, db: ds.db}
+	blockers, err := st.guards(q)
+	if err != nil {
+		return nil, err
+	}
+	renames, err := renamePlans(q, st.renames)
 	if err != nil {
 		return nil, err
 	}
 	for i := range st.plans {
-		if st.plans[i].Upgrade.Available {
-			st.plans[i].Upgrade.Blockers = blockers
+		if !st.plans[i].Upgrade.Available {
+			continue
+		}
+		st.plans[i].Upgrade.Blockers = blockers
+		// A rename belongs to the package whose kind declares it; the blockers
+		// are the whole set, because the boot refuses the shipped set whole.
+		for _, r := range renames {
+			if vocabulary.KindPackage(r.Kind) == st.plans[i].Package {
+				st.plans[i].Upgrade.Renames = append(st.plans[i].Upgrade.Renames, r)
+			}
 		}
 	}
 	return st.plans, nil
