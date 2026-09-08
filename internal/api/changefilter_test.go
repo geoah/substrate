@@ -164,6 +164,7 @@ func changeTypesFromNDJSON(t *testing.T, rec *httptest.ResponseRecorder) []strin
 	}
 	return types
 }
+
 // A merge entry is addressed to the winner and a split entry to the loser, and
 // each names both in its payload. The record scope returns them for either id,
 // on the history page and the watch drain alike, and for nobody else.

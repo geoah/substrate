@@ -83,11 +83,11 @@ func (ds *dataset) buildChangeFilter(b *builder, f substrate.ChangeFilter) error
 		// not follow a former id here, and the entry count is unchanged.
 		//
 		// Three flat arms, each with an index: changelog_record_idx for the
-		// first, the partial changelog_pair_idx of migration 0016 for the
+		// first, the partial changelog_pair_idx of migration 0018 for the
 		// other two, whose WHERE the op test must repeat as a LITERAL. Bound
 		// as a parameter, a generic plan could not prove the partial index
 		// applicable and would walk the changelog. The `->>` test itself is
-		// never an index condition under row-level security (0016 says why),
+		// never an index condition under row-level security (0018 says why),
 		// so the pair arms scan the repository's merge and split rows.
 		id := b.arg(f.RecordID)
 		pair := `op IN ('` + string(substrate.OpMerge) + `', '` + string(substrate.OpSplit) + `')`

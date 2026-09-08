@@ -13,7 +13,7 @@ import (
 )
 
 // The names a merge or split entry's payload gives its pair. The record-scoped
-// change feed reads them back (changefeed.go) and migration 0016 indexes them,
+// change feed reads them back (changefeed.go) and migration 0018 indexes them,
 // so a rename here is a filter that stops matching every stored entry.
 const (
 	payloadWinner = "winner"
