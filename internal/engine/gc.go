@@ -63,6 +63,15 @@ func (ds *dataset) gcPass(ctx context.Context) (int, error) {
 	for _, v := range victims {
 		err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 			ref := eref{Kind: v.typ, ID: v.id}
+			// The advisory lock before the row lock, the order every addressed
+			// write takes (checkID, lockCanonical). A put at this id that
+			// passed checkID before the reservation existed would otherwise
+			// wait out the purge on the row lock alone and then create a
+			// record beside its own reservation; behind this lock it either
+			// restores the tombstone first or meets the reservation.
+			if err := t.lockRecord(ref); err != nil {
+				return err
+			}
 			row, err := t.loadRow(ref, true)
 			if err != nil || row == nil {
 				return err

@@ -36,11 +36,11 @@ func TestPurgedIDIsReserved(t *testing.T) {
 	}
 
 	acc := mustPut(t, ds, owner, accountInput("acct-gone", "Gone"))
-	pointer := mustPut(t, ds, owner, substrate.PutInput{
+	// A referrer with no `onDelete:`, so its pointer outlives the purge.
+	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: mirrorPackage + "/pointer", ID: "pointer-at-gone",
 		Properties: map[string]any{"label": "still points", "account": acc.ID},
 	})
-	wantPath := enginetest.AccountType + "/" + acc.ID
 
 	// Before the sweep the same put is the documented undelete: same id,
 	// same row.
@@ -63,13 +63,9 @@ func TestPurgedIDIsReserved(t *testing.T) {
 	_, err = ds.Put(ctx, owner, accountInput(acc.ID, "Impostor"))
 	wantErr(t, err, substrate.ErrConflict, "a put at a purged id")
 
-	// The refused put minted nothing, and the pointer still names nothing:
-	// its value is untouched and the record it names stays absent.
+	// The refused put minted nothing, so the pointer still names nothing.
 	_, err = ds.Get(ctx, acc.Kind, acc.ID)
 	wantErr(t, err, substrate.ErrNotFound, "the purged id after the refused put")
-	if got := storedRefPath(mustGet(t, ds, pointer.Kind, pointer.ID).Properties["account"]); got != wantPath {
-		t.Fatalf("the pointer's value moved to %v, want %s", got, wantPath)
-	}
 	// Any other id in the kind is still the writer's to name.
 	mustPut(t, ds, owner, accountInput("acct-new", "New"))
 

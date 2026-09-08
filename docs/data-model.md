@@ -55,7 +55,10 @@ supply its own id on create, which is how an integration composes a stable id
 out of a provider's own key; supplied ids allow a wider character set (RFC 3986
 unreserved plus `:`, `@` and `/`, up to 128 characters). Ids are never derived
 from content and never reused: a purged id is refused with `409` rather than
-reissued ([merges](projection.md#merges)).
+reissued ([merges](projection.md#merges)). A supplied id is therefore spent
+once its record is purged: a connector that composes ids from a provider's key
+and deletes a record cannot write that id again after the sweep, and a bundle
+input record deleted at the well-known id `default` leaves that id reserved.
 
 Three more words, used precisely on every page:
 

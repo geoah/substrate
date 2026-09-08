@@ -246,8 +246,8 @@ func (t *txn) putSpec(ty *vocabulary.Kind, in substrate.PutInput) (*applySpec, e
 // URL path segment, and never somebody's former id WITHIN THIS TYPE —
 // addressing a write at a merged-away id would silently write the winner of
 // a merge the writer never made. A purged id is refused the same way: a new
-// record wearing it would be what every surviving pointer at the old one
-// resolves to (rows.go reserveID). Another type holding the
+// record at it is what every surviving pointer at the old one would resolve
+// to (rows.go reserveID). Another type holding the
 // same id is no collision: identity is the (type, id) pair.
 func (t *txn) checkID(typ, id string) error {
 	if !vocabulary.ValidID(id) {

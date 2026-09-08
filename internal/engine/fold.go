@@ -279,6 +279,16 @@ func (t *txn) foldRecordOp(op foldOp) (foldResult, error) {
 		return foldResult{}, err
 	}
 	row.Version = version
+	if created {
+		// Live, checkID refuses a create at a reserved id, so this deletes
+		// nothing. Replaying history written before reservations existed
+		// (put, delete, gc, put) it is what makes the rebuilt fold match
+		// the database that never held the row: the record is live there,
+		// so no reservation may stand beside it.
+		if err := t.releaseReservation(ref); err != nil {
+			return foldResult{}, err
+		}
+	}
 	if changed {
 		row.UpdatedAt = t.now
 		if op.Delta.Restored {

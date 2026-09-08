@@ -26,7 +26,7 @@ import (
 //	                   re-derived by the same record effect that produces them
 //	annotations        written by the same entries
 //	property_managers  ditto — who last had a write accepted, per property
-//	former_ids         ditto — merge's trail and purge's reservations
+//	former_ids         ditto: merge's trail and purge's reservations
 //
 // Everything else survives the rebuild, and each for a stated reason:
 //

@@ -660,28 +660,32 @@ func (t *txn) applyPurge(ref eref) error {
 	return t.reserveID(ref)
 }
 
-// reserveID is the purge's last word on the identity: the id stays in the
-// former-id trail, denoting nothing, so checkID refuses a later put at it and
-// a pointer that still names the purged record keeps dangling instead of
-// resolving to a stranger wearing its id. The record's own losers keep their
-// trail rows, pointing at the purged winner: their ids stay refused as former
-// ids, and a put at one cannot resurrect a merged-away tombstone without a
-// split. Both hold on a rebuild, because this runs inside the purge effect
-// the `gc` entry carries.
+// reserveID keeps a purged id in the former-id trail, denoting nothing, so
+// checkID refuses a later put at it: a pointer that still names the purged
+// record must keep dangling rather than resolve to a new record under the
+// same id. The record's own losers keep their trail rows, pointing at the
+// purged winner: their ids stay refused as former ids, so a put at one cannot
+// resurrect a merged-away tombstone without a split. Both hold on a rebuild,
+// because this runs inside the purge effect the `gc` entry carries.
 //
 // A blob manifest reserves nothing: its id IS the content digest (blobs.go),
-// so the same bytes uploaded again must land at the same id, and nothing else
-// can wear it.
+// so the same bytes uploaded again must land at the same id, and no other
+// content can produce it.
 func (t *txn) reserveID(ref eref) error {
 	if ref.Kind == kindBlob {
 		return nil
 	}
-	_, err := t.exec(`
-		INSERT INTO former_ids (record_kind, former_id, record_id, created_at) VALUES ($1, $2, $3, $4)
-		ON CONFLICT (repository, record_kind, former_id) DO UPDATE SET record_id = EXCLUDED.record_id`,
-		ref.Kind, ref.ID, purgedTarget, t.now)
-	if err != nil {
+	if err := t.applyFormerID(ref.Kind, ref.ID, purgedTarget); err != nil {
 		return fmt.Errorf("substrate/engine: reserve %s %s: %w", ref.Kind, ref.ID, err)
 	}
 	return nil
+}
+
+// releaseReservation drops the reservation on an id a create just landed at.
+// Only the fold's create path calls it (fold.go foldRecordOp): a live create
+// never reaches a reserved id, so this matters on replay alone.
+func (t *txn) releaseReservation(ref eref) error {
+	_, err := t.exec(`DELETE FROM former_ids WHERE record_kind = $1 AND former_id = $2 AND record_id = $3`,
+		ref.Kind, ref.ID, purgedTarget)
+	return err
 }
