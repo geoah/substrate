@@ -152,6 +152,8 @@ func problemFor(err error) (int, errorPayload) {
 		return http.StatusForbidden, errorPayload{Code: codeForbidden, Message: err.Error()}
 	case errors.Is(err, substrate.ErrAuth):
 		return http.StatusUnauthorized, errorPayload{Code: codeAuth, Message: err.Error()}
+	case errors.Is(err, substrate.ErrUnavailable):
+		return http.StatusServiceUnavailable, errorPayload{Code: codeUnavailable, Message: err.Error()}
 	default:
 		return http.StatusInternalServerError, errorPayload{Code: codeInternal, Message: "internal error"}
 	}
@@ -161,6 +163,10 @@ func problemFor(err error) (int, errorPayload) {
 // envelope; unknown errors are 500 without leaking their text shape.
 func writeSubstrateError(w http.ResponseWriter, err error) {
 	status, p := problemFor(err)
+	if status == http.StatusServiceUnavailable {
+		writeUnavailable(w, time.Second, p.Message)
+		return
+	}
 	if status >= http.StatusInternalServerError {
 		slog.Error("request failed", "error", err)
 	}

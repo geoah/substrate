@@ -628,10 +628,15 @@ callable's body faulted while running, distinct from `validation` so a caller
 tells its own bad arguments from the function failing to execute), `unsupported`
 (501, a feature this deployment does not offer, the thing `GET
 /.well-known/substrate/server.json` detection replaces), and `unavailable`
-(503, always with a `Retry-After`). One
-case is worth calling out: a well-formed token whose repository cannot be
+(503, always with a `Retry-After`). Two
+cases are worth calling out: a well-formed token whose repository cannot be
 opened answers `unavailable`, never a masked `401`, so a store the binary
-cannot serve is diagnosable instead of looking like a bad credential.
+cannot serve is diagnosable instead of looking like a bad credential; and a
+`semantic` search over a repository whose vectors have not been bought yet
+answers `unavailable` with the number of properties still queued, so an empty
+index is never mistaken for an empty match; search has no REST route, so that
+one reaches a client as the GraphQL error's `extensions.code`, or as the
+function host's error.
 
 The same problem object appears under `extensions` in a GraphQL error and in the
 [watch stream](changelog.md)'s terminal error frame, so an error means the same

@@ -56,9 +56,9 @@ func TestDeclaredBodyAndPerPropertyFTS(t *testing.T) {
 		Kind: pkg + "/article", ID: "a1",
 		Properties: map[string]any{"body": "the peregrine falcon dives"},
 	})
-	hits, err := ds.Search(ctx, substrate.SearchInput{
+	hits, err := searchHits(ds.Search(ctx, substrate.SearchInput{
 		Q: "peregrine", Mode: substrate.SearchLexical, Kinds: []string{pkg + "/article"},
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,9 +75,9 @@ func TestDeclaredBodyAndPerPropertyFTS(t *testing.T) {
 	if full.Body != "the peregrine falcon dives" || full.Properties["body"] != "the peregrine falcon dives" {
 		t.Fatalf("fts:false body not served: body=%q props=%v", full.Body, full.Properties["body"])
 	}
-	hits, err = ds.Search(ctx, substrate.SearchInput{
+	hits, err = searchHits(ds.Search(ctx, substrate.SearchInput{
 		Q: "peregrine", Mode: substrate.SearchLexical, Kinds: []string{pkg + "/memo"},
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}

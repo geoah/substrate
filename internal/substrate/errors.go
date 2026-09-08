@@ -26,6 +26,14 @@ var (
 	// the body runs. A body fault is a server-side execution fault (500
 	// function_failed), never invalid caller input (422).
 	ErrFunctionFault = errors.New("substrate: function body failed")
+	// ErrUnavailable marks an answer the substrate cannot give YET: the state
+	// it needs is still being built, and the same call succeeds later without
+	// the caller changing anything. Semantic search returns it while the
+	// resolved embeddings pair has no vectors and the queue holds work (a
+	// repository restored from its directory, a re-embed, before the drain
+	// has bought them), so "no vectors yet" never reads as "no matches". It is
+	// distinct from ErrValidation, which needs the caller to change something.
+	ErrUnavailable = errors.New("substrate: not available yet")
 )
 
 // ValidationError carries per-field detail for the UI's YAML editor.

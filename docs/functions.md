@@ -506,7 +506,10 @@ Python has no need of.
 **Reads.** `host.records.get(kind, id)`,
 `host.records.list(kinds, where?, first?, after?, order?)`,
 `host.records.search(q, kinds, k?, mode?)` (`mode` is `lexical`, `semantic`
-or `hybrid`, and defaults to `hybrid`), and
+or `hybrid`, and defaults to `hybrid`; the answer is the hits with `pending`
+beside them, the number of properties the drain has yet to buy vectors for:
+Python's list carries it as `.pending`, and Go's `Records.SearchResult` returns
+`{Hits, Pending}` where `Records.Search` returns the hits alone), and
 `host.functions.call(function, input?)`. `get` addresses one record by its
 full reference, the (kind, id) pair; a bare id names nothing and the frame is
 refused. Reads see committed state, never this delivery's own staged effects,

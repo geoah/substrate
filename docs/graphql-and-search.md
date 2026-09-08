@@ -155,11 +155,21 @@ two arms:
   ([0026](decisions/0026-embedding-vectors-are-1536-wide-or-refused.md)).
 
 `mode` picks `lexical`, `semantic`, or `hybrid` (the default): hybrid runs both
-arms, normalizes each against its own best hit, and merges. Every hit carries
-the record beside its raw per-arm scores, `lexical` and `semantic`, so a caller
-can threshold rather than trust a rank. In a repository that has named no
-embeddings provider, hybrid degrades to lexical and `semantic` reports an error
-rather than pretending.
+arms, normalizes each against its own best hit, and merges. The answer is
+`hits` and `pending`. Every hit carries the record beside its raw per-arm
+scores, `lexical` and `semantic`, so a caller can threshold rather than trust a
+rank. `pending` is the number of properties the drain has yet to buy vectors
+for, counted whenever the semantic arm was asked for: non-zero means the
+ranking covers a partial index (a repository [restored from its
+directory](operations.md#backups), a `reembed` in progress), and it falls to 0
+as the drain buys. In a repository that has named no embeddings provider,
+hybrid degrades to lexical and `semantic` reports an error rather than
+pretending. While properties are queued and no vector from the resolved
+provider and model has landed yet, `semantic` refuses with the `unavailable`
+code and the count, so "no vectors yet" never reads as "no matches"; hybrid
+returns its lexical arm alone. With nothing queued, a repository with nothing
+embeddable returns no hits, and a row re-pointed at a model nobody ran
+`reembed` for is refused naming the command.
 
 **Which model bought the vectors is data, per repository.** The one
 [`llmprovider`](agents.md#providers) row declaring `embedModel` is where a

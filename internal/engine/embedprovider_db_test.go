@@ -41,7 +41,7 @@ func TestEmbedQueueIdlesWithNoProvider(t *testing.T) {
 	}
 
 	// Hybrid degrades to lexical rather than failing.
-	hits, err := ds.Search(ctx, substrate.SearchInput{Q: "marmalade"})
+	hits, err := searchHits(ds.Search(ctx, substrate.SearchInput{Q: "marmalade"}))
 	if err != nil {
 		t.Fatalf("hybrid search with no provider: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestEmbedQueueIdlesWithNoProvider(t *testing.T) {
 	}
 
 	// Semantic asked for by name says what is missing.
-	_, err = ds.Search(ctx, substrate.SearchInput{Q: "marmalade", Mode: substrate.SearchSemantic})
+	_, err = searchHits(ds.Search(ctx, substrate.SearchInput{Q: "marmalade", Mode: substrate.SearchSemantic}))
 	if err == nil || !strings.Contains(err.Error(), "embedModel") {
 		t.Fatalf("semantic search with no provider: %v", err)
 	}
@@ -216,21 +216,9 @@ func TestReembedReplacesVectorsAndResumes(t *testing.T) {
 	emb := newFakeEmbedServer(t)
 	installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
 
-	titles := []string{
-		"alpha unique marmalade prose", "beta zeppelin narrative here",
-		"gamma tangerine dictionary volume",
-	}
-	ids := make([]string, 0, len(titles))
-	for i, desc := range titles {
-		row := mustPut(t, ds, owner, substrate.PutInput{
-			Kind: "book", Properties: map[string]any{
-				"title": "Book " + string(rune('A'+i)), "description": desc,
-			},
-		})
-		ids = append(ids, row.ID)
-	}
-	if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != len(titles) {
-		t.Fatalf("first drain = %d, %v, want %d, nil", n, err, len(titles))
+	ids := putBooks(t, ds)
+	if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != len(ids) {
+		t.Fatalf("first drain = %d, %v, want %d, nil", n, err, len(ids))
 	}
 	if got := semanticIDs(t, ds, "marmalade prose"); len(got) == 0 || got[0] != ids[0] {
 		t.Fatalf("the first model's vectors are not searchable: %v", got)
@@ -238,13 +226,15 @@ func TestReembedReplacesVectorsAndResumes(t *testing.T) {
 
 	// The owner re-points the row at another model. Nothing re-embeds by
 	// itself: the old vectors are simply no longer the resolved pair's, so
-	// they stop being scored.
+	// they stop being scored, and with nothing queued and nothing that will
+	// change by itself the refusal names the command.
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: typeProvider, ID: "vectors",
 		Properties: map[string]any{"embedModel": "text-embedding-ada-002"},
 	})
-	if got := semanticIDs(t, ds, "marmalade prose"); len(got) != 0 {
-		t.Fatalf("vectors from the old model were still scored: %v", got)
+	_, err := searchHits(ds.Search(ctx, substrate.SearchInput{Q: "marmalade prose", Mode: substrate.SearchSemantic}))
+	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "run reembed") {
+		t.Fatalf("semantic search with only the old model's vectors = %v, want ErrValidation naming reembed", err)
 	}
 
 	report, err := ds.Reembed(ctx, false)
@@ -254,8 +244,14 @@ func TestReembedReplacesVectorsAndResumes(t *testing.T) {
 	if report.Model != "text-embedding-ada-002" || report.Provider != "vectors" {
 		t.Fatalf("reembed resolved %q/%q", report.Provider, report.Model)
 	}
-	if report.Enqueued != len(titles) {
-		t.Fatalf("reembed queued %d properties, want %d", report.Enqueued, len(titles))
+	if report.Enqueued != len(ids) {
+		t.Fatalf("reembed queued %d properties, want %d", report.Enqueued, len(ids))
+	}
+	// Queued and not yet bought: semantic search returns ErrUnavailable with
+	// the count.
+	_, err = searchHits(ds.Search(ctx, substrate.SearchInput{Q: "marmalade prose", Mode: substrate.SearchSemantic}))
+	if !errors.Is(err, substrate.ErrUnavailable) || !strings.Contains(err.Error(), `"text-embedding-ada-002": 3 properties pending`) {
+		t.Fatalf("semantic search with the re-embed queued = %v, want ErrUnavailable naming the model and 3 pending", err)
 	}
 
 	// INTERRUPTED: one batch of one, and then nothing. The repository is now
@@ -270,15 +266,15 @@ func TestReembedReplacesVectorsAndResumes(t *testing.T) {
 	}
 
 	// RESUMED: the queue is the state, so a later pass finishes the job.
-	if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != len(titles)-1 {
-		t.Fatalf("resumed drain = %d, %v, want %d, nil", n, err, len(titles)-1)
+	if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != len(ids)-1 {
+		t.Fatalf("resumed drain = %d, %v, want %d, nil", n, err, len(ids)-1)
 	}
 	if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != 0 {
 		t.Fatalf("the queue did not drain: %d %v", n, err)
 	}
 	all := semanticIDs(t, ds, "marmalade prose")
-	if len(all) != len(titles) {
-		t.Fatalf("after the re-embed %d records are searchable, want %d: %v", len(all), len(titles), all)
+	if len(all) != len(ids) {
+		t.Fatalf("after the re-embed %d records are searchable, want %d: %v", len(all), len(ids), all)
 	}
 	if all[0] != ids[0] {
 		t.Fatalf("the new model's ranking is wrong: %v", all)
@@ -290,14 +286,14 @@ func TestReembedReplacesVectorsAndResumes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reembed --all: %v", err)
 	}
-	if forced.Enqueued != len(titles) || !forced.All {
-		t.Fatalf("reembed --all queued %d (all=%v), want %d", forced.Enqueued, forced.All, len(titles))
+	if forced.Enqueued != len(ids) || !forced.All {
+		t.Fatalf("reembed --all queued %d (all=%v), want %d", forced.Enqueued, forced.All, len(ids))
 	}
 }
 
 func semanticIDs(t *testing.T, ds substrate.Dataset, q string) []string {
 	t.Helper()
-	hits, err := ds.Search(context.Background(), substrate.SearchInput{Q: q, Mode: substrate.SearchSemantic})
+	hits, err := searchHits(ds.Search(context.Background(), substrate.SearchInput{Q: q, Mode: substrate.SearchSemantic}))
 	if err != nil {
 		t.Fatalf("semantic search %q: %v", q, err)
 	}

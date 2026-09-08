@@ -243,6 +243,7 @@ func TestRESTErrorEnvelopeMapping(t *testing.T) {
 		{"not_found", fmt.Errorf("id: %w", substrate.ErrNotFound), http.StatusNotFound, codeNotFound},
 		{"function_failed", fmt.Errorf("body: %w", substrate.ErrFunctionFault), http.StatusInternalServerError, codeFunctionFailed},
 		{"internal", errBoom, http.StatusInternalServerError, codeInternal},
+		{"unavailable", fmt.Errorf("vectors: %w", substrate.ErrUnavailable), http.StatusServiceUnavailable, codeUnavailable},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -250,6 +251,10 @@ func TestRESTErrorEnvelopeMapping(t *testing.T) {
 			defer delete(ds.errs, "Put")
 			rec := env.do(t, http.MethodPost, peoplePath, tok, map[string]any{"properties": map[string]any{"title": "x"}})
 			wantErrorCode(t, rec, tc.status, tc.code)
+			// Every unavailable carries Retry-After.
+			if tc.status == http.StatusServiceUnavailable && rec.Header().Get("Retry-After") == "" {
+				t.Fatalf("503 without Retry-After: %v", rec.Header())
+			}
 		})
 	}
 

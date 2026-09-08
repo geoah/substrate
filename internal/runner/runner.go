@@ -1035,14 +1035,17 @@ func (s *readState) handle(ctx context.Context, call hostCall) (any, error) {
 		if in.K <= 0 || in.K > rem {
 			in.K = rem
 		}
-		hits, err := s.backend.Search(ctx, in)
+		res, err := s.backend.Search(ctx, in)
 		if err != nil {
 			return nil, err
 		}
-		if err := s.chargeRows(len(hits)); err != nil {
+		if err := s.chargeRows(len(res.Hits)); err != nil {
 			return nil, s.trip(err)
 		}
-		return map[string]any{"hits": hits}, nil
+		// `pending` rides beside the hits: how many properties the drain has
+		// yet to buy vectors for, so a body can tell a partial semantic index
+		// from a full one. The SDKs' typed readers take `hits` alone.
+		return map[string]any{"hits": res.Hits, "pending": res.Pending}, nil
 	case "call":
 		var in struct {
 			Function string `json:"function"`

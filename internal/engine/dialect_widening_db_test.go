@@ -302,7 +302,7 @@ func TestContainersStayOutOfSearch(t *testing.T) {
 		},
 	})
 	for _, word := range []string{"zorionak", "bezperatan", "urtebetetzez", "gabonak"} {
-		hits, err := ds.Search(ctx, substrate.SearchInput{Q: word, Mode: substrate.SearchLexical})
+		hits, err := searchHits(ds.Search(ctx, substrate.SearchInput{Q: word, Mode: substrate.SearchLexical}))
 		if err != nil {
 			t.Fatalf("search %q: %v", word, err)
 		}

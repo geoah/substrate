@@ -982,8 +982,9 @@ func TestGraphQLSearch(t *testing.T) {
 	ds := env.svc.datasets["geoah"]
 	ds.records["c1"] = &substrate.Record{ID: "c1", Kind: "samples.substrate.reamde.dev/people/person", Title: "Ada Lovelace"}
 
-	res := env.gql(t, tok, `{ search(q: "ada", mode: "hybrid", kinds: ["samples.substrate.reamde.dev/people/person"], k: 5) { lexical record { id } } }`, nil)
-	hits, _ := res.Data["search"].([]any)
+	res := env.gql(t, tok, `{ search(q: "ada", mode: "hybrid", kinds: ["samples.substrate.reamde.dev/people/person"], k: 5) { hits { lexical record { id } } pending } }`, nil)
+	search, _ := res.Data["search"].(map[string]any)
+	hits, _ := search["hits"].([]any)
 	if len(hits) != 1 {
 		t.Fatalf("hits = %v", hits)
 	}

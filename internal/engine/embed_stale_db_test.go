@@ -88,7 +88,7 @@ func TestEmbedQueueDoesNotPublishStaleVectors(t *testing.T) {
 	if n, err := ds.ProcessEmbedQueue(ctx, 10); err != nil || n != 1 {
 		t.Fatalf("second drain = %d, %v, want 1, nil", n, err)
 	}
-	hits, err := ds.Search(ctx, substrate.SearchInput{Q: "zeppelin narrative", Mode: substrate.SearchSemantic})
+	hits, err := searchHits(ds.Search(ctx, substrate.SearchInput{Q: "zeppelin narrative", Mode: substrate.SearchSemantic}))
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}

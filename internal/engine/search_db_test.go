@@ -2,7 +2,11 @@ package engine_test
 
 import (
 	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
@@ -50,7 +54,7 @@ func TestLexicalSearch(t *testing.T) {
 		},
 	})
 
-	hits, err := ds.Search(ctx, substrate.SearchInput{Q: "rack layout", Mode: substrate.SearchLexical})
+	hits, err := searchHits(ds.Search(ctx, substrate.SearchInput{Q: "rack layout", Mode: substrate.SearchLexical}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,9 +69,9 @@ func TestLexicalSearch(t *testing.T) {
 		t.Fatalf("raw lexical score missing: %+v", hits[0])
 	}
 	// Type narrowing.
-	hits, err = ds.Search(ctx, substrate.SearchInput{
+	hits, err = searchHits(ds.Search(ctx, substrate.SearchInput{
 		Q: "rack layout", Mode: substrate.SearchLexical, Kinds: []string{"conversationmessage"},
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +79,7 @@ func TestLexicalSearch(t *testing.T) {
 		t.Fatalf("type filter ignored: %v", hitIDs(hits))
 	}
 	// Without an embedder, hybrid degrades to lexical rather than failing.
-	hits, err = ds.Search(ctx, substrate.SearchInput{Q: "rack layout"})
+	hits, err = searchHits(ds.Search(ctx, substrate.SearchInput{Q: "rack layout"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +130,7 @@ func TestEmbedQueueAndHybridSearch(t *testing.T) {
 		t.Fatalf("queue not drained: %d %v", again, err)
 	}
 
-	hits, err := ds.Search(ctx, substrate.SearchInput{Q: "datacentre rack layout", Mode: substrate.SearchSemantic})
+	hits, err := searchHits(ds.Search(ctx, substrate.SearchInput{Q: "datacentre rack layout", Mode: substrate.SearchSemantic}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +141,7 @@ func TestEmbedQueueAndHybridSearch(t *testing.T) {
 		t.Fatalf("cosine looks wrong: %v", hits[0].Semantic)
 	}
 	// Hybrid exposes both raw arms.
-	hits, err = ds.Search(ctx, substrate.SearchInput{Q: "datacentre rack layout", Mode: substrate.SearchHybrid})
+	hits, err = searchHits(ds.Search(ctx, substrate.SearchInput{Q: "datacentre rack layout", Mode: substrate.SearchHybrid}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,6 +178,55 @@ func TestEmbedQueueAndHybridSearch(t *testing.T) {
 	if after-before >= firstChunks {
 		t.Fatalf("unchanged chunks were re-embedded: %d of %d", after-before, firstChunks)
 	}
+}
+
+// TestHybridSearchSkipsTheSemanticArmWithoutVectors: while the resolved pair
+// has no vectors (a restore the drain has not bought yet) there is nothing to
+// score, so hybrid does not embed the query at all. A provider that is down
+// cannot fail the search whose lexical arm has the answer, no query embedding
+// is bought for nothing, and the answer still counts the backlog.
+func TestHybridSearchSkipsTheSemanticArmWithoutVectors(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	var calls atomic.Int32
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		http.Error(w, "embedder down", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(down.Close)
+	_, ds := newDataset(t)
+	installShelf(t, ds)
+	installEmbedProvider(t, ds, "vectors", down.URL, "text-embedding-3-small")
+	book := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "book", Properties: map[string]any{
+			"title": "The Work", "description": "alpha unique marmalade prose",
+		},
+	})
+
+	res, err := ds.Search(ctx, substrate.SearchInput{Q: "marmalade"})
+	if err != nil {
+		t.Fatalf("hybrid search with the embedder down and no vectors: %v", err)
+	}
+	if len(res.Hits) == 0 || res.Hits[0].Record.ID != book.ID || res.Pending != 1 {
+		t.Fatalf("hybrid = %v, pending %d; want the lexical hit and pending 1", hitIDs(res.Hits), res.Pending)
+	}
+	if n := calls.Load(); n != 0 {
+		t.Fatalf("hybrid embedded its query %d times with nothing to score against", n)
+	}
+	// Semantic mode says why instead of dialing the provider.
+	_, err = ds.Search(ctx, substrate.SearchInput{Q: "marmalade", Mode: substrate.SearchSemantic})
+	if !errors.Is(err, substrate.ErrUnavailable) {
+		t.Fatalf("semantic search with no vectors = %v, want ErrUnavailable", err)
+	}
+	if n := calls.Load(); n != 0 {
+		t.Fatalf("semantic search dialed the provider %d times with nothing to score against", n)
+	}
+}
+
+// searchHits unwraps a Search answer to its hits, for the assertions that are
+// about the ranking and not about the pending count.
+func searchHits(res substrate.SearchResult, err error) ([]substrate.Hit, error) {
+	return res.Hits, err
 }
 
 func hitIDs(hits []substrate.Hit) []string {

@@ -30,10 +30,12 @@ package engine
 //     created from the manifest when missing, sealed/ is loaded into the
 //     table, the missing entries are inserted with their checksums, and the
 //     fold is rebuilt from the files (the same replay `repository rebuild`
-//     runs). An `import_progress` row marks the repository from before the
-//     first batch of entries commits until the transaction that commits the
-//     last fold pass, so a boot that finds the row with equal heads resumes
-//     the fold, and no dataset opens while it is set (ErrImportIncomplete).
+//     runs), and every embeddable property is queued for the drain, because
+//     the vectors are not in the directory. An `import_progress` row marks
+//     the repository from before the first batch of entries commits until
+//     the transaction that commits the last fold pass, so a boot that finds
+//     the row with equal heads resumes the fold, and no dataset opens while
+//     it is set (ErrImportIncomplete).
 //  4. A seq in both with different checksums, a line whose sum does not
 //     verify, or a finished segment whose sidecar does not match: the boot
 //     refuses, naming the repository and the seq or file. Nothing is repaired.
@@ -925,7 +927,19 @@ func (ds *dataset) insertEntries(ctx context.Context, entries []changelogfile.En
 // (each clears the fold tables first). The registry load between them reads
 // the first pass's committed rows through the pool, which is why the two
 // passes need not share a transaction.
+//
+// The same transaction converges the vectors with the fold and queues what is
+// missing (reconcileEmbeddings): the fold never reaches the live write's
+// enqueueEmbed, and the vectors are not in the directory, so the queue is what
+// stands in for them. Into an empty database that queues every embeddable
+// property; over an older database dump restored beside a newer directory it
+// deletes the vectors of values the directory has since changed or cleared
+// (a cleared property is not enqueued, so its vector would otherwise be
+// scored for good) and queues only what changed. Under the marker's
+// transaction a resumed import queues too, and a crash before the commit
+// leaves nothing half-done.
 func (ds *dataset) refoldFromFiles(ctx context.Context, log *changelogfile.Log) error {
+	queued := 0
 	replay := func(last bool) error {
 		tx, err := ds.db.BeginTx(ctx, nil)
 		if err != nil {
@@ -941,6 +955,11 @@ func (ds *dataset) refoldFromFiles(ctx context.Context, log *changelogfile.Log) 
 			return err
 		}
 		if last {
+			n, err := ds.reconcileEmbeddings(ctx, tx, t.now)
+			if err != nil {
+				return err
+			}
+			queued = n
 			if _, err := t.exec(`DELETE FROM import_progress`); err != nil {
 				return fmt.Errorf("clear the import-progress marker: %w", err)
 			}
@@ -958,6 +977,10 @@ func (ds *dataset) refoldFromFiles(ctx context.Context, log *changelogfile.Log) 
 	}
 	if err := replay(true); err != nil {
 		return fmt.Errorf("substrate/engine: import: second fold: %w", err)
+	}
+	if queued > 0 {
+		ds.svc.log.Info("substrate: import queued the repository's embeddable properties for the drain",
+			"repository", ds.scope.Repository, "username", ds.info.Name, "queued", queued)
 	}
 	return nil
 }

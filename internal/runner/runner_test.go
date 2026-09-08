@@ -23,7 +23,9 @@ type fakeBackend struct {
 	getCalls  int
 	lastFirst int
 	lastK     int
-	blockGet  bool
+	// pending is what Search reports as the embed backlog.
+	pending  int
+	blockGet bool
 	// call is the Call host-call's fake engine half; nil refuses.
 	call func(function string, args any) (any, error)
 	// calls records every Call the backend served.
@@ -59,9 +61,9 @@ func (f *fakeBackend) List(_ context.Context, q substrate.Query) (*substrate.Pag
 	return &substrate.Page{Records: out}, nil
 }
 
-func (f *fakeBackend) Search(_ context.Context, in substrate.SearchInput) ([]substrate.Hit, error) {
+func (f *fakeBackend) Search(_ context.Context, in substrate.SearchInput) (substrate.SearchResult, error) {
 	f.lastK = in.K
-	return nil, nil
+	return substrate.SearchResult{Pending: f.pending}, nil
 }
 
 func (f *fakeBackend) Call(_ context.Context, function string, args any) (any, error) {
@@ -173,6 +175,34 @@ def main(input, host):
 	}
 	if _, err := r.Invoke(context.Background(), spec, testInput(), widgetBackend()); err != nil {
 		t.Fatalf("host died with the body error: %v", err)
+	}
+}
+
+// TestPythonSearchResultCarriesPending: the host's search answer carries the
+// embed backlog beside the hits, and the Python SDK hands both to the body:
+// the returned list is the hits, and `.pending` rides on it.
+func TestPythonSearchResultCarriesPending(t *testing.T) {
+	r := New()
+	spec := Spec{
+		Repository: "t1", Function: "backlog.g.test",
+		Runtime: "python",
+		Source: `
+def main(input, host):
+    res = host.records.search("x", ["widget"])
+    return {"effects": [], "output": {"pending": res.pending, "hits": len(res), "same": res.hits is res}}
+`,
+		TimeoutMs: 5000,
+		ReadTypes: []string{"g.test/widgets/widget"},
+	}
+	be := widgetBackend()
+	be.pending = 2
+	res, err := r.Invoke(context.Background(), spec, testInput(), be)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	out, _ := res.Output.(map[string]any)
+	if out["pending"] != float64(2) || out["hits"] != float64(0) || out["same"] != true {
+		t.Fatalf("output = %v, want pending 2 over an empty, self-same hits list", res.Output)
 	}
 }
 

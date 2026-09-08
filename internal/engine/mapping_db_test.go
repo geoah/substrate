@@ -1253,7 +1253,7 @@ func TestSearchDemotesUtilityPersons(t *testing.T) {
 		Properties: map[string]any{"prominence": "known"},
 	})
 
-	hits, err := ds.Search(ctx, substrate.SearchInput{Q: "Zorionak", Mode: substrate.SearchLexical})
+	hits, err := searchHits(ds.Search(ctx, substrate.SearchInput{Q: "Zorionak", Mode: substrate.SearchLexical}))
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}
@@ -1267,9 +1267,9 @@ func TestSearchDemotesUtilityPersons(t *testing.T) {
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "organization", Properties: map[string]any{"name": "Zorionak Ltd"},
 	})
-	hits, err = ds.Search(ctx, substrate.SearchInput{
+	hits, err = searchHits(ds.Search(ctx, substrate.SearchInput{
 		Q: "Zorionak", Mode: substrate.SearchLexical, Kinds: []string{"organization", "person"},
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
