@@ -38,11 +38,17 @@ type Record struct {
 	Labels      map[string]any `json:"labels"`
 	Annotations map[string]any `json:"annotations,omitempty"`
 
-	Version    int64      `json:"version"`
-	CreatedAt  time.Time  `json:"createdAt"`
-	UpdatedAt  time.Time  `json:"updatedAt"`
-	DeletedAt  *time.Time `json:"deletedAt,omitempty"`
-	Finalizers []string   `json:"finalizers,omitempty"`
+	// Version is the edit counter a write asserts with IfVersion.
+	Version int64 `json:"version"`
+	// KindVersion is the effective version of the kind declaration (its own
+	// pin, else its package's) under which the record's data was last
+	// written. Absent (0) on a record not written since the stamp existed
+	// (decision 0060). Server-set; ignored on input.
+	KindVersion int64      `json:"kindVersion,omitempty"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	UpdatedAt   time.Time  `json:"updatedAt"`
+	DeletedAt   *time.Time `json:"deletedAt,omitempty"`
+	Finalizers  []string   `json:"finalizers,omitempty"`
 
 	// PropertyMeta is per-property provenance: the manager
 	// the ledger names, when it changed, and the live offers whose value

@@ -1064,6 +1064,11 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		return nil, err
 	}
 	row.Title = title
+	// The row is stamped with the version of the declaration every check
+	// above ran against (migration 0021). The stamp rides the delta below and
+	// lands only when the row moves (rows.go upsertRecord), so a re-put of
+	// identical data leaves it naming the version that last wrote the columns.
+	row.KindVersion = sp.ty.Version
 
 	// Secret-typed property values move into the sealed store here, at the
 	// storage boundary: the JSONB that lands in the row, and the changelog

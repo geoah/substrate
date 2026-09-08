@@ -33,21 +33,26 @@ func (r eref) less(o eref) bool {
 
 // erow is one stored records row.
 type erow struct {
-	ID         string
-	Kind       string
-	Title      string
-	Body       string
-	States     map[string]string
-	At         *time.Time
-	EndsAt     *time.Time
-	DueAt      *time.Time
-	Props      map[string]any
-	Labels     map[string]any
-	Version    int64
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	DeletedAt  *time.Time
-	Finalizers []string
+	ID      string
+	Kind    string
+	Title   string
+	Body    string
+	States  map[string]string
+	At      *time.Time
+	EndsAt  *time.Time
+	DueAt   *time.Time
+	Props   map[string]any
+	Labels  map[string]any
+	Version int64
+	// KindVersion is the effective version of the kind declaration under
+	// which the row's columns were last written (migration 0021): the writer
+	// stamps it, the delta carries it and the fold restores it. 0 is the
+	// absent stamp, on rows and history older than the column.
+	KindVersion int64
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	DeletedAt   *time.Time
+	Finalizers  []string
 }
 
 func (r *erow) ref() eref { return eref{Kind: r.Kind, ID: r.ID} }
@@ -78,7 +83,7 @@ func (r *erow) clone() *erow {
 }
 
 const recordCols = `id, kind, title, body, states, at, ends_at, due_at, props, labels,
-	version, created_at, updated_at, deleted_at, to_jsonb(finalizers)`
+	version, kind_version, created_at, updated_at, deleted_at, to_jsonb(finalizers)`
 
 type scanner interface {
 	Scan(dest ...any) error
@@ -100,7 +105,7 @@ type recordScan struct {
 func (es *recordScan) dests() []any {
 	return []any{
 		&es.r.ID, &es.r.Kind, &es.r.Title, &es.r.Body, &es.states, &es.r.At, &es.r.EndsAt, &es.r.DueAt,
-		&es.props, &es.labels, &es.r.Version, &es.r.CreatedAt, &es.r.UpdatedAt, &es.r.DeletedAt, &es.finalizers,
+		&es.props, &es.labels, &es.r.Version, &es.r.KindVersion, &es.r.CreatedAt, &es.r.UpdatedAt, &es.r.DeletedAt, &es.finalizers,
 	}
 }
 
@@ -163,6 +168,12 @@ func jsonb(v any) ([]byte, error) {
 //
 // Its ONE caller is the fold (fold.go foldRecordOp): a write path reaches the
 // records table by describing what changed, never by writing the table.
+//
+// `kind_version` rides a change and never makes one: it is written whenever
+// the row moves and left alone when nothing else did, so a re-put of identical
+// data after a kind upgrade stays silent (no version bump, no changelog row)
+// and the stamp keeps naming the definition under which the stored columns
+// were last written.
 func (t *txn) upsertRecord(r *erow, fts [3]string, force, resurrect bool) (changed, created bool, version int64, err error) {
 	states, err := jsonb(r.States)
 	if err != nil {
@@ -183,14 +194,14 @@ func (t *txn) upsertRecord(r *erow, fts [3]string, force, resurrect bool) (chang
 	row := t.row(`
 		INSERT INTO records (
 			id, kind, title, body, states, at, ends_at, due_at, props, labels,
-			finalizers, fts, version, created_at, updated_at
+			finalizers, fts, version, kind_version, created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9::jsonb, $10::jsonb,
 			ARRAY(SELECT jsonb_array_elements_text($11::jsonb)),
 			setweight(to_tsvector('english', $12), 'A') ||
 			setweight(to_tsvector('english', $13), 'B') ||
 			setweight(to_tsvector('english', $14), 'C'),
-			1, $15, $15
+			1, $18, $15, $15
 		)
 		ON CONFLICT (repository, kind, id) DO UPDATE SET
 			title      = EXCLUDED.title,
@@ -203,6 +214,7 @@ func (t *txn) upsertRecord(r *erow, fts [3]string, force, resurrect bool) (chang
 			labels     = EXCLUDED.labels,
 			finalizers = EXCLUDED.finalizers,
 			fts        = EXCLUDED.fts,
+			kind_version = EXCLUDED.kind_version,
 			deleted_at = CASE WHEN $16::bool THEN NULL ELSE records.deleted_at END,
 			version    = records.version + 1,
 			updated_at = $15
@@ -219,7 +231,7 @@ func (t *txn) upsertRecord(r *erow, fts [3]string, force, resurrect bool) (chang
 		   OR records.finalizers IS DISTINCT FROM EXCLUDED.finalizers
 		RETURNING version, (xmax = 0)`,
 		r.ID, r.Kind, r.Title, r.Body, states, r.At, r.EndsAt, r.DueAt, props, labels,
-		finalizers, fts[0], fts[1], fts[2], t.now, resurrect, force)
+		finalizers, fts[0], fts[1], fts[2], t.now, resurrect, force, r.KindVersion)
 	err = row.Scan(&version, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		// The conflict fired and the WHERE excluded it: the stored row is

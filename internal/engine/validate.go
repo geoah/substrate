@@ -1075,7 +1075,8 @@ func recordOf(ty *vocabulary.Kind, row *erow) *substrate.Record {
 		ID: row.ID, Kind: row.Kind, Title: row.Title, Body: row.Body,
 		At: row.At, EndsAt: row.EndsAt, DueAt: row.DueAt,
 		Properties: redactProps(ty, row.Props), Labels: row.Labels,
-		Version: row.Version, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		Version: row.Version, KindVersion: row.KindVersion,
+		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 		DeletedAt: row.DeletedAt, Finalizers: row.Finalizers,
 	}
 	if e.Properties == nil {

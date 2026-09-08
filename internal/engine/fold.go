@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -108,6 +109,34 @@ type rowDelta struct {
 	States     *map[string]string `json:"states,omitempty"`
 	Labels     *map[string]any    `json:"labels,omitempty"`
 	Finalizers *[]string          `json:"finalizers,omitempty"`
+
+	// KindVersion is the effective version of the kind declaration the writer
+	// validated the row against (its own pin, else its package's), carried
+	// when the write moved it. It is a VALUE like every other field here: the
+	// fold restores it and never asks the registry, so a rebuild stamps each
+	// row with the version that wrote it, not the version it holds today. An
+	// absent key is "unchanged", and 0 is never written, so history older than
+	// the stamp folds to the column's default of 0 (decision 0060).
+	KindVersion foldVersion `json:"kindVersion,omitempty"`
+}
+
+// foldVersion is the delta's spelling of a version stamp: an int64 that
+// decodes from ANY JSON number lexeme. It is the one typed number in the fold
+// payload, and the payload has two spellings of a number: Postgres prints
+// `18`, and the segment file canonicalizes the same value to `1.8E1`
+// (changelogfile.canonicalNumber), which encoding/json refuses for a bare
+// int64. The replay reads the file, so the fold decodes exactly, through
+// big.Rat, and refuses a lexeme that is not a whole number rather than round
+// it.
+type foldVersion int64
+
+func (v *foldVersion) UnmarshalJSON(b []byte) error {
+	r, ok := new(big.Rat).SetString(string(b))
+	if !ok || !r.IsInt() || !r.Num().IsInt64() {
+		return fmt.Errorf("kindVersion %s is not a whole number", b)
+	}
+	*v = foldVersion(r.Num().Int64())
+	return nil
 }
 
 // foldOp is one effect: a fold kind, the record REFERENCE it lands on, and
@@ -293,12 +322,18 @@ func (t *txn) foldRecordOp(op foldOp) (foldResult, error) {
 			CreatedAt: t.now, UpdatedAt: t.now,
 		}
 	}
+	stamp := row.KindVersion
 	op.Delta.applyTo(row)
 	changed, created, version, err := t.upsertRecord(row, t.foldFTS(row), op.Delta.Force, op.Delta.Restored)
 	if err != nil {
 		return foldResult{}, err
 	}
 	row.Version = version
+	if !changed {
+		// The stamp lands only with a change (upsertRecord), so the row handed
+		// back says what the table says: the version that last wrote it.
+		row.KindVersion = stamp
+	}
 	if changed {
 		row.UpdatedAt = t.now
 		if op.Delta.Restored {
@@ -709,6 +744,11 @@ func diffRow(before, after *erow) *rowDelta {
 		fin := append([]string{}, after.Finalizers...)
 		d.Finalizers = &fin
 	}
+	// A writer that resolved no declaration leaves the stamp where it was: 0
+	// on `after` is "not stamped", never "stamp 0".
+	if after.KindVersion != 0 && before.KindVersion != after.KindVersion {
+		d.KindVersion = foldVersion(after.KindVersion)
+	}
 	return d
 }
 
@@ -762,6 +802,9 @@ func (d *rowDelta) applyTo(row *erow) {
 	}
 	if d.Finalizers != nil {
 		row.Finalizers = append([]string{}, (*d.Finalizers)...)
+	}
+	if d.KindVersion != 0 {
+		row.KindVersion = int64(d.KindVersion)
 	}
 }
 

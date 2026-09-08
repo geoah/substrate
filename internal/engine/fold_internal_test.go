@@ -51,23 +51,25 @@ func TestDeltaRoundTripsThroughTheLog(t *testing.T) {
 				Props:  map[string]any{"description": "a delta", "count": 2.0, "flag": false, "empty": ""},
 				Labels: map[string]any{"owner/pinned": true},
 				At:     &at, DueAt: &due,
-				Finalizers: []string{"substrate.merge"},
+				Finalizers:  []string{"substrate.merge"},
+				KindVersion: 3,
 			},
 		},
 		{
-			name: "values move, one property goes, a time clears",
+			name: "values move, one property goes, a time clears, the kind version moves",
 			before: &erow{
 				ID: "t1", Kind: "task", Title: "Ship it",
 				States: map[string]string{"status": "open"},
 				Props:  map[string]any{"description": "a delta", "url": "https://example.com"},
 				Labels: map[string]any{"owner/pinned": true},
-				DueAt:  &due,
+				DueAt:  &due, KindVersion: 3,
 			},
 			after: &erow{
 				ID: "t1", Kind: "task", Title: "Shipped",
-				States: map[string]string{"status": "done"},
-				Props:  map[string]any{"description": "moved"},
-				Labels: map[string]any{"owner/urgent": "yes"},
+				States:      map[string]string{"status": "done"},
+				Props:       map[string]any{"description": "moved"},
+				Labels:      map[string]any{"owner/urgent": "yes"},
+				KindVersion: 4,
 			},
 		},
 		{
@@ -194,9 +196,81 @@ func TestUnchangedRowDescribesNothing(t *testing.T) {
 	d := diffRow(row.clone(), row)
 	if d.Created || d.Set != nil || d.Del != nil || d.Title != nil || d.Body != nil ||
 		d.At != nil || d.EndsAt != nil || d.DueAt != nil ||
-		d.States != nil || d.Labels != nil || d.Finalizers != nil {
+		d.States != nil || d.Labels != nil || d.Finalizers != nil || d.KindVersion != 0 {
 		raw, _ := json.Marshal(d)
 		t.Fatalf("an unchanged row described a change: %s", raw)
+	}
+}
+
+// TestKindVersionIsAValueTheDeltaCarries pins the stamp's three spellings
+// (decision 0060). A write under a newer declaration carries `kindVersion` and
+// the fold restores it; a delta without the key leaves the row's stamp alone,
+// so every entry written before the stamp folds to the column's default of 0;
+// and a writer that stamped nothing (0 on `after`) describes no move, so no
+// delta ever carries a stamp of 0.
+func TestKindVersionIsAValueTheDeltaCarries(t *testing.T) {
+	before := &erow{
+		ID: "t1", Kind: "task",
+		Props: map[string]any{"description": "a delta"}, States: map[string]string{}, Labels: map[string]any{},
+		KindVersion: 3,
+	}
+	after := before.clone()
+	after.Props["description"] = "moved"
+	after.KindVersion = 4
+	raw, err := json.Marshal(diffRow(before, after))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != `{"set":{"description":"moved"},"kindVersion":4}` {
+		t.Fatalf("a write under a newer declaration encodes as %s", raw)
+	}
+	var wire rowDelta
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		t.Fatal(err)
+	}
+	row := before.clone()
+	wire.applyTo(row)
+	if row.KindVersion != 4 {
+		t.Fatalf("the fold restored kind version %d, want 4", row.KindVersion)
+	}
+
+	// History older than the stamp: the delta names the properties and nothing
+	// else, and the row it folds onto is one the column's default left at 0.
+	var old rowDelta
+	if err := json.Unmarshal([]byte(`{"created":true,"set":{"description":"a delta"}}`), &old); err != nil {
+		t.Fatal(err)
+	}
+	fresh := &erow{ID: "t1", Kind: "task"}
+	old.applyTo(fresh)
+	if fresh.KindVersion != 0 {
+		t.Fatalf("an entry without the key folded to kind version %d, want 0", fresh.KindVersion)
+	}
+
+	// The segment file spells the same number `1.8E1` (changelogfile
+	// canonicalNumber), and the replay reads the file: the stamp decodes from
+	// that spelling exactly, and a lexeme that is not a whole number is refused
+	// rather than rounded.
+	var filed rowDelta
+	if err := json.Unmarshal([]byte(`{"kindVersion":1.8E1}`), &filed); err != nil {
+		t.Fatalf("the file's spelling of 18 does not decode: %v", err)
+	}
+	if filed.KindVersion != 18 {
+		t.Fatalf("1.8E1 decoded to kind version %d, want 18", filed.KindVersion)
+	}
+	if err := json.Unmarshal([]byte(`{"kindVersion":1.5E0}`), &filed); err == nil {
+		t.Fatal("a fractional kind version decoded; it must be refused")
+	}
+
+	// An unstamped writer moves a property and leaves the stamp where it was.
+	unstamped := before.clone()
+	unstamped.Props["description"] = "moved again"
+	unstamped.KindVersion = 0
+	raw, err = json.Marshal(diffRow(before, unstamped))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != `{"set":{"description":"moved again"}}` {
+		t.Fatalf("an unstamped write encodes as %s; a stamp of 0 must never be written", raw)
 	}
 }
 
