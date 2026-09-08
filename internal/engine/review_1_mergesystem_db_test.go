@@ -45,10 +45,10 @@ func TestSk1MergeSystemTypeProjections(t *testing.T) {
 	// Control: put/patch/delete all refuse.
 	_, perr := ds.Put(ctx, owner, substrate.PutInput{Kind: "substrate.reamde.dev/core/kind", ID: teamTy, Properties: map[string]any{"name": "hax"}})
 	t.Logf("put on type projection: %v (forbidden=%v)", perr, errors.Is(perr, substrate.ErrForbidden))
-	_, derr := ds.Delete(ctx, owner, "substrate.reamde.dev/core/kind", teamTy)
+	_, derr := ds.Delete(ctx, owner, "substrate.reamde.dev/core/kind", teamTy, substrate.DeleteInput{})
 	t.Logf("delete on type projection: %v (forbidden=%v)", derr, errors.Is(derr, substrate.ErrForbidden))
 
-	rec, merr := ds.Merge(ctx, owner, "substrate.reamde.dev/core/kind", contactTy, teamTy)
+	rec, merr := ds.Merge(ctx, owner, substrate.MergeInput{Kind: "substrate.reamde.dev/core/kind", Winner: contactTy, Loser: teamTy})
 	if merr != nil {
 		t.Logf("merge REFUSED: %v (forbidden=%v)", merr, errors.Is(merr, substrate.ErrForbidden))
 		return
@@ -79,7 +79,7 @@ func TestSk1MergeSystemTypeProjections(t *testing.T) {
 	t.Logf("put team record after type merge: %v err=%v", e != nil, err)
 
 	// Does split undo it?
-	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Logf("split FAILED (damage is unrecoverable via API): %v", err)
 	} else {
 		back, err := ds.Get(ctx, "substrate.reamde.dev/core/kind", teamTy)
@@ -118,19 +118,19 @@ func TestSk1MergeNonFusingTypes(t *testing.T) {
 	m1, m2 := mk("M1"), mk("M2")
 	// Merging two records of ONE type is legal now: the only
 	// refusals are across types and inside core.
-	rec, err := ds.Merge(ctx, owner, m1.Kind, m1.ID, m2.ID)
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: m1.Kind, Winner: m1.ID, Loser: m2.ID})
 	if err != nil {
 		t.Fatalf("merge of two messages: %v", err)
 	}
 	if got := mustGet(t, ds, m2.Kind, m2.ID); got.ID != m1.ID {
 		t.Fatalf("the loser should resolve to the winner: %+v", got)
 	}
-	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	// Across types it is inexpressible: the verb addresses one type, so the
 	// person's id does not exist among messages — a not-found, no merge.
-	if _, err := ds.Merge(ctx, owner, m1.Kind, m1.ID, author.ID); err == nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: m1.Kind, Winner: m1.ID, Loser: author.ID}); err == nil {
 		t.Fatal("merging a message into a person must be refused")
 	} else {
 		wantErr(t, err, substrate.ErrNotFound, "merge across types")
@@ -160,7 +160,7 @@ func TestSk1MergedTypeSurvivesRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	importVocabulary(t, ds, "people")
-	_, merr := ds.Merge(ctx, owner, "substrate.reamde.dev/core/kind", "samples.substrate.reamde.dev/people/person", "samples.substrate.reamde.dev/people/organization")
+	_, merr := ds.Merge(ctx, owner, substrate.MergeInput{Kind: "substrate.reamde.dev/core/kind", Winner: "samples.substrate.reamde.dev/people/person", Loser: "samples.substrate.reamde.dev/people/organization"})
 	if !errors.Is(merr, substrate.ErrForbidden) {
 		t.Fatalf("merge of two type projections: %v", merr)
 	}
@@ -213,7 +213,7 @@ func TestSk1RepositoryRowsAreNotRecords(t *testing.T) {
 	if len(page.Records) != 1 || page.Records[0].ID != alpha.ID {
 		t.Fatalf("alpha sees %v, want only its own description", ids(page.Records))
 	}
-	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/repository", alpha.ID); err == nil {
+	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/repository", alpha.ID, substrate.DeleteInput{}); err == nil {
 		t.Fatal("deleting the repository's own description succeeded")
 	}
 	// beta stays reachable whatever alpha does with its own rows.

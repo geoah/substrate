@@ -383,7 +383,7 @@ func TestBundleInputResolution(t *testing.T) {
 
 	// Deleting the bound record leaves a DANGLING binding — a problem to
 	// show, never silently papered over by the default rules.
-	if _, err := ds.Delete(ctx, owner, second.Kind, second.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, second.Kind, second.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete bound: %v", err)
 	}
 	st, err = ops.BundleStatus(ctx, mbPackage)
@@ -435,7 +435,7 @@ func TestBundleInputBoundToAMergedRecordResolvesToTheWinner(t *testing.T) {
 	}).BindBundleInput(ctx, mbPackage, "client", loser.ID); err != nil {
 		t.Fatalf("bind: %v", err)
 	}
-	if _, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 
@@ -450,7 +450,7 @@ func TestBundleInputBoundToAMergedRecordResolvesToTheWinner(t *testing.T) {
 	// Delete the winner: the input dangles again, and the message names BOTH
 	// ends of the trail — the id the binding carries, and the record it merged
 	// into — so rebinding is not a search.
-	if _, err := ds.Delete(ctx, owner, winner.Kind, winner.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, winner.Kind, winner.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the winner: %v", err)
 	}
 	st, err = ops.BundleStatus(ctx, mbPackage)
@@ -638,10 +638,10 @@ func TestBundleUninstallTearsDownAuthority(t *testing.T) {
 		t.Fatal("mailitem missing from types before uninstall")
 	}
 	// Clear the data so the uninstall has nothing live to guard.
-	if _, err := ds.Delete(ctx, owner, mbItemType, one.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, mbItemType, one.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete item: %v", err)
 	}
-	if _, err := ds.Delete(ctx, owner, mbMessageType, "m-"+one.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, mbMessageType, "m-"+one.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete message: %v", err)
 	}
 

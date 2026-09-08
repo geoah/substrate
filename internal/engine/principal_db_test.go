@@ -142,7 +142,7 @@ func TestSplitKeepsAManagerRowAnotherTokenWroteSince(t *testing.T) {
 	if err != nil {
 		t.Fatalf("put loser: %v", err)
 	}
-	merge, err := ds.Merge(first, owner, principalTask, winner.ID, loser.ID)
+	merge, err := ds.Merge(first, owner, substrate.MergeInput{Kind: principalTask, Winner: winner.ID, Loser: loser.ID})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestSplitKeepsAManagerRowAnotherTokenWroteSince(t *testing.T) {
 		t.Fatalf("patch url: %v", err)
 	}
 
-	if _, err := ds.Split(first, owner, merge.ID); err != nil {
+	if _, err := ds.Split(first, owner, substrate.SplitInput{Merge: merge.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	var principal string
@@ -195,7 +195,7 @@ func TestRebuildReplaysTheManagerPrincipal(t *testing.T) {
 	}
 	// The merge migrates the loser's manager rows where the winner has none,
 	// and its resync snapshot is what a replay writes back.
-	if _, err := ds.Merge(ctx, owner, principalTask, winner.ID, loser.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: principalTask, Winner: winner.ID, Loser: loser.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 	if got := managerPrincipals(t, dsn, winner.Kind, winner.ID); len(got) != 2 {

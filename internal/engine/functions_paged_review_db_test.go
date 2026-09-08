@@ -372,7 +372,7 @@ func TestPagedCursorLifecycleDropAndSweep(t *testing.T) {
 	}
 
 	// Deleting the trigger drops its paged rows in the same transaction.
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, typeTrigger, triggerID); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, typeTrigger, triggerID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete trigger: %v", err)
 	}
 	if _, ok := pagedCursor(t, ds, chain); ok {

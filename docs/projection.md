@@ -294,6 +294,13 @@ Every merge writes a `recordmerge` record: an ordinary record carrying
 annotations and manager rows the merge moved. That record is what makes the
 undo possible.
 
+A merge decided from a stale read can carry the versions it read:
+`winnerVersion` and `loserVersion`, each optional, each refusing the whole
+merge with a `conflict` when that participant has moved since. A split takes
+`ifVersion` on the `recordmerge` record alone, never on the pair, because it
+reverts the merge and keeps every edit after it
+([the five mutations](api.md#the-five-mutations)).
+
 ### Former ids resolve to the winner
 
 Merging means ids move, and a client that cached one must not silently read

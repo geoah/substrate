@@ -149,7 +149,7 @@ func TestOwnerRefTraitReferenceCascade(t *testing.T) {
 		t.Fatalf("write to a non-implementing kind: err = %v, want the trait refusal", err)
 	}
 
-	if _, err := ds.Delete(ctx, owner, accA.Kind, accA.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, accA.Kind, accA.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ds.RunGC(ctx); err != nil {

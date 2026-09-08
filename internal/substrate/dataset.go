@@ -43,12 +43,16 @@ type Dataset interface {
 	// name, exactly like PutInput.Type.
 	Put(ctx context.Context, actor Actor, in PutInput) (*Record, error)
 	Patch(ctx context.Context, actor Actor, typ, id string, in PatchInput) (*Record, error)
-	Delete(ctx context.Context, actor Actor, typ, id string) (*Record, error)
+	// Delete tombstones one record. The input carries the optional version
+	// precondition; a zero DeleteInput is an unconditional delete.
+	Delete(ctx context.Context, actor Actor, typ, id string, in DeleteInput) (*Record, error)
 	// Merge/Split return the command-as-record record
 	// (substrate.reamde.dev/core/recordmerge / substrate.reamde.dev/core/recordsplit); creating the
-	// record performs the operation. Merge joins two records of ONE type.
-	Merge(ctx context.Context, actor Actor, typ, winner, loser string) (*Record, error)
-	Split(ctx context.Context, actor Actor, mergeID string) (*Record, error)
+	// record performs the operation. Merge joins two records of ONE type, the
+	// one MergeInput.Kind names. Each input carries its optional version
+	// preconditions; a zero one is unconditional.
+	Merge(ctx context.Context, actor Actor, in MergeInput) (*Record, error)
+	Split(ctx context.Context, actor Actor, in SplitInput) (*Record, error)
 
 	// --- reads ---
 	// Get returns the full record by its (type, id) identity: properties,

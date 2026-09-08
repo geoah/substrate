@@ -400,7 +400,7 @@ func (h *handler) getTokens(w http.ResponseWriter, r *http.Request) {
 // is no revocation list and nothing to expire.
 func (h *handler) deleteToken(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	ent, err := DatasetFrom(ctx).Delete(ctx, ActorFrom(ctx), tokenType, pathParam(r, "id"))
+	ent, err := DatasetFrom(ctx).Delete(ctx, ActorFrom(ctx), tokenType, pathParam(r, "id"), substrate.DeleteInput{})
 	if err != nil {
 		writeSubstrateError(w, err)
 		return

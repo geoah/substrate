@@ -27,7 +27,7 @@ func TestCanonicalIDReadByFormerID(t *testing.T) {
 	loser := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "person", Properties: map[string]any{"name": "N. Ray"},
 	})
-	if _, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 
@@ -63,7 +63,7 @@ func TestCanonicalIDReferenceResolution(t *testing.T) {
 
 	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "A"}})
 	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "B"}})
-	if _, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 
@@ -125,7 +125,7 @@ func TestCanonicalIDMergeRepointsNothing(t *testing.T) {
 		},
 	})
 
-	if _, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 	wantAuthor := []string{vocabulary.RecordPath(typePerson, loser.ID)}
@@ -184,10 +184,10 @@ func TestCanonicalIDTrailsFlatten(t *testing.T) {
 	b := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "B"}})
 	c := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "C"}})
 
-	if _, err := ds.Merge(ctx, owner, b.Kind, b.ID, a.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: b.Kind, Winner: b.ID, Loser: a.ID}); err != nil {
 		t.Fatalf("merge a into b: %v", err)
 	}
-	if _, err := ds.Merge(ctx, owner, c.Kind, c.ID, b.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: c.Kind, Winner: c.ID, Loser: b.ID}); err != nil {
 		t.Fatalf("merge b into c: %v", err)
 	}
 
@@ -228,7 +228,7 @@ func TestCanonicalIDsAreNeverReused(t *testing.T) {
 	loser := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "person", Properties: map[string]any{"name": "B"},
 	})
-	if _, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 
@@ -247,7 +247,7 @@ func TestCanonicalIDsAreNeverReused(t *testing.T) {
 	srcLoser := mustPut(t, ds, people, substrate.PutInput{
 		Kind: typeGoogleContact, ID: "g-c2", Properties: map[string]any{"name": aname("Alex 2")},
 	})
-	if _, err := ds.Merge(ctx, owner, src.Kind, src.ID, srcLoser.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: src.Kind, Winner: src.ID, Loser: srcLoser.ID}); err != nil {
 		t.Fatalf("merge sources: %v", err)
 	}
 	if _, err := ds.Put(ctx, people, substrate.PutInput{
@@ -280,10 +280,10 @@ func TestCanonicalIDDeleteByFormerID(t *testing.T) {
 
 	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "A"}})
 	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "B"}})
-	if _, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
-	del, err := ds.Delete(ctx, owner, loser.Kind, loser.ID)
+	del, err := ds.Delete(ctx, owner, loser.Kind, loser.ID, substrate.DeleteInput{})
 	if err != nil {
 		t.Fatalf("delete by former id: %v", err)
 	}
@@ -308,10 +308,10 @@ func TestCanonicalIDReferenceWriteAtFormerIDs(t *testing.T) {
 	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "B"}})
 	org := mustPut(t, ds, owner, substrate.PutInput{Kind: "organization", Properties: map[string]any{"name": "Acme"}})
 	orgLoser := mustPut(t, ds, owner, substrate.PutInput{Kind: "organization", Properties: map[string]any{"name": "Acme Inc"}})
-	if _, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID}); err != nil {
 		t.Fatalf("merge people: %v", err)
 	}
-	if _, err := ds.Merge(ctx, owner, org.Kind, org.ID, orgLoser.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: org.Kind, Winner: org.ID, Loser: orgLoser.ID}); err != nil {
 		t.Fatalf("merge orgs: %v", err)
 	}
 
@@ -386,7 +386,7 @@ func TestRekeySameIDAcrossTypes(t *testing.T) {
 	}
 
 	// A delete of one leaves the other live.
-	if _, err := ds.Delete(ctx, owner, "task", shared); err != nil {
+	if _, err := ds.Delete(ctx, owner, "task", shared, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete task: %v", err)
 	}
 	if got := mustGet(t, ds, "person", shared); got.DeletedAt != nil {
@@ -412,7 +412,7 @@ func TestRekeyFormerIDTrailIsPerType(t *testing.T) {
 	loser := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "person", ID: "trail-l", Properties: map[string]any{"name": "B"},
 	})
-	if _, err := ds.Merge(ctx, owner, "person", winner.ID, loser.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: "person", Winner: winner.ID, Loser: loser.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 

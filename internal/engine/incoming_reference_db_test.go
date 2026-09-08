@@ -180,7 +180,7 @@ func TestIncomingExcludesADeletedSource(t *testing.T) {
 	if page := incoming(t, ds, "h1", substrate.IncomingOptions{}); page.Total != 1 {
 		t.Fatalf("incoming before the delete = %+v", page)
 	}
-	if _, err := ds.Delete(ctx, owner, graphPackage+"/spoke", "s1"); err != nil {
+	if _, err := ds.Delete(ctx, owner, graphPackage+"/spoke", "s1", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the source: %v", err)
 	}
 	// The tombstone keeps its rows in the index (a delete touches `records`
@@ -207,7 +207,7 @@ func TestIncomingFindsAPointerWrittenUnderAFormerID(t *testing.T) {
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: graphPackage + "/spoke", ID: "s1", Properties: map[string]any{"hub": "h2"},
 	})
-	if _, err := ds.Merge(ctx, owner, graphPackage+"/hub", winner.ID, "h2"); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: graphPackage + "/hub", Winner: winner.ID, Loser: "h2"}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 
@@ -430,7 +430,7 @@ func TestIncomingRefusesACursorAfterAMergeIntoTheTarget(t *testing.T) {
 		t.Fatalf("the first page = %+v", minted.Incoming)
 	}
 
-	if _, err := ds.Merge(ctx, owner, graphPackage+"/hub", "h1", "h2"); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: graphPackage + "/hub", Winner: "h1", Loser: "h2"}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 	_, err := ds.Incoming(ctx, graphPackage+"/hub", "h1",

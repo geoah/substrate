@@ -104,7 +104,7 @@ func TestEffectAddressingSerializesWithMerge(t *testing.T) {
 
 	mergeDone := make(chan error, 1)
 	go func() {
-		_, err := ds.Merge(ctx, substrate.ActorAPI, w.Kind, w.ID, l.ID)
+		_, err := ds.Merge(ctx, substrate.ActorAPI, substrate.MergeInput{Kind: w.Kind, Winner: w.ID, Loser: l.ID})
 		mergeDone <- err
 	}()
 	time.Sleep(300 * time.Millisecond) // the merge now holds the advisory locks
@@ -244,7 +244,7 @@ func TestMergeSplitReplayIdempotent(t *testing.T) {
 	a := racePut(t, ds, map[string]any{"name": "a"})
 	b := racePut(t, ds, map[string]any{"name": "b"})
 
-	rec, err := ds.Merge(ctx, substrate.ActorAPI, a.Kind, a.ID, b.ID)
+	rec, err := ds.Merge(ctx, substrate.ActorAPI, substrate.MergeInput{Kind: a.Kind, Winner: a.ID, Loser: b.ID})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestMergeSplitReplayIdempotent(t *testing.T) {
 		t.Fatalf("merge replay minted a record: %d live merge records", n)
 	}
 	// And through the surface verb too.
-	again, err := ds.Merge(ctx, substrate.ActorAPI, a.Kind, a.ID, b.ID)
+	again, err := ds.Merge(ctx, substrate.ActorAPI, substrate.MergeInput{Kind: a.Kind, Winner: a.ID, Loser: b.ID})
 	if err != nil {
 		t.Fatalf("surface merge replay: %v", err)
 	}
@@ -277,7 +277,7 @@ func TestMergeSplitReplayIdempotent(t *testing.T) {
 	}
 
 	// Split, then replay the split effect.
-	if _, err := ds.Split(ctx, substrate.ActorAPI, rec.ID); err != nil {
+	if _, err := ds.Split(ctx, substrate.ActorAPI, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	if err := ds.inTx(ctx, raceActor, false, func(tx *txn) error {

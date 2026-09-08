@@ -132,7 +132,7 @@ func TestRetirementRefusesOnEveryDoor(t *testing.T) {
 
 	// The retire: the kind is dropped and its name spent in the same breath;
 	// the widget loses a property, a value and a state and spends each.
-	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/kind", retPackage+"/gadget"); err != nil {
+	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/kind", retPackage+"/gadget", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("drop gadget: %v", err)
 	}
 	if err := apply(packageDocRetiring(retPackage, "gadget"),
@@ -156,7 +156,7 @@ func TestRetirementRefusesOnEveryDoor(t *testing.T) {
 	// A change elsewhere in the package travels without its header: deleting
 	// another kind moves the package version from the STORED row, retirement
 	// included, rather than from a bare header that would read as un-retiring.
-	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/kind", retPackage+"/trinket"); err != nil {
+	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/kind", retPackage+"/trinket", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("deleting another kind of a package with retirements must admit: %v", err)
 	}
 	assertStored("after deleting another kind without the header")

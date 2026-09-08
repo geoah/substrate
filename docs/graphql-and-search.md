@@ -65,10 +65,12 @@ mutation ($k: String!, $id: ID!, $in: JSON!) {
 #  "in": {"properties": {"status": "done"}}}
 ```
 
-`patch(kind, id, input, ifVersion)` and `delete(kind, id)` address one record;
-`merge(kind, winner, loser)` joins two
-records of one kind, and `split(mergeId)` undoes one by the `recordmerge`
-record's id.
+`patch(kind, id, input, ifVersion)` and `delete(kind, id, ifVersion)` address
+one record; `merge(kind, winner, loser, winnerVersion, loserVersion)` joins two
+records of one kind, and `split(mergeId, ifVersion)` undoes one by the
+`recordmerge` record's id. Every version argument is an optional `Long`, the
+same [precondition](api.md#the-five-mutations) the REST body carries: a stale
+one fails the mutation with a `conflict` error and changes nothing.
 
 ## Generated names and scalars
 

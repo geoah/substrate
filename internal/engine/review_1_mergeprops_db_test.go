@@ -37,7 +37,7 @@ func TestSkepticMergeSplitLinkDataCollision(t *testing.T) {
 		},
 	})
 
-	rec, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID)
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestSkepticMergeSplitLinkDataCollision(t *testing.T) {
 		t.Fatalf("the merge moved link data onto the winner: %+v", got)
 	}
 
-	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	back := linkDataOf(t, ds, loser.Kind, loser.ID, "memberOf", team.ID)
@@ -103,11 +103,11 @@ func TestSkepticMergeSplitWinnerLoserReference(t *testing.T) {
 		t.Fatalf("setup: replyTo missing: %+v", pre.Properties)
 	}
 
-	rec, err := ds.Merge(ctx, owner, m1.Kind, m1.ID, m2.ID)
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: m1.Kind, Winner: m1.ID, Loser: m2.ID})
 	if err != nil {
 		t.Fatalf("merge of two messages: %v", err)
 	}
-	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	if back := mustGet(t, ds, m2.Kind, m2.ID); refPathValue(back, "replyTo") != wantReplyTo {

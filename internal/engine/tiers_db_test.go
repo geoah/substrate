@@ -395,7 +395,7 @@ func TestMergeCarriesTier(t *testing.T) {
 		t.Fatalf("bundle pin: %v", err)
 	}
 
-	rec, err := ds.Merge(ctx, substrate.ActorAPI, typeTierProfile, winner.ID, loserID)
+	rec, err := ds.Merge(ctx, substrate.ActorAPI, substrate.MergeInput{Kind: typeTierProfile, Winner: winner.ID, Loser: loserID})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -409,7 +409,7 @@ func TestMergeCarriesTier(t *testing.T) {
 	}
 
 	// Split takes exactly the migrated rows back.
-	if _, err := ds.Split(ctx, substrate.ActorAPI, rec.ID); err != nil {
+	if _, err := ds.Split(ctx, substrate.ActorAPI, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	w = tierGet(t, ds, winner.ID)

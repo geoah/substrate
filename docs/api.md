@@ -27,7 +27,7 @@ POST   /api/v1/{authority}/{package}/{kind}       # create, server assigns the i
 GET    /api/v1/{authority}/{package}/{kind}/{id}
 PATCH  /api/v1/{authority}/{package}/{kind}/{id}  # patch, including state transitions
 PUT    /api/v1/{authority}/{package}/{kind}/{id}  # upsert at the given id
-DELETE /api/v1/{authority}/{package}/{kind}/{id}  # soft delete
+DELETE /api/v1/{authority}/{package}/{kind}/{id}  # soft delete; ?ifVersion= guards it
 GET    /api/v1/{authority}/{package}/{kind}/{id}/incoming   # who points at this record
 ```
 
@@ -163,10 +163,27 @@ what move it.
 A `put` onto a tombstone restores that record: same id, same row, one
 changelog row saying so. It is undelete, not id reuse.
 
-`put` and `patch` take an optional `ifVersion`: the write applies only if the
-addressed record's stored version equals it (a non-existent record is version
-0), else the whole write fails a `conflict`. It is the safe
-read-then-conditional-write primitive.
+Every mutation takes an optional version precondition, and a stale one fails
+the whole write with a `conflict` (`409`) and changes nothing. `put` and
+`patch` take `ifVersion` in the body: the write applies only if the addressed
+record's stored version equals it (a non-existent record is version 0). `delete`
+takes it as the `?ifVersion=` query parameter, since a `DELETE` body is dropped
+by enough clients to be no place for a guard; a delete addressed through a
+former id compares the canonical record, the row the tombstone lands on. `merge`
+takes `winnerVersion` and `loserVersion` in its body, each optional, each
+holding that one participant; `split` takes `ifVersion` on the `recordmerge`
+record alone, because the pair change with every edit after the merge and a
+split keeps those edits. Every one of them is the safe read-then-conditional-write
+primitive, and every one moves the version it checked, so a retry under the
+same precondition is a `conflict` rather than a silent second effect.
+
+```http
+DELETE /api/v1/samples.substrate.reamde.dev/people/person/9f2k?ifVersion=4
+POST   /api/v1/merge   {"kind": "samples.substrate.reamde.dev/people/person",
+                        "winner": "9f2k", "loser": "7hd1",
+                        "winnerVersion": 4, "loserVersion": 2}
+POST   /api/v1/split   {"merge": "m3x8", "ifVersion": 1}
+```
 
 A record's own derived views hang off its path too, which is where
 `…/{id}/incoming` sits. That follows one rule, written into the contract: **a
@@ -178,11 +195,13 @@ records are core's, so their verbs sit beside them.
 ### Idempotency and retries
 
 A retried write is safe when the request names its own target. `put` with an id
-is a primary-key upsert, so retrying it lands the same row. `patch` and `put`
-under `ifVersion` are compare-and-set: the second attempt sees the version it
-already moved and fails `conflict`. A blob `PUT` is content addressed by its
-digest. The trigger delivery path carries its own idempotency key, so a
-redelivered change applies once.
+is a primary-key upsert, so retrying it lands the same row. Any of the five
+mutations under its version precondition (`ifVersion` on `put`, `patch`,
+`delete` and `split`, `winnerVersion` and `loserVersion` on `merge`) is
+compare-and-set: the second attempt sees the version it already moved and fails
+`conflict`. A blob `PUT` is content addressed by its digest. The trigger
+delivery path carries its own idempotency key, so a redelivered change applies
+once.
 
 A retried write is NOT safe when the server assigns the identity or the effect.
 A `POST /api/v1/{authority}/{package}/{kind}` with no id mints a random id, so

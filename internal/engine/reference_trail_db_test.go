@@ -138,7 +138,7 @@ func TestReferenceFilterFollowsTheFormerIDTrail(t *testing.T) {
 		Properties: map[string]any{"label": "another person", "about": stranger.ID},
 	})
 
-	if _, err := ds.Merge(ctx, owner, typePerson, winner.ID, loser.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: typePerson, Winner: winner.ID, Loser: loser.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 	// The merge moved no value: `n-before` still spells the loser.
@@ -230,7 +230,7 @@ func TestRepeatedReferenceRefusesOneRecordTwiceAcrossAMerge(t *testing.T) {
 	winner := newPerson(t, ds, "Ada Lovelace")
 	loser := newPerson(t, ds, "A. Lovelace")
 	other := newPerson(t, ds, "Grace Hopper")
-	if _, err := ds.Merge(ctx, owner, typePerson, winner.ID, loser.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: typePerson, Winner: winner.ID, Loser: loser.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 
@@ -279,10 +279,10 @@ func TestCascadeFollowsTheFormerIDTrail(t *testing.T) {
 		Properties: map[string]any{"label": "owned by somebody else", "about": stranger.ID},
 	})
 
-	if _, err := ds.Merge(ctx, owner, typePerson, winner.ID, loser.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: typePerson, Winner: winner.ID, Loser: loser.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
-	if _, err := ds.Delete(ctx, owner, typePerson, winner.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, typePerson, winner.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the winner: %v", err)
 	}
 	if _, err := ds.RunGC(ctx); err != nil {

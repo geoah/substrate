@@ -551,7 +551,7 @@ func TestChangeRequestCreateDivergence(t *testing.T) {
 
 	// A tombstoned row at the id: a create neither resurrects nor overwrites.
 	live := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", ID: "gone-1", Properties: map[string]any{"name": "was here"}})
-	if _, err := ds.Delete(ctx, owner, live.Kind, live.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, live.Kind, live.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	tomb := mustPut(t, ds, engram, substrate.PutInput{
@@ -660,7 +660,7 @@ func TestSystemTypesRejectGenericWrites(t *testing.T) {
 		t.Fatal("expected forbidden")
 	}
 	// Revoking a token is a delete.
-	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/token", info.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/token", info.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("token revoke: %v", err)
 	}
 	// A repository's lifecycle machine is the one system transition the generic
@@ -688,7 +688,7 @@ func TestSystemTypesRejectGenericWrites(t *testing.T) {
 		wantErr(t, err, substrate.ErrForbidden, "repository property write")
 	}
 	// Deleting a merge record is not a generic operation either.
-	if _, err := ds.Delete(ctx, owner, repository.Kind, repository.ID); err == nil {
+	if _, err := ds.Delete(ctx, owner, repository.Kind, repository.ID, substrate.DeleteInput{}); err == nil {
 		t.Fatal("expected forbidden")
 	}
 }
@@ -722,7 +722,7 @@ func TestPutResurrectsATombstone(t *testing.T) {
 	})
 
 	// The provider cancels it.
-	if _, err := ds.Delete(ctx, gcal, event.Kind, event.ID); err != nil {
+	if _, err := ds.Delete(ctx, gcal, event.Kind, event.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	if got := mustGet(t, ds, event.Kind, event.ID); got.DeletedAt == nil {
@@ -798,7 +798,7 @@ func TestResurrectDoesNotCascade(t *testing.T) {
 		},
 	})
 	for _, e := range []*substrate.Record{msg, conv} {
-		if _, err := ds.Delete(ctx, owner, e.Kind, e.ID); err != nil {
+		if _, err := ds.Delete(ctx, owner, e.Kind, e.ID, substrate.DeleteInput{}); err != nil {
 			t.Fatalf("delete %s: %v", e.ID, err)
 		}
 	}
@@ -858,7 +858,7 @@ func TestWritesRefuseSystemTypes(t *testing.T) {
 
 	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "A"}})
 	b := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "B"}})
-	rec, err := ds.Merge(ctx, owner, a.Kind, a.ID, b.ID)
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: a.Kind, Winner: a.ID, Loser: b.ID})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -878,7 +878,7 @@ func TestWritesRefuseSystemTypes(t *testing.T) {
 		wantErr(t, err, substrate.ErrForbidden, "put on a system type")
 	}
 	// The record is intact, so the merge is still reversible.
-	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	if got := mustGet(t, ds, b.Kind, b.ID); got.DeletedAt != nil || got.ID != b.ID {

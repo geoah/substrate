@@ -21,7 +21,7 @@ func TestSk1SplitRevertsPostMergeOwnerWrites(t *testing.T) {
 		Labels:      map[string]any{"owner/shelf": "audio"},
 		Annotations: map[string]any{"owner/note": "from loser"},
 	})
-	rec, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID)
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestSk1SplitRevertsPostMergeOwnerWrites(t *testing.T) {
 		t.Fatalf("precondition failed: %v %v", curated.Labels, curated.Annotations)
 	}
 
-	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	w := mustGet(t, ds, winner.Kind, winner.ID)
@@ -70,14 +70,14 @@ func TestSk1SplitClobbersOverwrittenKey(t *testing.T) {
 		Kind: "person", Properties: map[string]any{"name": "N. Ray"},
 		Annotations: map[string]any{"owner/note": "loser newer"},
 	})
-	rec, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID)
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: winner.Kind, Winner: winner.ID, Loser: loser.ID})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 	mustPatch(t, ds, owner, winner.Kind, winner.ID, substrate.PatchInput{
 		Annotations: map[string]any{"owner/note": "curated after the merge"},
 	})
-	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	w := mustGet(t, ds, winner.Kind, winner.ID)

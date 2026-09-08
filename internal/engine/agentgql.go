@@ -243,25 +243,25 @@ func (m *agentMutateDataset) Patch(ctx context.Context, actor substrate.Actor, t
 	return e, err
 }
 
-func (m *agentMutateDataset) Delete(ctx context.Context, actor substrate.Actor, typ, id string) (*substrate.Record, error) {
+func (m *agentMutateDataset) Delete(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.DeleteInput) (*substrate.Record, error) {
 	ty, err := m.allow(typ, "delete")
 	if err != nil {
 		return nil, err
 	}
-	if err := m.door(ctx, ty, policyOpDelete, id, nil, nil); err != nil {
+	if err := m.door(ctx, ty, policyOpDelete, id, nil, in.IfVersion); err != nil {
 		return nil, err
 	}
-	e, err := m.loop.ds.deleteBounded(ctx, actor, typ, id, m.ceiling())
+	e, err := m.loop.ds.deleteBounded(ctx, actor, typ, id, in, m.ceiling())
 	if err == nil {
 		m.tally("delete")
 	}
 	return e, err
 }
 
-func (m *agentMutateDataset) Merge(context.Context, substrate.Actor, string, string, string) (*substrate.Record, error) {
+func (m *agentMutateDataset) Merge(context.Context, substrate.Actor, substrate.MergeInput) (*substrate.Record, error) {
 	return nil, fmt.Errorf("%w: merge is the owner's decision: its reviewed flow is a recordmergerequest, not an agent mutation", substrate.ErrForbidden)
 }
 
-func (m *agentMutateDataset) Split(context.Context, substrate.Actor, string) (*substrate.Record, error) {
+func (m *agentMutateDataset) Split(context.Context, substrate.Actor, substrate.SplitInput) (*substrate.Record, error) {
 	return nil, fmt.Errorf("%w: split is the owner's decision: it reverses a reviewed merge, not an agent mutation", substrate.ErrForbidden)
 }

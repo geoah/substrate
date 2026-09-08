@@ -36,3 +36,36 @@ type PatchInput struct {
 
 	IfVersion *int64 `json:"ifVersion,omitempty"`
 }
+
+// DeleteInput is a delete's precondition. IfVersion holds the tombstone to the
+// version the caller read: a record edited since fails the whole delete with
+// ErrConflict and stays live, as a put or patch under IfVersion would. Nil
+// checks nothing. A delete addressed through a former id compares the
+// canonical record, because that is the row the tombstone lands on.
+type DeleteInput struct {
+	IfVersion *int64 `json:"ifVersion,omitempty"`
+}
+
+// MergeInput names the two records a merge joins: identity is the (kind, id)
+// pair, so the one kind travels beside both ids. WinnerVersion and
+// LoserVersion each hold one participant to the version the caller read;
+// either alone is a precondition on that record only, and a mismatch fails
+// the whole merge with ErrConflict before anything moves.
+type MergeInput struct {
+	Kind   string `json:"kind"`
+	Winner string `json:"winner"`
+	Loser  string `json:"loser"`
+
+	WinnerVersion *int64 `json:"winnerVersion,omitempty"`
+	LoserVersion  *int64 `json:"loserVersion,omitempty"`
+}
+
+// SplitInput names the recordmerge record a split reverses. IfVersion holds
+// the split to that record's version, not the pair's: the winner and the
+// loser change with every edit after the merge, and a split reverts the merge
+// alone, leaving those edits where they are.
+type SplitInput struct {
+	Merge string `json:"merge"`
+
+	IfVersion *int64 `json:"ifVersion,omitempty"`
+}

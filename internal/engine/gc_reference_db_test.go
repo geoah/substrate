@@ -119,7 +119,7 @@ func TestOwnerRefReferenceCascade(t *testing.T) {
 	mustPatch(t, ds, owner, synced.Kind, synced.ID,
 		substrate.PatchInput{AddFinalizers: []string{"testmirror.example.com/testmirror/teardown"}})
 
-	if _, err := ds.Delete(ctx, owner, acc.Kind, acc.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, acc.Kind, acc.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ds.RunGC(ctx); err != nil {

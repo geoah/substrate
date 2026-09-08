@@ -501,7 +501,7 @@ func TestAuthKindsRefuseGenericWrites(t *testing.T) {
 	}); err == nil {
 		t.Fatal("the credential was repointed through the generic surface")
 	}
-	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/credential", "self"); err == nil {
+	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/credential", "self", substrate.DeleteInput{}); err == nil {
 		t.Fatal("the credential was deleted through the generic surface")
 	}
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{

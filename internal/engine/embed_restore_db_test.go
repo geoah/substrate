@@ -243,7 +243,7 @@ func TestImportConvergesTheVectorsAnOlderDatabaseHolds(t *testing.T) {
 	})
 	mustPatch(t, ds2, owner, "book", cleared.ID, substrate.PatchInput{Properties: map[string]any{"description": nil}})
 	mustPatch(t, ds2, owner, "book", queuedThenCleared.ID, substrate.PatchInput{Properties: map[string]any{"description": nil}})
-	if _, err := ds2.Delete(ctx, owner, "book", tombstoned.ID); err != nil {
+	if _, err := ds2.Delete(ctx, owner, "book", tombstoned.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("tombstone: %v", err)
 	}
 	_ = svc2.Close()

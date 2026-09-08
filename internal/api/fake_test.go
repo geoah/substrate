@@ -338,6 +338,9 @@ type fakeDataset struct {
 	lastVocabularyDocs []map[string]any
 	lastDeleteType     string
 	lastDeleteID       string
+	lastDelete         substrate.DeleteInput
+	lastMerge          substrate.MergeInput
+	lastSplit          substrate.SplitInput
 
 	// error injection, keyed by method name
 	errs map[string]error
@@ -664,10 +667,11 @@ func (d *fakeDataset) Patch(ctx context.Context, actor substrate.Actor, typ, id 
 	return e, nil
 }
 
-func (d *fakeDataset) Delete(ctx context.Context, _ substrate.Actor, typ, id string) (*substrate.Record, error) {
+func (d *fakeDataset) Delete(ctx context.Context, _ substrate.Actor, typ, id string, in substrate.DeleteInput) (*substrate.Record, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.lastDeleteType, d.lastDeleteID = typ, id
+	d.lastDelete = in
 	d.lastPrincipal = substrate.PrincipalFrom(ctx)
 	if err := d.fail("Delete"); err != nil {
 		return nil, err
@@ -676,14 +680,51 @@ func (d *fakeDataset) Delete(ctx context.Context, _ substrate.Actor, typ, id str
 	if !ok || (typ != "" && e.Kind != typ) {
 		return nil, fmt.Errorf("%w: %s", substrate.ErrNotFound, id)
 	}
-	now := time.Unix(10, 0).UTC()
-	e.DeletedAt = &now
+	if err := fakeCAS(e, in.IfVersion); err != nil {
+		return nil, err
+	}
+	// The tombstone moves the version, as the engine's does (rows.go), so a
+	// retried conditioned delete meets the same conflict here; a delete of a
+	// tombstone is the engine's no-op and moves nothing.
+	if e.DeletedAt == nil {
+		now := time.Unix(10, 0).UTC()
+		e.DeletedAt = &now
+		e.Version++
+	}
 	return e, nil
 }
 
-func (d *fakeDataset) Merge(_ context.Context, _ substrate.Actor, typ, winner, loser string) (*substrate.Record, error) {
+// fakeCAS is the engine's checkCAS: an absent precondition checks nothing, a
+// present one must equal the stored version or the write fails conflict.
+func fakeCAS(e *substrate.Record, ifVersion *int64) error {
+	if ifVersion == nil {
+		return nil
+	}
+	var have int64
+	if e != nil {
+		have = e.Version
+	}
+	if have != *ifVersion {
+		return fmt.Errorf("%w: ifVersion %d, stored %d", substrate.ErrConflict, *ifVersion, have)
+	}
+	return nil
+}
+
+func (d *fakeDataset) Merge(_ context.Context, _ substrate.Actor, in substrate.MergeInput) (*substrate.Record, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.lastMerge = in
 	if err := d.fail("Merge"); err != nil {
 		return nil, err
+	}
+	// Each participant's precondition is checked against the fake's row when
+	// it holds one; a record the test never stored is version 0, as the
+	// engine reads an absent row.
+	if err := fakeCAS(d.records[in.Winner], in.WinnerVersion); err != nil {
+		return nil, fmt.Errorf("winner %s: %w", in.Winner, err)
+	}
+	if err := fakeCAS(d.records[in.Loser], in.LoserVersion); err != nil {
+		return nil, fmt.Errorf("loser %s: %w", in.Loser, err)
 	}
 	// The merge record names both sides with REFERENCE properties, each an
 	// object holding the winner's and the loser's full record path under `ref`,
@@ -691,21 +732,27 @@ func (d *fakeDataset) Merge(_ context.Context, _ substrate.Actor, typ, winner, l
 	return &substrate.Record{
 		ID: "merge1", Kind: corePackage + "/recordmerge",
 		Properties: map[string]any{
-			"winner": map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(typ, winner)},
-			"loser":  map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(typ, loser)},
+			"winner": map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(in.Kind, in.Winner)},
+			"loser":  map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(in.Kind, in.Loser)},
 		},
 	}, nil
 }
 
-func (d *fakeDataset) Split(_ context.Context, _ substrate.Actor, mergeID string) (*substrate.Record, error) {
+func (d *fakeDataset) Split(_ context.Context, _ substrate.Actor, in substrate.SplitInput) (*substrate.Record, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.lastSplit = in
 	if err := d.fail("Split"); err != nil {
+		return nil, err
+	}
+	if err := fakeCAS(d.records[in.Merge], in.IfVersion); err != nil {
 		return nil, err
 	}
 	return &substrate.Record{
 		ID: "split1", Kind: corePackage + "/recordsplit",
 		Properties: map[string]any{
 			"merge": map[string]any{
-				vocabulary.ReferenceValueKey: vocabulary.RecordPath(corePackage+"/recordmerge", mergeID),
+				vocabulary.ReferenceValueKey: vocabulary.RecordPath(corePackage+"/recordmerge", in.Merge),
 			},
 		},
 	}, nil

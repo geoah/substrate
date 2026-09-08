@@ -42,13 +42,13 @@ func TestSk3MergeSystemTypes(t *testing.T) {
 	} else {
 		t.Logf("put refused: %v", err)
 	}
-	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/kind", "samples.substrate.reamde.dev/people/organization"); err == nil {
+	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/kind", "samples.substrate.reamde.dev/people/organization", substrate.DeleteInput{}); err == nil {
 		t.Fatal("delete on a type projection unexpectedly succeeded")
 	} else {
 		t.Logf("delete refused: %v", err)
 	}
 
-	rec, err := ds.Merge(ctx, owner, "substrate.reamde.dev/core/kind", "samples.substrate.reamde.dev/people/person", "samples.substrate.reamde.dev/people/organization")
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: "substrate.reamde.dev/core/kind", Winner: "samples.substrate.reamde.dev/people/person", Loser: "samples.substrate.reamde.dev/people/organization"})
 	if err != nil {
 		t.Logf("merge refused (claim REFUTED): %v", err)
 		return
@@ -72,13 +72,13 @@ func TestSk3MergeSystemTypes(t *testing.T) {
 	t.Logf("organization type listed right after merge: %v", listed(ds))
 
 	// Can it be undone via the public split verb?
-	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Logf("split refused: %v", err)
 	} else {
 		t.Logf("split ok; organization type listed again: %v", listed(ds))
 	}
 	// Re-merge, this time with a connector actor, to see if authz blocks it.
-	rec2, err := ds.Merge(ctx, substrate.Actor("connector:slack"), "substrate.reamde.dev/core/kind", "samples.substrate.reamde.dev/people/person", "samples.substrate.reamde.dev/people/organization")
+	rec2, err := ds.Merge(ctx, substrate.Actor("connector:slack"), substrate.MergeInput{Kind: "substrate.reamde.dev/core/kind", Winner: "samples.substrate.reamde.dev/people/person", Loser: "samples.substrate.reamde.dev/people/organization"})
 	if err != nil {
 		t.Logf("connector-actor merge refused: %v", err)
 	} else {
@@ -133,14 +133,14 @@ func TestSk3MergeOfOneType(t *testing.T) {
 	}
 	a := mk("m1", "one")
 	b := mk("m2", "two")
-	rec, err := ds.Merge(ctx, owner, a.Kind, a.ID, b.ID)
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: a.Kind, Winner: a.ID, Loser: b.ID})
 	if err != nil {
 		t.Fatalf("merge of two messages: %v", err)
 	}
 	if got := mustGet(t, ds, b.Kind, b.ID); got.ID != a.ID || got.CanonicalID != a.ID {
 		t.Fatalf("the loser should resolve to the winner: %+v", got)
 	}
-	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	if got := mustGet(t, ds, b.Kind, b.ID); got.ID != b.ID || got.DeletedAt != nil {

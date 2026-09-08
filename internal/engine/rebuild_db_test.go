@@ -104,7 +104,7 @@ func writeSomeHistory(t *testing.T, ds substrate.Dataset) *substrate.Record {
 		Properties: map[string]any{"source": vocabulary.RecordPath(first.Kind, first.ID)},
 	})
 	// A delete, and the put that brings the record back.
-	if _, err := ds.Delete(ctx, owner, third.Kind, third.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, third.Kind, third.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
@@ -113,7 +113,7 @@ func writeSomeHistory(t *testing.T, ds substrate.Dataset) *substrate.Record {
 		Labels:     map[string]any{"owner/kept": true},
 	})
 	// And one that stays deleted.
-	if _, err := ds.Delete(ctx, owner, second.Kind, second.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, second.Kind, second.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	return cleared
@@ -400,7 +400,7 @@ func writeAMergeablePair(t *testing.T, ds substrate.Dataset) mergedPair {
 	older := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: shelf + "/book", Properties: map[string]any{"title": "Notes on the Engine"},
 	})
-	if _, err := ds.Merge(ctx, owner, loser.Kind, loser.ID, older.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: loser.Kind, Winner: loser.ID, Loser: older.ID}); err != nil {
 		t.Fatalf("the first merge: %v", err)
 	}
 	// A source record whose SUBJECT names the loser. The merge leaves it exactly
@@ -428,7 +428,7 @@ func TestRebuildReproducesAMerge(t *testing.T) {
 	writeSomeHistory(t, ds)
 	pair := writeAMergeablePair(t, ds)
 
-	if _, err := ds.Merge(ctx, owner, pair.winner.Kind, pair.winner.ID, pair.loser.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: pair.winner.Kind, Winner: pair.winner.ID, Loser: pair.loser.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 	// The merge REPOINTS NOTHING: the edition still names the loser, and the
@@ -461,7 +461,7 @@ func TestRebuildReproducesASplit(t *testing.T) {
 	ctx := context.Background()
 	pair := writeAMergeablePair(t, ds)
 
-	rec, err := ds.Merge(ctx, owner, pair.winner.Kind, pair.winner.ID, pair.loser.ID)
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: pair.winner.Kind, Winner: pair.winner.ID, Loser: pair.loser.ID})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -471,7 +471,7 @@ func TestRebuildReproducesASplit(t *testing.T) {
 		Labels:      map[string]any{"owner/shelf": "curated"},
 		Annotations: map[string]any{"owner/note": "curated after the merge"},
 	})
-	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	ed := mustGet(t, ds, pair.edition.Kind, pair.edition.ID)
@@ -518,7 +518,7 @@ func TestRebuildRefusesWhatItCannotReplay(t *testing.T) {
 	b := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "A. Lovelace"},
 	})
-	if _, err := ds.Merge(ctx, owner, a.Kind, a.ID, b.ID); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: a.Kind, Winner: a.ID, Loser: b.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 	// A merge entry as an older binary wrote it: the moved sets, no resync.

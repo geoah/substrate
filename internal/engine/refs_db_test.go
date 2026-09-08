@@ -180,7 +180,7 @@ func TestTheRebuiltIndexMatchesTheLiveOne(t *testing.T) {
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: refsSpoke, ID: "s2", Properties: map[string]any{"hub": "h1"},
 	})
-	if _, err := ds.Delete(ctx, owner, refsSpoke, "s2"); err != nil {
+	if _, err := ds.Delete(ctx, owner, refsSpoke, "s2", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	// Drop `hub` from the declaration: every spoke's rows are re-projected
@@ -344,7 +344,7 @@ func TestAContainerFlipAboveAReferenceReDerivesTombstones(t *testing.T) {
 	if got := refRows(t, raw, agent, "a1"); len(got) != 1 || got[0].path != "callable" {
 		t.Fatalf("the nested pointer derived %+v, want one row at `callable`", got)
 	}
-	if _, err := ds.Delete(ctx, owner, agent, "a1"); err != nil {
+	if _, err := ds.Delete(ctx, owner, agent, "a1", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 
@@ -375,7 +375,7 @@ func TestDeleteKeepsTheIndexAndAReWriteReplacesIt(t *testing.T) {
 		Kind: refsSpoke, ID: "s1", Properties: map[string]any{"hub": "h1"},
 	})
 
-	if _, err := ds.Delete(ctx, owner, refsSpoke, "s1"); err != nil {
+	if _, err := ds.Delete(ctx, owner, refsSpoke, "s1", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	if got := refRows(t, raw, refsSpoke, "s1"); len(got) != 1 || got[0].dst != "h1" {
@@ -409,7 +409,7 @@ func TestVocabularyApplyReprojectsTheIndex(t *testing.T) {
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: refsSpoke, ID: "s1", Properties: map[string]any{"hub": "h1", "hubs": []any{"h1"}},
 	})
-	if _, err := ds.Delete(ctx, owner, refsSpoke, "s1"); err != nil {
+	if _, err := ds.Delete(ctx, owner, refsSpoke, "s1", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	if got := refRows(t, raw, refsSpoke, "s1"); len(got) != 2 {

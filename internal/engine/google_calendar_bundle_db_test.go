@@ -599,7 +599,7 @@ func TestGoogleCalendarAccountDisconnectCascades(t *testing.T) {
 
 	// Disconnect the account, the owner-managed delete the console issues, and
 	// run the sweep the server runs on its own cadence.
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, googleAccountType, "acct-step"); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, googleAccountType, "acct-step", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete account: %v", err)
 	}
 	if _, err := ds.RunGC(ctx); err != nil {

@@ -296,13 +296,34 @@ func (h *handler) patchResource(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, ent)
 }
 
+// deleteResource tombstones one record. The version precondition travels as
+// the `ifVersion` query parameter: a DELETE body is dropped by enough clients
+// and proxies to be no place for a guard, and the spelling is the one `put`
+// and `patch` carry in their bodies. Any other parameter is refused by name.
 func (h *handler) deleteResource(w http.ResponseWriter, r *http.Request) {
 	ds, ti, addr, ok := h.collection(w, r, true)
 	if !ok {
 		return
 	}
+	if bad := unsupportedParam(r, deleteParams...); bad != "" {
+		writeError(w, http.StatusBadRequest, codeBadRequest, bad)
+		return
+	}
+	// Presence is what counts, not a non-empty value: `?ifVersion=` is a
+	// precondition the caller meant and the server cannot read, so it is
+	// refused, never treated as omitted and deleted through.
+	var in substrate.DeleteInput
+	if q := r.URL.Query(); q.Has("ifVersion") {
+		raw := q.Get("ifVersion")
+		n, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, codeBadRequest, "ifVersion: "+strconv.Quote(raw)+" is not an integer")
+			return
+		}
+		in.IfVersion = &n
+	}
 	ctx := r.Context()
-	ent, err := ds.Delete(ctx, ActorFrom(ctx), ti.Identity, addr.id)
+	ent, err := ds.Delete(ctx, ActorFrom(ctx), ti.Identity, addr.id, in)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
@@ -320,6 +341,9 @@ var (
 	// incomingParams is the reverse read's grammar: the keyset page, and the
 	// two narrowings a drill-down expands one group with.
 	incomingParams = []string{"first", "after", "property", "fromKind"}
+	// deleteParams is a record delete's grammar: the version precondition
+	// alone.
+	deleteParams = []string{"ifVersion"}
 	// watchParams is a collection watch: the mode switch and the resume cursor.
 	// The list grammar does not apply, and rejectParams names those keys with a
 	// message of their own before this set is consulted.

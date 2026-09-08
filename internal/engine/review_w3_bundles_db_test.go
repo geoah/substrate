@@ -320,7 +320,7 @@ func TestW3OAuthCallbackVsDeleteBarrier(t *testing.T) {
 		t.Fatal("the exchange never reached the provider")
 	}
 	// The exchange is blocked at the provider; the account dies meanwhile.
-	if _, err := ds.Delete(ctx, owner, account.Kind, account.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, account.Kind, account.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete during exchange: %v", err)
 	}
 	if _, err := ops.ProcessOAuthFinalizers(ctx); err != nil {
@@ -370,7 +370,7 @@ func TestW3OAuthRefreshVsFinalizerBarrier(t *testing.T) {
 		t.Fatal("the refresh never reached the provider")
 	}
 	// The refresh is blocked at the provider; teardown completes meanwhile.
-	if _, err := ds.Delete(ctx, owner, account.Kind, account.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, account.Kind, account.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete during refresh: %v", err)
 	}
 	if released, err := ops.ProcessOAuthFinalizers(ctx); err != nil || released != 1 {
@@ -435,7 +435,7 @@ func TestW3OAuthRevoke500StillReleases(t *testing.T) {
 	p.revokeStatus = http.StatusInternalServerError
 	p.mu.Unlock()
 
-	if _, err := ds.Delete(ctx, owner, account.Kind, account.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, account.Kind, account.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	released, err := ops.ProcessOAuthFinalizers(ctx)
@@ -584,12 +584,12 @@ func TestW3MergeSplitBundleLifecycleGuards(t *testing.T) {
 	if err := ops.DisableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
-	_, err := ds.Merge(ctx, owner, a1.Kind, a1.ID, a2.ID)
+	_, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: a1.Kind, Winner: a1.ID, Loser: a2.ID})
 	wantErr(t, err, substrate.ErrGuard, "merge of frozen accounts")
 	if err := ops.EnableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
-	rec, err := ds.Merge(ctx, owner, a1.Kind, a1.ID, a2.ID)
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: a1.Kind, Winner: a1.ID, Loser: a2.ID})
 	if err != nil {
 		t.Fatalf("merge while live: %v", err)
 	}
@@ -597,12 +597,12 @@ func TestW3MergeSplitBundleLifecycleGuards(t *testing.T) {
 	if err := ops.DisableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
-	_, err = ds.Split(ctx, owner, rec.ID)
+	_, err = ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID})
 	wantErr(t, err, substrate.ErrGuard, "split resurrecting a frozen account")
 	if err := ops.EnableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
-	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split while live: %v", err)
 	}
 
@@ -626,7 +626,7 @@ func TestW3MergeSplitBundleLifecycleGuards(t *testing.T) {
 		t.Fatalf("uninstall after purge: %v", err)
 	}
 	// The type is gone: a merge no longer resolves it.
-	if _, err := ds.Merge(ctx, owner, i1.Kind, i1.ID, "whatever"); err == nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: i1.Kind, Winner: i1.ID, Loser: "whatever"}); err == nil {
 		t.Fatal("merge resolved a torn-down type")
 	}
 }
@@ -693,7 +693,7 @@ func TestW3SplitInputTurnsAmbiguous(t *testing.T) {
 		t.Fatalf("install bundle: %v", err)
 	}
 	c1 := mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
-	if _, err := ds.Delete(ctx, owner, c1.Kind, c1.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, c1.Kind, c1.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete c1: %v", err)
 	}
 	c2 := mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
@@ -720,7 +720,7 @@ func TestW3SplitInputTurnsAmbiguous(t *testing.T) {
 		}
 	}
 
-	if _, err := ds.Split(ctx, owner, rec); err != nil {
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec}); err != nil {
 		t.Fatalf("split resurrecting a second record of an input's kind: %v", err)
 	}
 	got := mustGet(t, ds, c1.Kind, c1.ID)
@@ -918,7 +918,7 @@ func TestW3BundledAgentUpgradeGuard(t *testing.T) {
 		t.Fatalf("agent upgrade refusal: %v", err)
 	}
 	// Rewire the trigger away; the same upgrade then lands.
-	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/trigger", "on-wag-helper"); err != nil {
+	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/trigger", "on-wag-helper", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete trigger: %v", err)
 	}
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, withoutAgent); err != nil {

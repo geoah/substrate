@@ -71,7 +71,7 @@ func TestIncomingExcludesTombstonedSources(t *testing.T) {
 	if page := readIncoming(t, ds, typePerson, pid, 50, ""); page.Total != 1 {
 		t.Fatalf("incoming before delete = %+v", page)
 	}
-	if _, err := ds.Delete(ctx, people, g.Kind, g.ID); err != nil {
+	if _, err := ds.Delete(ctx, people, g.Kind, g.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete source: %v", err)
 	}
 	if page := readIncoming(t, ds, typePerson, pid, 50, ""); page.Total != 0 || len(page.Incoming) != 0 {
@@ -91,7 +91,7 @@ func TestIncomingResolvesFormerIDToCanonicalRecord(t *testing.T) {
 		"realName": "Sam J", "email": "sam@corp.example",
 	})
 	winner, loser := personOf(t, ds, g), personOf(t, ds, s)
-	if _, err := ds.Merge(ctx, owner, typePerson, winner, loser); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: typePerson, Winner: winner, Loser: loser}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 

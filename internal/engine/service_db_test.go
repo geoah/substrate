@@ -145,7 +145,7 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 		t.Fatal("expected an auth error")
 	}
 	// Revoking IS deleting the record, through the ordinary surface.
-	if _, err := ds2.Delete(ctx, owner, "substrate.reamde.dev/core/token", tok.ID); err != nil {
+	if _, err := ds2.Delete(ctx, owner, "substrate.reamde.dev/core/token", tok.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
 	if _, _, err := svc2.Authenticate(ctx, secret); err == nil {

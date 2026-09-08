@@ -209,7 +209,7 @@ func TestTombstoneKeepsReferencesAndUndeleteRestoresThem(t *testing.T) {
 		"peer": []any{lpLink(target.ID, map[string]any{"role": "lead", "order": 1})},
 	})
 
-	if _, err := ds.Delete(ctx, owner, src.Kind, src.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, src.Kind, src.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	gone := mustGet(t, ds, src.Kind, src.ID)
@@ -444,7 +444,7 @@ func TestMustExistRefusesAMissingTarget(t *testing.T) {
 		t.Fatalf("stored owner = %q", got)
 	}
 
-	if _, err := ds.Delete(ctx, owner, target.Kind, target.ID); err != nil {
+	if _, err := ds.Delete(ctx, owner, target.Kind, target.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the target: %v", err)
 	}
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{

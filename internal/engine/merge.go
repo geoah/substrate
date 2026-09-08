@@ -27,7 +27,7 @@ const corePackage = "substrate.reamde.dev/core"
 // value: two people holding one email address are two records until an owner
 // merges them.
 
-func (ds *dataset) Merge(ctx context.Context, actor substrate.Actor, typ, winner, loser string) (*substrate.Record, error) {
+func (ds *dataset) Merge(ctx context.Context, actor substrate.Actor, in substrate.MergeInput) (*substrate.Record, error) {
 	var out *substrate.Record
 	err := ds.inTx(ctx, actor, false, func(t *txn) error {
 		// The shared registry-dependency lock before the kind resolves, as a
@@ -36,11 +36,12 @@ func (ds *dataset) Merge(ctx context.Context, actor substrate.Actor, typ, winner
 		if err := t.lockRegistryDepShared(); err != nil {
 			return err
 		}
-		ty, err := t.resolveType(typ)
+		ty, err := t.resolveType(in.Kind)
 		if err != nil {
 			return err
 		}
-		e, err := t.mergeRecord(eref{Kind: ty.Identity, ID: winner}, eref{Kind: ty.Identity, ID: loser})
+		e, err := t.mergeRecordIf(eref{Kind: ty.Identity, ID: in.Winner}, eref{Kind: ty.Identity, ID: in.Loser},
+			in.WinnerVersion, in.LoserVersion)
 		out = e
 		return err
 	})
@@ -52,8 +53,15 @@ func (ds *dataset) Merge(ctx context.Context, actor substrate.Actor, typ, winner
 
 // mergeRecord performs the merge and returns its command record — the moved
 // sets it carries are what makes split possible. Merge joins two records of
-// ONE type; the refs must agree.
+// ONE type; the refs must agree. It is mergeRecordIf with no version
+// precondition, the shape a request accept and a function effect take.
 func (t *txn) mergeRecord(winnerRef, loserRef eref) (*substrate.Record, error) {
+	return t.mergeRecordIf(winnerRef, loserRef, nil, nil)
+}
+
+// mergeRecordIf is mergeRecord under optional version preconditions, one per
+// participant, checked under both record locks before anything moves.
+func (t *txn) mergeRecordIf(winnerRef, loserRef eref, winnerVersion, loserVersion *int64) (*substrate.Record, error) {
 	if winnerRef.Kind != loserRef.Kind {
 		return nil, fmt.Errorf("%w: cannot merge %s into %s", substrate.ErrValidation, loserRef.Kind, winnerRef.Kind)
 	}
@@ -99,6 +107,16 @@ func (t *txn) mergeRecord(winnerRef, loserRef eref) (*substrate.Record, error) {
 	}
 	if err := guardMergeType(ty); err != nil {
 		return nil, err
+	}
+	// The preconditions, ahead of the replay branch below: a merge that
+	// already happened moved both versions, so a retried CONDITIONED merge
+	// fails conflict the way a retried put under IfVersion does, and the
+	// caller re-reads instead of trusting a no-op it could not verify.
+	if err := checkCAS(winner, winnerVersion); err != nil {
+		return nil, fmt.Errorf("winner %s: %w", winnerID, err)
+	}
+	if err := checkCAS(loser, loserVersion); err != nil {
+		return nil, fmt.Errorf("loser %s: %w", loserID, err)
 	}
 	// Replay idempotence: this exact merge already happened — the loser is
 	// tombstoned and its id resolves onto the winner's canonical record with
@@ -434,10 +452,10 @@ func (t *txn) moveAnnotations(loserRef, winnerRef eref) (all, overwritten []map[
 	return all, overwritten, applied, nil
 }
 
-func (ds *dataset) Split(ctx context.Context, actor substrate.Actor, mergeID string) (*substrate.Record, error) {
+func (ds *dataset) Split(ctx context.Context, actor substrate.Actor, in substrate.SplitInput) (*substrate.Record, error) {
 	var out *substrate.Record
 	err := ds.inTx(ctx, actor, false, func(t *txn) error {
-		e, err := t.split(mergeID)
+		e, err := t.splitIf(in.Merge, in.IfVersion)
 		out = e
 		return err
 	})
@@ -447,7 +465,18 @@ func (ds *dataset) Split(ctx context.Context, actor substrate.Actor, mergeID str
 	return out, nil
 }
 
+// split reverses one merge. It is splitIf with no version precondition, the
+// shape a function effect takes.
 func (t *txn) split(mergeID string) (*substrate.Record, error) {
+	return t.splitIf(mergeID, nil)
+}
+
+// splitIf is split under an optional precondition on the recordmerge record's
+// version, checked under its row lock. The pair's own versions are not
+// consulted: a split reverts the merge and keeps every edit after it, so
+// holding the winner or the loser to a version would refuse every split after
+// any edit.
+func (t *txn) splitIf(mergeID string, ifVersion *int64) (*substrate.Record, error) {
 	// The shared registry-dependency lock before any row lock: the split
 	// resolves the merged-away record's kind and resurrects its row against
 	// that declaration, so it holds the declaration to commit as a put does.
@@ -460,6 +489,12 @@ func (t *txn) split(mergeID string) (*substrate.Record, error) {
 	}
 	if rec == nil {
 		return nil, fmt.Errorf("%w: merge record %s", substrate.ErrNotFound, mergeID)
+	}
+	// Ahead of the replay branch: a split tombstones the merge record and
+	// moves its version, so a retried CONDITIONED split fails conflict rather
+	// than returning a no-op the caller could not verify.
+	if err := checkCAS(rec, ifVersion); err != nil {
+		return nil, err
 	}
 	if rec.DeletedAt != nil {
 		// Replay idempotence: a merge record tombstones exactly when its
