@@ -205,8 +205,9 @@ arguments as the verbatim wire string).
 
 ### OpenAPI stance
 
-This plan's generated OpenAPI export was never built, and the hand-written
-document #131 landed instead was removed before v1 with no client for it.
+This plan's generated OpenAPI export was never built. #131 landed a
+hand-written document instead, and it was removed before v1 because no client
+read it.
 
 ### Engine behavior fixes (round 3, unchanged)
 
