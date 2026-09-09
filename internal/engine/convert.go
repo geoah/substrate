@@ -457,7 +457,7 @@ func (p conversionPlan) wire(q sqlReader) (substrate.ConversionPlan, error) {
 // rewrite its own kinds, with the work, the lossy judgment and the hash
 // recounted over them. The changelog head is the whole plan's. The boot
 // refuses the shipped set whole, so the blockers are shared; the rewrites are
-// each package's own, as the renames were before the steps existed.
+// each package's own.
 func packagePlan(plan substrate.ConversionPlan, pkg string) substrate.ConversionPlan {
 	out := substrate.ConversionPlan{ChangelogSeq: plan.ChangelogSeq}
 	for _, s := range plan.Steps {
@@ -469,19 +469,6 @@ func packagePlan(plan substrate.ConversionPlan, pkg string) substrate.Conversion
 		out.Lossy = out.Lossy || s.Lossy
 	}
 	out.PlanHash = planHash(out.Steps)
-	return out
-}
-
-// legacyRenames is the plan's rename steps in the shape BundleUpgrade.Renames
-// carried before Steps existed: the same count, read once, so the two lists
-// cannot disagree. Nil when nothing is renamed, so the field is omitted.
-func legacyRenames(steps []substrate.ConversionStep) []substrate.BundleUpgradeRename {
-	var out []substrate.BundleUpgradeRename
-	for _, s := range steps {
-		if s.Step == substrate.StepRename {
-			out = append(out, substrate.BundleUpgradeRename{Kind: s.Kind, From: s.From, To: s.To, Records: s.Records})
-		}
-	}
 	return out
 }
 

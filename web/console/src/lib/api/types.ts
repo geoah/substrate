@@ -629,19 +629,6 @@ export interface BundleUpgrade extends ConversionPlan {
    * at all carries one fixed line ("the upgrade preview failed; see the
    * server log") and no motion. */
   blockers?: string[]
-  /** The `rename` steps in the shape this field had before `steps` existed,
-   * derived from them.
-   * @deprecated read `steps`; kept because the bundles feature is stable. */
-  renames?: BundleUpgradeRename[]
-}
-
-/** One property rename an upgrade performs (substrate.BundleUpgradeRename).
- * @deprecated a ConversionStep with `step: "rename"` says the same. */
-export interface BundleUpgradeRename {
-  kind: string
-  from: string
-  to: string
-  records: number
 }
 
 /** The preview of one vocabulary apply (substrate.VocabularyPlan), from

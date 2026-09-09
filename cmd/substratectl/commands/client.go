@@ -62,7 +62,6 @@ const (
 	pathRegister       = "/register"
 	pathLogin          = "/login"
 	pathPassword       = "/password"
-	pathRecoveryEnroll = "/recovery/enroll"
 	pathTOTPEnroll     = "/totp/enroll"
 	pathTOTP           = "/totp"
 	pathTokens         = "/tokens"
@@ -379,18 +378,6 @@ type registerResult struct {
 	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
 }
 
-type recoveryEnrollRequest struct {
-	Repository        string `json:"repository"`
-	Password          string `json:"password"`
-	TOTPCode          string `json:"totpCode"`
-	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
-}
-
-type recoveryEnrollResult struct {
-	RecoveryKey       string `json:"recoveryKey,omitempty"`
-	RecoveryPublicKey string `json:"recoveryPublicKey"`
-}
-
 // factors is both current factors presented directly: it authenticates a
 // login, and it is the password-factor rule's evidence on every endpoint that
 // changes auth material. A bearer token is never a substitute.
@@ -456,14 +443,6 @@ func (c *client) registerEnroll(ctx context.Context, in registerBeginRequest) (*
 func (c *client) register(ctx context.Context, in registerRequest) (*registerResult, error) {
 	var out registerResult
 	if err := c.do(ctx, http.MethodPost, pathRegister, nil, in, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (c *client) recoveryEnroll(ctx context.Context, in recoveryEnrollRequest) (*recoveryEnrollResult, error) {
-	var out recoveryEnrollResult
-	if err := c.do(ctx, http.MethodPost, pathRecoveryEnroll, nil, in, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

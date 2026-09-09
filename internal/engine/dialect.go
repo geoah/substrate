@@ -34,9 +34,9 @@ var ErrVocabularyDialectNewer = errors.New("substrate/engine: the store speaks a
 // refuses to open.
 const maxVocabularyDialect = 1
 
-// MaxSchemaDialect is the newest dialect this binary speaks — the value GET
-// /api discovery reports as the binary maximum. Exported so the
-// API layer can surface it without coupling to the gate's internals.
+// MaxSchemaDialect is the newest dialect this binary speaks. No dialect is on
+// the wire: it is exported for the tests outside this package that assert what
+// an open stamps and which manifest the gate refuses.
 func MaxSchemaDialect() int { return maxVocabularyDialect }
 
 // gateVocabularyDialect runs the gate at repository open: refuse a store newer

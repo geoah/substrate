@@ -278,8 +278,8 @@ and every `manager` effect carrying the stamp a property rename moved with it
 The next number is spent when a writer learns a spelling an older binary's
 fold would refuse or misread.
 A repository's stored dialect is not on the wire, and
-neither are the entries written in it: what
-[API discovery](api.md#discovery) reports is the binary's maximum. The dialect
+neither are the entries written in it: no dialect is on the wire at all
+([discovery](api.md#discovery)). The dialect
 is in the repository directory, as `changelogDialect` in `repository.json`,
 which the transaction that records the claim rewrites before it appends, so a
 copy of the directory never holds segments its manifest understates

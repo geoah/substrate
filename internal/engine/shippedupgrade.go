@@ -314,7 +314,6 @@ func (ds *dataset) PlanShippedUpgrade(ctx context.Context) ([]substrate.ShippedU
 		}
 		st.plans[i].Upgrade.Blockers = blockers
 		st.plans[i].Upgrade.ConversionPlan = packagePlan(plan, st.plans[i].Package)
-		st.plans[i].Upgrade.Renames = legacyRenames(st.plans[i].Upgrade.Steps) //nolint:staticcheck // the deprecated field is produced here for readers that still read it
 	}
 	return st.plans, nil
 }

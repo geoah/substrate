@@ -774,9 +774,9 @@ type titleResolver struct {
 }
 
 func (r *titleResolver) Prop(name string) string {
-	// The loader refuses a sensitive property in a template, but a legacy
-	// declaration may predate that rule: render empty rather than copy a
-	// value every read surface redacts into the unsealed, FTS-indexed title.
+	// The loader refuses a sensitive property in a template; this is the
+	// second gate, because copying a value every read surface redacts into
+	// the unsealed, FTS-indexed title is the one mistake with no recovery.
 	if p, ok := r.ty.Prop(name); ok && p.Sensitive() {
 		return ""
 	}

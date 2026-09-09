@@ -348,52 +348,6 @@ func (h *handler) postMintToken(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, substrate.MintedToken{Token: info, Secret: secret})
 }
 
-type recoveryEnrollRequest struct {
-	Repository        string `json:"repository"`
-	Password          string `json:"password"`
-	TOTPCode          string `json:"totpCode"`
-	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
-}
-
-type recoveryEnrollResponse struct {
-	RecoveryKey       string `json:"recoveryKey,omitempty"`
-	RecoveryPublicKey string `json:"recoveryPublicKey"`
-}
-
-// postRecoveryEnroll enrolls a recovery key on a repository that predates
-// them. Both current factors in the body, a bearer refused as evidence,
-// exactly like the credential changes: a stolen token must not be able to
-// claim the one recovery slot and walk away with an offline key.
-func (h *handler) postRecoveryEnroll(w http.ResponseWriter, r *http.Request) {
-	var req recoveryEnrollRequest
-	if err := decodeBody(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
-		return
-	}
-	repository := repositoryOf(r, req.Repository)
-	if ok := h.authGate(w, r, repository, costRequest); !ok {
-		return
-	}
-	if !h.factorsPresented(w, req.Password, req.TOTPCode) {
-		return
-	}
-	enroller, ok := h.svc.(substrate.RecoveryEnroller)
-	if !ok {
-		writeError(w, http.StatusNotImplemented, codeUnsupported, "this build does not support recovery enrollment")
-		return
-	}
-	identity, recipient, err := enroller.EnrollRecoveryKey(r.Context(), substrate.LoginInput{
-		Repository: repository, Password: req.Password, TOTPCode: req.TOTPCode,
-	}, req.RecoveryPublicKey)
-	if err != nil {
-		writeAuthFailure(w, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, recoveryEnrollResponse{
-		RecoveryKey: identity, RecoveryPublicKey: recipient,
-	})
-}
-
 func (h *handler) getTokens(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	tokens, err := DatasetFrom(ctx).Tokens(ctx)

@@ -677,11 +677,10 @@ var declarationDataKeys = map[string]map[string]bool{
 //
 // It exists because a declaration ROW carries more than its document does: what
 // the engine stamps (a version, an origin, the quarantine marks, the bundle
-// lifecycle bools) and, on a repository an older binary once wrote, the retired
-// spellings. Reading a row back as a document is therefore a WHITELIST — these
-// keys and nothing else — which is what keeps a property some FUTURE binary
-// stamps from reaching this loader as an unknown key, and keeps the engine from
-// holding a second, hand-maintained copy of this set.
+// lifecycle bools). Reading a row back as a document is therefore a
+// WHITELIST — these keys and nothing else — which is what keeps a property
+// some FUTURE binary stamps from reaching this loader as an unknown key, and
+// keeps the engine from holding a second, hand-maintained copy of this set.
 //
 // The map is a copy: the sets themselves are this package's own.
 func DeclarationDataKeys(short string) map[string]bool {

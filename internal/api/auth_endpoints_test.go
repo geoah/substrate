@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -223,50 +222,6 @@ func TestConsoleRoutesFallThroughToTheSPA(t *testing.T) {
 	if got := rec.Body.String(); got == "" || got[0] != '<' {
 		t.Fatalf("DELETE /.well-known/substrate/server.json served %q, want the console", got)
 	}
-}
-
-// The recovery enrollment carries the password-factor rule: both current
-// factors in the body buy the one-time enrollment, a bearer or bad factors
-// buy nothing, and the second attempt conflicts.
-func TestRecoveryEnrollFactorsAndOneTime(t *testing.T) {
-	env := newTestEnv(t)
-
-	// No factors: refused before the service is reached, exactly as the
-	// credential changes refuse a bearer as evidence.
-	rec := env.do(t, http.MethodPost, "/recovery/enroll", "", map[string]any{
-		"repository": fakeRepository,
-	})
-	wantStatus(t, rec, http.StatusForbidden)
-
-	// Wrong factors: the one auth error.
-	env.clock.advance(defaultAuthInterval + time.Millisecond)
-	rec = env.do(t, http.MethodPost, "/recovery/enroll", "", map[string]any{
-		"repository": fakeRepository, "password": "wrong", "totpCode": "000000",
-	})
-	wantStatus(t, rec, http.StatusUnauthorized)
-
-	// Right factors: enrolled once, the server-minted key delivered once.
-	env.clock.advance(defaultAuthInterval + time.Millisecond)
-	rec = env.do(t, http.MethodPost, "/recovery/enroll", "", map[string]any{
-		"repository": fakeRepository, "password": "correct-horse-battery-staple",
-		"totpCode": fakeCode(fakeRepository),
-	})
-	wantStatus(t, rec, http.StatusCreated)
-	out := decodeJSON[map[string]string](t, rec)
-	if !strings.HasPrefix(out["recoveryKey"], "AGE-SECRET-KEY-1") {
-		t.Fatalf("no server-minted key: %+v", out)
-	}
-	if !strings.HasPrefix(out["recoveryPublicKey"], "age1") {
-		t.Fatalf("no recipient: %+v", out)
-	}
-
-	// One-time: the slot is claimed.
-	env.clock.advance(defaultAuthInterval + time.Millisecond)
-	rec = env.do(t, http.MethodPost, "/recovery/enroll", "", map[string]any{
-		"repository": fakeRepository, "password": "correct-horse-battery-staple",
-		"totpCode": fakeCode(fakeRepository),
-	})
-	wantStatus(t, rec, http.StatusConflict)
 }
 
 // THE DOOR WITH THE SECOND FACTOR OFF (SUBSTRATE_INSECURE_DISABLE_TOTP): the

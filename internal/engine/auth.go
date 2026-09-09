@@ -460,64 +460,6 @@ func (s *service) registrationSeed(in substrate.RegisterInput) (string, int64, e
 	return seed, step, nil
 }
 
-// EnrollRecoveryKey wraps the repository's DEK to an age recipient and
-// writes the recoverykey singleton, CREATE-ONLY: a repository from before
-// recovery keys enrolls one here, and rotation is deliberately not v1. An
-// empty publicKey asks the server to mint the pair; the identity returns
-// once and is never stored.
-//
-// It carries the PASSWORD-FACTOR RULE, both current factors in the input: a
-// bearer token is not evidence here. Enrollment permanently claims the
-// repository's only recovery slot and hands out an offline decryption key,
-// which is materially more than the repository API can ever do, so a stolen
-// token must not be enough.
-//
-// The recovery promise (a backup plus this key, no host involved) holds
-// because every sealed payload is bound-framed under the DEK from the
-// repository's first write (0059). No control-plane row is written here at
-// all: the scoped transaction cannot reach `repositories`, and a write after
-// the commit would be a step that can fail once the record is committed and
-// a server-minted identity, returned exactly once, is gone.
-func (s *service) EnrollRecoveryKey(ctx context.Context, in substrate.LoginInput, publicKey string) (identity, recipient string, err error) {
-	repo, _, err := s.verifyFactors(ctx, in)
-	if err != nil {
-		return "", "", err
-	}
-	if publicKey == "" {
-		if identity, publicKey, err = generateRecoveryIdentity(); err != nil {
-			return "", "", err
-		}
-	}
-	if _, err := wrapDEKToRecipient(make([]byte, 32), publicKey); err != nil {
-		return "", "", fmt.Errorf("%w: %w", substrate.ErrValidation, err)
-	}
-	ds, err := s.open(ctx, repo)
-	if err != nil {
-		return "", "", err
-	}
-	if s.readOnly {
-		return "", "", ErrDirectoryReadOnly
-	}
-	ref := eref{Kind: kindRecoveryKey, ID: recoveryKeyID}
-	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
-		if err := t.lockRecord(ref); err != nil {
-			return err
-		}
-		row, err := t.loadRow(ref, false)
-		if err != nil {
-			return err
-		}
-		if row != nil && row.DeletedAt == nil {
-			return fmt.Errorf("%w: a recovery key is already enrolled; rotation is not yet supported", substrate.ErrConflict)
-		}
-		return t.writeRecoveryKey(publicKey)
-	})
-	if err != nil {
-		return "", "", err
-	}
-	return identity, publicKey, nil
-}
-
 // writeRecoveryKey wraps the repository's DEK to the enrolled age recipient
 // and writes the recoverykey singleton: the changelog-borne half of the
 // recovery story, ciphertext only the user's identity opens.

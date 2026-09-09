@@ -349,7 +349,7 @@ func deriveCredentialKey(key string) ([]byte, error) {
 
 // secretRefPrefix namespaces the refs storeSecretProps mints, so a generic
 // reader recognizes a resolvable ref without probing the store for every
-// legacy plaintext.
+// string value.
 const secretRefPrefix = "secret:"
 
 // newSecretRef mints an unguessable ref for one stored secret value.
