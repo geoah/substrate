@@ -403,12 +403,9 @@ func (ds *dataset) completeOAuth(ctx context.Context, st oauthflow.State, code s
 		if row == nil || row.DeletedAt != nil {
 			return fmt.Errorf("%w: account %s was deleted while its consent was in flight", substrate.ErrConflict, recordID)
 		}
-		// The stored ref is sealed at rest; open it to reuse
-		// the same credential-store key across a reconnect.
-		ref, err := ds.svc.openPropValue(propString(row, propTokenRef))
-		if err != nil {
-			return err
-		}
+		// The stored ref names the credential row; reusing it keeps the same
+		// credential-store key across a reconnect.
+		ref := propString(row, propTokenRef)
 		if ref == "" {
 			if ref, err = newID(); err != nil {
 				return err

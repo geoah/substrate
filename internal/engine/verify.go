@@ -428,9 +428,8 @@ func hashBlob(ctx context.Context, store blobbytes.Store, digest string) (int64,
 // the repository's own declaration rows, as a replay loads them, so a
 // property the repository declares secret is checked whatever package it is
 // in. A value that is not an engine-minted ref (`secret:`, `auth:`) is a
-// legacy plaintext or the retired inline-sealed form, which references
-// nothing. References only in historical payloads are not walked: rotation
-// deletes their rows and files on purpose.
+// plaintext, which references nothing. References only in historical payloads
+// are not walked: rotation deletes their rows and files on purpose.
 func (s *service) verifySecretRefs(ctx context.Context, tx dbx, db *sql.DB, repo Repository, dir string, fileRefs map[string]bool, report *VerifyReport, found func(string)) error {
 	bare := s.bareDataset(repo, db, dir)
 	if err := bare.loadDeclarationsForReplay(ctx); err != nil {

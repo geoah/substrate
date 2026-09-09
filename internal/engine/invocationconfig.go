@@ -111,7 +111,7 @@ func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Fun
 			entry, esecrets := ds.injectedRecordConfig(ctx, t, row)
 			secrets = append(secrets, esecrets...)
 			if oauthEnabled {
-				ref, _ := ds.svc.openPropValue(propString(row, propTokenRef))
+				ref := propString(row, propTokenRef)
 				switch {
 				case ref == "":
 				case !haveClient:

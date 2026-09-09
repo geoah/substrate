@@ -29,14 +29,16 @@ import (
 )
 
 // Payload framing: one marker byte, then the JSON (plain) or
-// nonce||ciphertext (sealed). `credBoundSealed` is what everything writes: a
-// payload whose GCM additional data binds it to the address it was written
-// at, so a row moved, copied or swapped without the key stops decrypting
+// nonce||ciphertext (sealed). `credBoundSealed` is what every stored payload
+// wears: its GCM additional data binds it to the address it was written at,
+// so a row moved, copied or swapped without the key stops decrypting
 // ([0023](../../docs/decisions/0023-a-sealed-payload-is-bound-to-its-address.md)).
-// `credSealed` is the unbound form, which nothing writes and the open path
-// still decodes; `credPlain` is what a keyless host's DEK wrap is written as,
-// and a repository's sealed payload so framed is refused
+// `credSealed` is the unbound form, and the PKCE verifier in `oauth_flows` is
+// its one writer: that row is ephemeral, lives outside the sealed store, and
+// 0023 binds the store. `credPlain` is what a keyless host's DEK wrap is
+// written as, and a repository's sealed payload so framed is refused
 // ([0059](../../docs/decisions/0059-a-marked-repository-refuses-plain-and-host-key-sealed-payloads.md)).
+// Any other marker byte is refused where it is met.
 const (
 	credPlain       byte = 'p'
 	credSealed      byte = 's'
@@ -234,8 +236,9 @@ func newAEAD(key []byte) (cipher.AEAD, error) {
 }
 
 // sealWith frames and seals one payload under an AEAD, binding aad as GCM
-// additional data. A non-nil aad frames `credBoundSealed` and the open side must
-// present the same aad; a nil aad frames the older unbound `credSealed`.
+// additional data. A non-nil aad frames `credBoundSealed` and the open side
+// must present the same aad; a nil aad frames `credSealed`, which only the
+// PKCE verifier writes.
 func sealWith(aead cipher.AEAD, raw, aad []byte) ([]byte, error) {
 	nonce := make([]byte, aead.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
@@ -249,9 +252,9 @@ func sealWith(aead cipher.AEAD, raw, aad []byte) ([]byte, error) {
 	return aead.Seal(out, nonce, raw, aad), nil
 }
 
-// openWith opens one sealed-framed payload under an AEAD, presenting aad as GCM
-// additional data. The caller passes the aad the framing byte calls for: the
-// row's binding for `credBoundSealed`, nil for the unbound `credSealed`.
+// openWith opens one sealed-framed payload under an AEAD, presenting aad as
+// GCM additional data. The caller passes the aad the framing byte calls for:
+// the row's binding for `credBoundSealed`, nil for the unbound `credSealed`.
 func openWith(aead cipher.AEAD, payload, aad []byte) ([]byte, error) {
 	body := payload[1:]
 	if len(body) < aead.NonceSize() {
@@ -291,16 +294,13 @@ func (s *service) openCredential(payload, aad []byte) ([]byte, error) {
 	switch payload[0] {
 	case credPlain:
 		return payload[1:], nil
-	case credSealed, credBoundSealed:
+	case credBoundSealed:
 		aead, err := s.credentialAEAD()
 		if err != nil {
 			return nil, err
 		}
 		if aead == nil {
 			return nil, errors.New("sealed credential but no credential key configured")
-		}
-		if payload[0] == credSealed {
-			aad = nil // the unbound framing sealed no additional data
 		}
 		return openWith(aead, payload, aad)
 	default:
@@ -352,12 +352,6 @@ func deriveCredentialKey(key string) ([]byte, error) {
 // legacy plaintext.
 const secretRefPrefix = "secret:"
 
-// sealedPropPrefix marks the RETIRED inline-sealed form: releases before the
-// store-backed design encrypted the value directly into JSONB under this
-// prefix. openSecretValue still opens it; the next accepted write of the
-// property moves the value into the store.
-const sealedPropPrefix = "substrate:sealsecret:v1:"
-
 // newSecretRef mints an unguessable ref for one stored secret value.
 func newSecretRef() (string, error) {
 	raw := make([]byte, 16)
@@ -406,9 +400,9 @@ func (t *txn) sealedRefOf(ref string, owner eref) (bool, error) {
 }
 
 // openSecretValue resolves one stored secret value to its material: a secret
-// ref reads its sealed row, the retired inline-sealed form opens in place,
-// and a legacy plaintext passes through unchanged, so a value written by any
-// release still reads.
+// ref reads its sealed row, and any other value passes through unchanged,
+// which is how a plaintext written before secrets moved into the store
+// reads.
 func (ds *dataset) openSecretValue(ctx context.Context, stored string) (string, error) {
 	switch {
 	case stored == "":
@@ -430,40 +424,7 @@ func (ds *dataset) openSecretValue(ctx context.Context, stored string) (string, 
 			return "", fmt.Errorf("substrate/engine: open stored secret: %w", err)
 		}
 		return string(raw), nil
-	case strings.HasPrefix(stored, sealedPropPrefix):
-		raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(stored, sealedPropPrefix))
-		if err != nil {
-			return "", fmt.Errorf("substrate/engine: decode sealed property: %w", err)
-		}
-		// The retired inline-sealed form predates the binding, and the DEK:
-		// it lives in a record property rather than in the sealed store, so
-		// it opens under the HOST key, unbound.
-		out, err := ds.svc.openCredential(raw, nil)
-		if err != nil {
-			return "", fmt.Errorf("substrate/engine: open sealed property: %w", err)
-		}
-		return string(out), nil
 	default:
 		return stored, nil
 	}
-}
-
-// openPropValue opens the retired inline-sealed form, or passes any other
-// value through: the tokenRef read sites want the REF a legacy release
-// sealed inline, never the material behind it, so they must not resolve a
-// store-backed ref the way openSecretValue does.
-func (s *service) openPropValue(stored string) (string, error) {
-	if !strings.HasPrefix(stored, sealedPropPrefix) {
-		return stored, nil
-	}
-	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(stored, sealedPropPrefix))
-	if err != nil {
-		return "", fmt.Errorf("substrate/engine: decode sealed property: %w", err)
-	}
-	// The retired inline-sealed form predates the binding: unbound framing.
-	out, err := s.openCredential(raw, nil)
-	if err != nil {
-		return "", fmt.Errorf("substrate/engine: open sealed property: %w", err)
-	}
-	return string(out), nil
 }

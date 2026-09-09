@@ -38,8 +38,9 @@ func TestHostKeyIDNamesAKeyWithoutRevealingIt(t *testing.T) {
 	}
 }
 
-// One open order: the DEK, bound or unbound, and nothing else. A plain
-// payload and one sealed under the host key are refused, by name, and the
+// One open order: the DEK, bound or unbound (the PKCE verifier writes the
+// unbound frame), and nothing else. A plain payload, one sealed under the
+// host key and one wearing an unknown marker are refused, by name, and the
 // refusal says what it found and what key it expected.
 func TestOpenRepoPayloadOpensUnderTheDEKAlone(t *testing.T) {
 	t.Parallel()
@@ -66,6 +67,8 @@ func TestOpenRepoPayloadOpensUnderTheDEKAlone(t *testing.T) {
 	unbound := seal(dekAEAD, nil)
 	hostBound := seal(hostAEAD, aad)
 	plain := append([]byte{credPlain}, raw...)
+	// A marker byte no writer produces: the bound payload's bytes under it.
+	unknownFrame := append([]byte{'z'}, bound[1:]...)
 
 	opens := func(payload []byte) error {
 		got, err := openRepoPayload(payload, dek, aad)
@@ -84,7 +87,8 @@ func TestOpenRepoPayloadOpensUnderTheDEKAlone(t *testing.T) {
 			t.Fatalf("payload %q under the DEK did not open: %v", p[0], err)
 		}
 	}
-	// A plain payload and one under the host key are refused, by name.
+	// A plain payload, one under the host key and one wearing an unknown
+	// marker are refused, by name.
 	err = opens(plain)
 	if !errors.Is(err, errPlainRefused) || !strings.Contains(err.Error(), "'p'") || !strings.Contains(err.Error(), "DEK") {
 		t.Fatalf("the plain framing was not refused by name: %v", err)
@@ -92,6 +96,10 @@ func TestOpenRepoPayloadOpensUnderTheDEKAlone(t *testing.T) {
 	err = opens(hostBound)
 	if err == nil || !strings.Contains(err.Error(), `'a'`) || !strings.Contains(err.Error(), "repository DEK") {
 		t.Fatalf("the host-key payload was not refused by name: %v", err)
+	}
+	err = opens(unknownFrame)
+	if err == nil || !strings.Contains(err.Error(), "unknown credential framing") || !strings.Contains(err.Error(), `'z'`) {
+		t.Fatalf("an unknown marker byte was not refused as unknown: %v", err)
 	}
 	// The proof function opens under its key alone and never reads plain.
 	if _, err := OpenPayloadWithKey(dek, bound, aad); err != nil {

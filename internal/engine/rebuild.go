@@ -50,7 +50,7 @@ import (
 //
 // Everything else survives the rebuild, and each for a stated reason:
 //
-//   - sealed — A SIDE STORE. Its payloads were never in the changelog and
+//   - sealed, A SIDE STORE: its payloads were never in the changelog and
 //     cannot be regenerated from it; the changelog only re-links the references.
 //     This is why the repository directory holds them beside the segments
 //     (repodir.go), as it holds the blob bytes.
@@ -60,7 +60,7 @@ import (
 //   - oauth_flows, RUNTIME STATE: a consent flow in flight is a nonce and a
 //     PKCE verifier with an expiry, which has no meaning in the changelog; an
 //     interrupted flow is started again.
-//   - vocabulary_dialect — the STORE SHAPE's stamp, about the tables rather
+//   - vocabulary_dialect, the STORE SHAPE's stamp, about the tables rather
 //     than about their contents.
 //   - changelog_dialect — what dialect the entries being replayed are written
 //     in (changelogdialect.go). A replay does not rewrite an entry, so it

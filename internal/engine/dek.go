@@ -194,10 +194,10 @@ func OpenPayloadWithKey(key, payload, aad []byte) ([]byte, error) {
 // have been planted.
 var errPlainRefused = errors.New("refusing a plain-framed ('p') sealed payload: every payload of a repository is bound-framed ('a') under its DEK")
 
-// openRepoPayload is the one open order for a repository's sealed payloads:
-// the DEK and nothing else (decision 0059). A plain payload is refused, and
-// aad is presented only for the bound framing, since the unbound `credSealed`
-// sealed no additional data.
+// openRepoPayload is the one open order for a repository's payloads: the DEK
+// and nothing else (decision 0059). A plain payload is refused by name and
+// any unknown marker byte as unknown. aad is presented only for the bound
+// framing, since `credSealed` (the PKCE verifier) sealed no additional data.
 func openRepoPayload(payload, dek, aad []byte) ([]byte, error) {
 	if len(payload) == 0 {
 		return nil, errors.New("empty payload")

@@ -1295,8 +1295,8 @@ func packageDeclarations(g *vocabulary.Package) ([]declaration, error) {
 	var decls []declaration
 	var missing []string
 	// add takes the declaration's own data map and the properties the engine
-	// stamps over it. The retired keys of the kind — the `definition` blob,
-	// the id-derived `name`, the agent mirrors, a never-stored `sourceYAML` —
+	// stamps over it. The retired keys of the kind (the `definition` blob, the
+	// id-derived `name`, the agent mirrors, a never-stored `sourceYAML`)
 	// travel as explicit nulls: a projection's put MERGES, so without them a
 	// row that somehow carried one would keep it. A null against an absent
 	// property is a no-op, so a repository that never held them stays
@@ -1834,7 +1834,7 @@ func rowDocument(id, typeIdent string, props map[string]any) (vocabulary.Documen
 	// question. Nothing translates it.
 	if _, held := props[propDeclarationBlob]; held {
 		return vocabulary.Document{}, false, fmt.Errorf(
-			"%w: schema row %s %s carries the retired `%s` property — a declaration is stored as its own properties, so the row is damaged",
+			"%w: schema row %s %s carries the retired `%s` property. A declaration is stored as its own properties, so the row is damaged",
 			ErrDeclarationUntranslated, typeIdent, id, propDeclarationBlob)
 	}
 	switch short {
