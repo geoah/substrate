@@ -133,13 +133,6 @@ func seedTask(h *harness) {
 			UpdatedAt: testNow.Add(-4 * time.Hour),
 		},
 	})
-	// A server may still answer with an incoming block on the record. The
-	// document must ignore it: incoming references page on their own resource.
-	h.fake.seedIncoming("t9", []substrate.IncomingReference{
-		{Property: "person", From: substrate.IncomingSource{
-			ID: "people-c1001", Kind: "google.connectors.substrate.reamde.dev/google/contact", Title: "Alex Chen",
-		}},
-	})
 }
 
 func TestVersion(t *testing.T) {
@@ -1136,19 +1129,6 @@ func TestGetRendersManagedPropertiesInStatus(t *testing.T) {
 	list, _ := h.mustRun("get", "tasks", "-o", "yaml")
 	if strings.Contains(list, "manager:") || strings.Contains(list, "alternatives:") {
 		t.Fatalf("a list document must not carry status.properties:\n%s", list)
-	}
-}
-
-func TestGetOmitsIncomingFromManifest(t *testing.T) {
-	h := newHarness(t)
-	h.writeConfig()
-	seedTask(h)
-	out, _ := h.mustRun("get", "tasks", "t9")
-
-	for _, unwanted := range []string{"incoming:", "people-c1001", "Alex Chen"} {
-		if strings.Contains(out, unwanted) {
-			t.Fatalf("manifest carries %q:\n%s", unwanted, out)
-		}
 	}
 }
 

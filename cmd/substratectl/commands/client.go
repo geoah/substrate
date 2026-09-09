@@ -86,15 +86,12 @@ func newClient(server, token string, hc *http.Client) *client {
 // collectionPath is the kind reference AS a path:
 // /api/v1/{authority}/{package}/{kind}, where pkg is the package IDENTITY
 // (`{authority}/{package}`, decision 0047) and so already carries its own
-// separator. An empty pkg leaves /api/v1/{kind}. Every id segment is escaped,
-// so a record id carrying a slash (a declaration's id IS a kind reference)
-// arrives percent-encoded rather than as more path segments.
+// separator. Every kind carries one, so every collection is three segments.
+// Every id segment is escaped, so a record id carrying a slash (a
+// declaration's id IS a kind reference) arrives percent-encoded rather than
+// as more path segments.
 func collectionPath(pkg, kind string, id ...string) string {
-	p := apiPrefix
-	if pkg != "" {
-		p += "/" + pkg
-	}
-	p += "/" + kind
+	p := apiPrefix + "/" + pkg + "/" + kind
 	for _, seg := range id {
 		p += "/" + url.PathEscape(seg)
 	}
@@ -426,9 +423,9 @@ type tokenResult struct {
 }
 
 // discoveryDoc is the slice of GET /.well-known/substrate/server.json the
-// door reads. The pointer is the point: a substrate that predates the field,
-// and one that cannot be reached at all, must both read as "a code is
-// required" rather than as "no".
+// door reads. The pointer is the point: an answer that carries no
+// `totpRequired`, and a server that cannot be reached at all, must both read
+// as "a code is required" rather than as "no".
 type discoveryDoc struct {
 	Registration struct {
 		TOTPRequired *bool `json:"totpRequired"`

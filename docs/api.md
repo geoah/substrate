@@ -402,25 +402,24 @@ unauthenticated, and opens no repository, so a client can call it before it
 holds a token. The well-known path is what lets an outside system ask whether
 a domain is a substrate at all before it speaks the rest of the contract, the
 same way `/.well-known/openid-configuration` works for an OIDC issuer. It
-reports: the served API versions; the server build; the binary's maximum
-[vocabulary dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract);
-the [changelog horizon](changelog.md#frames-and-the-horizon) and the binary's
-maximum [changelog dialect](changelog.md#the-dialect-a-changelog-is-written-in);
-the reference
+reports: the served API versions; the server build; the
+[changelog horizon](changelog.md#frames-and-the-horizon); the reference
 grammar this deployment speaks; the authentication endpoints beside the
 versioned API (`/register`, `/login`, `/tokens`, `/password`, `/totp`); what
 registration asks for and whether it is open at all; the two request surfaces,
-each with its endpoint and its compatibility; and a feature list. (Both
-stored dialects are per-repository and never appear on the wire; a binary too
-old for a store refuses to open it, which surfaces as `unavailable`.) That
+each with its endpoint and its compatibility; and a feature list. No dialect
+is on the wire: the
+[vocabulary](vocabulary.md#vocabulary-evolution-and-the-dialect-contract) and
+[changelog](changelog.md#the-dialect-a-changelog-is-written-in) dialects are
+stored per repository, and a binary too old for a store refuses to open it,
+which surfaces as `unavailable`. That
 feature list is what replaces probing for 501s: each entry names a feature,
 its stability and the `surfaces` that serve it (`rest`, `graphql`, or both):
 
 ```json
 {"versions": [{"name": "v1", "status": "served"}],
  "server": {"version": "…", "build": "…"},
- "vocabulary": {"maxDialect": 3, "note": "…"},
- "changelog": {"horizon": 0, "maxDialect": 6},
+ "changelog": {"horizon": 0},
  "features": [{"name": "triggers", "stability": "stable", "surfaces": ["rest"]},
               {"name": "changefeed", "stability": "stable", "surfaces": ["rest", "graphql"]},
               {"name": "search", "stability": "beta", "surfaces": ["graphql"]},

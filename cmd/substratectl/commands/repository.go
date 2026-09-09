@@ -466,9 +466,8 @@ func printChangelogFiles(out io.Writer, repoID string) {
 
 func (a *app) repositoryRebuildCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:     "rebuild <repository>",
-		Short:   "Replay a repository's changelog into a fresh fold",
-		Aliases: []string{"rebuild-repository"},
+		Use:   "rebuild <repository>",
+		Short: "Replay a repository's changelog into a fresh fold",
 		Long: `Clear a repository's fold and replay its whole changelog into it.
 
 The changelog is the truth and the records table is a fold of it, so this is the
@@ -633,7 +632,9 @@ type declaredKind struct {
 
 // declaredKinds reads the kind declarations out of the fold. A declaration IS
 // a record, so this is an ordinary read of an ordinary
-// collection — and the record's id is the kind reference.
+// collection — and the record's id is the kind reference. Every declaration
+// carries its version property; the coalesce keeps one malformed row from
+// failing the whole read.
 func declaredKinds(ctx context.Context, db *sql.DB) ([]declaredKind, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, COALESCE(props->>'version', '')
@@ -690,9 +691,6 @@ func groupByPackage(kinds []declaredKind) []packageGroup {
 		}
 		g.count++
 		version := k.version
-		if version == "" {
-			version = "(unversioned)"
-		}
 		if !seen[pkg][version] {
 			seen[pkg][version] = true
 			g.versions = append(g.versions, version)
@@ -700,22 +698,11 @@ func groupByPackage(kinds []declaredKind) []packageGroup {
 	}
 	out := make([]packageGroup, 0, len(byPackage))
 	for _, g := range byPackage {
-		// Versions are incremental integers, so the honest order is numeric;
-		// the non-numeric labels (a legacy spelling, "(unversioned)") sort
-		// after the numbers, lexically among themselves.
+		// Versions are incremental integers, so the order is numeric.
 		sort.Slice(g.versions, func(i, j int) bool {
-			vi, ei := strconv.ParseInt(g.versions[i], 10, 64)
-			vj, ej := strconv.ParseInt(g.versions[j], 10, 64)
-			switch {
-			case ei == nil && ej == nil:
-				return vi < vj
-			case ei == nil:
-				return true
-			case ej == nil:
-				return false
-			default:
-				return g.versions[i] < g.versions[j]
-			}
+			vi, _ := strconv.ParseInt(g.versions[i], 10, 64)
+			vj, _ := strconv.ParseInt(g.versions[j], 10, 64)
+			return vi < vj
 		})
 		out = append(out, *g)
 	}

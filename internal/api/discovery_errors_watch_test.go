@@ -31,9 +31,9 @@ var wantFeatureSurfaces = map[string][]string{
 	"agents":     {surfaceREST},
 }
 
-func TestDiscoveryReportsVersionsFeaturesDialect(t *testing.T) {
+func TestDiscoveryReportsVersionsAndFeatures(t *testing.T) {
 	svc := newFakeService()
-	h := New(Config{Service: svc, MaxDialect: 6, MaxChangelogDialect: 3})
+	h := New(Config{Service: svc})
 
 	req := httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil)
 	req.RemoteAddr = "10.0.0.1:1234"
@@ -50,25 +50,13 @@ func TestDiscoveryReportsVersionsFeaturesDialect(t *testing.T) {
 	if len(doc.Versions) != 1 {
 		t.Fatalf("served versions = %+v, want exactly v1", doc.Versions)
 	}
-	if v1 := doc.Versions[0]; v1.Name != "v1" || v1.Status != "served" || v1.ReplacedBy != "" {
+	if v1 := doc.Versions[0]; v1.Name != "v1" || v1.Status != "served" {
 		t.Fatalf("v1 version = %+v", v1)
 	}
 
-	// Binary max dialect surfaces here (per-repository dialect noted elsewhere).
-	if doc.Vocabulary.MaxDialect != 6 {
-		t.Fatalf("maxDialect = %d, want 6", doc.Vocabulary.MaxDialect)
-	}
-	if doc.Vocabulary.Note == "" {
-		t.Fatalf("schema note missing")
-	}
-
-	// Retention horizon is 0 today, and the changelog carries its own binary
-	// max: the dialect of entries this binary can replay.
+	// The retention horizon is 0 today: every committed seq is resumable.
 	if doc.Changelog.Horizon != 0 {
 		t.Fatalf("horizon = %d, want 0", doc.Changelog.Horizon)
-	}
-	if doc.Changelog.MaxDialect != 3 {
-		t.Fatalf("changelog maxDialect = %d, want 3", doc.Changelog.MaxDialect)
 	}
 
 	// The feature list follows the fake's seams: it carries ChangeFeedOps and
@@ -368,9 +356,9 @@ func TestPrimaryPrefixServesResources(t *testing.T) {
 	}
 }
 
-// The pre-v1 prefix is not served: it never shipped, so it is an ordinary
-// unknown API path — a 404 problem object, never a quietly aliased 200.
-func TestPreV1PrefixIsNotServed(t *testing.T) {
+// An unknown version prefix is an ordinary unknown API path: a 404 problem
+// object, never a quietly aliased 200.
+func TestUnknownVersionPrefixIsNotServed(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodGet, "/api/v1alpha1/samples.substrate.reamde.dev/people/person", tok, nil)

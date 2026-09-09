@@ -222,11 +222,9 @@ func Start(t testing.TB, opts ...Option) *Env {
 		t.Fatalf("testenv: load catalog: %v", err)
 	}
 	handler := api.New(api.Config{
-		Service:             svc,
-		Catalog:             cat,
-		InviteCode:          InviteCode,
-		MaxDialect:          engine.MaxSchemaDialect(),
-		MaxChangelogDialect: engine.MaxChangelogDialect(),
+		Service:    svc,
+		Catalog:    cat,
+		InviteCode: InviteCode,
 		// The auth rate limiter reads the same clock as the TOTP verifier, so
 		// a test spaces two logins by advancing it rather than sleeping.
 		Now: o.now,

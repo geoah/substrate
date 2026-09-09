@@ -105,59 +105,6 @@ func ParseYAML(data []byte, source string) ([]*Package, error) {
 	return BuildPackages(docs, source)
 }
 
-// Manifest is the legacy registration payload shape (name, the package it
-// installs, and the manifest document list). The POST …/connectors shim and the frozen
-// substrate.ConnectorManifest wire type were removed at the v1 freeze (ticket
-// 004, ruling A12); this struct survives ONLY as the in-memory shape the
-// loader test's fixture decodes into. It is not a wire contract, and the
-// stored-manifest promotion that once shared it is gone (#217).
-type Manifest struct {
-	Name string `json:"name"`
-	// Authority is the PACKAGE identity the payload installs; the field name
-	// is the legacy payload's.
-	Authority string           `json:"authority"`
-	Manifests []map[string]any `json:"manifests"`
-}
-
-// ParseManifest turns an installed payload — a list of manifest documents —
-// into the single package it installs.
-func ParseManifest(m Manifest) (*Package, error) {
-	docs := make([]Document, 0, len(m.Manifests))
-	var problems []string
-	for _, raw := range m.Manifests {
-		d, errs := documentFrom(raw, "")
-		if len(errs) > 0 {
-			problems = append(problems, errs...)
-			continue
-		}
-		docs = append(docs, d)
-	}
-	if len(problems) > 0 {
-		return nil, validationError(problems)
-	}
-	packages, err := BuildPackages(docs, SourceInstalled)
-	if err != nil {
-		return nil, err
-	}
-	switch {
-	case len(packages) == 0:
-		return nil, validationError([]string{"manifest: declares no package"})
-	case len(packages) > 1:
-		names := make([]string, 0, len(packages))
-		for _, g := range packages {
-			names = append(names, g.Identity)
-		}
-		return nil, validationError([]string{
-			fmt.Sprintf("manifest: installs one package, got %s", strings.Join(names, ", ")),
-		})
-	case m.Authority != "" && packages[0].Identity != m.Authority:
-		return nil, validationError([]string{
-			fmt.Sprintf("manifest: package %q, but its manifests declare %q", m.Authority, packages[0].Identity),
-		})
-	}
-	return packages[0], nil
-}
-
 // BuildPackages turns a document stream into the groups it declares — one per
 // package, plus one per authority document — keyed by DeclaredPackage. Every
 // problem in every document is reported at once.
@@ -358,7 +305,6 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 		Mappings:      map[string]*Mapping{},
 		Functions:     map[string]*Function{},
 		Agents:        map[string]*Agent{},
-		SourceYAML:    gd.header.Source,
 	}
 	l.pkg = g
 
@@ -503,7 +449,7 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 		}
 		g.PropertyTypes[local] = &PropertyType{
 			Name: local, Package: identity, Base: p.Datatype, Prop: p,
-			Definition: data, SourceYAML: d.Source,
+			Definition: data,
 		}
 		g.DatatypeOrder = append(g.DatatypeOrder, local)
 	}
@@ -520,7 +466,7 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 			continue
 		}
 		c := &Trait{
-			Name: local, Package: identity, Definition: d.Data, SourceYAML: d.Source,
+			Name: local, Package: identity, Definition: d.Data,
 		}
 		if one, has := d.Data["oneOf"]; has {
 			c.Variants = l.parseTraitVariants(where, one)
@@ -894,7 +840,6 @@ func (l *loader) parseType(doc Document) *Kind {
 		Machines:    map[string]*Machine{},
 		HotColumns:  map[string]bool{},
 		Definition:  d,
-		SourceYAML:  doc.Source,
 	}
 	if v := l.parseVersion(where, d); v != 0 {
 		t.Version = v

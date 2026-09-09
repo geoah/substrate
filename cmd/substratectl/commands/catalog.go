@@ -309,12 +309,12 @@ flag.`,
 			// shipped, not `null`.
 			rows := []catalogRow{}
 			// The seeded package first. The shipped read is optional: a
-			// server that previews no boot upgrade (an older binary, a
-			// dataset without the seam) answers 404 or 501 and has no core
-			// row, and any other refusal costs the core row alone, because
-			// the catalog read still serves and is the reason the command
-			// was run. A refusal that is not one of the two expected ones
-			// is said once, on stderr.
+			// server that previews no boot upgrade (a dataset without the
+			// seam) answers 404 or 501 and has no core row, and any other
+			// refusal costs the core row alone, because the catalog read
+			// still serves and is the reason the command was run. A refusal
+			// that is not one of the two expected ones is said once, on
+			// stderr.
 			var shipped substrate.OperationalList[substrate.ShippedUpgrade]
 			err = cl.do(ctx, http.MethodGet, apiPrefix+"/vocabulary/upgrade", nil, nil, &shipped)
 			var ae *apiError

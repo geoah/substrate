@@ -45,10 +45,10 @@ type Change struct {
 	// pass every record it purged.
 	Affected []AffectedRecord `json:"affected,omitempty"`
 	// Hash is the entry's checksum, hex: the SHA-256 of its canonical line,
-	// the same value the segment file carries in `sum`. It is NOT
+	// the same value the segment file carries in `sum`. Every committed entry
+	// carries one, stamped in the transaction that appended it. It is NOT
 	// independently recomputable from this wire shape: the payload here is
-	// redacted, and the checksum covers what is stored. Absent only on an
-	// entry written before checksums existed.
+	// redacted, and the checksum covers what is stored.
 	Hash string `json:"hash,omitempty"`
 }
 
@@ -77,11 +77,10 @@ type ChangePage struct {
 // AffectedRecord is one record a change moved, as the public event names it.
 // Version is the version the record reached in this entry, the same number a
 // read of the record returns until its next change, so a client whose copy
-// already carries it or a later one need not fetch; it is absent on a purge
-// (the record has no version afterwards) and on an entry written before the
-// effects recorded one. Deleted is true when the entry tombstoned or purged
-// the record; a fetch then answers the tombstone or `not_found`, and a client
-// keeping a copy drops it either way.
+// already carries it or a later one need not fetch; it is absent on a purge,
+// where the record has no version afterwards. Deleted is true when the entry
+// tombstoned or purged the record; a fetch then answers the tombstone or
+// `not_found`, and a client keeping a copy drops it either way.
 type AffectedRecord struct {
 	Kind    string `json:"kind"`
 	ID      string `json:"id"`
