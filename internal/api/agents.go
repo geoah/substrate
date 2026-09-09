@@ -34,7 +34,7 @@ func (h *handler) postAgentCall(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
 	}
-	res, err := ops.CallAgent(r.Context(), pathParam(r, "name"), req.Input)
+	res, err := ops.CallAgent(idempotentContext(r), pathParam(r, "name"), req.Input)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return

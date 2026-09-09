@@ -155,6 +155,38 @@ func (ds *dataset) agentFire(ctx context.Context, tr *trigger, mode, fid string,
 // settlement, and the final reply returns with the thread id — the durable
 // trace is the thread, so unlike a function call something IS minted.
 func (ds *dataset) CallAgent(ctx context.Context, name string, input any) (*substrate.AgentResult, error) {
+	// The request's Idempotency-Key first, before the agent is resolved or
+	// admitted (idempotency.go): a stored outcome answers a repeat even after
+	// the agent was disabled or uninstalled, because the first attempt ran.
+	call, stored, err := ds.beginIdempotent(ctx, idemAgentCall, agentCallInput{Name: name, Input: input})
+	if err != nil {
+		return nil, err
+	}
+	if stored != nil {
+		var replayed substrate.AgentResult
+		if err := json.Unmarshal(stored, &replayed); err != nil {
+			return nil, fmt.Errorf("decode the stored outcome: %w", err)
+		}
+		return &replayed, nil
+	}
+	// The key is consumed: the loop, its tools and its sub-agents run
+	// without one, so a mutate tool's create never inherits it.
+	ctx = substrate.WithoutIdempotencyKey(ctx)
+	res, err := ds.callAgentOnce(ctx, name, input, call)
+	if err != nil {
+		// Nothing settled. The reservation goes unless the attempt opened a
+		// thread, whose effects may have committed (attachThread).
+		call.release(ctx)
+		return nil, err
+	}
+	return res, nil
+}
+
+// callAgentOnce is CallAgent's one attempt: admission, the loop, and the
+// idempotency reservation bound to the thread as it opens and settled in the
+// thread's settling transaction, the completion hook a trigger delivery uses
+// for the same reason.
+func (ds *dataset) callAgentOnce(ctx context.Context, name string, input any, call *idempotentCall) (*substrate.AgentResult, error) {
 	ag, err := ds.registry().ResolveAgent(name)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", substrate.ErrNotFound, err)
@@ -171,11 +203,34 @@ func (ds *dataset) CallAgent(ctx context.Context, name string, input any) (*subs
 	if err != nil {
 		return nil, err
 	}
-	res, err := ds.runAgent(ctx, ag, agentInvocation{mode: "call", user: user})
+	// The reservation's lease follows the agent's own deadline from here;
+	// attachThread extends it to the retention window once the thread opens.
+	if err := call.extendLease(ctx, nowUTC().Add(time.Duration(ag.Budgets.DeadlineSeconds)*time.Second)); err != nil {
+		return nil, err
+	}
+	inv := agentInvocation{mode: "call", user: user}
+	if call != nil {
+		inv.onThread = call.attachThread
+		inv.complete = func(t *txn, res *substrate.AgentResult) error { return call.settleIn(t, res) }
+		// The delivery identity the loop derives its tool keys from is the
+		// client's key, not a per-call mint (runAgent's default): an external
+		// effect under this call presents a downstream key that names the
+		// client's attempt, so two attempts under one key are one effect to a
+		// provider that honors it, and two keys are two.
+		inv.delivery = call.downstreamKey(ag.Identity())
+	}
+	res, err := ds.runAgent(ctx, ag, inv)
 	if err != nil {
 		return nil, agentEntryError(err)
 	}
 	return res, nil
+}
+
+// agentCallInput is what an agent call's idempotency fingerprint covers: the
+// agent addressed and the input as decoded.
+type agentCallInput struct {
+	Name  string `json:"name"`
+	Input any    `json:"input"`
 }
 
 // agentEntryError shapes a loop error for the direct entries: a sentinel the

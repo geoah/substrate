@@ -28,27 +28,20 @@ const corePackage = "substrate.reamde.dev/core"
 // merges them.
 
 func (ds *dataset) Merge(ctx context.Context, actor substrate.Actor, in substrate.MergeInput) (*substrate.Record, error) {
-	var out *substrate.Record
-	err := ds.inTx(ctx, actor, false, func(t *txn) error {
+	return ds.idempotentRecordTx(ctx, actor, idemMerge, in, func(t *txn) (*substrate.Record, error) {
 		// The shared registry-dependency lock before the kind resolves, as a
 		// put takes it: the merge rewrites both rows against this declaration
 		// and must not race a vocabulary apply that replaces it.
 		if err := t.lockRegistryDepShared(); err != nil {
-			return err
+			return nil, err
 		}
 		ty, err := t.resolveType(in.Kind)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		e, err := t.mergeRecordIf(eref{Kind: ty.Identity, ID: in.Winner}, eref{Kind: ty.Identity, ID: in.Loser},
+		return t.mergeRecordIf(eref{Kind: ty.Identity, ID: in.Winner}, eref{Kind: ty.Identity, ID: in.Loser},
 			in.WinnerVersion, in.LoserVersion)
-		out = e
-		return err
 	})
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 // mergeRecord performs the merge and returns its command record — the moved
@@ -460,16 +453,9 @@ func (t *txn) moveAnnotations(loserRef, winnerRef eref) (all, overwritten []map[
 }
 
 func (ds *dataset) Split(ctx context.Context, actor substrate.Actor, in substrate.SplitInput) (*substrate.Record, error) {
-	var out *substrate.Record
-	err := ds.inTx(ctx, actor, false, func(t *txn) error {
-		e, err := t.splitIf(in.Merge, in.IfVersion)
-		out = e
-		return err
+	return ds.idempotentRecordTx(ctx, actor, idemSplit, in, func(t *txn) (*substrate.Record, error) {
+		return t.splitIf(in.Merge, in.IfVersion)
 	})
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 // split reverses one merge. It is splitIf with no version precondition, the

@@ -783,6 +783,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.adoptLegacyLedger,
 		ds.upgradeShippedVocabulary,
 		ds.ensureTriggerCursors,
+		ds.clearDeadReservations,
 	} {
 		if err := step(ctx); err != nil {
 			ds.close()

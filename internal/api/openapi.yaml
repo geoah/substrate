@@ -812,6 +812,7 @@ paths:
       operationId: merge
       parameters:
         - $ref: "#/components/parameters/actor"
+        - $ref: "#/components/parameters/idempotencyKey"
       requestBody:
         required: true
         content:
@@ -840,6 +841,7 @@ paths:
       operationId: split
       parameters:
         - $ref: "#/components/parameters/actor"
+        - $ref: "#/components/parameters/idempotencyKey"
       requestBody:
         required: true
         content:
@@ -1421,10 +1423,12 @@ paths:
         declared input schema when it has one; effects apply under the
         function's own actor. A body fault is `500 function_failed`,
         distinct from `422 validation` for bad input. A retry re-runs the
-        effects: this call is not idempotent.
+        effects unless it carries the first call's `Idempotency-Key`, which
+        answers the stored outcome instead.
       operationId: callFunction
       parameters:
         - $ref: "#/components/parameters/callableName"
+        - $ref: "#/components/parameters/idempotencyKey"
       requestBody:
         required: true
         content:
@@ -1450,6 +1454,7 @@ paths:
       operationId: callAgent
       parameters:
         - $ref: "#/components/parameters/callableName"
+        - $ref: "#/components/parameters/idempotencyKey"
       requestBody:
         required: true
         content:
@@ -1577,10 +1582,12 @@ paths:
         Creates a record of the kind; the server assigns the id unless the
         body names one, and a kind some mapping points at refuses a client
         id (`422`). The body's `kind` is ignored: the path names it. A retry
-        without an id creates a second record.
+        without an id creates a second record unless it carries the first
+        attempt's `Idempotency-Key`, which answers the record it created.
       operationId: createRecord
       parameters:
         - $ref: "#/components/parameters/actor"
+        - $ref: "#/components/parameters/idempotencyKey"
       requestBody:
         $ref: "#/components/requestBodies/Put"
       responses:
@@ -1875,6 +1882,21 @@ components:
       description: |-
         Attribution for the write: `console`, `substratectl`, or any name
         that is not one of the substrate's own hands. Absent is `api`.
+      schema:
+        type: string
+    idempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |-
+        The client's name for this attempt, up to 255 UTF-8 bytes (bytes,
+        not characters, so no `maxLength` is declared here; a longer key is
+        `422 validation`). A repeat under
+        the same key and the same body answers the first attempt's outcome
+        with its original status, and the effect runs once; the same key
+        with a different body is `409 conflict`. The key binds to the
+        repository and the operation, not the token, and answers for 24
+        hours.
       schema:
         type: string
     webhookAuthority:

@@ -395,6 +395,47 @@ func (b *callBackend) Call(ctx context.Context, ident string, args any) (any, er
 // returns the output (checked against `output:` when declared) and how many
 // effects applied.
 func (ds *dataset) CallFunction(ctx context.Context, name string, args any) (any, int, error) {
+	// The request's Idempotency-Key first, before the function is resolved,
+	// admitted or its input checked (idempotency.go): a stored outcome
+	// answers a repeat even after the function was disabled, uninstalled or
+	// its input narrowed, because the first attempt ran. A refused attempt
+	// releases the reservation below, so it burns no key.
+	call, stored, err := ds.beginIdempotent(ctx, idemFunctionCall, functionCallInput{Name: name, Args: args})
+	if err != nil {
+		return nil, 0, err
+	}
+	if stored != nil {
+		var replayed substrate.FunctionCalled
+		if err := json.Unmarshal(stored, &replayed); err != nil {
+			return nil, 0, fmt.Errorf("decode the stored outcome: %w", err)
+		}
+		return replayed.Output, replayed.Effects, nil
+	}
+	// The key is consumed: the body, its host calls and its effects run
+	// without one.
+	ctx = substrate.WithoutIdempotencyKey(ctx)
+	output, effects, err := ds.callFunctionOnce(ctx, name, args, call)
+	if err != nil {
+		// Nothing committed: the reservation goes so the retry runs again.
+		call.release(ctx)
+		return nil, 0, err
+	}
+	return output, effects, nil
+}
+
+// functionCallInput is what a function call's idempotency fingerprint covers:
+// the callable addressed and the arguments as decoded.
+type functionCallInput struct {
+	Name string `json:"name"`
+	Args any    `json:"args"`
+}
+
+// callFunctionOnce is CallFunction's one attempt: admission, the body, the
+// output check and the effects, with the idempotency reservation settled in
+// the transaction that applies the effects (or in one of its own when there
+// are none), so the stored outcome commits with the effect and never without
+// it.
+func (ds *dataset) callFunctionOnce(ctx context.Context, name string, args any, call *idempotentCall) (any, int, error) {
 	fn, err := ds.registry().ResolveFunction(name)
 	if err != nil {
 		return nil, 0, fmt.Errorf("%w: %w", substrate.ErrNotFound, err)
@@ -413,19 +454,39 @@ func (ds *dataset) CallFunction(ctx context.Context, name string, args any) (any
 			return nil, 0, fmt.Errorf("%w: input: %w", substrate.ErrValidation, err)
 		}
 	}
-	if fn.IsHost() {
-		return ds.callHostFunction(ctx, fn, args)
-	}
-	callID, err := newID()
-	if err != nil {
+	// The reservation's lease follows the body's own clock from here, plus
+	// the provisioning a PEP 723 body may need first: a uv cache evicted
+	// since the last run re-resolves for up to runner's uvProvisionTimeout
+	// before fn.Timeout starts counting, and a lease that lapsed in that
+	// window would let a retry run the body a second time.
+	if err := call.extendLease(ctx, nowUTC().Add(fn.Timeout+idempotencyProvisionBudget)); err != nil {
 		return nil, 0, err
 	}
+	if fn.IsHost() {
+		output, effects, err := ds.callHostFunction(ctx, fn, args)
+		if err != nil {
+			return nil, 0, err
+		}
+		return output, effects, call.settle(ctx, substrate.FunctionCalled{Output: output, Effects: effects})
+	}
+	// The key the body hands its external effects. Under a client key it
+	// derives from (repository, function, client key), so an attempt that
+	// completed an external request and died before settling is retried
+	// under the SAME downstream key and a provider that honors it performs
+	// the effect once. Without one it is unique per call: a manual
+	// invocation is not a delivery, so nothing external dedupes two of them.
+	downstream := call.downstreamKey(fn.Identity())
+	if downstream == "" {
+		callID, err := newID()
+		if err != nil {
+			return nil, 0, err
+		}
+		downstream = fmt.Sprintf("%s/%s/call/%s", ds.Repository().Name, fn.Identity(), callID)
+	}
 	effects, output, err := ds.runCallable(ctx, fn, runner.Input{
-		Mode: runner.ModeCall,
-		Args: args,
-		// Unique per call: a manual invocation is not a delivery, so nothing
-		// external should dedupe two of them into one.
-		IdempotencyKey: fmt.Sprintf("%s/%s/call/%s", ds.Repository().Name, fn.Identity(), callID),
+		Mode:           runner.ModeCall,
+		Args:           args,
+		IdempotencyKey: downstream,
 	})
 	if err != nil {
 		// The body ran and faulted (a raise, a bad effect, a failed sub-call).
@@ -440,23 +501,25 @@ func (ds *dataset) CallFunction(ctx context.Context, name string, args any) (any
 			return nil, 0, fmt.Errorf("%w: output: %w", substrate.ErrValidation, err)
 		}
 	}
-	if len(effects) > 0 {
-		actor := substrate.Actor(fn.Actor())
-		err = ds.inTx(ctx, actor, false, func(t *txn) error {
-			t.setEffectEmit(fn.Caps.Emit)
-			if err := t.lockEffectTargets(effects); err != nil {
+	outcome := substrate.FunctionCalled{Output: output, Effects: len(effects)}
+	if len(effects) == 0 {
+		return output, 0, call.settle(ctx, outcome)
+	}
+	actor := substrate.Actor(fn.Actor())
+	err = ds.inTx(ctx, actor, false, func(t *txn) error {
+		t.setEffectEmit(fn.Caps.Emit)
+		if err := t.lockEffectTargets(effects); err != nil {
+			return err
+		}
+		for _, ef := range effects {
+			if err := t.applyEffect(ef); err != nil {
 				return err
 			}
-			for _, ef := range effects {
-				if err := t.applyEffect(ef); err != nil {
-					return err
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			return nil, 0, err
 		}
+		return call.settleIn(t, outcome)
+	})
+	if err != nil {
+		return nil, 0, err
 	}
 	return output, len(effects), nil
 }

@@ -117,6 +117,12 @@ func (ds *dataset) putBounded(ctx context.Context, actor substrate.Actor, in sub
 	// request, so no ceiling travels into it.
 	if ty, err := ds.resolveType(in.Kind); err == nil {
 		if _, isVocabulary := vocabularyRecordKinds[ty.Identity]; isVocabulary {
+			// A declaration write is admission, not one of the operations
+			// the key store covers (idempotency.go): refused rather than
+			// ignored, so a client never reads a silent no-op as a promise.
+			if substrate.IdempotencyKeyFrom(ctx) != "" {
+				return nil, fmt.Errorf("%w: Idempotency-Key is not accepted on a vocabulary kind; a declaration is addressed by its own id", substrate.ErrValidation)
+			}
 			return ds.putSchemaRecord(ctx, actor, ty, in)
 		}
 	}
@@ -128,17 +134,25 @@ func (ds *dataset) putInternal(ctx context.Context, actor substrate.Actor, in su
 }
 
 func (ds *dataset) putWith(ctx context.Context, actor substrate.Actor, in substrate.PutInput, internal bool, ceiling *effectCeiling) (*substrate.Record, error) {
-	var out *substrate.Record
-	err := ds.inTx(ctx, actor, internal, func(t *txn) error {
+	run := func(t *txn) (*substrate.Record, error) {
 		ceiling.stamp(t)
-		e, err := t.put(in)
-		out = e
-		return err
-	})
-	if err != nil {
-		return nil, err
+		return t.put(in)
 	}
-	return out, nil
+	if internal {
+		// An internal put (the seed, a token mint) runs on whatever context
+		// reached it and never consults a request's key.
+		var out *substrate.Record
+		err := ds.inTx(ctx, actor, true, func(t *txn) error {
+			e, err := run(t)
+			out = e
+			return err
+		})
+		if err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
+	return ds.idempotentRecordTx(ctx, actor, idemCreate, in, run)
 }
 
 func (t *txn) put(in substrate.PutInput) (*substrate.Record, error) {

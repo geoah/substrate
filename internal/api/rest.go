@@ -223,7 +223,7 @@ func (h *handler) createInCollection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.Kind = ti.Identity
-	ctx := r.Context()
+	ctx := idempotentContext(r)
 	ent, err := ds.Put(ctx, ActorFrom(ctx), in)
 	if err != nil {
 		writeSubstrateError(w, err)
