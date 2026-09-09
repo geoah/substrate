@@ -60,6 +60,11 @@ func DSN(t testing.TB) string {
 		ctx := context.Background()
 		if env := os.Getenv("SUBSTRATE_TEST_DATABASE_URL"); env != "" {
 			pgDSN = env
+			if os.Getenv("SUBSTRATE_TEST_DATABASE_DISPOSABLE") == "true" {
+				if pgErr = durabilityOffOnServer(ctx, pgDSN); pgErr != nil {
+					return
+				}
+			}
 		} else {
 			c, err := postgres.Run(ctx, "pgvector/pgvector:pg16",
 				postgres.WithDatabase("substrate"),
@@ -72,16 +77,8 @@ func DSN(t testing.TB) string {
 				// 16 cores (measured: ~56) and would not survive 32, and the
 				// failure — "too many clients already" — reads like a leak
 				// rather than a limit, so it is raised here once.
-				testcontainers.WithCmdArgs("-c", "max_connections=500",
-					// The container is thrown away with the binary, so
-					// durability buys nothing here and costs most of the run:
-					// DROP DATABASE forces a checkpoint, and with fsync on,
-					// a checkpoint under 16 parallel tests fsyncs every dirty
-					// file (measured: 830 drops averaged 1.2 s, one took 26 s,
-					// 72% of Postgres's time). Every commit's WAL flush went
-					// the same way. A server somebody points the suite at
-					// (SUBSTRATE_TEST_DATABASE_URL) is never changed.
-					"-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off"),
+				testcontainers.WithCmdArgs("-c", "max_connections=500"),
+				DurabilityOff(),
 				testcontainers.WithWaitStrategy(
 					wait.ForLog("database system is ready to accept connections").
 						WithOccurrence(2).WithStartupTimeout(120*time.Second)),
@@ -117,6 +114,47 @@ func DSN(t testing.TB) string {
 		t.Fatalf("start pgvector container: %v", pgErr)
 	}
 	return pgDSN
+}
+
+// durabilityGUCs are the settings that make a throwaway Postgres flush
+// nothing. Durability buys a test database nothing and costs most of the run:
+// DROP DATABASE forces a checkpoint, and with fsync on, a checkpoint under 16
+// parallel tests fsyncs every dirty file (measured: 830 drops averaged 1.2 s,
+// one took 26 s, 72% of Postgres's time), and every commit's WAL flush went
+// the same way. All three are sighup-context or lower, so a running server
+// takes them from ALTER SYSTEM plus a reload.
+var durabilityGUCs = []string{"fsync=off", "synchronous_commit=off", "full_page_writes=off"}
+
+// DurabilityOff is the container option every test-owned Postgres starts with;
+// a test that starts a container of its own passes it too.
+func DurabilityOff() testcontainers.CustomizeRequestOption {
+	args := make([]string, 0, 2*len(durabilityGUCs))
+	for _, guc := range durabilityGUCs {
+		args = append(args, "-c", guc)
+	}
+	return testcontainers.WithCmdArgs(args...)
+}
+
+// durabilityOffOnServer applies durabilityGUCs to a server the suite was
+// pointed at. It runs only under SUBSTRATE_TEST_DATABASE_DISPOSABLE=true,
+// because ALTER SYSTEM rewrites the server's own configuration: a CI service
+// container is disposable, a developer's database may not be.
+func durabilityOffOnServer(ctx context.Context, dsn string) error {
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+	for _, guc := range durabilityGUCs {
+		name, value, _ := strings.Cut(guc, "=")
+		if _, err := db.ExecContext(ctx, fmt.Sprintf("ALTER SYSTEM SET %s = %s", name, value)); err != nil {
+			return fmt.Errorf("testdb: ALTER SYSTEM SET %s: %w", name, err)
+		}
+	}
+	if _, err := db.ExecContext(ctx, "SELECT pg_reload_conf()"); err != nil {
+		return fmt.Errorf("testdb: pg_reload_conf: %w", err)
+	}
+	return nil
 }
 
 // containerDSN addresses the container by its own IP where the host can

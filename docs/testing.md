@@ -46,8 +46,11 @@ not care which:
   and `vector` is not a trusted extension, so either the role is a superuser
   or you install both into `template1` once (connect to `template1` and
   `CREATE EXTENSION` each), after which every new database inherits them and
-  `CREATEDB` is enough. The server is never changed (no `ALTER SYSTEM`); every database
-  the run makes is dropped when the binary exits (`testdb.Main`), and a
+  `CREATEDB` is enough. The server is not changed unless
+  `SUBSTRATE_TEST_DATABASE_DISPOSABLE=true` says it may be, in which case
+  `testdb` turns off `fsync`, `synchronous_commit` and `full_page_writes` with
+  `ALTER SYSTEM` and a reload, the way it does on its own container. Every
+  database the run makes is dropped when the binary exits (`testdb.Main`), and a
   `sub_tpl_*` or `sub_test_*` database older than six hours with nothing
   connected is dropped at the next run's start, so a killed binary does not
   accumulate them.
@@ -145,7 +148,12 @@ connection, and it was the queue every test waited in (98 s to 84 s). Each
 test drops its copy in its cleanup and `testdb.Main` drops what is left after
 `m.Run` (a dropper goroutine off the tests' path measured no gain: 69 to
 80 s against 67 s). CI's service containers keep their data directory on a
-tmpfs (`--tmpfs` in the job's `options`), no GUC spelled anywhere.
+tmpfs (`--tmpfs` in the job's `options`) and take no command line, so the
+jobs set `SUBSTRATE_TEST_DATABASE_DISPOSABLE=true` and `testdb` applies the
+same three settings through `ALTER SYSTEM`. The one test that starts a
+container of its own (`TestOpenFailsClosedWithoutSafeRoles`) passes
+`testdb.DurabilityOff()`, and the dev database `mise run dev` starts carries
+the flags too.
 
 **The data roots on tmpfs.** Every changelog write fsyncs
 ([0062](decisions/0062-a-write-is-on-disk-before-its-commit-and-its-final-newline-is-the-commit-marker.md)),
