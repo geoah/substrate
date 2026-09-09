@@ -50,17 +50,18 @@ import (
 //
 // Everything else survives the rebuild, and each for a stated reason:
 //
-//   - blobs, sealed — SIDE STORES. Their bytes were never in the changelog and
+//   - sealed — A SIDE STORE. Its payloads were never in the changelog and
 //     cannot be regenerated from it; the changelog only re-links the references.
-//     This is why the repository directory holds all three (repodir.go).
+//     This is why the repository directory holds them beside the segments
+//     (repodir.go), as it holds the blob bytes.
 //   - embeddings, embed_queue — DERIVED FROM THE RECORDS, not from the changelog,
 //     and expensive: the vectors of a reproduced row are still that row's, so
 //     they are kept rather than re-bought from the provider.
 //   - oauth_flows, RUNTIME STATE: a consent flow in flight is a nonce and a
 //     PKCE verifier with an expiry, which has no meaning in the changelog; an
 //     interrupted flow is started again.
-//   - vocabulary_dialect, vocabulary_promotions — the STORE SHAPE's ledger, about the
-//     tables rather than about their contents.
+//   - vocabulary_dialect — the STORE SHAPE's stamp, about the tables rather
+//     than about their contents.
 //   - changelog_dialect — what dialect the entries being replayed are written
 //     in (changelogdialect.go). A replay does not rewrite an entry, so it
 //     cannot change the answer.

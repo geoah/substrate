@@ -16,14 +16,12 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
@@ -737,18 +735,16 @@ func TestSealedMirrorFollowsRotation(t *testing.T) {
 	}
 }
 
-// A store from before the data root carries chain hashes in `changelog.hash`
-// that no line can reproduce. With NO file yet, the boot writes the directory
-// out and re-stamps every row to the line's checksum, so the migration is the
-// one place a stamp is rewritten; afterwards the table and the file agree row
-// for row.
-func TestBootMigratesRowsWithChainHashes(t *testing.T) {
+// A row whose stamp is not the checksum of what it holds is damage wherever
+// it is met, an empty directory included: the boot refuses and names the seq
+// rather than writing the row out as history and making the table agree with
+// it.
+func TestBootRefusesAGarbledRowWithNoFileAtAll(t *testing.T) {
 	t.Parallel()
 	svc, ds, dsn := newDatasetWithDSN(t)
 	for _, name := range []string{"one", "two", "three"} {
 		mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": name}})
 	}
-	head := maxSeq(t, ds)
 	root := engine.DataRootOf(svc)
 	dir := repoDirOf(t, svc, ds)
 	_ = svc.Close()
@@ -761,31 +757,12 @@ func TestBootMigratesRowsWithChainHashes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc2 := mustReopen(t, dsn, root)
-	report := mustVerify(t, svc2, testdb.Repository(t))
-	if !report.OK || report.Head != head || report.FileHead != head {
-		t.Fatalf("the migrated store does not verify: %+v", report)
+	_, err := reopen(t, dsn, root)
+	if !errors.Is(err, engine.ErrChangelogDiverged) {
+		t.Fatalf("boot over garbled stamps with no file: err = %v, want ErrChangelogDiverged", err)
 	}
-	log, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	entries, err := log.Read(0, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stamped := tableChangelog(t, dsn)
-	if int64(len(entries)) != head {
-		t.Fatalf("the file holds %d entries, want %d", len(entries), head)
-	}
-	for _, e := range entries {
-		_, sum, err := changelogfile.Encode(e)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !bytes.Equal(sum[:], stamped[e.Seq]) {
-			t.Fatalf("seq %d: the row's stamp was not rewritten to the line's checksum", e.Seq)
-		}
+	if !strings.Contains(err.Error(), "seq 1") {
+		t.Fatalf("the refusal must name the seq: %v", err)
 	}
 }
 
@@ -1167,7 +1144,7 @@ func TestBootSkipsADirectoryWithNoManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := w.Append([]changelogfile.Entry{{
-		Seq: 1, TS: time.Now().UTC(), Actor: "api", Op: "put", RecordID: "r1", Kind: "x.example.com/p/k",
+		Seq: 1, Txn: 1, TS: time.Now().UTC(), Actor: "api", Op: "put", RecordID: "r1", Kind: "x.example.com/p/k",
 		Payload: json.RawMessage(`{}`),
 	}}); err != nil {
 		t.Fatal(err)
@@ -1333,418 +1310,7 @@ func TestRegistrationUsesTheAuthorityAsTheId(t *testing.T) {
 	}
 }
 
-// A `repositories` row whose id is not its authority is a database written
-// before the authority became the id. The boot refuses it and says what to do,
-// and migration 0015's constraint is re-added without validating the old row.
-func TestBootRefusesARowWhoseIdIsNotItsAuthority(t *testing.T) {
-	t.Parallel()
-	svc, dsn := newService(t)
-	registerUser(t, svc, "ada.example.com")
-	root := engine.DataRootOf(svc)
-	_ = svc.Close()
-
-	db := rawDB(t, dsn)
-	// The constraint holds every row written from now on; the old shape is
-	// reached the way an old database reaches it, with no constraint at all.
-	if _, err := db.Exec(`ALTER TABLE repositories DROP CONSTRAINT repositories_id_is_authority`); err != nil {
-		t.Fatalf("drop the constraint: %v", err)
-	}
-	if _, err := db.Exec(`UPDATE repositories SET id = 'k3j9x2m41pfq'`); err != nil {
-		t.Fatalf("give the row a random id: %v", err)
-	}
-	// Such a database recorded nothing from 0015 on, and the runner refuses
-	// a gap, so every migration from 0015 runs again at the boot: 0015 puts
-	// the constraint back NOT VALID over the old row, which a validating one
-	// could not. This case therefore depends on 0015 through the last
-	// migration being re-runnable over a schema that already has them (each
-	// guards with IF NOT EXISTS or a catalog check); a later migration that
-	// is not must move the cut below it.
-	if _, err := db.Exec(`DELETE FROM schema_migrations WHERE version >= 15`); err != nil {
-		t.Fatalf("forget the migrations from 0015 on: %v", err)
-	}
-	_, err := reopen(t, dsn, root)
-	if err == nil {
-		t.Fatal("a row whose id is not its authority booted")
-	}
-	if !errors.Is(err, engine.ErrRepositoryIDNotAuthority) {
-		t.Fatalf("the refusal must be ErrRepositoryIDNotAuthority: %v", err)
-	}
-	for _, want := range []string{"Wipe the database and boot again", "k3j9x2m41pfq", "ada.example.com"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("the refusal must say %q: %v", want, err)
-		}
-	}
-	var validated bool
-	// Scoped to THIS database's table: an unscoped conname lookup answered
-	// from another test's schema when every test shared one database.
-	if err := db.QueryRow(`SELECT convalidated FROM pg_constraint
-		WHERE conname = 'repositories_id_is_authority' AND conrelid = 'repositories'::regclass`).Scan(&validated); err != nil {
-		t.Fatalf("the migration did not re-add the constraint: %v", err)
-	}
-	if validated {
-		t.Fatal("the re-added constraint validated the old row, which it cannot have")
-	}
-	// The wipe the message asks for, then the boot goes through.
-	if _, err := db.Exec(`UPDATE repositories SET id = authority`); err != nil {
-		t.Fatal(err)
-	}
-	mustReopen(t, dsn, root)
-}
-
-// legacyFixture is a repository directory in the shape a pre-authority binary
-// wrote: named by the random id it minted, its manifest carrying `id`, its
-// DEK wrapped under `dek\x00<random id>`, and its changelog holding the
-// self-description record under that id. It is built from a real
-// repository's directory, so the changelog, the sealed files and the blob are
-// what such a binary wrote; only the two things that binary spelled with the
-// old id are rewritten.
-type legacyFixture struct {
-	root, oldDir, oldID, authority string
-	manifest                       changelogfile.Manifest
-	dek, oldWrap                   []byte
-	token                          substrate.TokenInfo
-	secret, digest, ref            string
-	before                         []byte
-	head                           int64
-}
-
-const repositoryKind = "substrate.reamde.dev/core/repository"
-
-func buildLegacyFixture(t *testing.T) legacyFixture {
-	t.Helper()
-	svc, dsn := newService(t)
-	ctx := context.Background()
-	_, token, secret := registerUser(t, svc, "ada.example.com")
-	ds, err := svc.Dataset(ctx, "ada.example.com")
-	if err != nil {
-		t.Fatal(err)
-	}
-	importVocabulary(t, ds, "tasks")
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "from before"}})
-	ref := putProvider(t, ds, dsn, "openai", "sk-old-binding")
-	digest := putBlob(t, ds, []byte("old directory bytes"))
-	fx := legacyFixture{
-		oldID: "k3j9x2m41pfq", authority: "ada.example.com", token: token, secret: secret,
-		digest: digest, ref: ref, before: foldOf(t, ds), head: maxSeq(t, ds),
-	}
-	root := engine.DataRootOf(svc)
-	_ = svc.Close()
-
-	// The old shape: <root>/repositories/<random id>, the manifest with `id`
-	// and v0.46.0's changelog dialect 2, lines without `txn`, the DEK wrapped
-	// under `dek\x00<random id>`, the self-description under the random id.
-	src := filepath.Join(root, changelogfile.RepositoriesDir, fx.authority)
-	fx.root = t.TempDir()
-	fx.oldDir = filepath.Join(fx.root, changelogfile.RepositoriesDir, fx.oldID)
-	copyDir(t, src, fx.oldDir)
-	rewriteRecordID(t, changelogfile.ChangelogDir(fx.oldDir), repositoryKind, fx.authority, fx.oldID)
-	rewriteChangelogDir(t, changelogfile.ChangelogDir(fx.oldDir), unframe)
-	m, err := changelogfile.ReadManifest(src)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fx.manifest = m
-	if fx.dek, err = engine.OpenPayloadWithKey(engine.TestCredentialKeyBytes, m.DEK, engine.DEKAAD(fx.authority)); err != nil {
-		t.Fatalf("unwrap the DEK: %v", err)
-	}
-	if fx.oldWrap, err = engine.SealWithKey(engine.TestCredentialKeyBytes, fx.dek, engine.DEKAAD(fx.oldID)); err != nil {
-		t.Fatal(err)
-	}
-	legacy, err := json.MarshalIndent(map[string]any{
-		"format": 1, "id": fx.oldID, "username": "ada", "authority": fx.authority,
-		"createdAt": m.CreatedAt.Format("2006-01-02T15:04:05.000000Z"), "changelogDialect": 2,
-		"dek": base64.StdEncoding.EncodeToString(fx.oldWrap),
-	}, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(fx.oldDir, changelogfile.ManifestName), legacy, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	// The fixture is what it claims: the new reader refuses it, the old one
-	// reads it.
-	if _, err := changelogfile.ReadManifest(fx.oldDir); err == nil {
-		t.Fatal("the fixture's manifest reads as the current shape")
-	}
-	if lm, err := changelogfile.ReadLegacyManifest(fx.oldDir); err != nil || lm.ID != fx.oldID {
-		t.Fatalf("the fixture's manifest is not the pre-authority shape: %+v, %v", lm, err)
-	}
-	return fx
-}
-
-// rewriteRecordID re-encodes a changelog directory with the entries of kind
-// under id moved to newID, in the entry's record id and in the fold ops its
-// payload carries. Every line's checksum is recomputed, so the result
-// verifies and reads as a changelog a binary that minted newID wrote.
-func rewriteRecordID(t *testing.T, dir, kind, id, newID string) {
-	t.Helper()
-	log, err := changelogfile.OpenReadOnly(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	re := regexp.MustCompile(`"id":\s*"` + regexp.QuoteMeta(id) + `"`)
-	var entries []changelogfile.Entry
-	moved := 0
-	if err := log.Walk(func(e changelogfile.Entry) error {
-		e.Payload = append(json.RawMessage(nil), e.Payload...)
-		if e.Kind == kind && e.RecordID == id {
-			e.RecordID = newID
-			e.Payload = re.ReplaceAll(e.Payload, []byte(`"id":"`+newID+`"`))
-			moved++
-		}
-		entries = append(entries, e)
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if moved == 0 {
-		t.Fatalf("no entry of %s under %s to move", kind, id)
-	}
-	if err := os.RemoveAll(dir); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	w, err := changelogfile.OpenWriter(dir, changelogfile.WriterOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := w.Append(entries); err != nil {
-		t.Fatal(err)
-	}
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// withoutKind drops every row of one kind from a fold snapshot (the record,
-// its managers, annotations, refs and former ids), for a comparison that must
-// ignore a record the boot moved.
-func withoutKind(t *testing.T, snap []byte, kind string) []byte {
-	t.Helper()
-	dec := json.NewDecoder(bytes.NewReader(snap))
-	dec.UseNumber()
-	var doc map[string]any
-	if err := dec.Decode(&doc); err != nil {
-		t.Fatal(err)
-	}
-	for table, list := range doc {
-		rows, _ := list.([]any)
-		kept := make([]any, 0, len(rows))
-		for _, r := range rows {
-			if row, ok := r.(map[string]any); ok && (row["kind"] == kind || row["record_kind"] == kind || row["src_kind"] == kind) {
-				continue
-			}
-			kept = append(kept, r)
-		}
-		doc[table] = kept
-	}
-	out, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return out
-}
-
-// A directory a pre-authority binary wrote, named by the random id it minted
-// and carrying a manifest with `id`, imports into a fresh database: the boot
-// moves it under its authority, re-wraps the DEK from the old binding to the
-// new, writes the format-1 manifest, imports it as any directory with no row,
-// and then moves the self-description record from the old id to the authority
-// with two changelog entries, so the correction is in the changelog and a
-// rebuild reproduces it.
-func TestBootImportsAnOldIdNamedDirectory(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	fx := buildLegacyFixture(t)
-	m := fx.manifest
-
-	dsn2 := engine.MigratedDSN(t)
-	svc2 := mustReopen(t, dsn2, fx.root)
-	if _, err := os.Stat(fx.oldDir); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("the old directory is still there: %v", err)
-	}
-	newDir := filepath.Join(fx.root, changelogfile.RepositoriesDir, fx.authority)
-	m2, err := changelogfile.ReadManifest(newDir)
-	if err != nil {
-		t.Fatalf("no manifest under the authority: %v", err)
-	}
-	// The manifest is in the format this binary writes, with the vocabulary
-	// dialect the old format implied. The changelog dialect is this binary's:
-	// the boot appended the self-description's correction (below), so it
-	// claimed the dialect, and the manifest followed the claim without a
-	// restart (manifest_db_test.go).
-	if m2.Format != changelogfile.ManifestFormat || m2.Authority != fx.authority ||
-		m2.ChangelogDialect != engine.MaxChangelogDialect() || m2.VocabularyDialect != formatOneVocabularyDialect || !m2.CreatedAt.Equal(m.CreatedAt) {
-		t.Fatalf("manifest after the move = %+v", m2)
-	}
-	if bytes.Equal(m2.DEK, fx.oldWrap) {
-		t.Fatal("the DEK was not re-wrapped")
-	}
-	if got, err := engine.OpenPayloadWithKey(engine.TestCredentialKeyBytes, m2.DEK, engine.DEKAAD(fx.authority)); err != nil || !bytes.Equal(got, fx.dek) {
-		t.Fatalf("the re-wrapped DEK does not open under the authority to the same key: %v", err)
-	}
-	repos, err := svc2.Repositories(ctx)
-	if err != nil || len(repos) != 1 || repos[0].ID != fx.authority {
-		t.Fatalf("repositories after the import = %+v, %v", repos, err)
-	}
-	var wrapped []byte
-	if err := rawDB(t, dsn2).QueryRow(`SELECT dek FROM repositories WHERE id = $1`, fx.authority).Scan(&wrapped); err != nil || !bytes.Equal(wrapped, m2.DEK) {
-		t.Fatalf("the row's DEK is not the manifest's: %v", err)
-	}
-	ds2, err := svc2.Dataset(ctx, "ada.example.com")
-	if err != nil {
-		t.Fatalf("open the imported repository: %v", err)
-	}
-	// The fold is the original's, except the self-description the boot moved.
-	if after := foldOf(t, ds2); string(withoutKind(t, after, repositoryKind)) != string(withoutKind(t, fx.before, repositoryKind)) {
-		t.Fatalf("the imported fold is not the original\n%s", firstDifference(withoutKind(t, fx.before, repositoryKind), withoutKind(t, after, repositoryKind)))
-	}
-	if got := getBlob(t, ds2, fx.digest); string(got) != "old directory bytes" {
-		t.Fatalf("blob bytes = %q", got)
-	}
-	if got := openSecret(t, dsn2, fx.ref); got != "sk-old-binding" {
-		t.Fatalf("secret = %q", got)
-	}
-	if _, info, err := svc2.Authenticate(ctx, fx.secret); err != nil || info.ID != fx.token.ID {
-		t.Fatalf("the registered token does not open the imported repository: %v (%+v)", err, info)
-	}
-	// The self-description: readable under the repository's id, a tombstone
-	// under the old one, and both moves in the changelog by the system actor.
-	self := mustGet(t, ds2, repositoryKind, ds2.Repository().ID)
-	if self.ID != fx.authority || self.Properties["authority"] != fx.authority || self.DeletedAt != nil {
-		t.Fatalf("the self-description under the authority = %+v", self)
-	}
-	if old := mustGet(t, ds2, repositoryKind, fx.oldID); old.DeletedAt == nil {
-		t.Fatalf("the self-description under the old id is not a tombstone: %+v", old)
-	}
-	moves := changesSince(t, ds2, fx.head)
-	if len(moves) != 2 ||
-		moves[0].Op != substrate.OpPut || moves[0].Kind != repositoryKind || moves[0].RecordID != fx.authority || moves[0].Actor != substrate.ActorSystem ||
-		moves[1].Op != substrate.OpDelete || moves[1].Kind != repositoryKind || moves[1].RecordID != fx.oldID || moves[1].Actor != substrate.ActorSystem {
-		t.Fatalf("the correction is not two system entries, a put under the authority and a delete of the old id: %+v", moves)
-	}
-	report := mustVerify(t, svc2, "ada.example.com")
-	if !report.OK || report.Head != fx.head+2 || report.FileHead != fx.head+2 {
-		t.Fatalf("the imported repository does not verify with the correction in both stores: %+v", report)
-	}
-	// The correction is in the changelog: a rebuild from the files reproduces
-	// the fold that holds it.
-	folded := foldOf(t, ds2)
-	if _, err := svc2.(rebuilder).RebuildRepository(ctx, "ada.example.com"); err != nil {
-		t.Fatalf("rebuild: %v", err)
-	}
-	if again := foldOf(t, ds2); string(again) != string(folded) {
-		t.Fatalf("the rebuilt fold is not the imported one\n%s", firstDifference(folded, again))
-	}
-	// A second boot finds nothing to move and nothing to correct.
-	_ = svc2.Close()
-	svc3 := mustReopen(t, dsn2, fx.root)
-	ds3, err := svc3.Dataset(ctx, "ada.example.com")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := maxSeq(t, ds3); got != fx.head+2 {
-		t.Fatalf("a second boot appended: head %d, want %d", got, fx.head+2)
-	}
-}
-
-// s3LikeBackend is a blob backend named s3 whose old-id prefix holds what the
-// test says: the shape of a bucket after a rename on disk, with no bucket.
-// Everything but the name and the legacy listing is the fs backend's.
-type s3LikeBackend struct {
-	blobbytes.Backend
-	legacy map[string][]blobbytes.Object
-}
-
-func (s3LikeBackend) Name() string { return blobbytes.BackendS3 }
-
-func (b s3LikeBackend) ListLegacyRepository(_ context.Context, id string, _ int) ([]blobbytes.Object, error) {
-	return b.legacy[id], nil
-}
-
-// Under a blob store that keys objects by the repository id, renaming the
-// directory moves no blob: the boot refuses to move a pre-authority directory
-// while the old id's prefix holds objects, names both prefixes, and leaves
-// the directory where it is; once the prefix is empty the move proceeds.
-func TestLegacyMoveRefusesWhileTheBucketHoldsTheOldPrefix(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	fx := buildLegacyFixture(t)
-	dsn2 := engine.MigratedDSN(t)
-	fsBackend, err := blobbytes.NewFS(fx.root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	backend := &s3LikeBackend{Backend: fsBackend, legacy: map[string][]blobbytes.Object{
-		fx.oldID: {{Digest: fx.digest, Size: 19}},
-	}}
-	open := func() (substrate.Service, error) {
-		return engine.OpenForTest(t, ctx, dsn2,
-			engine.WithKindsDir(engine.CoreKindsDir),
-			engine.WithDataRoot(fx.root),
-			engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithBlobStore(backend))
-	}
-	_, err = open()
-	if err == nil {
-		t.Fatal("the boot moved a directory whose blobs are still under the old id")
-	}
-	for _, want := range []string{"<SUBSTRATE_BLOB_S3_PREFIX>" + fx.oldID + "/", "<SUBSTRATE_BLOB_S3_PREFIX>" + fx.authority + "/", "boot again"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("the refusal must say %q: %v", want, err)
-		}
-	}
-	if _, err := os.Stat(fx.oldDir); err != nil {
-		t.Fatalf("the refusal moved the directory: %v", err)
-	}
-	var rows int
-	if err := rawDB(t, dsn2).QueryRow(`SELECT count(*) FROM repositories`).Scan(&rows); err != nil || rows != 0 {
-		t.Fatalf("the refused boot created %d rows (%v)", rows, err)
-	}
-
-	// The operator moved the objects: the old prefix is empty.
-	backend.legacy = nil
-	svc, err := open()
-	if err != nil {
-		t.Fatalf("the boot after the move: %v", err)
-	}
-	defer func() { _ = svc.Close() }()
-	repos, err := svc.Repositories(ctx)
-	if err != nil || len(repos) != 1 || repos[0].ID != fx.authority {
-		t.Fatalf("repositories after the move = %+v, %v", repos, err)
-	}
-}
-
-// A move that crashed between the rename and the manifest write (the
-// directory under its authority, the manifest still the old shape) is held
-// to the same check as the move: an authority a `repositories` row already
-// holds refuses the boot.
-func TestInterruptedLegacyMoveRefusesATakenAuthority(t *testing.T) {
-	t.Parallel()
-	fx := buildLegacyFixture(t)
-	newDir := filepath.Join(fx.root, changelogfile.RepositoriesDir, fx.authority)
-	if err := os.Rename(fx.oldDir, newDir); err != nil {
-		t.Fatal(err)
-	}
-	// A row that holds the authority, registered on the same database from
-	// another data root.
-	dsn2 := engine.MigratedDSN(t)
-	other := mustReopen(t, dsn2, t.TempDir())
-	registerUser(t, other, "ada.example.com")
-	_ = other.Close()
-
-	_, err := reopen(t, dsn2, fx.root)
-	if err == nil {
-		t.Fatal("an interrupted move onto a taken authority booted")
-	}
-	if !strings.Contains(err.Error(), "already holds") || !strings.Contains(err.Error(), fx.authority) {
-		t.Fatalf("the refusal must name the taken authority: %v", err)
-	}
-}
-
-// An import lands its rows in batches and folds after the last one, so a boot
+// An import that dies part way lands its rows in batches and folds after the last one, so a boot
 // that died after that batch used to leave equal heads and an empty fold that
 // the next boot served as a healthy repository; one that died between the two
 // fold passes left records with no refs and unweighted fts. Each case here

@@ -111,7 +111,7 @@ func TestS3Store(t *testing.T) {
 	b := newS3(t, "conformance", "")
 	conformance(t, func(t *testing.T, repository string) blobbytes.Store {
 		t.Helper()
-		s, err := b.Repository(repository, nil)
+		s, err := b.Repository(repository)
 		if err != nil {
 			t.Fatalf("bind %s: %v", repository, err)
 		}
@@ -124,13 +124,13 @@ func TestS3RepositoryIsolation(t *testing.T) {
 	b := newS3(t, "isolation", "")
 	repositoryIsolation(t, func(t *testing.T, repository string) blobbytes.Store {
 		t.Helper()
-		s, err := b.Repository(repository, nil)
+		s, err := b.Repository(repository)
 		if err != nil {
 			t.Fatalf("bind %s: %v", repository, err)
 		}
 		return s
 	})
-	refuseBadRepository(t, b, nil)
+	refuseBadRepository(t, b)
 }
 
 // A prefix lets one bucket hold this substrate beside something else, and the
@@ -138,7 +138,7 @@ func TestS3RepositoryIsolation(t *testing.T) {
 func TestS3PrefixIsHonored(t *testing.T) {
 	t.Parallel()
 	b := newS3(t, "prefixed", "substrate/blobs")
-	s, err := b.Repository("repoprefixed.example.com", nil)
+	s, err := b.Repository("repoprefixed.example.com")
 	if err != nil {
 		t.Fatalf("bind: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestS3PrefixIsHonored(t *testing.T) {
 	// The same bucket, no prefix: a store that ignored the prefix would find
 	// this object at the bucket root.
 	bare := newS3(t, "prefixed", "")
-	other, err := bare.Repository("repoprefixed.example.com", nil)
+	other, err := bare.Repository("repoprefixed.example.com")
 	if err != nil {
 		t.Fatalf("bind without the prefix: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestS3ListWalksPastKeysThatAreNotBlobs(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	b := newS3(t, "straykeys", "")
-	s, err := b.Repository("repostray.example.com", nil)
+	s, err := b.Repository("repostray.example.com")
 	if err != nil {
 		t.Fatalf("bind: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestS3RefusesAHalfConfiguredBackend(t *testing.T) {
 func TestS3RefusesBytesThatAreNotTheirDigest(t *testing.T) {
 	t.Parallel()
 	b := newS3(t, "mismatch", "")
-	s, err := b.Repository("repomismatch.example.com", nil)
+	s, err := b.Repository("repomismatch.example.com")
 	if err != nil {
 		t.Fatalf("bind: %v", err)
 	}

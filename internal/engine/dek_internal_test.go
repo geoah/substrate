@@ -38,10 +38,10 @@ func TestHostKeyIDNamesAKeyWithoutRevealingIt(t *testing.T) {
 	}
 }
 
-// Every framing, opened with and without the marker: the marker refuses the
-// plain framing and the host-key fallback, names what it found and what it
-// expected, and changes nothing for a payload under the DEK.
-func TestOpenRepoPayloadRefusesLegacyFormsOnceMarked(t *testing.T) {
+// One open order: the DEK, bound or unbound, and nothing else. A plain
+// payload and one sealed under the host key are refused, by name, and the
+// refusal says what it found and what key it expected.
+func TestOpenRepoPayloadOpensUnderTheDEKAlone(t *testing.T) {
 	t.Parallel()
 	dek := bytes.Repeat([]byte{3}, 32)
 	host := bytes.Repeat([]byte{4}, 32)
@@ -67,8 +67,8 @@ func TestOpenRepoPayloadRefusesLegacyFormsOnceMarked(t *testing.T) {
 	hostBound := seal(hostAEAD, aad)
 	plain := append([]byte{credPlain}, raw...)
 
-	opens := func(payload []byte, dekOnly bool) error {
-		got, err := openRepoPayload(payload, dek, host, aad, dekOnly)
+	opens := func(payload []byte) error {
+		got, err := openRepoPayload(payload, dek, aad)
 		if err != nil {
 			return err
 		}
@@ -78,29 +78,20 @@ func TestOpenRepoPayloadRefusesLegacyFormsOnceMarked(t *testing.T) {
 		return nil
 	}
 
-	// Under the DEK, marked or not: the two forms the store writes and wrote.
+	// Under the DEK, bound and unbound alike.
 	for _, p := range [][]byte{bound, unbound} {
-		for _, marked := range []bool{false, true} {
-			if err := opens(p, marked); err != nil {
-				t.Fatalf("payload %q under the DEK did not open (marked=%v): %v", p[0], marked, err)
-			}
+		if err := opens(p); err != nil {
+			t.Fatalf("payload %q under the DEK did not open: %v", p[0], err)
 		}
 	}
-	// Unmarked: the legacy forms open, plain as is and host-key by fallback.
-	if err := opens(plain, false); err != nil {
-		t.Fatalf("an unmarked repository refused a plain payload: %v", err)
+	// A plain payload and one under the host key are refused, by name.
+	err = opens(plain)
+	if !errors.Is(err, errPlainRefused) || !strings.Contains(err.Error(), "'p'") || !strings.Contains(err.Error(), "DEK") {
+		t.Fatalf("the plain framing was not refused by name: %v", err)
 	}
-	if err := opens(hostBound, false); err != nil {
-		t.Fatalf("an unmarked repository refused the host-key fallback: %v", err)
-	}
-	// Marked: both refused, by name.
-	err = opens(plain, true)
-	if !errors.Is(err, errPlainRefused) || !strings.Contains(err.Error(), "'p'") || !strings.Contains(err.Error(), "repository DEK") {
-		t.Fatalf("a marked repository did not refuse the plain framing by name: %v", err)
-	}
-	err = opens(hostBound, true)
-	if err == nil || !strings.Contains(err.Error(), `'a'`) || !strings.Contains(err.Error(), "repository DEK") || !strings.Contains(err.Error(), "host-key fallback is refused") {
-		t.Fatalf("a marked repository did not refuse the host-key payload by name: %v", err)
+	err = opens(hostBound)
+	if err == nil || !strings.Contains(err.Error(), `'a'`) || !strings.Contains(err.Error(), "repository DEK") {
+		t.Fatalf("the host-key payload was not refused by name: %v", err)
 	}
 	// The proof function opens under its key alone and never reads plain.
 	if _, err := OpenPayloadWithKey(dek, bound, aad); err != nil {

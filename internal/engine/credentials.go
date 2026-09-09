@@ -29,14 +29,13 @@ import (
 )
 
 // Payload framing: one marker byte, then the JSON (plain) or
-// nonce||ciphertext (sealed). `credBoundSealed` marks a payload whose GCM
-// additional data binds it to the address it was written at, so a row moved,
-// copied or swapped without the key stops decrypting; `credSealed` is the older
-// unbound form, which the open path still reads until a re-key rebinds it
+// nonce||ciphertext (sealed). `credBoundSealed` is what everything writes: a
+// payload whose GCM additional data binds it to the address it was written
+// at, so a row moved, copied or swapped without the key stops decrypting
 // ([0023](../../docs/decisions/0023-a-sealed-payload-is-bound-to-its-address.md)).
-// `credPlain` is what a keyless release stored; the DEK wrap of a keyless
-// host is still written so, and a sealed-store payload so framed opens only
-// on a repository not yet marked DEK-only
+// `credSealed` is the unbound form, which nothing writes and the open path
+// still decodes; `credPlain` is what a keyless host's DEK wrap is written as,
+// and a repository's sealed payload so framed is refused
 // ([0059](../../docs/decisions/0059-a-marked-repository-refuses-plain-and-host-key-sealed-payloads.md)).
 const (
 	credPlain       byte = 'p'
@@ -436,11 +435,10 @@ func (ds *dataset) openSecretValue(ctx context.Context, stored string) (string, 
 		if err != nil {
 			return "", fmt.Errorf("substrate/engine: decode sealed property: %w", err)
 		}
-		// The retired inline-sealed form predates the binding: unbound framing.
-		// It lives in a record property, not in the sealed store, so the
-		// store's DEK-only marker says nothing about it and the re-key never
-		// meets it: the host-key fallback stays open for this form (0059).
-		out, err := openRepoPayload(raw, ds.dek, ds.svc.credKey, nil, false)
+		// The retired inline-sealed form predates the binding, and the DEK:
+		// it lives in a record property rather than in the sealed store, so
+		// it opens under the HOST key, unbound.
+		out, err := ds.svc.openCredential(raw, nil)
 		if err != nil {
 			return "", fmt.Errorf("substrate/engine: open sealed property: %w", err)
 		}
@@ -468,90 +466,4 @@ func (s *service) openPropValue(stored string) (string, error) {
 		return "", fmt.Errorf("substrate/engine: open sealed property: %w", err)
 	}
 	return string(out), nil
-}
-
-// rekeySealedStore re-keys every sealed payload not already bound and under the
-// DEK: keyless plain framings, host-key-sealed legacies, and the older unbound
-// `credSealed` form alike. The scan takes every row FOR UPDATE, so a concurrent
-// TOTP step consume or token refresh serializes behind this transaction instead
-// of being overwritten by a stale buffered copy. A payload already `credBoundSealed`
-// and openable under the DEK with its row binding passes byte-identical, which is
-// the idempotency. The first open of a repository not yet marked DEK-only runs
-// it and marks the row (retireLegacySealed, 0059); recovery enrollment runs it
-// again, because the recovery promise is only true once every payload is under
-// the DEK the recovery key wraps. It must run BEFORE the marker is read as set:
-// opening the legacy forms is what it is for.
-func (t *txn) rekeySealedStore() (int, error) {
-	dekAEAD, err := aeadOf(t.ds.dek)
-	if err != nil {
-		return 0, err
-	}
-	type pending struct {
-		rec changelogfile.SealedRecord
-	}
-	total := 0
-	after := ""
-	// One page of rows at a time, flushed before the next loads, so memory
-	// stays bounded by the batch; the FOR UPDATE locks accumulate for the
-	// transaction either way, which is what keeps a concurrent step consume
-	// or token refresh serialized behind the rewrite.
-	for {
-		var updates []pending
-		rows, err := t.query(`
-			SELECT ref, record_kind, record_id, payload, expires_at, updated_at FROM sealed
-			WHERE ref > $1 ORDER BY ref LIMIT $2 FOR UPDATE`, after, rebuildBatch)
-		if err != nil {
-			return total, err
-		}
-		n := 0
-		for rows.Next() {
-			var ref string
-			var owner eref
-			var payload []byte
-			var expires sql.NullTime
-			var updated time.Time
-			if err := rows.Scan(&ref, &owner.Kind, &owner.ID, &payload, &expires, &updated); err != nil {
-				_ = rows.Close()
-				return total, err
-			}
-			n++
-			after = ref
-			aad := sealedAAD(ref, owner.Kind, owner.ID)
-			// Already bound and openable under the DEK: leave it byte-identical.
-			// A `credSealed` (unbound) payload fails this check and is re-keyed
-			// into the bound framing below.
-			if len(payload) > 0 && payload[0] == credBoundSealed && dekAEAD != nil {
-				if _, err := openWith(dekAEAD, payload, aad); err == nil {
-					continue
-				}
-			}
-			raw, err := t.ds.openPayload(payload, aad)
-			if err != nil {
-				_ = rows.Close()
-				return total, fmt.Errorf("substrate/engine: re-key sealed %s: %w", ref, err)
-			}
-			sealed, err := t.ds.sealPayload(raw, aad)
-			if err != nil {
-				_ = rows.Close()
-				return total, err
-			}
-			updates = append(updates, pending{rec: sealedRecordOf(ref, owner.Kind, owner.ID, sealed, expires, updated)})
-		}
-		if err := rows.Err(); err != nil {
-			_ = rows.Close()
-			return total, err
-		}
-		_ = rows.Close()
-		for _, u := range updates {
-			if _, err := t.exec(`UPDATE sealed SET payload = $1 WHERE ref = $2`,
-				u.rec.Payload, u.rec.Ref); err != nil {
-				return total, err
-			}
-			t.mirrorSealedWrite(u.rec)
-			total++
-		}
-		if n < rebuildBatch {
-			return total, nil
-		}
-	}
 }

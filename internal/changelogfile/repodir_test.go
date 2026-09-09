@@ -103,27 +103,15 @@ func TestEnsureRepoDirAndList(t *testing.T) {
 	if len(ids) != 2 || ids[0] != "alpha.example.com" || ids[1] != "zeta.example.com" {
 		t.Fatalf("ids with a .snapshot beside them = %v", ids)
 	}
-	// A directory that is not an authority is refused, not skipped: a
-	// pre-authority id first, which the legacy list finds instead.
-	if err := os.Mkdir(filepath.Join(root, RepositoriesDir, "k3j9x2m41pfq"), dirMode); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ListRepositoryDirs(root); !errors.Is(err, ErrRepositoryAuthority) {
-		t.Fatalf("err = %v, want ErrRepositoryAuthority", err)
-	}
-	legacy, err := ListLegacyRepositoryDirs(root)
-	if err != nil || len(legacy) != 1 || legacy[0] != "k3j9x2m41pfq" {
-		t.Fatalf("legacy dirs = %v, %v", legacy, err)
-	}
-	// Then a name neither grammar admits, which both lists refuse.
-	if err := os.Mkdir(filepath.Join(root, RepositoriesDir, "not an id"), dirMode); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ListRepositoryDirs(root); !errors.Is(err, ErrRepositoryAuthority) {
-		t.Fatalf("err = %v, want ErrRepositoryAuthority", err)
-	}
-	if _, err := ListLegacyRepositoryDirs(root); !errors.Is(err, ErrLegacyRepositoryDir) {
-		t.Fatalf("legacy list err = %v, want ErrLegacyRepositoryDir", err)
+	// A directory whose name is not an authority is refused, not skipped: one
+	// the boot check passed over would be a repository that never imports.
+	for _, name := range []string{"k3j9x2m41pfq", "not an id"} {
+		if err := os.Mkdir(filepath.Join(root, RepositoriesDir, name), dirMode); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ListRepositoryDirs(root); !errors.Is(err, ErrRepositoryAuthority) {
+			t.Fatalf("%s: err = %v, want ErrRepositoryAuthority", name, err)
+		}
 	}
 }
 
@@ -137,45 +125,4 @@ func longAuthority(n int) string {
 		n -= l + 1
 	}
 	return strings.Join(labels, ".")
-}
-
-// RenameRepoDir moves a pre-authority directory under its authority, once:
-// the old name must be of the old grammar, the new one an authority, and an
-// occupied target is refused.
-func TestRenameRepoDir(t *testing.T) {
-	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, RepositoriesDir, "k3j9x2m41pfq", "changelog"), dirMode); err != nil {
-		t.Fatal(err)
-	}
-	dst, err := RenameRepoDir(root, "k3j9x2m41pfq", "ada.example.com")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := filepath.Join(root, RepositoriesDir, "ada.example.com"); dst != want {
-		t.Fatalf("renamed to %s, want %s", dst, want)
-	}
-	if _, err := os.Stat(filepath.Join(dst, "changelog")); err != nil {
-		t.Fatalf("the contents did not move: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(root, RepositoriesDir, "k3j9x2m41pfq")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("the old directory is still there: %v", err)
-	}
-	legacy, err := ListLegacyRepositoryDirs(root)
-	if err != nil || len(legacy) != 0 {
-		t.Fatalf("legacy dirs after the rename = %v, %v", legacy, err)
-	}
-	// The target is taken.
-	if err := os.MkdirAll(filepath.Join(root, RepositoriesDir, "other12345ab"), dirMode); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := RenameRepoDir(root, "other12345ab", "ada.example.com"); err == nil {
-		t.Fatal("renamed onto an existing directory")
-	}
-	// Neither side may be of the wrong grammar.
-	if _, err := RenameRepoDir(root, "other12345ab", "k3j9x2m41pfq"); !errors.Is(err, ErrRepositoryAuthority) {
-		t.Fatalf("a non-authority target: err = %v", err)
-	}
-	if _, err := RenameRepoDir(root, "../etc", "grace.example.com"); !errors.Is(err, ErrLegacyRepositoryDir) {
-		t.Fatalf("a path-escaping source: err = %v", err)
-	}
 }

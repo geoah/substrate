@@ -101,13 +101,8 @@ type dataset struct {
 	// sealed-store payload seals under it. The control plane holds it
 	// wrapped under the host credential key; the repository's recoverykey
 	// record holds it wrapped to the user's age recipient.
-	dek []byte
-	// dekOnly is the row's `sealed_dek_only` marker (0059): every payload in
-	// the sealed store is bound under dek, so openPayload refuses a plain
-	// payload and never tries the host key. Set before the dataset is
-	// published and never written afterwards.
-	dekOnly bool
-	watch   *broadcaster
+	dek   []byte
+	watch *broadcaster
 	// generation is the repository's history generation (repositories.go),
 	// the marker every change cursor this dataset hands out is bound to. It
 	// is read once at open: the row changes it only when a boot imports the
@@ -162,18 +157,6 @@ type dataset struct {
 	// webhook requests runs (webhooks.go resumeWebhooks), so passes that
 	// come faster than a fire settles do not start a second walk.
 	resumingWebhooks atomic.Bool
-	// stampHeld, set on the opening goroutine only, keeps the appends the
-	// ledger adoption makes BEFORE its own transaction (the blob spool of a
-	// legacy park's body) from stamping the dialect: the stamp must commit
-	// with the adoption or not at all, so a failed adoption is repeated at the
-	// next open (delivery.go adoptLegacyLedger). A blob manifest's put is an
-	// entry a dialect 5 binary replays, so the hold costs nothing it covers.
-	stampHeld bool
-	// adoptLedger is set by the dialect gate when the stored dialect is
-	// below the delivery ledger's rung: the open then records the trigger
-	// tables' rows as ledger entries once (delivery.go adoptLegacyLedger).
-	// Set and read on the opening goroutine only.
-	adoptLedger bool
 
 	mu   sync.RWMutex
 	reg  *vocabulary.Registry

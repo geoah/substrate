@@ -539,10 +539,9 @@ func TestTargetlessRequestKeepsItsShape(t *testing.T) {
 	}
 }
 
-// Back-compat: a request that was ALREADY STORED with a malformed diff is not
-// re-judged. Nothing refuses it on read, and accepting it fails exactly as it
-// did before admission existed — a rolled-back transition, the request still
-// proposed, the conflict annotated for the owner to read.
+// A request ALREADY STORED with a malformed diff is not re-judged. Nothing
+// refuses it on read, and accepting it fails at the transition: rolled back,
+// the request still proposed, the conflict annotated for the owner to read.
 func TestStoredMalformedRequestStillFailsAtAccept(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

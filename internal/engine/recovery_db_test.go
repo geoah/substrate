@@ -9,9 +9,6 @@ package engine_test
 import (
 	"bytes"
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
 	"io"
@@ -200,13 +197,11 @@ func TestServerMintedRecoveryKeyAndEnrollOnce(t *testing.T) {
 	}
 }
 
-// TestEnrollRecoveryKeyWrapsADEKThatOpensMigratedPayloads is the pre-recovery
-// repository's whole story: its payloads sat sealed under the HOST key, the
-// first open under a binary with the DEK-only marker re-keys them under the
-// DEK (decision 0059), and enrollment then wraps that DEK to the recovery key
-// and re-keys once more in the same commit, so "a backup plus the recovery
-// key, no host involved" holds for every payload.
-func TestEnrollRecoveryKeyWrapsADEKThatOpensMigratedPayloads(t *testing.T) {
+// TestEnrollRecoveryKeyWrapsADEKThatOpensEverySealedPayload holds the recovery
+// promise: every payload is sealed under the repository's DEK (decision 0059),
+// enrollment wraps that DEK to the recovery key, and the identity alone
+// recovers a DEK that opens the store, with no host involved.
+func TestEnrollRecoveryKeyWrapsADEKThatOpensEverySealedPayload(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, dsn := newService(t, engine.WithCredentialKey(engine.TestCredentialKey))
@@ -231,12 +226,8 @@ func TestEnrollRecoveryKeyWrapsADEKThatOpensMigratedPayloads(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	// Simulate the pre-recovery store: drop the enrollment registration
-	// wrote, plant a payload sealed under the HOST key, and clear the
-	// DEK-only marker, exactly what a pre-DEK release left behind. A marked
-	// repository refuses a host-key payload outright (0059), so the planted
-	// row is only a legacy one on an unmarked row, and the rewind has to be
-	// followed by a reopen: the open dataset already holds the marker.
+	// The repository as a registration leaves it, minus the enrollment
+	// registration wrote: this test enrolls by hand.
 	if _, err := db.Exec(`DELETE FROM records WHERE kind = $1 AND id = 'self'`, recoveryKeyKind); err != nil {
 		t.Fatalf("drop recovery record: %v", err)
 	}
@@ -252,21 +243,6 @@ func TestEnrollRecoveryKeyWrapsADEKThatOpensMigratedPayloads(t *testing.T) {
 		"substrate.reamde.dev/core/llmprovider").Scan(&ref); err != nil {
 		t.Fatalf("read ref: %v", err)
 	}
-	hostKey := engine.TestCredentialKeyBytes
-	if _, err := db.Exec(`UPDATE sealed SET payload = $1 WHERE ref = $2`,
-		sealUnder(t, hostKey, []byte("sk-legacy-material")), ref); err != nil {
-		t.Fatalf("plant host-key payload: %v", err)
-	}
-	if _, err := db.Exec(`UPDATE repositories SET sealed_dek_only = false WHERE id = 'cleo.example.com'`); err != nil {
-		t.Fatalf("clear the DEK-only marker: %v", err)
-	}
-	root := engine.DataRootOf(svc)
-	_ = svc.Close()
-	svc = mustReopen(t, dsn, root)
-	if ds, err = svc.Dataset(ctx, "cleo.example.com"); err != nil {
-		t.Fatalf("reopen dataset: %v", err)
-	}
-
 	identity, recipient, err := svc.(substrate.RecoveryEnroller).EnrollRecoveryKey(ctx, substrate.LoginInput{
 		Repository: "cleo.example.com", Password: testPassword, TOTPCode: u.code(t),
 	}, "")
@@ -283,8 +259,8 @@ func TestEnrollRecoveryKeyWrapsADEKThatOpensMigratedPayloads(t *testing.T) {
 	sealedKey, _ := rec.Properties["sealedKey"].(string)
 	dek := unwrapWithIdentity(t, identity, sealedKey)
 
-	// The planted host-key payload was re-keyed by the first open and the
-	// enrollment wrapped that DEK: the identity-recovered DEK alone opens it.
+	// The provider secret was sealed under the DEK, and the enrollment
+	// wrapped that DEK: the identity-recovered DEK alone opens it.
 	var payload []byte
 	var kind, rid string
 	if err := db.QueryRow(`SELECT payload, record_kind, record_id FROM sealed WHERE ref = $1`, ref).
@@ -293,7 +269,7 @@ func TestEnrollRecoveryKeyWrapsADEKThatOpensMigratedPayloads(t *testing.T) {
 	}
 	plain, err := engine.OpenPayloadWithKey(dek, payload, engine.SealedAAD(ref, kind, rid))
 	if err != nil {
-		t.Fatalf("enrollment left the payload host-keyed: %v", err)
+		t.Fatalf("the recovered DEK does not open the payload: %v", err)
 	}
 	if string(plain) != "sk-legacy-material" {
 		t.Fatalf("recovered %q", plain)
@@ -307,31 +283,10 @@ func TestEnrollRecoveryKeyWrapsADEKThatOpensMigratedPayloads(t *testing.T) {
 	}
 }
 
-// sealUnder seals raw under an explicit AES-256-GCM key with the store's
-// framing: the test's stand-in for a pre-DEK release's host-key writes.
-func sealUnder(t *testing.T, key, raw []byte) []byte {
-	t.Helper()
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		t.Fatalf("cipher: %v", err)
-	}
-	aead, err := cipher.NewGCM(block)
-	if err != nil {
-		t.Fatalf("gcm: %v", err)
-	}
-	nonce := make([]byte, aead.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
-		t.Fatalf("nonce: %v", err)
-	}
-	out := append([]byte{'s'}, nonce...)
-	return aead.Seal(out, nonce, raw, nil)
-}
-
-// Enrollment requires the DEK-only marker BEFORE it writes, and writes
-// nothing to the control plane: a refused enrollment leaves no record, so a
-// retry is not told the slot is taken, and a granted one has no step left
-// that could fail after the identity is minted (decision 0059).
-func TestEnrollRecoveryKeyRefusesAnUnmarkedDatasetBeforeWriting(t *testing.T) {
+// Enrollment writes nothing to the control plane: the identity is minted, the
+// record is written in one transaction, and no step is left that could fail
+// after a server-minted identity has been handed out once (decision 0059).
+func TestEnrollRecoveryKeyWritesOnlyTheRecord(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, dsn := newService(t, engine.WithCredentialKey(engine.TestCredentialKey))
@@ -346,8 +301,7 @@ func TestEnrollRecoveryKeyRefusesAnUnmarkedDatasetBeforeWriting(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, "dee.example.com")
-	if err != nil {
+	if _, err := svc.Dataset(ctx, "dee.example.com"); err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
 	db := rawDB(t, dsn)
@@ -368,25 +322,9 @@ func TestEnrollRecoveryKeyRefusesAnUnmarkedDatasetBeforeWriting(t *testing.T) {
 		return identity, err
 	}
 
-	engine.SetDatasetDEKOnly(ds, false)
-	if identity, err := enroll(); err == nil || !strings.Contains(err.Error(), "DEK-only") {
-		t.Fatalf("an unmarked dataset enrolled: identity minted=%v err=%v", identity != "", err)
-	}
-	if n := recoveryRecords(); n != 0 {
-		t.Fatalf("a refused enrollment left %d recovery record(s)", n)
-	}
-	var marked bool
-	if err := db.QueryRow(`SELECT sealed_dek_only FROM repositories WHERE id = 'dee.example.com'`).Scan(&marked); err != nil || !marked {
-		t.Fatalf("the row's marker moved under a refused enrollment: %v %v", marked, err)
-	}
-
-	engine.SetDatasetDEKOnly(ds, true)
-	// The refused enrollment verified the factors and spent its code before
-	// the guard, so the retry needs the next step.
-	waitStep(t)
 	identity, err := enroll()
 	if err != nil || !strings.HasPrefix(identity, "AGE-SECRET-KEY-1") {
-		t.Fatalf("the marked dataset did not enroll: %q, %v", identity, err)
+		t.Fatalf("the enrollment did not mint an identity: %q, %v", identity, err)
 	}
 	if n := recoveryRecords(); n != 1 {
 		t.Fatalf("a granted enrollment left %d recovery record(s), want 1", n)

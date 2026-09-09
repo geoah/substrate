@@ -305,7 +305,7 @@ func (s *service) checkCopiedSealed(ds *dataset, partial string, files []changel
 		if want, ok := byRef[f.Ref]; !ok || !sealedRecordsEqual(f, want) {
 			return fmt.Errorf("%w: sealed/%s is not the source's record", ErrSnapshotCopyDamaged, name)
 		}
-		if _, err := openRepoPayload(f.Payload, ds.dek, s.credKey, sealedAAD(f.Ref, f.RecordKind, f.RecordID), ds.dekOnly); err != nil {
+		if _, err := openRepoPayload(f.Payload, ds.dek, sealedAAD(f.Ref, f.RecordKind, f.RecordID)); err != nil {
 			return fmt.Errorf("%w: sealed/%s does not open under the DEK: %w", ErrSnapshotCopyDamaged, name, err)
 		}
 	}
@@ -340,7 +340,7 @@ func destBlobStore(root string, repo Repository) (blobbytes.Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return destFS.Repository(repo.ID, nil)
+	return destFS.Repository(repo.ID)
 }
 
 // copyBlobs reads every listed blob out of the repository's store, checks
@@ -352,7 +352,7 @@ func (s *service) copyBlobs(ctx context.Context, ds *dataset, repo Repository, d
 	if len(digests) == 0 {
 		return 0, nil
 	}
-	store, err := s.blobs.Repository(repo.ID, ds.db)
+	store, err := s.blobs.Repository(repo.ID)
 	if err != nil {
 		return 0, err
 	}

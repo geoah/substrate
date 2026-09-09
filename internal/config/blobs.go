@@ -9,15 +9,12 @@ import (
 )
 
 // Blobs says where blob bytes live. It is part of Config and also loadable on
-// its own, because substratectl's operator hat needs the same answer to
-// migrate bytes out of the `blobs` column.
+// its own, for a command that needs the store and nothing else.
 type Blobs struct {
 	// Store is `fs` (the default: <data root>/repositories/<authority>/blobs, so the
 	// repository directory is the whole backup) or `s3` (a bucket, which
 	// makes the backup two artifacts; docs/operations.md says what the second
-	// one is). `postgres`, the `blobs` bytea column, is no longer a runtime
-	// choice: the column is readable only through `substratectl blobs
-	// migrate --from postgres`, which moves the bytes out.
+	// one is).
 	Store string `envconfig:"SUBSTRATE_BLOB_STORE" default:"fs"`
 	// The s3 backend: any S3-compatible endpoint. The bucket must be
 	// PRIVATE — the bytes are stored as they arrived, so anything that can
@@ -50,8 +47,7 @@ func LoadBlobs() (Blobs, error) {
 // the data root every repository directory lives under (Data.Root). An
 // unknown name is a refusal that lists the two, rather than a silent fall
 // back to the default: a typo in SUBSTRATE_BLOB_STORE would otherwise write
-// bytes somewhere the operator did not mean. `postgres` is refused by name,
-// with the one command that still reads the column.
+// bytes somewhere the operator did not mean.
 func (b Blobs) Backend(dataRoot string) (blobbytes.Backend, error) {
 	switch b.Store {
 	case "", blobbytes.BackendFS:
@@ -67,9 +63,6 @@ func (b Blobs) Backend(dataRoot string) (blobbytes.Backend, error) {
 			Prefix:          b.S3Prefix,
 			PathStyle:       b.S3PathStyle,
 		})
-	case blobbytes.BackendPostgres:
-		return nil, fmt.Errorf("SUBSTRATE_BLOB_STORE %q is not a runtime store: the `blobs` column is readable only through `substratectl blobs migrate --from postgres`, which moves the bytes into %s or %s",
-			b.Store, blobbytes.BackendFS, blobbytes.BackendS3)
 	default:
 		return nil, fmt.Errorf("unknown SUBSTRATE_BLOB_STORE %q: one of %s, %s",
 			b.Store, blobbytes.BackendFS, blobbytes.BackendS3)

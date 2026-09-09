@@ -156,53 +156,12 @@ func TestOpenCutsAnUnfinishedTransactionThatIsTheWholeActiveSegment(t *testing.T
 	}
 }
 
-// A format 1 line (v0.46.0, v0.47.0) carries no `txn` and reads as a
-// transaction of its own, so an unframed history recovers exactly as those
-// binaries recovered it: every complete line stays.
-func TestALineWithoutTxnIsATransactionOfItsOwn(t *testing.T) {
-	dir := t.TempDir()
-	legacy := unframed(entriesFrom(1, 3))
-	line, _, err := Encode(legacy[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if bytes.Contains(line, []byte(`"txn"`)) {
-		t.Fatalf("an unframed entry encodes a txn key: %s", line)
-	}
-	appendAll(t, dir, WriterOptions{}, legacy)
-	path := filepath.Join(dir, SegmentName(1))
-	torn := encodeLine(t, legacy[2])
-	whole := fileSize(t, path)
-	if err := os.WriteFile(path, mustRead(t, path)[:whole-int64(len(torn))/2], fileMode); err != nil {
-		t.Fatal(err)
-	}
-	l, err := Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if l.Head() != 2 || l.TruncatedEntries != 0 {
-		t.Fatalf("head = %d, truncated entries = %d; want 2, 0", l.Head(), l.TruncatedEntries)
-	}
-	// A framed transaction follows the unframed history in the same segment.
-	w, err := l.Writer(WriterOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := w.Append(txnFrom(3, 2)); err != nil {
-		t.Fatal(err)
-	}
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if rep, err := Verify(dir); err != nil || rep.Head != 4 {
-		t.Fatalf("verify: %+v, %v", rep, err)
-	}
-}
-
+// The frame is part of the line: `txn` moves the checksum, and a line
+// carrying none does not encode at all.
 func TestTxnMovesTheSum(t *testing.T) {
 	a := entryAt(1)
 	b := a
-	b.Txn = 0
+	b.Txn = 2
 	_, sa, err := Encode(a)
 	if err != nil {
 		t.Fatal(err)
@@ -213,6 +172,11 @@ func TestTxnMovesTheSum(t *testing.T) {
 	}
 	if sa == sb {
 		t.Fatal("txn is not covered by the checksum")
+	}
+	unframed := a
+	unframed.Txn = 0
+	if _, _, err := Encode(unframed); !errors.Is(err, ErrTxnFraming) {
+		t.Fatalf("encoding a line with no txn: err = %v, want ErrTxnFraming", err)
 	}
 	line, _, err := Encode(a)
 	if err != nil {
@@ -282,9 +246,9 @@ func TestWriterRefusesABatchThatIsNotWholeTransactions(t *testing.T) {
 			if w.Head() != 2 || fileSize(t, path) != before {
 				t.Fatalf("a refused batch moved the head to %d or wrote %d bytes", w.Head(), fileSize(t, path)-before)
 			}
-			// Whole transactions, including a format 1 line beside a framed
-			// transaction (the boot writing out a table with both), are taken.
-			if err := w.Append(append(unframed(entriesFrom(3, 1)), txnFrom(4, 2)...)); err != nil {
+			// Whole transactions, a one-line one beside a longer one (the
+			// boot writing out a table with both), are taken.
+			if err := w.Append(append(entriesFrom(3, 1), txnFrom(4, 2)...)); err != nil {
 				t.Fatal(err)
 			}
 			if w.Head() != 5 {
@@ -384,26 +348,21 @@ func TestVerifyRefusesATransactionCrossingASegment(t *testing.T) {
 	}
 }
 
-// A line that does not continue the transaction before it is refused by the
-// active-segment scan, not cut: a `txn` that changes inside a transaction, or
-// a line with none where one is open.
+// A line whose `txn` is not the transaction the line before it left open is
+// refused by the active-segment scan, not cut. A line carrying no `txn` at all
+// is refused a step earlier, where it is encoded (TestTxnMovesTheSum), so it
+// cannot be written here.
 func TestOpenRefusesTransactionFramingDamage(t *testing.T) {
-	changed := txnFrom(1, 3)
-	changed[1].Txn = 4
-	dropped := txnFrom(1, 3)
-	dropped[1].Txn = 0
-	for name, entries := range map[string][]Entry{"txn changes inside": changed, "unframed line inside": dropped} {
-		t.Run(name, func(t *testing.T) {
-			dir := t.TempDir()
-			path := writeLines(t, dir, 1, encodeLine(t, entries[0]), encodeLine(t, entries[1]), encodeLine(t, entries[2]))
-			size := fileSize(t, path)
-			if _, err := Open(dir); !errors.Is(err, ErrTxnFraming) {
-				t.Fatalf("Open: err = %v, want ErrTxnFraming", err)
-			}
-			if fileSize(t, path) != size {
-				t.Fatal("a refused open changed the file")
-			}
-		})
+	entries := txnFrom(1, 3)
+	entries[1].Txn = 4
+	dir := t.TempDir()
+	path := writeLines(t, dir, 1, encodeLine(t, entries[0]), encodeLine(t, entries[1]), encodeLine(t, entries[2]))
+	size := fileSize(t, path)
+	if _, err := Open(dir); !errors.Is(err, ErrTxnFraming) {
+		t.Fatalf("Open: err = %v, want ErrTxnFraming", err)
+	}
+	if fileSize(t, path) != size {
+		t.Fatal("a refused open changed the file")
 	}
 }
 

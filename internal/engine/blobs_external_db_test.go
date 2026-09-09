@@ -146,7 +146,7 @@ func TestBlobFSOrphanObjectIsUnreadableAndSwept(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open the fs backend: %v", err)
 	}
-	store, err := backend.Repository(ds.Repository().ID, nil)
+	store, err := backend.Repository(ds.Repository().ID)
 	if err != nil {
 		t.Fatalf("bind the store: %v", err)
 	}
@@ -269,51 +269,6 @@ func TestBlobFSGraceSparesAFreshUpload(t *testing.T) {
 	}
 }
 
-// The Postgres `blobs` column is not a store any more. A boot over rows left
-// in it would 404 every blob that did not follow, and a 404 reads like a
-// deletion, so the boot refuses and names the one command that empties the
-// column.
-func TestBootRefusesBytesLeftInThePostgresColumn(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	svc, dsn := newService(t)
-	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
-		t.Fatalf("create repository: %v", err)
-	}
-	ds, err := svc.Dataset(ctx, testdb.Repository(t))
-	if err != nil {
-		t.Fatalf("open dataset: %v", err)
-	}
-	// A row as the retired backend wrote it, through the repository-scoped
-	// pool so the repository column defaults the way it always did.
-	scoped, err := engine.OpenScopedDB(dsn, ds.Repository().ID, engine.RoleApp)
-	if err != nil {
-		t.Fatalf("open the scoped pool: %v", err)
-	}
-	defer func() { _ = scoped.Close() }()
-	data := []byte("bytes an older binary left in the column")
-	if _, err := scoped.ExecContext(ctx,
-		`INSERT INTO blobs (digest, size, bytes) VALUES ($1, $2, $3)`,
-		blobDigestOf(data), len(data), data); err != nil {
-		t.Fatalf("seed the column: %v", err)
-	}
-	if err := svc.Close(); err != nil {
-		t.Fatalf("close: %v", err)
-	}
-
-	reopened, err := engine.OpenForTest(t, ctx, dsn,
-		engine.WithDataRoot(t.TempDir()),
-		engine.WithKindsDir(engine.CoreKindsDir),
-		engine.WithCredentialKey(engine.TestCredentialKey))
-	if err == nil {
-		_ = reopened.Close()
-		t.Fatal("a boot opened over blob bytes still in the Postgres column")
-	}
-	if !strings.Contains(err.Error(), "blobs migrate --from postgres") {
-		t.Fatalf("the refusal must name the way out of the column, got: %v", err)
-	}
-}
-
 // The bytes live in the repository directory, so a service reopened on the
 // same data root reads what the last one stored, with no option beyond the
 // root itself.
@@ -367,8 +322,8 @@ func TestBlobFSReopenOnTheSameRootReadsTheBytes(t *testing.T) {
 // crash the engine cannot otherwise be made to have: the bytes never land.
 type refusingBackend struct{ blobbytes.Backend }
 
-func (b refusingBackend) Repository(repository string, db blobbytes.DB) (blobbytes.Store, error) {
-	s, err := b.Backend.Repository(repository, db)
+func (b refusingBackend) Repository(repository string) (blobbytes.Store, error) {
+	s, err := b.Backend.Repository(repository)
 	if err != nil {
 		return nil, err
 	}

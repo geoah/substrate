@@ -319,16 +319,16 @@ func TestPolicyGovernanceStaysWithTheRuleThatReachesTheOwner(t *testing.T) {
 	}
 }
 
-// THE ACTIONLESS ROW AN OLDER BINARY LEFT. The write door refuses one now, so
-// the fixture plants it the way the engine's own machinery writes; evaluation
-// skips it and says so once, not once per agent write.
+// A POLICY ROW WITH NO ACTION. The write door refuses one, so the fixture
+// plants it the way the engine's own machinery writes; evaluation skips it and
+// says so once, not once per agent write.
 func TestActionlessPolicyIsSkippedAndWarnedOnce(t *testing.T) {
 	ctx := context.Background()
 	var logs syncBuffer
 	ds := openInternalDataset(t, WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))
 	if err := ds.inTx(ctx, substrate.ActorAPI, true, func(tx *txn) error {
 		_, err := tx.put(substrate.PutInput{
-			Kind: vocabulary.KindRecordPatchPolicy, ID: "legacy-actionless",
+			Kind: vocabulary.KindRecordPatchPolicy, ID: "noaction",
 			Properties: map[string]any{"selector": map[string]any{"kinds": []any{"*"}}},
 		})
 		return err
@@ -338,23 +338,23 @@ func TestActionlessPolicyIsSkippedAndWarnedOnce(t *testing.T) {
 	for i := range 2 {
 		verdict, rule, err := ds.policyVerdict(ctx, typeThread, policyOpPut, "crew.test.dev/crew/editor")
 		if err != nil || verdict != policyAllow || rule != nil {
-			t.Fatalf("evaluation %d saw the actionless rule: %s %v %v", i, verdict, rule, err)
+			t.Fatalf("evaluation %d saw the rule with no action: %s %v %v", i, verdict, rule, err)
 		}
 	}
-	if n := strings.Count(logs.String(), "legacy-actionless"); n != 1 {
-		t.Fatalf("the actionless rule warned %d times, want 1", n)
+	if n := strings.Count(logs.String(), "noaction"); n != 1 {
+		t.Fatalf("the rule with no action warned %d times, want 1", n)
 	}
 	// The only ways out are an action or a delete: a write that leaves it
 	// actionless is refused like any other.
 	_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: vocabulary.KindRecordPatchPolicy, ID: "legacy-actionless",
+		Kind: vocabulary.KindRecordPatchPolicy, ID: "noaction",
 		Properties: map[string]any{"criteria": "anything"},
 	})
 	if err == nil || !strings.Contains(err.Error(), "`action` is required") {
 		t.Fatalf("a write that left the row actionless admitted: %v", err)
 	}
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: vocabulary.KindRecordPatchPolicy, ID: "legacy-actionless",
+		Kind: vocabulary.KindRecordPatchPolicy, ID: "noaction",
 		Properties: map[string]any{"action": "gate"},
 	}); err != nil {
 		t.Fatalf("giving the row an action: %v", err)

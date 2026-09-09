@@ -228,10 +228,7 @@ that does not follow the previous one, a line whose `txn` does not fit the
 transaction around it, or a finished segment whose sidecar does not match is
 a named refusal, not a repair.
 
-Segments written by v0.46.0 through v0.51.0 carry no `txn`. A reader takes such a
-line as a transaction of its own, which is how those releases read it: no
-boundary was recorded, and none is reconstructed. A directory this release
-writes does not open under either of them
+Every line carries `txn`; one without it is the same named refusal
 ([decision 0057](decisions/0057-a-changelog-line-names-its-transaction-and-an-unfinished-one-is-cut-whole.md)).
 
 What the checksum proves: an entry is undamaged, in the file and in the table,
@@ -268,22 +265,18 @@ mint a token, fails as an internal error.
 The refusal is the point. Without it an old binary opens a store it cannot
 replay, serves it for weeks, and fails only when somebody runs `repository
 rebuild`, the day the changelog had to be replayable. The changelog dialect is
-6 today: 1 was the changelog while `link` and `unlink` were ops, 2 the
-changelog after references replaced them, 3 the entry that names its
-transaction (`txn`, covered by the checksum), which a dialect 2 binary would
-silently re-stamp away at boot
+1 today, the ops, fold effects and entry frame this release writes: the record
+ops and the `delivery` op with the seven effects a trigger's bookkeeping
+replays through
+([decision 0064](decisions/0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md)),
+every entry naming its transaction
 ([decision 0057](decisions/0057-a-changelog-line-names-its-transaction-and-an-unfinished-one-is-cut-whole.md)),
-and 4 the `record` delta that carries `kindVersion`, the kind declaration
-version that wrote the row
-([decision 0060](decisions/0060-a-record-carries-the-kind-version-that-last-wrote-it.md)),
-which a dialect 3 binary would drop at replay, folding every record to 0 with
-nothing refusing, and 5 the `manager` effect that carries `updatedAt`, the
-stamp of a manager row a property rename moved
-([decision 0063](decisions/0063-a-property-rename-is-ordinary-record-writes.md)),
-which a dialect 4 binary would drop the same way, stamping the replay's own
-time, and 6 the delivery ledger: the `delivery` op and the seven fold
-effects a trigger's bookkeeping replays through
-([decision 0064](decisions/0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md)).
+every `record` delta carrying the kind version that wrote the row
+([decision 0060](decisions/0060-a-record-carries-the-kind-version-that-last-wrote-it.md))
+and every `manager` effect carrying the stamp a property rename moved with it
+([decision 0063](decisions/0063-a-property-rename-is-ordinary-record-writes.md)).
+The next number is spent when a writer learns a spelling an older binary's
+fold would refuse or misread.
 A repository's stored dialect is not on the wire, and
 neither are the entries written in it: what
 [API discovery](api.md#discovery) reports is the binary's maximum. The dialect
@@ -299,7 +292,7 @@ in a spelling it does not know.
 
 A repository written by a newer binary cannot be served by an older one again:
 downgrading means restoring the copy taken before the upgrade, the same as for
-a vocabulary promotion
+the vocabulary dialect
 ([upgrading the binary](operations.md#upgrading-the-binary)).
 
 ## Watching

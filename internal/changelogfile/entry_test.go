@@ -14,6 +14,7 @@ func sample() Entry {
 		Actor: "api", Principal: "k7abc", Op: "put",
 		RecordID: "kq3v9x2m41pf", Kind: "samples.substrate.reamde.dev/tasks/task",
 		CausedBy: 4188, CausedByOK: true,
+		Txn:     4192,
 		Payload: json.RawMessage(`{"properties": ["name", "dueAt"], "created": true, "n": 1.50}`),
 	}
 }

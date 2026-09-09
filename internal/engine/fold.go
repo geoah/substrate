@@ -1063,30 +1063,12 @@ func forEachRecordDeltaSet(payload map[string]any, fn func(kindRef, recordID str
 // for split's undo carries nothing the fold can act on. It is refused rather
 // than replayed into a silent difference.
 //
-// AN ENTRY FROM BEFORE REFERENCES ABSORBED THE EDGE (decision 0044, changelog
-// dialect 1). `link` and `unlink` were ops and `edge`/`unedge`/`edge1` were
-// fold effects; both are gone, and their meaning lives in the source record's
-// own properties now, which no such entry carries. There is no translation and
-// no migration path: the rebuild refuses the entry by name, so the operator
-// reads which spelling stopped it instead of watching a replay reconstruct a
-// record with no pointers on it.
-//
 // An effect the fold does not know at all is refused by foldOne, one layer
 // down, where the same rule holds for every operation.
 func foldRefuses(ch substrate.Change) bool {
-	switch string(ch.Op) {
-	case opLinkRetired, opUnlinkRetired:
-		return true
-	}
 	ops, err := foldOpsOf(ch)
 	if err != nil {
 		return true
-	}
-	for _, op := range ops {
-		switch string(op.Kind) {
-		case foldEdgePutRetired, foldEdgeDelRetired, foldEdgeOnlyRetired:
-			return true
-		}
 	}
 	switch ch.Op {
 	case substrate.OpMerge, substrate.OpSplit:
@@ -1099,18 +1081,6 @@ func foldRefuses(ch substrate.Change) bool {
 	}
 	return false
 }
-
-// The dialect-1 spellings this binary refuses. They are named as constants and
-// not as bare literals so the refusal is greppable from the words a stored
-// payload actually holds.
-const (
-	opLinkRetired   = "link"
-	opUnlinkRetired = "unlink"
-
-	foldEdgePutRetired  = "edge"
-	foldEdgeDelRetired  = "unedge"
-	foldEdgeOnlyRetired = "edge1"
-)
 
 // decodeNumberPreserving decodes stored JSONB without flattening numbers to
 // float64: a rewritten payload must re-marshal every untouched value

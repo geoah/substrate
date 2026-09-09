@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -26,16 +25,6 @@ const (
 // authority (vocabulary.ValidRepositoryAuthority): lowercase DNS labels with
 // at least one dot, so it is always one path segment under the root.
 var ErrRepositoryAuthority = errors.New("changelogfile: not a repository authority")
-
-// ErrLegacyRepositoryDir is returned for a directory under repositories/
-// whose name is neither an authority nor a repository id of the shape written
-// before the authority became the id.
-var ErrLegacyRepositoryDir = errors.New("changelogfile: not a repository directory")
-
-// reLegacyRepositoryID is the grammar the directory name had before the
-// authority became the id: one path segment of the record id alphabet. It
-// exists so a directory written by that binary can be found and renamed.
-var reLegacyRepositoryID = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
 
 // checkRepositoryAuthority holds a repository id to the grammar the engine
 // admits at registration. The same rule is checked in internal/blobbytes,
@@ -100,8 +89,6 @@ func EnsureRepoDir(root, id string) (string, error) {
 // state) are ignored, because no authority starts with a dot; any other
 // directory whose name is not an authority is refused, because a directory
 // the boot check silently skipped would be a repository that never imports.
-// A directory named by a pre-authority id is such a refusal too: the caller
-// renames it first (ListLegacyRepositoryDirs, RenameRepoDir).
 func ListRepositoryDirs(root string) ([]string, error) {
 	names, err := listDirs(root)
 	if err != nil {
@@ -113,71 +100,6 @@ func ListRepositoryDirs(root string) ([]string, error) {
 		}
 	}
 	return names, nil
-}
-
-// ListLegacyRepositoryDirs returns the names of the directories under root
-// that a binary from before the authority became the id wrote: names of the
-// old id grammar that are not authorities, in name order. A name that is
-// neither is refused with ErrLegacyRepositoryDir. Files and dot-prefixed
-// directories are ignored as in ListRepositoryDirs.
-func ListLegacyRepositoryDirs(root string) ([]string, error) {
-	names, err := listDirs(root)
-	if err != nil {
-		return nil, err
-	}
-	var legacy []string
-	for _, name := range names {
-		if vocabulary.ValidRepositoryAuthority(name) {
-			continue
-		}
-		if !reLegacyRepositoryID.MatchString(name) || name == "." || name == ".." {
-			return nil, fmt.Errorf("%w: %q", ErrLegacyRepositoryDir, name)
-		}
-		legacy = append(legacy, name)
-	}
-	return legacy, nil
-}
-
-// LegacyRepoDir is the directory a pre-authority binary named by the random
-// id it minted, `<root>/repositories/<id>`, for the boot check that moves it
-// under its authority. The id is held to the old grammar, so it is one path
-// segment.
-func LegacyRepoDir(root, id string) (string, error) {
-	if err := checkRoot(root); err != nil {
-		return "", err
-	}
-	if !reLegacyRepositoryID.MatchString(id) || id == "." || id == ".." {
-		return "", fmt.Errorf("%w: %q", ErrLegacyRepositoryDir, id)
-	}
-	return filepath.Join(filepath.Clean(root), RepositoriesDir, id), nil
-}
-
-// RenameRepoDir renames the directory `<root>/repositories/<from>` to the
-// repository directory of authority to. from is held to the old id grammar
-// and to to the authority grammar; a target that already exists is refused,
-// because two directories claiming one authority is a question for an
-// operator, not a rename.
-func RenameRepoDir(root, from, to string) (string, error) {
-	if err := checkRoot(root); err != nil {
-		return "", err
-	}
-	src, err := LegacyRepoDir(root, from)
-	if err != nil {
-		return "", err
-	}
-	dst, err := RepoDir(root, to)
-	if err != nil {
-		return "", err
-	}
-	if _, err := os.Lstat(dst); err == nil {
-		return "", fmt.Errorf("changelogfile: rename %s to %s: the target already exists", from, to)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", err
-	}
-	if err := os.Rename(src, dst); err != nil {
-		return "", err
-	}
-	return dst, nil
 }
 
 // listDirs is the raw walk of `<root>/repositories/`: every directory that is

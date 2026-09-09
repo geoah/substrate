@@ -88,7 +88,7 @@ func TestWriterRefusesGapsAndRepeats(t *testing.T) {
 	}{
 		{"gap at start", entriesFrom(4, 1)},
 		{"repeat of head", entriesFrom(2, 1)},
-		{"seq zero", entriesFrom(0, 1)},
+		{"seq zero", []Entry{seqZero()}},
 		{"gap inside the batch", []Entry{entryAt(3), entryAt(5)}},
 		{"repeat inside the batch", []Entry{entryAt(3), entryAt(3)}},
 	}
@@ -412,11 +412,14 @@ func TestWriterAppendLines(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = w.Close() }()
-	lines := []Line{{Seq: 1, Bytes: encodeLine(t, entryAt(1))}, {Seq: 2, Bytes: encodeLine(t, entryAt(2))}}
+	lines := []Line{
+		{Seq: 1, Txn: 1, Bytes: encodeLine(t, entryAt(1))},
+		{Seq: 2, Txn: 2, Bytes: encodeLine(t, entryAt(2))},
+	}
 	if err := w.AppendLines(lines); err != nil {
 		t.Fatal(err)
 	}
-	if err := w.AppendLines([]Line{{Seq: 4, Bytes: encodeLine(t, entryAt(4))}}); !errors.Is(err, ErrSeqGap) {
+	if err := w.AppendLines([]Line{{Seq: 4, Txn: 4, Bytes: encodeLine(t, entryAt(4))}}); !errors.Is(err, ErrSeqGap) {
 		t.Fatalf("gap: err = %v, want ErrSeqGap", err)
 	}
 	before := fileSize(t, filepath.Join(dir, SegmentName(1)))

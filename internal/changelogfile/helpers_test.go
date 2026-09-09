@@ -40,17 +40,6 @@ func txnFrom(first, n int64) []Entry {
 	return out
 }
 
-// unframed strips the transaction frame: the format 1 line v0.46.0 and
-// v0.47.0 wrote.
-func unframed(entries []Entry) []Entry {
-	out := make([]Entry, len(entries))
-	for i, e := range entries {
-		e.Txn = 0
-		out[i] = e
-	}
-	return out
-}
-
 // appendAll opens a writer with opts, appends the entries in one batch and
 // closes it.
 func appendAll(t *testing.T, dir string, opts WriterOptions, entries []Entry) {
@@ -149,4 +138,12 @@ func equalSeqs(a []int64, first, n int64) bool {
 		}
 	}
 	return true
+}
+
+// seqZero is an entry at seq 0, framed by a transaction ending at 1: the seq
+// no writer accepts, with a `txn` that is not what refuses it.
+func seqZero() Entry {
+	e := entryAt(1)
+	e.Seq = 0
+	return e
 }

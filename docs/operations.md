@@ -48,7 +48,7 @@ boot.
 | `SUBSTRATE_SANDBOX`            | `best-effort`                          | How hard to confine function bodies: `off`, `best-effort`, or `enforce` (refuse to run a body unconfined). |
 | `SUBSTRATE_SANDBOX_EGRESS_ALLOW` | —                                   | A comma-separated list of CIDRs (or bare addresses) a network body may reach despite the private-range block. A body that declares `permissions.network` reaches the public internet but not the deployment's own loopback, link-local or RFC1918 ranges, so a local provider (a loopback Ollama) needs its address listed here. Empty blocks every private range. |
 | `SUBSTRATE_EGRESS_ALLOW`       | —                                      | A comma-separated list of CIDRs (or bare addresses) the SERVER may dial for a repository-chosen URL despite the private-range block. An `llmprovider` row's `baseURL` is written by the repository owner, so the engine confines its completion and embedding dials to public destinations, refusing the deployment's own loopback, link-local, RFC1918 and CGNAT ranges at connect time (issue #241). A local provider (a loopback Ollama) needs its address listed here. Empty blocks every private range. This is the server's own dials; `SUBSTRATE_SANDBOX_EGRESS_ALLOW` is the separate escape for a function body's dials. |
-| `SUBSTRATE_BLOB_STORE`         | `fs`                                   | Where blob bytes live: `fs` (under the repository directory in the data root) or `s3` (a bucket). `postgres` is refused at boot. See [the blob store](#the-blob-store). |
+| `SUBSTRATE_BLOB_STORE`         | `fs`                                   | Where blob bytes live: `fs` (under the repository directory in the data root) or `s3` (a bucket). See [the blob store](#the-blob-store). |
 | `SUBSTRATE_BLOB_S3_ENDPOINT`   | —                                      | `s3` only: the service URL, scheme included (`https://s3.us-east-1.amazonaws.com`, or a self-hosted endpoint).                       |
 | `SUBSTRATE_BLOB_S3_BUCKET`     | —                                      | `s3` only: the bucket. It must be PRIVATE — the bytes are stored as they arrived.                                                    |
 | `SUBSTRATE_BLOB_S3_REGION`     | `us-east-1`                            | `s3` only: the region the request is signed for.                                                                                     |
@@ -72,7 +72,7 @@ that directory is the truth on disk and the unit a backup copies
 $SUBSTRATE_DATA_ROOT/
   repositories/
     ada.example.com/                # one per repository, named by its authority
-      repository.json               # the manifest: format, authority, createdAt, changelogDialect, vocabularyDialect, the wrapped DEK, dekKeyId, sealedDekOnly
+      repository.json               # the manifest: format, authority, createdAt, changelogDialect, vocabularyDialect, the wrapped DEK, dekKeyId
       snapshot.json                 # only in a snapshot, or a directory restored from one: the head seq and checksum the copy holds, and the blobs it needs
       changelog/
         000000000000001.ndjson      # a segment, named by its first seq; the highest is the active one
@@ -94,10 +94,10 @@ under `SUBSTRATE_CREDENTIAL_KEY`, the same bytes as the `repositories.dek`
 column, so a copy restored onto a host with the same key opens without
 anything else. The key itself is never in the directory; `dekKeyId` names it
 (16 hex digits of a one-way hash over the key), so a host holding another key
-is told which key the directory wants. `sealedDekOnly` records that every
-file under `sealed/` is ciphertext under the DEK and nothing else: no plain
-payload and none sealed under a host key, so the server refuses those forms on
-this repository and a recovery through the recovery key is complete
+is told which key the directory wants. Every file under `sealed/` is
+ciphertext under that DEK and nothing else: the server refuses a plain
+payload and never tries the host key on one, so a recovery through the
+recovery key is complete
 ([decision 0059](decisions/0059-a-marked-repository-refuses-plain-and-host-key-sealed-payloads.md)).
 
 The manifest is also the directory's record of what a binary must understand
@@ -106,17 +106,13 @@ to read it: `changelogDialect` is the repository's
 `vocabularyDialect` its
 [vocabulary dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract),
 each the same number the repository's stamp holds. The server rewrites the
-manifest when a stamp moves: at the open that promotes the vocabulary
-dialect, and in the first write a new binary appends, which claims the
-changelog dialect and writes the manifest before it commits or appends. So a
-copy of the directory never holds segments its manifest understates, at any
-instant between an upgrade's first write and the next restart. A manifest
-with `format` 1, which v0.46.0 through v0.53.0 wrote, has no
-`vocabularyDialect`; it is read as vocabulary dialect 3, the one every one of
-those releases stored, and rewritten as format 2 at the next boot. Those
-releases refuse a format-2 manifest, so a rollback to one of them fails at
-boot for every repository this binary has opened; the remedy is to delete
-each `repository.json`, which the older binary rewrites from the row.
+manifest when a stamp moves: at the open that stamps the vocabulary dialect,
+and in the first write a new binary appends, which claims the changelog
+dialect and writes the manifest before it commits or appends. So a copy of the
+directory never holds segments its manifest understates, at any instant
+between a new binary's first write and the next restart. There is one manifest
+format, `format` 1; a manifest naming any other is refused rather than guessed
+at.
 
 Postgres is the commit point and the live index, and the directory is written
 first: the repository's one writer stages the write's sealed files under
@@ -182,10 +178,9 @@ always the truth. `SUBSTRATE_BLOB_STORE` says where the bytes go.
 `fs` is the default: the bytes sit in the repository directory beside the
 changelog, so one copy of the directory is a whole backup. `s3` is for a
 deployment whose disk cannot hold the attachments, and it makes the backup two
-artifacts. `postgres`, the `blobs` bytea column, is not a runtime store any
-more: a server configured with it refuses to boot, and so does a server whose
-`blobs` table still holds byte rows, naming
-`substratectl blobs migrate --from postgres` as the way out.
+artifacts. Those are the two stores; any other value of
+`SUBSTRATE_BLOB_STORE` refuses the boot by name rather than falling back to
+the default.
 
 **Isolation is not the database's job here.** The repository is half of every
 key, and it comes from the authenticated token's repository, never from the
@@ -214,21 +209,12 @@ Deleting works the same way in reverse: the manifest is tombstoned, then the
 object is deleted, and an object left behind by a failure is reaped by a later
 sweep that lists the store.
 
-**Switching backends is a migration, not a setting.** A server whose configured
-store is not where the bytes actually are refuses to boot, rather than serving
-404s for half the blobs. Move them first, with the server stopped. A store
-upgraded from a release that kept bytes in the database runs this once:
-
-```
-SUBSTRATE_BLOB_STORE=fs SUBSTRATE_DATA_ROOT=/var/lib/substrate \
-  DATABASE_URL=… substratectl blobs migrate --from postgres
-```
-
-It moves one repository at a time and deletes each object from the source only
-once the target holds it, so an interrupted run is finished by running it
-again. `--dry-run` counts what would move; a repository name moves that one alone.
-Then start the server with the same `SUBSTRATE_BLOB_STORE`. Moving between
-`fs` and `s3` is the same command with `--from` and `--to` naming them.
+**Pick the store before the first upload.** `SUBSTRATE_BLOB_STORE` is read at
+boot and nothing moves bytes between the two stores: a server pointed at a
+store the bytes are not in serves a 404 for every blob, and a 404 reads like a
+deletion. Changing it on a substrate that already holds blobs means copying
+`<data root>/repositories/<authority>/blobs/` into the bucket (or back) by
+hand, with the server stopped.
 
 The 64 MiB cap on one upload and the absence of range reads are the contract,
 not the backend: neither changes with the store.
@@ -270,21 +256,17 @@ on the box, through the DSN.
 - Each repository is opened the first time something touches it. Opening
   rebuilds its kind registry **from its own stored declaration records** —
   nothing on the serving path reads the binary's embedded tree.
-- **The first open re-keys the sealed store once.** A repository whose row is
-  not yet marked `sealed_dek_only` has every sealed payload that is plain
-  (`'p'`, from a keyless release) or sealed under the host key (from before
-  repositories had their own DEK) re-sealed under its DEK, then the row is
-  marked and `repository.json` follows. From then on a read of that
-  repository refuses a plain payload and never tries the host key, naming the
-  framing it found and the key it expected, so a payload planted in the old
-  forms is refused rather than read
+- **The sealed store has one key.** Every payload is bound-framed ciphertext
+  under the repository's DEK, from its first write, so a read refuses a plain
+  payload and never tries the host key, naming the framing it found and the
+  key it expected
   ([decision 0059](decisions/0059-a-marked-repository-refuses-plain-and-host-key-sealed-payloads.md)).
-  `repository inspect` shows the marker and the id of the host key the DEK
-  is wrapped under. A payload that opens under neither the DEK nor the host
-  key refuses that open, naming the ref: nothing can recover its material,
-  so delete the row from `sealed` (and its file under `sealed/`) and have the
-  user re-enter the secret it held (a provider token: reconnect the account;
-  the login credential: `user reset`), then open again.
+  `repository inspect` shows the id of the host key the DEK is wrapped under.
+  A payload that does not open under the DEK refuses that open, naming the
+  ref: nothing can recover its material, so delete the row from `sealed` (and
+  its file under `sealed/`) and have the user re-enter the secret it held (a
+  provider token: reconnect the account; the login credential: `user reset`),
+  then open again.
 - **The data root is reconciled with the `repositories` table**, directory
   by directory and row by row, before anything else writes. Five cases: a
   directory and a row whose heads and last checksums agree open; a table ahead
@@ -302,10 +284,11 @@ on the box, through the DSN.
   one). A manifest whose `changelogDialect` or `vocabularyDialect` is above
   the binary's maximum **refuses the boot** with the same named error the open
   gives ("the changelog speaks a newer dialect than this binary can replay",
-  "the store speaks a newer schema dialect than this binary"), and a
-  changelog holding a retired `link` or `unlink` entry refuses it too; both
-  refusals come before the row is created, so a refused directory reserves
-  its authority for nothing and leaves no row for a later boot to export an
+  "the store speaks a newer schema dialect than this binary"); so does a
+  manifest carrying no wrapped DEK, and one whose DEK does not open every
+  file under `sealed/`, named by file. Each refusal
+  comes before the row is created, so a refused directory reserves its
+  authority for nothing and leaves no row for a later boot to export an
   empty repository from. The import writes
   an `import_progress` row before its first batch of entries commits and
   deletes it in the transaction that commits the last fold pass. A boot that
@@ -317,27 +300,13 @@ on the box, through the DSN.
   the repository and the seq or the file, and repairs nothing (one refusal an
   operator reads, rather than a repository half-open beside the others); a
   row with no directory has its directory written out from the tables, once,
-  which is how a store from a release before the data root gets one. A
+  which is how a repository whose directory was moved away gets one back. A
   directory under `repositories/` named by an authority (`ada.example.com`)
   with no row and no `repository.json` is logged and skipped: nothing says
   whose it is, so it is neither imported nor deleted. Any other entry under
-  `repositories/` (a `tmp`, a `Backup-2026`, an old-id name with no manifest)
-  refuses the boot and names the entry; move it out of the data root.
-- **A `repositories` row whose `id` is not its authority refuses the boot.**
-  Before [decision 0052](decisions/0052-the-authority-is-the-repository-id.md)
-  the id was a random 12-character string; now it is the authority, and there
-  is no migration between the two. The error names the repository and says to
-  wipe the database and boot again. The repository directories under the data
-  root are what comes back: a directory still named by an old id is renamed
-  to its authority, its DEK re-wrapped, imported, and its self-description
-  record (`substrate.reamde.dev/core/repository`) moved from the old id to
-  the authority by two changelog entries the boot appends. Under the `s3`
-  blob store the bucket still keys that repository's objects by the old id,
-  so the boot refuses until you move every object under
-  `<SUBSTRATE_BLOB_S3_PREFIX><old id>/` to
-  `<SUBSTRATE_BLOB_S3_PREFIX><authority>/` and boot again. On the dev
-  substrate that is `mise run dev:wipe` followed by a start with the data
-  root kept (move `.dev/data` aside first, since `dev:wipe` removes it too).
+  `repositories/` (a `tmp`, a `Backup-2026`, anything whose name is not an
+  authority) refuses the boot and names the entry; move it out of the data
+  root.
 - **Shipped vocabulary is upgraded, per repository, in one transaction**: the
   first open under a new binary appends the version diff to that repository's
   changelog under the `substrate` actor
@@ -367,56 +336,35 @@ error instead of appending behind the first one's back.
 ## Upgrading the binary
 
 **Take a backup before you deploy** ([backups](#backups): the data root and a
-database dump, together). A repository's first open under a new binary may
-promote its stored
-[vocabulary dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract),
-and the promotion this binary carries rewrites every declaration row the
-repository holds. That is the one step of an upgrade a rollback cannot undo, so
-the copy you take beforehand is the only way back.
+database dump, together). An upgrade that applies a schema migration closes
+the rollback for the whole database, and the copy you take beforehand is the
+only way back.
 
-**A dialect promotion is one transaction, and it is one-way.** Each repository
-carries a monotonic dialect integer. When a binary's maximum is above the stored
-one, the first open of that repository runs the promotion and stamps the new
-number **inside the same transaction as the row rewrite**, indivisibly: a crash
-leaves the store wholly on the old dialect and the next open tries again, and a
-store can never hold new rows under an old stamp.
+**Each repository carries two dialect stamps, and each refuses a binary that
+is behind it.** The
+[vocabulary dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)
+says what shape the stored declaration rows are in, and the
+[changelog dialect](changelog.md#the-dialect-a-changelog-is-written-in) says
+what a binary must understand to replay the entries. A binary whose maximum is
+below a stored stamp refuses to open that repository, by name, and the API
+surfaces the refusal as `503 unavailable` with a `Retry-After`, never as an
+invalid token, so a store the binary cannot serve is diagnosable rather than
+mysterious. Nothing is rewritten and there is no promotion step: a fresh
+repository is stamped at the binary's maximum at its first open, and the
+changelog's claim is written by the first transaction a binary appends, so a
+new binary that opened a repository and wrote nothing leaves that stamp alone.
 
-**Downgrading after that open is impossible without a restore.** An older binary
-meeting the newer stamp refuses to open the repository. That is the named
-refusal, which the API surfaces as `503 unavailable` with a `Retry-After`, never
-as an invalid token, so a store the binary cannot serve is diagnosable rather
-than mysterious. That refusal is the *good* outcome: it exists because the older
-binary would otherwise misread the migrated rows. Rolling the image back is
-therefore not a fix; restoring the pre-upgrade copy is. Rolling *forward* to a
-binary whose maximum covers the stamp still is.
+**Rolling the image back is only safe while both stamps and the schema still
+fit.** An older binary refuses a repository stamped above its maxima and a
+database holding a migration it does not carry (below), so the way back from
+either is to restore the copy taken before the upgrade. Rolling *forward* to a
+binary whose maxima cover the stamps always works.
 
-**The changelog carries a dialect of its own, and it refuses the same way.**
-Beside the vocabulary stamp each repository carries a
-[changelog dialect](changelog.md#the-dialect-a-changelog-is-written-in): what a
-binary must understand to replay its entries. A binary claims it in the first
-transaction it appends with, so an older binary meeting a newer stamp refuses
-the open instead of serving a history it could not rebuild. A new binary that
-opened a repository and wrote nothing leaves that stamp alone, but the rollback
-stays open only if the binary also carried no new schema migration: applying
-one closes it for the whole database (below). Nothing is rewritten and there is
-no promotion step: a changelog is append-only, so old entries keep the spelling
-they were written in.
-
-**The promotion refuses rather than guesses.** It translates every declaration
-row this repository holds, and if one installed closure no longer parses under
-the new binary it fails the open, logging the package and the reason, instead
-of migrating the rest: stamping a store with one un-migrated row would leave two
-encodings in it, and no reader could tell which one it was holding. The repair is
-to re-install that bundle (or open once under the binary that wrote it) before
-the new binary migrates the repository. A repository whose only trouble is a
-tightened contract is a different case, below.
-
-[Quarantine](vocabulary.md#quarantine) is that other case: a binary that tightens
-a contract quarantines each installed bundle whose stored closure no longer
-admits, rather than bricking the repository, and re-installing the bundle (or a
-later open under a binary that relaxed the contract) clears the marker.
-Quarantine is a state a migrated repository may reach, never one it may be
-migrated in.
+[Quarantine](vocabulary.md#quarantine) is what a tightened contract does: a
+binary that narrows what a declaration may say quarantines each installed
+bundle whose stored closure no longer admits, rather than bricking the
+repository. Re-installing the bundle, or a later open under a binary that
+relaxed the contract, clears the marker.
 
 **A migration this binary does not carry stops the boot.** The runner records
 each migration's version, name and sha256 in `schema_migrations` as it applies
@@ -452,13 +400,6 @@ that was still revising its migration. Throw such a database away:
 `mise run dev:wipe` for a development one, a restore from a backup a matching
 binary wrote for anything else. There is no repair, because two branch
 revisions of one migration can differ in any way at all.
-
-The one sanctioned exception is a migration corrected before it landed.
-`supersededSHA256` in `internal/engine/migrate.go` names the hash the branch
-file had, and a later migration adds whatever that revision lacked, so a
-database carrying the old hash boots and catches up. `0007_signed_from_positive`
-is the only such catch-up: it adds the CHECK constraint that `0005` gained four
-minutes before it merged.
 
 ## Backups
 
@@ -805,8 +746,8 @@ ahead of its file as a finding instead of repairing it, and `reembed` writes
 queue rows, which are not changelog entries. `repository rebuild`,
 `repository rotate-generation`, `repository snapshot` and `user reset` open the
 repository as its changelog writer, and a running server holds that lock: the
-command refuses, naming the lock, until the server is stopped. `blobs migrate`
-needs it stopped too ([the blob store](#the-blob-store)). `repository rewrap` acts on a copied directory
+command refuses, naming the lock, until the server is stopped.
+`repository rewrap` acts on a copied directory
 before any boot has imported it, so it needs `SUBSTRATE_CREDENTIAL_KEY` and
 the directory, and no DSN.
 
@@ -893,35 +834,14 @@ the exec path needs nothing open at all.
   agree from that apply on. Rows indexed before this re-indexing existed,
   under a declaration that has since changed, keep the old bands until a
   rebuild or the next such edit of their kind; a search over them can return
-  a hit the rebuilt repository does not, or miss one it does. One exception is already
-  written: every release before this fix, v0.1.0 through v0.47.0, stored the
-  removal of a record's last label with no `labels` key in the delta, so
-  replaying such an entry brings that label back whatever else the write
-  changed. When that write changed nothing else in the row, the entry's delta
-  is `{}` and the replay also leaves `version` and `updated_at` at the prior
-  write's, where the live write bumped one and moved the other. Nothing
-  reconstructs the clear from the changelog alone. The bare `{}` entries are
-  listable, since the stored payload carries the effects. Against the
-  database, `SELECT seq, kind, record_id FROM changelog WHERE repository =
-  '<authority>' AND EXISTS (SELECT 1 FROM jsonb_array_elements(payload->'fold')
-  e WHERE e->>'kind' = 'record' AND e->'delta' = '{}')` names each record to
-  relabel after the rebuild. A clear that rode along with a property change in
-  the same write leaves no mark that tells it from the property change alone,
-  and nothing lists those. It does not touch blobs or sealed files, which were
-  never in the changelog. It replays the delivery ledger with the rest of the
+  a hit the rebuilt repository does not, or miss one it does. It does not
+  touch blobs or sealed files, which were never in the changelog. It replays the delivery ledger with the rest of the
   fold: each trigger's cursor lands at the last delivery it acknowledged, its
   parked failures and a paged drain's resume row come back, and the next pass
-  re-reads the rows after the cursor, which deliver nothing. Trigger state
-  from before changelog dialect 6 was recorded into the ledger at the
-  repository's first open under it, so a rebuild keeps it. OAuth flows in
+  re-reads the rows after the cursor, which deliver nothing. OAuth flows in
   flight are left alone. Stop the server
   first: it opens the repository as its changelog writer and refuses while
   the server holds the lock.
-- **`blobs migrate`** moves blob bytes from one store to another, one
-  repository at a time, and is the only way across a
-  `SUBSTRATE_BLOB_STORE` change: see [the blob store](#the-blob-store). It
-  writes no records and appends no changelog entries, because the manifest
-  never moves.
 - **`user reset <repository>`** is the answer to a user who has lost both
   factors. It writes fresh sealed material and a new credential record and
   prints a fresh TOTP enrollment. The data is untouched; the account gets new

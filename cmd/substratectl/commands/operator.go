@@ -183,27 +183,23 @@ type repositoryRow struct {
 	ID        string
 	Authority string
 	CreatedAt time.Time
-	// DEKKeyID names the host key the repository's DEK is wrapped under;
-	// empty for a wrap written before key ids were recorded. PlainWrap says
-	// the wrap is plain-marked, written by a keyless host, so no key protects
-	// it. SealedDEKOnly says every sealed payload is under the DEK, so the
-	// server refuses the legacy forms on this repository (decision record
-	// 0059).
-	DEKKeyID      string
-	HasDEK        bool
-	PlainWrap     bool
-	SealedDEKOnly bool
+	// DEKKeyID names the host key the repository's DEK is wrapped under, and
+	// is empty under no key. PlainWrap says the wrap is plain-marked, written
+	// by a keyless host, so no key protects it (decision record 0059).
+	DEKKeyID  string
+	HasDEK    bool
+	PlainWrap bool
 }
 
 // repositoryRowColumns is the column list scanRepositoryRow reads, in order.
 // The wrap's first byte is its framing; 112 is 'p', the plain marker.
 const repositoryRowColumns = `id, authority, created_at, dek_key_id,
-	dek IS NOT NULL, dek IS NOT NULL AND get_byte(dek, 0) = 112, sealed_dek_only`
+	dek IS NOT NULL, dek IS NOT NULL AND get_byte(dek, 0) = 112`
 
 func scanRepositoryRow(scan func(dest ...any) error) (repositoryRow, error) {
 	var r repositoryRow
 	var keyID sql.NullString
-	if err := scan(&r.ID, &r.Authority, &r.CreatedAt, &keyID, &r.HasDEK, &r.PlainWrap, &r.SealedDEKOnly); err != nil {
+	if err := scan(&r.ID, &r.Authority, &r.CreatedAt, &keyID, &r.HasDEK, &r.PlainWrap); err != nil {
 		return repositoryRow{}, err
 	}
 	r.DEKKeyID = keyID.String
@@ -242,23 +238,18 @@ func repositoryRowByID(ctx context.Context, db *sql.DB, repository string) (repo
 }
 
 // describeKeys renders what the row records about the repository's keys
-// (decision record 0059): the host key its DEK is wrapped under, and whether
-// the server has re-keyed its sealed store under the DEK alone.
+// (decision record 0059): the host key its DEK is wrapped under. Every sealed
+// payload is under that DEK, so there is nothing else to say about the store.
 func describeKeys(r repositoryRow) string {
-	wrap := "wrapped under an unnamed host key (written before key ids; a keyed server re-wraps and names it at the next open)"
 	switch {
 	case !r.HasDEK:
-		wrap = "no DEK yet (a repository from before DEKs; the server adopts one and re-keys the sealed store at the next open)"
+		return "NO DEK: nothing can open this repository's sealed store"
 	case r.PlainWrap:
-		wrap = "PLAIN wrap, written by a keyless host: no key protects the DEK until a keyed server opens the repository"
+		return "PLAIN wrap, written by a keyless host: no key protects the DEK"
 	case r.DEKKeyID != "":
-		wrap = "wrapped under host key " + r.DEKKeyID
+		return "wrapped under host key " + r.DEKKeyID
 	}
-	store := "sealed store DEK-only"
-	if !r.SealedDEKOnly {
-		store = "sealed store not yet re-keyed (plain or host-key-sealed payloads may remain until the server opens it once)"
-	}
-	return wrap + "; " + store
+	return "wrapped under an unnamed host key"
 }
 
 // controlPlaneError names the one failure an operator will actually hit: a DSN

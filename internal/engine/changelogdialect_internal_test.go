@@ -12,35 +12,22 @@ package engine
 // changing what lands in a payload is not.
 
 import (
-	"encoding/json"
 	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"strings"
 	"testing"
-	"time"
 )
 
-// dialectTwoOps and dialectTwoEffects are the changelog vocabulary since
-// dialect 2, where references absorbed edges (decision 0044): `link` and
-// `unlink` stopped being ops and `edge`/`unedge`/`edge1` stopped being
-// effects. Dialect 1 entries carrying any of the five are refused at the fold
-// by name (fold.go foldRefuses) rather than replayed into a store with no
-// pointers in it. Dialect 3 keeps this vocabulary unchanged: its rung is the
-// `txn` frame on every entry and the checksum over it (decision 0057), not a
-// spelling. Dialect 4 keeps it unchanged too: its rung is the `kindVersion`
-// key on the record delta (decision 0060, TestTheKindVersionStampIsDialectFour),
-// and dialect 5 its rung is the `updatedAt` key on the manager effect
-// (decision 0063, TestTheManagerStampIsDialectFive),
-// so the lists hold.
-// Dialect 6 (maxChangelogDialect) adds the delivery ledger: the `delivery` op
-// and the seven effects a trigger's bookkeeping folds through (decision 0064).
+// dialectOneOps and dialectOneEffects are the changelog vocabulary this binary
+// writes: the record and delivery ops, and every fold effect a replayer must
+// understand, the delivery ledger's seven included (decision 0064).
 var (
-	dialectSixOps = []string{
+	dialectOneOps = []string{
 		"put", "patch", "delete", "merge", "split", "gc", "delivery",
 	}
-	dialectSixEffects = []string{
+	dialectOneEffects = []string{
 		"record", "tombstone", "purge", "bump",
 		"annotation", "manager", "former", "resync",
 		"cursor", "schedule", "park", "unpark", "page", "unpage", "forget",
@@ -55,8 +42,8 @@ func TestChangelogDialectCoversTheChangelogVocabulary(t *testing.T) {
 		typeName string
 		want     []string
 	}{
-		{"changelog ops", "../substrate/change.go", "Op", dialectSixOps},
-		{"fold effects", "fold.go", "foldKind", dialectSixEffects},
+		{"changelog ops", "../substrate/change.go", "Op", dialectOneOps},
+		{"fold effects", "fold.go", "foldKind", dialectOneEffects},
 	} {
 		got := declaredStrings(t, c.file, c.typeName)
 		if len(got) != len(c.want) {
@@ -76,65 +63,22 @@ func TestChangelogDialectCoversTheChangelogVocabulary(t *testing.T) {
 	}
 }
 
-// Dialect 4 is the `record` delta carrying `kindVersion` (decision 0060). A
-// dialect 3 binary does not refuse the key: foldOpsOf decodes without
-// DisallowUnknownFields, so it replays the entry, drops the stamp and folds
-// the row to 0 with nothing saying so. The rung is what makes that binary
-// refuse at the gate, so the constant and the key are pinned together: a
-// binary that writes the key stamps 4, and one that stops writing it may not
-// keep the number.
-func TestTheKindVersionStampIsDialectFour(t *testing.T) {
+// The gate compares in one direction: a repository stamped above the binary's
+// maximum is refused by name and with both numbers in the message, and
+// anything at or below it, an unstamped changelog included, opens.
+func TestTheGateRefusesOnlyANewerStamp(t *testing.T) {
 	t.Parallel()
-	if maxChangelogDialect < 4 {
-		t.Fatalf("maxChangelogDialect = %d; the kindVersion stamp is rung 4", maxChangelogDialect)
+	err := admitChangelogDialect("ada.example.com", maxChangelogDialect+1, maxChangelogDialect)
+	if !errors.Is(err, ErrChangelogDialectNewer) {
+		t.Fatalf("a repository stamped above the maximum was admitted: %v", err)
 	}
-	if err := admitChangelogDialect("geoah", 4, 3); !errors.Is(err, ErrChangelogDialectNewer) {
-		t.Fatalf("a dialect 3 binary admitted a repository stamped 4: %v", err)
+	if !strings.Contains(err.Error(), "this binary replays <= ") {
+		t.Fatalf("the refusal must name both numbers: %v", err)
 	}
-	if err := admitChangelogDialect("geoah", 3, maxChangelogDialect); err != nil {
-		t.Fatalf("a repository stamped 3 must open under this binary: %v", err)
-	}
-	raw, err := json.Marshal(rowDelta{KindVersion: 4})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(raw) != `{"kindVersion":4}` {
-		t.Fatalf("the record delta spells the stamp as %s; dialect 4 is the key `kindVersion`", raw)
-	}
-}
-
-// Dialect 5 is the `manager` effect carrying `updatedAt` (decision 0063): a
-// property rename moves a manager row with its original stamp, and a dialect
-// 4 binary, which decodes the key as absent and stamps the replay's own time,
-// must refuse a store stamped 5 rather than fold it differently from the
-// author. A store stamped 4 opens under this binary.
-func TestTheManagerStampIsDialectFive(t *testing.T) {
-	t.Parallel()
-	if maxChangelogDialect < 5 {
-		t.Fatalf("maxChangelogDialect = %d; the manager stamp is rung 5", maxChangelogDialect)
-	}
-	if err := admitChangelogDialect("geoah", maxChangelogDialect, 4); !errors.Is(err, ErrChangelogDialectNewer) {
-		t.Fatalf("a dialect 4 binary admitted a repository stamped 5: %v", err)
-	}
-	if err := admitChangelogDialect("geoah", 4, maxChangelogDialect); err != nil {
-		t.Fatalf("a repository stamped 4 must open under this binary: %v", err)
-	}
-	at := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
-	raw, err := json.Marshal(foldOp{Kind: foldManager, Ref: "k", ID: "r", Property: "p", Actor: "api", Tier: "owner", UpdatedAt: &at})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(raw), `"updatedAt":"2026-09-08T12:00:00Z"`) {
-		t.Fatalf("the manager effect spells its stamp as %s; dialect 5 is the key `updatedAt`", raw)
-	}
-	// Without a stamp the key is absent, so every manager effect written
-	// before the rung still decodes to "the transaction's clock".
-	raw, err = json.Marshal(foldOp{Kind: foldManager, Ref: "k", ID: "r", Property: "p", Actor: "api", Tier: "owner"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(raw), "updatedAt") {
-		t.Fatalf("a manager effect without a stamp spells one: %s", raw)
+	for _, stored := range []int{0, maxChangelogDialect} {
+		if err := admitChangelogDialect("ada.example.com", stored, maxChangelogDialect); err != nil {
+			t.Fatalf("a repository stamped %d must open under this binary: %v", stored, err)
+		}
 	}
 }
 
@@ -174,33 +118,4 @@ func declaredStrings(t *testing.T, file, typeName string) []string {
 		t.Fatalf("%s declares no %s constants — did the type move?", file, typeName)
 	}
 	return out
-}
-
-// A repository this binary stamps (6) is refused by a binary whose maximum is
-// 5, 4, 3 or 2: the delivery ledger's op and effects are unknown to their fold, and
-// v0.46.0 and v0.47.0 (maximum 2) would also re-stamp every `changelog.hash`
-// without `txn` at boot (changelogdialect.go, rungs three to six).
-func TestChangelogDialectSixIsRefusedByAnOlderBinary(t *testing.T) {
-	t.Parallel()
-	if maxChangelogDialect != 6 {
-		t.Fatalf("maxChangelogDialect = %d; the delivery ledger is rung 6", maxChangelogDialect)
-	}
-	for _, older := range []int{2, 3, 4, 5} {
-		err := admitChangelogDialect("geoah", maxChangelogDialect, older)
-		if !errors.Is(err, ErrChangelogDialectNewer) {
-			t.Fatalf("a dialect %d binary admitted a repository stamped 6: %v", older, err)
-		}
-		if !strings.Contains(err.Error(), "dialect 6, this binary replays <= ") {
-			t.Fatalf("the refusal must name both numbers: %v", err)
-		}
-	}
-	if err := admitChangelogDialect("geoah", 3, maxChangelogDialect); err != nil {
-		t.Fatalf("a repository stamped 3 must open under this binary: %v", err)
-	}
-	if err := admitChangelogDialect("geoah", 2, maxChangelogDialect); err != nil {
-		t.Fatalf("a repository stamped 2 must open under this binary: %v", err)
-	}
-	if err := admitChangelogDialect("geoah", 0, maxChangelogDialect); err != nil {
-		t.Fatalf("an unstamped repository must open: %v", err)
-	}
 }

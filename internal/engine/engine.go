@@ -74,10 +74,6 @@ type options struct {
 	// compile into the binary and are inert unless set.
 	importFault func(stage string) error
 	importBatch int
-	// adoptFault is the ledger adoption's test seam (delivery.go
-	// adoptLegacyLedger): a hook run after each trigger's rows are recorded,
-	// inside the one transaction, so a test can fail it mid-way. Tests only.
-	adoptFault func(triggerID string) error
 	// commitFault is a write's test seam (export_test.go): a hook run at
 	// each durable step of commitAndMirror, around the manifest write that
 	// precedes the first append in a new changelog dialect and around the
@@ -170,9 +166,7 @@ func WithDirectoryReadOnly() Option { return func(o *options) { o.dirReadOnly = 
 // WithBlobStore puts blob bytes somewhere other than the default, which is the
 // fs backend under the data root (<root>/repositories/<authority>/blobs). The s3
 // backend trades the one-directory backup for bytes in a bucket;
-// internal/blobbytes says what each one keeps. The postgres backend is not a
-// choice here: the engine refuses to boot while the `blobs` column holds rows
-// (checkBlobBackend).
+// internal/blobbytes says what each one keeps.
 func WithBlobStore(b blobbytes.Backend) Option { return func(o *options) { o.blobs = b } }
 
 // ErrNoDataRoot is Open's refusal when no data root was given, or the given
@@ -284,8 +278,6 @@ type service struct {
 	// (repodir.go importEntries, refoldFromFiles). Tests only.
 	testImportFault func(stage string) error
 	testImportBatch int
-	// testAdoptFault is the option's adoption seam. Tests only.
-	testAdoptFault func(triggerID string) error
 	// testCommitFault is the options' commit seam (dataset.go
 	// commitAndMirror, repodir.go writeManifestBeforeCommit). Tests only.
 	testCommitFault func(stage string) error
@@ -392,7 +384,6 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 
 		testImportFault:   o.importFault,
 		testImportBatch:   o.importBatch,
-		testAdoptFault:    o.adoptFault,
 		testCommitFault:   o.commitFault,
 		testSnapshotFault: o.snapshotFault,
 		testInvokeHook:    o.invokeHook,
@@ -485,12 +476,6 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 	}
 	// A backend switch on a store that already holds bytes is refused here,
 	// before anything is served: half the blobs would 404 otherwise, and a
-	// 404 reads like a deletion.
-	if err := s.checkBlobBackend(ctx); err != nil {
-		_ = maint.Close()
-		_ = admin.Close()
-		return nil, err
-	}
 	// Reclaim any repository-scoped rows a registration that crashed between its
 	// scoped commit and its control-plane insert left behind (createSeededRepository
 	// commits the repository's own rows FIRST and the control-plane row LAST, so
@@ -510,15 +495,6 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 	// the open path a request drives. What arrives later (a bundle's
 	// kinds) is materialized by the schema write that admits it.
 	if err := ensureIndices(ctx, admin, reg.Kinds()); err != nil {
-		_ = maint.Close()
-		_ = admin.Close()
-		return nil, err
-	}
-	// A row from before the authority was the repository id is refused before
-	// anything reads it by that id (repodir.go checkRepositoryRows): its DEK
-	// is bound to the old id, so the key check below would otherwise name the
-	// key when the answer is the database.
-	if err := s.requireRepositoryRowsAreAuthorities(ctx); err != nil {
 		_ = maint.Close()
 		_ = admin.Close()
 		return nil, err
@@ -690,27 +666,14 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.ID, err)
 	}
 	db.SetMaxOpenConns(8)
-	// The repository's keys for the dataset's lifetime: the DEK unwrapped and
-	// the sealed-store marker; a pre-DEK repository adopts a DEK here,
-	// compare-and-swap against a concurrent open.
+	// The repository's DEK for the dataset's lifetime, unwrapped from the
+	// control-plane row.
 	keys, err := s.repoKeys(ctx, repo.ID)
 	if err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("substrate/engine: open repository %s: unwrap DEK: %w", repo.ID, err)
 	}
 	dek := keys.dek
-	if dek == nil {
-		if dek, err = s.adoptDEK(ctx, repo.ID); err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("substrate/engine: open repository %s: adopt DEK: %w", repo.ID, err)
-		}
-		// The manifest carries the wrapped DEK, so the row is re-read to
-		// hand ensureManifest the bytes the adoption stored.
-		if repo, err = s.repositoryByID(ctx, repo.ID); err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("substrate/engine: open repository %s: re-read after adopting a DEK: %w", repo.ID, err)
-		}
-	}
 	dir, err := s.repositoryDir(repo.ID)
 	if err != nil {
 		_ = db.Close()
@@ -720,7 +683,6 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		svc:        s,
 		db:         db,
 		dek:        dek,
-		dekOnly:    repo.SealedDEKOnly,
 		scope:      sc,
 		dir:        dir,
 		generation: repo.HistoryGeneration,
@@ -744,25 +706,15 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	// a binary that cannot replay this history must not extend it either. It
 	// only reads; the claim is written by the first transaction that appends
 	// (changelogdialect.go). This is the entries' half of the downgrade gate,
-	// beside dialect.go's promoteSchemaDialect over the stored declaration rows.
+	// beside dialect.go's gate over the stored declaration rows.
 	if err := ds.gateChangelogDialect(ctx); err != nil {
 		ds.close()
 		return nil, err
 	}
-	if !s.readOnly {
-		// The one-shot re-key of a store that still holds legacy payloads,
-		// and the marker that retires the fallback (0059), come before the
-		// manifest is written below, because the manifest carries the marker.
-		if repo, err = s.retireLegacySealed(ctx, ds, repo); err != nil {
-			ds.close()
-			return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.ID, err)
-		}
-		ds.dekOnly = repo.SealedDEKOnly
-	}
 	// The stored rows speak one DIALECT: the gate in dialect.go refuses a
-	// store newer than this binary with a named error and stamps an older one,
-	// before anything reads declaration rows back.
-	if err := ds.promoteSchemaDialect(ctx); err != nil {
+	// store newer than this binary with a named error and stamps an
+	// unstamped one, before anything reads declaration rows back.
+	if err := ds.gateVocabularyDialect(ctx); err != nil {
 		ds.close()
 		return nil, err
 	}
@@ -782,7 +734,6 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	// shipped-vocabulary upgrade append what a newer binary added (seed.go).
 	for _, step := range []func(context.Context) error{
 		ds.loadStoredVocabulary,
-		ds.adoptLegacyLedger,
 		ds.upgradeShippedVocabulary,
 		ds.ensureTriggerCursors,
 		ds.clearDeadReservations,
@@ -900,8 +851,8 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 	// The DEK is born with the repository: the seed transaction below already
 	// writes sealed material (the credential, at registration), and it seals
 	// under this key from the first byte. The control-plane row wraps it
-	// under the host key at the commit point, names that key, and is born
-	// DEK-only: nothing it will ever hold was sealed any other way (0059).
+	// under the host key at the commit point and names that key; nothing the
+	// repository will ever hold is sealed any other way (0059).
 	dek, err := newDEK()
 	if err != nil {
 		return zero, err
@@ -909,7 +860,7 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 	if repo.DEK, err = s.wrapDEK(dek, repo.ID); err != nil {
 		return zero, err
 	}
-	repo.DEKKeyID, repo.SealedDEKOnly = s.credKeyID, true
+	repo.DEKKeyID = s.credKeyID
 
 	db, err := openScoped(s.dsn, repo.scope(), s.appRole)
 	if err != nil {
@@ -925,7 +876,7 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 	// After the seed commits, the dataset is thrown away and the repository is
 	// opened the ordinary way: from its own rows.
 	seedDS := &dataset{
-		svc: s, db: db, dek: dek, dekOnly: true, scope: repo.scope(),
+		svc: s, db: db, dek: dek, scope: repo.scope(),
 		reg: s.base.Clone(), watch: newBroadcaster(), info: repo.info(),
 	}
 	// inserted flips once the control-plane row is this creation's, and

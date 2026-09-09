@@ -232,8 +232,8 @@ func TestExportOverTheAPIRestoresIntoAnEmptyDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(m.DEK) == 0 || !m.SealedDEKOnly {
-		t.Fatalf("the exported manifest lost its wrapped DEK or its marker: %+v", m)
+	if len(m.DEK) == 0 {
+		t.Fatalf("the exported manifest lost its wrapped DEK: %+v", m)
 	}
 	if info, err := os.Stat(dir2); err != nil || info.Mode().Perm() != 0o700 {
 		t.Fatalf("the extracted directory is %v, want 0700", info.Mode())

@@ -1,12 +1,8 @@
 package engine_test
 
-// A database migrated by a build from an unmerged branch: what it takes to
-// open one, and what it takes to be refused. The case in hand is the 0005 a
-// branch build applied before the merge added its last CHECK. 0007 adds that
-// constraint wherever it is missing, and supersededSHA256 is what lets the
-// runner get as far as applying it. 0014 drops the constraint again with the
-// rest of the signing state, so a fully migrated schema no longer carries it;
-// what these hold is the runner's bookkeeping.
+// The migration runner against a real database: an edited migration is
+// refused, a database a newer binary migrated is refused, and a migration
+// whose steps are all IF EXISTS re-runs as a no-op.
 
 import (
 	"context"
@@ -17,8 +13,6 @@ import (
 
 	"github.com/geoah/substrate/internal/engine"
 )
-
-const branch0005 = "63fd9e709feefca7bd5ab040d268988d8f6f24c740f0384759f125f7f8adcc40"
 
 func constraintExists(t *testing.T, db *sql.DB, name string) bool {
 	t.Helper()
@@ -41,61 +35,6 @@ func recordedHash(t *testing.T, db *sql.DB, version int) string {
 		t.Fatalf("read schema_migrations: %v", err)
 	}
 	return sum
-}
-
-// strand rewrites a fully migrated schema into the one a pre-merge build of
-// PR #89 left: 0005 recorded under the hash that branch's file had, no 0007,
-// and the constraint 0007 exists to add still missing. Two columns come back
-// with it, because a database stranded before 0007 still has both and the
-// replayed migrations read them: `signed_from_seq`, which 0005 added and 0014
-// dropped, and `username`, which 0001 added, 0013 reads and 0024 dropped.
-func strand(t *testing.T, db *sql.DB) {
-	t.Helper()
-	for _, q := range []string{
-		`DELETE FROM schema_migrations WHERE version >= 7`,
-		`UPDATE schema_migrations SET sha256 = '` + branch0005 + `' WHERE version = 5`,
-		`ALTER TABLE repositories ADD COLUMN IF NOT EXISTS signed_from_seq bigint`,
-		`ALTER TABLE repositories ADD COLUMN IF NOT EXISTS username text`,
-		`ALTER TABLE repositories DROP CONSTRAINT IF EXISTS repositories_signed_from_positive`,
-	} {
-		if _, err := db.Exec(q); err != nil {
-			t.Fatalf("strand the schema (%s): %v", q, err)
-		}
-	}
-}
-
-func TestOpenHealsADatabaseTheBranchBuildMigrated(t *testing.T) {
-	t.Parallel()
-	_, dsn := newService(t)
-	db := rawDB(t, dsn)
-	strand(t, db)
-	if constraintExists(t, db, "repositories_signed_from_positive") {
-		t.Fatal("the stranded schema still carries the constraint; the test proves nothing")
-	}
-
-	svc, err := engine.OpenForTest(t, context.Background(), dsn,
-		engine.WithDataRoot(t.TempDir()),
-		engine.WithKindsDir(engine.CoreKindsDir),
-		engine.WithCredentialKey(engine.TestCredentialKey))
-	if err != nil {
-		t.Fatalf("a database this repository's own branch build migrated was refused: %v", err)
-	}
-	t.Cleanup(func() { _ = svc.Close() })
-
-	if constraintExists(t, db, "repositories_signed_from_positive") {
-		t.Fatal("0014 left the constraint 0007 added; the signing state was not dropped")
-	}
-	// The recorded 0005 hash STAYS what ran: it is the record of which file
-	// this database applied, and 0007 is what makes accepting it safe.
-	if got := recordedHash(t, db, 5); got != branch0005 {
-		t.Fatalf("the recorded 0005 hash is %q; the runner rewrote history", got)
-	}
-	if recordedHash(t, db, 7) == "" {
-		t.Fatal("0007 is not recorded as applied")
-	}
-	if recordedHash(t, db, 14) == "" {
-		t.Fatal("0014 is not recorded as applied")
-	}
 }
 
 // Re-running 0014 over a schema it already ran on: every drop is IF EXISTS,

@@ -194,13 +194,16 @@ func (s *service) VerifyRepository(ctx context.Context, repository string) (Veri
 			}
 			expected++
 			switch txn := row.entry.Txn; {
-			case txn != 0 && txn < row.entry.Seq:
+			case txn == 0:
+				found(fmt.Sprintf("seq %d carries no txn", row.entry.Seq))
+				openTxn = 0
+			case txn < row.entry.Seq:
 				found(fmt.Sprintf("seq %d ends its transaction at %d, before itself", row.entry.Seq, txn))
 				openTxn = 0
 			case openTxn != 0 && txn != openTxn:
 				found(fmt.Sprintf("seq %d carries txn %d inside the transaction ending at %d", row.entry.Seq, txn, openTxn))
 				openTxn = 0
-			case txn == 0 || txn == row.entry.Seq:
+			case txn == row.entry.Seq:
 				openTxn = 0
 			default:
 				openTxn = txn
@@ -377,7 +380,7 @@ func (s *service) verifyBlobs(ctx context.Context, tx dbx, db *sql.DB, repo Repo
 	if len(blobs) == 0 {
 		return nil
 	}
-	store, err := s.blobs.Repository(repo.ID, db)
+	store, err := s.blobs.Repository(repo.ID)
 	if err != nil {
 		return err
 	}
@@ -488,7 +491,7 @@ func (s *service) verifySealedOpen(repo Repository, files []changelogfile.Sealed
 		return
 	}
 	for _, f := range files {
-		if _, err := openRepoPayload(f.Payload, dek, s.credKey, sealedAAD(f.Ref, f.RecordKind, f.RecordID), repo.SealedDEKOnly); err != nil {
+		if _, err := openRepoPayload(f.Payload, dek, sealedAAD(f.Ref, f.RecordKind, f.RecordID)); err != nil {
 			found(fmt.Sprintf("sealed/%s (%s %s): does not open under the DEK: %v",
 				changelogfile.SealedFileName(f.Ref), f.RecordKind, f.RecordID, err))
 			continue

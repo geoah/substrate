@@ -188,69 +188,6 @@ func TestRewrapRestoresARepositoryUnderANewCredentialKey(t *testing.T) {
 	}
 }
 
-// A directory a v0.47.0 through v0.51.0 binary wrote carries a format-1
-// manifest. The rewrap reads it, writes the manifest back in format 2 with
-// the vocabulary dialect that format implies and the changelog dialect it
-// recorded, and the boot on the new host imports it.
-func TestRewrapOpensAFormatOneDirectory(t *testing.T) {
-	t.Parallel()
-	svc, _ := newService(t)
-	ctx := context.Background()
-	u, identity := registerWithIdentity(t, svc, "ada.example.com")
-	ds, err := svc.Dataset(ctx, "ada.example.com")
-	if err != nil {
-		t.Fatal(err)
-	}
-	importVocabulary(t, ds, "tasks")
-	writeSomeHistory(t, ds)
-	before := foldOf(t, ds)
-	id := repositoryIDOf(t, ds)
-	root := engine.DataRootOf(svc)
-	_ = svc.Close()
-
-	root2 := copyRepositoryDir(t, root, id)
-	dir2, err := changelogfile.RepoDir(root2, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rewriteChangelogDir(t, changelogfile.ChangelogDir(dir2), unframe)
-	writeFormatOneManifest(t, dir2, readManifest(t, dir2))
-	otherRaw, other := otherCredentialKey(t)
-
-	report, err := engine.RewrapRepositoryDir(dir2, identity, other)
-	if err != nil {
-		t.Fatalf("rewrap a format-1 directory: %v", err)
-	}
-	if report.Repository != id {
-		t.Fatalf("report = %+v", report)
-	}
-	m := readManifest(t, dir2)
-	if m.Format != changelogfile.ManifestFormat || m.ChangelogDialect != 2 || m.VocabularyDialect != formatOneVocabularyDialect {
-		t.Fatalf("the rewritten manifest = %+v, want format %d, changelog dialect 2, vocabulary dialect %d", m, changelogfile.ManifestFormat, formatOneVocabularyDialect)
-	}
-	if _, err := engine.OpenPayloadWithKey(otherRaw, m.DEK, engine.DEKAAD(id)); err != nil {
-		t.Fatalf("the rewritten manifest does not open under the new key: %v", err)
-	}
-
-	dsn2 := engine.MigratedDSN(t)
-	svc2, err := openWithKey(t, dsn2, root2, other)
-	if err != nil {
-		t.Fatalf("boot on the rewrapped format-1 directory: %v", err)
-	}
-	ds2, err := svc2.Dataset(ctx, "ada.example.com")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if after := foldOf(t, ds2); string(after) != string(before) {
-		t.Fatalf("the restored fold is not the original\n%s", firstDifference(before, after))
-	}
-	if _, _, err := svc2.Login(ctx, substrate.LoginInput{
-		Repository: "ada.example.com", Password: u.password, TOTPCode: u.code(t), Label: "after",
-	}); err != nil {
-		t.Fatalf("login after the rewrap: %v", err)
-	}
-}
-
 // A repository that never enrolled a recovery key has no recoverykey record,
 // so no identity opens it: the rewrap refuses and says so. A directory with
 // no manifest is refused too, because nothing says whose it is. Neither is

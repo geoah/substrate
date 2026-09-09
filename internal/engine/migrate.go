@@ -49,22 +49,6 @@ type recorded struct {
 // reset) run the same runner and refuse the same way.
 var ErrDatabaseNewer = errors.New("substrate/engine: the database applied migrations this binary does not carry")
 
-// supersededSHA256 lists, per version, the hashes a migration's file carried
-// on an unmerged branch before it landed. A database an in-development build
-// migrated recorded one of those, and this binary's file no longer hashes to
-// it.
-//
-// A hash belongs here only once a LATER migration brings the schema it left
-// up to what the file now says, and the comment beside it names that
-// migration. Without the catch-up, accepting the hash accepts a schema that
-// is genuinely different.
-var supersededSHA256 = map[int][]string{
-	// ff9bfff, PR #89's branch: the landed 0005 exactly, but for the
-	// repositories_signed_from_positive CHECK added before the merge. 0007
-	// adds that constraint to whatever lacks it.
-	5: {"63fd9e709feefca7bd5ab040d268988d8f6f24c740f0384759f125f7f8adcc40"},
-}
-
 // migrate applies every pending migration to the schema the DSN's
 // search_path pins, atomically per migration. Idempotent.
 //
@@ -158,7 +142,7 @@ func checkRecorded(migrations []migration, applied map[int]recorded) error {
 			}
 			continue
 		}
-		if r.SHA256 == "" || r.SHA256 == m.SHA256 || superseded(m.Version, r.SHA256) {
+		if r.SHA256 == "" || r.SHA256 == m.SHA256 {
 			continue
 		}
 		drift = append(drift, fmt.Sprintf("  %d (%s): recorded %s, file %s", m.Version, m.Name, r.SHA256, m.SHA256))
@@ -178,8 +162,7 @@ func checkRecorded(migrations []migration, applied map[int]recorded) error {
 			`whose migration has changed since, in practice a build from a branch that was still editing it. `+
 			`Nothing pending is applied, because a new migration must not land on a schema its predecessors did not build. `+
 			`A development database is thrown away with mise run dev:wipe, and anything else is restored from a dump a `+
-			`matching binary wrote. A migration corrected before it landed is accepted instead by naming its old hash in `+
-			`supersededSHA256, together with the later migration that closes the gap. What diverges:`+"\n%s",
+			`matching binary wrote. What diverges:`+"\n%s",
 			len(drift), strings.Join(drift, "\n")))
 	}
 	if len(gap) > 0 {
@@ -191,15 +174,6 @@ func checkRecorded(migrations []migration, applied map[int]recorded) error {
 			len(gap), highestRecorded, strings.Join(gap, "\n")))
 	}
 	return errors.Join(errs...)
-}
-
-func superseded(version int, sum string) bool {
-	for _, known := range supersededSHA256[version] {
-		if known == sum {
-			return true
-		}
-	}
-	return false
 }
 
 func appliedMigrations(ctx context.Context, conn *sql.Conn) (map[int]recorded, error) {

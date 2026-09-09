@@ -105,10 +105,9 @@ func TestChangelogDialectGate(t *testing.T) {
 	}
 }
 
-// TestChangelogDialectAdoptsAnUnstampedStore covers the store every existing
-// repository is on the day this ships: a changelog written before anything
-// stamped one. It is dialect 1 by construction (no binary that could write
-// anything else has run), so it opens, and the next write claims it.
+// TestChangelogDialectAdoptsAnUnstampedStore covers a changelog nothing has
+// claimed: the open reads it, writes no claim of its own, and the first
+// append is what stamps it.
 func TestChangelogDialectAdoptsAnUnstampedStore(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -229,11 +228,16 @@ func recordCount(t *testing.T, db *sql.DB) int {
 	return n
 }
 
+// storedChangelogDialect is the repository's claim, 0 when nothing has
+// claimed the changelog yet.
 func storedChangelogDialect(t *testing.T, db *sql.DB) int {
 	t.Helper()
 	var d int
-	if err := db.QueryRowContext(context.Background(),
-		`SELECT dialect FROM changelog_dialect`).Scan(&d); err != nil {
+	switch err := db.QueryRowContext(context.Background(),
+		`SELECT dialect FROM changelog_dialect`).Scan(&d); {
+	case errors.Is(err, sql.ErrNoRows):
+		return 0
+	case err != nil:
 		t.Fatalf("read the stamped changelog dialect: %v", err)
 	}
 	return d

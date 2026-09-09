@@ -2,9 +2,7 @@ package engine
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -646,42 +644,9 @@ func (ds *dataset) whenProgram(src string) (cel.Program, error) {
 // between creation and the first dispatch is never skipped — and a schedule
 // source's fire state initializes at now, so the first fire is the next
 // occurrence. Both are ledger effects on a delivery entry of their own, so a
-// restore brings the trigger back at the position it started from. One
-// exception beats the creation seq: a DEFAULT trigger (`on-<callable
-// identity>`) whose callable still owns a pre-wave-1 cursor ADOPTS that
-// position and its parked failures atomically, so a subscription that lived
-// on the function itself (dropped whole by the run-arm cleanup or a
-// stored-blob promotion before the trigger existed) resumes exactly where it
-// stood instead of restarting at head.
+// restore brings the trigger back at the position it started from.
 func (t *txn) initTriggerBookkeeping(id string, props map[string]any) error {
 	seq := t.maxSeq
-	if legacy, ok := t.adoptableLegacyCursor(id, props); ok {
-		var old sql.NullInt64
-		err := t.row(`SELECT seq FROM trigger_cursors WHERE trigger_id = $1`, legacy).Scan(&old)
-		switch {
-		case errors.Is(err, sql.ErrNoRows):
-			// Nothing to adopt: the trigger starts at its own creation.
-		case err != nil:
-			return err
-		default:
-			seq = old.Int64
-			// The legacy failures move under the new id: read whole, the
-			// legacy rows forgotten, then parked again under this trigger
-			// with the ids they had.
-			failures, err := t.failuresOf(legacy)
-			if err != nil {
-				return err
-			}
-			if err := t.forgetTx(legacy); err != nil {
-				return err
-			}
-			for _, f := range failures {
-				if err := t.parkTx(id, f); err != nil {
-					return err
-				}
-			}
-		}
-	}
 	if err := t.setCursorTx(id, seq); err != nil {
 		return err
 	}
@@ -693,52 +658,6 @@ func (t *txn) initTriggerBookkeeping(id string, props map[string]any) error {
 		}
 	}
 	return t.settleDelivery(id)
-}
-
-// failuresOf reads a trigger's parked failures whole, in the ledger's shape.
-func (t *txn) failuresOf(triggerID string) ([]foldFailure, error) {
-	rows, err := t.query(`
-		SELECT id, seq, fire_id, record_id, attempts, last_error, parked_at, payload
-		FROM trigger_failures WHERE trigger_id = $1 ORDER BY id`, triggerID)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []foldFailure
-	for rows.Next() {
-		var f foldFailure
-		var payload []byte
-		if err := rows.Scan(&f.ID, &f.Seq, &f.FireID, &f.RecordID, &f.Attempts, &f.LastError, &f.ParkedAt, &payload); err != nil {
-			return nil, err
-		}
-		f.ParkedAt = f.ParkedAt.UTC()
-		f.Payload = json.RawMessage(payload)
-		out = append(out, f)
-	}
-	return out, rows.Err()
-}
-
-// adoptableLegacyCursor reports the callable identity whose legacy delivery
-// state this trigger may adopt: only the default trigger of a FUNCTION
-// callable (`on-<identity>`) qualifies, and never while a live TRIGGER record
-// answers to that identity — a cursor keyed by another live trigger's id is
-// that trigger's, not a pre-wave-1 leftover.
-func (t *txn) adoptableLegacyCursor(id string, props map[string]any) (string, bool) {
-	// The callable is read through the one shape-tolerant reader, not off a
-	// key: `callable` is a reference, stored as `{ref: "<kind>/<id>"}`, and
-	// reaching for an `id` key read the retired dialect-1 pair and answered ""
-	// for every row a release ever wrote.
-	_, cid, ok := vocabulary.SplitRecordPath(storedReferencePath(props["callable"]))
-	if !ok || cid == "" || id != "on-"+cid {
-		return "", false
-	}
-	var one int
-	err := t.row(`SELECT 1 FROM records WHERE kind = $1 AND id = $2 AND deleted_at IS NULL`,
-		typeTrigger, cid).Scan(&one)
-	if err == nil {
-		return "", false
-	}
-	return cid, true
 }
 
 // dropTriggerBookkeeping runs inside the transaction that tombstones a

@@ -2,24 +2,20 @@
 // blob manifest is a record in Postgres and stays the truth; only the bytes
 // live here.
 //
-// Two backends are runtime choices: `fs` (the default) keeps the bytes at
+// There are two backends: `fs` (the default) keeps the bytes at
 // <root>/repositories/<repository>/blobs/<digest>, inside the repository
 // directory that is the backup unit, and `s3` keeps them at
-// <prefix><repository>/<digest> under a bucket. A third, `postgres`, reads
-// the `blobs` bytea column the bytes used to live in; it is a MIGRATION
-// SOURCE for `substratectl blobs migrate --from postgres` and nothing else,
-// and the engine refuses to boot while the column still holds rows.
+// <prefix><repository>/<digest> under a bucket. Nothing moves bytes between
+// them.
 //
 // A Store is bound to ONE repository before a caller can reach it. The
 // repository is half of every key and no method takes one, so a caller holding
-// a digest cannot address another repository's bytes: for postgres that is row
-// level security, for fs and s3 it is the bound key prefix and the digest
-// grammar checked here.
+// a digest cannot address another repository's bytes: it is the bound key
+// prefix and the digest grammar checked here.
 package blobbytes
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -29,12 +25,10 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// The backend names, which are also the SUBSTRATE_BLOB_STORE values and what
-// the backend-switch guard compares.
+// The backend names, which are also the SUBSTRATE_BLOB_STORE values.
 const (
-	BackendPostgres = "postgres"
-	BackendFS       = "fs"
-	BackendS3       = "s3"
+	BackendFS = "fs"
+	BackendS3 = "s3"
 )
 
 // ErrNotStored is what a read or an open reports when the store holds no bytes
@@ -68,8 +62,7 @@ func checkRepository(repository string) error {
 }
 
 // Object is one stored object, as a listing reports it. The time is what the
-// unreferenced-upload grace and the orphan sweep read; the size is what a
-// migration passes to the store it is copying into.
+// unreferenced-upload grace and the orphan sweep read.
 type Object struct {
 	Digest string
 	Size   int64
@@ -78,15 +71,14 @@ type Object struct {
 
 // Store is one repository's blob bytes. Every method is idempotent: putting
 // bytes that are already there and deleting bytes that are not there both
-// succeed, so a sweep or a resumed migration can run again without special
-// cases.
+// succeed, so a sweep can run again without special cases.
 //
 // Put takes an io.Reader and Open returns an io.ReadCloser so that a later
 // streaming read path (range requests, a cap above 64 MiB) is a change to the
 // callers rather than to the backends.
 type Store interface {
-	// Backend names the backend this store belongs to: one of BackendPostgres,
-	// BackendFS, BackendS3.
+	// Backend names the backend this store belongs to: BackendFS or
+	// BackendS3.
 	Backend() string
 	// Put writes exactly size bytes read from r under digest. The bytes must
 	// hash to digest: the s3 backend signs the request with that hash, so a
@@ -106,36 +98,13 @@ type Store interface {
 	List(ctx context.Context, after string, limit int) ([]Object, error)
 }
 
-// DB is the subset of *sql.DB and *sql.Tx the postgres backend runs on. Only
-// that backend uses it; fs and s3 ignore the handle they are given.
-type DB interface {
-	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
-	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-}
-
 // Backend is the configured store, before it is bound to a repository. One
 // Backend serves every repository the process opens.
 type Backend interface {
 	// Name is the backend's name, the same value its stores report.
 	Name() string
-	// Repository binds the backend to one repository. db is that repository's
-	// row-level-security-scoped pool: the postgres backend runs its statements
-	// on it, and the other two ignore it.
-	Repository(repository string, db DB) (Store, error)
-}
-
-// LegacyRepositoryLister is implemented by a backend that keys objects by the
-// repository id and so still holds a repository's objects under the random id
-// a binary from before the authority became the id gave it (the s3 backend).
-// The boot check that moves such a repository's directory under its authority
-// asks it whether the old prefix is empty first: a rename on disk moves
-// nothing in a bucket, and a moved repository whose objects stayed under the
-// old id reads every blob as ErrNotStored.
-type LegacyRepositoryLister interface {
-	// ListLegacyRepository lists at most limit objects (limit <= 0 is every
-	// object) still keyed under the pre-authority repository id.
-	ListLegacyRepository(ctx context.Context, id string, limit int) ([]Object, error)
+	// Repository binds the backend to one repository.
+	Repository(repository string) (Store, error)
 }
 
 // Locator is implemented by a backend whose objects live outside the
@@ -146,36 +115,6 @@ type Locator interface {
 	// URL a person can act on: `s3://<bucket>/<prefix><repository>/`. An
 	// object is that plus its digest.
 	Location(repository string) (string, error)
-}
-
-// InTransaction is implemented by a backend whose bytes settle inside the
-// caller's database transaction, which is the postgres backend and only the
-// postgres backend. The engine keeps the one-transaction settle wherever it is
-// offered: bytes and manifest commit together, so no reader ever sees a stored
-// manifest whose bytes are missing and no crash can leave an orphan. Where it
-// is not offered the engine writes the bytes between two transactions instead
-// (engine/blobs.go).
-type InTransaction interface {
-	Store
-	// PutTx inserts the bytes inside the caller's transaction. It carries the
-	// name and mime type because this backend's own table has held those
-	// columns since before the manifest did; a read reports the manifest's.
-	PutTx(ctx context.Context, tx DB, b Blob) error
-	// ExistsTx is Exists inside the caller's transaction, so it sees a PutTx
-	// the same transaction has not committed yet.
-	ExistsTx(ctx context.Context, tx DB, digest string) (bool, error)
-	// DeleteTx is Delete inside the caller's transaction, so the bytes and the
-	// manifest tombstone go together.
-	DeleteTx(ctx context.Context, tx DB, digest string) error
-}
-
-// Blob is one row of the postgres backend's own table.
-type Blob struct {
-	Digest    string
-	Name      string
-	MediaType string
-	Size      int64
-	Bytes     []byte
 }
 
 // ReadAll reads a stored object whole, refusing one longer than size. It is

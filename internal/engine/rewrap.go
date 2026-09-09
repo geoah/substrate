@@ -71,9 +71,6 @@ func RewrapRepositoryDir(repoDir, identity, newKey string) (RewrapReport, error)
 	if err != nil {
 		return report, err
 	}
-	// Written back in the format this binary writes: a format-1 manifest
-	// (v0.47.0 through v0.53.0) gains the vocabulary dialect its format implies.
-	m = currentManifest(m)
 	report.Repository = m.Authority
 
 	seq, sealedKey, err := lastRecoveryKey(repoDir)

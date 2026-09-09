@@ -49,8 +49,8 @@ var rePrefix = regexp.MustCompile(`^[A-Za-z0-9_.\-/]*$`)
 // S3 keeps blob bytes in an S3-compatible bucket under
 // <prefix><repository>/<digest>. It is the hosted answer.
 //
-// What it gives up against the postgres backend, both deliberately: a database
-// dump is no longer a whole backup (the bucket is the second half, and
+// What it gives up against the fs backend, both deliberately: the repository
+// directory is no longer a whole backup (the bucket is the second half, and
 // docs/operations.md says so), and row level security does not reach a bucket
 // — the repository is a key prefix, and the credentials this process holds
 // reach every repository in the bucket.
@@ -102,7 +102,7 @@ func NewS3(cfg S3Config) (*S3, error) {
 func (*S3) Name() string { return BackendS3 }
 
 // Repository binds the backend to one repository's key prefix.
-func (s *S3) Repository(repository string, _ DB) (Store, error) {
+func (s *S3) Repository(repository string) (Store, error) {
 	if err := checkRepository(repository); err != nil {
 		return nil, err
 	}
@@ -122,23 +122,6 @@ func (s *S3) Location(repository string) (string, error) {
 type s3Store struct {
 	s3     *S3
 	prefix string
-}
-
-// reLegacyRepositoryID is the repository id grammar from before the authority
-// became the id, one path segment of the record id alphabet: the rule
-// internal/changelogfile holds a pre-authority directory name to.
-var reLegacyRepositoryID = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
-
-// ListLegacyRepository lists the objects still keyed under a pre-authority
-// repository id, `<prefix><id>/` (LegacyRepositoryLister). Repository refuses
-// such an id, so this is the one way to read that prefix, and it is for the
-// boot check that moves the repository's directory under its authority.
-func (s *S3) ListLegacyRepository(ctx context.Context, id string, limit int) ([]Object, error) {
-	if !reLegacyRepositoryID.MatchString(id) || id == "." || id == ".." {
-		return nil, fmt.Errorf("blobbytes: %q is not a pre-authority repository id", id)
-	}
-	st := &s3Store{s3: s, prefix: s.cfg.Prefix + id + "/"}
-	return st.List(ctx, "", limit)
 }
 
 func (*s3Store) Backend() string { return BackendS3 }

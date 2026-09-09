@@ -87,49 +87,7 @@ func (ds *dataset) PutBlob(ctx context.Context, actor substrate.Actor, up substr
 	if err != nil {
 		return nil, err
 	}
-	if txStore, ok := store.(blobbytes.InTransaction); ok {
-		return ds.putBlobOneTx(ctx, actor, txStore, digest, name, up.MediaType, data)
-	}
 	return ds.putBlobExternal(ctx, actor, store, digest, name, up.MediaType, data)
-}
-
-// putBlobOneTx is the path for a store that can join the caller's transaction
-// (blobbytes.InTransaction): bytes AND manifest settle in ONE transaction
-// under the exclusive per-digest lock, so a GC sweep can never delete the
-// bytes between their insert and the manifest settling, and no crash can
-// leave either half without the other. Neither runtime backend offers it
-// today; the fs and s3 default is putBlobExternal.
-func (ds *dataset) putBlobOneTx(ctx context.Context, actor substrate.Actor, store blobbytes.InTransaction, digest, name, mediaType string, data []byte) (*substrate.BlobInfo, error) {
-	size := int64(len(data))
-	var info *substrate.BlobInfo
-	err := ds.inTx(ctx, actor, true, func(t *txn) error {
-		if err := t.lockKey(blobLockKey(digest)); err != nil {
-			return err
-		}
-		// The byte store is dedup-by-digest: first bytes win, a re-store is a
-		// no-op. The row and the manifest carry the same digest.
-		if err := store.PutTx(t.ctx, t.tx, blobbytes.Blob{
-			Digest: digest, Name: name, MediaType: mediaType, Size: size, Bytes: data,
-		}); err != nil {
-			return err
-		}
-		auth, _, err := t.authoritativeBlobMeta(digest, name, mediaType, size)
-		if err != nil {
-			return err
-		}
-		if err := t.settleBlobRecord(actor, digest, auth.size, auth.name, auth.mediaType); err != nil {
-			return err
-		}
-		info = &substrate.BlobInfo{
-			Digest: digest, Size: auth.size, Name: auth.name,
-			MediaType: auth.mediaType, Status: substrate.BlobStored,
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return info, nil
 }
 
 // putBlobExternal is the fs and s3 path, where the bytes and the manifest
@@ -223,7 +181,7 @@ func (t *txn) authoritativeBlobMeta(digest, name, mediaType string, size int64) 
 // row level security would bind for a backend that runs on it), so a store
 // handed to a request can only ever reach that request's repository.
 func (ds *dataset) blobBytes() (blobbytes.Store, error) {
-	return ds.svc.blobs.Repository(ds.scope.Repository, ds.db)
+	return ds.svc.blobs.Repository(ds.scope.Repository)
 }
 
 // blobRecordMeta is a blob manifest, read as fields rather than as a map.
@@ -283,29 +241,6 @@ func (t *txn) mintPendingBlobRecord(actor substrate.Actor, digest, name, mediaTy
 	}
 	_, err := t.put(substrate.PutInput{Kind: kindBlob, ID: digest, Properties: props})
 	return err
-}
-
-// checkBlobBackend refuses a boot while the `blobs` bytea column still holds
-// bytes. The column was the store before the data root existed and is not
-// one any more: a boot on fs or s3 over rows left in it would serve a 404 for
-// every blob that did not follow, and a 404 reads like a deletion. There is
-// no automatic move; `substratectl blobs migrate --from postgres` is the
-// operator act that empties the column, so this names it and stops.
-//
-// It runs on the maintenance pool, the one that reads across repositories,
-// and asks one question: whether any row is left. The fs and s3 backends are
-// not probed against each other, and never were; the boot check over the
-// repository directory is where the file side's integrity is held.
-func (s *service) checkBlobBackend(ctx context.Context) error {
-	var rows int
-	if err := s.maint.QueryRowContext(ctx, `SELECT count(*) FROM blobs`).Scan(&rows); err != nil {
-		return fmt.Errorf("substrate/engine: check the blob store: %w", err)
-	}
-	if rows > 0 {
-		return fmt.Errorf("substrate/engine: %d blobs still hold their bytes in the Postgres `blobs` column, which is no longer a blob store: move them into %s with `substratectl blobs migrate --from postgres`",
-			rows, s.blobs.Name())
-	}
-	return nil
 }
 
 // checkBlobName validates and normalizes an uploaded blob's display name. A
@@ -415,17 +350,12 @@ func (t *txn) guardBlobWrite(sp *applySpec) error {
 	return nil
 }
 
-// blobBytesExist is the guard's probe. The postgres backend runs it on this
-// transaction, so bytes inserted a statement earlier count; an external
-// backend answers over its own connection, and only bytes it has already
-// acknowledged count.
+// blobBytesExist is the guard's probe: the store answers over its own
+// connection, so only bytes it has already acknowledged count.
 func (t *txn) blobBytesExist(digest string) (bool, error) {
 	store, err := t.ds.blobBytes()
 	if err != nil {
 		return false, err
-	}
-	if txStore, ok := store.(blobbytes.InTransaction); ok {
-		return txStore.ExistsTx(t.ctx, t.tx, digest)
 	}
 	return store.Exists(t.ctx, digest)
 }
@@ -649,14 +579,6 @@ func (ds *dataset) blobGCPass(ctx context.Context) (int, error) {
 			if ref {
 				return nil
 			}
-			// The bytes go with the tombstone where the backend can join this
-			// transaction. Where it cannot, the tombstone commits first and
-			// the delete follows, below, under a fresh lock.
-			if txStore, ok := store.(blobbytes.InTransaction); ok {
-				if err := txStore.DeleteTx(t.ctx, t.tx, digest); err != nil {
-					return err
-				}
-			}
 			row, err := t.loadRow(eref{Kind: kindBlob, ID: digest}, true)
 			if err != nil {
 				return err
@@ -682,17 +604,14 @@ func (ds *dataset) blobGCPass(ctx context.Context) (int, error) {
 			continue
 		}
 		n++
-		// The external backend's delete comes AFTER the tombstone commits,
-		// and it re-takes the lock (deleteOrphanBytes) rather than riding this
+		// The store's delete comes AFTER the tombstone commits, and it
+		// re-takes the lock (deleteOrphanBytes) rather than riding this
 		// transaction's: between the commit and the delete a re-upload of the
 		// same bytes may take the lock, find the object still there and settle
 		// a new `stored` manifest, and deleting under that manifest would leave
 		// it pointing at nothing. Failing here is safe — the object is left
 		// for the sweep — while the opposite order would publish a live
 		// manifest whose bytes are already gone.
-		if _, ok := store.(blobbytes.InTransaction); ok {
-			continue
-		}
 		if err := ds.deleteOrphanBytes(ctx, store, digest); err != nil {
 			ds.svc.log.Warn("substrate: a collected blob's bytes could not be deleted; the orphan sweep will retry",
 				"digest", digest, "backend", store.Backend(), "error", err)
@@ -726,9 +645,6 @@ func (ds *dataset) deleteOrphanBytes(ctx context.Context, store blobbytes.Store,
 		}
 		// Nothing to commit but the lock, so the delete runs inside the
 		// transaction that holds it.
-		if txStore, ok := store.(blobbytes.InTransaction); ok {
-			return txStore.DeleteTx(t.ctx, t.tx, digest)
-		}
 		return store.Delete(t.ctx, digest)
 	})
 }

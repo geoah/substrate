@@ -43,14 +43,9 @@ type Repository struct {
 	// registration and at import, and nothing else changes it, so a restart
 	// and a rebuild keep every cursor while an import resets them once.
 	HistoryGeneration string
-	// DEKKeyID names the host key DEK is wrapped under (hostKeyID). Empty for
-	// a wrap written before the id was recorded or under no key; the first
-	// open under a keyed host fills it in (0059).
+	// DEKKeyID names the host key DEK is wrapped under (hostKeyID). Empty
+	// under no key (0059).
 	DEKKeyID string
-	// SealedDEKOnly records that every payload in the sealed store is bound
-	// under DEK: no plain and no host-key-sealed payload remains, so a read
-	// refuses both (0059). Set at creation and by the re-key at open.
-	SealedDEKOnly bool
 }
 
 // newHistoryGeneration mints a history generation: a random id in the record
@@ -279,9 +274,9 @@ func (s *service) insertRepositoryRow(ctx context.Context, cp controlPlane, r *R
 	}
 	r.HistoryGeneration = generation
 	err = cp.QueryRowContext(ctx, `
-		INSERT INTO repositories (id, authority, dek, history_generation, dek_key_id, sealed_dek_only)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING created_at`, r.ID, r.Authority, r.DEK, r.HistoryGeneration, nullString(r.DEKKeyID), r.SealedDEKOnly).Scan(&r.CreatedAt)
+		INSERT INTO repositories (id, authority, dek, history_generation, dek_key_id)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING created_at`, r.ID, r.Authority, r.DEK, r.HistoryGeneration, nullString(r.DEKKeyID)).Scan(&r.CreatedAt)
 	if err != nil {
 		if taken := repositoryRowTaken(err, r); taken != nil {
 			return taken
@@ -471,14 +466,15 @@ func (s *service) sweepOrphans(ctx context.Context) error {
 // repositoryScopedTables is every table carrying a `repository` column — the
 // same set the migrations put row level security on (0001, plus
 // changelog_dialect in 0009, import_progress in 0016 and idempotency_keys in
-// 0023; chain_epochs came in 0005 and left in 0014). A rollback that missed
-// one would leave rows nothing can ever reach again.
+// 0023; chain_epochs came in 0005 and left in 0014, blobs and
+// vocabulary_promotions left in 0025). A rollback that missed one would leave
+// rows nothing can ever reach again.
 var repositoryScopedTables = []string{
 	"records", "refs", "former_ids", "annotations", "property_managers",
 	"property_offers", "changelog", "embeddings", "embed_queue",
 	"trigger_cursors", "trigger_failures", "trigger_schedule", "sealed",
-	"oauth_flows", "paged_cursors", "blobs", "vocabulary_dialect",
-	"vocabulary_promotions", "changelog_dialect", "import_progress",
+	"oauth_flows", "paged_cursors", "vocabulary_dialect",
+	"changelog_dialect", "import_progress",
 	"idempotency_keys",
 }
 
@@ -494,13 +490,13 @@ func (s *service) repositoryByIDOn(ctx context.Context, q dbx, id string) (Repos
 }
 
 // repositoryColumns is the column list scanRepositoryRow reads, in its order.
-const repositoryColumns = `id, authority, created_at, dek, history_generation, dek_key_id, sealed_dek_only`
+const repositoryColumns = `id, authority, created_at, dek, history_generation, dek_key_id`
 
 // scanRepositoryRow reads one row of repositoryColumns.
 func scanRepositoryRow(scan func(dest ...any) error) (Repository, error) {
 	var r Repository
 	var keyID sql.NullString
-	if err := scan(&r.ID, &r.Authority, &r.CreatedAt, &r.DEK, &r.HistoryGeneration, &keyID, &r.SealedDEKOnly); err != nil {
+	if err := scan(&r.ID, &r.Authority, &r.CreatedAt, &r.DEK, &r.HistoryGeneration, &keyID); err != nil {
 		return Repository{}, err
 	}
 	r.DEKKeyID = keyID.String
