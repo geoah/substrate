@@ -214,7 +214,9 @@ run = [
   # the test process hosts, and the server dials it through the same egress
   # gate as any provider. A caller's own allowlist is appended, never
   # substituted, so it cannot silently close the loopback the suite needs.
-  "SUBSTRATE_EGRESS_ALLOW=\"127.0.0.0/8,::1/128${SUBSTRATE_EGRESS_ALLOW:+,$SUBSTRATE_EGRESS_ALLOW}\" .mise/dev.sh restart",
+  # The invite code is set here because the bare dev substrate reads none,
+  # and AUTH-02 (a wrong code is refused) needs a door that does.
+  "SUBSTRATE_INVITE_CODE=\"${SUBSTRATE_INVITE_CODE:-let-me-in}\" SUBSTRATE_EGRESS_ALLOW=\"127.0.0.0/8,::1/128${SUBSTRATE_EGRESS_ALLOW:+,$SUBSTRATE_EGRESS_ALLOW}\" .mise/dev.sh restart",
   """
     SUBSTRATE_E2E_SERVER="http://127.0.0.1:${SUBSTRATE_DEV_PORT:-8080}" \
     SUBSTRATE_E2E_INVITE="${SUBSTRATE_INVITE_CODE:-let-me-in}" \
@@ -451,8 +453,8 @@ run = "yamlfmt -lint ."
 #
 # Every task below is one subcommand of .mise/dev.sh, which holds the shape of
 # it: the container and its volume, the pid and the log under .dev/, and the
-# environment the server boots with (invite code `let-me-in`, the console at /
-# when web/console/dist exists).
+# environment the server boots with (no invite code and no second factor, the
+# console at / when web/console/dist exists).
 #
 # `dev:wipe` is not a convenience — it is the only way back to a FRESH
 # substrate. Registration is one-shot per user and there is no unregister, so

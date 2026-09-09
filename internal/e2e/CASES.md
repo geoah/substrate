@@ -35,14 +35,14 @@ the rows below into one coherent repository.
 | id | case | needs | status |
 | --- | --- | --- | --- |
 | DISC-01 | `/healthz` answers `{"status":"ok"}` | | slice (in AUTH-01) |
-| DISC-02 | `server.json` states `registration.open`, `totpRequired` and the changelog horizon | | slice (in AUTH-01) |
+| DISC-02 | `server.json` states `registration.inviteRequired`, `totpRequired` and the changelog horizon | | slice (in AUTH-01) |
 
 ## Registration, login, credentials
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
 | AUTH-01 | register with the invite code, mint and use the first token, log in, revoke | | slice |
-| AUTH-02 | a wrong invite code is a 401; a closed door (no code configured) is a 501 | | implemented |
+| AUTH-02 | a wrong invite code is a 401 where one is configured; skipped where discovery says none is read | | implemented |
 | AUTH-03 | a taken username is refused with a 422 naming it | | slice (in AUTH-01) |
 | AUTH-10 | a refused registration writes nothing: the loser's changelog gains no row | | implemented |
 | AUTH-04 | a username outside `[a-z][a-z0-9]{1,29}` and an out-of-bounds password are refused at validation | | implemented |

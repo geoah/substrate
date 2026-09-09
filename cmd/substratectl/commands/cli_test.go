@@ -354,6 +354,48 @@ func TestRegisterSkipsTheEnrollmentWhereNoCodeIsVerified(t *testing.T) {
 	}
 }
 
+// The local substrate reads no invite code, and says so: registration is not
+// asked for one, sends an empty one, and the door is read ONCE for both
+// answers. Stdin carries only the password pair, so a stray "Invite code:"
+// prompt would consume a line meant for the password and fail loudly.
+func TestRegisterAsksForNoInviteCodeWhereNoneIsRead(t *testing.T) {
+	h := newHarness(t)
+	h.fake.noInvite = true
+	h.fake.totpDisabled = true
+	h.stdin.WriteString("hunter2\nhunter2\n")
+	out, _ := h.mustRun("register", "--server", h.server, "--username", "geoah")
+	if !strings.Contains(out, "registered geoah") {
+		t.Fatalf("registration did not land:\n%s", out)
+	}
+	var invite string
+	if err := json.Unmarshal(h.fake.lastBody["inviteCode"], &invite); err != nil {
+		t.Fatalf("decode inviteCode: %v", err)
+	}
+	if invite != "" {
+		t.Fatalf("inviteCode sent = %q, want empty", invite)
+	}
+	if got := h.fake.doorRequests(); len(got) != 1 || got[0] != "POST /register" {
+		t.Fatalf("requests = %v, want the commit alone", got)
+	}
+	if got := h.fake.discoveryReads(); got != 1 {
+		t.Fatalf("discovery read %d times, want once for both answers", got)
+	}
+}
+
+// A substrate that reads a code still gets asked, and an empty answer is
+// refused before anything is sent.
+func TestRegisterRefusesAnEmptyInviteCodeWhereOneIsRead(t *testing.T) {
+	h := newHarness(t)
+	h.stdin.WriteString("\n")
+	_, _, err := h.run("register", "--server", h.server, "--username", "geoah")
+	if err == nil || !strings.Contains(err.Error(), "an invite code is required") {
+		t.Fatalf("err = %v, want the invite-code refusal", err)
+	}
+	if got := h.fake.doorRequests(); len(got) != 0 {
+		t.Fatalf("requests = %v, want none", got)
+	}
+}
+
 func TestLoginAcceptsASpacedCode(t *testing.T) {
 	h := newHarness(t)
 	h.stdin.WriteString("hunter2\n")

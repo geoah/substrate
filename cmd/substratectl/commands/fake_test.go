@@ -62,6 +62,9 @@ type fakeSubstrate struct {
 	// `registration.totpRequired: false` — the local substrate that verifies
 	// no second factor.
 	totpDisabled bool
+	// noInvite makes it answer `registration.inviteRequired: false` — the
+	// local substrate with no SUBSTRATE_INVITE_CODE, which reads none.
+	noInvite bool
 	// changes is the ndjson watch payload (one substrate.Change per row).
 	changes []substrate.Change
 	// catalog is GET /api/v1/catalog's items, and shipped is GET
@@ -155,6 +158,20 @@ func (f *fakeSubstrate) doorRequests() []string {
 		}
 	}
 	return out
+}
+
+// discoveryReads counts the probe doorRequests hides: one gesture reads the
+// door once, however many answers it needs from it.
+func (f *fakeSubstrate) discoveryReads() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, r := range f.requests {
+		if r == "GET /.well-known/substrate/server.json" {
+			n++
+		}
+	}
+	return n
 }
 
 func (f *fakeSubstrate) handler() http.Handler {
@@ -510,11 +527,15 @@ func (f *fakeSubstrate) paced(w http.ResponseWriter) {
 // handleRegisterEnroll issues a TOTP enrollment and writes NOTHING, exactly as
 // the substrate does: the caller holds the seed and hands it back with a code.
 // handleDiscovery serves the slice of GET /.well-known/substrate/server.json
-// the door reads: whether this deployment verifies a second factor at all.
+// the door reads: whether this deployment reads an invite code and whether it
+// verifies a second factor at all.
 func (f *fakeSubstrate) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"registration": map[string]any{"totpRequired": !f.totpDisabled},
+		"registration": map[string]any{
+			"inviteRequired": !f.noInvite,
+			"totpRequired":   !f.totpDisabled,
+		},
 	})
 }
 

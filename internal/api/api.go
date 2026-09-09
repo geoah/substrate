@@ -68,10 +68,12 @@ type Config struct {
 	// dialect lives in that repository's own `changelog_dialect` table and is
 	// served nowhere. Zero when unset.
 	MaxChangelogDialect int
-	// InviteCode is the ONE door into a fresh substrate: registering with it
-	// creates a user and their one repository. EMPTY TURNS REGISTRATION OFF —
-	// the endpoints answer `unsupported`, exactly like any capability this
-	// deployment lacks, and discovery reports `registration.open: false`.
+	// InviteCode gates the ONE door into a fresh substrate: set, the register
+	// endpoints admit only a request that presents it. EMPTY, THE DOOR READS
+	// NO CODE — anyone who reaches it may create a user — and discovery
+	// reports `registration.inviteRequired: false` so a client hides the
+	// field instead of asking for something nothing reads. The local
+	// substrate is the one deployment meant to run that way.
 	InviteCode string
 	// TOTPDisabled mirrors the service's own dev escape hatch
 	// (SUBSTRATE_INSECURE_DISABLE_TOTP): the second factor is not verified, so

@@ -24,7 +24,7 @@ vi.mock("@tanstack/react-router", () => ({
 }))
 
 /** What GET /.well-known/substrate/server.json said about the door; discovery.test.ts covers the fetching. */
-const policy = vi.hoisted(() => ({ totpRequired: true }))
+const policy = vi.hoisted(() => ({ inviteRequired: true, totpRequired: true }))
 vi.mock("@/lib/api/discovery", () => ({ useAuthPolicy: () => policy }))
 
 import { RegisterPage } from "./register"
@@ -77,6 +77,7 @@ describe("RegisterPage", () => {
     vi.stubGlobal("fetch", fetchMock)
     clearSession()
     navigate.mockClear()
+    policy.inviteRequired = true
     policy.totpRequired = true
   })
 
@@ -230,16 +231,15 @@ describe("RegisterPage", () => {
     })
   })
 
-  it("explains a closed door when no invite code is configured", async () => {
-    fetchMock.mockResolvedValue(
-      jsonResponse(501, {
-        error: { code: "unsupported", message: "registration disabled" },
-      })
-    )
+  it("asks for no invite code where the substrate reads none", async () => {
+    // The local substrate: no SUBSTRATE_INVITE_CODE and no second factor.
+    // The field is not rendered, the form is complete without it, and the
+    // commit carries an empty code the door ignores.
+    policy.inviteRequired = false
+    policy.totpRequired = false
+    fetchMock.mockResolvedValue(jsonResponse(201, MINT))
     render(<RegisterPage />)
-    fireEvent.change(screen.getByLabelText("Invite code"), {
-      target: { value: "INV-1" },
-    })
+    expect(screen.queryByLabelText("Invite code")).toBeNull()
     fireEvent.change(screen.getByLabelText("Username"), {
       target: { value: "geoah" },
     })
@@ -249,8 +249,34 @@ describe("RegisterPage", () => {
     fireEvent.change(screen.getByLabelText("Confirm password"), {
       target: { value: PASSWORD },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
-    await screen.findByText(/Registration is closed/i)
-    expect(getToken()).toBeNull()
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create my repository" })
+    )
+
+    await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe("/register")
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      inviteCode: "",
+      username: "geoah",
+      password: PASSWORD,
+      totpSecret: "",
+      totpCode: "",
+      label: "console",
+      authority: "geoah.localhost",
+    })
+  })
+
+  it("still asks for the invite code where one is read, with the factor off", () => {
+    // The two answers are independent: a gated door with no second factor
+    // keeps the invite field and drops the code step.
+    policy.totpRequired = false
+    render(<RegisterPage />)
+    expect(screen.getByLabelText("Invite code")).toBeTruthy()
+    expect(
+      screen
+        .getByRole("button", { name: "Create my repository" })
+        .hasAttribute("disabled")
+    ).toBe(true)
   })
 })

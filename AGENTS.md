@@ -5,8 +5,8 @@ How to work this repo: the substrate server (`cmd/substrated`), the console
 CLI (`cmd/substratectl`). Provider auth and sync live IN the server — the OAuth
 facility plus bundle functions.
 
-**The model, in one paragraph.** One invite code admits people. Registering
-creates a **user** — username, password and TOTP, all three — and that user's
+**The model, in one paragraph.** One invite code gates who registers, where
+one is set. Registering creates a **user** — username, password and TOTP, all three — and that user's
 one **repository**, which owns one **authority** (`<username>.<server host>`
 unless the registration names one; the home of the kinds the user declares
 and the repository's id on disk, in the database and on the wire,
@@ -78,7 +78,7 @@ columns, so do not hand-align them. Settings live in `.yamlfmt` and
 `.yamllint`, one comment per decision.
 
 **A substrate to work against** — a Postgres container of its own on `:5433`
-and the binary from the tree on `:8080`, invite code `let-me-in`, pid, log,
+and the binary from the tree on `:8080`, no invite code, pid, log,
 credential key and data root under `.dev/`. `docker compose up` builds an image; this does not, so a change
 is a restart. Every task is a subcommand of `.mise/dev.sh`.
 
@@ -96,16 +96,20 @@ there is no unregister, so any change to the door is tested by throwing the
 database away — `dev:wipe` here, `docker compose down -v` on the compose path. `bin/substratectl --dsn "$(mise run dev:dsn)" …` is the operator
 hat against it, and `mise run console:build` puts the console at `/`.
 
-**The dev door has no second factor.** Every `dev*` task sets
-`SUBSTRATE_INSECURE_DISABLE_TOTP=true`, so registering and signing in are a
-username and a password: enrolling an authenticator for a database that gets
-wiped is friction with nothing behind it. The engine still mints and seals a
-seed, and the deployment says which door it runs at
-`GET /.well-known/substrate/server.json` (`registration.totpRequired`), which
-is what the console and `substratectl` read before they ask anybody for a
-code. A change to the door is tested under
-`mise run dev:totp`, where the factor is enforced, and NEVER by setting the
-variable outside this tree.
+**The dev door has no invite code and no second factor.** Every `dev*` task
+leaves `SUBSTRATE_INVITE_CODE` unset, so the register door reads no code
+(there is no closed state: a set code is the gate, an unset one is none), and
+sets `SUBSTRATE_INSECURE_DISABLE_TOTP=true`, so registering and signing in
+are a username and a password: typing a code printed beside the command that
+starts the box, and enrolling an authenticator for a database that gets
+wiped, are friction with nothing behind them. `compose.yaml` ships the same
+two defaults. The engine still mints and seals a seed, and the deployment
+says which door it runs at `GET /.well-known/substrate/server.json`
+(`registration.inviteRequired`, `registration.totpRequired`), which is what
+the console and `substratectl` read before they ask anybody for either code.
+A change to the gate is tested with `SUBSTRATE_INVITE_CODE` set (`mise run
+test:e2e` does), a change to the factor under `mise run dev:totp`, where it
+is enforced, and NEVER by setting the TOTP variable outside this tree.
 
 **The dev substrate has a data root.** Every `dev*` task exports
 `SUBSTRATE_DATA_ROOT` as the absolute path of `.dev/data`, so each

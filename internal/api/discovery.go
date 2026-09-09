@@ -46,19 +46,20 @@ type discoveryDoc struct {
 	// version prefix. There is no repository segment
 	// anywhere: the token implies the repository.
 	Endpoints endpointsInfo `json:"endpoints"`
-	// Registration is what the register door ASKS FOR and WHETHER it is even
-	// open, which a client cannot infer from the paths alone.
+	// Registration is what the register door ASKS FOR, which a client cannot
+	// infer from the paths alone.
 	Registration registrationInfo `json:"registration"`
 }
 
 // registrationInfo is the register door's shape. It states a requirement,
 // never a verdict: what a caller must present, decided by configuration,
-// with no repository opened and nothing about any user in it.
+// with no repository opened and nothing about any user in it. The door is
+// always open; what varies is what it asks for.
 type registrationInfo struct {
-	// Open is false only on a deployment with no invite code configured — the
-	// register endpoints answer `unsupported` either way, this just lets a
-	// client say so before trying.
-	Open bool `json:"open"`
+	// InviteRequired is false only on a deployment with no
+	// SUBSTRATE_INVITE_CODE — a local one. A client reads it to stop asking
+	// for a code nothing reads; the door admits without one either way.
+	InviteRequired bool `json:"inviteRequired"`
 	// TOTPRequired is false only on a deployment that booted with
 	// SUBSTRATE_INSECURE_DISABLE_TOTP — a local one. A client reads it to
 	// stop asking for a code nothing checks; it is not permission to skip
@@ -226,8 +227,8 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 			Password: "/password", TOTP: "/totp",
 		},
 		Registration: registrationInfo{
-			Open:         h.inviteCode != "",
-			TOTPRequired: !h.totpDisabled,
+			InviteRequired: h.inviteCode != "",
+			TOTPRequired:   !h.totpDisabled,
 		},
 	}
 	writeJSON(w, http.StatusOK, doc)

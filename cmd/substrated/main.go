@@ -196,7 +196,8 @@ func run() error {
 	slog.Info("catalog loaded", "bundles", len(cat.Bundles()))
 
 	if cfg.InviteCode == "" {
-		slog.Info("no SUBSTRATE_INVITE_CODE: registration is closed")
+		// Loud, and at boot: anyone who can reach this port may create a user.
+		slog.Warn("no SUBSTRATE_INVITE_CODE: registration asks for no invite code — set one before anyone else can reach this substrate")
 	}
 	handler := api.New(api.Config{
 		Service:             svc,

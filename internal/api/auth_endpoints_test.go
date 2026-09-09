@@ -81,8 +81,8 @@ func TestRegistrationKeepsTheAuthorityItIsGiven(t *testing.T) {
 	}
 }
 
-// Registration is OFF unless the invite code is configured, and a wrong code
-// is an auth failure that never reaches the service.
+// With an invite code configured, a wrong one is an auth failure that never
+// reaches the service.
 func TestRegistrationIsGatedByTheInviteCode(t *testing.T) {
 	env := newTestEnv(t)
 	rec := env.do(t, http.MethodPost, registerEnrolPath, "", map[string]any{
@@ -92,19 +92,29 @@ func TestRegistrationIsGatedByTheInviteCode(t *testing.T) {
 	if env.svc.registerCalls != 0 {
 		t.Fatalf("a bad invite code reached the service (%d calls)", env.svc.registerCalls)
 	}
+}
 
-	closed := newFakeService()
+// With NO invite code configured the door reads none: a registration carrying
+// an empty code, or any code at all, is admitted. This is the local substrate;
+// discovery says so (TestDiscoveryReportsNoInviteRequiredWithNoInviteCode) so a
+// client stops asking.
+func TestRegistrationAdmitsWithoutACodeWhenNoneIsConfigured(t *testing.T) {
+	svc := newFakeService()
 	clock := &testClock{t: time.Unix(1_700_000_000, 0).UTC()}
-	shut := &testEnv{svc: closed, h: New(Config{Service: closed, Now: clock.now}), clock: clock}
-	for _, path := range []string{registerEnrolPath, registerPath} {
-		rec := shut.do(t, http.MethodPost, path, "", map[string]any{
-			"inviteCode": "anything", "username": "ada",
-		})
-		wantErrorCode(t, rec, http.StatusNotImplemented, codeUnsupported)
-		clock.advance(defaultAuthInterval + time.Millisecond)
-	}
-	if closed.registerCalls != 0 {
-		t.Fatalf("a closed substrate reached the service (%d calls)", closed.registerCalls)
+	env := &testEnv{svc: svc, h: New(Config{Service: svc, Now: clock.now}), clock: clock}
+	rec := env.do(t, http.MethodPost, registerEnrolPath, "", map[string]any{
+		"inviteCode": "", "username": "ada",
+	})
+	wantStatus(t, rec, http.StatusOK)
+	env.clock.advance(defaultAuthInterval + time.Millisecond)
+	rec = env.do(t, http.MethodPost, registerPath, "", map[string]any{
+		"inviteCode": "anything-at-all", "username": "ada",
+		"password":   "correct-horse-battery-staple",
+		"totpSecret": "SEED", "totpCode": fakeCode("ada"),
+	})
+	wantStatus(t, rec, http.StatusCreated)
+	if svc.registerCalls != 2 {
+		t.Fatalf("registerCalls = %d, want the enrollment and the commit to reach the service", svc.registerCalls)
 	}
 }
 
@@ -323,9 +333,9 @@ func TestDiscoveryRequiresTOTPByDefault(t *testing.T) {
 	wantStatus(t, rec, http.StatusForbidden)
 }
 
-// A deployment with no invite code configured says so in discovery, before a
-// caller wastes a round trip finding out registration answers `unsupported`.
-func TestDiscoveryReportsRegistrationClosedWithNoInviteCode(t *testing.T) {
+// A deployment with no invite code configured says so in discovery, so a
+// client stops asking a person for a code nothing reads.
+func TestDiscoveryReportsNoInviteRequiredWithNoInviteCode(t *testing.T) {
 	svc := newFakeService()
 	clock := &testClock{t: time.Unix(1_700_000_000, 0).UTC()}
 	env := &testEnv{svc: svc, clock: clock, h: New(Config{Service: svc, Now: clock.now})}
@@ -334,19 +344,19 @@ func TestDiscoveryReportsRegistrationClosedWithNoInviteCode(t *testing.T) {
 	wantStatus(t, rec, http.StatusOK)
 	doc := decodeJSON[map[string]any](t, rec)
 	registration, _ := doc["registration"].(map[string]any)
-	if registration == nil || registration["open"] != false {
-		t.Fatalf("discovery must report registration as closed: %+v", doc["registration"])
+	if registration == nil || registration["inviteRequired"] != false {
+		t.Fatalf("discovery must report that no invite code is read: %+v", doc["registration"])
 	}
 }
 
-// The ordinary test deployment carries an invite code, so discovery says
-// registration is open.
-func TestDiscoveryReportsRegistrationOpenWithInviteCode(t *testing.T) {
+// The ordinary test deployment carries an invite code, so discovery says one
+// is required.
+func TestDiscoveryReportsInviteRequiredWithInviteCode(t *testing.T) {
 	env := newTestEnv(t)
 	rec := env.do(t, http.MethodGet, "/.well-known/substrate/server.json", "", nil)
 	doc := decodeJSON[map[string]any](t, rec)
 	registration, _ := doc["registration"].(map[string]any)
-	if registration == nil || registration["open"] != true {
-		t.Fatalf("discovery must report registration as open: %+v", doc["registration"])
+	if registration == nil || registration["inviteRequired"] != true {
+		t.Fatalf("discovery must report the invite code as required: %+v", doc["registration"])
 	}
 }

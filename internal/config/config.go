@@ -26,10 +26,14 @@ type Config struct {
 	// Blobs says where blob bytes live. Its own type, because the operator
 	// hat loads it without the rest (LoadBlobs).
 	Blobs Blobs
-	// InviteCode is the ONE door into a fresh substrate: registering with it
-	// creates a user and their one repository. UNSET TURNS REGISTRATION OFF —
-	// /register answers `unsupported` — which is the right default for a
-	// substrate that already has its user.
+	// InviteCode gates the ONE door into a fresh substrate: registering
+	// creates a user and their one repository, and with a code set the door
+	// admits only a request that presents it. UNSET, THE DOOR READS NO CODE
+	// and anyone who can reach the substrate may register — the right shape
+	// for the laptop the README's quick start runs on, and the wrong one for
+	// anything else, so the boot says so. There is no closed state: a
+	// substrate that has its user keeps strangers out with a code nobody is
+	// given, and discovery reports `registration.inviteRequired` either way.
 	InviteCode string `envconfig:"SUBSTRATE_INVITE_CODE" default:""`
 
 	// ConversionCeiling bounds the live records one declaration change (a

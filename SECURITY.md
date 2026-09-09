@@ -52,11 +52,12 @@ unless you ask it not to.
 ## Not a finding
 
 - **The shipped compose defaults.** `compose.yaml` is a laptop quick start and
-  says so: the invite code is `let-me-in`, the Postgres password is
-  `postgres`, and the credential key is minted into a volume on first start.
-  Each is a deliberate default with a comment naming what to change before the
-  deployment is reachable by anyone else. A report that they are insecure adds
-  nothing.
+  says so: no invite code is configured so the register door reads none, the
+  second factor is switched off, the Postgres password is `postgres`, and the
+  credential key is minted into a volume on first start. Each is a deliberate
+  default with a comment naming what to change before the deployment is
+  reachable by anyone else, and the server warns about the first two at boot.
+  A report that they are insecure adds nothing.
 - **Anything a `SUBSTRATE_INSECURE_*` variable turns on.** Those switches exist
   to weaken the substrate for local testing, they announce themselves at boot,
   and `SUBSTRATE_INSECURE_DISABLE_TOTP` in particular makes a password the

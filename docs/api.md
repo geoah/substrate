@@ -437,7 +437,7 @@ its stability and the `surfaces` that serve it (`rest`, `graphql`, or both):
                         "substrate"]},
  "endpoints": {"register": "/register", "login": "/login", "tokens": "/tokens",
                "password": "/password", "totp": "/totp"},
- "registration": {"open": true, "totpRequired": true}}
+ "registration": {"inviteRequired": true, "totpRequired": true}}
 ```
 
 A feature's `surfaces` are the doors to its own operations, not to its
@@ -463,15 +463,14 @@ a `stable` `changefeed` freezes `GET …/changes` and does not make GraphQL's
 `changelog` field stable
 ([decision 0053](decisions/0053-rest-is-supported-all-of-graphql-is-preview.md)).
 
-`registration` is what the register door asks for, and whether it is even
-open. `registration.open` is `false` only on a deployment with no invite code
-configured — the register endpoints answer `unsupported` either way, this
-just lets a client say so before trying. `registration.totpRequired` is what
-a client reads before it asks a person for a code: it is `false` only where
-the second factor is
-[switched off](auth.md#the-second-factor-can-be-switched-off-locally), which is
-a local substrate. Neither field is a verdict — the service refuses on its
-own terms either way.
+`registration` is what the register door asks for. `registration.inviteRequired`
+is `false` only on a deployment with
+[no invite code configured](auth.md#the-invite-code), where the door reads
+none; `registration.totpRequired` is `false` only where the second factor is
+[switched off](auth.md#the-second-factor-can-be-switched-off-locally). Both
+describe a local substrate, and a client reads them before it asks a person
+for either code. Neither field is a verdict — the service refuses on its own
+terms either way.
 
 ### What a feature's stability means
 

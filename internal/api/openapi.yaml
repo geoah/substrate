@@ -182,19 +182,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/TOTPEnrollment"
         "401":
-          description: The invite code is wrong (`auth`).
+          description: "The invite code is wrong (`auth`); a deployment reporting
+            `registration.inviteRequired: false` reads none."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "429":
           $ref: "#/components/responses/RateLimited"
-        "501":
-          description: Registration is closed on this deployment (`unsupported`).
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorEnvelope"
         default:
           $ref: "#/components/responses/Error"
   /register:
@@ -223,19 +218,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/RegisterResult"
         "401":
-          description: The invite code is wrong (`auth`).
+          description: "The invite code is wrong (`auth`); a deployment reporting
+            `registration.inviteRequired: false` reads none."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "429":
           $ref: "#/components/responses/RateLimited"
-        "501":
-          description: Registration is closed on this deployment (`unsupported`).
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorEnvelope"
         default:
           $ref: "#/components/responses/Error"
   /login:
@@ -2827,6 +2817,9 @@ components:
       properties:
         inviteCode:
           type: string
+          description: "Empty where discovery reports `registration.inviteRequired:
+            false`; a deployment with a code configured refuses any other
+            value."
         username:
           type: string
           description: "`[a-z][a-z0-9]{1,29}`, unique and permanent."
@@ -2837,6 +2830,9 @@ components:
       properties:
         inviteCode:
           type: string
+          description: "Empty where discovery reports `registration.inviteRequired:
+            false`; a deployment with a code configured refuses any other
+            value."
         username:
           type: string
         password:
@@ -3143,9 +3139,9 @@ components:
           type: string
     RegistrationInfo:
       type: object
-      required: [open, totpRequired]
+      required: [inviteRequired, totpRequired]
       properties:
-        open:
+        inviteRequired:
           type: boolean
         totpRequired:
           type: boolean

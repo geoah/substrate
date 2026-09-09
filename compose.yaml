@@ -61,13 +61,20 @@ services:
         exec /usr/local/bin/substrate
     environment:
       DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-substrate}?sslmode=disable
-      # The one door into a fresh substrate. Registering with this code creates
-      # the user and their repository. The dash (not :-) is deliberate: unset
-      # keeps the laptop default, but set-and-EMPTY passes through as empty,
-      # which closes registration — the right state once the box has its user.
-      # With :- an operator could never close the door from the environment,
-      # because empty would fall back to the known default.
-      SUBSTRATE_INVITE_CODE: ${SUBSTRATE_INVITE_CODE-let-me-in}
+      # THIS IS A LAPTOP. Two settings below make it one, and both are what to
+      # change before anyone else can reach the port (see BIND_ADDRESS).
+      #
+      # No invite code: the register door reads none, so registering is a
+      # username and a password. Set one and the door admits only a request
+      # that presents it, which is how a box that has its user keeps
+      # strangers out — there is no separate closed state.
+      SUBSTRATE_INVITE_CODE: ${SUBSTRATE_INVITE_CODE:-}
+      # No second factor: login and registration take the password alone, the
+      # console and substratectl read that from discovery and stop asking for
+      # a code, and the boot log says so. A seed is still minted and sealed, so
+      # setting this to false later restores the factor. On a reachable
+      # deployment a leaked password would then be the account.
+      SUBSTRATE_INSECURE_DISABLE_TOTP: ${SUBSTRATE_INSECURE_DISABLE_TOTP:-true}
       # Where every repository's directory lives: the changelog segments, the
       # sealed store's files and the blob bytes. Required and absolute; the
       # substrate-data volume above is mounted here.

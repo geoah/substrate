@@ -30,7 +30,7 @@ vi.mock("@/router", () => ({
 /** What GET /.well-known/substrate/server.json said about the door. Mocked at the module so the fetch
  * assertions below stay about the login call itself; discovery.test.ts covers
  * the fetching. */
-const policy = vi.hoisted(() => ({ totpRequired: true }))
+const policy = vi.hoisted(() => ({ inviteRequired: true, totpRequired: true }))
 vi.mock("@/lib/api/discovery", () => ({ useAuthPolicy: () => policy }))
 
 import { LoginPage } from "./login"

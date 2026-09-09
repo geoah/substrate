@@ -29,15 +29,17 @@ readonly DSN="postgres://postgres:postgres@127.0.0.1:${DB_PORT}/substrate?sslmod
 readonly STATE=".dev"
 readonly PIDFILE="${STATE}/substrate.pid"
 readonly LOGFILE="${STATE}/substrate.log"
-# The same code compose.yaml defaults to, so a walkthrough written against one
-# path works against the other.
-readonly INVITE="${SUBSTRATE_INVITE_CODE:-let-me-in}"
+# NO INVITE CODE BY DEFAULT: the door reads none, so registering here is a
+# username and a password. Same as compose.yaml, so a walkthrough written
+# against one path works against the other. Set one to test the gate
+# (`test:e2e` does).
+readonly INVITE="${SUBSTRATE_INVITE_CODE:-}"
+invite_words() { [ -n "$INVITE" ] && echo "invite code ${INVITE}" || echo "no invite code"; }
 # THE SECOND FACTOR IS OFF HERE BY DEFAULT. This substrate is thrown away by
 # `dev:wipe` and registration is one-shot per user, so every fresh start would
 # otherwise mean enrolling an authenticator entry to reach a repository that
-# will not outlive the afternoon. Nothing else in the tree turns it off, and
-# `dev:totp` runs the same substrate with the factor enforced — which is how a
-# change to the door gets tested.
+# will not outlive the afternoon. `dev:totp` runs the same substrate with the
+# factor enforced — which is how a change to the door gets tested.
 # Not readonly: `dev:totp` is this same substrate with the factor put back.
 DISABLE_TOTP="${SUBSTRATE_INSECURE_DISABLE_TOTP:-true}"
 # The credential key wraps each repository's DEK and a host without one refuses
@@ -249,7 +251,7 @@ server_start() {
 		server_stop >/dev/null
 		return 1
 	fi
-	echo "dev: substrate up (pid $(cat "$PIDFILE")), invite code ${INVITE}"
+	echo "dev: substrate up (pid $(cat "$PIDFILE")), $(invite_words)"
 	totp_note
 	urls
 	[ -d "$WEB_DIR" ] || echo "  (no console: mise run console:build, then mise run dev:restart)"
@@ -282,7 +284,7 @@ cmd_run() {
 		return 1
 	fi
 	db_up
-	echo "dev: substrate on :${PORT}, invite code ${INVITE} (ctrl-c to stop)"
+	echo "dev: substrate on :${PORT}, $(invite_words) (ctrl-c to stop)"
 	totp_note
 	urls
 	local web=()
@@ -354,7 +356,13 @@ cmd_status() {
 		# The RUNNING server's own answer, not what this shell would start one
 		# with: `dev` and `dev:totp` differ, so status must report the door
 		# that is actually up.
-		case "$(curl -fsS "http://127.0.0.1:${PORT}/.well-known/substrate/server.json" 2>/dev/null)" in
+		local disc
+		disc="$(curl -fsS "http://127.0.0.1:${PORT}/.well-known/substrate/server.json" 2>/dev/null)"
+		case "$disc" in
+		*'"inviteRequired":false'*) echo "  invite code:   none (anyone who reaches this port may register)" ;;
+		*'"inviteRequired":true'*) echo "  invite code:   required" ;;
+		esac
+		case "$disc" in
 		*'"totpRequired":false'*) echo "  second factor: OFF (username + password)" ;;
 		*'"totpRequired":true'*) echo "  second factor: enforced" ;;
 		esac

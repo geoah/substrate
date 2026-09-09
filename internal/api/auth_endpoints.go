@@ -102,12 +102,11 @@ func (h *handler) authGate(w http.ResponseWriter, r *http.Request, username stri
 }
 
 // inviteOK compares the presented invite code with the configured one in
-// constant time. An unconfigured code means registration is OFF — the
-// endpoint answers `unsupported`, the same way every absent capability does.
+// constant time. No configured code means the door reads none: whatever was
+// presented, including nothing, admits, and discovery has said so.
 func (h *handler) inviteOK(w http.ResponseWriter, presented string) bool {
 	if h.inviteCode == "" {
-		writeUnsupported(w, "this substrate is not open for registration")
-		return false
+		return true
 	}
 	if subtle.ConstantTimeCompare([]byte(h.inviteCode), []byte(presented)) != 1 {
 		writeError(w, http.StatusUnauthorized, codeAuth, "invalid invite code")
