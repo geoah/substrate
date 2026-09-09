@@ -22,8 +22,7 @@ import { patchRecord, recordQueryOptions } from "@/lib/api/records"
 import type { SubstrateRecord } from "@/lib/api/types"
 import { cn } from "@/lib/utils"
 
-// The collection segment is the kind name (decision 0033); `llminteractions`
-// addressed nothing and 404d.
+// The collection segment is the kind name (decision 0033).
 const INTERACTION_KIND = "llminteraction"
 
 interface Option {

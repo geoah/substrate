@@ -834,6 +834,22 @@ data:
   properties:
     label: {type: string}
 `
+	// The same spelling nested where it was authored: `names.plural`, the pair
+	// a pre-0033 declaration wrote, refused inside the block rather than only
+	// at the top of `data`.
+	const namesPlural = `kind: substrate.reamde.dev/core/package
+metadata: {id: p.example.com/p}
+data: {authority: p.example.com, package: p, version: 1}
+---
+kind: substrate.reamde.dev/core/kind
+metadata: {id: p.example.com/p/widget}
+data:
+  authority: p.example.com
+  package: p
+  names: {singular: widget, plural: widgets}
+  properties:
+    label: {type: string}
+`
 	agentMirror := func(mirror string) string {
 		return agAuthority(`  description: classifies widgets
   prompt: You classify widgets.
@@ -875,6 +891,10 @@ data:
 		"the plural row mirror is named": {
 			kindDoc,
 			"key \"plural\" is deleted — the retired mirror: a kind's collection segment is its name (decision 0033)",
+		},
+		"names.plural is named where it was authored": {
+			namesPlural,
+			"data.names: key \"plural\" is deleted — the retired mirror: a kind's collection segment is its name (decision 0033)",
 		},
 		"the functions mirror names tools": {
 			agentMirror("  functions: [ag.example.com/ag/annotate]\n"),

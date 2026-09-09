@@ -103,7 +103,7 @@ function renderEditor(
         <RecordEditorForm
           authority="samples.substrate.reamde.dev"
           pkg="tasks"
-          name="tasks"
+          name="task"
           mode={mode}
           kind={taskKind}
           kinds={[taskKind]}
@@ -203,7 +203,7 @@ describe("the record editor", () => {
     const [authority, pkg, name, input] = createRecord.mock.calls[0]
     expect(authority).toBe("samples.substrate.reamde.dev")
     expect(pkg).toBe("tasks")
-    expect(name).toBe("tasks")
+    expect(name).toBe("task")
     expect(input.properties).toEqual({
       title: "hi",
       effort: 3,
