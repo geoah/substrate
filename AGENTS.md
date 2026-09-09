@@ -329,9 +329,11 @@ discharged.
   [0066](docs/decisions/0066-a-backfill-and-an-enum-remap-are-ordinary-record-writes.md)).
   `required` beside a `default` backfills the same way, and a remap onto a
   value the stored declaration still admits is refused as lossy.
-  `edges.<rel>.properties` was reserved with them and is now live: an edge
-  write carrying a property the rel does not declare is refused
-  ([0027](docs/decisions/0027-an-edge-outlives-a-tombstone-and-dies-with-a-purge.md)).
+  `edges.<rel>.properties` was reserved with them and left with `data.edges`:
+  a reference is the only link between records, data on the link is the
+  reference property's own `properties:` block, and a write carrying a link
+  property the reference does not declare is refused
+  ([0044](docs/decisions/0044-a-reference-is-the-only-link-between-records.md)).
   `retired` is live too: a package header lists the kind names it has spent
   and a kind lists its spent property names, enum values and states, the
   list is carried forward and never shrinks, and declaring a listed name

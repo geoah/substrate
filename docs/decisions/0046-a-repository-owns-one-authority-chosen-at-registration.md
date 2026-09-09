@@ -1,6 +1,6 @@
 ---
 status: superseded
-date: 2026-09-02
+date: 2026-09-05
 decision-makers: George Antoniadis
 superseded-by: 0052
 ---
