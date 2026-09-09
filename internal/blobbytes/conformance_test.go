@@ -1,8 +1,8 @@
 package blobbytes_test
 
-// One contract, three backends. Everything a Store promises is asserted here
+// One contract, two backends. Everything a Store promises is asserted here
 // and each backend's own file runs the whole set, so `fs` and `s3` cannot
-// quietly mean something else by Put, Delete or List than `postgres` does.
+// quietly mean something else by Put, Delete or List than the other does.
 
 import (
 	"context"
@@ -195,8 +195,8 @@ func conformance(t *testing.T, open openStore) {
 
 // repositoryIsolation is the fs and s3 case: row level security does not reach
 // either, so the repository half of the key is what keeps two repositories
-// apart. The postgres backend does not run this — its isolation is the row
-// level security policy, which internal/engine's isolation suite owns.
+// apart. Row level security over the tables is internal/engine's isolation
+// suite.
 func repositoryIsolation(t *testing.T, open openStore) {
 	ctx := context.Background()
 	data := []byte("one repository's attachment")
@@ -236,20 +236,20 @@ func repositoryIsolation(t *testing.T, open openStore) {
 // refuseBadRepository is the other half of the key grammar: a repository id
 // that could hold a path separator would let one repository's store address
 // another's.
-func refuseBadRepository(t *testing.T, b blobbytes.Backend, db blobbytes.DB) {
+func refuseBadRepository(t *testing.T, b blobbytes.Backend) {
 	// The id is the repository's authority: lowercase DNS labels with at least
 	// one dot, up to 253 bytes. `.` and `..` would address the store's root or
-	// its parent instead of one repository inside it; the old random id has no
-	// dot; a capital letter is not lowercase.
+	// its parent instead of one repository inside it; a name with no dot is
+	// not an authority; a capital letter is not lowercase.
 	for _, bad := range []string{
 		"", ".", "..", "../elsewhere", "a/b", "k3j9x2m41pfq", "Ada.example.com", "ada_1.example.com",
 		strings.Repeat("r", 64) + ".example.com", longAuthority(254),
 	} {
-		if _, err := b.Repository(bad, db); err == nil {
+		if _, err := b.Repository(bad); err == nil {
 			t.Fatalf("the backend bound to %q as a repository id", bad)
 		}
 	}
-	if _, err := b.Repository(longAuthority(200), db); err != nil {
+	if _, err := b.Repository(longAuthority(200)); err != nil {
 		t.Fatalf("a 200-byte authority is a repository id: %v", err)
 	}
 }

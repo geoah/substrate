@@ -125,9 +125,8 @@ func TestLoadData(t *testing.T) {
 	}
 }
 
-// The `blobs` column is a migration source, never a store the server runs on:
-// asking for it is refused with the one command that still reads it. The
-// default is fs under the data root.
+// There are two stores, and the default is fs under the data root. Any other
+// name is refused by the variable's name rather than falling back.
 func TestBlobsBackend(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -140,15 +139,11 @@ func TestBlobsBackend(t *testing.T) {
 			t.Fatalf("Store %q built the %s backend, want fs", store, b.Name())
 		}
 	}
-	_, err := (Blobs{Store: "postgres"}).Backend(root)
-	if err == nil {
-		t.Fatal("Backend accepted postgres as a runtime store")
-	}
-	if !strings.Contains(err.Error(), "substratectl blobs migrate --from postgres") {
-		t.Fatalf("the refusal does not name the migration: %v", err)
-	}
-	if _, err := (Blobs{Store: "disk"}).Backend(root); err == nil || !strings.Contains(err.Error(), "SUBSTRATE_BLOB_STORE") {
-		t.Fatalf("an unknown store was not refused by name: %v", err)
+	for _, store := range []string{"postgres", "disk"} {
+		_, err := (Blobs{Store: store}).Backend(root)
+		if err == nil || !strings.Contains(err.Error(), "SUBSTRATE_BLOB_STORE") {
+			t.Fatalf("Store %q was not refused by the variable's name: %v", store, err)
+		}
 	}
 	if _, err := (Blobs{Store: "fs"}).Backend("relative"); err == nil {
 		t.Fatal("the fs backend accepted a relative data root")

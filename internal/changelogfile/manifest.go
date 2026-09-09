@@ -14,25 +14,10 @@ import (
 // directory.
 const ManifestName = "repository.json"
 
-// ManifestFormat is the manifest format this package writes. Format 3 drops
-// format 2's `username`: a repository has one name, its authority, and the
-// user logs in with it. Formats 2 and 1 are still read (manifestFormatTwo,
-// manifestFormatOne, and ReadLegacyManifest for v0.46.0's shape) and their
-// `username` is dropped on the way in; a manifest naming any other format is
-// refused rather than guessed at.
-const ManifestFormat = 3
-
-// manifestFormatTwo is the format v0.54.0 through v0.60.0 wrote: format 3's
-// keys plus the `username` that was then the login name. Read, never written.
-const manifestFormatTwo = 2
-
-// manifestFormatOne is the format v0.47.0 through v0.53.0 wrote: format 2's
-// keys without `vocabularyDialect`. `dekKeyId` and `sealedDekOnly` joined the
-// set in v0.53.0 (decision 0059), so a format-1 manifest may carry them or
-// not; one without them reads as an unnamed key and an unmarked store, which
-// is what such a directory is. v0.46.0 wrote the same keys with an `id`
-// beside them, which ReadLegacyManifest reads. Read, never written.
-const manifestFormatOne = 1
+// ManifestFormat is the manifest format this package reads and writes, the
+// only one there is. A manifest naming any other format is refused rather
+// than guessed at, and a later format announces itself in `format`.
+const ManifestFormat = 1
 
 var (
 	// ErrManifestFormat is returned for a manifest whose format this package
@@ -54,8 +39,7 @@ var (
 // and this field are one value.
 type Manifest struct {
 	// Format is the format the manifest was read in, or the one to write:
-	// ManifestFormat, or manifestFormatOne on a manifest v0.46.0 through
-	// v0.53.0 wrote.
+	// ManifestFormat.
 	Format    int
 	Authority string
 	CreatedAt time.Time
@@ -63,8 +47,7 @@ type Manifest struct {
 	// what a binary must replay to fold the segments.
 	ChangelogDialect int
 	// VocabularyDialect is the repository's `vocabulary_dialect` stamp, the
-	// shape its stored declaration rows are in. 0 on a format-1 manifest,
-	// which recorded none.
+	// shape its stored declaration rows are in.
 	VocabularyDialect int
 	// DEK is the repository's data key wrapped under SUBSTRATE_CREDENTIAL_KEY,
 	// the `repositories.dek` bytes; base64 on the wire. Ciphertext under a key
@@ -72,18 +55,11 @@ type Manifest struct {
 	DEK []byte
 	// DEKKeyID names the host key DEK is wrapped under, the
 	// `repositories.dek_key_id` value: 16 hex digits of a one-way hash over
-	// the key, never the key. Empty for a wrap written before the id was
-	// recorded, or under no key (decision 0059).
+	// the key, never the key. Empty under no key (decision 0059).
 	DEKKeyID string
-	// SealedDEKOnly is `repositories.sealed_dek_only`: every file under
-	// sealed/ is bound-framed ciphertext under DEK, with no plain and no
-	// host-key-sealed payload left, so the engine refuses those forms on
-	// this repository. False for a directory written before the marker
-	// existed; the first open re-keys the store and sets it (0059).
-	SealedDEKOnly bool
 }
 
-// manifestWire is the JSON form of format 3. CreatedAt is written in
+// manifestWire is the JSON form of the manifest. CreatedAt is written in
 // TSFormat, the precision the row holds, and read as any RFC 3339 time.
 type manifestWire struct {
 	Format            int    `json:"format"`
@@ -93,38 +69,6 @@ type manifestWire struct {
 	VocabularyDialect int    `json:"vocabularyDialect"`
 	DEK               []byte `json:"dek"`
 	DEKKeyID          string `json:"dekKeyId"`
-	SealedDEKOnly     bool   `json:"sealedDekOnly"`
-}
-
-// manifestWireTwo is the JSON form of format 2: manifestWire plus the
-// `username` this package no longer keeps. Its key set is closed on its own,
-// like every format's.
-type manifestWireTwo struct {
-	Format int `json:"format"`
-	// Username is declared so the closed key set admits the key; the value is
-	// dropped.
-	Username          string `json:"username"`
-	Authority         string `json:"authority"`
-	CreatedAt         string `json:"createdAt"`
-	ChangelogDialect  int    `json:"changelogDialect"`
-	VocabularyDialect int    `json:"vocabularyDialect"`
-	DEK               []byte `json:"dek"`
-	DEKKeyID          string `json:"dekKeyId"`
-	SealedDEKOnly     bool   `json:"sealedDekOnly"`
-}
-
-// manifestWireOne is the JSON form of format 1: manifestWireTwo without
-// `vocabularyDialect`. Its key set is closed on its own, so a format-1
-// document carrying the format-2 key is refused as unknown.
-type manifestWireOne struct {
-	Format           int    `json:"format"`
-	Username         string `json:"username"`
-	Authority        string `json:"authority"`
-	CreatedAt        string `json:"createdAt"`
-	ChangelogDialect int    `json:"changelogDialect"`
-	DEK              []byte `json:"dek"`
-	DEKKeyID         string `json:"dekKeyId"`
-	SealedDEKOnly    bool   `json:"sealedDekOnly"`
 }
 
 // MarshalJSON renders the manifest in its file form.
@@ -132,7 +76,7 @@ func (m Manifest) MarshalJSON() ([]byte, error) {
 	w := manifestWire{
 		Format: m.Format, Authority: m.Authority,
 		ChangelogDialect: m.ChangelogDialect, VocabularyDialect: m.VocabularyDialect, DEK: m.DEK,
-		DEKKeyID: m.DEKKeyID, SealedDEKOnly: m.SealedDEKOnly,
+		DEKKeyID: m.DEKKeyID,
 	}
 	if !m.CreatedAt.IsZero() {
 		w.CreatedAt = m.CreatedAt.UTC().Format(TSFormat)
@@ -140,11 +84,10 @@ func (m Manifest) MarshalJSON() ([]byte, error) {
 	return json.Marshal(w)
 }
 
-// UnmarshalJSON parses the file form of format 3, 2 or 1, chosen by the
-// `format` key. Each format's key set is closed: an unknown key is refused,
-// because a format is defined by exactly its keys and a later format
-// announces itself in `format`. The `id` key a pre-authority binary wrote is
-// unknown here on purpose; ReadLegacyManifest reads that shape.
+// UnmarshalJSON parses the file form, refusing any format but
+// ManifestFormat. The key set is closed: an unknown key is refused, because a
+// format is defined by exactly its keys and a later format announces itself
+// in `format`.
 func (m *Manifest) UnmarshalJSON(data []byte) error {
 	var probe struct {
 		Format int `json:"format"`
@@ -152,35 +95,12 @@ func (m *Manifest) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &probe); err != nil {
 		return err
 	}
-	var w manifestWire
-	switch probe.Format {
-	case ManifestFormat:
-		if err := decodeClosed(data, &w); err != nil {
-			return err
-		}
-	case manifestFormatTwo:
-		var two manifestWireTwo
-		if err := decodeClosed(data, &two); err != nil {
-			return err
-		}
-		w = manifestWire{
-			Format: two.Format, Authority: two.Authority,
-			CreatedAt: two.CreatedAt, ChangelogDialect: two.ChangelogDialect,
-			VocabularyDialect: two.VocabularyDialect, DEK: two.DEK,
-			DEKKeyID: two.DEKKeyID, SealedDEKOnly: two.SealedDEKOnly,
-		}
-	case manifestFormatOne:
-		var one manifestWireOne
-		if err := decodeClosed(data, &one); err != nil {
-			return err
-		}
-		w = manifestWire{
-			Format: one.Format, Authority: one.Authority,
-			CreatedAt: one.CreatedAt, ChangelogDialect: one.ChangelogDialect, DEK: one.DEK,
-			DEKKeyID: one.DEKKeyID, SealedDEKOnly: one.SealedDEKOnly,
-		}
-	default:
+	if probe.Format != ManifestFormat {
 		return fmt.Errorf("%w: got %d", ErrManifestFormat, probe.Format)
+	}
+	var w manifestWire
+	if err := decodeClosed(data, &w); err != nil {
+		return err
 	}
 	created, err := parseManifestTime(w.CreatedAt)
 	if err != nil {
@@ -190,7 +110,7 @@ func (m *Manifest) UnmarshalJSON(data []byte) error {
 		Format: w.Format, Authority: w.Authority,
 		CreatedAt: created, ChangelogDialect: w.ChangelogDialect,
 		VocabularyDialect: w.VocabularyDialect, DEK: w.DEK,
-		DEKKeyID: w.DEKKeyID, SealedDEKOnly: w.SealedDEKOnly,
+		DEKKeyID: w.DEKKeyID,
 	}
 	return nil
 }
@@ -214,9 +134,8 @@ func parseManifestTime(s string) (time.Time, error) {
 }
 
 // check refuses a manifest that does not name a repository, or does not name
-// the directory repoDir. The format is checked where it is read (UnmarshalJSON)
-// and where it is written (WriteManifest), because the two accept different
-// sets.
+// the directory repoDir. The format is checked where it is read
+// (UnmarshalJSON) and where it is written (WriteManifest).
 func (m Manifest) check(repoDir string) error {
 	if m.Authority == "" {
 		return ErrManifestIncomplete
@@ -251,9 +170,7 @@ func ReadManifest(repoDir string) (Manifest, error) {
 
 // WriteManifest checks the manifest and writes it atomically into the
 // repository directory, replacing any manifest there. Only ManifestFormat is
-// written: a manifest read in an older format is the caller's to bring up to
-// date, because the keys the newer format adds are not this package's to
-// invent.
+// written.
 func WriteManifest(repoDir string, m Manifest) error {
 	if m.Format != ManifestFormat {
 		return fmt.Errorf("%w: writing format %d, this package writes %d", ErrManifestFormat, m.Format, ManifestFormat)
@@ -266,69 +183,4 @@ func WriteManifest(repoDir string, m Manifest) error {
 		return err
 	}
 	return writeFileAtomic(repoDir, ManifestName, append(data, '\n'))
-}
-
-// --- the pre-authority manifest ----------------------------------------------
-
-// LegacyManifest is the manifest a binary from before the authority became
-// the id wrote: format 1 with an `id` key holding a random id, which named
-// the directory and was the additional data the DEK wrap was bound to. The
-// engine reads one only to move the directory under its authority.
-type LegacyManifest struct {
-	// ID is the old random repository id, the directory's name.
-	ID       string
-	Manifest Manifest
-}
-
-// legacyManifestWire is manifestWireOne plus the `id` key.
-type legacyManifestWire struct {
-	Format           int    `json:"format"`
-	ID               string `json:"id"`
-	Username         string `json:"username"`
-	Authority        string `json:"authority"`
-	CreatedAt        string `json:"createdAt"`
-	ChangelogDialect int    `json:"changelogDialect"`
-	DEK              []byte `json:"dek"`
-}
-
-// ReadLegacyManifest reads the pre-authority manifest in repoDir. Its
-// authority must be one a directory can be named by, since that is what the
-// caller renames the directory to; whether the `id` names the directory is
-// the caller's check, because the caller may be finishing a move that renamed
-// the directory and then crashed before writing the new manifest. The same
-// closed key set applies: this reads exactly the old shape, and the manifest
-// it returns is format 1.
-func ReadLegacyManifest(repoDir string) (LegacyManifest, error) {
-	raw, err := os.ReadFile(filepath.Join(repoDir, ManifestName))
-	if err != nil {
-		return LegacyManifest{}, err
-	}
-	var w legacyManifestWire
-	if err := decodeClosed(raw, &w); err != nil {
-		return LegacyManifest{}, fmt.Errorf("changelogfile: decode %s: %w", ManifestName, err)
-	}
-	created, err := parseManifestTime(w.CreatedAt)
-	if err != nil {
-		return LegacyManifest{}, fmt.Errorf("changelogfile: decode %s: %w", ManifestName, err)
-	}
-	lm := LegacyManifest{
-		ID: w.ID,
-		Manifest: Manifest{
-			Format: w.Format, Authority: w.Authority,
-			CreatedAt: created, ChangelogDialect: w.ChangelogDialect, DEK: w.DEK,
-		},
-	}
-	if lm.Manifest.Format != manifestFormatOne {
-		return LegacyManifest{}, fmt.Errorf("%w: got %d", ErrManifestFormat, lm.Manifest.Format)
-	}
-	if lm.ID == "" || lm.Manifest.Authority == "" {
-		return LegacyManifest{}, fmt.Errorf("%w (a pre-authority manifest needs an id too)", ErrManifestIncomplete)
-	}
-	if !reLegacyRepositoryID.MatchString(lm.ID) || lm.ID == "." || lm.ID == ".." {
-		return LegacyManifest{}, fmt.Errorf("%w: %q", ErrLegacyRepositoryDir, lm.ID)
-	}
-	if err := checkRepositoryAuthority(lm.Manifest.Authority); err != nil {
-		return LegacyManifest{}, err
-	}
-	return lm, nil
 }

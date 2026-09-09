@@ -247,7 +247,7 @@ func (s *service) openSealed(ctx context.Context, repoID, ref string) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	return openRepoPayload(payload, keys.dek, s.credKey, sealedAAD(ref, owner.Kind, owner.ID), keys.dekOnly)
+	return openRepoPayload(payload, keys.dek, sealedAAD(ref, owner.Kind, owner.ID))
 }
 
 // consumeTOTPStep spends a code by recording its step on the sealed TOTP row.
@@ -257,9 +257,6 @@ func (s *service) openSealed(ctx context.Context, repoID, ref string) ([]byte, e
 // replay counter is not a change to the credential.
 func (s *service) consumeTOTPStep(ctx context.Context, repo Repository, ref string, to int64) (bool, error) {
 	repoID := repo.ID
-	// The dataset is opened BEFORE the row is locked: the open ladder may
-	// itself lock sealed rows (a re-key), and it must not wait behind this
-	// transaction's FOR UPDATE.
 	ds, err := s.open(ctx, repo)
 	if err != nil {
 		return false, err
@@ -280,16 +277,13 @@ func (s *service) consumeTOTPStep(ctx context.Context, repo Repository, ref stri
 	if err != nil {
 		return false, err
 	}
-	// The keys are read inside the transaction that holds the row FOR UPDATE:
-	// a re-key that would move this row waits on that lock, so the payload
-	// above and the keys here describe the same moment.
 	keys, err := s.repoKeysOn(ctx, tx, repoID)
 	if err != nil {
 		return false, err
 	}
 	dek := keys.dek
 	aad := sealedAAD(ref, owner.Kind, owner.ID)
-	raw, err := openRepoPayload(payload, dek, s.credKey, aad, keys.dekOnly)
+	raw, err := openRepoPayload(payload, dek, aad)
 	if err != nil {
 		return false, err
 	}
@@ -311,9 +305,7 @@ func (s *service) consumeTOTPStep(ctx context.Context, repo Repository, ref stri
 		return false, err
 	}
 	// The row is re-read inside the transaction, so the file gets what the
-	// table holds at the commit and not the bytes one writer remembers; the
-	// dataset was opened before the row was locked, so the re-key a first
-	// open runs (retireLegacySealed) is already in the row this read sees.
+	// table holds at the commit and not the bytes one writer remembers.
 	rec, err := readSealedRecordOn(ctx, tx, repoID, ref)
 	if err != nil {
 		return false, err
@@ -321,9 +313,7 @@ func (s *service) consumeTOTPStep(ctx context.Context, repo Repository, ref stri
 	// The step lives in the sealed row and nowhere in the changelog, so the
 	// file is the only thing that carries it into the directory, and the row
 	// commits only once the file is written (commitSealed). It goes through
-	// the dataset, under the writer mutex every other sealed write takes:
-	// written straight from here it could lose the rename race against a
-	// concurrent rekeySealedStore and leave the older payload on disk.
+	// the dataset, under the writer mutex every other sealed write takes.
 	if err := ds.commitSealed(tx, []sealedMirrorOp{{rec: rec}}); err != nil {
 		return false, err
 	}
@@ -482,12 +472,10 @@ func (s *service) registrationSeed(in substrate.RegisterInput) (string, int64, e
 // which is materially more than the repository API can ever do, so a stolen
 // token must not be enough.
 //
-// The same transaction re-keys the whole sealed store under the DEK. The
-// open already did that once and marked the row DEK-only (retireLegacySealed,
-// 0059), and the enrollment requires that marker BEFORE it writes: the
-// recovery promise (a backup plus this key, no host involved) is only true of
-// a DEK-only store. The row is not written here at all. The scoped
-// transaction cannot reach `repositories`, and a control-plane write after
+// The recovery promise (a backup plus this key, no host involved) holds
+// because every sealed payload is bound-framed under the DEK from the
+// repository's first write (0059). No control-plane row is written here at
+// all: the scoped transaction cannot reach `repositories`, and a write after
 // the commit would be a step that can fail once the record is committed and
 // a server-minted identity, returned exactly once, is gone.
 func (s *service) EnrollRecoveryKey(ctx context.Context, in substrate.LoginInput, publicKey string) (identity, recipient string, err error) {
@@ -507,14 +495,8 @@ func (s *service) EnrollRecoveryKey(ctx context.Context, in substrate.LoginInput
 	if err != nil {
 		return "", "", err
 	}
-	// A read-only process neither re-keys nor marks at open, so its dataset
-	// carries the row's marker as stored; it is refused as read-only, not as
-	// unmarked, because that is what it is.
 	if s.readOnly {
 		return "", "", ErrDirectoryReadOnly
-	}
-	if !ds.dekOnly {
-		return "", "", errors.New("substrate/engine: the sealed store is not marked DEK-only, so a recovery key cannot promise to open it; the open re-keys and marks a repository before anything writes to it")
 	}
 	ref := eref{Kind: kindRecoveryKey, ID: recoveryKeyID}
 	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
@@ -528,11 +510,7 @@ func (s *service) EnrollRecoveryKey(ctx context.Context, in substrate.LoginInput
 		if row != nil && row.DeletedAt == nil {
 			return fmt.Errorf("%w: a recovery key is already enrolled; rotation is not yet supported", substrate.ErrConflict)
 		}
-		if err := t.writeRecoveryKey(publicKey); err != nil {
-			return err
-		}
-		_, err = t.rekeySealedStore()
-		return err
+		return t.writeRecoveryKey(publicKey)
 	})
 	if err != nil {
 		return "", "", err

@@ -6,12 +6,11 @@ package engine
 // recoverykey record holds it wrapped to the user's age recipient. The two
 // planes never mix: nothing host-keyed sits in the repository, and the user
 // plane (changelog + sealed + blobs) is recoverable with the age identity
-// alone. A payload sealed before DEKs existed, or stored plain by a keyless
-// release, opens through the host-key fallback until the repository's first
-// open re-keys it under the DEK and marks the row `sealed_dek_only`; from
-// then on both forms are refused (decision 0059). Each DEK wrap names the
-// host key it is under (`dek_key_id`), so a wrong SUBSTRATE_CREDENTIAL_KEY is
-// reported as the wrong key, by id, and not as damage.
+// alone. Every payload is bound-framed under the DEK, from the repository's
+// first write: a plain one and a host-key-sealed one are refused wherever
+// they are met (decision 0059). Each DEK wrap names the host key it is under
+// (`dek_key_id`), so a wrong SUBSTRATE_CREDENTIAL_KEY is reported as the
+// wrong key, by id, and not as damage.
 
 import (
 	"bytes"
@@ -39,9 +38,7 @@ func newDEK() ([]byte, error) {
 // dekAAD binds the control-plane DEK wrap to its repository. The wrap has no
 // owning record, so it binds the literal "dek" and the repository id, which is
 // its authority (0023): `dek\x00<authority>`, so a wrap lifted into another
-// repository's row stops opening. A directory written before the authority
-// was the id is bound to the old random id, and the boot check re-wraps it
-// (repodir.go, migrateLegacyDir).
+// repository's row stops opening.
 func dekAAD(repoID string) []byte {
 	return []byte("dek\x00" + repoID)
 }
@@ -99,12 +96,10 @@ func (s *service) wrongHostKey(repoID, keyID string, cause error) error {
 }
 
 // repoKeys is what the control-plane row says about one repository's keys:
-// the DEK unwrapped (nil when the repository predates DEKs), the id of the
-// host key its wrap names, and whether the sealed store is DEK-only (0059).
+// the DEK unwrapped and the id of the host key its wrap names.
 type repoKeys struct {
-	dek     []byte
-	keyID   string
-	dekOnly bool
+	dek   []byte
+	keyID string
 }
 
 // repoKeys reads one repository's keys straight from the control plane: the
@@ -120,45 +115,20 @@ func (s *service) repoKeysOn(ctx context.Context, q dbx, repoID string) (repoKey
 	var wrapped []byte
 	var keyID sql.NullString
 	err := q.QueryRowContext(ctx,
-		`SELECT dek, dek_key_id, sealed_dek_only FROM repositories WHERE id = $1`, repoID).
-		Scan(&wrapped, &keyID, &k.dekOnly)
+		`SELECT dek, dek_key_id FROM repositories WHERE id = $1`, repoID).
+		Scan(&wrapped, &keyID)
 	if err != nil {
 		return k, err
 	}
 	k.keyID = keyID.String
+	// A repository is born with its DEK (CreateRepository) and an import
+	// refuses a manifest without one, so a row with no wrap is damage rather
+	// than a repository waiting for a key.
 	if len(wrapped) == 0 {
-		return k, nil
+		return k, fmt.Errorf("substrate/engine: repository %s holds no wrapped DEK, so nothing can open its sealed store", repoID)
 	}
 	k.dek, err = s.unwrapDEK(wrapped, repoID, k.keyID)
 	return k, err
-}
-
-// adoptDEK gives a pre-DEK repository its key, compare-and-swap on NULL so
-// two concurrent opens cannot mint two: the loser re-reads the winner's. The
-// row names the host key the wrap is under; the store is DEK-only only once
-// the re-key at open has run (retireLegacySealed).
-func (s *service) adoptDEK(ctx context.Context, repoID string) ([]byte, error) {
-	dek, err := newDEK()
-	if err != nil {
-		return nil, err
-	}
-	wrapped, err := s.wrapDEK(dek, repoID)
-	if err != nil {
-		return nil, err
-	}
-	res, err := s.maint.ExecContext(ctx,
-		`UPDATE repositories SET dek = $1, dek_key_id = $2 WHERE id = $3 AND dek IS NULL`,
-		wrapped, nullString(s.credKeyID), repoID)
-	if err != nil {
-		return nil, err
-	}
-	if n, err := res.RowsAffected(); err != nil {
-		return nil, err
-	} else if n == 1 {
-		return dek, nil
-	}
-	k, err := s.repoKeys(ctx, repoID)
-	return k.dek, err
 }
 
 // nullString is s as a nullable text column value: NULL for the empty string.
@@ -166,77 +136,17 @@ func nullString(s string) sql.NullString {
 	return sql.NullString{String: s, Valid: s != ""}
 }
 
-// retireLegacySealed is the one-shot pass that makes a repository DEK-only
-// (0059). A repository not yet marked has its sealed store re-keyed under the
-// DEK, plain and host-key-sealed payloads included, and its row marked, so
-// every later read refuses those forms. On a keyed host a wrap that names no
-// key (a row from before the id was stored) is RE-WRAPPED under this host's
-// key and the id written beside it: the old wrap may be plain-marked, from a
-// keyless release, and an id must never name a key that protects nothing.
-// A repository missing neither pays nothing here. It runs at open, under the
-// per-repository singleflight, before the manifest is written, because the
-// manifest carries the wrap, the id and the marker.
-func (s *service) retireLegacySealed(ctx context.Context, ds *dataset, repo Repository) (Repository, error) {
-	if repo.SealedDEKOnly && (repo.DEKKeyID != "" || s.credKeyID == "") {
-		return repo, nil
-	}
-	if !repo.SealedDEKOnly {
-		var n int
-		if err := ds.inRawTx(ctx, func(t *txn) error {
-			var err error
-			n, err = t.rekeySealedStore()
-			return err
-		}); err != nil {
-			return repo, fmt.Errorf("re-key the sealed store under the DEK: %w", err)
-		}
-		if n > 0 {
-			s.log.Info("substrate: re-keyed legacy sealed payloads under the repository DEK; plain and host-key-sealed payloads are refused from here on",
-				"repository", repo.ID, "payloads", n)
-		}
-		// The re-keyed files must be on disk before the row says the store is
-		// DEK-only: a file the re-key could not write fails its transaction
-		// above (ErrDirectoryWrite), and a failure after the commit is
-		// latched (fileErr) and caught here, so a marker is never written
-		// over stale host-key files, which would be a manifest that lies
-		// until the next boot rewrites them. The open fails, unmarked, and
-		// the boot check's rewrite of sealed/ from the table is the repair.
-		if err := ds.directoryErr(); err != nil {
-			return repo, fmt.Errorf("the re-keyed sealed files did not reach the directory: %w", err)
-		}
-	}
-	if repo.DEKKeyID == "" && s.credKeyID != "" {
-		wrapped, err := s.wrapDEK(ds.dek, repo.ID)
-		if err != nil {
-			return repo, err
-		}
-		if _, err := s.maint.ExecContext(ctx,
-			`UPDATE repositories SET sealed_dek_only = true, dek = $2, dek_key_id = $3 WHERE id = $1`,
-			repo.ID, wrapped, s.credKeyID); err != nil {
-			return repo, err
-		}
-		if len(repo.DEK) > 0 && repo.DEK[0] == credPlain {
-			s.log.Info("substrate: sealed a plain-marked DEK wrap under SUBSTRATE_CREDENTIAL_KEY",
-				"repository", repo.ID, "keyId", s.credKeyID)
-		}
-		return s.repositoryByID(ctx, repo.ID)
-	}
-	if _, err := s.maint.ExecContext(ctx,
-		`UPDATE repositories SET sealed_dek_only = true WHERE id = $1`, repo.ID); err != nil {
-		return repo, err
-	}
-	return s.repositoryByID(ctx, repo.ID)
-}
-
-// sealRepoPayload seals one payload under a repository's DEK, or under the
-// host key for a pre-DEK repository the maintenance paths touch before any
-// open has adopted one, binding aad to the row it lands in.
+// sealRepoPayload seals one payload under a repository's DEK, binding aad to
+// the row it lands in: the maintenance paths' seal, outside a dataset. A
+// caller with no DEK is a programming error, and storing plaintext silently
+// would be worse.
 func (s *service) sealRepoPayload(dek, raw, aad []byte) ([]byte, error) {
-	if len(dek) == 0 {
-		return s.sealCredential(raw, aad)
-	}
 	aead, err := aeadOf(dek)
 	if err != nil {
 		return nil, err
+	}
+	if aead == nil {
+		return nil, errors.New("substrate/engine: no DEK to seal a repository payload under")
 	}
 	return sealWith(aead, raw, aad)
 }
@@ -267,45 +177,35 @@ func (ds *dataset) sealPayload(raw, aad []byte) ([]byte, error) {
 }
 
 // openPayload opens one sealed-store payload under the repository's DEK, with
-// aad as the row's binding (presented for `credBoundSealed` payloads only). On
-// a repository marked DEK-only the plain framing and the host-key fallback
-// are refused (0059); until the first open has re-keyed the store and marked
-// it, a plain payload opens as is and the host key is tried after the DEK,
-// for material sealed before DEKs existed.
+// aad as the row's binding (presented for `credBoundSealed` payloads only).
 func (ds *dataset) openPayload(payload, aad []byte) ([]byte, error) {
-	return openRepoPayload(payload, ds.dek, ds.svc.credKey, aad, ds.dekOnly)
+	return openRepoPayload(payload, ds.dek, aad)
 }
 
-// OpenPayloadWithKey opens one sealed-store payload under the supplied key
-// ALONE, presenting aad as the row's binding: the recovery tooling's read, and
-// the proof that a DEK recovered through the age wrap is sufficient on its
-// own. A plain payload is refused here whatever the repository's marker says,
-// because opening one proves nothing about the key.
+// OpenPayloadWithKey opens one sealed-store payload under the supplied key,
+// presenting aad as the row's binding: the recovery tooling's read, and the
+// proof that a DEK recovered through the age wrap is sufficient on its own.
 func OpenPayloadWithKey(key, payload, aad []byte) ([]byte, error) {
-	return openRepoPayload(payload, key, nil, aad, true)
+	return openRepoPayload(payload, key, aad)
 }
 
-// errPlainRefused is the refusal of a `credPlain` payload on a repository
-// marked DEK-only: the store holds none, so one can only have been planted.
-var errPlainRefused = errors.New("refusing a plain-framed ('p') sealed payload: this repository holds no legacy payload, so every payload is expected bound-framed ('a') under the repository DEK")
+// errPlainRefused is the refusal of a `credPlain` payload in a repository's
+// sealed store: every payload seals under the DEK, so a plain one can only
+// have been planted.
+var errPlainRefused = errors.New("refusing a plain-framed ('p') sealed payload: every payload of a repository is bound-framed ('a') under its DEK")
 
-// openRepoPayload is the one open order for a repository's sealed payloads.
-// dekOnly is the repository's marker (0059): set, only the DEK is tried and a
-// plain payload is refused, and the failure names the framing found and the
-// key expected; unset, the plain framing opens as is and the host key is the
-// fallback after the DEK. aad is presented only for the bound framing; the
-// unbound `credSealed` sealed no additional data, so it opens with nil.
-func openRepoPayload(payload, dek, hostKey, aad []byte, dekOnly bool) ([]byte, error) {
+// openRepoPayload is the one open order for a repository's payloads: the DEK
+// and nothing else (decision 0059). A plain payload is refused by name and
+// any unknown marker byte as unknown. aad is presented only for the bound
+// framing, since `credSealed` (the PKCE verifier) sealed no additional data.
+func openRepoPayload(payload, dek, aad []byte) ([]byte, error) {
 	if len(payload) == 0 {
 		return nil, errors.New("empty payload")
 	}
 	framing := payload[0]
 	switch framing {
 	case credPlain:
-		if dekOnly {
-			return nil, errPlainRefused
-		}
-		return payload[1:], nil
+		return nil, errPlainRefused
 	case credSealed:
 		aad = nil
 	case credBoundSealed:
@@ -313,39 +213,18 @@ func openRepoPayload(payload, dek, hostKey, aad []byte, dekOnly bool) ([]byte, e
 	default:
 		return nil, fmt.Errorf("unknown credential framing %q", framing)
 	}
-	keys := [][]byte{dek, hostKey}
-	if dekOnly {
-		keys = keys[:1]
+	aead, err := aeadOf(dek)
+	if err != nil {
+		return nil, err
 	}
-	// The FIRST failure is the authoritative one: the DEK is tried first,
-	// and a malformed DEK must not hide behind a host-key attempt's error.
-	var firstErr error
-	for _, key := range keys {
-		aead, err := aeadOf(key)
-		if err != nil {
-			if firstErr == nil {
-				firstErr = err
-			}
-			continue
-		}
-		if aead == nil {
-			continue
-		}
-		out, err := openWith(aead, payload, aad)
-		if err == nil {
-			return out, nil
-		}
-		if firstErr == nil {
-			firstErr = err
-		}
+	if aead == nil {
+		return nil, errors.New("no key to try")
 	}
-	if firstErr == nil {
-		firstErr = errors.New("no key to try")
+	out, err := openWith(aead, payload, aad)
+	if err != nil {
+		return nil, fmt.Errorf("sealed payload framed %q does not open under the repository DEK, the one key this repository's payloads seal under: %w", framing, err)
 	}
-	if dekOnly {
-		return nil, fmt.Errorf("sealed payload framed %q does not open under the repository DEK, the one key this repository's payloads seal under (the host-key fallback is refused: no legacy payload remains): %w", framing, firstErr)
-	}
-	return nil, fmt.Errorf("sealed payload framed %q opens under neither the repository DEK nor the host key: %w", framing, firstErr)
+	return out, nil
 }
 
 // --- the age recovery wrap -------------------------------------------------

@@ -69,7 +69,7 @@ func (*FS) Name() string { return BackendFS }
 // authority grammar first, so it is always exactly one path segment. Nothing
 // is created here: the directory appears on the first Put, so binding a
 // repository that never stored a blob leaves no trace on disk.
-func (f *FS) Repository(repository string, _ DB) (Store, error) {
+func (f *FS) Repository(repository string) (Store, error) {
 	if err := checkRepository(repository); err != nil {
 		return nil, err
 	}

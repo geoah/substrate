@@ -1284,9 +1284,7 @@ func (t *txn) projectionKind(reg *vocabulary.Registry, projecting map[string]boo
 // per key and refuses every retired one by name (vocabulary/load.go's
 // tombstones), so the properties a row carries are the keys the author wrote, and
 // the read-back (rowDocument) is that same map with the stamped keys dropped.
-// Reading what an older binary stored is not this projection's job: a row in
-// dialect 1's shape is refused at the gate (dialect.go), so the loader is handed
-// the admitted spelling like anybody else. What the engine stamps is declared `managed: true`
+// What the engine stamps is declared `managed: true`
 // on the core kinds, which is the same list spelled where a client can read it.
 //
 // EVERY DECLARATION CARRIES A VERSION. A record type's own
@@ -1297,12 +1295,12 @@ func packageDeclarations(g *vocabulary.Package) ([]declaration, error) {
 	var decls []declaration
 	var missing []string
 	// add takes the declaration's own data map and the properties the engine
-	// stamps over it. The retired keys of the kind — the `definition` blob an
-	// older binary stored, the id-derived `name`, the agent mirrors, a
-	// never-stored `sourceYAML` — travel as explicit nulls: a projection's put
-	// MERGES, so without them a migrated row would keep the blob it was
-	// translated out of. A null against an absent property is a no-op, so a
-	// repository that never held them stays changelog-silent.
+	// stamps over it. The retired keys of the kind (the `definition` blob, the
+	// id-derived `name`, the agent mirrors, a never-stored `sourceYAML`)
+	// travel as explicit nulls: a projection's put MERGES, so without them a
+	// row that somehow carried one would keep it. A null against an absent
+	// property is a no-op, so a repository that never held them stays
+	// changelog-silent.
 	add := func(short, typeIdent, id string, data, stamped map[string]any) error {
 		props, err := jsonSafe(data)
 		if err != nil {
@@ -1465,7 +1463,13 @@ func packageDeclarations(g *vocabulary.Package) ([]declaration, error) {
 // The RETIRED half does need a list, because it is a list of DEAD spellings and
 // nothing derives it: retiredDeclarationProps, below.
 
-// propDeclarationBlob is dialect 1's one authored property: the whole
+// ErrDeclarationUntranslated is the row-level refusal: a stored declaration
+// row in a shape this binary cannot read, met when the whole declaration is
+// read back (rowDocument). A row is the declaration's own properties, so the
+// shapes it names are damage rather than a version of anything.
+var ErrDeclarationUntranslated = errors.New("substrate/engine: a stored declaration is in a shape this binary cannot read")
+
+// propDeclarationBlob is the retired `definition` property: the whole
 // declaration, as json. Spelled once so the refusals that name it are greppable.
 const propDeclarationBlob = "definition"
 
@@ -1474,11 +1478,10 @@ const propDeclarationBlob = "definition"
 // id-derived `name` and `plural`, an agent's function/sub-agent mirrors, a
 // never-stored `sourceYAML`.
 //
-// It outlived the rung that read it (#217) because two LIVE paths still do:
-// `engineOwned` excludes them from the properties a projection preserves, and
-// the projection writes each as an explicit null so a merge-only put clears one
-// off a row that still carries it. The list cannot grow: a spelling is retired
-// once, and dialect 1 is closed.
+// Two LIVE paths read it: `engineOwned` excludes them from the properties a
+// projection preserves, and the projection writes each as an explicit null so
+// a merge-only put clears one off a row that still carries it. The list cannot
+// grow: a spelling is retired once.
 func retiredDeclarationProps(short string) map[string]bool {
 	out := map[string]bool{propDeclarationBlob: true, "sourceYAML": true, "name": true}
 	switch short {
@@ -1816,8 +1819,7 @@ func (ds *dataset) vocabularyDocumentRowsWhere(ctx context.Context, authorities 
 // dialect, and dropping it would rebuild authorities missing declarations — the
 // dialect gate at repository open is the front door, this is the bolt on the back.
 // The boolean skip survives only for rows that are legitimately not documents
-// (a pre-promotion actor mirror row the seed rewrites, a row too old to
-// rebuild that deleteVocabularyRecord addresses by name alone).
+// (an actor mirror row with no authority, which the seed rewrites).
 func rowDocument(id, typeIdent string, props map[string]any) (vocabulary.Document, bool, error) {
 	short, ok := vocabularyRecordKinds[typeIdent]
 	if !ok {
@@ -1829,11 +1831,10 @@ func rowDocument(id, typeIdent string, props map[string]any) (vocabulary.Documen
 	// the value is. A null, a string or a list under that key is not a declaration
 	// this binary can read either, and reading the row's typed properties around it
 	// would rebuild an authority from half a declaration — so presence alone is the
-	// question. Nothing translates it: the gate at open refuses a store carrying
-	// one (dialect.go) and this is the same refusal at the row.
+	// question. Nothing translates it.
 	if _, held := props[propDeclarationBlob]; held {
 		return vocabulary.Document{}, false, fmt.Errorf(
-			"%w: schema row %s %s carries a `%s` property — dialect 2 stores a declaration's own properties, so this row is dialect 1 or corruption, and no rung translates either",
+			"%w: schema row %s %s carries the retired `%s` property. A declaration is stored as its own properties, so the row is damaged",
 			ErrDeclarationUntranslated, typeIdent, id, propDeclarationBlob)
 	}
 	switch short {
@@ -1854,10 +1855,9 @@ func rowDocument(id, typeIdent string, props map[string]any) (vocabulary.Documen
 		// A DELETED KEY IS NAMED, NEVER DROPPED. The read below is a whitelist, so
 		// a row carrying a spelling the loader retired would otherwise lose it in
 		// silence — a function whose `emit` vanished keeps running and writes
-		// nothing, which is the worst answer available. Only an UNRELEASED binary
-		// wrote such a row, and nothing migrates one, so the refusal is the whole
-		// handling: it names the replacement, and the store it comes from is a
-		// development one to wipe.
+		// nothing, which is the worst answer available. Nothing migrates such a
+		// row, so the refusal is the whole handling: it names the replacement,
+		// and the store it comes from is a development one to wipe.
 		for _, name := range sortedKeys(props) {
 			replacement, gone := vocabulary.DeletedDeclarationKeys(short)[name]
 			if !gone {

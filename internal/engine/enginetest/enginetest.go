@@ -364,7 +364,7 @@ func readBundleDir(dir string) ([]map[string]any, error) {
 	return out, nil
 }
 
-// Manifest is the legacy connector-registration shape, kept for tests only:
+// Manifest is the retired connector-registration shape, kept for tests only:
 // the authority's manifest documents plus its default trigger records.
 type Manifest struct {
 	Name      string

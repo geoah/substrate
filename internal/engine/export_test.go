@@ -312,10 +312,6 @@ func ReceiveWebhookHeld(ctx context.Context, svc substrate.Service, authority, t
 // the trigger's parked failures until its fire settles.
 const WebhookPendingError = pendingWebhookError
 
-// SetDatasetDEKOnly overrides an open dataset's DEK-only marker, so a test can
-// present a dataset the open did not mark to a path that requires the marker.
-func SetDatasetDEKOnly(ds substrate.Dataset, v bool) { ds.(*dataset).dekOnly = v }
-
 // PoolStats is the repository pool's statistics, for a test that has to know
 // every connection is held.
 func PoolStats(ds substrate.Dataset) sql.DBStats { return ds.(*dataset).db.Stats() }

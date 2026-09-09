@@ -28,15 +28,13 @@ const TSFormat = "2006-01-02T15:04:05.000000Z07:00"
 // prefix and never a silent change of meaning.
 const sumPrefix = "sha256:"
 
-// LineFormat is the line format this package writes. Format 2 lines carry
-// `txn`, the seq of the last entry of the transaction that appended them, so
-// a reader knows where a transaction ends and cuts an incomplete one whole.
-// Format 1, which v0.46.0 through v0.51.0 wrote, carried no `txn` and recorded
-// no boundary; this package still reads it, one line as one transaction, because
-// nothing can reconstruct a boundary that was never written. The manifest's
-// `changelogDialect` is where a directory names what its lines need: format 2
-// lines are changelog dialect 3.
-const LineFormat = 2
+// LineFormat is the line format this package reads and writes, the only one
+// there is. Every line carries `txn`, the seq of the last entry of the
+// transaction that appended it, so a reader knows where a transaction ends and
+// cuts an incomplete one whole; a line without it is refused
+// (ErrTxnFraming). The manifest's `changelogDialect` is where a directory
+// names what its lines need.
+const LineFormat = 1
 
 // Entry is one changelog entry as the file carries it. Payload is the JSON
 // text Postgres stored (`payload::text`); Encode canonicalizes it, so the
@@ -56,28 +54,31 @@ type Entry struct {
 	CausedByOK bool
 	// Txn is the seq of the last entry of the transaction that appended this
 	// one: the line with Seq == Txn ends the transaction, and a line with
-	// Seq < Txn is followed by more of the same transaction. 0 on a format 1
-	// line, which recorded no boundary and is read as a transaction of its
-	// own (LineFormat).
+	// Seq < Txn is followed by more of the same transaction. Every entry
+	// carries one.
 	Txn     int64
 	Payload json.RawMessage
 }
 
 // EndsTransaction reports whether this entry is the last of its transaction:
-// its Txn is its own Seq, or it carries none.
+// its Txn is its own Seq.
 func (e Entry) EndsTransaction() bool { return endsTransaction(e.Seq, e.Txn) }
 
-func endsTransaction(seq, txn int64) bool { return txn == 0 || txn == seq }
+func endsTransaction(seq, txn int64) bool { return txn == seq }
 
 // ErrTxnFraming is returned when a line's `txn` does not fit the transaction
-// around it: a `txn` below its own seq, or a line that does not continue the
-// transaction the line before it left open (a different `txn`, or none).
+// around it: an absent `txn`, a `txn` below its own seq, or a line that does
+// not continue the transaction the line before it left open.
 var ErrTxnFraming = errors.New("changelogfile: line does not fit its transaction")
 
-// checkTxn refuses a `txn` below the line's own seq: a transaction cannot end
-// before an entry it contains. 0 is no frame and passes.
+// checkTxn refuses a line with no `txn` and a `txn` below the line's own seq:
+// every line frames its transaction, and a transaction cannot end before an
+// entry it contains.
 func checkTxn(seq, txn int64) error {
-	if txn != 0 && txn < seq {
+	if txn == 0 {
+		return fmt.Errorf("%w: seq %d carries no txn", ErrTxnFraming, seq)
+	}
+	if txn < seq {
 		return fmt.Errorf("%w: seq %d ends its transaction at %d, before itself", ErrTxnFraming, seq, txn)
 	}
 	return nil
@@ -240,9 +241,7 @@ func (e Entry) object() (map[string]any, error) {
 	if e.CausedByOK {
 		obj["causedBy"] = e.CausedBy
 	}
-	if e.Txn != 0 {
-		obj["txn"] = e.Txn
-	}
+	obj["txn"] = e.Txn
 	return obj, nil
 }
 

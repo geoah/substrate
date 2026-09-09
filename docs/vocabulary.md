@@ -217,21 +217,21 @@ upgrade or a bundle upgrade can never silently corrupt data already written
 against the old shape. The contract has two halves.
 
 **A per-repository vocabulary dialect.** Each repository carries a monotonic
-vocabulary-dialect integer, stamped by the binary when the repository is opened.
-Dialect promotions are keyed, recorded, ordered steps from N to N+1, run at
-open and recorded per repository, so the history of how a repository's vocabulary
-advanced is itself readable. A step that rewrites stored rows stamps the new
-number in the same transaction as the rewrite, which is what makes a promotion
-**one-way**: [upgrading the binary](operations.md#upgrading-the-binary) is where
-that lands on an operator. A binary whose maximum supported dialect is
-below a repository's stored dialect refuses to open that repository with a
-named error ("the store speaks a newer schema dialect than this binary"),
-rather than opening it and misreading rows written by a newer shape; the API
-surfaces the refusal as `503 repository temporarily unavailable`, never as an
-invalid token. A repository's stored dialect is internal to its own store and
+vocabulary-dialect integer naming the shape its stored declaration rows are
+in. It is 1 today, the shape this release writes, and a fresh repository is
+stamped at the binary's maximum at its first open. A binary whose maximum
+supported dialect is below a repository's stored dialect refuses to open that
+repository with a named error ("the store speaks a newer schema dialect than
+this binary"), rather than opening it and misreading rows written by a newer
+shape; the API surfaces the refusal as `503 repository temporarily
+unavailable`, never as an invalid token, and
+[upgrading the binary](operations.md#upgrading-the-binary) is where that lands
+on an operator. A repository's stored dialect is internal to its own store and
 never appears on the wire; what
 [API discovery](api.md#discovery) reports is the binary's maximum, which is
-the number a client actually needs.
+the number a client actually needs. The next number is spent when a release
+changes what a stored declaration row holds, together with the step that
+rewrites the rows and stamps the new number in the same transaction.
 
 **Admission refuses narrowing.** A declaration change that would strand
 existing data is refused at admission, as a `guard` error naming every

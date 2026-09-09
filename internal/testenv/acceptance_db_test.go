@@ -27,7 +27,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -62,8 +61,8 @@ const (
 	drillAuthority = "drill.example.com"
 	drillPassword  = "correct-horse-battery-staple"
 
-	legacyAuthority = "legacy.example.com"
-	legacyPassword  = "another-correct-horse-battery"
+	secondAuthority = "second.example.com"
+	secondPassword  = "another-correct-horse-battery"
 
 	corePkg        = "substrate.reamde.dev/core"
 	googlePkg      = "providers.substrate.reamde.dev/google"
@@ -106,7 +105,7 @@ var (
 	fileKind     = drillAuthority + "/attach/file"
 	oauthKind    = drillAuthority + "/creds/oauthclient"
 	googleConfig = googlePkg + "/config"
-	legacyTask   = legacyAuthority + "/tasks/task"
+	secondTask   = secondAuthority + "/tasks/task"
 
 	// drillCollections is every collection the drill compares record by
 	// record.
@@ -683,14 +682,14 @@ type drill struct {
 	clock *engine.TestClock
 	embed *fakeEmbed
 
-	identity, legacyIdentity *age.X25519Identity
+	identity, secondIdentity *age.X25519Identity
 	keyA, keyB               string
 	rootA, dsnA              string
 	dbs                      map[string]*sql.DB
 
 	// The source substrate, its second user and the recorded state.
 	envA   *testenv.Env
-	legacy *testenv.Env
+	second *testenv.Env
 	source *state
 
 	// What stage 1 hands later stages by name.
@@ -709,8 +708,8 @@ type drill struct {
 	// Stage 2: the snapshot root and the recorded points.
 	snapRoot   string
 	snapHead   int64
-	legacyHead int64
-	legacyFold []byte
+	secondHead int64
+	secondFold []byte
 
 	// Stage 3: the rewrapped directory as it stood before the restore booted
 	// (pristine, copied for stages 5 and 6), the restored substrate and what
@@ -744,7 +743,7 @@ func TestReleaseAcceptanceDrill(t *testing.T) {
 		{"03 restore under another credential key with the recovery key", d.restore, []string{"02"}},
 		{"04 compare the restored substrate and resume dispatch", d.compareAndResume, []string{"03"}},
 		{"05 interrupt the import at batch boundaries and resume", d.interruptedImport, []string{"03"}},
-		{"06 restore the oldest accepted format and refuse a newer one", d.formatTransition, []string{"02", "03"}},
+		{"06 restore the second repository under both keys and refuse a newer manifest", d.secondRestore, []string{"02", "03"}},
 		{"07 a cursor from the replaced history is reset", d.replacedHistoryCursor, []string{"03", "04"}},
 	}
 	for _, s := range stages {
@@ -772,7 +771,7 @@ func (d *drill) buildSource(t *testing.T) {
 	// The drain buys the source's vectors, so the fixed queries are recorded
 	// over a full index.
 	drainEmbeds(t, ds)
-	d.writeLegacyRepository(t, e)
+	d.writeSecondRepository(t, e)
 	d.holdWebhook(t, e)
 
 	d.source = captureState(t, e, ds, d.scoped(t, d.dsnA, drillAuthority))
@@ -802,7 +801,7 @@ func (d *drill) seedSource(t *testing.T) *testenv.Env {
 	if d.identity, err = age.GenerateX25519Identity(); err != nil {
 		t.Fatal(err)
 	}
-	if d.legacyIdentity, err = age.GenerateX25519Identity(); err != nil {
+	if d.secondIdentity, err = age.GenerateX25519Identity(); err != nil {
 		t.Fatal(err)
 	}
 	d.keyA, d.keyB = testenv.MintCredentialKey(), testenv.MintCredentialKey()
@@ -1062,37 +1061,36 @@ func (d *drill) parkAutomations(t *testing.T, e *testenv.Env) substrate.Dataset 
 	return ds
 }
 
-// writeLegacyRepository registers a second user on the same substrate and
-// writes what a v0.47 binary could have: tasks, a cleared label, a sealed
-// value and a blob. Stage 6 takes its snapshot through the oldest format
-// the reader accepts.
-func (d *drill) writeLegacyRepository(t *testing.T, e *testenv.Env) {
+// writeSecondRepository registers a second user on the same substrate and
+// writes tasks, a cleared label, a sealed value and a blob. Stage 6 restores
+// its snapshot on two hosts.
+func (d *drill) writeSecondRepository(t *testing.T, e *testenv.Env) {
 	ctx := context.Background()
-	d.legacy = e.RegisterUser(legacyAuthority, legacyPassword, d.legacyIdentity.Recipient().String())
-	l := d.legacy.For(t)
+	d.second = e.RegisterUser(secondAuthority, secondPassword, d.secondIdentity.Recipient().String())
+	l := d.second.For(t)
 	for _, id := range sampleImports {
 		l.MustJSON(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/import", nil, nil)
 	}
 	for i, name := range []string{"first", "second", "third"} {
-		putRecord(t, l, legacyTask, fmt.Sprintf("l-%d", i), map[string]any{
-			"properties": map[string]any{"name": name, "description": "legacy " + name},
-			"labels":     map[string]any{"owner/legacy": true},
+		putRecord(t, l, secondTask, fmt.Sprintf("l-%d", i), map[string]any{
+			"properties": map[string]any{"name": name, "description": "second " + name},
+			"labels":     map[string]any{"owner/second": true},
 		})
 	}
-	patchRecord(t, l, legacyTask, "l-0", map[string]any{"labels": map[string]any{"owner/legacy": nil}})
-	putRecord(t, l, corePkg+"/llmprovider", "legacy-llm", map[string]any{"properties": map[string]any{
-		"label": "legacy", "wire": "openai", "baseURL": "https://llm.example.com/v1", "apiKey": "sk-legacy-value",
+	patchRecord(t, l, secondTask, "l-0", map[string]any{"labels": map[string]any{"owner/second": nil}})
+	putRecord(t, l, corePkg+"/llmprovider", "second-llm", map[string]any{"properties": map[string]any{
+		"label": "second", "wire": "openai", "baseURL": "https://llm.example.com/v1", "apiKey": "sk-second-value",
 	}})
-	if status, raw, _ := l.DoRaw(http.MethodPut, "/api/v1/blobs?name=legacy.txt", []byte("legacy bytes"),
+	if status, raw, _ := l.DoRaw(http.MethodPut, "/api/v1/blobs?name=second.txt", []byte("second bytes"),
 		map[string]string{"Content-Type": "text/plain"}); status != http.StatusCreated {
-		t.Fatalf("legacy blob: %d %s", status, raw)
+		t.Fatalf("the second repository's blob: %d %s", status, raw)
 	}
-	lds, err := e.Service.Dataset(ctx, legacyAuthority)
+	lds, err := e.Service.Dataset(ctx, secondAuthority)
 	if err != nil {
-		t.Fatalf("open the legacy dataset: %v", err)
+		t.Fatalf("open the second dataset: %v", err)
 	}
-	if d.legacyFold, err = lds.(folded).FoldSnapshot(ctx); err != nil {
-		t.Fatalf("legacy fold: %v", err)
+	if d.secondFold, err = lds.(folded).FoldSnapshot(ctx); err != nil {
+		t.Fatalf("the second repository's fold: %v", err)
 	}
 }
 
@@ -1150,16 +1148,16 @@ func (d *drill) stopAndSnapshot(t *testing.T) {
 		t.Errorf("the copy holds no bytes for %s: %v", d.blobDigest, err)
 	}
 
-	legacyReport, err := operator.(engine.Snapshotter).SnapshotRepository(ctx, legacyAuthority, d.snapRoot)
+	secondReport, err := operator.(engine.Snapshotter).SnapshotRepository(ctx, secondAuthority, d.snapRoot)
 	if err != nil {
-		t.Fatalf("snapshot %s: %v", legacyAuthority, err)
+		t.Fatalf("snapshot %s: %v", secondAuthority, err)
 	}
-	d.legacyHead = legacyReport.Head
-	if legacyReport.Repository != legacyAuthority {
-		t.Errorf("legacy snapshot report = %+v", legacyReport)
+	d.secondHead = secondReport.Head
+	if secondReport.Repository != secondAuthority {
+		t.Errorf("the second repository's snapshot report = %+v", secondReport)
 	}
 	t.Logf("snapshot: %s at seq %d (%d segments, %d sealed files, %d blobs); %s at seq %d",
-		drillAuthority, report.Head, report.Segments, report.SealedFiles, report.Blobs, legacyAuthority, legacyReport.Head)
+		drillAuthority, report.Head, report.Segments, report.SealedFiles, report.Blobs, secondAuthority, secondReport.Head)
 }
 
 // --- stage 3 --------------------------------------------------------------------
@@ -1619,111 +1617,104 @@ func (d *drill) interruptedImport(t *testing.T) {
 
 // --- stage 6 --------------------------------------------------------------------
 
-// formatTransition takes the legacy repository's snapshot through the oldest
-// format the reader accepts, the v0.47.0 through v0.51.0 directory: format 1
-// manifest stamped changelog dialect 2 with no vocabulary dialect, and lines
-// without a transaction frame (#363), the same fixture
-// internal/engine/manifest_db_test.go TestBootImportsAFormatOneDirectory
-// builds. The boot reads it directly under the key it was written with,
-// then a second copy goes through the rewrap under the other key. Then a
-// manifest above the binary's dialect is refused by name before any row
-// lands.
-func (d *drill) formatTransition(t *testing.T) {
+// secondRestore takes the second repository's snapshot back twice: once on a
+// host that still has the key it was written under, once through the rewrap
+// onto another host's key. Then a manifest above the binary's changelog
+// dialect is refused by name before any row lands.
+func (d *drill) secondRestore(t *testing.T) {
 	ctx := context.Background()
 
-	// The same-key restore: the boot's own reader imports format 1 and
-	// upgrades the manifest in place. No rewrap runs first, so a reader that
-	// stopped accepting format 1 fails here.
-	root := formatOneCopy(t, d.snapRoot)
-	dir, err := changelogfile.RepoDir(root, legacyAuthority)
+	// The same-key restore: the boot imports the directory as it stands.
+	root := copyRoot(t, d.snapRoot, secondAuthority)
+	dir, err := changelogfile.RepoDir(root, secondAuthority)
 	if err != nil {
 		t.Fatal(err)
 	}
 	dsn := testdb.NewSchema(t)
 	e := testenv.Start(t,
-		testenv.WithUser(legacyAuthority, legacyPassword), testenv.WithoutRegistration(),
+		testenv.WithUser(secondAuthority, secondPassword), testenv.WithoutRegistration(),
 		testenv.WithDSN(dsn), testenv.WithDataRoot(root), testenv.WithCredentialKey(d.keyA),
 		testenv.WithClock(d.clock.Now))
-	session := *d.legacy.Session
+	session := *d.second.Session
 	e.Session = &session
-	ds, err := e.Service.Dataset(ctx, legacyAuthority)
+	ds, err := e.Service.Dataset(ctx, secondAuthority)
 	if err != nil {
 		t.Fatalf("open the repository the boot imported from format 1: %v", err)
 	}
-	if upgraded, err := changelogfile.ReadManifest(dir); err != nil || upgraded.Format != changelogfile.ManifestFormat || upgraded.ChangelogDialect != 2 {
-		t.Errorf("manifest after the format-1 import = %+v (%v), want format %d at the manifest's dialect 2", upgraded, err, changelogfile.ManifestFormat)
+	if imported, err := changelogfile.ReadManifest(dir); err != nil || imported.Format != changelogfile.ManifestFormat ||
+		imported.ChangelogDialect != engine.MaxChangelogDialect() {
+		t.Errorf("manifest after the import = %+v (%v), want format %d at changelog dialect %d",
+			imported, err, changelogfile.ManifestFormat, engine.MaxChangelogDialect())
 	}
 	fold, err := ds.(folded).FoldSnapshot(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(fold, d.legacyFold) {
-		t.Errorf("the fold restored from format 1 is not the source's\n%s", firstDifference(d.legacyFold, fold))
+	if !bytes.Equal(fold, d.secondFold) {
+		t.Errorf("the restored fold is not the source's\n%s", firstDifference(d.secondFold, fold))
 	}
 	head, err := ds.Head(ctx)
-	if err != nil || head.Seq != d.legacyHead {
-		t.Errorf("head after the format-1 import = %d (%v), want %d", head.Seq, err, d.legacyHead)
+	if err != nil || head.Seq != d.secondHead {
+		t.Errorf("head after the import = %d (%v), want %d", head.Seq, err, d.secondHead)
 	}
-	scoped := d.scoped(t, dsn, legacyAuthority)
+	scoped := d.scoped(t, dsn, secondAuthority)
 	var stamped int
-	if err := scoped.QueryRowContext(ctx, `SELECT dialect FROM changelog_dialect`).Scan(&stamped); err != nil || stamped != 2 {
-		t.Errorf("changelog dialect after the import = %d (%v), want the manifest's 2", stamped, err)
+	if err := scoped.QueryRowContext(ctx, `SELECT dialect FROM changelog_dialect`).Scan(&stamped); err != nil || stamped != engine.MaxChangelogDialect() {
+		t.Errorf("changelog dialect after the import = %d (%v), want the manifest's %d", stamped, err, engine.MaxChangelogDialect())
 	}
 	d.clock.Advance(engine.TOTPPeriod)
-	if status, raw := e.Login(legacyAuthority, legacyPassword, e.TOTPCode()); status != http.StatusCreated {
-		t.Errorf("login on the format-1 restore: %d %s", status, raw)
+	if status, raw := e.Login(secondAuthority, secondPassword, e.TOTPCode()); status != http.StatusCreated {
+		t.Errorf("login on the restore: %d %s", status, raw)
 	}
-	if labels := labelsOf(t, getRecord(t, e, legacyTask, "l-0"), "l-0"); len(labels) != 0 {
-		t.Errorf("the cleared label came back through format 1: %v", labels)
+	if labels := labelsOf(t, getRecord(t, e, secondTask, "l-0"), "l-0"); len(labels) != 0 {
+		t.Errorf("the cleared label came back through the restore: %v", labels)
 	}
-	if labels := labelsOf(t, getRecord(t, e, legacyTask, "l-1"), "l-1"); labels["owner/legacy"] != true {
+	if labels := labelsOf(t, getRecord(t, e, secondTask, "l-1"), "l-1"); labels["owner/second"] != true {
 		t.Errorf("l-1 lost its label: %v", labels)
 	}
-	// The first write moves the stamp and the manifest together.
-	putRecord(t, e, legacyTask, "l-after", map[string]any{"properties": map[string]any{"name": "after"}})
+	// The restored repository takes writes.
+	putRecord(t, e, secondTask, "l-after", map[string]any{"properties": map[string]any{"name": "after"}})
 	if err := scoped.QueryRowContext(ctx, `SELECT dialect FROM changelog_dialect`).Scan(&stamped); err != nil || stamped != engine.MaxChangelogDialect() {
 		t.Errorf("changelog dialect after the first write = %d (%v), want %d", stamped, err, engine.MaxChangelogDialect())
 	}
-	if moved, err := changelogfile.ReadManifest(dir); err != nil || moved.ChangelogDialect != engine.MaxChangelogDialect() {
-		t.Errorf("manifest after the first write = %+v (%v), want changelog dialect %d", moved, err, engine.MaxChangelogDialect())
-	}
 
-	// The other-key restore of the same format: `repository rewrap` reads the
-	// format-1 manifest, opens the DEK with the recovery key and rewrites the
-	// manifest under the new host's key; the boot then imports it. A second
-	// copy, because the imported one above now holds a row wrapped under the
-	// first key.
-	rewrapRoot := formatOneCopy(t, d.snapRoot)
-	rewrapDir, err := changelogfile.RepoDir(rewrapRoot, legacyAuthority)
+	// The other-key restore: `repository rewrap` reads the manifest, opens the
+	// DEK with the recovery key and rewrites the manifest under the new host's
+	// key; the boot then imports it. A second copy, because the imported one
+	// above now holds a row wrapped under the first key.
+	rewrapRoot := copyRoot(t, d.snapRoot, secondAuthority)
+	rewrapDir, err := changelogfile.RepoDir(rewrapRoot, secondAuthority)
 	if err != nil {
 		t.Fatal(err)
 	}
-	report, err := engine.RewrapRepositoryDir(rewrapDir, d.legacyIdentity.String(), d.keyB)
+	report, err := engine.RewrapRepositoryDir(rewrapDir, d.secondIdentity.String(), d.keyB)
 	if err != nil {
-		t.Fatalf("rewrap the format-1 directory: %v", err)
+		t.Fatalf("rewrap the directory: %v", err)
 	}
-	if report.Repository != legacyAuthority {
+	if report.Repository != secondAuthority {
 		t.Errorf("rewrap report = %+v", report)
 	}
-	if rewrapped, err := changelogfile.ReadManifest(rewrapDir); err != nil || rewrapped.Format != changelogfile.ManifestFormat || rewrapped.ChangelogDialect != 2 {
-		t.Errorf("the rewrapped manifest = %+v (%v), want format %d at changelog dialect 2", rewrapped, err, changelogfile.ManifestFormat)
+	if rewrapped, err := changelogfile.ReadManifest(rewrapDir); err != nil || rewrapped.Format != changelogfile.ManifestFormat ||
+		rewrapped.ChangelogDialect != engine.MaxChangelogDialect() {
+		t.Errorf("the rewrapped manifest = %+v (%v), want format %d at changelog dialect %d",
+			rewrapped, err, changelogfile.ManifestFormat, engine.MaxChangelogDialect())
 	}
 	rewrapped, err := engine.Open(ctx, testdb.NewSchema(t), engine.WithKindsFS(kinds.Seed()),
 		engine.WithDataRoot(rewrapRoot), engine.WithCredentialKey(d.keyB), engine.WithTestTOTPClock(d.clock.Now))
 	if err != nil {
-		t.Fatalf("boot on the rewrapped format-1 directory: %v", err)
+		t.Fatalf("boot on the rewrapped directory: %v", err)
 	}
 	defer func() { _ = rewrapped.Close() }()
-	rds, err := rewrapped.Dataset(ctx, legacyAuthority)
+	rds, err := rewrapped.Dataset(ctx, secondAuthority)
 	if err != nil {
 		t.Fatalf("open the rewrapped repository: %v", err)
 	}
-	if rfold, err := rds.(folded).FoldSnapshot(ctx); err != nil || !bytes.Equal(rfold, d.legacyFold) {
-		t.Errorf("the fold restored from the rewrapped format-1 directory is not the source's (%v)\n%s", err, firstDifference(d.legacyFold, rfold))
+	if rfold, err := rds.(folded).FoldSnapshot(ctx); err != nil || !bytes.Equal(rfold, d.secondFold) {
+		t.Errorf("the fold restored from the rewrapped directory is not the source's (%v)\n%s", err, firstDifference(d.secondFold, rfold))
 	}
 	d.clock.Advance(engine.TOTPPeriod)
-	if _, _, err := rewrapped.Login(ctx, substrate.LoginInput{Repository: legacyAuthority, Password: legacyPassword, TOTPCode: d.legacy.For(t).TOTPCode(), Label: "rewrapped"}); err != nil {
-		t.Errorf("login on the rewrapped format-1 restore: %v", err)
+	if _, _, err := rewrapped.Login(ctx, substrate.LoginInput{Repository: secondAuthority, Password: secondPassword, TOTPCode: d.second.For(t).TOTPCode(), Label: "rewrapped"}); err != nil {
+		t.Errorf("login on the rewrapped restore: %v", err)
 	}
 
 	// A directory a NEWER binary wrote refuses the boot by name, before any
@@ -1954,7 +1945,7 @@ func recordPath(kind, id string) string {
 }
 
 // putRecord, patchRecord and deleteRecord are the three writes every
-// repository in the drill goes through, so the legacy repository is written
+// repository in the drill goes through, so the second repository is written
 // by the same path as the source. Each returns the record the door answered.
 func putRecord(t *testing.T, e *testenv.Env, kind, id string, body map[string]any) map[string]any {
 	t.Helper()
@@ -2339,103 +2330,6 @@ func patchedSeedTree(t testing.TB, file string) (string, int64) {
 // reDeclaredVersion is a declaration's own version line, at the `data:`
 // block's indentation, so a property named `version` is never the match.
 var reDeclaredVersion = regexp.MustCompile(`\n  version: (\d+)\n`)
-
-// formatOneCopy copies the legacy repository out of the snapshot root as a
-// v0.47.0 through v0.51.0 binary would have written it: lines without a
-// transaction frame, a format-1 manifest, no snapshot.json. It is the
-// fixture internal/engine/manifest_db_test.go builds for
-// TestBootImportsAFormatOneDirectory: current payloads on format-1 lines.
-func formatOneCopy(t *testing.T, snapRoot string) string {
-	t.Helper()
-	root := copyRoot(t, snapRoot, legacyAuthority)
-	dir, err := changelogfile.RepoDir(root, legacyAuthority)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m, err := changelogfile.ReadManifest(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	unframeChangelog(t, changelogfile.ChangelogDir(dir))
-	writeFormatOneManifest(t, dir, m)
-	if err := os.Remove(filepath.Join(dir, changelogfile.SnapshotName)); err != nil {
-		t.Fatal(err)
-	}
-	return root
-}
-
-// unframeChangelog re-encodes a changelog directory without transaction
-// frames, the lines v0.46.0 through v0.51.0 wrote, recomputing each
-// checksum, and checks the written lines carry no frame key.
-func unframeChangelog(t *testing.T, dir string) {
-	t.Helper()
-	reader, err := changelogfile.OpenReadOnly(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var entries []changelogfile.Entry
-	if err := reader.Walk(func(e changelogfile.Entry) error {
-		e.Payload = slices.Clone(e.Payload)
-		e.Txn = 0
-		entries = append(entries, e)
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.RemoveAll(dir); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	w, err := changelogfile.OpenWriter(dir, changelogfile.WriterOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := w.Append(entries); err != nil {
-		t.Fatal(err)
-	}
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
-	}
-	segments, err := changelogfile.Segments(dir)
-	if err != nil || len(segments) == 0 {
-		t.Fatalf("the rewritten changelog has no segment: %v", err)
-	}
-	raw, err := os.ReadFile(filepath.Join(dir, segments[0].Name))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for i, line := range bytes.Split(bytes.TrimSpace(raw), []byte("\n")) {
-		if bytes.Contains(line, []byte(`"txn"`)) {
-			t.Fatalf("line %d of the format-1 fixture carries a transaction frame: %s", i+1, line)
-		}
-	}
-}
-
-// writeFormatOneManifest writes the manifest v0.47.0 through v0.51.0 wrote:
-// format 1, changelog dialect 2, no vocabulary dialect, no key id, no marker.
-func writeFormatOneManifest(t *testing.T, dir string, m changelogfile.Manifest) {
-	t.Helper()
-	raw, err := json.MarshalIndent(map[string]any{
-		"format": 1, "username": "ada", "authority": m.Authority,
-		"createdAt": m.CreatedAt.Format(changelogfile.TSFormat), "changelogDialect": 2,
-		"dek": base64.StdEncoding.EncodeToString(m.DEK),
-	}, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, changelogfile.ManifestName), raw, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	got, err := changelogfile.ReadManifest(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Format != 1 || got.ChangelogDialect != 2 || got.VocabularyDialect != 0 {
-		t.Fatalf("the fixture's manifest is not the format-1 shape: %+v", got)
-	}
-}
 
 // --- diffing ---------------------------------------------------------------------------
 

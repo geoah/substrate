@@ -341,7 +341,7 @@ the invite code is the only door and there is nothing else to record.`,
 					out = append(out, map[string]any{
 						"authority": r.ID,
 						"createdAt": r.CreatedAt.Format(time.RFC3339),
-						"dekKeyId":  r.DEKKeyID, "sealedDekOnly": r.SealedDEKOnly,
+						"dekKeyId":  r.DEKKeyID,
 					})
 				}
 				return printJSON(a.out, out)

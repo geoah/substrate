@@ -25,7 +25,7 @@ func TestFSStore(t *testing.T) {
 	b := newFS(t)
 	conformance(t, func(t *testing.T, repository string) blobbytes.Store {
 		t.Helper()
-		s, err := b.Repository(repository, nil)
+		s, err := b.Repository(repository)
 		if err != nil {
 			t.Fatalf("bind %s: %v", repository, err)
 		}
@@ -38,13 +38,13 @@ func TestFSRepositoryIsolation(t *testing.T) {
 	b := newFS(t)
 	repositoryIsolation(t, func(t *testing.T, repository string) blobbytes.Store {
 		t.Helper()
-		s, err := b.Repository(repository, nil)
+		s, err := b.Repository(repository)
 		if err != nil {
 			t.Fatalf("bind %s: %v", repository, err)
 		}
 		return s
 	})
-	refuseBadRepository(t, b, nil)
+	refuseBadRepository(t, b)
 }
 
 func TestFSRefusesARelativeRoot(t *testing.T) {
@@ -66,7 +66,7 @@ func TestFSKeyShapeAndModes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open the fs backend: %v", err)
 	}
-	s, err := b.Repository("repokeys.example.com", nil)
+	s, err := b.Repository("repokeys.example.com")
 	if err != nil {
 		t.Fatalf("bind: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestFSKeyShapeAndModes(t *testing.T) {
 func TestFSList(t *testing.T) {
 	t.Parallel()
 	b := newFS(t)
-	s, err := b.Repository("repolist.example.com", nil)
+	s, err := b.Repository("repolist.example.com")
 	if err != nil {
 		t.Fatalf("bind: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestFSListSkipsWhatIsNotABlob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open the fs backend: %v", err)
 	}
-	s, err := b.Repository("repostray.example.com", nil)
+	s, err := b.Repository("repostray.example.com")
 	if err != nil {
 		t.Fatalf("bind: %v", err)
 	}

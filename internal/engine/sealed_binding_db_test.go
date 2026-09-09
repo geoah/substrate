@@ -3,12 +3,11 @@ package engine
 // A sealed payload binds to the address it was written at (ADR 0023): moving a
 // row's ciphertext onto another row fails the open, and the re-key that
 // recovery enrollment runs leaves an already-bound store byte-identical. These
-// are INTERNAL tests: they reach openSecretValue and rekeySealedStore directly
+// are INTERNAL tests: they reach openSecretValue directly
 // and plant bytes in the sealed table the way an attacker with table write
 // access would.
 
 import (
-	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -79,77 +78,6 @@ func TestSealedPayloadDoesNotOpenAtAnotherRow(t *testing.T) {
 	if got, err := ds.openSecretValue(ctx, refA); err != nil || got != "secret-a" {
 		t.Fatalf("row A stopped opening after the move: got %q err %v", got, err)
 	}
-}
-
-// TestRekeyIsIdempotentOnBoundStore re-keys twice: the first pass upgrades a
-// planted unbound legacy row and leaves the rest, the second moves nothing and
-// leaves every payload byte-identical.
-func TestRekeyIsIdempotentOnBoundStore(t *testing.T) {
-	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	ctx := context.Background()
-	ds := openInternalDataset(t)
-
-	refA := putProviderSecret(t, ds, "a", "secret-a")
-	putProviderSecret(t, ds, "b", "secret-b")
-
-	// Plant an unbound `s`-framed payload at row A, as a pre-binding release
-	// wrote it: DEK-sealed with no additional data.
-	aead, err := aeadOf(ds.dek)
-	if err != nil || aead == nil {
-		t.Fatalf("build DEK aead: %v", err)
-	}
-	legacy, err := sealWith(aead, []byte("secret-a"), nil)
-	if err != nil {
-		t.Fatalf("seal legacy payload: %v", err)
-	}
-	if legacy[0] != credSealed {
-		t.Fatalf("legacy payload is not unbound-framed: %q", legacy)
-	}
-	if _, err := ds.db.ExecContext(ctx, `UPDATE sealed SET payload = $1 WHERE ref = $2`, legacy, refA); err != nil {
-		t.Fatalf("plant legacy payload at row A: %v", err)
-	}
-
-	// First re-key: only the legacy row moves; the bound rows are skipped.
-	if n := rekeySealed(t, ctx, ds); n != 1 {
-		t.Fatalf("first re-key moved %d rows, want 1 (the legacy)", n)
-	}
-	before := snapshotSealed(t, ctx, ds)
-
-	// Second re-key on an all-bound store: nothing moves, nothing changes.
-	if n := rekeySealed(t, ctx, ds); n != 0 {
-		t.Fatalf("second re-key moved %d rows, want 0", n)
-	}
-	after := snapshotSealed(t, ctx, ds)
-	if len(before) != len(after) {
-		t.Fatalf("row count changed under an idempotent re-key: %d -> %d", len(before), len(after))
-	}
-	for ref, payload := range before {
-		if !bytes.Equal(payload, after[ref]) {
-			t.Fatalf("row %s changed under an idempotent re-key", ref)
-		}
-	}
-
-	if got, err := ds.openSecretValue(ctx, refA); err != nil || got != "secret-a" {
-		t.Fatalf("row A does not open after the re-key: got %q err %v", got, err)
-	}
-}
-
-// rekeySealed runs one rekeySealedStore pass in a raw transaction and returns
-// the number of rows it moved.
-func rekeySealed(t *testing.T, ctx context.Context, ds *dataset) int {
-	t.Helper()
-	var n int
-	if err := ds.inRawTx(ctx, func(tx *txn) error {
-		var err error
-		n, err = tx.rekeySealedStore()
-		return err
-	}); err != nil {
-		t.Fatalf("re-key sealed store: %v", err)
-	}
-	return n
 }
 
 // snapshotSealed reads every sealed row's payload, keyed by ref.

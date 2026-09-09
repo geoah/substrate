@@ -380,10 +380,7 @@ discharged.
   idempotent where it may meet a schema that already has the change.
   `mise run frozen:check` refuses the edit, the delete and the rename;
   `mise run lint:migrations` holds the naming and numbering, because a file the
-  runner cannot parse is a step that silently never runs. The one sanctioned
-  exception, a migration corrected before it landed, is `supersededSHA256` in
-  `internal/engine/migrate.go` together with the later migration that closes
-  the gap.
+  runner cannot parse is a step that silently never runs.
 - **`lint:docs` is the one docs linter**, and it holds two halves. What the
   pages point at: every Markdown link and `#anchor` resolves against the tree,
   offline, so renaming a doc or a heading means fixing what points at it, and

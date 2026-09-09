@@ -120,11 +120,9 @@ func TestBothViewsLoad(t *testing.T) {
 // to keep its own names apart; installing two third-party bundles that collide
 // is a known issue, shipping two that do is a bug.
 // THE SHIPPED TREE IS AUTHORED IN THE DECLARED SPELLING. The loader admits one
-// spelling per key and refuses each pre-typed one by name, so a tree document
-// left in an old spelling does not store as something other than what it says: it
-// does not load at all. Nothing understands those spellings any more: the
-// dialect-1 grammar that read the ROWS an older binary stored was deleted with
-// its rung (#217).
+// spelling per key and refuses each retired one by name, so a tree document
+// left in an old spelling does not store as something other than what it says:
+// it does not load at all. Nothing understands those spellings any more.
 //
 // The test still earns its keep for what it says when that happens. A load
 // failure names one key inside one closure; this names the document (its kind and
