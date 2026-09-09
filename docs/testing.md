@@ -73,7 +73,7 @@ mise run test:db:engine                # about 70 s on 16 cores; the answer you 
 go test ./internal/engine/ -run TestFold -v
 ```
 
-The engine package is 830 top-level tests: about 70 s of wall time on a 16
+The engine package is about 850 top-level tests: about 70 s of wall time on a 16
 core machine (measured 2026-09-08, down from 134 s the same day; the section
 below says where the time went), and longer on a 4 vCPU CI runner (six to
 eight minutes before that change; a shard's log says what it is now), so the
@@ -106,7 +106,7 @@ keyed on one constant, so the parallel suite ran its migrations one test at
 a time: 90% of Postgres's time in a run was that lock. The lock is keyed on
 `current_schema()` now, like the engine's other three (no effect on a
 deployment, one schema per database), which is what the packages still on
-`testdb.NewSchema` (catalog, testenv, substratectl) get. The from-empty
+`testdb.NewSchema` (blobbytes, catalog, testenv, substratectl) get. The from-empty
 migration still runs three times per engine binary: the template build,
 `TestRepositoryProvisioningAndProjections` and
 `TestAssertPoolPrincipalRejectsSuperuser`.
@@ -186,9 +186,9 @@ case goes from passing to skipping, and the build stays green.
 `SUBSTRATE_TEST_REQUIRE_SANDBOX=1` closes that. The guards fail instead of
 skipping, and `internal/sandboxtest` counts, so a run that skipped its way to
 zero cases cannot exit 0 either. Each package's `TestMain` declares how many
-cases guard on the confinement, eight in `internal/runner` and four in
-`internal/sandbox`, and the count is held to that **exactly**: adding a ninth
-case, or deleting one of the eight, fails until the number moves with it. A
+cases guard on the confinement, ten in `internal/runner` and four in
+`internal/sandbox`, and the count is held to that **exactly**: adding an
+eleventh case, or deleting one of the ten, fails until the number moves with it. A
 case that passes the guard and then skips on a precondition of its own (a uid
 that cannot make a device node, a probe that will not build) counts as guarded
 but not as asserted, and at least one case must have asserted.
@@ -436,10 +436,12 @@ half of that again.
 `changes` is the path gate. `.mise/changescheck.sh` diffs the merge base with
 the PR's base branch against the tree and answers `go=false` only when every
 changed file matches a pattern nothing a Go test reads: `docs/`,
-`web/console/`, `.github/` other than `ci.yml`, `*.md`, and the root linter,
-release and image configs. `kinds/` and `samples/` are embedded whole, so any
-file under them counts, and an unmatched file counts, because a needless run
-is cheaper than a red test merged green. The diff is read with `--no-renames`,
+`web/console/` (except `wire.golden.json` and `record-schema.ts`, which Go
+tests read), `.github/` other than `ci.yml`, `*.md`, the root linter configs,
+`Dockerfile.release` and `compose.yaml`. `Dockerfile` and `.goreleaser.yaml`
+count as relevant because `internal/build` reads them. `kinds/` and `samples/`
+are embedded whole, so any file under them counts, and an unmatched file
+counts, because a needless run is cheaper than a red test merged green. The diff is read with `--no-renames`,
 so a Go file moved onto an inert path is seen on both sides, and a base the
 script cannot resolve fails the job rather than answering `false`. `go test`
 and the engine shards carry `if: needs.changes.outputs.go == 'true'`. A push

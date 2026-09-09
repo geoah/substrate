@@ -169,11 +169,7 @@ that hash. The old values stay in the changelog either way; a lossy step
 removes them from the fold and nothing erases them. A plan whose `work` is
 above the deployment's ceiling (`SUBSTRATE_CONVERSION_CEILING`, 10000 records
 by default, [operations](operations.md#configuration)) is refused and the
-preview lists the refusal among `blockers`. The import door takes the same
-body, but a sample has no preview yet, so a lossy re-import of one is refused
-with the `403` naming the `planHash` and `changelogSeq` it would take;
-confirming it through the catalog preview arrives with the sample preview of
-[#386](https://github.com/geoah/substrate/issues/386).
+preview lists the refusal among `blockers`.
 
 The seeded `core` package is not a catalog entry, so its preview is its own
 read: `GET /api/v1/vocabulary/upgrade` answers one entry per package the
@@ -400,7 +396,7 @@ data:
 
 The **Connections** view in the console is a cross-bundle operational
 surface over every such account, one row per account, read from the native
-`accountconfig` records that integration bundles ship. It pages every
+`accountconfig` records that provider bundles ship. It pages every
 implementor of the `accountconfig` trait, which is a plain query
 (`GET …/substrate.reamde.dev/core/trait/{id}/records`, with
 `…/trait/{id}/implementors` for the kinds themselves), because implementing a

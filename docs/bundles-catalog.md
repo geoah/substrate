@@ -62,7 +62,7 @@ thing, and the Records column counts them.
 
 ## LLM (sample)
 
-Package `samples.substrate.reamde.dev/llm`. Install this bundle first if
+Package `samples.substrate.reamde.dev/llm`. Import this bundle first if
 you want to run an agent at all. A fresh substrate seeds no `llmprovider` row,
 so this bundle ships the two an agent can name (`anthropic` and `openai`),
 correctly shaped for their wires and deliberately keyless, plus a `scratchpad`
@@ -83,24 +83,24 @@ kind to practise on and six agents:
   summarizer is `hiddenFromChat`: off the chat list, callable only by other
   agents.
 
-Installing it gives you rows that refuse until you key them. The key is a
+Importing it gives you rows that refuse until you key them. The key is a
 record write: **Data → llmproviders → `anthropic` → Edit**, put it in `apiKey`,
 apply. It is secret-typed, so it reads back redacted from then on and rotating
-it is the same write again. The `openai` row is the other wire, and with an
-empty `baseURL` it resolves to the host's configured gateway:
-[providers](agents.md#providers) has the host-gateway rule, the wires, and
-pricing.
+it is the same write again. The `openai` row is the other wire, pointed at
+`https://api.openai.com/v1` and re-pointable at any gateway that speaks it;
+an `openai` row needs a `baseURL`, and every row needs its own `apiKey`:
+[providers](agents.md#providers) has the wires and pricing.
 
 ## Notes (sample)
 
 Package `samples.substrate.reamde.dev/notes`. The smallest bundle that shows
 an agent calling functions as tools and delegating to a sub-agent, and the one
 to read first. It needs no network, no credentials and no other bundle's
-vocabulary, so it installs on a fresh substrate and is driven by hand in one
+vocabulary, so it imports on a fresh substrate and is driven by hand in one
 command, and its two functions stand on their own with no model at all:
 
 ```bash
-substratectl apply -f samples/notes/bundle.yaml
+substratectl import samples.substrate.reamde.dev/notes   # or: apply --as-mine -f samples/notes/bundle.yaml
 substratectl function call stats --input '{"text": "hello world"}'
 ```
 
