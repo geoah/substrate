@@ -267,7 +267,7 @@ func (t *txn) checkID(typ, id string) error {
 		return err
 	}
 	if former != "" {
-		return fmt.Errorf("%w: %s is a former id of %s: write to the canonical id", substrate.ErrConflict, id, former)
+		return fmt.Errorf("%w: %s is a former id of %s; ids are never reused", substrate.ErrConflict, id, former)
 	}
 	return nil
 }

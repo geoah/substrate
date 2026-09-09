@@ -63,6 +63,17 @@ func (ds *dataset) gcPass(ctx context.Context) (int, error) {
 	for _, v := range victims {
 		err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 			ref := eref{Kind: v.typ, ID: v.id}
+			// The record's advisory lock before its row lock, the order every
+			// addressed write keeps for the record it addresses (checkID,
+			// lockCanonical), under the changelog lock inTx took first. The
+			// victim is then locked the way a write locks it, so the global
+			// lock order (rows.go changelogLockKey) has no exception at this
+			// record. A put at this id either restores the tombstone before
+			// the sweep runs, and the reload below skips the live row, or
+			// creates a fresh record after the purge.
+			if err := t.lockRecord(ref); err != nil {
+				return err
+			}
 			row, err := t.loadRow(ref, true)
 			if err != nil || row == nil {
 				return err

@@ -297,11 +297,9 @@ func (t *txn) lockEffectTargets(effects []effect) error {
 func (t *txn) applyEffect(ef effect) error {
 	switch ef.Action {
 	case effectPut:
-		// A put addressed to a former id resolves onto the canonical winner: a
-		// function's deterministic ids must survive a merge, so a delivery at
-		// the loser's id lands on the winner instead of being refused as a
-		// former id. An id is stable while its record exists; after a purge
-		// it is free again, and a put there creates a fresh record.
+		// A put addressed to a former id resolves onto the canonical winner:
+		// a function's deterministic ids must survive a merge — parking every
+		// later delivery on "ids are never reused" is the trap this closes.
 		// The per-record advisory lock is taken BEFORE the trail resolves and
 		// the resolution re-checked under it (lockCanonical), so a concurrent
 		// merge can never slip between resolve and apply and get its loser
