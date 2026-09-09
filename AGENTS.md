@@ -38,8 +38,8 @@ mise run test           # the whole Go suite, in its two halves
 mise run test:short     # skips every suite that wants a database
 mise run test:race      # the short suite under the race detector
 mise run test:coverage  # both halves, with a profile -> coverage.out
-mise run lint           # every linter: Go, YAML, shell, Python, the docs, the pins
-mise run lint:go        # one of them; :yaml/:shell/:python/:docs/:toolchain are the rest
+mise run lint           # every linter: Go, YAML, shell, Python, the docs, the migrations, the sandbox gate, the toolchain pins, the CI scripts
+mise run lint:go        # one of them; :yaml/:shell/:python/:docs/:migrations/:sandboxgate/:toolchain/:ci are the rest
 mise run audit          # the vulnerability scans: govulncheck and pnpm audit
 mise run fmt            # every formatter, in place: gofumpt/goimports and yamlfmt
 mise run fmt:check      # the same, as a check — what CI runs
@@ -48,7 +48,7 @@ mise run ci             # every CI job, locally. The whole pipeline.
 ```
 
 **A bare task name is every check of its kind**, and a suffix narrows it to
-one language: `lint` is all six linters, `lint:go` is one of them; `fmt`
+one language: `lint` is all nine linters, `lint:go` is one of them; `fmt`
 writes Go and YAML, `fmt:yaml` writes one; `fmt:check` is the pair as a check.
 Nothing is reachable only through the aggregate. The console is not one of
 those suffixes — it is a second toolchain with its own family (`console:lint`,
@@ -188,7 +188,9 @@ Everything — vocabulary declarations and data records alike — is one YAML do
 with **four** keys, `kind` / `metadata` / `data` / `status`. `kind` is the
 record's kind REFERENCE (`samples.substrate.reamde.dev/people/person`; every
 kind carries an authority and a package), `metadata.id` the record id,
-`data.properties` the declared properties with `data.edges` beside them —
+`data.properties` the declared properties, references included (a reference
+is a property,
+[0044](docs/decisions/0044-a-reference-is-the-only-link-between-records.md)) —
 properties are NOT written straight onto `data`, and the CLI refuses a document
 that tries — and `status` is server-owned, ignored on input, so
 `get -o yaml` output is directly `apply -f`-able.
@@ -215,8 +217,8 @@ words, and what each one replaced:
 | **bundle**    | the install unit, named for the package it ships; `/bundles`, and the `bundle` tier | extension |
 | **provider**  | a catalog tier: a package a publisher owns, INSTALLED under the authority that publishes it | integration |
 | **sample**    | the other catalog tier: a package the user copies, IMPORTED under the repository's own authority | example, vocabulary bundle |
-| **input**     | a bundle's named configuration need; one record resolves per input (bound edge, the id `default`, then the sole record) | config, configType, singleton |
-| **edge**      | a named (`rel`), directed link between records              | relationship |
+| **input**     | a bundle's named configuration need; one record resolves per input (bound reference, the id `default`, then the sole record) | config, configType, singleton |
+| **reference** | a typed pointer at one record, declared as a property and stored as `{ref: <kind>/<id>}` | relationship, edge |
 
 `docs/terms.md` is the full list, and it is the one the docs are held to.
 
@@ -304,9 +306,9 @@ discharged.
   Additive changes (new kind, new optional property, new enum value, new
   state) upgrade cleanly; narrowings (drop, retype, remove a value, add
   `required`) are refused while live records hold the old shape, so prefer
-  add-and-deprecate. `deprecated: true` is the marker, on a property, an
-  edge or one enum value. CI runs `mise run kinds:check` and refuses the merge
-  otherwise.
+  add-and-deprecate. `deprecated: true` is the marker, on a property, a
+  reference or one enum value. CI runs `mise run kinds:check` and refuses the
+  merge otherwise.
 - **A kind titles itself from a property it declares.** The built-in `title`
   every record carries is derived storage, never a kind's input: a kind with a
   heading declares its own property (`name`, `summary`, `subject`) and renders
@@ -364,7 +366,7 @@ discharged.
   `mise run version:next` says what main would release right now.
 - Keep `mise run lint` and `mise run fmt:check` at zero. Both are aggregates,
   and the `lint` job runs both: `lint` is Go, YAML, shell, Python, the docs,
-  the migrations and the toolchain pins, `fmt:check` is Go and YAML. The console has its own pair
+  the migrations, the sandbox gate, the toolchain pins and the CI scripts, `fmt:check` is Go and YAML. The console has its own pair
   (`console:lint`, `console:fmt:check`) inside `ci:console`.
 - **A landed migration is never edited.** `internal/engine/migrations/` is
   append-only: the runner records each file's sha256 as it applies it and

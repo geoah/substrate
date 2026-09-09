@@ -3,9 +3,14 @@
 Every repository is seeded at creation with **`substrate.reamde.dev/core` and nothing
 else** — the substrate's own machinery, including the delivery plumbing and the
 agent runtime's data. Everything else is a **sample you import**: people,
-tasks, messaging, calendar, and the mneme-ported health, fitness, routines,
-journal, places, food and commerce. Each ships in the binary under
-`samples.substrate.reamde.dev` and is a starting point, not a dependency
+tasks, messaging, calendar, scheduling (the two traits the repeating kinds
+bind), the mneme-ported health, fitness, routines, journal, places, food and
+commerce, and the function and agent examples notes, llm, web and firecrawl
+(each described with its functions in the
+[bundles catalog](bundles-catalog.md)) and pebble
+([samples/pebble/README.md](../samples/pebble/README.md)). Each ships in the
+binary under `samples.substrate.reamde.dev` and is a starting point, not a
+dependency
 ([decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)):
 importing rewrites the closure onto **your own authority**, so
 `samples.substrate.reamde.dev/tasks/task` lands as `ada.example.com/tasks/task`
@@ -65,6 +70,17 @@ value says so and falls back to they/them.
 | `emailthread`         | One mail thread.                                                       |
 | `emailmessage`        | One mail message in a thread.                                          |
 
+## samples.substrate.reamde.dev/scheduling (a sample)
+
+Traits only, no kinds. `calendar`, `tasks`, `health`, `fitness` and `routines`
+`require` it and bind its two traits across packages, the way every package
+binds core's `temporal` ([traits](traits.md)).
+
+| Trait           | What it is                                                                                                                         |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `recurring`     | An RFC 5545 RRULE the substrate stores and never expands: `recurrence`, `rdates`, `exdates`, `timezone`.                           |
+| `occurrencelog` | The done-or-skipped mark against one occurrence of a recurring record: `status`, `scheduledAt`, `details`. Absence means missed.   |
+
 ## samples.substrate.reamde.dev/calendar (a sample)
 
 | Kind                  | What it is                                                              |
@@ -89,7 +105,7 @@ Like every suggested mapping it lands only where the Linear provider is already
 installed, and importing this sample again is what lands it afterwards
 ([suggested mappings](bundles.md#suggested-mappings)).
 
-Seven further vocabulary bundles are ported from mneme v4. The recurring
+Seven further samples are ported from mneme v4. The recurring
 kinds share one stance: a schedule stores an RFC 5545 RRULE the substrate
 never expands, an occurrence exists only when a log records it, and "missed"
 is computed from absence, never stored.
@@ -161,7 +177,7 @@ speaks:
 | `repository`         | The repository describing itself from the inside: its id, the owning username, the authority it owns, and a lifecycle state.                        |
 | `credential`         | The one record (id `self`) holding your auth material by reference into the sealed store ([users and tokens](auth.md)).                                         |
 | `recoverykey`        | The one record (id `self`) holding the age recipient the user enrolled and the repository's data-encryption key wrapped to it; only the user's age identity opens the wrap.  |
-| `token`              | One bearer credential: label, optional expiry, coarse last-used, and the hash of its secret.                                                        |
+| `token`              | One bearer credential: label, optional expiry, and the hash of its secret.                                                                          |
 | `actor`              | One declared actor, the name writes are attributed to, and the tier it writes at.                                                                   |
 | `agent`              | One declared agent: an LLM-loop callable ([agents](agents.md)).                                                                                    |
 | `blob`               | One content-addressed blob: the manifest is the metadata, the bytes live in the byte store; the digest is the id.                                   |
@@ -178,14 +194,14 @@ console-editable and changelog-visible like anything else
 | Kind      | What it is                                                                                                             |
 | --------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `trigger` | One binding of a source (a record subscription, a schedule, or a public webhook endpoint) to one callable, owning the delivery cursor. |
-| `run`     | One settled trigger delivery attempt, the run ledger's row.                                                            |
+| `run`     | One trigger delivery attempt, written after it settles: the delivery ledger's row. Parked runs stay until retried away; the rest are pruned to the newest few per trigger. |
 
 So is the agent runtime's data. **Agents are alpha**, so these four are a
 preview, unfrozen at v1 and not part of the frozen core:
 
 | Kind             | What it is                                                                                       |
 | ---------------- | ------------------------------------------------------------------------------------------------ |
-| `llmprovider`    | One place completions are bought: `wire` (enum), `baseURL`, `apiKey`, `headers` and `pricing` (repeated objects), `defaults` (object). |
+| `llmprovider`    | One place completions are bought: `label`, `wire` (enum), `baseURL`, `apiKey`, `embedModel`, `headers` and `pricing` (repeated objects), `defaults` (object). |
 | `llmthread`      | One agent run's conversation state, written as the loop runs — its `provider` and `model` included. |
 | `llmmessage`     | One turn in a thread, with its tool-call audit.                                                  |
 | `llminteraction` | One batch of questions an agent asked the user, waiting in the thread it came from; answering or dismissing it is one reviewed owner transition that resumes the agent. Landed by the `ask` built-in. |
