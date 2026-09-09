@@ -88,10 +88,10 @@ func seededRepository(t *testing.T) (dsn string) {
 	t.Helper()
 	ctx := context.Background()
 	svc, dsn := newService(t)
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
@@ -114,7 +114,7 @@ func openMoved(t *testing.T, dsn, tree string) error {
 		return err
 	}
 	defer func() { _ = svc.Close() }()
-	_, err = svc.Dataset(context.Background(), testdb.Username(t))
+	_, err = svc.Dataset(context.Background(), testdb.Repository(t))
 	return err
 }
 
@@ -152,7 +152,7 @@ func stillSpeaksTheOldShape(t *testing.T, dsn string) {
 		t.Fatalf("reopen: %v", err)
 	}
 	defer func() { _ = svc.Close() }()
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestBootUpgradeRefusesAnUnstorableDefault(t *testing.T) {
 		t.Fatalf("reopen: %v", err)
 	}
 	defer func() { _ = svc.Close() }()
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
@@ -252,7 +252,7 @@ func providerWrite(t *testing.T, dsn, id string, props map[string]any) error {
 		t.Fatalf("reopen: %v", err)
 	}
 	defer func() { _ = svc.Close() }()
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
@@ -289,7 +289,7 @@ func openRefused(t *testing.T, dsn, tree string) string {
 		t.Fatalf("a refused upgrade must not fail the open: %v", err)
 	}
 	defer func() { _ = svc.Close() }()
-	if _, err := svc.Dataset(context.Background(), testdb.Username(t)); err != nil {
+	if _, err := svc.Dataset(context.Background(), testdb.Repository(t)); err != nil {
 		t.Fatalf("a refused upgrade must not fail the open: %v", err)
 	}
 	return refused
@@ -450,7 +450,7 @@ func TestBootUpgradeRefusesARetiredName(t *testing.T) {
 		t.Helper()
 		svc := openTree(t, dsn, shippedTree(t))
 		defer func() { _ = svc.Close() }()
-		ds, err := svc.Dataset(ctx, testdb.Username(t))
+		ds, err := svc.Dataset(ctx, testdb.Repository(t))
 		if err != nil {
 			t.Fatalf("%s: dataset: %v", when, err)
 		}
@@ -472,7 +472,7 @@ func TestBootUpgradeRefusesARetiredName(t *testing.T) {
 	addShippedKind(t, reusing, corePackage, "gadget", "gadgets")
 	bumpPackageVersion(t, reusing, corePackage, "100")
 	svc := openTree(t, dsn, reusing)
-	if _, err := svc.Dataset(ctx, testdb.Username(t)); err != nil {
+	if _, err := svc.Dataset(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("a refused upgrade must not fail the open: %v", err)
 	}
 	_ = svc.Close()
@@ -483,7 +483,7 @@ func TestBootUpgradeRefusesARetiredName(t *testing.T) {
 	dropping := shippedTree(t)
 	bumpPackageVersion(t, dropping, corePackage, "101")
 	svc = openTree(t, dsn, dropping)
-	if _, err := svc.Dataset(ctx, testdb.Username(t)); err != nil {
+	if _, err := svc.Dataset(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("a refused upgrade must not fail the open: %v", err)
 	}
 	_ = svc.Close()
@@ -503,7 +503,7 @@ func TestBootUpgradeRefusesARetiredName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	if _, err := svc.Dataset(ctx, testdb.Username(t)); err != nil {
+	if _, err := svc.Dataset(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("a refused upgrade must not fail the open: %v", err)
 	}
 	_ = svc.Close()
@@ -537,7 +537,7 @@ func TestBootUpgradeRefusesRetiringAHeldKind(t *testing.T) {
 	})
 	bumpPackageVersion(t, retiring, corePackage, "100")
 	svc := openTree(t, dsn, retiring)
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("a refused upgrade must not fail the open: %v", err)
 	}
@@ -553,7 +553,7 @@ func TestBootUpgradeRefusesRetiringAHeldKind(t *testing.T) {
 	// The repository opens again under the same tree: the stored closure is
 	// consistent, so nothing refuses the open.
 	svc = openTree(t, dsn, retiring)
-	if _, err := svc.Dataset(ctx, testdb.Username(t)); err != nil {
+	if _, err := svc.Dataset(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("the repository must keep opening: %v", err)
 	}
 	_ = svc.Close()
@@ -591,7 +591,7 @@ func TestBootUpgradeConvertsAShippedRename(t *testing.T) {
 
 	svc := openTree(t, dsn, tree)
 	defer func() { _ = svc.Close() }()
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
@@ -677,7 +677,7 @@ func TestBootUpgradeRefusesARenameAStoredMappingReads(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	dsn := seededRepository(t)
-	ownerPackage := testdb.Authority(t) + "/handles"
+	ownerPackage := testdb.Repository(t) + "/handles"
 	const gadget = corePackage + "/gadget"
 
 	// Binary N+1 ships the mirror; the owner declares the subject kind and the
@@ -702,7 +702,7 @@ func TestBootUpgradeRefusesARenameAStoredMappingReads(t *testing.T) {
 		t.Helper()
 		svc := openTree(t, dsn, tree)
 		t.Cleanup(func() { _ = svc.Close() })
-		ds, err := svc.Dataset(ctx, testdb.Username(t))
+		ds, err := svc.Dataset(ctx, testdb.Repository(t))
 		if err != nil {
 			t.Fatalf("dataset: %v", err)
 		}
@@ -729,7 +729,7 @@ func TestBootUpgradeRefusesARenameAStoredMappingReads(t *testing.T) {
 	refused := openRefused(t, dsn, renaming)
 	wantRefusedUpgrade(t, refused, "recordmapping "+ownerPackage+"/gadgethandleowner", `declares no property "login"`)
 	svc := openTree(t, dsn, renaming)
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
@@ -743,7 +743,7 @@ func TestBootUpgradeRefusesARenameAStoredMappingReads(t *testing.T) {
 	// mapping, let the next open land the rename, and declare the mapping
 	// again on the new name.
 	svc = openTree(t, dsn, shippedTree(t))
-	ds, err = svc.Dataset(ctx, testdb.Username(t))
+	ds, err = svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
@@ -755,14 +755,14 @@ func TestBootUpgradeRefusesARenameAStoredMappingReads(t *testing.T) {
 	}
 	_ = svc.Close()
 	svc = openTree(t, dsn, renaming)
-	if _, err := svc.Dataset(ctx, testdb.Username(t)); err != nil {
+	if _, err := svc.Dataset(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
 	_ = svc.Close()
 	declare(t, renaming, "username")
 	svc = openTree(t, dsn, renaming)
 	defer func() { _ = svc.Close() }()
-	ds, err = svc.Dataset(ctx, testdb.Username(t))
+	ds, err = svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
@@ -819,7 +819,7 @@ func TestBootUpgradeCompilesTheKeptStoredDeclaration(t *testing.T) {
 	}
 	svc := openTree(t, dsn, renaming)
 	defer func() { _ = svc.Close() }()
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
@@ -853,7 +853,7 @@ func TestBootUpgradeRefusesARenameAStoredTemplateReads(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	dsn := seededRepository(t)
-	viewerPackage := testdb.Authority(t) + "/dash"
+	viewerPackage := testdb.Repository(t) + "/dash"
 	viewer := func(tmpl string) []map[string]any {
 		return []map[string]any{
 			vocabulary.PackageManifest(viewerPackage, 0),
@@ -870,7 +870,7 @@ func TestBootUpgradeRefusesARenameAStoredTemplateReads(t *testing.T) {
 		t.Helper()
 		svc := openTree(t, dsn, shippedTree(t))
 		defer func() { _ = svc.Close() }()
-		ds, err := svc.Dataset(ctx, testdb.Username(t))
+		ds, err := svc.Dataset(ctx, testdb.Repository(t))
 		if err != nil {
 			t.Fatalf("dataset: %v", err)
 		}
@@ -891,7 +891,7 @@ func TestBootUpgradeRefusesARenameAStoredTemplateReads(t *testing.T) {
 	declare(t, "{provider.displayLabel}")
 	svc := openTree(t, dsn, tree)
 	defer func() { _ = svc.Close() }()
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
@@ -942,7 +942,7 @@ func TestBootUpgradeConvertsAShippedBackfillAndRemap(t *testing.T) {
 	// on the wire the tree respells.
 	{
 		svc := openTree(t, dsn, shippedTree(t))
-		ds, err := svc.Dataset(ctx, testdb.Username(t))
+		ds, err := svc.Dataset(ctx, testdb.Repository(t))
 		if err != nil {
 			t.Fatalf("dataset: %v", err)
 		}
@@ -959,7 +959,7 @@ func TestBootUpgradeConvertsAShippedBackfillAndRemap(t *testing.T) {
 
 	svc := openTree(t, dsn, tree)
 	defer func() { _ = svc.Close() }()
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
@@ -1010,7 +1010,7 @@ func TestBootUpgradeRefusesAShippedLossyRemap(t *testing.T) {
 	// records, so the collapse needs a record to lose.
 	{
 		svc := openTree(t, dsn, shippedTree(t))
-		ds, err := svc.Dataset(ctx, testdb.Username(t))
+		ds, err := svc.Dataset(ctx, testdb.Repository(t))
 		if err != nil {
 			t.Fatalf("dataset: %v", err)
 		}
@@ -1039,7 +1039,7 @@ func TestBootUpgradeRefusesAShippedLossyRemap(t *testing.T) {
 
 	svc := openTree(t, dsn, tree)
 	defer func() { _ = svc.Close() }()
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
@@ -1083,7 +1083,7 @@ func TestBootUpgradeConvertsARemapOntoARetainedValueNobodyHolds(t *testing.T) {
 	// `openai` when the remap lands on it.
 	{
 		svc := openTree(t, dsn, shippedTree(t))
-		ds, err := svc.Dataset(ctx, testdb.Username(t))
+		ds, err := svc.Dataset(ctx, testdb.Repository(t))
 		if err != nil {
 			t.Fatalf("dataset: %v", err)
 		}
@@ -1108,7 +1108,7 @@ func TestBootUpgradeConvertsARemapOntoARetainedValueNobodyHolds(t *testing.T) {
 	}
 	svc := openTree(t, dsn, tree)
 	defer func() { _ = svc.Close() }()
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}

@@ -22,13 +22,13 @@ func TestFirstLoginOfAPreDEKRepositoryMirrorsTheReKeyedStep(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, dsn := newService(t)
-	enrollment, err := svc.BeginRegistration(ctx, "eve")
+	enrollment, err := svc.BeginRegistration(ctx, "eve.example.com")
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	u := &authUser{username: "eve", password: testPassword, seed: enrollment.Secret}
+	u := &authUser{repository: "eve.example.com", password: testPassword, seed: enrollment.Secret}
 	if _, err := svc.Register(ctx, substrate.RegisterInput{
-		Username: "eve", Authority: "eve.example.com", Password: testPassword,
+		Repository: "eve.example.com", Password: testPassword,
 		TOTPSecret: u.seed, TOTPCode: u.code(t),
 	}); err != nil {
 		t.Fatalf("register: %v", err)
@@ -92,7 +92,7 @@ func TestFirstLoginOfAPreDEKRepositoryMirrorsTheReKeyedStep(t *testing.T) {
 	// sealed under the host key, and the open that follows adopts a DEK,
 	// re-keys the store and marks the repository.
 	if _, _, err := svc.Login(ctx, substrate.LoginInput{
-		Username: "eve", Password: testPassword, TOTPCode: u.code(t), Label: "first",
+		Repository: "eve.example.com", Password: testPassword, TOTPCode: u.code(t), Label: "first",
 	}); err != nil {
 		t.Fatalf("first login: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestFirstLoginOfAPreDEKRepositoryMirrorsTheReKeyedStep(t *testing.T) {
 	svc2 := mustReopen(t, engine.MigratedDSN(t), root2)
 	waitStep(t)
 	if _, _, err := svc2.Login(ctx, substrate.LoginInput{
-		Username: "eve", Password: testPassword, TOTPCode: u.code(t), Label: "after import",
+		Repository: "eve.example.com", Password: testPassword, TOTPCode: u.code(t), Label: "after import",
 	}); err != nil {
 		t.Fatalf("login on the imported copy: %v", err)
 	}

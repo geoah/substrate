@@ -19,7 +19,7 @@ import (
 func (a *app) loginCommand() *cobra.Command {
 	var (
 		server        string
-		username      string
+		repository    string
 		code          string
 		label         string
 		contextName   string
@@ -27,9 +27,11 @@ func (a *app) loginCommand() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "Log in with username, password and TOTP code, and store the token",
+		Short: "Log in with a repository name, password and TOTP code, and store the token",
 		Long: `Log in to a substrate.
 
+The repository is the name registration created — its authority
+(ada.example.com), or a bare label the substrate completes under its own host.
 Both factors are presented directly: the password and one code from the
 authenticator holding this account — unless the substrate verifies no second
 factor, in which case no code is asked for. The login mints a token record and returns
@@ -37,8 +39,8 @@ its secret exactly once; substratectl writes it to the config file (mode 0600) a
 current context. The token implies the repository — there is nothing else to
 configure.
 
-  substratectl login --server https://substrate.example.com --username geoah
-  substratectl login --username geoah --totp-code 123456 --password-stdin < password`,
+  substratectl login --server https://substrate.example.com --repository geoah
+  substratectl login --repository geoah --totp-code 123456 --password-stdin < password`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := a.config()
@@ -51,10 +53,10 @@ configure.
 					firstEnv("SUBSTRATE_SERVER", "SS_SERVER"),
 					existing.Server, defaultServer)
 			}
-			if username == "" {
-				username = existing.Username
+			if repository == "" {
+				repository = existing.Repository
 			}
-			username, err = a.askUsername(username)
+			repository, err = a.askRepository(repository)
 			if err != nil {
 				return err
 			}
@@ -75,27 +77,26 @@ configure.
 				label = defaultTokenLabel()
 			}
 			res, err := cl.login(cmd.Context(), factors{
-				Username: username, Password: password, TOTPCode: code, Label: label,
+				Repository: repository, Password: password, TOTPCode: code, Label: label,
 			})
 			if err != nil {
 				return authError(err)
 			}
 			if contextName == "" {
-				contextName = username
+				contextName = repository
 			}
-			// upsertContext replaces the whole struct, and login learns no
-			// authority: the one `register` stored is carried forward rather
-			// than dropped.
-			prev, _ := cfg.context(contextName)
+			// The door's own answer, not what was typed: a bare label reaches
+			// it as one and comes back as the authority, which is what
+			// `apply --as-mine` and a webhook URL need.
 			cfg.upsertContext(Context{
-				Name: contextName, Server: server, Username: username,
-				Authority: prev.Authority,
-				Token:     res.Secret, TokenID: res.Token.ID,
+				Name: contextName, Server: server,
+				Repository: firstNonEmpty(res.Repository, repository),
+				Token:      res.Secret, TokenID: res.Token.ID,
 			})
 			if err := a.saveConfig(cfg); err != nil {
 				return err
 			}
-			fmt.Fprintf(a.out, "logged in to %s as %s\n", server, username)
+			fmt.Fprintf(a.out, "logged in to %s as %s\n", server, repository)
 			fmt.Fprintf(a.out, "  token:   %s (%s)\n", dash(res.Token.Label), dash(res.Token.ID))
 			fmt.Fprintf(a.out, "  context: %s -> %s\n", contextName, a.configPath)
 			return nil
@@ -103,10 +104,10 @@ configure.
 	}
 	f := cmd.Flags()
 	f.StringVar(&server, "server", "", "substrate base URL")
-	f.StringVar(&username, "username", "", "username (prompted for when omitted)")
+	f.StringVar(&repository, "repository", "", "repository to log in to: ada.example.com, or a bare label under the substrate's host (prompted for when omitted)")
 	f.StringVar(&code, "totp-code", "", "current 6-digit code (prompted for when omitted)")
 	f.StringVar(&label, "label", "", "label for the minted token (default: substratectl@<hostname>)")
-	f.StringVar(&contextName, "context", "", "name for the stored context (default: the username)")
+	f.StringVar(&contextName, "context", "", "name for the stored context (default: the repository name)")
 	f.BoolVar(&passwordStdin, "password-stdin", false, "read the password from stdin (one line) instead of prompting")
 	return cmd
 }
@@ -118,7 +119,7 @@ func (a *app) logoutCommand() *cobra.Command {
 		Long: `Revoke the token in the current context and remove it from the config.
 
 Revoking is deleting the token record: no row means no access. The context's
-server and username stay, so logging back in is one command.`,
+server and repository stay, so logging back in is one command.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := a.config()
@@ -183,14 +184,14 @@ func defaultTokenLabel() string {
 
 // authError replaces the door's deliberately uniform 401 with the reasons a
 // person can act on. The substrate answers the same way for an unknown
-// username, a wrong password and a wrong code — on purpose — so the CLI must
+// repository, a wrong password and a wrong code — on purpose — so the CLI must
 // not invent a diagnosis it does not have.
 func authError(err error) error {
 	var ae *apiError
 	if !errors.As(err, &ae) || ae.Status != http.StatusUnauthorized {
 		return err
 	}
-	ae.Message = "the substrate refused the username, the password or the code"
+	ae.Message = "the substrate refused the repository, the password or the code"
 	ae.Hint = fmt.Sprintf("check the password and the CURRENT %d-digit code; repeated failures lock the account out for a while", codeDigits)
 	return ae
 }

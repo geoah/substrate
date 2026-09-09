@@ -39,7 +39,7 @@ type Config struct {
 	ConversionCeiling int64 `envconfig:"SUBSTRATE_CONVERSION_CEILING" default:"10000"`
 
 	// InsecureDisableTOTP takes the SECOND FACTOR OFF the whole door: login,
-	// registration and the credential changes ask for a username and a
+	// registration and the credential changes ask for a repository and a
 	// password and nothing else. It exists for a local substrate you wipe
 	// every day, where enrolling an authenticator to reach a throwaway
 	// repository is friction with nothing behind it. NEVER set it on a

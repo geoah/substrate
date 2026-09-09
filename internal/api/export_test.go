@@ -80,10 +80,10 @@ func (s *exportingService) Authenticate(ctx context.Context, secret string) (sub
 func exportEnv(t *testing.T) (*testEnv, *exportingDataset, string) {
 	t.Helper()
 	base := newFakeService()
-	ds := &exportingDataset{fakeDataset: base.datasets["geoah"]}
+	ds := &exportingDataset{fakeDataset: base.datasets[fakeRepository]}
 	svc := &exportingService{fakeService: base, ds: ds}
 	env := &testEnv{svc: base, h: New(Config{Service: svc, InviteCode: testInviteCode})}
-	return env, ds, base.token("geoah")
+	return env, ds, base.token(fakeRepository)
 }
 
 // The archive comes back as a tar under the authority's file name, with the
@@ -123,7 +123,7 @@ func TestExportStreamsTheArchiveUnderTheBearerToken(t *testing.T) {
 // is an ordinary error body with its status, not half an archive.
 func TestExportRefusesWithAStatusBeforeTheFirstByte(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	wantErrorCode(t, env.do(t, http.MethodGet, "/api/v1/export", tok, nil), http.StatusNotImplemented, codeUnsupported)
 
 	env, ds, tok := exportEnv(t)

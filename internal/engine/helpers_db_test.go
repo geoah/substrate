@@ -22,12 +22,12 @@ import (
 // the suite finish in a third of the time it used to: the work is mostly spent
 // waiting on Postgres, so running one test at a time left the machine idle.
 // What makes it SAFE is that a test shares nothing it can observe — its own
-// schema (testdb.NewSchema), and its own repository id (testdb.Username, a
+// schema (testdb.NewSchema), and its own repository id (testdb.Repository, a
 // name derived from the test's own). The runner (runner.Shared, one per
 // process) keys function processes on the repository id, and the id is the
-// authority, so two tests registering one username would share function
+// authority, so two tests registering one name would share function
 // processes and either one's Close would retire the other's mid-delivery.
-// A test that runs function bodies must not register a fixed username.
+// A test that runs function bodies must not register a fixed name.
 //
 // The exceptions are the tests that write a PACKAGE-LEVEL var: BlobUploadGrace
 // (the blob GC tests) and maxPagesPerDrain / maxDrainEffects / pagedSweepGrace
@@ -77,10 +77,10 @@ func newCoreDataset(t *testing.T, opts ...engine.Option) (substrate.Service, sub
 	t.Helper()
 	svc, _ := newService(t, opts...)
 	ctx := context.Background()
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
@@ -122,9 +122,9 @@ const testPassword = "correct-horse-battery-staple"
 
 // authUser is a registered user and the seed its codes come from.
 type authUser struct {
-	username string
-	password string
-	seed     string
+	repository string
+	password   string
+	seed       string
 	// step is the last step this user consumed. Codes are ONE-TIME, so a
 	// second authentication inside one 30-second window has to move on.
 	step int64
@@ -160,21 +160,20 @@ func waitStep(t *testing.T) {
 
 // registerUser walks the REAL registration flow — enrollment, one code, the
 // commit — and returns the user plus the token registration minted.
-func registerUser(t *testing.T, svc substrate.Service, username string) (*authUser, substrate.TokenInfo, string) {
+func registerUser(t *testing.T, svc substrate.Service, repository string) (*authUser, substrate.TokenInfo, string) {
 	t.Helper()
 	ctx := context.Background()
-	enrollment, err := svc.BeginRegistration(ctx, username)
+	enrollment, err := svc.BeginRegistration(ctx, repository)
 	if err != nil {
 		t.Fatalf("begin registration: %v", err)
 	}
-	u := &authUser{username: username, password: testPassword, seed: enrollment.Secret}
+	u := &authUser{repository: repository, password: testPassword, seed: enrollment.Secret}
 	res, err := svc.Register(ctx, substrate.RegisterInput{
-		Username: username, Password: u.password,
+		Repository: repository, Password: u.password,
 		TOTPSecret: u.seed, TOTPCode: u.code(t), Label: "cli",
-		Authority: username + ".example.com",
 	})
 	if err != nil {
-		t.Fatalf("register %q: %v", username, err)
+		t.Fatalf("register %q: %v", repository, err)
 	}
 	return u, res.Token, res.Secret
 }

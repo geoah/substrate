@@ -71,12 +71,11 @@ import (
 //     bookkeeping the changelog never carried. A rebuild replays the effects
 //     the keys answer for, so the keys stay valid; only a fresh database
 //     forgets them, which docs/api.md states.
-//   - repositories — the control plane, one row per user.
+//   - repositories — the control plane, one row per repository.
 
 // RebuildReport is what one rebuild did.
 type RebuildReport struct {
 	Repository string        `json:"repository"`
-	Username   string        `json:"username"`
 	Entries    int64         `json:"entries"`
 	Head       int64         `json:"head"`
 	Records    int64         `json:"records"`
@@ -97,7 +96,7 @@ const rebuildBatch = 500
 // Rebuilder is the operator hat's rebuild seam, off substrate.Service like
 // Resetter (auth.go) and asserted here for the same reason.
 type Rebuilder interface {
-	RebuildRepository(ctx context.Context, username string) (RebuildReport, error)
+	RebuildRepository(ctx context.Context, repository string) (RebuildReport, error)
 }
 
 var _ Rebuilder = (*service)(nil)
@@ -110,12 +109,12 @@ var _ Rebuilder = (*service)(nil)
 // leaves it exactly as it was. Before the replay the files are held to the
 // table (repodir.go): the heads must be equal and the common tail must agree,
 // or the rebuild refuses rather than fold a history the table does not index.
-func (s *service) RebuildRepository(ctx context.Context, username string) (RebuildReport, error) {
+func (s *service) RebuildRepository(ctx context.Context, repository string) (RebuildReport, error) {
 	started := time.Now()
 	if s.readOnly {
 		return RebuildReport{}, ErrDirectoryReadOnly
 	}
-	repo, err := s.repositoryByUsername(ctx, username)
+	repo, err := s.repositoryByID(ctx, repository)
 	if err != nil {
 		return RebuildReport{}, err
 	}
@@ -123,7 +122,7 @@ func (s *service) RebuildRepository(ctx context.Context, username string) (Rebui
 	if err != nil {
 		return RebuildReport{}, err
 	}
-	report := RebuildReport{Repository: repo.ID, Username: repo.Username}
+	report := RebuildReport{Repository: repo.ID}
 	if err := ds.directoryErr(); err != nil {
 		return report, err
 	}

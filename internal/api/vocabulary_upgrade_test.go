@@ -62,7 +62,7 @@ func TestVocabularyUpgradeServesTheShippedPreview(t *testing.T) {
 		},
 	}}
 	env := newShippedUpgradeEnv(t, want, nil)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 
 	rec := env.do(t, http.MethodGet, "/api/v1/vocabulary/upgrade", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
@@ -90,7 +90,7 @@ func TestVocabularyUpgradeServesTheShippedPreview(t *testing.T) {
 // one, so a client can tell "up to date" from "no answer".
 func TestVocabularyUpgradeAnswersAnEmptyList(t *testing.T) {
 	env := newShippedUpgradeEnv(t, nil, nil)
-	rec := env.do(t, http.MethodGet, "/api/v1/vocabulary/upgrade", env.svc.token("geoah"), nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/vocabulary/upgrade", env.svc.token(fakeRepository), nil)
 	wantStatus(t, rec, http.StatusOK)
 	if got := rec.Body.String(); got != "{\"items\":[]}\n" {
 		t.Fatalf("body = %s, want an empty items list", got)
@@ -101,7 +101,7 @@ func TestVocabularyUpgradeAnswersAnEmptyList(t *testing.T) {
 // nothing in it.
 func TestVocabularyUpgradeReportsAFailedPreview(t *testing.T) {
 	env := newShippedUpgradeEnv(t, nil, errBoom)
-	rec := env.do(t, http.MethodGet, "/api/v1/vocabulary/upgrade", env.svc.token("geoah"), nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/vocabulary/upgrade", env.svc.token(fakeRepository), nil)
 	wantErrorCode(t, rec, http.StatusInternalServerError, codeInternal)
 }
 
@@ -109,6 +109,6 @@ func TestVocabularyUpgradeReportsAFailedPreview(t *testing.T) {
 // every other optional seam does.
 func TestVocabularyUpgradeIsUnsupportedWithoutThePlanner(t *testing.T) {
 	env := newTestEnv(t)
-	rec := env.do(t, http.MethodGet, "/api/v1/vocabulary/upgrade", env.svc.token("geoah"), nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/vocabulary/upgrade", env.svc.token(fakeRepository), nil)
 	wantErrorCode(t, rec, http.StatusNotImplemented, codeUnsupported)
 }

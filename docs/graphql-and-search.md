@@ -182,7 +182,7 @@ repository buys them, each stored vector names that row and that model, and the
 semantic arm scores only the currently resolved pair. Re-point the row and the
 older vectors stop being scored rather than being ranked against the new ones:
 cosine distance between two models' vectors is not a distance. `substratectl
---dsn … repository reembed <username>` and `POST
+--dsn … repository reembed <repository>` and `POST
 /api/v1/embeddings/reembed` queue their replacement,
 which the server's drain loop buys a batch at a time.
 

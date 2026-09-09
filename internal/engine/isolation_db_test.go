@@ -44,12 +44,12 @@ func twoRepositories(t *testing.T) pair {
 	ctx := context.Background()
 	svc, dsn := newService(t)
 	p := pair{svc: svc, dsn: dsn}
-	for _, name := range []string{"alpha", "beta"} {
-		info, err := svc.CreateRepository(ctx, name, name+".example.com")
+	for _, name := range []string{"alpha.example.com", "beta.example.com"} {
+		info, err := svc.CreateRepository(ctx, name)
 		if err != nil {
 			t.Fatalf("create %s: %v", name, err)
 		}
-		if name == "alpha" {
+		if name == "alpha.example.com" {
 			p.alpha = info.ID
 		} else {
 			p.beta = info.ID
@@ -100,7 +100,7 @@ func TestRepositoryIsolationSurvivesADroppedPredicate(t *testing.T) {
 		`SELECT title FROM records WHERE id = 'shared-id'`).Scan(&title); err != nil {
 		t.Fatalf("read the task: %v", err)
 	}
-	if title != "alpha only" {
+	if title != "alpha.example.com only" {
 		t.Fatalf("title = %q, want alpha's", title)
 	}
 
@@ -157,7 +157,7 @@ func TestRepositoryIsolationSurvivesADroppedPredicate(t *testing.T) {
 		`SELECT title FROM records WHERE id = 'shared-id'`).Scan(&title); err != nil {
 		t.Fatalf("read beta's task: %v", err)
 	}
-	if title != "beta only" {
+	if title != "beta.example.com only" {
 		t.Fatalf("beta's title = %q", title)
 	}
 }
@@ -299,7 +299,7 @@ func TestAdvisoryLocksArePerRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	beta, err := svc.Dataset(ctx, "beta")
+	beta, err := svc.Dataset(ctx, "beta.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}

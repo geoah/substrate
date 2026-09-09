@@ -21,10 +21,10 @@ func listWithFilter(filter string) string {
 // would turn a guarded write into an unconditional one.
 func TestStrictDecodeNamesUnknownBodyKey(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	// Seed p1 so a strict-decode failure is what returns 400, not a missing
 	// resource: the decode is refused before the Patch ever runs.
-	env.svc.datasets["geoah"].records["p1"] = &substrate.Record{
+	env.svc.datasets[fakeRepository].records["p1"] = &substrate.Record{
 		ID: "p1", Kind: "samples.substrate.reamde.dev/people/person", Version: 1,
 		Properties: map[string]any{"name": "Ada"},
 	}
@@ -55,7 +55,7 @@ func TestStrictDecodeNamesUnknownBodyKey(t *testing.T) {
 // dropped, because a dropped `properties` writes nothing and answers 200.
 func TestStrictDecodeNamesUnknownPatchKey(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodPatch, peoplePath+"/p1", tok, map[string]any{
 		"props": map[string]any{"name": "Ada"}, // it is `properties`, not `props`
 	})
@@ -69,7 +69,7 @@ func TestStrictDecodeNamesUnknownPatchKey(t *testing.T) {
 // destructive query.
 func TestStrictDecodeNamesUnknownFilterKey(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodGet, listWithFilter(`{"nope":1}`), tok, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 	if body := rec.Body.String(); !strings.Contains(body, "nope") {
@@ -82,7 +82,7 @@ func TestStrictDecodeNamesUnknownFilterKey(t *testing.T) {
 // the decoder has never heard of still lands.
 func TestStrictDecodeKeepsPropertiesOpen(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodPost, peoplePath, tok, map[string]any{
 		"properties": map[string]any{"name": "Ada", "anythingGoesHere": 42},
 	})
@@ -100,11 +100,11 @@ func TestExpiredTokenRejected(t *testing.T) {
 	past := time.Unix(1_600_000_000, 0).UTC()   // 2020
 	future := time.Unix(1_800_000_000, 0).UTC() // 2027
 
-	expired := env.svc.tokenWith("geoah", func(i *substrate.TokenInfo) { i.ExpiresAt = &past })
+	expired := env.svc.tokenWith(fakeRepository, func(i *substrate.TokenInfo) { i.ExpiresAt = &past })
 	rec := env.do(t, http.MethodGet, peoplePath, expired, nil)
 	wantErrorCode(t, rec, http.StatusUnauthorized, codeAuth)
 
-	live := env.svc.tokenWith("geoah", func(i *substrate.TokenInfo) { i.ExpiresAt = &future })
+	live := env.svc.tokenWith(fakeRepository, func(i *substrate.TokenInfo) { i.ExpiresAt = &future })
 	rec = env.do(t, http.MethodGet, peoplePath, live, nil)
 	wantStatus(t, rec, http.StatusOK)
 }

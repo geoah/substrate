@@ -181,7 +181,6 @@ func (a *app) controlPlane() (*sql.DB, error) {
 // repositoryRow is the control plane, whole: the user IS this row.
 type repositoryRow struct {
 	ID        string
-	Username  string
 	Authority string
 	CreatedAt time.Time
 	// DEKKeyID names the host key the repository's DEK is wrapped under;
@@ -198,13 +197,13 @@ type repositoryRow struct {
 
 // repositoryRowColumns is the column list scanRepositoryRow reads, in order.
 // The wrap's first byte is its framing; 112 is 'p', the plain marker.
-const repositoryRowColumns = `id, username, authority, created_at, dek_key_id,
+const repositoryRowColumns = `id, authority, created_at, dek_key_id,
 	dek IS NOT NULL, dek IS NOT NULL AND get_byte(dek, 0) = 112, sealed_dek_only`
 
 func scanRepositoryRow(scan func(dest ...any) error) (repositoryRow, error) {
 	var r repositoryRow
 	var keyID sql.NullString
-	if err := scan(&r.ID, &r.Username, &r.Authority, &r.CreatedAt, &keyID, &r.HasDEK, &r.PlainWrap, &r.SealedDEKOnly); err != nil {
+	if err := scan(&r.ID, &r.Authority, &r.CreatedAt, &keyID, &r.HasDEK, &r.PlainWrap, &r.SealedDEKOnly); err != nil {
 		return repositoryRow{}, err
 	}
 	r.DEKKeyID = keyID.String
@@ -230,11 +229,11 @@ func listRepositoryRows(ctx context.Context, db *sql.DB) ([]repositoryRow, error
 	return out, rows.Err()
 }
 
-func repositoryRowByUsername(ctx context.Context, db *sql.DB, username string) (repositoryRow, error) {
+func repositoryRowByID(ctx context.Context, db *sql.DB, repository string) (repositoryRow, error) {
 	r, err := scanRepositoryRow(db.QueryRowContext(ctx,
-		`SELECT `+repositoryRowColumns+` FROM repositories WHERE username = $1`, username).Scan)
+		`SELECT `+repositoryRowColumns+` FROM repositories WHERE id = $1`, repository).Scan)
 	if errors.Is(err, sql.ErrNoRows) {
-		return repositoryRow{}, fmt.Errorf("no user %q on this substrate", username)
+		return repositoryRow{}, fmt.Errorf("no repository %q on this substrate", repository)
 	}
 	if err != nil {
 		return repositoryRow{}, controlPlaneError(err)

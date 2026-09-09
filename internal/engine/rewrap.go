@@ -25,10 +25,8 @@ import (
 
 // RewrapReport is what one rewrap did.
 type RewrapReport struct {
-	// Repository is the authority, the repository's id; Username is the login
-	// label the manifest carries.
+	// Repository is the authority, the repository's id.
 	Repository string `json:"repository"`
-	Username   string `json:"username"`
 	// RecoveryKeySeq is the changelog seq of the recoverykey write whose
 	// sealedKey the identity opened.
 	RecoveryKeySeq int64 `json:"recoveryKeySeq"`
@@ -76,7 +74,7 @@ func RewrapRepositoryDir(repoDir, identity, newKey string) (RewrapReport, error)
 	// Written back in the format this binary writes: a format-1 manifest
 	// (v0.47.0 through v0.53.0) gains the vocabulary dialect its format implies.
 	m = currentManifest(m)
-	report.Repository, report.Username = m.Authority, m.Username
+	report.Repository = m.Authority
 
 	seq, sealedKey, err := lastRecoveryKey(repoDir)
 	if err != nil {

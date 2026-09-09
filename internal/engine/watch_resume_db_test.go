@@ -24,7 +24,7 @@ func TestWatchResumesGaplesslyAcrossARestart(t *testing.T) {
 		if err != nil {
 			t.Fatalf("open engine: %v", err)
 		}
-		ds, err := svc.Dataset(ctx, testdb.Username(t))
+		ds, err := svc.Dataset(ctx, testdb.Repository(t))
 		if err != nil {
 			t.Fatalf("open dataset: %v", err)
 		}
@@ -36,10 +36,10 @@ func TestWatchResumesGaplesslyAcrossARestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}
-	if _, err := svc1.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc1.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds1, err := svc1.Dataset(ctx, testdb.Username(t))
+	ds1, err := svc1.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}

@@ -1,8 +1,9 @@
 # Users, tokens, and actors
 
-A **user** is a human principal: a username, a password, and a TOTP second
-factor, all three required. A user owns exactly one **repository**, and a
-**token** is how anything reaches it. Both the credential and every token are
+A **user** is a human principal: a repository name, a password, and a TOTP
+second factor, all three required. A user owns exactly one **repository**,
+whose name is its authority and their login name, and a **token** is how
+anything reaches it. Both the credential and every token are
 ordinary [records](data-model.md) in the repository they belong to, so the
 same reads, the same changelog, and the same console pages that show your tasks show
 your account too.
@@ -29,7 +30,7 @@ Registration is two calls, and only the second writes anything:
 
 ```http
 POST /register/enroll
-{"inviteCode": "…", "username": "ada"}
+{"inviteCode": "…", "repository": "ada.example.com"}
 
 → 200 {"totpSecret": "JBSWY3DPEHPK3PXP",
        "otpauthUri": "otpauth://totp/Substrate:ada?secret=JBSWY3DPEHPK3PXP&issuer=Substrate&algorithm=SHA1&digits=6&period=30"}
@@ -40,34 +41,32 @@ registration leaves no row to expire and nothing to sweep:
 
 ```http
 POST /register
-{"inviteCode": "…", "username": "ada", "password": "…",
- "totpSecret": "JBSWY3DPEHPK3PXP", "totpCode": "123456", "label": "laptop",
- "authority": "ada.example.com"}
+{"inviteCode": "…", "repository": "ada.example.com", "password": "…",
+ "totpSecret": "JBSWY3DPEHPK3PXP", "totpCode": "123456", "label": "laptop"}
 
 → 201 {"token": {…}, "secret": "substrate_tok_…",
-       "authority": "ada.example.com",
+       "repository": "ada.example.com",
        "recoveryKey": "AGE-SECRET-KEY-1…", "recoveryPublicKey": "age1…"}
 ```
 
-`authority` is the hostname the repository owns, any DNS name its user
-controls (`ada.example.com`, `geoah.me`): the home of every package its user
-declares kinds in. Omitted, it defaults to the username under the host the
-request reached
-(`ada.substrate.example` for a request to `substrate.example`), and the
-response says what it got. It is lowercase DNS labels with at least one dot,
-within the DNS length limits, never under `substrate.reamde.dev` (where the
-shipped vocabulary publishes), unique across the substrate, and permanent
-([decision record 0046](decisions/0046-a-repository-owns-one-authority-chosen-at-registration.md)).
+`repository` is the whole of the name: it BECOMES the repository's authority,
+any DNS name its user controls (`ada.example.com`, `geoah.me`), which is the
+home of every package its user declares kinds in and the name they log in
+with. A name carrying a dot is taken as it is; a bare label is completed under
+the host the request reached (`ada` reaching `substrate.example` is
+`ada.substrate.example`), and the response says what was created. It is
+lowercase DNS labels with at least one dot, within the DNS length limits,
+never under `substrate.reamde.dev` (where the shipped vocabulary publishes),
+unique across the substrate, and permanent
+([decision record 0074](decisions/0074-the-repository-name-is-the-login-name.md)).
 The repository's own `repository` record carries it, so a client that only
 speaks the record API can read it back.
 
-The authority is the repository's public name and its id: a webhook URL
+That one name is everywhere: a webhook URL
 (`POST /webhooks/{authority}/{trigger}`) and a delivery envelope's
 `repository.authority` carry it, `RepositoryInfo.id` on the wire is it, and
 the repository's directory under the data root is named by it
 ([decision record 0052](decisions/0052-the-authority-is-the-repository-id.md)).
-The username is the login identifier, on `/login` and in the envelope's
-`repository.owner`, and appears in no public URL.
 
 A request that names no `recoveryPublicKey` asks the server to mint the
 recovery pair, and the response carries the age identity exactly once,
@@ -84,9 +83,8 @@ is already complete. Anything that fails before that erases what it wrote: a
 failed registration creates nothing, and no order of failures leaves a
 half-created user.
 
-Registration therefore ends logged in — the response carries the first token's
-secret. Usernames match `[a-z][a-z0-9]{1,29}`, are unique across the
-substrate, and are permanent.
+Registration therefore ends logged in: the response carries the first token's
+secret.
 
 ## Logging in
 
@@ -94,7 +92,7 @@ A login presents both factors directly and mints a token record:
 
 ```http
 POST /login
-{"username": "ada", "password": "…", "totpCode": "123456", "label": "laptop"}
+{"repository": "ada.example.com", "password": "…", "totpCode": "123456", "label": "laptop"}
 
 → 201 {"token": {"id": "…", "label": "laptop", "createdAt": "…"},
        "secret": "substrate_tok_…"}
@@ -106,7 +104,7 @@ it, and there is no sessions table to reap. One consequence worth stating: a
 password change does not sign anything out. Live tokens survive it, because a
 token is data access and the credential is the account.
 
-Every failure — an unknown username, a wrong password, a wrong code — answers
+Every failure (an unknown repository, a wrong password, a wrong code) answers
 one identical `401`, and the engine does the same password-hashing and HMAC
 work on all three so timing is not an oracle either.
 
@@ -154,7 +152,7 @@ Authorization: Bearer substrate_tok_…
 ## The credential, and the password-factor rule
 
 The user's own auth material is one record,
-`substrate.reamde.dev/core/credential` at id `self`. It carries the username and two
+`substrate.reamde.dev/core/credential` at id `self`. It carries the repository it admits to and two
 secret-typed references into the repository's sealed store — one for the
 password hash (argon2id), one for the TOTP seed and its replay counter. **The
 material itself never enters the changelog or a record's data**, so the changelog shows
@@ -165,10 +163,10 @@ append-only sequence.
 Four endpoints change auth material, and all four obey one rule:
 
 ```http
-POST /password        # {"username","password","totpCode","newPassword"} → 200
-POST /totp/enroll     # {"username","password","totpCode"} → 200 {totpSecret, otpauthUri}
+POST /password        # {"repository","password","totpCode","newPassword"} → 200
+POST /totp/enroll     # {"repository","password","totpCode"} → 200 {totpSecret, otpauthUri}
 POST /totp            # + {"newTotpSecret","newTotpCode"} → 200
-POST /recovery/enroll # {"username","password","totpCode","recoveryPublicKey"?} → 201 {recoveryKey?, recoveryPublicKey}
+POST /recovery/enroll # {"repository","password","totpCode","recoveryPublicKey"?} → 201 {recoveryKey?, recoveryPublicKey}
 ```
 
 `POST /recovery/enroll` claims the repository's one recovery slot for a
@@ -200,7 +198,7 @@ lock, so two requests racing on one code cannot both win.
 Registration and the credential endpoints are the substrate's unauthenticated
 write paths beside the [webhook door](api.md#webhooks), so they share one
 posture. Attempts are paced to
-one per five seconds, keyed by (client IP, username) and by username alone,
+one per five seconds, keyed by (client IP, repository) and by repository alone,
 under one global bucket 32 attempts wide, so a flood is bounded without an
 honest login waiting out somebody else's. There is no failure lockout: a
 lockout keyed off the caller is a denial-of-service lever rather than a
@@ -224,7 +222,7 @@ says about who did this.
 ## The second factor can be switched off locally
 
 `SUBSTRATE_INSECURE_DISABLE_TOTP` stops the substrate verifying codes at all:
-login, registration and both credential changes take a username and a password,
+login, registration and both credential changes take a repository and a password,
 and a code sent anyway is ignored. It exists for a substrate on your own
 machine that gets wiped daily — every `mise run dev*` task except `dev:totp`
 sets it, and nothing else in the tree does. On a reachable deployment it would make a leaked

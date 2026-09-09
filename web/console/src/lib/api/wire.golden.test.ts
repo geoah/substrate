@@ -79,7 +79,7 @@ import type {
   PropertyMeta,
   PutInput,
   RecordFilter,
-  SessionUser,
+  SessionCredential,
   SetupItem,
   ShippedRecord,
   ShippedUpgrade,
@@ -316,6 +316,7 @@ const tokenInfo: Shape<TokenInfo> = {
 const mintedToken: Shape<MintedToken> = {
   token: true,
   secret: true,
+  repository: false,
 }
 
 const totpEnrollment: Shape<TOTPEnrollment> = {
@@ -324,31 +325,29 @@ const totpEnrollment: Shape<TOTPEnrollment> = {
 }
 
 /** Registration (auth.ts): the request the door decodes and its answer, which
- * is the mint plus the authority and the recovery material. */
+ * is the mint plus the repository and the recovery material. */
 const registerInput: Shape<RegisterInput> = {
   inviteCode: true,
-  username: true,
+  repository: true,
   password: true,
   totpSecret: true,
   totpCode: true,
   label: false,
-  authority: false,
   recoveryPublicKey: false,
 }
 
-/** Login (auth.ts): the two factors and the token label. */
+/** Login (auth.ts): the repository, the two factors and the token label. */
 const loginRequest: Shape<LoginRequest> = {
-  username: true,
+  repository: true,
   password: true,
   totpCode: true,
   label: false,
 }
 
-const sessionUser: Shape<SessionUser> = { username: true }
+const sessionCredential: Shape<SessionCredential> = { repository: true }
 
 const registerResult: Shape<RegisterResult> = {
   ...mintedToken,
-  authority: true,
   recoveryKey: false,
   recoveryPublicKey: false,
 }
@@ -577,7 +576,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   RegisterInput: registerInput,
   RegisterResult: registerResult,
   LoginRequest: loginRequest,
-  SessionUser: sessionUser,
+  SessionCredential: sessionCredential,
   AgentResult: agentResult,
   AgentEvent: agentEvent,
   CatalogBundle: catalogBundle,
@@ -656,7 +655,7 @@ const notOnTheWire: Record<string, string> = {
   IncomingGroup: "a client-side fold of IncomingReference rows",
   // repository.ts
   RepositoryInfo:
-    "two properties read off the repository record; not the operator's substrate.RepositoryInfo",
+    "one property read off the repository record; not the operator's substrate.RepositoryInfo",
 }
 
 /** Every module in this directory, source included, tests excluded: the shapes

@@ -160,10 +160,9 @@ type Record struct {
 	Properties map[string]any `json:"properties"`
 }
 
-// Repository carries the repository's two names: the owner's username, for
-// "assigned to me" guards, and the authority it publishes under.
+// Repository names the repository the delivery belongs to: its authority,
+// which is its id and the name it publishes kinds and webhook URLs under.
 type Repository struct {
-	Owner     string `json:"owner"`
 	Authority string `json:"authority"`
 }
 

@@ -300,7 +300,7 @@ func TestTriggerWhenGuard(t *testing.T) {
 	ds, ops := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("guarded", map[string]any{
 			"kinds": []any{widgetType},
-			"when":  `record != null && record.properties.assignee == repository.owner`,
+			"when":  `record != null && record.properties.assignee == repository.authority`,
 		})},
 		pyFn("guarded", map[string]any{}, []any{taskType}, mirrorSource))
 	ctx := context.Background()
@@ -311,7 +311,7 @@ func TestTriggerWhenGuard(t *testing.T) {
 	})
 	mine := mustPut(t, ds, fnActor, substrate.PutInput{
 		Kind:       widgetType,
-		Properties: map[string]any{"name": "mine", "assignee": testdb.Username(t)},
+		Properties: map[string]any{"name": "mine", "assignee": testdb.Repository(t)},
 	})
 	process(t, ops)
 
@@ -949,14 +949,14 @@ func TestTriggerDispatchIsPerRepository(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
-	install := func(username string) (substrate.Dataset, fnOps) {
+	install := func(repository string) (substrate.Dataset, fnOps) {
 		t.Helper()
-		if _, err := svc.CreateRepository(ctx, username, username+".example.com"); err != nil {
-			t.Fatalf("create repository %s: %v", username, err)
+		if _, err := svc.CreateRepository(ctx, repository); err != nil {
+			t.Fatalf("create repository %s: %v", repository, err)
 		}
-		ds, err := svc.Dataset(ctx, username)
+		ds, err := svc.Dataset(ctx, repository)
 		if err != nil {
-			t.Fatalf("open %s: %v", username, err)
+			t.Fatalf("open %s: %v", repository, err)
 		}
 		importVocabulary(t, ds, "tasks")
 		err = enginetest.Install(ctx, ds, owner, fnConnector(
@@ -965,10 +965,10 @@ func TestTriggerDispatchIsPerRepository(t *testing.T) {
 def main(input, host):
     c = input["envelope"]["change"]
     return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
-                         "id": "m-" + c["id"], "properties": {"name": input["envelope"]["repository"]["owner"]}}]}
+                         "id": "m-" + c["id"], "properties": {"name": input["envelope"]["repository"]["authority"]}}]}
 `)))
 		if err != nil {
-			t.Fatalf("install into %s: %v", username, err)
+			t.Fatalf("install into %s: %v", repository, err)
 		}
 		ops, ok := ds.(fnOps)
 		if !ok {
@@ -976,8 +976,8 @@ def main(input, host):
 		}
 		return ds, ops
 	}
-	one, opsOne := install(testdb.Username(t))
-	two, opsTwo := install(testdb.Username(t) + "2")
+	one, opsOne := install(testdb.Repository(t))
+	two, opsTwo := install(testdb.RepositoryLabel(t) + "2.example.com")
 
 	mustPut(t, one, owner, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "only here"}})
 	if n := process(t, opsOne); n != 1 {

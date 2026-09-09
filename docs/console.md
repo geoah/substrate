@@ -5,7 +5,7 @@ substrate itself at `/`, talking to the same public surface as every other
 client. It reads the whole repository and writes through the same public verbs,
 so nothing it does needs an endpoint no other client has.
 
-Signing in is the same exchange [substratectl](substratectl.md) makes: username, password,
+Signing in is the same exchange [substratectl](substratectl.md) makes: the repository, the password,
 and the current 6-digit code ([users and tokens](auth.md)). The console then
 holds a token exactly like a script does: a session is its
 [token record](auth.md#tokens), which is why logging out revokes it. A

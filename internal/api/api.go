@@ -84,7 +84,7 @@ type Config struct {
 	// Now is an optional clock seam for the auth rate limiter.
 	Now func() time.Time
 	// AuthInterval is the minimum spacing between unauthenticated auth
-	// requests per (client IP, username), per username and globally; zero
+	// requests per (client IP, repository), per repository and globally; zero
 	// selects the default.
 	AuthInterval time.Duration
 }

@@ -31,10 +31,10 @@ func TestChangelogDialectGate(t *testing.T) {
 		return svc
 	}
 	svc := open()
-	_, _, secret := registerUser(t, svc, testdb.Username(t))
+	_, _, secret := registerUser(t, svc, testdb.Repository(t))
 	_ = svc.Close()
 
-	db, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, testdb.Username(t)), engine.RoleApp)
+	db, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleApp)
 	if err != nil {
 		t.Fatalf("open repository schema: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestChangelogDialectGate(t *testing.T) {
 
 	// A reopen at the same dialect is silent.
 	svc2 := open()
-	if _, err := svc2.Dataset(ctx, testdb.Username(t)); err != nil {
+	if _, err := svc2.Dataset(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("reopen at the stamped dialect: %v", err)
 	}
 	_ = svc2.Close()
@@ -64,7 +64,7 @@ func TestChangelogDialectGate(t *testing.T) {
 	}
 	svc3 := open()
 	defer func() { _ = svc3.Close() }()
-	_, err = svc3.Dataset(ctx, testdb.Username(t))
+	_, err = svc3.Dataset(ctx, testdb.Repository(t))
 	if err == nil {
 		t.Fatal("a changelog written in a newer dialect must refuse the open")
 	}
@@ -100,7 +100,7 @@ func TestChangelogDialectGate(t *testing.T) {
 	}
 	svc4 := open()
 	defer func() { _ = svc4.Close() }()
-	if _, err := svc4.Dataset(ctx, testdb.Username(t)); err != nil {
+	if _, err := svc4.Dataset(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("reopen after restoring the dialect: %v", err)
 	}
 }
@@ -122,15 +122,15 @@ func TestChangelogDialectAdoptsAnUnstampedStore(t *testing.T) {
 		return svc
 	}
 	svc := open()
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	if _, err := svc.Dataset(ctx, testdb.Username(t)); err != nil {
+	if _, err := svc.Dataset(ctx, testdb.Repository(t)); err != nil {
 		t.Fatal(err)
 	}
 	_ = svc.Close()
 
-	db, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, testdb.Username(t)), engine.RoleApp)
+	db, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleApp)
 	if err != nil {
 		t.Fatalf("open repository schema: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestChangelogDialectAdoptsAnUnstampedStore(t *testing.T) {
 	// The wind-back runs as MAINT: the application role may stamp but not
 	// erase a stamp, so a pre-gate store has to be simulated from the side
 	// erasing a repository runs on.
-	maint, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, testdb.Username(t)), engine.RoleMaint)
+	maint, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleMaint)
 	if err != nil {
 		t.Fatalf("open repository schema as maint: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestChangelogDialectAdoptsAnUnstampedStore(t *testing.T) {
 
 	svc2 := open()
 	defer func() { _ = svc2.Close() }()
-	ds, err := svc2.Dataset(ctx, testdb.Username(t))
+	ds, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("an unstamped changelog must open: %v", err)
 	}
@@ -185,20 +185,20 @@ func TestRebuildRefusesANewerChangelogDialect(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, dsn := newService(t)
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
 	// Opened and cached BEFORE the stamp moves: from here the gate in the open
 	// path never runs for this repository again in this process.
-	if _, err := svc.Dataset(ctx, testdb.Username(t)); err != nil {
+	if _, err := svc.Dataset(ctx, testdb.Repository(t)); err != nil {
 		t.Fatal(err)
 	}
 	rb := svc.(rebuilder)
-	if _, err := rb.RebuildRepository(ctx, testdb.Username(t)); err != nil {
+	if _, err := rb.RebuildRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("rebuild at the stamped dialect: %v", err)
 	}
 
-	db, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, testdb.Username(t)), engine.RoleApp)
+	db, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleApp)
 	if err != nil {
 		t.Fatalf("open repository schema: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestRebuildRefusesANewerChangelogDialect(t *testing.T) {
 	}
 
 	before := recordCount(t, db)
-	_, err = rb.RebuildRepository(ctx, testdb.Username(t))
+	_, err = rb.RebuildRepository(ctx, testdb.Repository(t))
 	if !errors.Is(err, engine.ErrChangelogDialectNewer) {
 		t.Fatalf("rebuild against a newer changelog dialect = %v", err)
 	}

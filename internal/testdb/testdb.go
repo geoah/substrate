@@ -504,36 +504,25 @@ func pgCode(err error) string {
 	return ""
 }
 
-// RepositoryID reads a user's repository id out of the control-plane table.
-// Tests that poke at rows need it because the repository is a COLUMN now, not
-// a schema: a raw pool has to be pinned to the id (engine.OpenScopedDB) before
-// row level security will show it anything.
-func RepositoryID(t *testing.T, dsn, username string) string {
+// Repository is the repository a test registers, and so its id: the test's
+// name folded to a DNS label ([a-z][a-z0-9]{1,29}) with a hash of the whole
+// name behind it, under example.com — the shape a real registration mints
+// from a bare label and the request host. Every test used to register
+// "geoah", which was harmless while the runner keyed function processes on a
+// minted id. The authority is the repository id now (decision record 0052),
+// so two parallel tests registering one name share one id in the
+// process-wide runner.Shared, and either test's Close (Reconcile against an
+// empty live set) retires the other's function process mid-delivery. A
+// subtest's name is its own, so a subtest that opens the repository its
+// parent created takes the parent's name.
+func Repository(t *testing.T) string {
 	t.Helper()
-	db, err := sql.Open("pgx", dsn)
-	if err != nil {
-		t.Fatalf("open postgres: %v", err)
-	}
-	defer func() { _ = db.Close() }()
-	var id string
-	if err := db.QueryRowContext(context.Background(),
-		`SELECT id FROM repositories WHERE username = $1`, username).Scan(&id); err != nil {
-		t.Fatalf("look up repository %q: %v", username, err)
-	}
-	return id
+	return RepositoryLabel(t) + ".example.com"
 }
 
-// Username is the username a test registers its repository under: the
-// test's name folded to the username grammar ([a-z][a-z0-9]{1,29}) with a
-// hash of the whole name behind it, so no two tests in a binary share one.
-// Every test used to register "geoah", which was harmless while the runner
-// keyed function processes on a minted id. The authority is the repository
-// id now (decision record 0052), so two parallel tests registering one
-// username share one id in the process-wide runner.Shared, and either
-// test's Close (Reconcile against an empty live set) retires the other's
-// function process mid-delivery. A subtest's name is its own, so a subtest
-// that opens the repository its parent created takes the parent's name.
-func Username(t *testing.T) string {
+// RepositoryLabel is Repository's bare label, for a test that builds a name
+// of its own from it (a second repository, a package identity).
+func RepositoryLabel(t *testing.T) string {
 	t.Helper()
 	name := t.Name()
 	var b strings.Builder
@@ -545,21 +534,13 @@ func Username(t *testing.T) string {
 	// A test's name begins with Test, so the prefix begins with a letter.
 	prefix := b.String()
 	// 20 readable characters and 8 of hash leave room under the 30-byte cap
-	// for a test that needs a second repository (Username(t) + "2").
+	// for a test that needs a second repository (RepositoryLabel(t) + "2").
 	if len(prefix) > 20 {
 		prefix = prefix[:20]
 	}
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(name))
 	return prefix + fmt.Sprintf("%08x", h.Sum32())
-}
-
-// Authority is the repository authority a test registers, and so its
-// repository id: Username(t) as a label under example.com, the shape
-// DefaultRepositoryAuthority mints at a real registration.
-func Authority(t *testing.T) string {
-	t.Helper()
-	return Username(t) + ".example.com"
 }
 
 // schemaName names a NewSchema schema: the nanosecond and a counter, so

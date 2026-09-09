@@ -11,7 +11,7 @@ import {
   clearSession,
   getToken,
   getTokenId,
-  getUsername,
+  getRepository,
 } from "@/lib/api/session"
 
 const navigate = vi.fn().mockResolvedValue(undefined)
@@ -52,7 +52,7 @@ const MINT = {
 }
 
 function signIn() {
-  fireEvent.change(screen.getByLabelText("Username"), {
+  fireEvent.change(screen.getByLabelText("Repository"), {
     target: { value: "geoah" },
   })
   fireEvent.change(screen.getByLabelText("Password"), {
@@ -80,26 +80,26 @@ describe("LoginPage", () => {
     fetchMock.mockReset()
   })
 
-  it("asks for username, password and the one-time code", () => {
+  it("asks for the repository, password and the one-time code", () => {
     render(<LoginPage />)
-    expect(screen.getByLabelText("Username")).toBeTruthy()
+    expect(screen.getByLabelText("Repository")).toBeTruthy()
     expect(screen.getByLabelText("Password")).toBeTruthy()
     expect(screen.getByLabelText("One-time code")).toBeTruthy()
   })
 
-  it("logs in and stores the minted token, username and token id", async () => {
+  it("logs in and stores the minted token, repository and token id", async () => {
     fetchMock.mockResolvedValue(jsonResponse(201, MINT))
     render(<LoginPage />)
     signIn()
     await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
-    expect(getUsername()).toBe("geoah")
+    expect(getRepository()).toBe("geoah")
     expect(getTokenId()).toBe("tok-1")
     expect(navigate).toHaveBeenCalledWith({ to: "/", replace: true })
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe("/login")
     const body = JSON.parse((init as RequestInit).body as string)
     expect(body).toEqual({
-      username: "geoah",
+      repository: "geoah",
       password: "correct horse battery",
       totpCode: "123456",
       label: "console",
@@ -118,7 +118,7 @@ describe("LoginPage", () => {
     )
     render(<LoginPage />)
     signIn()
-    await screen.findByText(/username, password or code is wrong/i)
+    await screen.findByText(/repository, password or code is wrong/i)
     expect(getToken()).toBeNull()
     expect(navigate).not.toHaveBeenCalled()
   })
@@ -142,7 +142,7 @@ describe("LoginPage", () => {
     fetchMock.mockResolvedValue(jsonResponse(201, MINT))
     render(<LoginPage />)
     expect(screen.queryByLabelText("One-time code")).toBeNull()
-    fireEvent.change(screen.getByLabelText("Username"), {
+    fireEvent.change(screen.getByLabelText("Repository"), {
       target: { value: "geoah" },
     })
     fireEvent.change(screen.getByLabelText("Password"), {
@@ -153,7 +153,7 @@ describe("LoginPage", () => {
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe("/login")
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
-      username: "geoah",
+      repository: "geoah",
       password: "correct horse battery",
       totpCode: "",
       label: "console",
@@ -162,7 +162,7 @@ describe("LoginPage", () => {
 
   it("rejects a non-six-digit code before any request", async () => {
     render(<LoginPage />)
-    fireEvent.change(screen.getByLabelText("Username"), {
+    fireEvent.change(screen.getByLabelText("Repository"), {
       target: { value: "geoah" },
     })
     fireEvent.change(screen.getByLabelText("Password"), {

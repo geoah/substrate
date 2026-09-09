@@ -13,7 +13,7 @@ import (
 
 func sampleManifest(authority string) Manifest {
 	return Manifest{
-		Format: ManifestFormat, Username: "ada", Authority: authority,
+		Format: ManifestFormat, Authority: authority,
 		CreatedAt:         time.Date(2026, 9, 5, 10, 0, 0, 123456000, time.UTC),
 		ChangelogDialect:  3,
 		VocabularyDialect: 3,
@@ -37,14 +37,17 @@ func TestManifestRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"format": 2`, `"authority": "ada.example.com"`, `"createdAt": "2026-09-05T10:00:00.123456Z"`, `"dek": "AAECA/r7/P0="`, `"changelogDialect": 3`, `"vocabularyDialect": 3`, `"dekKeyId": "0123456789abcdef"`, `"sealedDekOnly": true`} {
+	for _, want := range []string{`"format": 3`, `"authority": "ada.example.com"`, `"createdAt": "2026-09-05T10:00:00.123456Z"`, `"dek": "AAECA/r7/P0="`, `"changelogDialect": 3`, `"vocabularyDialect": 3`, `"dekKeyId": "0123456789abcdef"`, `"sealedDekOnly": true`} {
 		if !bytes.Contains(raw, []byte(want)) {
 			t.Errorf("manifest lacks %s:\n%s", want, raw)
 		}
 	}
-	// The authority is the id: there is no second key for it.
-	if bytes.Contains(raw, []byte(`"id"`)) {
-		t.Errorf("manifest carries an id key:\n%s", raw)
+	// The authority is the repository's one name: no second key for it, and
+	// no `username` beside it (format 3).
+	for _, gone := range []string{`"id"`, `"username"`} {
+		if bytes.Contains(raw, []byte(gone)) {
+			t.Errorf("manifest carries a %s key:\n%s", gone, raw)
+		}
 	}
 	info, err := os.Stat(filepath.Join(dir, ManifestName))
 	if err != nil {
@@ -57,19 +60,19 @@ func TestManifestRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Format != m.Format || got.Username != m.Username || got.Authority != m.Authority ||
+	if got.Format != m.Format || got.Authority != m.Authority ||
 		!got.CreatedAt.Equal(m.CreatedAt) || got.ChangelogDialect != m.ChangelogDialect ||
 		got.VocabularyDialect != m.VocabularyDialect || !bytes.Equal(got.DEK, m.DEK) ||
 		got.DEKKeyID != m.DEKKeyID || got.SealedDEKOnly != m.SealedDEKOnly {
 		t.Fatalf("round trip: got %+v, want %+v", got, m)
 	}
 	// A rewrite replaces the file whole.
-	m.Username = "grace"
+	m.ChangelogDialect = 4
 	if err := WriteManifest(dir, m); err != nil {
 		t.Fatal(err)
 	}
 	got, err = ReadManifest(dir)
-	if err != nil || got.Username != "grace" {
+	if err != nil || got.ChangelogDialect != 4 {
 		t.Fatalf("after rewrite: %+v, %v", got, err)
 	}
 	// No temporary file is left behind.
@@ -111,7 +114,7 @@ func TestManifestReadsFormatOne(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Format != 1 || m.Authority != "ada.example.com" || m.Username != "ada" || m.ChangelogDialect != 2 || m.VocabularyDialect != 0 ||
+	if m.Format != 1 || m.Authority != "ada.example.com" || m.ChangelogDialect != 2 || m.VocabularyDialect != 0 ||
 		!m.CreatedAt.Equal(time.Date(2026, 9, 5, 10, 0, 0, 0, time.UTC)) || !bytes.Equal(m.DEK, []byte{0, 1, 2, 3}) ||
 		m.DEKKeyID != "" || m.SealedDEKOnly {
 		t.Fatalf("manifest = %+v", m)
@@ -178,7 +181,7 @@ func TestLegacyManifest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lm.ID != "k3j9x2m41pfq" || lm.Manifest.Authority != "ada.example.com" || lm.Manifest.Username != "ada" ||
+	if lm.ID != "k3j9x2m41pfq" || lm.Manifest.Authority != "ada.example.com" ||
 		lm.Manifest.ChangelogDialect != 2 || !bytes.Equal(lm.Manifest.DEK, []byte{0, 1, 2, 3}) ||
 		!lm.Manifest.CreatedAt.Equal(time.Date(2026, 9, 5, 10, 0, 0, 0, time.UTC)) {
 		t.Fatalf("legacy manifest = %+v", lm)
@@ -236,9 +239,9 @@ func TestWriteManifestRefusals(t *testing.T) {
 	}{
 		{"format 0", func(m *Manifest) { m.Format = 0 }, ErrManifestFormat},
 		{"format 1 is read, never written", func(m *Manifest) { m.Format = 1 }, ErrManifestFormat},
-		{"format 3", func(m *Manifest) { m.Format = 3 }, ErrManifestFormat},
+		{"format 2 is read, never written", func(m *Manifest) { m.Format = 2 }, ErrManifestFormat},
+		{"format 4", func(m *Manifest) { m.Format = 4 }, ErrManifestFormat},
 		{"no authority", func(m *Manifest) { m.Authority = "" }, ErrManifestIncomplete},
-		{"no username", func(m *Manifest) { m.Username = "" }, ErrManifestIncomplete},
 		{"authority is not one", func(m *Manifest) { m.Authority = "a/b" }, ErrRepositoryAuthority},
 		{"authority is the old id shape", func(m *Manifest) { m.Authority = "k3j9x2m41pfq" }, ErrRepositoryAuthority},
 		{"authority names another directory", func(m *Manifest) { m.Authority = "other.example.com" }, ErrManifestAuthority},
@@ -267,18 +270,18 @@ func TestReadManifestRefusals(t *testing.T) {
 		body string
 		want error
 	}{
-		{"format 3", `{"format":3,"authority":"ada.example.com","username":"ada"}`, ErrManifestFormat},
-		{"no format", `{"authority":"ada.example.com","username":"ada"}`, ErrManifestFormat},
-		{"no authority", `{"format":2,"username":"ada"}`, ErrManifestIncomplete},
-		{"no username", `{"format":2,"authority":"ada.example.com"}`, ErrManifestIncomplete},
+		{"format 4", `{"format":4,"authority":"ada.example.com"}`, ErrManifestFormat},
+		{"no format", `{"authority":"ada.example.com"}`, ErrManifestFormat},
+		{"no authority", `{"format":3}`, ErrManifestIncomplete},
+		{"format 3 with the format-2 username", `{"format":3,"authority":"ada.example.com","username":"ada"}`, nil},
 		{"format 1 with no authority", `{"format":1,"username":"ada"}`, ErrManifestIncomplete},
-		{"wrong directory", `{"format":2,"authority":"grace.example.com","username":"ada"}`, ErrManifestAuthority},
+		{"wrong directory", `{"format":3,"authority":"grace.example.com"}`, ErrManifestAuthority},
 		{"the pre-authority id key", `{"format":1,"id":"k3j9x2m41pfq","authority":"ada.example.com","username":"ada"}`, nil},
 		{"the pre-authority id key in format 2", `{"format":2,"id":"k3j9x2m41pfq","authority":"ada.example.com","username":"ada"}`, nil},
-		{"unknown key", `{"format":2,"authority":"ada.example.com","username":"ada","head":5}`, nil},
+		{"unknown key", `{"format":3,"authority":"ada.example.com","head":5}`, nil},
 		{"format 1 with the format-2 key", `{"format":1,"authority":"ada.example.com","username":"ada","vocabularyDialect":3}`, nil},
-		{"bad time", `{"format":2,"authority":"ada.example.com","username":"ada","createdAt":"yesterday"}`, nil},
-		{"bad base64", `{"format":2,"authority":"ada.example.com","username":"ada","dek":"!!"}`, nil},
+		{"bad time", `{"format":3,"authority":"ada.example.com","createdAt":"yesterday"}`, nil},
+		{"bad base64", `{"format":3,"authority":"ada.example.com","dek":"!!"}`, nil},
 		{"not JSON", `{`, nil},
 	}
 	for _, c := range cases {
@@ -304,11 +307,11 @@ func TestReadManifestRefusals(t *testing.T) {
 func TestManifestJSONOmitsNothing(t *testing.T) {
 	// Every key is written even when zero, so a reader never has to guess
 	// whether a missing key was unset or unknown to the writer.
-	raw, err := json.Marshal(Manifest{Format: ManifestFormat, Username: "ada"})
+	raw, err := json.Marshal(Manifest{Format: ManifestFormat})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"format":2,"username":"ada","authority":"","createdAt":"","changelogDialect":0,"vocabularyDialect":0,"dek":null,"dekKeyId":"","sealedDekOnly":false}`
+	want := `{"format":3,"authority":"","createdAt":"","changelogDialect":0,"vocabularyDialect":0,"dek":null,"dekKeyId":"","sealedDekOnly":false}`
 	if string(raw) != want {
 		t.Fatalf("got %s\nwant %s", raw, want)
 	}

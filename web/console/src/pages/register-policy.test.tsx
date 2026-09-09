@@ -37,6 +37,7 @@ const ENROLLMENT = {
 const MINT = {
   token: { id: "tok-1", label: "console", createdAt: "2026-08-12T00:00:00Z" },
   secret: "substrate_tok_minted",
+  repository: "geoah.localhost",
 }
 const PASSWORD = "correct horse battery"
 
@@ -44,7 +45,7 @@ function fillFirstStep() {
   fireEvent.change(screen.getByLabelText("Invite code"), {
     target: { value: "INV-1" },
   })
-  fireEvent.change(screen.getByLabelText("Username"), {
+  fireEvent.change(screen.getByLabelText("Repository"), {
     target: { value: "geoah" },
   })
   fireEvent.change(screen.getByLabelText("Password"), {
@@ -107,16 +108,15 @@ describe("RegisterPage and the door's own answer", () => {
     )!
     // An empty seed asks the substrate to mint the one it seals: the seed the
     // abandoned enrollment handed out is not smuggled into the commit.
-    // The authority rides along: the username under this console's host
+    // The bare label the reader typed, completed under this console's host
     // (jsdom serves from `localhost`), because the reader left it derived.
     expect(JSON.parse((call[1] as RequestInit).body as string)).toEqual({
       inviteCode: "INV-1",
-      username: "geoah",
+      repository: "geoah.localhost",
       password: PASSWORD,
       totpSecret: "",
       totpCode: "",
       label: "console",
-      authority: "geoah.localhost",
     })
   })
 

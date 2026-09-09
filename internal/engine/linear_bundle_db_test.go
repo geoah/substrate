@@ -490,10 +490,10 @@ func linearOpenDataset(t *testing.T, client *http.Client) (*service, *dataset) {
 	if !ok {
 		t.Fatalf("service is a %T", svc)
 	}
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	d, err := svc.Dataset(ctx, testdb.Username(t))
+	d, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}

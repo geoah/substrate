@@ -35,7 +35,7 @@ func (a *app) blobsMigrateCommand() *cobra.Command {
 	var from, to string
 	var dryRun bool
 	cmd := &cobra.Command{
-		Use:   "migrate [username]",
+		Use:   "migrate [repository]",
 		Short: "Move blob bytes out of the Postgres `blobs` column into the configured store, repository by repository",
 		Long: `Move every blob's bytes out of the Postgres ` + "`blobs`" + ` column into the store the
 server runs on, one repository at a time, and delete each row only once the
@@ -56,7 +56,7 @@ It is resumable and re-runnable. An object the target already holds is not
 copied again, and a row the column no longer holds was already moved, so a
 run interrupted anywhere continues by being run again. Stop the server first.
 
-With no username it moves every repository; with one, only that user's.`,
+With no repository it moves every one; with one, only that repository's.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if from != blobbytes.BackendPostgres {
@@ -91,7 +91,7 @@ With no username it moves every repository; with one, only that user's.`,
 				return err
 			}
 			if len(args) == 1 {
-				row, err := repositoryRowByUsername(cmd.Context(), db, args[0])
+				row, err := repositoryRowByID(cmd.Context(), db, args[0])
 				if err != nil {
 					return err
 				}
@@ -103,10 +103,10 @@ With no username it moves every repository; with one, only that user's.`,
 			for _, row := range rows {
 				moved, err := a.migrateRepositoryBlobs(cmd.Context(), row, source, target, dryRun)
 				if err != nil {
-					return fmt.Errorf("repository %s: %w", row.Username, err)
+					return fmt.Errorf("repository %s: %w", row.ID, err)
 				}
 				total += moved
-				fmt.Fprintf(a.out, "%s: %d blobs\n", row.Username, moved)
+				fmt.Fprintf(a.out, "%s: %d blobs\n", row.ID, moved)
 			}
 			verb := "moved"
 			if dryRun {

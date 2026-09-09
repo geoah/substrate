@@ -367,9 +367,8 @@ func (h *harness) writeConfigAuthority(authority string) {
 	cfg := &Config{
 		CurrentContext: "test",
 		Contexts: []Context{{
-			Name: "test", Server: h.server, Username: "geoah",
-			Authority: authority,
-			Token:     "substrate_tok_geoah_test", TokenID: "tk01",
+			Name: "test", Server: h.server, Repository: authority,
+			Token: "substrate_tok_geoah_test", TokenID: "tk01",
 		}},
 	}
 	if err := saveConfig(h.configPath, cfg); err != nil {

@@ -14,12 +14,17 @@ import (
 // directory.
 const ManifestName = "repository.json"
 
-// ManifestFormat is the manifest format this package writes. Format 2 adds
-// `vocabularyDialect` to format 1's keys. Format 1, which v0.46.0 through
-// v0.53.0 wrote, is still read (manifestFormatOne, and ReadLegacyManifest
-// for v0.46.0's shape); a manifest naming any other format is refused rather
-// than guessed at.
-const ManifestFormat = 2
+// ManifestFormat is the manifest format this package writes. Format 3 drops
+// format 2's `username`: a repository has one name, its authority, and the
+// user logs in with it. Formats 2 and 1 are still read (manifestFormatTwo,
+// manifestFormatOne, and ReadLegacyManifest for v0.46.0's shape) and their
+// `username` is dropped on the way in; a manifest naming any other format is
+// refused rather than guessed at.
+const ManifestFormat = 3
+
+// manifestFormatTwo is the format v0.54.0 through v0.60.0 wrote: format 3's
+// keys plus the `username` that was then the login name. Read, never written.
+const manifestFormatTwo = 2
 
 // manifestFormatOne is the format v0.47.0 through v0.53.0 wrote: format 2's
 // keys without `vocabularyDialect`. `dekKeyId` and `sealedDekOnly` joined the
@@ -33,9 +38,8 @@ var (
 	// ErrManifestFormat is returned for a manifest whose format this package
 	// does not read, and by WriteManifest for one that is not ManifestFormat.
 	ErrManifestFormat = errors.New("changelogfile: manifest format is not one this package handles")
-	// ErrManifestIncomplete is returned for a manifest with no authority or
-	// no username.
-	ErrManifestIncomplete = errors.New("changelogfile: manifest lacks an authority or a username")
+	// ErrManifestIncomplete is returned for a manifest with no authority.
+	ErrManifestIncomplete = errors.New("changelogfile: manifest lacks an authority")
 	// ErrManifestAuthority is returned when the manifest's authority is not
 	// the name of the directory it sits in: the directory is keyed by the
 	// authority, and a renamed copy would import under the wrong key.
@@ -53,7 +57,6 @@ type Manifest struct {
 	// ManifestFormat, or manifestFormatOne on a manifest v0.46.0 through
 	// v0.53.0 wrote.
 	Format    int
-	Username  string
 	Authority string
 	CreatedAt time.Time
 	// ChangelogDialect is the repository's `repositories.changelog_dialect`,
@@ -80,10 +83,26 @@ type Manifest struct {
 	SealedDEKOnly bool
 }
 
-// manifestWire is the JSON form of format 2. CreatedAt is written in
+// manifestWire is the JSON form of format 3. CreatedAt is written in
 // TSFormat, the precision the row holds, and read as any RFC 3339 time.
 type manifestWire struct {
 	Format            int    `json:"format"`
+	Authority         string `json:"authority"`
+	CreatedAt         string `json:"createdAt"`
+	ChangelogDialect  int    `json:"changelogDialect"`
+	VocabularyDialect int    `json:"vocabularyDialect"`
+	DEK               []byte `json:"dek"`
+	DEKKeyID          string `json:"dekKeyId"`
+	SealedDEKOnly     bool   `json:"sealedDekOnly"`
+}
+
+// manifestWireTwo is the JSON form of format 2: manifestWire plus the
+// `username` this package no longer keeps. Its key set is closed on its own,
+// like every format's.
+type manifestWireTwo struct {
+	Format int `json:"format"`
+	// Username is declared so the closed key set admits the key; the value is
+	// dropped.
 	Username          string `json:"username"`
 	Authority         string `json:"authority"`
 	CreatedAt         string `json:"createdAt"`
@@ -94,7 +113,7 @@ type manifestWire struct {
 	SealedDEKOnly     bool   `json:"sealedDekOnly"`
 }
 
-// manifestWireOne is the JSON form of format 1: manifestWire without
+// manifestWireOne is the JSON form of format 1: manifestWireTwo without
 // `vocabularyDialect`. Its key set is closed on its own, so a format-1
 // document carrying the format-2 key is refused as unknown.
 type manifestWireOne struct {
@@ -111,7 +130,7 @@ type manifestWireOne struct {
 // MarshalJSON renders the manifest in its file form.
 func (m Manifest) MarshalJSON() ([]byte, error) {
 	w := manifestWire{
-		Format: m.Format, Username: m.Username, Authority: m.Authority,
+		Format: m.Format, Authority: m.Authority,
 		ChangelogDialect: m.ChangelogDialect, VocabularyDialect: m.VocabularyDialect, DEK: m.DEK,
 		DEKKeyID: m.DEKKeyID, SealedDEKOnly: m.SealedDEKOnly,
 	}
@@ -121,7 +140,7 @@ func (m Manifest) MarshalJSON() ([]byte, error) {
 	return json.Marshal(w)
 }
 
-// UnmarshalJSON parses the file form of format 2 or format 1, chosen by the
+// UnmarshalJSON parses the file form of format 3, 2 or 1, chosen by the
 // `format` key. Each format's key set is closed: an unknown key is refused,
 // because a format is defined by exactly its keys and a later format
 // announces itself in `format`. The `id` key a pre-authority binary wrote is
@@ -139,13 +158,24 @@ func (m *Manifest) UnmarshalJSON(data []byte) error {
 		if err := decodeClosed(data, &w); err != nil {
 			return err
 		}
+	case manifestFormatTwo:
+		var two manifestWireTwo
+		if err := decodeClosed(data, &two); err != nil {
+			return err
+		}
+		w = manifestWire{
+			Format: two.Format, Authority: two.Authority,
+			CreatedAt: two.CreatedAt, ChangelogDialect: two.ChangelogDialect,
+			VocabularyDialect: two.VocabularyDialect, DEK: two.DEK,
+			DEKKeyID: two.DEKKeyID, SealedDEKOnly: two.SealedDEKOnly,
+		}
 	case manifestFormatOne:
 		var one manifestWireOne
 		if err := decodeClosed(data, &one); err != nil {
 			return err
 		}
 		w = manifestWire{
-			Format: one.Format, Username: one.Username, Authority: one.Authority,
+			Format: one.Format, Authority: one.Authority,
 			CreatedAt: one.CreatedAt, ChangelogDialect: one.ChangelogDialect, DEK: one.DEK,
 			DEKKeyID: one.DEKKeyID, SealedDEKOnly: one.SealedDEKOnly,
 		}
@@ -157,7 +187,7 @@ func (m *Manifest) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*m = Manifest{
-		Format: w.Format, Username: w.Username, Authority: w.Authority,
+		Format: w.Format, Authority: w.Authority,
 		CreatedAt: created, ChangelogDialect: w.ChangelogDialect,
 		VocabularyDialect: w.VocabularyDialect, DEK: w.DEK,
 		DEKKeyID: w.DEKKeyID, SealedDEKOnly: w.SealedDEKOnly,
@@ -188,7 +218,7 @@ func parseManifestTime(s string) (time.Time, error) {
 // and where it is written (WriteManifest), because the two accept different
 // sets.
 func (m Manifest) check(repoDir string) error {
-	if m.Authority == "" || m.Username == "" {
+	if m.Authority == "" {
 		return ErrManifestIncomplete
 	}
 	if err := checkRepositoryAuthority(m.Authority); err != nil {
@@ -284,14 +314,14 @@ func ReadLegacyManifest(repoDir string) (LegacyManifest, error) {
 	lm := LegacyManifest{
 		ID: w.ID,
 		Manifest: Manifest{
-			Format: w.Format, Username: w.Username, Authority: w.Authority,
+			Format: w.Format, Authority: w.Authority,
 			CreatedAt: created, ChangelogDialect: w.ChangelogDialect, DEK: w.DEK,
 		},
 	}
 	if lm.Manifest.Format != manifestFormatOne {
 		return LegacyManifest{}, fmt.Errorf("%w: got %d", ErrManifestFormat, lm.Manifest.Format)
 	}
-	if lm.ID == "" || lm.Manifest.Authority == "" || lm.Manifest.Username == "" {
+	if lm.ID == "" || lm.Manifest.Authority == "" {
 		return LegacyManifest{}, fmt.Errorf("%w (a pre-authority manifest needs an id too)", ErrManifestIncomplete)
 	}
 	if !reLegacyRepositoryID.MatchString(lm.ID) || lm.ID == "." || lm.ID == ".." {

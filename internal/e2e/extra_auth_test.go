@@ -196,7 +196,7 @@ func xaCaseInviteCode(c *C) {
 
 	c.paceAuth()
 	status, raw := c.doAs("", http.MethodPost, "/register/enroll",
-		map[string]any{"inviteCode": wrongInvite, "username": name}, nil)
+		map[string]any{"inviteCode": wrongInvite, "repository": name}, nil)
 	c.requiref(status == http.StatusUnauthorized, "`/register/enroll` with a wrong invite code answered %d, want 401%s", status, redacted(status, raw))
 	enrollErr := xaErrorOf(c, raw)
 	c.requiref(enrollErr.Error.Code == "auth", "the enroll refusal's code is %q, want `auth`", enrollErr.Error.Code)
@@ -205,7 +205,7 @@ func xaCaseInviteCode(c *C) {
 
 	c.paceAuth()
 	status, raw = c.doAs("", http.MethodPost, "/register",
-		map[string]any{"inviteCode": wrongInvite, "username": name, "password": c.r.password}, nil)
+		map[string]any{"inviteCode": wrongInvite, "repository": name, "password": c.r.password}, nil)
 	c.requiref(status == http.StatusUnauthorized, "`/register` with a wrong invite code answered %d, want 401%s", status, redacted(status, raw))
 	registerErr := xaErrorOf(c, raw)
 	c.requiref(registerErr.Error.Code == "auth", "the register refusal's code is %q, want `auth`", registerErr.Error.Code)
@@ -234,7 +234,7 @@ func xaCaseCredentialValidation(c *C) {
 	for _, name := range []string{"9bad", "Bad"} {
 		c.paceAuth()
 		status, raw := c.doAs("", http.MethodPost, "/register",
-			map[string]any{"inviteCode": r.invite, "username": name, "password": r.password}, nil)
+			map[string]any{"inviteCode": r.invite, "repository": name, "password": r.password}, nil)
 		c.requiref(status == http.StatusUnprocessableEntity,
 			"registering the username %q answered %d, want 422%s", name, status, redacted(status, raw))
 		e := xaErrorOf(c, raw)
@@ -251,7 +251,7 @@ func xaCaseCredentialValidation(c *C) {
 	name := xaName("xapw")
 	c.paceAuth()
 	status, raw := c.doAs("", http.MethodPost, "/register",
-		map[string]any{"inviteCode": r.invite, "username": name, "password": "short"}, nil)
+		map[string]any{"inviteCode": r.invite, "repository": name, "password": "short"}, nil)
 	c.requiref(status == http.StatusUnprocessableEntity,
 		"registering with a five-character password answered %d, want 422: %s", status, raw)
 	e := xaErrorOf(c, raw)
@@ -272,15 +272,15 @@ func xaCaseLoginOracle(c *C) {
 	ghost := xaName("xaghost")
 	c.paceAuth()
 	unknownStatus, unknownRaw := c.doAs("", http.MethodPost, "/login",
-		map[string]any{"username": ghost, "password": r.password}, nil)
+		map[string]any{"repository": ghost, "password": r.password}, nil)
 	c.requiref(unknownStatus == http.StatusUnauthorized,
 		"logging in as the unregistered `%s` answered %d, want 401%s", ghost, unknownStatus, redacted(unknownStatus, unknownRaw))
 
 	c.paceAuth()
 	wrongStatus, wrongRaw := c.doAs("", http.MethodPost, "/login",
-		map[string]any{"username": r.username, "password": "definitely-not-the-password"}, nil)
+		map[string]any{"repository": r.repository, "password": "definitely-not-the-password"}, nil)
 	c.requiref(wrongStatus == http.StatusUnauthorized,
-		"a wrong password for `%s` answered %d, want 401%s", r.username, wrongStatus, redacted(wrongStatus, wrongRaw))
+		"a wrong password for `%s` answered %d, want 401%s", r.repository, wrongStatus, redacted(wrongStatus, wrongRaw))
 
 	c.requiref(unknownStatus == wrongStatus,
 		"an unknown user answered %d and a wrong password answered %d", unknownStatus, wrongStatus)
@@ -306,9 +306,9 @@ func xaCaseRefusedRegistrationWrites(c *C) {
 
 	c.paceAuth()
 	status, raw := c.doAs("", http.MethodPost, "/register",
-		map[string]any{"inviteCode": r.invite, "username": r.username, "password": "a-completely-different-password"}, nil)
+		map[string]any{"inviteCode": r.invite, "repository": r.repository, "password": "a-completely-different-password"}, nil)
 	c.requiref(status == http.StatusUnprocessableEntity,
-		"re-registering `%s` answered %d, want 422%s", r.username, status, redacted(status, raw))
+		"re-registering `%s` answered %d, want 422%s", r.repository, status, redacted(status, raw))
 	e := xaErrorOf(c, raw)
 	c.requiref(e.Error.Code == "validation", "the duplicate refusal's code is %q, want `validation`", e.Error.Code)
 	c.requiref(strings.Contains(e.Error.Message, "already exists"),
@@ -460,7 +460,7 @@ func xaCaseRateWindow(c *C) {
 	r := c.r
 	// The first two attempts carry a wrong password on purpose: neither may
 	// succeed, and neither spends a TOTP code on a door that enforces one.
-	wrong := map[string]any{"username": r.username, "password": "definitely-not-the-password"}
+	wrong := map[string]any{"repository": r.repository, "password": "definitely-not-the-password"}
 
 	c.paceAuth()
 	status, _, raw := xaSend(c, "", http.MethodPost, "/login", wrong, nil)
@@ -486,7 +486,7 @@ func xaCaseRateWindow(c *C) {
 	c.stepf("waited the %s the server asked for", wait.Round(100*time.Millisecond))
 
 	// The window reopened, so the correct credentials get through and mint.
-	login := map[string]any{"username": r.username, "password": r.password, "label": "e2e-rate-window"}
+	login := map[string]any{"repository": r.repository, "password": r.password, "label": "e2e-rate-window"}
 	if r.totpSecret != "" {
 		login["totpCode"] = r.nextTOTPCode(c)
 	}
@@ -532,7 +532,7 @@ func xaCaseIsolation(c *C) {
 		Secret string `json:"secret"`
 	}
 	status, raw := c.doAs("", http.MethodPost, "/register",
-		map[string]any{"inviteCode": r.invite, "username": second, "password": r.password}, &reg)
+		map[string]any{"inviteCode": r.invite, "repository": second, "password": r.password}, &reg)
 	c.requiref(status == http.StatusCreated, "registering a second user answered %d, want 201%s", status, redacted(status, raw))
 	c.requiref(reg.Secret != "", "the second registration returned no token secret")
 	xaSecond.username, xaSecond.token = second, reg.Secret
@@ -597,5 +597,5 @@ func xaCaseCatalogIsolation(c *C) {
 	c.requiref(!xaBundleInstalled(c, xaSecond.token, tasksBundleID),
 		"the second user's catalog says `%s` is installed; nobody installed it there", tasksBundleID)
 	c.stepf("one catalog, two repositories: `%s` is installed=true for `%s` and installed=false for `%s`",
-		tasksBundleID, c.r.username, xaSecond.username)
+		tasksBundleID, c.r.repository, xaSecond.username)
 }

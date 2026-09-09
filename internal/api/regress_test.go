@@ -93,7 +93,7 @@ func (s *bundleService) Authenticate(ctx context.Context, secret string) (substr
 func newBundleEnv(t *testing.T) (*testEnv, *bundleDataset) {
 	t.Helper()
 	fs := newFakeService()
-	bd := &bundleDataset{fakeDataset: fs.datasets["geoah"], pkg: "widgets.example.com/widgets"}
+	bd := &bundleDataset{fakeDataset: fs.datasets[fakeRepository], pkg: "widgets.example.com/widgets"}
 	svc := &bundleService{fakeService: fs, ds: bd}
 	clock := &testClock{t: time.Unix(1_700_000_000, 0).UTC()}
 	return &testEnv{svc: fs, h: New(Config{Service: svc, Now: clock.now}), clock: clock}, bd
@@ -111,7 +111,7 @@ const bindPath = bundlePath + "/bind"
 // before the engine is touched.
 func TestBundleBindValidatesAndAnswersStatus(t *testing.T) {
 	env, bd := newBundleEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 
 	rec := env.do(t, http.MethodPost, bindPath, tok, map[string]any{"input": "client", "record": "cfg-1"})
 	if rec.Code != http.StatusOK {
@@ -145,7 +145,7 @@ func TestBundleBindValidatesAndAnswersStatus(t *testing.T) {
 func TestBundleUninstallAcksTombstone(t *testing.T) {
 	env, bd := newBundleEnv(t)
 	bd.statusErr = substrate.ErrNotFound // the row is gone once uninstall ran
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 
 	rec := env.do(t, http.MethodPatch, bundlePath, tok,
 		map[string]any{"properties": map[string]any{"uninstalled": true}})
@@ -165,7 +165,7 @@ func TestBundleUninstallAcksTombstone(t *testing.T) {
 // is a 400 before any op runs (decision 0033).
 func TestBundleLifecycleIsRecordState(t *testing.T) {
 	env, _ := newBundleEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 
 	rec := env.do(t, http.MethodPatch, bundlePath, tok,
 		map[string]any{"properties": map[string]any{"disabled": true}})
@@ -207,7 +207,7 @@ func (e *testEnv) gqlRaw(t *testing.T, token, query string, vars map[string]any)
 // errors rather than silently dropping the CAS precondition.
 func TestGraphQLInputStrictDecodeMiscasedIfVersion(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	res := env.gqlRaw(t, tok,
 		`mutation ($in: JSON!) { patch(kind: "samples.substrate.reamde.dev/people/person", id: "x", input: $in) { id } }`,
 		map[string]any{"in": map[string]any{"ifversion": 3}})
@@ -223,7 +223,7 @@ func TestGraphQLInputStrictDecodeMiscasedIfVersion(t *testing.T) {
 // Long variable errors (UseNumber + coerceLong), never truncates.
 func TestGraphQLLongVariableRejectsFractional(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	res := env.gqlRaw(t, tok, `query ($from: Long) { changelog(from: $from) { from } }`,
 		map[string]any{"from": 1.5})
 	if len(res.Errors) == 0 {
@@ -235,7 +235,7 @@ func TestGraphQLLongVariableRejectsFractional(t *testing.T) {
 // past 2^63 errors rather than wrapping.
 func TestGraphQLLongVariableRejectsOutOfRange(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	// 2^63 as a JSON number literal — one past the int64 ceiling.
 	res := env.gqlRaw(t, tok, `query ($from: Long) { changelog(from: $from) { from } }`,
 		map[string]any{"from": float64(9223372036854775808.0)})
@@ -251,7 +251,7 @@ func TestGraphQLLongVariableRejectsOutOfRange(t *testing.T) {
 // pushed into inlining its page sizes.
 func TestGraphQLIntVariableIsUsable(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	res := env.gqlRaw(t, tok,
 		`query ($first: Int) { records(first: $first) { nodes { id } } }`,
 		map[string]any{"first": 5})
@@ -259,7 +259,7 @@ func TestGraphQLIntVariableIsUsable(t *testing.T) {
 		t.Fatalf("an Int variable was refused: %v", res.Errors)
 	}
 	// The value ARRIVES: the fake records the query it was listed with.
-	if got := env.svc.datasets["geoah"].lastQuery.First; got != 5 {
+	if got := env.svc.datasets[fakeRepository].lastQuery.First; got != 5 {
 		t.Fatalf("first reached the dataset as %d, want 5", got)
 	}
 	// And a Long variable travels the same path in the same request shape.
@@ -279,7 +279,7 @@ func TestGraphQLIntVariableIsUsable(t *testing.T) {
 // decode catches the stray closer.
 func TestStrictDecodeRejectsTrailingCloser(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/samples.substrate.reamde.dev/people/person", strings.NewReader("{}}"))
 	req.RemoteAddr = "10.0.0.1:1234"
 	req.Header.Set("Authorization", "Bearer "+tok)

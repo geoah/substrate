@@ -191,7 +191,7 @@ func TestTheRebuiltIndexMatchesTheLiveOne(t *testing.T) {
 	}
 
 	before := foldOf(t, ds)
-	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Username(t)); err != nil {
+	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	if after := foldOf(t, ds); !bytes.Equal(before, after) {

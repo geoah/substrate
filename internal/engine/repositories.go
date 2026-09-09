@@ -28,8 +28,7 @@ type Repository struct {
 	// home of the kinds its user declares. It is the primary key, the scope
 	// every repository-scoped query runs under, the DEK wrap's binding and the
 	// name of the directory under the data root.
-	ID       string
-	Username string
+	ID string
 	// Authority always equals ID: the column predates the decision to make the
 	// authority the id, and a landed migration is never edited, so it stays
 	// and migration 0015 holds the two equal.
@@ -70,7 +69,7 @@ func (r Repository) scope() Scope { return Scope{Repository: r.ID} }
 
 // info renders the repository the way the read surfaces still describe it.
 func (r Repository) info() substrate.RepositoryInfo {
-	return substrate.RepositoryInfo{ID: r.ID, Name: r.Username, Authority: r.Authority, State: "active"}
+	return substrate.RepositoryInfo{ID: r.ID, Authority: r.Authority, State: "active"}
 }
 
 // ensureRoles creates the two Postgres roles the isolation rests on. It is
@@ -270,10 +269,9 @@ func (s *service) lockRegistration(ctx context.Context, authority string) (*sql.
 // CREATION (engine.go createSeededRepository). Everything the repository
 // contains is already committed when this runs, so the user exists exactly
 // when this row does. The registration lock keeps two registrations for one
-// authority apart; the unique index on the username is what a racing
-// registration of one username under two authorities loses on, and losing it
-// costs the loser nothing but the rows under its own authority, which it
-// erases on the way out.
+// authority apart, and a racing registration that gets past it loses on the
+// primary key instead; losing costs the loser nothing but the rows under its
+// own authority, which it erases on the way out.
 func (s *service) insertRepositoryRow(ctx context.Context, cp controlPlane, r *Repository) error {
 	generation, err := newHistoryGeneration()
 	if err != nil {
@@ -281,14 +279,14 @@ func (s *service) insertRepositoryRow(ctx context.Context, cp controlPlane, r *R
 	}
 	r.HistoryGeneration = generation
 	err = cp.QueryRowContext(ctx, `
-		INSERT INTO repositories (id, username, authority, dek, history_generation, dek_key_id, sealed_dek_only)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING created_at`, r.ID, r.Username, r.Authority, r.DEK, r.HistoryGeneration, nullString(r.DEKKeyID), r.SealedDEKOnly).Scan(&r.CreatedAt)
+		INSERT INTO repositories (id, authority, dek, history_generation, dek_key_id, sealed_dek_only)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING created_at`, r.ID, r.Authority, r.DEK, r.HistoryGeneration, nullString(r.DEKKeyID), r.SealedDEKOnly).Scan(&r.CreatedAt)
 	if err != nil {
 		if taken := repositoryRowTaken(err, r); taken != nil {
 			return taken
 		}
-		return fmt.Errorf("substrate/engine: create repository %q: %w", r.Username, err)
+		return fmt.Errorf("substrate/engine: create repository %q: %w", r.ID, err)
 	}
 	r.CreatedAt = r.CreatedAt.UTC()
 	return nil
@@ -299,10 +297,10 @@ func (s *service) insertRepositoryRow(ctx context.Context, cp controlPlane, r *R
 const sqlstateUniqueViolation = "23505"
 
 // repositoryRowTaken names a unique violation on the control-plane insert the
-// way the early lookups do: the primary key (the authority) and the authority
-// index are one refusal, the username index the other. The race that reaches
-// here is the one the lookups could not see, and the caller must not learn
-// less from it than from the lookup.
+// way the early lookup does: the primary key (the authority) and the authority
+// index are the same refusal. The race that reaches here is the one the lookup
+// could not see, and the caller must not learn less from it than from the
+// lookup.
 func repositoryRowTaken(err error, r *Repository) error {
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) || pgErr.Code != sqlstateUniqueViolation {
@@ -311,8 +309,6 @@ func repositoryRowTaken(err error, r *Repository) error {
 	switch pgErr.ConstraintName {
 	case "repositories_pkey", "repositories_authority_key":
 		return errAuthorityTaken(r.Authority)
-	case "repositories_username_key":
-		return errUsernameTaken(r.Username)
 	}
 	return nil
 }
@@ -486,35 +482,25 @@ var repositoryScopedTables = []string{
 	"idempotency_keys",
 }
 
-func (s *service) repositoryByUsername(ctx context.Context, username string) (Repository, error) {
-	return s.repositoryByUsernameOn(ctx, s.maint, username)
-}
-
 func (s *service) repositoryByID(ctx context.Context, id string) (Repository, error) {
 	return s.repositoryByIDOn(ctx, s.maint, id)
 }
 
-// repositoryByUsernameOn and repositoryByIDOn are the lookups on a given
-// maint handle, for the creation path, which runs them on the connection the
-// registration lock is held on.
-func (s *service) repositoryByUsernameOn(ctx context.Context, q dbx, username string) (Repository, error) {
-	return s.scanRepository(q.QueryRowContext(ctx,
-		`SELECT `+repositoryColumns+` FROM repositories WHERE username = $1`, username), username)
-}
-
+// repositoryByIDOn is the lookup on a given maint handle, for the creation
+// path, which runs it on the connection the registration lock is held on.
 func (s *service) repositoryByIDOn(ctx context.Context, q dbx, id string) (Repository, error) {
 	return s.scanRepository(q.QueryRowContext(ctx,
 		`SELECT `+repositoryColumns+` FROM repositories WHERE id = $1`, id), id)
 }
 
 // repositoryColumns is the column list scanRepositoryRow reads, in its order.
-const repositoryColumns = `id, username, authority, created_at, dek, history_generation, dek_key_id, sealed_dek_only`
+const repositoryColumns = `id, authority, created_at, dek, history_generation, dek_key_id, sealed_dek_only`
 
 // scanRepositoryRow reads one row of repositoryColumns.
 func scanRepositoryRow(scan func(dest ...any) error) (Repository, error) {
 	var r Repository
 	var keyID sql.NullString
-	if err := scan(&r.ID, &r.Username, &r.Authority, &r.CreatedAt, &r.DEK, &r.HistoryGeneration, &keyID, &r.SealedDEKOnly); err != nil {
+	if err := scan(&r.ID, &r.Authority, &r.CreatedAt, &r.DEK, &r.HistoryGeneration, &keyID, &r.SealedDEKOnly); err != nil {
 		return Repository{}, err
 	}
 	r.DEKKeyID = keyID.String
@@ -563,4 +549,4 @@ func (s *service) listRepositories(ctx context.Context) ([]Repository, error) {
 // totp_secret/step/fails/locked_until columns and the four methods around
 // them — is GONE (B3). A user's factors are the credential record and its
 // sealed rows; there is nothing about a user in the control plane but the
-// username and the day they arrived.
+// repository they own and the day they arrived.

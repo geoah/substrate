@@ -65,10 +65,10 @@ func newReopenableDataset(t *testing.T) *reopenableDataset {
 	r := &reopenableDataset{dsn: testdb.NewSchema(t), dataRoot: t.TempDir()}
 	r.open(t)
 	ctx := context.Background()
-	if _, err := r.svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
+	if _, err := r.svc.CreateRepository(ctx, "geoah.example.com"); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := r.svc.Dataset(ctx, "geoah")
+	ds, err := r.svc.Dataset(ctx, "geoah.example.com")
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
@@ -98,7 +98,7 @@ func (r *reopenableDataset) reopen(t *testing.T) substrate.Dataset {
 		t.Fatalf("close the service: %v", err)
 	}
 	r.open(t)
-	ds, err := r.svc.Dataset(context.Background(), "geoah")
+	ds, err := r.svc.Dataset(context.Background(), "geoah.example.com")
 	if err != nil {
 		t.Fatalf("reopen the dataset: %v", err)
 	}

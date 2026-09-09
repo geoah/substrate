@@ -19,12 +19,12 @@ const (
 )
 
 func loginBody(username, password, code string) map[string]any {
-	return map[string]any{"username": username, "password": password, "totpCode": code}
+	return map[string]any{"repository": username, "password": password, "totpCode": code}
 }
 
 func TestLoginRateLimitIgnoresSpoofedClientIPHeaders(t *testing.T) {
 	env := newTestEnv(t)
-	body := loginBody("geoah", "wrong", "000000")
+	body := loginBody(fakeRepository, "wrong", "000000")
 	for i := range 30 {
 		env.do(t, http.MethodPost, loginPath, "", body,
 			"True-Client-IP", fmt.Sprintf("203.0.113.%d", i),
@@ -38,7 +38,7 @@ func TestLoginRateLimitIgnoresSpoofedClientIPHeaders(t *testing.T) {
 
 func TestLoginRateLimitIsAlsoPerUsernameAcrossPeers(t *testing.T) {
 	env := newTestEnv(t)
-	body := loginBody("geoah", "wrong", "000000")
+	body := loginBody(fakeRepository, "wrong", "000000")
 	for i := range 20 {
 		env.doFrom(t, fmt.Sprintf("10.0.%d.%d:4321", i, i), http.MethodPost, loginPath, "", body)
 	}
@@ -64,7 +64,7 @@ func TestLoginRateLimitIsGlobal(t *testing.T) {
 func TestAuthBodyIsBounded(t *testing.T) {
 	env := newTestEnv(t)
 	rec := env.do(t, http.MethodPost, loginPath, "", map[string]any{
-		"username": "geoah", "password": strings.Repeat("a", 2<<20), "totpCode": "000000",
+		"repository": fakeRepository, "password": strings.Repeat("a", 2<<20), "totpCode": "000000",
 	})
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 	if env.svc.loginCalls != 0 {
@@ -94,7 +94,7 @@ func TestRegistrationGestureIsOneAttempt(t *testing.T) {
 	env := newTestEnv(t)
 	enroll := func(user string) int {
 		return env.do(t, http.MethodPost, registerEnrolPath, "", map[string]any{
-			"inviteCode": testInviteCode, "username": user,
+			"inviteCode": testInviteCode, "repository": user,
 		}).Code
 	}
 	if code := enroll("ada"); code != http.StatusOK {
@@ -102,14 +102,14 @@ func TestRegistrationGestureIsOneAttempt(t *testing.T) {
 	}
 	// No clock advance at all: the commit half follows immediately.
 	rec := env.do(t, http.MethodPost, registerPath, "", map[string]any{
-		"inviteCode": testInviteCode, "username": "ada",
+		"inviteCode": testInviteCode, "repository": "ada",
 		"password":   "correct-horse-battery-staple",
-		"totpSecret": "SEED", "totpCode": fakeCode("ada"),
+		"totpSecret": "SEED", "totpCode": fakeCode("ada.example.com"),
 	})
 	wantStatus(t, rec, http.StatusCreated)
 
 	// The SAME caller's second gesture in the same interval is refused: the
-	// (IP, username) bucket spent its whole allowance across the pair's halves,
+	// (IP, repository) bucket spent its whole allowance across the pair's halves,
 	// so it is reached (429) before the endpoint ever runs.
 	if code := enroll("ada"); code != http.StatusTooManyRequests {
 		t.Fatalf("a second gesture from the same caller inside the interval = %d, want 429", code)
@@ -123,14 +123,14 @@ func TestRegistrationGestureIsOneAttempt(t *testing.T) {
 // honest login got a 429 for the first's sake.
 func TestGlobalBucketDoesNotThrottleHonestConcurrentUsers(t *testing.T) {
 	env := newTestEnv(t)
-	env.svc.addRepository("ada")
-	env.svc.passwords["ada"] = "correct-horse-battery-staple"
+	env.svc.addRepository("ada.example.com")
+	env.svc.passwords["ada.example.com"] = "correct-horse-battery-staple"
 
 	// geoah and ada, different peers, no clock advance between them.
 	wantStatus(t, env.doFrom(t, "10.0.0.1:1", http.MethodPost, loginPath, "",
-		loginBody("geoah", env.svc.passwords["geoah"], fakeCode("geoah"))), http.StatusCreated)
+		loginBody(fakeRepository, env.svc.passwords[fakeRepository], fakeCode(fakeRepository))), http.StatusCreated)
 	wantStatus(t, env.doFrom(t, "10.0.0.2:1", http.MethodPost, loginPath, "",
-		loginBody("ada", env.svc.passwords["ada"], fakeCode("ada"))), http.StatusCreated)
+		loginBody("ada", env.svc.passwords["ada.example.com"], fakeCode("ada.example.com"))), http.StatusCreated)
 	if env.svc.loginCalls != 2 {
 		t.Fatalf("Login called %d times; two honest users in one interval must both reach the service", env.svc.loginCalls)
 	}
@@ -161,7 +161,7 @@ func TestGlobalBucketBoundsADistributedSpray(t *testing.T) {
 // The pair's discount does not loosen login: one attempt per interval, still.
 func TestLoginKeepsOneAttemptPerInterval(t *testing.T) {
 	env := newTestEnv(t)
-	good := loginBody("geoah", env.svc.passwords["geoah"], fakeCode("geoah"))
+	good := loginBody(fakeRepository, env.svc.passwords[fakeRepository], fakeCode(fakeRepository))
 	wantStatus(t, env.do(t, http.MethodPost, loginPath, "", good), http.StatusCreated)
 	// Half an interval later — enough for a paired call, not for a request.
 	env.clock.advance(defaultAuthInterval / 2)
@@ -193,12 +193,12 @@ func TestFailuresNeverLockAnybodyOut(t *testing.T) {
 	}
 
 	// The door is still open to an unrelated, honest user.
-	good := loginBody("geoah", env.svc.passwords["geoah"], fakeCode("geoah"))
+	good := loginBody(fakeRepository, env.svc.passwords[fakeRepository], fakeCode(fakeRepository))
 	wantStatus(t, env.do(t, http.MethodPost, loginPath, "", good), http.StatusCreated)
 
 	// Now geoah fails repeatedly against their own account...
 	env.clock.advance(defaultAuthInterval + time.Millisecond)
-	ownBad := loginBody("geoah", "wrong-password", "000000")
+	ownBad := loginBody(fakeRepository, "wrong-password", "000000")
 	for range 20 {
 		wantErrorCode(t, env.do(t, http.MethodPost, loginPath, "", ownBad),
 			http.StatusUnauthorized, codeAuth)

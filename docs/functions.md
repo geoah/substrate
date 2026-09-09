@@ -259,7 +259,7 @@ repository:
 row's state **now**, not the old value, and is `null` after a delete, and its
 `properties` carry everything the record points at, each as an object holding
 the referent's path under `ref`. `repository` carries both names the
-repository has: `owner`, the username its user logs in with, and `authority`,
+repository has: `authority`,
 the name it publishes kinds and webhook URLs under. A
 schedule or
 webhook delivery has no changelog entry underneath it, so its envelope carries

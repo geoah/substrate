@@ -43,23 +43,19 @@ type Endpoints struct {
 	Scopes        []string
 }
 
-// State identifies the account record a flow is connecting: the repository's
-// owner and the record id ride the signed state through the provider
-// redirect. Nonce is the flow's one-time handle: the engine persists its hash
+// State identifies the account record a flow is connecting: the repository
+// and the record id ride the signed state through the provider redirect. Nonce is the flow's one-time handle: the engine persists its hash
 // when the flow starts and consumes it atomically at the callback, so a signed
 // state — the callback's sole authentication — authorizes exactly one
 // completion inside its TTL, never a replay.
 type State struct {
-	// Username names the repository by its OWNER, not by the authority an
-	// engine.Scope carries: the callback arrives unauthenticated and
-	// resolves the repository with the ordinary by-username lookup, which is
-	// the only lookup a maintenance-pool read offers. Spelling this field
-	// `Repository` invited exactly one wrong fix — handing it a scope id —
-	// which resolves to nothing and breaks every consent.
-	Username string `json:"repository"`
-	Record   string `json:"record"`
-	Nonce    string `json:"nonce,omitempty"`
-	Exp      int64  `json:"exp"`
+	// Repository is the repository's id, its authority: the callback arrives
+	// unauthenticated and resolves the repository with the ordinary by-id
+	// lookup, the only one a maintenance-pool read offers.
+	Repository string `json:"repository"`
+	Record     string `json:"record"`
+	Nonce      string `json:"nonce,omitempty"`
+	Exp        int64  `json:"exp"`
 }
 
 // Client runs flows. CallbackURL is the one redirect URI every bundle's
@@ -198,7 +194,7 @@ func (c *Client) VerifyState(signed string) (State, error) {
 	if err := json.Unmarshal(raw, &st); err != nil {
 		return State{}, ErrBadState
 	}
-	if st.Username == "" || st.Record == "" || c.now().After(time.Unix(st.Exp, 0)) {
+	if st.Repository == "" || st.Record == "" || c.now().After(time.Unix(st.Exp, 0)) {
 		return State{}, ErrBadState
 	}
 	return st, nil

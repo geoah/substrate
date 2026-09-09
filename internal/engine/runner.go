@@ -41,7 +41,7 @@ func (ds *dataset) deliveryEnvelope(ctx context.Context, ch substrate.Change) (m
 			return nil, err
 		}
 	}
-	return runner.Envelope(ch, e, ds.Repository().Name, ds.Repository().Authority), nil
+	return runner.Envelope(ch, e, ds.Repository().Authority), nil
 }
 
 // loadRowDB reads one record row by its full (type, id) identity, outside
@@ -481,7 +481,7 @@ func (ds *dataset) callFunctionOnce(ctx context.Context, name string, args any, 
 		if err != nil {
 			return nil, 0, err
 		}
-		downstream = fmt.Sprintf("%s/%s/call/%s", ds.Repository().Name, fn.Identity(), callID)
+		downstream = fmt.Sprintf("%s/%s/call/%s", ds.Repository().ID, fn.Identity(), callID)
 	}
 	effects, output, err := ds.runCallable(ctx, fn, runner.Input{
 		Mode:           runner.ModeCall,
@@ -634,7 +634,7 @@ func (ds *dataset) warmFunctions() {
 					return
 				}
 				ds.svc.log.Error("substrate: function body failed to prepare at repository open — its deliveries will park until the body or toolchain is fixed",
-					"repository", ds.Repository().Name, "function", fn.Identity(), "error", err)
+					"repository", ds.Repository().ID, "function", fn.Identity(), "error", err)
 			}
 		}
 	})

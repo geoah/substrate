@@ -249,10 +249,11 @@
   "LoginRequest": {
     "label": false,
     "password": true,
-    "totpCode": true,
-    "username": true
+    "repository": true,
+    "totpCode": true
   },
   "MintedToken": {
+    "repository": false,
     "secret": true,
     "token": true
   },
@@ -331,24 +332,23 @@
     "removeFinalizers": false
   },
   "RegisterInput": {
-    "authority": false,
     "inviteCode": true,
     "label": false,
     "password": true,
     "recoveryPublicKey": false,
+    "repository": true,
     "totpCode": true,
-    "totpSecret": true,
-    "username": true
+    "totpSecret": true
   },
   "RegisterResult": {
-    "authority": true,
     "recoveryKey": false,
     "recoveryPublicKey": false,
+    "repository": false,
     "secret": true,
     "token": true
   },
-  "SessionUser": {
-    "username": true
+  "SessionCredential": {
+    "repository": true
   },
   "SetupItem": {
     "code": true,

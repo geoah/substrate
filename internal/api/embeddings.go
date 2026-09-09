@@ -14,7 +14,7 @@ import "net/http"
 // mounted under the llmprovider resource: the row is where the model is
 // chosen, but every embeddable property is what gets requeued. The operator's
 // hat runs the same verb over the DSN
-// (`substratectl --dsn … repository reembed <username>`).
+// (`substratectl --dsn … repository reembed <repository>`).
 
 type reembedRequest struct {
 	// All ignores the stored provenance and enqueues every embeddable

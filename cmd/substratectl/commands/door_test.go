@@ -15,7 +15,7 @@ func TestConfigRoundTrip(t *testing.T) {
 	cfg := &Config{}
 	cfg.upsertContext(Context{
 		Name: "geoah", Server: "https://substrate.example.com",
-		Username: "geoah", Token: "substrate_tok_abc", TokenID: "tk01",
+		Repository: "geoah", Token: "substrate_tok_abc", TokenID: "tk01",
 	})
 	if err := saveConfig(path, cfg); err != nil {
 		t.Fatalf("save: %v", err)
@@ -27,7 +27,7 @@ func TestConfigRoundTrip(t *testing.T) {
 	if got.CurrentContext != "geoah" || len(got.Contexts) != 1 {
 		t.Fatalf("round trip = %+v", got)
 	}
-	if c := got.Contexts[0]; c.Server == "" || c.Username != "geoah" || c.Token != "substrate_tok_abc" || c.TokenID != "tk01" {
+	if c := got.Contexts[0]; c.Server == "" || c.Token != "substrate_tok_abc" || c.TokenID != "tk01" {
 		t.Fatalf("context = %+v", c)
 	}
 	// The directory holding secrets is 0700 and the file 0600.
@@ -41,7 +41,7 @@ func TestConfigRoundTrip(t *testing.T) {
 
 	// Upserting the same name REPLACES rather than appends, or a second login
 	// would leave the first secret lying in the file.
-	cfg.upsertContext(Context{Name: "geoah", Server: "https://other", Username: "geoah", Token: "substrate_tok_def"})
+	cfg.upsertContext(Context{Name: "geoah", Server: "https://other", Repository: "geoah", Token: "substrate_tok_def"})
 	if len(cfg.Contexts) != 1 || cfg.Contexts[0].Token != "substrate_tok_def" {
 		t.Fatalf("upsert appended: %+v", cfg.Contexts)
 	}
@@ -50,7 +50,7 @@ func TestConfigRoundTrip(t *testing.T) {
 	if !cfg.forgetToken("geoah") {
 		t.Fatal("forgetToken found no context")
 	}
-	if c := cfg.Contexts[0]; c.Token != "" || c.TokenID != "" || c.Server == "" || c.Username == "" {
+	if c := cfg.Contexts[0]; c.Token != "" || c.TokenID != "" || c.Server == "" || c.Repository == "" {
 		t.Fatalf("after forget = %+v", c)
 	}
 	if cfg.forgetToken("nobody") {
@@ -104,7 +104,7 @@ func TestRegisterWaitsOutTheDoorsPacing(t *testing.T) {
 	h.fake.paceRegisterOnce = true
 	h.fake.retryAfter = "1" // the door's real spacing is seconds; one is enough to prove it
 	h.stdin.WriteString("hunter2\nhunter2\n123456\n")
-	out, errOut := h.mustRun("register", "--server", h.server, "--invite-code", "let-me-in", "--username", "geoah")
+	out, errOut := h.mustRun("register", "--server", h.server, "--invite-code", "let-me-in", "--repository", "geoah")
 	if !strings.Contains(errOut, "paces this door") {
 		t.Errorf("stderr did not explain the wait:\n%s", errOut)
 	}
@@ -124,7 +124,7 @@ func TestRegisterDoesNotWaitOutALockout(t *testing.T) {
 	h.fake.retryAfter = "3600"
 	h.stdin.WriteString("hunter2\nhunter2\n123456\n")
 	_, _, err := h.run("register", "--server", h.server, "--invite-code", "let-me-in",
-		"--username", "geoah", "--totp-secret", "MFRGGZDFMZTWQ2LK")
+		"--repository", "geoah", "--totp-secret", "MFRGGZDFMZTWQ2LK")
 	if err == nil {
 		t.Fatal("an hour-long lockout was waited out")
 	}

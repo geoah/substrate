@@ -70,10 +70,10 @@ func TestUnparseableStoredAgentQuarantinesInsteadOfBricking(t *testing.T) {
 	}
 
 	svc := open()
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestUnparseableStoredAgentQuarantinesInsteadOfBricking(t *testing.T) {
 		t.Fatalf("install the legacy bundle: %v", err)
 	}
 
-	raw, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, testdb.Username(t)), engine.RoleApp)
+	raw, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleApp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestUnparseableStoredAgentQuarantinesInsteadOfBricking(t *testing.T) {
 
 	// (a) The repository OPENS despite the unparseable stored definition.
 	svc2 := open()
-	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("a repository holding one pre-refactor agent definition failed to open: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestUnparseableStoredAgentQuarantinesInsteadOfBricking(t *testing.T) {
 	_ = svc2.Close()
 	svc3 := open()
 	t.Cleanup(func() { _ = svc3.Close() })
-	ds3, err := svc3.Dataset(ctx, testdb.Username(t))
+	ds3, err := svc3.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("reopen after the correction: %v", err)
 	}

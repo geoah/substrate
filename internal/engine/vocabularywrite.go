@@ -1979,7 +1979,7 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 		// the store was made some other way — say so loudly rather than serve
 		// a repository in which nothing resolves. Core's own parse failure is
 		// a hard error upstream, so this is never a quarantine cascade.
-		return fmt.Errorf("substrate/engine: repository %s holds no vocabulary — it was never seeded", ds.info.Name)
+		return fmt.Errorf("substrate/engine: repository %s holds no vocabulary — it was never seeded", ds.info.ID)
 	}
 	// Fast path: the whole stored set admits together. A binary that RELAXED
 	// a contract also clears any stale quarantine markers here.
@@ -2000,7 +2000,7 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 		// filters first: the two ids by the id grammar, the reason as repaired
 		// prose (triggers.go). A crafted declaration cannot forge a log line.
 		ds.svc.log.Error("substrate: quarantining a stored closure that no longer loads under this binary — the repository opens WITHOUT it; re-install the bundle to clear",
-			"repository", logSafeID(ds.info.Name), "package", logSafeID(q.name), "reason", logSafeText(q.reason))
+			"repository", logSafeID(ds.info.ID), "package", logSafeID(q.name), "reason", logSafeText(q.reason))
 		if err := ds.markGroupQuarantined(ctx, q.name, q.reason); err != nil {
 			return err
 		}

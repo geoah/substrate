@@ -33,7 +33,6 @@ import (
 // SnapshotReport is what one snapshot wrote.
 type SnapshotReport struct {
 	Repository string `json:"repository"`
-	Username   string `json:"username"`
 	// Directory is the copy: `<destination root>/repositories/<authority>`.
 	Directory string `json:"directory"`
 	// Head and HeadHash are the recovery point recorded in the copy.
@@ -56,7 +55,7 @@ type SnapshotReport struct {
 // Snapshotter is the operator hat's snapshot seam, off substrate.Service like
 // Rebuilder and asserted here for the same reason.
 type Snapshotter interface {
-	SnapshotRepository(ctx context.Context, username, destRoot string) (SnapshotReport, error)
+	SnapshotRepository(ctx context.Context, repository, destRoot string) (SnapshotReport, error)
 }
 
 var _ Snapshotter = (*service)(nil)
@@ -113,7 +112,7 @@ const snapshotPartialPrefix = ".incoming-snapshot-"
 // the source was verified, writes `snapshot.json`, and renames the directory
 // into place. A failure anywhere removes the temporary root, so the
 // destination holds either the finished copy or nothing.
-func (s *service) SnapshotRepository(ctx context.Context, username, destRoot string) (SnapshotReport, error) {
+func (s *service) SnapshotRepository(ctx context.Context, repository, destRoot string) (SnapshotReport, error) {
 	started := time.Now()
 	if s.readOnly {
 		return SnapshotReport{}, ErrDirectoryReadOnly
@@ -121,11 +120,11 @@ func (s *service) SnapshotRepository(ctx context.Context, username, destRoot str
 	if len(s.credKey) == 0 {
 		return SnapshotReport{}, ErrSnapshotNeedsKey
 	}
-	repo, err := s.repositoryByUsername(ctx, username)
+	repo, err := s.repositoryByID(ctx, repository)
 	if err != nil {
 		return SnapshotReport{}, err
 	}
-	report := SnapshotReport{Repository: repo.ID, Username: repo.Username, BlobStore: s.blobs.Name()}
+	report := SnapshotReport{Repository: repo.ID, BlobStore: s.blobs.Name()}
 	// The destination before the lock: a snapshot that would land on an
 	// older copy is refused before it opens anything.
 	dst, err := changelogfile.RepoDir(destRoot, repo.ID)
@@ -146,7 +145,7 @@ func (s *service) SnapshotRepository(ctx context.Context, username, destRoot str
 
 	// The whole verification, side stores and sealed files opened included:
 	// a copy of a repository that does not verify is a copy of the damage.
-	verified, err := s.VerifyRepository(ctx, username)
+	verified, err := s.VerifyRepository(ctx, repository)
 	if err != nil {
 		return report, err
 	}

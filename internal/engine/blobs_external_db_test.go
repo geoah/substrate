@@ -104,10 +104,10 @@ func TestBlobFSIsRepositoryScoped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
-	if _, err := svc.CreateRepository(ctx, "otheruser", "otheruser.example.com"); err != nil {
+	if _, err := svc.CreateRepository(ctx, "otheruser.example.com"); err != nil {
 		t.Fatalf("create repository B: %v", err)
 	}
-	dsB, err := svc.Dataset(ctx, "otheruser")
+	dsB, err := svc.Dataset(ctx, "otheruser.example.com")
 	if err != nil {
 		t.Fatalf("open repository B: %v", err)
 	}
@@ -277,10 +277,10 @@ func TestBootRefusesBytesLeftInThePostgresColumn(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, dsn := newService(t)
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
@@ -322,10 +322,10 @@ func TestBlobFSReopenOnTheSameRootReadsTheBytes(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	svc, dsn := newService(t, engine.WithDataRoot(root))
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
@@ -350,7 +350,7 @@ func TestBlobFSReopenOnTheSameRootReadsTheBytes(t *testing.T) {
 		t.Fatalf("reopen on the same root: %v", err)
 	}
 	t.Cleanup(func() { _ = again.Close() })
-	ds2, err := again.Dataset(ctx, testdb.Username(t))
+	ds2, err := again.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open dataset again: %v", err)
 	}

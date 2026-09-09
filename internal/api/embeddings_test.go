@@ -13,8 +13,8 @@ import (
 // reports the pair every replacement vector will name.
 func TestReembedEndpoint(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	path := "/api/v1/embeddings/reembed"
 
 	rec := env.do(t, http.MethodPost, path, tok, map[string]any{})

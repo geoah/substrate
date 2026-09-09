@@ -6,13 +6,14 @@
  *
  * A session IS a token record: there is no session concept beside
  * it, which is why the tokens page is also the sessions page and why logging
- * out revokes the record it is holding. Beside the secret we keep the signed-in
- * username (the password-factor endpoints need it in their body) and the id of
- * the token record this browser holds (what logging out revokes). */
+ * out revokes the record it is holding. Beside the secret we keep the
+ * repository that was signed in to (the password-factor endpoints need it in
+ * their body) and the id of the token record this browser holds (what logging
+ * out revokes). */
 
 // The `substrate.*` keys are the component's name; the tests pin them.
 const TOKEN_KEY = "substrate.token"
-const USER_KEY = "substrate.username"
+const REPOSITORY_KEY = "substrate.repository"
 // The id of the token record this browser holds: what logging out revokes.
 const TOKEN_ID_KEY = "substrate.tokenid"
 
@@ -33,11 +34,12 @@ export function getToken(): string | null {
   }
 }
 
-/** The signed-in user's name. It is also what the password-factor endpoints
- * need in their body, so the account page never has to ask for it. */
-export function getUsername(): string | null {
+/** The repository this browser is signed in to. It is also what the
+ * password-factor endpoints need in their body, so the account page never has
+ * to ask for it. */
+export function getRepository(): string | null {
   try {
-    return localStorage.getItem(USER_KEY)
+    return localStorage.getItem(REPOSITORY_KEY)
   } catch {
     return null
   }
@@ -71,23 +73,23 @@ export function getTokenId(): string | null {
 // server-side at authenticate), scoped to one repository, and never the
 // password, which is not stored anywhere. A 401 drops it (sessionExpired).
 
-/** Store just the secret — the login probe path, before the username/id are
- * known, and the tests. `saveSession` is the full write. */
+/** Store just the secret — the login probe path, before the repository and
+ * the token id are known, and the tests. `saveSession` is the full write. */
 export function setToken(token: string): void {
   localStorage.setItem(TOKEN_KEY, token)
   sessionChanged()
 }
 
-/** The full sign-in write: the secret, the username, and the held token's id,
- * as a mint (login/register/token) hands them back. Clear text on purpose;
- * the block above setToken says why. */
+/** The full sign-in write: the secret, the repository, and the held token's
+ * id, as a mint (login/register/token) hands them back. Clear text on
+ * purpose; the block above setToken says why. */
 export function saveSession(
   secret: string,
-  username: string,
+  repository: string,
   tokenId: string
 ): void {
   localStorage.setItem(TOKEN_KEY, secret)
-  localStorage.setItem(USER_KEY, username)
+  localStorage.setItem(REPOSITORY_KEY, repository)
   localStorage.setItem(TOKEN_ID_KEY, tokenId)
   sessionChanged()
 }
@@ -96,7 +98,7 @@ export function saveSession(
 export function clearSession(): void {
   try {
     localStorage.removeItem(TOKEN_KEY)
-    localStorage.removeItem(USER_KEY)
+    localStorage.removeItem(REPOSITORY_KEY)
     localStorage.removeItem(TOKEN_ID_KEY)
   } catch {
     /* storage disabled — nothing to drop */

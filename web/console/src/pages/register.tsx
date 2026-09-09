@@ -115,19 +115,22 @@ function KeepKeyField({
   )
 }
 
-/** The authority a registration gets when the reader leaves the field alone:
- * the username as a label under the host serving this console, the way a
- * handle sits under its server. Mirrors the server's own default so the form
- * shows the name the repository will actually get. */
-function defaultAuthority(username: string, host: string): string {
+/** The authority a repository name resolves to, mirroring the server's rule
+ * (`vocabulary.RepositoryAuthority`) so the form shows the name the
+ * repository will actually get: a name carrying a dot IS the authority, and a
+ * bare label sits under the host serving this console, the way a handle sits
+ * under its server. */
+function repositoryAuthority(name: string, host: string): string {
+  const n = name.trim().replace(/\.$/, "").toLowerCase()
+  if (!n) return ""
+  if (n.includes(".")) return n
   const h = host.replace(/\.$/, "").toLowerCase()
-  if (!username || !h) return ""
-  return `${username}.${h}`
+  return h ? `${n}.${h}` : ""
 }
 
 /** Registration, in two steps.
  *
- * Step one collects the invite code, username AND password, then buys a TOTP
+ * Step one collects the invite code, the repository AND the password, then buys a TOTP
  * seed — it writes NOTHING (the browser holds the seed). Password before the
  * QR is deliberate: a password manager sees a new-login form submit and offers
  * to SAVE it first, so when step two reveals the authenticator QR the manager
@@ -142,14 +145,11 @@ export function RegisterPage() {
   const { totpRequired } = useAuthPolicy()
   const navigate = useNavigate()
   const [inviteCode, setInviteCode] = useState("")
-  const [username, setUsername] = useState("")
-  // The authority is DERIVED from the username under this console's host
-  // until the reader edits it, at which point their spelling is what is sent.
-  // Sending the derived value rather than leaving it to the server keeps what
-  // the form shows and what the repository gets one string.
-  const [authorityEdit, setAuthorityEdit] = useState<string | null>(null)
-  const authority =
-    authorityEdit ?? defaultAuthority(username.trim(), window.location.hostname)
+  const [repository, setRepository] = useState("")
+  // The name the repository will actually get. Sending the resolved value
+  // rather than leaving the completion to the server keeps what the form
+  // shows and what the repository gets one string.
+  const authority = repositoryAuthority(repository, window.location.hostname)
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
   const [code, setCode] = useState("")
@@ -181,8 +181,7 @@ export function RegisterPage() {
   const passwordsMatch = password.length > 0 && password === confirm
   const canEnroll =
     inviteCode.trim().length > 0 &&
-    username.trim().length > 0 &&
-    authority.trim().length > 0 &&
+    authority.length > 0 &&
     password.length >= MIN_PASSWORD &&
     passwordsMatch
 
@@ -204,7 +203,7 @@ export function RegisterPage() {
     setError(null)
     setBusy(true)
     try {
-      setEnrolled(await registerEnroll(inviteCode.trim(), username.trim()))
+      setEnrolled(await registerEnroll(inviteCode.trim(), authority))
     } catch (err) {
       fail(err)
     } finally {
@@ -224,15 +223,13 @@ export function RegisterPage() {
     setError(null)
     setBusy(true)
     try {
-      const name = username.trim()
       const minted = await register({
         inviteCode: inviteCode.trim(),
-        username: name,
+        repository: authority,
         password,
         totpSecret: enrollment?.totpSecret ?? "",
         totpCode: normalized,
         label: "console",
-        authority: authority.trim(),
       })
       // The recovery identity arrives ONCE, on this response, and no later
       // call can produce it: it lands in state BEFORE the fallible session
@@ -243,7 +240,11 @@ export function RegisterPage() {
       if (holdKeys) {
         setRecoveryKey(minted.recoveryKey ?? null)
       }
-      saveSession(minted.secret, name, minted.token.id)
+      saveSession(
+        minted.secret,
+        minted.repository ?? authority,
+        minted.token.id
+      )
       if (holdKeys) return
       await navigate({ to: "/", replace: true })
     } catch (err) {
@@ -321,8 +322,8 @@ export function RegisterPage() {
                 An invite code creates your user and your repository, seeded
                 with the shipped kinds.{" "}
                 {totpRequired
-                  ? `All three factors are required: username, password and a ${CODE_DIGITS}-digit code.`
-                  : "This substrate does not verify a second factor, so there is no authenticator to enroll: a username and a password make the user."}
+                  ? `All three are required: the repository, a password and a ${CODE_DIGITS}-digit code.`
+                  : "This substrate does not verify a second factor, so there is no authenticator to enroll: a repository name and a password make the user."}
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-6">
@@ -357,38 +358,25 @@ export function RegisterPage() {
                     </FieldDescription>
                   </Field>
                   <Field>
-                    <FieldLabel htmlFor="username">Username</FieldLabel>
+                    <FieldLabel htmlFor="repository">Repository</FieldLabel>
                     <Input
-                      id="username"
-                      autoComplete="username"
-                      value={username}
-                      onChange={(e) =>
-                        setUsername(e.target.value.toLowerCase())
-                      }
-                      disabled={enrollment !== null}
-                    />
-                    <FieldDescription>
-                      Lowercase letters and digits. It cannot be changed later.
-                    </FieldDescription>
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="authority">Authority</FieldLabel>
-                    <Input
-                      id="authority"
+                      id="repository"
                       className="data"
-                      autoComplete="off"
+                      autoComplete="username"
                       spellCheck={false}
-                      value={authority}
+                      value={repository}
                       onChange={(e) =>
-                        setAuthorityEdit(e.target.value.toLowerCase())
+                        setRepository(e.target.value.toLowerCase())
                       }
                       disabled={enrollment !== null}
                     />
                     <FieldDescription>
                       Any hostname you control, such as ada.example.com: it is
-                      the name your repository owns and every kind you declare
-                      lives under. Left alone, it is your username under this
-                      host. It cannot be changed later.
+                      the name you sign in with, the authority your repository
+                      owns, and where every kind you declare lives. A plain name
+                      is completed under this host
+                      {authority ? ` (${authority})` : ""}. It cannot be changed
+                      later.
                     </FieldDescription>
                   </Field>
                   <Field>

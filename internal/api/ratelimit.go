@@ -5,21 +5,22 @@ import (
 	"math"
 	"net"
 	"net/http"
-	"regexp"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // defaultAuthInterval is the spacing the unauthenticated auth endpoints —
 // registration, login and the two credential changes — allow per (client IP,
-// username), per username and GLOBALLY: one ATTEMPT per interval. The global
-// key is what makes a distributed attempt on many usernames cost the same as
+// repository), per repository and GLOBALLY: one ATTEMPT per interval. The
+// global key is what makes a distributed attempt on many repositories cost the same as
 // an attempt on one.
 const defaultAuthInterval = 5 * time.Second
 
 // An attempt is spelled in units so that a two-call GESTURE still costs one
-// attempt. authAllowance is both the per-(IP,username) bucket's ceiling and
+// attempt. authAllowance is both the per-(IP,repository) bucket's ceiling and
 // what one interval refills; an ordinary request spends the whole of it, while
 // the two calls of the registration gesture (`/register/enroll` then
 // `/register`, one human action) spend half each. So the pair fires back to
@@ -33,8 +34,8 @@ const (
 	costPaired    = authAllowance / 2
 )
 
-// The GLOBAL bucket is a different animal from the per-(IP, username) ones. It
-// exists to bound a DISTRIBUTED brute force — a spray across many usernames
+// The GLOBAL bucket is a different animal from the per-(IP, repository) ones.
+// It exists to bound a DISTRIBUTED brute force — a spray across many repositories
 // from many IPs, each of which slips past its own per-key bucket — so it must
 // hold MANY attempts, not one. Sizing it at a single request's cost (the old
 // `authAllowance`) made the whole substrate a one-attempt-per-interval funnel:
@@ -189,12 +190,11 @@ func peerIP(r *http.Request) string {
 	return addr
 }
 
-// usernameRE is the declared username grammar; every other spelling shares
-// one bucket, so unknown names buy neither map growth nor extra attempts.
-var usernameRE = regexp.MustCompile(`^[a-z][a-z0-9]{1,29}$`)
-
-func limiterUsername(name string) string {
-	if usernameRE.MatchString(name) {
+// limiterRepository keys a bucket by repository name. Only a name a
+// repository could actually own gets its own bucket; every other spelling
+// shares one, so unknown names buy neither map growth nor extra attempts.
+func limiterRepository(name string) string {
+	if vocabulary.ValidRepositoryAuthority(name) {
 		return name
 	}
 	return "-"

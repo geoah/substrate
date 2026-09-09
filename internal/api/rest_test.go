@@ -20,15 +20,15 @@ const peoplePath = "/api/v1/samples.substrate.reamde.dev/people/person"
 
 func TestRESTUnknownCollectionIs404(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodGet, "/api/v1/samples.substrate.reamde.dev/people/widgets", tok, nil)
 	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
 }
 
 func TestRESTCRUD(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	rec := env.do(t, http.MethodPost, peoplePath, tok, map[string]any{
 		"properties": map[string]any{"title": "Ada", "name": "Ada"},
@@ -78,8 +78,8 @@ func TestRESTCRUD(t *testing.T) {
 // GET one carries the property provenance; lists never do.
 func TestRESTGetOneCarriesPropertyMeta(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	at := time.Unix(1_700_000_000, 0).UTC()
 	ds.records["p1"] = &substrate.Record{
@@ -122,8 +122,8 @@ func TestRESTGetOneCarriesPropertyMeta(t *testing.T) {
 // Incoming references page independently from the canonical record read.
 func TestRESTIncomingIsSeparateAndPaged(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	ds.records["p1"] = &substrate.Record{
 		ID: "p1", Kind: "samples.substrate.reamde.dev/people/person",
@@ -170,8 +170,8 @@ func TestRESTIncomingIsSeparateAndPaged(t *testing.T) {
 
 func TestRESTListForcesTheCollectionType(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	// The path names the type. A filter that leaves `types` unset carries its
 	// other arms through; the collection type is applied on top.
@@ -209,7 +209,7 @@ func TestRESTListForcesTheCollectionType(t *testing.T) {
 // override let a client believe it had filtered when it had not.
 func TestRESTListRejectsConflictingFilterTypes(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	filter := substrate.Filter{Kinds: []string{"samples.substrate.reamde.dev/messaging/conversationmessage"}}
 	raw, err := json.Marshal(filter)
 	if err != nil {
@@ -221,15 +221,15 @@ func TestRESTListRejectsConflictingFilterTypes(t *testing.T) {
 
 func TestRESTBadFilterIsBadRequest(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodGet, peoplePath+"?filter=%7Bnot-json", tok, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 }
 
 func TestRESTErrorEnvelopeMapping(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	cases := []struct {
 		name   string

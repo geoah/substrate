@@ -38,10 +38,10 @@ func newHookDatasetWithDSN(t *testing.T, triggers []enginetest.Trigger, fns ...m
 	t.Helper()
 	ctx := context.Background()
 	svc, dsn := newService(t)
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestParkedEnvelopeGainsTheAuthorityOnRetry(t *testing.T) {
 			"permissions": map[string]any{"reads": map[string]any{"kinds": []any{widgetType}}},
 		}, []any{widgetType}, hookRepoSource),
 	)
-	if _, err := engine.ReceiveWebhookSync(ctx, svc, testdb.Authority(t), "hook-repo", "", jsonHook("repo", "repo")); err != nil {
+	if _, err := engine.ReceiveWebhookSync(ctx, svc, testdb.Repository(t), "hook-repo", "", jsonHook("repo", "repo")); err != nil {
 		t.Fatalf("receive: %v", err)
 	}
 	failures, err := ops.TriggerFailures(ctx, "hook-repo")
@@ -81,7 +81,7 @@ func TestParkedEnvelopeGainsTheAuthorityOnRetry(t *testing.T) {
 	}
 
 	// The payload as a binary before the authority wrote it.
-	raw, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, testdb.Username(t)), engine.RoleApp)
+	raw, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleApp)
 	if err != nil {
 		t.Fatalf("open raw: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestParkedEnvelopeGainsTheAuthorityOnRetry(t *testing.T) {
 	if _, err := raw.ExecContext(ctx, `
 		UPDATE trigger_failures
 		SET payload = jsonb_set(payload, '{repository}', jsonb_build_object('owner', $2::text))
-		WHERE id = $1`, failures[0].ID, testdb.Username(t)); err != nil {
+		WHERE id = $1`, failures[0].ID, testdb.Repository(t)); err != nil {
 		t.Fatalf("rewrite the parked payload: %v", err)
 	}
 
@@ -98,7 +98,7 @@ func TestParkedEnvelopeGainsTheAuthorityOnRetry(t *testing.T) {
 		t.Fatalf("retry: %v", err)
 	}
 	got := hookEcho(t, ds, "repo-echo")
-	if got["name"] != testdb.Authority(t) || got["want"] != testdb.Username(t) {
+	if got["name"] != testdb.Repository(t) || got["want"] != testdb.Repository(t) {
 		t.Fatalf("the replayed envelope carried %v, want both repository names", got)
 	}
 }
@@ -114,8 +114,8 @@ func TestWebhookRefusesARepositoryThatWillNotOpen(t *testing.T) {
 	// resolves, and the open fails unwrapping it, which is the shape of a
 	// credential or storage fault without one being staged.
 	if _, err := rawDB(t, dsn).ExecContext(ctx,
-		`INSERT INTO repositories (id, username, authority, dek, history_generation) VALUES ($1, $2, $3, $4, $5)`,
-		"ghost.example.com", "ghost", "ghost.example.com", []byte("not a wrapped dek"), "ghost-generation"); err != nil {
+		`INSERT INTO repositories (id, authority, dek, history_generation) VALUES ($1, $2, $3, $4)`,
+		"ghost.example.com", "ghost.example.com", []byte("not a wrapped dek"), "ghost-generation"); err != nil {
 		t.Fatalf("plant the repository row: %v", err)
 	}
 	if _, err := engine.ReceiveWebhookSync(ctx, svc, "ghost.example.com", "hook-open", "", jsonHook("x", "x")); !errors.Is(err, substrate.ErrNotFound) {

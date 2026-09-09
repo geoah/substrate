@@ -150,18 +150,19 @@ The removed values stay in the changelog.`,
 	return cmd
 }
 
-// contextAuthority is the authority the current context recorded at register
-// or login: what `--as-mine` rehomes onto. A context written before the field
-// existed carries none, and `--as` then has to be spelled out.
+// contextAuthority is the repository the current context recorded at register
+// or login, which IS its authority: what `--as-mine` rehomes onto. A context
+// written before the field existed carries none, and `--as` then has to be
+// spelled out.
 func (a *app) contextAuthority() (string, error) {
 	ctx, err := a.resolveContext()
 	if err != nil {
 		return "", err
 	}
-	if ctx.Authority == "" {
-		return "", errors.New("this context records no authority: pass --as <authority>, or log in again to store it")
+	if ctx.Repository == "" {
+		return "", errors.New("this context records no repository: pass --as <authority>, or log in again to store it")
 	}
-	return ctx.Authority, nil
+	return ctx.Repository, nil
 }
 
 // rehomeInput rewrites every mention of the authority the input is authored

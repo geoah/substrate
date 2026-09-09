@@ -273,10 +273,10 @@ func TestIdempotencyKeyStoresAnOutcomeWithANulEscape(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, dsn := newService(t)
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
@@ -339,7 +339,7 @@ func TestIdempotencyKeyOutlivesTheToken(t *testing.T) {
 	t.Parallel()
 	svc, _ := newService(t)
 	ctx := context.Background()
-	user, token, secret := registerUser(t, svc, testdb.Username(t))
+	user, token, secret := registerUser(t, svc, testdb.Repository(t))
 	ds, _, err := svc.Authenticate(ctx, secret)
 	if err != nil {
 		t.Fatalf("authenticate: %v", err)
@@ -359,7 +359,7 @@ func TestIdempotencyKeyOutlivesTheToken(t *testing.T) {
 		t.Fatalf("the revoked token still authenticates: %v", err)
 	}
 	next, nextSecret, err := svc.Login(ctx, substrate.LoginInput{
-		Username: user.username, Password: user.password, TOTPCode: user.code(t), Label: "again",
+		Repository: user.repository, Password: user.password, TOTPCode: user.code(t), Label: "again",
 	})
 	if err != nil {
 		t.Fatalf("login: %v", err)
@@ -384,10 +384,10 @@ func TestIdempotencyKeySurvivesReopen(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	svc, dsn := newService(t, engine.WithDataRoot(root))
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
@@ -409,7 +409,7 @@ func TestIdempotencyKeySurvivesReopen(t *testing.T) {
 		t.Fatalf("reopen: %v", err)
 	}
 	defer func() { _ = again.Close() }()
-	ds2, err := again.Dataset(ctx, testdb.Username(t))
+	ds2, err := again.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("reopen dataset: %v", err)
 	}

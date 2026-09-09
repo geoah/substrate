@@ -68,14 +68,14 @@ func plantOrphan(t *testing.T, dsn, id string) {
 
 // TestFailedRegistrationLeavesNoDurableRows forces a failure in the commit
 // window (after the seed, before the control-plane row) and asserts nothing
-// durable survives — and that a retry with the SAME username then succeeds.
+// durable survives, and that a retry with the SAME name then succeeds.
 func TestFailedRegistrationLeavesNoDurableRows(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	s, _ := openBareService(t)
 	s.testFailAfterSeed = func() error { return errors.New("boom after the seed committed") }
 
-	if _, err := s.CreateRepository(ctx, "alice", "alice.example.com"); err == nil {
+	if _, err := s.CreateRepository(ctx, "alice.example.com"); err == nil {
 		t.Fatal("a registration that failed after the seed reported success")
 	}
 	if n := orphanRowCount(t, s); n != 0 {
@@ -83,12 +83,12 @@ func TestFailedRegistrationLeavesNoDurableRows(t *testing.T) {
 	}
 
 	// The retry lands cleanly: the orphan carried no control-plane row, so the
-	// username was never taken.
+	// name was never taken.
 	s.testFailAfterSeed = nil
-	if _, err := s.CreateRepository(ctx, "alice", "alice.example.com"); err != nil {
-		t.Fatalf("retry with the same username: %v", err)
+	if _, err := s.CreateRepository(ctx, "alice.example.com"); err != nil {
+		t.Fatalf("retry with the same name: %v", err)
 	}
-	if _, err := s.repositoryByUsername(ctx, "alice"); err != nil {
+	if _, err := s.repositoryByID(ctx, "alice.example.com"); err != nil {
 		t.Fatalf("alice is not registered after the retry: %v", err)
 	}
 	if n := orphanRowCount(t, s); n != 0 {
@@ -126,10 +126,10 @@ func TestBootSweepReclaimsOrphanedRows(t *testing.T) {
 	ctx := context.Background()
 	s, dsn := openBareService(t)
 
-	if _, err := s.CreateRepository(ctx, "legit", "legit.example.com"); err != nil {
+	if _, err := s.CreateRepository(ctx, "legit.example.com"); err != nil {
 		t.Fatalf("create legit repository: %v", err)
 	}
-	legit, err := s.repositoryByUsername(ctx, "legit")
+	legit, err := s.repositoryByID(ctx, "legit.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -59,13 +59,11 @@ import (
 )
 
 const (
-	drillUser      = "drill"
-	drillPassword  = "correct-horse-battery-staple"
 	drillAuthority = "drill.example.com"
+	drillPassword  = "correct-horse-battery-staple"
 
-	legacyUser      = "legacy"
-	legacyPassword  = "another-correct-horse-battery"
 	legacyAuthority = "legacy.example.com"
+	legacyPassword  = "another-correct-horse-battery"
 
 	corePkg        = "substrate.reamde.dev/core"
 	googlePkg      = "providers.substrate.reamde.dev/google"
@@ -818,13 +816,12 @@ func (d *drill) seedSource(t *testing.T) *testenv.Env {
 	patched, shippedRun := patchedSeedTree(tb, "run.yaml")
 	d.runVersion = shippedRun
 	first := testenv.Start(tb,
-		testenv.WithUser(drillUser, drillPassword),
-		testenv.WithAuthority(drillAuthority),
+		testenv.WithUser(drillAuthority, drillPassword),
 		testenv.WithRecoveryPublicKey(d.identity.Recipient().String()),
 		testenv.WithDSN(d.dsnA), testenv.WithDataRoot(d.rootA), testenv.WithCredentialKey(d.keyA),
 		testenv.WithClock(d.clock.Now), testenv.WithKindsDir(patched))
-	if first.Authority != drillAuthority {
-		t.Fatalf("registered authority %q, want %q", first.Authority, drillAuthority)
+	if first.Repository != drillAuthority {
+		t.Fatalf("registered repository %q, want %q", first.Repository, drillAuthority)
 	}
 	if got := kindVersions(t, first)[corePkg+"/run"]; got != shippedRun-1 {
 		t.Fatalf("run declared at %d under the patched tree, want %d", got, shippedRun-1)
@@ -833,7 +830,7 @@ func (d *drill) seedSource(t *testing.T) *testenv.Env {
 
 	d.holdInvoked = make(chan struct{}, 16)
 	d.envA = testenv.Start(tb,
-		testenv.WithUser(drillUser, drillPassword), testenv.WithoutRegistration(),
+		testenv.WithUser(drillAuthority, drillPassword), testenv.WithoutRegistration(),
 		testenv.WithDSN(d.dsnA), testenv.WithDataRoot(d.rootA), testenv.WithCredentialKey(d.keyA),
 		testenv.WithClock(d.clock.Now),
 		testenv.WithEngineOptions(engine.WithTestInvokeHook(func(function string) {
@@ -988,7 +985,7 @@ func (d *drill) writeMirrors(t *testing.T, e *testenv.Env) {
 // as substrated's loop runs it.
 func (d *drill) parkAutomations(t *testing.T, e *testenv.Env) substrate.Dataset {
 	ctx := context.Background()
-	ds, err := e.Service.Dataset(ctx, drillUser)
+	ds, err := e.Service.Dataset(ctx, drillAuthority)
 	if err != nil {
 		t.Fatalf("open the source dataset: %v", err)
 	}
@@ -1071,7 +1068,7 @@ func (d *drill) parkAutomations(t *testing.T, e *testenv.Env) substrate.Dataset 
 // the reader accepts.
 func (d *drill) writeLegacyRepository(t *testing.T, e *testenv.Env) {
 	ctx := context.Background()
-	d.legacy = e.RegisterUser(legacyUser, legacyPassword, legacyAuthority, d.legacyIdentity.Recipient().String())
+	d.legacy = e.RegisterUser(legacyAuthority, legacyPassword, d.legacyIdentity.Recipient().String())
 	l := d.legacy.For(t)
 	for _, id := range sampleImports {
 		l.MustJSON(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/import", nil, nil)
@@ -1090,7 +1087,7 @@ func (d *drill) writeLegacyRepository(t *testing.T, e *testenv.Env) {
 		map[string]string{"Content-Type": "text/plain"}); status != http.StatusCreated {
 		t.Fatalf("legacy blob: %d %s", status, raw)
 	}
-	lds, err := e.Service.Dataset(ctx, legacyUser)
+	lds, err := e.Service.Dataset(ctx, legacyAuthority)
 	if err != nil {
 		t.Fatalf("open the legacy dataset: %v", err)
 	}
@@ -1131,9 +1128,9 @@ func (d *drill) stopAndSnapshot(t *testing.T) {
 	}
 	defer func() { _ = operator.Close() }()
 	d.snapRoot = d.tb(t).TempDir()
-	report, err := operator.(engine.Snapshotter).SnapshotRepository(ctx, drillUser, d.snapRoot)
+	report, err := operator.(engine.Snapshotter).SnapshotRepository(ctx, drillAuthority, d.snapRoot)
 	if err != nil {
-		t.Fatalf("snapshot %s: %v", drillUser, err)
+		t.Fatalf("snapshot %s: %v", drillAuthority, err)
 	}
 	d.snapHead = report.Head
 	if report.Head != d.source.head || report.Repository != drillAuthority || report.BlobStore != "fs" || report.Blobs < 1 || report.SealedFiles != sealedValues {
@@ -1153,9 +1150,9 @@ func (d *drill) stopAndSnapshot(t *testing.T) {
 		t.Errorf("the copy holds no bytes for %s: %v", d.blobDigest, err)
 	}
 
-	legacyReport, err := operator.(engine.Snapshotter).SnapshotRepository(ctx, legacyUser, d.snapRoot)
+	legacyReport, err := operator.(engine.Snapshotter).SnapshotRepository(ctx, legacyAuthority, d.snapRoot)
 	if err != nil {
-		t.Fatalf("snapshot %s: %v", legacyUser, err)
+		t.Fatalf("snapshot %s: %v", legacyAuthority, err)
 	}
 	d.legacyHead = legacyReport.Head
 	if legacyReport.Repository != legacyAuthority {
@@ -1206,8 +1203,8 @@ func (d *drill) restore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rewrap: %v", err)
 	}
-	if report.Repository != drillAuthority || report.Username != drillUser || report.SealedFiles != sealedValues {
-		t.Errorf("rewrap report = %+v, want %s/%s with %d sealed files opened", report, drillAuthority, drillUser, sealedValues)
+	if report.Repository != drillAuthority || report.SealedFiles != sealedValues {
+		t.Errorf("rewrap report = %+v, want %s/%s with %d sealed files opened", report, drillAuthority, drillAuthority, sealedValues)
 	}
 	d.pristine = copyRoot(tb, restoreRoot, drillAuthority)
 
@@ -1215,7 +1212,7 @@ func (d *drill) restore(t *testing.T) {
 	// registration. The restored substrate speaks with the source's token,
 	// which is a record the import brought back.
 	d.envB = testenv.Start(tb,
-		testenv.WithUser(drillUser, drillPassword), testenv.WithoutRegistration(),
+		testenv.WithUser(drillAuthority, drillPassword), testenv.WithoutRegistration(),
 		testenv.WithDSN(dsnB), testenv.WithDataRoot(restoreRoot), testenv.WithCredentialKey(d.keyB),
 		testenv.WithClock(d.clock.Now))
 	session := *d.envA.Session
@@ -1225,10 +1222,10 @@ func (d *drill) restore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(repos) != 1 || repos[0].ID != drillAuthority || repos[0].Name != drillUser {
+	if len(repos) != 1 || repos[0].ID != drillAuthority {
 		t.Fatalf("the restored database holds %+v, want the one imported repository", repos)
 	}
-	verified, err := e.Service.(engine.Verifier).VerifyRepository(ctx, drillUser)
+	verified, err := e.Service.(engine.Verifier).VerifyRepository(ctx, drillAuthority)
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
@@ -1253,7 +1250,7 @@ func (d *drill) restore(t *testing.T) {
 
 func (d *drill) compareAndResume(t *testing.T) {
 	e := d.envB.For(t)
-	ds, err := e.Service.Dataset(context.Background(), drillUser)
+	ds, err := e.Service.Dataset(context.Background(), drillAuthority)
 	if err != nil {
 		t.Fatalf("open the restored dataset: %v", err)
 	}
@@ -1392,13 +1389,13 @@ func (d *drill) compareRestored(t *testing.T, e *testenv.Env, ds substrate.Datas
 	// not replayed and the right password is admitted. The source's token
 	// authenticated every read above.
 	d.clock.Advance(engine.TOTPPeriod)
-	status, raw := e.Login(drillUser, "not-the-password", e.TOTPCode())
+	status, raw := e.Login(drillAuthority, "not-the-password", e.TOTPCode())
 	var refusal substrate.ErrorEnvelope
 	if err := json.Unmarshal(raw, &refusal); status != http.StatusUnauthorized || err != nil || refusal.Error.Code != "auth" {
 		t.Errorf("a wrong password on the restored host: %d %s, want 401 auth", status, raw)
 	}
 	d.clock.Advance(engine.TOTPPeriod)
-	if status, raw := e.Login(drillUser, drillPassword, e.TOTPCode()); status != http.StatusCreated {
+	if status, raw := e.Login(drillAuthority, drillPassword, e.TOTPCode()); status != http.StatusCreated {
 		t.Errorf("login on the restored host: %d %s", status, raw)
 	}
 
@@ -1567,10 +1564,10 @@ func (d *drill) interruptedImport(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read-only open after boot %d: %v", i+1, err)
 		}
-		if _, err := ro.Dataset(ctx, drillUser); !errors.Is(err, engine.ErrImportIncomplete) {
+		if _, err := ro.Dataset(ctx, drillAuthority); !errors.Is(err, engine.ErrImportIncomplete) {
 			t.Errorf("a read-only open after boot %d = %v, want ErrImportIncomplete", i+1, err)
 		}
-		report, err := ro.(engine.Verifier).VerifyRepository(ctx, drillUser)
+		report, err := ro.(engine.Verifier).VerifyRepository(ctx, drillAuthority)
 		if err != nil {
 			t.Fatalf("verify after boot %d: %v", i+1, err)
 		}
@@ -1587,7 +1584,7 @@ func (d *drill) interruptedImport(t *testing.T) {
 		t.Fatalf("the boot after the crashes: %v", err)
 	}
 	defer func() { _ = svc.Close() }()
-	ds, err := svc.Dataset(ctx, drillUser)
+	ds, err := svc.Dataset(ctx, drillAuthority)
 	if err != nil {
 		t.Fatalf("open the repository after the import resumed: %v", err)
 	}
@@ -1608,12 +1605,12 @@ func (d *drill) interruptedImport(t *testing.T) {
 	if head.Generation == d.source.gen {
 		t.Errorf("the resumed import kept the source's history generation %q", head.Generation)
 	}
-	report, err := svc.(engine.Verifier).VerifyRepository(ctx, drillUser)
+	report, err := svc.(engine.Verifier).VerifyRepository(ctx, drillAuthority)
 	if err != nil || !report.OK || report.Head != d.snapHead || report.SealedOpened != sealedValues || len(report.Findings) != 0 {
 		t.Errorf("the resumed repository does not verify: %+v %v", report, err)
 	}
 	d.clock.Advance(engine.TOTPPeriod)
-	if _, _, err := svc.Login(ctx, substrate.LoginInput{Username: drillUser, Password: drillPassword, TOTPCode: d.envA.For(t).TOTPCode(), Label: "resumed"}); err != nil {
+	if _, _, err := svc.Login(ctx, substrate.LoginInput{Repository: drillAuthority, Password: drillPassword, TOTPCode: d.envA.For(t).TOTPCode(), Label: "resumed"}); err != nil {
 		t.Errorf("login after the resumed import: %v", err)
 	}
 	t.Logf("interrupted import: %d batches of %d, killed at %d, %d and %d rows; the fourth boot finished it",
@@ -1644,12 +1641,12 @@ func (d *drill) formatTransition(t *testing.T) {
 	}
 	dsn := testdb.NewSchema(t)
 	e := testenv.Start(t,
-		testenv.WithUser(legacyUser, legacyPassword), testenv.WithoutRegistration(),
+		testenv.WithUser(legacyAuthority, legacyPassword), testenv.WithoutRegistration(),
 		testenv.WithDSN(dsn), testenv.WithDataRoot(root), testenv.WithCredentialKey(d.keyA),
 		testenv.WithClock(d.clock.Now))
 	session := *d.legacy.Session
 	e.Session = &session
-	ds, err := e.Service.Dataset(ctx, legacyUser)
+	ds, err := e.Service.Dataset(ctx, legacyAuthority)
 	if err != nil {
 		t.Fatalf("open the repository the boot imported from format 1: %v", err)
 	}
@@ -1673,7 +1670,7 @@ func (d *drill) formatTransition(t *testing.T) {
 		t.Errorf("changelog dialect after the import = %d (%v), want the manifest's 2", stamped, err)
 	}
 	d.clock.Advance(engine.TOTPPeriod)
-	if status, raw := e.Login(legacyUser, legacyPassword, e.TOTPCode()); status != http.StatusCreated {
+	if status, raw := e.Login(legacyAuthority, legacyPassword, e.TOTPCode()); status != http.StatusCreated {
 		t.Errorf("login on the format-1 restore: %d %s", status, raw)
 	}
 	if labels := labelsOf(t, getRecord(t, e, legacyTask, "l-0"), "l-0"); len(labels) != 0 {
@@ -1705,7 +1702,7 @@ func (d *drill) formatTransition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rewrap the format-1 directory: %v", err)
 	}
-	if report.Repository != legacyAuthority || report.Username != legacyUser {
+	if report.Repository != legacyAuthority {
 		t.Errorf("rewrap report = %+v", report)
 	}
 	if rewrapped, err := changelogfile.ReadManifest(rewrapDir); err != nil || rewrapped.Format != changelogfile.ManifestFormat || rewrapped.ChangelogDialect != 2 {
@@ -1717,7 +1714,7 @@ func (d *drill) formatTransition(t *testing.T) {
 		t.Fatalf("boot on the rewrapped format-1 directory: %v", err)
 	}
 	defer func() { _ = rewrapped.Close() }()
-	rds, err := rewrapped.Dataset(ctx, legacyUser)
+	rds, err := rewrapped.Dataset(ctx, legacyAuthority)
 	if err != nil {
 		t.Fatalf("open the rewrapped repository: %v", err)
 	}
@@ -1725,7 +1722,7 @@ func (d *drill) formatTransition(t *testing.T) {
 		t.Errorf("the fold restored from the rewrapped format-1 directory is not the source's (%v)\n%s", err, firstDifference(d.legacyFold, rfold))
 	}
 	d.clock.Advance(engine.TOTPPeriod)
-	if _, _, err := rewrapped.Login(ctx, substrate.LoginInput{Username: legacyUser, Password: legacyPassword, TOTPCode: d.legacy.For(t).TOTPCode(), Label: "rewrapped"}); err != nil {
+	if _, _, err := rewrapped.Login(ctx, substrate.LoginInput{Repository: legacyAuthority, Password: legacyPassword, TOTPCode: d.legacy.For(t).TOTPCode(), Label: "rewrapped"}); err != nil {
 		t.Errorf("login on the rewrapped format-1 restore: %v", err)
 	}
 
@@ -2421,7 +2418,7 @@ func unframeChangelog(t *testing.T, dir string) {
 func writeFormatOneManifest(t *testing.T, dir string, m changelogfile.Manifest) {
 	t.Helper()
 	raw, err := json.MarshalIndent(map[string]any{
-		"format": 1, "username": m.Username, "authority": m.Authority,
+		"format": 1, "username": "ada", "authority": m.Authority,
 		"createdAt": m.CreatedAt.Format(changelogfile.TSFormat), "changelogDialect": 2,
 		"dek": base64.StdEncoding.EncodeToString(m.DEK),
 	}, "", "  ")

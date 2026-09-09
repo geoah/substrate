@@ -30,12 +30,12 @@ func TestOpenRefusesAChangelogThatPredatesReferences(t *testing.T) {
 		return svc
 	}
 	svc := open()
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
 	_ = svc.Close()
 
-	maint, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, testdb.Username(t)), engine.RoleMaint)
+	maint, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleMaint)
 	if err != nil {
 		t.Fatalf("open the maintenance pool: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestOpenRefusesAChangelogThatPredatesReferences(t *testing.T) {
 
 	svc2 := open()
 	defer func() { _ = svc2.Close() }()
-	_, err = svc2.Dataset(ctx, testdb.Username(t))
+	_, err = svc2.Dataset(ctx, testdb.Repository(t))
 	if err == nil {
 		t.Fatal("a changelog holding `link` entries must refuse the open")
 	}
@@ -76,7 +76,7 @@ func TestOpenRefusesAChangelogThatPredatesReferences(t *testing.T) {
 	}
 	svc3 := open()
 	defer func() { _ = svc3.Close() }()
-	if _, err := svc3.Dataset(ctx, testdb.Username(t)); err != nil {
+	if _, err := svc3.Dataset(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("a store below the maximum with no retired entry must open: %v", err)
 	}
 }

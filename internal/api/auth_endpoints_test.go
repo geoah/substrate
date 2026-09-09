@@ -20,7 +20,7 @@ func TestRegisterThenLogin(t *testing.T) {
 
 	// Step one issues the enrollment and writes nothing.
 	rec := env.do(t, http.MethodPost, registerEnrolPath, "", map[string]any{
-		"inviteCode": testInviteCode, "username": "ada",
+		"inviteCode": testInviteCode, "repository": "ada",
 	})
 	wantStatus(t, rec, http.StatusOK)
 	enrollment := decodeJSON[substrate.TOTPEnrollment](t, rec)
@@ -31,9 +31,9 @@ func TestRegisterThenLogin(t *testing.T) {
 	// Step two commits, and registration ends logged in.
 	env.clock.advance(defaultAuthInterval + time.Millisecond)
 	rec = env.do(t, http.MethodPost, registerPath, "", map[string]any{
-		"inviteCode": testInviteCode, "username": "ada",
+		"inviteCode": testInviteCode, "repository": "ada",
 		"password":   "correct-horse-battery-staple",
-		"totpSecret": enrollment.Secret, "totpCode": fakeCode("ada"),
+		"totpSecret": enrollment.Secret, "totpCode": fakeCode("ada.example.com"),
 		"label": "console",
 	})
 	wantStatus(t, rec, http.StatusCreated)
@@ -41,10 +41,11 @@ func TestRegisterThenLogin(t *testing.T) {
 	if out.Secret == "" || out.Token.Label != "console" {
 		t.Fatalf("registration response = %+v", out)
 	}
-	// A request naming no authority gets the username under the host it
-	// reached (httptest requests carry `example.com`), and learns it here.
-	if out.Authority != "ada.example.com" {
-		t.Fatalf("registration authority = %q, want the default under the request host", out.Authority)
+	// A bare repository label is completed under the host the request reached
+	// (httptest requests carry `example.com`), and the caller learns the
+	// authority it got here.
+	if out.Repository != "ada.example.com" {
+		t.Fatalf("registered repository = %q, want the label completed under the request host", out.Repository)
 	}
 
 	// The token registration handed back is an ordinary bearer.
@@ -54,29 +55,28 @@ func TestRegisterThenLogin(t *testing.T) {
 	// Login mints another — sessions ARE token records.
 	env.clock.advance(defaultAuthInterval + time.Millisecond)
 	rec = env.do(t, http.MethodPost, loginPath, "",
-		loginBody("ada", "correct-horse-battery-staple", fakeCode("ada")))
+		loginBody("ada", "correct-horse-battery-staple", fakeCode("ada.example.com")))
 	wantStatus(t, rec, http.StatusCreated)
 	if login := decodeJSON[substrate.MintedToken](t, rec); login.Secret == out.Secret {
 		t.Fatal("login handed back the registration's secret")
 	}
 }
 
-// A registration that names its own authority keeps it: the handler defaults
-// only what is absent, and the engine's answer is echoed verbatim.
-func TestRegistrationKeepsTheAuthorityItIsGiven(t *testing.T) {
+// A repository name carrying a dot IS the authority: the host is not appended
+// to it, and the engine's answer is echoed verbatim.
+func TestRegistrationKeepsADottedRepositoryName(t *testing.T) {
 	env := newTestEnv(t)
 	rec := env.do(t, http.MethodPost, registerPath, "", map[string]any{
-		"inviteCode": testInviteCode, "username": "ada",
+		"inviteCode": testInviteCode, "repository": " ada.example.org ",
 		"password":   "correct-horse-battery-staple",
-		"totpSecret": "SEED", "totpCode": fakeCode("ada"),
-		"authority": " ada.example.org ",
+		"totpSecret": "SEED", "totpCode": fakeCode("ada.example.org"),
 	})
 	wantStatus(t, rec, http.StatusCreated)
 	out := decodeJSON[substrate.Registered](t, rec)
-	if out.Authority != "ada.example.org" {
-		t.Fatalf("registration authority = %q, want the trimmed one the request named", out.Authority)
+	if out.Repository != "ada.example.org" {
+		t.Fatalf("registered repository = %q, want the trimmed name the request sent", out.Repository)
 	}
-	if got := env.svc.datasets["ada"].Repository().Authority; got != "ada.example.org" {
+	if got := env.svc.datasets["ada.example.org"].Repository().Authority; got != "ada.example.org" {
 		t.Fatalf("the repository was created under %q", got)
 	}
 }
@@ -86,7 +86,7 @@ func TestRegistrationKeepsTheAuthorityItIsGiven(t *testing.T) {
 func TestRegistrationIsGatedByTheInviteCode(t *testing.T) {
 	env := newTestEnv(t)
 	rec := env.do(t, http.MethodPost, registerEnrolPath, "", map[string]any{
-		"inviteCode": "wrong", "username": "ada",
+		"inviteCode": "wrong", "repository": "ada",
 	})
 	wantErrorCode(t, rec, http.StatusUnauthorized, codeAuth)
 	if env.svc.registerCalls != 0 {
@@ -98,7 +98,7 @@ func TestRegistrationIsGatedByTheInviteCode(t *testing.T) {
 	shut := &testEnv{svc: closed, h: New(Config{Service: closed, Now: clock.now}), clock: clock}
 	for _, path := range []string{registerEnrolPath, registerPath} {
 		rec := shut.do(t, http.MethodPost, path, "", map[string]any{
-			"inviteCode": "anything", "username": "ada",
+			"inviteCode": "anything", "repository": "ada",
 		})
 		wantErrorCode(t, rec, http.StatusNotImplemented, codeUnsupported)
 		clock.advance(defaultAuthInterval + time.Millisecond)
@@ -113,14 +113,14 @@ func TestRegistrationIsGatedByTheInviteCode(t *testing.T) {
 // and the change goes through only with both current factors in the body.
 func TestCredentialChangesRefuseABearerTokenAlone(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	password := env.svc.passwords["geoah"]
+	tok := env.svc.token(fakeRepository)
+	password := env.svc.passwords[fakeRepository]
 
 	for path, body := range map[string]map[string]any{
-		"/password":    {"username": "geoah", "newPassword": "a-brand-new-passphrase"},
-		"/totp/enroll": {"username": "geoah"},
+		"/password":    {"repository": fakeRepository, "newPassword": "a-brand-new-passphrase"},
+		"/totp/enroll": {"repository": fakeRepository},
 		"/totp": {
-			"username": "geoah", "newTotpSecret": "JBSWY3DPEHPK3PXP",
+			"repository": fakeRepository, "newTotpSecret": "JBSWY3DPEHPK3PXP",
 			"newTotpCode": "123456",
 		},
 	} {
@@ -131,18 +131,18 @@ func TestCredentialChangesRefuseABearerTokenAlone(t *testing.T) {
 
 	// With both factors presented directly it works, token or no token.
 	rec := env.do(t, http.MethodPost, "/password", "", map[string]any{
-		"username": "geoah", "password": password, "totpCode": fakeCode("geoah"),
+		"repository": fakeRepository, "password": password, "totpCode": fakeCode(fakeRepository),
 		"newPassword": "a-brand-new-passphrase",
 	})
 	wantStatus(t, rec, http.StatusOK)
-	if env.svc.passwords["geoah"] != "a-brand-new-passphrase" {
-		t.Fatalf("the password did not change: %q", env.svc.passwords["geoah"])
+	if env.svc.passwords[fakeRepository] != "a-brand-new-passphrase" {
+		t.Fatalf("the password did not change: %q", env.svc.passwords[fakeRepository])
 	}
 
 	// A wrong current password is refused whatever else is right.
 	env.clock.advance(defaultAuthInterval + time.Millisecond)
 	rec = env.do(t, http.MethodPost, "/password", "", map[string]any{
-		"username": "geoah", "password": password, "totpCode": fakeCode("geoah"),
+		"repository": fakeRepository, "password": password, "totpCode": fakeCode(fakeRepository),
 		"newPassword": "another-passphrase-again",
 	})
 	wantErrorCode(t, rec, http.StatusUnauthorized, codeAuth)
@@ -150,10 +150,10 @@ func TestCredentialChangesRefuseABearerTokenAlone(t *testing.T) {
 
 func TestTOTPReenrollmentIsTwoSteps(t *testing.T) {
 	env := newTestEnv(t)
-	password := env.svc.passwords["geoah"]
+	password := env.svc.passwords[fakeRepository]
 
 	rec := env.do(t, http.MethodPost, "/totp/enroll", "", map[string]any{
-		"username": "geoah", "password": password, "totpCode": fakeCode("geoah"),
+		"repository": fakeRepository, "password": password, "totpCode": fakeCode(fakeRepository),
 	})
 	wantStatus(t, rec, http.StatusOK)
 	enrollment := decodeJSON[substrate.TOTPEnrollment](t, rec)
@@ -165,14 +165,14 @@ func TestTOTPReenrollmentIsTwoSteps(t *testing.T) {
 	// factors: nothing changes on a seed nobody holds.
 	env.clock.advance(defaultAuthInterval + time.Millisecond)
 	rec = env.do(t, http.MethodPost, "/totp", "", map[string]any{
-		"username": "geoah", "password": password, "totpCode": fakeCode("geoah"),
+		"repository": fakeRepository, "password": password, "totpCode": fakeCode(fakeRepository),
 		"newTotpSecret": enrollment.Secret, "newTotpCode": "",
 	})
 	wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
 
 	env.clock.advance(defaultAuthInterval + time.Millisecond)
 	rec = env.do(t, http.MethodPost, "/totp", "", map[string]any{
-		"username": "geoah", "password": password, "totpCode": fakeCode("geoah"),
+		"repository": fakeRepository, "password": password, "totpCode": fakeCode(fakeRepository),
 		"newTotpSecret": enrollment.Secret, "newTotpCode": "123456",
 	})
 	wantStatus(t, rec, http.StatusOK)
@@ -182,7 +182,7 @@ func TestTOTPReenrollmentIsTwoSteps(t *testing.T) {
 // the user exists at all, are not questions the door answers.
 func TestLoginGivesNoExistenceOracle(t *testing.T) {
 	env := newTestEnv(t)
-	badPassword := env.do(t, http.MethodPost, loginPath, "", loginBody("geoah", "wrong", fakeCode("geoah")))
+	badPassword := env.do(t, http.MethodPost, loginPath, "", loginBody(fakeRepository, "wrong", fakeCode(fakeRepository)))
 	env.clock.advance(defaultAuthInterval + time.Millisecond)
 	noUser := env.do(t, http.MethodPost, loginPath, "", loginBody("nosuch", "wrong", "000000"))
 
@@ -214,7 +214,7 @@ func TestConsoleRoutesFallThroughToTheSPA(t *testing.T) {
 		}
 	}
 	// Under an API prefix the method really is wrong, and says so.
-	rec := env.do(t, http.MethodDelete, "/api/v1/graphql", svc.token("geoah"), nil)
+	rec := env.do(t, http.MethodDelete, "/api/v1/graphql", svc.token(fakeRepository), nil)
 	wantStatus(t, rec, http.StatusMethodNotAllowed)
 	// Discovery sits outside the API surface, the same class as /healthz: a
 	// wrong method there falls to the SPA too, never a JSON 405.
@@ -234,22 +234,22 @@ func TestRecoveryEnrollFactorsAndOneTime(t *testing.T) {
 	// No factors: refused before the service is reached, exactly as the
 	// credential changes refuse a bearer as evidence.
 	rec := env.do(t, http.MethodPost, "/recovery/enroll", "", map[string]any{
-		"username": "geoah",
+		"repository": fakeRepository,
 	})
 	wantStatus(t, rec, http.StatusForbidden)
 
 	// Wrong factors: the one auth error.
 	env.clock.advance(defaultAuthInterval + time.Millisecond)
 	rec = env.do(t, http.MethodPost, "/recovery/enroll", "", map[string]any{
-		"username": "geoah", "password": "wrong", "totpCode": "000000",
+		"repository": fakeRepository, "password": "wrong", "totpCode": "000000",
 	})
 	wantStatus(t, rec, http.StatusUnauthorized)
 
 	// Right factors: enrolled once, the server-minted key delivered once.
 	env.clock.advance(defaultAuthInterval + time.Millisecond)
 	rec = env.do(t, http.MethodPost, "/recovery/enroll", "", map[string]any{
-		"username": "geoah", "password": "correct-horse-battery-staple",
-		"totpCode": fakeCode("geoah"),
+		"repository": fakeRepository, "password": "correct-horse-battery-staple",
+		"totpCode": fakeCode(fakeRepository),
 	})
 	wantStatus(t, rec, http.StatusCreated)
 	out := decodeJSON[map[string]string](t, rec)
@@ -263,8 +263,8 @@ func TestRecoveryEnrollFactorsAndOneTime(t *testing.T) {
 	// One-time: the slot is claimed.
 	env.clock.advance(defaultAuthInterval + time.Millisecond)
 	rec = env.do(t, http.MethodPost, "/recovery/enroll", "", map[string]any{
-		"username": "geoah", "password": "correct-horse-battery-staple",
-		"totpCode": fakeCode("geoah"),
+		"repository": fakeRepository, "password": "correct-horse-battery-staple",
+		"totpCode": fakeCode(fakeRepository),
 	})
 	wantStatus(t, rec, http.StatusConflict)
 }
@@ -292,7 +292,7 @@ func TestTOTPDisabledDoorTakesThePasswordAlone(t *testing.T) {
 
 	// A password and no code changes the password.
 	rec = env.do(t, http.MethodPost, "/password", "", map[string]any{
-		"username": "geoah", "password": "correct-horse-battery-staple",
+		"repository": fakeRepository, "password": "correct-horse-battery-staple",
 		"newPassword": "a-new-correct-horse",
 	})
 	wantStatus(t, rec, http.StatusOK)
@@ -300,8 +300,8 @@ func TestTOTPDisabledDoorTakesThePasswordAlone(t *testing.T) {
 	// A bearer token and no password is still refused with 403 — a token is
 	// not evidence here and the missing factor is not why.
 	env.clock.advance(defaultAuthInterval + time.Millisecond)
-	rec = env.do(t, http.MethodPost, "/password", svc.token("geoah"), map[string]any{
-		"username": "geoah", "newPassword": "another-correct-horse",
+	rec = env.do(t, http.MethodPost, "/password", svc.token(fakeRepository), map[string]any{
+		"repository": fakeRepository, "newPassword": "another-correct-horse",
 	})
 	wantStatus(t, rec, http.StatusForbidden)
 }
@@ -317,7 +317,7 @@ func TestDiscoveryRequiresTOTPByDefault(t *testing.T) {
 		t.Fatalf("discovery must require the second factor by default: %+v", doc["registration"])
 	}
 	rec = env.do(t, http.MethodPost, "/password", "", map[string]any{
-		"username": "geoah", "password": "correct-horse-battery-staple",
+		"repository": fakeRepository, "password": "correct-horse-battery-staple",
 		"newPassword": "a-new-correct-horse",
 	})
 	wantStatus(t, rec, http.StatusForbidden)

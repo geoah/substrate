@@ -5,8 +5,8 @@ package engine
 // A user is a `repositories` row, and everything else about them is a RECORD
 // in the repository they own:
 //
-//   - `substrate.reamde.dev/core/credential`, singleton id `self` — the username plus
-//     two refs into the sealed store. The material itself (an argon2id
+//   - `substrate.reamde.dev/core/credential`, singleton id `self` — the
+//     repository it admits to plus two refs into the sealed store. The material itself (an argon2id
 //     password hash, a TOTP seed) is NEVER in the changelog and never in a record's
 //     data, so the changelog carries an audit trail — "the credential changed at T"
 //     — and nothing crackable.
@@ -16,9 +16,9 @@ package engine
 //     back its secret once.
 //
 // THE MAINT-POOL PATHS ARE ENUMERATED HERE AND NOWHERE ELSE. Authentication
-// cannot start from a repository scope — a login knows a username and a
+// cannot start from a repository scope — a login knows a repository name and a
 // bearer knows a hash — so exactly four reads run on the BYPASSRLS pool with
-// an explicit `repository` predicate: `repositoryByUsername` (login),
+// an explicit `repository` predicate: `repositoryByID` (login),
 // `credentialOf` + `authMaterial` (the factors), and `tokenByHash` (every
 // authenticated request). Everything they lead to runs scoped.
 
@@ -40,7 +40,6 @@ import (
 
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
-	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 const (
@@ -170,31 +169,31 @@ func newAuthRef(kind string) (string, error) {
 // credentialOf reads a repository's credential record on the MAINTENANCE pool
 // — one of the four enumerated cross-scope reads, because a login has no
 // repository scope yet. It returns the two sealed refs.
-func (s *service) credentialOf(ctx context.Context, repoID string) (username, passwordRef, totpRef string, err error) {
+func (s *service) credentialOf(ctx context.Context, repoID string) (passwordRef, totpRef string, err error) {
 	var props []byte
 	err = s.maint.QueryRowContext(ctx, `
 		SELECT props FROM records
 		WHERE repository = $1 AND kind = $2 AND id = $3 AND deleted_at IS NULL`,
 		repoID, kindCredential, credentialID).Scan(&props)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", "", "", fmt.Errorf("%w: no credential", substrate.ErrAuth)
+		return "", "", fmt.Errorf("%w: no credential", substrate.ErrAuth)
 	}
 	if err != nil {
-		return "", "", "", err
+		return "", "", err
 	}
 	var m map[string]any
 	if err := json.Unmarshal(props, &m); err != nil {
-		return "", "", "", err
+		return "", "", err
 	}
 	str := func(k string) string { v, _ := m[k].(string); return v }
-	return str("username"), str("passwordRef"), str("totpRef"), nil
+	return str("passwordRef"), str("totpRef"), nil
 }
 
 // authMaterialOf opens both sealed rows for a repository, on the maintenance
 // pool for the same reason credentialOf is there.
 func (s *service) authMaterialOf(ctx context.Context, repoID string) (authMaterial, error) {
 	var m authMaterial
-	_, passwordRef, totpRef, err := s.credentialOf(ctx, repoID)
+	passwordRef, totpRef, err := s.credentialOf(ctx, repoID)
 	if err != nil {
 		return m, err
 	}
@@ -357,24 +356,23 @@ func mustJSON(v any) []byte {
 
 // --- registration ----------------------------------------------------------
 
-// BeginRegistration issues a TOTP enrollment for a username and writes
+// BeginRegistration issues a TOTP enrollment for a repository and writes
 // NOTHING: the caller holds the seed and proves possession by returning it
 // with one code (Register). An abandoned registration therefore leaves no
 // durable trace at all — no row to expire, no pending state to sweep.
-func (s *service) BeginRegistration(ctx context.Context, username string) (substrate.TOTPEnrollment, error) {
-	if !vocabulary.ValidRepositoryName(username) {
-		return substrate.TOTPEnrollment{},
-			fmt.Errorf("%w: username %q must match [a-z][a-z0-9]{1,29}", substrate.ErrValidation, username)
+func (s *service) BeginRegistration(ctx context.Context, repository string) (substrate.TOTPEnrollment, error) {
+	if err := validRepositoryAuthority(repository); err != nil {
+		return substrate.TOTPEnrollment{}, err
 	}
-	return newEnrollment(username)
+	return newEnrollment(repository)
 }
 
-func newEnrollment(username string) (substrate.TOTPEnrollment, error) {
+func newEnrollment(repository string) (substrate.TOTPEnrollment, error) {
 	seed, err := NewTOTPSecret()
 	if err != nil {
 		return substrate.TOTPEnrollment{}, err
 	}
-	return substrate.TOTPEnrollment{Secret: seed, URI: TOTPEnrollmentURI(username, seed)}, nil
+	return substrate.TOTPEnrollment{Secret: seed, URI: TOTPEnrollmentURI(repository, seed)}, nil
 }
 
 // Register creates the user: ONE creation act
@@ -416,11 +414,11 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 	if label == "" {
 		label = "login"
 	}
-	out.Authority = in.Authority
-	_, err = s.createSeededRepository(ctx, in.Username, in.Authority, func(t *txn) error {
+	out.Repository = in.Repository
+	_, err = s.createSeededRepository(ctx, in.Repository, func(t *txn) error {
 		// Fresh account: no prior credential to compare against, so no CAS.
 		if err := t.writeCredential(credentialWrite{
-			username: in.Username, passwordHash: hash,
+			repository: in.Repository, passwordHash: hash,
 			totp: totpMaterial{Secret: seed, Step: step},
 		}); err != nil {
 			return err
@@ -575,12 +573,12 @@ func validPassword(p string) error {
 
 // verifyFactors is the ONE place both factors are checked, so /login, the
 // password change and the TOTP re-enrollment cannot drift apart (ruling
-// RB-6 needs them identical). It answers the SAME error for an unknown user,
-// a wrong password and a wrong code, and does the same argon2id and HMAC work
-// on every path so the timing says nothing either.
+// RB-6 needs them identical). It answers the SAME error for an unknown
+// repository, a wrong password and a wrong code, and does the same argon2id
+// and HMAC work on every path so the timing says nothing either.
 func (s *service) verifyFactors(ctx context.Context, in substrate.LoginInput) (Repository, authMaterial, error) {
-	authErr := fmt.Errorf("%w: bad username, password or code", substrate.ErrAuth)
-	repo, rerr := s.repositoryByUsername(ctx, in.Username)
+	authErr := fmt.Errorf("%w: bad repository, password or code", substrate.ErrAuth)
+	repo, rerr := s.repositoryByID(ctx, in.Repository)
 	material := authMaterial{passwordHash: dummyPasswordHash, totp: totpMaterial{}}
 	key := dummyTOTPKey
 	if rerr == nil {
@@ -671,7 +669,7 @@ func (s *service) ChangePassword(ctx context.Context, in substrate.LoginInput, n
 	// credential. The write reconciles that step against anything a concurrent
 	// login advanced.
 	return ds.rewriteCredential(ctx, credentialWrite{
-		username: in.Username, passwordHash: hash, totp: material.totp,
+		repository: in.Repository, passwordHash: hash, totp: material.totp,
 		expectPasswordRef: material.passwordRef, expectTotpRef: material.totpRef, casEnabled: true,
 	})
 }
@@ -683,7 +681,7 @@ func (s *service) BeginTOTPReenrollment(ctx context.Context, in substrate.LoginI
 	if _, _, err := s.verifyFactors(ctx, in); err != nil {
 		return substrate.TOTPEnrollment{}, err
 	}
-	return newEnrollment(in.Username)
+	return newEnrollment(in.Repository)
 }
 
 // ReenrollTOTP swaps the second factor: the current factors AND one code from
@@ -715,7 +713,7 @@ func (s *service) ReenrollTOTP(ctx context.Context, in substrate.LoginInput, new
 	// at the code just proven, and the verified refs are the CAS baseline so a
 	// concurrent password change cannot be silently reverted by this write.
 	return ds.rewriteCredential(ctx, credentialWrite{
-		username: in.Username, passwordHash: material.passwordHash,
+		repository: in.Repository, passwordHash: material.passwordHash,
 		totp:              totpMaterial{Secret: seed, Step: step},
 		expectPasswordRef: material.passwordRef, expectTotpRef: material.totpRef, casEnabled: true,
 	})
@@ -727,7 +725,7 @@ func (s *service) ReenrollTOTP(ctx context.Context, in substrate.LoginInput, new
 // leaving the command to refuse at runtime, on the box, to a user who has
 // already lost their authenticator.
 type Resetter interface {
-	ResetUser(ctx context.Context, username, newPassword string) (substrate.TOTPEnrollment, error)
+	ResetUser(ctx context.Context, repository, newPassword string) (substrate.TOTPEnrollment, error)
 }
 
 var _ Resetter = (*service)(nil)
@@ -737,16 +735,16 @@ var _ Resetter = (*service)(nil)
 // attributed to the substrate. It is off substrate.Service on purpose —
 // `substratectl user reset` on the box is the only caller (B8), and nothing
 // reachable from the network resets an account.
-func (s *service) ResetUser(ctx context.Context, username, newPassword string) (substrate.TOTPEnrollment, error) {
+func (s *service) ResetUser(ctx context.Context, repository, newPassword string) (substrate.TOTPEnrollment, error) {
 	var zero substrate.TOTPEnrollment
 	if err := validPassword(newPassword); err != nil {
 		return zero, err
 	}
-	repo, err := s.repositoryByUsername(ctx, username)
+	repo, err := s.repositoryByID(ctx, repository)
 	if err != nil {
 		return zero, err
 	}
-	enrollment, err := newEnrollment(username)
+	enrollment, err := newEnrollment(repository)
 	if err != nil {
 		return zero, err
 	}
@@ -761,7 +759,7 @@ func (s *service) ResetUser(ctx context.Context, username, newPassword string) (
 	// The operator's reset is authoritative and rare — no compare-and-swap: it
 	// deliberately overwrites whatever is there for a user who lost both factors.
 	if err := ds.rewriteCredential(ctx, credentialWrite{
-		username: username, passwordHash: hash,
+		repository: repository, passwordHash: hash,
 		totp: totpMaterial{Secret: enrollment.Secret},
 	}); err != nil {
 		return zero, err
@@ -776,7 +774,7 @@ func (s *service) ResetUser(ctx context.Context, username, newPassword string) (
 // credential still points at the refs the caller verified against — a
 // concurrent rotation is a CONFLICT, not a silent overwrite that undoes it.
 type credentialWrite struct {
-	username     string
+	repository   string
 	passwordHash string
 	totp         totpMaterial
 	// expectPasswordRef/expectTotpRef are the refs the verification read. When
@@ -864,7 +862,7 @@ func (t *txn) writeCredential(cw credentialWrite) error {
 	if _, err := t.put(substrate.PutInput{
 		Kind: kindCredential, ID: credentialID,
 		Properties: map[string]any{
-			"username": cw.username, "passwordRef": passwordRef, "totpRef": totpRef,
+			"repository": cw.repository, "passwordRef": passwordRef, "totpRef": totpRef,
 		},
 	}); err != nil {
 		return err
@@ -909,9 +907,9 @@ func (ds *dataset) rewriteCredential(ctx context.Context, cw credentialWrite) er
 
 // tokenPrefix namespaces bearer secrets so leak scanners (gitleaks, GitHub
 // secret scanning) match them with no false positives. The secret is
-// `substrate_tok_<hex>` and NOTHING else: no username segment, because a token
+// `substrate_tok_<hex>` and NOTHING else: no repository segment, because a token
 // names its repository by being FOUND in it (ruling RB-2's one-repository
-// model made the routing hint pointless, and a secret that carries a username
+// model made the routing hint pointless, and a secret that carries a name
 // leaks one).
 const tokenPrefix = "substrate_tok_"
 
@@ -1031,7 +1029,7 @@ func (s *service) Authenticate(ctx context.Context, tokenSecret string) (substra
 		// A well-formed token whose real repository could NOT be opened is a
 		// service condition, not a bad credential: surface it so
 		// the API maps it to a 5xx instead of a misleading "invalid token".
-		return nil, zero, fmt.Errorf("open repository %s: %w", repo.Username, err)
+		return nil, zero, fmt.Errorf("open repository %s: %w", repo.ID, err)
 	}
 	return ds, info, nil
 }

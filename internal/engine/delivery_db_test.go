@@ -285,7 +285,7 @@ func TestARestoredRepositoryResumesItsDeliveries(t *testing.T) {
 		Query: map[string][]string{"token": {secret}},
 		Body:  []byte(body),
 	}
-	fid, err := d.svc.receiveWebhook(ctx, testdb.Authority(t), ledgerHook, "", req, webhookFireInline)
+	fid, err := d.svc.receiveWebhook(ctx, testdb.Repository(t), ledgerHook, "", req, webhookFireInline)
 	if err != nil {
 		t.Fatalf("receive: %v", err)
 	}
@@ -368,7 +368,7 @@ func TestARestoredRepositoryResumesItsDeliveries(t *testing.T) {
 		t.Fatalf("import the directory: %v", err)
 	}
 	t.Cleanup(func() { _ = svc2.Close() })
-	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open the restored repository: %v", err)
 	}
@@ -467,7 +467,7 @@ func TestARestoredRepositoryResumesItsDeliveries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc2.(*service).RebuildRepository(ctx, testdb.Username(t)); err != nil {
+	if _, err := svc2.(*service).RebuildRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	after, err := d2.FoldSnapshot(ctx)
@@ -626,10 +626,10 @@ func TestAFirstOpenAdoptsLegacyTriggerBookkeeping(t *testing.T) {
 		return svc.(*service)
 	}
 	svc := open()
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatal(err)
 	}
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -685,14 +685,14 @@ func TestAFirstOpenAdoptsLegacyTriggerBookkeeping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}
-	if _, err := faulty.Dataset(ctx, testdb.Username(t)); err == nil || !strings.Contains(err.Error(), "adoption fault") {
+	if _, err := faulty.Dataset(ctx, testdb.Repository(t)); err == nil || !strings.Contains(err.Error(), "adoption fault") {
 		t.Fatalf("the faulted open answered %v", err)
 	}
 	_ = faulty.Close()
 	if adopted != 1 {
 		t.Fatalf("the fault fired after %d triggers, want the first", adopted)
 	}
-	probe, err := open().Dataset(ctx, testdb.Username(t))
+	probe, err := open().Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -707,12 +707,12 @@ func TestAFirstOpenAdoptsLegacyTriggerBookkeeping(t *testing.T) {
 
 	svc2 := open()
 	t.Cleanup(func() { _ = svc2.Close() })
-	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open under the ledger: %v", err)
 	}
 	d2 := ds2.(*dataset)
-	if _, err := svc2.RebuildRepository(ctx, testdb.Username(t)); err != nil {
+	if _, err := svc2.RebuildRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	if got := cursorSeq(t, d2, ledgerMirror); got != 3 {
@@ -1065,7 +1065,7 @@ func TestARestoredTriggerAppliesAnEditedSourceFromTheEdit(t *testing.T) {
 		t.Fatalf("import the directory: %v", err)
 	}
 	t.Cleanup(func() { _ = svc2.Close() })
-	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1411,7 +1411,7 @@ func TestAParkedMultipartWebhookKeepsItsPartValuesOutOfTheLedger(t *testing.T) {
 			{Name: "audio", MediaType: "audio/mp4", Data: []byte("not really audio")},
 		},
 	}
-	if _, err := d.svc.receiveWebhook(ctx, testdb.Authority(t), ledgerHook, "", req, webhookFireInline); err != nil {
+	if _, err := d.svc.receiveWebhook(ctx, testdb.Repository(t), ledgerHook, "", req, webhookFireInline); err != nil {
 		t.Fatalf("receive: %v", err)
 	}
 	ids := failureIDs(t, d, ledgerHook)

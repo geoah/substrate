@@ -133,13 +133,13 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, dsn := newService(t)
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
 	// The seed is COMPLETE at creation: the changelog's head is already where it
 	// will be, before anything has opened the repository.
-	raw, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, testdb.Username(t)), engine.RoleApp)
+	raw, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleApp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 		t.Fatal("creation wrote no changelog entries")
 	}
 
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,17 +234,17 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 
 	// --- binary N: two repositories are created and their seed is the tree.
 	svc1 := openTree(t, dsn, tree)
-	for _, name := range []string{"opened", "asleep"} {
-		if _, err := svc1.CreateRepository(ctx, name, name+".example.com"); err != nil {
+	for _, name := range []string{"opened.example.com", "asleep.example.com"} {
+		if _, err := svc1.CreateRepository(ctx, name); err != nil {
 			t.Fatalf("create %s: %v", name, err)
 		}
 	}
-	dsAsleep, err := svc1.Dataset(ctx, "asleep")
+	dsAsleep, err := svc1.Dataset(ctx, "asleep.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
 	asleepHead := maxSeq(t, dsAsleep)
-	dsOpened, err := svc1.Dataset(ctx, "opened")
+	dsOpened, err := svc1.Dataset(ctx, "opened.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 	bumpPackageVersion(t, tree, "substrate.reamde.dev/core", "99")
 
 	svc2 := openTree(t, dsn, tree)
-	ds2, err := svc2.Dataset(ctx, "opened")
+	ds2, err := svc2.Dataset(ctx, "opened.example.com")
 	if err != nil {
 		t.Fatalf("open on binary N+1: %v", err)
 	}
@@ -306,7 +306,7 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 
 	// --- CONVERGENT: the same binary again writes nothing at all.
 	svc3 := openTree(t, dsn, tree)
-	ds3, err := svc3.Dataset(ctx, "opened")
+	ds3, err := svc3.Dataset(ctx, "opened.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +317,7 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 	// --- A REPOSITORY NEVER OPENED STAYS UNTOUCHED: `asleep` was created on
 	// binary N and nothing has opened it since, so its changelog has not moved and
 	// its vocabulary is still binary N's.
-	rawAsleep, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, "asleep"), engine.RoleApp)
+	rawAsleep, err := engine.OpenScopedDB(dsn, "asleep.example.com", engine.RoleApp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -340,7 +340,7 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 	}
 
 	// …and it upgrades the moment it IS opened, from wherever it stood.
-	dsAwake, err := svc3.Dataset(ctx, "asleep")
+	dsAwake, err := svc3.Dataset(ctx, "asleep.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -458,10 +458,10 @@ func TestBootUpgradeHoldsRowsToADeclarationItKeeps(t *testing.T) {
 	tree := shippedTree(t)
 
 	svc1 := openTree(t, dsn, tree)
-	if _, err := svc1.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc1.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	ds1, err := svc1.Dataset(ctx, testdb.Username(t))
+	ds1, err := svc1.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -501,7 +501,7 @@ func TestBootUpgradeHoldsRowsToADeclarationItKeeps(t *testing.T) {
 
 	svc2 := openTree(t, dsn, tree)
 	t.Cleanup(func() { _ = svc2.Close() })
-	_, err = svc2.Dataset(ctx, testdb.Username(t))
+	_, err = svc2.Dataset(ctx, testdb.Repository(t))
 	// What matters is the invariant below: no row lands that the surviving
 	// declaration rejects. Today the projection's refusal is how it holds, so the
 	// upgrade fails rather than writing such a row.
@@ -512,7 +512,7 @@ func TestBootUpgradeHoldsRowsToADeclarationItKeeps(t *testing.T) {
 		t.Fatalf("the refusal must name the undeclared property: %v", err)
 	}
 
-	raw, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, testdb.Username(t)), engine.RoleApp)
+	raw, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleApp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -548,10 +548,10 @@ func TestBootUpgradeNeverDowngrades(t *testing.T) {
 	bumpPackageVersion(t, tree, "substrate.reamde.dev/core", "99")
 
 	svc1 := openTree(t, dsn, tree)
-	if _, err := svc1.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc1.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	ds1, err := svc1.Dataset(ctx, testdb.Username(t))
+	ds1, err := svc1.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -563,7 +563,7 @@ func TestBootUpgradeNeverDowngrades(t *testing.T) {
 	older := shippedTree(t)
 	svc2 := openTree(t, dsn, older)
 	t.Cleanup(func() { _ = svc2.Close() })
-	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open on the older binary: %v", err)
 	}

@@ -398,8 +398,8 @@ from every other suite:
   place, so a human can sign into the console (the report has the
   credentials) or point `substratectl` at the server and review what the
   suite actually did. `mise run dev:wipe` is the cleanup; each run registers
-  a new username, so runs never collide.
-- **It writes a report.** Every run writes `.dev/e2e/report-<username>.md`:
+  a new repository name, so runs never collide.
+- **It writes a report.** Every run writes `.dev/e2e/report-<repository>.md`:
   each case, what it tests, every step it took with the answering status, the
   result, and an appendix showing the repository as it was left, changelog
   included.

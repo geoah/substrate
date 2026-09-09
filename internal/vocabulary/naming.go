@@ -61,8 +61,7 @@ var (
 	// encoded, so a client writes `%2F` and the API decodes it once
 	// (api/rest.go pathParam). No "%" in the alphabet, so nothing on the wire
 	// is percent-decoded twice.
-	reID     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._~:@/-]*$`)
-	reRepoNm = regexp.MustCompile(`^[a-z][a-z0-9]{1,29}$`)
+	reID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._~:@/-]*$`)
 )
 
 // MaxIDLen caps a writer-supplied id: long enough for any encoded provider
@@ -99,9 +98,6 @@ func ValidID(s string) bool {
 	return len(s) <= MaxIDLen && reID.MatchString(s)
 }
 
-// ValidRepositoryName reports whether s is a legal repository (user) name.
-func ValidRepositoryName(s string) bool { return reRepoNm.MatchString(s) }
-
 // The DNS limits an authority is held to when a repository claims one as its
 // own: 253 characters in all and 63 per label (RFC 1035 §2.3.4). A published
 // kind's authority is also held to reAuthority, which has no length rule, so
@@ -127,14 +123,23 @@ func ValidRepositoryAuthority(s string) bool {
 	return true
 }
 
-// DefaultRepositoryAuthority is the authority a registration gets when it
-// names none: the username as a label under the host the request reached
-// (`ada.example.com`), the way a handle sits under its server. host is
-// the request's Host header, so a port and a trailing dot are stripped and
-// the case folded; the result is NOT validated here, because a host that is
-// no DNS name (an IPv6 literal) yields a string the caller refuses with the
-// same message as any other bad authority.
-func DefaultRepositoryAuthority(username, host string) string {
+// RepositoryAuthority resolves the repository name a caller typed into the
+// authority that name means. A name carrying a dot IS the authority
+// (`ada.example.com`); a bare label is completed under the host the request
+// reached (`ada` -> `ada.example.com`), the way a handle sits under its
+// server. host is the request's Host header, so a port and a trailing dot are
+// stripped and the case folded. The result is NOT validated here: a host that
+// is no DNS name (an IPv6 literal) yields a string the caller refuses with
+// the same message as any other bad authority, and a bare label under no host
+// yields "".
+func RepositoryAuthority(name, host string) string {
+	name = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(name)), ".")
+	if name == "" {
+		return ""
+	}
+	if strings.Contains(name, ".") {
+		return name
+	}
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
@@ -142,7 +147,7 @@ func DefaultRepositoryAuthority(username, host string) string {
 	if host == "" {
 		return ""
 	}
-	return username + "." + host
+	return name + "." + host
 }
 
 // MetaKeyNamespace returns the writer namespace of a label/annotation key.

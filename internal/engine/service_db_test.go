@@ -31,21 +31,22 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 		return svc
 	}
 	svc := open()
-	info, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t))
+	info, err := svc.CreateRepository(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	if info.ID == "" || info.Name != testdb.Username(t) {
+	if info.ID != testdb.Repository(t) {
 		t.Fatalf("repository = %+v", info)
 	}
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err == nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err == nil {
 		t.Fatal("expected a duplicate-repository error")
 	}
-	if _, err := svc.CreateRepository(ctx, "Bad Name", "bad.example.com"); err == nil {
+	// A name that is no authority: one label, so no repository may own it.
+	if _, err := svc.CreateRepository(ctx, "bad"); err == nil {
 		t.Fatal("expected a repository-name validation error")
 	}
 
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +58,7 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(repos) != 1 || repos[0].Name != testdb.Username(t) || repos[0].ID != info.ID {
+	if len(repos) != 1 || repos[0].ID != info.ID {
 		t.Fatalf("repositories = %+v", repos)
 	}
 	self, err := ds.Get(ctx, "substrate.reamde.dev/core/repository", info.ID)
@@ -114,7 +115,7 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 	_ = svc.Close()
 	svc2 := open()
 	t.Cleanup(func() { _ = svc2.Close() })
-	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,15 +133,15 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 	if !strings.HasPrefix(secret, "substrate_tok_") || strings.Count(secret, "_") != 2 {
 		t.Fatalf("secret = %q, want substrate_tok_<hex>", secret)
 	}
-	if strings.Contains(secret, testdb.Username(t)) {
+	if strings.Contains(secret, testdb.Repository(t)) {
 		t.Fatalf("secret leaks the username: %q", secret)
 	}
 	authDS, info2, err := svc2.Authenticate(ctx, secret)
 	if err != nil {
 		t.Fatalf("authenticate: %v", err)
 	}
-	if info2.ID != tok.ID || authDS.Repository().Name != testdb.Username(t) {
-		t.Fatalf("authenticated as %+v / %s", info2, authDS.Repository().Name)
+	if info2.ID != tok.ID || authDS.Repository().ID != testdb.Repository(t) {
+		t.Fatalf("authenticated as %+v / %s", info2, authDS.Repository().ID)
 	}
 	if _, _, err := svc2.Authenticate(ctx, "substrate_tok_deadbeef"); err == nil {
 		t.Fatal("expected an auth error")
@@ -162,15 +163,15 @@ func TestRepositoryDatasetIsolation(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newService(t)
 	for _, name := range []string{"alpha", "beta"} {
-		if _, err := svc.CreateRepository(ctx, name, name+".example.com"); err != nil {
+		if _, err := svc.CreateRepository(ctx, name+".example.com"); err != nil {
 			t.Fatal(err)
 		}
 	}
-	a, err := svc.Dataset(ctx, "alpha")
+	a, err := svc.Dataset(ctx, "alpha.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := svc.Dataset(ctx, "beta")
+	b, err := svc.Dataset(ctx, "beta.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +180,7 @@ func TestRepositoryDatasetIsolation(t *testing.T) {
 	if _, err := b.Get(ctx, task.Kind, task.ID); err == nil {
 		t.Fatal("datasets must be isolated")
 	}
-	if _, err := svc.Dataset(ctx, "nosuch"); err == nil {
+	if _, err := svc.Dataset(ctx, "nosuch.example.com"); err == nil {
 		t.Fatal("expected not found")
 	}
 }
@@ -201,10 +202,10 @@ func TestSchemaRowsStoreNoSourceYAML(t *testing.T) {
 		return svc
 	}
 	svc := open()
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -467,7 +467,7 @@ func (ds *dataset) warnDiscardedOutput(t *trigger, fn *vocabulary.Function) {
 	// a crafted id cannot forge log lines and no secret-shaped value — the
 	// scanner taints every props-map read alike — reaches the log.
 	ds.svc.log.Warn("substrate: trigger fires a function whose output is discarded — it declares no emit, no call and no network, so a delivery can change nothing; call it instead, or give it the grant it needs",
-		"repository", logSafeID(ds.Repository().Name), "trigger", logSafeID(t.ID), "function", logSafeID(fn.Identity()))
+		"repository", logSafeID(ds.Repository().ID), "trigger", logSafeID(t.ID), "function", logSafeID(fn.Identity()))
 }
 
 // logSafeText is logSafeID for PROSE: an admission error or a quarantine

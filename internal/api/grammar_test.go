@@ -16,8 +16,8 @@ import (
 // POST, and nothing is written.
 func TestPostToRecordPathIsMethodNotAllowed(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	path := peoplePath + "/p1"
 	ds.lastPut = substrate.PutInput{}
@@ -36,8 +36,8 @@ func TestPostToRecordPathIsMethodNotAllowed(t *testing.T) {
 // id, so a client that meant an upsert got a new row every call.
 func TestPutToCollectionPathIsMethodNotAllowed(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	ds.lastPut = substrate.PutInput{}
 	rec := env.do(t, http.MethodPut, peoplePath, tok,
@@ -62,8 +62,8 @@ func TestPutToCollectionPathIsMethodNotAllowed(t *testing.T) {
 // reason the collection segment is the kind's name (decision 0033).
 func TestRecordURLIsItsReference(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	const kind = "samples.substrate.reamde.dev/people/person"
 	const id = "r1"
@@ -81,8 +81,8 @@ func TestRecordURLIsItsReference(t *testing.T) {
 // its collection does. The action moved to /api/v1/merge (#202).
 func TestShadowedCollectionsAreReachable(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	ds.types = append(ds.types, substrate.KindInfo{
 		Identity: "substrate.reamde.dev/core/recordmerge", Name: "recordmerge",
 		Authority: coreAuthorityName, Package: "core", Version: 1, Plural: "recordmerges", Source: "builtin",
@@ -98,8 +98,8 @@ func TestShadowedCollectionsAreReachable(t *testing.T) {
 // symmetric (decision 0033).
 func TestReservedRecordIdsRefuseBothDirections(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	// `incoming` is the record's one sub-resource, so it is the one reserved
 	// id: `edges` went back to being an ordinary id when its routes died.
@@ -122,7 +122,7 @@ func TestReservedRecordIdsRefuseBothDirections(t *testing.T) {
 // console's index.html.
 func TestShortPathIs404(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	for _, path := range []string{"/api/v1/note", "/api/v1/example.com/note"} {
 		for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
 			rec := env.do(t, method, path, tok, map[string]any{})

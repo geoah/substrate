@@ -33,8 +33,7 @@ const webhookFirePrefix = "hook-"
 var errWebhookRefused = fmt.Errorf("%w: no such webhook", substrate.ErrNotFound)
 
 // webhookPath is a webhook trigger's endpoint, relative to the server root.
-// The repository is named by its authority: the authority is what the
-// repository publishes under, and the username stays the login identifier.
+// The repository is named by its authority, which is its one name (0071).
 func webhookPath(authority, triggerID string) string {
 	return "/webhooks/" + authority + "/" + triggerID
 }
@@ -111,7 +110,7 @@ func (s *service) receiveWebhook(ctx context.Context, authority, triggerID, key 
 		// redeliver a request the substrate already holds.
 		if !ds.spawn("webhook fire", func(ctx context.Context) { ds.fireWebhook(ctx, tr, row) }) {
 			ds.svc.log.Info("substrate: webhook fire left pending, the service is shutting down",
-				"repository", ds.Repository().Name, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID))
+				"repository", ds.Repository().ID, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID))
 		}
 	}
 	return row.FireID, nil
@@ -151,7 +150,7 @@ func (ds *dataset) admitWebhook(ctx context.Context, triggerID, key string, req 
 	}
 	fid := webhookFirePrefix + wid
 	at := nowUTC()
-	envelope := runner.FireEnvelope(fid, at, ds.Repository().Name, ds.Repository().Authority)
+	envelope := runner.FireEnvelope(fid, at, ds.Repository().Authority)
 	envelope["request"] = webhookRequestEnvelope(req, parts)
 	payload, err := ds.parkedEnvelope(ctx, envelope)
 	if err != nil {
@@ -195,7 +194,7 @@ func (ds *dataset) fireWebhook(ctx context.Context, tr *trigger, row foldFailure
 	var envelope map[string]any
 	if err := json.Unmarshal(row.Payload, &envelope); err != nil {
 		ds.svc.log.Error("substrate: webhook fire cannot read its recorded request, the entry stays pending",
-			"repository", ds.Repository().Name, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID), "failure", int64(row.ID))
+			"repository", ds.Repository().ID, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID), "failure", int64(row.ID))
 		return
 	}
 	_, err := ds.deliverFire(ctx, tr, runner.ModeWebhook, row.FireID, row.ParkedAt, nil, envelope, &row)
@@ -203,7 +202,7 @@ func (ds *dataset) fireWebhook(ctx context.Context, tr *trigger, row foldFailure
 		return
 	}
 	outcome := webhookFireOutcome(err)
-	attrs := []any{"repository", ds.Repository().Name, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID), "failure", int64(row.ID), "outcome", outcome}
+	attrs := []any{"repository", ds.Repository().ID, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID), "failure", int64(row.ID), "outcome", outcome}
 	switch outcome {
 	case fireOutcomeRunning, fireOutcomeRetired:
 		ds.svc.log.Info("substrate: webhook fire not run, another hand holds or delivered it", attrs...)
@@ -274,7 +273,7 @@ func (ds *dataset) runPendingWebhooks(ctx context.Context) {
 	pending, err := ds.pendingWebhooks(ctx, 0)
 	if err != nil {
 		ds.svc.log.Error("substrate: pending webhook deliveries could not be read",
-			"repository", ds.Repository().Name, "error", err)
+			"repository", ds.Repository().ID, "error", err)
 		return
 	}
 	held := map[string]int{}
@@ -293,7 +292,7 @@ func (ds *dataset) runPendingWebhooks(ctx context.Context) {
 		current, err := ds.pendingWebhooks(ctx, int64(p.row.ID))
 		if err != nil {
 			ds.svc.log.Error("substrate: pending webhook delivery could not be read again",
-				"repository", ds.Repository().Name, "trigger", logSafeID(p.trigger), "fire", p.row.FireID, "failure", int64(p.row.ID), "error", err)
+				"repository", ds.Repository().ID, "trigger", logSafeID(p.trigger), "fire", p.row.FireID, "failure", int64(p.row.ID), "error", err)
 			return
 		}
 		if len(current) == 0 {
@@ -303,7 +302,7 @@ func (ds *dataset) runPendingWebhooks(ctx context.Context) {
 	}
 	for trigger, n := range held {
 		ds.svc.log.Warn("substrate: webhook deliveries left pending, their trigger does not run",
-			"repository", ds.Repository().Name, "trigger", logSafeID(trigger), "pending", n)
+			"repository", ds.Repository().ID, "trigger", logSafeID(trigger), "pending", n)
 	}
 }
 
@@ -389,20 +388,17 @@ func blobNameOf(filename string) string {
 // the bytes are read back into it here so the callable sees the request as
 // it arrived. A stored envelope was written by whatever binary parked it, so
 // a park from before the repository carried an authority holds `repository:
-// {owner}` alone; the current names fill what it lacks, since a body that
-// reads repository.authority must not see an empty string on a retry.
+// {owner}` alone; the authority fills what it lacks, since a body that reads
+// repository.authority must not see an empty string on a retry.
 func (ds *dataset) fireEnvelope(ctx context.Context, envelope map[string]any, fid string, at time.Time) (map[string]any, error) {
-	owner, authority := ds.Repository().Name, ds.Repository().Authority
+	authority := ds.Repository().Authority
 	if envelope == nil {
-		return runner.FireEnvelope(fid, at, owner, authority), nil
+		return runner.FireEnvelope(fid, at, authority), nil
 	}
 	repo, _ := envelope["repository"].(map[string]any)
 	if repo == nil {
 		repo = map[string]any{}
 		envelope["repository"] = repo
-	}
-	if name, _ := repo["owner"].(string); name == "" {
-		repo["owner"] = owner
 	}
 	if name, _ := repo["authority"].(string); name == "" {
 		repo["authority"] = authority

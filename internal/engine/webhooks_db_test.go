@@ -128,7 +128,7 @@ func TestWebhookDelivery(t *testing.T) {
 	)
 	// The subtests address the repository the PARENT registered, whose name
 	// derives from the parent's t.
-	username, authority := testdb.Username(t), testdb.Authority(t)
+	authority := testdb.Repository(t)
 
 	t.Run("open endpoint delivers the request", func(t *testing.T) {
 		fid, err := engine.ReceiveWebhookSync(ctx, svc, authority, "hook-open", "", jsonHook(`{"hello":"wörld"}`, "yes"))
@@ -164,9 +164,9 @@ func TestWebhookDelivery(t *testing.T) {
 	t.Run("every refusal is not found", func(t *testing.T) {
 		cases := map[string][2]string{
 			"unknown authority": {"nobody.example.com", "hook-open"},
-			// The door takes the authority alone: the username is not a valid
-			// path segment here.
-			"the username":      {username, "hook-open"},
+			// The door takes the authority, which is the repository's whole
+			// name: a bare label is not a path segment here.
+			"a bare label":      {testdb.RepositoryLabel(t), "hook-open"},
 			"unknown trigger":   {authority, "hook-missing"},
 			"disabled trigger":  {authority, "hook-off"},
 			"a record trigger":  {authority, "hook-record"},
@@ -303,7 +303,7 @@ func TestWebhookParkedRetryReplaysRequest(t *testing.T) {
 			{Name: "audio", MediaType: "audio/mp4", Data: audio},
 		},
 	}
-	fid, err := engine.ReceiveWebhookSync(ctx, svc, testdb.Authority(t), "hook-gated", "", req)
+	fid, err := engine.ReceiveWebhookSync(ctx, svc, testdb.Repository(t), "hook-gated", "", req)
 	if err != nil {
 		t.Fatalf("receive: %v", err)
 	}

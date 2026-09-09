@@ -33,7 +33,7 @@ const (
 )
 
 // authWindow paces the credential endpoints: the door admits one attempt per
-// five seconds per (peer, username), so the suite waits the window out
+// five seconds per (peer, repository), so the suite waits the window out
 // between attempts instead of reading its own 429 as a failure.
 const authWindow = 5200 * time.Millisecond
 
@@ -47,7 +47,7 @@ type run struct {
 
 	stub *llmStub // the scripted OpenAI-wire model the story agents buy from
 
-	username   string
+	repository string
 	password   string
 	token      string // the first token's secret; every case call carries it
 	tokenID    string
@@ -61,18 +61,19 @@ func newRun(t *testing.T, base string) *run {
 	if invite == "" {
 		invite = "let-me-in"
 	}
-	// The username is fresh per run because registration is one-shot and the
-	// repository is left behind on purpose; base36 nanoseconds keep it inside
-	// the [a-z][a-z0-9]{1,29} grammar and two runs in the same second apart.
-	username := "e2e" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	// The repository name is fresh per run because registration is one-shot
+	// and the repository is left behind on purpose; base36 nanoseconds keep
+	// it a legal DNS label and two runs in the same second apart. It is a
+	// bare label, which the door completes under its own host.
+	repository := "e2e" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	return &run{
-		t:        t,
-		base:     strings.TrimRight(base, "/"),
-		invite:   invite,
-		hc:       &http.Client{Timeout: 30 * time.Second},
-		username: username,
-		password: "correct-horse-battery-staple",
-		rep:      &report{Server: base, Started: time.Now()},
+		t:          t,
+		base:       strings.TrimRight(base, "/"),
+		invite:     invite,
+		hc:         &http.Client{Timeout: 30 * time.Second},
+		repository: repository,
+		password:   "correct-horse-battery-staple",
+		rep:        &report{Server: base, Started: time.Now()},
 	}
 }
 
@@ -80,7 +81,7 @@ func newRun(t *testing.T, base string) *run {
 // tests, every step it took, and how the repository looks afterwards.
 type report struct {
 	Server     string
-	Username   string
+	Repository string
 	Password   string
 	TOTPSecret string // printed only when the server enforces the factor: without it the reviewer cannot sign in
 	Started    time.Time
@@ -257,12 +258,12 @@ func (r *run) writeReport() (string, error) {
 	fmt.Fprintf(&b, "# Substrate live e2e report\n\n")
 	fmt.Fprintf(&b, "| | |\n| --- | --- |\n")
 	fmt.Fprintf(&b, "| server | %s |\n", rep.Server)
-	if rep.Username == "" {
+	if rep.Repository == "" {
 		// Registration never completed: there is no repository and nothing
 		// to sign into, and the report must not pretend otherwise.
 		fmt.Fprintf(&b, "| registration | FAILED; no repository was created (see AUTH-01) |\n")
 	} else {
-		fmt.Fprintf(&b, "| username | `%s` |\n", rep.Username)
+		fmt.Fprintf(&b, "| repository | `%s` |\n", rep.Repository)
 		fmt.Fprintf(&b, "| password | `%s` (a dev throwaway, printed on purpose) |\n", rep.Password)
 		if rep.TOTPSecret != "" {
 			fmt.Fprintf(&b, "| totp seed | `%s` (enroll it to sign in; this server enforces the factor) |\n", rep.TOTPSecret)
@@ -271,7 +272,7 @@ func (r *run) writeReport() (string, error) {
 	fmt.Fprintf(&b, "| started | %s |\n", rep.Started.UTC().Format(time.RFC3339))
 	fmt.Fprintf(&b, "| finished | %s |\n", rep.Finished.UTC().Format(time.RFC3339))
 	fmt.Fprintf(&b, "| result | **%d passed, %d failed, %d skipped** |\n\n", passed, failed, skipped)
-	if rep.Username != "" {
+	if rep.Repository != "" {
 		fmt.Fprintf(&b, "The repository is left in place for review: open the console at the\n")
 		fmt.Fprintf(&b, "server URL and sign in with the credentials above, or point substratectl\n")
 		fmt.Fprintf(&b, "at it. `mise run dev:wipe` deletes the database when the review is done.\n\n")
@@ -308,7 +309,7 @@ func (r *run) writeReport() (string, error) {
 		return "", err
 	}
 	// 0600: the report carries working credentials until the next dev:wipe.
-	path := filepath.Join(dir, "report-"+r.username+".md")
+	path := filepath.Join(dir, "report-"+r.repository+".md")
 	if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
 		return "", err
 	}

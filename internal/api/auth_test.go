@@ -23,8 +23,8 @@ func TestAuthUnknownToken(t *testing.T) {
 // owner, and the token constrains nothing.
 func TestActorDefaultsToOwnerAndHeaderNamesTheWriter(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	rec := env.do(t, http.MethodPost, "/api/v1/samples.substrate.reamde.dev/people/person", tok,
 		map[string]any{"properties": map[string]any{"name": "Ada"}})
@@ -49,9 +49,9 @@ func TestActorDefaultsToOwnerAndHeaderNamesTheWriter(t *testing.T) {
 // apart.
 func TestWriteCarriesTheResolvedTokenID(t *testing.T) {
 	env := newTestEnv(t)
-	first := env.svc.token("geoah")
-	second := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	first := env.svc.token(fakeRepository)
+	second := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	rec := env.do(t, http.MethodPost, "/api/v1/samples.substrate.reamde.dev/people/person", first,
 		map[string]any{"properties": map[string]any{"name": "Ada"}})
@@ -80,7 +80,7 @@ func TestWriteCarriesTheResolvedTokenID(t *testing.T) {
 // allowed to claim one could forge exactly what the facility exists to own.
 func TestActorHeaderRefusesTheHostNamespace(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	for _, actor := range []string{
 		"substrate",          // the bare namespace label
 		"substrate.oauth",    // the OAuth facility's hand

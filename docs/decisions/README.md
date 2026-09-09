@@ -222,3 +222,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0071](0071-a-webhook-url-names-the-repository-by-its-authority.md) | A webhook URL names the repository by its authority | accepted |
 | [0072](0072-reserve-a-purged-record-id-against-reuse.md) | Reserve a purged record id so a later write cannot take it | rejected |
 | [0073](0073-idempotency-keys-live-in-a-postgres-table-not-the-changelog.md) | Idempotency keys live in a Postgres table, not the changelog | accepted |
+| [0074](0074-the-repository-name-is-the-login-name.md) | The repository name is the login name, and `username` is gone | accepted |

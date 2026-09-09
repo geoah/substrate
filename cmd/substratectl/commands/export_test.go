@@ -44,7 +44,7 @@ func exportArchive(t *testing.T, complete bool) []byte {
 			t.Fatal(err)
 		}
 	}
-	write("repository.json", `{"format":2,"username":"ada","authority":"ada.example.com"}`+"\n")
+	write("repository.json", `{"format":2,"repository":"ada","authority":"ada.example.com"}`+"\n")
 	write("changelog/000000000000001.ndjson", "{}\n{}\n")
 	write("changelog/000000000000001.ndjson.sha256", strings.Repeat("0", 64)+"\n")
 	write("changelog/000000000000003.ndjson", "{}\n")

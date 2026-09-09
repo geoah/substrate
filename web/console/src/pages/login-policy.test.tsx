@@ -72,7 +72,7 @@ describe("LoginPage and the door's own answer", () => {
     // Discovery has not answered yet: the strict door is what renders, so a
     // deployment that DOES want a code never hides the field.
     expect(screen.getByLabelText("One-time code")).toBeTruthy()
-    fireEvent.change(screen.getByLabelText("Username"), {
+    fireEvent.change(screen.getByLabelText("Repository"), {
       target: { value: "geoah" },
     })
     fireEvent.change(screen.getByLabelText("Password"), {
@@ -85,9 +85,9 @@ describe("LoginPage and the door's own answer", () => {
     )
     // The two fields survived the answer — a password manager fills them the
     // moment the page paints, and nothing here may throw that away.
-    expect((screen.getByLabelText("Username") as HTMLInputElement).value).toBe(
-      "geoah"
-    )
+    expect(
+      (screen.getByLabelText("Repository") as HTMLInputElement).value
+    ).toBe("geoah")
     expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe(
       "correct horse battery"
     )
@@ -96,7 +96,7 @@ describe("LoginPage and the door's own answer", () => {
     await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
     const call = fetchMock.mock.calls.find(([url]) => String(url) === "/login")!
     expect(JSON.parse((call[1] as RequestInit).body as string)).toEqual({
-      username: "geoah",
+      repository: "geoah",
       password: "correct horse battery",
       totpCode: "",
       label: "console",
@@ -110,7 +110,7 @@ describe("LoginPage and the door's own answer", () => {
       return jsonResponse(201, MINT)
     })
     render(<LoginPage />)
-    fireEvent.change(screen.getByLabelText("Username"), {
+    fireEvent.change(screen.getByLabelText("Repository"), {
       target: { value: "geoah" },
     })
     fireEvent.change(screen.getByLabelText("Password"), {

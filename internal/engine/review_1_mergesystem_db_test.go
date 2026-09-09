@@ -152,10 +152,10 @@ func TestSk1MergedTypeSurvivesRestart(t *testing.T) {
 		return svc
 	}
 	svc := open()
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestSk1MergedTypeSurvivesRestart(t *testing.T) {
 
 	svc2 := open()
 	defer func() { _ = svc2.Close() }()
-	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,14 +193,14 @@ func TestSk1RepositoryRowsAreNotRecords(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
-	alpha, err := svc.CreateRepository(ctx, "alpha", "alpha.example.com")
+	alpha, err := svc.CreateRepository(ctx, "alpha.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.CreateRepository(ctx, "beta", "beta.example.com"); err != nil {
+	if _, err := svc.CreateRepository(ctx, "beta.example.com"); err != nil {
 		t.Fatal(err)
 	}
-	ds, err := svc.Dataset(ctx, "alpha")
+	ds, err := svc.Dataset(ctx, "alpha.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func TestSk1RepositoryRowsAreNotRecords(t *testing.T) {
 		t.Fatal("deleting the repository's own description succeeded")
 	}
 	// beta stays reachable whatever alpha does with its own rows.
-	if _, err := svc.Dataset(ctx, "beta"); err != nil {
+	if _, err := svc.Dataset(ctx, "beta.example.com"); err != nil {
 		t.Fatalf("repository beta became unreachable: %v", err)
 	}
 }

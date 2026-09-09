@@ -545,18 +545,15 @@ func (f *fakeSubstrate) handleRegister(w http.ResponseWriter, r *http.Request) {
 	// was supplied.
 	var recipient string
 	_ = json.Unmarshal(f.lastBody["recoveryPublicKey"], &recipient)
-	// The authority the way the server answers it: the one named, else the
-	// username under the host the request reached.
-	var authority, username string
-	_ = json.Unmarshal(f.lastBody["authority"], &authority)
-	_ = json.Unmarshal(f.lastBody["username"], &username)
-	if authority == "" {
-		authority = vocabulary.DefaultRepositoryAuthority(username, r.Host)
-	}
+	// The repository the way the server answers it: the name as sent when it
+	// carries a dot, else that label under the host the request reached.
+	var repository string
+	_ = json.Unmarshal(f.lastBody["repository"], &repository)
+	repository = vocabulary.RepositoryAuthority(repository, r.Host)
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"token":             substrate.TokenInfo{ID: "tk01", Label: label, Created: testNow},
 		"secret":            fakeSecret,
-		"authority":         authority,
+		"repository":        repository,
 		"recoveryPublicKey": recipient,
 	})
 }
@@ -589,7 +586,7 @@ func (f *fakeSubstrate) handlePasswordChange(w http.ResponseWriter, r *http.Requ
 	}
 	var username string
 	_ = json.Unmarshal(f.lastBody["username"], &username)
-	writeJSON(w, http.StatusOK, map[string]string{"username": username})
+	writeJSON(w, http.StatusOK, map[string]string{"repository": username})
 }
 
 func (f *fakeSubstrate) handleTOTPEnroll(w http.ResponseWriter, r *http.Request) {
@@ -615,7 +612,7 @@ func (f *fakeSubstrate) handleTOTPReenroll(w http.ResponseWriter, r *http.Reques
 	}
 	var username string
 	_ = json.Unmarshal(f.lastBody["username"], &username)
-	writeJSON(w, http.StatusOK, map[string]string{"username": username})
+	writeJSON(w, http.StatusOK, map[string]string{"repository": username})
 }
 
 func (f *fakeSubstrate) factorsPresented(w http.ResponseWriter) bool {

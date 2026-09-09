@@ -116,7 +116,11 @@ data:
   # version 21: the bundle document gains `requiresAtLeast`, the floor a
   # closure puts under a package it requires (decision record 0070). The
   # `bundle` kind pins no version of its own and takes this one. Additive.
-  version: 21
+  # version 22: the repository's one name is its authority and the login name
+  # with it (decision record 0074). The `credential` kind renames `username`
+  # to `repository`, which the apply carries out as ordinary record writes;
+  # it pins no version of its own and takes this one.
+  version: 22
 ---
 # The substrate's own actors: the doors a human write comes through, and the
 # engine's own hand. Attribution, not authorization (§3). The machine hands

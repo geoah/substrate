@@ -16,26 +16,26 @@ type Service interface {
 	// control-plane repository and no operator dataset.
 	Repositories(ctx context.Context) ([]RepositoryInfo, error)
 
-	// Dataset opens a repository's dataset by its user's username.
-	Dataset(ctx context.Context, username string) (Dataset, error)
+	// Dataset opens a repository's dataset by its id, the authority.
+	Dataset(ctx context.Context, repository string) (Dataset, error)
 
-	// CreateRepository creates a repository and its control-plane row for a
-	// username and the authority it owns, seeded and open. Registration goes
-	// through it; nothing else should, since a repository with no credential
-	// has no way in.
-	CreateRepository(ctx context.Context, name, authority string) (RepositoryInfo, error)
+	// CreateRepository creates a repository and its control-plane row under
+	// the authority it owns, seeded and open. Registration goes through it;
+	// nothing else should, since a repository with no credential has no way
+	// in.
+	CreateRepository(ctx context.Context, repository string) (RepositoryInfo, error)
 
 	// --- the door ---
 	//
 	// Registration is two calls and one write. BeginRegistration issues a
-	// TOTP enrollment for a username and creates NOTHING; Register takes it
+	// TOTP enrollment for a repository and creates NOTHING; Register takes it
 	// back with one code and a password, and only then does anything durable
 	// exist. An abandoned registration leaves no row, no seed and no record.
 	// The invite code gating both is the HTTP layer's (it holds the config).
-	BeginRegistration(ctx context.Context, username string) (TOTPEnrollment, error)
+	BeginRegistration(ctx context.Context, repository string) (TOTPEnrollment, error)
 	Register(ctx context.Context, in RegisterInput) (RegisterResult, error)
 
-	// Login verifies username + password + TOTP and MINTS A TOKEN RECORD,
+	// Login verifies repository + password + TOTP and MINTS A TOKEN RECORD,
 	// returning its secret exactly once (ruling RB-5: sessions ARE token
 	// records; there is no session concept beside them).
 	Login(ctx context.Context, in LoginInput) (TokenInfo, string, error)
