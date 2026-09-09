@@ -374,7 +374,7 @@ and the binary refuses to open it: every step after the runner (the orphan
 sweep, the declared indexes, the data root import) writes to the schema, and
 an older binary does not know the shape it would be writing to. The refusal
 names each such row by its recorded name, which is the migration file's name
-(`0016_something`); the tree's history says which release added that file. The
+(`0002_something`); the tree's history says which release added that file. The
 repair is to run that release or a later one, or to restore the database from
 the copy taken before the upgrade. This is the database's own downgrade
 refusal, beside the two per-repository ones above, and it closes the rollback

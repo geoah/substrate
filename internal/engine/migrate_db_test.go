@@ -1,8 +1,8 @@
 package engine_test
 
-// The migration runner against a real database: an edited migration is
-// refused, a database a newer binary migrated is refused, and a migration
-// whose steps are all IF EXISTS re-runs as a no-op.
+// The runner's bookkeeping against a real database: which recorded
+// schema_migrations rows an open accepts, and which ones it refuses before
+// any later boot step writes to the schema.
 
 import (
 	"context"
@@ -14,61 +14,13 @@ import (
 	"github.com/geoah/substrate/internal/engine"
 )
 
-func constraintExists(t *testing.T, db *sql.DB, name string) bool {
-	t.Helper()
-	var n int
-	if err := db.QueryRow(`
-		SELECT count(*) FROM pg_constraint
-		WHERE conrelid = 'repositories'::regclass AND conname = $1`, name).Scan(&n); err != nil {
-		t.Fatalf("read pg_constraint: %v", err)
-	}
-	return n > 0
-}
-
-func recordedHash(t *testing.T, db *sql.DB, version int) string {
-	t.Helper()
-	var sum string
-	switch err := db.QueryRow(`SELECT sha256 FROM schema_migrations WHERE version = $1`, version).Scan(&sum); {
-	case err == sql.ErrNoRows:
-		return ""
-	case err != nil:
-		t.Fatalf("read schema_migrations: %v", err)
-	}
-	return sum
-}
-
-// Re-running 0014 over a schema it already ran on: every drop is IF EXISTS,
-// so a replay is a no-op rather than an undefined-object error.
-func TestDroppingTheSigningStateIsANoOpWhereItIsAlreadyGone(t *testing.T) {
-	t.Parallel()
-	_, dsn := newService(t)
-	db := rawDB(t, dsn)
-	if _, err := db.Exec(`DELETE FROM schema_migrations WHERE version >= 14`); err != nil {
-		t.Fatalf("unrecord 0014: %v", err)
-	}
-	if constraintExists(t, db, "repositories_signed_from_positive") {
-		t.Fatal("the landed 0014 did not drop the constraint")
-	}
-	svc, err := engine.OpenForTest(t, context.Background(), dsn,
-		engine.WithDataRoot(t.TempDir()),
-		engine.WithKindsDir(engine.CoreKindsDir),
-		engine.WithCredentialKey(engine.TestCredentialKey))
-	if err != nil {
-		t.Fatalf("re-applying 0014 over a migrated schema failed: %v", err)
-	}
-	t.Cleanup(func() { _ = svc.Close() })
-	if recordedHash(t, db, 14) == "" {
-		t.Fatal("0014 is not recorded as applied after the replay")
-	}
-}
-
 // An edited migration nobody sanctioned is still refused, and the refusal
 // names the migration and both hashes rather than saying the schema is wrong.
 func TestOpenRefusesAnUnknownEditedMigration(t *testing.T) {
 	t.Parallel()
 	_, dsn := newService(t)
 	db := rawDB(t, dsn)
-	if _, err := db.Exec(`UPDATE schema_migrations SET sha256 = 'not-a-hash-anybody-shipped' WHERE version = 5`); err != nil {
+	if _, err := db.Exec(`UPDATE schema_migrations SET sha256 = 'not-a-hash-anybody-shipped' WHERE version = 1`); err != nil {
 		t.Fatalf("edit the recorded hash: %v", err)
 	}
 	_, err := engine.OpenForTest(t, context.Background(), dsn,
@@ -76,9 +28,9 @@ func TestOpenRefusesAnUnknownEditedMigration(t *testing.T) {
 		engine.WithKindsDir(engine.CoreKindsDir),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err == nil {
-		t.Fatal("a database whose 0005 nothing recognizes was opened")
+		t.Fatal("a database whose 0001 nothing recognizes was opened")
 	}
-	for _, want := range []string{"0005_changelog_integrity", "not-a-hash-anybody-shipped", "dev:wipe"} {
+	for _, want := range []string{"0001_init", "not-a-hash-anybody-shipped", "dev:wipe"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("the refusal does not name %q: %v", want, err)
 		}

@@ -13,8 +13,9 @@ import (
 )
 
 // The names a merge or split entry's payload gives its pair. The record-scoped
-// change feed reads them back (changefeed.go) and migration 0018 indexes them,
-// so a rename here is a filter that stops matching every stored entry.
+// change feed reads them back (changefeed.go) and changelog_pair_idx indexes
+// the entries they name, so a rename here is a filter that stops matching
+// every stored entry.
 const (
 	payloadWinner = "winner"
 	payloadLoser  = "loser"

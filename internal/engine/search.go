@@ -309,8 +309,7 @@ func (ds *dataset) semantic(ctx context.Context, provider *embedProvider, q stri
 	// ONLY the resolved pair's vectors are scored. Cosine distance between two
 	// models' vectors is not a distance, so a half-finished re-embed returns
 	// fewer hits rather than a ranking mixed across models, and a vector whose
-	// producing model is unknown (the empty provenance a row stored before
-	// migration 0008 carries) is never scored at all.
+	// producing model is unknown (the empty provenance) is never scored at all.
 	prov := ` AND em.provider = ` + b.arg(provider.id) + ` AND em.model = ` + b.arg(provider.model)
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT em.record_kind, em.record_id, MAX(1 - (em.vec <=> `+vec+`)) AS sim,

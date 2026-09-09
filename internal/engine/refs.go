@@ -25,7 +25,7 @@ import (
 // describing the rows would be a second statement of the same fact, free to
 // disagree with the first.
 //
-// ADDRESSING. See migration 0010 for the column contract. `property` is the
+// ADDRESSING. See 0001_init for the column contract. `property` is the
 // kind's own top-level name, `path` the value address below it (dots joining
 // object field names, list indices and keyed-map keys), `ord` the index inside
 // a repeated reference. A single top-level reference is (name, "", 0).
@@ -271,13 +271,12 @@ func referencePathOf(v any) string {
 // transaction after the fold, so the index and the row it projects commit
 // together or not at all.
 //
-// A ROW CARRIES NO TIMESTAMP (migration 0011). The table held a `created_at`
-// that no reader served and that no durable state defined: a live re-projection
-// stamped a re-derived row with the apply's clock, a rebuild stamped the same
-// row with the replayed entry's, and the two snapshots disagreed under an
-// identical changelog. Every column here is now a function of (folded
-// properties, declaration) alone, which is what lets a rebuild reproduce the
-// table exactly.
+// A ROW CARRIES NO TIMESTAMP. A clock is not a function of the row's own
+// durable state: a live re-projection would stamp a re-derived row with the
+// apply's clock and a rebuild would stamp the same row with the replayed
+// entry's, so one changelog would fold to two different tables. Every column
+// here is a function of (folded properties, declaration) alone, which is what
+// lets a rebuild reproduce the table exactly.
 func (t *txn) syncRefs(ref eref, ty *vocabulary.Kind, props map[string]any) error {
 	want := deriveRefs(ty, props)
 	if _, err := t.exec(`DELETE FROM refs WHERE src_kind = $1 AND src = $2`, ref.Kind, ref.ID); err != nil {
