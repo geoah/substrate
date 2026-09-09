@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -213,10 +214,10 @@ func TestCanonicalIDTrailsFlatten(t *testing.T) {
 	}
 }
 
-// §6.3 — canonical ids are never reused. A write ADDRESSED at a merged-away
-// id lands on the winner, and a writer-supplied id colliding with a former id
-// is a conflict: nothing is ever re-minted at a dead id.
-func TestCanonicalIDsAreNeverReused(t *testing.T) {
+// §6.3: a former id names its winner. A write ADDRESSED at a merged-away id
+// lands on the winner, and a writer-supplied id colliding with a former id is
+// a conflict, because a record minted there would shadow the trail.
+func TestFormerIDNamesItsWinner(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
@@ -256,10 +257,17 @@ func TestCanonicalIDsAreNeverReused(t *testing.T) {
 		t.Fatal("a writer-supplied former id must be a conflict")
 	} else {
 		wantErr(t, err, substrate.ErrConflict, "former id as a writer key")
+		// The message names the id, its canonical id and the remedy, so a
+		// writer can act on it without a second read.
+		for _, want := range []string{"g-c2", "g-c1", "write to the canonical id"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("conflict message %q does not name %q", err, want)
+			}
+		}
 	}
 
-	// And the id itself is still the tombstone's, forever: nothing new wears
-	// it.
+	// And the id still names the loser's tombstone, which the merge finalizer
+	// holds against the sweep.
 	dead, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
 		IDs: []string{loser.ID}, Deleted: ptr(true),
 	}})
@@ -317,7 +325,7 @@ func TestCanonicalIDReferenceWriteAtFormerIDs(t *testing.T) {
 
 	// Both ends addressed by their former ids. A PATCH resolves the addressed
 	// record forward (a put with a supplied id is refused outright: an id is
-	// the writer's own key and a former one is never reused), and the VALUE is
+	// the writer's own key and a former one names the winner), and the VALUE is
 	// left exactly as written.
 	if _, err := ds.Patch(ctx, owner, "person", loser.ID, substrate.PatchInput{
 		Properties: map[string]any{"memberOf": []any{orgLoser.ID}},
