@@ -469,17 +469,24 @@ func (ds *dataset) callFunctionOnce(ctx context.Context, name string, args any, 
 		}
 		return output, effects, call.settle(ctx, substrate.FunctionCalled{Output: output, Effects: effects})
 	}
-	callID, err := newID()
-	if err != nil {
-		return nil, 0, err
+	// The key the body hands its external effects. Under a client key it
+	// derives from (repository, function, client key), so an attempt that
+	// completed an external request and died before settling is retried
+	// under the SAME downstream key and a provider that honors it performs
+	// the effect once. Without one it is unique per call: a manual
+	// invocation is not a delivery, so nothing external dedupes two of them.
+	downstream := call.downstreamKey(fn.Identity())
+	if downstream == "" {
+		callID, err := newID()
+		if err != nil {
+			return nil, 0, err
+		}
+		downstream = fmt.Sprintf("%s/%s/call/%s", ds.Repository().Name, fn.Identity(), callID)
 	}
 	effects, output, err := ds.runCallable(ctx, fn, runner.Input{
-		Mode: runner.ModeCall,
-		Args: args,
-		// Unique per call: a manual invocation is not a delivery, so nothing
-		// external should dedupe two of them into one. The request's own
-		// Idempotency-Key dedupes at the entry, before the body runs.
-		IdempotencyKey: fmt.Sprintf("%s/%s/call/%s", ds.Repository().Name, fn.Identity(), callID),
+		Mode:           runner.ModeCall,
+		Args:           args,
+		IdempotencyKey: downstream,
 	})
 	if err != nil {
 		// The body ran and faulted (a raise, a bad effect, a failed sub-call).

@@ -212,6 +212,12 @@ func (ds *dataset) callAgentOnce(ctx context.Context, name string, input any, ca
 	if call != nil {
 		inv.onThread = call.attachThread
 		inv.complete = func(t *txn, res *substrate.AgentResult) error { return call.settleIn(t, res) }
+		// The delivery identity the loop derives its tool keys from is the
+		// client's key, not a per-call mint (runAgent's default): an external
+		// effect under this call presents a downstream key that names the
+		// client's attempt, so two attempts under one key are one effect to a
+		// provider that honors it, and two keys are two.
+		inv.delivery = call.downstreamKey(ag.Identity())
 	}
 	res, err := ds.runAgent(ctx, ag, inv)
 	if err != nil {

@@ -223,6 +223,8 @@ and the client cannot tell that from a merge somebody else made.
 
 Those five operations take the `Idempotency-Key` request header: the client's
 name for one attempt, any string up to 255 bytes (a UUID is the usual choice).
+A function or agent body hands its own external effects an idempotency key
+derived from the client's, so a retry presents the same key downstream too.
 
 ```http
 POST /api/v1/samples.substrate.reamde.dev/tasks/task
@@ -236,8 +238,9 @@ The contract, per key:
 
 - The effect runs once. A repeat under the same key with the same body
   answers the first attempt's outcome, the same body and the same status code
-  (`201` for the record a create made, `200` for a call), for 24 hours after
-  the first attempt settled; after that the key is free again. The key is
+  (`201` for the record a create made, `200` for a call), for 24 hours from
+  the moment the first attempt's outcome committed (not from when the request
+  arrived); after that the key is free again. The key is
   looked up before the callable is resolved or admitted, so the repeat
   answers even after the function or agent was disabled, uninstalled or
   redeclared in between.

@@ -1889,7 +1889,8 @@ components:
       in: header
       required: false
       description: |-
-        The client's name for this attempt, up to 255 bytes. A repeat under
+        The client's name for this attempt, up to 255 bytes (bytes, not
+        characters: `maxLength` below is the byte bound). A repeat under
         the same key and the same body answers the first attempt's outcome
         with its original status, and the effect runs once; the same key
         with a different body is `409 conflict`. The key binds to the

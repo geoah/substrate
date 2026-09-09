@@ -262,7 +262,7 @@ func (ds *dataset) idempotentRecordTx(ctx context.Context, actor substrate.Actor
 	var out *substrate.Record
 	var stored *idempotencyRow
 	err = ds.inTx(ctx, actor, false, func(t *txn) error {
-		row, err := idempotencyRead(t.ctx, t.tx, op, key, t.now)
+		row, err := idempotencyRead(t.ctx, t.tx, op, key, nowUTC())
 		if err != nil {
 			return err
 		}
@@ -289,7 +289,10 @@ func (ds *dataset) idempotentRecordTx(ctx context.Context, actor substrate.Actor
 		// The whole row in one statement: a dead row under the key (past its
 		// expires_at) is taken over, a live one cannot exist past the read
 		// above, and zero rows means one appeared anyway, which fails the
-		// write rather than settle over it.
+		// write rather than settle over it. The window runs from settlement,
+		// read here and not from t.now, which predates the wait on the
+		// changelog lock.
+		settled := nowUTC()
 		res, err := t.exec(`
 			INSERT INTO idempotency_keys (operation, key, fingerprint, owner, outcome, locator, settled_at, expires_at)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -298,7 +301,7 @@ func (ds *dataset) idempotentRecordTx(ctx context.Context, actor substrate.Actor
 			       locator = EXCLUDED.locator, thread = NULL, created_at = EXCLUDED.created_at,
 			       settled_at = EXCLUDED.settled_at, expires_at = EXCLUDED.expires_at
 			 WHERE idempotency_keys.expires_at <= $7`,
-			string(op), key, fingerprint, owner, raw, locator, t.now, t.now.Add(idempotencyRetention))
+			string(op), key, fingerprint, owner, raw, locator, settled, settled.Add(idempotencyRetention))
 		if err != nil {
 			return fmt.Errorf("settle idempotency key: %w", err)
 		}
@@ -400,6 +403,17 @@ func (c *idempotentCall) reserve(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
+// downstreamKey is the idempotency key a keyed callable hands its external
+// effects: deterministic in (repository, callable, client key), so every
+// attempt under one client key presents the same key downstream. Empty
+// without a client key.
+func (c *idempotentCall) downstreamKey(callable string) string {
+	if c == nil {
+		return ""
+	}
+	return fmt.Sprintf("%s/%s/call/key/%s", c.ds.Repository().Name, callable, c.key)
+}
+
 // lost is the refusal every conditional write answers with when the row is
 // no longer this attempt's: its lease lapsed and another attempt took over.
 func (c *idempotentCall) lost() error {
@@ -440,7 +454,7 @@ func (c *idempotentCall) attachThread(t *txn, threadID string) error {
 	res, err := t.exec(`
 		UPDATE idempotency_keys SET thread = $4, expires_at = $5
 		 WHERE operation = $1 AND key = $2 AND owner = $3 AND settled_at IS NULL`,
-		string(c.op), c.key, c.owner, threadID, t.now.Add(idempotencyRetention))
+		string(c.op), c.key, c.owner, threadID, nowUTC().Add(idempotencyRetention))
 	if err != nil {
 		return fmt.Errorf("attach the thread to the idempotency key: %w", err)
 	}
@@ -459,7 +473,9 @@ const idempotencySettleSQL = `UPDATE idempotency_keys
 
 // settleIn completes the reservation inside the transaction that applies the
 // callable's effects. A row this attempt no longer owns fails the
-// transaction, so the effects roll back rather than land twice.
+// transaction, so the effects roll back rather than land twice. The window
+// runs from settlement, not from t.now, which predates the wait on the
+// changelog lock.
 func (c *idempotentCall) settleIn(t *txn, outcome any) error {
 	if c == nil {
 		return nil
@@ -468,7 +484,8 @@ func (c *idempotentCall) settleIn(t *txn, outcome any) error {
 	if err != nil {
 		return err
 	}
-	res, err := t.exec(idempotencySettleSQL, string(c.op), c.key, c.owner, raw, t.now, t.now.Add(idempotencyRetention))
+	settled := nowUTC()
+	res, err := t.exec(idempotencySettleSQL, string(c.op), c.key, c.owner, raw, settled, settled.Add(idempotencyRetention))
 	if err != nil {
 		return fmt.Errorf("settle idempotency key: %w", err)
 	}

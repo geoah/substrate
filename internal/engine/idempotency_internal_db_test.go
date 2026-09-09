@@ -399,3 +399,64 @@ func TestIdempotencyKeyOverCapCreateNamesTheRecord(t *testing.T) {
 		t.Fatalf("the over-cap create left %d rows", n)
 	}
 }
+
+// The key a keyed call hands its body's external effects derives from the
+// client's key: an attempt that died before settling is retried under the
+// SAME downstream key, and a call without a client key mints a fresh one.
+func TestIdempotencyKeyRetryPresentsTheSameDownstreamKey(t *testing.T) {
+	t.Parallel()
+	ds, _ := openAgentDataset(t)
+	ctx := context.Background()
+	kctx := substrate.WithIdempotencyKey(ctx, "echo-dk")
+	echoed := func(ctx context.Context) string {
+		out, _, err := ds.CallFunction(ctx, crewPackage+"/keyecho", nil)
+		if err != nil {
+			t.Fatalf("keyecho: %v", err)
+		}
+		key, _ := out.(map[string]any)["key"].(string)
+		if key == "" {
+			t.Fatalf("keyecho answered no key: %v", out)
+		}
+		return key
+	}
+	first := echoed(kctx)
+	// The settle is lost (as under a crash before it, once the boot has
+	// cleared the reservation): the retry runs the body again.
+	if _, err := ds.db.ExecContext(ctx, `DELETE FROM idempotency_keys WHERE key = 'echo-dk'`); err != nil {
+		t.Fatal(err)
+	}
+	second := echoed(kctx)
+	if first != second {
+		t.Fatalf("two attempts under one client key presented %q and %q downstream", first, second)
+	}
+	if !strings.Contains(first, "/call/key/echo-dk") {
+		t.Fatalf("the downstream key does not derive from the client key: %q", first)
+	}
+	if a, b := echoed(ctx), echoed(ctx); a == b || a == first {
+		t.Fatalf("unkeyed calls presented %q and %q; want fresh keys", a, b)
+	}
+}
+
+// An agent call's tool keys derive from the client's key too, through the
+// delivery identity the loop derives them from.
+func TestIdempotencyKeyAgentToolKeysDeriveFromTheClientKey(t *testing.T) {
+	t.Parallel()
+	ds, fake := openAgentDataset(t)
+	ctx := context.Background()
+	fake.script("keep",
+		fakeTurn{calls: []fakeCall{{"keyecho", `{}`}}},
+		fakeTurn{content: "kept"},
+	)
+	res, err := ds.CallAgent(substrate.WithIdempotencyKey(ctx, "keeper-dk"), crewPackage+"/keeper", "go")
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if res.Status != threadOK {
+		t.Fatalf("result: %+v", res)
+	}
+	task := mustGetInternal(t, ds, "samples.substrate.reamde.dev/tasks/task", "t-idem")
+	key, _ := task.Properties["name"].(string)
+	if !strings.Contains(key, "/call/key/keeper-dk/") {
+		t.Fatalf("the tool's key does not derive from the client key: %q", key)
+	}
+}
