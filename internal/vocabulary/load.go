@@ -1065,8 +1065,8 @@ func (l *loader) checkTemplate(where string, t *Kind, tmpl *Template) {
 //
 // A title is an unredacted, FTS-indexed column, so a sensitive property rendered
 // into one would leak around every read-surface redaction. The runtime resolver
-// skips them as well (a referent's properties and legacy vocabularies), but a
-// declaration should fail loudly rather than render empty.
+// skips them too, whatever a stored declaration says (engine's titleResolver),
+// but a declaration should fail loudly here rather than render empty there.
 func (l *loader) ownToken(where string, t *Kind, name string) bool {
 	if p, ok := t.Props[name]; ok {
 		if p.Sensitive() {

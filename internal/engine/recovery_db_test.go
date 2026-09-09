@@ -153,7 +153,7 @@ func TestRegistrationEnrollsRecoveryKey(t *testing.T) {
 func TestRegistrationMintsTheRecoveryKeyWhenTheClientNamesNoRecipient(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, _ := newService(t, engine.WithCredentialKey(engine.TestCredentialKey))
+	svc, dsn := newService(t, engine.WithCredentialKey(engine.TestCredentialKey))
 	enrollment, err := svc.BeginRegistration(ctx, "bo.example.com")
 	if err != nil {
 		t.Fatalf("begin: %v", err)
@@ -186,5 +186,35 @@ func TestRegistrationMintsTheRecoveryKeyWhenTheClientNamesNoRecipient(t *testing
 	dek := unwrapWithIdentity(t, res.RecoveryKey, sealedKey)
 	if len(dek) != 32 {
 		t.Fatalf("recovered DEK is %d bytes", len(dek))
+	}
+
+	// The server-minted identity carries the same promise the client-minted
+	// one does: the DEK it recovers opens a payload the repository sealed,
+	// with no host key in hand.
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "substrate.reamde.dev/core/llmprovider", ID: "prov",
+		Properties: map[string]any{
+			"label": "prov", "wire": "openai",
+			"baseURL": "https://llm.example.com/v1", "apiKey": "sk-server-minted",
+		},
+	})
+	db := rawDB(t, dsn)
+	var ref string
+	if err := db.QueryRow(`SELECT props->>'apiKey' FROM records WHERE kind = $1 AND id = 'prov'`,
+		"substrate.reamde.dev/core/llmprovider").Scan(&ref); err != nil {
+		t.Fatalf("read ref: %v", err)
+	}
+	var payload []byte
+	var kind, rid string
+	if err := db.QueryRow(`SELECT payload, record_kind, record_id FROM sealed WHERE ref = $1`, ref).
+		Scan(&payload, &kind, &rid); err != nil {
+		t.Fatalf("read sealed payload: %v", err)
+	}
+	plain, err := engine.OpenPayloadWithKey(dek, payload, engine.SealedAAD(ref, kind, rid))
+	if err != nil {
+		t.Fatalf("the server-minted identity's DEK does not open the payload: %v", err)
+	}
+	if string(plain) != "sk-server-minted" {
+		t.Fatalf("recovered %q", plain)
 	}
 }

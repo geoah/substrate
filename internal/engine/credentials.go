@@ -400,9 +400,7 @@ func (t *txn) sealedRefOf(ref string, owner eref) (bool, error) {
 }
 
 // openSecretValue resolves one stored secret value to its material: a secret
-// ref reads its sealed row, and any other value passes through unchanged,
-// which is how a plaintext written before secrets moved into the store
-// reads.
+// ref reads its sealed row, and any other value passes through unchanged.
 func (ds *dataset) openSecretValue(ctx context.Context, stored string) (string, error) {
 	switch {
 	case stored == "":
