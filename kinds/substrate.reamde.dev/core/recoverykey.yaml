@@ -17,9 +17,9 @@ data:
   # changelog — and that is the point: a backup of changelog + sealed + blobs
   # plus the identity is a complete recovery, no host key required.
   #
-  # Writes come from registration and the one recovery enrollment,
-  # attributed to the substrate; the generic surface refuses them
-  # (engine/write.go forbidSystemKind). Reading and listing it is ordinary.
+  # Registration is the one writer, attributed to the substrate; the generic
+  # surface refuses every write (engine/write.go forbidSystemKind). Reading
+  # and listing it is ordinary.
   displayTemplate: "{algorithm}"
   properties:
     # Registration writes exactly `age-x25519-v1`. It stays a string, not an

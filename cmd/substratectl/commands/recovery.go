@@ -16,7 +16,6 @@ import (
 	"os/exec"
 
 	"filippo.io/age"
-	"github.com/spf13/cobra"
 )
 
 // newRecoveryIdentity mints the age pair client-side.
@@ -106,86 +105,4 @@ func (a *app) handOverRecoveryKey(ctx context.Context, server, repository, ident
 		return
 	}
 	a.printRecoveryKey(identity, recipient)
-}
-
-// recoveryCommand is the user's hat: enroll a recovery key on a repository
-// that predates them. Registration is the ordinary door.
-func (a *app) recoveryCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "recovery",
-		Short: "The repository's recovery key",
-	}
-	cmd.AddCommand(a.recoveryEnrollCommand())
-	return cmd
-}
-
-func (a *app) recoveryEnrollCommand() *cobra.Command {
-	var (
-		repository    string
-		code          string
-		passwordStdin bool
-	)
-	cmd := &cobra.Command{
-		Use:   "enroll",
-		Short: "Enroll a recovery key on a repository that predates them (one-time)",
-		Long: `Generate the recovery key locally, enroll its public half, and keep the key.
-
-The substrate stores your repository's data-encryption key wrapped to the
-age recipient, re-keys every stored secret under that data-encryption key in
-the same transaction, and the recovery key stays with you (1Password when
-the op CLI is signed in, printed once otherwise): a backup plus the key is a
-complete recovery with no server and no host key.
-
-Both current factors go in the request body, exactly like a password change:
-a bearer token is not evidence to claim the one recovery slot. One-time: a
-repository holds one recovery key, and rotation is not yet supported. New
-repositories enroll at registration; this command exists for the ones that
-predate recovery keys.`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			repository, err := a.askRepository(repository)
-			if err != nil {
-				return err
-			}
-			password, err := a.secret(passwordStdin, "Current password: ")
-			if err != nil {
-				return err
-			}
-			cl, err := a.doorClient()
-			if err != nil {
-				return err
-			}
-			code, err := a.askCodeIfRequired(cmd.Context(), cl, code, "Current TOTP code: ")
-			if err != nil {
-				return err
-			}
-			cctx, err := a.resolveContext()
-			if err != nil {
-				return err
-			}
-			identity, recipient, err := newRecoveryIdentity()
-			if err != nil {
-				return err
-			}
-			// The handoff runs BEFORE the commit: a response lost after the
-			// server enrolled would otherwise take the only copy of a key
-			// that can never be re-issued with it.
-			fmt.Fprintln(a.out, "Keep this before enrolling; the substrate never stores it:")
-			a.handOverRecoveryKey(cmd.Context(), cctx.Server, repository, identity, recipient)
-			res, err := cl.recoveryEnroll(cmd.Context(), recoveryEnrollRequest{
-				Repository: repository, Password: password, TOTPCode: code,
-				RecoveryPublicKey: recipient,
-			})
-			if err != nil {
-				return authError(err)
-			}
-			fmt.Fprintf(a.out, "recovery key enrolled on %s (recipient %s)\n", cctx.Server, res.RecoveryPublicKey)
-			return nil
-		},
-	}
-	f := cmd.Flags()
-	f.StringVar(&repository, "repository", "", "repository (defaults to the context's)")
-	f.StringVar(&code, "totp-code", "", "current 6-digit code (prompted for when omitted)")
-	f.BoolVar(&passwordStdin, "password-stdin", false, "read the current password from stdin (one line)")
-	return cmd
 }

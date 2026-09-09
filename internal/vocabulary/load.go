@@ -677,11 +677,10 @@ var declarationDataKeys = map[string]map[string]bool{
 //
 // It exists because a declaration ROW carries more than its document does: what
 // the engine stamps (a version, an origin, the quarantine marks, the bundle
-// lifecycle bools) and, on a repository an older binary once wrote, the retired
-// spellings. Reading a row back as a document is therefore a WHITELIST — these
-// keys and nothing else — which is what keeps a property some FUTURE binary
-// stamps from reaching this loader as an unknown key, and keeps the engine from
-// holding a second, hand-maintained copy of this set.
+// lifecycle bools). Reading a row back as a document is therefore a
+// WHITELIST — these keys and nothing else — which is what keeps a property
+// some FUTURE binary stamps from reaching this loader as an unknown key, and
+// keeps the engine from holding a second, hand-maintained copy of this set.
 //
 // The map is a copy: the sets themselves are this package's own.
 func DeclarationDataKeys(short string) map[string]bool {
@@ -1066,8 +1065,8 @@ func (l *loader) checkTemplate(where string, t *Kind, tmpl *Template) {
 //
 // A title is an unredacted, FTS-indexed column, so a sensitive property rendered
 // into one would leak around every read-surface redaction. The runtime resolver
-// skips them as well (a referent's properties and legacy vocabularies), but a
-// declaration should fail loudly rather than render empty.
+// skips them too, whatever a stored declaration says (engine's titleResolver),
+// but a declaration should fail loudly here rather than render empty there.
 func (l *loader) ownToken(where string, t *Kind, name string) bool {
 	if p, ok := t.Props[name]; ok {
 		if p.Sensitive() {

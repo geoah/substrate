@@ -203,10 +203,9 @@ func WithInsecureDisableTOTP() Option {
 // the same reason the dataset's are (dataset.go): a renamed method must break
 // the build, not one endpoint at runtime.
 var (
-	_ substrate.Service          = (*service)(nil)
-	_ substrate.OAuthCompleter   = (*service)(nil)
-	_ substrate.RecoveryEnroller = (*service)(nil)
-	_ substrate.SeamReporter     = (*service)(nil)
+	_ substrate.Service        = (*service)(nil)
+	_ substrate.OAuthCompleter = (*service)(nil)
+	_ substrate.SeamReporter   = (*service)(nil)
 )
 
 type service struct {
@@ -509,10 +508,10 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 	}
 	// Every repository's directory against its rows, before anything is
 	// served (repodir.go): a crash left the file a transaction behind, a
-	// restore left a directory with no row, or a store predates the data
-	// root. A repository the two sides disagree on refuses the boot. A
-	// read-only process skips it: the check writes, and the server that owns
-	// the directories runs it at its own boot.
+	// restore left a directory with no row, or a wiped data root left a row
+	// with no directory. A repository the two sides disagree on refuses the
+	// boot. A read-only process skips it: the check writes, and the server
+	// that owns the directories runs it at its own boot.
 	if !s.readOnly {
 		if err := s.reconcileRepositories(ctx); err != nil {
 			_ = maint.Close()

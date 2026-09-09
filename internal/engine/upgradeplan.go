@@ -232,7 +232,6 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 	if plan.ConversionPlan, err = st.conversions.wire(q); err != nil {
 		return plan, err
 	}
-	plan.Renames = legacyRenames(plan.Steps) //nolint:staticcheck // the deprecated field is produced here for readers that still read it
 	// An edited copy binds the hash to its edited state, exactly as the
 	// import door does before it compares a confirmation (convert.go).
 	plan.DiscardsEdits = bindEditedCopy(&plan.ConversionPlan, edited)

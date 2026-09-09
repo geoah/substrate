@@ -24,7 +24,7 @@ substratectl export                       # the recovery export, a tar of the re
 
 **The user's hat** speaks HTTP and carries a token: everything above, plus
 `register`, `login`, `logout`, `token`, `user password`, `user totp`,
-`recovery enroll`, `trigger`, `function`, `bundle`, `catalog`, `import`,
+`trigger`, `function`, `bundle`, `catalog`, `import`,
 `install` and `export`. It needs a server and a token, and it can run
 anywhere.
 

@@ -1,11 +1,9 @@
 package engine
 
 // A sealed payload binds to the address it was written at (ADR 0023): moving a
-// row's ciphertext onto another row fails the open, and the re-key that
-// recovery enrollment runs leaves an already-bound store byte-identical. These
-// are INTERNAL tests: they reach openSecretValue directly
-// and plant bytes in the sealed table the way an attacker with table write
-// access would.
+// row's ciphertext onto another row fails the open. These are INTERNAL tests:
+// they reach openSecretValue directly and plant bytes in the sealed table the
+// way an attacker with table write access would.
 
 import (
 	"context"

@@ -312,9 +312,6 @@ func TestUpgradePreviewReportsBlockers(t *testing.T) {
 	if up == nil || !up.Available || len(up.Blockers) != 0 || !up.Lossy || up.Work != 1 || up.PlanHash == "" {
 		t.Fatalf("a lossy drop previews as %+v", up)
 	}
-	if len(up.Renames) != 0 { //nolint:staticcheck // the deprecated field is still served, and must stay empty here
-		t.Fatalf("a drop previews renames: %+v", up.Renames) //nolint:staticcheck // as above
-	}
 	if _, _, err := lossy.Install(ctx, substrate.ActorAPI, tasksBundleID, ds); err == nil {
 		t.Fatal("the install door admitted a lossy plan without a confirmation")
 	} else if !errors.Is(err, substrate.ErrLossyConversion) || !strings.Contains(err.Error(), `"url"`) {

@@ -57,10 +57,9 @@ var ErrChangelogDialectNewer = errors.New("substrate/engine: the changelog speak
 // refuses to open.
 const maxChangelogDialect = 1
 
-// MaxChangelogDialect is the newest changelog dialect this binary can replay,
-// the value GET /.well-known/substrate/server.json reports as the binary
-// maximum. Exported so the API layer can surface it without reaching into the
-// engine's tables.
+// MaxChangelogDialect is the newest changelog dialect this binary can replay.
+// No dialect is on the wire: it is exported for the tests outside this package
+// that assert what an append stamps and which manifest the boot refuses.
 func MaxChangelogDialect() int { return maxChangelogDialect }
 
 // gateChangelogDialect runs the gate at repository open, and it only READS:

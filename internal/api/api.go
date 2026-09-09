@@ -149,12 +149,6 @@ func New(cfg Config) http.Handler {
 	r.Post("/password", h.postPassword)
 	r.Post("/totp/enroll", h.postTOTPBegin)
 	r.Post("/totp", h.postTOTP)
-	// One-time recovery-key enrollment, for repositories that predate it:
-	// registration is the ordinary door. It carries the password-factor rule
-	// like the credential changes above: enrollment claims the repository's
-	// only recovery slot and hands out an offline decryption key, so a
-	// bearer token is not evidence here.
-	r.Post("/recovery/enroll", h.postRecoveryEnroll)
 	// The public webhook door (decision 0045), beside the other bearer-less
 	// routes and outside /api so no kind can shadow it. The path names the
 	// repository's authority and the trigger; the trigger's own key, when it

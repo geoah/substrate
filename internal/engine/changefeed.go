@@ -112,9 +112,7 @@ func (ds *dataset) buildChangeFilter(b *builder, f substrate.ChangeFilter) error
 		// property name both hit. Sequential at personal scale by design.
 		// Matching the payload is safe BY CONSTRUCTION of the store: a
 		// secret's delta value is an opaque ref and a digest is a one-way
-		// comparator, so the searchable bytes are never material. The one
-		// exception is legacy plaintext written before secrets moved into
-		// the store.
+		// comparator, so the searchable bytes are never material.
 		p := b.arg("%" + escapeLike(f.Q) + "%")
 		b.add(`(kind ILIKE ` + p + ` OR actor ILIKE ` + p +
 			` OR record_id ILIKE ` + p + ` OR payload::text ILIKE ` + p + `)`)
@@ -167,8 +165,8 @@ func (ds *dataset) queryChanges(ctx context.Context, b *builder, order string, l
 // stored row is untouched: this shapes the READ, and a rebuild reads the
 // table's own rows through foldEntry, never through here. Taking the effects
 // off is also what keeps a sensitive value out of the feed: the fold carries
-// a secret's opaque ref, a digest, or a legacy plaintext, and the event
-// carries no value of any property.
+// a secret's opaque ref or a digest, and the event carries no value of any
+// property.
 //
 // One element per (kind, id), in first-touch order; a later effect on the same
 // record within the entry updates its version and deletion status, so a

@@ -13,7 +13,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// rebuild-repository: clear the fold and replay the changelog
+// `repository rebuild`: clear the fold and replay the changelog
 // through the SAME fold the live write path uses (fold.go). It is the
 // containment test made runnable — a repository is what this plus its side
 // stores reproduces — and it is a required, tested path rather than a
@@ -445,7 +445,7 @@ func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 }
 
 // FoldSnapshot renders a repository's whole fold as one ordered JSON document:
-// what `rebuild-repository` must reproduce, byte for byte. It is the
+// what `repository rebuild` must reproduce, byte for byte. It is the
 // containment test's instrument — operator tooling and the rebuild test both
 // read the fold through it rather than through a hand-written query each.
 func (ds *dataset) FoldSnapshot(ctx context.Context) ([]byte, error) {

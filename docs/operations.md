@@ -626,10 +626,10 @@ second artifact: copy the objects `snapshot.json` lists back into the bucket
 
 A directory copied to a host whose `SUBSTRATE_CREDENTIAL_KEY` is not the one
 it was written under is opened with the user's recovery key instead: the
-`AGE-SECRET-KEY-1…` line kept at registration or at `recovery enroll`. An
-export is such a copy once extracted anywhere (`tar -x -C /srv/restore -f
-ada.example.com-1234.tar`). Run `repository rewrap` on the copy, in its
-restore location, with the new host's key in the environment. It reads the last `recoverykey` record out of the
+`AGE-SECRET-KEY-1…` line kept at registration. An export is such a copy once
+extracted anywhere (`tar -x -C /srv/restore -f ada.example.com-1234.tar`). Run
+`repository rewrap` on the copy, in its restore location, with the new host's
+key in the environment. It reads the last `recoverykey` record out of the
 changelog files, opens its `sealedKey` with the recovery key, checks that the
 data-encryption key it recovered opens every file under `sealed/`, wraps that
 key under `SUBSTRATE_CREDENTIAL_KEY` and rewrites `repository.json`. Then move

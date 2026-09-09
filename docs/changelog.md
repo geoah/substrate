@@ -277,12 +277,11 @@ and every `manager` effect carrying the stamp a property rename moved with it
 ([decision 0063](decisions/0063-a-property-rename-is-ordinary-record-writes.md)).
 The next number is spent when a writer learns a spelling an older binary's
 fold would refuse or misread.
-A repository's stored dialect is not on the wire, and
-neither are the entries written in it: what
-[API discovery](api.md#discovery) reports is the binary's maximum. The dialect
-is in the repository directory, as `changelogDialect` in `repository.json`,
-which the transaction that records the claim rewrites before it appends, so a
-copy of the directory never holds segments its manifest understates
+No dialect is on the wire at all ([discovery](api.md#discovery)), and neither
+are the entries written in one. The dialect is in the repository directory, as
+`changelogDialect` in `repository.json`, which the transaction that records the
+claim rewrites before it appends, so a copy of the directory never holds
+segments its manifest understates
 ([the repository directory](operations.md#the-repository-directory)).
 
 `repository rebuild` reads the stamp again, under the changelog lock and

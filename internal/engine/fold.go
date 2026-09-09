@@ -24,7 +24,7 @@ import (
 // That is what makes the payload replayable. A v0 entry named the properties
 // that moved and nothing else, so a rebuild could learn WHAT changed and never
 // WHAT IT BECAME; an entry now carries the delta WITH ITS VALUES, and
-// `rebuild-repository` clears the fold and drives the same `foldOne` from the
+// `repository rebuild` clears the fold and drives the same `foldOne` from the
 // changelog. There is no second implementation of "what a change does to the records
 // table" to drift from this one.
 //

@@ -165,10 +165,3 @@ type LoginInput struct {
 	// paths, which mint nothing.
 	Label string
 }
-
-// RecoveryEnroller is one-time recovery enrollment, an optional Service
-// extension (see Service): it exists for repositories that predate recovery
-// keys, and registration is the ordinary door.
-type RecoveryEnroller interface {
-	EnrollRecoveryKey(ctx context.Context, in LoginInput, publicKey string) (identity, recipient string, err error)
-}

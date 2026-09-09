@@ -5,9 +5,9 @@ import "context"
 // Service is the process-wide handle: schema files loaded, database
 // connected, the shared schema migrated. One per process.
 //
-// Four seams sit off this interface as named OPTIONAL EXTENSIONS an
+// Three seams sit off this interface as named OPTIONAL EXTENSIONS an
 // implementation may also satisfy, on the same terms as Dataset's:
-// OAuthCompleter, RecoveryEnroller, SeamReporter and EmbeddingsReporter. A
+// OAuthCompleter, SeamReporter and EmbeddingsReporter. A
 // consumer type-asserts the named interface, and the implementation asserts it
 // at compile time.
 type Service interface {
