@@ -11,9 +11,9 @@
 # matches the file, because a new migration must not land on a schema its
 # predecessors did not build. Editing a merged migration therefore does not
 # change anybody's schema: it locks every database that already ran the old
-# text out of every binary built after. That happened here (0005 gained a
-# CHECK four minutes before it merged), which is why the rule is now a job and
-# not a paragraph.
+# text out of every binary built after. It is a job and not a paragraph because
+# it has been broken by hand: a migration gained a CHECK four minutes before it
+# merged.
 #
 # AN ACCEPTED RECORD'S BODY IS NEVER EDITED. docs/decisions/ is one choice made
 # at one time; a record that gets rewritten as opinion moves stops being
@@ -66,8 +66,25 @@ fi
 # Added is the only status a migration file may have. A rename shows up as
 # delete plus add, and it is refused for the delete: the recorded name is what
 # an operator reads out of schema_migrations.
+#
+# THE ONE-TIME SQUASH EXCEPTION, WHICH THE NEXT PR REMOVES. No database has
+# ever run this schema, so the chain of migrations is replaced once by a single
+# file that builds the final schema directly. The shape is recognized narrowly,
+# so it cannot admit a second reset: the tree holds exactly one migration, it
+# is 0001_init.up.sql, and the base held more than one. Under that shape the
+# whole rule is skipped, the edit of 0001 included, because the squash rewrites
+# that file too.
+squash_reset=0
+if [ "$(find "$migrations" -maxdepth 1 -type f | wc -l)" -eq 1 ] &&
+  [ -f "${migrations}/0001_init.up.sql" ] &&
+  [ "$(git ls-tree -r --name-only "$base_commit" -- "$migrations" | wc -l)" -gt 1 ]; then
+  squash_reset=1
+  echo "frozen:check: the one-time migration squash: ${migrations} holds only 0001_init.up.sql, so the migration rule is skipped" >&2
+fi
+
 while read -r status path; do
   [ -n "$path" ] || continue
+  [ "$squash_reset" -eq 0 ] || continue
   case "$status" in
   A) ;;
   M) flag "${path} is a landed migration and this branch edits it; add a new migration instead" ;;

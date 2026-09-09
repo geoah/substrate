@@ -13,8 +13,8 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// The `Idempotency-Key` contract (docs/api.md "Idempotency and retries",
-// migration 0023): a request that names a key runs its effect once, and the
+// The `Idempotency-Key` contract (docs/api.md "Idempotency and retries"): a
+// request that names a key runs its effect once, and the
 // same key with the same input answers the first attempt's stored outcome for
 // idempotencyRetention. The key store is the idempotency_keys table, one row
 // per (repository, operation, key), and it never enters the changelog: a

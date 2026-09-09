@@ -45,9 +45,9 @@ type erow struct {
 	Labels  map[string]any
 	Version int64
 	// KindVersion is the effective version of the kind declaration under
-	// which the row's columns were last written (migration 0021): the writer
-	// stamps it, the delta carries it and the fold restores it. 0 is the
-	// absent stamp, on rows and history older than the column.
+	// which the row's columns were last written: the writer stamps it, the
+	// delta carries it and the fold restores it. 0 is the absent stamp, on a
+	// replayed entry whose delta names no version.
 	KindVersion int64
 	CreatedAt   time.Time
 	UpdatedAt   time.Time

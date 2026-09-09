@@ -29,9 +29,8 @@ type Repository struct {
 	// every repository-scoped query runs under, the DEK wrap's binding and the
 	// name of the directory under the data root.
 	ID string
-	// Authority always equals ID: the column predates the decision to make the
-	// authority the id, and a landed migration is never edited, so it stays
-	// and migration 0015 holds the two equal.
+	// Authority always equals ID: the repositories_id_is_authority CHECK holds
+	// the two equal on every row, and the engine writes both.
 	Authority string
 	CreatedAt time.Time
 	// DEK is the repository's data-encryption key, WRAPPED under the host
@@ -464,11 +463,8 @@ func (s *service) sweepOrphans(ctx context.Context) error {
 }
 
 // repositoryScopedTables is every table carrying a `repository` column — the
-// same set the migrations put row level security on (0001, plus
-// changelog_dialect in 0009, import_progress in 0016 and idempotency_keys in
-// 0023; chain_epochs came in 0005 and left in 0014, blobs and
-// vocabulary_promotions left in 0025). A rollback that missed one would leave
-// rows nothing can ever reach again.
+// same set 0001_init puts row level security on. A rollback that missed one
+// would leave rows nothing can ever reach again.
 var repositoryScopedTables = []string{
 	"records", "refs", "former_ids", "annotations", "property_managers",
 	"property_offers", "changelog", "embeddings", "embed_queue",

@@ -12,7 +12,7 @@ type IncomingReference struct {
 	// From is the source record, shallow by design: a reverse row names what
 	// points here, and the reader fetches it if they want more. A reader that
 	// wants the source's timestamps reads the source: the reverse row carries
-	// no time of its own, because the refs index stores none (migration 0011).
+	// no time of its own, because the refs index stores no timestamp.
 	From IncomingSource `json:"from"`
 }
 

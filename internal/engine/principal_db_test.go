@@ -98,8 +98,9 @@ func TestPrincipalStampsTheEntryAndItsManagerRows(t *testing.T) {
 }
 
 // A write no token stands behind — the seed, the boot upgrade, a background
-// worker — carries the empty principal, and NOTHING writes the 'invalid'
-// placeholder any more: it is migration 0005's mark on history alone.
+// worker — carries the empty principal. Nothing writes the 'invalid'
+// placeholder: empty is the one spelling for "no token stood behind this
+// write".
 func TestPrincipalIsEmptyWhereNoTokenWrote(t *testing.T) {
 	t.Parallel()
 	_, ds, dsn := newDatasetWithDSN(t)

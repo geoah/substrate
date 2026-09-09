@@ -1,7 +1,7 @@
 package engine_test
 
-// THE REFS INDEX as storage: what the migration leaves behind, what a
-// re-derive preserves, and what a declaration change re-projects. The
+// THE REFS INDEX as storage: what the schema declares, what a re-derive
+// preserves, and what a declaration change re-projects. The
 // derivation itself is pure and tested without a database
 // (refs_internal_test.go); this is the half that needs one.
 
@@ -75,10 +75,10 @@ func refRows(t *testing.T, raw *sql.DB, kind, id string) []refRowRead {
 	return out
 }
 
-// TestMigrationLeavesTheRefsIndexAndNoEdges: 0010 drops the edges table and
-// creates `refs` in its place, so a database this binary opened has exactly
-// one of the two.
-func TestMigrationLeavesTheRefsIndexAndNoEdges(t *testing.T) {
+// A database this binary opened has `refs` and no `edges`: a reference is the
+// only link between records (decision 0044), so the link table it replaced
+// must not be there for anything to write to.
+func TestTheSchemaHasTheRefsIndexAndNoEdges(t *testing.T) {
 	t.Parallel()
 	_, raw, _ := newDatasetWithDB(t)
 	ctx := context.Background()
@@ -90,10 +90,10 @@ func TestMigrationLeavesTheRefsIndexAndNoEdges(t *testing.T) {
 		t.Fatalf("ask the catalog: %v", err)
 	}
 	if !refsThere {
-		t.Fatal("migration 0010 did not create the refs index")
+		t.Fatal("the schema has no refs index")
 	}
 	if edgesThere {
-		t.Fatal("the edges table survived migration 0010")
+		t.Fatal("the schema has an edges table; a reference is the only link between records")
 	}
 	// The primary key is what makes a re-derive replace exactly one record's
 	// rows, so it is asserted rather than assumed.
@@ -111,7 +111,7 @@ func TestMigrationLeavesTheRefsIndexAndNoEdges(t *testing.T) {
 	}
 }
 
-// A ROW CARRIES NO CLOCK (migration 0011). Every column is a function of the
+// A ROW CARRIES NO CLOCK. Every column is a function of the
 // source record's folded properties and its kind's declaration, which is what
 // makes the live table and the rebuilt one the same table; a `created_at` read
 // the apply's clock on a re-projection and the entry's on a replay.
