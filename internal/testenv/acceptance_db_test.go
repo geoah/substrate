@@ -677,7 +677,9 @@ type drill struct {
 	hookFailureID  int64
 	hookFireID     string
 	holdFireID     string
-	runVersion     int64
+	// holdInvoked is signaled as the runner starts the held fire's body.
+	holdInvoked chan struct{}
+	runVersion  int64
 
 	// Stage 2: the snapshot roots and the recorded points.
 	snapRoot   string
@@ -771,10 +773,19 @@ func (d *drill) buildSource(t *testing.T) {
 	token, totp := first.Token, first.TOTPSecret
 	first.Stop()
 
+	d.holdInvoked = make(chan struct{}, 16)
 	d.envA = testenv.Start(d.root,
 		testenv.WithUser(drillUser, drillPassword), testenv.WithoutRegistration(),
 		testenv.WithDSN(d.dsnA), testenv.WithDataRoot(d.rootA), testenv.WithCredentialKey(d.keyA),
-		testenv.WithClock(d.clock.Now))
+		testenv.WithClock(d.clock.Now),
+		testenv.WithEngineOptions(engine.WithTestInvokeHook(func(function string) {
+			if strings.HasSuffix(function, "/auto/hold") {
+				select {
+				case d.holdInvoked <- struct{}{}:
+				default:
+				}
+			}
+		})))
 	d.envA.Token, d.envA.TOTPSecret, d.envA.Authority = token, totp, drillAuthority
 	e := d.envA.For(t)
 	if got := kindVersions(t, e)[corePkg+"/run"]; got != shippedRun {
@@ -998,16 +1009,7 @@ func (d *drill) buildSource(t *testing.T) {
 
 	// The parked webhook (#437): the door records the request and answers
 	// 202; the fire fails at its gate and parks under a retry id.
-	status, raw, _ = e.DoRaw(http.MethodPost, "/webhooks/"+drillAuthority+"/on-hook", []byte(`{"say":"call the dentist"}`),
-		map[string]string{"Content-Type": "application/json", "X-GitHub-Event": "parked", "Authorization": ""})
-	if status != http.StatusAccepted {
-		t.Fatalf("webhook: %d %s", status, raw)
-	}
-	var accepted substrate.WebhookAccepted
-	if err := json.Unmarshal(raw, &accepted); err != nil || accepted.Fire == "" {
-		t.Fatalf("webhook answered %s: %v", raw, err)
-	}
-	d.hookFireID = accepted.Fire
+	d.hookFireID = postWebhook(t, e, "on-hook", `{"say":"call the dentist"}`, "parked")
 	deadline := time.Now().Add(20 * time.Second)
 	for {
 		parked = parkedOf(t, e, "on-hook")
@@ -1073,17 +1075,19 @@ func (d *drill) buildSource(t *testing.T) {
 
 	// The held webhook LAST: its fire sleeps until a `release` flag exists,
 	// the stop cancels it, and the entry stays pending for the restored
-	// dispatcher. Everything after this point must finish inside the body's
-	// 40 second wait.
-	status, raw, _ = e.DoRaw(http.MethodPost, "/webhooks/"+drillAuthority+"/on-hold", []byte(`{"say":"hold the line"}`),
-		map[string]string{"Content-Type": "application/json", "X-GitHub-Event": "held", "Authorization": ""})
-	if status != http.StatusAccepted {
-		t.Fatalf("held webhook: %d %s", status, raw)
+	// dispatcher. The runner's invoke hook says when the body has started,
+	// so the stop below cancels a fire that is running, not one still queued.
+	// Everything after this point must finish inside the body's 40 second
+	// wait.
+	d.holdFireID = postWebhook(t, e, "on-hold", `{"say":"hold the line"}`, "held")
+	select {
+	case <-d.holdInvoked:
+	case <-time.After(20 * time.Second):
+		t.Fatal("the held fire's body did not start within 20s of the 202")
 	}
-	if err := json.Unmarshal(raw, &accepted); err != nil || accepted.Fire == "" {
-		t.Fatalf("held webhook answered %s: %v", raw, err)
+	if status, _ := e.Do(http.MethodGet, recordPath(echoKind, "hold-echo"), nil); status != http.StatusNotFound {
+		t.Fatalf("the held fire settled before the stop: hold-echo reads %d", status)
 	}
-	d.holdFireID = accepted.Fire
 
 	d.source = captureState(t, e, ds, scopedA)
 	if st := d.source.statuses["on-hold"]; st.Pending != 1 {
@@ -1346,6 +1350,9 @@ func (d *drill) compareAndResume(t *testing.T) {
 	if st := d.restored.statuses["on-hold"]; st.Pending != 1 {
 		t.Errorf("restored on-hold status = %+v, want the held fire pending", st)
 	}
+	if status, _ := e.Do(http.MethodGet, recordPath(echoKind, "hold-echo"), nil); status != http.StatusNotFound {
+		t.Errorf("the held fire's echo exists before dispatch resumed: %d", status)
+	}
 	if status, _ := e.Do(http.MethodGet, recordPath(taskKind, "t-w2"), nil); status != http.StatusNotFound {
 		t.Errorf("the pending delivery landed before dispatch resumed: t-w2 reads %d", status)
 	}
@@ -1585,45 +1592,28 @@ func (d *drill) interruptedImport(t *testing.T) {
 // is refused by name before any row lands.
 func (d *drill) formatTransition(t *testing.T) {
 	ctx := context.Background()
-	root := copyRoot(t, d.snapRoot, legacyAuthority)
+
+	// The boot reads format 1 itself: the same-key restore, a directory a
+	// v0.51 binary wrote copied under a server holding the key it was written
+	// under, imported and upgraded in place by the boot alone. No rewrap runs
+	// first, so a reader that stopped accepting format 1 fails here.
+	root := formatOneCopy(t, d.snapRoot)
 	dir, err := changelogfile.RepoDir(root, legacyAuthority)
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := changelogfile.ReadManifest(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	unframeChangelog(t, changelogfile.ChangelogDir(dir))
-	writeFormatOneManifest(t, dir, m)
-	// A v0.51 directory carried no snapshot.json.
-	if err := os.Remove(filepath.Join(dir, changelogfile.SnapshotName)); err != nil {
-		t.Fatal(err)
-	}
-	report, err := engine.RewrapRepositoryDir(dir, d.legacyIdentity.String(), d.keyB)
-	if err != nil {
-		t.Fatalf("rewrap the format-1 directory: %v", err)
-	}
-	if report.Repository != legacyAuthority || report.Username != legacyUser {
-		t.Errorf("rewrap report = %+v", report)
-	}
-	after, err := changelogfile.ReadManifest(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if after.Format != changelogfile.ManifestFormat || after.ChangelogDialect != 2 {
-		t.Errorf("the rewritten manifest = %+v, want format %d at changelog dialect 2", after, changelogfile.ManifestFormat)
-	}
-
 	dsn := testdb.NewSchema(t)
 	e := testenv.Start(t,
 		testenv.WithUser(legacyUser, legacyPassword), testenv.WithoutRegistration(),
-		testenv.WithDSN(dsn), testenv.WithDataRoot(root), testenv.WithCredentialKey(d.keyB),
+		testenv.WithDSN(dsn), testenv.WithDataRoot(root), testenv.WithCredentialKey(d.keyA),
 		testenv.WithClock(d.clock.Now))
 	e.TOTPSecret, e.Authority = d.legacy.TOTPSecret, legacyAuthority
 	ds, err := e.Service.Dataset(ctx, legacyUser)
 	if err != nil {
-		t.Fatalf("open the repository restored from format 1: %v", err)
+		t.Fatalf("open the repository the boot imported from format 1: %v", err)
+	}
+	if upgraded, err := changelogfile.ReadManifest(dir); err != nil || upgraded.Format != changelogfile.ManifestFormat || upgraded.ChangelogDialect != 2 {
+		t.Errorf("manifest after the format-1 import = %+v (%v), want format %d at the manifest's dialect 2", upgraded, err, changelogfile.ManifestFormat)
 	}
 	fold, err := ds.(folded).FoldSnapshot(ctx)
 	if err != nil {
@@ -1662,6 +1652,47 @@ func (d *drill) formatTransition(t *testing.T) {
 	}
 	if moved, err := changelogfile.ReadManifest(dir); err != nil || moved.ChangelogDialect != engine.MaxChangelogDialect() {
 		t.Errorf("manifest after the first write = %+v (%v), want changelog dialect %d", moved, err, engine.MaxChangelogDialect())
+	}
+
+	// The other-key restore of the same format: `repository rewrap` reads the
+	// format-1 manifest, opens the DEK with the recovery key and rewrites the
+	// manifest under the new host's key; the boot then imports it.
+	rewrapRoot := formatOneCopy(t, d.snapRoot)
+	rewrapDir, err := changelogfile.RepoDir(rewrapRoot, legacyAuthority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := engine.RewrapRepositoryDir(rewrapDir, d.legacyIdentity.String(), d.keyB)
+	if err != nil {
+		t.Fatalf("rewrap the format-1 directory: %v", err)
+	}
+	if report.Repository != legacyAuthority || report.Username != legacyUser {
+		t.Errorf("rewrap report = %+v", report)
+	}
+	if rewrapped, err := changelogfile.ReadManifest(rewrapDir); err != nil || rewrapped.Format != changelogfile.ManifestFormat || rewrapped.ChangelogDialect != 2 {
+		t.Errorf("the rewrapped manifest = %+v (%v), want format %d at changelog dialect 2", rewrapped, err, changelogfile.ManifestFormat)
+	}
+	rewrapDSN := testdb.NewSchema(t)
+	rewrapped, err := engine.Open(ctx, rewrapDSN, engine.WithKindsFS(kinds.Seed()),
+		engine.WithDataRoot(rewrapRoot), engine.WithCredentialKey(d.keyB), engine.WithTestTOTPClock(d.clock.Now))
+	if err != nil {
+		t.Fatalf("boot on the rewrapped format-1 directory: %v", err)
+	}
+	defer func() { _ = rewrapped.Close() }()
+	rds, err := rewrapped.Dataset(ctx, legacyUser)
+	if err != nil {
+		t.Fatalf("open the rewrapped repository: %v", err)
+	}
+	if rfold, err := rds.(folded).FoldSnapshot(ctx); err != nil || !bytes.Equal(rfold, d.legacyFold) {
+		t.Errorf("the fold restored from the rewrapped format-1 directory is not the source's (%v)\n%s", err, firstDifference(d.legacyFold, rfold))
+	}
+	d.clock.Advance(engine.TOTPPeriod)
+	code, err := engine.TOTPCode(d.legacy.TOTPSecret, engine.TOTPStep(d.clock.Now()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := rewrapped.Login(ctx, substrate.LoginInput{Username: legacyUser, Password: legacyPassword, TOTPCode: code, Label: "rewrapped"}); err != nil {
+		t.Errorf("login on the rewrapped format-1 restore: %v", err)
 	}
 
 	// A directory a NEWER binary wrote refuses the boot by name, before any
@@ -2068,6 +2099,41 @@ func gqlSearch(t *testing.T, e *testenv.Env, q, mode string, kinds []string) sea
 	return a
 }
 
+// postWebhook posts one JSON request to the public webhook door and returns
+// the fire id. The request is built here, not through the harness, so the
+// stage can hold it to carrying no bearer: the door authenticates by path and
+// key alone, and a drill that sent a token would pass against a door that
+// started demanding one.
+func postWebhook(t *testing.T, e *testenv.Env, trigger, body, event string) string {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, e.URL+"/webhooks/"+drillAuthority+"/"+trigger, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-GitHub-Event", event)
+	if _, has := req.Header["Authorization"]; has {
+		t.Fatalf("the webhook request carries an Authorization header")
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("webhook %s: %v", trigger, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("webhook %s without a bearer: %d %s, want 202", trigger, resp.StatusCode, raw)
+	}
+	var accepted substrate.WebhookAccepted
+	if err := json.Unmarshal(raw, &accepted); err != nil || accepted.Fire == "" {
+		t.Fatalf("webhook %s answered %s: %v", trigger, raw, err)
+	}
+	return accepted.Fire
+}
+
 // firstStreamLine opens a watch and returns its first frame.
 func firstStreamLine(t *testing.T, e *testenv.Env, path string) []byte {
 	t.Helper()
@@ -2281,6 +2347,28 @@ func unframeChangelog(t *testing.T, dir string) {
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// formatOneCopy copies the legacy repository out of the snapshot root as a
+// v0.47.0 through v0.51.0 binary would have written it: lines without a
+// transaction frame, a format-1 manifest, no snapshot.json.
+func formatOneCopy(t *testing.T, snapRoot string) string {
+	t.Helper()
+	root := copyRoot(t, snapRoot, legacyAuthority)
+	dir, err := changelogfile.RepoDir(root, legacyAuthority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := changelogfile.ReadManifest(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unframeChangelog(t, changelogfile.ChangelogDir(dir))
+	writeFormatOneManifest(t, dir, m)
+	if err := os.Remove(filepath.Join(dir, changelogfile.SnapshotName)); err != nil {
+		t.Fatal(err)
+	}
+	return root
 }
 
 // writeFormatOneManifest writes the manifest v0.47.0 through v0.51.0 wrote:

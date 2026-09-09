@@ -47,3 +47,10 @@ func ImportIncomplete(ctx context.Context, db *sql.DB) (bool, error) {
 	_, incomplete, err := importIncomplete(ctx, db)
 	return incomplete, err
 }
+
+// WithTestInvokeHook runs fn with a function's identity as the runner is
+// about to invoke its body (runner.go runCallableRaw): the moment a test
+// that must act mid-fire (stop the server, retry it by hand) can wait for.
+func WithTestInvokeHook(fn func(function string)) Option {
+	return func(o *options) { o.invokeHook = fn }
+}

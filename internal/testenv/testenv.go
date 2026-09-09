@@ -379,7 +379,9 @@ func (e *Env) Do(method, path string, body any) (int, []byte) {
 
 // DoRaw is Do with the body and headers as the caller built them: a blob
 // upload, a webhook post, a request under another actor. A nil body sends
-// none; the bearer header is added unless the caller set one.
+// none. The bearer header is added unless the headers map carries the
+// "Authorization" key: a caller that means "no bearer" sets it to "", and
+// the request then goes out with no Authorization header at all.
 func (e *Env) DoRaw(method, path string, body []byte, headers map[string]string) (int, []byte, http.Header) {
 	e.t.Helper()
 	var reader io.Reader
@@ -391,9 +393,12 @@ func (e *Env) DoRaw(method, path string, body []byte, headers map[string]string)
 		e.t.Fatalf("testenv: build %s %s: %v", method, path, err)
 	}
 	for k, v := range headers {
+		if v == "" {
+			continue
+		}
 		req.Header.Set(k, v)
 	}
-	if e.Token != "" && req.Header.Get("Authorization") == "" {
+	if _, explicit := headers["Authorization"]; !explicit && e.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+e.Token)
 	}
 	resp, err := e.client.Do(req)

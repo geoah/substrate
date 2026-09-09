@@ -174,13 +174,6 @@ func OpenForTest(t *testing.T, ctx context.Context, dsn string, opts ...Option) 
 	return Open(ctx, dsn, all...)
 }
 
-// WithTestInvokeHook runs fn with a function's identity as the runner is
-// about to invoke its body (runner.go runCallableRaw): the moment a test
-// that must act mid-fire (cancel it, retry it by hand) can wait for.
-func WithTestInvokeHook(fn func(function string)) Option {
-	return func(o *options) { o.invokeHook = fn }
-}
-
 // The snapshot stages WithTestSnapshotFault reports, in the order they run.
 const (
 	SnapshotAfterChangelog = snapshotAfterChangelog
