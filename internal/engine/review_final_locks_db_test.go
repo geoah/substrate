@@ -137,7 +137,7 @@ func installContactSource(t *testing.T, ds *dataset) {
 			vocabulary.PackageManifest(csrcPackage, 1),
 			vocabulary.ActorManifest(csrcPackage, vocabulary.PackageActor(csrcPackage)),
 			vocabulary.KindManifest(csrcPackage,
-				map[string]any{"singular": "note", "plural": "notes"},
+				map[string]any{"singular": "note"},
 				map[string]any{
 					"properties": map[string]any{
 						"text": map[string]any{"type": "string"},
@@ -150,7 +150,7 @@ func installContactSource(t *testing.T, ds *dataset) {
 					},
 				}),
 			vocabulary.KindManifest(csrcPackage,
-				map[string]any{"singular": "contact", "plural": "contacts"},
+				map[string]any{"singular": "contact"},
 				map[string]any{
 					"properties": map[string]any{
 						"email": map[string]any{"type": "email"},

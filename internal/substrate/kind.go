@@ -13,12 +13,6 @@ type KindInfo struct {
 	// 1 for a first declaration, +1 per change (or whatever higher number an
 	// explicit apply pinned).
 	Version int64 `json:"version"`
-	// Plural is retired: the collection segment is the kind name now
-	// (decision 0033), so no declaration ships a `names.plural` and the engine
-	// projects this empty. The field survives on the wire, and substratectl
-	// still resolves a typed plural client-side, so a legacy payload that
-	// carries one keeps decoding.
-	Plural string `json:"plural"`
 	// Source is where the declaration came from: "builtin" (the seed),
 	// "published" (a provider install, whose declarations only a substrate path
 	// writes) or "installed" (the repository's own).

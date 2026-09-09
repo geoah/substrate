@@ -163,16 +163,16 @@ export interface BrowsePrefs {
   sort?: string
 }
 
-function prefsKey(group: string, plural: string): string {
-  return `substrate.browse.${group}/${plural}`
+function prefsKey(group: string, name: string): string {
+  return `substrate.browse.${group}/${name}`
 }
 
 export function loadBrowsePrefs(
   group: string,
-  plural: string
+  name: string
 ): BrowsePrefs | null {
   try {
-    const raw = localStorage.getItem(prefsKey(group, plural))
+    const raw = localStorage.getItem(prefsKey(group, name))
     if (!raw) return null
     const parsed: unknown = JSON.parse(raw)
     if (typeof parsed !== "object" || parsed === null) return null
@@ -195,7 +195,7 @@ export function loadBrowsePrefs(
  * the entry entirely — clearing filters clears the stored state too. */
 export function saveBrowsePrefs(
   group: string,
-  plural: string,
+  name: string,
   prefs: BrowsePrefs
 ): void {
   try {
@@ -203,9 +203,9 @@ export function saveBrowsePrefs(
     if (prefs.filter?.length) out.filter = prefs.filter
     if (prefs.sort) out.sort = prefs.sort
     if (out.filter || out.sort) {
-      localStorage.setItem(prefsKey(group, plural), JSON.stringify(out))
+      localStorage.setItem(prefsKey(group, name), JSON.stringify(out))
     } else {
-      localStorage.removeItem(prefsKey(group, plural))
+      localStorage.removeItem(prefsKey(group, name))
     }
   } catch {
     // Storage full or denied — the URL still carries the view.

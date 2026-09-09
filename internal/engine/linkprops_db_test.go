@@ -41,7 +41,7 @@ func lpApply(t *testing.T, ds substrate.Dataset, props map[string]any) error {
 	_, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, []map[string]any{
 		vocabulary.PackageManifest(lpPackage, 0),
 		vocabulary.KindManifest(lpPackage,
-			map[string]any{"singular": "node", "plural": "nodes"},
+			map[string]any{"singular": "node"},
 			map[string]any{"displayTemplate": "{label}", "properties": props}),
 	})
 	return err

@@ -75,7 +75,7 @@ func w2Manifest(withTrigger bool) enginetest.Manifest {
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(w2Package, 0),
 			vocabulary.ActorManifest(w2Package, vocabulary.PackageActor(w2Package)),
-			vocabulary.KindManifest(w2Package, map[string]any{"singular": "widget", "plural": "widgets"},
+			vocabulary.KindManifest(w2Package, map[string]any{"singular": "widget"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 			vocabulary.FunctionManifest(w2Package, "mirror", map[string]any{
 				"description": "mirrors widgets into tasks",

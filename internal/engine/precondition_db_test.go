@@ -251,7 +251,7 @@ func TestDeleteOfADeclarationHonorsIfVersion(t *testing.T) {
 
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
-		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
+		swTypeDoc("widget", map[string]any{"name": map[string]any{"type": "string"}}),
 	}); err != nil {
 		t.Fatalf("apply: %v", err)
 	}

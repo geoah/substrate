@@ -689,7 +689,7 @@ func TestConstraintTightenedThroughAPropertyTypeIsRefused(t *testing.T) {
 		}
 	}
 	item := vocabulary.KindManifest(pkg,
-		map[string]any{"singular": "item", "plural": "items"},
+		map[string]any{"singular": "item"},
 		map[string]any{"properties": map[string]any{"code": map[string]any{"type": "code"}}})
 	sa := applier(t, ds)
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{

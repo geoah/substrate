@@ -46,7 +46,6 @@ data:
   package: ops
   names:
     singular: deployrequest
-    plural: deployrequests
   properties:
     state:
       type: state
@@ -78,7 +77,6 @@ data:
   package: core
   names:
     singular: llmthread
-    plural: llmthreads
   properties:
     status:
       type: string
@@ -91,7 +89,6 @@ data:
   package: core
   names:
     singular: gadgetrequest
-    plural: gadgetrequests
   properties:
     # thread is a plain string here, not a reference: the marker must refuse.
     thread:

@@ -218,7 +218,6 @@ const kindInfo: Shape<KindInfo> = {
   authority: true,
   package: true,
   version: true,
-  plural: true,
   source: true,
   description: true,
   definition: true,

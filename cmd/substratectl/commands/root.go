@@ -178,15 +178,15 @@ func (a *app) rootCommand() *cobra.Command {
 
 AS A USER it holds a token and talks HTTP. Everything in a repository is a
 record of a declared kind, addressed by its kind reference, three segments:
-{authority}/{package}/{name}. The CLI is
-a thin door onto that surface: types, get, apply, patch, delete, watch. A
-pointer at another record is a property, so the same verbs write it. The token
-implies the repository; there is nothing else to point at.
+{authority}/{package}/{name}. The CLI is a thin door onto that surface: kinds,
+get, apply, patch, delete, watch. A pointer at another record is a property, so
+the same verbs write it. The token implies the repository; there is nothing else
+to point at.
 
   substratectl register --server https://substrate.example.com
   substratectl login --repository geoah
   substratectl kinds
-  substratectl get tasks -l owner/pinned=true
+  substratectl get task -l owner/pinned=true
   substratectl apply -f task.yaml
   substratectl token create --label laptop
 

@@ -460,17 +460,17 @@ function SetupItemRow({ item, types }: { item: SetupItem; types: KindInfo[] }) {
         : undefined
   const authority = item.code === "provider" ? CORE_AUTHORITY : kind?.authority
   const pkg = item.code === "provider" ? CORE_PACKAGE_NAME : kind?.package
-  const plural = item.code === "provider" ? "llmprovider" : kind?.name
+  const name = item.code === "provider" ? "llmprovider" : kind?.name
   return (
     <div className="flex items-center justify-between gap-3 rounded-md border border-warning/40 px-4 py-2.5">
       <p className="flex min-w-0 items-center gap-2 text-xs text-warning">
         <TriangleAlertIcon className="size-3.5 shrink-0" />
         <span className="min-w-0">{item.message}</span>
       </p>
-      {item.record && authority && pkg && plural && (
+      {item.record && authority && pkg && name && (
         <Link
           to="/data/$authority/$pkg/$name/$id"
-          params={{ authority, pkg, name: plural, id: item.record }}
+          params={{ authority, pkg, name, id: item.record }}
           className="inline-flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground underline-offset-4 hover:underline"
         >
           <span className="data">{item.record}</span>

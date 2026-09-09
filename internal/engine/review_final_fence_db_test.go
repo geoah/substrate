@@ -207,7 +207,7 @@ def main(input, host):
 			"installs":    []any{tbPackage + "/tbconfig", tbPackage + "/writer"},
 		}),
 		vocabulary.KindManifest(tbPackage,
-			map[string]any{"singular": "tbconfig", "plural": "tbconfigs"},
+			map[string]any{"singular": "tbconfig"},
 			map[string]any{"properties": map[string]any{
 				"note": map[string]any{"type": "string"},
 			}}),
@@ -295,7 +295,7 @@ def main(input, host):
 			"installs":    []any{cbPackage + "/cbconfig", cbPackage + "/caller"},
 		}),
 		vocabulary.KindManifest(cbPackage,
-			map[string]any{"singular": "cbconfig", "plural": "cbconfigs"},
+			map[string]any{"singular": "cbconfig"},
 			map[string]any{"properties": map[string]any{
 				"note": map[string]any{"type": "string"},
 			}}),

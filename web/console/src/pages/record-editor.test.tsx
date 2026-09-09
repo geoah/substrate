@@ -60,7 +60,6 @@ const taskKind: KindInfo = {
   authority: "samples.substrate.reamde.dev",
   package: "tasks",
   version: 0,
-  plural: "tasks",
   source: "installed",
   description: "",
   definition: {
@@ -104,7 +103,7 @@ function renderEditor(
         <RecordEditorForm
           authority="samples.substrate.reamde.dev"
           pkg="tasks"
-          plural="tasks"
+          name="tasks"
           mode={mode}
           kind={taskKind}
           kinds={[taskKind]}
@@ -201,10 +200,10 @@ describe("the record editor", () => {
     })
     fireEvent.click(screen.getByRole("button", { name: "Create" }))
     await waitFor(() => expect(createRecord).toHaveBeenCalled())
-    const [authority, pkg, plural, input] = createRecord.mock.calls[0]
+    const [authority, pkg, name, input] = createRecord.mock.calls[0]
     expect(authority).toBe("samples.substrate.reamde.dev")
     expect(pkg).toBe("tasks")
-    expect(plural).toBe("tasks")
+    expect(name).toBe("tasks")
     expect(input.properties).toEqual({
       title: "hi",
       effort: 3,

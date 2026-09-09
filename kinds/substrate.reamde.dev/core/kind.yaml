@@ -27,7 +27,10 @@ data:
   # writes (decision record 0048).
   # version 16: `retired` declares the property names, enum values and states
   # the kind has spent (decision record 0055). Additive.
-  version: 16
+  # version 17: `names.plural` is gone from the declaration too, not just from
+  # routing (issue 319): nothing ships it, nothing reads it, and no repository
+  # holds a row that carries it.
+  version: 17
   names:
     singular: kind
   # the declarations this repository holds; id is the kind REFERENCE
@@ -79,14 +82,6 @@ data:
           type: string
           required: true
           description: the kind's singular name, its identity's last segment
-        # Retired: the collection segment is the kind name now (decision 0033).
-        # Kept as an OPTIONAL field, read by nothing, so a declaration a pre-0033
-        # binary wrote still validates against this meta-kind rather than being
-        # refused as an undeclared field — the reserved-inert pattern (0020).
-        plural:
-          type: string
-          deprecated: true
-          description: retired; the collection segment is the kind name (0033)
     description:
       type: string
       description: what this kind is for, read above its collection

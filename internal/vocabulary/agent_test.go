@@ -25,7 +25,7 @@ metadata:
 data:
   authority: ag.example.com
   package: ag
-  names: {singular: widget, plural: widgets}
+  names: {singular: widget}
   properties:
     name: {type: string}
 ---
@@ -87,7 +87,7 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: core
-  names: {singular: recordpatchrequest, plural: recordpatchrequests}
+  names: {singular: recordpatchrequest}
   properties:
     op: {type: string}
 ---

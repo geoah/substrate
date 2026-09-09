@@ -128,7 +128,6 @@ function kindInfo(name: string, authority: string, pkg = "data"): KindInfo {
     authority,
     package: pkg,
     version: 0,
-    plural: `${name}s`,
     source: "schema",
     description: "",
     definition: {},

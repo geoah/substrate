@@ -34,7 +34,7 @@ func declareNotes(t *testing.T, ds substrate.Dataset, remarkIndexed bool) {
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, []map[string]any{
 		vocabulary.PackageManifest(ftsPackage, 0),
 		vocabulary.KindManifest(ftsPackage,
-			map[string]any{"singular": "note", "plural": "notes"},
+			map[string]any{"singular": "note"},
 			map[string]any{"displayTemplate": "{name}", "properties": map[string]any{
 				"name":   map[string]any{"type": "string"},
 				"remark": remark,

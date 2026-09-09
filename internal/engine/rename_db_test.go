@@ -59,8 +59,8 @@ func rnClosure(gizmoProps, gizmoData map[string]any, target string, extra ...map
 	}
 	docs := []map[string]any{
 		vocabulary.PackageManifest(rnPackage, 0),
-		vocabulary.KindManifest(rnPackage, map[string]any{"singular": "gizmo", "plural": "gizmos"}, data),
-		vocabulary.KindManifest(rnPackage, map[string]any{"singular": "gizmosource", "plural": "gizmosources"},
+		vocabulary.KindManifest(rnPackage, map[string]any{"singular": "gizmo"}, data),
+		vocabulary.KindManifest(rnPackage, map[string]any{"singular": "gizmosource"},
 			map[string]any{"properties": map[string]any{
 				"size": map[string]any{"type": "string"},
 				"gizmo": map[string]any{
@@ -336,14 +336,14 @@ func TestRenameMovesTheValueOfEveryLiveRecord(t *testing.T) {
 // each template reads.
 func rnViewers(pinned, loose string) []map[string]any {
 	return []map[string]any{
-		vocabulary.KindManifest(rnPackage, map[string]any{"singular": "viewer", "plural": "viewers"},
+		vocabulary.KindManifest(rnPackage, map[string]any{"singular": "viewer"},
 			map[string]any{
 				"displayTemplate": "{gizmo." + pinned + "}",
 				"properties": map[string]any{
 					"gizmo": map[string]any{"type": "reference", "kind": rnGizmo},
 				},
 			}),
-		vocabulary.KindManifest(rnPackage, map[string]any{"singular": "looseviewer", "plural": "looseviewers"},
+		vocabulary.KindManifest(rnPackage, map[string]any{"singular": "looseviewer"},
 			map[string]any{
 				"displayTemplate": "{subject." + loose + "}",
 				"properties": map[string]any{
@@ -455,7 +455,7 @@ func TestRenameRefusesADestinationALiveRecordCarries(t *testing.T) {
 	closure := func(props map[string]any) []map[string]any {
 		return []map[string]any{
 			vocabulary.PackageManifest(rnPackage, 0),
-			vocabulary.KindManifest(rnPackage, map[string]any{"singular": "gizmo", "plural": "gizmos"},
+			vocabulary.KindManifest(rnPackage, map[string]any{"singular": "gizmo"},
 				map[string]any{"properties": props}),
 		}
 	}

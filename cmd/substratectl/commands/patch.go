@@ -19,7 +19,7 @@ func (a *app) patchCommand() *cobra.Command {
 		raw        string
 	)
 	cmd := &cobra.Command{
-		Use:   "patch <plural> <id>",
+		Use:   "patch <kind> <id>",
 		Short: "Patch a record — state transitions, labels, properties",
 		Long: `Patch a record in place. State transitions only travel this way
 ("complete a task" is --state status=done; apply/put refuse to move a state).

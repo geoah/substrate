@@ -9,7 +9,7 @@ import (
 func (a *app) deleteCommand() *cobra.Command {
 	var pkg string
 	cmd := &cobra.Command{
-		Use:   "delete <plural> <id>",
+		Use:   "delete <kind> <id>",
 		Short: "Soft-delete a record",
 		Long: `Delete a record. Deletion is soft and cooperative: the record is
 tombstoned and hard deletion waits for its finalizers to be released.`,

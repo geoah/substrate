@@ -54,13 +54,13 @@ func installLedgerConnector(t *testing.T, ds *dataset, startsAt time.Time) {
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(ledgerPkg, 0),
 			vocabulary.ActorManifest(ledgerPkg, vocabulary.PackageActor(ledgerPkg)),
-			vocabulary.KindManifest(ledgerPkg, map[string]any{"singular": "widget", "plural": "widgets"},
+			vocabulary.KindManifest(ledgerPkg, map[string]any{"singular": "widget"},
 				map[string]any{"properties": map[string]any{
 					"name":   map[string]any{"type": "string"},
 					"want":   map[string]any{"type": "string", "fts": false},
 					"target": map[string]any{"type": "string", "fts": false},
 				}}),
-			vocabulary.KindManifest(ledgerPkg, map[string]any{"singular": "gadget", "plural": "gadgets"},
+			vocabulary.KindManifest(ledgerPkg, map[string]any{"singular": "gadget"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 			vocabulary.FunctionManifest(ledgerPkg, "mirror", map[string]any{
 				"description": "mirrors widgets into tasks",

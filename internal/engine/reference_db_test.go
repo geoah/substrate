@@ -29,13 +29,13 @@ func firstClassVocabulary(t *testing.T, ds substrate.Dataset) {
 	docs := []map[string]any{
 		vocabulary.PackageManifest(firstClassPackage, 0),
 		vocabulary.KindManifest(firstClassPackage,
-			map[string]any{"singular": "target", "plural": "targets"},
+			map[string]any{"singular": "target"},
 			map[string]any{
 				"displayTemplate": "{name}",
 				"properties":      map[string]any{"name": map[string]any{"type": "string"}},
 			}),
 		vocabulary.KindManifest(firstClassPackage,
-			map[string]any{"singular": "pointer", "plural": "pointers"},
+			map[string]any{"singular": "pointer"},
 			map[string]any{
 				// The template reads the referent's own property: without a
 				// reference branch in the resolver this renders "" for the
@@ -58,7 +58,7 @@ func firstClassVocabulary(t *testing.T, ds substrate.Dataset) {
 		// A BARE reference token: renders the referent's title, and the id it
 		// holds when there is no referent to read.
 		vocabulary.KindManifest(firstClassPackage,
-			map[string]any{"singular": "tag", "plural": "tags"},
+			map[string]any{"singular": "tag"},
 			map[string]any{
 				"displayTemplate": "{target}",
 				"properties": map[string]any{
@@ -68,7 +68,7 @@ func firstClassVocabulary(t *testing.T, ds substrate.Dataset) {
 				},
 			}),
 		vocabulary.KindManifest(firstClassPackage,
-			map[string]any{"singular": "roster", "plural": "rosters"},
+			map[string]any{"singular": "roster"},
 			map[string]any{
 				"properties": map[string]any{
 					"targets": map[string]any{
@@ -78,7 +78,7 @@ func firstClassVocabulary(t *testing.T, ds substrate.Dataset) {
 				},
 			}),
 		vocabulary.KindManifest(firstClassPackage,
-			map[string]any{"singular": "strict", "plural": "stricts"},
+			map[string]any{"singular": "strict"},
 			map[string]any{
 				"properties": map[string]any{
 					"target": map[string]any{
@@ -314,14 +314,14 @@ func TestReferenceDotSkipsASensitiveReferentProperty(t *testing.T) {
 		// digest stores its value verbatim in the fold (unlike a secret, which
 		// seals to a ref), so a leak would be the material itself.
 		vocabulary.KindManifest(pkg,
-			map[string]any{"singular": "holder", "plural": "holders"},
+			map[string]any{"singular": "holder"},
 			map[string]any{"properties": map[string]any{
 				"fingerprint": map[string]any{"type": "digest"},
 			}}),
 		// The referencing kind hops the pointer to that digest. The loader
 		// admits this because `fingerprint` is another kind's property.
 		vocabulary.KindManifest(pkg,
-			map[string]any{"singular": "viewer", "plural": "viewers"},
+			map[string]any{"singular": "viewer"},
 			map[string]any{
 				"displayTemplate": "{holder.fingerprint}",
 				"properties": map[string]any{

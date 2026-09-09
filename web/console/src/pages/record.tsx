@@ -59,16 +59,14 @@ const tabParser = parseAsStringLiteral(TABS)
   .withOptions({ history: "push" })
 
 export function RecordPage() {
-  // The route param is `$name` (the kind name is the collection segment),
-  // aliased to a local `plural` so the rest of this file reads unchanged.
-  const { authority, pkg, name: plural, id } = recordRoute.useParams()
+  const { authority, pkg, name, id } = recordRoute.useParams()
   const [tab, setTab] = useQueryState("tab", tabParser)
 
   const registry = useQuery(kindsQueryOptions)
   const kindInfo = registry.data
-    ? kindByCollection(registry.data, authority, pkg, plural)
+    ? kindByCollection(registry.data, authority, pkg, name)
     : undefined
-  const record = useQuery(recordQueryOptions(authority, pkg, plural, id))
+  const record = useQuery(recordQueryOptions(authority, pkg, name, id))
 
   // The hover vocabulary comes off the kinds query the page already holds —
   // one registry read backs every property tooltip on the manifest.
@@ -104,7 +102,7 @@ export function RecordPage() {
             </EmptyTitle>
             <EmptyDescription>
               <span className="data">
-                {authority}/{plural}/{id}
+                {authority}/{name}/{id}
               </span>{" "}
               — {record.error.message}
             </EmptyDescription>
@@ -139,7 +137,7 @@ export function RecordPage() {
         <div className="min-w-0">
           <h1 className="truncate text-lg font-semibold">{title}</h1>
           <p className="data text-xs text-muted-foreground">
-            {authority}/{plural}/{e.id}
+            {authority}/{name}/{e.id}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
@@ -160,7 +158,7 @@ export function RecordPage() {
                 params={{
                   authority: authority,
                   pkg: pkg,
-                  name: plural,
+                  name,
                   id: e.id,
                 }}
               />
@@ -199,7 +197,7 @@ export function RecordPage() {
             <GraphRail
               authority={authority}
               pkg={pkg}
-              plural={plural}
+              name={name}
               record={e}
               kinds={registry.data ?? []}
             />

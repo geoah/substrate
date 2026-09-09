@@ -24,7 +24,7 @@ func TestAChangedIndexDefinitionRebuildsTheStaleOrdinalIndex(t *testing.T) {
 		return []map[string]any{
 			vocabulary.PackageManifest(publishPackage, 0),
 			vocabulary.KindManifest(publishPackage,
-				map[string]any{"singular": "meter", "plural": "meters"},
+				map[string]any{"singular": "meter"},
 				map[string]any{
 					"properties": map[string]any{
 						"name":  map[string]any{"type": "string"},

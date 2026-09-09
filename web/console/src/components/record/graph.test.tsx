@@ -74,7 +74,6 @@ const task: KindInfo = {
   authority: "samples.substrate.reamde.dev",
   package: "tasks",
   version: 1,
-  plural: "tasks",
   source: "installed",
   description: "",
   definition: {
@@ -96,7 +95,6 @@ const person: KindInfo = {
   authority: "samples.substrate.reamde.dev",
   package: "people",
   version: 1,
-  plural: "people",
   source: "installed",
   description: "",
   definition: {},
@@ -132,7 +130,7 @@ function renderRail() {
       <GraphRail
         authority="samples.substrate.reamde.dev"
         pkg="tasks"
-        plural="task"
+        name="task"
         record={record}
         kinds={[task, person]}
       />
@@ -210,7 +208,7 @@ describe("GraphRail", () => {
         <GraphRail
           authority="samples.substrate.reamde.dev"
           pkg="tasks"
-          plural="task"
+          name="task"
           record={linked}
           kinds={[task, person]}
         />

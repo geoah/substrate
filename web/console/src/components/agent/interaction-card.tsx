@@ -22,7 +22,9 @@ import { patchRecord, recordQueryOptions } from "@/lib/api/records"
 import type { SubstrateRecord } from "@/lib/api/types"
 import { cn } from "@/lib/utils"
 
-const INTERACTION_PLURAL = "llminteractions"
+// The collection segment is the kind name (decision 0033); `llminteractions`
+// addressed nothing and 404d.
+const INTERACTION_KIND = "llminteraction"
 
 interface Option {
   value: string
@@ -85,12 +87,7 @@ function answersOf(record: SubstrateRecord): Map<string, string[]> {
 export function InteractionCard({ id }: { id: string }) {
   const client = useQueryClient()
   const interaction = useQuery(
-    recordQueryOptions(
-      CORE_AUTHORITY,
-      CORE_PACKAGE_NAME,
-      INTERACTION_PLURAL,
-      id
-    )
+    recordQueryOptions(CORE_AUTHORITY, CORE_PACKAGE_NAME, INTERACTION_KIND, id)
   )
   const [picked, setPicked] = useState<Map<string, string[]>>(new Map())
   const [submitting, setSubmitting] = useState<"answer" | "dismiss" | null>(
@@ -141,7 +138,7 @@ export function InteractionCard({ id }: { id: string }) {
       await patchRecord(
         CORE_AUTHORITY,
         CORE_PACKAGE_NAME,
-        INTERACTION_PLURAL,
+        INTERACTION_KIND,
         id,
         {
           properties:

@@ -27,20 +27,20 @@ func TestDeclaredBodyAndPerPropertyFTS(t *testing.T) {
 			vocabulary.ActorManifest(pkg, "connector:reader"),
 			// A declared body, fts defaulting true for text: indexed.
 			vocabulary.KindManifest(pkg,
-				map[string]any{"singular": "article", "plural": "articles"},
+				map[string]any{"singular": "article"},
 				map[string]any{"properties": map[string]any{
 					"body": map[string]any{"type": "text"},
 				}}),
 			// A declared body opting out of the index: stored and served, never
 			// searched.
 			vocabulary.KindManifest(pkg,
-				map[string]any{"singular": "memo", "plural": "memos"},
+				map[string]any{"singular": "memo"},
 				map[string]any{"properties": map[string]any{
 					"body": map[string]any{"type": "text", "fts": false},
 				}}),
 			// No body declared: a body write is refused like any undeclared name.
 			vocabulary.KindManifest(pkg,
-				map[string]any{"singular": "tag", "plural": "tags"},
+				map[string]any{"singular": "tag"},
 				map[string]any{"properties": map[string]any{
 					"label": map[string]any{"type": "string"},
 				}}),

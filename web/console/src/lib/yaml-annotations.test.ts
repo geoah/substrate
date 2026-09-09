@@ -82,7 +82,6 @@ describe("keyDocsOf", () => {
     authority: "samples.substrate.reamde.dev",
     package: "people",
     version: 0,
-    plural: "people",
     source: "builtin",
     description: "",
     definition: {

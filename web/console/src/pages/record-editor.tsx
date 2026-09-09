@@ -84,25 +84,20 @@ type Lens = "form" | "yaml"
 
 /** New-record route wrapper (`/data/:authority/:package/:kind/new`). */
 export function RecordNewPage() {
-  const { authority, pkg, name: plural } = recordNewRoute.useParams()
+  const { authority, pkg, name } = recordNewRoute.useParams()
   return (
-    <RecordEditor
-      authority={authority}
-      pkg={pkg}
-      plural={plural}
-      mode="create"
-    />
+    <RecordEditor authority={authority} pkg={pkg} name={name} mode="create" />
   )
 }
 
 /** Edit route wrapper (`/data/:authority/:package/:kind/:id/edit`). */
 export function RecordEditPage() {
-  const { authority, pkg, name: plural, id } = recordEditRoute.useParams()
+  const { authority, pkg, name, id } = recordEditRoute.useParams()
   return (
     <RecordEditor
       authority={authority}
       pkg={pkg}
-      plural={plural}
+      name={name}
       mode="edit"
       id={id}
     />
@@ -112,22 +107,22 @@ export function RecordEditPage() {
 function RecordEditor({
   authority,
   pkg,
-  plural,
+  name,
   mode,
   id,
 }: {
   authority: string
   pkg: string
-  plural: string
+  name: string
   mode: Mode
   id?: string
 }) {
   const registry = useQuery(kindsQueryOptions)
   const kindInfo = registry.data
-    ? kindByCollection(registry.data, authority, pkg, plural)
+    ? kindByCollection(registry.data, authority, pkg, name)
     : undefined
   const record = useQuery({
-    ...recordQueryOptions(authority, pkg, plural, id ?? ""),
+    ...recordQueryOptions(authority, pkg, name, id ?? ""),
     enabled: mode === "edit" && Boolean(id),
   })
 
@@ -139,7 +134,7 @@ function RecordEditor({
     return (
       <EditorEmpty
         title="Unknown collection"
-        description={`${authority}/${plural} is not in the kind registry.`}
+        description={`${authority}/${name} is not in the kind registry.`}
       />
     )
   }
@@ -147,7 +142,7 @@ function RecordEditor({
     return (
       <EditorEmpty
         title="The record didn't load"
-        description={`${authority}/${plural}/${id} — ${record.error.message}`}
+        description={`${authority}/${name}/${id} — ${record.error.message}`}
       />
     )
   }
@@ -161,7 +156,7 @@ function RecordEditor({
     <RecordEditorForm
       authority={authority}
       pkg={pkg}
-      plural={plural}
+      name={name}
       mode={mode}
       kind={kindInfo}
       kinds={registry.data ?? []}
@@ -175,7 +170,7 @@ function RecordEditor({
 export function RecordEditorForm({
   authority,
   pkg,
-  plural,
+  name,
   mode,
   kind,
   kinds,
@@ -184,7 +179,7 @@ export function RecordEditorForm({
 }: {
   authority: string
   pkg: string
-  plural: string
+  name: string
   mode: Mode
   kind: KindInfo
   kinds: KindInfo[]
@@ -258,8 +253,8 @@ export function RecordEditorForm({
       }
       const input = toPutInput(parsed.value, kind)
       return mode === "edit" && record
-        ? putRecord(authority, pkg, plural, record.id, input)
-        : createRecord(authority, pkg, plural, input)
+        ? putRecord(authority, pkg, name, record.id, input)
+        : createRecord(authority, pkg, name, input)
     },
     onSuccess: (saved) => {
       toast.add({
@@ -273,7 +268,7 @@ export function RecordEditorForm({
         params: {
           authority: authority,
           pkg: pkg,
-          name: plural,
+          name,
           id: saved.id,
         },
       })
@@ -324,8 +319,8 @@ export function RecordEditorForm({
           </h1>
           <p className="data text-xs text-muted-foreground">
             {mode === "edit" && record
-              ? `${authority}/${plural}/${record.id}`
-              : `${authority}/${plural}`}
+              ? `${authority}/${name}/${record.id}`
+              : `${authority}/${name}`}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
@@ -352,14 +347,14 @@ export function RecordEditorForm({
                   params={{
                     authority: authority,
                     pkg: pkg,
-                    name: plural,
+                    name,
                     id: record.id,
                   }}
                 />
               ) : (
                 <Link
                   to="/data/$authority/$pkg/$name"
-                  params={{ authority: authority, pkg: pkg, name: plural }}
+                  params={{ authority: authority, pkg: pkg, name }}
                 />
               )
             }

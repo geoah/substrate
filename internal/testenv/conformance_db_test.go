@@ -67,7 +67,6 @@ data:
   package: ` + conformancePackage + `
   names:
     singular: note
-    plural: notes
   displayTemplate: "{subject}"
   properties:
     subject:
@@ -198,7 +197,7 @@ func conformanceCases() []codeCase {
 					"data": map[string]any{
 						"authority":       conformanceAuthority,
 						"package":         conformancePackage,
-						"names":           map[string]any{"singular": "note", "plural": "notes"},
+						"names":           map[string]any{"singular": "note"},
 						"displayTemplate": "{subject}",
 						"properties": map[string]any{
 							"subject": map[string]any{"type": "string", "required": true, "description": "what the note is about"},

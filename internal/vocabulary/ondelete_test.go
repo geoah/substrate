@@ -30,7 +30,7 @@ metadata:
 data:
   authority: own.example.com
   package: own
-  names: {singular: account, plural: accounts}
+  names: {singular: account}
   properties:
     label: {type: string}
 ---
@@ -40,7 +40,7 @@ metadata:
 data:
   authority: own.example.com
   package: own
-  names: {singular: mirror, plural: mirrors}
+  names: {singular: mirror}
   properties:
     account:
 ` + account
@@ -167,7 +167,7 @@ metadata:
 data:
   authority: own.example.com
   package: own
-  names: {singular: account, plural: accounts}
+  names: {singular: account}
   traits: [connected]
   properties:
     tokenRef: {type: secret}
@@ -178,7 +178,7 @@ metadata:
 data:
   authority: own.example.com
   package: own
-  names: {singular: mirror, plural: mirrors}
+  names: {singular: mirror}
   properties:
     account:
 ` + account

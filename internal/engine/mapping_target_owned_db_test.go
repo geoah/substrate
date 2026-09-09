@@ -36,7 +36,7 @@ const (
 // package declares a mapping that fills it.
 func tmProviderDocs() []map[string]any {
 	kind := vocabulary.KindManifest(tmPackage,
-		map[string]any{"singular": "issue", "plural": "issues"},
+		map[string]any{"singular": "issue"},
 		map[string]any{
 			"properties": map[string]any{
 				"headline": map[string]any{"type": "string"},
@@ -62,7 +62,7 @@ func tmTaskDocs() []map[string]any {
 	return []map[string]any{
 		vocabulary.PackageManifest(tmHomePackage, 1),
 		vocabulary.KindManifest(tmHomePackage,
-			map[string]any{"singular": "task", "plural": "tasks"},
+			map[string]any{"singular": "task"},
 			map[string]any{"properties": map[string]any{
 				"name": map[string]any{"type": "string"},
 			}}),
@@ -178,7 +178,7 @@ func TestOneMirrorReachesTwoKindsThroughTwoSlots(t *testing.T) {
 	_, ds := newDataset(t)
 
 	kind := vocabulary.KindManifest(tmPackage,
-		map[string]any{"singular": "issue", "plural": "issues"},
+		map[string]any{"singular": "issue"},
 		map[string]any{
 			"properties": map[string]any{
 				"headline": map[string]any{"type": "string"},
@@ -194,7 +194,7 @@ func TestOneMirrorReachesTwoKindsThroughTwoSlots(t *testing.T) {
 	docs = append(docs, tmTaskDocs()...)
 	docs = append(docs,
 		vocabulary.KindManifest(tmHomePackage,
-			map[string]any{"singular": "note", "plural": "notes"},
+			map[string]any{"singular": "note"},
 			map[string]any{"properties": map[string]any{
 				"summary": map[string]any{"type": "string"},
 			}}),
@@ -237,7 +237,7 @@ func TestTheMappingPinsAnUnpinnedSubjectSlot(t *testing.T) {
 	docs := append(tmProviderDocs(), tmTaskDocs()...)
 	docs = append(docs,
 		vocabulary.KindManifest(tmHomePackage,
-			map[string]any{"singular": "note", "plural": "notes"},
+			map[string]any{"singular": "note"},
 			map[string]any{"properties": map[string]any{
 				"summary": map[string]any{"type": "string"},
 			}}),
@@ -281,7 +281,7 @@ func TestSubjectHopRefusesTwoAdmittedMappings(t *testing.T) {
 	_, ds := newDataset(t)
 
 	mirror := vocabulary.KindManifest(tmPackage,
-		map[string]any{"singular": "issue", "plural": "issues"},
+		map[string]any{"singular": "issue"},
 		map[string]any{
 			"properties": map[string]any{
 				"headline": map[string]any{"type": "string"},
@@ -304,13 +304,13 @@ func TestSubjectHopRefusesTwoAdmittedMappings(t *testing.T) {
 			},
 		},
 		vocabulary.KindManifest(tmHomePackage,
-			map[string]any{"singular": "task", "plural": "tasks"},
+			map[string]any{"singular": "task"},
 			map[string]any{
 				"traits":     []any{"titled"},
 				"properties": map[string]any{"name": map[string]any{"type": "string"}},
 			}),
 		vocabulary.KindManifest(tmHomePackage,
-			map[string]any{"singular": "note", "plural": "notes"},
+			map[string]any{"singular": "note"},
 			map[string]any{
 				"traits":     []any{"titled"},
 				"properties": map[string]any{"name": map[string]any{"type": "string"}},
@@ -318,7 +318,7 @@ func TestSubjectHopRefusesTwoAdmittedMappings(t *testing.T) {
 		// The bookmark points at "something titled", which both mapping
 		// targets are.
 		vocabulary.KindManifest(tmHomePackage,
-			map[string]any{"singular": "bookmark", "plural": "bookmarks"},
+			map[string]any{"singular": "bookmark"},
 			map[string]any{"properties": map[string]any{
 				"about": map[string]any{"type": "reference", "trait": "titled", "mustExist": true},
 			}}),
@@ -370,7 +370,7 @@ func TestDroppingAMappedSourceKindIsRefusedAtEveryDoor(t *testing.T) {
 			"installs":    []any{tmPackage + "/leftover"},
 		}),
 		vocabulary.KindManifest(tmPackage,
-			map[string]any{"singular": "leftover", "plural": "leftovers"},
+			map[string]any{"singular": "leftover"},
 			map[string]any{"properties": map[string]any{
 				"name": map[string]any{"type": "string"},
 			}}),
@@ -408,7 +408,7 @@ func TestDroppingAMappedSourceKindIsRefusedAtEveryDoor(t *testing.T) {
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(plainPackage, 1),
 		vocabulary.KindManifest(plainPackage,
-			map[string]any{"singular": "row", "plural": "rows"},
+			map[string]any{"singular": "row"},
 			map[string]any{"properties": map[string]any{
 				"headline": map[string]any{"type": "string"},
 				"task":     map[string]any{"type": "reference", "mustExist": true, "subject": true},

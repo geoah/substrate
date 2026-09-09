@@ -618,24 +618,24 @@ func TestKindsTable(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	out, _ := h.mustRun("kinds")
-	want := "NAME                  AUTHORITY                                PACKAGE     PLURAL                 VERSION   SOURCE\n" +
-		"syncrun               google.connectors.substrate.reamde.dev   google      syncruns               1         installed\n" +
-		"book                  library.substrate.reamde.dev             library     books                  1         builtin\n" +
-		"bookseries            library.substrate.reamde.dev             library     bookseries             1         builtin\n" +
-		"movie                 library.substrate.reamde.dev             library     movies                 1         builtin\n" +
-		"podcast               library.substrate.reamde.dev             library     podcasts               1         builtin\n" +
-		"tvseries              library.substrate.reamde.dev             library     tvseries               1         builtin\n" +
-		"calendarevent         samples.substrate.reamde.dev             calendar    calendarevents         1         builtin\n" +
-		"calendareventseries   samples.substrate.reamde.dev             calendar    calendareventseries    1         builtin\n" +
-		"conversationmessage   samples.substrate.reamde.dev             messaging   conversationmessages   1         builtin\n" +
-		"organization          samples.substrate.reamde.dev             people      organizations          1         builtin\n" +
-		"person                samples.substrate.reamde.dev             people      people                 1         builtin\n" +
-		"task                  samples.substrate.reamde.dev             tasks       tasks                  1         builtin\n" +
-		"syncrun               slack.connectors.substrate.reamde.dev    slack       syncruns               1         installed\n" +
-		"kind                  substrate.reamde.dev                     core        kinds                  1         builtin\n" +
-		"recordmerge           substrate.reamde.dev                     core        recordmerges           1         builtin\n" +
-		"recordsplit           substrate.reamde.dev                     core        recordsplits           1         builtin\n" +
-		"token                 substrate.reamde.dev                     core        tokens                 1         builtin\n"
+	want := "NAME                  AUTHORITY                                PACKAGE     VERSION   SOURCE\n" +
+		"syncrun               google.connectors.substrate.reamde.dev   google      1         installed\n" +
+		"book                  library.substrate.reamde.dev             library     1         builtin\n" +
+		"bookseries            library.substrate.reamde.dev             library     1         builtin\n" +
+		"movie                 library.substrate.reamde.dev             library     1         builtin\n" +
+		"podcast               library.substrate.reamde.dev             library     1         builtin\n" +
+		"tvseries              library.substrate.reamde.dev             library     1         builtin\n" +
+		"calendarevent         samples.substrate.reamde.dev             calendar    1         builtin\n" +
+		"calendareventseries   samples.substrate.reamde.dev             calendar    1         builtin\n" +
+		"conversationmessage   samples.substrate.reamde.dev             messaging   1         builtin\n" +
+		"organization          samples.substrate.reamde.dev             people      1         builtin\n" +
+		"person                samples.substrate.reamde.dev             people      1         builtin\n" +
+		"task                  samples.substrate.reamde.dev             tasks       1         builtin\n" +
+		"syncrun               slack.connectors.substrate.reamde.dev    slack       1         installed\n" +
+		"kind                  substrate.reamde.dev                     core        1         builtin\n" +
+		"recordmerge           substrate.reamde.dev                     core        1         builtin\n" +
+		"recordsplit           substrate.reamde.dev                     core        1         builtin\n" +
+		"token                 substrate.reamde.dev                     core        1         builtin\n"
 	if out != want {
 		t.Fatalf("kinds table:\ngot:\n%s\nwant:\n%s", out, want)
 	}
@@ -645,7 +645,7 @@ func TestGetListTable(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
-	out, _ := h.mustRun("get", "tasks")
+	out, _ := h.mustRun("get", "task")
 	want := "ID   TITLE                      STATE            UPDATED\n" +
 		"t9   Send rack layout to Alex   lifecycle=open   2h\n"
 	if out != want {
@@ -666,8 +666,8 @@ func TestGetByFormerIDNotesTheCanonicalIDOnStderr(t *testing.T) {
 			seedTask(h)
 			h.fake.mergeInto("t8", "t9")
 
-			byFormer, stderr := h.mustRun("get", "tasks", "t8", "-o", output)
-			byCanonical, quiet := h.mustRun("get", "tasks", "t9", "-o", output)
+			byFormer, stderr := h.mustRun("get", "task", "t8", "-o", output)
+			byCanonical, quiet := h.mustRun("get", "task", "t9", "-o", output)
 
 			if want := "resolved via former id; canonical: t9\n"; stderr != want {
 				t.Fatalf("stderr = %q, want %q", stderr, want)
@@ -688,7 +688,7 @@ func TestGetWideTable(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
-	out, _ := h.mustRun("get", "tasks", "-o", "wide")
+	out, _ := h.mustRun("get", "task", "-o", "wide")
 	if !strings.Contains(out, "ID") || !strings.Contains(out, "TYPE") || !strings.Contains(out, "VERSION") {
 		t.Fatalf("wide table missing columns:\n%s", out)
 	}
@@ -697,17 +697,17 @@ func TestGetWideTable(t *testing.T) {
 	}
 }
 
-// A qualified plural is resolved syntactically: addressing the collection costs
-// no round trip, and a format with nothing to look up makes exactly one
-// request.
-func TestGetQualifiedPluralResolvesWithoutTheRegistry(t *testing.T) {
+// A qualified kind reference is resolved syntactically: addressing the
+// collection costs no round trip, and a format with nothing to look up makes
+// exactly one request.
+func TestGetQualifiedRefResolvesWithoutTheRegistry(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
 	h.mustRun("get", "samples.substrate.reamde.dev/tasks/task", "-o", "yaml")
 	for _, req := range h.fake.requests {
 		if strings.Contains(req, "/substrate.reamde.dev/core/kind") {
-			t.Fatalf("qualified plural should not hit the type registry: %v", h.fake.requests)
+			t.Fatalf("a qualified reference should not hit the type registry: %v", h.fake.requests)
 		}
 	}
 }
@@ -722,7 +722,7 @@ func TestGetTableAsksTheRegistryOnlyForTheStateColumn(t *testing.T) {
 	seedTask(h)
 	out, _ := h.mustRun("get", "samples.substrate.reamde.dev/tasks/task")
 	if !strings.Contains(out, "lifecycle=open") {
-		t.Fatalf("qualified plural lost the STATE column:\n%s", out)
+		t.Fatalf("a qualified reference lost the STATE column:\n%s", out)
 	}
 	if h.fake.requests[0] != "GET /api/v1/samples.substrate.reamde.dev/tasks/task" {
 		t.Fatalf("the collection read must come first: %v", h.fake.requests)
@@ -752,24 +752,21 @@ func TestStateColumnComesFromTheDeclaration(t *testing.T) {
 	}
 }
 
-// A bare plural that exactly one package declares still resolves without a
+// A bare kind name that exactly one package declares still resolves without a
 // package: splitting the vocabulary namespaced the names, it did not make
 // every command spell a package out. The fake serves only the tasks
-// collection, so
-// most of these reads 404; what is under test is the collection the CLI
-// addressed, not what came back.
-func TestGetBarePluralResolvesWhenUniqueAcrossGroups(t *testing.T) {
+// collection, so most of these reads 404; what is under test is the collection
+// the CLI addressed, not what came back.
+func TestGetBareNameResolvesWhenUniqueAcrossPackages(t *testing.T) {
 	cases := []struct{ arg, path string }{
-		{"people", "/api/v1/samples.substrate.reamde.dev/people/person"},
-		{"calendarevents", "/api/v1/samples.substrate.reamde.dev/calendar/calendarevent"},
-		{"conversationmessages", "/api/v1/samples.substrate.reamde.dev/messaging/conversationmessage"},
-		{"books", "/api/v1/library.substrate.reamde.dev/library/book"},
-		{"movies", "/api/v1/library.substrate.reamde.dev/library/movie"},
-		{"podcasts", "/api/v1/library.substrate.reamde.dev/library/podcast"},
-		{"bookseries", "/api/v1/library.substrate.reamde.dev/library/bookseries"},
-		// The singular resolves too, so `get person` is not a usage error.
 		{"person", "/api/v1/samples.substrate.reamde.dev/people/person"},
+		{"calendarevent", "/api/v1/samples.substrate.reamde.dev/calendar/calendarevent"},
+		{"conversationmessage", "/api/v1/samples.substrate.reamde.dev/messaging/conversationmessage"},
 		{"book", "/api/v1/library.substrate.reamde.dev/library/book"},
+		{"movie", "/api/v1/library.substrate.reamde.dev/library/movie"},
+		{"podcast", "/api/v1/library.substrate.reamde.dev/library/podcast"},
+		{"bookseries", "/api/v1/library.substrate.reamde.dev/library/bookseries"},
+		{"tvseries", "/api/v1/library.substrate.reamde.dev/library/tvseries"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.arg, func(t *testing.T) {
@@ -787,34 +784,13 @@ func TestGetBarePluralResolvesWhenUniqueAcrossGroups(t *testing.T) {
 	}
 }
 
-// `tvseries` is its own plural — there is nothing to pluralize and nothing to
-// strip, so the bare argument, the qualified one and the type name are all the
-// same string and must all address the same collection. A resolver that
-// appended an "s" or assumed plural != name would only be caught here.
-func TestGetPluralEqualToSingular(t *testing.T) {
-	for _, arg := range []string{"tvseries", "library.substrate.reamde.dev/library/tvseries"} {
-		t.Run(arg, func(t *testing.T) {
-			h := newHarness(t)
-			h.writeConfig()
-			_, _, _ = h.run("get", arg)
-			want := "GET /api/v1/library.substrate.reamde.dev/library/tvseries"
-			for _, req := range h.fake.requests {
-				if req == want {
-					return
-				}
-			}
-			t.Errorf("get %s made %v, want one of them to be %q", arg, h.fake.requests, want)
-		})
-	}
-}
-
 // Every connector installs a type named exactly `syncrun` in its own package,
-// so `syncruns` is ambiguous the moment a second connector is registered: the
-// one plural in a real repository that can never resolve bare.
-func TestGetAmbiguousPluralErrors(t *testing.T) {
+// so `syncrun` is ambiguous the moment a second connector is registered: the
+// one name in a real repository that can never resolve bare.
+func TestGetAmbiguousNameErrors(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
-	_, _, err := h.run("get", "syncruns")
+	_, _, err := h.run("get", "syncrun")
 	if err == nil {
 		t.Fatal("expected an ambiguity error")
 	}
@@ -863,15 +839,15 @@ func TestTypeRegistryIsReadWhole(t *testing.T) {
 	extra := make([]map[string]any, 0, 520)
 	for i := range 520 {
 		name := fmt.Sprintf("padtype%03d", i)
-		extra = append(extra, installed(name, "pad.bundles.substrate.reamde.dev/pad", name+"s"))
+		extra = append(extra, installed(name, "pad.bundles.substrate.reamde.dev/pad"))
 	}
 	h.fake.extraTypes = extra
 
-	// `books` sits at the oldest end of the registry. The fake serves no
+	// `book` sits at the oldest end of the registry. The fake serves no
 	// library collection, so the read itself 404s — the assertion is that it
 	// RESOLVED and addressed that collection at all.
-	if _, _, err := h.run("get", "books"); err != nil && strings.Contains(err.Error(), "no type with plural") {
-		t.Fatalf("`get books` lost shipped vocabulary past the first page: %v", err)
+	if _, _, err := h.run("get", "book"); err != nil && strings.Contains(err.Error(), "no kind named") {
+		t.Fatalf("`get book` lost shipped vocabulary past the first page: %v", err)
 	}
 	var sawBooks bool
 	pages := 0
@@ -882,20 +858,20 @@ func TestTypeRegistryIsReadWhole(t *testing.T) {
 		}
 	}
 	if !sawBooks {
-		t.Fatalf("`get books` did not reach the library collection: %v", h.fake.requests)
+		t.Fatalf("`get book` did not reach the library collection: %v", h.fake.requests)
 	}
 	if pages < 2 {
 		t.Fatalf("the registry was read in %d request(s); a %d-row registry pages", pages, len(extra)+len(fakeRegistry))
 	}
 
-	// An ambiguous plural must still REPORT its ambiguity rather than lose one
+	// An ambiguous name must still REPORT its ambiguity rather than lose one
 	// of its candidates past the page boundary and silently pick the other.
 	h2 := newHarness(t)
 	h2.writeConfig()
 	h2.fake.extraTypes = extra
-	_, _, err := h2.run("get", "syncruns")
+	_, _, err := h2.run("get", "syncrun")
 	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
-		t.Fatalf("`get syncruns` past the first page: err = %v, want an ambiguity", err)
+		t.Fatalf("`get syncrun` past the first page: err = %v, want an ambiguity", err)
 	}
 
 	// And `types` lists every row, not a silently truncated 50.
@@ -908,7 +884,7 @@ func TestTypeRegistryIsReadWhole(t *testing.T) {
 	}
 }
 
-func TestGetUnknownPluralErrors(t *testing.T) {
+func TestGetUnknownKindErrors(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	_, _, err := h.run("get", "widgets")
@@ -921,7 +897,7 @@ func TestGetSingleYAMLRoundTripsThroughApply(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
-	out, _ := h.mustRun("get", "tasks", "t9")
+	out, _ := h.mustRun("get", "task", "t9")
 
 	var d document
 	if err := yaml.Unmarshal([]byte(out), &d); err != nil {
@@ -982,7 +958,7 @@ func TestGetJSON(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
-	out, _ := h.mustRun("get", "tasks", "t9", "-o", "json")
+	out, _ := h.mustRun("get", "task", "t9", "-o", "json")
 	var d document
 	if err := json.Unmarshal([]byte(out), &d); err != nil {
 		t.Fatalf("get -o json is not parseable: %v\n%s", err, out)
@@ -1001,7 +977,7 @@ func TestGetListJSONIsAnArrayOfManifests(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
-	out, _ := h.mustRun("get", "tasks", "-o", "json")
+	out, _ := h.mustRun("get", "task", "-o", "json")
 	var docs []document
 	if err := json.Unmarshal([]byte(out), &docs); err != nil {
 		t.Fatalf("get list -o json is not an array: %v\n%s", err, out)
@@ -1017,7 +993,7 @@ func TestGetListJSONIsAnArrayOfManifests(t *testing.T) {
 func TestGetKindsYAML(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
-	out, _ := h.mustRun("get", "kinds", "-o", "yaml")
+	out, _ := h.mustRun("get", "kind", "-o", "yaml")
 	first, _, _ := strings.Cut(out, "\n---\n")
 	var d document
 	if err := yaml.Unmarshal([]byte(first), &d); err != nil {
@@ -1042,7 +1018,7 @@ func TestGetRendersFormerIDsInStatus(t *testing.T) {
 	h.writeConfig()
 	seedTask(h)
 	h.fake.mergeInto("t8", "t9")
-	out, _ := h.mustRun("get", "tasks", "t9")
+	out, _ := h.mustRun("get", "task", "t9")
 
 	var d document
 	if err := yaml.Unmarshal([]byte(out), &d); err != nil {
@@ -1074,7 +1050,7 @@ func TestGetRendersManagedPropertiesInStatus(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
-	out, _ := h.mustRun("get", "tasks", "t9")
+	out, _ := h.mustRun("get", "task", "t9")
 
 	var d document
 	if err := yaml.Unmarshal([]byte(out), &d); err != nil {
@@ -1126,7 +1102,7 @@ func TestGetRendersManagedPropertiesInStatus(t *testing.T) {
 		t.Fatalf("put input properties = %+v", in.Properties)
 	}
 
-	list, _ := h.mustRun("get", "tasks", "-o", "yaml")
+	list, _ := h.mustRun("get", "task", "-o", "yaml")
 	if strings.Contains(list, "manager:") || strings.Contains(list, "alternatives:") {
 		t.Fatalf("a list document must not carry status.properties:\n%s", list)
 	}
@@ -1168,7 +1144,7 @@ func TestPatchStateWritesTheProperty(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
-	out, _ := h.mustRun("patch", "tasks", "t9", "--state", "lifecycle=done")
+	out, _ := h.mustRun("patch", "task", "t9", "--state", "lifecycle=done")
 
 	var in substrate.PatchInput
 	if err := json.Unmarshal(mustRaw(h.fake.lastBody), &in); err != nil {
@@ -1184,7 +1160,7 @@ func TestPatchStateWritesTheProperty(t *testing.T) {
 		t.Fatalf("patch output missing the resulting state:\n%s", out)
 	}
 	// …and an ordinary property written the same way is not reported as a state.
-	out, _ = h.mustRun("patch", "tasks", "t9", "--prop", "detail=cold aisle")
+	out, _ = h.mustRun("patch", "task", "t9", "--prop", "detail=cold aisle")
 	if strings.Contains(out, "detail") {
 		t.Fatalf("the states line names declared states only:\n%s", out)
 	}
@@ -1383,7 +1359,7 @@ metadata:
 data:
   authority: widgets.example.substrate.reamde.dev
   package: widgets
-  names: {singular: widget, plural: widgets}
+  names: {singular: widget}
   properties:
     name: {type: string}
 ---
@@ -1433,7 +1409,7 @@ func TestDelete(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
-	out, _ := h.mustRun("delete", "tasks", "t9")
+	out, _ := h.mustRun("delete", "task", "t9")
 	if !strings.Contains(out, "samples.substrate.reamde.dev/tasks/task/t9 deleted") {
 		t.Fatalf("delete output:\n%s", out)
 	}
@@ -1872,7 +1848,7 @@ func TestEditDiffAndRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("SUBSTRATE_EDITOR", editor)
-	out, _ := h.mustRun("edit", "tasks", "t9")
+	out, _ := h.mustRun("edit", "task", "t9")
 	if !strings.Contains(out, "-     title: Send rack layout to Alex") ||
 		!strings.Contains(out, "+     title: Edited by hand") {
 		t.Fatalf("edit diff:\n%s", out)
@@ -1890,7 +1866,7 @@ func TestEditNoChangeIsNoWrite(t *testing.T) {
 	h.writeConfig()
 	seedTask(h)
 	t.Setenv("SUBSTRATE_EDITOR", "true")
-	out, _ := h.mustRun("edit", "tasks", "t9")
+	out, _ := h.mustRun("edit", "task", "t9")
 	if !strings.Contains(out, "unchanged (edit canceled)") {
 		t.Fatalf("edit output:\n%s", out)
 	}

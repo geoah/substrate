@@ -24,7 +24,7 @@ metadata: {id: t.example.com/t/thing}
 data:
   authority: t.example.com
   package: t
-  names: {singular: thing, plural: things}
+  names: {singular: thing}
   properties:
     label: {type: string}
 `
@@ -34,7 +34,7 @@ metadata: {id: t.example.com/t/other}
 data:
   authority: t.example.com
   package: t
-  names: {singular: other, plural: others}
+  names: {singular: other}
 `
 
 func writeTree(t *testing.T, files map[string]string) *tree {
@@ -116,7 +116,7 @@ metadata: {id: t.example.com/t/fresh}
 data:
   authority: t.example.com
   package: t
-  names: {singular: fresh, plural: freshes}
+  names: {singular: fresh}
 `
 
 func TestAddedDeclarationNeedsNoBump(t *testing.T) {
@@ -252,7 +252,7 @@ metadata: {id: t.example.com/t/thing}
 data:
   authority: t.example.com
   package: t
-  names: {singular: thing, plural: things}
+  names: {singular: thing}
   properties:
     label: {type: string}
     level: {type: enum, values: [high]}

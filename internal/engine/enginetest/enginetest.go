@@ -198,7 +198,7 @@ func InstallShelfVersion(ctx context.Context, ds substrate.Dataset, version int6
 			},
 		},
 		vocabulary.KindManifest(ShelfPackage,
-			map[string]any{"singular": "book", "plural": "books"},
+			map[string]any{"singular": "book"},
 			map[string]any{
 				"properties": map[string]any{
 					"subtitle":    map[string]any{"type": "string"},
@@ -210,7 +210,7 @@ func InstallShelfVersion(ctx context.Context, ds substrate.Dataset, version int6
 				},
 			}),
 		vocabulary.KindManifest(ShelfPackage,
-			map[string]any{"singular": "bookedition", "plural": "bookeditions"},
+			map[string]any{"singular": "bookedition"},
 			map[string]any{
 				"properties": map[string]any{
 					"format":   map[string]any{"type": "enum", "values": []any{"print", "ebook", "audiobook"}},
@@ -438,7 +438,7 @@ func AccountManifest() Manifest {
 				"data": map[string]any{
 					"authority":       AccountAuthority,
 					"package":         "testacct",
-					"names":           map[string]any{"singular": "account", "plural": "accounts"},
+					"names":           map[string]any{"singular": "account"},
 					"displayTemplate": "{label}",
 					"traits":          []any{"accountconfig"},
 					"properties": map[string]any{

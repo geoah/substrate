@@ -154,10 +154,10 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
 
 - **Casing is one rule.** Every declared name and system key is camelCase
   with initialisms uppercase (`displayTemplate`, `oneOf`, `ifVersion`,
-  `onEnter`, `endsAt`). Snake spellings are errors, not aliases. Kind
-  singulars and plurals and a package name stay `[a-z][a-z0-9]*`; an authority
-  stays a dotted lowercase DNS name; an actor is a bare word or a prefixed
-  machine hand, never a DNS name; enum and state values stay lowercase words.
+  `onEnter`, `endsAt`). Snake spellings are errors, not aliases. A kind name
+  and a package name stay `[a-z][a-z0-9]*`; an authority stays a dotted
+  lowercase DNS name; an actor is a bare word or a prefixed machine hand,
+  never a DNS name; enum and state values stay lowercase words.
 - **Reserved property names.** `title`, `at`, `endsAt` and `dueAt` are the
   four properties every record already carries, each with its own storage
   column; redeclaring one is a load error naming the built-in. The temporal

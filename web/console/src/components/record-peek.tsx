@@ -89,7 +89,7 @@ export function RecordPeek({
           open={open}
           authority={authority}
           pkg={pkg}
-          plural={targetKind.name}
+          name={targetKind.name}
           id={target.id}
           targetKind={targetKind}
           fallbackTitle={label}
@@ -104,7 +104,7 @@ function PeekBody({
   open,
   authority,
   pkg,
-  plural,
+  name,
   id,
   targetKind,
   fallbackTitle,
@@ -113,14 +113,14 @@ function PeekBody({
   open: boolean
   authority: string
   pkg: string
-  plural: string
+  name: string
   id: string
   targetKind: KindInfo
   fallbackTitle: string
   path: string
 }) {
   const record = useQuery({
-    ...recordQueryOptions(authority, pkg, plural, id),
+    ...recordQueryOptions(authority, pkg, name, id),
     enabled: open,
   })
 

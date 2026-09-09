@@ -47,10 +47,6 @@ const KINDS: KindInfo[] = [
     authority: "samples.substrate.reamde.dev",
     package: "people",
     version: 1,
-    // A REAL plural, deliberately unequal to the name: the page must route by
-    // the kind name (decision 0033), and a fixture where the two match would
-    // let a `.plural` read pass.
-    plural: "people",
     source: "installed",
     description: "",
     definition: {
@@ -67,7 +63,6 @@ const KINDS: KindInfo[] = [
     authority: "samples.substrate.reamde.dev",
     package: "tasks",
     version: 1,
-    plural: "tasks",
     source: "installed",
     description: "",
     definition: { properties: { summary: { type: "string" } } },
@@ -141,8 +136,8 @@ describe("MergeRequestDetailPage", () => {
         return jsonResponse(200, { kinds: KINDS })
       }
       if (path === MR_PATH) return jsonResponse(200, mergeRequest)
-      // The two sides answer ONLY at the kind-name segment, so a page that
-      // routed by the plural would render neither.
+      // The two sides answer ONLY at the kind-name segment, the collection
+      // segment the page routes by (decision 0033).
       if (path === "/api/v1/samples.substrate.reamde.dev/people/person/p1") {
         return jsonResponse(200, winner)
       }

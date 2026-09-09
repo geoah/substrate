@@ -26,7 +26,7 @@ metadata:
 data:
   authority: fn.example.com
   package: fn
-  names: {singular: widget, plural: widgets}
+  names: {singular: widget}
   properties:
     name: {type: string}
 ---
@@ -36,7 +36,7 @@ metadata:
 data:
   authority: fn.example.com
   package: fn
-  names: {singular: gadget, plural: gadgets}
+  names: {singular: gadget}
 ---
 kind: substrate.reamde.dev/core/function
 metadata:

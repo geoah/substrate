@@ -42,7 +42,7 @@ func noteManifest(version int, linkProps bool) enginetest.Manifest {
 				"data": map[string]any{
 					"authority":       noteAuthority,
 					"package":         "refnotes",
-					"names":           map[string]any{"singular": "note", "plural": "notes"},
+					"names":           map[string]any{"singular": "note"},
 					"displayTemplate": "{label}",
 					"properties": map[string]any{
 						"label":    map[string]any{"type": "string"},

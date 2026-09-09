@@ -85,7 +85,7 @@ func TestShadowedCollectionsAreReachable(t *testing.T) {
 	ds := env.svc.datasets[fakeRepository]
 	ds.types = append(ds.types, substrate.KindInfo{
 		Identity: "substrate.reamde.dev/core/recordmerge", Name: "recordmerge",
-		Authority: coreAuthorityName, Package: "core", Version: 1, Plural: "recordmerges", Source: "builtin",
+		Authority: coreAuthorityName, Package: "core", Version: 1, Source: "builtin",
 	})
 	rec := env.do(t, http.MethodGet, "/api/v1/"+corePackage+"/recordmerge", tok, nil)
 	wantStatus(t, rec, http.StatusOK)

@@ -37,10 +37,10 @@ func pathDocs() []map[string]any {
 	return []map[string]any{
 		vocabulary.PackageManifest(pathPackage, 0),
 		vocabulary.KindManifest(pathPackage,
-			map[string]any{"singular": "target", "plural": "targets"},
+			map[string]any{"singular": "target"},
 			map[string]any{}),
 		vocabulary.KindManifest(pathPackage,
-			map[string]any{"singular": "holder", "plural": "holders"},
+			map[string]any{"singular": "holder"},
 			map[string]any{"properties": map[string]any{
 				"pinned":   map[string]any{"type": "reference", "kind": pathPackage + "/target"},
 				"local":    map[string]any{"type": "reference", "kind": "target"},

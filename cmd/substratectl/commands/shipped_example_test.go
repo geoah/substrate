@@ -19,7 +19,7 @@ func TestShippedURLHarvesterExampleApplies(t *testing.T) {
 	// `trigger` type in the registry to route it. bundle.yaml is all core
 	// schema kinds and rides the batch verb without a registry lookup.
 	h.fake.extraTypes = []map[string]any{
-		typeRecord("trigger", "substrate.reamde.dev/core", "triggers", "builtin", nil),
+		typeRecord("trigger", "substrate.reamde.dev/core", "builtin", nil),
 	}
 
 	out, errOut, err := h.run("apply",

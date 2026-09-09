@@ -277,6 +277,13 @@ if grep_urls -rnE "substratectl (get|patch|delete|link|unlink) (${shipped_plural
   flag "a CLI example addresses a collection by its plural; the argument is the kind's name (decision 0033)"
 fi
 
+# A kind's `names` block declares its name and nothing else. The loader
+# refuses `names.plural` (decision 0033), so an example still shipping it is a
+# document the repository will not take.
+if grep_urls -rnE 'names\.plural|(^|, )[[:space:]]*plural: [a-z]'; then
+  flag "a documented declaration ships \`names.plural\`; a kind declares its name alone (decision 0033)"
+fi
+
 # The non-record endpoints hang off the version root, never off a package.
 repo_endpoints='vocabulary/apply|oauth/start|oauth/callback|catalog|changes|embeddings|recordmerges|recordsplits'
 if grep_urls -rnE "(/api/v[0-9]+|…)/substrate\.reamde\.dev/core/(${repo_endpoints})\b"; then
