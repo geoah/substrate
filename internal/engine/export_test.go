@@ -83,23 +83,6 @@ func MigratedDSN(t *testing.T) string {
 	return migratedTemplate.Clone(t)
 }
 
-// WithTestImportFault runs fn at each durable step of a boot import
-// (repodir.go importEntries): after every batch of changelog rows commits,
-// with ImportAfterBatch, and after the first fold pass commits, with
-// ImportAfterFirstFold. An error from fn ends the boot there, which is the
-// shape of a process dying at that step. A batch above zero replaces
-// rebuildBatch for the import's row batches, so a short history spans
-// several.
-func WithTestImportFault(batch int, fn func(stage string) error) Option {
-	return func(o *options) { o.importFault, o.importBatch = fn, batch }
-}
-
-// The import stages WithTestImportFault reports.
-const (
-	ImportAfterBatch     = importAfterBatch
-	ImportAfterFirstFold = importAfterFirstFold
-)
-
 // WithTestCommitFault runs fn at each durable step of a write's commit
 // (dataset.go commitAndMirror), five stages. Around the manifest write that
 // precedes the first append in a new changelog dialect (repodir.go
@@ -135,18 +118,6 @@ const (
 func WithTestSnapshotFault(fn func(stage, dir string) error) Option {
 	return func(o *options) { o.snapshotFault = fn }
 }
-
-// WithTestTOTPClock is the clock the TOTP verifier reads (auth.go totpVerify
-// callers), and nothing else: the record timestamps stay on the wall clock.
-// A test that has spent one window's codes advances it one step instead of
-// sleeping through a real 30 second window. OpenForTest installs it, so every
-// service a test opens verifies against the same clock ClockOf(t) reads.
-func WithTestTOTPClock(now func() time.Time) Option {
-	return func(o *options) { o.now = now }
-}
-
-// TOTPPeriod is the verifier's step, for a test that moves its clock one.
-const TOTPPeriod = totpPeriod
 
 // CoreKindsDir is the shipped core package, relative to this package: what
 // every test open loads unless it brings a patched tree.
@@ -255,13 +226,6 @@ func (s stagedThenFails) Stage(repoDir string, rec changelogfile.SealedRecord) e
 		return err
 	}
 	return ErrSealedStoreBroken
-}
-
-// ImportIncomplete reports whether the repository's import-progress marker
-// is set, read through the tamperer's seat.
-func ImportIncomplete(ctx context.Context, db dbx) (bool, error) {
-	_, incomplete, err := importIncomplete(ctx, db)
-	return incomplete, err
 }
 
 // WithCatchUpBatch sets how many changelog rows one page of the boot's

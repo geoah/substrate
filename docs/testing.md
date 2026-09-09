@@ -59,6 +59,22 @@ SUBSTRATE_TEST_DATABASE_URL="$(mise run dev:dsn)" mise run test:db
 
 `internal/testenv` layers a whole substrate on top of that: a real engine, a
 real HTTP listener and a real token, which is what the end-to-end cases drive.
+It also holds the release acceptance drill, `TestReleaseAcceptanceDrill`
+(`acceptance_db_test.go`): one repository holding every state a restore has
+to bring back (changed kinds, a cleared label, an attachment, sealed values,
+conflicting mapping offers, a merge and a split, a purge, settled, pending and
+parked deliveries, a parked webhook, a paged drain parked mid-cursor), stopped,
+snapshotted with `repository snapshot`, rewrapped under another credential
+key with the recovery key and imported into an empty schema, then compared
+record by record and resumed. Its later stages kill the import at batch
+boundaries, take a second repository through the oldest directory format the
+reader accepts, and resume a saved change cursor against the replaced
+history. It runs with the rest of `test:db` and takes about ten seconds; the
+fs blob store is the only one it exercises.
+
+```bash
+go test -count=1 -run TestReleaseAcceptanceDrill -v ./internal/testenv/
+```
 
 **Run the engine suite on its own when you are working in it.** `go test ./...`
 across the whole tree starves the container, and the cases then fail with
