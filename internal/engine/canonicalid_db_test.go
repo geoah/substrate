@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -256,6 +257,13 @@ func TestFormerIDNamesItsWinner(t *testing.T) {
 		t.Fatal("a writer-supplied former id must be a conflict")
 	} else {
 		wantErr(t, err, substrate.ErrConflict, "former id as a writer key")
+		// The message names the id, its canonical id and the remedy, so a
+		// writer can act on it without a second read.
+		for _, want := range []string{"g-c2", "g-c1", "write to the canonical id"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("conflict message %q does not name %q", err, want)
+			}
+		}
 	}
 
 	// And the id still names the loser's tombstone, which the merge finalizer
