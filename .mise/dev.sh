@@ -88,6 +88,10 @@ db_state() {
 db_up() {
 	case "$(db_state)" in
 	running) ;;
+	# A dev database is thrown away with `dev:wipe`, so it flushes nothing:
+	# fsync and the WAL flush cost most of a write and protect a power loss
+	# nobody here needs to survive. The flags ride the container's command,
+	# so an existing container keeps its old ones until it is recreated.
 	absent)
 		docker run -d \
 			--name "$CONTAINER" \
@@ -95,7 +99,8 @@ db_up() {
 			-e POSTGRES_DB=substrate \
 			-v "${VOLUME}:/var/lib/postgresql/data" \
 			-p "127.0.0.1:${DB_PORT}:5432" \
-			"$PG_IMAGE" >/dev/null
+			"$PG_IMAGE" \
+			-c fsync=off -c synchronous_commit=off -c full_page_writes=off >/dev/null
 		echo "dev: postgres started (${CONTAINER} on 127.0.0.1:${DB_PORT})"
 		;;
 	*)

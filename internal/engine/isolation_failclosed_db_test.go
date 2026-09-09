@@ -105,6 +105,7 @@ func TestOpenFailsClosedWithoutSafeRoles(t *testing.T) {
 		postgres.WithDatabase("substrate"),
 		postgres.WithUsername("postgres"),
 		postgres.WithPassword("postgres"),
+		testdb.DurabilityOff(),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").
 				WithOccurrence(2).WithStartupTimeout(120*time.Second)))
