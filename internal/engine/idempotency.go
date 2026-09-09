@@ -37,6 +37,20 @@ import (
 // The reservation carries a lease (idempotencyLease): a process that dies
 // between reserving and settling leaves the row in flight, and the next
 // attempt after the lease takes it over instead of waiting for the sweep.
+//
+// An agent call is the exception to the takeover and to the release. Its
+// tool effects commit one transaction at a time before the thread settles,
+// so once a thread exists the effect may already have run, and a second
+// thread under the key would run it again. The reservation therefore records
+// the thread id in the transaction that creates the thread (attachThread),
+// and from then on it is neither taken over nor released: a repeat, after a
+// failure or a dead process alike, is ErrConflict naming the thread, and the
+// client reads the thread and runs again under a new key.
+//
+// The lookup runs BEFORE the callable is resolved, admitted or its input
+// validated: the key is scoped by the operation and the callable's name and
+// the fingerprint covers the raw input, so a stored outcome answers even
+// after the callable was disabled, uninstalled or redeclared.
 
 // idempotentOp names the operation a key binds to. A key is the client's, so
 // the same string under two operations is two keys.
@@ -96,6 +110,9 @@ type idempotencyRow struct {
 	// outcome is nil while in flight, and nil after settlement when the
 	// answer exceeded idempotencyOutcomeCap.
 	outcome []byte
+	// thread is the agent thread an in-flight agent call opened; empty for
+	// every other row.
+	thread string
 }
 
 // replay decodes the stored outcome into out, or says why the row cannot
@@ -106,6 +123,10 @@ func (r *idempotencyRow) replay(key, fingerprint string, out any) error {
 		return fmt.Errorf("%w: Idempotency-Key %q was already used with a different request", substrate.ErrConflict, key)
 	}
 	if !r.settled {
+		if r.thread != "" {
+			return fmt.Errorf("%w: Idempotency-Key %q: the first request opened agent thread %s and has not settled; read the thread, and run again under a new key",
+				substrate.ErrConflict, key, r.thread)
+		}
 		return fmt.Errorf("%w: Idempotency-Key %q: the first request is still running; retry after it answers", substrate.ErrConflict, key)
 	}
 	if r.outcome == nil {
@@ -118,7 +139,7 @@ func (r *idempotencyRow) replay(key, fingerprint string, out any) error {
 	return nil
 }
 
-const idempotencySelectSQL = `SELECT fingerprint, settled_at IS NOT NULL, outcome
+const idempotencySelectSQL = `SELECT fingerprint, settled_at IS NOT NULL, outcome, coalesce(thread, '')
 	FROM idempotency_keys WHERE operation = $1 AND key = $2`
 
 // idempotencyUpsertSQL settles a key: it lands the settled row for a
@@ -135,7 +156,7 @@ type rowQuerier interface {
 
 func idempotencyRead(ctx context.Context, q rowQuerier, op idempotentOp, key string) (*idempotencyRow, error) {
 	var r idempotencyRow
-	err := q.QueryRowContext(ctx, idempotencySelectSQL, string(op), key).Scan(&r.fingerprint, &r.settled, &r.outcome)
+	err := q.QueryRowContext(ctx, idempotencySelectSQL, string(op), key).Scan(&r.fingerprint, &r.settled, &r.outcome, &r.thread)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -272,9 +293,10 @@ func (ds *dataset) beginIdempotent(ctx context.Context, op idempotentOp, input a
 	return nil, nil, fmt.Errorf("%w: Idempotency-Key %q: another request holds it; retry", substrate.ErrConflict, key)
 }
 
-// reserve inserts the in-flight row, or takes over one whose lease lapsed.
-// It runs outside every transaction and holds no lock afterwards, which keeps
-// it clear of the global lock order (rows.go changelogLockKey).
+// reserve inserts the in-flight row, or takes over one whose lease lapsed
+// without opening a thread. It runs outside every transaction and holds no
+// lock afterwards, which keeps it clear of the global lock order (rows.go
+// changelogLockKey).
 func (c *idempotentCall) reserve(ctx context.Context) (bool, error) {
 	now := nowUTC()
 	var one bool
@@ -284,7 +306,8 @@ func (c *idempotentCall) reserve(ctx context.Context) (bool, error) {
 		ON CONFLICT (repository, operation, key) DO UPDATE
 		   SET fingerprint = EXCLUDED.fingerprint, created_at = EXCLUDED.created_at,
 		       expires_at = EXCLUDED.expires_at
-		 WHERE idempotency_keys.settled_at IS NULL AND idempotency_keys.expires_at < $4
+		 WHERE idempotency_keys.settled_at IS NULL AND idempotency_keys.thread IS NULL
+		   AND idempotency_keys.expires_at < $4
 		RETURNING true`,
 		string(c.op), c.key, c.fingerprint, now, now.Add(idempotencyLease)).Scan(&one)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -294,6 +317,23 @@ func (c *idempotentCall) reserve(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("reserve idempotency key: %w", err)
 	}
 	return true, nil
+}
+
+// attachThread records the agent thread the reservation's attempt opened, in
+// the transaction that creates the thread. From here the row answers for the
+// full retention window whether or not the attempt settles: a repeat is
+// pointed at the thread (replay), and neither reserve nor release touches it.
+func (c *idempotentCall) attachThread(t *txn, threadID string) error {
+	if c == nil {
+		return nil
+	}
+	if _, err := t.exec(`
+		UPDATE idempotency_keys SET thread = $3, expires_at = $4
+		 WHERE operation = $1 AND key = $2 AND settled_at IS NULL`,
+		string(c.op), c.key, threadID, t.now.Add(idempotencyRetention)); err != nil {
+		return fmt.Errorf("attach the thread to the idempotency key: %w", err)
+	}
+	return nil
 }
 
 // settleIn completes the reservation inside the transaction that applies the
@@ -326,7 +366,8 @@ func (c *idempotentCall) settle(ctx context.Context, outcome any) error {
 }
 
 // release drops the reservation after a failed attempt, so the retry runs
-// the operation again. It runs on a context that survives the request's
+// the operation again. A reservation that opened a thread stays: its effects
+// may have committed. It runs on a context that survives the request's
 // cancellation, because a client that timed out is the common cause.
 func (c *idempotentCall) release(ctx context.Context) {
 	if c == nil {
@@ -334,7 +375,7 @@ func (c *idempotentCall) release(ctx context.Context) {
 	}
 	if _, err := c.ds.db.ExecContext(context.WithoutCancel(ctx), `
 		DELETE FROM idempotency_keys
-		 WHERE operation = $1 AND key = $2 AND settled_at IS NULL`, string(c.op), c.key); err != nil {
+		 WHERE operation = $1 AND key = $2 AND settled_at IS NULL AND thread IS NULL`, string(c.op), c.key); err != nil {
 		c.ds.svc.log.Warn("substrate: releasing an idempotency key after a failed attempt",
 			"repository", c.ds.Repository().Name, "operation", string(c.op), "error", err)
 	}

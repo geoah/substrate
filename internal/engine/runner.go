@@ -395,6 +395,44 @@ func (b *callBackend) Call(ctx context.Context, ident string, args any) (any, er
 // returns the output (checked against `output:` when declared) and how many
 // effects applied.
 func (ds *dataset) CallFunction(ctx context.Context, name string, args any) (any, int, error) {
+	// The request's Idempotency-Key first, before the function is resolved,
+	// admitted or its input checked (idempotency.go): a stored outcome
+	// answers a repeat even after the function was disabled, uninstalled or
+	// its input narrowed, because the first attempt ran. A refused attempt
+	// releases the reservation below, so it burns no key.
+	call, stored, err := ds.beginIdempotent(ctx, idemFunctionCall, functionCallInput{Name: name, Args: args})
+	if err != nil {
+		return nil, 0, err
+	}
+	if stored != nil {
+		var replayed substrate.FunctionCalled
+		if err := json.Unmarshal(stored, &replayed); err != nil {
+			return nil, 0, fmt.Errorf("decode the stored outcome: %w", err)
+		}
+		return replayed.Output, replayed.Effects, nil
+	}
+	output, effects, err := ds.callFunctionOnce(ctx, name, args, call)
+	if err != nil {
+		// Nothing committed: the reservation goes so the retry runs again.
+		call.release(ctx)
+		return nil, 0, err
+	}
+	return output, effects, nil
+}
+
+// functionCallInput is what a function call's idempotency fingerprint covers:
+// the callable addressed and the arguments as decoded.
+type functionCallInput struct {
+	Name string `json:"name"`
+	Args any    `json:"args"`
+}
+
+// callFunctionOnce is CallFunction's one attempt: admission, the body, the
+// output check and the effects, with the idempotency reservation settled in
+// the transaction that applies the effects (or in one of its own when there
+// are none), so the stored outcome commits with the effect and never without
+// it.
+func (ds *dataset) callFunctionOnce(ctx context.Context, name string, args any, call *idempotentCall) (any, int, error) {
 	fn, err := ds.registry().ResolveFunction(name)
 	if err != nil {
 		return nil, 0, fmt.Errorf("%w: %w", substrate.ErrNotFound, err)
@@ -413,41 +451,6 @@ func (ds *dataset) CallFunction(ctx context.Context, name string, args any) (any
 			return nil, 0, fmt.Errorf("%w: input: %w", substrate.ErrValidation, err)
 		}
 	}
-	// The request's Idempotency-Key, reserved after admission and input
-	// validation so a refused request burns no key (idempotency.go). A
-	// stored outcome answers here without running the body.
-	call, stored, err := ds.beginIdempotent(ctx, idemFunctionCall, functionCallInput{Name: name, Args: args})
-	if err != nil {
-		return nil, 0, err
-	}
-	if stored != nil {
-		var replayed substrate.FunctionCalled
-		if err := json.Unmarshal(stored, &replayed); err != nil {
-			return nil, 0, fmt.Errorf("decode the stored outcome: %w", err)
-		}
-		return replayed.Output, replayed.Effects, nil
-	}
-	output, effects, err := ds.callFunctionOnce(ctx, fn, args, call)
-	if err != nil {
-		// Nothing committed: the reservation goes so the retry runs again.
-		call.release(ctx)
-		return nil, 0, err
-	}
-	return output, effects, nil
-}
-
-// functionCallInput is what a function call's idempotency fingerprint covers:
-// the callable addressed and the arguments as decoded.
-type functionCallInput struct {
-	Name string `json:"name"`
-	Args any    `json:"args"`
-}
-
-// callFunctionOnce is CallFunction's one attempt: the body, the output check
-// and the effects, with the idempotency reservation settled in the
-// transaction that applies the effects (or in one of its own when there are
-// none), so the stored outcome commits with the effect and never without it.
-func (ds *dataset) callFunctionOnce(ctx context.Context, fn *vocabulary.Function, args any, call *idempotentCall) (any, int, error) {
 	if fn.IsHost() {
 		output, effects, err := ds.callHostFunction(ctx, fn, args)
 		if err != nil {

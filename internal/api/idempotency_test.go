@@ -7,6 +7,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 
@@ -124,13 +125,27 @@ func TestIdempotencyKeyReachesTheFiveOperations(t *testing.T) {
 	}
 }
 
-// The engine's refusal of a reused key travels as the closed error set's
-// `409 conflict`, the code the docs promise.
-func TestIdempotencyKeyConflictIs409(t *testing.T) {
+// A repeat under one key answers the first record with its `201`, and the
+// same key with another body is the closed error set's `409 conflict` whose
+// message names the key, the code the docs promise.
+func TestIdempotencyKeyRepeatReplaysAndMismatchIs409(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
-	env.svc.datasets["geoah"].errs["Put"] = substrate.ErrConflict
-	rec := env.do(t, http.MethodPost, "/api/v1/samples.substrate.reamde.dev/people/person", tok,
-		map[string]any{"properties": map[string]any{"name": "Ada"}}, idempotencyHeader, "reused")
+	path := "/api/v1/samples.substrate.reamde.dev/people/person"
+	body := map[string]any{"properties": map[string]any{"name": "Ada"}}
+
+	first := env.do(t, http.MethodPost, path, tok, body, idempotencyHeader, "reused")
+	wantStatus(t, first, http.StatusCreated)
+	repeat := env.do(t, http.MethodPost, path, tok, body, idempotencyHeader, "reused")
+	wantStatus(t, repeat, http.StatusCreated)
+	if a, b := decodeJSON[substrate.Record](t, first), decodeJSON[substrate.Record](t, repeat); a.ID != b.ID {
+		t.Fatalf("the repeat created %s, want the first attempt's %s", b.ID, a.ID)
+	}
+
+	rec := env.do(t, http.MethodPost, path, tok,
+		map[string]any{"properties": map[string]any{"name": "Grace"}}, idempotencyHeader, "reused")
 	wantErrorCode(t, rec, http.StatusConflict, codeConflict)
+	if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, `Idempotency-Key "reused"`) {
+		t.Fatalf("the conflict does not name the key: %q", msg)
+	}
 }

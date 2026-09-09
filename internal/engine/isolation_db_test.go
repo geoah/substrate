@@ -27,7 +27,7 @@ var repositoryScopedTables = []string{
 	"property_offers", "changelog", "embeddings", "embed_queue", "trigger_cursors",
 	"trigger_failures", "trigger_schedule", "sealed", "oauth_flows",
 	"paged_cursors", "blobs", "vocabulary_dialect", "vocabulary_promotions",
-	"changelog_dialect", "import_progress",
+	"changelog_dialect", "import_progress", "idempotency_keys",
 }
 
 // pair is two registered users, each with one task written at the SAME

@@ -348,6 +348,10 @@ type fakeDataset struct {
 	// lastIdempotencyKey is the Idempotency-Key the last Put, Merge or Split
 	// carried on its context; empty when the request sent none.
 	lastIdempotencyKey string
+	// lastPutRecord is what the last Put answered, and keys is the fake's
+	// key store: per Idempotency-Key, the body's fingerprint and that record.
+	lastPutRecord      *substrate.Record
+	keys               map[string]fakeKey
 	lastSearch         substrate.SearchInput
 	lastVocabularyDocs []map[string]any
 	// lastConfirm is the consent the confirmed apply verb received; plan is
@@ -382,8 +386,16 @@ func newFakeDataset(name string) *fakeDataset {
 		signals:    make(chan int64, 8),
 		errs:       map[string]error{},
 		traits:     map[string][]string{},
+		keys:       map[string]fakeKey{},
 	}
 	return ds
+}
+
+// fakeKey is one stored Idempotency-Key: the fingerprint of the body that
+// set it and the record it answers with.
+type fakeKey struct {
+	fingerprint string
+	record      *substrate.Record
 }
 
 func testTypes() []substrate.KindInfo {
@@ -632,6 +644,19 @@ func (d *fakeDataset) Put(ctx context.Context, actor substrate.Actor, in substra
 	d.lastPut, d.lastActor = in, actor
 	d.lastPrincipal = substrate.PrincipalFrom(ctx)
 	d.lastIdempotencyKey = substrate.IdempotencyKeyFrom(ctx)
+	// The key store's contract, in miniature (engine idempotency.go): the
+	// same key with the same body answers the first record, with another
+	// body it is the conflict whose message names the key.
+	if key := d.lastIdempotencyKey; key != "" {
+		fingerprint, _ := json.Marshal(in)
+		if held, ok := d.keys[key]; ok {
+			if held.fingerprint != string(fingerprint) {
+				return nil, fmt.Errorf("%w: Idempotency-Key %q was already used with a different request", substrate.ErrConflict, key)
+			}
+			return held.record, nil
+		}
+		defer func() { d.keys[key] = fakeKey{fingerprint: string(fingerprint), record: d.lastPutRecord} }()
+	}
 	id := in.ID
 	if id == "" {
 		id = fmt.Sprintf("ent%d", len(d.records)+1)
@@ -659,6 +684,7 @@ func (d *fakeDataset) Put(ctx context.Context, actor substrate.Actor, in substra
 		e.Labels = map[string]any{}
 	}
 	d.put(e)
+	d.lastPutRecord = e
 	return e, nil
 }
 

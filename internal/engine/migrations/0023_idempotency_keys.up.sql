@@ -13,6 +13,10 @@
 -- different input is refused. `outcome` is the stored answer, NULL while the
 -- request is in flight and NULL after settlement when the answer exceeded the
 -- retention cap (the effect still ran once, and the retry says so).
+-- `thread` is the agent thread an agent call opened, written in the
+-- transaction that creates the thread: the loop's tool effects commit before
+-- the thread settles, so a reservation that names a thread is never taken
+-- over or released, and a retry is pointed at the thread instead.
 --
 -- The table is Postgres-only bookkeeping and never enters the changelog: a
 -- repository restored from its directory alone forgets every key, which
@@ -25,6 +29,7 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
     key         text        NOT NULL,
     fingerprint text        NOT NULL,
     outcome     jsonb,
+    thread      text,
     created_at  timestamptz NOT NULL DEFAULT now(),
     settled_at  timestamptz,
     expires_at  timestamptz NOT NULL,

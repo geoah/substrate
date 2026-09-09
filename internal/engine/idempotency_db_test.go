@@ -9,6 +9,7 @@ package engine_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -99,14 +100,20 @@ func TestIdempotencyKeyMergeAndSplitReplay(t *testing.T) {
 	a := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"name": "a"}})
 	b := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"name": "b"}})
 
-	merge := substrate.MergeInput{Kind: taskType, Winner: a.ID, Loser: b.ID}
+	c := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"name": "c"}})
+	d := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"name": "d"}})
+
+	// A CONDITIONED merge: without the key its retry fails conflict, because
+	// the first attempt moved both versions; the key answers the stored
+	// merge record instead.
+	merge := substrate.MergeInput{Kind: taskType, Winner: a.ID, Loser: b.ID, WinnerVersion: ptr(a.Version), LoserVersion: ptr(b.Version)}
 	m1, err := ds.Merge(keyed("merge-1"), owner, merge)
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
-	// The repeat answers the stored merge record, and the fingerprint is what
-	// binds the key: the same key naming other participants is refused, which
-	// the engine's own verified-no-op replay of an identical merge would not.
+	if _, err := ds.Merge(context.Background(), owner, merge); !errors.Is(err, substrate.ErrConflict) {
+		t.Fatalf("keyless retry of a conditioned merge: %v, want ErrConflict", err)
+	}
 	m2, err := ds.Merge(keyed("merge-1"), owner, merge)
 	if err != nil {
 		t.Fatalf("merge repeat: %v", err)
@@ -114,13 +121,22 @@ func TestIdempotencyKeyMergeAndSplitReplay(t *testing.T) {
 	if m2.ID != m1.ID || m2.Kind != m1.Kind {
 		t.Fatalf("merge repeat answered %+v, want %+v", m2, m1)
 	}
-	_, err = ds.Merge(keyed("merge-1"), owner, substrate.MergeInput{Kind: taskType, Winner: b.ID, Loser: a.ID})
+	// The same key on a merge of two live records the engine would happily
+	// perform: the fingerprint refuses it, and c and d stay unmerged.
+	_, err = ds.Merge(keyed("merge-1"), owner, substrate.MergeInput{Kind: taskType, Winner: c.ID, Loser: d.ID})
 	wantErr(t, err, substrate.ErrConflict, "same merge key, other participants")
+	if got := mustGet(t, ds, taskType, d.ID); got.DeletedAt != nil {
+		t.Fatalf("a refused repeat merged %s away", d.ID)
+	}
 
-	split := substrate.SplitInput{Merge: m1.ID}
+	// The same for a conditioned split.
+	split := substrate.SplitInput{Merge: m1.ID, IfVersion: ptr(m1.Version)}
 	s1, err := ds.Split(keyed("split-1"), owner, split)
 	if err != nil {
 		t.Fatalf("split: %v", err)
+	}
+	if _, err := ds.Split(context.Background(), owner, split); !errors.Is(err, substrate.ErrConflict) {
+		t.Fatalf("keyless retry of a conditioned split: %v, want ErrConflict", err)
 	}
 	s2, err := ds.Split(keyed("split-1"), owner, split)
 	if err != nil {
@@ -129,9 +145,46 @@ func TestIdempotencyKeyMergeAndSplitReplay(t *testing.T) {
 	if s2.ID != s1.ID {
 		t.Fatalf("split repeat answered %s, want %s", s2.ID, s1.ID)
 	}
-	// Both records are live again, and exactly once.
+	m3, err := ds.Merge(context.Background(), owner, substrate.MergeInput{Kind: taskType, Winner: c.ID, Loser: d.ID})
+	if err != nil {
+		t.Fatalf("merge c and d: %v", err)
+	}
+	_, err = ds.Split(keyed("split-1"), owner, substrate.SplitInput{Merge: m3.ID})
+	wantErr(t, err, substrate.ErrConflict, "same split key, another merge")
+	if rec, err := ds.Get(context.Background(), "substrate.reamde.dev/core/recordmerge", m3.ID); err != nil || rec.DeletedAt != nil {
+		t.Fatalf("a refused repeat split %s: %+v %v", m3.ID, rec, err)
+	}
+	// Both records of the keyed split are live again, exactly once.
 	if got := mustGet(t, ds, taskType, b.ID); got.DeletedAt != nil {
 		t.Fatalf("the loser is still tombstoned after the split: %+v", got)
+	}
+}
+
+// The key is looked up before admission: a repeat answers the stored outcome
+// after the function's bundle was disabled, where a fresh call is refused.
+func TestIdempotencyKeyAnswersAfterTheFunctionIsDisabled(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, ops := installMailBundle(t)
+	fops := ds.(fnOps)
+	args := map[string]any{}
+
+	out, effects, err := fops.CallFunction(keyed("echo-1"), mbEchoFn, args)
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if err := ops.DisableBundle(ctx, mbPackage); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	if _, _, err := fops.CallFunction(ctx, mbEchoFn, args); err == nil || !strings.Contains(err.Error(), "disabled") {
+		t.Fatalf("a fresh call to the disabled function: %v", err)
+	}
+	again, againEffects, err := fops.CallFunction(keyed("echo-1"), mbEchoFn, args)
+	if err != nil {
+		t.Fatalf("repeat after the disable: %v", err)
+	}
+	if againEffects != effects || fmt.Sprint(again) != fmt.Sprint(out) {
+		t.Fatalf("repeat answered %v/%d, want the stored %v/%d", again, againEffects, out, effects)
 	}
 }
 

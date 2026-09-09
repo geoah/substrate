@@ -86,6 +86,11 @@ type agentInvocation struct {
 	// are one commit. The loop's tool writes before it are their own
 	// transactions and stay at-least-once (decision 0064).
 	complete func(t *txn, res *substrate.AgentResult) error
+	// onThread, when set, runs inside the transaction that creates the
+	// thread row: a direct call's idempotency reservation binds itself to
+	// the thread there (idempotency.go attachThread), before any tool effect
+	// can commit.
+	onThread func(t *txn, threadID string) error
 	// causedBy stamps every row the loop writes; 0 on direct invocations.
 	causedBy int64
 	// causalDepth rides into function-tool sub-calls so the changelog chain
@@ -620,7 +625,16 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 			props[threadRelPare] = l.in.parent
 		}
 		in := substrate.PutInput{Kind: typeThread, ID: id, Properties: props}
-		if err := l.putRow(ctx, l.actor, in); err != nil {
+		if err := l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
+			t.causedBy = l.in.causedBy
+			if _, err := t.put(in); err != nil {
+				return err
+			}
+			if l.in.onThread != nil {
+				return l.in.onThread(t, id)
+			}
+			return nil
+		}); err != nil {
 			return nil, err
 		}
 	}

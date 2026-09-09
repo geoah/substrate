@@ -8,6 +8,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,31 +56,115 @@ func TestIdempotencyKeyAgentCallRunsOnce(t *testing.T) {
 	}
 }
 
-// A failed attempt stores nothing: the reservation goes with the failure, and
-// the retry under the same key runs the operation again.
+// An attempt that fails before it opens a thread stores nothing: the
+// reservation goes with the failure, and the retry under the same key runs.
 func TestIdempotencyKeyFailedAttemptReleasesTheKey(t *testing.T) {
 	t.Parallel()
 	ds, fake := openAgentDataset(t)
 	ctx := substrate.WithIdempotencyKey(context.Background(), "agent-fail")
 
-	fake.script("pure", fakeTurn{status: 500})
-	if _, err := ds.CallAgent(ctx, crewPackage+"/purist", "try"); err == nil {
-		t.Fatal("a failed model turn answered a result")
+	if _, err := ds.CallAgent(ctx, crewPackage+"/nobody", "try"); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("an unknown agent: %v, want ErrNotFound", err)
 	}
 	if n := keyRows(t, ds, "agent-fail"); n != 0 {
-		t.Fatalf("a failed attempt left %d key rows", n)
+		t.Fatalf("a refused attempt left %d key rows", n)
 	}
 
 	fake.script("pure", fakeTurn{content: "second time lucky"})
 	res, err := ds.CallAgent(ctx, crewPackage+"/purist", "try")
 	if err != nil {
-		t.Fatalf("retry after a failure: %v", err)
+		t.Fatalf("retry under the released key: %v", err)
 	}
 	if res.Reply != "second time lucky" {
 		t.Fatalf("the retry did not run: %+v", res)
 	}
 	if n := keyRows(t, ds, "agent-fail"); n != 1 {
 		t.Fatalf("the settled retry left %d key rows, want 1", n)
+	}
+}
+
+// Once a thread exists the key is bound to it: a tool effect committed before
+// the run failed (or the process died) must not run again, so a retry, even
+// after the reservation's lease lapsed, opens no second thread and is pointed
+// at the first.
+func TestIdempotencyKeyBindsToTheThreadItOpened(t *testing.T) {
+	t.Parallel()
+	ds, fake := openAgentDataset(t)
+	ctx := context.Background()
+	kctx := substrate.WithIdempotencyKey(ctx, "agent-thread")
+	const task = "samples.substrate.reamde.dev/tasks/task"
+
+	// Turn one commits a tool effect; turn two dies, so the run never settles.
+	fake.script("root",
+		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"idem-annot"}`}}},
+		fakeTurn{status: 500},
+	)
+	if _, err := ds.CallAgent(kctx, crewPackage+"/classifier", "annotate it"); err == nil {
+		t.Fatal("a run whose model died answered a result")
+	}
+	first, err := ds.Get(ctx, task, "idem-annot")
+	if err != nil {
+		t.Fatalf("the tool effect did not commit: %v", err)
+	}
+	if n := keyRows(t, ds, "agent-thread"); n != 1 {
+		t.Fatalf("the reservation of a run that opened a thread was released: %d rows", n)
+	}
+
+	// The lease lapses, as it would under a dead process. A fresh turn is
+	// scripted so a second run WOULD succeed if one were allowed.
+	if _, err := ds.db.ExecContext(ctx, `UPDATE idempotency_keys SET expires_at = $1 WHERE key = $2`,
+		nowUTC().Add(-time.Minute), "agent-thread"); err != nil {
+		t.Fatalf("lapse the lease: %v", err)
+	}
+	fake.script("root", fakeTurn{calls: []fakeCall{{"annotate", `{"id":"idem-annot"}`}}}, fakeTurn{content: "done"})
+	_, err = ds.CallAgent(kctx, crewPackage+"/classifier", "annotate it")
+	if !errors.Is(err, substrate.ErrConflict) || !strings.Contains(err.Error(), "opened agent thread") {
+		t.Fatalf("retry under a thread-bound key: %v, want ErrConflict naming the thread", err)
+	}
+	if n := threadCountOf(t, ds, crewPackage+"/classifier"); n != 1 {
+		t.Fatalf("one key opened %d threads", n)
+	}
+	if again := mustGetInternal(t, ds, task, "idem-annot"); again.Version != first.Version {
+		t.Fatalf("the tool effect ran again: version %d -> %d", first.Version, again.Version)
+	}
+	if n := len(fake.requestsOf("root")); n != 2 {
+		t.Fatalf("the retry reached the model: %d requests, want the first run's 2", n)
+	}
+	if n := keyRows(t, ds, "agent-thread"); n != 1 {
+		t.Fatalf("the thread-bound reservation was taken over or released: %d rows", n)
+	}
+}
+
+// The key is looked up before admission: a repeat answers the stored outcome
+// after the agent's bundle was disabled, where a fresh call is refused.
+func TestIdempotencyKeyAnswersAfterTheAgentIsDisabled(t *testing.T) {
+	t.Parallel()
+	ds, fake := openAgentDataset(t)
+	installGreeterBundle(t, ds, fake)
+	const (
+		abPackage = "abundle.bundles.substrate.reamde.dev/abundle"
+		greeter   = abPackage + "/greeter"
+	)
+	ctx := context.Background()
+	kctx := substrate.WithIdempotencyKey(ctx, "greet-1")
+
+	fake.script("greet", fakeTurn{content: "hello"})
+	first, err := ds.CallAgent(kctx, greeter, "hi")
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if err := ds.DisableBundle(ctx, abPackage); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	if _, err := ds.CallAgent(ctx, greeter, "hi"); !errors.Is(err, substrate.ErrGuard) {
+		t.Fatalf("a fresh call to the disabled agent: %v, want ErrGuard", err)
+	}
+	again, err := ds.CallAgent(kctx, greeter, "hi")
+	if err != nil {
+		t.Fatalf("repeat after the disable: %v", err)
+	}
+	if again.Thread != first.Thread || again.Reply != "hello" {
+		t.Fatalf("repeat answered %+v, want the stored %+v", again, first)
 	}
 }
 
