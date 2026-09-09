@@ -274,7 +274,7 @@ func TestTriggerEffectResolvesFormerID(t *testing.T) {
 	t.Parallel()
 	// The deterministic-id parking trap: after the owner merges the task a
 	// function addresses by composed id, the function's next put must land on
-	// the canonical winner — not park on "ids are never reused".
+	// the canonical winner, not be refused as a former id.
 	ds, ops := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("mirror", map[string]any{"kinds": []any{widgetType}})},
 		pyFn("mirror", map[string]any{}, []any{taskType}, mirrorSource))
