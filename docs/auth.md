@@ -162,13 +162,18 @@ material itself never enters the changelog or a record's data**, so the changelo
 old sealed rows in the same transaction rather than piling old hashes into an
 append-only sequence.
 
-Three endpoints change auth material, and all three obey one rule:
+Four endpoints change auth material, and all four obey one rule:
 
 ```http
 POST /password        # {"username","password","totpCode","newPassword"} → 200
 POST /totp/enroll     # {"username","password","totpCode"} → 200 {totpSecret, otpauthUri}
 POST /totp            # + {"newTotpSecret","newTotpCode"} → 200
+POST /recovery/enroll # {"username","password","totpCode","recoveryPublicKey"?} → 201 {recoveryKey?, recoveryPublicKey}
 ```
+
+`POST /recovery/enroll` claims the repository's one recovery slot for a
+repository that predates recovery keys, so it takes both factors like a
+credential change.
 
 **The password-factor rule: changing auth material requires the current
 password and TOTP code, presented directly in the request body. A bearer token

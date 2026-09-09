@@ -210,8 +210,13 @@ next. A finished segment never changes. One transaction is one append, and
 the segment rotates only after an append, so a transaction never crosses a
 segment, however large it is.
 
-Postgres commits first and the file follows, so a crash can leave the file one
-transaction behind; the server appends the missing entries at the next boot
+The transaction's lines are written and fsynced before Postgres commits,
+without the newline that ends the last line; that newline lands after the
+commit and is the commit marker. A sealed value is staged as a pending file
+the same way and renamed into place after. A directory that cannot be written
+before the commit rolls the write back with `503 unavailable`
+(`ErrDirectoryWrite`); a crash between the commit and the newline leaves an
+unfinished transaction the next boot completes from Postgres
 ([what happens at boot](operations.md#what-happens-at-boot)). A reader accepts
 exactly one kind of damage, an unfinished transaction at the end of the active
 segment: a torn last line and, before it, the complete lines that carry the
@@ -223,7 +228,7 @@ that does not follow the previous one, a line whose `txn` does not fit the
 transaction around it, or a finished segment whose sidecar does not match is
 a named refusal, not a repair.
 
-Segments written by v0.46.0 and v0.47.0 carry no `txn`. A reader takes such a
+Segments written by v0.46.0 through v0.51.0 carry no `txn`. A reader takes such a
 line as a transaction of its own, which is how those releases read it: no
 boundary was recorded, and none is reconstructed. A directory this release
 writes does not open under either of them

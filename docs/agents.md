@@ -133,7 +133,7 @@ A `tools:` entry names its **function**: `{function: <function reference>}`,
 optionally with `name` and `description` to recolor this agent's prompt context
 without changing the function's canonical card. Tool names are unique per agent.
 The key is `function` because an entry admits nothing else: a sub-agent is named
-on `agents:`, and `callable` is the [trigger](functions.md#triggers)'s word,
+on `subagents:`, and `callable` is the [trigger](functions.md#triggers)'s word,
 where a target really may be a function or an agent.
 
 That is the only arm, because the five built-ins are
