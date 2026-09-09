@@ -205,20 +205,9 @@ arguments as the verbatim wire string).
 
 ### OpenAPI stance
 
-*Superseded by #131: the OpenAPI document is hand-written, not generated.*
-`internal/api/openapi.yaml` describes the REST surface, the server serves it
-at `GET /.well-known/substrate/openapi.json`, and `internal/api/openapi_test.go`
-holds it to the router and the wire structs. Record properties are
-`additionalProperties: true`, because a kind's shape lives in its declaration
-and no per-kind schema is exported. The stance below is what this plan
-proposed before that landed.
-
-Keep the domain dialect as the authored and stored form; add a generated
-one-way OpenAPI 3.1 export (API description of core resources; the function
-tool cards are OpenAPI-shaped by construction once IO is flat). Steal from
-K8s structural schemas: every level typed, no recursion, closed objects, no
-preserve-unknown-fields (our `json` is the honest escape hatch). Skip:
-`$ref`, composition keywords, `additionalProperties`, `nullable`, `default`.
+This plan's generated OpenAPI export was never built. #131 landed a
+hand-written document instead, and it was removed before v1 because no client
+read it.
 
 ### Engine behavior fixes (round 3, unchanged)
 
