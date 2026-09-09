@@ -411,6 +411,9 @@ func (ds *dataset) CallFunction(ctx context.Context, name string, args any) (any
 		}
 		return replayed.Output, replayed.Effects, nil
 	}
+	// The key is consumed: the body, its host calls and its effects run
+	// without one.
+	ctx = substrate.WithoutIdempotencyKey(ctx)
 	output, effects, err := ds.callFunctionOnce(ctx, name, args, call)
 	if err != nil {
 		// Nothing committed: the reservation goes so the retry runs again.
@@ -450,6 +453,10 @@ func (ds *dataset) callFunctionOnce(ctx context.Context, name string, args any, 
 		if err := vocabulary.CheckValue(fn.Input, args); err != nil {
 			return nil, 0, fmt.Errorf("%w: input: %w", substrate.ErrValidation, err)
 		}
+	}
+	// The reservation's lease follows the body's own clock from here.
+	if err := call.extendLease(ctx, nowUTC().Add(fn.Timeout)); err != nil {
+		return nil, 0, err
 	}
 	if fn.IsHost() {
 		output, effects, err := ds.callHostFunction(ctx, fn, args)

@@ -237,7 +237,7 @@ The contract, per key:
 - The effect runs once. A repeat under the same key with the same body
   answers the first attempt's outcome, the same body and the same status code
   (`201` for the record a create made, `200` for a call), for 24 hours after
-  the first attempt settled. The key is looked up before the callable is
+  the first attempt settled; after that the key is free again. The key is looked up before the callable is
   resolved or admitted, so the repeat answers even after the function or
   agent was disabled, uninstalled or redeclared in between.
 - The key binds to the repository and the operation, never to the token: a
@@ -248,7 +248,9 @@ The contract, per key:
   server does not hold the second request open for a body of unknown length,
   and the client retries after the first answers. A create, merge or split
   runs inside the repository's one write transaction, so its repeat waits for
-  that commit and then answers the stored outcome.
+  that commit and then answers the stored outcome. A running call's claim on
+  its key lasts its own deadline plus a minute; a claim a dead server left
+  behind is cleared when the repository next opens.
 - A failed attempt stores nothing. A `422`, a `500 function_failed` or a
   connection lost before the commit leaves no key behind, and the retry runs
   the operation again.

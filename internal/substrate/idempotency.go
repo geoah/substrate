@@ -32,6 +32,17 @@ func WithIdempotencyKey(ctx context.Context, key string) context.Context {
 	return context.WithValue(ctx, idempotencyKeyCtx{}, key)
 }
 
+// WithoutIdempotencyKey returns ctx with no idempotency key. An entry point
+// that consumed the key runs its body on this context, so a nested write (an
+// agent's mutate tool, a function's effects) cannot mistake the request's key
+// for its own.
+func WithoutIdempotencyKey(ctx context.Context) context.Context {
+	if IdempotencyKeyFrom(ctx) == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, idempotencyKeyCtx{}, "")
+}
+
 // IdempotencyKeyFrom returns the request's idempotency key, empty when the
 // request carried none.
 func IdempotencyKeyFrom(ctx context.Context) string {

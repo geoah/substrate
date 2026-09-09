@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/geoah/substrate/internal/engine"
@@ -188,82 +187,108 @@ func TestIdempotencyKeyAnswersAfterTheFunctionIsDisabled(t *testing.T) {
 	}
 }
 
-// slowFn sleeps long enough for every concurrent caller to arrive while the
-// first attempt holds the reservation, and names each run with a fresh id so
-// the number of runs is countable.
-func slowFn() map[string]any {
-	return pyFn("slow", map[string]any{
+// gatedFn blocks until the flag widget the test names exists, then writes one
+// task: the barrier that keeps the first attempt in flight while every other
+// attempt under the key arrives, deterministically.
+func gatedFn() map[string]any {
+	return pyFn("gated", map[string]any{
+		"timeout": "PT30S",
 		"arguments": []any{
-			map[string]any{"name": "title", "type": "string", "required": true},
+			map[string]any{"name": "flag", "type": "string", "required": true},
 		},
+		"permissions": map[string]any{"reads": map[string]any{"kinds": []any{widgetType}}},
 	}, []any{taskType}, `
-import time, uuid
+import time
 def main(input, host):
-    time.sleep(2)
-    tid = "slow-" + uuid.uuid4().hex
+    flag = input["args"]["flag"]
+    for _ in range(600):
+        if host.get("widgets.test.dev/widgets/widget", flag):
+            break
+        time.sleep(0.05)
     return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
-                         "id": tid, "properties": {"name": input["args"]["title"]}}],
-            "output": {"id": tid}}
+                         "id": "gated-" + flag, "properties": {"name": flag}}],
+            "output": {"flag": flag}}
 `)
 }
 
 func TestIdempotencyKeyFunctionCallRunsTheBodyOnce(t *testing.T) {
 	t.Parallel()
-	ds, ops := newFnDataset(t, nil, slowFn())
-	args := map[string]any{"title": "concurrent"}
+	ds, ops := newFnDataset(t, nil, gatedFn())
+	args := map[string]any{"flag": "open-the-gate"}
 
+	type answer struct {
+		out any
+		err error
+	}
 	const callers = 4
-	outputs := make([]any, callers)
-	errs := make([]error, callers)
-	var wg sync.WaitGroup
-	for i := range callers {
-		wg.Add(1)
+	answers := make(chan answer, callers)
+	for range callers {
 		go func() {
-			defer wg.Done()
-			outputs[i], _, errs[i] = ops.CallFunction(keyed("call-1"), fnPackage+"/slow", args)
+			out, _, err := ops.CallFunction(keyed("call-1"), fnPackage+"/gated", args)
+			answers <- answer{out, err}
 		}()
 	}
-	wg.Wait()
-	var winner any
-	ok, conflicts := 0, 0
-	for i := range callers {
-		switch {
-		case errs[i] == nil:
-			ok++
-			winner = outputs[i]
-		case errors.Is(errs[i], substrate.ErrConflict):
-			conflicts++
-			if !strings.Contains(errs[i].Error(), "still running") {
-				t.Fatalf("the concurrent refusal does not say the first is in flight: %v", errs[i])
-			}
-		default:
-			t.Fatalf("caller %d: %v", i, errs[i])
+	// Every attempt but the one that holds the reservation is refused while
+	// the body is parked on the gate; only then does the gate open.
+	for i := range callers - 1 {
+		a := <-answers
+		if !errors.Is(a.err, substrate.ErrConflict) || !strings.Contains(a.err.Error(), "still running") {
+			t.Fatalf("attempt %d while the first is in flight: %v, want ErrConflict naming the running request", i, a.err)
 		}
 	}
-	if ok != 1 || conflicts != callers-1 {
-		t.Fatalf("%d callers succeeded and %d were refused; want 1 and %d", ok, conflicts, callers-1)
+	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, ID: "open-the-gate", Properties: map[string]any{"name": "gate"}})
+	winner := <-answers
+	if winner.err != nil {
+		t.Fatalf("the attempt holding the reservation: %v", winner.err)
 	}
-	if rows := actorChanges(t, ds, fnPackage+"/slow"); len(rows) != 1 {
+	if rows := actorChanges(t, ds, fnPackage+"/gated"); len(rows) != 1 {
 		t.Fatalf("the body ran %d times under one key", len(rows))
 	}
 
 	// After the first attempt settled, the repeat answers its outcome and
 	// applies nothing.
-	out, effects, err := ops.CallFunction(keyed("call-1"), fnPackage+"/slow", args)
+	out, effects, err := ops.CallFunction(keyed("call-1"), fnPackage+"/gated", args)
 	if err != nil {
 		t.Fatalf("repeat: %v", err)
 	}
 	if effects != 1 {
 		t.Fatalf("repeat reported %d effects, want the first attempt's 1", effects)
 	}
-	if want, got := winner.(map[string]any)["id"], out.(map[string]any)["id"]; want != got {
+	if want, got := winner.out.(map[string]any)["flag"], out.(map[string]any)["flag"]; want != got {
 		t.Fatalf("repeat answered %v, want %v", got, want)
 	}
-	if rows := actorChanges(t, ds, fnPackage+"/slow"); len(rows) != 1 {
+	if rows := actorChanges(t, ds, fnPackage+"/gated"); len(rows) != 1 {
 		t.Fatalf("the repeat ran the body: %d runs", len(rows))
 	}
-	_, _, err = ops.CallFunction(keyed("call-1"), fnPackage+"/slow", map[string]any{"title": "other"})
+	_, _, err = ops.CallFunction(keyed("call-1"), fnPackage+"/gated", map[string]any{"flag": "other"})
 	wantErr(t, err, substrate.ErrConflict, "same call key, different input")
+}
+
+// The stored outcome is the marshaled bytes, not jsonb: an output carrying a
+// NUL escape, which jsonb refuses, settles and replays like any other.
+func TestIdempotencyKeyStoresAnOutcomeWithANulEscape(t *testing.T) {
+	t.Parallel()
+	nul := pyFn("nul", map[string]any{}, []any{taskType}, `
+def main(input, host):
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
+                         "id": "nul-task", "properties": {"name": "nul"}}],
+            "output": {"s": "a\u0000b"}}
+`)
+	_, ops := newFnDataset(t, nil, nul)
+	first, effects, err := ops.CallFunction(keyed("nul-1"), fnPackage+"/nul", nil)
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if effects != 1 || first.(map[string]any)["s"] != "a\x00b" {
+		t.Fatalf("first answer: %v (%d effects)", first, effects)
+	}
+	again, _, err := ops.CallFunction(keyed("nul-1"), fnPackage+"/nul", nil)
+	if err != nil {
+		t.Fatalf("repeat: %v", err)
+	}
+	if again.(map[string]any)["s"] != "a\x00b" {
+		t.Fatalf("repeat answered %v", again)
+	}
 }
 
 // A key names an attempt in a repository, not a token: the token that carried

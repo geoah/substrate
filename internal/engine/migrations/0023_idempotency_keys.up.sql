@@ -10,25 +10,33 @@
 -- The key binds to the repository and the operation, never to the token that
 -- carried it: no token column, so a retry after logout and login matches.
 -- `fingerprint` is the SHA-256 of the request's input; the same key with a
--- different input is refused. `outcome` is the stored answer, NULL while the
--- request is in flight and NULL after settlement when the answer exceeded the
--- retention cap (the effect still ran once, and the retry says so).
--- `thread` is the agent thread an agent call opened, written in the
--- transaction that creates the thread: the loop's tool effects commit before
--- the thread settles, so a reservation that names a thread is never taken
--- over or released, and a retry is pointed at the thread instead.
+-- different input is refused. `outcome` is the stored answer as the engine
+-- marshaled it, unparsed bytes rather than jsonb: nothing queries inside it,
+-- and jsonb refuses a \u0000 escape, which would fail the settle after the
+-- effects in the same transaction. NULL while the request is in flight and
+-- NULL after settlement when the answer exceeded the retention cap (the
+-- effect still ran once, and the retry says so). `owner` is the attempt that
+-- holds the row, a random token: a stale attempt whose lease lapsed can
+-- neither release nor overwrite a successor's row. `thread` is the agent
+-- thread an agent call opened, written in the transaction that creates the
+-- thread: the loop's tool effects commit before the thread settles, so a
+-- reservation that names a thread is never released, and a retry is pointed
+-- at the thread instead.
 --
 -- The table is Postgres-only bookkeeping and never enters the changelog: a
 -- repository restored from its directory alone forgets every key, which
--- docs/api.md states. `expires_at` is the retention window a GC sweep
--- deletes past (gc.go), and while a row is in flight it is the lease a stale
--- reservation can be taken over after.
+-- docs/api.md states. `expires_at` is the row's life: the retention window
+-- once settled, the lease while in flight. Every read holds a row to it, so a
+-- row past it is dead whether or not the GC sweep (gc.go) has reclaimed the
+-- space, and the next attempt takes it over. A reservation without a thread
+-- is also dead at boot, because one process writes a repository at a time.
 CREATE TABLE IF NOT EXISTS idempotency_keys (
     repository  text        NOT NULL DEFAULT current_setting('substrate.repository'),
     operation   text        NOT NULL,
     key         text        NOT NULL,
     fingerprint text        NOT NULL,
-    outcome     jsonb,
+    outcome     bytea,
+    owner       text        NOT NULL,
     thread      text,
     created_at  timestamptz NOT NULL DEFAULT now(),
     settled_at  timestamptz,

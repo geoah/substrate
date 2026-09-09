@@ -110,11 +110,11 @@ func TestIdempotencyKeyBindsToTheThreadItOpened(t *testing.T) {
 		t.Fatalf("the reservation of a run that opened a thread was released: %d rows", n)
 	}
 
-	// The lease lapses, as it would under a dead process. A fresh turn is
-	// scripted so a second run WOULD succeed if one were allowed.
-	if _, err := ds.db.ExecContext(ctx, `UPDATE idempotency_keys SET expires_at = $1 WHERE key = $2`,
-		nowUTC().Add(-time.Minute), "agent-thread"); err != nil {
-		t.Fatalf("lapse the lease: %v", err)
+	// The next boot clears dead reservations; a thread-bound one is not dead
+	// to it. A fresh turn is scripted so a second run WOULD succeed if one
+	// were allowed.
+	if err := ds.clearDeadReservations(ctx); err != nil {
+		t.Fatalf("boot clear: %v", err)
 	}
 	fake.script("root", fakeTurn{calls: []fakeCall{{"annotate", `{"id":"idem-annot"}`}}}, fakeTurn{content: "done"})
 	_, err = ds.CallAgent(kctx, crewPackage+"/classifier", "annotate it")
@@ -132,6 +132,172 @@ func TestIdempotencyKeyBindsToTheThreadItOpened(t *testing.T) {
 	}
 	if n := keyRows(t, ds, "agent-thread"); n != 1 {
 		t.Fatalf("the thread-bound reservation was taken over or released: %d rows", n)
+	}
+}
+
+// The key is consumed at the entry: the loop's mutate tool creates records
+// on a context without it, so two creates under one agent call are two
+// records and not a create-key collision.
+func TestIdempotencyKeyDoesNotLeakIntoTheAgentsWrites(t *testing.T) {
+	t.Parallel()
+	ds, fake := openAgentDataset(t)
+	ctx := context.Background()
+	kctx := substrate.WithIdempotencyKey(ctx, "editor-1")
+	put := func(id, name string) string {
+		return gqlToolArgs(t, map[string]any{
+			"query": `mutation { put(input: {kind: "crew.test.dev/crew/widget", id: "` + id + `", properties: {name: "` + name + `"}}) { id } }`,
+		})
+	}
+	fake.script("mut",
+		fakeTurn{calls: []fakeCall{{"mutate", put("w-first", "first")}}},
+		fakeTurn{calls: []fakeCall{{"mutate", put("w-second", "second")}}},
+		fakeTurn{content: "made both"},
+	)
+	res, err := ds.CallAgent(kctx, crewPackage+"/editor", "make two widgets")
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if res.Status != threadOK || res.Effects != 2 {
+		t.Fatalf("result: %+v", res)
+	}
+	for _, id := range []string{"w-first", "w-second"} {
+		if _, err := ds.Get(ctx, crewPackage+"/widget", id); err != nil {
+			t.Fatalf("widget %s was not created: %v", id, err)
+		}
+	}
+	for _, m := range threadMessages(t, ds, res.Thread) {
+		if m["role"] == "tool" && m["ok"] != true {
+			t.Fatalf("a mutate failed under the call's key: %v", m["content"])
+		}
+	}
+	if n := keyRows(t, ds, "editor-1"); n != 1 {
+		t.Fatalf("the key landed %d rows, want the agent call's one", n)
+	}
+}
+
+// Every write to a reservation is conditional on the attempt's owner token:
+// an attempt whose lease lapsed can neither drop nor overwrite the successor
+// that took the row over.
+func TestIdempotencyKeyStaleAttemptCannotReleaseOrSettle(t *testing.T) {
+	t.Parallel()
+	ds := openInternalDataset(t)
+	ctx := context.Background()
+	reserve := func(owner string) *idempotentCall {
+		c := &idempotentCall{ds: ds, op: idemFunctionCall, key: "stale", fingerprint: "fp", owner: owner}
+		owned, err := c.reserve(ctx)
+		if err != nil || !owned {
+			t.Fatalf("%s reserve: owned=%v err=%v", owner, owned, err)
+		}
+		return c
+	}
+	ownerOf := func() string {
+		var owner string
+		if err := ds.db.QueryRowContext(ctx, `SELECT owner FROM idempotency_keys WHERE key = 'stale'`).Scan(&owner); err != nil {
+			t.Fatalf("read owner: %v", err)
+		}
+		return owner
+	}
+	a := reserve("attempt-a")
+	// A's lease lapses; B takes the row over.
+	if _, err := ds.db.ExecContext(ctx, `UPDATE idempotency_keys SET expires_at = $1 WHERE key = 'stale'`, nowUTC().Add(-time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	b := reserve("attempt-b")
+	if got := ownerOf(); got != "attempt-b" {
+		t.Fatalf("owner after the takeover: %s", got)
+	}
+
+	// A fails late: its release must not drop B's live reservation, and its
+	// settle must not claim the row.
+	a.release(ctx)
+	if n := keyRows(t, ds, "stale"); n != 1 || ownerOf() != "attempt-b" {
+		t.Fatalf("a stale release touched the successor's row: rows=%d owner=%s", n, ownerOf())
+	}
+	if err := a.settle(ctx, "from a"); !errors.Is(err, substrate.ErrConflict) {
+		t.Fatalf("a stale settle: %v, want ErrConflict", err)
+	}
+	if row, _ := idempotencyRead(ctx, ds.db, idemFunctionCall, "stale", nowUTC()); row == nil || row.settled {
+		t.Fatalf("a stale settle changed the row: %+v", row)
+	}
+	if err := a.extendLease(ctx, nowUTC().Add(time.Hour)); !errors.Is(err, substrate.ErrConflict) {
+		t.Fatalf("a stale lease extension: %v, want ErrConflict", err)
+	}
+
+	// B settles; a stale settle afterwards does not overwrite the outcome.
+	if err := b.settle(ctx, "from b"); err != nil {
+		t.Fatalf("b settle: %v", err)
+	}
+	if err := a.settle(ctx, "from a, later"); !errors.Is(err, substrate.ErrConflict) {
+		t.Fatalf("a stale settle over a settled row: %v, want ErrConflict", err)
+	}
+	row, err := idempotencyRead(ctx, ds.db, idemFunctionCall, "stale", nowUTC())
+	if err != nil || row == nil {
+		t.Fatalf("read after settle: %+v %v", row, err)
+	}
+	var outcome string
+	if err := row.replay("stale", "fp", &outcome); err != nil || outcome != "from b" {
+		t.Fatalf("outcome after a stale settle: %q %v", outcome, err)
+	}
+}
+
+// Retention is enforced by the reads, not the sweep: a settled row past its
+// window is dead, and the next attempt under the key takes it over even
+// before the sweep reclaims it.
+func TestIdempotencyKeyExpiredRowIsDeadBeforeTheSweep(t *testing.T) {
+	t.Parallel()
+	ds := openInternalDataset(t)
+	ctx := context.Background()
+	const task = "samples.substrate.reamde.dev/tasks/task"
+	first, err := ds.Put(substrate.WithIdempotencyKey(ctx, "stale-1"), substrate.ActorAPI,
+		substrate.PutInput{Kind: task, Properties: map[string]any{"name": "first"}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := ds.db.ExecContext(ctx, `UPDATE idempotency_keys SET expires_at = $1 WHERE key = 'stale-1'`, nowUTC().Add(-time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	// Live, this body would be a fingerprint conflict; dead, the key is free.
+	second, err := ds.Put(substrate.WithIdempotencyKey(ctx, "stale-1"), substrate.ActorAPI,
+		substrate.PutInput{Kind: task, Properties: map[string]any{"name": "second"}})
+	if err != nil {
+		t.Fatalf("create under an expired key: %v", err)
+	}
+	if second.ID == first.ID {
+		t.Fatal("an expired key still answered the first attempt")
+	}
+	if n := keyRows(t, ds, "stale-1"); n != 1 {
+		t.Fatalf("the takeover left %d rows", n)
+	}
+	again, err := ds.Put(substrate.WithIdempotencyKey(ctx, "stale-1"), substrate.ActorAPI,
+		substrate.PutInput{Kind: task, Properties: map[string]any{"name": "second"}})
+	if err != nil || again.ID != second.ID {
+		t.Fatalf("the taken-over key does not answer its new attempt: %+v %v", again, err)
+	}
+}
+
+// One process writes a repository at a time, so a reservation without a
+// thread is dead when the repository opens; a thread-bound one is kept.
+func TestIdempotencyKeyDeadReservationsClearAtOpen(t *testing.T) {
+	t.Parallel()
+	ds := openInternalDataset(t)
+	ctx := context.Background()
+	for _, key := range []string{"dead-plain", "dead-thread"} {
+		c := &idempotentCall{ds: ds, op: idemAgentCall, key: key, fingerprint: "fp", owner: "gone-" + key}
+		if owned, err := c.reserve(ctx); err != nil || !owned {
+			t.Fatalf("reserve %s: %v %v", key, owned, err)
+		}
+	}
+	if _, err := ds.db.ExecContext(ctx, `UPDATE idempotency_keys SET thread = 'th-1' WHERE key = 'dead-thread'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := ds.clearDeadReservations(ctx); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	if n := keyRows(t, ds, "dead-plain"); n != 0 {
+		t.Fatalf("a dead reservation survived the open: %d rows", n)
+	}
+	if n := keyRows(t, ds, "dead-thread"); n != 1 {
+		t.Fatalf("a thread-bound reservation was cleared: %d rows", n)
 	}
 }
 

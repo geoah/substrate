@@ -169,6 +169,9 @@ func (ds *dataset) CallAgent(ctx context.Context, name string, input any) (*subs
 		}
 		return &replayed, nil
 	}
+	// The key is consumed: the loop, its tools and its sub-agents run
+	// without one, so a mutate tool's create never inherits it.
+	ctx = substrate.WithoutIdempotencyKey(ctx)
 	res, err := ds.callAgentOnce(ctx, name, input, call)
 	if err != nil {
 		// Nothing settled. The reservation goes unless the attempt opened a
@@ -198,6 +201,11 @@ func (ds *dataset) callAgentOnce(ctx context.Context, name string, input any, ca
 	defer release()
 	user, err := agentUserContent(input)
 	if err != nil {
+		return nil, err
+	}
+	// The reservation's lease follows the agent's own deadline from here;
+	// attachThread extends it to the retention window once the thread opens.
+	if err := call.extendLease(ctx, nowUTC().Add(time.Duration(ag.Budgets.DeadlineSeconds)*time.Second)); err != nil {
 		return nil, err
 	}
 	inv := agentInvocation{mode: "call", user: user}
