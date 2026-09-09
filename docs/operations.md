@@ -683,12 +683,6 @@ failure keeps the id `…/parked` listed, so a saved retry still names it, and
 a parked drain resumes from its last committed page. On an import of a newer
 directory over an older database dump the entries fold over the dump's rows,
 so the triggers land where the directory says, not where the dump did.
-A repository's first open under changelog dialect 6 records the trigger state
-its tables already held as ledger entries, so an upgraded repository keeps it
-through a rebuild or a restore. A directory written before dialect 6 and never
-opened under it carries no ledger: restored into an empty database, it starts
-its triggers at the head, its parked failures are gone (their `run` records
-survive), and nothing reconstructs the positions from the changelog alone.
 
 Runtime state is not in the directory: embedding vectors (queued again,
 below), OAuth flows in flight, a record trigger's scan position past rows
