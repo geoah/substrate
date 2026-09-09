@@ -44,6 +44,10 @@ type fakeService struct {
 	// totpDisabled models the engine's dev escape hatch: the second factor is
 	// not verified, so any code — including none — passes.
 	totpDisabled bool
+	// wrap, when set, decorates the dataset Authenticate hands a request: a
+	// test that needs an optional seam the plain fake does not carry
+	// (AutomationOps, AgentOps) returns a wrapper here.
+	wrap func(*fakeDataset) substrate.Dataset
 	// embeddings models WithEmbedder: the engine answers the same question
 	// through the same seam, and discovery lists the feature only when it is
 	// true.
@@ -293,6 +297,9 @@ func (s *fakeService) Authenticate(_ context.Context, secret string) (substrate.
 	if !ok {
 		return nil, substrate.TokenInfo{}, substrate.ErrAuth
 	}
+	if s.wrap != nil {
+		return s.wrap(s.datasets[t.repository]), t.info, nil
+	}
 	return s.datasets[t.repository], t.info, nil
 }
 
@@ -337,7 +344,10 @@ type fakeDataset struct {
 	lastActor substrate.Actor
 	// lastPrincipal is what the engine reads off the write's context: the
 	// token id the door resolved, never anything the caller sent.
-	lastPrincipal      string
+	lastPrincipal string
+	// lastIdempotencyKey is the Idempotency-Key the last Put, Merge or Split
+	// carried on its context; empty when the request sent none.
+	lastIdempotencyKey string
 	lastSearch         substrate.SearchInput
 	lastVocabularyDocs []map[string]any
 	// lastConfirm is the consent the confirmed apply verb received; plan is
@@ -621,6 +631,7 @@ func (d *fakeDataset) Put(ctx context.Context, actor substrate.Actor, in substra
 	}
 	d.lastPut, d.lastActor = in, actor
 	d.lastPrincipal = substrate.PrincipalFrom(ctx)
+	d.lastIdempotencyKey = substrate.IdempotencyKeyFrom(ctx)
 	id := in.ID
 	if id == "" {
 		id = fmt.Sprintf("ent%d", len(d.records)+1)
@@ -719,10 +730,11 @@ func fakeCAS(e *substrate.Record, ifVersion *int64) error {
 	return nil
 }
 
-func (d *fakeDataset) Merge(_ context.Context, _ substrate.Actor, in substrate.MergeInput) (*substrate.Record, error) {
+func (d *fakeDataset) Merge(ctx context.Context, _ substrate.Actor, in substrate.MergeInput) (*substrate.Record, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.lastMerge = in
+	d.lastIdempotencyKey = substrate.IdempotencyKeyFrom(ctx)
 	if err := d.fail("Merge"); err != nil {
 		return nil, err
 	}
@@ -747,10 +759,11 @@ func (d *fakeDataset) Merge(_ context.Context, _ substrate.Actor, in substrate.M
 	}, nil
 }
 
-func (d *fakeDataset) Split(_ context.Context, _ substrate.Actor, in substrate.SplitInput) (*substrate.Record, error) {
+func (d *fakeDataset) Split(ctx context.Context, _ substrate.Actor, in substrate.SplitInput) (*substrate.Record, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.lastSplit = in
+	d.lastIdempotencyKey = substrate.IdempotencyKeyFrom(ctx)
 	if err := d.fail("Split"); err != nil {
 		return nil, err
 	}

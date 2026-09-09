@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"io"
 	"net/http"
 
@@ -22,6 +23,20 @@ import (
 // and nothing else. The repository-management endpoints went with
 // the control plane in B1.
 
+// idempotencyHeader is the request header a client names one attempt with.
+// The engine reads it off the context (substrate.IdempotencyKeyFrom) and
+// answers a repeat with the first attempt's outcome (docs/api.md,
+// "Idempotency and retries").
+const idempotencyHeader = "Idempotency-Key"
+
+// idempotentContext is the request context with its Idempotency-Key bound.
+// Only the handlers whose effect the server assigns call it: the id-less
+// create, the function and agent calls, merge and split. Agent chat is a
+// stream with nothing to replay, so its handler never does.
+func idempotentContext(r *http.Request) context.Context {
+	return substrate.WithIdempotencyKey(r.Context(), r.Header.Get(idempotencyHeader))
+}
+
 // The merge and split bodies ARE the engine's inputs (substrate.MergeInput,
 // substrate.SplitInput): the kind beside the two ids, the merge record's id, and
 // the optional version preconditions, decoded strictly so a misspelled
@@ -37,7 +52,7 @@ func (h *handler) postMerges(w http.ResponseWriter, r *http.Request) {
 			"kind is required — a merge addresses two records of one kind by (kind, id)")
 		return
 	}
-	ctx := r.Context()
+	ctx := idempotentContext(r)
 	ent, err := DatasetFrom(ctx).Merge(ctx, ActorFrom(ctx), req)
 	if err != nil {
 		writeSubstrateError(w, err)
@@ -52,7 +67,7 @@ func (h *handler) postSplits(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
 	}
-	ctx := r.Context()
+	ctx := idempotentContext(r)
 	ent, err := DatasetFrom(ctx).Split(ctx, ActorFrom(ctx), req)
 	if err != nil {
 		writeSubstrateError(w, err)

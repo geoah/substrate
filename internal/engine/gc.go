@@ -33,6 +33,12 @@ func (ds *dataset) RunGC(ctx context.Context) (int, error) {
 	if err != nil {
 		return collected, err
 	}
+	// Idempotency keys past their retention window go with the same sweep
+	// (idempotency.go). They are request bookkeeping, not records, so they
+	// are not counted as collected.
+	if _, err := ds.sweepIdempotencyKeys(ctx, nowUTC()); err != nil {
+		return collected + blobs, err
+	}
 	return collected + blobs, nil
 }
 

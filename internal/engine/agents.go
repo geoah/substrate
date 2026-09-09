@@ -171,11 +171,38 @@ func (ds *dataset) CallAgent(ctx context.Context, name string, input any) (*subs
 	if err != nil {
 		return nil, err
 	}
-	res, err := ds.runAgent(ctx, ag, agentInvocation{mode: "call", user: user})
+	// The request's Idempotency-Key, reserved after admission and input
+	// validation (idempotency.go). The loop writes many transactions, so the
+	// reservation settles in the one that settles the thread: the completion
+	// hook a trigger delivery uses for the same reason.
+	call, stored, err := ds.beginIdempotent(ctx, idemAgentCall, agentCallInput{Name: name, Input: input})
 	if err != nil {
+		return nil, err
+	}
+	if stored != nil {
+		var replayed substrate.AgentResult
+		if err := json.Unmarshal(stored, &replayed); err != nil {
+			return nil, fmt.Errorf("decode the stored outcome: %w", err)
+		}
+		return &replayed, nil
+	}
+	inv := agentInvocation{mode: "call", user: user}
+	if call != nil {
+		inv.complete = func(t *txn, res *substrate.AgentResult) error { return call.settleIn(t, res) }
+	}
+	res, err := ds.runAgent(ctx, ag, inv)
+	if err != nil {
+		call.release(ctx)
 		return nil, agentEntryError(err)
 	}
 	return res, nil
+}
+
+// agentCallInput is what an agent call's idempotency fingerprint covers: the
+// agent addressed and the input as decoded.
+type agentCallInput struct {
+	Name  string `json:"name"`
+	Input any    `json:"input"`
 }
 
 // agentEntryError shapes a loop error for the direct entries: a sentinel the

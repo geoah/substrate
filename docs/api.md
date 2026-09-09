@@ -213,21 +213,59 @@ compare-and-set: the second attempt sees the version it already moved and fails
 delivery path carries its own idempotency key, so a redelivered change applies
 once.
 
-A retried write is NOT safe when the server assigns the identity or the effect.
-A `POST /api/v1/{authority}/{package}/{kind}` with no id mints a random id, so
-a client that retries after a timeout creates a second record. `POST
-…/functions/{name}/call` mints a fresh idempotency key per call, so a retry
-re-runs the function's effects; the agent call, agent chat, `merge` and `split`
-POSTs behave the same way.
+A retried write is NOT safe on its own when the server assigns the identity or
+the effect. A `POST /api/v1/{authority}/{package}/{kind}` with no id mints a
+random id, so a client that retries after a timeout creates a second record.
+`POST …/core/function/{name}/call` and `…/core/agent/{name}/call` run the body
+again, with its effects. A retried `merge` or `split` under a version
+precondition fails `conflict`, because the first attempt moved the versions,
+and the client cannot tell that from a merge somebody else made.
 
-The remedy is a client-supplied `Idempotency-Key` request header on that call
-surface: two requests carrying the same key return the same outcome, and the
-effect runs once. The header is additive and not yet accepted by the server
-(#378 adds the key store); the semantics are fixed here so a client may rely
-on them the moment it lands.
+Those five operations take the `Idempotency-Key` request header: the client's
+name for one attempt, any string up to 255 bytes (a UUID is the usual choice).
 
-Until then, whether a create can be made idempotent depends on the kind. A
-kind no `recordmapping` points at accepts a client-supplied id: `put` at
+```http
+POST /api/v1/samples.substrate.reamde.dev/tasks/task
+Idempotency-Key: 6f1c2e3a-9b0d-4c7e-8a21-5d3f0b9e7c44
+Content-Type: application/json
+
+{"properties": {"name": "file the report"}}
+```
+
+The contract, per key:
+
+- The effect runs once. A repeat under the same key with the same body
+  answers the first attempt's outcome, the same body and the same status code
+  (`201` for the record a create made, `200` for a call), for 24 hours after
+  the first attempt settled.
+- The key binds to the repository and the operation, never to the token: a
+  retry after `logout` and `login` still matches, and the same string sent to
+  `/merge` and to a create is two keys.
+- The same key with a different body is `409 conflict`. So is a repeat that
+  arrives while the first function or agent call is still running: the
+  server does not hold the second request open for a body of unknown length,
+  and the client retries after the first answers. A create, merge or split
+  runs inside the repository's one write transaction, so its repeat waits for
+  that commit and then answers the stored outcome.
+- A failed attempt stores nothing. A `422`, a `500 function_failed` or a
+  connection lost before the commit leaves no key behind, and the retry runs
+  the operation again.
+- A stored outcome is capped at 1 MiB. A larger one is not kept: the effect
+  still ran once, and the repeat is `409 conflict` saying the outcome was not
+  retained, so the client reads the record or the thread instead.
+- Agent chat streams and is excluded; there is no stored outcome to replay.
+  `vocabulary/apply`, catalog import and `POST /tokens` do not take the header,
+  and a `POST` to a vocabulary kind's collection (`kind`, `trait`, ...) refuses
+  it (`422`).
+
+The key store is a Postgres table, `idempotency_keys`, and not part of the
+changelog: a repository restored from its directory alone
+([Backups](operations.md#backups)) forgets every key, and the first retry
+after such a restore runs once more. Keys survive a restart and a
+`repository rebuild`, which replay nothing the keys answer for.
+
+Whether a create needs the header depends on the kind. A kind no
+`recordmapping` points at accepts a client-supplied id: `put` at
 `…/{kind}/{id}` creates the record on the first attempt and upserts the same
 row on the retry. A kind some mapping points at does not: `checkCreateID`
 refuses a client id on a record that does not exist yet, a `validation` error
@@ -235,8 +273,8 @@ refuses a client id on a record that does not exist yet, a `validation` error
 subject ([0049](decisions/0049-the-owner-of-a-mappings-target-declares-it.md)).
 The `people` and `tasks` samples ship mappings onto their own `person` and
 `task`, so those two are server-assigned from the moment the mappings land
-([Suggested mappings](bundles.md#suggested-mappings)). There is no safe create
-for a mapped kind today; `Idempotency-Key` is its remedy once the header lands.
+([Suggested mappings](bundles.md#suggested-mappings)), and `Idempotency-Key`
+on the `POST` is the one safe create for them.
 
 ## The filter grammar
 

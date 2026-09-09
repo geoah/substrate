@@ -177,7 +177,7 @@ func (h *handler) postFunctionCall(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
 	}
-	output, effects, err := ops.CallFunction(r.Context(), pathParam(r, "name"), req.Input)
+	output, effects, err := ops.CallFunction(idempotentContext(r), pathParam(r, "name"), req.Input)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return

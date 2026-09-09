@@ -67,6 +67,10 @@ import (
 //   - import_progress: the boot import's own marker (repodir.go). A rebuild
 //     never runs while it is set, because no dataset opens over an
 //     incomplete import.
+//   - idempotency_keys: the `Idempotency-Key` store (idempotency.go), request
+//     bookkeeping the changelog never carried. A rebuild replays the effects
+//     the keys answer for, so the keys stay valid; only a fresh database
+//     forgets them, which docs/api.md states.
 //   - repositories — the control plane, one row per user.
 
 // RebuildReport is what one rebuild did.
