@@ -36,7 +36,7 @@ API call that completes a task. Start at the
 ## Bundles
 
 - [Bundles](bundles.md) — installable closures of functions, agents,
-  vocabulary, or a provider integration, applied and removed as one unit
+  vocabulary, or a provider, applied and removed as one unit
 - [Functions and the host SDK](functions.md)
 - [Agents](agents.md) — assistants that read your records and write back
   through the same API; this part is alpha

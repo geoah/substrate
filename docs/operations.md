@@ -346,11 +346,15 @@ on the box, through the DSN.
   prepares logs an error naming the function, and its deliveries park rather
   than the repository failing.
 
-Four loops then run in-process: the trigger dispatcher every 5 seconds, garbage
+Five loops then run in-process: the trigger dispatcher every 5 seconds, garbage
 collection every 5 minutes, OAuth refresh and finalizer processing every
-minute, and — when an embedder is configured — the embed-queue drain every
-minute. Each enumerates repositories and opens each one through the same
-row-level-security-bound pool a request uses.
+minute, the resolution sweep (the recovery path for a resume that a restart or
+a lost lease dropped) every 2 minutes, and the embed-queue drain every minute,
+whether or not any repository holds an embedding provider yet. The GC sweep
+also drops `idempotency_keys` rows past their 24 hour retention
+([idempotency and retries](api.md#idempotency-and-retries)). Each enumerates
+repositories and opens each one through the same row-level-security-bound pool
+a request uses.
 
 Keep it to **one replica**. The watch signal and the trigger dispatcher are
 in-process, and two dispatchers would serialize on compare-and-swap rather than
@@ -746,8 +750,9 @@ its triggers at the head, its parked failures are gone (their `run` records
 survive), and nothing reconstructs the positions from the changelog alone.
 
 Runtime state is not in the directory: embedding vectors (queued again,
-below), OAuth flows in flight, and a record trigger's scan position past rows
-that matched nothing. A consent flow in flight is started again: it is a nonce
+below), OAuth flows in flight, a record trigger's scan position past rows
+that matched nothing, and the `Idempotency-Key` rows, so a retry carrying a
+key from before the restore runs its operation again. A consent flow in flight is started again: it is a nonce
 and a PKCE verifier with an expiry, and the callback fails once, so the user
 starts the flow over. A user's tokens are records, so they come back.
 Change cursors that clients saved (the console's tail, `substratectl watch
@@ -792,14 +797,16 @@ Operator commands (the "operator hat" of
 directly and hold no token. They need `--dsn` (or `DATABASE_URL`) and
 `SUBSTRATE_DATA_ROOT`, and refuse before touching anything without them.
 
-**Three of them run beside a live server; four need it stopped; one takes no
-database.** `repository list`, `repository inspect` and `repository verify`
-read: `verify` opens the engine read-only, so it runs no boot check, appends
-nothing and reports an unfinished final transaction or a table ahead of its file
-as a finding instead of repairing it. `repository rebuild`, `repository rotate-generation`,
-`repository snapshot` and `user reset` open the repository as its changelog
-writer, and a running server holds that lock: the command refuses, naming the
-lock, until the server is stopped. `repository rewrap` acts on a copied directory
+**Four of them run beside a live server; five need it stopped; one takes no
+database.** `repository list`, `repository inspect`, `repository verify` and
+`repository reembed` open the engine read-only, so they run no boot check and
+append nothing: `verify` reports an unfinished final transaction or a table
+ahead of its file as a finding instead of repairing it, and `reembed` writes
+queue rows, which are not changelog entries. `repository rebuild`,
+`repository rotate-generation`, `repository snapshot` and `user reset` open the
+repository as its changelog writer, and a running server holds that lock: the
+command refuses, naming the lock, until the server is stopped. `blobs migrate`
+needs it stopped too ([the blob store](#the-blob-store)). `repository rewrap` acts on a copied directory
 before any boot has imported it, so it needs `SUBSTRATE_CREDENTIAL_KEY` and
 the directory, and no DSN.
 
