@@ -199,7 +199,7 @@ func newUpgradeErrEnv(t *testing.T) *testEnv {
 // is not where that goes.
 func TestCatalogListSurvivesAFailedUpgradePreview(t *testing.T) {
 	env := newUpgradeErrEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 
 	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
 	if rec.Code != http.StatusOK {
@@ -257,7 +257,7 @@ func TestCatalogListSurvivesAFailedUpgradePreview(t *testing.T) {
 
 func TestCatalogListReturnsShippedBundles(t *testing.T) {
 	env := newCatalogEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	body := decodeJSON[struct {
@@ -296,7 +296,7 @@ const peopleBundleID = "samples.substrate.reamde.dev/people"
 // provider and the web sample is a sample (decision record 0048).
 func TestCatalogListCarriesTheTier(t *testing.T) {
 	env := newCatalogEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	body := decodeJSON[struct {
@@ -333,7 +333,7 @@ func TestCatalogListCarriesTheTier(t *testing.T) {
 // names the verb that does work.
 func TestCatalogImportRefusesAProvider(t *testing.T) {
 	env := newCatalogEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(googleBundleID)+"/import", tok, nil)
 	wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
 	if body := rec.Body.String(); !strings.Contains(body, "install") {
@@ -345,7 +345,7 @@ func TestCatalogImportRefusesAProvider(t *testing.T) {
 // machine is refused before the closure is touched.
 func TestCatalogImportRefusesNonOwner(t *testing.T) {
 	env := newCatalogEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(webBundleID)+"/import", tok, nil,
 		actorHeader, "reader.substrate.reamde.dev")
 	wantErrorCode(t, rec, http.StatusForbidden, codeForbidden)
@@ -356,7 +356,7 @@ func TestCatalogImportRefusesNonOwner(t *testing.T) {
 // nowhere, which is why the body is what this asserts.
 func TestCatalogImportUnknownNamesTheBundle(t *testing.T) {
 	env := newCatalogEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodPost, "/api/v1/catalog/nope.example.com%2Fnothing/import", tok, nil)
 	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
 	if body := rec.Body.String(); !strings.Contains(body, "nope.example.com/nothing") {
@@ -366,7 +366,7 @@ func TestCatalogImportUnknownNamesTheBundle(t *testing.T) {
 
 func TestCatalogDetailPreviewsTheClosure(t *testing.T) {
 	env := newCatalogEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape(webBundleID), tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	item := decodeJSON[substrate.CatalogItem](t, rec)
@@ -377,7 +377,7 @@ func TestCatalogDetailPreviewsTheClosure(t *testing.T) {
 
 func TestCatalogDetailUnknownIs404(t *testing.T) {
 	env := newCatalogEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodGet, "/api/v1/catalog/nope.bundles.substrate.reamde.dev", tok, nil)
 	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
 }
@@ -387,14 +387,14 @@ func TestCatalogDetailUnknownIs404(t *testing.T) {
 // list and the detail read.
 func TestCatalogListSurfacesStatusReadFailure(t *testing.T) {
 	env := newStatusErrEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
 	wantErrorCode(t, rec, http.StatusInternalServerError, codeInternal)
 }
 
 func TestCatalogDetailSurfacesStatusReadFailure(t *testing.T) {
 	env := newStatusErrEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape(webBundleID), tok, nil)
 	wantErrorCode(t, rec, http.StatusInternalServerError, codeInternal)
 }
@@ -405,7 +405,7 @@ func TestCatalogDetailSurfacesStatusReadFailure(t *testing.T) {
 // reached a shorter way.
 func TestCatalogInstallRefusesNonOwner(t *testing.T) {
 	env := newCatalogEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(webBundleID)+"/install", tok, nil,
 		actorHeader, "reader.substrate.reamde.dev")
 	wantErrorCode(t, rec, http.StatusForbidden, codeForbidden)
@@ -532,7 +532,7 @@ func TestCatalogKeepsThePreviewOfAnEditedCopy(t *testing.T) {
 	}
 	read := func(env *testEnv) *substrate.BundleUpgrade {
 		t.Helper()
-		tok := env.svc.token("geoah")
+		tok := env.svc.token(fakeRepository)
 		rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
 		wantStatus(t, rec, http.StatusOK)
 		body := decodeJSON[struct {
@@ -567,7 +567,7 @@ func TestCatalogKeepsThePreviewOfAnEditedCopy(t *testing.T) {
 // held bundles' versions before the button is pressed.
 func TestCatalogCarriesTheRequiresFloors(t *testing.T) {
 	env := newCatalogEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape("samples.substrate.reamde.dev/tasks"), tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	item := decodeJSON[struct {
@@ -627,7 +627,7 @@ func TestCatalogInstallCarriesTheConfirmation(t *testing.T) {
 		h:     New(Config{Service: &installerService{fakeService: base, last: &last}, Now: clock.now, Catalog: cat}),
 		clock: clock,
 	}
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	path := "/api/v1/catalog/" + url.PathEscape(googleBundleID) + "/install"
 	rec := env.do(t, http.MethodPost, path, tok, map[string]any{
 		"confirm": map[string]any{"planHash": "cafe", "changelogSeq": 41},
@@ -652,7 +652,7 @@ func TestCatalogInstallCarriesTheConfirmation(t *testing.T) {
 // installedFor reads one catalog entry's `installed` flag off the listing.
 func installedFor(t *testing.T, env *testEnv, id string) bool {
 	t.Helper()
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	body := decodeJSON[struct {
@@ -686,7 +686,7 @@ func TestCatalogReportsAnImportedSampleInstalled(t *testing.T) {
 // at 8, edited" without a second read.
 func TestCatalogCarriesTheHeldCopyProvenance(t *testing.T) {
 	env := newHeldEnv(t, "geoah.example.com/web")
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	body := decodeJSON[struct {
@@ -772,7 +772,7 @@ func provenanceFor(t *testing.T, env *testEnv, id string) (installed bool, origi
 		Installed bool   `json:"installed"`
 		Origin    string `json:"origin"`
 	}
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	body := decodeJSON[struct {
@@ -858,7 +858,7 @@ func TestCatalogReportsAnUntakenSampleAvailable(t *testing.T) {
 // and both ends of the projection. A provider carries none at all.
 func TestCatalogListsSuggestedMappingsAndTheirState(t *testing.T) {
 	env := newCatalogEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	body := decodeJSON[struct {

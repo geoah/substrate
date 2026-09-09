@@ -10,7 +10,7 @@ import (
 
 func (a *app) repositoryRotateGenerationCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "rotate-generation <username>",
+		Use:   "rotate-generation <repository>",
 		Short: "Mint a new history generation, so every saved change cursor resets once",
 		Long: `Mint a new history generation for a repository and store it on its row.
 
@@ -41,8 +41,8 @@ two disagreeing.`,
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(a.out, "repository %s (%s): history generation %s -> %s; every saved change cursor now re-lists once\n",
-				report.Repository, report.Username, report.Previous, report.Generation)
+			fmt.Fprintf(a.out, "repository %s: history generation %s -> %s; every saved change cursor now re-lists once\n",
+				report.Repository, report.Previous, report.Generation)
 			return nil
 		},
 	}

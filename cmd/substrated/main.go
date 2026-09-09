@@ -286,9 +286,9 @@ func repositoryDatasets(ctx context.Context, svc substrate.Service) []substrate.
 	}
 	out := make([]substrate.Dataset, 0, len(repos))
 	for _, r := range repos {
-		ds, err := svc.Dataset(ctx, r.Name)
+		ds, err := svc.Dataset(ctx, r.ID)
 		if err != nil {
-			slog.Error("open repository", "repository", r.Name, "error", err)
+			slog.Error("open repository", "repository", r.ID, "error", err)
 			continue
 		}
 		out = append(out, ds)
@@ -300,11 +300,11 @@ func sweepGC(ctx context.Context, svc substrate.Service) {
 	for _, ds := range repositoryDatasets(ctx, svc) {
 		n, err := ds.RunGC(ctx)
 		if err != nil {
-			slog.Error("gc sweep", "repository", ds.Repository().Name, "error", err)
+			slog.Error("gc sweep", "repository", ds.Repository().ID, "error", err)
 			continue
 		}
 		if n > 0 {
-			slog.Info("gc sweep", "repository", ds.Repository().Name, "collected", n)
+			slog.Info("gc sweep", "repository", ds.Repository().ID, "collected", n)
 		}
 	}
 }
@@ -317,11 +317,11 @@ func sweepResolutions(ctx context.Context, svc substrate.Service) {
 		}
 		n, err := rs.SweepResolutions(ctx)
 		if err != nil {
-			slog.Error("resolution sweep", "repository", ds.Repository().Name, "error", err)
+			slog.Error("resolution sweep", "repository", ds.Repository().ID, "error", err)
 			continue
 		}
 		if n > 0 {
-			slog.Info("resolution sweep", "repository", ds.Repository().Name, "resumed", n)
+			slog.Info("resolution sweep", "repository", ds.Repository().ID, "resumed", n)
 		}
 	}
 }
@@ -339,11 +339,11 @@ func dispatchTriggers(ctx context.Context, svc substrate.Service) {
 		}
 		n, err := fr.ProcessTriggers(ctx)
 		if err != nil {
-			slog.Error("trigger dispatch", "repository", ds.Repository().Name, "error", err)
+			slog.Error("trigger dispatch", "repository", ds.Repository().ID, "error", err)
 			continue
 		}
 		if n > 0 {
-			slog.Info("trigger dispatch", "repository", ds.Repository().Name, "ran", n)
+			slog.Info("trigger dispatch", "repository", ds.Repository().ID, "ran", n)
 		}
 	}
 }
@@ -355,14 +355,14 @@ func maintainOAuth(ctx context.Context, svc substrate.Service) {
 			continue
 		}
 		if n, err := om.RefreshOAuthTokens(ctx); err != nil {
-			slog.Error("oauth refresh", "repository", ds.Repository().Name, "error", err)
+			slog.Error("oauth refresh", "repository", ds.Repository().ID, "error", err)
 		} else if n > 0 {
-			slog.Info("oauth refresh", "repository", ds.Repository().Name, "refreshed", n)
+			slog.Info("oauth refresh", "repository", ds.Repository().ID, "refreshed", n)
 		}
 		if n, err := om.ProcessOAuthFinalizers(ctx); err != nil {
-			slog.Error("oauth finalizers", "repository", ds.Repository().Name, "error", err)
+			slog.Error("oauth finalizers", "repository", ds.Repository().ID, "error", err)
 		} else if n > 0 {
-			slog.Info("oauth finalizers", "repository", ds.Repository().Name, "released", n)
+			slog.Info("oauth finalizers", "repository", ds.Repository().ID, "released", n)
 		}
 	}
 }
@@ -381,11 +381,11 @@ func drainEmbeds(ctx context.Context, svc substrate.Service) {
 	for _, ds := range repositoryDatasets(ctx, svc) {
 		n, err := ds.ProcessEmbedQueue(ctx, embedBatch)
 		if err != nil {
-			slog.Error("embed queue", "repository", ds.Repository().Name, "error", err)
+			slog.Error("embed queue", "repository", ds.Repository().ID, "error", err)
 			continue
 		}
 		if n > 0 {
-			slog.Info("embed queue", "repository", ds.Repository().Name, "embedded", n)
+			slog.Info("embed queue", "repository", ds.Repository().ID, "embedded", n)
 		}
 	}
 }

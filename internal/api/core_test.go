@@ -13,7 +13,7 @@ const tokensPath = "/tokens"
 // (registration and login), not a caller who already holds a token.
 func TestMintTokenIsAuthenticatedAndUnmetered(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	for range 3 {
 		rec := env.do(t, http.MethodPost, tokensPath, tok, map[string]any{"label": "scripted"})
 		wantStatus(t, rec, http.StatusCreated)
@@ -30,7 +30,7 @@ func TestMintTokenIsAuthenticatedAndUnmetered(t *testing.T) {
 
 func TestTokenListAndRevoke(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 
 	rec := env.do(t, http.MethodGet, tokensPath, tok, nil)
 	wantStatus(t, rec, http.StatusOK)
@@ -41,7 +41,7 @@ func TestTokenListAndRevoke(t *testing.T) {
 
 	// Revoking IS deleting the record — the same write the generic record
 	// surface performs.
-	ds := env.svc.datasets["geoah"]
+	ds := env.svc.datasets[fakeRepository]
 	ds.records["tok1"] = &substrate.Record{ID: "tok1", Kind: "substrate.reamde.dev/core/token"}
 	rec = env.do(t, http.MethodDelete, tokensPath+"/tok1", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
@@ -56,14 +56,14 @@ func TestTokenListAndRevoke(t *testing.T) {
 // collection the engine refuses generic writes to.
 func TestRepositoryCollectionHasNoInstallVerb(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodPost, "/api/v1/substrate.reamde.dev/core/repositories/geoah/rotateotp", tok, map[string]any{})
 	wantStatus(t, rec, http.StatusNotFound)
 }
 
 func TestMergeSplit(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 
 	rec := env.do(t, http.MethodPost, "/api/v1/merge", tok,
 		map[string]any{"kind": "samples.substrate.reamde.dev/people/person", "winner": "a1", "loser": "b2"})

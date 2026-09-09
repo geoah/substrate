@@ -268,8 +268,8 @@ type service struct {
 	bg *background
 
 	mu sync.Mutex
-	// datasets is keyed by REPOSITORY ID, the authority, never by username: a
-	// username is a lookup key, the authority is the identity.
+	// datasets is keyed by REPOSITORY ID, the authority: the repository's one
+	// name, on disk, in the database and on the wire (decision 0052).
 	datasets map[string]*dataset
 	// opening is the per-repository singleflight: an id maps to the channel
 	// the in-flight open closes when it is done, either way. It exists because
@@ -687,7 +687,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	}
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.Username, err)
+		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.ID, err)
 	}
 	db.SetMaxOpenConns(8)
 	// The repository's keys for the dataset's lifetime: the DEK unwrapped and
@@ -696,25 +696,25 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	keys, err := s.repoKeys(ctx, repo.ID)
 	if err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("substrate/engine: open repository %s: unwrap DEK: %w", repo.Username, err)
+		return nil, fmt.Errorf("substrate/engine: open repository %s: unwrap DEK: %w", repo.ID, err)
 	}
 	dek := keys.dek
 	if dek == nil {
 		if dek, err = s.adoptDEK(ctx, repo.ID); err != nil {
 			_ = db.Close()
-			return nil, fmt.Errorf("substrate/engine: open repository %s: adopt DEK: %w", repo.Username, err)
+			return nil, fmt.Errorf("substrate/engine: open repository %s: adopt DEK: %w", repo.ID, err)
 		}
 		// The manifest carries the wrapped DEK, so the row is re-read to
 		// hand ensureManifest the bytes the adoption stored.
 		if repo, err = s.repositoryByID(ctx, repo.ID); err != nil {
 			_ = db.Close()
-			return nil, fmt.Errorf("substrate/engine: open repository %s: re-read after adopting a DEK: %w", repo.Username, err)
+			return nil, fmt.Errorf("substrate/engine: open repository %s: re-read after adopting a DEK: %w", repo.ID, err)
 		}
 	}
 	dir, err := s.repositoryDir(repo.ID)
 	if err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.Username, err)
+		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.ID, err)
 	}
 	ds := &dataset{
 		svc:        s,
@@ -738,7 +738,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	// would land on a file that is not at the seq it claims (repodir.go).
 	if err := ds.openDirectory(ctx); err != nil {
 		ds.close()
-		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.Username, err)
+		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.ID, err)
 	}
 	// The changelog dialect gate runs next, ahead of every step that writes:
 	// a binary that cannot replay this history must not extend it either. It
@@ -755,7 +755,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		// manifest is written below, because the manifest carries the marker.
 		if repo, err = s.retireLegacySealed(ctx, ds, repo); err != nil {
 			ds.close()
-			return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.Username, err)
+			return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.ID, err)
 		}
 		ds.dekOnly = repo.SealedDEKOnly
 	}
@@ -774,7 +774,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		m, err := s.ensureManifest(ctx, dir, repo, db)
 		if err != nil {
 			ds.close()
-			return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.Username, err)
+			return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.ID, err)
 		}
 		ds.manifest = m
 	}
@@ -805,9 +805,9 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	return ds, nil
 }
 
-// Dataset opens a repository's dataset by its user's username.
-func (s *service) Dataset(ctx context.Context, username string) (substrate.Dataset, error) {
-	repo, err := s.repositoryByUsername(ctx, username)
+// Dataset opens a repository's dataset by its id, the authority.
+func (s *service) Dataset(ctx context.Context, repository string) (substrate.Dataset, error) {
+	repo, err := s.repositoryByID(ctx, repository)
 	if err != nil {
 		return nil, err
 	}
@@ -825,8 +825,8 @@ func (s *service) DatasetSeams() substrate.Dataset { return (*dataset)(nil) }
 // that row, and the repository it owns is born holding the shipped kinds.
 // Registration (auth.go) is what calls it — a repository created any other
 // way has no credential and therefore no way in.
-func (s *service) CreateRepository(ctx context.Context, name, authority string) (substrate.RepositoryInfo, error) {
-	repo, err := s.createSeededRepository(ctx, name, authority, nil)
+func (s *service) CreateRepository(ctx context.Context, repository string) (substrate.RepositoryInfo, error) {
+	repo, err := s.createSeededRepository(ctx, repository, nil)
 	if err != nil {
 		return substrate.RepositoryInfo{}, err
 	}
@@ -850,8 +850,7 @@ func (s *service) CreateRepository(ctx context.Context, name, authority string) 
 // the control-plane table is only visible to `substrate_maint`. So instead of
 // a transaction that cannot exist, the ORDER carries the guarantee: everything
 // the repository contains commits first, in one transaction, and the
-// control-plane row — the row every lookup starts from, and the unique index
-// on the username — is written LAST. A failure anywhere before it leaves rows
+// control-plane row — the row every lookup starts from — is written LAST. A failure anywhere before it leaves rows
 // under an authority no login, token or listing can ever name, and they are
 // deleted on the way out; a failure at the row itself does the same. There is
 // no order in which a HALF-CREATED USER can be observed: the user exists
@@ -877,11 +876,8 @@ func (s *service) CreateRepository(ctx context.Context, name, authority string) 
 // lookup after the first's row exists and is refused before it writes a byte.
 // The cleanup is ownership-checked on top (eraseFailedCreation): a creation
 // that wrote no row erases nothing while a row holds the authority.
-func (s *service) createSeededRepository(ctx context.Context, name, authority string, extra func(*txn) error) (Repository, error) {
+func (s *service) createSeededRepository(ctx context.Context, authority string, extra func(*txn) error) (Repository, error) {
 	var zero Repository
-	if !vocabulary.ValidRepositoryName(name) {
-		return zero, fmt.Errorf("%w: username %q must match [a-z][a-z0-9]{1,29}", substrate.ErrValidation, name)
-	}
 	if err := validRepositoryAuthority(authority); err != nil {
 		return zero, err
 	}
@@ -890,22 +886,17 @@ func (s *service) createSeededRepository(ctx context.Context, name, authority st
 		return zero, err
 	}
 	defer unlock()
-	// A cheap early no: the unique indexes below are the truth, and they are
-	// what a race actually loses on (insertRepositoryRow names the same
-	// refusals when it does). The authority is checked BEFORE anything is
-	// written under it, because rows land in its scope, and a scope that
-	// already belongs to somebody would be somebody else's data.
-	if _, err := s.repositoryByUsernameOn(ctx, cp, name); err == nil {
-		return zero, errUsernameTaken(name)
-	} else if !errors.Is(err, substrate.ErrNotFound) {
-		return zero, err
-	}
+	// A cheap early no: the primary key below is the truth, and it is what a
+	// race actually loses on (insertRepositoryRow names the same refusal when
+	// it does). The authority is checked BEFORE anything is written under it,
+	// because rows land in its scope, and a scope that already belongs to
+	// somebody would be somebody else's data.
 	if _, err := s.repositoryByIDOn(ctx, cp, authority); err == nil {
 		return zero, errAuthorityTaken(authority)
 	} else if !errors.Is(err, substrate.ErrNotFound) {
 		return zero, err
 	}
-	repo := Repository{ID: authority, Username: name, Authority: authority}
+	repo := Repository{ID: authority, Authority: authority}
 	// The DEK is born with the repository: the seed transaction below already
 	// writes sealed material (the credential, at registration), and it seals
 	// under this key from the first byte. The control-plane row wraps it
@@ -926,7 +917,7 @@ func (s *service) createSeededRepository(ctx context.Context, name, authority st
 	}
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
-		return zero, fmt.Errorf("substrate/engine: create repository %s: %w", name, err)
+		return zero, fmt.Errorf("substrate/engine: create repository %s: %w", authority, err)
 	}
 	db.SetMaxOpenConns(8)
 	// The creation dataset carries the BINARY's registry — the seed has to
@@ -961,7 +952,7 @@ func (s *service) createSeededRepository(ctx context.Context, name, authority st
 		if err := t.asActor(substrate.ActorSystem, func() error {
 			_, err := t.put(substrate.PutInput{
 				Kind: kindRepository, ID: repo.ID,
-				Properties: map[string]any{"name": name, "authority": authority, "lifecycle": "active"},
+				Properties: map[string]any{"name": authority, "authority": authority, "lifecycle": "active"},
 			})
 			return err
 		}); err != nil {
@@ -993,7 +984,7 @@ func (s *service) createSeededRepository(ctx context.Context, name, authority st
 	// is a failed registration like any other: the row is erased with the
 	// rows and the directory, so nothing half-made survives the call.
 	if _, err := s.reconcileRow(ctx, repo, false); err != nil {
-		return fail("directory", fmt.Errorf("substrate/engine: write the repository directory of %s: %w", name, err))
+		return fail("directory", fmt.Errorf("substrate/engine: write the repository directory of %s: %w", authority, err))
 	}
 	return repo, nil
 }
@@ -1038,13 +1029,9 @@ func validRepositoryAuthority(authority string) error {
 // so the one no repository may claim.
 const publisherAuthority = "substrate.reamde.dev"
 
-// errUsernameTaken and errAuthorityTaken are the two refusals a registration
-// meets when its names are somebody's: spelled once, because the early lookup
-// and the row insert's unique violation must say the same thing.
-func errUsernameTaken(name string) error {
-	return fmt.Errorf("%w: user %q already exists", substrate.ErrValidation, name)
-}
-
+// errAuthorityTaken is the refusal a registration meets when its name is
+// somebody's: spelled once, because the early lookup and the row insert's
+// unique violation must say the same thing.
 func errAuthorityTaken(authority string) error {
 	return fmt.Errorf("%w: authority %q is already owned by another repository on this substrate", substrate.ErrValidation, authority)
 }

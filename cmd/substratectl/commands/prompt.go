@@ -153,22 +153,23 @@ func normalizeCode(in string) (string, error) {
 	return code, nil
 }
 
-// askUsername resolves the username: the flag, the context's, else a prompt.
-func (a *app) askUsername(username string) (string, error) {
-	if username == "" {
+// askRepository resolves the repository name: the flag, the context's, else a
+// prompt.
+func (a *app) askRepository(repository string) (string, error) {
+	if repository == "" {
 		if ctx, err := a.resolveContext(); err == nil {
-			username = ctx.Username
+			repository = ctx.Repository
 		}
 	}
-	if username != "" {
-		return username, nil
+	if repository != "" {
+		return repository, nil
 	}
-	got, err := a.prompt("Username: ")
+	got, err := a.prompt("Repository: ")
 	if err != nil {
 		return "", err
 	}
 	if got == "" {
-		return "", errors.New("a username is required")
+		return "", errors.New("a repository name is required")
 	}
 	return got, nil
 }

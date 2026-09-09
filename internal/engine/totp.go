@@ -31,7 +31,7 @@ const (
 // The failure LOCKOUT is not here any more: it guards the unauthenticated
 // endpoints as a whole — login, registration and the credential changes — so
 // it lives with the rate limiter in front of them (api/ratelimit.go), keyed
-// on the caller and the username rather than on a control-plane column.
+// on the caller and the repository rather than on a control-plane column.
 
 // totpIssuer labels the enrollment in the password manager.
 const totpIssuer = "Substrate"

@@ -169,7 +169,7 @@ func TestDiscoveryNamesEachSurfaceWithItsCompatibility(t *testing.T) {
 	}
 
 	// The advertised GraphQL endpoint is the one that answers.
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	gql := env.do(t, http.MethodPost, doc.Surfaces.GraphQL.Endpoint, tok,
 		map[string]any{"query": `{ __typename }`})
 	wantStatus(t, gql, http.StatusOK)
@@ -181,7 +181,7 @@ func TestDiscoveryNamesEachSurfaceWithItsCompatibility(t *testing.T) {
 // outside. The door that does rank is TestGraphQLSearch's.
 func TestSearchHasNoRESTRoute(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	// A one-segment path names no kind (decision 0042), so it is the router's
 	// generic 404; a two-segment path is a collection lookup that misses.
 	for path, want := range map[string]string{
@@ -360,7 +360,7 @@ func TestDiscoveryDoesNotRequireAuth(t *testing.T) {
 
 func TestPrimaryPrefixServesResources(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodGet, "/api/v1/samples.substrate.reamde.dev/people/person", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	if w := rec.Header().Get("Warning"); w != "" {
@@ -372,7 +372,7 @@ func TestPrimaryPrefixServesResources(t *testing.T) {
 // unknown API path — a 404 problem object, never a quietly aliased 200.
 func TestPreV1PrefixIsNotServed(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodGet, "/api/v1alpha1/samples.substrate.reamde.dev/people/person", tok, nil)
 	wantStatus(t, rec, http.StatusNotFound)
 }
@@ -383,7 +383,7 @@ func TestUnsupportedIs501(t *testing.T) {
 	// The fake dataset carries no bundle machinery, so the bundle status verb
 	// is a capability-absent 501 → code unsupported (never internal).
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodGet, "/api/v1/substrate.reamde.dev/core/bundle/status", tok, nil)
 	wantErrorCode(t, rec, http.StatusNotImplemented, codeUnsupported)
 }
@@ -391,7 +391,7 @@ func TestUnsupportedIs501(t *testing.T) {
 func TestUnavailableIs503WithRetryAfter(t *testing.T) {
 	env := newTestEnv(t)
 	env.svc.authErr = errors.New("repository open failed")
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodGet, "/api/v1/samples.substrate.reamde.dev/people/person", tok, nil)
 	wantErrorCode(t, rec, http.StatusServiceUnavailable, codeUnavailable)
 	if ra := rec.Header().Get("Retry-After"); ra == "" {
@@ -401,7 +401,7 @@ func TestUnavailableIs503WithRetryAfter(t *testing.T) {
 
 func TestBadRequestIsEmittedAndCoded(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	// A non-numeric changelog cursor is a bad_request, named, not silence.
 	rec := env.do(t, http.MethodGet, changesPath+"?from=notanumber", tok, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
@@ -409,8 +409,8 @@ func TestBadRequestIsEmittedAndCoded(t *testing.T) {
 
 func TestGraphQLErrorCarriesProblemInExtensions(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	// Wrap so errors.Is matches the sentinel, exactly like the engine.
 	ds.errs["List"] = fmt.Errorf("label ns: %w", substrate.ErrForbidden)
 
@@ -439,8 +439,8 @@ func TestWatchTerminalErrorFrameOnMidStreamFailure(t *testing.T) {
 	env := newTestEnv(t)
 	srv := httptest.NewServer(env.h)
 	defer srv.Close()
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	// from=0 skips headSeq so the 200 + bookmark go out first; then the drain's
 	// Changes read fails, and the stream must end with a terminal error frame
@@ -467,7 +467,7 @@ func TestWatchTerminalErrorFrameOnMidStreamFailure(t *testing.T) {
 
 func TestCompactedBelowHorizonNonWatch(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	// horizon is 0; a from below it exercises the compacted signal path.
 	rec := env.do(t, http.MethodGet, changesPath+"?from=-1", tok, nil)
 	wantErrorCode(t, rec, http.StatusGone, codeCompacted)
@@ -475,7 +475,7 @@ func TestCompactedBelowHorizonNonWatch(t *testing.T) {
 
 func TestCompactedBelowHorizonWatch(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	// The watch path rejects a below-horizon resume before any 200/stream byte.
 	rec := env.do(t, http.MethodGet, changesPath+"?watch=1&from=-5", tok, nil)
 	wantErrorCode(t, rec, http.StatusGone, codeCompacted)

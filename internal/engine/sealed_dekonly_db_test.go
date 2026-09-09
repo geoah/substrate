@@ -147,7 +147,7 @@ func TestFirstOpenRekeysAndMarksAnUnmarkedRepository(t *testing.T) {
 		t.Fatalf("reopen: %v", err)
 	}
 	t.Cleanup(func() { _ = reopened.Close() })
-	d, err := reopened.Dataset(ctx, testdb.Username(t))
+	d, err := reopened.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open the repository: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestFirstOpenRewrapsAWrapThatNamesNoKey(t *testing.T) {
 				t.Fatalf("reopen: %v", err)
 			}
 			t.Cleanup(func() { _ = reopened.Close() })
-			d, err := reopened.Dataset(ctx, testdb.Username(t))
+			d, err := reopened.Dataset(ctx, testdb.Repository(t))
 			if err != nil {
 				t.Fatalf("open the repository: %v", err)
 			}

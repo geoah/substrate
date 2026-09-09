@@ -184,7 +184,7 @@ pointer at another record is a property, so the same verbs write it. The token
 implies the repository; there is nothing else to point at.
 
   substratectl register --server https://substrate.example.com
-  substratectl login --username geoah
+  substratectl login --repository geoah
   substratectl kinds
   substratectl get tasks -l owner/pinned=true
   substratectl apply -f task.yaml

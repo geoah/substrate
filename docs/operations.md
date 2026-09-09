@@ -72,7 +72,7 @@ that directory is the truth on disk and the unit a backup copies
 $SUBSTRATE_DATA_ROOT/
   repositories/
     ada.example.com/                # one per repository, named by its authority
-      repository.json               # the manifest: format, authority, username, createdAt, changelogDialect, vocabularyDialect, the wrapped DEK, dekKeyId, sealedDekOnly
+      repository.json               # the manifest: format, authority, createdAt, changelogDialect, vocabularyDialect, the wrapped DEK, dekKeyId, sealedDekOnly
       snapshot.json                 # only in a snapshot, or a directory restored from one: the head seq and checksum the copy holds, and the blobs it needs
       changelog/
         000000000000001.ndjson      # a segment, named by its first seq; the highest is the active one
@@ -89,7 +89,7 @@ line carrying its own SHA-256 checksum
 ([the checksum and the segment files](changelog.md#the-checksum-and-the-segment-files)).
 The directory is `repositories/ada.example.com/` for the repository whose
 authority is `ada.example.com`, so a person finds it by name; `repository.json`
-carries the username beside the authority. It also carries the DEK wrapped
+carries that authority, and nothing else names the repository. It also carries the DEK wrapped
 under `SUBSTRATE_CREDENTIAL_KEY`, the same bytes as the `repositories.dek`
 column, so a copy restored onto a host with the same key opens without
 anything else. The key itself is never in the directory; `dekKeyId` names it
@@ -157,7 +157,7 @@ What that means for an operator:
 - Every stored vector names the row and the model that produced it. Change
   either and the older vectors stop being searched, which is deliberate: cosine
   distance between two models' vectors is not a distance. Run
-  `substratectl --dsn … repository reembed <username>` to queue their
+  `substratectl --dsn … repository reembed <repository>` to queue their
   replacement, or `POST
   /api/v1/embeddings/reembed` from the repository's
   own token. Both write queue rows; the server's drain loop buys the vectors a
@@ -226,7 +226,7 @@ SUBSTRATE_BLOB_STORE=fs SUBSTRATE_DATA_ROOT=/var/lib/substrate \
 
 It moves one repository at a time and deletes each object from the source only
 once the target holds it, so an interrupted run is finished by running it
-again. `--dry-run` counts what would move; a username moves that user alone.
+again. `--dry-run` counts what would move; a repository name moves that one alone.
 Then start the server with the same `SUBSTRATE_BLOB_STORE`. Moving between
 `fs` and `s3` is the same command with `--from` and `--to` naming them.
 
@@ -305,8 +305,8 @@ on the box, through the DSN.
   "the store speaks a newer schema dialect than this binary"), and a
   changelog holding a retired `link` or `unlink` entry refuses it too; both
   refusals come before the row is created, so a refused directory reserves
-  neither its username nor its authority and leaves no row for a later boot
-  to export an empty repository from. The import writes
+  its authority for nothing and leaves no row for a later boot to export an
+  empty repository from. The import writes
   an `import_progress` row before its first batch of entries commits and
   deletes it in the transaction that commits the last fold pass. A boot that
   dies in between leaves the row, and the next boot check resumes the import
@@ -505,7 +505,7 @@ rsync -a --delete "$SUBSTRATE_DATA_ROOT"/ backup-host:/srv/substrate-backup/
 ```
 
 **A snapshot is a copy with a recorded point, taken with the server stopped.**
-`repository snapshot <username> <destination root>` writes
+`repository snapshot <repository> <destination root>` writes
 `<destination root>/repositories/<authority>/`, the layout a data root has,
 verified before and after: it takes the repository's writer lock (a running
 server refuses it), runs the whole `repository verify` including the blob
@@ -653,7 +653,7 @@ change nothing here.
 
 Each directory under `repositories/` is one repository, named by its
 authority: `./substrate-backup/repositories/ada.example.com/` is Ada's, and
-its `repository.json` names the username the operator commands take.
+its `repository.json` names the authority the operator commands take.
 
 **An import that dies is resumed, not served.** The boot marks the repository
 in `import_progress` before the first changelog entry lands and clears the
@@ -838,14 +838,14 @@ Publishing the Postgres port to reach the same commands from the host is a
 worse trade: it exposes the database to everything that can reach the host, and
 the exec path needs nothing open at all.
 
-- **`repository list`** reads the one control-plane table: one row per user.
-- **`repository inspect <username>`** reports the authority (the repository's
-  id, and the name of its directory), the username, when it was created, the changelog head in the table and the head in the
+- **`repository list`** reads the one control-plane table: one row per repository.
+- **`repository inspect <repository>`** reports the authority (the repository's
+  id, and the name of its directory), when it was created, the changelog head in the table and the head in the
   segment files with the segment count, live and tombstoned record counts,
   and the declaration versions per package. Two heads that differ are the gap
   the next boot closes. It is the first thing to run when something looks
   wrong.
-- **`repository verify <username>`** walks the segment files: every line's
+- **`repository verify <repository>`** walks the segment files: every line's
   `sum`, every finished segment's sidecar, the seq order, and both heads
   against each other. It then holds the side stores to the fold: every blob
   whose manifest says `stored` is read out of the configured blob store and
@@ -869,7 +869,7 @@ the exec path needs nothing open at all.
   files are undamaged, agree with the table and hold what the fold needs; it
   does not prove who wrote them
   ([the checksum](changelog.md#the-checksum-and-the-segment-files)).
-- **`repository snapshot <username> <destination root>`** writes a verified
+- **`repository snapshot <repository> <destination root>`** writes a verified
   copy of the repository directory at
   `<destination root>/repositories/<authority>/` with `snapshot.json`
   recording the head seq and checksum the copy holds
@@ -882,7 +882,7 @@ the exec path needs nothing open at all.
   place last, so a failed snapshot leaves nothing there. Run it with the
   server's binary, as with `rebuild`. Under `s3` it lists the objects the
   copy needs instead of copying them.
-- **`repository rebuild <username>`** replays the segment files into a fresh
+- **`repository rebuild <repository>`** replays the segment files into a fresh
   fold, in one transaction, under that repository's own lock, after running
   the same check the boot runs. It reproduces the fold bit for bit and appends
   nothing, so it is safe to run on a healthy repository, and it is the proof
@@ -922,7 +922,7 @@ the exec path needs nothing open at all.
   `SUBSTRATE_BLOB_STORE` change: see [the blob store](#the-blob-store). It
   writes no records and appends no changelog entries, because the manifest
   never moves.
-- **`user reset <username>`** is the answer to a user who has lost both
+- **`user reset <repository>`** is the answer to a user who has lost both
   factors. It writes fresh sealed material and a new credential record and
   prints a fresh TOTP enrollment. The data is untouched; the account gets new
   keys. There is no self-serve recovery, deliberately. Like `rebuild` it

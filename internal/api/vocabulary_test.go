@@ -68,8 +68,8 @@ func (d *fakeDataset) ApplyVocabularyDocumentsWith(ctx context.Context, actor su
 // the strict decoder refuses.
 func TestSchemaPlanEndpoint(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	ds.plan = substrate.VocabularyPlan{
 		ConversionPlan: substrate.ConversionPlan{
 			Lossy: true, Work: 3, PlanHash: "cafe", ChangelogSeq: 41,
@@ -103,8 +103,8 @@ func TestSchemaPlanEndpoint(t *testing.T) {
 // client knows to preview and confirm rather than migrate records.
 func TestSchemaApplyCarriesTheConfirmation(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	doc := map[string]any{
 		"kind":     corePackage + "/authority",
 		"metadata": map[string]any{"id": "widgets.example.substrate.reamde.dev"},
@@ -138,8 +138,8 @@ func TestSchemaApplyCarriesTheConfirmation(t *testing.T) {
 // bare apply claims nothing.
 func TestSchemaApplyAndPlanCarryTheOrigin(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	const origin = "samples.substrate.reamde.dev/tasks"
 	doc := map[string]any{
 		"kind":     corePackage + "/package",
@@ -175,8 +175,8 @@ func TestSchemaApplyAndPlanCarryTheOrigin(t *testing.T) {
 // caller's bearer context supplying dataset and actor.
 func TestSchemaApplyEndpoint(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	rec := env.do(t, http.MethodPost, "/api/v1/vocabulary/apply", tok, map[string]any{
 		"documents": []map[string]any{

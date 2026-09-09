@@ -16,8 +16,8 @@ const personKind = "samples.substrate.reamde.dev/people/person"
 // patch is, and an absent one checks nothing.
 func TestRESTDeleteIfVersion(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	ds.put(&substrate.Record{ID: "p1", Kind: personKind, Version: 3})
 
 	rec := env.do(t, http.MethodDelete, peoplePath+"/p1?ifVersion=2", tok, nil)
@@ -52,8 +52,8 @@ func TestRESTDeleteIfVersion(t *testing.T) {
 // `400 bad_request`, and the dataset is not reached.
 func TestRESTDeleteRefusesAMalformedPrecondition(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	ds.put(&substrate.Record{ID: "p1", Kind: personKind, Version: 3})
 
 	for _, query := range []string{"?ifVersion=three", "?ifVersion=", "?ifversion=3", "?version=3"} {
@@ -77,8 +77,8 @@ func TestRESTDeleteRefusesAMalformedPrecondition(t *testing.T) {
 // misspelled key is `400 bad_request` naming it.
 func TestRESTMergeSplitPreconditions(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	ds.put(&substrate.Record{ID: "a1", Kind: personKind, Version: 4})
 	ds.put(&substrate.Record{ID: "b2", Kind: personKind, Version: 2})
 
@@ -127,8 +127,8 @@ func TestRESTMergeSplitPreconditions(t *testing.T) {
 // one is a resolver error whose extensions carry the `conflict` code.
 func TestGraphQLDeleteMergeSplitPreconditions(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	ds.put(&substrate.Record{ID: "p1", Kind: personKind, Version: 3})
 	ds.put(&substrate.Record{ID: "p2", Kind: personKind, Version: 2})
 	ds.put(&substrate.Record{ID: "merge1", Kind: corePackage + "/recordmerge", Version: 1})

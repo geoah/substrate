@@ -45,15 +45,17 @@ func recordedHash(t *testing.T, db *sql.DB, version int) string {
 
 // strand rewrites a fully migrated schema into the one a pre-merge build of
 // PR #89 left: 0005 recorded under the hash that branch's file had, no 0007,
-// and the constraint 0007 exists to add still missing. The column the
-// constraint checks comes back too: 0005 added it and 0014 dropped it, and a
-// database stranded before 0007 still has it.
+// and the constraint 0007 exists to add still missing. Two columns come back
+// with it, because a database stranded before 0007 still has both and the
+// replayed migrations read them: `signed_from_seq`, which 0005 added and 0014
+// dropped, and `username`, which 0001 added, 0013 reads and 0024 dropped.
 func strand(t *testing.T, db *sql.DB) {
 	t.Helper()
 	for _, q := range []string{
 		`DELETE FROM schema_migrations WHERE version >= 7`,
 		`UPDATE schema_migrations SET sha256 = '` + branch0005 + `' WHERE version = 5`,
 		`ALTER TABLE repositories ADD COLUMN IF NOT EXISTS signed_from_seq bigint`,
+		`ALTER TABLE repositories ADD COLUMN IF NOT EXISTS username text`,
 		`ALTER TABLE repositories DROP CONSTRAINT IF EXISTS repositories_signed_from_positive`,
 	} {
 		if _, err := db.Exec(q); err != nil {

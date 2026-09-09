@@ -62,6 +62,10 @@ type fakeToken struct {
 	info       substrate.TokenInfo
 }
 
+// fakeRepository is the repository every fake starts with, named the way a
+// registration names one: the repository IS its authority.
+const fakeRepository = "geoah.example.com"
+
 func newFakeService() *fakeService {
 	s := &fakeService{
 		datasets:  map[string]*fakeDataset{},
@@ -69,15 +73,15 @@ func newFakeService() *fakeService {
 		passwords: map[string]string{},
 		codes:     map[string]string{},
 	}
-	s.addRepository("geoah")
-	s.passwords["geoah"] = "correct-horse-battery-staple"
+	s.addRepository(fakeRepository)
+	s.passwords[fakeRepository] = "correct-horse-battery-staple"
 	return s
 }
 
-func (s *fakeService) addRepository(name string) *fakeDataset {
-	ds := newFakeDataset(name)
-	s.datasets[name] = ds
-	s.codes[name] = fakeCode(name)
+func (s *fakeService) addRepository(repository string) *fakeDataset {
+	ds := newFakeDataset(repository)
+	s.datasets[repository] = ds
+	s.codes[repository] = fakeCode(repository)
 	return ds
 }
 
@@ -91,16 +95,16 @@ func fakeCode(repository string) string {
 }
 
 // fakeEnrollment is the shape the enrollment endpoints return.
-func fakeEnrollment(username string) substrate.TOTPEnrollment {
+func fakeEnrollment(repository string) substrate.TOTPEnrollment {
 	return substrate.TOTPEnrollment{
 		Secret: "JBSWY3DPEHPK3PXP",
-		URI: "otpauth://totp/Substrate:" + username +
+		URI: "otpauth://totp/Substrate:" + repository +
 			"?secret=JBSWY3DPEHPK3PXP&issuer=Substrate&algorithm=SHA1&digits=6&period=30",
 	}
 }
 
 // token registers a bearer secret for a repository. The secret carries NO
-// username segment — the hash lookup is what finds the repository.
+// name segment — the hash lookup is what finds the repository.
 func (s *fakeService) token(repository string) string {
 	secret := "substrate_tok_" + fmt.Sprint(len(s.tokens)+1)
 	s.tokens[secret] = fakeToken{
@@ -144,26 +148,24 @@ func (s *fakeService) Dataset(_ context.Context, repository string) (substrate.D
 	return ds, nil
 }
 
-func (s *fakeService) CreateRepository(_ context.Context, name, authority string) (substrate.RepositoryInfo, error) {
+func (s *fakeService) CreateRepository(_ context.Context, repository string) (substrate.RepositoryInfo, error) {
 	if s.createRepositoryErr != nil {
 		return substrate.RepositoryInfo{}, s.createRepositoryErr
 	}
-	ds := s.addRepository(name)
-	ds.repository.Authority = authority
-	return ds.Repository(), nil
+	return s.addRepository(repository).Repository(), nil
 }
 
-func (s *fakeService) BeginRegistration(_ context.Context, username string) (substrate.TOTPEnrollment, error) {
+func (s *fakeService) BeginRegistration(_ context.Context, repository string) (substrate.TOTPEnrollment, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.registerCalls++
 	if s.registerErr != nil {
 		return substrate.TOTPEnrollment{}, s.registerErr
 	}
-	if _, taken := s.datasets[username]; taken {
-		return substrate.TOTPEnrollment{}, fmt.Errorf("%w: user %q already exists", substrate.ErrValidation, username)
+	if _, taken := s.datasets[repository]; taken {
+		return substrate.TOTPEnrollment{}, fmt.Errorf("%w: repository %q already exists", substrate.ErrValidation, repository)
 	}
-	return fakeEnrollment(username), nil
+	return fakeEnrollment(repository), nil
 }
 
 func (s *fakeService) Register(_ context.Context, in substrate.RegisterInput) (substrate.RegisterResult, error) {
@@ -173,24 +175,23 @@ func (s *fakeService) Register(_ context.Context, in substrate.RegisterInput) (s
 	if s.registerErr != nil {
 		return substrate.RegisterResult{}, s.registerErr
 	}
-	if _, taken := s.datasets[in.Username]; taken {
-		return substrate.RegisterResult{}, fmt.Errorf("%w: user %q already exists", substrate.ErrValidation, in.Username)
+	if _, taken := s.datasets[in.Repository]; taken {
+		return substrate.RegisterResult{}, fmt.Errorf("%w: repository %q already exists", substrate.ErrValidation, in.Repository)
 	}
-	if in.TOTPCode != fakeCode(in.Username) {
+	if in.TOTPCode != fakeCode(in.Repository) {
 		return substrate.RegisterResult{}, fmt.Errorf("%w: bad code", substrate.ErrAuth)
 	}
-	// The engine requires a concrete authority: the handler fills the default,
-	// so an empty one reaching here is the handler's bug.
-	if in.Authority == "" {
-		return substrate.RegisterResult{}, fmt.Errorf("%w: a repository needs an authority", substrate.ErrValidation)
+	// The engine requires a concrete authority: the handler resolves whatever
+	// the caller typed, so an empty one reaching here is the handler's bug.
+	if in.Repository == "" {
+		return substrate.RegisterResult{}, fmt.Errorf("%w: a repository needs a name", substrate.ErrValidation)
 	}
-	ds := s.addRepository(in.Username)
-	ds.repository.Authority = in.Authority
-	s.passwords[in.Username] = in.Password
-	secret := s.token(in.Username)
+	s.addRepository(in.Repository)
+	s.passwords[in.Repository] = in.Password
+	secret := s.token(in.Repository)
 	info := s.tokens[secret].info
 	info.Label = in.Label
-	out := substrate.RegisterResult{Token: info, Secret: secret, Authority: in.Authority, RecoveryPublicKey: in.RecoveryPublicKey}
+	out := substrate.RegisterResult{Token: info, Secret: secret, Repository: in.Repository, RecoveryPublicKey: in.RecoveryPublicKey}
 	if out.RecoveryPublicKey == "" {
 		// The fake's stand-in for the server-minted pair: shape, not crypto.
 		out.RecoveryKey = "AGE-SECRET-KEY-FAKE"
@@ -211,7 +212,7 @@ func (s *fakeService) EnrollRecoveryKey(_ context.Context, in substrate.LoginInp
 	if s.recoveryEnrolled == nil {
 		s.recoveryEnrolled = map[string]bool{}
 	}
-	if s.recoveryEnrolled[in.Username] {
+	if s.recoveryEnrolled[in.Repository] {
 		return "", "", fmt.Errorf("%w: a recovery key is already enrolled; rotation is not yet supported", substrate.ErrConflict)
 	}
 	identity := ""
@@ -224,20 +225,20 @@ func (s *fakeService) EnrollRecoveryKey(_ context.Context, in substrate.LoginInp
 	} else if _, err := age.ParseX25519Recipient(publicKey); err != nil {
 		return "", "", fmt.Errorf("%w: recovery public key is not an age recipient", substrate.ErrValidation)
 	}
-	s.recoveryEnrolled[in.Username] = true
+	s.recoveryEnrolled[in.Repository] = true
 	return identity, publicKey, nil
 }
 
 // verify is the fake's whole factor check: the recorded password and the
-// username's canned code, answering ONE error for every failure exactly as
+// repository's canned code, answering ONE error for every failure exactly as
 // the engine does.
 func (s *fakeService) verify(in substrate.LoginInput) error {
-	password, known := s.passwords[in.Username]
+	password, known := s.passwords[in.Repository]
 	if !known || password != in.Password {
-		return fmt.Errorf("%w: bad username, password or code", substrate.ErrAuth)
+		return fmt.Errorf("%w: bad repository, password or code", substrate.ErrAuth)
 	}
-	if !s.totpDisabled && in.TOTPCode != fakeCode(in.Username) {
-		return fmt.Errorf("%w: bad username, password or code", substrate.ErrAuth)
+	if !s.totpDisabled && in.TOTPCode != fakeCode(in.Repository) {
+		return fmt.Errorf("%w: bad repository, password or code", substrate.ErrAuth)
 	}
 	return nil
 }
@@ -252,7 +253,7 @@ func (s *fakeService) Login(_ context.Context, in substrate.LoginInput) (substra
 	if err := s.verify(in); err != nil {
 		return substrate.TokenInfo{}, "", err
 	}
-	secret := s.token(in.Username)
+	secret := s.token(in.Repository)
 	info := s.tokens[secret].info
 	info.Label = in.Label
 	return info, secret, nil
@@ -264,7 +265,7 @@ func (s *fakeService) ChangePassword(_ context.Context, in substrate.LoginInput,
 	if err := s.verify(in); err != nil {
 		return err
 	}
-	s.passwords[in.Username] = newPassword
+	s.passwords[in.Repository] = newPassword
 	return nil
 }
 
@@ -274,7 +275,7 @@ func (s *fakeService) BeginTOTPReenrollment(_ context.Context, in substrate.Logi
 	if err := s.verify(in); err != nil {
 		return substrate.TOTPEnrollment{}, err
 	}
-	return fakeEnrollment(in.Username), nil
+	return fakeEnrollment(in.Repository), nil
 }
 
 func (s *fakeService) ReenrollTOTP(_ context.Context, in substrate.LoginInput, newSecret, newCode string) error {
@@ -375,7 +376,7 @@ type fakeDataset struct {
 
 func newFakeDataset(name string) *fakeDataset {
 	ds := &fakeDataset{
-		repository: substrate.RepositoryInfo{ID: name + ".example.com", Name: name, Authority: name + ".example.com", State: "active"},
+		repository: substrate.RepositoryInfo{ID: name, Authority: name, State: "active"},
 		types:      testTypes(),
 		records:    map[string]*substrate.Record{},
 		meta:       map[string]map[string]substrate.PropertyMeta{},

@@ -31,15 +31,15 @@ func TestSchemaDialectLadder(t *testing.T) {
 		return svc
 	}
 	svc := open()
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	if _, err := svc.Dataset(ctx, testdb.Username(t)); err != nil {
+	if _, err := svc.Dataset(ctx, testdb.Repository(t)); err != nil {
 		t.Fatal(err)
 	}
 	_ = svc.Close()
 
-	db, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, testdb.Username(t)), engine.RoleApp)
+	db, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleApp)
 	if err != nil {
 		t.Fatalf("open repository schema: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestSchemaDialectLadder(t *testing.T) {
 
 	// A reopen at the same dialect is silent and does not refuse.
 	svc2 := open()
-	if _, err := svc2.Dataset(ctx, testdb.Username(t)); err != nil {
+	if _, err := svc2.Dataset(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("reopen at the stamped dialect: %v", err)
 	}
 	_ = svc2.Close()
@@ -85,7 +85,7 @@ func TestSchemaDialectLadder(t *testing.T) {
 	}
 	svc3 := open()
 	defer func() { _ = svc3.Close() }()
-	_, err = svc3.Dataset(ctx, testdb.Username(t))
+	_, err = svc3.Dataset(ctx, testdb.Repository(t))
 	if err == nil {
 		t.Fatal("a store speaking a newer dialect must refuse the open")
 	}
@@ -105,7 +105,7 @@ func TestSchemaDialectLadder(t *testing.T) {
 	}
 	svc4 := open()
 	defer func() { _ = svc4.Close() }()
-	if _, err := svc4.Dataset(ctx, testdb.Username(t)); err != nil {
+	if _, err := svc4.Dataset(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("reopen after restoring the dialect: %v", err)
 	}
 
@@ -119,7 +119,7 @@ func TestSchemaDialectLadder(t *testing.T) {
 	}
 	svc5 := open()
 	defer func() { _ = svc5.Close() }()
-	_, err = svc5.Dataset(ctx, testdb.Username(t))
+	_, err = svc5.Dataset(ctx, testdb.Repository(t))
 	if err == nil {
 		t.Fatal("a store stamped below the maximum must refuse the open")
 	}
@@ -213,10 +213,10 @@ func assertDefinitionBlobRefusesTheOpen(t *testing.T, declKind string, blob any)
 		return svc
 	}
 	svc := open()
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +240,7 @@ func assertDefinitionBlobRefusesTheOpen(t *testing.T, declKind string, blob any)
 	}
 	_ = svc.Close()
 
-	db, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, testdb.Username(t)), engine.RoleApp)
+	db, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleApp)
 	if err != nil {
 		t.Fatalf("open repository schema: %v", err)
 	}
@@ -264,7 +264,7 @@ func assertDefinitionBlobRefusesTheOpen(t *testing.T, declKind string, blob any)
 
 	svc2 := open()
 	defer func() { _ = svc2.Close() }()
-	_, err = svc2.Dataset(ctx, testdb.Username(t))
+	_, err = svc2.Dataset(ctx, testdb.Repository(t))
 	if err == nil {
 		t.Fatalf("%s: a store holding a `definition` must refuse the open", declKind)
 	}
@@ -310,16 +310,16 @@ func TestStampedStoreRefusesANullDefinitionAtTheRow(t *testing.T) {
 		return svc
 	}
 	svc := open()
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	importVocabulary(t, ds)
 	installShippedBundle(t, ds, "web")
-	db, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, testdb.Username(t)), engine.RoleApp)
+	db, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleApp)
 	if err != nil {
 		t.Fatalf("open repository schema: %v", err)
 	}
@@ -336,7 +336,7 @@ func TestStampedStoreRefusesANullDefinitionAtTheRow(t *testing.T) {
 	_ = svc.Close()
 
 	svc2 := open()
-	_, err = svc2.Dataset(ctx, testdb.Username(t))
+	_, err = svc2.Dataset(ctx, testdb.Repository(t))
 	if !errors.Is(err, engine.ErrDeclarationUntranslated) {
 		t.Fatalf("a null definition must refuse by name, got %v", err)
 	}
@@ -368,16 +368,16 @@ func TestStampedStoreRefusesAnInterimGrantRow(t *testing.T) {
 		return svc
 	}
 	svc := open()
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	importVocabulary(t, ds)
 	installShippedBundle(t, ds, "web")
-	db, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, testdb.Username(t)), engine.RoleApp)
+	db, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleApp)
 	if err != nil {
 		t.Fatalf("open repository schema: %v", err)
 	}
@@ -396,7 +396,7 @@ func TestStampedStoreRefusesAnInterimGrantRow(t *testing.T) {
 	_ = svc.Close()
 
 	svc2 := open()
-	_, err = svc2.Dataset(ctx, testdb.Username(t))
+	_, err = svc2.Dataset(ctx, testdb.Repository(t))
 	if !errors.Is(err, engine.ErrDeclarationUntranslated) {
 		t.Fatalf("an interim grant row must refuse by name, got %v", err)
 	}

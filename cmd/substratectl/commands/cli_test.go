@@ -52,7 +52,7 @@ func (h *harness) writeConfig() {
 	cfg := &Config{
 		CurrentContext: "test",
 		Contexts: []Context{{
-			Name: "test", Server: h.server, Username: "geoah",
+			Name: "test", Server: h.server, Repository: "geoah",
 			Token: "substrate_tok_geoah_test", TokenID: "tk01",
 		}},
 	}
@@ -195,7 +195,7 @@ func TestHelpSpeaksTheV1Vocabulary(t *testing.T) {
 func TestLoginStoresTokenWithTightPermissions(t *testing.T) {
 	h := newHarness(t)
 	h.stdin.WriteString("hunter2\n")
-	out, _, err := h.run("login", "--server", h.server, "--username", "geoah", "--totp-code", "123456")
+	out, _, err := h.run("login", "--server", h.server, "--repository", "geoah", "--totp-code", "123456")
 	if err != nil {
 		t.Fatalf("login: %v", err)
 	}
@@ -222,16 +222,16 @@ func TestLoginStoresTokenWithTightPermissions(t *testing.T) {
 		t.Fatalf("config = %+v", cfg)
 	}
 	got := cfg.Contexts[0]
-	if got.Server != h.server || got.Username != "geoah" || !strings.HasPrefix(got.Token, "substrate_tok_") {
+	if got.Server != h.server || !strings.HasPrefix(got.Token, "substrate_tok_") {
 		t.Fatalf("stored context = %+v", got)
 	}
 	// The token id is stored so that `substratectl logout` can revoke the very token
-	// it forgets, and NOTHING names a repository: the token implies it.
+	// it forgets, and no URL names the repository: the token implies it.
 	if got.TokenID != "tk01" {
 		t.Errorf("stored token id = %q, want the minted record's", got.TokenID)
 	}
-	if strings.Contains(string(b), "repository") {
-		t.Errorf("the stored context still names a repository:\n%s", b)
+	if got.Repository != "geoah" {
+		t.Errorf("stored repository = %q, want the one logged in to", got.Repository)
 	}
 	// The label defaults to substratectl@<hostname>.
 	var label string
@@ -248,12 +248,12 @@ func TestLoginStoresTokenWithTightPermissions(t *testing.T) {
 func TestLoginSendsBothFactors(t *testing.T) {
 	h := newHarness(t)
 	h.stdin.WriteString("hunter2\n")
-	h.mustRun("login", "--server", h.server, "--username", "geoah", "--password-stdin", "--totp-code", "654321")
+	h.mustRun("login", "--server", h.server, "--repository", "geoah", "--password-stdin", "--totp-code", "654321")
 	if got := h.lastRequest(); got != "POST /login" {
 		t.Fatalf("login hit %q, want POST /login", got)
 	}
 	for field, want := range map[string]string{
-		"username": "geoah", "password": "hunter2", "totpCode": "654321",
+		"repository": "geoah", "password": "hunter2", "totpCode": "654321",
 	} {
 		var got string
 		if err := json.Unmarshal(h.fake.lastBody[field], &got); err != nil {
@@ -272,13 +272,13 @@ func TestLoginPromptsForWhatItIsNotGiven(t *testing.T) {
 	h := newHarness(t)
 	h.stdin.WriteString("geoah\nhunter2\n123456\n")
 	_, errOut := h.mustRun("login", "--server", h.server)
-	for _, want := range []string{"Username: ", "Password: ", "TOTP code: "} {
+	for _, want := range []string{"Repository: ", "Password: ", "TOTP code: "} {
 		if !strings.Contains(errOut, want) {
 			t.Errorf("prompt %q missing from stderr: %q", want, errOut)
 		}
 	}
 	var username string
-	if err := json.Unmarshal(h.fake.lastBody["username"], &username); err != nil {
+	if err := json.Unmarshal(h.fake.lastBody["repository"], &username); err != nil {
 		t.Fatalf("decode username: %v", err)
 	}
 	if username != "geoah" {
@@ -292,7 +292,7 @@ func TestLoginRejectsNonSixDigitCodesWithoutARequest(t *testing.T) {
 	for _, code := range []string{"12345", "1234567", "12345a", "sso_deadbeef", "   "} {
 		h := newHarness(t)
 		h.stdin.WriteString("hunter2\n")
-		_, _, err := h.run("login", "--server", h.server, "--username", "geoah", "--totp-code", code)
+		_, _, err := h.run("login", "--server", h.server, "--repository", "geoah", "--totp-code", code)
 		if err == nil {
 			t.Fatalf("code %q was accepted", code)
 		}
@@ -316,7 +316,7 @@ func TestLoginAsksForNoCodeWhereNoneIsVerified(t *testing.T) {
 	h := newHarness(t)
 	h.fake.totpDisabled = true
 	h.stdin.WriteString("hunter2\n")
-	h.mustRun("login", "--server", h.server, "--username", "geoah")
+	h.mustRun("login", "--server", h.server, "--repository", "geoah")
 	var code string
 	if err := json.Unmarshal(h.fake.lastBody["totpCode"], &code); err != nil {
 		t.Fatalf("decode totpCode: %v", err)
@@ -336,7 +336,7 @@ func TestRegisterSkipsTheEnrollmentWhereNoCodeIsVerified(t *testing.T) {
 	h := newHarness(t)
 	h.fake.totpDisabled = true
 	h.stdin.WriteString("hunter2\nhunter2\n")
-	out, _ := h.mustRun("register", "--server", h.server, "--invite-code", "let-me-in", "--username", "geoah")
+	out, _ := h.mustRun("register", "--server", h.server, "--invite-code", "let-me-in", "--repository", "geoah")
 	if strings.Contains(out, "TOTP enrollment") {
 		t.Errorf("an enrollment was shown for a substrate that verifies none:\n%s", out)
 	}
@@ -357,7 +357,7 @@ func TestRegisterSkipsTheEnrollmentWhereNoCodeIsVerified(t *testing.T) {
 func TestLoginAcceptsASpacedCode(t *testing.T) {
 	h := newHarness(t)
 	h.stdin.WriteString("hunter2\n")
-	h.mustRun("login", "--server", h.server, "--username", "geoah", "--totp-code", "123 456")
+	h.mustRun("login", "--server", h.server, "--repository", "geoah", "--totp-code", "123 456")
 	var code string
 	if err := json.Unmarshal(h.fake.lastBody["totpCode"], &code); err != nil {
 		t.Fatalf("decode totpCode: %v", err)
@@ -373,7 +373,7 @@ func TestLogin401NamesEveryFactorAndTheLockout(t *testing.T) {
 	h := newHarness(t)
 	h.fake.authStatus = 401
 	h.stdin.WriteString("hunter2\n")
-	_, _, err := h.run("login", "--server", h.server, "--username", "geoah", "--totp-code", "000000")
+	_, _, err := h.run("login", "--server", h.server, "--repository", "geoah", "--totp-code", "000000")
 	if err == nil {
 		t.Fatal("expected an error from a 401")
 	}
@@ -381,7 +381,7 @@ func TestLogin401NamesEveryFactorAndTheLockout(t *testing.T) {
 	renderError(&buf, err)
 	got := buf.String()
 	for _, want := range []string{
-		"refused the username, the password or the code",
+		"refused the repository, the password or the code",
 		"repeated failures lock the account out",
 	} {
 		if !strings.Contains(got, want) {
@@ -394,7 +394,7 @@ func TestLoginRateLimitedRendersRetryHint(t *testing.T) {
 	h := newHarness(t)
 	h.fake.authStatus = 429
 	h.stdin.WriteString("hunter2\n")
-	_, _, err := h.run("login", "--server", h.server, "--username", "geoah", "--totp-code", "123456")
+	_, _, err := h.run("login", "--server", h.server, "--repository", "geoah", "--totp-code", "123456")
 	if err == nil {
 		t.Fatal("expected an error from a 429")
 	}
@@ -420,16 +420,15 @@ func TestLoginRateLimitedRendersRetryHint(t *testing.T) {
 func TestRegisterEnrollsThenCommitsAndEndsLoggedIn(t *testing.T) {
 	h := newHarness(t)
 	h.stdin.WriteString("hunter2\nhunter2\n123456\n")
-	out, _ := h.mustRun("register", "--server", h.server, "--invite-code", "let-me-in", "--username", "geoah")
+	out, _ := h.mustRun("register", "--server", h.server, "--invite-code", "let-me-in", "--repository", "geoah")
 	for _, want := range []string{
 		"TOTP enrollment",
 		"otpauth URI: " + fakeOtpauthURI,
 		"secret:      " + fakeTOTPSecret,
 		"nothing is stored until the code below is accepted",
-		"registered geoah on " + h.server,
-		// The authority the repository owns, defaulted by the substrate from
-		// its own host when none is named.
-		"authority: geoah.127.0.0.1",
+		// The bare label the caller typed, completed by the substrate under
+		// its own host: the repository's name IS its authority.
+		"registered geoah.127.0.0.1 on " + h.server,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("register output missing %q:\n%s", want, out)
@@ -440,7 +439,7 @@ func TestRegisterEnrollsThenCommitsAndEndsLoggedIn(t *testing.T) {
 	}
 	// The commit carries the seed the caller was issued, plus one code from it.
 	for field, want := range map[string]string{
-		"inviteCode": "let-me-in", "username": "geoah", "password": "hunter2",
+		"inviteCode": "let-me-in", "repository": "geoah", "password": "hunter2",
 		"totpSecret": fakeTOTPSecret, "totpCode": "123456",
 	} {
 		var got string
@@ -464,26 +463,26 @@ func TestRegisterEnrollsThenCommitsAndEndsLoggedIn(t *testing.T) {
 // webhook URL is built from. `register` records the one the server answered
 // with, and `login`, which is told no authority at all, must carry the stored
 // one forward instead of replacing the context without it.
-func TestRegisterStoresTheAuthorityAndLoginKeepsIt(t *testing.T) {
+func TestRegisterAndLoginStoreTheRepository(t *testing.T) {
 	h := newHarness(t)
 	h.stdin.WriteString("hunter2\nhunter2\n123456\n")
-	h.mustRun("register", "--server", h.server, "--invite-code", "let-me-in", "--username", "geoah")
+	h.mustRun("register", "--server", h.server, "--invite-code", "let-me-in", "--repository", "geoah")
 	cfg, err := loadConfig(h.configPath)
 	if err != nil {
 		t.Fatalf("read config after register: %v", err)
 	}
-	if len(cfg.Contexts) != 1 || cfg.Contexts[0].Authority != "geoah.127.0.0.1" {
-		t.Fatalf("register stored %+v, want the authority the server answered", cfg.Contexts)
+	if len(cfg.Contexts) != 1 || cfg.Contexts[0].Repository != "geoah.127.0.0.1" {
+		t.Fatalf("register stored %+v, want the repository the server answered", cfg.Contexts)
 	}
 
 	h.stdin.WriteString("hunter2\n")
-	h.mustRun("login", "--server", h.server, "--username", "geoah", "--totp-code", "123456")
+	h.mustRun("login", "--server", h.server, "--repository", "geoah", "--totp-code", "123456")
 	cfg, err = loadConfig(h.configPath)
 	if err != nil {
 		t.Fatalf("read config after login: %v", err)
 	}
-	if len(cfg.Contexts) != 1 || cfg.Contexts[0].Authority != "geoah.127.0.0.1" {
-		t.Fatalf("login dropped the stored authority: %+v", cfg.Contexts)
+	if len(cfg.Contexts) != 1 || cfg.Contexts[0].Repository != "geoah" {
+		t.Fatalf("login stored %+v, want the repository it was given: %+v", cfg.Contexts, cfg.Contexts)
 	}
 	if cfg.Contexts[0].Token == "" {
 		t.Fatalf("login stored no token: %+v", cfg.Contexts)
@@ -496,7 +495,7 @@ func TestRegisterWithOwnSeedSkipsTheEnrollment(t *testing.T) {
 	h := newHarness(t)
 	h.stdin.WriteString("hunter2\n")
 	h.mustRun("register", "--server", h.server, "--invite-code", "let-me-in",
-		"--username", "geoah", "--password-stdin",
+		"--repository", "geoah", "--password-stdin",
 		"--totp-secret", "MFRGGZDFMZTWQ2LK", "--totp-code", "123456")
 	if got := h.fake.requests; len(got) != 1 || got[0] != "POST /register" {
 		t.Fatalf("requests = %v, want the commit alone", got)
@@ -506,7 +505,7 @@ func TestRegisterWithOwnSeedSkipsTheEnrollment(t *testing.T) {
 func TestRegisterRefusesAMismatchedPassword(t *testing.T) {
 	h := newHarness(t)
 	h.stdin.WriteString("hunter2\nhunter3\n")
-	_, _, err := h.run("register", "--server", h.server, "--invite-code", "x", "--username", "geoah")
+	_, _, err := h.run("register", "--server", h.server, "--invite-code", "x", "--repository", "geoah")
 	if err == nil || !strings.Contains(err.Error(), "do not match") {
 		t.Fatalf("err = %v, want a mismatch refusal", err)
 	}
@@ -535,7 +534,7 @@ func TestLogoutRevokesTheStoredTokenAndForgetsIt(t *testing.T) {
 	if got.Token != "" || got.TokenID != "" {
 		t.Errorf("logout kept the secret: %+v", got)
 	}
-	if got.Server == "" || got.Username == "" {
+	if got.Server == "" || got.Repository == "" {
 		t.Errorf("logout threw away the context: %+v", got)
 	}
 }
@@ -1735,13 +1734,13 @@ func TestUserPasswordSendsBothFactorsAndNoBearer(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.stdin.WriteString("hunter2\nhunter3\n")
-	out, _ := h.mustRun("user", "password", "--username", "geoah", "--totp-code", "123456",
+	out, _ := h.mustRun("user", "password", "--repository", "geoah", "--totp-code", "123456",
 		"--password-stdin", "--new-password-stdin")
 	if got := h.lastRequest(); got != "POST /password" {
 		t.Fatalf("password change hit %q", got)
 	}
 	for field, want := range map[string]string{
-		"username": "geoah", "password": "hunter2", "totpCode": "123456", "newPassword": "hunter3",
+		"repository": "geoah", "password": "hunter2", "totpCode": "123456", "newPassword": "hunter3",
 	} {
 		var got string
 		if err := json.Unmarshal(h.fake.lastBody[field], &got); err != nil {
@@ -1765,7 +1764,7 @@ func TestUserTOTPEnrollsThenSwaps(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.stdin.WriteString("hunter2\n654321\n")
-	out, _ := h.mustRun("user", "totp", "--username", "geoah", "--totp-code", "123456", "--password-stdin")
+	out, _ := h.mustRun("user", "totp", "--repository", "geoah", "--totp-code", "123456", "--password-stdin")
 	if got := h.fake.requests; len(got) != 2 || got[0] != "POST /totp/enroll" || got[1] != "POST /totp" {
 		t.Fatalf("requests = %v, want the candidate then the swap", got)
 	}

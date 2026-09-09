@@ -110,7 +110,7 @@ func TestARecordCarriesTheKindVersionThatWroteIt(t *testing.T) {
 	if !ok {
 		t.Fatal("the service cannot rebuild a repository")
 	}
-	if _, err := rb.RebuildRepository(ctx, testdb.Username(t)); err != nil {
+	if _, err := rb.RebuildRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	if after := foldOf(t, ds); string(before) != string(after) {

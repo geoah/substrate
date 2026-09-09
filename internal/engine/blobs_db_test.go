@@ -188,10 +188,10 @@ func TestBlobGetIsRepositoryScoped(t *testing.T) {
 	}
 	// A second repository cannot read repository A's blob: the digest is simply absent
 	// in its schema.
-	if _, err := svc.CreateRepository(ctx, "otheruser", "otheruser.example.com"); err != nil {
+	if _, err := svc.CreateRepository(ctx, "otheruser.example.com"); err != nil {
 		t.Fatalf("create repository B: %v", err)
 	}
-	dsB, err := svc.Dataset(ctx, "otheruser")
+	dsB, err := svc.Dataset(ctx, "otheruser.example.com")
 	if err != nil {
 		t.Fatalf("open repository B: %v", err)
 	}

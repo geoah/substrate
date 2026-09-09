@@ -292,7 +292,7 @@ func conformanceCases() []codeCase {
 		run: func(t *testing.T, e *testenv.Env) {
 			// A username of this case's own, so the per-(IP, username) bucket
 			// is untouched by the registration Start already performed.
-			attempt := map[string]any{"username": "conformance-pacing", "password": "wrong"}
+			attempt := map[string]any{"repository": "conformance-pacing.example.com", "password": "wrong"}
 			// The first attempt spends the whole allowance; whether it is
 			// refused for the password or already for the pace is not this
 			// case's assertion.

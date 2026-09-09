@@ -38,7 +38,6 @@ const verifyFindingCap = 20
 // VerifyReport is what one verification saw.
 type VerifyReport struct {
 	Repository string `json:"repository"`
-	Username   string `json:"username"`
 	// Entries and Head are the table's: how many rows, and the highest seq.
 	Entries int64 `json:"entries"`
 	Head    int64 `json:"head"`
@@ -87,7 +86,7 @@ type RecoveryPoint struct {
 // Verifier is the operator hat's verification seam, off substrate.Service
 // like Resetter (auth.go) and asserted here for the same reason.
 type Verifier interface {
-	VerifyRepository(ctx context.Context, username string) (VerifyReport, error)
+	VerifyRepository(ctx context.Context, repository string) (VerifyReport, error)
 }
 
 var _ Verifier = (*service)(nil)
@@ -95,13 +94,13 @@ var _ Verifier = (*service)(nil)
 // VerifyRepository walks one repository's changelog files and table. Findings
 // land in the report, not in the error: the error is for "could not verify"
 // (no such user, no connection), never for "verified and found damage".
-func (s *service) VerifyRepository(ctx context.Context, username string) (VerifyReport, error) {
+func (s *service) VerifyRepository(ctx context.Context, repository string) (VerifyReport, error) {
 	started := time.Now()
-	repo, err := s.repositoryByUsername(ctx, username)
+	repo, err := s.repositoryByID(ctx, repository)
 	if err != nil {
 		return VerifyReport{}, err
 	}
-	report := VerifyReport{Repository: repo.ID, Username: repo.Username}
+	report := VerifyReport{Repository: repo.ID}
 	found := func(f string) {
 		if len(report.Findings) >= verifyFindingCap {
 			report.Truncated = true

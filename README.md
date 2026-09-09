@@ -69,7 +69,7 @@ toolchain: `mise install` once.
 ```bash
 mise run build:cli
 
-# Asks for the invite code, a username, a password and a TOTP code from the
+# Asks for the invite code, a repository name, a password and a TOTP code from the
 # enrollment it prints, hands you a recovery key, then stores the minted
 # token as a context in ~/.config/substratectl.
 bin/substratectl register --server http://localhost:8080

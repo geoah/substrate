@@ -39,10 +39,10 @@ func newSealingDatasetDSN(t *testing.T) (substrate.Service, substrate.Dataset, *
 	t.Helper()
 	svc, dsn := newService(t, engine.WithCredentialKey(engine.TestCredentialKey))
 	ctx := context.Background()
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}

@@ -50,9 +50,9 @@ func reopenWith(t *testing.T, dsn, root string, opts ...engine.Option) substrate
 func stampedAtTwo(t *testing.T) (dsn, root, dir string, db *sql.DB) {
 	t.Helper()
 	svc, dsn := newService(t)
-	registerUser(t, svc, "ada")
+	registerUser(t, svc, "ada.example.com")
 	root = engine.DataRootOf(svc)
-	id := testdb.RepositoryID(t, dsn, "ada")
+	id := "ada.example.com"
 	_ = svc.Close()
 	dir, err := changelogfile.RepoDir(root, id)
 	if err != nil {
@@ -132,7 +132,7 @@ func unframe(e *changelogfile.Entry) { e.Txn = 0 }
 func writeFormatOneManifest(t *testing.T, dir string, m changelogfile.Manifest) {
 	t.Helper()
 	raw, err := json.MarshalIndent(map[string]any{
-		"format": 1, "username": m.Username, "authority": m.Authority,
+		"format": 1, "username": "ada", "authority": m.Authority,
 		"createdAt": m.CreatedAt.Format(changelogfile.TSFormat), "changelogDialect": 2,
 		"dek": base64.StdEncoding.EncodeToString(m.DEK),
 	}, "", "  ")
@@ -166,7 +166,7 @@ func TestManifestFollowsTheChangelogStampBeforeARestart(t *testing.T) {
 	ctx := context.Background()
 	dsn, root, dir, db := stampedAtTwo(t)
 	svc2 := mustReopen(t, dsn, root)
-	ds, err := svc2.Dataset(ctx, "ada")
+	ds, err := svc2.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +297,7 @@ func TestBootImportsAFormatOneDirectory(t *testing.T) {
 		t.Fatalf("manifest after the import = %+v", m)
 	}
 
-	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open the imported repository: %v", err)
 	}
@@ -307,7 +307,7 @@ func TestBootImportsAFormatOneDirectory(t *testing.T) {
 	if got := openSecret(t, dsn2, ref); got != "sk-format-one" {
 		t.Fatalf("secret = %q", got)
 	}
-	report := mustVerify(t, svc2, testdb.Username(t))
+	report := mustVerify(t, svc2, testdb.Repository(t))
 	if !report.OK || report.Head != head || report.FileHead != head {
 		t.Fatalf("the imported directory does not verify: %+v", report)
 	}
@@ -322,7 +322,7 @@ func TestBootImportsAFormatOneDirectory(t *testing.T) {
 
 // A `link` entry in the files, which dialect 1 wrote and nothing folds any
 // more, refuses the import before the `repositories` row and the dialect rows
-// exist, so the directory reserves neither its username nor its authority
+// exist, so the directory reserves its authority for nothing
 // and a later boot has no row to export an empty repository from. The fold
 // would refuse it too, with the rows inserted and the import marker set.
 func TestImportRefusesARetiredLinkEntryBeforeAnyRow(t *testing.T) {
@@ -374,7 +374,7 @@ func TestManifestCarriesTheDialectBeforeTheFirstStampedAppend(t *testing.T) {
 		}
 		return nil
 	}))
-	ds, err := svc.Dataset(ctx, "ada")
+	ds, err := svc.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -431,7 +431,7 @@ func TestAFailedManifestWriteRefusesTheStampingWrite(t *testing.T) {
 		}
 		return nil
 	}))
-	ds, err := svc.Dataset(ctx, "ada")
+	ds, err := svc.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}

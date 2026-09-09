@@ -343,7 +343,7 @@ func withMaxPages(n int) func() {
 // chainKey is the paged-cursor key a dispatch delivery uses: the delivery's
 // idempotency key.
 func chainKey(ds *dataset, triggerID string, seq int64) string {
-	return fmt.Sprintf("%s/%s/%d", ds.Repository().Name, triggerID, seq)
+	return fmt.Sprintf("%s/%s/%d", ds.Repository().ID, triggerID, seq)
 }
 
 // pagedCursor reads one chain's stored resume cursor as an integer.

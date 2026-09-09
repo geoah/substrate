@@ -53,13 +53,13 @@ describe("AccountPage", () => {
     fetchMock.mockReset()
   })
 
-  it("shows the signed-in username", () => {
+  it("shows the signed-in repository", () => {
     render(<AccountPage />)
     expect(screen.getByText("geoah")).toBeTruthy()
   })
 
   it("changes the password with the password factor in the body", async () => {
-    fetchMock.mockResolvedValue(jsonResponse(200, { username: "geoah" }))
+    fetchMock.mockResolvedValue(jsonResponse(200, { repository: "geoah" }))
     render(<AccountPage />)
     const card = within(cardFor("Change password"))
     fireEvent.change(card.getByLabelText("Current password"), {
@@ -85,7 +85,7 @@ describe("AccountPage", () => {
       ([url]) => String(url) === "/password"
     )!
     expect(JSON.parse((call[1] as RequestInit).body as string)).toEqual({
-      username: "geoah",
+      repository: "geoah",
       password: "old-passphrase",
       totpCode: "123456",
       newPassword: "hunter2hunter2",
@@ -116,7 +116,7 @@ describe("AccountPage", () => {
       fetchMock.mock.calls.some(([url]) => String(url) === "/totp/enroll")
     ).toBe(true)
 
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, { username: "geoah" }))
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { repository: "geoah" }))
     fireEvent.change(card.getByLabelText("Code from the NEW secret"), {
       target: { value: "222 222" },
     })
@@ -131,7 +131,7 @@ describe("AccountPage", () => {
       ([url]) => String(url) === "/totp"
     )!
     expect(JSON.parse((change[1] as RequestInit).body as string)).toEqual({
-      username: "geoah",
+      repository: "geoah",
       password: "old-passphrase",
       totpCode: "111111",
       newTotpSecret: "NEWSEED",
@@ -141,7 +141,7 @@ describe("AccountPage", () => {
 
   it("drops the code field and the re-enrollment where no factor is verified", async () => {
     policy.totpRequired = false
-    fetchMock.mockResolvedValue(jsonResponse(200, { username: "geoah" }))
+    fetchMock.mockResolvedValue(jsonResponse(200, { repository: "geoah" }))
     render(<AccountPage />)
     // Nothing to replace, so the re-enrollment card is not offered at all.
     expect(screen.queryByText("Replace your authenticator")).toBeNull()
@@ -169,7 +169,7 @@ describe("AccountPage", () => {
       ([url]) => String(url) === "/password"
     )!
     expect(JSON.parse((call[1] as RequestInit).body as string)).toEqual({
-      username: "geoah",
+      repository: "geoah",
       password: "old-passphrase",
       totpCode: "",
       newPassword: "hunter2hunter2",

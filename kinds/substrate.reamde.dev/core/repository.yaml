@@ -13,7 +13,12 @@ data:
   # version 16: the repository gained its `authority`, the home of the kinds
   # its user declares (decision record 0046). Pinned above core's 15 so the
   # bump reaches repositories that already hold the kind.
-  version: 16
+  # version 17: the repository has one name. `name` holds the authority, the
+  # same value `authority` does, and is deprecated in favour of it (decision
+  # record 0074). It stays declared, because dropping a property live records
+  # hold is a narrowing the upgrade refuses. It loses `required`, which is a
+  # widening: a property cannot be both deprecated and required.
+  version: 17
   names:
     singular: repository
   # ONE record, id = the repository's authority (decision record 0046), which
@@ -21,12 +26,13 @@ data:
   # control-plane row is the truth; this is its projection inside the
   # repository, so a client that only ever speaks the record API can still say
   # which repository it is in.
-  displayTemplate: "{name}"
+  displayTemplate: "{authority}"
   properties:
     name:
       type: string
-      required: true
-      description: the username this repository belongs to
+      deprecated: true
+      description: the repository's authority, the same value `authority`
+        holds; read `authority` instead
     # Not `required`: a repository created before the column existed holds a
     # self-description without it, and adding `required` is a narrowing the
     # boot upgrade refuses while that row stands.

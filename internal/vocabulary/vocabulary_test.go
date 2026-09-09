@@ -3210,11 +3210,18 @@ func TestRepositoryAuthorityGrammar(t *testing.T) {
 		"[::1]:8080":             "ada.::1",
 		"":                       "",
 	} {
-		if got := vocabulary.DefaultRepositoryAuthority("ada", host); got != want {
-			t.Errorf("vocabulary.DefaultRepositoryAuthority(ada, %q) = %q, want %q", host, got, want)
+		if got := vocabulary.RepositoryAuthority("ada", host); got != want {
+			t.Errorf("vocabulary.RepositoryAuthority(ada, %q) = %q, want %q", host, got, want)
 		}
 	}
-	if vocabulary.ValidRepositoryAuthority(vocabulary.DefaultRepositoryAuthority("ada", "[::1]:8080")) {
+	// A name that already carries a dot IS the authority: the host is not
+	// appended to it, whatever the host is.
+	for _, host := range []string{"substrate.example", "substrate.example:8080", ""} {
+		if got := vocabulary.RepositoryAuthority("Ada.Example.COM ", host); got != "ada.example.com" {
+			t.Errorf("vocabulary.RepositoryAuthority(ada.example.com, %q) = %q", host, got)
+		}
+	}
+	if vocabulary.ValidRepositoryAuthority(vocabulary.RepositoryAuthority("ada", "[::1]:8080")) {
 		t.Error("an IPv6 literal host produced a default that passes the grammar")
 	}
 }

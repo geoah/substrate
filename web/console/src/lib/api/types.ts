@@ -449,9 +449,10 @@ export interface TokenInfo {
 }
 
 /** What a credential change answers (`POST /password`, `POST /totp`): the
- * username the factors proved. No token is minted; the caller signs in again. */
-export interface SessionUser {
-  username: string
+ * repository the factors proved. No token is minted; the caller signs in
+ * again. */
+export interface SessionCredential {
+  repository: string
 }
 
 /** A mint (login, registration or `POST /tokens`): the record, plus the secret
@@ -459,6 +460,9 @@ export interface SessionUser {
 export interface MintedToken {
   token: TokenInfo
   secret: string
+  /** The repository the token opens, as the door resolved it: login and
+   * registration echo it, a `POST /tokens` mint omits it. */
+  repository?: string
 }
 
 /** What an OAuth start answers: the provider consent URL to open. */

@@ -70,14 +70,13 @@ type Session struct {
 	// Token is the bearer secret of the user's current token. A token has
 	// full access to its repository, so there is nothing else to hold.
 	Token string
-	// Username is the registered user, which is also the repository's name.
-	Username string
+	// Repository is the repository the user owns and logs in with: its
+	// authority, as registration returned it, or as the option named it when
+	// nothing registered.
+	Repository string
 	// TOTPSecret is the enrolled seed, so a test can log in again, on this
 	// substrate or on one restored from it.
 	TOTPSecret string
-	// Authority is the repository's authority as registration returned it,
-	// or as the option named it when nothing registered.
-	Authority string
 }
 
 // Env is one running substrate and the credentials to talk to it.
@@ -103,9 +102,8 @@ type Env struct {
 type Option func(*options)
 
 type options struct {
-	username          string
+	repository        string
 	password          string
-	authority         string
 	recoveryPublicKey string
 	dsn               string
 	dataRoot          string
@@ -116,16 +114,12 @@ type options struct {
 	noRegister        bool
 }
 
-// WithUser names the user Start registers. The default is fine unless a test
-// needs two substrates to disagree about who lives in them.
-func WithUser(username, password string) Option {
-	return func(o *options) { o.username, o.password = username, password }
-}
-
-// WithAuthority names the authority registration asks for; absent, the door
-// derives one from the username and the listener's host.
-func WithAuthority(authority string) Option {
-	return func(o *options) { o.authority = authority }
+// WithUser names the repository Start registers and the password its user
+// signs in with. A bare label is completed under the listener's host, exactly
+// as the door does it. The default is fine unless a test needs two substrates
+// to disagree about who lives in them.
+func WithUser(repository, password string) Option {
+	return func(o *options) { o.repository, o.password = repository, password }
 }
 
 // WithRecoveryPublicKey registers with a client-minted age recipient, the way
@@ -179,7 +173,7 @@ func Start(t testing.TB, opts ...Option) *Env {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	o := options{username: "tester", password: "correct-horse-battery-staple"}
+	o := options{repository: "tester", password: "correct-horse-battery-staple"}
 	for _, opt := range opts {
 		opt(&o)
 	}
@@ -260,13 +254,13 @@ func Start(t testing.TB, opts ...Option) *Env {
 	t.Cleanup(stop)
 
 	env := &Env{
-		Session: &Session{Username: o.username, Authority: o.authority},
+		Session: &Session{Repository: o.repository},
 		URL:     "http://" + ln.Addr().String(),
 		DSN:     dsn, Service: svc, t: t, now: o.now, stop: stop,
 		client: &http.Client{Timeout: 120 * time.Second},
 	}
 	if !o.noRegister {
-		env.register(o.username, o.password, o.authority, o.recoveryPublicKey)
+		env.register(o.repository, o.password, o.recoveryPublicKey)
 	}
 	return env
 }
@@ -287,7 +281,7 @@ func (e *Env) For(t testing.TB) *Env {
 // untouched, and it cannot Stop the substrate.
 func (e *Env) WithToken(token string) *Env {
 	c := *e
-	c.Session = &Session{Token: token, Username: e.Username, TOTPSecret: e.TOTPSecret, Authority: e.Authority}
+	c.Session = &Session{Token: token, Repository: e.Repository, TOTPSecret: e.TOTPSecret}
 	c.stop = nil
 	return &c
 }
@@ -321,10 +315,10 @@ func (e *Env) TOTPCode() string {
 // Login signs the user in with the password and a code, and returns the
 // status and body: a test asserting a refusal needs the refusal. On success
 // the Session's Token is replaced with the new secret.
-func (e *Env) Login(username, password, code string) (int, []byte) {
+func (e *Env) Login(repository, password, code string) (int, []byte) {
 	e.t.Helper()
 	status, raw, _ := e.DoRaw(http.MethodPost, "/login", marshal(e.t, substrate.LoginRequest{
-		Username: username, Password: password, TOTPCode: code, Label: "testenv-login",
+		Repository: repository, Password: password, TOTPCode: code, Label: "testenv-login",
 	}), map[string]string{"Content-Type": "application/json", "Authorization": ""})
 	if status == http.StatusCreated {
 		var out substrate.MintedToken
@@ -336,28 +330,28 @@ func (e *Env) Login(username, password, code string) (int, []byte) {
 	return status, raw
 }
 
-// RegisterUser registers another user on the same substrate and returns an
-// Env authenticated as that user: the server, the clock and the schema are
-// shared, the Session is theirs. An empty authority takes the door's default;
-// an empty recovery recipient has the server mint the pair. The copy cannot
-// Stop the substrate.
-func (e *Env) RegisterUser(username, password, authority, recoveryPublicKey string) *Env {
+// RegisterUser registers another repository on the same substrate and returns
+// an Env authenticated as its user: the server, the clock and the schema are
+// shared, the Session is theirs. A bare repository label is completed under
+// the listener's host; an empty recovery recipient has the server mint the
+// pair. The copy cannot Stop the substrate.
+func (e *Env) RegisterUser(repository, password, recoveryPublicKey string) *Env {
 	e.t.Helper()
 	other := *e
-	other.Session = &Session{Username: username, Authority: authority}
+	other.Session = &Session{Repository: repository}
 	other.stop = nil
-	other.register(username, password, authority, recoveryPublicKey)
+	other.register(repository, password, recoveryPublicKey)
 	return &other
 }
 
 // register walks the real registration: enroll for a TOTP seed, then commit
 // with a code derived from it. Registration ends holding a token, so there is
 // no separate login.
-func (e *Env) register(username, password, authority, recoveryPublicKey string) {
+func (e *Env) register(repository, password, recoveryPublicKey string) {
 	e.t.Helper()
 	var enrollment substrate.TOTPEnrollment
 	e.mustJSON(http.MethodPost, "/register/enroll", map[string]any{
-		"inviteCode": InviteCode, "username": username,
+		"inviteCode": InviteCode, "repository": repository,
 	}, &enrollment)
 
 	code, err := engine.TOTPCode(enrollment.Secret, engine.TOTPStep(e.now()))
@@ -366,16 +360,16 @@ func (e *Env) register(username, password, authority, recoveryPublicKey string) 
 	}
 	var out substrate.Registered
 	e.mustJSON(http.MethodPost, "/register", substrate.RegisterRequest{
-		InviteCode: InviteCode, Username: username, Password: password,
+		InviteCode: InviteCode, Repository: repository, Password: password,
 		TOTPSecret: enrollment.Secret, TOTPCode: code, Label: "testenv",
-		Authority: authority, RecoveryPublicKey: recoveryPublicKey,
+		RecoveryPublicKey: recoveryPublicKey,
 	}, &out)
 	if out.Secret == "" {
 		e.t.Fatal("testenv: registration returned no token secret")
 	}
 	e.Token = out.Secret
 	e.TOTPSecret = enrollment.Secret
-	e.Authority = out.Authority
+	e.Repository = out.Repository
 }
 
 func marshal(t testing.TB, v any) []byte {

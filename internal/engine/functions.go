@@ -1563,12 +1563,12 @@ func (ds *dataset) sweepPagedCursors(ctx context.Context) error {
 // recordChainKey is the paged-cursor key for a record-change delivery, and its
 // idempotency key: repository-qualified because per-repository changelog seqs collide.
 func (ds *dataset) recordChainKey(triggerID string, seq int64) string {
-	return fmt.Sprintf("%s/%s/%d", ds.Repository().Name, triggerID, seq)
+	return fmt.Sprintf("%s/%s/%d", ds.Repository().ID, triggerID, seq)
 }
 
 // fireChainKey is the paged-cursor key for a schedule or webhook fire delivery.
 func (ds *dataset) fireChainKey(triggerID, fireID string) string {
-	return fmt.Sprintf("%s/%s/%s", ds.Repository().Name, triggerID, fireID)
+	return fmt.Sprintf("%s/%s/%s", ds.Repository().ID, triggerID, fireID)
 }
 
 // --- cursors ---------------------------------------------------------------

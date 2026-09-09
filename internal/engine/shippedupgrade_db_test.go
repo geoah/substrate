@@ -61,7 +61,7 @@ func TestShippedUpgradePreviewReportsTheRefusedBootUpgrade(t *testing.T) {
 		t.Fatalf("core's declared version: %v", err)
 	}
 	svc := openTree(t, dsn, shippedTree(t))
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestShippedUpgradePreviewReportsTheRefusedBootUpgrade(t *testing.T) {
 		t.Fatalf("open the moved tree: %v", err)
 	}
 	defer func() { _ = svc.Close() }()
-	ds, err = svc.Dataset(ctx, testdb.Username(t))
+	ds, err = svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("a refused upgrade must not fail the open: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestShippedUpgradePreviewReportsARetiredName(t *testing.T) {
 		t.Fatalf("open the reusing tree: %v", err)
 	}
 	defer func() { _ = svc.Close() }()
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("a refused upgrade must not fail the open: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestShippedUpgradePreviewMatchesTheLogWithEveryGuardKind(t *testing.T) {
 		t.Fatalf("open the moved tree: %v", err)
 	}
 	defer func() { _ = svc.Close() }()
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("a refused upgrade must not fail the open: %v", err)
 	}

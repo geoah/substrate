@@ -17,7 +17,6 @@ import (
 // RotateReport is what one rotation did.
 type RotateReport struct {
 	Repository string `json:"repository"`
-	Username   string `json:"username"`
 	Previous   string `json:"previous"`
 	Generation string `json:"generation"`
 }
@@ -25,7 +24,7 @@ type RotateReport struct {
 // GenerationRotator is the operator hat's rotation seam, off
 // substrate.Service like Rebuilder and asserted here for the same reason.
 type GenerationRotator interface {
-	RotateHistoryGeneration(ctx context.Context, username string) (RotateReport, error)
+	RotateHistoryGeneration(ctx context.Context, repository string) (RotateReport, error)
 }
 
 var _ GenerationRotator = (*service)(nil)
@@ -35,11 +34,11 @@ var _ GenerationRotator = (*service)(nil)
 // at its next resume and re-lists. It opens the repository the way a rebuild
 // does, so a running server, which holds the directory lock and has the old
 // generation cached, refuses it rather than serve two generations at once.
-func (s *service) RotateHistoryGeneration(ctx context.Context, username string) (RotateReport, error) {
+func (s *service) RotateHistoryGeneration(ctx context.Context, repository string) (RotateReport, error) {
 	if s.readOnly {
 		return RotateReport{}, ErrDirectoryReadOnly
 	}
-	repo, err := s.repositoryByUsername(ctx, username)
+	repo, err := s.repositoryByID(ctx, repository)
 	if err != nil {
 		return RotateReport{}, err
 	}
@@ -47,7 +46,7 @@ func (s *service) RotateHistoryGeneration(ctx context.Context, username string) 
 	if err != nil {
 		return RotateReport{}, err
 	}
-	report := RotateReport{Repository: repo.ID, Username: repo.Username, Previous: repo.HistoryGeneration}
+	report := RotateReport{Repository: repo.ID, Previous: repo.HistoryGeneration}
 	if err := ds.directoryErr(); err != nil {
 		return report, err
 	}
@@ -57,7 +56,7 @@ func (s *service) RotateHistoryGeneration(ctx context.Context, username string) 
 	}
 	if _, err := s.maint.ExecContext(ctx,
 		`UPDATE repositories SET history_generation = $1 WHERE id = $2`, generation, repo.ID); err != nil {
-		return report, fmt.Errorf("substrate/engine: rotate the history generation of %s: %w", repo.Username, err)
+		return report, fmt.Errorf("substrate/engine: rotate the history generation of %s: %w", repo.ID, err)
 	}
 	ds.mu.Lock()
 	ds.generation = generation

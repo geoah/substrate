@@ -82,8 +82,8 @@ func TestGraphQLSchemaBuildsFromTheRegistry(t *testing.T) {
 // leak into this record's audit trail.
 func TestGraphQLHistoryIsScopedByType(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	// A person materialized at id "shared", plus changelog rows for the SAME id
 	// under two types — the collision A9 removes.
@@ -119,7 +119,7 @@ func TestGraphQLHistoryIsScopedByType(t *testing.T) {
 
 func TestGraphQLPutPatchRecordRoundTrip(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 
 	put := env.gql(t, tok, `mutation ($in: JSON!) { put(input: $in) { id kind title ... on Person { name company } } }`,
 		map[string]any{"in": map[string]any{
@@ -155,7 +155,7 @@ func TestGraphQLPutPatchRecordRoundTrip(t *testing.T) {
 // decision 0044 asks for.
 func TestGraphQLReferenceRoundTrip(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 
 	const path = "samples.substrate.reamde.dev/people/person/boss1"
 	put := env.gql(t, tok,
@@ -179,7 +179,7 @@ func TestGraphQLReferenceRoundTrip(t *testing.T) {
 // one-shape decision reaches the schema and not only the stored value.
 func TestGraphQLReferenceRequiresASubSelection(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 
 	res := env.gqlRaw(t, tok,
 		`query { records(first: 1) { nodes { ... on Person { manager } } } }`, nil)
@@ -195,7 +195,7 @@ func TestGraphQLReferenceRequiresASubSelection(t *testing.T) {
 // for it is told at query time rather than handed two nulls.
 func TestGraphQLReferenceRefusesTheRetiredPair(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 
 	res := env.gqlRaw(t, tok,
 		`query { records(first: 1) { nodes { ... on Person { manager { kind id } } } } }`, nil)
@@ -209,8 +209,8 @@ func TestGraphQLReferenceRefusesTheRetiredPair(t *testing.T) {
 
 func TestGraphQLRecordsUsesTheJSONFilter(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	// title is a PROPERTY, not a top-level put field — the strict
 	// GraphQL input decoder (codex regress #9) refuses it at the top level, so
@@ -252,7 +252,7 @@ func TestGraphQLRecordsUsesTheJSONFilter(t *testing.T) {
 // which it never did. The description carries the date range that works.
 func TestGraphQLFilterArgumentDescribesItsGrammar(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	res := env.gql(t, tok, `{ __type(name: "Query") { fields { name args { name description } } } }`, nil)
 
 	args := map[string]string{}
@@ -292,8 +292,8 @@ func TestGraphQLFilterArgumentDescribesItsGrammar(t *testing.T) {
 // working is a failing test and not a client's afternoon.
 func TestGraphQLDayRangeFilterReachesTheDataset(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	env.gql(t, tok, `{
 		records(filter: {kinds: ["samples.substrate.reamde.dev/tasks/task"],
 		                 properties: {at: {gte: "2026-08-15T00:00:00Z", lt: "2026-08-16T00:00:00Z"}}},
@@ -318,7 +318,7 @@ func TestGraphQLDayRangeFilterReachesTheDataset(t *testing.T) {
 // keys the argument does take.
 func TestGraphQLBadFilterIsAValidationErrorNamingTheKeys(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodPost, graphqlPath, tok, map[string]any{
 		"query": `query ($f: JSON) { records(filter: $f) { nodes { id } } }`,
 		// The shape an agent guesses for a day agenda: the predicate written
@@ -351,7 +351,7 @@ func TestGraphQLNeedsAuth(t *testing.T) {
 // strict decoder refuse every spec-compliant client that sent the real key.
 func TestGraphQLRequestExtensionsKeyIsSpelledExtensions(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodPost, graphqlPath, tok, map[string]any{
 		"query": "{ __typename }", "extensions": map[string]any{"trace": true},
 	})
@@ -366,8 +366,8 @@ func TestGraphQLRequestExtensionsKeyIsSpelledExtensions(t *testing.T) {
 
 func TestGraphQLSchemaIsCachedPerRegistryFingerprint(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	env.gql(t, tok, `{ __typename }`, nil)
 	env.gql(t, tok, `{ __typename }`, nil)
@@ -396,8 +396,8 @@ func TestGraphQLSchemaIsCachedPerRegistryFingerprint(t *testing.T) {
 // `target` resolving the referent through the registry.
 func TestGraphQLReferenceHistoryAndCapabilityInterfaces(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	at := time.Unix(1_700_000_500, 0).UTC()
 	ds.records["team1"] = &substrate.Record{
@@ -449,7 +449,7 @@ func TestGraphQLReferenceHistoryAndCapabilityInterfaces(t *testing.T) {
 // scalar rather than growing an object of its own.
 func TestGraphQLLinkDataReferenceIsItsOwnType(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 
 	res := env.gql(t, tok, `{
 		message: __type(name: "Conversationmessage") { fields { name type { name kind } } }
@@ -505,8 +505,8 @@ func TestGraphQLLinkDataReferenceIsItsOwnType(t *testing.T) {
 // list resolve it null, because only single-record reads assemble it.
 func TestGraphQLPropertyMeta(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	at := time.Unix(1_700_000_000, 0).UTC()
 	ds.records["p1"] = &substrate.Record{
@@ -545,8 +545,8 @@ func TestGraphQLPropertyMeta(t *testing.T) {
 // resource owns their pagination.
 func TestGraphQLIncomingIsNotOnRecord(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	ds.records["p1"] = &substrate.Record{
 		ID: "p1", Kind: "samples.substrate.reamde.dev/people/person",
@@ -633,8 +633,8 @@ func TestGraphQLNamesDoNotDependOnRegistryOrder(t *testing.T) {
 // its authority from the start, so there is no tie to break and no rename.
 func TestGraphQLInstallingASameWordPackageKeepsExistingNames(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	taskKind := func(authority string) substrate.KindInfo {
 		return substrate.KindInfo{
@@ -769,8 +769,8 @@ func TestGraphQLReferenceNameCollisionIsRefused(t *testing.T) {
 // round-trips through GraphQL instead of overflowing GraphQL's 32-bit Int.
 func TestGraphQLLongScalarRoundTripsPast2e31(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	const bigVersion = int64(3_000_000_000) // > 2^31-1 (2_147_483_647)
 	const bigSeq = int64(5_000_000_000)
@@ -881,8 +881,8 @@ func wireInt64(t *testing.T, v any) int64 {
 // scalar and on the link property alike.
 func TestGraphQLIntPropertyRoundTripsSafeIntegers(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	ds.types = append(ds.types, widgetKind())
 
 	const maxSafe = int64(1<<53 - 1)
@@ -945,8 +945,8 @@ func TestGraphQLIntPropertyRoundTripsSafeIntegers(t *testing.T) {
 // a variable or over REST (decision 0012).
 func TestGraphQLInlineNumberLiteralStoresANumber(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	ds.types = append(ds.types, widgetKind())
 
 	res := env.gql(t, tok, `mutation { put(input: {kind: "`+widgetRef+`", id: "w1", properties: {count: 5, scores: [1, 2], ratio: 1.5}}) { ... on Widget { count } } }`, nil)
@@ -978,8 +978,8 @@ func sortedTypeNames(tm map[string]graphql.Type) []string {
 
 func TestGraphQLSearch(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	ds.records["c1"] = &substrate.Record{ID: "c1", Kind: "samples.substrate.reamde.dev/people/person", Title: "Ada Lovelace"}
 
 	res := env.gql(t, tok, `{ search(q: "ada", mode: "hybrid", kinds: ["samples.substrate.reamde.dev/people/person"], k: 5) { hits { lexical record { id } } pending } }`, nil)
@@ -998,8 +998,8 @@ func TestGraphQLSearch(t *testing.T) {
 // zero must not read as version 0.
 func TestGraphQLAffectedVersionIsNullWhenAbsent(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	const kind = "samples.substrate.reamde.dev/people/person"
 	ds.changes = append(ds.changes, substrate.Change{
 		Seq: 1, TS: time.Unix(1, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut, RecordID: "p1", Kind: kind,

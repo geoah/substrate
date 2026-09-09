@@ -98,10 +98,10 @@ func TestPolicySelectorOpsUpgradeToTheEnum(t *testing.T) {
 	dsn := engine.MigratedDSN(t)
 
 	old := openTree(t, dsn, oldPolicyTree(t))
-	if _, err := old.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := old.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	ds, err := old.Dataset(ctx, testdb.Username(t))
+	ds, err := old.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestPolicySelectorOpsUpgradeToTheEnum(t *testing.T) {
 	// The shipped tree opens the same repository: the enum lands, and the
 	// stored policy is untouched by it.
 	next := openTree(t, dsn, shippedTree(t))
-	ds, err = next.Dataset(ctx, testdb.Username(t))
+	ds, err = next.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,10 +165,10 @@ func TestPolicySelectorOpsUpgradeRefusedByAStrandedSelector(t *testing.T) {
 	dsn := engine.MigratedDSN(t)
 
 	old := openTree(t, dsn, oldPolicyTree(t))
-	if _, err := old.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := old.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	ds, err := old.Dataset(ctx, testdb.Username(t))
+	ds, err := old.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestPolicySelectorOpsUpgradeRefusedByAStrandedSelector(t *testing.T) {
 	}
 
 	next := openTree(t, dsn, shippedTree(t))
-	ds, err = next.Dataset(ctx, testdb.Username(t))
+	ds, err = next.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("a refused upgrade must still open the repository: %v", err)
 	}

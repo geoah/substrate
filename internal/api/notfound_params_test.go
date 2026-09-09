@@ -31,7 +31,7 @@ func TestUnmatchedAPIPathsAreJSONNotFound(t *testing.T) {
 	// A token, so the authenticated subtree answers about the PATH rather than
 	// about the caller (an unauthenticated 401 is the right answer there, and it
 	// is a JSON problem object already).
-	tok := svc.token("geoah")
+	tok := svc.token(fakeRepository)
 
 	for _, path := range []string{
 		"/api",
@@ -80,7 +80,7 @@ func TestUnmatchedAPIPathsAreJSONNotFound(t *testing.T) {
 // object — the contract belongs to the API, not to the presence of a WebDir.
 func TestUnmatchedAPIPathsAreJSONWithoutAWebDir(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	// `/api/v1/nope` matches no route at all — not even the generic
 	// {authority}/{plural} resource, whose own 404 is a JSON problem object
 	// already — so it is the router's fallback that has to answer well.
@@ -101,7 +101,7 @@ func TestUnmatchedAPIPathsAreJSONWithoutAWebDir(t *testing.T) {
 // filtered, which is the worst answer available.
 func TestUnknownListParamsAreRefused(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 
 	for _, query := range []string{"?bogus=1", "?first=2&bogus=1", "?limit=5", "?watch=1&bogus=1"} {
 		rec := env.do(t, http.MethodGet, peoplePath+query, tok, nil)
@@ -129,7 +129,7 @@ func TestUnknownListParamsAreRefused(t *testing.T) {
 // not be a blanket one.
 func TestSupportedListParamsStillWork(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	createPerson(t, env, tok)
 
 	for _, query := range []string{
@@ -146,7 +146,7 @@ func TestSupportedListParamsStillWork(t *testing.T) {
 	}
 	// The watch mode's own parameters: the switch and the resume cursor.
 	wantNotRefused(t, env, peoplePath+"?watch=1&from=0", tok)
-	generation := env.svc.datasets["geoah"].generation
+	generation := env.svc.datasets[fakeRepository].generation
 	wantNotRefused(t, env, peoplePath+"?watch=1&from=1&generation="+generation, tok)
 }
 
@@ -172,8 +172,8 @@ func wantNotRefused(t *testing.T, env *testEnv, path, token string) {
 // whole unfiltered feed looking like a filtered one.
 func TestUnknownChangeParamsAreRefused(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	seedChanges(env.svc.datasets["geoah"], 3)
+	tok := env.svc.token(fakeRepository)
+	seedChanges(env.svc.datasets[fakeRepository], 3)
 
 	for query, want := range map[string]string{
 		"?kind=samples.substrate.reamde.dev/people/person": "kinds",
@@ -193,14 +193,14 @@ func TestUnknownChangeParamsAreRefused(t *testing.T) {
 // The feed's real parameters keep working, in both of its modes.
 func TestSupportedChangeParamsStillWork(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	seedChanges(env.svc.datasets["geoah"], 3)
+	tok := env.svc.token(fakeRepository)
+	seedChanges(env.svc.datasets[fakeRepository], 3)
 
 	for _, query := range []string{
 		"",
 		"?from=0",
 		"?first=2",
-		"?first=2&before=3&generation=" + env.svc.datasets["geoah"].generation,
+		"?first=2&before=3&generation=" + env.svc.datasets[fakeRepository].generation,
 		"?kinds=samples.substrate.reamde.dev/people/person&ops=put&actors=owner",
 		"?excludeKinds=samples.substrate.reamde.dev/tasks/task&excludeOps=delete&excludeActors=machine",
 		"?recordId=e1&recordKind=samples.substrate.reamde.dev/people/person",
@@ -209,7 +209,7 @@ func TestSupportedChangeParamsStillWork(t *testing.T) {
 		rec := env.do(t, http.MethodGet, changesPath+query, tok, nil)
 		wantStatus(t, rec, http.StatusOK)
 	}
-	generation := env.svc.datasets["geoah"].generation
+	generation := env.svc.datasets[fakeRepository].generation
 	wantNotRefused(t, env, changesPath+"?watch=1&from=3&generation="+generation+"&kinds=samples.substrate.reamde.dev/people/person", tok)
 }
 

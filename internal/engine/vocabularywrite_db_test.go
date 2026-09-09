@@ -105,10 +105,10 @@ func TestSchemaApplyActivatesOnCommit(t *testing.T) {
 		return svc
 	}
 	svc := open()
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func TestSchemaApplyActivatesOnCommit(t *testing.T) {
 	_ = svc.Close()
 	svc2 := open()
 	t.Cleanup(func() { _ = svc2.Close() })
-	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -457,10 +457,10 @@ func TestKindInfoDefinitionSurvivesAReload(t *testing.T) {
 		return svc
 	}
 	svc := open()
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -490,7 +490,7 @@ func TestKindInfoDefinitionSurvivesAReload(t *testing.T) {
 
 	// The reopen rebuilds the registry from that row.
 	svc2 := open()
-	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
@@ -1025,7 +1025,7 @@ func TestOpenNeverPrunesShippedRows(t *testing.T) {
 		return svc
 	}
 	svc := open()
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
 	_ = svc.Close()
@@ -1034,7 +1034,7 @@ func TestOpenNeverPrunesShippedRows(t *testing.T) {
 	// today's tree no longer declares. Typed, like any row this dialect stores —
 	// a `definition` blob would be refused at the open by the dialect gate, which
 	// is a different question from pruning.
-	raw, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, testdb.Username(t)), engine.RoleApp)
+	raw, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleApp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1058,7 +1058,7 @@ func TestOpenNeverPrunesShippedRows(t *testing.T) {
 
 	svc2 := open()
 	t.Cleanup(func() { _ = svc2.Close() })
-	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}

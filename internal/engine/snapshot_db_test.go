@@ -34,8 +34,8 @@ func TestVerifyReportsMissingAndDamagedSideStoreFiles(t *testing.T) {
 	t.Parallel()
 	svc, dsn := newService(t)
 	ctx := context.Background()
-	registerUser(t, svc, "ada")
-	ds, err := svc.Dataset(ctx, "ada")
+	registerUser(t, svc, "ada.example.com")
+	ds, err := svc.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestVerifyReportsMissingAndDamagedSideStoreFiles(t *testing.T) {
 	}
 
 	svc2 := mustReopen(t, engine.MigratedDSN(t), root2)
-	report := mustVerify(t, svc2, "ada")
+	report := mustVerify(t, svc2, "ada.example.com")
 	if report.OK {
 		t.Fatalf("a copy short of a blob's bytes and a live secret's file verified: %+v", report)
 	}
@@ -101,8 +101,8 @@ func TestVerifyOpensEverySealedFileUnderTheKey(t *testing.T) {
 	t.Parallel()
 	svc, dsn := newService(t)
 	ctx := context.Background()
-	registerUser(t, svc, "ada")
-	ds, err := svc.Dataset(ctx, "ada")
+	registerUser(t, svc, "ada.example.com")
+	ds, err := svc.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestVerifyOpensEverySealedFileUnderTheKey(t *testing.T) {
 	// it, on both halves alike: a disk that flipped a byte of a payload the
 	// server then read back into its row.
 	svc2 := mustReopen(t, dsn, root)
-	if report := mustVerify(t, svc2, "ada"); !report.OK || report.SealedOpened != report.SealedFiles || report.SealedOpened == 0 {
+	if report := mustVerify(t, svc2, "ada.example.com"); !report.OK || report.SealedOpened != report.SealedFiles || report.SealedOpened == 0 {
 		t.Fatalf("the repository does not verify before the damage, or not every file was opened: %+v", report)
 	}
 	path := filepath.Join(changelogfile.SealedDir(dir), changelogfile.SealedFileName(ref))
@@ -139,7 +139,7 @@ func TestVerifyOpensEverySealedFileUnderTheKey(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	report := mustVerify(t, svc2, "ada")
+	report := mustVerify(t, svc2, "ada.example.com")
 	want := "sealed/" + changelogfile.SealedFileName(ref) + " (" + typeProvider + " openai): does not open under the DEK"
 	if report.OK || !findingContaining(report, want) {
 		t.Fatalf("a sealed file that does not open was not named:\n%+v", report)
@@ -150,7 +150,7 @@ func TestVerifyOpensEverySealedFileUnderTheKey(t *testing.T) {
 
 	// A process without the key compares bytes and opens nothing.
 	keyless := reopenWith(t, dsn, root, engine.WithDirectoryReadOnly(), engine.WithCredentialKey(""))
-	blind := mustVerify(t, keyless, "ada")
+	blind := mustVerify(t, keyless, "ada.example.com")
 	if !blind.OK || blind.SealedOpened != 0 {
 		t.Fatalf("without the key the damage must be invisible and nothing opened: %+v", blind)
 	}
@@ -164,8 +164,8 @@ func TestSnapshotRecordsThePointAndRestoresIntoAnEmptyDatabase(t *testing.T) {
 	t.Parallel()
 	svc, dsn := newService(t)
 	ctx := context.Background()
-	registerUser(t, svc, "ada")
-	ds, err := svc.Dataset(ctx, "ada")
+	registerUser(t, svc, "ada.example.com")
+	ds, err := svc.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +185,7 @@ func TestSnapshotRecordsThePointAndRestoresIntoAnEmptyDatabase(t *testing.T) {
 	// The operator's process: the server is stopped, so it takes the lock.
 	operator := mustReopen(t, dsn, root)
 	dest := t.TempDir()
-	report, err := operator.(snapshotter).SnapshotRepository(ctx, "ada", dest)
+	report, err := operator.(snapshotter).SnapshotRepository(ctx, "ada.example.com", dest)
 	if err != nil {
 		t.Fatalf("snapshot: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestSnapshotRecordsThePointAndRestoresIntoAnEmptyDatabase(t *testing.T) {
 	if len(snap.Blobs) != 1 || snap.Blobs[0] != digest || snap.BlobLocation != "" || snap.SealedFiles != report.SealedFiles {
 		t.Fatalf("snapshot = %+v, want the one stored digest %s in the directory", snap, digest)
 	}
-	if _, err := operator.(snapshotter).SnapshotRepository(ctx, "ada", dest); !errors.Is(err, engine.ErrSnapshotExists) {
+	if _, err := operator.(snapshotter).SnapshotRepository(ctx, "ada.example.com", dest); !errors.Is(err, engine.ErrSnapshotExists) {
 		t.Fatalf("a second snapshot over the first must be refused, got %v", err)
 	}
 	_ = operator.Close()
@@ -211,7 +211,7 @@ func TestSnapshotRecordsThePointAndRestoresIntoAnEmptyDatabase(t *testing.T) {
 	// The restore: the destination is laid out as a data root.
 	dsn2 := engine.MigratedDSN(t)
 	svc2 := mustReopen(t, dsn2, dest)
-	ds2, err := svc2.Dataset(ctx, "ada")
+	ds2, err := svc2.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatalf("open the restored repository: %v", err)
 	}
@@ -224,7 +224,7 @@ func TestSnapshotRecordsThePointAndRestoresIntoAnEmptyDatabase(t *testing.T) {
 	if got := openSecret(t, dsn2, ref); got != secretBefore {
 		t.Fatalf("secret = %q, want %q", got, secretBefore)
 	}
-	verified := mustVerify(t, svc2, "ada")
+	verified := mustVerify(t, svc2, "ada.example.com")
 	if !verified.OK || verified.Head != head {
 		t.Fatalf("the restored repository does not verify: %+v", verified)
 	}
@@ -235,7 +235,7 @@ func TestSnapshotRecordsThePointAndRestoresIntoAnEmptyDatabase(t *testing.T) {
 		t.Fatalf("verify opened %d of %d sealed files and hashed %d blobs (%d bytes)", verified.SealedOpened, verified.SealedFiles, verified.Blobs, verified.BlobBytes)
 	}
 	mustPut(t, ds2, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "after the restore"}})
-	if grown := mustVerify(t, svc2, "ada"); !grown.OK || grown.Snapshot == nil || grown.Snapshot.Head != head || grown.Head != head+1 {
+	if grown := mustVerify(t, svc2, "ada.example.com"); !grown.OK || grown.Snapshot == nil || grown.Snapshot.Head != head || grown.Head != head+1 {
 		t.Fatalf("a write past the recorded point must not be a finding: %+v", grown)
 	}
 }
@@ -246,8 +246,8 @@ func snapshotFixture(t *testing.T) (dsn, root, id, ref, digest string, head int6
 	t.Helper()
 	svc, dsn := newService(t)
 	ctx := context.Background()
-	registerUser(t, svc, "ada")
-	ds, err := svc.Dataset(ctx, "ada")
+	registerUser(t, svc, "ada.example.com")
+	ds, err := svc.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,13 +339,13 @@ func TestSnapshotDiscardsACopyThatDoesNotReadBack(t *testing.T) {
 				return nil
 			}))
 			dest := t.TempDir()
-			_, err := operator.(snapshotter).SnapshotRepository(ctx, "ada", dest)
+			_, err := operator.(snapshotter).SnapshotRepository(ctx, "ada.example.com", dest)
 			if !errors.Is(err, engine.ErrSnapshotCopyDamaged) {
 				t.Fatalf("a damaged copy was kept: %v", err)
 			}
 			nothingAt(t, dest, id)
 			armed = false
-			report, err := operator.(snapshotter).SnapshotRepository(ctx, "ada", dest)
+			report, err := operator.(snapshotter).SnapshotRepository(ctx, "ada.example.com", dest)
 			if err != nil || report.Head != head {
 				t.Fatalf("the retry into the same destination: %+v, %v", report, err)
 			}
@@ -371,12 +371,12 @@ func TestSnapshotFailureMidCopyLeavesNothingAndRetries(t *testing.T) {
 		return nil
 	}))
 	dest := t.TempDir()
-	if _, err := operator.(snapshotter).SnapshotRepository(ctx, "ada", dest); !errors.Is(err, diskFull) {
+	if _, err := operator.(snapshotter).SnapshotRepository(ctx, "ada.example.com", dest); !errors.Is(err, diskFull) {
 		t.Fatalf("the mid-copy failure was not the snapshot's error: %v", err)
 	}
 	nothingAt(t, dest, id)
 	armed = false
-	report, err := operator.(snapshotter).SnapshotRepository(ctx, "ada", dest)
+	report, err := operator.(snapshotter).SnapshotRepository(ctx, "ada.example.com", dest)
 	if err != nil || report.Head != head {
 		t.Fatalf("the retry into the same destination: %+v, %v", report, err)
 	}
@@ -396,7 +396,7 @@ func TestSnapshotRefusesTheLockAndADamagedRepository(t *testing.T) {
 		t.Fatalf("a second process could not boot beside the server: %v", err)
 	}
 	dest := t.TempDir()
-	_, err = second.(snapshotter).SnapshotRepository(ctx, testdb.Username(t), dest)
+	_, err = second.(snapshotter).SnapshotRepository(ctx, testdb.Repository(t), dest)
 	if !errors.Is(err, engine.ErrChangelogLocked) || !errors.Is(err, changelogfile.ErrLocked) {
 		t.Fatalf("beside a running server the refusal must be the lock's: %v", err)
 	}
@@ -411,7 +411,7 @@ func TestSnapshotRefusesTheLockAndADamagedRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 	operator := mustReopen(t, dsn, root)
-	_, err = operator.(snapshotter).SnapshotRepository(ctx, testdb.Username(t), dest)
+	_, err = operator.(snapshotter).SnapshotRepository(ctx, testdb.Repository(t), dest)
 	if !errors.Is(err, engine.ErrSnapshotUnverified) || !strings.Contains(err.Error(), digest) {
 		t.Fatalf("a repository short of a blob's bytes must refuse the snapshot and name the blob: %v", err)
 	}

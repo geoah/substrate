@@ -95,7 +95,7 @@ func (ds *dataset) promoteSchemaDialect(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := admitVocabularyDialect(ds.info.Name, stored); err != nil {
+	if err := admitVocabularyDialect(ds.info.ID, stored); err != nil {
 		return err
 	}
 	if stored == maxVocabularyDialect {
@@ -108,7 +108,7 @@ func (ds *dataset) promoteSchemaDialect(ctx context.Context) error {
 	// the whole handling.
 	if stored > 0 {
 		return fmt.Errorf("%w: repository %s stores dialect %d, whose kind references carry no package segment (decision record 0047); no rung translates them, so wipe the store: mise run dev:wipe in development, and restore a dump taken before the upgrade anywhere else",
-			ErrDeclarationUntranslated, ds.info.Name, stored)
+			ErrDeclarationUntranslated, ds.info.ID, stored)
 	}
 	// The dialect-1 shape is refused by its own tell, before the stamp: the
 	// stamp is durable and one-way, and stamping a store whose rows the reader
@@ -117,7 +117,7 @@ func (ds *dataset) promoteSchemaDialect(ctx context.Context) error {
 		return err
 	} else if len(left) > 0 {
 		return fmt.Errorf("%w: repository %s: %d declaration row(s) carry a `%s` blob, which dialect 1 stored and no release ever produced; there is no rung that translates it (#217), so wipe the store: %s",
-			ErrDeclarationUntranslated, ds.info.Name, len(left), propDeclarationBlob, strings.Join(left, ", "))
+			ErrDeclarationUntranslated, ds.info.ID, len(left), propDeclarationBlob, strings.Join(left, ", "))
 	}
 	// A gate that promoted nothing still stamps: the dialect is the store's
 	// SHAPE, not a count of promotions run, so a fresh repository leaves its

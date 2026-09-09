@@ -41,7 +41,7 @@ import {
   totpEnroll,
 } from "@/lib/api/auth"
 import { useAuthPolicy } from "@/lib/api/discovery"
-import { getUsername } from "@/lib/api/session"
+import { getRepository } from "@/lib/api/session"
 import { ApiError, type TOTPEnrollment } from "@/lib/api/types"
 
 const MIN_PASSWORD = 12
@@ -75,7 +75,7 @@ async function copy(value: string) {
 }
 
 export function AccountPage() {
-  const username = getUsername() ?? ""
+  const repository = getRepository() ?? ""
   const { totpRequired } = useAuthPolicy()
 
   return (
@@ -109,14 +109,18 @@ export function AccountPage() {
             </CardHeader>
             <CardContent>
               <div className="flex items-baseline gap-2 text-sm">
-                <span className="text-muted-foreground">Username</span>
-                <span className="data">{username || "unknown"}</span>
+                <span className="text-muted-foreground">Repository</span>
+                <span className="data">{repository || "unknown"}</span>
               </div>
             </CardContent>
           </Card>
 
-          <PasswordCard username={username} totpRequired={totpRequired} />
-          {totpRequired ? <TotpCard username={username} /> : <TotpOffCard />}
+          <PasswordCard repository={repository} totpRequired={totpRequired} />
+          {totpRequired ? (
+            <TotpCard repository={repository} />
+          ) : (
+            <TotpOffCard />
+          )}
         </div>
       </div>
     </div>
@@ -124,10 +128,10 @@ export function AccountPage() {
 }
 
 function PasswordCard({
-  username,
+  repository,
   totpRequired,
 }: {
-  username: string
+  repository: string
   totpRequired: boolean
 }) {
   const [password, setPassword] = useState("")
@@ -139,7 +143,7 @@ function PasswordCard({
 
   const matches = next.length > 0 && next === confirm
   const canSubmit =
-    username !== "" &&
+    repository !== "" &&
     password.length > 0 &&
     (!totpRequired || normalizeCode(code) !== null) &&
     next.length >= MIN_PASSWORD &&
@@ -151,7 +155,7 @@ function PasswordCard({
     setError(null)
     setBusy(true)
     try {
-      await changePassword(username, password, normalized, next)
+      await changePassword(repository, password, normalized, next)
       setPassword("")
       setCode("")
       setNext("")
@@ -286,7 +290,7 @@ function TotpOffCard() {
   )
 }
 
-function TotpCard({ username }: { username: string }) {
+function TotpCard({ repository }: { repository: string }) {
   const [password, setPassword] = useState("")
   const [code, setCode] = useState("")
   const [enrollment, setEnrollment] = useState<TOTPEnrollment | null>(null)
@@ -295,7 +299,7 @@ function TotpCard({ username }: { username: string }) {
   const [isBusy, setBusy] = useState(false)
 
   const canBegin =
-    username !== "" && password.length > 0 && normalizeCode(code) !== null
+    repository !== "" && password.length > 0 && normalizeCode(code) !== null
 
   async function begin() {
     const normalized = normalizeCode(code)
@@ -303,7 +307,7 @@ function TotpCard({ username }: { username: string }) {
     setError(null)
     setBusy(true)
     try {
-      setEnrollment(await totpEnroll(username, password, normalized))
+      setEnrollment(await totpEnroll(repository, password, normalized))
     } catch (err) {
       setError(describe(err))
       setCode("")
@@ -320,7 +324,7 @@ function TotpCard({ username }: { username: string }) {
     setBusy(true)
     try {
       await totpChange(
-        username,
+        repository,
         password,
         normalizedCurrent,
         enrollment.totpSecret,

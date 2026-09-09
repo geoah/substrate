@@ -6,12 +6,15 @@ CLI (`cmd/substratectl`). Provider auth and sync live IN the server — the OAut
 facility plus bundle functions.
 
 **The model, in one paragraph.** One invite code admits people. Registering
-creates a **user** — username, password and TOTP, all three — and that user's
-one **repository**, which owns one **authority** (`<username>.<server host>`
-unless the registration names one; the home of the kinds the user declares
-and the repository's id on disk, in the database and on the wire,
+creates a **repository** and its **user**: one name, one password and TOTP,
+all three. That name IS the repository's one **authority** (a bare label is
+completed under the server's host; the home of the kinds the user declares,
+the name they log in with, and the repository's id on disk, in the database
+and on the wire,
 [0046](docs/decisions/0046-a-repository-owns-one-authority-chosen-at-registration.md),
-[0052](docs/decisions/0052-the-authority-is-the-repository-id.md)).
+[0052](docs/decisions/0052-the-authority-is-the-repository-id.md),
+[0074](docs/decisions/0074-the-repository-name-is-the-login-name.md)).
+There is no username.
 Everything the user has lives in it: an append-only,
 strictly sequential **changelog**, checksummed segment files in the
 repository's directory under `SUBSTRATE_DATA_ROOT` that Postgres indexes,
@@ -98,7 +101,7 @@ hat against it, and `mise run console:build` puts the console at `/`.
 
 **The dev door has no second factor.** Every `dev*` task sets
 `SUBSTRATE_INSECURE_DISABLE_TOTP=true`, so registering and signing in are a
-username and a password: enrolling an authenticator for a database that gets
+repository name and a password: enrolling an authenticator for a database that gets
 wiped is friction with nothing behind it. The engine still mints and seals a
 seed, and the deployment says which door it runs at
 `GET /.well-known/substrate/server.json` (`registration.totpRequired`), which
@@ -144,8 +147,8 @@ never HTTP, and refuses before touching anything without one.
 
 ```bash
 # the user's hat — HTTP + a token
-bin/substratectl register                    # invite code, username, password, TOTP enroll, recovery key (auto-saved to 1Password when `op` is signed in)
-bin/substratectl login --username <you>      # password + TOTP; mints a token record
+bin/substratectl register                    # invite code, repository, password, TOTP enroll, recovery key (auto-saved to 1Password when `op` is signed in)
+bin/substratectl login --repository <yours>  # password + TOTP; mints a token record
 bin/substratectl kinds                       # every installed kind
 bin/substratectl get kind <ref> -o yaml      # one kind's definition
 bin/substratectl get task <id> -o yaml       # one record, apply-able envelope
@@ -155,9 +158,9 @@ bin/substratectl export                      # the recovery export: a tar of the
 
 # the operator's hat — a DSN, no HTTP
 bin/substratectl --dsn "$DATABASE_URL" repository list
-bin/substratectl --dsn "$DATABASE_URL" repository verify <username>  # walk the segment files: every line's checksum, every sidecar, both heads
-bin/substratectl --dsn "$DATABASE_URL" repository rebuild <username>  # replay the segment files into a fresh fold
-bin/substratectl --dsn "$DATABASE_URL" user reset <username>   # needs SUBSTRATE_CREDENTIAL_KEY
+bin/substratectl --dsn "$DATABASE_URL" repository verify <repository>  # walk the segment files: every line's checksum, every sidecar, both heads
+bin/substratectl --dsn "$DATABASE_URL" repository rebuild <repository>  # replay the segment files into a fresh fold
+bin/substratectl --dsn "$DATABASE_URL" user reset <repository>   # needs SUBSTRATE_CREDENTIAL_KEY
 ```
 
 **Registration seeds the `core` package and nothing else.** `tasks` above is a
@@ -173,11 +176,11 @@ other door, `…/install`, and lands under the authority that publishes it. A
 snippet that opens with `get people` on a fresh substrate is wrong, and was.
 
 Config is `~/.config/substratectl/config.yaml` (override with
-`SUBSTRATECTL_CONFIG`): named contexts of `{name, server, username, authority,
-token, tokenId}` — **no repository**, because the token implies it; the token
-id so `logout` can revoke the very token it forgets, and the authority (the
-repository's public name, written by `register` and carried forward by
-`login`) because a webhook URL is built from it. `SUBSTRATE_SERVER` /
+`SUBSTRATECTL_CONFIG`): named contexts of `{name, server, repository, token,
+tokenId}` — no URL names the repository, because the token implies it; the
+token id so `logout` can revoke the very token it forgets, and the repository
+(its authority, written by `register` and by `login`) because a webhook URL is
+built from it. `SUBSTRATE_SERVER` /
 `SUBSTRATE_TOKEN` are canonical and override the file (`SS_*` is the one
 accepted alias); flags override both. A password is NEVER an argument — every
 prompt has a flag or a `--*-stdin` twin so the same command scripts headlessly.
@@ -219,6 +222,7 @@ words, and what each one replaced:
 | **sample**    | the other catalog tier: a package the user copies, IMPORTED under the repository's own authority | example, vocabulary bundle |
 | **input**     | a bundle's named configuration need; one record resolves per input (bound reference, the id `default`, then the sole record) | config, configType, singleton |
 | **reference** | a typed pointer at one record, declared as a property and stored as `{ref: <kind>/<id>}` | relationship, edge |
+| **repository**| everything one user has; its name IS its authority, and that name is what a registration takes and a login presents | username |
 
 `docs/terms.md` is the full list, and it is the one the docs are held to.
 

@@ -78,7 +78,7 @@ func (ds *dataset) runGraphQLTool(ctx context.Context, actor substrate.Actor, ta
 	if err != nil {
 		return toolError(err.Error()), false
 	}
-	schema, err := ds.svc.gqlSchemas.SchemaFor(ds.Repository().Name, types)
+	schema, err := ds.svc.gqlSchemas.SchemaFor(ds.Repository().ID, types)
 	if err != nil {
 		return toolError(err.Error()), false
 	}

@@ -11,7 +11,7 @@ import {
   clearSession,
   getToken,
   getTokenId,
-  getUsername,
+  getRepository,
 } from "@/lib/api/session"
 
 const navigate = vi.fn().mockResolvedValue(undefined)
@@ -47,6 +47,7 @@ const ENROLLMENT = {
 const MINT = {
   token: { id: "tok-1", label: "console", createdAt: "2026-08-12T00:00:00Z" },
   secret: "substrate_tok_minted",
+  repository: "geoah.localhost",
 }
 
 const PASSWORD = "correct horse battery"
@@ -57,7 +58,7 @@ async function enroll() {
   fireEvent.change(screen.getByLabelText("Invite code"), {
     target: { value: "INV-1" },
   })
-  fireEvent.change(screen.getByLabelText("Username"), {
+  fireEvent.change(screen.getByLabelText("Repository"), {
     target: { value: "geoah" },
   })
   fireEvent.change(screen.getByLabelText("Password"), {
@@ -89,7 +90,7 @@ describe("RegisterPage", () => {
   it("collects the credentials first, and shows no one-time code until enrolled", () => {
     render(<RegisterPage />)
     expect(screen.getByLabelText("Invite code")).toBeTruthy()
-    expect(screen.getByLabelText("Username")).toBeTruthy()
+    expect(screen.getByLabelText("Repository")).toBeTruthy()
     // Password is on the FIRST step now, so a manager saves the login before
     // any QR appears.
     expect(screen.getByLabelText("Password")).toBeTruthy()
@@ -105,7 +106,7 @@ describe("RegisterPage", () => {
     fireEvent.change(screen.getByLabelText("Invite code"), {
       target: { value: "INV-1" },
     })
-    fireEvent.change(screen.getByLabelText("Username"), {
+    fireEvent.change(screen.getByLabelText("Repository"), {
       target: { value: "geoah" },
     })
     expect(
@@ -119,7 +120,7 @@ describe("RegisterPage", () => {
     expect(url).toBe("/register/enroll")
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
       inviteCode: "INV-1",
-      username: "geoah",
+      repository: "geoah.localhost",
     })
     expect(screen.getByText("SEED")).toBeTruthy()
     expect(screen.getByLabelText("One-time code")).toBeTruthy()
@@ -139,21 +140,18 @@ describe("RegisterPage", () => {
     )
 
     await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
-    expect(getUsername()).toBe("geoah")
+    expect(getRepository()).toBe("geoah.localhost")
     expect(getTokenId()).toBe("tok-1")
     expect(navigate).toHaveBeenCalledWith({ to: "/", replace: true })
     const [url, init] = fetchMock.mock.calls[1]
     expect(url).toBe("/register")
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
       inviteCode: "INV-1",
-      username: "geoah",
+      repository: "geoah.localhost",
       password: PASSWORD,
       totpSecret: "SEED",
       totpCode: "123456",
       label: "console",
-      // The authority the reader left derived: the username under the host
-      // serving the page (jsdom's is `localhost`).
-      authority: "geoah.localhost",
     })
   })
 
@@ -199,7 +197,7 @@ describe("RegisterPage", () => {
     fireEvent.change(screen.getByLabelText("Invite code"), {
       target: { value: "INV-1" },
     })
-    fireEvent.change(screen.getByLabelText("Username"), {
+    fireEvent.change(screen.getByLabelText("Repository"), {
       target: { value: "geoah" },
     })
     fireEvent.change(screen.getByLabelText("Password"), {
@@ -221,12 +219,11 @@ describe("RegisterPage", () => {
     // door that verifies none expects.
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
       inviteCode: "INV-1",
-      username: "geoah",
+      repository: "geoah.localhost",
       password: PASSWORD,
       totpSecret: "",
       totpCode: "",
       label: "console",
-      authority: "geoah.localhost",
     })
   })
 
@@ -240,7 +237,7 @@ describe("RegisterPage", () => {
     fireEvent.change(screen.getByLabelText("Invite code"), {
       target: { value: "INV-1" },
     })
-    fireEvent.change(screen.getByLabelText("Username"), {
+    fireEvent.change(screen.getByLabelText("Repository"), {
       target: { value: "geoah" },
     })
     fireEvent.change(screen.getByLabelText("Password"), {

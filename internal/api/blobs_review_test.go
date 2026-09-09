@@ -55,7 +55,7 @@ var _ substrate.BlobStore = (*blockingBlobDS)(nil)
 
 func TestBlobPutIsConcurrencyBounded(t *testing.T) {
 	ds := &blockingBlobDS{
-		fakeDataset: newFakeDataset("geoah"),
+		fakeDataset: newFakeDataset(fakeRepository),
 		started:     make(chan struct{}, 64),
 		release:     make(chan struct{}),
 	}

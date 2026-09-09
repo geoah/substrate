@@ -28,7 +28,7 @@ import { saveSession } from "@/lib/api/session"
 import { ApiError } from "@/lib/api/types"
 import { loginRoute } from "@/router"
 
-/** The door refuses to say WHICH factor was wrong — username, password and
+/** The door refuses to say WHICH factor was wrong — repository, password and
  * code fail as one, and a lockout reads the same — so the console must not
  * invent specifics the server withheld. Only the rate limit earns sugar (the
  * wait). */
@@ -39,7 +39,7 @@ function describeError(err: unknown): string {
       return `Too many attempts — the door is rate limited on purpose. Try again in ${wait}s.`
     }
     if (err.code === "auth") {
-      return "The username, password or code is wrong — or there have been too many failed attempts. Wait for a fresh code and try again."
+      return "The repository, password or code is wrong — or there have been too many failed attempts. Wait for a fresh code and try again."
     }
     return err.message
   }
@@ -50,7 +50,7 @@ function describeError(err: unknown): string {
  * not, an empty field is valid and the input is never rendered. */
 function loginSchema(totpRequired: boolean) {
   return z.object({
-    username: z.string().trim().min(1, "Enter your username."),
+    repository: z.string().trim().min(1, "Enter your repository."),
     password: z.string().min(1, "Enter your password."),
     code: z.string().refine((v) => !totpRequired || normalizeCode(v) !== null, {
       message: `Enter the current ${CODE_DIGITS}-digit code.`,
@@ -60,9 +60,10 @@ function loginSchema(totpRequired: boolean) {
 
 type LoginValues = z.infer<ReturnType<typeof loginSchema>>
 
-/** Sign in: username, password and the current TOTP code — all three, every
- * time. The response is a token RECORD and its secret; there is no session
- * beside it, so what the browser keeps is a token like any other client's. */
+/** Sign in: the repository, the password and the current TOTP code — all
+ * three, every time. The response is a token RECORD and its secret; there is
+ * no session beside it, so what the browser keeps is a token like any other
+ * client's. */
 export function LoginPage() {
   const navigate = useNavigate()
   const search = loginRoute.useSearch()
@@ -72,10 +73,10 @@ export function LoginPage() {
   // FOLLOW it rather than be fixed at mount: react-hook-form reads the options
   // it is given on every render, and this form must not be remounted to change
   // them — a remount resets the fields, and by then a password manager has
-  // filled the username and password in.
+  // filled the repository and password in.
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema(totpRequired)),
-    defaultValues: { username: "", password: "", code: "" },
+    defaultValues: { repository: "", password: "", code: "" },
   })
 
   async function onSubmit(values: LoginValues) {
@@ -84,17 +85,19 @@ export function LoginPage() {
     // there is nothing to normalize and nothing to refuse.
     const code = totpRequired ? normalizeCode(values.code) : ""
     if (code === null) return
-    const username = values.username.trim()
+    const repository = values.repository.trim()
     let minted
     try {
-      minted = await login(username, values.password, code)
+      minted = await login(repository, values.password, code)
     } catch (err) {
       setApiError(describeError(err))
       // A stale code cannot succeed twice; drop it so the next try starts fresh.
       form.resetField("code")
       return
     }
-    saveSession(minted.secret, username, minted.token.id)
+    // The door answers with the repository it RESOLVED, so a bare label is
+    // stored as the authority it named.
+    saveSession(minted.secret, minted.repository ?? repository, minted.token.id)
     await navigate({ to: search.redirect ?? "/", replace: true })
   }
 
@@ -114,24 +117,27 @@ export function LoginPage() {
             <CardTitle>Sign in</CardTitle>
             <CardDescription>
               {totpRequired
-                ? `Your username, password and the current ${CODE_DIGITS}-digit code.`
-                : "Your username and password — this substrate does not verify a second factor."}{" "}
+                ? `Your repository, password and the current ${CODE_DIGITS}-digit code.`
+                : "Your repository and password — this substrate does not verify a second factor."}{" "}
               Signing in mints a token that stays in this browser.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={form.handleSubmit(onSubmit)}>
               <FieldGroup>
-                <Field data-invalid={!!errors.username || undefined}>
-                  <FieldLabel htmlFor="username">Username</FieldLabel>
+                <Field data-invalid={!!errors.repository || undefined}>
+                  <FieldLabel htmlFor="repository">Repository</FieldLabel>
                   <Input
-                    id="username"
+                    id="repository"
                     autoComplete="username"
                     autoFocus
-                    aria-invalid={!!errors.username || !!apiError}
-                    {...form.register("username")}
+                    aria-invalid={!!errors.repository || !!apiError}
+                    {...form.register("repository")}
                   />
-                  <FieldError errors={[errors.username]} />
+                  <FieldDescription>
+                    The name you registered, such as ada.example.com.
+                  </FieldDescription>
+                  <FieldError errors={[errors.repository]} />
                 </Field>
                 <Field data-invalid={!!errors.password || undefined}>
                   <FieldLabel htmlFor="password">Password</FieldLabel>

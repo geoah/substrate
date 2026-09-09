@@ -23,8 +23,7 @@ func (a *app) registerCommand() *cobra.Command {
 	var (
 		server            string
 		invite            string
-		username          string
-		authority         string
+		repository        string
 		secret            string
 		code              string
 		label             string
@@ -35,15 +34,16 @@ func (a *app) registerCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "register",
 		Short: "Register a user with an invite code and store the first token",
-		Long: `Create a user and their repository on a substrate that is open for
+		Long: `Create a repository and its user on a substrate that is open for
 registration.
 
-Three things make a user: a username, a password, and a second factor. substratectl
-asks the substrate for a TOTP enrollment, prints it once for an authenticator,
-and takes back one code with the password — only that call writes anything.
+Three things make a user: a repository name, a password, and a second factor.
+substratectl asks the substrate for a TOTP enrollment, prints it once for an
+authenticator, and takes back one code with the password — only that call
+writes anything.
 
   substratectl register --server https://substrate.example.com
-  substratectl register --username geoah --invite-code CODE \
+  substratectl register --repository geoah --invite-code CODE \
       --totp-secret BASE32SEED --totp-code 123456 --password-stdin < password
 
 --totp-secret brings your own seed and skips the enrollment call, which is what
@@ -52,11 +52,12 @@ substrate and the code is prompted for.
 
 A substrate that verifies no second factor (SUBSTRATE_INSECURE_DISABLE_TOTP, a
 local-development setting) is neither enrolled with nor asked for a code: a
-username and a password make the user.
+repository name and a password make the user.
 
-The repository owns one AUTHORITY: any hostname you control (ada.example.com),
-the home of every kind you declare. --authority chooses it; omitted, the
-substrate names it <username>.<its own host>. It is permanent.`,
+THE REPOSITORY NAME IS ITS AUTHORITY: the home of every kind you declare, the
+name you log in with, and permanent. Pass any hostname you control
+(ada.example.com), or a bare label the substrate completes under its own host
+(geoah -> geoah.substrate.example.com).`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := a.config()
@@ -78,14 +79,14 @@ substrate names it <username>.<its own host>. It is permanent.`,
 			if invite == "" {
 				return errors.New("an invite code is required: a substrate with none configured is closed to registration")
 			}
-			if username == "" {
-				username, err = a.prompt("Username: ")
+			if repository == "" {
+				repository, err = a.prompt("Repository: ")
 				if err != nil {
 					return err
 				}
 			}
-			if username == "" {
-				return errors.New("a username is required")
+			if repository == "" {
+				return errors.New("a repository name is required")
 			}
 			password, err := a.newSecret(passwordStdin, "Password: ", "Password (again): ")
 			if err != nil {
@@ -105,7 +106,7 @@ substrate names it <username>.<its own host>. It is permanent.`,
 			}
 			if secret == "" && totpRequired {
 				enrollment, err := cl.registerEnroll(cmd.Context(), registerBeginRequest{
-					InviteCode: invite, Username: username,
+					InviteCode: invite, Repository: repository,
 				})
 				if err != nil {
 					return authError(err)
@@ -143,9 +144,9 @@ substrate names it <username>.<its own host>. It is permanent.`,
 			}
 			res, err := a.retryWhenPaced(cmd.Context(), func() (*registerResult, error) {
 				return cl.register(cmd.Context(), registerRequest{
-					InviteCode: invite, Username: username, Password: password,
+					InviteCode: invite, Repository: repository, Password: password,
 					TOTPSecret: secret, TOTPCode: code, Label: label,
-					Authority: authority, RecoveryPublicKey: recoveryPublicKey,
+					RecoveryPublicKey: recoveryPublicKey,
 				})
 			})
 			if err != nil {
@@ -162,38 +163,35 @@ substrate names it <username>.<its own host>. It is permanent.`,
 				return authError(err)
 			}
 			if contextName == "" {
-				contextName = username
+				contextName = repository
 			}
 			cfg.upsertContext(Context{
-				Name: contextName, Server: server, Username: username,
-				Authority: res.Authority,
-				Token:     res.Secret, TokenID: res.Token.ID,
+				Name: contextName, Server: server, Repository: res.Repository,
+				Token: res.Secret, TokenID: res.Token.ID,
 			})
 			if err := a.saveConfig(cfg); err != nil {
 				// The registration LANDED: the one-time keys must not die
 				// with a failed config write, so they are handed over before
 				// the error surfaces.
 				fmt.Fprintln(a.errOut, "registered, but the token could not be stored; keep the keys below:")
-				a.handOverRecoveryKey(cmd.Context(), server, username, recoveryIdentity, res.RecoveryPublicKey)
+				a.handOverRecoveryKey(cmd.Context(), server, res.Repository, recoveryIdentity, res.RecoveryPublicKey)
 				return err
 			}
-			fmt.Fprintf(a.out, "registered %s on %s\n", username, server)
-			fmt.Fprintf(a.out, "  authority: %s\n", dash(res.Authority))
+			fmt.Fprintf(a.out, "registered %s on %s\n", dash(res.Repository), server)
 			fmt.Fprintf(a.out, "  token:     %s (%s)\n", dash(res.Token.Label), dash(res.Token.ID))
 			fmt.Fprintf(a.out, "  context:   %s -> %s\n", contextName, a.configPath)
-			a.handOverRecoveryKey(cmd.Context(), server, username, recoveryIdentity, res.RecoveryPublicKey)
+			a.handOverRecoveryKey(cmd.Context(), server, res.Repository, recoveryIdentity, res.RecoveryPublicKey)
 			return nil
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(&server, "server", "", "substrate base URL")
 	f.StringVar(&invite, "invite-code", "", "invite code (prompted for when omitted)")
-	f.StringVar(&username, "username", "", "username to claim (prompted for when omitted)")
-	f.StringVar(&authority, "authority", "", "hostname the repository owns, e.g. ada.example.com (default: <username>.<the substrate's host>)")
+	f.StringVar(&repository, "repository", "", "repository to create, which becomes its authority: ada.example.com, or a bare label under the substrate's host (prompted for when omitted)")
 	f.StringVar(&secret, "totp-secret", "", "base32 TOTP seed to enroll (default: ask the substrate for one)")
 	f.StringVar(&code, "totp-code", "", "6-digit code from the new enrollment (prompted for when omitted)")
 	f.StringVar(&label, "label", "", "label for the first token (default: substratectl@<hostname>)")
-	f.StringVar(&contextName, "context", "", "name for the stored context (default: the username)")
+	f.StringVar(&contextName, "context", "", "name for the stored context (default: the repository name)")
 	f.StringVar(&recoveryPublicKey, "recovery-public-key", "", "age recipient for the recovery key (default: generate the pair locally and hand you the key)")
 	f.BoolVar(&passwordStdin, "password-stdin", false, "read the password from stdin (one line) instead of prompting")
 	return cmd

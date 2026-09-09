@@ -21,8 +21,8 @@ func createPerson(t *testing.T, env *testEnv, tok string) string {
 
 func TestPatchThroughTheWrongCollectionWritesNothing(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	id := createPerson(t, env, tok)
 	before := ds.records[id].Version
 
@@ -41,8 +41,8 @@ func TestPatchThroughTheWrongCollectionWritesNothing(t *testing.T) {
 
 func TestDeleteThroughTheWrongCollectionIsRefused(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	id := createPerson(t, env, tok)
 
 	// The token collection must not delete a person (nor a person
@@ -62,8 +62,8 @@ func TestDeleteThroughTheWrongCollectionIsRefused(t *testing.T) {
 
 func TestMutationsThroughTheRightCollectionStillWork(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	id := createPerson(t, env, tok)
 
 	rec := env.do(t, http.MethodPatch, peoplePath+"/"+id, tok,
@@ -79,7 +79,7 @@ func TestMutationsThroughTheRightCollectionStillWork(t *testing.T) {
 
 func TestMutatingAMissingResourceIs404(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	wantErrorCode(t, env.do(t, http.MethodPatch, peoplePath+"/nope", tok,
 		map[string]any{"properties": map[string]any{"title": "x"}}), http.StatusNotFound, codeNotFound)
 	wantErrorCode(t, env.do(t, http.MethodDelete, peoplePath+"/nope", tok, nil),

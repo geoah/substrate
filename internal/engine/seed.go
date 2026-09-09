@@ -242,7 +242,7 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 		return err
 	})
 	if err != nil {
-		return fmt.Errorf("substrate/engine: upgrade shipped vocabulary of %s: %w", ds.info.Name, err)
+		return fmt.Errorf("substrate/engine: upgrade shipped vocabulary of %s: %w", ds.info.ID, err)
 	}
 	if len(refused) > 0 {
 		// The message is the entire interface for the migration it is asking
@@ -250,11 +250,11 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 		ds.svc.log.Error("substrate: REFUSED to upgrade a repository's shipped vocabulary. Live rows hold the old shape, "+
 			"a declared default no write could store, or a retired name is declared again or dropped. The stored declarations stand, "+
 			"and this binary's newer ones will not land until it is resolved",
-			"repository", ds.info.Name, "refused", strings.Join(refused, "; "))
+			"repository", ds.info.ID, "refused", strings.Join(refused, "; "))
 		return nil
 	}
 	ds.svc.log.Info("substrate: upgraded a repository's shipped vocabulary from the embedded tree",
-		"repository", ds.info.Name, "packages", sortedKeys(st.upgrade), "convertedRecords", converted)
+		"repository", ds.info.ID, "packages", sortedKeys(st.upgrade), "convertedRecords", converted)
 
 	// The rows moved, so the live registry is rebuilt from them — the same
 	// read every open does, so an upgraded repository and a freshly opened one

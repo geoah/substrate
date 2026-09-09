@@ -54,8 +54,8 @@ func seedRecurring(ds *fakeDataset) {
 
 func TestOccurrencesComputeRulesLogsAndStamps(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	seedRecurring(ds)
 	// A rule the budget refuses is a named problem, never a silent absence.
 	ds.records["dense"] = &substrate.Record{
@@ -109,8 +109,8 @@ func TestOccurrencesComputeRulesLogsAndStamps(t *testing.T) {
 
 func TestOccurrencesTruncateAtTheLimit(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	seedRecurring(env.svc.datasets["geoah"])
+	tok := env.svc.token(fakeRepository)
+	seedRecurring(env.svc.datasets[fakeRepository])
 
 	rec := env.do(t, http.MethodGet,
 		"/api/v1/occurrences?from=2026-07-01T00:00:00Z&to=2026-07-04T00:00:00Z&limit=2", tok, nil)
@@ -130,7 +130,7 @@ func TestOccurrencesTruncateAtTheLimit(t *testing.T) {
 // not 422: no implementors means nothing recurs.
 func TestOccurrencesWithoutTheTraitAnswerEmpty(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 
 	rec := env.do(t, http.MethodGet,
 		"/api/v1/occurrences?from=2026-07-01T00:00:00Z&to=2026-07-04T00:00:00Z", tok, nil)
@@ -143,8 +143,8 @@ func TestOccurrencesWithoutTheTraitAnswerEmpty(t *testing.T) {
 
 func TestOccurrencesRefuseBadWindows(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	seedRecurring(env.svc.datasets["geoah"])
+	tok := env.svc.token(fakeRepository)
+	seedRecurring(env.svc.datasets[fakeRepository])
 
 	for _, path := range []string{
 		"/api/v1/occurrences",                                                   // both bounds missing

@@ -12,13 +12,12 @@ import { queryOptions } from "@tanstack/react-query"
 import { corePath, request } from "./http"
 import type { Page } from "./types"
 
-/** The repository record's own shape, the two properties the console reads. */
+/** The repository record's own shape, the one property the console reads. */
 export interface RepositoryInfo {
-  /** The username this repository belongs to. */
-  name: string
-  /** The DNS-style authority this repository owns, the home of every kind
-   * its user declares. Empty on a repository created before the column
-   * existed, which the caller has to render as "unknown" rather than guess. */
+  /** The DNS-style authority this repository owns: its name, its id, and the
+   * home of every kind its user declares. Empty on a repository created
+   * before the column existed, which the caller has to render as "unknown"
+   * rather than guess. */
   authority: string
 }
 
@@ -34,10 +33,7 @@ async function fetchRepository(
   const record = page.records?.[0]
   if (!record) return undefined
   const properties = (record.properties ?? {}) as Record<string, unknown>
-  return {
-    name: String(properties.name ?? ""),
-    authority: String(properties.authority ?? ""),
-  }
+  return { authority: String(properties.authority ?? "") }
 }
 
 export const repositoryQueryOptions = queryOptions({

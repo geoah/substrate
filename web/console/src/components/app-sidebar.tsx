@@ -67,7 +67,7 @@ import {
   type AuthorityNav,
   type PackageNav,
 } from "@/lib/api/kinds"
-import { getToken, getUsername, maskedToken } from "@/lib/api/session"
+import { getToken, getRepository, maskedToken } from "@/lib/api/session"
 import { upgradableBundleCount } from "@/lib/bundles"
 
 const consoleItems = [
@@ -247,7 +247,7 @@ function ActorFooter() {
   const navigate = useNavigate()
   const { theme, setTheme } = useTheme()
   const token = getToken()
-  const username = getUsername()
+  const repository = getRepository()
 
   async function logOut() {
     // Logging out revokes the token record this browser holds — a session IS
@@ -273,7 +273,7 @@ function ActorFooter() {
             </Avatar>
             <div className="grid flex-1 text-left text-sm leading-tight">
               <span className="truncate font-medium">
-                {username ?? "Signed in"}
+                {repository ?? "Signed in"}
               </span>
               <span className="truncate data text-xs text-sidebar-foreground/70">
                 {token ? maskedToken(token) : "no session"}

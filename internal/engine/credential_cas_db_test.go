@@ -39,12 +39,12 @@ func openCredentialService(t *testing.T) (*service, Repository) {
 		t.Fatalf("code: %v", err)
 	}
 	if _, err := s.Register(ctx, substrate.RegisterInput{
-		Username: testdb.Username(t), Authority: testdb.Authority(t), Password: "correct-horse-battery-staple",
+		Repository: testdb.Repository(t), Password: "correct-horse-battery-staple",
 		TOTPSecret: seed, TOTPCode: code, Label: "cli",
 	}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	repo, err := s.repositoryByUsername(ctx, testdb.Username(t))
+	repo, err := s.repositoryByID(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("lookup: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestCredentialRewriteCASPreventsLostUpdate(t *testing.T) {
 	}
 	// A (password change) commits first, keeping the seed.
 	if err := ds.rewriteCredential(ctx, credentialWrite{
-		username: testdb.Username(t), passwordHash: hash,
+		repository: testdb.Repository(t), passwordHash: hash,
 		totp:              matA.totp,
 		expectPasswordRef: matA.passwordRef, expectTotpRef: matA.totpRef, casEnabled: true,
 	}); err != nil {
@@ -97,7 +97,7 @@ func TestCredentialRewriteCASPreventsLostUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = ds.rewriteCredential(ctx, credentialWrite{
-		username: testdb.Username(t), passwordHash: matB.passwordHash,
+		repository: testdb.Repository(t), passwordHash: matB.passwordHash,
 		totp:              totpMaterial{Secret: newSeed, Step: 1},
 		expectPasswordRef: matB.passwordRef, expectTotpRef: matB.totpRef, casEnabled: true,
 	})
@@ -154,7 +154,7 @@ func TestCredentialRewriteStepNeverRegresses(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := ds.rewriteCredential(ctx, credentialWrite{
-		username: testdb.Username(t), passwordHash: hash,
+		repository: testdb.Repository(t), passwordHash: hash,
 		totp:              mat.totp, // carries readStep, which is now stale
 		expectPasswordRef: mat.passwordRef, expectTotpRef: mat.totpRef, casEnabled: true,
 	}); err != nil {
@@ -207,13 +207,13 @@ func TestConcurrentCredentialChangesNeitherSilentlyLost(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		errA = s.ChangePassword(ctx, substrate.LoginInput{
-			Username: testdb.Username(t), Password: "correct-horse-battery-staple", TOTPCode: codeA,
+			Repository: testdb.Repository(t), Password: "correct-horse-battery-staple", TOTPCode: codeA,
 		}, newPassword)
 	}()
 	go func() {
 		defer wg.Done()
 		errB = s.ReenrollTOTP(ctx, substrate.LoginInput{
-			Username: testdb.Username(t), Password: "correct-horse-battery-staple", TOTPCode: codeB,
+			Repository: testdb.Repository(t), Password: "correct-horse-battery-staple", TOTPCode: codeB,
 		}, newSeed, newSeedCode)
 	}()
 	wg.Wait()

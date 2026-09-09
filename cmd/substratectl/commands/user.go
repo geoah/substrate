@@ -9,7 +9,7 @@ import (
 	"github.com/geoah/substrate/internal/engine"
 )
 
-// A user is a username, a password and a TOTP secret. Two of these commands
+// A user is a repository, a password and a TOTP secret. Two of these commands
 // change a user's own factors over HTTP and one is the operator's door on the
 // box; they sit together because they are the same subject, and each says
 // which hat it wears.
@@ -31,7 +31,7 @@ func (a *app) userCommand() *cobra.Command {
 
 func (a *app) userPasswordCommand() *cobra.Command {
 	var (
-		username         string
+		repository       string
 		code             string
 		passwordStdin    bool
 		newPasswordStdin bool
@@ -45,12 +45,12 @@ The current password and one current code go in the request body: a bearer
 token is not accepted here and never will be, so a stolen token cannot rotate
 the account it stole.
 
-  substratectl user password --username geoah
-  substratectl user password --username geoah --totp-code 123456 \
+  substratectl user password --repository geoah
+  substratectl user password --repository geoah --totp-code 123456 \
       --password-stdin --new-password-stdin <<< $'current\nnew'`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			username, err := a.askUsername(username)
+			repository, err := a.askRepository(repository)
 			if err != nil {
 				return err
 			}
@@ -71,18 +71,18 @@ the account it stole.
 				return err
 			}
 			if err := cl.changePassword(cmd.Context(), passwordRequest{
-				factors:     factors{Username: username, Password: password, TOTPCode: code},
+				factors:     factors{Repository: repository, Password: password, TOTPCode: code},
 				NewPassword: newPassword,
 			}); err != nil {
 				return authError(err)
 			}
-			fmt.Fprintf(a.out, "password changed for %s\n", username)
+			fmt.Fprintf(a.out, "password changed for %s\n", repository)
 			fmt.Fprintln(a.out, "  existing tokens keep working — revoke them with `substratectl token revoke <id>` if the old password leaked")
 			return nil
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&username, "username", "", "username (defaults to the context's)")
+	f.StringVar(&repository, "repository", "", "repository (defaults to the context's)")
 	f.StringVar(&code, "totp-code", "", "current 6-digit code (prompted for when omitted)")
 	f.BoolVar(&passwordStdin, "password-stdin", false, "read the current password from stdin (one line)")
 	f.BoolVar(&newPasswordStdin, "new-password-stdin", false, "read the new password from stdin (the next line)")
@@ -91,7 +91,7 @@ the account it stole.
 
 func (a *app) userTOTPCommand() *cobra.Command {
 	var (
-		username      string
+		repository    string
 		code          string
 		newSecret     string
 		newCode       string
@@ -106,12 +106,12 @@ The current password and code prove the account; a code from the NEW enrollment
 proves it landed in an authenticator before the swap. The old secret stops
 working the moment the swap commits.
 
-  substratectl user totp --username geoah
-  substratectl user totp --username geoah --totp-code 123456 --password-stdin \
+  substratectl user totp --repository geoah
+  substratectl user totp --repository geoah --totp-code 123456 --password-stdin \
       --new-totp-secret BASE32SEED --new-totp-code 654321 < password`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			username, err := a.askUsername(username)
+			repository, err := a.askRepository(repository)
 			if err != nil {
 				return err
 			}
@@ -130,7 +130,7 @@ working the moment the swap commits.
 			if err != nil {
 				return err
 			}
-			current := factors{Username: username, Password: password, TOTPCode: code}
+			current := factors{Repository: repository, Password: password, TOTPCode: code}
 			if newSecret == "" {
 				// The enrollment call writes NOTHING: an abandoned
 				// re-enrollment cannot lock anyone out of their account.
@@ -152,13 +152,13 @@ working the moment the swap commits.
 			}); err != nil {
 				return authError(err)
 			}
-			fmt.Fprintf(a.out, "second factor replaced for %s\n", username)
+			fmt.Fprintf(a.out, "second factor replaced for %s\n", repository)
 			fmt.Fprintln(a.out, "  the previous secret stopped working — delete its authenticator entry")
 			return nil
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&username, "username", "", "username (defaults to the context's)")
+	f.StringVar(&repository, "repository", "", "repository (defaults to the context's)")
 	f.StringVar(&code, "totp-code", "", "current 6-digit code (prompted for when omitted)")
 	f.StringVar(&newSecret, "new-totp-secret", "", "base32 seed to enroll (default: ask the substrate for one)")
 	f.StringVar(&newCode, "new-totp-code", "", "6-digit code from the new enrollment (prompted for when omitted)")
@@ -169,8 +169,8 @@ working the moment the swap commits.
 func (a *app) userResetCommand() *cobra.Command {
 	var passwordStdin bool
 	cmd := &cobra.Command{
-		Use:   "reset <username>",
-		Short: "Operator: give a user new factors (direct database, no HTTP)",
+		Use:   "reset <repository>",
+		Short: "Operator: give a repository's user new factors (direct database, no HTTP)",
 		Long: `Reset a user who lost both factors.
 
 This is the operator's door and it runs ON THE BOX: it writes new sealed
@@ -185,10 +185,10 @@ change the password once they are back in.
 Stop the server first: the reset appends to the repository's changelog, so it
 opens the repository as its writer, and a running server holds that lock.
 
-  DATABASE_URL=… substratectl user reset geoah`,
+  DATABASE_URL=… substratectl user reset geoah.example.com`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			username := args[0]
+			repository := args[0]
 			// The DSN and the credential key are checked BEFORE the password is
 			// asked for: being told there is no database — or that the key is
 			// missing and the write would land in plaintext — only after typing a
@@ -215,11 +215,11 @@ opens the repository as its writer, and a running server holds that lock.
 			if !ok {
 				return seamMissing("ResetUser")
 			}
-			enrollment, err := r.ResetUser(cmd.Context(), username, password)
+			enrollment, err := r.ResetUser(cmd.Context(), repository, password)
 			if err != nil {
 				return lockHint(err)
 			}
-			fmt.Fprintf(a.out, "user %s reset\n", username)
+			fmt.Fprintf(a.out, "the user of %s is reset\n", repository)
 			fmt.Fprintln(a.out, "  the password is the one you just typed; the old one no longer works")
 			a.printEnrollment(enrollment.URI, enrollment.Secret)
 			fmt.Fprintln(a.out, "  hand both over out of band; the user's tokens are untouched")

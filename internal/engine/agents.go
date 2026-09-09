@@ -45,7 +45,7 @@ func (ds *dataset) deliverToAgent(ctx context.Context, tr *trigger, ch substrate
 		// The stable delivery identity (the function-trigger key shape):
 		// tool idempotency keys derive from it, so a RETRIED delivery — a
 		// fresh thread by construction — reproduces the same keys.
-		delivery: fmt.Sprintf("%s/%s/%d", ds.Repository().Name, tr.ID, ch.Seq),
+		delivery: fmt.Sprintf("%s/%s/%d", ds.Repository().ID, tr.ID, ch.Seq),
 		complete: agentCompletion(settle, claim, advance),
 	})
 	if err != nil {
@@ -134,7 +134,7 @@ func (ds *dataset) agentFire(ctx context.Context, tr *trigger, mode, fid string,
 		mode: mode, user: string(user),
 		// Stable per occurrence: a retried fire reuses the fire id, so tool
 		// keys survive the retry (the functionFire key shape).
-		delivery: fmt.Sprintf("%s/%s/%s", ds.Repository().Name, tr.ID, fid),
+		delivery: fmt.Sprintf("%s/%s/%s", ds.Repository().ID, tr.ID, fid),
 		complete: agentCompletion(settle, claim, false),
 	})
 	if err != nil {

@@ -92,7 +92,7 @@ func TestPrincipalStampsTheEntryAndItsManagerRows(t *testing.T) {
 
 	// The principal is covered by the checksum like every other column, so
 	// the entries that now carry one have to still verify.
-	if report := mustVerify(t, svc, testdb.Username(t)); !report.OK {
+	if report := mustVerify(t, svc, testdb.Repository(t)); !report.OK {
 		t.Fatalf("the checksums do not verify with principals stamped: %+v", report.Findings)
 	}
 }
@@ -208,7 +208,7 @@ func TestRebuildReplaysTheManagerPrincipal(t *testing.T) {
 	if !ok {
 		t.Fatal("the service cannot rebuild a repository")
 	}
-	if _, err := rb.RebuildRepository(context.Background(), testdb.Username(t)); err != nil {
+	if _, err := rb.RebuildRepository(context.Background(), testdb.Repository(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	if after := foldOf(t, ds); string(after) != string(before) {

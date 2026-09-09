@@ -72,15 +72,15 @@ func (a *app) saveItemTo1Password(ctx context.Context, what string, item opItem)
 }
 
 // saveRecoveryTo1Password is the recovery key's automatic save.
-func (a *app) saveRecoveryTo1Password(ctx context.Context, server, username, identity, recipient string) bool {
+func (a *app) saveRecoveryTo1Password(ctx context.Context, server, repository, identity, recipient string) bool {
 	return a.saveItemTo1Password(ctx, "recovery key", opItem{
-		Title:    fmt.Sprintf("substrate recovery key (%s @ %s)", username, server),
+		Title:    fmt.Sprintf("substrate recovery key (%s @ %s)", repository, server),
 		Category: "PASSWORD",
 		Fields: []opField{
 			{ID: "password", Type: "CONCEALED", Purpose: "PASSWORD", Value: identity},
 			{Label: "recipient", Type: "STRING", Value: recipient},
 			{Label: "server", Type: "STRING", Value: server},
-			{Label: "username", Type: "STRING", Value: username},
+			{Label: "repository", Type: "STRING", Value: repository},
 		},
 	})
 }
@@ -97,12 +97,12 @@ func (a *app) printRecoveryKey(identity, recipient string) {
 
 // handOverRecoveryKey runs the whole handoff: 1Password when possible, the
 // printed ceremony otherwise.
-func (a *app) handOverRecoveryKey(ctx context.Context, server, username, identity, recipient string) {
+func (a *app) handOverRecoveryKey(ctx context.Context, server, repository, identity, recipient string) {
 	if identity == "" {
 		fmt.Fprintf(a.out, "  recovery recipient enrolled: %s\n", recipient)
 		return
 	}
-	if a.saveRecoveryTo1Password(ctx, server, username, identity, recipient) {
+	if a.saveRecoveryTo1Password(ctx, server, repository, identity, recipient) {
 		return
 	}
 	a.printRecoveryKey(identity, recipient)
@@ -121,7 +121,7 @@ func (a *app) recoveryCommand() *cobra.Command {
 
 func (a *app) recoveryEnrollCommand() *cobra.Command {
 	var (
-		username      string
+		repository    string
 		code          string
 		passwordStdin bool
 	)
@@ -143,7 +143,7 @@ repositories enroll at registration; this command exists for the ones that
 predate recovery keys.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			username, err := a.askUsername(username)
+			repository, err := a.askRepository(repository)
 			if err != nil {
 				return err
 			}
@@ -171,9 +171,9 @@ predate recovery keys.`,
 			// server enrolled would otherwise take the only copy of a key
 			// that can never be re-issued with it.
 			fmt.Fprintln(a.out, "Keep this before enrolling; the substrate never stores it:")
-			a.handOverRecoveryKey(cmd.Context(), cctx.Server, username, identity, recipient)
+			a.handOverRecoveryKey(cmd.Context(), cctx.Server, repository, identity, recipient)
 			res, err := cl.recoveryEnroll(cmd.Context(), recoveryEnrollRequest{
-				Username: username, Password: password, TOTPCode: code,
+				Repository: repository, Password: password, TOTPCode: code,
 				RecoveryPublicKey: recipient,
 			})
 			if err != nil {
@@ -184,7 +184,7 @@ predate recovery keys.`,
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&username, "username", "", "username (defaults to the context's)")
+	f.StringVar(&repository, "repository", "", "repository (defaults to the context's)")
 	f.StringVar(&code, "totp-code", "", "current 6-digit code (prompted for when omitted)")
 	f.BoolVar(&passwordStdin, "password-stdin", false, "read the current password from stdin (one line)")
 	return cmd

@@ -145,7 +145,7 @@ func TestOwnerRefReferenceCascade(t *testing.T) {
 	// The tombstone is a fold effect on the entry that reports it, so the same
 	// changelog replays to the same records table.
 	before := foldOf(t, ds)
-	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Username(t)); err != nil {
+	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	if after := foldOf(t, ds); !bytes.Equal(before, after) {

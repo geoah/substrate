@@ -484,12 +484,12 @@ func TestBundleInputBindSurvivesRebuild(t *testing.T) {
 		t.Fatalf("bind: %v", err)
 	}
 	rb, ok := svc.(interface {
-		RebuildRepository(ctx context.Context, username string) (engine.RebuildReport, error)
+		RebuildRepository(ctx context.Context, repository string) (engine.RebuildReport, error)
 	})
 	if !ok {
 		t.Fatal("the service cannot rebuild a repository")
 	}
-	if _, err := rb.RebuildRepository(ctx, testdb.Username(t)); err != nil {
+	if _, err := rb.RebuildRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	st, err := ops.BundleStatus(ctx, mbPackage)

@@ -112,7 +112,7 @@ func TestAKindEditReindexesItsRowsAndTheRebuildAgrees(t *testing.T) {
 			t.Fatalf("%s: search finds %v, want %v", when, got, wantIDs)
 		}
 		before := foldOf(t, ds)
-		if _, err := rb.RebuildRepository(ctx, testdb.Username(t)); err != nil {
+		if _, err := rb.RebuildRepository(ctx, testdb.Repository(t)); err != nil {
 			t.Fatalf("%s: rebuild: %v", when, err)
 		}
 		if after := foldOf(t, ds); string(before) != string(after) {
@@ -190,7 +190,7 @@ func TestARebuildAgreesAfterAnUninstallLeavesTombstones(t *testing.T) {
 	}
 
 	before := foldOf(t, ds)
-	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Username(t)); err != nil {
+	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	if after := foldOf(t, ds); string(before) != string(after) {

@@ -26,25 +26,24 @@ import (
 // registerWithIdentity walks the registration flow with a client-minted age
 // identity, the way substratectl register does, and returns the user and the
 // identity string the substrate never sees.
-func registerWithIdentity(t *testing.T, svc substrate.Service, username string) (*authUser, string) {
+func registerWithIdentity(t *testing.T, svc substrate.Service, repository string) (*authUser, string) {
 	t.Helper()
 	ctx := context.Background()
 	id, err := age.GenerateX25519Identity()
 	if err != nil {
 		t.Fatalf("generate identity: %v", err)
 	}
-	enrollment, err := svc.BeginRegistration(ctx, username)
+	enrollment, err := svc.BeginRegistration(ctx, repository)
 	if err != nil {
 		t.Fatalf("begin registration: %v", err)
 	}
-	u := &authUser{username: username, password: testPassword, seed: enrollment.Secret}
+	u := &authUser{repository: repository, password: testPassword, seed: enrollment.Secret}
 	if _, err := svc.Register(ctx, substrate.RegisterInput{
-		Username: username, Password: u.password,
+		Repository: repository, Password: u.password,
 		TOTPSecret: u.seed, TOTPCode: u.code(t), Label: "cli",
-		Authority:         username + ".example.com",
 		RecoveryPublicKey: id.Recipient().String(),
 	}); err != nil {
-		t.Fatalf("register %q: %v", username, err)
+		t.Fatalf("register %q: %v", repository, err)
 	}
 	return u, id.String()
 }
@@ -78,8 +77,8 @@ func TestRewrapRestoresARepositoryUnderANewCredentialKey(t *testing.T) {
 	t.Parallel()
 	svc, dsn := newService(t)
 	ctx := context.Background()
-	u, identity := registerWithIdentity(t, svc, "ada")
-	ds, err := svc.Dataset(ctx, "ada")
+	u, identity := registerWithIdentity(t, svc, "ada.example.com")
+	ds, err := svc.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +141,7 @@ func TestRewrapRestoresARepositoryUnderANewCredentialKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rewrap: %v", err)
 	}
-	if report.Repository != id || report.Username != "ada" || report.SealedFiles == 0 || report.RecoveryKeySeq == 0 {
+	if report.Repository != id || report.SealedFiles == 0 || report.RecoveryKeySeq == 0 {
 		t.Fatalf("report = %+v", report)
 	}
 	// The manifest now opens under the new key and no longer under the old.
@@ -165,7 +164,7 @@ func TestRewrapRestoresARepositoryUnderANewCredentialKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("boot on the rewrapped directory: %v", err)
 	}
-	ds2, err := svc2.Dataset(ctx, "ada")
+	ds2, err := svc2.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,12 +177,12 @@ func TestRewrapRestoresARepositoryUnderANewCredentialKey(t *testing.T) {
 	if got := getBlob(t, ds2, digest); string(got) != "bytes behind the rewrap" {
 		t.Fatalf("blob bytes = %q", got)
 	}
-	report2 := mustVerify(t, svc2, "ada")
+	report2 := mustVerify(t, svc2, "ada.example.com")
 	if !report2.OK || report2.Head != head || report2.FileHead != head {
 		t.Fatalf("the restored repository does not verify: %+v", report2)
 	}
 	if _, _, err := svc2.Login(ctx, substrate.LoginInput{
-		Username: "ada", Password: u.password, TOTPCode: u.code(t), Label: "after",
+		Repository: "ada.example.com", Password: u.password, TOTPCode: u.code(t), Label: "after",
 	}); err != nil {
 		t.Fatalf("login after the rewrap: %v", err)
 	}
@@ -197,8 +196,8 @@ func TestRewrapOpensAFormatOneDirectory(t *testing.T) {
 	t.Parallel()
 	svc, _ := newService(t)
 	ctx := context.Background()
-	u, identity := registerWithIdentity(t, svc, "ada")
-	ds, err := svc.Dataset(ctx, "ada")
+	u, identity := registerWithIdentity(t, svc, "ada.example.com")
+	ds, err := svc.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +221,7 @@ func TestRewrapOpensAFormatOneDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rewrap a format-1 directory: %v", err)
 	}
-	if report.Repository != id || report.Username != "ada" {
+	if report.Repository != id {
 		t.Fatalf("report = %+v", report)
 	}
 	m := readManifest(t, dir2)
@@ -238,7 +237,7 @@ func TestRewrapOpensAFormatOneDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("boot on the rewrapped format-1 directory: %v", err)
 	}
-	ds2, err := svc2.Dataset(ctx, "ada")
+	ds2, err := svc2.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +245,7 @@ func TestRewrapOpensAFormatOneDirectory(t *testing.T) {
 		t.Fatalf("the restored fold is not the original\n%s", firstDifference(before, after))
 	}
 	if _, _, err := svc2.Login(ctx, substrate.LoginInput{
-		Username: "ada", Password: u.password, TOTPCode: u.code(t), Label: "after",
+		Repository: "ada.example.com", Password: u.password, TOTPCode: u.code(t), Label: "after",
 	}); err != nil {
 		t.Fatalf("login after the rewrap: %v", err)
 	}

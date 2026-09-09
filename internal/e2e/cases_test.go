@@ -36,7 +36,7 @@ func TestE2E(t *testing.T) {
 			return
 		}
 		t.Logf("report: %s", path)
-		t.Logf("repository: user %s on %s (left in place; mise run dev:wipe removes it)", r.username, r.base)
+		t.Logf("repository: user %s on %s (left in place; mise run dev:wipe removes it)", r.repository, r.base)
 	}()
 
 	r.runCase("AUTH-01", "Registration and the token door",
@@ -142,14 +142,14 @@ func caseAuth(c *C) {
 
 	// Register. With the factor enforced the suite enrolls a seed and proves
 	// it with a live code, exactly as an authenticator would.
-	reg := map[string]any{"inviteCode": r.invite, "username": r.username, "password": r.password}
+	reg := map[string]any{"inviteCode": r.invite, "repository": r.repository, "password": r.password}
 	if disc.Registration.TOTPRequired {
 		var enr struct {
 			TOTPSecret string `json:"totpSecret"`
 		}
 		c.paceAuth()
 		status, raw = c.doAs("", http.MethodPost, "/register/enroll",
-			map[string]string{"inviteCode": r.invite, "username": r.username}, &enr)
+			map[string]string{"inviteCode": r.invite, "repository": r.repository}, &enr)
 		c.requiref(status == http.StatusOK, "register/enroll answered %d: %s", status, raw)
 		step := engine.TOTPStep(time.Now())
 		code, err := engine.TOTPCode(enr.TOTPSecret, step)
@@ -177,8 +177,8 @@ func caseAuth(c *C) {
 	c.requiref(strings.HasPrefix(regOut.Secret, "substrate_tok_"), "token secret has the wrong shape")
 	c.requiref(regOut.RecoveryKey != "", "register minted no recovery key (none was supplied)")
 	r.token, r.tokenID = regOut.Secret, regOut.Token.ID
-	r.rep.Username, r.rep.Password = r.username, r.password
-	c.stepf("registered `%s`: repository created, first token `%s` minted, recovery key returned once (not kept)", r.username, regOut.Token.ID)
+	r.rep.Repository, r.rep.Password = r.repository, r.password
+	c.stepf("registered `%s`: repository created, first token `%s` minted, recovery key returned once (not kept)", r.repository, regOut.Token.ID)
 
 	// The minted token opens the repository; no token opens nothing.
 	var toks struct {
@@ -197,11 +197,11 @@ func caseAuth(c *C) {
 	c.paceAuth()
 	status, raw = c.doAs("", http.MethodPost, "/register", reg, nil)
 	c.requiref(status == http.StatusUnprocessableEntity && strings.Contains(string(raw), "already exists"),
-		"re-registering %q answered %d, want a 422 naming the taken username: %s", r.username, status, raw)
-	c.stepf("a second registration of `%s` was refused: 422, %q", r.username, "already exists")
+		"re-registering %q answered %d, want a 422 naming the taken username: %s", r.repository, status, raw)
+	c.stepf("a second registration of `%s` was refused: 422, %q", r.repository, "already exists")
 
 	// Login mints a second token that works.
-	login := map[string]any{"username": r.username, "password": r.password, "label": "e2e-login"}
+	login := map[string]any{"repository": r.repository, "password": r.password, "label": "e2e-login"}
 	if disc.Registration.TOTPRequired {
 		login["totpCode"] = r.nextTOTPCode(c)
 	}
@@ -219,7 +219,7 @@ func caseAuth(c *C) {
 	c.stepf("login minted token `%s` and it authenticates", loginOut.Token.ID)
 
 	// A wrong password is one indistinguishable 401.
-	badLogin := map[string]any{"username": r.username, "password": "not-the-password"}
+	badLogin := map[string]any{"repository": r.repository, "password": "not-the-password"}
 	c.paceAuth()
 	status, _ = c.doAs("", http.MethodPost, "/login", badLogin, nil)
 	c.requiref(status == http.StatusUnauthorized, "a wrong password answered %d, want 401", status)
@@ -423,9 +423,9 @@ func caseChangelog(c *C) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, ctl, "--dsn", dsn, "repository", "verify", r.username).CombinedOutput()
-	c.requiref(err == nil, "substratectl repository verify %s: %v: %s", r.username, err, out)
-	c.stepf("operator verify (`substratectl repository verify %s`): %s", r.username, verifySummary(string(out)))
+	out, err := exec.CommandContext(ctx, ctl, "--dsn", dsn, "repository", "verify", r.repository).CombinedOutput()
+	c.requiref(err == nil, "substratectl repository verify %s: %v: %s", r.repository, err, out)
+	c.stepf("operator verify (`substratectl repository verify %s`): %s", r.repository, verifySummary(string(out)))
 }
 
 // changelogHead reads the feed's head and history generation off a one-row

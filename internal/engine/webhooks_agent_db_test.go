@@ -45,7 +45,7 @@ func TestAnAgentWebhookInterruptedMidLoopWaitsForAHand(t *testing.T) {
 	defer cancel()
 	done := make(chan string, 1)
 	go func() {
-		fid, err := ds.svc.receiveWebhook(fctx, testdb.Authority(t), tr.ID, "", req, webhookFireInline)
+		fid, err := ds.svc.receiveWebhook(fctx, testdb.Repository(t), tr.ID, "", req, webhookFireInline)
 		if err != nil {
 			t.Errorf("receive: %v", err)
 		}

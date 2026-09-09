@@ -59,13 +59,13 @@ func TestRegistrationEnrollsRecoveryKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate identity: %v", err)
 	}
-	enrollment, err := svc.BeginRegistration(ctx, "ada")
+	enrollment, err := svc.BeginRegistration(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	u := &authUser{username: "ada", password: testPassword, seed: enrollment.Secret}
+	u := &authUser{repository: "ada.example.com", password: testPassword, seed: enrollment.Secret}
 	res, err := svc.Register(ctx, substrate.RegisterInput{
-		Username: "ada", Authority: "ada" + ".example.com", Password: testPassword,
+		Repository: "ada.example.com", Password: testPassword,
 		TOTPSecret: u.seed, TOTPCode: u.code(t),
 		RecoveryPublicKey: clientID.Recipient().String(),
 	})
@@ -79,7 +79,7 @@ func TestRegistrationEnrollsRecoveryKey(t *testing.T) {
 		t.Fatalf("recipient echoed wrong: %q", res.RecoveryPublicKey)
 	}
 
-	ds, err := svc.Dataset(ctx, "ada")
+	ds, err := svc.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestRegistrationEnrollsRecoveryKey(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	var wrapped []byte
-	if err := db.QueryRow(`SELECT dek FROM repositories WHERE username = 'ada'`).Scan(&wrapped); err != nil {
+	if err := db.QueryRow(`SELECT dek FROM repositories WHERE id = 'ada.example.com'`).Scan(&wrapped); err != nil {
 		t.Fatalf("read wrapped dek: %v", err)
 	}
 	if len(wrapped) == 0 {
@@ -157,13 +157,13 @@ func TestServerMintedRecoveryKeyAndEnrollOnce(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t, engine.WithCredentialKey(engine.TestCredentialKey))
-	enrollment, err := svc.BeginRegistration(ctx, "bo")
+	enrollment, err := svc.BeginRegistration(ctx, "bo.example.com")
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	u := &authUser{username: "bo", password: testPassword, seed: enrollment.Secret}
+	u := &authUser{repository: "bo.example.com", password: testPassword, seed: enrollment.Secret}
 	res, err := svc.Register(ctx, substrate.RegisterInput{
-		Username: "bo", Authority: "bo" + ".example.com", Password: testPassword,
+		Repository: "bo.example.com", Password: testPassword,
 		TOTPSecret: u.seed, TOTPCode: u.code(t),
 	})
 	if err != nil {
@@ -177,7 +177,7 @@ func TestServerMintedRecoveryKeyAndEnrollOnce(t *testing.T) {
 	if !strings.HasPrefix(res.RecoveryPublicKey, "age1") {
 		t.Fatalf("no recipient: %q", res.RecoveryPublicKey)
 	}
-	ds, err := svc.Dataset(ctx, "bo")
+	ds, err := svc.Dataset(ctx, "bo.example.com")
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestServerMintedRecoveryKeyAndEnrollOnce(t *testing.T) {
 	// A second enrollment refuses: one recovery key, no rotation yet. The
 	// enrollment carries the password-factor rule, so a fresh code goes in.
 	if _, _, err := svc.(substrate.RecoveryEnroller).EnrollRecoveryKey(ctx, substrate.LoginInput{
-		Username: "bo", Password: testPassword, TOTPCode: u.code(t),
+		Repository: "bo.example.com", Password: testPassword, TOTPCode: u.code(t),
 	}, ""); err == nil {
 		t.Fatal("a second recovery enrollment was accepted")
 	}
@@ -210,18 +210,18 @@ func TestEnrollRecoveryKeyWrapsADEKThatOpensMigratedPayloads(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, dsn := newService(t, engine.WithCredentialKey(engine.TestCredentialKey))
-	enrollment, err := svc.BeginRegistration(ctx, "cleo")
+	enrollment, err := svc.BeginRegistration(ctx, "cleo.example.com")
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	u := &authUser{username: "cleo", password: testPassword, seed: enrollment.Secret}
+	u := &authUser{repository: "cleo.example.com", password: testPassword, seed: enrollment.Secret}
 	if _, err := svc.Register(ctx, substrate.RegisterInput{
-		Username: "cleo", Authority: "cleo" + ".example.com", Password: testPassword,
+		Repository: "cleo.example.com", Password: testPassword,
 		TOTPSecret: u.seed, TOTPCode: u.code(t),
 	}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, "cleo")
+	ds, err := svc.Dataset(ctx, "cleo.example.com")
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
@@ -257,18 +257,18 @@ func TestEnrollRecoveryKeyWrapsADEKThatOpensMigratedPayloads(t *testing.T) {
 		sealUnder(t, hostKey, []byte("sk-legacy-material")), ref); err != nil {
 		t.Fatalf("plant host-key payload: %v", err)
 	}
-	if _, err := db.Exec(`UPDATE repositories SET sealed_dek_only = false WHERE username = 'cleo'`); err != nil {
+	if _, err := db.Exec(`UPDATE repositories SET sealed_dek_only = false WHERE id = 'cleo.example.com'`); err != nil {
 		t.Fatalf("clear the DEK-only marker: %v", err)
 	}
 	root := engine.DataRootOf(svc)
 	_ = svc.Close()
 	svc = mustReopen(t, dsn, root)
-	if ds, err = svc.Dataset(ctx, "cleo"); err != nil {
+	if ds, err = svc.Dataset(ctx, "cleo.example.com"); err != nil {
 		t.Fatalf("reopen dataset: %v", err)
 	}
 
 	identity, recipient, err := svc.(substrate.RecoveryEnroller).EnrollRecoveryKey(ctx, substrate.LoginInput{
-		Username: "cleo", Password: testPassword, TOTPCode: u.code(t),
+		Repository: "cleo.example.com", Password: testPassword, TOTPCode: u.code(t),
 	}, "")
 	if err != nil {
 		t.Fatalf("enroll: %v", err)
@@ -301,7 +301,7 @@ func TestEnrollRecoveryKeyWrapsADEKThatOpensMigratedPayloads(t *testing.T) {
 
 	// And a wrong-factors enrollment never gets that far.
 	if _, _, err := svc.(substrate.RecoveryEnroller).EnrollRecoveryKey(ctx, substrate.LoginInput{
-		Username: "cleo", Password: "wrong-password-entirely", TOTPCode: "000000",
+		Repository: "cleo.example.com", Password: "wrong-password-entirely", TOTPCode: "000000",
 	}, ""); err == nil {
 		t.Fatal("enrollment accepted without valid factors")
 	}
@@ -335,18 +335,18 @@ func TestEnrollRecoveryKeyRefusesAnUnmarkedDatasetBeforeWriting(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, dsn := newService(t, engine.WithCredentialKey(engine.TestCredentialKey))
-	enrollment, err := svc.BeginRegistration(ctx, "dee")
+	enrollment, err := svc.BeginRegistration(ctx, "dee.example.com")
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	u := &authUser{username: "dee", password: testPassword, seed: enrollment.Secret}
+	u := &authUser{repository: "dee.example.com", password: testPassword, seed: enrollment.Secret}
 	if _, err := svc.Register(ctx, substrate.RegisterInput{
-		Username: "dee", Authority: "dee.example.com", Password: testPassword,
+		Repository: "dee.example.com", Password: testPassword,
 		TOTPSecret: u.seed, TOTPCode: u.code(t),
 	}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, "dee")
+	ds, err := svc.Dataset(ctx, "dee.example.com")
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
@@ -363,7 +363,7 @@ func TestEnrollRecoveryKeyRefusesAnUnmarkedDatasetBeforeWriting(t *testing.T) {
 	}
 	enroll := func() (string, error) {
 		identity, _, err := svc.(substrate.RecoveryEnroller).EnrollRecoveryKey(ctx, substrate.LoginInput{
-			Username: "dee", Password: testPassword, TOTPCode: u.code(t),
+			Repository: "dee.example.com", Password: testPassword, TOTPCode: u.code(t),
 		}, "")
 		return identity, err
 	}
@@ -376,7 +376,7 @@ func TestEnrollRecoveryKeyRefusesAnUnmarkedDatasetBeforeWriting(t *testing.T) {
 		t.Fatalf("a refused enrollment left %d recovery record(s)", n)
 	}
 	var marked bool
-	if err := db.QueryRow(`SELECT sealed_dek_only FROM repositories WHERE username = 'dee'`).Scan(&marked); err != nil || !marked {
+	if err := db.QueryRow(`SELECT sealed_dek_only FROM repositories WHERE id = 'dee.example.com'`).Scan(&marked); err != nil || !marked {
 		t.Fatalf("the row's marker moved under a refused enrollment: %v %v", marked, err)
 	}
 

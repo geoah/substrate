@@ -15,8 +15,8 @@ const peopleV1 = "/api/v1/samples.substrate.reamde.dev/people/person"
 // and no unlink verb, so a put is the whole mutation surface for a pointer.
 func TestRESTReferenceIsWrittenAsAProperty(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	ds.records["p1"] = &substrate.Record{
 		ID: "p1", Kind: "samples.substrate.reamde.dev/people/person", Version: 1,
 		Properties: map[string]any{"name": "Sam"},
@@ -47,8 +47,8 @@ func TestRESTReferenceIsWrittenAsAProperty(t *testing.T) {
 // `…/{id}/edges/{rel}` in either method, so the path is the router's 404.
 func TestRESTEdgeRoutesAreGone(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	env.svc.datasets["geoah"].records["p1"] = &substrate.Record{ID: "p1", Kind: "samples.substrate.reamde.dev/people/person"}
+	tok := env.svc.token(fakeRepository)
+	env.svc.datasets[fakeRepository].records["p1"] = &substrate.Record{ID: "p1", Kind: "samples.substrate.reamde.dev/people/person"}
 
 	for _, method := range []string{http.MethodPost, http.MethodDelete} {
 		rec := env.do(t, method, peopleV1+"/p1/edges/member_of", tok, map[string]any{"id": "org1"})
@@ -60,7 +60,7 @@ func TestRESTEdgeRoutesAreGone(t *testing.T) {
 // id: a record may be called `edges` and read back at its own path.
 func TestRESTEdgesIsAnOrdinaryRecordID(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 
 	rec := env.do(t, http.MethodPut, peopleV1+"/edges", tok, map[string]any{
 		"properties": map[string]any{"name": "Sam"},
@@ -84,7 +84,7 @@ func TestRESTEdgesIsAnOrdinaryRecordID(t *testing.T) {
 // only one of them was pinned and the two decode the same body.
 func TestRESTRefusesAnEdgesKeyNamingItsReplacement(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	edges := map[string]any{"member_of": []any{map[string]any{"id": "org1"}}}
 
 	for _, method := range []string{http.MethodPut, http.MethodPatch} {
@@ -108,7 +108,7 @@ func TestRESTRefusesAnEdgesKeyNamingItsReplacement(t *testing.T) {
 // narrowing a list is not writing a record.
 func TestRESTFilterWithAnEdgesKeyIsAPlainUnknownField(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodPost, graphqlPath, tok, map[string]any{
 		"query":     `query ($f: JSON) { records(filter: $f) { nodes { id } } }`,
 		"variables": map[string]any{"f": map[string]any{"edges": map[string]any{"member_of": "org1"}}},
@@ -136,7 +136,7 @@ func TestRESTFilterWithAnEdgesKeyIsAPlainUnknownField(t *testing.T) {
 // collection would be 404).
 func TestTriggerVerbsLiveUnderCore(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 
 	rec := env.do(t, http.MethodGet, "/api/v1/substrate.reamde.dev/core/trigger/status", tok, nil)
 	wantErrorCode(t, rec, http.StatusNotImplemented, codeUnsupported)
@@ -157,7 +157,7 @@ func TestTriggerVerbsLiveUnderCore(t *testing.T) {
 // it, not a silent success.
 func TestWatchRejectsListParams(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodGet, peopleV1+"?watch=1&orderBy=at:desc", tok, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 	if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "orderBy") {
@@ -167,8 +167,8 @@ func TestWatchRejectsListParams(t *testing.T) {
 
 func TestIncomingRejectsListParams(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	env.svc.datasets["geoah"].records["p1"] = &substrate.Record{ID: "p1", Kind: "samples.substrate.reamde.dev/people/person"}
+	tok := env.svc.token(fakeRepository)
+	env.svc.datasets[fakeRepository].records["p1"] = &substrate.Record{ID: "p1", Kind: "samples.substrate.reamde.dev/people/person"}
 	rec := env.do(t, http.MethodGet, peopleV1+"/p1/incoming?filter=%7B%7D", tok, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 	if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "filter") {

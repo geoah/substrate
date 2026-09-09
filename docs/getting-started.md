@@ -18,8 +18,8 @@ alone. Everything else, including the task kinds used below, is a
 configured, registration is closed;
 [users, tokens, and actors](auth.md#the-invite-code) has the detail.
 
-Registration needs three things from you: a username, a password, and a TOTP
-second factor. All three are required, and the username is yours permanently.
+Registration needs three things from you: a repository name, a password, and a
+TOTP second factor. All three are required, and the name is yours permanently.
 
 ## Register
 
@@ -28,7 +28,7 @@ that is the easiest way in. From a terminal, [substratectl](substratectl.md) doe
 thing:
 
 ```bash
-substratectl register --server https://substrate.example --username ada
+substratectl register --server https://substrate.example --repository ada.example.com
 ```
 
 It asks the substrate for a TOTP enrollment, prints the `otpauth://` URI and
@@ -36,14 +36,14 @@ the seed for your authenticator, and takes back one code along with the
 password you choose. Only that second call writes anything, so an abandoned
 registration leaves nothing behind. Registration ends logged in: `substratectl` stores
 the minted token as a context in `~/.config/substratectl/config.yaml`. The
-repository it created owns an **authority**, a hostname every package you
-declare kinds in lives under: any name you control through `--authority`
-(`ada.example.com`), else your username under the server's host.
+repository name IS its **authority**, the hostname every package you declare
+kinds in lives under: any name you control (`ada.example.com`), or a bare
+label the substrate completes under its own host.
 
 Unattended, bring your own seed and skip the prompts:
 
 ```bash
-substratectl register --username ada --invite-code CODE \
+substratectl register --repository ada.example.com --invite-code CODE \
     --totp-secret BASE32SEED --totp-code 123456 --password-stdin < password
 ```
 
@@ -60,12 +60,12 @@ included.
 A login is both factors presented directly, and it mints a token record:
 
 ```bash
-substratectl login --server https://substrate.example --username ada
+substratectl login --server https://substrate.example --repository ada.example.com
 ```
 
 ```http
 POST /login
-{"username": "ada", "password": "…", "totpCode": "123456", "label": "laptop"}
+{"repository": "ada.example.com", "password": "…", "totpCode": "123456", "label": "laptop"}
 
 → 201 {"token": {…}, "secret": "substrate_tok_…"}
 ```

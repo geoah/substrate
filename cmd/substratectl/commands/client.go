@@ -355,21 +355,20 @@ func vocabularyBody(docs []map[string]any, origin string) map[string]any {
 // server: the caller holds the seed and hands it back with one code.
 type registerBeginRequest struct {
 	InviteCode string `json:"inviteCode"`
-	Username   string `json:"username"`
+	Repository string `json:"repository"`
 }
 
 // registerRequest is the registration commit — the only call that creates
 // anything.
 type registerRequest struct {
 	InviteCode string `json:"inviteCode"`
-	Username   string `json:"username"`
+	// Repository is the name of the repository to create, which BECOMES its
+	// authority: a bare label is completed under the substrate's own host.
+	Repository string `json:"repository"`
 	Password   string `json:"password"`
 	TOTPSecret string `json:"totpSecret"`
 	TOTPCode   string `json:"totpCode"`
 	Label      string `json:"label,omitempty"`
-	// Authority is the DNS-style authority the repository will own; empty
-	// lets the substrate default it to the username under its own host.
-	Authority string `json:"authority,omitempty"`
 	// RecoveryPublicKey is the age recipient generated CLIENT-SIDE, so the
 	// matching identity never rides the wire.
 	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
@@ -379,13 +378,12 @@ type registerRequest struct {
 // recipient, and the identity ONLY when the server minted the pair.
 type registerResult struct {
 	tokenResult
-	Authority         string `json:"authority,omitempty"`
 	RecoveryKey       string `json:"recoveryKey,omitempty"`
 	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
 }
 
 type recoveryEnrollRequest struct {
-	Username          string `json:"username"`
+	Repository        string `json:"repository"`
 	Password          string `json:"password"`
 	TOTPCode          string `json:"totpCode"`
 	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
@@ -400,10 +398,10 @@ type recoveryEnrollResult struct {
 // login, and it is the password-factor rule's evidence on every endpoint that
 // changes auth material. A bearer token is never a substitute.
 type factors struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-	TOTPCode string `json:"totpCode"`
-	Label    string `json:"label,omitempty"`
+	Repository string `json:"repository"`
+	Password   string `json:"password"`
+	TOTPCode   string `json:"totpCode"`
+	Label      string `json:"label,omitempty"`
 }
 
 type passwordRequest struct {
@@ -422,6 +420,9 @@ type totpRequest struct {
 type tokenResult struct {
 	Token  substrate.TokenInfo `json:"token"`
 	Secret string              `json:"secret"`
+	// Repository is the repository the door resolved the request's name to.
+	// Login and registration echo it; a `POST /tokens` mint does not.
+	Repository string `json:"repository,omitempty"`
 }
 
 // discoveryDoc is the slice of GET /.well-known/substrate/server.json the

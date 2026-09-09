@@ -49,7 +49,7 @@ func (a *app) repositoryCommand() *cobra.Command {
 func (a *app) repositorySnapshotCommand() *cobra.Command {
 	var output string
 	cmd := &cobra.Command{
-		Use:   "snapshot <username> <destination root>",
+		Use:   "snapshot <repository> <destination root>",
 		Short: "Write a verified copy of a repository's directory that records the point it holds",
 		Long: `Copy one repository's directory into a destination root, verified before and
 after, with snapshot.json recording the committed point the copy holds.
@@ -113,8 +113,7 @@ repository with this binary's dialects, which an older server then refuses.
 			if output == "json" {
 				return printJSON(a.out, report)
 			}
-			fmt.Fprintf(a.out, "repository %s snapshot written\n", report.Username)
-			fmt.Fprintf(a.out, "  authority: %s\n", report.Repository)
+			fmt.Fprintf(a.out, "repository %s snapshot written\n", report.Repository)
 			fmt.Fprintf(a.out, "  directory: %s\n", report.Directory)
 			fmt.Fprintf(a.out, "  point:     seq %d, checksum %s\n", report.Head, report.HeadHash)
 			fmt.Fprintf(a.out, "  changelog: %d segment(s)\n", report.Segments)
@@ -202,8 +201,7 @@ server whose database has never held this repository, then boot.
 			if output == "json" {
 				return printJSON(a.out, report)
 			}
-			fmt.Fprintf(a.out, "repository %s rewrapped\n", report.Username)
-			fmt.Fprintf(a.out, "  authority:   %s\n", report.Repository)
+			fmt.Fprintf(a.out, "repository %s rewrapped\n", report.Repository)
 			fmt.Fprintf(a.out, "  recovery key: recoverykey record at seq %d opened\n", report.RecoveryKeySeq)
 			fmt.Fprintf(a.out, "  sealed:      %d file(s) open under the recovered key\n", report.SealedFiles)
 			fmt.Fprintf(a.out, "  manifest:    %s rewritten under %s\n", changelogfile.ManifestName, credentialKeyEnv)
@@ -263,7 +261,7 @@ func parseRecoveryIdentity(r io.Reader) (string, error) {
 func (a *app) repositoryReembedCommand() *cobra.Command {
 	var all bool
 	cmd := &cobra.Command{
-		Use:   "reembed <username>",
+		Use:   "reembed <repository>",
 		Short: "Queue a repository's vectors for re-embedding through its current provider",
 		Long: `Enqueue every embeddable property whose stored vectors did not come from the
 repository's current embeddings provider and model.
@@ -321,7 +319,7 @@ func (a *app) repositoryListCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List every repository on this substrate",
-		Long: `List the control-plane table: one row per user, and the whole of it.
+		Long: `List the control-plane table: one row per repository, and the whole of it.
 
 The authority is the repository's id, and the directory under
 SUBSTRATE_DATA_ROOT is named by it; created_at is the admission record, since
@@ -341,7 +339,7 @@ the invite code is the only door and there is nothing else to record.`,
 				out := make([]map[string]any, 0, len(rows))
 				for _, r := range rows {
 					out = append(out, map[string]any{
-						"authority": r.ID, "username": r.Username,
+						"authority": r.ID,
 						"createdAt": r.CreatedAt.Format(time.RFC3339),
 						"dekKeyId":  r.DEKKeyID, "sealedDekOnly": r.SealedDEKOnly,
 					})
@@ -356,10 +354,10 @@ the invite code is the only door and there is nothing else to record.`,
 				return nil
 			}
 			tw := newTable(a.out)
-			fmt.Fprintln(tw, "AUTHORITY\tUSERNAME\tCREATED\tAGE")
+			fmt.Fprintln(tw, "AUTHORITY\tCREATED\tAGE")
 			for _, r := range rows {
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-					r.ID, r.Username, r.CreatedAt.Format(time.RFC3339), humanAge(a.now(), r.CreatedAt))
+				fmt.Fprintf(tw, "%s\t%s\t%s\n",
+					r.ID, r.CreatedAt.Format(time.RFC3339), humanAge(a.now(), r.CreatedAt))
 			}
 			return tw.Flush()
 		},
@@ -370,7 +368,7 @@ the invite code is the only door and there is nothing else to record.`,
 
 func (a *app) repositoryInspectCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "inspect <username>",
+		Use:   "inspect <repository>",
 		Short: "Show one repository: authority, both changelog heads, records, vocabulary versions",
 		Long: `Describe a repository from the outside.
 
@@ -391,7 +389,7 @@ This command only reads.`,
 				return err
 			}
 			defer func() { _ = db.Close() }()
-			repo, err := repositoryRowByUsername(cmd.Context(), db, args[0])
+			repo, err := repositoryRowByID(cmd.Context(), db, args[0])
 			if err != nil {
 				return err
 			}
@@ -401,8 +399,7 @@ This command only reads.`,
 			}
 			defer func() { _ = scoped.Close() }()
 
-			fmt.Fprintf(a.out, "repository %s\n", repo.Username)
-			fmt.Fprintf(a.out, "  authority: %s\n", repo.ID)
+			fmt.Fprintf(a.out, "repository %s\n", repo.ID)
 			fmt.Fprintf(a.out, "  created:   %s (%s)\n",
 				repo.CreatedAt.Format(time.RFC3339), humanAge(a.now(), repo.CreatedAt))
 			fmt.Fprintf(a.out, "  dek:       %s\n", describeKeys(repo))
@@ -469,7 +466,7 @@ func printChangelogFiles(out io.Writer, repoID string) {
 
 func (a *app) repositoryRebuildCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:     "rebuild <username>",
+		Use:     "rebuild <repository>",
 		Short:   "Replay a repository's changelog into a fresh fold",
 		Aliases: []string{"rebuild-repository"},
 		Long: `Clear a repository's fold and replay its whole changelog into it.
@@ -507,8 +504,7 @@ which is why it is the backup unit.`,
 			if err != nil {
 				return lockHint(err)
 			}
-			fmt.Fprintf(a.out, "repository %s rebuilt\n", report.Username)
-			fmt.Fprintf(a.out, "  authority: %s\n", report.Repository)
+			fmt.Fprintf(a.out, "repository %s rebuilt\n", report.Repository)
 			fmt.Fprintf(a.out, "  replayed: %d entries to head %d\n", report.Entries, report.Head)
 			fmt.Fprintf(a.out, "  records:  %d\n", report.Records)
 			fmt.Fprintf(a.out, "  took:     %s\n", report.Took.Round(time.Millisecond))
@@ -520,7 +516,7 @@ which is why it is the backup unit.`,
 func (a *app) repositoryVerifyCommand() *cobra.Command {
 	var output string
 	cmd := &cobra.Command{
-		Use:   "verify <username>",
+		Use:   "verify <repository>",
 		Short: "Walk a repository's changelog files and table and check every checksum",
 		Long: `Walk a repository's changelog in both places and hold them to each other.
 
@@ -574,8 +570,7 @@ Exits nonzero when anything does not verify.`,
 					return err
 				}
 			} else {
-				fmt.Fprintf(a.out, "repository %s\n", report.Username)
-				fmt.Fprintf(a.out, "  authority: %s\n", report.Repository)
+				fmt.Fprintf(a.out, "repository %s\n", report.Repository)
 				fmt.Fprintf(a.out, "  table:    %d entries, head %d\n", report.Entries, report.Head)
 				fmt.Fprintf(a.out, "  files:    head %d in %d segment(s)\n", report.FileHead, report.Segments)
 				fmt.Fprintf(a.out, "  sealed:   %d rows, %d files\n", report.SealedRows, report.SealedFiles)
@@ -604,7 +599,7 @@ Exits nonzero when anything does not verify.`,
 				}
 			}
 			if !report.OK {
-				return fmt.Errorf("repository %s does not verify: %d finding(s)", report.Username, len(report.Findings))
+				return fmt.Errorf("repository %s does not verify: %d finding(s)", report.Repository, len(report.Findings))
 			}
 			return nil
 		},

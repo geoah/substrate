@@ -56,10 +56,10 @@ func (c *callableFake) ChatAgent(ctx context.Context, _ substrate.Actor, _, _, _
 
 func TestIdempotencyKeyReachesTheFiveOperations(t *testing.T) {
 	env := newTestEnv(t)
-	plain := env.svc.datasets["geoah"]
+	plain := env.svc.datasets[fakeRepository]
 	callable := &callableFake{fakeDataset: plain, keys: map[string]string{}}
 	env.svc.wrap = func(*fakeDataset) substrate.Dataset { return callable }
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	const key = "attempt-7f3a"
 
 	person := "samples.substrate.reamde.dev/people/person"
@@ -130,7 +130,7 @@ func TestIdempotencyKeyReachesTheFiveOperations(t *testing.T) {
 // message names the key, the code the docs promise.
 func TestIdempotencyKeyRepeatReplaysAndMismatchIs409(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	path := "/api/v1/samples.substrate.reamde.dev/people/person"
 	body := map[string]any{"properties": map[string]any{"name": "Ada"}}
 

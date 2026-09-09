@@ -368,11 +368,11 @@ func caseStory06(c *C) {
 		c.stepf("SKIPPED the verify and rebuild: %s and %s are not both set", envCtl, envDSN)
 		return
 	}
-	out, err := ctlRun(ctl, dsn, "repository", "verify", r.username)
+	out, err := ctlRun(ctl, dsn, "repository", "verify", r.repository)
 	c.requiref(err == nil, "repository verify: %v: %s", err, out)
 	c.stepf("operator verify: %s", verifySummary(out))
 
-	out, err = ctlRun(ctl, dsn, "repository", "rebuild", r.username)
+	out, err = ctlRun(ctl, dsn, "repository", "rebuild", r.repository)
 	c.requiref(err == nil, "repository rebuild: %v: %s", err, out)
 	rebuilt := c.graphJoin()
 	c.requiref(string(join) == string(rebuilt),

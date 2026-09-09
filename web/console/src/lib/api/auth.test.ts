@@ -68,19 +68,19 @@ describe("the v1 door", () => {
     return fetchMock.mock.calls.at(-1) as [string, RequestInit]
   }
 
-  it("registerEnroll POSTs the invite code + username, anonymously, at the root", async () => {
+  it("registerEnroll POSTs the invite code + repository, anonymously, at the root", async () => {
     setToken("substrate_tok_stored")
     fetchMock.mockResolvedValue(
       jsonResponse(200, { totpSecret: "SEED", otpauthUri: "otpauth://x" })
     )
-    const res = await registerEnroll("INV-1", "geoah")
+    const res = await registerEnroll("INV-1", "geoah.localhost")
     expect(res.totpSecret).toBe("SEED")
     const [url, init] = lastCall()
     expect(url).toBe("/register/enroll")
     expect(init.method).toBe("POST")
     expect(JSON.parse(init.body as string)).toEqual({
       inviteCode: "INV-1",
-      username: "geoah",
+      repository: "geoah.localhost",
     })
     // Anonymous: a stored bearer never rides the door.
     expect(
@@ -92,7 +92,7 @@ describe("the v1 door", () => {
     fetchMock.mockResolvedValue(jsonResponse(201, MINT))
     const res = await register({
       inviteCode: "INV-1",
-      username: "geoah",
+      repository: "geoah.localhost",
       password: "pw",
       totpSecret: "SEED",
       totpCode: "123456",
@@ -103,7 +103,7 @@ describe("the v1 door", () => {
     expect(url).toBe("/register")
     expect(JSON.parse(init.body as string)).toMatchObject({
       inviteCode: "INV-1",
-      username: "geoah",
+      repository: "geoah.localhost",
       totpCode: "123456",
     })
   })
@@ -111,12 +111,12 @@ describe("the v1 door", () => {
   it("login POSTs username/password/totpCode with a default label, anonymously", async () => {
     setToken("substrate_tok_stored")
     fetchMock.mockResolvedValue(jsonResponse(201, MINT))
-    const res = await login("geoah", "pw", "123456")
+    const res = await login("geoah.localhost", "pw", "123456")
     expect(res.token.id).toBe("tok-1")
     const [url, init] = lastCall()
     expect(url).toBe("/login")
     expect(JSON.parse(init.body as string)).toEqual({
-      username: "geoah",
+      repository: "geoah.localhost",
       password: "pw",
       totpCode: "123456",
       label: "console",
@@ -128,12 +128,14 @@ describe("the v1 door", () => {
 
   it("changePassword is anonymous — the password factor never rides a bearer", async () => {
     setToken("substrate_tok_stored")
-    fetchMock.mockResolvedValue(jsonResponse(200, { username: "geoah" }))
-    await changePassword("geoah", "pw", "123456", "newpw")
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, { repository: "geoah.localhost" })
+    )
+    await changePassword("geoah.localhost", "pw", "123456", "newpw")
     const [url, init] = lastCall()
     expect(url).toBe("/password")
     expect(JSON.parse(init.body as string)).toEqual({
-      username: "geoah",
+      repository: "geoah.localhost",
       password: "pw",
       totpCode: "123456",
       newPassword: "newpw",
@@ -147,15 +149,17 @@ describe("the v1 door", () => {
     fetchMock.mockResolvedValue(
       jsonResponse(200, { totpSecret: "NEW", otpauthUri: "otpauth://y" })
     )
-    await totpEnroll("geoah", "pw", "123456")
+    await totpEnroll("geoah.localhost", "pw", "123456")
     expect(lastCall()[0]).toBe("/totp/enroll")
 
-    fetchMock.mockResolvedValue(jsonResponse(200, { username: "geoah" }))
-    await totpChange("geoah", "pw", "123456", "NEW", "654321")
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, { repository: "geoah.localhost" })
+    )
+    await totpChange("geoah.localhost", "pw", "123456", "NEW", "654321")
     const [url, init] = lastCall()
     expect(url).toBe("/totp")
     expect(JSON.parse(init.body as string)).toEqual({
-      username: "geoah",
+      repository: "geoah.localhost",
       password: "pw",
       totpCode: "123456",
       newTotpSecret: "NEW",
@@ -215,7 +219,7 @@ describe("the v1 door", () => {
         { "Retry-After": "5" }
       )
     )
-    const err = (await login("geoah", "pw", "000000").catch(
+    const err = (await login("geoah.localhost", "pw", "000000").catch(
       (e: unknown) => e
     )) as ApiError
     expect(err.code).toBe("rate_limited")
@@ -227,7 +231,9 @@ describe("the v1 door", () => {
     fetchMock.mockResolvedValue(
       jsonResponse(401, { error: { code: "auth", message: "invalid code" } })
     )
-    await expect(login("geoah", "pw", "000000")).rejects.toMatchObject({
+    await expect(
+      login("geoah.localhost", "pw", "000000")
+    ).rejects.toMatchObject({
       code: "auth",
     })
     expect(getToken()).toBe("substrate_tok_live")

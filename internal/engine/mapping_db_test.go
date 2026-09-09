@@ -1484,7 +1484,7 @@ func wantRebuildAgrees(t *testing.T, svc substrate.Service, ds substrate.Dataset
 	if offersIn(t, before) == 0 {
 		t.Fatal("no offers survive; the rebuild comparison would prove nothing")
 	}
-	if _, err := svc.(rebuilder).RebuildRepository(context.Background(), testdb.Username(t)); err != nil {
+	if _, err := svc.(rebuilder).RebuildRepository(context.Background(), testdb.Repository(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	if after := foldOf(t, ds); string(after) != string(before) {
@@ -1587,7 +1587,7 @@ func TestRecomputeKeepsARequiredValueWhenItsSourceLeaves(t *testing.T) {
 	// No offers are left anywhere here, so compare the folds directly rather
 	// than through wantRebuildAgrees and its offers guard.
 	before := foldOf(t, ds)
-	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Username(t)); err != nil {
+	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	if after := foldOf(t, ds); string(after) != string(before) {
@@ -1794,7 +1794,7 @@ func TestRemovedLastMappingReleasesMachineValues(t *testing.T) {
 			p.Properties["pronouns"], p.PropertyMeta["pronouns"])
 	}
 	before := foldOf(t, ds)
-	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Username(t)); err != nil {
+	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	if after := foldOf(t, ds); string(after) != string(before) {

@@ -11,8 +11,8 @@ import (
 // addressed at a former id answers with the canonical record and names it.
 func TestCanonicalIDOnBothReadSurfaces(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	ds.records["winner"] = &substrate.Record{
 		ID: "winner", Kind: "samples.substrate.reamde.dev/people/person", Title: "Ada",
 		Properties: map[string]any{"name": "Ada"}, Labels: map[string]any{},

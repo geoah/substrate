@@ -7,14 +7,15 @@ Dead words, and what replaced them: **entity** → record, **group** → authori
 **type** → kind, **capability** → trait,
 **schema** → vocabulary, **log** → changelog, **extension** → bundle,
 **relationship** and **edge** → reference, **plural** → the kind's name, which
-is the collection segment (decision 0033), **tenant** and **identity** →
+is the collection segment (decision 0033), **username** → the repository name,
+which is its authority (decision 0074), **tenant** and **identity** →
 nothing, there are none.
 
 ## The shape of things
 
 | Term | What it is |
 | ---- | ---------- |
-| **repository** | Everything one user has: one changelog, the records folded out of it, and the blob store beside them. One user, one repository, no sharing. It owns one **authority**, any hostname its user controls, chosen at registration (`ada.example.com`; the default is the username under the server's host), the home of every package its user declares kinds in. |
+| **repository** | Everything one user has: one changelog, the records folded out of it, and the blob store beside them. One user, one repository, no sharing. It owns one **authority**, any hostname its user controls, chosen at registration (`ada.example.com`; a bare label is completed under the server's host), which is the repository's name, its id, the name its user logs in with, and the home of every package its user declares kinds in. |
 | **record** | One typed thing. Identity is `(kind, id)` within a repository. It is the only thing the substrate stores. |
 | **kind** | What a record is, written `<authority>/<package>/<name>`; every kind carries both. A kind declares the properties its records may carry. |
 | **authority** | The DNS-style label that publishes packages. One path segment: `/api/v1/{authority}/{package}/{kind}`. |

@@ -98,7 +98,7 @@ func (h *handler) postGraphQL(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, err)
 		return
 	}
-	schema, err := h.schemas.SchemaFor(ds.Repository().Name, types)
+	schema, err := h.schemas.SchemaFor(ds.Repository().ID, types)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return

@@ -100,8 +100,8 @@ var wireTypes = map[string]any{
 	// Login: the request the door decodes, the openapi.yaml component of the
 	// same name. The console's LoginRequest (auth.ts) mirrors it.
 	"LoginRequest": LoginRequest{},
-	// A credential change's answer: the username the factors proved.
-	"SessionUser": SessionUser{},
+	// A credential change's answer: the repository the factors proved.
+	"SessionCredential": SessionCredential{},
 
 	// The agent chat stream (agents.ts): one ndjson event, and the settled
 	// result the done event carries.

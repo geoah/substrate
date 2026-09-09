@@ -72,8 +72,8 @@ func TestWatchCollectionStreamsBookmarkThenChanges(t *testing.T) {
 	env := newTestEnv(t)
 	srv := httptest.NewServer(env.h)
 	defer srv.Close()
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	br, stop := startWatch(t, srv, peoplePath+"?watch=1", tok)
 	defer stop()
@@ -111,8 +111,8 @@ func TestWatchResumesFromCursor(t *testing.T) {
 	env := newTestEnv(t)
 	srv := httptest.NewServer(env.h)
 	defer srv.Close()
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	for i := range 3 {
 		ds.commit(substrate.Change{
@@ -137,8 +137,8 @@ func TestWatchResumesFromCursor(t *testing.T) {
 
 func TestChangesWithoutWatchIsASinglePage(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	ds.commit(substrate.Change{
 		TS: time.Unix(1, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
 		RecordID: "c1", Kind: "samples.substrate.reamde.dev/people/person",
@@ -226,8 +226,8 @@ func TestBookmarkCarriesTheGeneration(t *testing.T) {
 	env := newTestEnv(t)
 	srv := httptest.NewServer(env.h)
 	defer srv.Close()
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	head := seedPeople(ds, 2)
 
 	for name, prefix := range resumeEntryPoints {
@@ -256,8 +256,8 @@ func TestResumeCursorIsHeldToTheHead(t *testing.T) {
 	env := newTestEnv(t)
 	srv := httptest.NewServer(env.h)
 	defer srv.Close()
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	head := seedPeople(ds, 3)
 
 	for name, prefix := range resumeEntryPoints {
@@ -280,8 +280,8 @@ func TestResumeCursorIsHeldToTheHead(t *testing.T) {
 // generation: `from=0` reads everything, on the page and on the stream.
 func TestFromZeroNeedsNoGeneration(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	seedPeople(ds, 2)
 
 	rec := env.do(t, http.MethodGet, "/api/v1/changes?from=0", tok, nil)
@@ -307,8 +307,8 @@ func TestRestoredHistoryResetsTheCursorAndLosesNothing(t *testing.T) {
 	env := newTestEnv(t)
 	srv := httptest.NewServer(env.h)
 	defer srv.Close()
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	seedPeople(ds, 7)
 	saved, savedGeneration := int64(5), ds.generation
 
@@ -347,8 +347,8 @@ func TestHistoryContinuationIsHeldToTheGeneration(t *testing.T) {
 	env := newTestEnv(t)
 	srv := httptest.NewServer(env.h)
 	defer srv.Close()
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	head := seedPeople(ds, 3)
 
 	for _, query := range []string{
@@ -378,8 +378,8 @@ func TestHistoryContinuationIsHeldToTheGeneration(t *testing.T) {
 // head, so a client can hand either straight to `watch?from=&generation=`.
 func TestListAndHistoryCarryTheHandoff(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	head := seedPeople(ds, 2)
 
 	rec := env.do(t, http.MethodGet, peoplePath, tok, nil)

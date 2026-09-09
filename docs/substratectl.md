@@ -7,8 +7,8 @@ kinds, get, apply, import, patch, delete, edit, watch. It lives in the
 same repository as the substrate (`cmd/substratectl`) and builds with Go.
 
 ```
-substratectl register --server https://substrate.example --username ada
-substratectl login --username ada
+substratectl register --server https://substrate.example --repository ada.example.com
+substratectl login --repository ada.example.com
 substratectl kinds                        # every declared kind
 substratectl get task                    # list a collection
 substratectl get task t9 -o yaml         # one record, apply-able envelope
@@ -49,10 +49,10 @@ no server and no token.
 it asks for a TOTP enrollment, prints it once for an authenticator, and hands
 back one code with the password you choose. `--totp-secret` brings your own
 seed and skips the enrollment call, which is what makes an unattended
-registration possible. `--authority` names the DNS-style authority the
-repository owns, the home of every package you declare kinds in; omitted, the
-substrate names it `<username>.<its own host>`, and `register` prints the
-result.
+registration possible. `--repository` names the repository, which BECOMES its
+authority: the home of every package you declare kinds in, and the name you
+log in with. A name carrying a dot is taken as it is; a bare label is
+completed under the substrate's own host, and `register` prints the result.
 
 Against a substrate that verifies no second factor
 ([the local TOTP-off switch](auth.md#the-second-factor-can-be-switched-off-locally)),
@@ -79,9 +79,9 @@ headlessly, and a password is never an argument.
 
 Config lives at `~/.config/substratectl/config.yaml`, mode 0600 in a 0700 directory
 (`SUBSTRATECTL_CONFIG` and `XDG_CONFIG_HOME` are respected). It holds one **context**
-per substrate: a name, the server, the username, the token, and the token's id
-so `logout` can revoke the very token it forgets. **No repository** — the token
-implies it, and there is nothing else to configure.
+per substrate: a name, the server, the repository, the token, and the token's
+id so `logout` can revoke the very token it forgets. No URL names the
+repository: the token implies it, and there is nothing else to configure.
 
 `SUBSTRATE_SERVER` and `SUBSTRATE_TOKEN` override the file, and flags override
 both; `SS_SERVER` and `SS_TOKEN` are the one accepted alias, read only when the

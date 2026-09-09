@@ -15,7 +15,7 @@ import type {
   OperationalList,
   TokenInfo,
   TOTPEnrollment,
-  SessionUser,
+  SessionCredential,
 } from "./types"
 
 /** How many digits a TOTP code has; the substrate accepts nothing else. */
@@ -31,31 +31,31 @@ export function normalizeCode(input: string): string | null {
 
 // ── registration ────────────────────────────────────────────────────────────
 
-/** Step one of registration: the invite code and a username buy a TOTP seed.
- * It writes NOTHING — the caller holds the seed and hands it back with one
- * code, so an abandoned registration leaves no row. */
+/** Step one of registration: the invite code and a repository name buy a TOTP
+ * seed. It writes NOTHING — the caller holds the seed and hands it back with
+ * one code, so an abandoned registration leaves no row. */
 export function registerEnroll(
   inviteCode: string,
-  username: string
+  repository: string
 ): Promise<TOTPEnrollment> {
   return request<TOTPEnrollment>(
     "POST",
     "/register/enroll",
-    { inviteCode, username },
+    { inviteCode, repository },
     { anonymous: true }
   )
 }
 
 export interface RegisterInput {
   inviteCode: string
-  username: string
+  /** The repository to create, which BECOMES its authority and is the login
+   * name: `ada.example.com`, or a bare label the substrate completes under
+   * its own host. Permanent. */
+  repository: string
   password: string
   totpSecret: string
   totpCode: string
   label?: string
-  /** The DNS-style authority the repository will own, the home of every kind
-   * its user declares. Absent, the substrate names it `<username>.<its host>`. */
-  authority?: string
   /** A client-generated age recipient; absent asks the substrate to mint the
    * pair and return the identity once. */
   recoveryPublicKey?: string
@@ -65,9 +65,6 @@ export interface RegisterInput {
  * (present only when the server minted the pair; shown once, never stored)
  * and the enrolled recipient. */
 export interface RegisterResult extends MintedToken {
-  /** The authority the repository was created with, always echoed so a client
-   * that sent none learns the default it got. */
-  authority: string
   recoveryKey?: string
   recoveryPublicKey?: string
 }
@@ -85,9 +82,9 @@ export function register(input: RegisterInput): Promise<RegisterResult> {
 // ── login ─────────────────────────────────────────────────────────────────
 
 /** The login request as the door decodes it (`substrate.LoginRequest`): the
- * two factors and the label of the token the login mints. */
+ * repository, the two factors and the label of the token the login mints. */
 export interface LoginRequest {
-  username: string
+  repository: string
   password: string
   totpCode: string
   label?: string
@@ -96,7 +93,7 @@ export interface LoginRequest {
 /** Login mints a token RECORD and returns its secret once: there is no session
  * concept beside it, the console holds a token like every other client. */
 export function login(
-  username: string,
+  repository: string,
   password: string,
   totpCode: string,
   label = "console"
@@ -104,7 +101,7 @@ export function login(
   return request<MintedToken>(
     "POST",
     "/login",
-    { username, password, totpCode, label } satisfies LoginRequest,
+    { repository, password, totpCode, label } satisfies LoginRequest,
     { anonymous: true }
   )
 }
@@ -115,45 +112,45 @@ export function login(
  * the body. A bearer token alone is refused with 403 — so these calls are
  * deliberately anonymous. */
 export async function changePassword(
-  username: string,
+  repository: string,
   password: string,
   totpCode: string,
   newPassword: string
 ): Promise<void> {
-  await request<SessionUser>(
+  await request<SessionCredential>(
     "POST",
     "/password",
-    { username, password, totpCode, newPassword },
+    { repository, password, totpCode, newPassword },
     { anonymous: true }
   )
 }
 
 /** Re-enrollment step one: prove both current factors, receive a fresh seed. */
 export function totpEnroll(
-  username: string,
+  repository: string,
   password: string,
   totpCode: string
 ): Promise<TOTPEnrollment> {
   return request<TOTPEnrollment>(
     "POST",
     "/totp/enroll",
-    { username, password, totpCode },
+    { repository, password, totpCode },
     { anonymous: true }
   )
 }
 
 /** Re-enrollment step two: the new seed proved by one of its own codes. */
 export async function totpChange(
-  username: string,
+  repository: string,
   password: string,
   totpCode: string,
   newTotpSecret: string,
   newTotpCode: string
 ): Promise<void> {
-  await request<SessionUser>(
+  await request<SessionCredential>(
     "POST",
     "/totp",
-    { username, password, totpCode, newTotpSecret, newTotpCode },
+    { repository, password, totpCode, newTotpSecret, newTotpCode },
     { anonymous: true }
   )
 }

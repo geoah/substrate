@@ -113,7 +113,7 @@ func (ds *dataset) warnActionless(id string) {
 		return
 	}
 	ds.svc.log.Warn("substrate: policy: no action, so the rule speaks for nothing — give it allow, gate or refuse, or delete it",
-		"repository", logSafeID(ds.Repository().Name), "policy", logSafeID(id))
+		"repository", logSafeID(ds.Repository().ID), "policy", logSafeID(id))
 }
 
 // resolveSelectorKinds canonicalizes a selector's exact patterns against the

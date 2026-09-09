@@ -157,8 +157,8 @@ func TestExportOverTheAPIRestoresIntoAnEmptyDatabase(t *testing.T) {
 	// sidecars and an active one cut at the point.
 	svc, dsn := newService(t, engine.WithChangelogSegmentBytes(8<<10))
 	ctx := context.Background()
-	_, token, secret := registerUser(t, svc, "ada")
-	ds, err := svc.Dataset(ctx, "ada")
+	_, token, secret := registerUser(t, svc, "ada.example.com")
+	ds, err := svc.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,7 +242,7 @@ func TestExportOverTheAPIRestoresIntoAnEmptyDatabase(t *testing.T) {
 	// The restore: an empty database, the same host key.
 	dsn2 := engine.MigratedDSN(t)
 	svc2 := mustReopen(t, dsn2, root2)
-	ds2, err := svc2.Dataset(ctx, "ada")
+	ds2, err := svc2.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatalf("open the restored repository: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestExportOverTheAPIRestoresIntoAnEmptyDatabase(t *testing.T) {
 	if _, info, err := svc2.Authenticate(ctx, secret); err != nil || info.ID != token.ID {
 		t.Fatalf("the token does not open the restored repository: %v (%+v)", err, info)
 	}
-	verified := mustVerify(t, svc2, "ada")
+	verified := mustVerify(t, svc2, "ada.example.com")
 	if !verified.OK || verified.Head != head || verified.FileHead != head {
 		t.Fatalf("the restored repository does not verify: %+v", verified)
 	}
@@ -269,14 +269,14 @@ func TestExportOverTheAPIRestoresIntoAnEmptyDatabase(t *testing.T) {
 		t.Fatalf("verify opened %d of %d sealed files and hashed %d blobs", verified.SealedOpened, verified.SealedFiles, verified.Blobs)
 	}
 	mustPut(t, ds2, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "after the restore"}})
-	if grown := mustVerify(t, svc2, "ada"); !grown.OK || grown.Head != head+1 || grown.Snapshot == nil || grown.Snapshot.Head != head {
+	if grown := mustVerify(t, svc2, "ada.example.com"); !grown.OK || grown.Head != head+1 || grown.Snapshot == nil || grown.Snapshot.Head != head {
 		t.Fatalf("a write past the recorded point must not be a finding: %+v", grown)
 	}
 
 	// A read-only process is not the writer and cannot pin a point; the
 	// refusal is an unavailability, which the API answers as a 503.
 	readOnly := reopenWith(t, dsn, engine.DataRootOf(svc), engine.WithDirectoryReadOnly())
-	roDS, err := readOnly.Dataset(ctx, "ada")
+	roDS, err := readOnly.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,8 +313,8 @@ func TestExportPinsAPointWhileWritesContinue(t *testing.T) {
 	t.Parallel()
 	svc, _ := newService(t, engine.WithChangelogSegmentBytes(4<<10))
 	ctx := context.Background()
-	registerUser(t, svc, "ada")
-	ds, err := svc.Dataset(ctx, "ada")
+	registerUser(t, svc, "ada.example.com")
+	ds, err := svc.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -405,11 +405,11 @@ func TestExportPinsAPointWhileWritesContinue(t *testing.T) {
 	}
 
 	svc2 := mustReopen(t, engine.MigratedDSN(t), root2)
-	verified := mustVerify(t, svc2, "ada")
+	verified := mustVerify(t, svc2, "ada.example.com")
 	if !verified.OK || verified.Head != head || verified.Snapshot == nil || verified.Snapshot.Head != head {
 		t.Fatalf("the restored repository does not verify at the pinned point: %+v", verified)
 	}
-	ds2, err := svc2.Dataset(ctx, "ada")
+	ds2, err := svc2.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -633,7 +633,7 @@ func TestExportStreamsBlobsOutOfS3(t *testing.T) {
 
 	// An fs host imports the archive as it is.
 	svc2 := mustReopen(t, engine.MigratedDSN(t), root2)
-	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -643,7 +643,7 @@ func TestExportStreamsBlobsOutOfS3(t *testing.T) {
 	if got := getBlob(t, ds2, digest); !bytes.Equal(got, payload) {
 		t.Fatalf("blob bytes = %d bytes, want %d", len(got), len(payload))
 	}
-	verified := mustVerify(t, svc2, testdb.Username(t))
+	verified := mustVerify(t, svc2, testdb.Repository(t))
 	if !verified.OK || verified.Head != head || verified.Blobs != 1 || verified.BlobBytes != int64(len(payload)) {
 		t.Fatalf("the restored repository does not verify: %+v", verified)
 	}

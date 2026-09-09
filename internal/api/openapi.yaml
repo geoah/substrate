@@ -164,7 +164,7 @@ paths:
       description: |-
         Issues a TOTP enrollment for a registration. Writes nothing: the
         caller hands the seed back with one code on `POST /register`. Rate
-        limited per client address and username; a refusal is `429` with
+        limited per client address and repository; a refusal is `429` with
         `Retry-After`.
       operationId: registerEnroll
       security: []
@@ -202,11 +202,13 @@ paths:
       tags: [auth]
       summary: Register
       description: |-
-        Creates the user and their one repository in one transaction and
-        answers with the first token's secret, so registration ends logged
-        in. `authority` defaults to `<username>.<host>`; the response echoes
-        what was chosen. `recoveryKey` is present only when the server minted
-        the recovery pair, shown this once.
+        Creates the repository and its user in one transaction and answers
+        with the first token's secret, so registration ends logged in. The
+        `repository` name BECOMES the repository's authority: a name carrying
+        a dot is taken as it is, a bare label is completed under the host the
+        request reached, and the response echoes what was created.
+        `recoveryKey` is present only when the server minted the recovery
+        pair, shown this once.
       operationId: register
       security: []
       requestBody:
@@ -293,7 +295,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SessionUser"
+                $ref: "#/components/schemas/SessionCredential"
         "401":
           description: The factors were refused (`auth`).
           content:
@@ -361,7 +363,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SessionUser"
+                $ref: "#/components/schemas/SessionCredential"
         "401":
           description: The factors were refused (`auth`).
           content:
@@ -2823,22 +2825,25 @@ components:
     RegisterBeginRequest:
       type: object
       additionalProperties: false
-      required: [inviteCode, username]
+      required: [inviteCode, repository]
       properties:
         inviteCode:
           type: string
-        username:
+        repository:
           type: string
-          description: "`[a-z][a-z0-9]{1,29}`, unique and permanent."
+          description: The repository to create, which becomes its authority.
     RegisterInput:
       type: object
       additionalProperties: false
-      required: [inviteCode, username, password]
+      required: [inviteCode, repository, password]
       properties:
         inviteCode:
           type: string
-        username:
+        repository:
           type: string
+          description: "The repository to create, which BECOMES its authority
+            and is the login name: `ada.example.com`, or a bare label the
+            door completes under its own host. Unique and permanent."
         password:
           type: string
         totpSecret:
@@ -2853,24 +2858,22 @@ components:
         label:
           type: string
           description: The first token's label.
-        authority:
-          type: string
-          description: The repository's authority; default `<username>.<host>`.
         recoveryPublicKey:
           type: string
           description: A client-generated age recipient; absent asks the server
             to mint the pair.
     RegisterResult:
       type: object
-      required: [token, secret, authority]
+      required: [token, secret]
       properties:
         token:
           $ref: "#/components/schemas/TokenInfo"
         secret:
           type: string
           description: The token secret, shown this once.
-        authority:
+        repository:
           type: string
+          description: The repository that was created, its authority.
         recoveryKey:
           type: string
           description: The age identity, only when the server minted the pair.
@@ -2880,10 +2883,12 @@ components:
     LoginRequest:
       type: object
       additionalProperties: false
-      required: [username, password]
+      required: [repository, password]
       properties:
-        username:
+        repository:
           type: string
+          description: "The repository to log in to: its authority, or a bare
+            label the door completes under its own host."
         password:
           type: string
         totpCode:
@@ -2896,9 +2901,9 @@ components:
     PasswordRequest:
       type: object
       additionalProperties: false
-      required: [username, password, newPassword]
+      required: [repository, password, newPassword]
       properties:
-        username:
+        repository:
           type: string
         password:
           type: string
@@ -2912,9 +2917,9 @@ components:
     TOTPBeginRequest:
       type: object
       additionalProperties: false
-      required: [username, password]
+      required: [repository, password]
       properties:
-        username:
+        repository:
           type: string
         password:
           type: string
@@ -2926,9 +2931,9 @@ components:
     TOTPRequest:
       type: object
       additionalProperties: false
-      required: [username, password, newTotpSecret, newTotpCode]
+      required: [repository, password, newTotpSecret, newTotpCode]
       properties:
-        username:
+        repository:
           type: string
         password:
           type: string
@@ -2951,18 +2956,18 @@ components:
         otpauthUri:
           type: string
           description: The `otpauth://` URI a password manager imports.
-    SessionUser:
+    SessionCredential:
       type: object
-      required: [username]
+      required: [repository]
       properties:
-        username:
+        repository:
           type: string
     RecoveryEnrollRequest:
       type: object
       additionalProperties: false
-      required: [username, password]
+      required: [repository, password]
       properties:
-        username:
+        repository:
           type: string
         password:
           type: string
@@ -3017,6 +3022,11 @@ components:
         secret:
           type: string
           description: Shown this once.
+        repository:
+          type: string
+          description: "The repository the token opens, as the door resolved
+            it. Login and registration echo it; a `POST /tokens` mint omits
+            it."
     # --- discovery ------------------------------------------------------
     Discovery:
       type: object

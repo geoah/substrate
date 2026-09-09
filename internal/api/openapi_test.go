@@ -124,7 +124,7 @@ var openapiComponents = map[string]any{
 	"TOTPEnrollment":      substrate.TOTPEnrollment{},
 	"RegisterInput":       substrate.RegisterRequest{},
 	"RegisterResult":      substrate.Registered{},
-	"SessionUser":         substrate.SessionUser{},
+	"SessionCredential":   substrate.SessionCredential{},
 	"AgentResult":         substrate.AgentResult{},
 	"AgentEvent":          substrate.AgentEvent{},
 	"CatalogBundle":       substrate.CatalogBundle{},

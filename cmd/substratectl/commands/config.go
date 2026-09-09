@@ -11,20 +11,18 @@ import (
 
 // Context is one named substrate endpoint plus the token minted for it.
 //
-// There is no repository here and none in any URL: a token IMPLIES its
-// repository, so the whole of a stored credential is the
-// server, the user who logged in and the secret. TokenID is the token
-// record's id, kept so `substratectl logout` can revoke the very token it forgets.
-// Authority is the repository's public name, the one a webhook URL and a
-// delivery envelope carry; `register` records it and `login` carries the
-// stored one forward.
+// No URL carries the repository: a token IMPLIES its repository, so the whole
+// of a stored credential is the server, the repository that was signed in to
+// and the secret. Repository is that repository's one name — its authority,
+// which is also what a webhook URL and a delivery envelope carry — and both
+// `register` and `login` record it. TokenID is the token record's id, kept so
+// `substratectl logout` can revoke the very token it forgets.
 type Context struct {
-	Name      string `yaml:"name"`
-	Server    string `yaml:"server"`
-	Username  string `yaml:"username,omitempty"`
-	Authority string `yaml:"authority,omitempty"`
-	Token     string `yaml:"token,omitempty"`
-	TokenID   string `yaml:"tokenId,omitempty"`
+	Name       string `yaml:"name"`
+	Server     string `yaml:"server"`
+	Repository string `yaml:"repository,omitempty"`
+	Token      string `yaml:"token,omitempty"`
+	TokenID    string `yaml:"tokenId,omitempty"`
 }
 
 // Config is the on-disk CLI configuration. The file holds bearer secrets and
@@ -105,7 +103,7 @@ func (c *Config) upsertContext(ctx Context) {
 }
 
 // forgetToken drops the stored secret from a context, keeping the server and
-// the username so the next `substratectl login` is one command. It reports whether
+// the repository so the next `substratectl login` is one command. It reports whether
 // there was a context to forget.
 func (c *Config) forgetToken(name string) bool {
 	for i := range c.Contexts {

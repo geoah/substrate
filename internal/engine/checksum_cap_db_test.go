@@ -33,7 +33,7 @@ func TestSettleChecksumsRefusesALineOverTheCapBeforeCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	kind := testdb.Authority(t) + "/p/thing"
+	kind := testdb.Repository(t) + "/p/thing"
 	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 		return t.appendChange(substrate.ActorSystem, substrate.OpPut, "big", kind,
 			map[string]any{"blob": strings.Repeat("a", changelogfile.MaxLineBytes)})

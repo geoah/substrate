@@ -385,8 +385,8 @@ func TestBootWritesTheDirectoryForARowWithoutOne(t *testing.T) {
 	t.Parallel()
 	svc, dsn := newService(t)
 	ctx := context.Background()
-	registerUser(t, svc, "ada")
-	ds, err := svc.Dataset(ctx, "ada")
+	registerUser(t, svc, "ada.example.com")
+	ds, err := svc.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -406,7 +406,7 @@ func TestBootWritesTheDirectoryForARowWithoutOne(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the boot wrote no manifest: %v", err)
 	}
-	if m.Authority != id || m.Username != "ada" || m.Authority != "ada.example.com" || len(m.DEK) == 0 ||
+	if m.Authority != id || m.Authority != "ada.example.com" || len(m.DEK) == 0 ||
 		m.ChangelogDialect != engine.MaxChangelogDialect() || m.CreatedAt.IsZero() {
 		t.Fatalf("manifest = %+v", m)
 	}
@@ -422,7 +422,7 @@ func TestBootWritesTheDirectoryForARowWithoutOne(t *testing.T) {
 	if len(sealed) != 2 {
 		t.Fatalf("sealed files = %d, want the credential's two", len(sealed))
 	}
-	report := mustVerify(t, svc2, "ada")
+	report := mustVerify(t, svc2, "ada.example.com")
 	if !report.OK || report.Head != head || report.FileHead != head || report.SealedRows != 2 || report.SealedFiles != 2 {
 		t.Fatalf("the written directory does not verify: %+v", report)
 	}
@@ -450,10 +450,10 @@ func TestBootImportsARepositoryDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(repos) != 1 || repos[0].ID != id || repos[0].Name != testdb.Username(t) || repos[0].Authority != testdb.Authority(t) {
+	if len(repos) != 1 || repos[0].ID != id || repos[0].Authority != testdb.Repository(t) {
 		t.Fatalf("repositories after the import = %+v", repos)
 	}
-	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open the imported repository: %v", err)
 	}
@@ -508,7 +508,7 @@ func TestHistoryGenerationHoldsAcrossRestartAndRebuildAndRotatesOnImport(t *test
 	// head, so the restore leaves it above the new head.
 	saved := copyHead + 2
 
-	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Username(t)); err != nil {
+	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	if after, err := ds.Head(ctx); err != nil || after.Generation != before.Generation || after.Seq != copyHead+4 {
@@ -517,7 +517,7 @@ func TestHistoryGenerationHoldsAcrossRestartAndRebuildAndRotatesOnImport(t *test
 
 	_ = svc.Close()
 	svc2 := mustReopen(t, dsn, root)
-	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("reopen the repository: %v", err)
 	}
@@ -529,7 +529,7 @@ func TestHistoryGenerationHoldsAcrossRestartAndRebuildAndRotatesOnImport(t *test
 	// The older copy over an emptied database: the row is recreated from the
 	// manifest, and with it the generation.
 	svc3 := mustReopen(t, engine.MigratedDSN(t), olderRoot)
-	ds3, err := svc3.Dataset(ctx, testdb.Username(t))
+	ds3, err := svc3.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open the imported repository: %v", err)
 	}
@@ -635,8 +635,8 @@ func TestRoundTripDirectoryRestoresARepository(t *testing.T) {
 	t.Parallel()
 	svc, dsn := newService(t)
 	ctx := context.Background()
-	_, token, secret := registerUser(t, svc, "ada")
-	ds, err := svc.Dataset(ctx, "ada")
+	_, token, secret := registerUser(t, svc, "ada.example.com")
+	ds, err := svc.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -661,7 +661,7 @@ func TestRoundTripDirectoryRestoresARepository(t *testing.T) {
 	root2 := copyRepositoryDir(t, root, id)
 	dsn2 := engine.MigratedDSN(t)
 	svc2 := mustReopen(t, dsn2, root2)
-	ds2, err := svc2.Dataset(ctx, "ada")
+	ds2, err := svc2.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatalf("open the restored repository: %v", err)
 	}
@@ -679,11 +679,11 @@ func TestRoundTripDirectoryRestoresARepository(t *testing.T) {
 	if _, info, err := svc2.Authenticate(ctx, secret); err != nil || info.ID != token.ID {
 		t.Fatalf("the registered token does not open the restored repository: %v (%+v)", err, info)
 	}
-	report := mustVerify(t, svc2, "ada")
+	report := mustVerify(t, svc2, "ada.example.com")
 	if !report.OK || report.Head != head || report.FileHead != head {
 		t.Fatalf("the restored repository does not verify: %+v", report)
 	}
-	rebuilt, err := svc2.(rebuilder).RebuildRepository(ctx, "ada")
+	rebuilt, err := svc2.(rebuilder).RebuildRepository(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatalf("rebuild the restored repository: %v", err)
 	}
@@ -702,10 +702,10 @@ func TestSealedMirrorFollowsRotation(t *testing.T) {
 	t.Parallel()
 	svc, dsn := newService(t)
 	ctx := context.Background()
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -762,7 +762,7 @@ func TestBootMigratesRowsWithChainHashes(t *testing.T) {
 	}
 
 	svc2 := mustReopen(t, dsn, root)
-	report := mustVerify(t, svc2, testdb.Username(t))
+	report := mustVerify(t, svc2, testdb.Repository(t))
 	if !report.OK || report.Head != head || report.FileHead != head {
 		t.Fatalf("the migrated store does not verify: %+v", report)
 	}
@@ -870,7 +870,7 @@ func TestReadOnlyOpenLeavesDamageAndVerifyNamesIt(t *testing.T) {
 	if after, _ := os.ReadFile(path); !bytes.Equal(after, damaged) {
 		t.Fatal("a read-only open changed the segment")
 	}
-	report := mustVerify(t, ro, testdb.Username(t))
+	report := mustVerify(t, ro, testdb.Repository(t))
 	if report.OK {
 		t.Fatalf("a torn, behind file verified: %+v", report)
 	}
@@ -888,7 +888,7 @@ func TestReadOnlyOpenLeavesDamageAndVerifyNamesIt(t *testing.T) {
 	}
 
 	// The dataset opens beside the damage and refuses to write.
-	ro2, err := ro.Dataset(ctx, testdb.Username(t))
+	ro2, err := ro.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open the dataset read-only: %v", err)
 	}
@@ -905,7 +905,7 @@ func TestReadOnlyOpenLeavesDamageAndVerifyNamesIt(t *testing.T) {
 
 	// The server's own boot cuts the tail and catches the file up.
 	svc3 := mustReopen(t, dsn, root)
-	if report := mustVerify(t, svc3, testdb.Username(t)); !report.OK || report.FileHead != head {
+	if report := mustVerify(t, svc3, testdb.Repository(t)); !report.OK || report.FileHead != head {
 		t.Fatalf("after the writing boot: %+v", report)
 	}
 }
@@ -930,7 +930,7 @@ func TestASecondProcessRefusesRebuildWhileTheServerHoldsTheLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a second process could not boot beside the server: %v", err)
 	}
-	_, err = second.(rebuilder).RebuildRepository(ctx, testdb.Username(t))
+	_, err = second.(rebuilder).RebuildRepository(ctx, testdb.Repository(t))
 	if err == nil {
 		t.Fatal("a second process rebuilt a repository the server holds the writer lock on")
 	}
@@ -942,7 +942,7 @@ func TestASecondProcessRefusesRebuildWhileTheServerHoldsTheLock(t *testing.T) {
 	head := maxSeq(t, ds)
 	_ = svc.Close()
 
-	report, err := second.(rebuilder).RebuildRepository(ctx, testdb.Username(t))
+	report, err := second.(rebuilder).RebuildRepository(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("with the server stopped the rebuild must run: %v", err)
 	}
@@ -1080,7 +1080,7 @@ func TestACrashBetweenPrepareAndCommitFoldsNoUncommittedLine(t *testing.T) {
 	_ = svc.Close()
 
 	svc2 := mustReopen(t, dsn, root)
-	report := mustVerify(t, svc2, testdb.Username(t))
+	report := mustVerify(t, svc2, testdb.Repository(t))
 	if !report.OK || report.Head != head || report.FileHead != head || report.TruncatedBytes != 0 {
 		t.Fatalf("after the boot: %+v", report)
 	}
@@ -1090,7 +1090,7 @@ func TestACrashBetweenPrepareAndCommitFoldsNoUncommittedLine(t *testing.T) {
 	if pending, _ := changelogfile.PendingSealed(dir); len(pending) != 0 {
 		t.Fatalf("the boot left the staged file of a transaction that never committed: %v", pending)
 	}
-	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1098,7 +1098,7 @@ func TestACrashBetweenPrepareAndCommitFoldsNoUncommittedLine(t *testing.T) {
 		t.Fatalf("the uncommitted write is readable after the boot: err = %v", err)
 	}
 	mustPut(t, ds2, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "after"}})
-	if report := mustVerify(t, svc2, testdb.Username(t)); !report.OK || report.Head != head+1 || report.FileHead != head+1 {
+	if report := mustVerify(t, svc2, testdb.Repository(t)); !report.OK || report.Head != head+1 || report.FileHead != head+1 {
 		t.Fatalf("the next write did not continue from the head before the crash: %+v", report)
 	}
 }
@@ -1136,11 +1136,11 @@ func TestACrashBetweenCommitAndTheNewlineIsCaughtUpAtTheNextOpen(t *testing.T) {
 	_ = svc.Close()
 
 	svc2 := mustReopen(t, dsn, root)
-	report := mustVerify(t, svc2, testdb.Username(t))
+	report := mustVerify(t, svc2, testdb.Repository(t))
 	if !report.OK || report.Head != head+1 || report.FileHead != head+1 || report.TruncatedBytes != 0 {
 		t.Fatalf("the boot did not append the committed transaction again: %+v", report)
 	}
-	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1245,7 +1245,7 @@ func TestImportRefusesAnAuthorityLongerThanARecordID(t *testing.T) {
 		t.Fatalf("the directory layer must admit a DNS-length authority: %v", err)
 	}
 	if err := changelogfile.WriteManifest(dir, changelogfile.Manifest{
-		Format: changelogfile.ManifestFormat, Username: "long", Authority: authority, CreatedAt: time.Now().UTC(),
+		Format: changelogfile.ManifestFormat, Authority: authority, CreatedAt: time.Now().UTC(),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1269,14 +1269,14 @@ func TestRegistrationUsesTheAuthorityAsTheId(t *testing.T) {
 	t.Parallel()
 	svc, dsn := newService(t)
 	ctx := context.Background()
-	registerUser(t, svc, "ada")
+	registerUser(t, svc, "ada.example.com")
 	const authority = "ada.example.com"
 
 	repos, err := svc.Repositories(ctx)
 	if err != nil || len(repos) != 1 {
 		t.Fatalf("repositories = %+v, %v", repos, err)
 	}
-	if repos[0].ID != authority || repos[0].Authority != authority || repos[0].Name != "ada" {
+	if repos[0].ID != authority || repos[0].Authority != authority {
 		t.Fatalf("RepositoryInfo = %+v, want id and authority %q", repos[0], authority)
 	}
 	var id, column string
@@ -1287,7 +1287,7 @@ func TestRegistrationUsesTheAuthorityAsTheId(t *testing.T) {
 	if id != authority || column != authority {
 		t.Fatalf("row id = %q, authority = %q, want both %q", id, column, authority)
 	}
-	ds, err := svc.Dataset(ctx, "ada")
+	ds, err := svc.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1310,7 +1310,7 @@ func TestRegistrationUsesTheAuthorityAsTheId(t *testing.T) {
 	if err != nil {
 		t.Fatalf("no manifest at %s: %v", dir, err)
 	}
-	if m.Authority != authority || m.Username != "ada" || !bytes.Equal(m.DEK, wrapped) {
+	if m.Authority != authority || !bytes.Equal(m.DEK, wrapped) {
 		t.Fatalf("manifest = %+v", m)
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, changelogfile.ManifestName))
@@ -1339,7 +1339,7 @@ func TestRegistrationUsesTheAuthorityAsTheId(t *testing.T) {
 func TestBootRefusesARowWhoseIdIsNotItsAuthority(t *testing.T) {
 	t.Parallel()
 	svc, dsn := newService(t)
-	registerUser(t, svc, "ada")
+	registerUser(t, svc, "ada.example.com")
 	root := engine.DataRootOf(svc)
 	_ = svc.Close()
 
@@ -1414,8 +1414,8 @@ func buildLegacyFixture(t *testing.T) legacyFixture {
 	t.Helper()
 	svc, dsn := newService(t)
 	ctx := context.Background()
-	_, token, secret := registerUser(t, svc, "ada")
-	ds, err := svc.Dataset(ctx, "ada")
+	_, token, secret := registerUser(t, svc, "ada.example.com")
+	ds, err := svc.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1575,7 +1575,7 @@ func TestBootImportsAnOldIdNamedDirectory(t *testing.T) {
 	// the boot appended the self-description's correction (below), so it
 	// claimed the dialect, and the manifest followed the claim without a
 	// restart (manifest_db_test.go).
-	if m2.Format != changelogfile.ManifestFormat || m2.Authority != fx.authority || m2.Username != "ada" ||
+	if m2.Format != changelogfile.ManifestFormat || m2.Authority != fx.authority ||
 		m2.ChangelogDialect != engine.MaxChangelogDialect() || m2.VocabularyDialect != formatOneVocabularyDialect || !m2.CreatedAt.Equal(m.CreatedAt) {
 		t.Fatalf("manifest after the move = %+v", m2)
 	}
@@ -1586,14 +1586,14 @@ func TestBootImportsAnOldIdNamedDirectory(t *testing.T) {
 		t.Fatalf("the re-wrapped DEK does not open under the authority to the same key: %v", err)
 	}
 	repos, err := svc2.Repositories(ctx)
-	if err != nil || len(repos) != 1 || repos[0].ID != fx.authority || repos[0].Name != "ada" {
+	if err != nil || len(repos) != 1 || repos[0].ID != fx.authority {
 		t.Fatalf("repositories after the import = %+v, %v", repos, err)
 	}
 	var wrapped []byte
 	if err := rawDB(t, dsn2).QueryRow(`SELECT dek FROM repositories WHERE id = $1`, fx.authority).Scan(&wrapped); err != nil || !bytes.Equal(wrapped, m2.DEK) {
 		t.Fatalf("the row's DEK is not the manifest's: %v", err)
 	}
-	ds2, err := svc2.Dataset(ctx, "ada")
+	ds2, err := svc2.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatalf("open the imported repository: %v", err)
 	}
@@ -1613,7 +1613,7 @@ func TestBootImportsAnOldIdNamedDirectory(t *testing.T) {
 	// The self-description: readable under the repository's id, a tombstone
 	// under the old one, and both moves in the changelog by the system actor.
 	self := mustGet(t, ds2, repositoryKind, ds2.Repository().ID)
-	if self.ID != fx.authority || self.Properties["name"] != "ada" || self.Properties["authority"] != fx.authority || self.DeletedAt != nil {
+	if self.ID != fx.authority || self.Properties["authority"] != fx.authority || self.DeletedAt != nil {
 		t.Fatalf("the self-description under the authority = %+v", self)
 	}
 	if old := mustGet(t, ds2, repositoryKind, fx.oldID); old.DeletedAt == nil {
@@ -1625,14 +1625,14 @@ func TestBootImportsAnOldIdNamedDirectory(t *testing.T) {
 		moves[1].Op != substrate.OpDelete || moves[1].Kind != repositoryKind || moves[1].RecordID != fx.oldID || moves[1].Actor != substrate.ActorSystem {
 		t.Fatalf("the correction is not two system entries, a put under the authority and a delete of the old id: %+v", moves)
 	}
-	report := mustVerify(t, svc2, "ada")
+	report := mustVerify(t, svc2, "ada.example.com")
 	if !report.OK || report.Head != fx.head+2 || report.FileHead != fx.head+2 {
 		t.Fatalf("the imported repository does not verify with the correction in both stores: %+v", report)
 	}
 	// The correction is in the changelog: a rebuild from the files reproduces
 	// the fold that holds it.
 	folded := foldOf(t, ds2)
-	if _, err := svc2.(rebuilder).RebuildRepository(ctx, "ada"); err != nil {
+	if _, err := svc2.(rebuilder).RebuildRepository(ctx, "ada.example.com"); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	if again := foldOf(t, ds2); string(again) != string(folded) {
@@ -1641,7 +1641,7 @@ func TestBootImportsAnOldIdNamedDirectory(t *testing.T) {
 	// A second boot finds nothing to move and nothing to correct.
 	_ = svc2.Close()
 	svc3 := mustReopen(t, dsn2, fx.root)
-	ds3, err := svc3.Dataset(ctx, "ada")
+	ds3, err := svc3.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1732,7 +1732,7 @@ func TestInterruptedLegacyMoveRefusesATakenAuthority(t *testing.T) {
 	// another data root.
 	dsn2 := engine.MigratedDSN(t)
 	other := mustReopen(t, dsn2, t.TempDir())
-	registerUser(t, other, "ada")
+	registerUser(t, other, "ada.example.com")
 	_ = other.Close()
 
 	_, err := reopen(t, dsn2, fx.root)
@@ -1764,7 +1764,7 @@ func TestAnInterruptedImportResumesAtTheNextBoot(t *testing.T) {
 	id := repositoryIDOf(t, ds)
 	// The subtests import a copy of THIS repository, whose name derives from
 	// the parent's t.
-	username := testdb.Username(t)
+	username := testdb.Repository(t)
 	root := engine.DataRootOf(svc)
 	_ = svc.Close()
 
@@ -1946,14 +1946,14 @@ func TestAResumedImportFoldsWhatTheCatchUpAppended(t *testing.T) {
 	}
 
 	svc2 := mustReopen(t, dsn2, root2)
-	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open after the catch-up and the resumed import: %v", err)
 	}
 	if after := foldOf(t, ds2); string(after) != string(before) {
 		t.Fatalf("the resumed fold lacks what the catch-up appended\n%s", firstDifference(before, after))
 	}
-	if report := mustVerify(t, svc2, testdb.Username(t)); !report.OK || report.Head != head || report.FileHead != head {
+	if report := mustVerify(t, svc2, testdb.Repository(t)); !report.OK || report.Head != head || report.FileHead != head {
 		t.Fatalf("the repository does not verify after the catch-up: %+v", report)
 	}
 }
@@ -2031,7 +2031,7 @@ func TestBootReappendsATransactionCutInTheFile(t *testing.T) {
 	if !bytes.Equal(after, whole) {
 		t.Fatal("the re-appended segment is not byte for byte the one the writer wrote")
 	}
-	if report := mustVerify(t, svc2, testdb.Username(t)); !report.OK {
+	if report := mustVerify(t, svc2, testdb.Repository(t)); !report.OK {
 		t.Fatalf("verify after the boot: %+v", report)
 	}
 }
@@ -2079,7 +2079,7 @@ func TestCatchUpAppendsWholeTransactions(t *testing.T) {
 	if rep.Segments >= int(head) {
 		t.Fatalf("%d segments for %d entries: the catch-up appended line by line", rep.Segments, head)
 	}
-	if report := mustVerify(t, svc2, testdb.Username(t)); !report.OK {
+	if report := mustVerify(t, svc2, testdb.Repository(t)); !report.OK {
 		t.Fatalf("verify after the boot: %+v", report)
 	}
 }
@@ -2126,11 +2126,11 @@ func TestACommitInDoubtLatchesUntilTheBootCatchesUp(t *testing.T) {
 	_ = svc.Close()
 
 	svc2 := mustReopen(t, dsn, root)
-	report := mustVerify(t, svc2, testdb.Username(t))
+	report := mustVerify(t, svc2, testdb.Repository(t))
 	if !report.OK || report.Head != head+1 || report.FileHead != head+1 {
 		t.Fatalf("the boot did not catch the file up: %+v", report)
 	}
-	ds2, err := svc2.Dataset(ctx, testdb.Username(t))
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}

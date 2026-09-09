@@ -112,12 +112,12 @@ func TestDeclaredDefaultLandsInTheRecordAndSurvivesARebuild(t *testing.T) {
 	// The delta the write appended is what a rebuild replays: if the default
 	// had been applied on the way out instead, the rebuilt row would lose it.
 	rb, ok := svc.(interface {
-		RebuildRepository(ctx context.Context, username string) (engine.RebuildReport, error)
+		RebuildRepository(ctx context.Context, repository string) (engine.RebuildReport, error)
 	})
 	if !ok {
 		t.Fatal("the service cannot rebuild a repository")
 	}
-	if _, err := rb.RebuildRepository(ctx, testdb.Username(t)); err != nil {
+	if _, err := rb.RebuildRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	if rebuilt := mustGet(t, ds, requiredTicket, "t1"); rebuilt.Properties["priority"] != "none" {

@@ -58,8 +58,8 @@ func TestParseChangeFilterAcceptsRepeatedAndCommaLists(t *testing.T) {
 
 func TestChangesHonorsRepeatedTypeParams(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	for _, typ := range []string{"samples.substrate.reamde.dev/people/person", "samples.substrate.reamde.dev/messaging/conversationmessage", "samples.substrate.reamde.dev/tasks/task"} {
 		ds.commit(substrate.Change{
 			TS: time.Unix(1, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
@@ -113,7 +113,7 @@ func TestParseChangeFilterRequiresKindCompanion(t *testing.T) {
 // the feed to the one record of that type, not every id-sharing row.
 func TestChangesRecordIdWithoutKindIsBadRequest(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	rec := env.do(t, http.MethodGet,
 		"/api/v1/changes?recordId=shared", tok, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
@@ -121,8 +121,8 @@ func TestChangesRecordIdWithoutKindIsBadRequest(t *testing.T) {
 
 func TestChangesRecordIdPlusKindScopesToOneRecord(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	// The same id under two types — exactly the A9 collision.
 	ds.commit(substrate.Change{
 		TS: time.Unix(1, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
@@ -172,8 +172,8 @@ func TestChangesRecordScopeCarriesMergeAndSplitForBothRecords(t *testing.T) {
 	env := newTestEnv(t)
 	srv := httptest.NewServer(env.h)
 	defer srv.Close()
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	const kind = "samples.substrate.reamde.dev/people/person"
 	pair := map[string]any{"winner": "w1", "loser": "l1"}
 	for i, c := range []substrate.Change{

@@ -63,13 +63,13 @@ func TestOldActorSpellingSurvivesRebuild(t *testing.T) {
 	if !ok {
 		t.Fatal("the service cannot rebuild a repository")
 	}
-	if _, err := rb.RebuildRepository(context.Background(), testdb.Username(t)); err != nil {
+	if _, err := rb.RebuildRepository(context.Background(), testdb.Repository(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	if after := foldOf(t, ds); string(after) != string(before) {
 		t.Fatal("the rebuilt fold does not match: a retired actor spelling did not replay as written")
 	}
-	if report := mustVerify(t, svc, testdb.Username(t)); !report.OK {
+	if report := mustVerify(t, svc, testdb.Repository(t)); !report.OK {
 		t.Fatalf("the checksums do not verify over the retired spelling: %+v", report.Findings)
 	}
 }

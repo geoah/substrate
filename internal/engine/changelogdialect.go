@@ -133,7 +133,7 @@ func (ds *dataset) gateChangelogDialect(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := admitChangelogDialect(ds.info.Name, stored, maxChangelogDialect); err != nil {
+	if err := admitChangelogDialect(ds.info.ID, stored, maxChangelogDialect); err != nil {
 		return err
 	}
 	// A store already at this binary's maximum needs no stamp from it, which
@@ -162,7 +162,7 @@ func (ds *dataset) refuseRetiredLinkEntries(ctx context.Context) error {
 		return fmt.Errorf("substrate/engine: probe retired link entries: %w", err)
 	}
 	return fmt.Errorf("%w: repository %s holds `%s`/`%s` changelog entries, which dialect 1 wrote and migration 0010 left nothing to fold into; there is no rung that translates them (decision 0044), so wipe the store: mise run dev:wipe in development, and restore a dump taken before the upgrade anywhere else",
-		ErrChangelogPredatesReferences, ds.info.Name, opLinkRetired, opUnlinkRetired)
+		ErrChangelogPredatesReferences, ds.info.ID, opLinkRetired, opUnlinkRetired)
 }
 
 // refuseNewerChangelogDialect re-reads the stamp inside the caller's
@@ -177,7 +177,7 @@ func (t *txn) refuseNewerChangelogDialect() error {
 	if err != nil {
 		return err
 	}
-	return admitChangelogDialect(t.ds.info.Name, stored, maxChangelogDialect)
+	return admitChangelogDialect(t.ds.info.ID, stored, maxChangelogDialect)
 }
 
 // admitChangelogDialect is the one comparison every gate makes: a repository

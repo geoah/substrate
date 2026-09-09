@@ -1,16 +1,14 @@
 package substrate
 
 // RepositoryInfo describes one repository as the control-plane table holds it:
-// its id, the owning user's username, and the lifecycle state. There is no
-// schema name — every repository lives in the one shared schema.
+// its id and the lifecycle state. There is no schema name — every repository
+// lives in the one shared schema.
 type RepositoryInfo struct {
-	// ID is the repository's authority (decision 0046), the row's primary
-	// key; it always equals Authority, which stays for the readers that ask
-	// for the name by that word.
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	// Authority is the DNS-style authority this repository owns: the home of
-	// every kind its user declares, chosen at registration and permanent.
+	// ID is the repository's authority (decision 0052), the row's primary
+	// key: the name its user registered and logs in with, and the home of
+	// every kind that user declares. It always equals Authority, which stays
+	// for the readers that ask for the name by that word.
+	ID        string `json:"id"`
 	Authority string `json:"authority"`
 	State     string `json:"state"` // lifecycle machine state
 }

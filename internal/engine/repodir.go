@@ -178,7 +178,6 @@ const (
 // reconcileOutcome is what the boot check did for one repository.
 type reconcileOutcome struct {
 	Repository string
-	Username   string
 	Action     string
 	// Entries is how many entries moved: appended to the file, or imported
 	// into the table.
@@ -224,11 +223,11 @@ func (s *service) reconcileRepositories(ctx context.Context) error {
 		hasRow[repo.ID] = true
 		out, err := s.reconcileRow(ctx, repo, true)
 		if err != nil {
-			return fmt.Errorf("substrate/engine: boot check: repository %s (%s): %w", repo.ID, repo.Username, err)
+			return fmt.Errorf("substrate/engine: boot check: repository %s: %w", repo.ID, err)
 		}
 		s.logReconcile(out)
 		if err := s.correctSelfDescription(ctx, out); err != nil {
-			return fmt.Errorf("substrate/engine: boot check: repository %s (%s): %w", repo.ID, repo.Username, err)
+			return fmt.Errorf("substrate/engine: boot check: repository %s: %w", repo.ID, err)
 		}
 	}
 	for _, id := range dirs {
@@ -295,7 +294,7 @@ func (s *service) correctSelfDescription(ctx context.Context, out reconcileOutco
 	for k, v := range stray.Properties {
 		props[k] = v
 	}
-	props["name"], props["authority"] = repo.Username, repo.ID
+	props["name"], props["authority"] = repo.ID, repo.ID
 	if err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 		if _, err := t.put(substrate.PutInput{Kind: kindRepository, ID: repo.ID, Properties: props}); err != nil {
 			return err
@@ -304,10 +303,10 @@ func (s *service) correctSelfDescription(ctx context.Context, out reconcileOutco
 		return err
 	}); err != nil {
 		return fmt.Errorf("substrate/engine: move the self-description of %s from %s to its authority: %w",
-			repo.Username, out.StrayRepositoryID, err)
+			repo.ID, out.StrayRepositoryID, err)
 	}
 	s.log.Info("substrate: repository self-description moved under the authority",
-		"repository", repo.ID, "username", repo.Username, "from", out.StrayRepositoryID)
+		"repository", repo.ID, "from", out.StrayRepositoryID)
 	return nil
 }
 
@@ -329,7 +328,7 @@ func (s *service) requireRepositoryRowsAreAuthorities(ctx context.Context) error
 func checkRepositoryRows(repos []Repository) error {
 	for _, repo := range repos {
 		if repo.ID != repo.Authority || validRepositoryID(repo.ID) != nil {
-			return fmt.Errorf("%w (row id %q, authority %q, user %s)", ErrRepositoryIDNotAuthority, repo.ID, repo.Authority, repo.Username)
+			return fmt.Errorf("%w (row id %q, authority %q)", ErrRepositoryIDNotAuthority, repo.ID, repo.Authority)
 		}
 	}
 	return nil
@@ -385,7 +384,7 @@ func (s *service) migrateLegacyDirs(ctx context.Context) error {
 			return fmt.Errorf("write the manifest of repository %s after moving it under its authority: %w", m.Authority, err)
 		}
 		s.log.Info("substrate: repository directory moved under its authority",
-			"repository", m.Authority, "username", m.Username, "from", name)
+			"repository", m.Authority, "from", name)
 	}
 	// The crash window: renamed, manifest not yet rewritten.
 	dirs, err := changelogfile.ListRepositoryDirs(s.dataRoot)
@@ -416,7 +415,7 @@ func (s *service) migrateLegacyDirs(ctx context.Context) error {
 			return fmt.Errorf("write the manifest of repository %s after moving it under its authority: %w", authority, err)
 		}
 		s.log.Info("substrate: repository directory's manifest rewritten after an interrupted move",
-			"repository", authority, "username", m.Username, "from", lm.ID)
+			"repository", authority, "from", lm.ID)
 	}
 	return nil
 }
@@ -476,8 +475,8 @@ func (s *service) rewrapLegacyDEK(lm changelogfile.LegacyManifest) (changelogfil
 	}
 	dek, err := s.unwrapDEK(lm.Manifest.DEK, lm.ID, lm.Manifest.DEKKeyID)
 	if err != nil {
-		return m, fmt.Errorf("the DEK in the manifest of repository %s (%s, directory %s) does not open: %w. Set the key the directory was written under, or move the directory out of the data root",
-			lm.Manifest.Authority, lm.Manifest.Username, lm.ID, err)
+		return m, fmt.Errorf("the DEK in the manifest of repository %s (directory %s) does not open: %w. Set the key the directory was written under, or move the directory out of the data root",
+			lm.Manifest.Authority, lm.ID, err)
 	}
 	if m.DEK, err = s.wrapDEK(dek, m.Authority); err != nil {
 		return m, err
@@ -487,7 +486,7 @@ func (s *service) rewrapLegacyDEK(lm changelogfile.LegacyManifest) (changelogfil
 }
 
 func (s *service) logReconcile(out reconcileOutcome) {
-	attrs := []any{"repository", out.Repository, "username", out.Username, "action", out.Action}
+	attrs := []any{"repository", out.Repository, "action", out.Action}
 	if out.Entries > 0 {
 		attrs = append(attrs, "entries", out.Entries)
 	}
@@ -507,7 +506,7 @@ func (s *service) logReconcile(out reconcileOutcome) {
 // dataset may be open on the repository while it runs, which is true at boot
 // and at creation.
 func (s *service) reconcileRow(ctx context.Context, repo Repository, allowImport bool) (reconcileOutcome, error) {
-	out := reconcileOutcome{Repository: repo.ID, Username: repo.Username}
+	out := reconcileOutcome{Repository: repo.ID}
 	dir, err := changelogfile.RepoDir(s.dataRoot, repo.ID)
 	if err != nil {
 		return out, err
@@ -620,7 +619,7 @@ func (ds *dataset) reconcileDir(ctx context.Context, out *reconcileOutcome, allo
 		return mirrorSealedFromTable(ctx, ds.db, ds.dir)
 	}
 	if !allowImport {
-		return importIncompleteErr(ds.info.Name, markedHead)
+		return importIncompleteErr(ds.info.ID, markedHead)
 	}
 	if out.Action == reconcileCaughtUp {
 		if log, err = changelogfile.Open(changelogfile.ChangelogDir(ds.dir)); err != nil {
@@ -811,7 +810,7 @@ func (ds *dataset) importEntries(ctx context.Context, log *changelogfile.Log, ta
 	if ds.svc.testImportBatch > 0 {
 		batch = ds.svc.testImportBatch
 	}
-	if err := refuseRetiredEntriesInFiles(ds.info.Name, log, tableHead, batch); err != nil {
+	if err := refuseRetiredEntriesInFiles(ds.info.ID, log, tableHead, batch); err != nil {
 		return 0, err
 	}
 	if err := loadSealedFiles(ctx, ds.db, ds.dir); err != nil {
@@ -887,7 +886,7 @@ func refuseRetiredEntriesInFiles(repository string, log *changelogfile.Log, tabl
 // head is what the refold folds, and the two differ after a catch-up.
 func (ds *dataset) completeImport(ctx context.Context, log *changelogfile.Log, markedHead int64) error {
 	ds.svc.log.Warn("substrate: resuming an interrupted import of the repository directory",
-		"repository", ds.scope.Repository, "username", ds.info.Name, "markedHead", markedHead, "fileHead", log.Head())
+		"repository", ds.scope.Repository, "markedHead", markedHead, "fileHead", log.Head())
 	if err := loadSealedFiles(ctx, ds.db, ds.dir); err != nil {
 		return err
 	}
@@ -1041,7 +1040,7 @@ func (ds *dataset) refoldFromFiles(ctx context.Context, log *changelogfile.Log) 
 	}
 	if queued > 0 {
 		ds.svc.log.Info("substrate: import queued the repository's embeddable properties for the drain",
-			"repository", ds.scope.Repository, "username", ds.info.Name, "queued", queued)
+			"repository", ds.scope.Repository, "queued", queued)
 	}
 	return nil
 }
@@ -1091,7 +1090,6 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 	if err != nil {
 		return out, fmt.Errorf("a directory with no `repositories` row must carry a manifest to import: %w", err)
 	}
-	out.Username = m.Username
 	if err := validRepositoryID(m.Authority); err != nil {
 		return out, fmt.Errorf("the manifest names an authority that cannot be a repository id: %w", err)
 	}
@@ -1099,17 +1097,17 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 	// insertEntries writes anything: a refusal from the fold, with the rows
 	// already committed, is the outage the manifest exists to prevent.
 	m = currentManifest(m)
-	if err := newerChangelogDialect(m.Username, m.ChangelogDialect); err != nil {
+	if err := newerChangelogDialect(m.Authority, m.ChangelogDialect); err != nil {
 		return out, err
 	}
-	if err := admitVocabularyDialect(m.Username, m.VocabularyDialect); err != nil {
+	if err := admitVocabularyDialect(m.Authority, m.VocabularyDialect); err != nil {
 		return out, err
 	}
 	if len(m.DEK) > 0 {
 		dek, err := s.unwrapDEK(m.DEK, m.Authority, m.DEKKeyID)
 		if err != nil {
-			return out, fmt.Errorf("the DEK in the manifest of repository %s (%s) does not open: %w. Importing it would leave a repository whose sealed store no login can open; set the key the directory was written under, or move the directory out of the data root",
-				m.Authority, m.Username, err)
+			return out, fmt.Errorf("the DEK in the manifest of repository %s does not open: %w. Importing it would leave a repository whose sealed store no login can open; set the key the directory was written under, or move the directory out of the data root",
+				m.Authority, err)
 		}
 		// A marked manifest is a claim about the files, and the row it would
 		// create refuses every legacy form for good, so the claim is proven
@@ -1122,25 +1120,20 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 				return out, err
 			}
 			if err := sealedFilesOpenUnder(files, dek); err != nil {
-				return out, fmt.Errorf("the manifest of repository %s (%s) says sealedDekOnly, but %w; the directory is refused rather than imported as a repository that would refuse that payload for good. Restore the directory from a copy whose files open, or clear sealedDekOnly in %s so the first open re-keys the store",
-					m.Authority, m.Username, err, changelogfile.ManifestName)
+				return out, fmt.Errorf("the manifest of repository %s says sealedDekOnly, but %w; the directory is refused rather than imported as a repository that would refuse that payload for good. Restore the directory from a copy whose files open, or clear sealedDekOnly in %s so the first open re-keys the store",
+					m.Authority, err, changelogfile.ManifestName)
 			}
 		}
 	}
-	if other, err := s.repositoryByUsername(ctx, m.Username); err == nil {
-		return out, fmt.Errorf("the manifest names username %q, which repository %s already holds", m.Username, other.ID)
-	} else if !errors.Is(err, substrate.ErrNotFound) {
-		return out, err
-	}
 	// The entries' own gate, still before the row: a `link` entry refuses the
-	// directory here, so it reserves neither the username nor the authority,
-	// and a later boot finds no row to export an empty repository from. The
-	// read-only open cuts nothing; reconcileDir opens the log again to repair.
+	// directory here, so it reserves the authority for nothing, and a later
+	// boot finds no row to export an empty repository from. The read-only open
+	// cuts nothing; reconcileDir opens the log again to repair.
 	log, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir))
 	if err != nil {
 		return out, directoryOpenErr(err)
 	}
-	if err := refuseRetiredEntriesInFiles(m.Username, log, 0, rebuildBatch); err != nil {
+	if err := refuseRetiredEntriesInFiles(m.Authority, log, 0, rebuildBatch); err != nil {
 		return out, err
 	}
 	// The directory is listed because no row has its authority as id, and the
@@ -1150,7 +1143,7 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 	// DEK-only store with no DEK to be under is contradictory, and an unmarked
 	// row costs one re-key pass at the first open, which is the safe reading.
 	repo := Repository{
-		ID: m.Authority, Username: m.Username, Authority: m.Authority, CreatedAt: m.CreatedAt,
+		ID: m.Authority, Authority: m.Authority, CreatedAt: m.CreatedAt,
 		DEK: m.DEK, DEKKeyID: m.DEKKeyID, SealedDEKOnly: m.SealedDEKOnly && len(m.DEK) > 0,
 	}
 	if repo.CreatedAt.IsZero() {
@@ -1165,9 +1158,9 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 		return out, err
 	}
 	if _, err := s.maint.ExecContext(ctx, `
-		INSERT INTO repositories (id, username, authority, created_at, dek, history_generation, dek_key_id, sealed_dek_only)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-		repo.ID, repo.Username, repo.Authority, repo.CreatedAt, repo.DEK, repo.HistoryGeneration,
+		INSERT INTO repositories (id, authority, created_at, dek, history_generation, dek_key_id, sealed_dek_only)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		repo.ID, repo.Authority, repo.CreatedAt, repo.DEK, repo.HistoryGeneration,
 		nullString(repo.DEKKeyID), repo.SealedDEKOnly); err != nil {
 		return out, fmt.Errorf("create the row from the manifest: %w", err)
 	}
@@ -1218,7 +1211,7 @@ func (s *service) manifestOf(ctx context.Context, repo Repository, q dbx) (chang
 		return changelogfile.Manifest{}, err
 	}
 	return changelogfile.Manifest{
-		Format: changelogfile.ManifestFormat, Username: repo.Username,
+		Format:    changelogfile.ManifestFormat,
 		Authority: repo.Authority, CreatedAt: repo.CreatedAt,
 		ChangelogDialect: changelog, VocabularyDialect: vocabulary, DEK: repo.DEK,
 		DEKKeyID: repo.DEKKeyID, SealedDEKOnly: repo.SealedDEKOnly,
@@ -1248,7 +1241,7 @@ func (s *service) ensureManifest(ctx context.Context, dir string, repo Repositor
 }
 
 func manifestsEqual(a, b changelogfile.Manifest) bool {
-	return a.Format == b.Format && a.Username == b.Username && a.Authority == b.Authority &&
+	return a.Format == b.Format && a.Authority == b.Authority &&
 		a.CreatedAt.Equal(b.CreatedAt) && a.ChangelogDialect == b.ChangelogDialect &&
 		a.VocabularyDialect == b.VocabularyDialect && bytes.Equal(a.DEK, b.DEK) &&
 		a.DEKKeyID == b.DEKKeyID && a.SealedDEKOnly == b.SealedDEKOnly
@@ -1497,7 +1490,7 @@ func (ds *dataset) openDirectory(ctx context.Context) error {
 		return err
 	}
 	if incomplete {
-		return importIncompleteErr(ds.info.Name, markedHead)
+		return importIncompleteErr(ds.info.ID, markedHead)
 	}
 	tableHead, err := tableChangelogHead(ctx, ds.db)
 	if err != nil {
@@ -1593,7 +1586,7 @@ func (ds *dataset) stageSealedBeforeCommit(writes []sealedMirrorOp) ([]string, e
 		staged = append(staged, op.rec.Ref)
 		if err := ds.sealedFiles().Stage(ds.dir, op.rec); err != nil {
 			ds.discardStaged(staged)
-			return nil, fmt.Errorf("%w: repository %s: stage sealed %s: %w", ErrDirectoryWrite, ds.info.Name, op.rec.Ref, err)
+			return nil, fmt.Errorf("%w: repository %s: stage sealed %s: %w", ErrDirectoryWrite, ds.info.ID, op.rec.Ref, err)
 		}
 	}
 	return staged, nil
@@ -1607,7 +1600,7 @@ func (ds *dataset) discardStaged(staged []string) {
 	for _, ref := range staged {
 		if err := changelogfile.DiscardSealed(ds.dir, ref); err != nil {
 			ds.svc.log.Error("substrate: could not discard a staged sealed file whose transaction did not commit; the next boot removes it",
-				"repository", ds.scope.Repository, "username", ds.info.Name, "ref", ref, "error", err)
+				"repository", ds.scope.Repository, "ref", ref, "error", err)
 		}
 	}
 }
@@ -1631,12 +1624,12 @@ func (ds *dataset) writeManifestBeforeCommit(dialect int) error {
 	// nothing durable anywhere, the sealed store's shape of refusal, so it
 	// is the retryable ErrDirectoryWrite and not a plain failure.
 	if err := ds.svc.commitFault(commitBeforeManifest); err != nil {
-		return fmt.Errorf("%w: repository %s: write %s with changelog dialect %d before the first entry in it: %w", ErrDirectoryWrite, ds.info.Name, changelogfile.ManifestName, dialect, err)
+		return fmt.Errorf("%w: repository %s: write %s with changelog dialect %d before the first entry in it: %w", ErrDirectoryWrite, ds.info.ID, changelogfile.ManifestName, dialect, err)
 	}
 	m := ds.manifest
 	m.ChangelogDialect = dialect
 	if err := changelogfile.WriteManifest(ds.dir, m); err != nil {
-		return fmt.Errorf("%w: repository %s: write %s with changelog dialect %d before the first entry in it: %w", ErrDirectoryWrite, ds.info.Name, changelogfile.ManifestName, dialect, err)
+		return fmt.Errorf("%w: repository %s: write %s with changelog dialect %d before the first entry in it: %w", ErrDirectoryWrite, ds.info.ID, changelogfile.ManifestName, dialect, err)
 	}
 	ds.manifest = m
 	return ds.svc.commitFault(commitAfterManifest)
@@ -1683,7 +1676,7 @@ func (ds *dataset) prepareLines(pending []pendingEntry) (bool, error) {
 			ds.latchDirectoryErr(fmt.Errorf("prepare seq %d..%d: %w", lines[0].Seq, lines[len(lines)-1].Seq, err))
 			return false, ds.fileErr
 		}
-		return false, fmt.Errorf("%w: repository %s: prepare seq %d..%d: %w", ErrDirectoryWrite, ds.info.Name, lines[0].Seq, lines[len(lines)-1].Seq, err)
+		return false, fmt.Errorf("%w: repository %s: prepare seq %d..%d: %w", ErrDirectoryWrite, ds.info.ID, lines[0].Seq, lines[len(lines)-1].Seq, err)
 	}
 	return true, nil
 }
@@ -1699,7 +1692,7 @@ func (ds *dataset) abortLines(prepared bool) {
 	}
 	if err := ds.writer.Abort(); err != nil {
 		ds.svc.log.Error("substrate: could not cut a prepared transaction that did not commit; the next open cuts it",
-			"repository", ds.scope.Repository, "username", ds.info.Name, "error", err)
+			"repository", ds.scope.Repository, "error", err)
 	}
 }
 
@@ -1748,7 +1741,7 @@ func (ds *dataset) latchDirectoryErr(cause error) {
 	if ds.fileErr != nil {
 		return
 	}
-	ds.fileErr = fmt.Errorf("%w: repository %s: %w", ErrChangelogFileBehind, ds.info.Name, cause)
+	ds.fileErr = fmt.Errorf("%w: repository %s: %w", ErrChangelogFileBehind, ds.info.ID, cause)
 	ds.svc.log.Error("substrate: the repository directory fell behind the tables; refusing writes until restart",
-		"repository", ds.scope.Repository, "username", ds.info.Name, "error", cause)
+		"repository", ds.scope.Repository, "error", cause)
 }

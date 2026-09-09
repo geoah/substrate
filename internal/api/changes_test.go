@@ -33,8 +33,8 @@ type changesBody struct {
 
 func TestChangesHistoryPagesNewestFirst(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	seedChanges(env.svc.datasets["geoah"], 5)
+	tok := env.svc.token(fakeRepository)
+	seedChanges(env.svc.datasets[fakeRepository], 5)
 
 	rec := env.do(t, http.MethodGet, "/api/v1/changes?first=2", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
@@ -47,7 +47,7 @@ func TestChangesHistoryPagesNewestFirst(t *testing.T) {
 	}
 
 	// The next page starts strictly below the oldest row already shown.
-	rec = env.do(t, http.MethodGet, "/api/v1/changes?first=2&before=4&generation="+env.svc.datasets["geoah"].generation, tok, nil)
+	rec = env.do(t, http.MethodGet, "/api/v1/changes?first=2&before=4&generation="+env.svc.datasets[fakeRepository].generation, tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	page = decodeJSON[changesBody](t, rec)
 	if len(page.Changes) != 2 || page.Changes[0].Seq != 3 || page.Changes[1].Seq != 2 {
@@ -57,8 +57,8 @@ func TestChangesHistoryPagesNewestFirst(t *testing.T) {
 
 func TestChangesHistoryCarriesTriggerStates(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	seedChanges(ds, 2)
 	ds.trStates[1] = []substrate.ChangeTrigger{
 		{Trigger: "on-mirror.widgets.test.dev", Callable: "widgets.test.dev/widgets/mirror", State: substrate.ChangeTriggerParked, Error: "boom"},
@@ -83,8 +83,8 @@ func TestChangesHistoryCarriesTriggerStates(t *testing.T) {
 
 func TestChangesQFiltersHistory(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 	ds.commit(substrate.Change{
 		TS: time.Unix(1, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
 		RecordID: "alpha1", Kind: "samples.substrate.reamde.dev/people/person",
@@ -108,8 +108,8 @@ func TestChangesWatchAppliesQ(t *testing.T) {
 	env := newTestEnv(t)
 	srv := httptest.NewServer(env.h)
 	defer srv.Close()
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	br, stop := startWatch(t, srv, "/api/v1/changes?watch=1&from=0&q=task", tok)
 	defer stop()
@@ -135,8 +135,8 @@ func TestChangesWatchRowsCarryTriggers(t *testing.T) {
 	env := newTestEnv(t)
 	srv := httptest.NewServer(env.h)
 	defer srv.Close()
-	tok := env.svc.token("geoah")
-	ds := env.svc.datasets["geoah"]
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
 
 	br, stop := startWatch(t, srv, "/api/v1/changes?watch=1&from=0", tok)
 	defer stop()
@@ -164,7 +164,7 @@ func TestChangesWatchRowsCarryTriggers(t *testing.T) {
 
 func TestChangesBadPagingParams(t *testing.T) {
 	env := newTestEnv(t)
-	tok := env.svc.token("geoah")
+	tok := env.svc.token(fakeRepository)
 	for _, path := range []string{
 		"/api/v1/changes?before=nope",
 		"/api/v1/changes?first=0",

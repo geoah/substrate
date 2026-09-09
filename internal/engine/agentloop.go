@@ -382,7 +382,7 @@ func (ds *dataset) runAgent(ctx context.Context, ag *vocabulary.Agent, in agentI
 		if err != nil {
 			return nil, err
 		}
-		in.delivery = fmt.Sprintf("%s/agentrun/%s", ds.Repository().Name, id)
+		in.delivery = fmt.Sprintf("%s/agentrun/%s", ds.Repository().ID, id)
 	}
 	l := &agentLoop{
 		ds: ds, ag: ag, provider: provider, model: ag.Model, params: params, in: in,
