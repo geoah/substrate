@@ -57,7 +57,10 @@ unreserved plus `:`, `@` and `/`, up to 128 characters). The one exception is
 a kind some `recordmapping` points at: its ids are server-assigned, and a
 create carrying an id is refused
 ([0049](decisions/0049-the-owner-of-a-mappings-target-declares-it.md)). Ids
-are never derived from content and never reused.
+are never derived from content. An id is stable while its record exists, not
+unique across time: once the sweep has purged a deleted record, a `put` at the
+same kind and id creates a new record there, and a reference another record
+still holds resolves to it ([api](api.md#the-five-mutations)).
 
 Three more words, used precisely on every page:
 

@@ -318,10 +318,11 @@ stale data. Three guarantees:
   and another kind wearing the same id is untouched.
 - **Trails stay flat.** After A merges into B and B into C, both A and B are
   former ids of C directly: resolution is one lookup, bounded forever.
-- **Ids are never reused within a kind, and never re-derived.** A tombstoned
-  loser's id stays a former id of its winner forever, so notes, annotations,
-  and an agent's memory can hold a full (kind, id) pair without a validity
-  window.
+- **A former id resolves for as long as its winner exists.** A tombstoned
+  loser's id stays a former id of its winner until the winner is itself
+  deleted and purged; the purge drops the trail with the record, and the id is
+  free for a new record after that. A (kind, id) pair held in a note or an
+  agent's memory is valid while the record it names is live or tombstoned.
 
 ### Split, the undo
 
