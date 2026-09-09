@@ -135,7 +135,6 @@ var openapiComponents = map[string]any{
 	"SuggestedMapping":    substrate.SuggestedMapping{},
 	"BundleUpgrade":       substrate.BundleUpgrade{},
 	"BundleUpgradeChange": substrate.BundleUpgradeChange{},
-	"BundleUpgradeRename": substrate.BundleUpgradeRename{},
 	"ConversionPlan":      substrate.ConversionPlan{},
 	"ConversionStep":      substrate.ConversionStep{},
 	"ConversionConfirm":   substrate.ConversionConfirm{},

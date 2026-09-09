@@ -85,14 +85,6 @@ export function shortTime(iso: string, withSeconds = false): string {
   return withSeconds ? `${hm}:${pad(d.getSeconds())}` : hm
 }
 
-/** A folded group's span: `12:03–12:05`, collapsing to one stamp when the
- * burst fits inside a minute. */
-export function timeRange(oldestISO: string, newestISO: string): string {
-  const a = shortTime(oldestISO)
-  const b = shortTime(newestISO)
-  return a === b ? b : `${a}–${b}`
-}
-
 /** A stored reference — the referent's record PATH — read back as the id it
  * names, or "" when the value is not a path. A cell repeating the whole
  * `<kind>/<id>` says the column's own kind back at the reader, so the surfaces
@@ -151,14 +143,6 @@ export function cellValue(value: unknown): string {
 export function recordTitle(properties: Record<string, unknown>): string {
   const title = properties.title
   return typeof title === "string" ? title : ""
-}
-
-/** Initials for an actor chip: `providers.substrate.reamde.dev` → `PS`,
- * `owner` → `OW`. */
-export function actorInitials(actor: string): string {
-  const parts = actor.split(".").filter(Boolean)
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
-  return actor.slice(0, 2).toUpperCase()
 }
 
 /** A machine actor's short voice: the first two labels

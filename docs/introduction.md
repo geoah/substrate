@@ -6,8 +6,8 @@ your own machine, against your own Postgres. It is the _system of record_
 personal software builds on, instead of every app keeping its own silo.
 
 The problem it answers is fragmentation. Every question that crosses two
-apps (_"what did Alex ask me before this meeting?"_) is an integration
-project, because nothing shares naming, nothing shares change notification,
+apps (_"what did Alex ask me before this meeting?"_) is a plumbing project
+of its own, because nothing shares naming, nothing shares change notification,
 and nothing offers a safe way for semi-trusted automation to write.
 
 The design borrows deliberately from Kubernetes, the most battle-tested
@@ -15,14 +15,14 @@ answer to "many semi-trusted programs cooperating over shared typed state":
 
 - the substrate is the **API server**: typed records, declared validation,
   an ordered change feed;
-- every application and integration is a **controller**: it watches, decides,
+- every application and provider is a **controller**: it watches, decides,
   and writes back through the same public API;
 - behavior lives in **declarations** (kinds, states, mappings, functions),
   not in bespoke endpoints. The write API is five generic mutations,
   forever: `put`, `patch`, `delete`, `merge`, `split`;
 - a closure of those declarations installs and uninstalls as one unit, a
-  **bundle**, which is how a provider integration or an automation reaches
-  the data without a substrate code change.
+  **bundle**, which is how a provider or an automation reaches the data
+  without a substrate code change.
 
 The kinds this binary ships live under `substrate.reamde.dev` and its
 subdomains, and everywhere in these pages "substrate" means the service you

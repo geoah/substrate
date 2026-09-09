@@ -26,7 +26,7 @@ func (a *app) getCommand() *cobra.Command {
 		after    string
 	)
 	cmd := &cobra.Command{
-		Use:   "get <plural> [id]",
+		Use:   "get <kind> [id]",
 		Short: "List or read records",
 		Long: `Read records from a collection.
 

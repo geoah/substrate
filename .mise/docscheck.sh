@@ -40,13 +40,16 @@ grep_docs() {
 # --- the dead words -----------------------------------------------------
 #
 # docs/terms.md is the vocabulary, and it says a dead word is a bug wherever it
-# survives. Only the words with NO honest surviving sense are grep-able: `type`,
-# `schema`, `group`, `log`, `extension` and `capability` all have a legitimate
-# sense (a GraphQL schema, a Postgres extension, a function's `capabilities`
-# envelope), so they are the reading pass's, not this script's.
+# survives. Only the words with NO honest surviving sense are grep-able —
+# `entity`, `tenant`, `relationship`, `singleton`, `configType`, `edge` and
+# `integration` (the provider tier's old name; Notion's own "internal
+# integration" is written around, not excepted). `type`, `schema`, `group`,
+# `log`, `extension` and `capability` all have a legitimate sense (a GraphQL
+# schema, a Postgres extension, a function's `capabilities` envelope), so they
+# are the reading pass's, not this script's.
 #
 # terms.md itself is exempt: it names the dead words on purpose, to retire them.
-dead='entit(y|ies)|tenants?|relationships?|singletons?|config[ -]?[Tt]ype|edges?'
+dead='entit(y|ies)|tenants?|relationships?|singletons?|config[ -]?[Tt]ype|edges?|integrations?'
 if grep_docs -rniE "\b(${dead})\b" | grep -v '^docs/terms.md:'; then
   flag "a dead word survives; docs/terms.md names the live one"
 fi

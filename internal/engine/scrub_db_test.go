@@ -65,7 +65,7 @@ func installVaultBundle(t *testing.T) substrate.Dataset {
 			},
 		}),
 		vocabulary.KindManifest(vPackage,
-			map[string]any{"singular": "vaultconfig", "plural": "vaultconfigs"},
+			map[string]any{"singular": "vaultconfig"},
 			map[string]any{
 				"properties": map[string]any{
 					"apiToken": map[string]any{"type": "secret"},
@@ -73,7 +73,7 @@ func installVaultBundle(t *testing.T) substrate.Dataset {
 				},
 			}),
 		vocabulary.KindManifest(vPackage,
-			map[string]any{"singular": "vaultnote", "plural": "vaultnotes"},
+			map[string]any{"singular": "vaultnote"},
 			map[string]any{"properties": map[string]any{"text": map[string]any{"type": "string"}}}),
 		fn("spill", `
 def main(input, host):

@@ -99,8 +99,8 @@ func (a *app) triggerRunCommand() *cobra.Command {
 callable, without moving the cursor.
 
 A record is addressed by (kind, id) — an id alone names no record, since two
-kinds may share one — so the delivery takes BOTH. The kind may be the plural or
-singular the registry knows ("tasks", "task") or the full reference
+kinds may share one — so the delivery takes BOTH. The kind may be the bare name
+the registry knows ("task") or the full reference
 ("samples.substrate.reamde.dev/tasks/task").`,
 		Example: `  substratectl trigger run classify-page task t9
   substratectl trigger run classify-page samples.substrate.reamde.dev/tasks/task t9`,
@@ -114,8 +114,8 @@ singular the registry knows ("tasks", "task") or the full reference
 			var res struct {
 				Ran int `json:"ran"`
 			}
-			// The wire wants the kind reference. A plural or singular the registry
-			// knows is resolved here; anything else travels verbatim, because the
+			// The wire wants the kind reference. A bare name the registry knows is
+			// resolved here; anything else travels verbatim, because the
 			// server resolves references and bare names too and its error names the
 			// kind better than a guess would.
 			recordKind := args[1]

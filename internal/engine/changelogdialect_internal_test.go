@@ -22,12 +22,13 @@ import (
 	"time"
 )
 
-// dialectTwoOps and dialectTwoEffects are the changelog vocabulary since
+// dialectSixOps and dialectSixEffects are the changelog vocabulary since
 // dialect 2, where references absorbed edges (decision 0044): `link` and
 // `unlink` stopped being ops and `edge`/`unedge`/`edge1` stopped being
-// effects. Dialect 1 entries carrying any of the five are refused at the fold
-// by name (fold.go foldRefuses) rather than replayed into a store with no
-// pointers in it. Dialect 3 keeps this vocabulary unchanged: its rung is the
+// effects. A store holding any of the five is stamped below the floor and
+// refused at the open (changelogdialect.go minChangelogDialect); one whose
+// stamp says otherwise is refused at the fold by name (fold.go foldRefuses).
+// Dialect 3 keeps this vocabulary unchanged: its rung is the
 // `txn` frame on every entry and the checksum over it (decision 0057), not a
 // spelling. Dialect 4 keeps it unchanged too: its rung is the `kindVersion`
 // key on the record delta (decision 0060, TestTheKindVersionStampIsDialectFour),
@@ -91,9 +92,6 @@ func TestTheKindVersionStampIsDialectFour(t *testing.T) {
 	if err := admitChangelogDialect("geoah", 4, 3); !errors.Is(err, ErrChangelogDialectNewer) {
 		t.Fatalf("a dialect 3 binary admitted a repository stamped 4: %v", err)
 	}
-	if err := admitChangelogDialect("geoah", 3, maxChangelogDialect); err != nil {
-		t.Fatalf("a repository stamped 3 must open under this binary: %v", err)
-	}
 	raw, err := json.Marshal(rowDelta{KindVersion: 4})
 	if err != nil {
 		t.Fatal(err)
@@ -115,9 +113,6 @@ func TestTheManagerStampIsDialectFive(t *testing.T) {
 	}
 	if err := admitChangelogDialect("geoah", maxChangelogDialect, 4); !errors.Is(err, ErrChangelogDialectNewer) {
 		t.Fatalf("a dialect 4 binary admitted a repository stamped 5: %v", err)
-	}
-	if err := admitChangelogDialect("geoah", 4, maxChangelogDialect); err != nil {
-		t.Fatalf("a repository stamped 4 must open under this binary: %v", err)
 	}
 	at := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
 	raw, err := json.Marshal(foldOp{Kind: foldManager, Ref: "k", ID: "r", Property: "p", Actor: "api", Tier: "owner", UpdatedAt: &at})
@@ -177,9 +172,9 @@ func declaredStrings(t *testing.T, file, typeName string) []string {
 }
 
 // A repository this binary stamps (6) is refused by a binary whose maximum is
-// 5, 4, 3 or 2: the delivery ledger's op and effects are unknown to their fold, and
-// v0.46.0 and v0.47.0 (maximum 2) would also re-stamp every `changelog.hash`
-// without `txn` at boot (changelogdialect.go, rungs three to six).
+// 5, 4, 3 or 2: the delivery ledger's op and effects are unknown to their
+// fold, and v0.46.0 and v0.47.0 (maximum 2) would also re-stamp every
+// `changelog.hash` without `txn` at boot.
 func TestChangelogDialectSixIsRefusedByAnOlderBinary(t *testing.T) {
 	t.Parallel()
 	if maxChangelogDialect != 6 {
@@ -194,13 +189,33 @@ func TestChangelogDialectSixIsRefusedByAnOlderBinary(t *testing.T) {
 			t.Fatalf("the refusal must name both numbers: %v", err)
 		}
 	}
-	if err := admitChangelogDialect("geoah", 3, maxChangelogDialect); err != nil {
-		t.Fatalf("a repository stamped 3 must open under this binary: %v", err)
+	if err := admitChangelogDialect("geoah", maxChangelogDialect, maxChangelogDialect); err != nil {
+		t.Fatalf("a repository stamped at the maximum must open: %v", err)
 	}
-	if err := admitChangelogDialect("geoah", 2, maxChangelogDialect); err != nil {
-		t.Fatalf("a repository stamped 2 must open under this binary: %v", err)
+}
+
+// The floor is the other half of the gate: every step that brought a store
+// stamped below minChangelogDialect forward was retired together, so such a
+// store is refused rather than opened into a fold this binary cannot
+// complete. The refusal names the release that still adopted it, because
+// booting that one once is the whole remedy. An unstamped 0 passes here: it
+// is a store no binary has claimed, which the open-time gate tells apart from
+// a pre-stamp history by probing the changelog.
+func TestAStoreBelowTheFloorIsRefused(t *testing.T) {
+	t.Parallel()
+	if minChangelogDialect > maxChangelogDialect {
+		t.Fatalf("the floor %d is above the maximum %d", minChangelogDialect, maxChangelogDialect)
+	}
+	for stored := 1; stored < minChangelogDialect; stored++ {
+		err := admitChangelogDialect("geoah", stored, maxChangelogDialect)
+		if !errors.Is(err, ErrChangelogDialectRetired) {
+			t.Fatalf("a store stamped %d was admitted: %v", stored, err)
+		}
+		if !strings.Contains(err.Error(), lastAdoptingRelease) {
+			t.Fatalf("the refusal must name the release that still adopted the store: %v", err)
+		}
 	}
 	if err := admitChangelogDialect("geoah", 0, maxChangelogDialect); err != nil {
-		t.Fatalf("an unstamped repository must open: %v", err)
+		t.Fatalf("an unstamped repository is judged by the open-time probe, not here: %v", err)
 	}
 }

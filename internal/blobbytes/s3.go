@@ -124,23 +124,6 @@ type s3Store struct {
 	prefix string
 }
 
-// reLegacyRepositoryID is the repository id grammar from before the authority
-// became the id, one path segment of the record id alphabet: the rule
-// internal/changelogfile holds a pre-authority directory name to.
-var reLegacyRepositoryID = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
-
-// ListLegacyRepository lists the objects still keyed under a pre-authority
-// repository id, `<prefix><id>/` (LegacyRepositoryLister). Repository refuses
-// such an id, so this is the one way to read that prefix, and it is for the
-// boot check that moves the repository's directory under its authority.
-func (s *S3) ListLegacyRepository(ctx context.Context, id string, limit int) ([]Object, error) {
-	if !reLegacyRepositoryID.MatchString(id) || id == "." || id == ".." {
-		return nil, fmt.Errorf("blobbytes: %q is not a pre-authority repository id", id)
-	}
-	st := &s3Store{s3: s, prefix: s.cfg.Prefix + id + "/"}
-	return st.List(ctx, "", limit)
-}
-
 func (*s3Store) Backend() string { return BackendS3 }
 
 // key is the one place an object key is built.

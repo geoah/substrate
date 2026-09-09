@@ -34,7 +34,7 @@ type Dataset interface {
 	// KindByRef resolves a kind REFERENCE ("samples.substrate.reamde.dev/tasks/task", or a bare
 	// "task"), or an unambiguous local name. A REST collection segment IS the
 	// kind name, so the two segments a request addresses spell the reference
-	// this resolves — routing needs no plural lookup (decision 0033).
+	// this resolves — routing needs no name lookup (decision 0033).
 	KindByRef(ctx context.Context, ref string) (KindInfo, error)
 
 	// --- the five mutations ---

@@ -15,8 +15,8 @@ import { queryOptions } from "@tanstack/react-query"
 import { CORE_AUTHORITY, corePath, request, splitKind } from "./http"
 import type { KindInfo, Page } from "./types"
 
-// The registry collection is the `kind` kind's own name (decision 0033); the
-// engine resolves the segment by identity, so the plural no longer routes.
+// The registry collection is the `kind` kind's own name (decision 0033): the
+// engine resolves the segment by identity.
 const KINDS = "kind"
 /** One page comfortably above any real registry; the fetch still follows the
  * cursor if a substrate ever outgrows it. */
@@ -45,7 +45,6 @@ function kindFromRecord(item: Record<string, unknown>): KindInfo | undefined {
     // The declaration version is an incremental int64; 0 (absent) covers a
     // declaration written before the server versioned them.
     version: Number(properties.version) || 0,
-    plural: String(names.plural ?? properties.plural ?? name),
     source: String(properties.source ?? "builtin"),
     // A STRING or nothing — this renders as prose, and `String()` would turn a
     // malformed declaration's object into "[object Object]" on the page.
@@ -65,10 +64,9 @@ export function normalizeKinds(payload: unknown): KindInfo[] {
       [])
   const out: KindInfo[] = []
   for (const item of raw as Array<Record<string, unknown>>) {
-    if (
-      typeof item?.identity === "string" &&
-      typeof item?.plural === "string"
-    ) {
+    // A flat KindInfo carries `identity`; a declaration record carries `id`
+    // and its declaration in `properties`.
+    if (typeof item?.identity === "string" && typeof item?.name === "string") {
       out.push(item as unknown as KindInfo)
       continue
     }
@@ -202,12 +200,4 @@ export function buildKindNav(kinds: KindInfo[]): KindNav {
         Number(a.authority === CORE_AUTHORITY) || byName(a, b)
   )
   return { authorities: [...schema, ...machinery] }
-}
-
-/** The login probe: the smallest authenticated read there is. Success means
- * the token is live; the caller stores it. Carries the candidate token
- * explicitly so a bad one never touches the stored session. */
-export async function probeToken(token: string): Promise<void> {
-  const q = new URLSearchParams({ first: "1" })
-  await request<Page>("GET", `${corePath(KINDS)}?${q}`, undefined, { token })
 }

@@ -1,6 +1,6 @@
 # Bundles catalog
 
-The substrate ships ten of these bundles in the binary, in the two tiers
+The substrate ships eleven of these bundles in the binary, in the two tiers
 [decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
 draws. (The vocabulary samples beside them, `people`, `tasks`, `calendar` and
 the rest, are in [built-in kinds](builtin-kinds.md).)
@@ -11,8 +11,8 @@ package its publisher owns, installed under
 provider into the repository; none writes back, and each ships a README
 stating its limits.
 
-**Four samples**: LLM, notes, the web harvester and Firecrawl. Each is a worked
-example to read and copy, imported under the repository's own authority and
+**Five samples**: LLM, notes, the web harvester, Firecrawl and Pebble. Each is
+a worked example to read and copy, imported under the repository's own authority and
 owned by it afterwards. A fix here reaches a repository that imported it as
 an upgrade offer read off the copy's origin stamp, taken by importing again
 ([0070](decisions/0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md);
@@ -59,6 +59,7 @@ thing, and the Records column counts them.
 | Notes         | Sample   | none           | 1     | 2         | 0       | 2      |
 | Firecrawl     | Sample   | API key        | 2     | 2         | 0       | 0      |
 | Web harvester | Sample   | none           | 2     | 4         | 4       | 3      |
+| Pebble        | Sample   | none           | 2     | 1         | 2       | 1      |
 
 ## LLM (sample)
 
@@ -278,10 +279,10 @@ revocation is manual.
 ## Notion
 
 Package `providers.substrate.reamde.dev/notion`. A provider that mirrors the Notion
-pages and data sources shared with an internal integration. It is authorized by
-an internal-integration token rather than OAuth, because Notion authenticates
-its token exchange with HTTP Basic and the host facility declares one auth
-style for every bundle.
+pages and data sources the user has shared with it. It is authorized by an
+internal Notion token (the one a workspace owner mints in Notion's settings)
+rather than OAuth, because Notion authenticates its token exchange with HTTP
+Basic and the host facility declares one auth style for every bundle.
 
 - **Kinds (4)**: `config`, `account`, and the mirrors `page` and `database`
   (one row per data source, recording its containing database).
@@ -292,7 +293,7 @@ style for every bundle.
   enabled; `notion-scheduled` fires hourly.
 - **Mappings**: none. A Notion page mirrors as a document, not a person.
 
-The integration token is a secret on the configuration record, origin-pinned to
+The Notion token is a secret on the configuration record, origin-pinned to
 Notion's API host. Only one account per repository syncs: every other account
 row is stamped `syncStatus: ignored: duplicate account`.
 
@@ -368,5 +369,34 @@ the running example these pages build on.
 
 Its functions are deterministic stubs, because the bundle exists to exercise
 the machinery rather than talk to a provider.
+
+## Pebble (sample)
+
+Package `samples.substrate.reamde.dev/pebble`. Voice capture from the Pebble
+Index 01 ring over a public webhook, and the smallest bundle that shows one:
+the ring's phone app POSTs each capture as `multipart/form-data` to one URL,
+and a custom header (`X-Pebble-Mode: note` or `agent`) says which button
+gesture sent it. The host stores the audio part in the blob store before the
+function runs, so the body reads a digest, never bytes.
+
+- **Kinds (2)**: `recording` (every capture: transcription, `recordedAt`,
+  `mode`, `client` and the `audio` blob) and `instruction` (written only in
+  agent mode, pointing back at its recording through a reference).
+- **Functions (1)**: `ingest` routes on the header, upserts the `recording` at
+  an id derived from the webhook fire id so a retried delivery updates the
+  same record, and writes the `instruction` beside it in agent mode.
+- **Triggers (2)**: `pebble-webhook` delivers
+  `POST /webhooks/<authority>/pebble-webhook` to `ingest`, open as shipped
+  (set `source.webhook.key` on the trigger to require a credential); and
+  `pebble-on-instruction` runs the `assistant` agent on each created
+  `instruction`.
+- **Agents (1)**: `assistant` reads open tasks through the `graphql` host
+  function and creates `tasks/task` records through `mutate`, so the bundle
+  requires the `tasks` sample. It names `provider: default`, a row the owner
+  writes and keys before it can run.
+
+No inputs and no OAuth: the one optional credential is the webhook key on the
+trigger record. [samples/pebble/README.md](../samples/pebble/README.md) has
+the ring app setup and a `curl` that mimics it.
 
 Next: [substratectl](substratectl.md), the command line over all of it.

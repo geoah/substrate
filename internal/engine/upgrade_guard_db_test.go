@@ -390,7 +390,7 @@ func TestBundleUpgradeRefusesATightenedPatternWithLiveRows(t *testing.T) {
 	})
 	closure := func(pattern string) []map[string]any {
 		item := vocabulary.KindManifest(mbPackage,
-			map[string]any{"singular": "mailitem", "plural": "mailitems"},
+			map[string]any{"singular": "mailitem"},
 			map[string]any{"properties": map[string]any{
 				"name": map[string]any{"type": "string", "pattern": pattern},
 			}})
@@ -469,7 +469,7 @@ func TestBootUpgradeRefusesARetiredName(t *testing.T) {
 	// before it opens anything): the upgrade is refused and the repository
 	// opens on the stored declarations.
 	reusing := shippedTree(t)
-	addShippedKind(t, reusing, corePackage, "gadget", "gadgets")
+	addShippedKind(t, reusing, corePackage, "gadget")
 	bumpPackageVersion(t, reusing, corePackage, "100")
 	svc := openTree(t, dsn, reusing)
 	if _, err := svc.Dataset(ctx, testdb.Username(t)); err != nil {
@@ -495,7 +495,7 @@ func TestBootUpgradeRefusesARetiredName(t *testing.T) {
 	// list, so the refusal has to come from the name being declared, and the
 	// log says so.
 	appending := shippedTree(t)
-	addShippedKind(t, appending, corePackage, "gadget", "gadgets")
+	addShippedKind(t, appending, corePackage, "gadget")
 	bumpPackageVersion(t, appending, corePackage, "99")
 	var logs bytes.Buffer
 	svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
@@ -523,7 +523,7 @@ func TestBootUpgradeRefusesRetiringAHeldKind(t *testing.T) {
 
 	// Binary N+1 ships core/gadget: it lands and the repository declares it.
 	shipping := shippedTree(t)
-	addShippedKind(t, shipping, corePackage, "gadget", "gadgets")
+	addShippedKind(t, shipping, corePackage, "gadget")
 	if err := openMoved(t, dsn, shipping); err != nil {
 		t.Fatalf("shipping a new kind must land: %v", err)
 	}
@@ -656,7 +656,7 @@ func renameShippedLabel(t *testing.T, tree string) {
 func addShippedMirror(t *testing.T, tree, prop string) {
 	t.Helper()
 	doc := "kind: substrate.reamde.dev/core/kind\nmetadata:\n  id: " + corePackage + "/gadget\ndata:\n" +
-		"  authority: substrate.reamde.dev\n  package: core\n  names:\n    singular: gadget\n    plural: gadgets\n" +
+		"  authority: substrate.reamde.dev\n  package: core\n  names:\n    singular: gadget\n" +
 		"  properties:\n    " + prop + ":\n      type: string\n"
 	if prop != "login" {
 		doc += "      renamedFrom: login\n"
@@ -690,7 +690,7 @@ func TestBootUpgradeRefusesARenameAStoredMappingReads(t *testing.T) {
 	mapping := func(path string) []map[string]any {
 		return []map[string]any{
 			vocabulary.PackageManifest(ownerPackage, 0),
-			vocabulary.KindManifest(ownerPackage, map[string]any{"singular": "handleowner", "plural": "handleowners"},
+			vocabulary.KindManifest(ownerPackage, map[string]any{"singular": "handleowner"},
 				map[string]any{"properties": map[string]any{"handle": map[string]any{"type": "string"}}}),
 			vocabulary.MappingManifest(ownerPackage, "gadgethandleowner", map[string]any{
 				"from": gadget, "to": ownerPackage + "/handleowner", "property": "person",
@@ -782,7 +782,7 @@ func addShippedGadget(t *testing.T, tree, version, tmpl string) {
 	t.Helper()
 	doc := "kind: substrate.reamde.dev/core/kind\nmetadata:\n  id: " + corePackage + "/gadget\ndata:\n" +
 		"  authority: substrate.reamde.dev\n  package: core\n  version: " + version + "\n" +
-		"  names:\n    singular: gadget\n    plural: gadgets\n" +
+		"  names:\n    singular: gadget\n" +
 		"  displayTemplate: \"" + tmpl + "\"\n" +
 		"  properties:\n    note:\n      type: string\n" +
 		"    provider:\n      type: reference\n      kind: substrate.reamde.dev/core/llmprovider\n"
@@ -857,7 +857,7 @@ func TestBootUpgradeRefusesARenameAStoredTemplateReads(t *testing.T) {
 	viewer := func(tmpl string) []map[string]any {
 		return []map[string]any{
 			vocabulary.PackageManifest(viewerPackage, 0),
-			vocabulary.KindManifest(viewerPackage, map[string]any{"singular": "providercard", "plural": "providercards"},
+			vocabulary.KindManifest(viewerPackage, map[string]any{"singular": "providercard"},
 				map[string]any{
 					"displayTemplate": tmpl,
 					"properties": map[string]any{

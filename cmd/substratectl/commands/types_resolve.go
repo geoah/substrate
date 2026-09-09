@@ -30,7 +30,7 @@ const typesPageLimit = 100
 // It pages. The collection list defaults to 50 rows and the shipped schema
 // alone declares more than that before a single bundle is installed, so a
 // single unpaged read sees the newest 50 types and NOTHING else — which
-// resolves a bare plural against a truncated registry, and that is worse than
+// resolves a bare name against a truncated registry, and that is worse than
 // slow: it reports shipped vocabulary as unknown, and it can find exactly one
 // match for a name several authorities declare and silently pick it.
 func (c *client) fetchTypes(ctx context.Context) ([]substrate.KindInfo, error) {
@@ -96,7 +96,6 @@ func decodeTypeInfo(raw json.RawMessage) (substrate.KindInfo, bool) {
 		Authority   string         `json:"authority"`
 		Package     string         `json:"package"`
 		Version     any            `json:"version"`
-		Plural      string         `json:"plural"`
 		Source      string         `json:"source"`
 		Description string         `json:"description"`
 		Definition  map[string]any `json:"definition"`
@@ -130,7 +129,6 @@ func decodeTypeInfo(raw json.RawMessage) (substrate.KindInfo, bool) {
 		Authority:   firstNonEmpty(r.Authority, propString(r.Properties, "authority")),
 		Package:     firstNonEmpty(r.Package, propString(r.Properties, "package")),
 		Version:     declaredVersion,
-		Plural:      firstNonEmpty(r.Plural, propString(names, "plural"), propString(r.Properties, "plural")),
 		Source:      firstNonEmpty(r.Source, propString(r.Properties, "source")),
 		Description: firstNonEmpty(r.Description, description),
 		Definition:  definition,
@@ -272,7 +270,7 @@ func (a *app) resolveCollection(ctx context.Context, arg, pkg string) (collectio
 	}
 	var matches []substrate.KindInfo
 	for _, ti := range types {
-		if ti.Plural == arg || ti.Name == arg {
+		if ti.Name == arg {
 			matches = append(matches, ti)
 		}
 	}
@@ -289,13 +287,6 @@ func (a *app) resolveCollection(ctx context.Context, arg, pkg string) (collectio
 	}
 	return collection{}, fmt.Errorf("%q is ambiguous across packages: %s (qualify it as authority/package/name or pass --package)",
 		arg, strings.Join(names, ", "))
-}
-
-func pluralOf(ti substrate.KindInfo) string {
-	if ti.Plural != "" {
-		return ti.Plural
-	}
-	return ti.Name
 }
 
 // types fetches and caches the registry for the life of one command.
@@ -315,9 +306,9 @@ func (a *app) types(ctx context.Context) ([]substrate.KindInfo, error) {
 	return types, nil
 }
 
-func (a *app) lookupCached(nameOrPlural, pkg string) (substrate.KindInfo, bool) {
+func (a *app) lookupCached(name, pkg string) (substrate.KindInfo, bool) {
 	for _, ti := range a.typeCache {
-		if vocabulary.KindPackage(ti.Identity) == pkg && (ti.Plural == nameOrPlural || ti.Name == nameOrPlural) {
+		if vocabulary.KindPackage(ti.Identity) == pkg && ti.Name == name {
 			return ti, true
 		}
 	}
@@ -325,7 +316,7 @@ func (a *app) lookupCached(nameOrPlural, pkg string) (substrate.KindInfo, bool) 
 }
 
 // collectionForKind resolves a manifest's `kind` — a kind reference — to its
-// REST collection. A bare reference resolves the way a bare plural does, and
+// REST collection. A bare reference resolves the way a bare name does, and
 // errors the same way when ambiguous.
 func (a *app) collectionForKind(ctx context.Context, ref string) (collection, error) {
 	authority, pkgName, name := vocabulary.SplitKindRef(ref)
@@ -338,12 +329,8 @@ func (a *app) collectionForKind(ctx context.Context, ref string) (collection, er
 		return collection{}, err
 	}
 	var elsewhere []string
-	var pluralOnly string
 	for _, ti := range types {
 		tiPkg := vocabulary.KindPackage(ti.Identity)
-		if tiPkg == pkg && ti.Plural == name && ti.Name != name {
-			pluralOnly = ti.Name
-		}
 		if ti.Name != name {
 			continue
 		}
@@ -351,9 +338,6 @@ func (a *app) collectionForKind(ctx context.Context, ref string) (collection, er
 			return collection{Authority: ti.Authority, Package: ti.Package, Name: ti.Name, Identity: ti.Identity}, nil
 		}
 		elsewhere = append(elsewhere, tiPkg)
-	}
-	if pluralOnly != "" {
-		return collection{}, fmt.Errorf("`kind` names the singular (%q), not the plural %q", pluralOnly, name)
 	}
 	if len(elsewhere) > 0 {
 		return collection{}, fmt.Errorf("no kind %q in package %q; it is declared in %s (fix the manifest's kind)",

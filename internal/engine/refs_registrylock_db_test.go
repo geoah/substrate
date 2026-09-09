@@ -33,10 +33,10 @@ func refLockDocs() []map[string]any {
 	return []map[string]any{
 		vocabulary.PackageManifest(refLockPackage, 0),
 		vocabulary.KindManifest(refLockPackage,
-			map[string]any{"singular": "target", "plural": "targets"},
+			map[string]any{"singular": "target"},
 			map[string]any{}),
 		vocabulary.KindManifest(refLockPackage,
-			map[string]any{"singular": "holder", "plural": "holders"},
+			map[string]any{"singular": "holder"},
 			map[string]any{"properties": map[string]any{
 				"points": map[string]any{"type": "reference", "kind": refLockPackage + "/target"},
 			}}),

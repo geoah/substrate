@@ -2,8 +2,8 @@
  * (decision 0033 retired plurals from routing): the thread read that names the
  * proposer, the live-target read behind the before → after preview, and the
  * standing rule the accept-and-allow flow mints. The mock answers ONLY at the
- * singular paths, and the task kind carries a real plural (`tasks`) so a
- * component that routed by `.plural` would render neither side. */
+ * kind-name paths, so a component that pluralized a segment would render
+ * neither side. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
@@ -51,7 +51,6 @@ const KINDS: KindInfo[] = [
     authority: "samples.substrate.reamde.dev",
     package: "tasks",
     version: 1,
-    plural: "tasks",
     source: "installed",
     description: "",
     definition: { properties: { summary: { type: "string" } } },

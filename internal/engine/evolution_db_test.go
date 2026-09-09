@@ -35,7 +35,7 @@ func evoBaseProps() map[string]any {
 
 func evoTypeDoc(props map[string]any) map[string]any {
 	return vocabulary.KindManifest(evoPackage,
-		map[string]any{"singular": "gizmo", "plural": "gizmos"},
+		map[string]any{"singular": "gizmo"},
 		map[string]any{"properties": props})
 }
 
@@ -55,7 +55,7 @@ func evoApplyRetiring(t *testing.T, ds substrate.Dataset, props, retired map[str
 	_, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, []map[string]any{
 		vocabulary.PackageManifest(evoPackage, 0),
 		vocabulary.KindManifest(evoPackage,
-			map[string]any{"singular": "gizmo", "plural": "gizmos"},
+			map[string]any{"singular": "gizmo"},
 			map[string]any{"properties": props, "retired": retired}),
 	})
 	return err
@@ -317,7 +317,7 @@ func TestSchemaEvolutionReservedKeysRoundTrip(t *testing.T) {
 		_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 			vocabulary.PackageManifest(evoPackage, 0),
 			vocabulary.KindManifest(evoPackage,
-				map[string]any{"singular": "gizmo", "plural": "gizmos"},
+				map[string]any{"singular": "gizmo"},
 				map[string]any{"properties": props}),
 		})
 		return err

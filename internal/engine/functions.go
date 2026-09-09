@@ -2001,14 +2001,6 @@ func (ds *dataset) RetryTriggerFailure(ctx context.Context, id string, failureID
 		// under its id, so a restore holds the count and the error the last
 		// retry left. A row another retry retired meanwhile is left gone,
 		// and this retry answers not found.
-		// The payload goes back through the parking policy: a row a binary
-		// before the ledger parked holds every header, the query and the
-		// body, none of which may enter the changelog.
-		scrubbed, perr := ds.parkedPayload(ctx, f.Payload)
-		if perr != nil {
-			return 0, perr
-		}
-		f.Payload = scrubbed
 		uerr := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 			if err := t.lockFailure(tr.ID, failureID); err != nil {
 				return err

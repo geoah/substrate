@@ -1069,7 +1069,10 @@ func forEachRecordDeltaSet(payload map[string]any, fn func(kindRef, recordID str
 // own properties now, which no such entry carries. There is no translation and
 // no migration path: the rebuild refuses the entry by name, so the operator
 // reads which spelling stopped it instead of watching a replay reconstruct a
-// record with no pointers on it.
+// record with no pointers on it. The dialect floor is not this check: it reads
+// the STAMP and closes the open, while a store stamped at the maximum whose
+// files hold a retired spelling reaches the rebuild, and this is what stops it
+// there.
 //
 // An effect the fold does not know at all is refused by foldOne, one layer
 // down, where the same rule holds for every operation.

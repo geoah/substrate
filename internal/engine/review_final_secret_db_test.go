@@ -53,12 +53,12 @@ def main(input, host):
 			"installs": []any{secretToolPackage + "/sconfig", secretToolPackage + "/snote", secretToolPackage + "/leaktool"},
 		}),
 		vocabulary.KindManifest(secretToolPackage,
-			map[string]any{"singular": "sconfig", "plural": "sconfigs"},
+			map[string]any{"singular": "sconfig"},
 			map[string]any{"properties": map[string]any{
 				"apiToken": map[string]any{"type": "secret"},
 			}}),
 		vocabulary.KindManifest(secretToolPackage,
-			map[string]any{"singular": "snote", "plural": "snotes"},
+			map[string]any{"singular": "snote"},
 			map[string]any{"properties": map[string]any{"text": map[string]any{"type": "string"}}}),
 		leak,
 	}

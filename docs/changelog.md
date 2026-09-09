@@ -3,7 +3,7 @@
 Every committed write appends one entry to the repository's **changelog**, in the
 same transaction as the write itself. It is append-only, strictly sequential,
 and there is exactly one of it per repository: the source of truth, the change
-feed, the audit trail, and the input stream for triggers and integrations are
+feed, the audit trail, and the input stream for triggers and providers are
 all the same changelog. The [records](data-model.md) you read are its fold. Identical
 re-writes append nothing, so a re-sync leaves no wake.
 
@@ -256,9 +256,13 @@ effects are storage ([the change event](#the-change-event) is what a reader
 gets), so the dialect names what a binary replays, never what a client parses. The claim
 rides the append: the first transaction a binary appends with writes the stamp
 alongside its entries, so the stamp covers every entry and no store is barred
-over entries nobody wrote. Opening only reads it, and a binary whose maximum is
-below the stored one refuses to open that repository, with the named error "the
-changelog speaks a newer dialect than this binary can replay". A request
+over entries nobody wrote. Opening only reads it, and it refuses in
+both directions: a binary whose maximum is below the stored one refuses that
+repository with the named error "the changelog speaks a newer dialect than
+this binary can replay", and a binary whose FLOOR is above it refuses with
+"the changelog speaks a dialect this binary no longer adopts", naming the
+release to boot first
+([decision 0074](decisions/0074-an-upgrade-step-is-retired-and-the-dialect-gate-gains-a-floor.md)). A request
 carrying a token then gets `503 repository temporarily unavailable` rather than
 an invalid-token 401, exactly like the
 [vocabulary dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)
@@ -284,6 +288,16 @@ which a dialect 4 binary would drop the same way, stamping the replay's own
 time, and 6 the delivery ledger: the `delivery` op and the seven fold
 effects a trigger's bookkeeping replays through
 ([decision 0064](decisions/0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md)).
+The floor is 6 too, which is to say this binary opens only what it wrote:
+each rung below it had a step that brought an older store forward — the
+unframed line, the delta without `kindVersion`, the manager effect without
+`updatedAt`, the trigger tables outside the ledger — and those steps were
+retired together rather than carried forever, so a store stamped below 6 is
+refused with v0.65.0 named as the release whose open still adopted it. Boot
+that once, let its first append re-stamp the store, then upgrade. The floor
+reads the stamp only: a `link` or `unlink` entry in the files is refused by
+name wherever it is read, whatever the stamp says.
+
 A repository's stored dialect is not on the wire, and
 neither are the entries written in it: what
 [API discovery](api.md#discovery) reports is the binary's maximum. The dialect
@@ -411,7 +425,7 @@ horizon, and the horizon is where policy lives.
   where it stands as `delivery` entries in the same changelog, which the feed
   never shows.
 - **Watchers**: the stream above, and `substratectl watch` is that stream in a
-  terminal ([substratectl](substratectl.md)). Integrations reconcile from it.
+  terminal ([substratectl](substratectl.md)). Providers reconcile from it.
 - **The console's events page** is the same feed, paged backward through
   history and filtered ([web console](console.md)).
 - **`rebuild`** replays it from the segment files, which is what makes the

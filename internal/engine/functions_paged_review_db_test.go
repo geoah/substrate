@@ -268,13 +268,13 @@ func installPagedSecretBundle(t *testing.T, ds *dataset) string {
 				},
 			}),
 			vocabulary.KindManifest(pagedSecretPackage,
-				map[string]any{"singular": "sconfig", "plural": "sconfigs"},
+				map[string]any{"singular": "sconfig"},
 				map[string]any{"properties": map[string]any{
 					"apiToken": map[string]any{"type": "secret"},
 				}}),
-			vocabulary.KindManifest(pagedSecretPackage, map[string]any{"singular": "widget", "plural": "widgets"},
+			vocabulary.KindManifest(pagedSecretPackage, map[string]any{"singular": "widget"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
-			vocabulary.KindManifest(pagedSecretPackage, map[string]any{"singular": "pnote", "plural": "pnotes"},
+			vocabulary.KindManifest(pagedSecretPackage, map[string]any{"singular": "pnote"},
 				map[string]any{"properties": map[string]any{"text": map[string]any{"type": "string"}}}),
 			vocabulary.FunctionManifest(pagedSecretPackage, "leakpage", map[string]any{
 				"description": "leaks the config secret into the paged continuation cursor",

@@ -1,6 +1,8 @@
 # Build output. NOT `/substrate` — that pattern also hides the substrate/
-# package, which is the core of this repo.
+# package, which is the core of this repo. `/substrated` is what a bare
+# `go build ./cmd/substrated` at the top level leaves behind.
 /bin/
+/substrated
 
 # Go
 *.test
@@ -16,7 +18,6 @@ dist/
 .DS_Store
 .idea/
 .vscode/*
-!.vscode/extensions.json
 
 # The dev substrate: the pid and the log of `mise run dev:up`.
 /.dev/
@@ -43,4 +44,3 @@ dist/
 
 # Python bytecode: host.py is imported by a test probe, never installed.
 __pycache__/
-/substrated

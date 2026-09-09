@@ -514,23 +514,6 @@ func (ds *dataset) parkedEnvelope(ctx context.Context, envelope map[string]any) 
 	return raw, nil
 }
 
-// parkedPayload runs a STORED failure payload through parkedEnvelope: the
-// legacy row a binary before the ledger parked holds every header, the query
-// and the body, and none of that may enter the changelog when the row is
-// adopted (delivery.go adoptLegacyLedger) or rewritten by a retry. A payload
-// already in the parked form passes through unchanged; an empty one stays
-// empty.
-func (ds *dataset) parkedPayload(ctx context.Context, payload json.RawMessage) (json.RawMessage, error) {
-	if len(payload) == 0 {
-		return nil, nil
-	}
-	var envelope map[string]any
-	if err := json.Unmarshal(payload, &envelope); err != nil {
-		return nil, fmt.Errorf("substrate: parked payload: %w", err)
-	}
-	return ds.parkedEnvelope(ctx, envelope)
-}
-
 // spoolParkedBody stores a delivered body's bytes content-addressed under
 // the webhook actor and returns the reference the parked envelope carries:
 // `{blob, encoding}`, the encoding saying whether the callable read it as

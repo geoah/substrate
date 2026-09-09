@@ -444,18 +444,6 @@ func (f *linearFakeAPI) pageCount() int {
 	return f.pages
 }
 
-func (f *linearFakeAPI) moveIssueA(state, stateType string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.issueAState, f.issueAStateTyp = state, stateType
-}
-
-func (f *linearFakeAPI) completeIssueB() {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.issueBState, f.issueBStateTyp = "Done", "completed"
-}
-
 // retitleIssueA renames issue A upstream: the heading a mapping projects.
 func (f *linearFakeAPI) retitleIssueA(title string) {
 	f.mu.Lock()

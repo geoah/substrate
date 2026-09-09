@@ -28,14 +28,14 @@ func dwDocs(holderProps map[string]any) []map[string]any {
 	return []map[string]any{
 		vocabulary.PackageManifest(dwPackage, 0),
 		vocabulary.KindManifest(dwPackage,
-			map[string]any{"singular": "target", "plural": "targets"},
+			map[string]any{"singular": "target"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 		// A second referent, so a nested reference has somewhere else to be
 		// narrowed to (dialect_narrowing_db_test.go).
 		vocabulary.KindManifest(dwPackage,
-			map[string]any{"singular": "other", "plural": "others"}, map[string]any{}),
+			map[string]any{"singular": "other"}, map[string]any{}),
 		vocabulary.KindManifest(dwPackage,
-			map[string]any{"singular": "holder", "plural": "holders"},
+			map[string]any{"singular": "holder"},
 			map[string]any{"properties": holderProps}),
 	}
 }
@@ -336,15 +336,15 @@ func TestDerivedTitleTokens(t *testing.T) {
 	docs := []map[string]any{
 		vocabulary.PackageManifest(dtPackage, 0),
 		vocabulary.KindManifest(dtPackage,
-			map[string]any{"singular": "leaf", "plural": "leaves"},
+			map[string]any{"singular": "leaf"},
 			map[string]any{"displayTemplate": "{localName}"}),
 		vocabulary.KindManifest(dtPackage,
-			map[string]any{"singular": "whole", "plural": "wholes"},
+			map[string]any{"singular": "whole"},
 			map[string]any{"displayTemplate": "{localName} ({id})"}),
 		// A kind that declares a REAL property of the token's name: the
 		// declaration wins, and the token is only the fallback.
 		vocabulary.KindManifest(dtPackage,
-			map[string]any{"singular": "claimer", "plural": "claimers"},
+			map[string]any{"singular": "claimer"},
 			map[string]any{
 				"displayTemplate": "{localName}",
 				"properties":      map[string]any{"localName": map[string]any{"type": "string"}},
@@ -353,13 +353,13 @@ func TestDerivedTitleTokens(t *testing.T) {
 		// the token means that reference here, the same thing the bare form would
 		// mean.
 		vocabulary.KindManifest(dtPackage,
-			map[string]any{"singular": "named", "plural": "nameds"},
+			map[string]any{"singular": "named"},
 			map[string]any{
 				"displayTemplate": "{name}",
 				"properties":      map[string]any{"name": map[string]any{"type": "string"}},
 			}),
 		vocabulary.KindManifest(dtPackage,
-			map[string]any{"singular": "refclaimer", "plural": "refclaimers"},
+			map[string]any{"singular": "refclaimer"},
 			map[string]any{
 				"displayTemplate": "{localName}",
 				"properties": map[string]any{
@@ -510,9 +510,9 @@ func TestStoredNestedReferenceDeclarationSurvivesAReopen(t *testing.T) {
 	docs := []map[string]any{
 		vocabulary.PackageManifest(pkg, 0),
 		vocabulary.KindManifest(pkg,
-			map[string]any{"singular": "target", "plural": "targets"}, map[string]any{}),
+			map[string]any{"singular": "target"}, map[string]any{}),
 		vocabulary.KindManifest(pkg,
-			map[string]any{"singular": "holder", "plural": "holders"},
+			map[string]any{"singular": "holder"},
 			map[string]any{"properties": map[string]any{
 				"pinned": map[string]any{"type": "reference", "kind": "target", "inverse": "holders"},
 				// The same inverse word, nested — a stored shape no earlier

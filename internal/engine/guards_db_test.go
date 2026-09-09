@@ -57,7 +57,7 @@ func installSecretCRD(t *testing.T, ds substrate.Dataset) string {
 			vocabulary.PackageManifest(pkg, 1),
 			vocabulary.ActorManifest(pkg, "connector:gmail"),
 			vocabulary.KindManifest(pkg,
-				map[string]any{"singular": "accountconfig", "plural": "accountconfigs"},
+				map[string]any{"singular": "accountconfig"},
 				map[string]any{"properties": map[string]any{
 					"label":  map[string]any{"type": "string"},
 					"apiKey": map[string]any{"type": "secret"},

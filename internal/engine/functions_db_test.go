@@ -93,7 +93,7 @@ func fnConnector(triggers []enginetest.Trigger, fns ...map[string]any) enginetes
 	manifests := []map[string]any{
 		vocabulary.PackageManifest(fnPackage, 0),
 		vocabulary.ActorManifest(fnPackage, vocabulary.PackageActor(fnPackage)),
-		vocabulary.KindManifest(fnPackage, map[string]any{"singular": "widget", "plural": "widgets"}, map[string]any{
+		vocabulary.KindManifest(fnPackage, map[string]any{"singular": "widget"}, map[string]any{
 			// Only `name` indexes: the scenario knobs must not pollute the
 			// lexical arm the host-read search test asserts on.
 			"properties": map[string]any{
@@ -112,7 +112,7 @@ func fnConnector(triggers []enginetest.Trigger, fns ...map[string]any) enginetes
 				"record":   map[string]any{"type": "string", "fts": false},
 			},
 		}),
-		vocabulary.KindManifest(fnPackage, map[string]any{"singular": "gadget", "plural": "gadgets"}, map[string]any{
+		vocabulary.KindManifest(fnPackage, map[string]any{"singular": "gadget"}, map[string]any{
 			"properties": map[string]any{
 				"count":  map[string]any{"type": "float"},
 				"wire":   map[string]any{"type": "string", "fts": false},
@@ -155,7 +155,7 @@ func TestPrepareBatchCountCap(t *testing.T) {
 	docs := []map[string]any{
 		vocabulary.PackageManifest(fnPackage, 0),
 		vocabulary.ActorManifest(fnPackage, vocabulary.PackageActor(fnPackage)),
-		vocabulary.KindManifest(fnPackage, map[string]any{"singular": "widget", "plural": "widgets"},
+		vocabulary.KindManifest(fnPackage, map[string]any{"singular": "widget"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 	}
 	// 65 bodies — one over the maxPrepareBatch=64 cap.

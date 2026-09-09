@@ -85,14 +85,21 @@ func TestApplyRefusesAFlatIDUnderTheEnvelope(t *testing.T) {
 	}
 }
 
-// `type` is the singular name; a plural resolves to a dedicated error rather
-// than becoming a second lookup namespace.
-func TestApplyRefusesThePluralAsType(t *testing.T) {
+// `kind` names a declared kind exactly; a name no declaration carries is
+// refused rather than guessed at, so a misspelling never writes.
+func TestApplyRefusesAKindTheRegistryDoesNotCarry(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.stdin.WriteString("kind: samples.substrate.reamde.dev/tasks/tasks\nmetadata: {id: t1}\ndata: {}\n")
 	_, _, err := h.run("apply", "-f", "-")
-	if err == nil || !strings.Contains(err.Error(), "singular") {
-		t.Fatalf("err = %v, want the singular-name error", err)
+	if err == nil || !strings.Contains(err.Error(), `unknown kind "samples.substrate.reamde.dev/tasks/tasks"`) {
+		t.Fatalf("err = %v, want the unknown-kind error", err)
+	}
+	if len(h.fake.requests) > 0 {
+		for _, req := range h.fake.requests {
+			if !strings.HasPrefix(req, "GET ") {
+				t.Fatalf("nothing may be written, saw %v", h.fake.requests)
+			}
+		}
 	}
 }

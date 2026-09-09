@@ -52,7 +52,7 @@ func bundler(t *testing.T, ds substrate.Dataset) bundleOps {
 // exist; the bundle's `client` input resolves one.
 func mbConfigTypeDoc() map[string]any {
 	return vocabulary.KindManifest(mbPackage,
-		map[string]any{"singular": "mailconfig", "plural": "mailconfigs"},
+		map[string]any{"singular": "mailconfig"},
 		map[string]any{
 			"traits": []any{"oauth2"},
 			"properties": map[string]any{
@@ -68,7 +68,7 @@ func mbConfigTypeDoc() map[string]any {
 
 func mbAccountTypeDoc() map[string]any {
 	return vocabulary.KindManifest(mbPackage,
-		map[string]any{"singular": "mailaccount", "plural": "mailaccounts"},
+		map[string]any{"singular": "mailaccount"},
 		map[string]any{
 			"traits": []any{"accountconfig"},
 			"properties": map[string]any{
@@ -86,13 +86,13 @@ func mbAccountTypeDoc() map[string]any {
 
 func mbItemTypeDoc() map[string]any {
 	return vocabulary.KindManifest(mbPackage,
-		map[string]any{"singular": "mailitem", "plural": "mailitems"},
+		map[string]any{"singular": "mailitem"},
 		map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}})
 }
 
 func mbMessageTypeDoc() map[string]any {
 	return vocabulary.KindManifest(mbPackage,
-		map[string]any{"singular": "mailmessage", "plural": "mailmessages"},
+		map[string]any{"singular": "mailmessage"},
 		map[string]any{"properties": map[string]any{"subject": map[string]any{"type": "string"}}})
 }
 

@@ -119,7 +119,7 @@ func (h *handler) collection(w http.ResponseWriter, r *http.Request, wantID bool
 	ctx := r.Context()
 	ds := DatasetFrom(ctx)
 	// The collection segments ARE the kind reference, so they resolve the kind
-	// directly — no plural lookup.
+	// directly — no name lookup.
 	ti, err := ds.KindByRef(ctx, addr.ref())
 	if err != nil {
 		if errors.Is(err, substrate.ErrNotFound) {

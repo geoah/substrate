@@ -189,7 +189,7 @@ func TestDigestRedactsWithoutIndirection(t *testing.T) {
 	docs := []map[string]any{
 		vocabulary.PackageManifest(pkg, 0),
 		vocabulary.KindManifest(pkg,
-			map[string]any{"singular": "artifact", "plural": "artifacts"},
+			map[string]any{"singular": "artifact"},
 			map[string]any{"properties": map[string]any{
 				"name":        map[string]any{"type": "string"},
 				"fingerprint": map[string]any{"type": "digest"},
@@ -232,7 +232,7 @@ func TestDisplayTemplateRefusesSensitiveProps(t *testing.T) {
 	docs := []map[string]any{
 		vocabulary.PackageManifest(pkg, 0),
 		vocabulary.KindManifest(pkg,
-			map[string]any{"singular": "leak", "plural": "leaks"},
+			map[string]any{"singular": "leak"},
 			map[string]any{
 				"displayTemplate": "{apiKey}",
 				"properties": map[string]any{

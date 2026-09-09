@@ -35,7 +35,7 @@ func requiredVocabulary(t *testing.T, ds substrate.Dataset) {
 	docs := []map[string]any{
 		vocabulary.PackageManifest(requiredPackage, 0),
 		vocabulary.KindManifest(requiredPackage,
-			map[string]any{"singular": "ticket", "plural": "tickets"},
+			map[string]any{"singular": "ticket"},
 			map[string]any{
 				"displayTemplate": "{name}",
 				"properties": map[string]any{
@@ -172,7 +172,7 @@ func TestDeclaredDefaultMustBeStorable(t *testing.T) {
 	_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(badDefaultPackage, 0),
 		vocabulary.KindManifest(badDefaultPackage,
-			map[string]any{"singular": "seen", "plural": "seens"},
+			map[string]any{"singular": "seen"},
 			map[string]any{
 				"properties": map[string]any{
 					// Postgres has no year zero, so no write could ever store it.

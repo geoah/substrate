@@ -21,7 +21,7 @@ const kvPackage = "stamps.example.substrate.reamde.dev/stamps"
 
 func kvWidget(props map[string]any) map[string]any {
 	return vocabulary.KindManifest(kvPackage,
-		map[string]any{"singular": "widget", "plural": "widgets"},
+		map[string]any{"singular": "widget"},
 		map[string]any{"properties": props})
 }
 

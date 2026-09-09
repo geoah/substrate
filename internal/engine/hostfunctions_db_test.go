@@ -451,7 +451,7 @@ func TestTriggerWarnsWhenTheOutputIsDiscarded(t *testing.T) {
 	ds := openInternalDataset(t, WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))
 	docs := []map[string]any{
 		vocabulary.PackageManifest("pure.test.dev/pure", 0),
-		vocabulary.KindManifest("pure.test.dev/pure", map[string]any{"singular": "gizmo", "plural": "gizmos"},
+		vocabulary.KindManifest("pure.test.dev/pure", map[string]any{"singular": "gizmo"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 		// One writes, one cannot: the pair is what makes the warning a signal.
 		vocabulary.FunctionManifest("pure.test.dev/pure", "counter", map[string]any{

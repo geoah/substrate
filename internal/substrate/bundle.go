@@ -107,27 +107,6 @@ type BundleUpgrade struct {
 	// The record rewrites the upgrade performs, counted against the live
 	// records (decision 0067).
 	ConversionPlan
-	// Renames is the plan's rename steps in the shape this field had before
-	// Steps existed, derived from Steps and never a second count.
-	//
-	// Deprecated: read Steps, where a rename is `step: rename`. The field
-	// stays because the bundles feature is stable and frozen means additive
-	// only (decision 0067).
-	Renames []BundleUpgradeRename `json:"renames,omitempty"`
-}
-
-// BundleUpgradeRename is one property rename an upgrade performs, the shape
-// the deprecated BundleUpgrade.Renames carries; a ConversionStep with
-// StepRename says the same and more.
-type BundleUpgradeRename struct {
-	// Kind is the full reference of the kind whose property moves.
-	Kind string `json:"kind"`
-	// From and To are the old and the new property names.
-	From string `json:"from"`
-	To   string `json:"to"`
-	// Records is the number of live records carrying the old name, each of
-	// which the upgrade rewrites.
-	Records int64 `json:"records"`
 }
 
 // ConversionPlan is the composed set of record rewrites a declaration change

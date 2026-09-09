@@ -37,7 +37,7 @@ func lqDocs() []map[string]any {
 			"installs":    []any{lqConfigType, lqAgent},
 		}),
 		vocabulary.KindManifest(lqPackage,
-			map[string]any{"singular": "legacyconfig", "plural": "legacyconfigs"},
+			map[string]any{"singular": "legacyconfig"},
 			map[string]any{
 				"properties": map[string]any{"note": map[string]any{"type": "string"}},
 			}),

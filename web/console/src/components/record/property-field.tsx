@@ -1,6 +1,6 @@
 /** ONE control per declared property, and the only place the console decides
  * what a datatype looks like on a form. Both typed surfaces render through it:
- * the integrations dialog (`RecordConfigForm`, one bundle config or account)
+ * the provider dialog (`RecordConfigForm`, one bundle input or account)
  * and the record editor's form lens (any kind at all).
  *
  * What the declaration buys, control by control:
@@ -551,8 +551,8 @@ function ReferenceField({
   const pinned = pinnedKind(field)
   const chosen = ref.kind || pinned
   const target = kindByIdentity(kinds, chosen)
-  // The PIN names a kind, a KindInfo is an authority and a plural, so the
-  // registry the editor already holds says which collection to offer.
+  // The PIN names a kind and a KindInfo carries its authority and package, so
+  // the registry the editor already holds says which collection to offer.
   const offered = useRecordOptions(chosen, kinds, self)
 
   return (

@@ -342,14 +342,6 @@ func refIDs(e *substrate.Record, name string) []string {
 	return out
 }
 
-// refID is refIDs for a single-valued reference, "" when it names nothing.
-func refID(e *substrate.Record, name string) string {
-	if ids := refIDs(e, name); len(ids) > 0 {
-		return ids[0]
-	}
-	return ""
-}
-
 // ReceiveWebhookSync is the public webhook door with the fire run inline
 // rather than handed to the background supervisor, so a test asserts on what
 // the delivery wrote the moment the call returns.

@@ -425,7 +425,6 @@ data:
   package: shop
   names:
     singular: widget
-    plural: widgets
   properties:
     status:
       type: enum

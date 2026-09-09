@@ -302,7 +302,7 @@ export function KindBrowsePage() {
           {records.isError ? (
             <PageEmpty
               icon={<SearchXIcon />}
-              title={`${kindInfo.plural} didn't load`}
+              title={`${kindInfo.name} didn't load`}
               description={records.error.message}
             >
               <Button
@@ -356,7 +356,7 @@ export function KindBrowsePage() {
                         <EmptyTitle>
                           {hasFilters
                             ? "Nothing matches"
-                            : `No ${kindInfo.plural} yet`}
+                            : `No ${kindInfo.name} yet`}
                         </EmptyTitle>
                         <EmptyDescription>
                           {hasFilters

@@ -211,7 +211,7 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 	}
 	docs := []map[string]any{
 		vocabulary.PackageManifest(crewPackage, 0),
-		vocabulary.KindManifest(crewPackage, map[string]any{"singular": "widget", "plural": "widgets"},
+		vocabulary.KindManifest(crewPackage, map[string]any{"singular": "widget"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 		vocabulary.FunctionManifest(crewPackage, "annotate", map[string]any{
 			"description": "writes one annotated task under the id you pass",
@@ -811,7 +811,7 @@ func installGreeterBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 			"installs":    []any{abPackage + "/abconfig", abPackage + "/greeter"},
 		}),
 		vocabulary.KindManifest(abPackage,
-			map[string]any{"singular": "abconfig", "plural": "abconfigs"},
+			map[string]any{"singular": "abconfig"},
 			map[string]any{"properties": map[string]any{
 				"note": map[string]any{"type": "string"},
 			}}),
@@ -1444,7 +1444,7 @@ func TestProposeDiffValidation(t *testing.T) {
 	const gaugePackage = "gauge.example.com/gauge"
 	docs := []map[string]any{
 		vocabulary.PackageManifest(gaugePackage, 0),
-		vocabulary.KindManifest(gaugePackage, map[string]any{"singular": "gauge", "plural": "gauges"},
+		vocabulary.KindManifest(gaugePackage, map[string]any{"singular": "gauge"},
 			map[string]any{"properties": map[string]any{
 				"model":  map[string]any{"type": "string"},
 				"apiKey": map[string]any{"type": "secret"},

@@ -75,7 +75,7 @@ func w2Manifest(withTrigger bool) enginetest.Manifest {
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(w2Package, 0),
 			vocabulary.ActorManifest(w2Package, vocabulary.PackageActor(w2Package)),
-			vocabulary.KindManifest(w2Package, map[string]any{"singular": "widget", "plural": "widgets"},
+			vocabulary.KindManifest(w2Package, map[string]any{"singular": "widget"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 			vocabulary.FunctionManifest(w2Package, "mirror", map[string]any{
 				"description": "mirrors widgets into tasks",
@@ -102,45 +102,6 @@ def main(input, host):
 		}}
 	}
 	return m
-}
-
-// w2AssertExactResume asserts the trigger owns the legacy position exactly:
-// cursor at seq under the trigger id, nothing orphaned under the function
-// identity, the failure re-keyed — and dispatch delivers ONLY the change
-// past the stored cursor.
-func w2AssertExactResume(t *testing.T, ds *dataset, seq int64, pendingID, processedID string) {
-	t.Helper()
-	ctx := context.Background()
-	triggerID := "on-" + w2Mirror
-	var got int64
-	if err := ds.db.QueryRowContext(ctx,
-		`SELECT seq FROM trigger_cursors WHERE trigger_id = $1`, triggerID).Scan(&got); err != nil {
-		t.Fatalf("trigger cursor: %v", err)
-	}
-	if got != seq {
-		t.Fatalf("cursor = %d, want the stored %d", got, seq)
-	}
-	var stale int
-	if err := ds.db.QueryRowContext(ctx,
-		`SELECT count(*) FROM trigger_cursors WHERE trigger_id = $1`, w2Mirror).Scan(&stale); err != nil {
-		t.Fatal(err)
-	}
-	if stale != 0 {
-		t.Fatal("the function-keyed cursor row is orphaned")
-	}
-	failures, err := ds.TriggerFailures(ctx, triggerID)
-	if err != nil || len(failures) != 1 || failures[0].LastError != "old park" {
-		t.Fatalf("failures did not re-key: %+v %v", failures, err)
-	}
-	if _, err := ds.ProcessTriggers(ctx); err != nil {
-		t.Fatalf("process: %v", err)
-	}
-	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "t-"+pendingID); err != nil {
-		t.Fatalf("the pending change was skipped: %v", err)
-	}
-	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "t-"+processedID); err == nil {
-		t.Fatal("the already-processed change was redelivered")
-	}
 }
 
 // Review W2 #5: create-only means TOMBSTONES count as existing and an

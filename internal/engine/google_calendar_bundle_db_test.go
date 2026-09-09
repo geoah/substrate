@@ -333,17 +333,6 @@ func gcalMaster(id, summary string) map[string]any {
 	}
 }
 
-// gcalStrings reads a repeated property back as the strings it holds.
-func gcalStrings(value any) []string {
-	list, _ := value.([]any)
-	out := make([]string, 0, len(list))
-	for _, v := range list {
-		s, _ := v.(string)
-		out = append(out, s)
-	}
-	return out
-}
-
 func calStepProps(extra map[string]any) map[string]any {
 	props := map[string]any{
 		"enabledCalendar": true, "syncFrequency": "hourly", "backfillDepth": "last30d",

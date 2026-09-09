@@ -28,7 +28,7 @@ func declarationRow() *substrate.Record {
 			"package":         "mine",
 			"version":         int64(3),
 			"displayTemplate": "{label}",
-			"names":           map[string]any{"singular": "widget", "plural": "widgets"},
+			"names":           map[string]any{"singular": "widget"},
 			"properties": map[string]any{
 				"label": map[string]any{"type": "string", "description": "what the widget is called"},
 			},

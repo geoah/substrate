@@ -37,7 +37,7 @@ func blobDocDocs(prop string, repeated bool) []map[string]any {
 	return []map[string]any{
 		vocabulary.PackageManifest(blobPackage, 0),
 		vocabulary.KindManifest(blobPackage,
-			map[string]any{"singular": "doc", "plural": "docs"},
+			map[string]any{"singular": "doc"},
 			map[string]any{"properties": map[string]any{prop: pdef}}),
 	}
 }

@@ -36,8 +36,9 @@ uv = "0.7.12"
 # The shell linter. `.mise/*.sh` hold the dev loop and the kinds guard, and
 # they are the only code in the tree that no compiler reads.
 shellcheck = "0.11.0"
-# The Python linter and formatter, for `internal/runner/host.py` — the function
-# runner's Python host, and the one Python file the server ships.
+# The Python linter, for the two Python files in the tree: `internal/runner/host.py`,
+# the function runner's Python host and the one Python file the server ships,
+# and `.mise/testtiming.py`, the reader behind `test:timing`.
 ruff = "0.16.2"
 # The link checker, run OFFLINE: it resolves relative links and anchors against
 # the tree and never opens a socket, so a moved doc fails the lint job instead
@@ -66,10 +67,6 @@ run = "go build -trimpath -o bin/substrate ./cmd/substrated"
 [tasks."build:cli"]
 description = "Build the CLI -> bin/substratectl"
 run = "go build -trimpath -o bin/substratectl ./cmd/substratectl"
-
-[tasks.run]
-description = "Run the server (wants DATABASE_URL)"
-run = "go run ./cmd/substrated"
 
 [tasks.test]
 description = "The whole Go suite, sequential: what ci:coverage runs on main"
@@ -492,11 +489,6 @@ run = ".mise/dev.sh restart"
 description = "Stop everything and DELETE the database: the next start is a fresh substrate"
 run = ".mise/dev.sh wipe"
 
-[tasks."dev:reset"]
-description = "dev:wipe then dev:up — a fresh substrate, running"
-depends = ["build"]
-run = [".mise/dev.sh wipe", ".mise/dev.sh up"]
-
 [tasks."dev:status"]
 description = "What is running: the database, the substrate, the console, the URLs"
 run = ".mise/dev.sh status"
@@ -504,10 +496,6 @@ run = ".mise/dev.sh status"
 [tasks."dev:logs"]
 description = "Follow the background substrate's log"
 run = ".mise/dev.sh logs"
-
-[tasks."dev:psql"]
-description = "A psql shell in the dev database"
-run = ".mise/dev.sh psql"
 
 [tasks."dev:dsn"]
 description = "Print the dev DSN — what the operator hat takes as --dsn"
@@ -568,10 +556,6 @@ run = "pnpm fmt:check"
 # =============================================================================
 # Image
 # =============================================================================
-
-[tasks.image]
-description = "Build the image for THIS arch, loaded into the local docker"
-run = "docker build -t $IMAGE:dev ."
 
 [tasks."image:push"]
 description = "Build multi-arch and push. TAG=<tag> (default: dev)"
@@ -746,7 +730,3 @@ depends = [
   "ci:console",
   "ci:image",
 ]
-
-[tasks.check]
-description = "Alias for ci"
-depends = ["ci"]

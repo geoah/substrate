@@ -31,7 +31,7 @@ const (
 func cvDocs(props map[string]any) []map[string]any {
 	return []map[string]any{
 		vocabulary.PackageManifest(cvPackage, 0),
-		vocabulary.KindManifest(cvPackage, map[string]any{"singular": "widget", "plural": "widgets"},
+		vocabulary.KindManifest(cvPackage, map[string]any{"singular": "widget"},
 			map[string]any{"properties": props}),
 	}
 }
@@ -341,11 +341,11 @@ func cvMappedClosure(values []any) []map[string]any {
 	const source = cvPackage + "/widgetsource"
 	return []map[string]any{
 		vocabulary.PackageManifest(cvPackage, 0),
-		vocabulary.KindManifest(cvPackage, map[string]any{"singular": "widget", "plural": "widgets"},
+		vocabulary.KindManifest(cvPackage, map[string]any{"singular": "widget"},
 			map[string]any{"properties": map[string]any{
 				"status": map[string]any{"type": "enum", "values": values},
 			}}),
-		vocabulary.KindManifest(cvPackage, map[string]any{"singular": "widgetsource", "plural": "widgetsources"},
+		vocabulary.KindManifest(cvPackage, map[string]any{"singular": "widgetsource"},
 			map[string]any{"properties": map[string]any{
 				"status": map[string]any{"type": "enum", "values": values},
 				"widget": map[string]any{

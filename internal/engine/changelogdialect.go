@@ -28,57 +28,27 @@ package engine
 // replayer needs), and the stamped column is what makes that refinement
 // possible later without guessing at unstamped history.
 //
-// THE LADDER HAS SIX RUNGS. Dialect 1 was the changelog while edges existed:
-// `link`/`unlink` ops and `edge`/`unedge`/`edge1` fold effects. Dialect 2 is the
-// changelog after references absorbed the edge (decision 0044): those five
-// spellings are gone and this binary refuses any entry carrying one (fold.go
-// foldRefuses), because a reference's meaning now lives in the source record's
-// own properties, which no such entry carries. Dialect 3 keeps dialect 2's ops
-// and effects and changes the ENTRY: every row and line names its transaction
-// (`txn`, decision 0057) and the checksum in `hash` covers it. The rung exists
-// for the table, not the fold: a dialect 2 binary reads the rows without
-// error, but its boot catch-up over an empty file (repodir.go appendFromTable,
-// `after == 0`) recomputes every checksum without `txn` and RE-STAMPS
-// `changelog.hash` to that encoding, after which no binary agrees with the
-// file. The stamp of 3 makes that binary refuse at open, before it touches a
-// row. Dialect 4 keeps dialect 3's ops, effects and entry frame and changes the
-// RECORD DELTA: it carries `kindVersion`, the kind declaration version that
-// wrote the row (decision 0060). The rung exists because a dialect 3 binary
-// does not refuse the key, it drops it: foldOpsOf decodes without
-// DisallowUnknownFields, so that binary imports a data root this one wrote,
-// folds every row to `kind_version` 0, and after an upgrade back the fold and
-// the changelog disagree with nothing saying so. The stamp of 4 makes it
-// refuse at the gate and at the manifest (repodir.go) instead.
-// Dialect 5 keeps dialect 4's ops, effects and entry frame and changes the
-// MANAGER EFFECT: it carries `updatedAt`, the stamp of a manager row a property
-// rename moved with its actor, tier and principal (rename.go moveManager,
-// decision 0063). The rung exists for the reason 4 does: a dialect 4 binary
-// drops the key rather than refusing it, stamps the replayed row with the
-// replay's own time, and its fold disagrees with the author's on when the
-// value was last written, with nothing saying so. The stamp of 5 makes it
-// refuse instead.
-// Dialect 6 adds the delivery ledger (delivery.go, decision 0064): the
-// `delivery` op and the seven effects a trigger's bookkeeping folds through
-// (cursor, schedule, park, unpark, page, unpage, forget). A dialect 5 binary
-// replays the op without complaint and refuses the first effect at the fold,
-// on the day somebody rebuilds; the stamp of 6 makes it refuse at open.
-//
-// A STORE BELOW THE MAXIMUM IS PROBED, NOT ASSUMED. Migration 0010 drops the
-// edges table, so a store whose changelog holds `link`/`unlink` entries has
-// already lost the rows those entries fold into: opening it would serve a
-// repository whose links are gone and whose history no binary can replay
-// (fold.go foldRefuses). Decision 0044 says such a store refuses to OPEN, so
-// the gate asks the changelog directly for a retired op and refuses there,
-// rather than leaving the discovery to the day somebody rebuilds. The probe is
-// one indexed-free `LIMIT 1` on a store that is below the maximum, which after
-// this release is only ever a fresh, unstamped one.
+// THE GATE HAS A FLOOR AS WELL AS A CEILING. Dialect 6 is the changelog with
+// the delivery ledger (delivery.go, decision 0064): the `delivery` op and the
+// seven effects a trigger's bookkeeping folds through. Every rung below it
+// (edges as ops and effects; the unframed line without `txn`; the record
+// delta without `kindVersion`; the manager effect without `updatedAt`; the
+// trigger tables outside the ledger) had an adoption step that rewrote or
+// recorded what the older store held, and those steps are gone: a store
+// stamped below minChangelogDialect is refused at open with the release to
+// boot first, because opening it would serve a fold this binary cannot
+// complete and a rebuild would quietly drop what the step used to carry
+// (decision 0074). A store with no stamp and no entry is fresh and admitted;
+// one with entries and no stamp predates the stamp itself and is refused the
+// same way.
 //
 // A change that teaches the writer a spelling an older binary's fold would
 // refuse or misread (a new fold effect kind, a new op, a payload shape an old
 // decoder reads differently) bumps maxChangelogDialect in the same commit, and
 // changelogdialect_internal_test.go is what makes the first two say so: it
 // reads the declared ops and effect kinds and fails on any the rung does not
-// list.
+// list. Raising minChangelogDialect is the separate act of retiring an
+// adoption step, and it names the last release that carried it.
 
 import (
 	"context"
@@ -96,30 +66,45 @@ import (
 // un-wrapped and the API maps it to `503` with Retry-After.
 var ErrChangelogDialectNewer = errors.New("substrate/engine: the changelog speaks a newer dialect than this binary can replay")
 
-// ErrChangelogPredatesReferences is the upgrade-side refusal: the repository's
-// changelog still holds the `link`/`unlink` ops that dialect 1 wrote, and the
-// edges those entries fold into no longer exist (migration 0010 drops the
-// table). There is no rung that translates them — a reference's meaning lives in
-// the source record's own properties, which no such entry carries — so the open
-// refuses instead of serving a repository whose links are silently gone.
-var ErrChangelogPredatesReferences = errors.New("substrate/engine: the changelog predates reference-only links")
+// ErrChangelogDialectRetired is the upgrade-side refusal: the repository's
+// changelog is stamped below the oldest dialect this binary still adopts, so
+// the steps that would bring it forward are in an earlier release. Boot that
+// release once, so its adoption commits and its first append re-stamps the
+// store, then this one.
+var ErrChangelogDialectRetired = errors.New("substrate/engine: the changelog speaks a dialect this binary no longer adopts")
+
+// ErrChangelogRetiredEntry is the entry-side refusal, and it is not the same
+// judgement as either dialect error: those read the STAMP, while this one
+// reads what the segment files actually hold. A directory written from the
+// tables of a store whose stamp ran ahead of its entries passes every stamp
+// check and still carries a spelling with nothing to fold into (decision
+// 0044), so the import refuses before it writes a row.
+var ErrChangelogRetiredEntry = errors.New("substrate/engine: the changelog directory holds an entry from a retired dialect")
 
 // maxChangelogDialect is the newest changelog dialect this binary can replay.
 // It is what this binary stamps when it appends; a repository stored above it
 // refuses to open.
 const maxChangelogDialect = 6
 
-// deliveryLedgerDialect is the rung the delivery ledger arrived at. A
-// repository stamped below it holds its trigger bookkeeping in the tables
-// alone, and the open adopts it into the ledger (delivery.go
-// adoptLegacyLedger) before anything else appends.
-const deliveryLedgerDialect = 6
+// minChangelogDialect is the oldest stamp this binary opens. Every adoption
+// step below it was retired together, and the last release to carry them is
+// what the refusal names.
+const minChangelogDialect = 6
+
+// lastAdoptingRelease is the release whose open still adopted a store stamped
+// below minChangelogDialect.
+const lastAdoptingRelease = "v0.65.0"
 
 // MaxChangelogDialect is the newest changelog dialect this binary can replay,
 // the value GET /.well-known/substrate/server.json reports as the binary
 // maximum. Exported so the API layer can surface it without reaching into the
 // engine's tables.
 func MaxChangelogDialect() int { return maxChangelogDialect }
+
+// MinChangelogDialect is the oldest stamp this binary opens. Equal to the
+// maximum while no rung above the floor exists, which is what the ladder's
+// own tests read to know whether a dialect TRANSITION is observable at all.
+func MinChangelogDialect() int { return minChangelogDialect }
 
 // gateChangelogDialect runs the gate at repository open, and it only READS:
 // refuse a changelog this binary cannot replay, write nothing. An open has no
@@ -143,26 +128,27 @@ func (ds *dataset) gateChangelogDialect(ctx context.Context) error {
 		ds.changelogStamped.Store(true)
 		return nil
 	}
-	ds.adoptLedger = stored < deliveryLedgerDialect
-	return ds.refuseRetiredLinkEntries(ctx)
-}
-
-// refuseRetiredLinkEntries refuses a changelog that still holds a dialect-1
-// `link` or `unlink` entry. It only READS, like the rest of the gate, and it
-// runs on the dataset's pool inside the repository's scope, so the statement
-// sees this repository's changelog and no other.
-func (ds *dataset) refuseRetiredLinkEntries(ctx context.Context) error {
+	if stored > 0 {
+		return nil
+	}
+	// No stamp: fresh, or written before the stamp existed. The one probe
+	// that tells them apart runs on the dataset's pool inside the
+	// repository's scope, so it sees this repository's changelog and no other.
 	var one int
-	err := ds.db.QueryRowContext(ctx,
-		`SELECT 1 FROM changelog WHERE op IN ($1, $2) LIMIT 1`, opLinkRetired, opUnlinkRetired).Scan(&one)
+	err = ds.db.QueryRowContext(ctx, `SELECT 1 FROM changelog LIMIT 1`).Scan(&one)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("substrate/engine: probe retired link entries: %w", err)
+		return fmt.Errorf("substrate/engine: probe the unstamped changelog: %w", err)
 	}
-	return fmt.Errorf("%w: repository %s holds `%s`/`%s` changelog entries, which dialect 1 wrote and migration 0010 left nothing to fold into; there is no rung that translates them (decision 0044), so wipe the store: mise run dev:wipe in development, and restore a dump taken before the upgrade anywhere else",
-		ErrChangelogPredatesReferences, ds.info.Name, opLinkRetired, opUnlinkRetired)
+	return retiredChangelogDialect(ds.info.Name, 0)
+}
+
+// retiredChangelogDialect is the floor's refusal, worded for an operator.
+func retiredChangelogDialect(repository string, stored int) error {
+	return fmt.Errorf("%w: repository %s stores changelog dialect %d, this binary adopts >= %d: boot %s once so it adopts and re-stamps the store, then upgrade",
+		ErrChangelogDialectRetired, repository, stored, minChangelogDialect, lastAdoptingRelease)
 }
 
 // refuseNewerChangelogDialect re-reads the stamp inside the caller's
@@ -181,13 +167,19 @@ func (t *txn) refuseNewerChangelogDialect() error {
 }
 
 // admitChangelogDialect is the one comparison every gate makes: a repository
-// stamped above the binary's maximum is refused, everything at or below it is
-// admitted. It takes the maximum as a parameter so a test can hold a binary
-// whose maximum is 2 to a repository this one stamped 3.
+// stamped above the binary's maximum is refused, one stamped below its floor
+// is refused, and everything between is admitted; 0 is a store no binary has
+// claimed, which the open-time gate probes and the import treats as retired,
+// because a directory with nothing in it has nothing to import. It takes the
+// maximum as a parameter so a test can hold a binary whose maximum is 5 to a
+// repository this one stamped 6.
 func admitChangelogDialect(repository string, stored, max int) error {
 	if stored > max {
 		return fmt.Errorf("%w: repository %s stores changelog dialect %d, this binary replays <= %d: upgrade the substrate",
 			ErrChangelogDialectNewer, repository, stored, max)
+	}
+	if stored > 0 && stored < minChangelogDialect {
+		return retiredChangelogDialect(repository, stored)
 	}
 	return nil
 }
@@ -229,7 +221,7 @@ const changelogDialectStamp = `
 // writeManifestBeforeCommit): the manifest is what an import reads for the
 // dialect, so it must say what the segments require before they require it.
 func (t *txn) stampChangelogDialect() error {
-	if t.ds.changelogStamped.Load() || t.ds.stampHeld {
+	if t.ds.changelogStamped.Load() {
 		return nil
 	}
 	if _, err := t.exec(changelogDialectStamp, maxChangelogDialect); err != nil {

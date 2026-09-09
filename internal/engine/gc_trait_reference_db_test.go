@@ -31,7 +31,7 @@ func traitMirrorManifest() enginetest.Manifest {
 		data := map[string]any{
 			"authority":       traitMirrorAuthority,
 			"package":         "traitmirror",
-			"names":           map[string]any{"singular": last(id), "plural": last(id) + "s"},
+			"names":           map[string]any{"singular": last(id)},
 			"displayTemplate": "{label}",
 			"properties": map[string]any{
 				"label": map[string]any{"type": "string"},
@@ -57,7 +57,7 @@ func traitMirrorManifest() enginetest.Manifest {
 			"data": map[string]any{
 				"authority":       traitMirrorAuthority,
 				"package":         "traitmirror",
-				"names":           map[string]any{"singular": last(id), "plural": last(id) + "s"},
+				"names":           map[string]any{"singular": last(id)},
 				"displayTemplate": "{label}",
 				"traits":          []any{"connected"},
 				"properties":      accountProps,

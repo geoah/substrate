@@ -31,14 +31,14 @@ metadata: {id: ` + authority + `/` + pkg + `/thing}
 data:
   authority: ` + authority + `
   package: ` + pkg + `
-  names: {singular: thing, plural: things}
+  names: {singular: thing}
 ---
 kind: substrate.reamde.dev/core/kind
 metadata: {id: ` + authority + `/` + pkg + `/pointer}
 data:
   authority: ` + authority + `
   package: ` + pkg + `
-  names: {singular: pointer, plural: pointers}
+  names: {singular: pointer}
 ` + pointerBody
 }
 
@@ -134,7 +134,7 @@ metadata: {id: shared.example.com/shared/note}
 data:
   authority: shared.example.com
   package: shared
-  names: {singular: note, plural: notes}
+  names: {singular: note}
 `
 	pointerAt := func(authority, name string) string {
 		pkg := packageOf(authority)
@@ -147,7 +147,7 @@ metadata: {id: ` + authority + `/` + pkg + `/` + name + `}
 data:
   authority: ` + authority + `
   package: ` + pkg + `
-  names: {singular: ` + name + `, plural: ` + name + `s}
+  names: {singular: ` + name + `}
   properties:
     note:
       type: reference

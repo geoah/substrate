@@ -472,19 +472,6 @@ func packagePlan(plan substrate.ConversionPlan, pkg string) substrate.Conversion
 	return out
 }
 
-// legacyRenames is the plan's rename steps in the shape BundleUpgrade.Renames
-// carried before Steps existed: the same count, read once, so the two lists
-// cannot disagree. Nil when nothing is renamed, so the field is omitted.
-func legacyRenames(steps []substrate.ConversionStep) []substrate.BundleUpgradeRename {
-	var out []substrate.BundleUpgradeRename
-	for _, s := range steps {
-		if s.Step == substrate.StepRename {
-			out = append(out, substrate.BundleUpgradeRename{Kind: s.Kind, From: s.From, To: s.To, Records: s.Records})
-		}
-	}
-	return out
-}
-
 // planHash identifies a plan by its steps and their counts: the same steps
 // over the same live records hash the same, and one record more or less does
 // not. A confirmation names this hash, so it covers exactly what the preview

@@ -23,7 +23,7 @@ func TestOrderByAnIntPropertySortsNumerically(t *testing.T) {
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(orderPackage, 0),
 		vocabulary.KindManifest(orderPackage,
-			map[string]any{"singular": "step", "plural": "steps"},
+			map[string]any{"singular": "step"},
 			map[string]any{"properties": map[string]any{
 				"turn": map[string]any{"type": "int"},
 				"name": map[string]any{"type": "string"},
@@ -76,7 +76,7 @@ func TestOrderAndFilterByADecimalPropertyCompareNumerically(t *testing.T) {
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(orderPackage, 0),
 		vocabulary.KindManifest(orderPackage,
-			map[string]any{"singular": "price", "plural": "prices"},
+			map[string]any{"singular": "price"},
 			map[string]any{"properties": map[string]any{
 				"amount": map[string]any{"type": "decimal"},
 			}}),
@@ -145,7 +145,7 @@ func TestOrderByAStringPropertyStaysTextual(t *testing.T) {
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(orderPackage, 0),
 		vocabulary.KindManifest(orderPackage,
-			map[string]any{"singular": "step", "plural": "steps"},
+			map[string]any{"singular": "step"},
 			map[string]any{"properties": map[string]any{
 				"turn": map[string]any{"type": "int"},
 				"name": map[string]any{"type": "string"},

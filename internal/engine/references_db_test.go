@@ -17,13 +17,13 @@ func refDocs() []map[string]any {
 	return []map[string]any{
 		vocabulary.PackageManifest(refPackage, 0),
 		vocabulary.KindManifest(refPackage,
-			map[string]any{"singular": "widget", "plural": "widgets"},
+			map[string]any{"singular": "widget"},
 			map[string]any{}),
 		vocabulary.KindManifest(refPackage,
-			map[string]any{"singular": "gadget", "plural": "gadgets"},
+			map[string]any{"singular": "gadget"},
 			map[string]any{}),
 		vocabulary.KindManifest(refPackage,
-			map[string]any{"singular": "holder", "plural": "holders"},
+			map[string]any{"singular": "holder"},
 			map[string]any{"properties": map[string]any{
 				"pin":    map[string]any{"type": "reference", "kind": "widget"},
 				"anyref": map[string]any{"type": "reference", "kind": "any"},

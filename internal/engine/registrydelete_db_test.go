@@ -90,7 +90,7 @@ func TestADeleteParksAtTheRegistryDepLockBeforeItsRecordLock(t *testing.T) {
 		return []map[string]any{
 			vocabulary.PackageManifest(publishPackage, 0),
 			vocabulary.KindManifest(publishPackage,
-				map[string]any{"singular": "token", "plural": "tokens"},
+				map[string]any{"singular": "token"},
 				map[string]any{"properties": props}),
 		}
 	}
@@ -161,7 +161,7 @@ func TestASplitParksAtTheRegistryDepLockBeforeItsRowLock(t *testing.T) {
 		return []map[string]any{
 			vocabulary.PackageManifest(publishPackage, 0),
 			vocabulary.KindManifest(publishPackage,
-				map[string]any{"singular": "badge", "plural": "badges"},
+				map[string]any{"singular": "badge"},
 				map[string]any{"properties": props}),
 		}
 	}

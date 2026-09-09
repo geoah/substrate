@@ -848,12 +848,11 @@ var typeDataKeys = map[string]bool{
 	"retired": true,
 }
 
-// namesKeys is the `names` block's key set. `plural` is retired: the collection
-// segment is the kind name now (decision 0033), so nothing reads it and no
-// declaration ships it. It stays ADMITTED, not read, so a declaration a pre-0033
-// binary wrote still opens rather than quarantining its authority — the same
-// tolerated-inert acceptance the retired row mirrors get (deletedDataKeys).
-var namesKeys = map[string]bool{"singular": true, "plural": true}
+// namesKeys is the `names` block's key set: `singular` and nothing else. The
+// collection segment is the kind name (decision 0033), so `plural` is spent
+// rather than tolerated — deletedDataKeys names it and says what took its
+// job, which is what a writer needs to read.
+var namesKeys = map[string]bool{"singular": true}
 
 // indexKeys is one declared index's key set: the properties it covers, in order.
 var indexKeys = map[string]bool{"properties": true}

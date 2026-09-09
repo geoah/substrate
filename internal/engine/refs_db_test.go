@@ -36,10 +36,10 @@ func refsVocabulary(t *testing.T, ds substrate.Dataset, withHub bool) error {
 	_, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, []map[string]any{
 		vocabulary.PackageManifest(refsPackage, 0),
 		vocabulary.KindManifest(refsPackage,
-			map[string]any{"singular": "hub", "plural": "hubs"},
+			map[string]any{"singular": "hub"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 		vocabulary.KindManifest(refsPackage,
-			map[string]any{"singular": "spoke", "plural": "spokes"},
+			map[string]any{"singular": "spoke"},
 			map[string]any{"properties": spoke}),
 	})
 	return err
@@ -258,15 +258,15 @@ func TestAReferenceFreeKindIssuesNoRefsStatements(t *testing.T) {
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(refsPackage, 0),
 		vocabulary.KindManifest(refsPackage,
-			map[string]any{"singular": "hub", "plural": "hubs"},
+			map[string]any{"singular": "hub"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 		vocabulary.KindManifest(refsPackage,
-			map[string]any{"singular": "spoke", "plural": "spokes"},
+			map[string]any{"singular": "spoke"},
 			map[string]any{"properties": map[string]any{
 				"hub": map[string]any{"type": "reference", "kind": refsHub},
 			}}),
 		vocabulary.KindManifest(refsPackage,
-			map[string]any{"singular": "note", "plural": "notes"},
+			map[string]any{"singular": "note"},
 			map[string]any{"properties": map[string]any{"text": map[string]any{"type": "string"}}}),
 	}); err != nil {
 		t.Fatalf("install the vocabulary: %v", err)
@@ -326,10 +326,10 @@ func TestAContainerFlipAboveAReferenceReDerivesTombstones(t *testing.T) {
 		_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 			vocabulary.PackageManifest(refsPackage, 0),
 			vocabulary.KindManifest(refsPackage,
-				map[string]any{"singular": "hub", "plural": "hubs"},
+				map[string]any{"singular": "hub"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 			vocabulary.KindManifest(refsPackage,
-				map[string]any{"singular": "agent", "plural": "agents"},
+				map[string]any{"singular": "agent"},
 				map[string]any{"properties": map[string]any{"tool": tool}}),
 		})
 		return err

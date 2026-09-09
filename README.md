@@ -398,17 +398,17 @@ rules. [docs/testing.md](docs/testing.md) maps the test suites.
 
 ## Where to read next
 
-| Where                                                | What                                                              |
-| ---------------------------------------------------- | ----------------------------------------------------------------- |
-| [docs/README.md](docs/README.md)                     | the documentation index; the pages build one running example      |
-| [docs/getting-started.md](docs/getting-started.md)   | register, log in, write a record                                  |
-| [docs/introduction.md](docs/introduction.md)         | the design, its terms, and what it borrows from Kubernetes        |
-| [docs/data-model.md](docs/data-model.md)             | the repository, its changelog, records, kinds and the envelope    |
-| [docs/api.md](docs/api.md)                           | REST, filters, mutations, errors                                  |
-| [docs/terms.md](docs/terms.md)                       | one word per thing, and the dead words each replaced              |
-| [docs/decisions](docs/decisions/README.md)           | the decision records: one short, dated page per choice            |
-| [kinds/](kinds), [samples/](samples)                 | the shipped vocabulary and the sample packages, as YAML           |
-| [AGENTS.md](AGENTS.md)                               | how to work on this code                                          |
-| [SECURITY.md](SECURITY.md)                           | how to report a vulnerability                                     |
-| [CHANGELOG.md](CHANGELOG.md)                         | released versions                                                 |
-| [Issues](https://github.com/geoah/substrate/issues)  | known bugs and planned work                                       |
+| Where                                                   | What                                                                 |
+| ------------------------------------------------------- | -------------------------------------------------------------------- |
+| [docs/README.md](docs/README.md)                        | the documentation index; the pages build one running example         |
+| [docs/getting-started.md](docs/getting-started.md)      | register, log in, write a record                                     |
+| [docs/introduction.md](docs/introduction.md)            | the design, its terms, and what it borrows from Kubernetes           |
+| [docs/data-model.md](docs/data-model.md)                | the repository, its changelog, records, kinds and the envelope       |
+| [docs/api.md](docs/api.md)                              | REST, filters, mutations, errors                                     |
+| [docs/terms.md](docs/terms.md)                          | one word per thing, and the dead words each replaced                 |
+| [docs/decisions](docs/decisions/README.md)              | the decision records: one short, dated page per choice               |
+| [kinds/](kinds), [samples/](samples)                    | the shipped vocabulary and the sample packages, as YAML              |
+| [AGENTS.md](AGENTS.md)                                  | how to work on this code                                             |
+| [SECURITY.md](SECURITY.md)                              | how to report a vulnerability                                        |
+| [Releases](https://github.com/geoah/substrate/releases) | released versions, one entry per tag, written from the commit titles |
+| [Issues](https://github.com/geoah/substrate/issues)     | known bugs and planned work                                          |

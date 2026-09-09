@@ -10,7 +10,6 @@ function kindInfo(overrides: Partial<KindInfo>): KindInfo {
     authority: "samples.substrate.reamde.dev",
     package: "people",
     version: 0,
-    plural: "persons",
     source: "builtin",
     description: "",
     definition: {},
@@ -29,6 +28,8 @@ describe("normalizeKinds", () => {
             name: "person",
             authority: "samples.substrate.reamde.dev",
             package: "people",
+            // A retired `plural` a stored row still holds must not reach the
+            // projection.
             plural: "persons",
             source: "builtin",
             definition: {
@@ -48,7 +49,6 @@ describe("normalizeKinds", () => {
         authority: "samples.substrate.reamde.dev",
         package: "people",
         version: 0,
-        plural: "persons",
         source: "builtin",
         description: "One human, one record.",
         definition: {
@@ -90,7 +90,6 @@ describe("normalizeKinds", () => {
       name: "task",
       authority: "samples.substrate.reamde.dev",
       package: "tasks",
-      plural: "task",
     })
   })
 
@@ -127,21 +126,18 @@ describe("buildKindNav", () => {
     kindInfo({
       identity: "samples.substrate.reamde.dev/people/organization",
       name: "organization",
-      plural: "organizations",
     }),
     kindInfo({
       identity: "samples.substrate.reamde.dev/tasks/task",
       name: "task",
       authority: "samples.substrate.reamde.dev",
       package: "tasks",
-      plural: "tasks",
     }),
     kindInfo({
       identity: "substrate.reamde.dev/core/kind",
       name: "kind",
       authority: "substrate.reamde.dev",
       package: "core",
-      plural: "kinds",
       source: "builtin",
     }),
     kindInfo({
@@ -149,7 +145,6 @@ describe("buildKindNav", () => {
       name: "contact",
       authority: "providers.substrate.reamde.dev",
       package: "google",
-      plural: "contacts",
       source: "installed",
     }),
     kindInfo({
@@ -157,7 +152,6 @@ describe("buildKindNav", () => {
       name: "syncrun",
       authority: "providers.substrate.reamde.dev",
       package: "google",
-      plural: "syncruns",
       source: "installed",
     }),
   ]
@@ -190,7 +184,6 @@ describe("buildKindNav", () => {
         name: "beeperuser",
         authority: "providers.substrate.reamde.dev",
         package: "beeper",
-        plural: "beeperusers",
         source: "installed",
       }),
       kindInfo({
@@ -198,7 +191,6 @@ describe("buildKindNav", () => {
         name: "kind",
         authority: "substrate.reamde.dev",
         package: "core",
-        plural: "kinds",
       }),
     ])
     expect(nav.authorities.map((a) => a.authority)).toEqual([
@@ -227,7 +219,6 @@ describe("buildKindNav", () => {
         name: "account",
         authority: "providers.substrate.reamde.dev",
         package: "whoop",
-        plural: "accounts",
         source: "published",
       }),
       kindInfo({
@@ -235,7 +226,6 @@ describe("buildKindNav", () => {
         name: "kind",
         authority: "substrate.reamde.dev",
         package: "core",
-        plural: "kinds",
       }),
     ])
     expect(nav.authorities.map((a) => a.authority)).toEqual([

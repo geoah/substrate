@@ -745,12 +745,18 @@ failure keeps the id `…/parked` listed, so a saved retry still names it, and
 a parked drain resumes from its last committed page. On an import of a newer
 directory over an older database dump the entries fold over the dump's rows,
 so the triggers land where the directory says, not where the dump did.
-A repository's first open under changelog dialect 6 records the trigger state
-its tables already held as ledger entries, so an upgraded repository keeps it
-through a rebuild or a restore. A directory written before dialect 6 and never
-opened under it carries no ledger: restored into an empty database, it starts
-its triggers at the head, its parked failures are gone (their `run` records
-survive), and nothing reconstructs the positions from the changelog alone.
+The ledger is why a store stamped below changelog dialect 6 refuses to open
+here. The step that recorded the trigger state a repository's tables already
+held, as ledger entries, lived in the open through v0.65.0 and was retired
+with the rest of the pre-6 adoption
+([decision 0074](decisions/0074-an-upgrade-step-is-retired-and-the-dialect-gate-gains-a-floor.md)):
+a store carried past it without adopting would start its triggers at the head
+on the first rebuild or restore, with its parked failures gone and nothing to
+reconstruct the positions from. **So a repository written by any release
+before v0.66.0 is upgraded in two steps: boot v0.65.0 once, let it open every
+repository and take one write, then upgrade to this binary.** The refusal
+names the release, and it happens before the repository serves a request, so
+the two-step is a startup failure and never a partial serve.
 
 Runtime state is not in the directory: embedding vectors (queued again,
 below), OAuth flows in flight, a record trigger's scan position past rows
@@ -759,7 +765,7 @@ key from before the restore runs its operation again. A consent flow in flight i
 and a PKCE verifier with an expiry, and the callback fails once, so the user
 starts the flow over. A user's tokens are records, so they come back.
 Change cursors that clients saved (the console's tail, `substratectl watch
---from`, an integration's bookmark) are refused once after an import: the row
+--from`, a provider's bookmark) are refused once after an import: the row
 comes back with a new history generation, and a resume under the old one
 answers `410 compacted` naming the head to re-list from ([the
 changelog](changelog.md#frames-and-the-horizon)). A dump keeps the row's
@@ -914,9 +920,8 @@ the exec path needs nothing open at all.
   never in the changelog. It replays the delivery ledger with the rest of the
   fold: each trigger's cursor lands at the last delivery it acknowledged, its
   parked failures and a paged drain's resume row come back, and the next pass
-  re-reads the rows after the cursor, which deliver nothing. Trigger state
-  from before changelog dialect 6 was recorded into the ledger at the
-  repository's first open under it, so a rebuild keeps it. OAuth flows in
+  re-reads the rows after the cursor, which deliver nothing. Every store this binary opens is
+  stamped 6 or above, so the ledger is always there for it to replay. OAuth flows in
   flight are left alone. Stop the server
   first: it opens the repository as its changelog writer and refuses while
   the server holds the lock.

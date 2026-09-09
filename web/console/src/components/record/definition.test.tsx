@@ -40,7 +40,6 @@ const llmprovider: KindInfo = {
   authority: "substrate.reamde.dev",
   package: "core",
   version: 1,
-  plural: "llmproviders",
   source: "builtin",
   description: "",
   definition: {
@@ -78,7 +77,6 @@ const account: KindInfo = {
   authority: "substrate.reamde.dev",
   package: "core",
   version: 1,
-  plural: "accounts",
   source: "builtin",
   description: "",
   definition: {},

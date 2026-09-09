@@ -488,7 +488,7 @@ func TestW3ShadowOAuth2Refused(t *testing.T) {
 	docs := mbDocs(nil,
 		w3TraitDoc("oauth2", map[string]any{"clientId": "string", "clientSecret": "secret"}),
 		vocabulary.KindManifest(mbPackage,
-			map[string]any{"singular": "mailconfig", "plural": "mailconfigs"},
+			map[string]any{"singular": "mailconfig"},
 			map[string]any{
 				// Resolves in-authority FIRST: this binds the local shadow, never core.
 				"traits":     []any{"oauth2"},
@@ -874,7 +874,7 @@ func TestW3BundledAgentUpgradeGuard(t *testing.T) {
 	_, ds := newDataset(t)
 	const wagPackage = "wagent.bundles.substrate.reamde.dev/wagent"
 	configDoc := vocabulary.KindManifest(wagPackage,
-		map[string]any{"singular": "wagconfig", "plural": "wagconfigs"},
+		map[string]any{"singular": "wagconfig"},
 		map[string]any{"properties": map[string]any{
 			"note": map[string]any{"type": "string"},
 		}})

@@ -2485,8 +2485,8 @@ components:
     KindInfo:
       type: object
       description: One declared kind as the read surfaces project it.
-      required: [identity, name, authority, package, version, plural, source,
-        description, definition]
+      required: [identity, name, authority, package, version, source, description,
+        definition]
       properties:
         identity:
           type: string
@@ -2499,9 +2499,6 @@ components:
         version:
           type: integer
           format: int64
-        plural:
-          type: string
-          description: Retired; always empty.
         source:
           type: string
           enum: [builtin, published, installed]
@@ -3509,30 +3506,6 @@ components:
         planHash:
           type: string
         changelogSeq:
-          type: integer
-          format: int64
-        renames:
-          type: array
-          deprecated: true
-          description: The `rename` steps in the shape this field had before
-            `steps` existed, derived from them. Read `steps`.
-          items:
-            $ref: "#/components/schemas/BundleUpgradeRename"
-    BundleUpgradeRename:
-      type: object
-      deprecated: true
-      description: "One property the upgrade moves live values for, and how
-        many records carry the old name. A `ConversionStep` whose `step` is
-        `rename` says the same."
-      required: [kind, from, to, records]
-      properties:
-        kind:
-          type: string
-        from:
-          type: string
-        to:
-          type: string
-        records:
           type: integer
           format: int64
     CatalogTakeRequest:

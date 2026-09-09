@@ -33,7 +33,7 @@ metadata: {id: g.example.com/g/thing}
 data:
   authority: g.example.com
   package: g
-  names: {singular: thing, plural: things}
+  names: {singular: thing}
 ` + body)}}
 }
 
@@ -322,7 +322,7 @@ metadata: {id: g.example.com/g/thing}
 data:
   authority: g.example.com
   package: g
-  names: {singular: thing, plural: things}
+  names: {singular: thing}
 ` + body)}}
 		r, err := vocabulary.LoadFS(fs)
 		if err != nil {

@@ -497,7 +497,7 @@ function ProblemsPanel({
 
         {clean ? (
           <p className="text-xs text-muted-foreground">
-            The document parses and satisfies the kind's schema.
+            The document parses and satisfies the kind's declaration.
           </p>
         ) : (
           <ul className="flex flex-col gap-2">

@@ -851,7 +851,7 @@ const RECORD_KINDS = [
 ] as const
 
 /** The row's closure, opened in place: what it adds, what it needs, and what it
- * IS (vocabulary or integration) — everything the reader needs to decide before
+ * IS (sample or provider) — everything the reader needs to decide before
  * the import, in the table's own voice. */
 function BundleDisclosure({
   row,

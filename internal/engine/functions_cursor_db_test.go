@@ -97,7 +97,7 @@ func openCursorDataset(t *testing.T) *dataset {
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 0),
 			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
-			vocabulary.KindManifest(pkg, map[string]any{"singular": "widget", "plural": "widgets"},
+			vocabulary.KindManifest(pkg, map[string]any{"singular": "widget"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 			vocabulary.FunctionManifest(pkg, "mirror", map[string]any{
 				"description": "mirrors widgets into tasks",
@@ -197,19 +197,6 @@ func importVocabulary(t *testing.T, ds substrate.Dataset, names ...string) {
 	t.Helper()
 	if err := enginetest.ImportVocabulary(context.Background(), ds, names...); err != nil {
 		t.Fatalf("import the shipped vocabulary: %v", err)
-	}
-}
-
-// declarePersonMapping declares the repository's OWN mapping from a provider
-// mirror kind onto the shipped person. Since record 49 a provider ships no
-// mapping (the package that owns `person` is the only one that may declare one
-// onto it), so a test that wants the shell mint, the projection or the one-hop
-// resolution declares it here, exactly as a repository would.
-func declarePersonMapping(t *testing.T, ds substrate.Dataset, name string, data map[string]any) {
-	t.Helper()
-	if err := enginetest.DeclareMappings(context.Background(), ds,
-		enginetest.PeopleMapping(name, data)); err != nil {
-		t.Fatalf("declare the %s mapping: %v", name, err)
 	}
 }
 

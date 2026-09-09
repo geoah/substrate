@@ -1,7 +1,7 @@
 /** The typed record form's pure core: which declared properties become editable
  * fields, how a record seeds them, how the values validate, and how they coerce
- * back into a properties payload. Two surfaces read it: the integrations
- * dialog (`RecordConfigForm`, one bundle config or account record) and the
+ * back into a properties payload. Two surfaces read it: the provider
+ * dialog (`RecordConfigForm`, one bundle input or account record) and the
  * record editor's form lens (any kind at all). The DECLARATION itself is read
  * through `record-schema.ts`, which the YAML lens reads too, so the two lenses
  * can never disagree about what a property is.

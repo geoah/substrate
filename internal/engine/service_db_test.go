@@ -225,7 +225,7 @@ func TestSchemaRowsStoreNoSourceYAML(t *testing.T) {
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(pkg, 0),
 		vocabulary.KindManifest(pkg,
-			map[string]any{"singular": "widget", "plural": "widgets"},
+			map[string]any{"singular": "widget"},
 			map[string]any{"properties": map[string]any{
 				"label": map[string]any{"type": "string"},
 			}}),

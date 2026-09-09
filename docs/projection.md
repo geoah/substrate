@@ -206,11 +206,11 @@ owner hold.
 
 ### Contributing a value
 
-There is exactly one way for an integration to contribute a value without
+There is exactly one way for a provider to contribute a value without
 pinning it: ship a **source kind** with an empty subject slot and write your
 own records. Your records become live sources once a mapping points them at a
 subject, your values compete in the same selection as every provider's, and
-they release by omission when your records go. The integration's half:
+they release by omission when your records go. The provider's half:
 
 ```yaml
 kind: substrate.reamde.dev/core/kind

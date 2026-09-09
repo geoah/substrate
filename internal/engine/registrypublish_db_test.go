@@ -56,7 +56,7 @@ func TestTheRegistryPublishesBeforeTheHeadSignal(t *testing.T) {
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
 		vocabulary.PackageManifest(publishPackage, 0),
 		vocabulary.KindManifest(publishPackage,
-			map[string]any{"singular": "beacon", "plural": "beacons"},
+			map[string]any{"singular": "beacon"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 	}); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -85,7 +85,7 @@ func TestAParkedWriteResolvesThePublishedDeclaration(t *testing.T) {
 		return []map[string]any{
 			vocabulary.PackageManifest(publishPackage, 0),
 			vocabulary.KindManifest(publishPackage,
-				map[string]any{"singular": "gizmo", "plural": "gizmos"},
+				map[string]any{"singular": "gizmo"},
 				map[string]any{"properties": props}),
 		}
 	}
@@ -170,7 +170,7 @@ func TestAnIndexTheEngineCannotBuildRefusesTheApplyWhole(t *testing.T) {
 	_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
 		vocabulary.PackageManifest(publishPackage, 0),
 		vocabulary.KindManifest(publishPackage,
-			map[string]any{"singular": "gauge", "plural": "gauges"},
+			map[string]any{"singular": "gauge"},
 			map[string]any{
 				"properties": map[string]any{"name": map[string]any{"type": "string"}},
 				"indices":    []any{map[string]any{"properties": []any{"created_at"}}},
@@ -208,7 +208,7 @@ func TestARefusedIndexDefinitionLeavesNoIndexBehind(t *testing.T) {
 	_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
 		vocabulary.PackageManifest(publishPackage, 0),
 		vocabulary.KindManifest(publishPackage,
-			map[string]any{"singular": "dial", "plural": "dials"},
+			map[string]any{"singular": "dial"},
 			map[string]any{
 				"properties": map[string]any{"name": map[string]any{"type": "string"}},
 				"indices": []any{

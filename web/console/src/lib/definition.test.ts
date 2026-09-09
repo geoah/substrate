@@ -23,7 +23,6 @@ const person: KindInfo = {
   authority: "samples.substrate.reamde.dev",
   package: "people",
   version: 0,
-  plural: "people",
   source: "builtin",
   description: "",
   definition: {
@@ -66,7 +65,6 @@ const event: KindInfo = {
   authority: "samples.substrate.reamde.dev",
   package: "calendar",
   version: 0,
-  plural: "calendarevents",
   source: "builtin",
   description: "",
   definition: { traits: ["temporal(range)"], properties: {} },
@@ -158,7 +156,6 @@ describe("kind resolution", () => {
     authority: "samples.substrate.reamde.dev",
     package: "people",
     version: 0,
-    plural: "organizations",
     source: "builtin",
     description: "",
     definition: {},
@@ -233,7 +230,6 @@ describe("declaration detail", () => {
     authority: "providers.substrate.reamde.dev",
     package: "github",
     version: 0,
-    plural: "configs",
     source: "installed",
     description: "",
     definition: {

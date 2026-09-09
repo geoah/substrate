@@ -6,7 +6,7 @@ pages and the code disagree, the code is right.
 Dead words, and what replaced them: **entity** → record, **group** → authority,
 **type** → kind, **capability** → trait,
 **schema** → vocabulary, **log** → changelog, **extension** → bundle,
-**relationship** and **edge** → reference, **plural** → the kind's name, which
+**integration** → provider, **relationship** and **edge** → reference, **plural** → the kind's name, which
 is the collection segment (decision 0033), **tenant** and **identity** →
 nothing, there are none.
 

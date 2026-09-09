@@ -88,12 +88,6 @@ func KindName(ref string) string {
 	return name
 }
 
-// KindAuthority is the authority of a kind reference, "" when it is bare.
-func KindAuthority(ref string) string {
-	authority, _, _ := SplitKindRef(ref)
-	return authority
-}
-
 // KindPackage is the package identity a kind reference lives in
 // ("samples.substrate.reamde.dev/tasks"), "" when the reference is bare.
 func KindPackage(ref string) string {

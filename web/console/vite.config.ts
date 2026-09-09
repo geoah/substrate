@@ -4,12 +4,10 @@ import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 
-// One host serves both the substrate API and the connectors control plane in
-// production; dev talks to it through this proxy so the app itself only ever
-// speaks same-origin paths. `/connectors` is NOT proxied: the console's own
-// /connectors route reads the entity surface (substrate.reamde.dev/core/connectors +
-// syncruns) and never calls the legacy control plane — proxying it would
-// shadow the page with the API's 404 (slice 4).
+// In production the substrate serves the console at `/` beside its own API, so
+// the app only ever speaks same-origin paths. Dev keeps that true: the console
+// runs on :5173 and `/api`, `/healthz` and `/.well-known` are proxied to the
+// substrate — nothing else is, so every other path stays the console's own.
 const SUBSTRATE = process.env.VITE_PROXY_SUBSTRATE ?? "http://localhost:8080"
 
 const proxyTarget = { target: SUBSTRATE, changeOrigin: true }

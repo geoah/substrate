@@ -422,8 +422,6 @@ export interface KindInfo {
   /** The declaration's incremental version, server-maintained: every accepted
    * change to the declaration bumps it. 0 means no version is stored. */
   version: number
-  /** The collection segment. */
-  plural: string
   /** `builtin` for the seeded vocabulary, `published` for a provider's kinds
    * (only an install or an upgrade writes those declarations), `installed` for
    * everything the repository declared or imported. */
@@ -627,19 +625,6 @@ export interface BundleUpgrade extends ConversionPlan {
    * at all carries one fixed line ("the upgrade preview failed; see the
    * server log") and no motion. */
   blockers?: string[]
-  /** The `rename` steps in the shape this field had before `steps` existed,
-   * derived from them.
-   * @deprecated read `steps`; kept because the bundles feature is stable. */
-  renames?: BundleUpgradeRename[]
-}
-
-/** One property rename an upgrade performs (substrate.BundleUpgradeRename).
- * @deprecated a ConversionStep with `step: "rename"` says the same. */
-export interface BundleUpgradeRename {
-  kind: string
-  from: string
-  to: string
-  records: number
 }
 
 /** The preview of one vocabulary apply (substrate.VocabularyPlan), from

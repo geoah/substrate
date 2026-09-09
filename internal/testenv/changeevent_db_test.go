@@ -42,7 +42,6 @@ data:
   package: feed
   names:
     singular: item
-    plural: items
   displayTemplate: "{name}"
   properties:
     name:

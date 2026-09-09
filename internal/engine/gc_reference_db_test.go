@@ -31,7 +31,7 @@ func mirrorManifest() enginetest.Manifest {
 			"data": map[string]any{
 				"authority":       mirrorAuthority,
 				"package":         "testmirror",
-				"names":           map[string]any{"singular": last(id), "plural": last(id) + "s"},
+				"names":           map[string]any{"singular": last(id)},
 				"displayTemplate": "{label}",
 				"properties": map[string]any{
 					"label":   map[string]any{"type": "string"},

@@ -56,7 +56,7 @@ func newRaceDataset(t *testing.T) *dataset {
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(racePackage, 0),
 			vocabulary.ActorManifest(racePackage, vocabulary.PackageActor(racePackage)),
-			vocabulary.KindManifest(racePackage, map[string]any{"singular": "widget", "plural": "widgets"},
+			vocabulary.KindManifest(racePackage, map[string]any{"singular": "widget"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 		},
 	}); err != nil {

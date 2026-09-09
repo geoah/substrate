@@ -69,7 +69,7 @@ metadata:
 data:
   authority: core.example.com
   package: core
-  names: {singular: account, plural: accounts}
+  names: {singular: account}
 status:
   # server-set, ignored on input, so get -o yaml output is apply-able
   observedGeneration: 3
@@ -112,7 +112,7 @@ metadata:
 data:
   authority: vocab.example.com
   package: vocab
-  names: {singular: contact, plural: contacts}
+  names: {singular: contact}
   properties:
     name: {type: string}
     company: {type: string}
@@ -126,7 +126,7 @@ metadata:
 data:
   authority: vocab.example.com
   package: vocab
-  names: {singular: googlecontact, plural: googlecontacts}
+  names: {singular: googlecontact}
   properties:
     # what the provider actually sends, declared (record 49) — never json
     name:
@@ -169,7 +169,7 @@ metadata:
 data:
   authority: vocab.example.com
   package: vocab
-  names: {singular: book, plural: books}
+  names: {singular: book}
   displayTemplate: "{title}"
   properties:
     asin: {type: asin}
@@ -191,7 +191,7 @@ metadata:
 data:
   authority: vocab.example.com
   package: vocab
-  names: {singular: task, plural: tasks}
+  names: {singular: task}
   traits: ["temporal(point: dueAt)"]
   indices: [{properties: [status, dueAt]}]
   properties:
@@ -240,7 +240,7 @@ metadata:
 data:
   authority: vocab.example.com
   package: vocab
-  names: {singular: note, plural: notes}
+  names: {singular: note}
   traits: [temporal(range)]
   properties:
     notes: {type: text}
@@ -252,7 +252,7 @@ metadata:
 data:
   authority: vocab.example.com
   package: vocab
-  names: {singular: shipment, plural: shipments}
+  names: {singular: shipment}
   properties:
     sentAt: {type: datetime, managed: true}
     dispatch:
@@ -389,7 +389,7 @@ metadata: {id: vocab.example.com/vocab/account}
 data:
   authority: vocab.example.com
   package: vocab
-  names: {singular: account, plural: accounts}
+  names: {singular: account}
   properties:
     backfillDepth:
       type: enum
@@ -457,7 +457,7 @@ func TestDefinitionIsTheData(t *testing.T) {
 		t.Fatal("definition.traits is what the GraphQL builder reads")
 	}
 	names, _ := task.Definition["names"].(map[string]any)
-	if names["plural"] != "tasks" {
+	if names["singular"] != "task" {
 		t.Fatalf("definition.names = %v", names)
 	}
 }
@@ -481,7 +481,7 @@ metadata:
 data:
   authority: d.example.com
   package: d
-  names: {singular: widget, plural: widgets}
+  names: {singular: widget}
   properties:
 ` + body}
 	}
@@ -574,7 +574,7 @@ data:
   authority: d.example.com
   package: d
   description: "` + desc + `"
-  names: {singular: widget, plural: widgets}
+  names: {singular: widget}
   properties:
     name: {type: string}
 `}
@@ -634,7 +634,7 @@ func TestSourceYAMLIsTheDocument(t *testing.T) {
 		`data:`,
 		`  authority: vocab.example.com`,
 		`  package: vocab`,
-		`  names: {singular: book, plural: books}`,
+		`  names: {singular: book}`,
 	}, "\n")
 	if !strings.HasPrefix(book.SourceYAML, wantHead) {
 		t.Fatalf("book source:\n%s\nwant prefix:\n%s", book.SourceYAML, wantHead)
@@ -717,7 +717,6 @@ func TestSourceYAMLForInstalledManifests(t *testing.T) {
 		`data:`,
 		`    authority: gmail.connectors.example.com`,
 		`    names:`,
-		`        plural: cursors`,
 		`        singular: cursor`,
 		`    package: gmail`,
 		`    properties:`,
@@ -751,7 +750,7 @@ func gmailManifest() vocabulary.Manifest {
 			vocabulary.PackageManifest(authority, 1),
 			vocabulary.ActorManifest(authority, "connector:gmail"),
 			vocabulary.KindManifest(authority,
-				map[string]any{"singular": "cursor", "plural": "cursors"},
+				map[string]any{"singular": "cursor"},
 				map[string]any{"properties": map[string]any{
 					"pageToken": map[string]any{"type": "string"},
 				}}),
@@ -786,7 +785,7 @@ metadata: {id: ` + authority + `/` + pkg + `/` + name + `}
 data:
   authority: ` + authority + `
   package: ` + pkg + `
-  names: {singular: ` + name + `, plural: ` + name + `s}
+  names: {singular: ` + name + `}
 ` + data
 	}
 	alpha := authority("a.example.com") + typ("a.example.com", "alpha", "")
@@ -905,7 +904,7 @@ metadata: {id: ` + g + `/` + pkg + `/` + name + `}
 data:
   authority: ` + g + `
   package: ` + pkg + `
-  names: {singular: ` + name + `, plural: ` + name + `s}
+  names: {singular: ` + name + `}
 ` + data
 	}
 	alpha := authority("a.example.com") + typ("a.example.com", "alpha", "")
@@ -996,7 +995,7 @@ metadata: {id: a.example.com/a/thing}
 data:
   authority: a.example.com
   package: a
-  names: {singular: thing, plural: things}
+  names: {singular: thing}
   traits: [ranked]
   properties:
 ` + props
@@ -1048,7 +1047,7 @@ func TestUnknownCapabilityRejected(t *testing.T) {
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(authority, 1),
 			vocabulary.KindManifest(authority,
-				map[string]any{"singular": "thing", "plural": "things"},
+				map[string]any{"singular": "thing"},
 				map[string]any{"traits": []any{"nosuchcapability"}}),
 		},
 	})
@@ -1077,7 +1076,7 @@ func TestInstalledGroupBindsLoadedCapability(t *testing.T) {
 			Manifests: []map[string]any{
 				vocabulary.PackageManifest(authority, 1),
 				vocabulary.KindManifest(authority,
-					map[string]any{"singular": "clip", "plural": "clips"},
+					map[string]any{"singular": "clip"},
 					map[string]any{
 						"traits":     []any{binding},
 						"properties": map[string]any{"mediaRef": map[string]any{"type": "url"}},
@@ -1115,7 +1114,7 @@ func TestInstallBumpsVersion(t *testing.T) {
 	m := gmailManifest()
 	// Its one type reaches into another package for its owner.
 	m.Manifests = append(m.Manifests, vocabulary.KindManifest(m.Authority,
-		map[string]any{"singular": "label", "plural": "labels"},
+		map[string]any{"singular": "label"},
 		map[string]any{"properties": map[string]any{
 			"account": map[string]any{
 				"type": "reference", "kind": "account",
@@ -1168,7 +1167,7 @@ func TestInstalledMapping(t *testing.T) {
 			vocabulary.PackageManifest(provider, 1),
 			vocabulary.ActorManifest(provider, "connector:slack"),
 			vocabulary.KindManifest(provider,
-				map[string]any{"singular": "slackuser", "plural": "slackusers"},
+				map[string]any{"singular": "slackuser"},
 				map[string]any{
 					"properties": map[string]any{
 						"realName": map[string]any{"type": "string"},
@@ -1200,7 +1199,7 @@ func TestInstalledMapping(t *testing.T) {
 			Manifests: []map[string]any{
 				vocabulary.PackageManifest(home, 1),
 				vocabulary.KindManifest(home,
-					map[string]any{"singular": "contactcard", "plural": "contactcards"},
+					map[string]any{"singular": "contactcard"},
 					map[string]any{
 						"properties": map[string]any{
 							"name":   map[string]any{"type": "string"},
@@ -1252,7 +1251,7 @@ func TestInstalledMapping(t *testing.T) {
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(chain, 1),
 			vocabulary.KindManifest(chain,
-				map[string]any{"singular": "leaf", "plural": "leaves"},
+				map[string]any{"singular": "leaf"},
 				map[string]any{"properties": map[string]any{
 					"middle": map[string]any{
 						"type": "reference", "kind": chain + "/middle",
@@ -1260,7 +1259,7 @@ func TestInstalledMapping(t *testing.T) {
 					},
 				}}),
 			vocabulary.KindManifest(chain,
-				map[string]any{"singular": "middle", "plural": "middles"},
+				map[string]any{"singular": "middle"},
 				map[string]any{"properties": map[string]any{
 					"root": map[string]any{
 						"type": "reference", "kind": chain + "/root",
@@ -1268,7 +1267,7 @@ func TestInstalledMapping(t *testing.T) {
 					},
 				}}),
 			vocabulary.KindManifest(chain,
-				map[string]any{"singular": "root", "plural": "roots"},
+				map[string]any{"singular": "root"},
 				map[string]any{"properties": map[string]any{
 					"name": map[string]any{"type": "string"},
 				}}),
@@ -1299,7 +1298,7 @@ func TestManifestShapeRejected(t *testing.T) {
 	const authority = "x.connectors.example.com/x"
 	for name, m := range map[string]vocabulary.Manifest{
 		"no authority manifest": {Name: "x", Authority: authority, Manifests: []map[string]any{
-			vocabulary.KindManifest(authority, map[string]any{"singular": "thing", "plural": "things"}, nil),
+			vocabulary.KindManifest(authority, map[string]any{"singular": "thing"}, nil),
 		}},
 		"two authorities": {Name: "x", Authority: authority, Manifests: []map[string]any{
 			vocabulary.PackageManifest(authority, 1),
@@ -1352,7 +1351,7 @@ func TestResolveAmbiguity(t *testing.T) {
 		Name: "dup", Authority: authority,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(authority, 1),
-			vocabulary.KindManifest(authority, map[string]any{"singular": "contact", "plural": "contacts"}, nil),
+			vocabulary.KindManifest(authority, map[string]any{"singular": "contact"}, nil),
 		},
 	})
 	if err != nil {
@@ -1532,7 +1531,7 @@ metadata: {id: x.example.com/x/person}
 data:
   authority: x.example.com
   package: x
-  names: {singular: person, plural: people}
+  names: {singular: person}
   properties:
     name: {type: string}
     primaryEmail: {type: email}
@@ -1549,7 +1548,7 @@ metadata: {id: x.example.com/x/rec}
 data:
   authority: x.example.com
   package: x
-  names: {singular: rec, plural: recs}
+  names: {singular: rec}
   properties:
     name:
       type: object
@@ -1678,7 +1677,7 @@ metadata: {id: x.example.com/x/org}
 data:
   authority: x.example.com
   package: x
-  names: {singular: org, plural: orgs}
+  names: {singular: org}
   properties: {name: {type: string}}
 ---
 kind: substrate.reamde.dev/core/recordmapping
@@ -1698,7 +1697,7 @@ metadata: {id: x.example.com/x/note}
 data:
   authority: x.example.com
   package: x
-  names: {singular: note, plural: notes}
+  names: {singular: note}
   properties: {about: {type: reference, kind: rec}}
 `,
 		"unknown mapping key": recperson(`  fuse: true
@@ -1747,7 +1746,7 @@ metadata: {id: x.example.com/x/two}
 data:
   authority: x.example.com
   package: x
-  names: {singular: two, plural: twos}
+  names: {singular: two}
   properties: {person: {type: reference, kind: person, projects: true}}
 `
 		fsys := fstest.MapFS{"x.example.com/x/all.yaml": &fstest.MapFile{Data: []byte(src)}}
@@ -1909,7 +1908,7 @@ func TestInstallRechecksMappingsAgainstAChangedSourceKind(t *testing.T) {
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest("p.example.com/p", 2),
 			vocabulary.KindManifest("p.example.com/p",
-				map[string]any{"singular": "issue", "plural": "issues"},
+				map[string]any{"singular": "issue"},
 				map[string]any{"properties": map[string]any{
 					"headline": map[string]any{"type": "int"},
 					"task":     map[string]any{"type": "reference", "mustExist": true, "subject": true},
@@ -1942,7 +1941,7 @@ metadata: {id: p.example.com/p/issue}
 data:
   authority: p.example.com
   package: p
-  names: {singular: issue, plural: issues}
+  names: {singular: issue}
   properties:
     headline: {type: string}
     task: {type: reference, mustExist: true, subject: true}
@@ -1960,7 +1959,7 @@ metadata: {id: u.example.com/u/task}
 data:
   authority: u.example.com
   package: u
-  names: {singular: task, plural: tasks}
+  names: {singular: task}
   properties:
     name: {type: string}
 ---
@@ -2007,7 +2006,7 @@ metadata: {id: p.example.com/p/issue}
 data:
   authority: p.example.com
   package: p
-  names: {singular: issue, plural: issues}
+  names: {singular: issue}
   properties:
     headline: {type: string}
     task: {type: reference, trait: ranked, mustExist: true, subject: true}
@@ -2063,7 +2062,7 @@ metadata: {id: u.example.com/u/note}
 data:
   authority: u.example.com
   package: u
-  names: {singular: note, plural: notes}
+  names: {singular: note}
   properties:
     name: {type: string}
 ---
@@ -2134,7 +2133,7 @@ metadata: {id: x.example.com/x/card}
 data:
   authority: x.example.com
   package: x
-  names: {singular: card, plural: cards}
+  names: {singular: card}
   displayTemplate: "` + template + `"
   properties:
     label: {type: string}
@@ -2243,7 +2242,7 @@ metadata: {id: x.example.com/x/contact}
 data:
   authority: x.example.com
   package: x
-  names: {singular: contact, plural: contacts}
+  names: {singular: contact}
 `,
 		"unknown envelope key": head + `kind: substrate.reamde.dev/core/kind
 metadata: {id: x.example.com/x/contact}
@@ -2251,7 +2250,7 @@ extra: nope
 data:
   authority: x.example.com
   package: x
-  names: {singular: contact, plural: contacts}
+  names: {singular: contact}
 `,
 		// The Kubernetes envelope is DELETED, and each key names what took
 		// its job rather than reading as an unknown key.
@@ -2261,7 +2260,7 @@ metadata: {id: x.example.com/x/contact}
 data:
   authority: x.example.com
   package: x
-  names: {singular: contact, plural: contacts}
+  names: {singular: contact}
 `,
 		"group is deleted": head + `group: substrate.reamde.dev/core
 kind: substrate.reamde.dev/core/kind
@@ -2269,34 +2268,34 @@ metadata: {id: x.example.com/x/contact}
 data:
   authority: x.example.com
   package: x
-  names: {singular: contact, plural: contacts}
+  names: {singular: contact}
 `,
 		"type is deleted": head + `type: kind
 metadata: {id: x.example.com/x/contact}
 data:
   authority: x.example.com
   package: x
-  names: {singular: contact, plural: contacts}
+  names: {singular: contact}
 `,
 		"spec is deleted": head + `kind: substrate.reamde.dev/core/kind
 metadata: {id: x.example.com/x/contact}
 spec:
   authority: x.example.com
   package: x
-  names: {singular: contact, plural: contacts}
+  names: {singular: contact}
 `,
 		"metadata.name is deleted": head + `kind: substrate.reamde.dev/core/kind
 metadata: {name: x.example.com/x/contact}
 data:
   authority: x.example.com
   package: x
-  names: {singular: contact, plural: contacts}
+  names: {singular: contact}
 `,
 		"no metadata.id": head + `kind: substrate.reamde.dev/core/kind
 data:
   authority: x.example.com
   package: x
-  names: {singular: contact, plural: contacts}
+  names: {singular: contact}
 `,
 		"unnamespaced label": head + `kind: substrate.reamde.dev/core/kind
 metadata:
@@ -2305,35 +2304,35 @@ metadata:
 data:
   authority: x.example.com
   package: x
-  names: {singular: contact, plural: contacts}
+  names: {singular: contact}
 `,
 		"orphan document": `kind: substrate.reamde.dev/core/kind
 metadata: {id: y.example.com/y/contact}
 data:
   authority: y.example.com
   package: y
-  names: {singular: contact, plural: contacts}
+  names: {singular: contact}
 `,
 		"identity mismatch": head + `kind: substrate.reamde.dev/core/kind
 metadata: {id: x.example.com/x/contacts}
 data:
   authority: x.example.com
   package: x
-  names: {singular: contact, plural: contacts}
+  names: {singular: contact}
 `,
 		"duplicate type": head + `kind: substrate.reamde.dev/core/kind
 metadata: {id: x.example.com/x/contact}
 data:
   authority: x.example.com
   package: x
-  names: {singular: contact, plural: contacts}
+  names: {singular: contact}
 ---
 kind: substrate.reamde.dev/core/kind
 metadata: {id: x.example.com/x/contact}
 data:
   authority: x.example.com
   package: x
-  names: {singular: contact, plural: contacts}
+  names: {singular: contact}
 `,
 		"duplicate authority": head + `kind: substrate.reamde.dev/core/package
 metadata: {id: x.example.com/x}
@@ -2357,19 +2356,19 @@ data: {authority: x.example.com}
 `,
 		// the body DSL
 		"missing names":     typ("  properties: {a: {type: string}}\n"),
-		"bad type name":     typ("  names: {singular: my_contact, plural: mycontacts}\n"),
-		"unknown names key": typ("  names: {singular: contact, plural: contacts, short: c}\n"),
+		"bad type name":     typ("  names: {singular: my_contact}\n"),
+		"unknown names key": typ("  names: {singular: contact, short: c}\n"),
 		// One casing rule: every declared name is camelCase.
-		"capitalised property": typ(`  names: {singular: contact, plural: contacts}
+		"capitalised property": typ(`  names: {singular: contact}
   properties: {FirstName: {type: string}}
 `),
-		"snake property": typ(`  names: {singular: contact, plural: contacts}
+		"snake property": typ(`  names: {singular: contact}
   properties: {first_name: {type: string}}
 `),
-		"snake reference": typ(`  names: {singular: contact, plural: contacts}
+		"snake reference": typ(`  names: {singular: contact}
   properties: {work_place: {type: reference, kind: contact}}
 `),
-		"snake stamp": typ(`  names: {singular: contact, plural: contacts}
+		"snake stamp": typ(`  names: {singular: contact}
   properties: {m: {type: state, states: [a, b], transitions: [{from: a, to: b, stamps: {done_at: now}}]}}
 `),
 		"snake capability property": head + `kind: substrate.reamde.dev/core/trait
@@ -2380,189 +2379,189 @@ data:
   properties: {top_score: int}
 `,
 		// Enum and state VALUES stay lowercase words — they are data.
-		"capitalised state value": typ(`  names: {singular: contact, plural: contacts}
+		"capitalised state value": typ(`  names: {singular: contact}
   properties: {m: {type: state, states: [Open], transitions: []}}
 `),
-		"snake enum value": typ(`  names: {singular: contact, plural: contacts}
+		"snake enum value": typ(`  names: {singular: contact}
   properties: {a: {type: enum, values: [in_progress]}}
 `),
-		"unknown property type": typ(`  names: {singular: contact, plural: contacts}
+		"unknown property type": typ(`  names: {singular: contact}
   properties: {a: {type: blob}}
 `),
-		"missing transitions": typ(`  names: {singular: contact, plural: contacts}
+		"missing transitions": typ(`  names: {singular: contact}
   properties: {m: {type: state, states: [open]}}
 `),
-		"initial is not a state": typ(`  names: {singular: contact, plural: contacts}
+		"initial is not a state": typ(`  names: {singular: contact}
   properties: {m: {type: state, states: [open], initial: shut, transitions: []}}
 `),
 		// `initial` is one declared state; the per-actor map died with the
 		// guards.
-		"initial map is deleted": typ(`  names: {singular: contact, plural: contacts}
+		"initial map is deleted": typ(`  names: {singular: contact}
   properties: {m: {type: state, states: [open], initial: {default: open}, transitions: []}}
 `),
 		// A transition carries no guard: anyone may perform any of them.
-		"transition actor is deleted": typ(`  names: {singular: contact, plural: contacts}
+		"transition actor is deleted": typ(`  names: {singular: contact}
   properties: {m: {type: state, states: [a, b], transitions: [{from: a, to: b, actor: owner}]}}
 `),
-		"bad stamp": typ(`  names: {singular: contact, plural: contacts}
+		"bad stamp": typ(`  names: {singular: contact}
   properties: {m: {type: state, states: [a, b], transitions: [{from: a, to: b, stamps: {x: yesterday}}]}}
 `),
 		// A declared stamp target must hold what the engine writes into it: a
 		// single datetime.
-		"stamp target declared as a string": typ(`  names: {singular: contact, plural: contacts}
+		"stamp target declared as a string": typ(`  names: {singular: contact}
   properties:
     doneAt: {type: string}
     m: {type: state, states: [a, b], transitions: [{from: a, to: b, stamps: {doneAt: now}}]}
 `),
-		"stamp target declared repeated": typ(`  names: {singular: contact, plural: contacts}
+		"stamp target declared repeated": typ(`  names: {singular: contact}
   properties:
     doneAt: {type: datetime, repeated: true}
     m: {type: state, states: [a, b], transitions: [{from: a, to: b, stamps: {doneAt: now}}]}
 `),
-		"stamp target declared keyed": typ(`  names: {singular: contact, plural: contacts}
+		"stamp target declared keyed": typ(`  names: {singular: contact}
   properties:
     doneAt: {type: datetime, keyed: true}
     m: {type: state, states: [a, b], transitions: [{from: a, to: b, stamps: {doneAt: now}}]}
 `),
-		"unknown machine key": typ(`  names: {singular: contact, plural: contacts}
+		"unknown machine key": typ(`  names: {singular: contact}
   properties: {m: {type: state, states: [a], guards: []}}
 `),
 		// `machines:` is DELETED from the DSL (MODEL §11.4), not renamed.
-		"machines is gone": typ(`  names: {singular: contact, plural: contacts}
+		"machines is gone": typ(`  names: {singular: contact}
   machines: {status: {states: [open, done]}}
 `),
-		"snake onEnter": typ(`  names: {singular: contact, plural: contacts}
+		"snake onEnter": typ(`  names: {singular: contact}
   properties: {m: {type: state, states: [a, b], transitions: [{from: a, to: b, on_enter: applyDiff}]}}
 `),
-		"snake onEnter value": typ(`  names: {singular: contact, plural: contacts}
+		"snake onEnter value": typ(`  names: {singular: contact}
   properties: {m: {type: state, states: [a, b], transitions: [{from: a, to: b, onEnter: apply_diff}]}}
 `),
-		"snake onDelete": typ(`  names: {singular: contact, plural: contacts}
+		"snake onDelete": typ(`  names: {singular: contact}
   properties: {org: {type: reference, kind: contact, on_delete: cascade}}
 `),
 		// A list is `repeated: true`; the bracketed spelling is deleted.
-		"bracketed list type": typ(`  names: {singular: contact, plural: contacts}
+		"bracketed list type": typ(`  names: {singular: contact}
   properties: {emails: {type: '[email]'}}
 `),
-		"a state property is not a list": typ(`  names: {singular: contact, plural: contacts}
+		"a state property is not a list": typ(`  names: {singular: contact}
   properties: {m: {type: state, repeated: true, states: [a, b], transitions: []}}
 `),
 		// Identity is the id and nothing else: everything that
 		// matched by value is deleted, each naming what replaced it.
-		"identifying is gone": typ(`  names: {singular: contact, plural: contacts}
+		"identifying is gone": typ(`  names: {singular: contact}
   properties: {email: {type: email, identifying: true}}
 `),
-		"aliasNamespaces is gone": typ(`  names: {singular: contact, plural: contacts}
+		"aliasNamespaces is gone": typ(`  names: {singular: contact}
   aliasNamespaces: [google.contact]
 `),
-		"id strategy is gone": typ(`  names: {singular: contact, plural: contacts}
+		"id strategy is gone": typ(`  names: {singular: contact}
   id: from_alias
 `),
-		"merge is gone": typ(`  names: {singular: contact, plural: contacts}
+		"merge is gone": typ(`  names: {singular: contact}
   merge: auto
 `),
 		// `ref` is gone with the kind it constrained (MODEL §11.5).
-		"ref is gone": typ(`  names: {singular: contact, plural: contacts}
+		"ref is gone": typ(`  names: {singular: contact}
   properties: {target: {type: ref}}
 `),
-		"unknown data key": typ(`  names: {singular: contact, plural: contacts}
+		"unknown data key": typ(`  names: {singular: contact}
   fields: {a: {type: string}}
 `),
 		// Object fields nest to MaxFieldDepth and hold declared shapes: never
 		// json/secret/digest/state/blobref, never a snake name, never a reserved
 		// one — and an object is never a refinement base.
-		"json field": typ(`  names: {singular: contact, plural: contacts}
+		"json field": typ(`  names: {singular: contact}
   properties: {name: {type: object, fields: {raw: {type: json}}}}
 `),
-		"secret field": typ(`  names: {singular: contact, plural: contacts}
+		"secret field": typ(`  names: {singular: contact}
   properties: {name: {type: object, fields: {key: {type: secret}}}}
 `),
-		"state field": typ(`  names: {singular: contact, plural: contacts}
+		"state field": typ(`  names: {singular: contact}
   properties: {name: {type: object, fields: {m: {type: state, states: [a], transitions: []}}}}
 `),
-		"snake field": typ(`  names: {singular: contact, plural: contacts}
+		"snake field": typ(`  names: {singular: contact}
   properties: {name: {type: object, fields: {display_name: {type: string}}}}
 `),
-		"reserved field": typ(`  names: {singular: contact, plural: contacts}
+		"reserved field": typ(`  names: {singular: contact}
   properties: {name: {type: object, fields: {title: {type: string}}}}
 `),
-		"object without fields": typ(`  names: {singular: contact, plural: contacts}
+		"object without fields": typ(`  names: {singular: contact}
   properties: {name: {type: object}}
 `),
-		"fields on a scalar": typ(`  names: {singular: contact, plural: contacts}
+		"fields on a scalar": typ(`  names: {singular: contact}
   properties: {name: {type: string, fields: {a: {type: string}}}}
 `),
-		"embed on an object": typ(`  names: {singular: contact, plural: contacts}
+		"embed on an object": typ(`  names: {singular: contact}
   properties: {name: {type: object, embed: true, fields: {a: {type: string}}}}
 `),
-		"fts on an object": typ(`  names: {singular: contact, plural: contacts}
+		"fts on an object": typ(`  names: {singular: contact}
   properties: {name: {type: object, fts: true, fields: {a: {type: string}}}}
 `),
 		// A level-5 field: the dialect admits four, and the guards that refuse a
 		// narrowing walk exactly that many jsonb notches.
-		"field nested past the depth": typ(`  names: {singular: contact, plural: contacts}
+		"field nested past the depth": typ(`  names: {singular: contact}
   properties:
     deep:
       type: object
       fields:
         l2: {type: object, fields: {l3: {type: object, fields: {l4: {type: object, fields: {l5: {type: string}}}}}}}
 `),
-		"json field at depth": typ(`  names: {singular: contact, plural: contacts}
+		"json field at depth": typ(`  names: {singular: contact}
   properties:
     deep: {type: object, fields: {l2: {type: object, fields: {raw: {type: json}}}}}
 `),
-		"secret field at depth": typ(`  names: {singular: contact, plural: contacts}
+		"secret field at depth": typ(`  names: {singular: contact}
   properties:
     deep: {type: object, fields: {l2: {type: object, fields: {key: {type: secret}}}}}
 `),
-		"blobref field at depth": typ(`  names: {singular: contact, plural: contacts}
+		"blobref field at depth": typ(`  names: {singular: contact}
   properties:
     deep: {type: object, fields: {l2: {type: object, fields: {bytes: {type: blobref}}}}}
 `),
 		// keyed and repeated are the two containers, and a declaration is one.
-		"keyed and repeated": typ(`  names: {singular: contact, plural: contacts}
+		"keyed and repeated": typ(`  names: {singular: contact}
   properties: {scopes: {type: string, keyed: true, repeated: true}}
 `),
 		// A keyed map of maps has no second node to declare: the value's shape IS
 		// the declaration, so leaving the fields out is refused by name.
-		"keyed object without fields": typ(`  names: {singular: contact, plural: contacts}
+		"keyed object without fields": typ(`  names: {singular: contact}
   properties: {variants: {type: object, keyed: true}}
 `),
-		"keyed field of maps": typ(`  names: {singular: contact, plural: contacts}
+		"keyed field of maps": typ(`  names: {singular: contact}
   properties:
     spec: {type: object, fields: {variants: {type: object, keyed: true}}}
 `),
-		"keyed json": typ(`  names: {singular: contact, plural: contacts}
+		"keyed json": typ(`  names: {singular: contact}
   properties: {raw: {type: json, keyed: true}}
 `),
-		"keyed secret": typ(`  names: {singular: contact, plural: contacts}
+		"keyed secret": typ(`  names: {singular: contact}
   properties: {keys: {type: secret, keyed: true}}
 `),
-		"keyPattern without keyed": typ(`  names: {singular: contact, plural: contacts}
+		"keyPattern without keyed": typ(`  names: {singular: contact}
   properties: {scopes: {type: string, keyPattern: camel}}
 `),
-		"unknown keyPattern": typ(`  names: {singular: contact, plural: contacts}
+		"unknown keyPattern": typ(`  names: {singular: contact}
   properties: {scopes: {type: string, keyed: true, keyPattern: snake}}
 `),
-		"fts on a keyed map": typ(`  names: {singular: contact, plural: contacts}
+		"fts on a keyed map": typ(`  names: {singular: contact}
   properties: {scopes: {type: string, keyed: true, fts: true}}
 `),
-		"embed on a keyed map": typ(`  names: {singular: contact, plural: contacts}
+		"embed on a keyed map": typ(`  names: {singular: contact}
   properties: {scopes: {type: string, keyed: true, embed: true}}
 `),
 		// refersTo marks what a STRING names; a typed pointer is a reference.
-		"refersTo on an int": typ(`  names: {singular: contact, plural: contacts}
+		"refersTo on an int": typ(`  names: {singular: contact}
   properties: {count: {type: int, refersTo: kind}}
 `),
-		"refersTo on a reference": typ(`  names: {singular: contact, plural: contacts}
+		"refersTo on a reference": typ(`  names: {singular: contact}
   properties: {target: {type: reference, kind: any, refersTo: kind}}
 `),
-		"unknown refersTo": typ(`  names: {singular: contact, plural: contacts}
+		"unknown refersTo": typ(`  names: {singular: contact}
   properties: {emit: {type: string, repeated: true, refersTo: widget}}
 `),
 		// managed says the ENGINE stamps a property; a field is a position
 		// inside one, and nothing stamps a position.
-		"managed on a field": typ(`  names: {singular: contact, plural: contacts}
+		"managed on a field": typ(`  names: {singular: contact}
   properties: {spec: {type: object, fields: {version: {type: string, managed: true}}}}
 `),
 		"object refinement base": head + `kind: substrate.reamde.dev/core/propertytype
@@ -2577,44 +2576,43 @@ data:
 		// validates against the wrong one. `body` is declarable (#68), but
 		// only text-family: the hot column is text, so a non-text `body` names
 		// a column that cannot hold its value.
-		"title is reserved": typ(`  names: {singular: contact, plural: contacts}
+		"title is reserved": typ(`  names: {singular: contact}
   properties: {title: {type: string}}
 `),
-		"body must be text-family": typ(`  names: {singular: contact, plural: contacts}
+		"body must be text-family": typ(`  names: {singular: contact}
   properties: {body: {type: int}}
 `),
 		// repeated text and keyed text are ordinarily fine; on `body` they name a
 		// list or map the single scalar column cannot hold, so the body guard
 		// refuses them where the datatype alone would pass.
-		"body cannot be repeated": typ(`  names: {singular: contact, plural: contacts}
+		"body cannot be repeated": typ(`  names: {singular: contact}
   properties: {body: {type: text, repeated: true}}
 `),
-		"body cannot be keyed": typ(`  names: {singular: contact, plural: contacts}
+		"body cannot be keyed": typ(`  names: {singular: contact}
   properties: {body: {type: text, keyed: true}}
 `),
-		"at is reserved": typ(`  names: {singular: contact, plural: contacts}
+		"at is reserved": typ(`  names: {singular: contact}
   properties: {at: {type: datetime}}
 `),
-		"endsAt is reserved": typ(`  names: {singular: contact, plural: contacts}
+		"endsAt is reserved": typ(`  names: {singular: contact}
   properties: {endsAt: {type: datetime}}
 `),
-		"dueAt is reserved": typ(`  names: {singular: contact, plural: contacts}
+		"dueAt is reserved": typ(`  names: {singular: contact}
   properties: {dueAt: {type: datetime}}
 `),
 		// the old authority-file spellings are gone, not tolerated
 		"old plural key": typ(`  names: {singular: contact, plural: contacts}
-  plural: contacts
 `),
-		"old display_template": typ(`  names: {singular: contact, plural: contacts}
+		"old display_template": typ(`  names: {singular: contact}
   display_template: "{name}"
 `),
-		"old property_precedence": typ(`  names: {singular: contact, plural: contacts}
+		"old property_precedence": typ(`  names: {singular: contact}
   property_precedence: [owner]
 `),
-		"propertyPrecedence is gone": typ(`  names: {singular: contact, plural: contacts}
+		"propertyPrecedence is gone": typ(`  names: {singular: contact}
   propertyPrecedence: [api, connector:slack]
 `),
-		"props is gone": typ(`  names: {singular: contact, plural: contacts}
+		"props is gone": typ(`  names: {singular: contact}
   props: {a: {type: string}}
 `),
 		"old one_of": `kind: substrate.reamde.dev/core/package
@@ -2628,13 +2626,13 @@ data:
   package: x
   one_of: {point: {at: datetime}}
 `,
-		"enum values": typ(`  names: {singular: contact, plural: contacts}
+		"enum values": typ(`  names: {singular: contact}
   properties: {a: {type: enum}}
 `),
-		"valueLabels unknown key": typ(`  names: {singular: contact, plural: contacts}
+		"valueLabels unknown key": typ(`  names: {singular: contact}
   properties: {a: {type: enum, values: [off, on], valueLabels: {off: "Off", nope: "No"}}}
 `),
-		"bad template": typ(`  names: {singular: contact, plural: contacts}
+		"bad template": typ(`  names: {singular: contact}
   displayTemplate: "{Name}"
 `),
 	}
@@ -3104,7 +3102,7 @@ metadata: {id: g.example.com/g/thing}
 data:
   authority: g.example.com
   package: g
-  names: {singular: thing, plural: things}
+  names: {singular: thing}
   properties:
 ` + props)}}
 	}
@@ -3235,7 +3233,7 @@ metadata: {id: g.example.com/g/thing}
 data:
   authority: g.example.com
   package: g
-  names: {singular: thing, plural: things}
+  names: {singular: thing}
   properties:
 ` + props)}}
 	}

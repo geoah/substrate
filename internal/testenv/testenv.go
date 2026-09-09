@@ -80,29 +80,12 @@ type Env struct {
 	client *http.Client
 }
 
-// Option tunes a Start.
-type Option func(*options)
-
-type options struct {
-	username string
-	password string
-}
-
-// WithUser names the user Start registers. The default is fine unless a test
-// needs two substrates to disagree about who lives in them.
-func WithUser(username, password string) Option {
-	return func(o *options) { o.username, o.password = username, password }
-}
-
 // Start brings up the substrate and returns it registered and logged in.
 // Everything is torn down through t.Cleanup: the server, the engine, the
 // schema.
-func Start(t *testing.T, opts ...Option) *Env {
+func Start(t *testing.T) *Env {
 	t.Helper()
-	o := options{username: "tester", password: "correct-horse-battery-staple"}
-	for _, opt := range opts {
-		opt(&o)
-	}
+	const username, password = "tester", "correct-horse-battery-staple"
 
 	// testdb skips under -short and shares one container per test binary.
 	dsn := testdb.NewSchema(t)
@@ -151,11 +134,11 @@ func Start(t *testing.T, opts ...Option) *Env {
 	})
 
 	env := &Env{
-		URL: "http://" + ln.Addr().String(), Username: o.username,
+		URL: "http://" + ln.Addr().String(), Username: username,
 		DSN: dsn, Service: svc, t: t,
 		client: &http.Client{Timeout: 120 * time.Second},
 	}
-	env.register(o.username, o.password)
+	env.register(username, password)
 	return env
 }
 

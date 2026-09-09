@@ -105,68 +105,6 @@ func TestChangelogDialectGate(t *testing.T) {
 	}
 }
 
-// TestChangelogDialectAdoptsAnUnstampedStore covers the store every existing
-// repository is on the day this ships: a changelog written before anything
-// stamped one. It is dialect 1 by construction (no binary that could write
-// anything else has run), so it opens, and the next write claims it.
-func TestChangelogDialectAdoptsAnUnstampedStore(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	dsn := engine.MigratedDSN(t)
-	open := func() substrate.Service {
-		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsDir(engine.CoreKindsDir))
-		if err != nil {
-			t.Fatalf("open: %v", err)
-		}
-		return svc
-	}
-	svc := open()
-	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
-		t.Fatalf("create repository: %v", err)
-	}
-	if _, err := svc.Dataset(ctx, testdb.Username(t)); err != nil {
-		t.Fatal(err)
-	}
-	_ = svc.Close()
-
-	db, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, testdb.Username(t)), engine.RoleApp)
-	if err != nil {
-		t.Fatalf("open repository schema: %v", err)
-	}
-	defer func() { _ = db.Close() }()
-	// The wind-back runs as MAINT: the application role may stamp but not
-	// erase a stamp, so a pre-gate store has to be simulated from the side
-	// erasing a repository runs on.
-	maint, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, testdb.Username(t)), engine.RoleMaint)
-	if err != nil {
-		t.Fatalf("open repository schema as maint: %v", err)
-	}
-	defer func() { _ = maint.Close() }()
-	if _, err := maint.ExecContext(ctx, `DELETE FROM changelog_dialect`); err != nil {
-		t.Fatalf("wind back the changelog dialect: %v", err)
-	}
-
-	svc2 := open()
-	defer func() { _ = svc2.Close() }()
-	ds, err := svc2.Dataset(ctx, testdb.Username(t))
-	if err != nil {
-		t.Fatalf("an unstamped changelog must open: %v", err)
-	}
-	// The open claimed nothing: it may never append, and a claim over history
-	// this binary did not write is what bars a rollback for no reason.
-	if n := changelogDialectRows(t, db); n != 0 {
-		t.Fatalf("the open stamped a dialect it had not written to: %d rows", n)
-	}
-	// The first append is the claim, and it commits with the entry.
-	if _, _, err := ds.MintToken(ctx, "test", nil); err != nil {
-		t.Fatalf("mint a token: %v", err)
-	}
-	if got := storedChangelogDialect(t, db); got != engine.MaxChangelogDialect() {
-		t.Fatalf("stamped changelog dialect = %d, want %d", got, engine.MaxChangelogDialect())
-	}
-}
-
 func changelogDialectRows(t *testing.T, db *sql.DB) int {
 	t.Helper()
 	var n int

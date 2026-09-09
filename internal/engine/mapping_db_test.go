@@ -35,7 +35,7 @@ func googleManifest() enginetest.Manifest {
 			vocabulary.PackageManifest(googlePackage, 1),
 			vocabulary.ActorManifest(googlePackage, string(people)),
 			vocabulary.KindManifest(googlePackage,
-				map[string]any{"singular": "contact", "plural": "contacts"},
+				map[string]any{"singular": "contact"},
 				map[string]any{
 					"displayTemplate": "{name.displayName}",
 					"properties": map[string]any{
@@ -73,7 +73,7 @@ func slackManifest() enginetest.Manifest {
 			vocabulary.PackageManifest(slackPackage, 1),
 			vocabulary.ActorManifest(slackPackage, string(slack)),
 			vocabulary.KindManifest(slackPackage,
-				map[string]any{"singular": "slackuser", "plural": "slackusers"},
+				map[string]any{"singular": "slackuser"},
 				map[string]any{
 					"displayTemplate": "{displayName|realName}",
 					"properties": map[string]any{
@@ -169,7 +169,7 @@ func dirManifest() enginetest.Manifest {
 			vocabulary.ActorManifest(dirPackage, string(dirsync)),
 			vocabulary.ActorManifest(dirPackage, string(dirsync2)),
 			vocabulary.KindManifest(dirPackage,
-				map[string]any{"singular": "entry", "plural": "entries"},
+				map[string]any{"singular": "entry"},
 				map[string]any{
 					"displayTemplate": "{fullName}",
 					"properties": map[string]any{
@@ -231,7 +231,7 @@ func crmManifest() enginetest.Manifest {
 			vocabulary.PackageManifest(crmPackage, 1),
 			vocabulary.ActorManifest(crmPackage, string(crmsync)),
 			vocabulary.KindManifest(crmPackage,
-				map[string]any{"singular": "lead", "plural": "leads"},
+				map[string]any{"singular": "lead"},
 				map[string]any{
 					"displayTemplate": "{name}",
 					"properties": map[string]any{
@@ -240,7 +240,7 @@ func crmManifest() enginetest.Manifest {
 					},
 				}),
 			vocabulary.KindManifest(crmPackage,
-				map[string]any{"singular": "leadsource", "plural": "leadsources"},
+				map[string]any{"singular": "leadsource"},
 				map[string]any{
 					"displayTemplate": "{fullName}",
 					"properties": map[string]any{
@@ -778,7 +778,7 @@ func TestStatesAreNeverRecomputed(t *testing.T) {
 			vocabulary.PackageManifest(pkg, 1),
 			vocabulary.ActorManifest(pkg, "connector:promoter"),
 			vocabulary.KindManifest(pkg,
-				map[string]any{"singular": "promoterrow", "plural": "promoterrows"},
+				map[string]any{"singular": "promoterrow"},
 				map[string]any{
 					"properties": map[string]any{
 						"name":       map[string]any{"type": "string"},
@@ -1204,7 +1204,7 @@ func TestObjectPropertyValidation(t *testing.T) {
 			vocabulary.PackageManifest(pkg, 1),
 			vocabulary.ActorManifest(pkg, "connector:nested"),
 			vocabulary.KindManifest(pkg,
-				map[string]any{"singular": "row", "plural": "rows"},
+				map[string]any{"singular": "row"},
 				map[string]any{"properties": map[string]any{
 					"outer": map[string]any{"type": "object", "fields": map[string]any{
 						"inner": map[string]any{"type": "object", "fields": map[string]any{
@@ -1223,7 +1223,7 @@ func TestObjectPropertyValidation(t *testing.T) {
 			vocabulary.PackageManifest(deep, 1),
 			vocabulary.ActorManifest(deep, "connector:toodeep"),
 			vocabulary.KindManifest(deep,
-				map[string]any{"singular": "row", "plural": "rows"},
+				map[string]any{"singular": "row"},
 				map[string]any{"properties": map[string]any{
 					"l1": map[string]any{"type": "object", "fields": map[string]any{
 						"l2": map[string]any{"type": "object", "fields": map[string]any{
@@ -1258,13 +1258,13 @@ func TestHotMapTargets(t *testing.T) {
 			vocabulary.PackageManifest(pkg, 1),
 			vocabulary.ActorManifest(pkg, "connector:library"),
 			vocabulary.KindManifest(pkg,
-				map[string]any{"singular": "work", "plural": "works"},
+				map[string]any{"singular": "work"},
 				map[string]any{"properties": map[string]any{
 					"subtitle": map[string]any{"type": "string"},
 					"body":     map[string]any{"type": "text"},
 				}}),
 			vocabulary.KindManifest(pkg,
-				map[string]any{"singular": "libraryrow", "plural": "libraryrows"},
+				map[string]any{"singular": "libraryrow"},
 				map[string]any{
 					"traits": []any{"temporal(point)"},
 					"properties": map[string]any{

@@ -468,7 +468,7 @@ metadata: {id: m.example.com/m/person}
 data:
   authority: m.example.com
   package: m
-  names: {singular: person, plural: people}
+  names: {singular: person}
   properties:
     name: {type: string}
     emails: {type: email, repeated: true}
@@ -478,7 +478,7 @@ metadata: {id: m.example.com/m/row}
 data:
   authority: m.example.com
   package: m
-  names: {singular: row, plural: rows}
+  names: {singular: row}
   properties:
     name:
       type: object
@@ -603,7 +603,7 @@ metadata: {id: c.example.com/c/meeting}
 data:
   authority: c.example.com
   package: c
-  names: {singular: meeting, plural: meetings}
+  names: {singular: meeting}
   traits: [temporal(range)]
 `
 }
@@ -726,7 +726,7 @@ metadata: {id: i.example.com/i/widget}
 data:
   authority: i.example.com
   package: i
-  names: {singular: widget, plural: widgets}
+  names: {singular: widget}
   indices: [[label, other]]
   properties:
     label: {type: string}
@@ -748,7 +748,7 @@ metadata: {id: s.bundles.example.com/s/config}
 data:
   authority: s.bundles.example.com
   package: s
-  names: {singular: config, plural: configs}
+  names: {singular: config}
   traits: [oauth2]
   properties:
     enabledThing: {type: bool}
@@ -829,8 +829,7 @@ metadata: {id: p.example.com/p/widget}
 data:
   authority: p.example.com
   package: p
-  names: {singular: widget, plural: widgets}
-  plural: widgets
+  names: {singular: widget}
   properties:
     label: {type: string}
 `
@@ -873,7 +872,7 @@ data:
 			`key "sourceYAML" is deleted — the retired mirror: nothing stores a document's text`,
 		},
 		"the plural mirror names names.plural": {
-			kindDoc,
+			strings.Replace(kindDoc, "names: {singular: widget}", "names: {singular: widget, plural: widgets}", 1),
 			"key \"plural\" is deleted — the retired mirror: a kind's collection segment is its name (decision 0033)",
 		},
 		"the functions mirror names tools": {
