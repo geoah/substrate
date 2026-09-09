@@ -130,8 +130,9 @@ function repositoryAuthority(name: string, host: string): string {
 
 /** Registration, in two steps.
  *
- * Step one collects the invite code, the repository AND the password, then buys a TOTP
- * seed — it writes NOTHING (the browser holds the seed). Password before the
+ * Step one collects the invite code (where this substrate reads one) and the
+ * repository AND the password, then buys a TOTP seed — it writes NOTHING (the
+ * browser holds the seed). Password before the
  * QR is deliberate: a password manager sees a new-login form submit and offers
  * to SAVE it first, so when step two reveals the authenticator QR the manager
  * attaches the one-time password to the login it just created rather than to
@@ -142,7 +143,7 @@ function repositoryAuthority(name: string, host: string): string {
  * Where the substrate verifies no second factor there IS no step two: the one
  * form commits, and the seed is minted server-side and enrolled nowhere. */
 export function RegisterPage() {
-  const { totpRequired } = useAuthPolicy()
+  const { inviteRequired, totpRequired } = useAuthPolicy()
   const navigate = useNavigate()
   const [inviteCode, setInviteCode] = useState("")
   const [repository, setRepository] = useState("")
@@ -160,12 +161,6 @@ export function RegisterPage() {
 
   function fail(err: unknown) {
     if (err instanceof ApiError) {
-      if (err.code === "unsupported") {
-        setError(
-          "Registration is closed — this substrate has no invite code configured, so it admits nobody. The operator sets one on the box."
-        )
-        return
-      }
       if (err.code === "rate_limited") {
         setError(
           `Too many attempts — the door is rate limited on purpose. Try again in ${err.retryAfter ?? 5}s.`
@@ -179,8 +174,10 @@ export function RegisterPage() {
   }
 
   const passwordsMatch = password.length > 0 && password === confirm
+  // A door that reads no invite code is not owed one; whatever is typed is
+  // sent regardless, because the substrate ignores it either way.
   const canEnroll =
-    inviteCode.trim().length > 0 &&
+    (!inviteRequired || inviteCode.trim().length > 0) &&
     authority.length > 0 &&
     password.length >= MIN_PASSWORD &&
     passwordsMatch
@@ -249,10 +246,16 @@ export function RegisterPage() {
       await navigate({ to: "/", replace: true })
     } catch (err) {
       if (err instanceof ApiError && err.code === "auth") {
+        // Which factor was wrong is whichever this door reads: a substrate
+        // that reads neither has nothing here to get wrong.
         setError(
-          totpRequired
+          totpRequired && inviteRequired
             ? "The invite code or the 6-digit code is wrong. Check the code your authenticator shows right now and try again."
-            : "The invite code is wrong."
+            : totpRequired
+              ? "The 6-digit code is wrong. Check the code your authenticator shows right now and try again."
+              : inviteRequired
+                ? "The invite code is wrong."
+                : err.message
         )
         setCode("")
       } else {
@@ -319,8 +322,9 @@ export function RegisterPage() {
             <CardHeader>
               <CardTitle>Register</CardTitle>
               <CardDescription>
-                An invite code creates your user and your repository, seeded
-                with the shipped kinds.{" "}
+                {inviteRequired
+                  ? "An invite code creates your user and your repository, seeded with the shipped kinds."
+                  : "This substrate asks for no invite code: registering creates your user and your repository, seeded with the shipped kinds."}{" "}
                 {totpRequired
                   ? `All three are required: the repository, a password and a ${CODE_DIGITS}-digit code.`
                   : "This substrate does not verify a second factor, so there is no authenticator to enroll: a repository name and a password make the user."}
@@ -343,20 +347,22 @@ export function RegisterPage() {
                 }}
               >
                 <FieldGroup>
-                  <Field>
-                    <FieldLabel htmlFor="inviteCode">Invite code</FieldLabel>
-                    <Input
-                      id="inviteCode"
-                      className="data"
-                      value={inviteCode}
-                      onChange={(e) => setInviteCode(e.target.value)}
-                      disabled={enrollment !== null}
-                      autoFocus
-                    />
-                    <FieldDescription>
-                      The code the operator configured on this substrate.
-                    </FieldDescription>
-                  </Field>
+                  {inviteRequired && (
+                    <Field>
+                      <FieldLabel htmlFor="inviteCode">Invite code</FieldLabel>
+                      <Input
+                        id="inviteCode"
+                        className="data"
+                        value={inviteCode}
+                        onChange={(e) => setInviteCode(e.target.value)}
+                        disabled={enrollment !== null}
+                        autoFocus
+                      />
+                      <FieldDescription>
+                        The code the operator configured on this substrate.
+                      </FieldDescription>
+                    </Field>
+                  )}
                   <Field>
                     <FieldLabel htmlFor="repository">Repository</FieldLabel>
                     <Input

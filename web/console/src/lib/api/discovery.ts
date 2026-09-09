@@ -1,18 +1,21 @@
 /** Discovery (`GET /.well-known/substrate/server.json`): what this deployment
  * serves, answered without a token and without opening a repository — which
- * is what lets the DOOR read it. The login and register pages ask it one
- * thing: does this substrate verify a second factor at all?
+ * is what lets the DOOR read it. The login and register pages ask it two
+ * things: does this substrate read an invite code, and does it verify a
+ * second factor at all?
  *
- * A local substrate booted with `SUBSTRATE_INSECURE_DISABLE_TOTP` verifies no
- * code, so a console that kept demanding six digits would be asking for
- * something nothing checks — and refusing the sign-in itself when the digits
- * are not to hand. */
+ * A local substrate with no `SUBSTRATE_INVITE_CODE` reads none, and one booted
+ * with `SUBSTRATE_INSECURE_DISABLE_TOTP` verifies no code, so a console that
+ * kept demanding either would be asking for something nothing checks — and
+ * refusing the sign-in itself when the digits are not to hand. */
 
 import { useEffect, useState } from "react"
 
 import { request } from "./http"
 
 export interface AuthPolicy {
+  /** False only where no invite code is configured, so the door reads none. */
+  inviteRequired: boolean
   /** False only where the second factor is switched off. */
   totpRequired: boolean
 }
@@ -25,7 +28,10 @@ interface DiscoveryDoc {
  * to: a deployment that wants a code and a console that hid the field would
  * refuse every sign-in, while the reverse merely asks for a digit nobody
  * reads. */
-export const STRICT_AUTH_POLICY: AuthPolicy = { totpRequired: true }
+export const STRICT_AUTH_POLICY: AuthPolicy = {
+  inviteRequired: true,
+  totpRequired: true,
+}
 
 /** The IN-FLIGHT request, and only that: doors mounting together share one
  * call, and a door mounting later asks again.
@@ -45,6 +51,7 @@ export function fetchAuthPolicy(): Promise<AuthPolicy> {
     { anonymous: true }
   )
     .then((doc) => ({
+      inviteRequired: doc?.registration?.inviteRequired !== false,
       totpRequired: doc?.registration?.totpRequired !== false,
     }))
     // Unreachable discovery must not leave the door unrenderable: assume the

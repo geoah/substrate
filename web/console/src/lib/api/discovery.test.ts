@@ -23,9 +23,14 @@ describe("fetchAuthPolicy", () => {
 
   it("reads the policy off GET /.well-known/substrate/server.json, anonymously", async () => {
     fetchMock.mockResolvedValue(
-      jsonResponse(200, { registration: { totpRequired: false } })
+      jsonResponse(200, {
+        registration: { inviteRequired: false, totpRequired: false },
+      })
     )
-    expect(await fetchAuthPolicy()).toEqual({ totpRequired: false })
+    expect(await fetchAuthPolicy()).toEqual({
+      inviteRequired: false,
+      totpRequired: false,
+    })
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe("/.well-known/substrate/server.json")
     expect(
@@ -46,23 +51,51 @@ describe("fetchAuthPolicy", () => {
     fetchMock.mockResolvedValue(
       jsonResponse(200, { registration: { totpRequired: true } })
     )
-    expect(await fetchAuthPolicy()).toEqual({ totpRequired: true })
+    expect(await fetchAuthPolicy()).toEqual({
+      inviteRequired: true,
+      totpRequired: true,
+    })
     expect(fetchMock.mock.calls.length).toBe(2)
   })
 
-  it("requires a code when discovery says nothing about it", async () => {
+  it("requires both when discovery says nothing about them", async () => {
     // An older substrate serves no `registration` block; the strict shape is
     // the only safe reading of silence.
     fetchMock.mockResolvedValue(jsonResponse(200, { versions: [] }))
-    expect(await fetchAuthPolicy()).toEqual({ totpRequired: true })
+    expect(await fetchAuthPolicy()).toEqual({
+      inviteRequired: true,
+      totpRequired: true,
+    })
+  })
+
+  it("reads the two answers apart", async () => {
+    // A gated door with the factor off, and an open door with it on, are
+    // both deployments; neither answer implies the other.
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        registration: { inviteRequired: true, totpRequired: false },
+      })
+    )
+    expect(await fetchAuthPolicy()).toEqual({
+      inviteRequired: true,
+      totpRequired: false,
+    })
   })
 
   it("falls back to strict on an unreachable substrate, and asks again", async () => {
     fetchMock.mockRejectedValueOnce(new TypeError("offline"))
-    expect(await fetchAuthPolicy()).toEqual({ totpRequired: true })
+    expect(await fetchAuthPolicy()).toEqual({
+      inviteRequired: true,
+      totpRequired: true,
+    })
     fetchMock.mockResolvedValue(
-      jsonResponse(200, { registration: { totpRequired: false } })
+      jsonResponse(200, {
+        registration: { inviteRequired: false, totpRequired: false },
+      })
     )
-    expect(await fetchAuthPolicy()).toEqual({ totpRequired: false })
+    expect(await fetchAuthPolicy()).toEqual({
+      inviteRequired: false,
+      totpRequired: false,
+    })
   })
 })

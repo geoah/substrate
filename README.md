@@ -56,8 +56,10 @@ docker compose up
 
 That is the whole thing: Postgres, the API and the console at
 <http://localhost:8080>. Every setting has a working default; the first start
-mints a credential key and tells you to back it up. Register with the invite
-code `let-me-in`.
+mints a credential key and tells you to back it up. Register with a repository
+name and a password: this substrate asks for no invite code and no second factor,
+which is the right shape for a laptop and the two things to change before
+anyone else can reach it ([configuration](#configuration)).
 
 ## Declare your own kinds
 
@@ -68,9 +70,10 @@ toolchain: `mise install` once.
 ```bash
 mise run build:cli
 
-# Asks for the invite code, a repository name, a password and a TOTP code from the
-# enrollment it prints, hands you a recovery key, then stores the minted
-# token as a context in ~/.config/substratectl.
+# Asks for a repository name and a password (and, on a substrate that reads
+# them, the invite code and a TOTP code from the enrollment it prints), hands
+# you a recovery key, then stores the minted token as a context in
+# ~/.config/substratectl.
 bin/substratectl register --server http://localhost:8080
 ```
 
@@ -357,15 +360,17 @@ today.
 ## Configuration
 
 Everything is an environment variable, and every one has a working default
-under `docker compose up`. Four matter before anyone else can reach your
+under `docker compose up`. Five matter before anyone else can reach your
 substrate: `DATABASE_URL` (the one Postgres), `SUBSTRATE_DATA_ROOT` (the
 directory every repository's changelog, sealed store and blobs live under, and
-the thing you back up), `SUBSTRATE_INVITE_CODE` (unset means registration is
-closed), and `SUBSTRATE_CREDENTIAL_KEY` (base64 of exactly 32 bytes; it wraps
-the key every secret is sealed under, and a server without it refuses to
-boot).
-[docs/operations.md](docs/operations.md) has the full table, the blob store
-and the egress rules included.
+the thing you back up), `SUBSTRATE_INVITE_CODE` (unset, the register door
+reads no code and anyone who reaches the port may register; set, it admits
+only a request that presents it), `SUBSTRATE_INSECURE_DISABLE_TOTP` (the
+compose file sets it, so a password is the whole credential; unset it), and
+`SUBSTRATE_CREDENTIAL_KEY` (base64 of exactly 32 bytes; it wraps the key every
+secret is sealed under, and a server without it refuses to boot).
+[docs/operations.md](docs/operations.md) has the full table, blob stores and
+egress rules included.
 
 ## Development
 

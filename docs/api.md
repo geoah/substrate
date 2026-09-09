@@ -438,7 +438,7 @@ serve it (`rest`, `graphql`, or both):
                         "substrate"]},
  "endpoints": {"register": "/register", "login": "/login", "tokens": "/tokens",
                "password": "/password", "totp": "/totp"},
- "registration": {"open": true, "totpRequired": true}}
+ "registration": {"inviteRequired": true, "totpRequired": true}}
 ```
 
 A feature's `surfaces` are the doors to its own operations, not to its
@@ -463,15 +463,14 @@ a `stable` `changefeed` freezes `GET …/changes` and does not make GraphQL's
 `changelog` field stable
 ([decision 0053](decisions/0053-rest-is-supported-all-of-graphql-is-preview.md)).
 
-`registration` is what the register door asks for, and whether it is even
-open. `registration.open` is `false` only on a deployment with no invite code
-configured — the register endpoints answer `unsupported` either way, this
-just lets a client say so before trying. `registration.totpRequired` is what
-a client reads before it asks a person for a code: it is `false` only where
-the second factor is
-[switched off](auth.md#the-second-factor-can-be-switched-off-locally), which is
-a local substrate. Neither field is a verdict — the service refuses on its
-own terms either way.
+`registration` is what the register door asks for. `registration.inviteRequired`
+is `false` only on a deployment with
+[no invite code configured](auth.md#the-invite-code), where the door reads
+none; `registration.totpRequired` is `false` only where the second factor is
+[switched off](auth.md#the-second-factor-can-be-switched-off-locally). Both
+describe a local substrate, and a client reads them before it asks a person
+for either code. Neither field is a verdict — the service refuses on its own
+terms either way.
 
 ### What a feature's stability means
 
@@ -895,12 +894,8 @@ The code set is closed. The client-error codes:
 The server-error family is split so a client can tell "try again" from "never
 going to work": `internal` (500, an unexpected fault), `function_failed` (500, a
 callable's body faulted while running, distinct from `validation` so a caller
-tells its own bad arguments from the function failing to execute), `unsupported`
-(501, a door this deployment does not open: the register endpoints on a
-deployment with no invite code configured, which `GET
-/.well-known/substrate/server.json` reports as `registration.open: false`),
-and `unavailable`
-(503, always with a `Retry-After`). Two
+tells its own bad arguments from the function failing to execute), and
+`unavailable` (503, always with a `Retry-After`). Two
 cases are worth calling out: a well-formed token whose repository cannot be
 opened answers `unavailable`, never a masked `401`, so a store the binary
 cannot serve is diagnosable instead of looking like a bad credential; and a

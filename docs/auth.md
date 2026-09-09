@@ -10,14 +10,21 @@ your account too.
 
 ## The invite code
 
-One hard-coded **invite code**, configured on the service, is the only door
-into a fresh substrate. Registering with it creates the user and, in the same
-transaction, the repository, seeded with the shipped vocabulary.
+Registering creates the user and, in the same transaction, the repository,
+seeded with the shipped vocabulary. One **invite code**, configured on the
+service as `SUBSTRATE_INVITE_CODE`, gates that door: with one set,
+`/register` and `/register/enroll` admit only a request that presents it, and
+a wrong one is `401 auth`. The code is compared in constant time.
 
-A substrate with no invite code configured is closed to registration:
-`/register` and `/register/enroll` answer `501 unsupported`. That is the right
-resting state for a substrate that already has its user. The code is compared
-in constant time.
+With no code configured the door reads none: anyone who can reach the
+substrate may register, a code sent anyway is ignored, and the boot log says
+so. That is the shape of the local substrate — `docker compose up` and every
+`mise run dev*` task run it — and the wrong one for anything else. There is
+no separate closed state: a substrate that has its user keeps strangers out
+with a code nobody is given. A deployment states which door it runs,
+unauthenticated, at `GET /.well-known/substrate/server.json`
+(`registration.inviteRequired`), and the console and `substratectl` read it
+before they ask anybody for a code.
 
 Users cannot see each other, and there is no admin user. The operator acts on
 the box, through
@@ -219,9 +226,10 @@ says about who did this.
 `SUBSTRATE_INSECURE_DISABLE_TOTP` stops the substrate verifying codes at all:
 login, registration and both credential changes take a repository and a password,
 and a code sent anyway is ignored. It exists for a substrate on your own
-machine that gets wiped daily — every `mise run dev*` task except `dev:totp`
-sets it, and nothing else in the tree does. On a reachable deployment it would make a leaked
-password the account, which is the whole reason the second factor is there.
+machine that gets wiped daily — `compose.yaml` and every `mise run dev*` task
+except `dev:totp` set it, and nothing else in the tree does. On a reachable
+deployment it would make a leaked password the account, which is the whole
+reason the second factor is there.
 
 What does **not** change: the password is still required and still argon2id, the
 [password-factor rule](#the-credential-and-the-password-factor-rule) still
@@ -234,7 +242,7 @@ A deployment states, unauthenticated at
 factor:
 
 ```json
-{ "registration": { "open": true, "totpRequired": false } }
+{ "registration": { "inviteRequired": false, "totpRequired": false } }
 ```
 
 The console and `substratectl` read it before they ask a person for anything,

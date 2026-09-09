@@ -395,26 +395,43 @@ type tokenResult struct {
 }
 
 // discoveryDoc is the slice of GET /.well-known/substrate/server.json the
-// door reads. The pointer is the point: an answer that carries no
-// `totpRequired`, and a server that cannot be reached at all, must both read
-// as "a code is required" rather than as "no".
+// door reads. The pointers are the point: a substrate that predates a field,
+// and one that cannot be reached at all, must both read as "required" rather
+// than as "no".
 type discoveryDoc struct {
 	Registration struct {
-		TOTPRequired *bool `json:"totpRequired"`
+		InviteRequired *bool `json:"inviteRequired"`
+		TOTPRequired   *bool `json:"totpRequired"`
 	} `json:"registration"`
 }
 
-// totpRequired reports whether this deployment verifies a second factor.
-// Anything short of an explicit NO is a yes: prompting for a code the door
-// wanted anyway costs a moment, while skipping one it wanted refuses the
-// login. A local substrate with SUBSTRATE_INSECURE_DISABLE_TOTP is the only
-// thing that answers no.
-func (c *client) totpRequired(ctx context.Context) bool {
+// doorPolicy is what the door asks a person for. Anything short of an
+// explicit NO is a yes: prompting for a code the door wanted anyway costs a
+// moment, while skipping one it wanted refuses the request. A local substrate
+// is the only thing that answers no to either — no SUBSTRATE_INVITE_CODE for
+// the invite, SUBSTRATE_INSECURE_DISABLE_TOTP for the second factor.
+type doorPolicy struct {
+	inviteRequired bool
+	totpRequired   bool
+}
+
+// door reads the policy once; both answers ride one request.
+func (c *client) door(ctx context.Context) doorPolicy {
+	strict := doorPolicy{inviteRequired: true, totpRequired: true}
 	var doc discoveryDoc
 	if err := c.do(ctx, http.MethodGet, pathDiscovery, nil, nil, &doc); err != nil {
-		return true
+		return strict
 	}
-	return doc.Registration.TOTPRequired == nil || *doc.Registration.TOTPRequired
+	reg := doc.Registration
+	return doorPolicy{
+		inviteRequired: reg.InviteRequired == nil || *reg.InviteRequired,
+		totpRequired:   reg.TOTPRequired == nil || *reg.TOTPRequired,
+	}
+}
+
+// totpRequired reports whether this deployment verifies a second factor.
+func (c *client) totpRequired(ctx context.Context) bool {
+	return c.door(ctx).totpRequired
 }
 
 func (c *client) registerEnroll(ctx context.Context, in registerBeginRequest) (*substrate.TOTPEnrollment, error) {

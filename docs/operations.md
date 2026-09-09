@@ -38,7 +38,7 @@ boot.
 | `PORT`                         | `8080`                                 | The port served.                                                                                          |
 | `LOG_LEVEL`                    | `info`                                 | `debug`, `info`, `warn`, `error`.                                                                         |
 | `WEB_DIR`                      | —                                      | The built console, served at `/`. Empty disables static serving.                                          |
-| `SUBSTRATE_INVITE_CODE`        | — (unset: registration is off)         | The one way in. See below.                                                                                  |
+| `SUBSTRATE_INVITE_CODE`        | — (unset: the door reads no code)      | Gates registration. **Set it before anyone else can reach the port.** See below.                            |
 | `SUBSTRATE_DATA_ROOT`          | required                               | The directory every repository's files live under: `repositories/<authority>/` with the manifest, the changelog segments, the sealed store's files and (on the `fs` blob store) the blob bytes. See [the repository directory](#the-repository-directory). It must be an absolute path, it must outlive the container, and a host without one refuses to boot, naming the variable. |
 | `SUBSTRATE_CHANGELOG_SEGMENT_BYTES` | `268435456`                       | The size past which the active changelog segment rotates: the writer fsyncs, writes the finished file's `.sha256` sidecar and opens the next segment. At least 1 MiB. |
 | `SUBSTRATE_CONVERSION_CEILING` | `10000`                                | The most live records one declaration change (a vocabulary apply, a provider upgrade, the boot upgrade) may rewrite in its transaction ([vocabulary evolution](vocabulary.md#backfilling-and-remapping)). A plan above it is refused and the previews list the refusal; `0` removes the ceiling. |
@@ -226,10 +226,13 @@ try to get one.
 
 ## The invite code
 
-`SUBSTRATE_INVITE_CODE` is the only way a user gets created. Set it, register,
-then unset it and restart: with it unset, registration is closed
-(`501 unsupported`). Registration is rate-limited (paced, with no failure
-lockout) whether or not the code is set ([users and tokens](auth.md)).
+`SUBSTRATE_INVITE_CODE` gates the one way a user gets created. Set, the
+register door admits only a request that presents it. Unset, the door reads
+no code and anyone who reaches the port may register — the laptop default,
+which `compose.yaml` ships and the boot log warns about. There is no closed
+state: once the box has its user, keep strangers out with a code nobody is
+given. Registration is rate-limited (paced, with no failure lockout) whether
+or not the code is set ([users and tokens](auth.md)).
 
 There is no admin user and no operator password. Everything privileged happens
 on the box, through the DSN.

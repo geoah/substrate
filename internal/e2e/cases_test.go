@@ -128,8 +128,8 @@ func caseAuth(c *C) {
 
 	var disc struct {
 		Registration struct {
-			Open         bool `json:"open"`
-			TOTPRequired bool `json:"totpRequired"`
+			InviteRequired bool `json:"inviteRequired"`
+			TOTPRequired   bool `json:"totpRequired"`
 		} `json:"registration"`
 		Changelog *struct {
 			Horizon int64 `json:"horizon"`
@@ -137,9 +137,8 @@ func caseAuth(c *C) {
 	}
 	status, raw = c.doAs("", http.MethodGet, "/.well-known/substrate/server.json", nil, &disc)
 	c.requiref(status == http.StatusOK, "discovery answered %d: %s", status, raw)
-	c.requiref(disc.Registration.Open, "registration is closed on this server; the suite needs an invite code")
 	c.requiref(disc.Changelog != nil, "discovery publishes no changelog horizon")
-	c.stepf("discovery: registration open, totpRequired=%t, changelog horizon %d", disc.Registration.TOTPRequired, disc.Changelog.Horizon)
+	c.stepf("discovery: inviteRequired=%t, totpRequired=%t, changelog horizon %d", disc.Registration.InviteRequired, disc.Registration.TOTPRequired, disc.Changelog.Horizon)
 
 	// Register. With the factor enforced the suite enrolls a seed and proves
 	// it with a live code, exactly as an authenticator would.
