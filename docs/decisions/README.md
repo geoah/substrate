@@ -24,6 +24,10 @@ The departures, so nobody reads the difference as a mistake:
   superseded, and a fifth value nobody can define is a lifecycle nobody can
   follow.
 - **`superseded-by:`** is a frontmatter key here, checked by the linter.
+  **`amended-by: NNNN`** is an optional one the linter ignores: a later
+  record changed part of this one in prose without superseding it, and the
+  key points a reader at it. The successor still names what it amends in its
+  own body; the key is a convenience, never the source of truth.
 - **Confirmation is expected**, not optional. A decision with nothing holding
   it is a decision that rots quietly, and writing "None: this is held by
   review only" is the honest version of that.
@@ -150,7 +154,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | ---------------------------------------------- | --------------------------------------------- | -------- |
 | [0001](0001-record-decisions-in-the-repo.md)   | Record decisions in the repo                  | accepted |
 | [0002](0002-declaration-versions-are-integers.md) | Declaration versions are integers the API maintains | accepted |
-| [0003](0003-notifies-is-the-one-resolution-primitive.md) | A transition's notifies marker is the one resolution primitive | accepted |
+| [0003](0003-notifies-is-the-one-resolution-primitive.md) | A transition's `notifies:` marker is the one resolution primitive | accepted |
 | [0004](0004-asks-are-records-the-owner-resolves.md) | Asks are batch records only the owner resolves | accepted |
 | [0005](0005-the-policy-door-is-deterministic-and-the-judge-recommends.md) | The policy door is deterministic; the judge only ever recommends | accepted |
 | [0006](0006-voluntary-proposals-stay-self-acceptable.md) | Voluntary proposals stay self-acceptable; only gated requests refuse bundle decisions | accepted |
@@ -159,7 +163,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0009](0009-the-chain-hashes-what-postgres-stored.md) | The changelog chain hashes what Postgres stored, with value-exact numbers | superseded |
 | [0010](0010-signing-is-per-repository-ed25519-one-way.md) | Changelog signing is a per-repository Ed25519 key with one-way activation | superseded |
 | [0011](0011-chain-transitions-are-repository-scoped-epochs.md) | Sanctioned chain transitions are recorded as repository-scoped chain epochs | superseded |
-| [0012](0012-numbers-are-exact-or-refused.md)   | Numbers are exact or refused: string-carried decimal, safe-integer int, one stored duration grammar | accepted |
+| [0012](0012-numbers-are-exact-or-refused.md)   | Numbers are exact or refused                  | accepted |
 | [0013](0013-state-machines-say-done-and-abandoned.md) | State machines say `done` and `abandoned`; a domain word survives only by decision | superseded |
 | [0014](0014-authorities-widen-only-outside-the-id-alphabet.md) | Authorities may widen only with characters the id alphabet excludes | accepted |
 | [0015](0015-unproven-kinds-stay-out-of-the-stable-set.md) | Unproven kinds stay out of the stable vocabulary set | accepted |
@@ -181,11 +185,11 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0034](0034-a-reference-may-pin-a-trait-not-only-a-kind.md) | A reference may pin a trait, not only a kind | accepted |
 | [0035](0035-a-network-body-connect-is-filtered-by-destination.md) | A network-granted body's connect is filtered by destination | accepted |
 | [0036](0036-operational-lists-are-a-page-envelope.md) | Operational lists answer with an `{items, cursor?}` envelope | accepted |
-| [0037](0037-gated-is-an-agent-loop-verdict-not-a-wire-code.md) | `gated` is an agent-loop verdict, not a wire code; it leaves the closed set | accepted |
+| [0037](0037-gated-is-an-agent-loop-verdict-not-a-wire-code.md) | `gated` is an agent-loop verdict, not a wire code | accepted |
 | [0038](0038-a-network-entry-is-a-bare-host-or-cidr-destination.md) | A `permissions.network` entry is a bare host or CIDR destination | accepted |
 | [0039](0039-the-substrate-stores-a-recurrence-rule-and-never-expands-it.md) | The substrate stores a recurrence rule and never expands it | accepted |
 | [0040](0040-the-four-occurrence-logs-say-done.md) | The four occurrence logs all say `done`; `medicationschedulelog` loses its `taken` exception | accepted |
-| [0041](0041-body-is-a-declarable-property-and-fts-is-per-property.md) | Body is a declarable, column-backed text property; FTS follows the property `fts` flag | accepted |
+| [0041](0041-body-is-a-declarable-property-and-fts-is-per-property.md) | Body is a declarable, column-backed property, and FTS is per-property | accepted |
 | [0042](0042-every-kind-carries-an-authority.md) | Every kind carries an authority; the URL disambiguates by segment count | accepted |
 | [0043](0043-occurrences-expand-at-read-in-the-api-layer.md) | Occurrences expand at read, in the API layer, never in the engine | accepted |
 | [0044](0044-a-reference-is-the-only-link-between-records.md) | A reference is the only link between records; `data.edges` is removed | accepted |
@@ -215,3 +219,6 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0068](0068-an-accepted-webhook-is-a-pending-entry-in-the-delivery-ledger.md) | An accepted webhook request is a pending entry in the delivery ledger before its `202` | accepted |
 | [0069](0069-the-owner-export-is-the-snapshot-streamed-as-a-tar.md) | The owner's export is the snapshot, streamed as a tar under the bearer token | accepted |
 | [0070](0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md) | A sample copy is upgraded through its origin stamp, and `requiresAtLeast` pins a floor under a requirement | accepted |
+| [0071](0071-a-webhook-url-names-the-repository-by-its-authority.md) | A webhook URL names the repository by its authority | accepted |
+| [0072](0072-reserve-a-purged-record-id-against-reuse.md) | Reserve a purged record id so a later write cannot take it | rejected |
+| [0073](0073-idempotency-keys-live-in-a-postgres-table-not-the-changelog.md) | Idempotency keys live in a Postgres table, not the changelog | accepted |
