@@ -49,7 +49,9 @@ not care which:
   `CREATEDB` is enough. The server is not changed unless
   `SUBSTRATE_TEST_DATABASE_DISPOSABLE=true` says it may be, in which case
   `testdb` turns off `fsync`, `synchronous_commit` and `full_page_writes` with
-  `ALTER SYSTEM` and a reload, the way it does on its own container. Every
+  `ALTER SYSTEM` and a reload, the way it does on its own container; that adds
+  a third requirement, a role allowed to run both, and the refusal names the
+  variable when it is not. Every
   database the run makes is dropped when the binary exits (`testdb.Main`), and a
   `sub_tpl_*` or `sub_test_*` database older than six hours with nothing
   connected is dropped at the next run's start, so a killed binary does not
@@ -152,8 +154,9 @@ tmpfs (`--tmpfs` in the job's `options`) and take no command line, so the
 jobs set `SUBSTRATE_TEST_DATABASE_DISPOSABLE=true` and `testdb` applies the
 same three settings through `ALTER SYSTEM`. The one test that starts a
 container of its own (`TestOpenFailsClosedWithoutSafeRoles`) passes
-`testdb.DurabilityOff()`, and the dev database `mise run dev` starts carries
-the flags too.
+`testdb.DurabilityOff()`, and a dev database `mise run dev` creates carries
+the flags on its command line (one created before this keeps the image's
+defaults until `dev:wipe` recreates it).
 
 **The data roots on tmpfs.** Every changelog write fsyncs
 ([0062](decisions/0062-a-write-is-on-disk-before-its-commit-and-its-final-newline-is-the-commit-marker.md)),

@@ -155,7 +155,9 @@ jobs:
     # assertions; only the machine differs.
     #
     # Its stock 100 connections are not raised the way testdb raises its own
-    # container's, because a service container takes no command: the suite runs
+    # container's, because a service container takes no command and
+    # max_connections needs a restart, which ALTER SYSTEM (the route the
+    # durability settings take) cannot give it: the suite runs
     # GOMAXPROCS tests at once holding ~4 connections each, which is ~16 on this
     # runner's four vCPUs. A LARGER runner would need that ceiling lifted, and
     # the failure says "too many clients already".

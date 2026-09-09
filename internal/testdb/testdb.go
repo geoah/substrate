@@ -111,7 +111,7 @@ func DSN(t testing.TB) string {
 		admin = db
 	})
 	if pgErr != nil {
-		t.Fatalf("start pgvector container: %v", pgErr)
+		t.Fatalf("testdb: %v", pgErr)
 	}
 	return pgDSN
 }
@@ -148,11 +148,13 @@ func durabilityOffOnServer(ctx context.Context, dsn string) error {
 	for _, guc := range durabilityGUCs {
 		name, value, _ := strings.Cut(guc, "=")
 		if _, err := db.ExecContext(ctx, fmt.Sprintf("ALTER SYSTEM SET %s = %s", name, value)); err != nil {
-			return fmt.Errorf("testdb: ALTER SYSTEM SET %s: %w", name, err)
+			return fmt.Errorf("testdb: SUBSTRATE_TEST_DATABASE_DISPOSABLE=true asks for ALTER SYSTEM SET %s, "+
+				"which this role may not run (%w); unset the variable, or connect as a superuser", name, err)
 		}
 	}
 	if _, err := db.ExecContext(ctx, "SELECT pg_reload_conf()"); err != nil {
-		return fmt.Errorf("testdb: pg_reload_conf: %w", err)
+		return fmt.Errorf("testdb: SUBSTRATE_TEST_DATABASE_DISPOSABLE=true asks for pg_reload_conf(), "+
+			"which this role may not run (%w); unset the variable, or connect as a superuser", err)
 	}
 	return nil
 }
