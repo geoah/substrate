@@ -246,6 +246,12 @@
     "source": true,
     "version": true
   },
+  "LoginRequest": {
+    "label": false,
+    "password": true,
+    "totpCode": true,
+    "username": true
+  },
   "MintedToken": {
     "secret": true,
     "token": true

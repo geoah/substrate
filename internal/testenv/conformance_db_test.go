@@ -19,7 +19,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -282,9 +281,7 @@ func conformanceCases() []codeCase {
 		code: "auth",
 		run: func(t *testing.T, e *testenv.Env) {
 			// The same server and the same client; only the bearer changes.
-			stranger := *e
-			stranger.Token = "substrate_tok_nope"
-			status, body := stranger.Do(http.MethodGet, notesPath, nil)
+			status, body := e.WithToken("substrate_tok_nope").Do(http.MethodGet, notesPath, nil)
 			wantError(t, status, body, http.StatusUnauthorized, "auth")
 		},
 	}, {
@@ -341,7 +338,7 @@ func conformanceCases() []codeCase {
 			if err := e.Service.Close(); err != nil {
 				t.Fatalf("close the service: %v", err)
 			}
-			status, header, body := rawGet(t, e, notesPath)
+			status, body, header := e.DoRaw(http.MethodGet, notesPath, nil, nil)
 			wantError(t, status, body, http.StatusServiceUnavailable, "unavailable")
 			// Ruling A6: every unavailable carries Retry-After, the auth path
 			// included. e.Do cannot see headers, so this case builds its own
@@ -351,28 +348,6 @@ func conformanceCases() []codeCase {
 			}
 		},
 	}}
-}
-
-// rawGet performs one authenticated GET and hands back the status, the headers
-// and the body, for the case that asserts a header. The response itself does
-// not escape, so its body is closed here.
-func rawGet(t *testing.T, e *testenv.Env, path string) (int, http.Header, []byte) {
-	t.Helper()
-	req, err := http.NewRequest(http.MethodGet, e.URL+path, nil)
-	if err != nil {
-		t.Fatalf("build GET %s: %v", path, err)
-	}
-	req.Header.Set("Authorization", "Bearer "+e.Token)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("GET %s: %v", path, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("read GET %s: %v", path, err)
-	}
-	return resp.StatusCode, resp.Header, body
 }
 
 // unreachable names the published codes no request to a substrate started by

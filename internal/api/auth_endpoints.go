@@ -36,12 +36,9 @@ type registerBeginRequest struct {
 	Username   string `json:"username"`
 }
 
-type loginRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-	TOTPCode string `json:"totpCode"`
-	Label    string `json:"label,omitempty"`
-}
+// loginRequest is the wire struct internal/substrate declares, so a client
+// built against the contract sends the keys the door decodes.
+type loginRequest = substrate.LoginRequest
 
 type passwordRequest struct {
 	Username    string `json:"username"`
@@ -211,10 +208,7 @@ func (h *handler) postLogin(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	info, secret, err := h.svc.Login(r.Context(), substrate.LoginInput{
-		Username: req.Username, Password: req.Password,
-		TOTPCode: req.TOTPCode, Label: req.Label,
-	})
+	info, secret, err := h.svc.Login(r.Context(), substrate.LoginInput(req))
 	if err != nil {
 		writeAuthFailure(w, err)
 		return

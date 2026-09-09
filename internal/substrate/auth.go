@@ -56,6 +56,15 @@ type SessionUser struct {
 	Username string `json:"username"`
 }
 
+// LoginRequest is a login as the HTTP door decodes it: the two factors and
+// the label of the token the login mints.
+type LoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+	TOTPCode string `json:"totpCode"`
+	Label    string `json:"label,omitempty"`
+}
+
 // RegisterRequest is the registration commit as the HTTP door decodes it:
 // the invite code, the username, the password, the enrollment the caller was
 // issued plus one code from it, and what a client may choose about its

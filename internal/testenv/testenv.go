@@ -28,6 +28,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -49,12 +50,12 @@ import (
 // only make failures harder to read.
 const InviteCode = "test-invite"
 
-// mintCredentialKey returns a conforming credential key: standard-base64 of 32
-// random bytes, the shape the engine demands (ADR 0024). Generated per call
-// rather than committed, because a key checked into the tree is a key everyone
-// has; the throwaway substrate is opened once, so a fresh key each time is
-// enough.
-func mintCredentialKey() string {
+// MintCredentialKey returns a conforming credential key: standard-base64 of
+// 32 random bytes, the shape the engine demands (ADR 0024). Generated per
+// call rather than committed, because a key checked into the tree is a key
+// everyone has; a test that restores under a second host key mints that one
+// too.
+func MintCredentialKey() string {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		panic(err)
@@ -62,30 +63,57 @@ func mintCredentialKey() string {
 	return base64.StdEncoding.EncodeToString(raw)
 }
 
-// Env is one running substrate and the credentials to talk to it.
-type Env struct {
-	// URL is the server's base URL, e.g. http://127.0.0.1:38311.
-	URL string
-	// Token is the bearer secret of the registered user's first token. A token
-	// has full access to its repository, so there is nothing else to hold.
+// Session is one user's credentials on a running substrate. Every Env bound
+// to the same user shares one Session by pointer, so a login through a
+// subtest's copy is seen by every other copy.
+type Session struct {
+	// Token is the bearer secret of the user's current token. A token has
+	// full access to its repository, so there is nothing else to hold.
 	Token string
 	// Username is the registered user, which is also the repository's name.
 	Username string
-	// DSN is the throwaway schema, for a test that needs to look underneath.
+	// TOTPSecret is the enrolled seed, so a test can log in again, on this
+	// substrate or on one restored from it.
+	TOTPSecret string
+	// Authority is the repository's authority as registration returned it,
+	// or as the option named it when nothing registered.
+	Authority string
+}
+
+// Env is one running substrate and the credentials to talk to it.
+type Env struct {
+	*Session
+	// URL is the server's base URL, e.g. http://127.0.0.1:38311.
+	URL string
+	// DSN is the schema the engine runs on, for a test that needs to look
+	// underneath.
 	DSN string
 	// Service is the engine behind the handler, for the same reason.
 	Service substrate.Service
 
-	t      *testing.T
+	t      testing.TB
 	client *http.Client
+	now    func() time.Time
+	// stop is nil on a copy For and RegisterUser return: only the Env Start
+	// returned stops the substrate.
+	stop func()
 }
 
 // Option tunes a Start.
 type Option func(*options)
 
 type options struct {
-	username string
-	password string
+	username          string
+	password          string
+	authority         string
+	recoveryPublicKey string
+	dsn               string
+	dataRoot          string
+	credentialKey     string
+	kindsDir          string
+	engine            []engine.Option
+	now               func() time.Time
+	noRegister        bool
 }
 
 // WithUser names the user Start registers. The default is fine unless a test
@@ -94,37 +122,109 @@ func WithUser(username, password string) Option {
 	return func(o *options) { o.username, o.password = username, password }
 }
 
+// WithAuthority names the authority registration asks for; absent, the door
+// derives one from the username and the listener's host.
+func WithAuthority(authority string) Option {
+	return func(o *options) { o.authority = authority }
+}
+
+// WithRecoveryPublicKey registers with a client-minted age recipient, the way
+// substratectl does, so the test holds the identity that opens the
+// repository's sealed files on a host with another credential key.
+func WithRecoveryPublicKey(recipient string) Option {
+	return func(o *options) { o.recoveryPublicKey = recipient }
+}
+
+// WithDSN opens the engine over an existing schema instead of a fresh one:
+// the restore target a test prepared, or the schema a stopped substrate ran
+// on. Start still skips under -short, as every database test does.
+func WithDSN(dsn string) Option { return func(o *options) { o.dsn = dsn } }
+
+// WithDataRoot names the data root; absent, a temp directory of the test's.
+// A restore points it at a directory another substrate wrote.
+func WithDataRoot(root string) Option { return func(o *options) { o.dataRoot = root } }
+
+// WithCredentialKey sets the host key; absent, one is minted.
+func WithCredentialKey(key string) Option { return func(o *options) { o.credentialKey = key } }
+
+// WithKindsDir loads the seeded core package from a directory instead of the
+// embedded tree: a copy of the shipped tree a test patched, so the next Start
+// over the same database runs the boot upgrade against it.
+func WithKindsDir(dir string) Option { return func(o *options) { o.kindsDir = dir } }
+
+// WithEngineOptions appends engine options after the ones Start sets, so
+// they win where they name the same thing: a test seam (engine.WithTest*),
+// a logger, a segment size.
+func WithEngineOptions(opts ...engine.Option) Option {
+	return func(o *options) { o.engine = append(o.engine, opts...) }
+}
+
+// WithClock is the clock the TOTP verifier and the registration code read,
+// so a test that has spent one window's codes advances it instead of waiting
+// thirty seconds. A nil clock is the wall clock.
+func WithClock(now func() time.Time) Option { return func(o *options) { o.now = now } }
+
+// WithoutRegistration starts the substrate over a repository that already
+// exists, imported from the data root at boot: nothing registers and Token is
+// empty until the test logs in.
+func WithoutRegistration() Option { return func(o *options) { o.noRegister = true } }
+
 // Start brings up the substrate and returns it registered and logged in.
 // Everything is torn down through t.Cleanup: the server, the engine, the
-// schema.
-func Start(t *testing.T, opts ...Option) *Env {
+// schema. Failures are reported to t, so a test that keeps the substrate past
+// one subtest hands Start a TB whose Cleanup is the parent's and whose
+// failures are the subtest's.
+func Start(t testing.TB, opts ...Option) *Env {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
 	o := options{username: "tester", password: "correct-horse-battery-staple"}
 	for _, opt := range opts {
 		opt(&o)
 	}
+	if o.now == nil {
+		o.now = time.Now
+	}
 
-	// testdb skips under -short and shares one container per test binary.
-	dsn := testdb.NewSchema(t)
+	// testdb shares one container per test binary.
+	dsn := o.dsn
+	if dsn == "" {
+		dsn = testdb.NewSchema(t)
+	}
+	if o.dataRoot == "" {
+		o.dataRoot = t.TempDir()
+	}
+	if o.credentialKey == "" {
+		o.credentialKey = MintCredentialKey()
+	}
 	ctx := context.Background()
 
 	// The SEED authority alone, exactly as substrated boots: a fresh
 	// repository holds core and nothing else, and a test that wants more
 	// installs it the way a user would.
-	svc, err := engine.Open(ctx, dsn, engine.WithKindsFS(kinds.Seed()),
+	seed := engine.WithKindsFS(kinds.Seed())
+	if o.kindsDir != "" {
+		seed = engine.WithKindsDir(o.kindsDir)
+	}
+	engineOpts := append([]engine.Option{
+		seed,
 		// The data root every repository directory lives under; the blob
 		// bytes default to the fs backend inside it.
-		engine.WithDataRoot(t.TempDir()),
+		engine.WithDataRoot(o.dataRoot),
 		// The live-API env runs the keyed shape the server runs. The key is
 		// base64 of 32 bytes, minted here rather than committed (ADR 0024).
-		engine.WithCredentialKey(mintCredentialKey()))
+		engine.WithCredentialKey(o.credentialKey),
+		engine.WithTestTOTPClock(o.now),
+	}, o.engine...)
+	svc, err := engine.Open(ctx, dsn, engineOpts...)
 	if err != nil {
 		t.Fatalf("testenv: open engine: %v", err)
 	}
-	t.Cleanup(func() { _ = svc.Close() })
 
 	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
+		_ = svc.Close()
 		t.Fatalf("testenv: load catalog: %v", err)
 	}
 	handler := api.New(api.Config{
@@ -133,6 +233,9 @@ func Start(t *testing.T, opts ...Option) *Env {
 		InviteCode:          InviteCode,
 		MaxDialect:          engine.MaxSchemaDialect(),
 		MaxChangelogDialect: engine.MaxChangelogDialect(),
+		// The auth rate limiter reads the same clock as the TOTP verifier, so
+		// a test spaces two logins by advancing it rather than sleeping.
+		Now: o.now,
 	})
 
 	// A real listener on a kernel-assigned port: two tests in one binary must
@@ -140,84 +243,212 @@ func Start(t *testing.T, opts ...Option) *Env {
 	// could paste into curl.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
+		_ = svc.Close()
 		t.Fatalf("testenv: listen: %v", err)
 	}
 	srv := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
-	t.Cleanup(func() {
-		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(shutdown)
-	})
+	var once sync.Once
+	stop := func() {
+		once.Do(func() {
+			shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(shutdown)
+			_ = svc.Close()
+		})
+	}
+	t.Cleanup(stop)
 
 	env := &Env{
-		URL: "http://" + ln.Addr().String(), Username: o.username,
-		DSN: dsn, Service: svc, t: t,
+		Session: &Session{Username: o.username, Authority: o.authority},
+		URL:     "http://" + ln.Addr().String(),
+		DSN:     dsn, Service: svc, t: t, now: o.now, stop: stop,
 		client: &http.Client{Timeout: 120 * time.Second},
 	}
-	env.register(o.username, o.password)
+	if !o.noRegister {
+		env.register(o.username, o.password, o.authority, o.recoveryPublicKey)
+	}
 	return env
+}
+
+// For is this substrate bound to a subtest: the same server, Session and
+// clock, with failures reported to t. A substrate started under a parent
+// test outlives its subtests, and a fatal raised on the parent from a
+// subtest's goroutine is not a failure the runner can attribute. The copy
+// cannot Stop the substrate; the Env Start returned does.
+func (e *Env) For(t testing.TB) *Env {
+	c := *e
+	c.t, c.stop = t, nil
+	return &c
+}
+
+// WithToken is this substrate spoken to with another bearer: a stranger's,
+// or none. The copy has a Session of its own, so the token the test holds is
+// untouched, and it cannot Stop the substrate.
+func (e *Env) WithToken(token string) *Env {
+	c := *e
+	c.Session = &Session{Token: token, Username: e.Username, TOTPSecret: e.TOTPSecret, Authority: e.Authority}
+	c.stop = nil
+	return &c
+}
+
+// Stop shuts the server down and closes the engine, the way a substrated
+// exit does: in-flight fires are drained and canceled, the directory lock is
+// released, and nothing appends afterwards. Idempotent; the cleanup is the
+// same call. A copy For or RegisterUser returned refuses it.
+func (e *Env) Stop() {
+	e.t.Helper()
+	if e.stop == nil {
+		e.t.Fatal("testenv: Stop on a copy; stop the substrate through the Env Start returned")
+	}
+	e.stop()
+}
+
+// TOTPCode is the code the user's authenticator would show at the clock's
+// current step.
+func (e *Env) TOTPCode() string {
+	e.t.Helper()
+	if e.TOTPSecret == "" {
+		e.t.Fatal("testenv: TOTPCode with an empty TOTPSecret: the Session holds no enrolled seed")
+	}
+	code, err := engine.TOTPCode(e.TOTPSecret, engine.TOTPStep(e.now()))
+	if err != nil {
+		e.t.Fatalf("testenv: totp code: %v", err)
+	}
+	return code
+}
+
+// Login signs the user in with the password and a code, and returns the
+// status and body: a test asserting a refusal needs the refusal. On success
+// the Session's Token is replaced with the new secret.
+func (e *Env) Login(username, password, code string) (int, []byte) {
+	e.t.Helper()
+	status, raw, _ := e.DoRaw(http.MethodPost, "/login", marshal(e.t, substrate.LoginRequest{
+		Username: username, Password: password, TOTPCode: code, Label: "testenv-login",
+	}), map[string]string{"Content-Type": "application/json", "Authorization": ""})
+	if status == http.StatusCreated {
+		var out substrate.MintedToken
+		if err := json.Unmarshal(raw, &out); err != nil {
+			e.t.Fatalf("testenv: decode login: %v (%s)", err, raw)
+		}
+		e.Token = out.Secret
+	}
+	return status, raw
+}
+
+// RegisterUser registers another user on the same substrate and returns an
+// Env authenticated as that user: the server, the clock and the schema are
+// shared, the Session is theirs. An empty authority takes the door's default;
+// an empty recovery recipient has the server mint the pair. The copy cannot
+// Stop the substrate.
+func (e *Env) RegisterUser(username, password, authority, recoveryPublicKey string) *Env {
+	e.t.Helper()
+	other := *e
+	other.Session = &Session{Username: username, Authority: authority}
+	other.stop = nil
+	other.register(username, password, authority, recoveryPublicKey)
+	return &other
 }
 
 // register walks the real registration: enroll for a TOTP seed, then commit
 // with a code derived from it. Registration ends holding a token, so there is
 // no separate login.
-func (e *Env) register(username, password string) {
+func (e *Env) register(username, password, authority, recoveryPublicKey string) {
 	e.t.Helper()
 	var enrollment substrate.TOTPEnrollment
 	e.mustJSON(http.MethodPost, "/register/enroll", map[string]any{
 		"inviteCode": InviteCode, "username": username,
 	}, &enrollment)
 
-	code, err := engine.TOTPCode(enrollment.Secret, engine.TOTPStep(time.Now()))
+	code, err := engine.TOTPCode(enrollment.Secret, engine.TOTPStep(e.now()))
 	if err != nil {
 		e.t.Fatalf("testenv: totp code: %v", err)
 	}
-	var out struct {
-		Secret string `json:"secret"`
-	}
-	e.mustJSON(http.MethodPost, "/register", map[string]any{
-		"inviteCode": InviteCode, "username": username, "password": password,
-		"totpSecret": enrollment.Secret, "totpCode": code, "label": "testenv",
+	var out substrate.Registered
+	e.mustJSON(http.MethodPost, "/register", substrate.RegisterRequest{
+		InviteCode: InviteCode, Username: username, Password: password,
+		TOTPSecret: enrollment.Secret, TOTPCode: code, Label: "testenv",
+		Authority: authority, RecoveryPublicKey: recoveryPublicKey,
 	}, &out)
 	if out.Secret == "" {
 		e.t.Fatal("testenv: registration returned no token secret")
 	}
 	e.Token = out.Secret
+	e.TOTPSecret = enrollment.Secret
+	e.Authority = out.Authority
+}
+
+func marshal(t testing.TB, v any) []byte {
+	t.Helper()
+	raw, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("testenv: marshal: %v", err)
+	}
+	return raw
 }
 
 // Do performs one authenticated request and returns the status and body. It
 // never fails the test: a test asserting a 403 needs the 403.
 func (e *Env) Do(method, path string, body any) (int, []byte) {
 	e.t.Helper()
+	var raw []byte
+	headers := map[string]string{}
+	if body != nil {
+		raw = marshal(e.t, body)
+		headers["Content-Type"] = "application/json"
+	}
+	status, out, _ := e.DoRaw(method, path, raw, headers)
+	return status, out
+}
+
+// DoRaw is Do with the body and headers as the caller built them: a blob
+// upload, a request under another actor. A nil body sends none. Every header
+// is sent as given, an empty value included, except Authorization: the bearer
+// is added unless the headers map names that key (in any casing), and an
+// empty value there means "no bearer", so the request goes out with no
+// Authorization header at all.
+func (e *Env) DoRaw(method, path string, body []byte, headers map[string]string) (int, []byte, http.Header) {
+	e.t.Helper()
+	resp := e.Request(context.Background(), method, path, body, headers)
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		e.t.Fatalf("testenv: read %s %s: %v", method, path, err)
+	}
+	return resp.StatusCode, raw, resp.Header
+}
+
+// Request is DoRaw with the response body left open, for a stream (a watch)
+// the caller reads a frame at a time and closes. ctx bounds the whole
+// exchange; the client's own timeout applies as well.
+func (e *Env) Request(ctx context.Context, method, path string, body []byte, headers map[string]string) *http.Response {
+	e.t.Helper()
 	var reader io.Reader
 	if body != nil {
-		raw, err := json.Marshal(body)
-		if err != nil {
-			e.t.Fatalf("testenv: marshal %s %s: %v", method, path, err)
-		}
-		reader = bytes.NewReader(raw)
+		reader = bytes.NewReader(body)
 	}
-	req, err := http.NewRequest(method, e.URL+path, reader)
+	req, err := http.NewRequestWithContext(ctx, method, e.URL+path, reader)
 	if err != nil {
 		e.t.Fatalf("testenv: build %s %s: %v", method, path, err)
 	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	explicit := false
+	for k, v := range headers {
+		if http.CanonicalHeaderKey(k) == "Authorization" {
+			explicit = true
+			if v == "" {
+				continue
+			}
+		}
+		req.Header.Set(k, v)
 	}
-	if e.Token != "" {
+	if !explicit && e.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+e.Token)
 	}
 	resp, err := e.client.Do(req)
 	if err != nil {
 		e.t.Fatalf("testenv: %s %s: %v", method, path, err)
 	}
-	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		e.t.Fatalf("testenv: read %s %s: %v", method, path, err)
-	}
-	return resp.StatusCode, raw
+	return resp
 }
 
 // mustJSON performs a request that has to succeed and decodes it.
@@ -233,6 +464,13 @@ func (e *Env) mustJSON(method, path string, body, into any) {
 	if err := json.Unmarshal(raw, into); err != nil {
 		e.t.Fatalf("testenv: decode %s %s: %v (%s)", method, path, err, raw)
 	}
+}
+
+// MustJSON is mustJSON for a test outside the package: the request has to
+// answer 2xx, and the body decodes into `into` when it is not nil.
+func (e *Env) MustJSON(method, path string, body, into any) {
+	e.t.Helper()
+	e.mustJSON(method, path, body, into)
 }
 
 // ApplyVocabulary installs vocabulary documents: kinds, traits, bundles,

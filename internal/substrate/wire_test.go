@@ -97,6 +97,9 @@ var wireTypes = map[string]any{
 	// The console's RegisterInput and RegisterResult (auth.ts) mirror them.
 	"RegisterInput":  RegisterRequest{},
 	"RegisterResult": Registered{},
+	// Login: the request the door decodes, the openapi.yaml component of the
+	// same name. The console's LoginRequest (auth.ts) mirrors it.
+	"LoginRequest": LoginRequest{},
 	// A credential change's answer: the username the factors proved.
 	"SessionUser": SessionUser{},
 

@@ -9,7 +9,6 @@ import (
 	"os"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
@@ -83,23 +82,6 @@ func MigratedDSN(t *testing.T) string {
 	return migratedTemplate.Clone(t)
 }
 
-// WithTestImportFault runs fn at each durable step of a boot import
-// (repodir.go importEntries): after every batch of changelog rows commits,
-// with ImportAfterBatch, and after the first fold pass commits, with
-// ImportAfterFirstFold. An error from fn ends the boot there, which is the
-// shape of a process dying at that step. A batch above zero replaces
-// rebuildBatch for the import's row batches, so a short history spans
-// several.
-func WithTestImportFault(batch int, fn func(stage string) error) Option {
-	return func(o *options) { o.importFault, o.importBatch = fn, batch }
-}
-
-// The import stages WithTestImportFault reports.
-const (
-	ImportAfterBatch     = importAfterBatch
-	ImportAfterFirstFold = importAfterFirstFold
-)
-
 // WithTestCommitFault runs fn at each durable step of a write's commit
 // (dataset.go commitAndMirror), five stages. Around the manifest write that
 // precedes the first append in a new changelog dialect (repodir.go
@@ -136,30 +118,12 @@ func WithTestSnapshotFault(fn func(stage, dir string) error) Option {
 	return func(o *options) { o.snapshotFault = fn }
 }
 
-// WithTestTOTPClock is the clock the TOTP verifier reads (auth.go totpVerify
-// callers), and nothing else: the record timestamps stay on the wall clock.
-// A test that has spent one window's codes advances it one step instead of
-// sleeping through a real 30 second window. OpenForTest installs it, so every
-// service a test opens verifies against the same clock ClockOf(t) reads.
-func WithTestTOTPClock(now func() time.Time) Option {
-	return func(o *options) { o.now = now }
-}
-
-// TOTPPeriod is the verifier's step, for a test that moves its clock one.
-const TOTPPeriod = totpPeriod
-
 // CoreKindsDir is the shipped core package, relative to this package: what
 // every test open loads unless it brings a patched tree.
 const CoreKindsDir = "../../kinds/substrate.reamde.dev/core"
 
-// TestClock is one test's TOTP clock: the wall clock plus what Advance has
-// added. Keyed on the full test name (ClockOf), so a subtest and a repeated
-// run (-count=N) start at zero.
-type TestClock struct {
-	mu     sync.Mutex
-	offset time.Duration
-}
-
+// testClocks holds one TestClock per test name (ClockOf), so a subtest and a
+// repeated run (-count=N) start at zero.
 var testClocks sync.Map
 
 // ClockOf is the test's clock, made on first use and forgotten when the test
@@ -172,20 +136,6 @@ func ClockOf(t *testing.T) *TestClock {
 		t.Cleanup(func() { testClocks.Delete(key) })
 	}
 	return c.(*TestClock)
-}
-
-// Now is the wall clock plus the advance.
-func (c *TestClock) Now() time.Time {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return time.Now().Add(c.offset).UTC()
-}
-
-// Advance moves the clock forward by d.
-func (c *TestClock) Advance(d time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.offset += d
 }
 
 // OpenForTest is the ONE way a test opens a service: Open with the shipped
@@ -201,13 +151,6 @@ func OpenForTest(t *testing.T, ctx context.Context, dsn string, opts ...Option) 
 		WithTestTOTPClock(ClockOf(t).Now),
 	}, opts...)
 	return Open(ctx, dsn, all...)
-}
-
-// WithTestInvokeHook runs fn with a function's identity as the runner is
-// about to invoke its body (runner.go runCallableRaw): the moment a test
-// that must act mid-fire (cancel it, retry it by hand) can wait for.
-func WithTestInvokeHook(fn func(function string)) Option {
-	return func(o *options) { o.invokeHook = fn }
 }
 
 // The snapshot stages WithTestSnapshotFault reports, in the order they run.

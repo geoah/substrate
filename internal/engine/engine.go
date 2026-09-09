@@ -68,9 +68,10 @@ type options struct {
 	// (WithDirectoryReadOnly): no boot check, no writer, no write.
 	dirReadOnly bool
 	// importFault and importBatch are the boot import's test seams
-	// (export_test.go): a hook run at each durable step of an import, so a
-	// test can stop the process there, and a batch size below rebuildBatch,
-	// so a small history spans more than one batch. Tests only.
+	// (seams.go WithTestImportFault): a hook run at each durable step of an
+	// import, so a test can stop the process there, and a batch size below
+	// rebuildBatch, so a small history spans more than one batch. The seams
+	// compile into the binary and are inert unless set.
 	importFault func(stage string) error
 	importBatch int
 	// adoptFault is the ledger adoption's test seam (delivery.go
@@ -86,13 +87,14 @@ type options struct {
 	// snapshotFault is the snapshot's test seam (export_test.go): a hook run
 	// with the partial directory after each copy step (snapshot.go).
 	snapshotFault func(stage, dir string) error
-	// invokeHook is the runner's test seam (export_test.go): a hook run with
-	// a function's identity as its body is about to be invoked
+	// invokeHook is the runner's test seam (seams.go WithTestInvokeHook): a
+	// hook run with a function's identity as its body is about to be invoked
 	// (runner.go runCallableRaw), so a test can act while the body runs.
+	// Inert unless set.
 	invokeHook func(function string)
-	// now is the TOTP verifier's clock (export_test.go WithTestTOTPClock); the
-	// wall clock when nil. Tests only: a test that spends one window's codes
-	// advances it instead of sleeping through a real 30 second step.
+	// now is the TOTP verifier's clock (seams.go WithTestTOTPClock); the wall
+	// clock when nil. A test that spends one window's codes advances it
+	// instead of sleeping through a real 30 second step.
 	now func() time.Time
 }
 
