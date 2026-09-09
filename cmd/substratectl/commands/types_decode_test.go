@@ -6,9 +6,9 @@ import (
 )
 
 // A typed declaration row authors `authority`, `package` and the `names`
-// object and carries no `name`/`plural` properties: the decoder must read the
-// names off the declaration and derive only the missing thirds from the id,
-// never clobbering an authored value.
+// object and carries no `name` property: the decoder must read the name off
+// the declaration and derive only the missing thirds from the id, never
+// clobbering an authored value.
 func TestDecodeTypeInfoTypedRow(t *testing.T) {
 	raw := json.RawMessage(`{
 		"id": "substrate.reamde.dev/core/agent",
@@ -18,7 +18,7 @@ func TestDecodeTypeInfoTypedRow(t *testing.T) {
 			"authority": "substrate.reamde.dev",
 			"package": "core",
 			"version": 6,
-			"names": {"singular": "agent", "plural": "agents"},
+			"names": {"singular": "agent"},
 			"description": "one declared agent"
 		}
 	}`)
@@ -31,9 +31,6 @@ func TestDecodeTypeInfoTypedRow(t *testing.T) {
 	}
 	if ti.Name != "agent" || ti.Authority != "substrate.reamde.dev" || ti.Package != "core" {
 		t.Errorf("name/authority/package = %q / %q / %q", ti.Name, ti.Authority, ti.Package)
-	}
-	if ti.Plural != "agents" {
-		t.Errorf("plural = %q", ti.Plural)
 	}
 	if ti.Version != 6 {
 		t.Errorf("version = %d", ti.Version)

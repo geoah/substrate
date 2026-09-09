@@ -99,9 +99,9 @@ const evoRefPackage = "evoref.example.substrate.reamde.dev/evoref"
 func evoRefDocs(holderProps map[string]any) []map[string]any {
 	return []map[string]any{
 		vocabulary.PackageManifest(evoRefPackage, 0),
-		vocabulary.KindManifest(evoRefPackage, map[string]any{"singular": "widget", "plural": "widgets"}, map[string]any{}),
-		vocabulary.KindManifest(evoRefPackage, map[string]any{"singular": "gadget", "plural": "gadgets"}, map[string]any{}),
-		vocabulary.KindManifest(evoRefPackage, map[string]any{"singular": "holder", "plural": "holders"},
+		vocabulary.KindManifest(evoRefPackage, map[string]any{"singular": "widget"}, map[string]any{}),
+		vocabulary.KindManifest(evoRefPackage, map[string]any{"singular": "gadget"}, map[string]any{}),
+		vocabulary.KindManifest(evoRefPackage, map[string]any{"singular": "holder"},
 			map[string]any{"properties": holderProps}),
 	}
 }

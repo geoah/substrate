@@ -76,9 +76,8 @@ function parseSort(sort: string): SortingState {
 
 export function KindBrowsePage() {
   // The route params are the kind reference, segment for segment; `$name` (the
-  // kind name) is the collection segment, aliased to a local `plural` only so
-  // the rest of this file reads unchanged.
-  const { authority, pkg, name: plural } = kindBrowseRoute.useParams()
+  // kind name) is the collection segment.
+  const { authority, pkg, name } = kindBrowseRoute.useParams()
   const navigate = useNavigate()
 
   const [tab, setTab] = useQueryState("tab", tabParser)
@@ -97,7 +96,7 @@ export function KindBrowsePage() {
   // effect writing on mount would wipe the store before this restore ran.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    const stored = loadBrowsePrefs(`${authority}/${pkg}`, plural)
+    const stored = loadBrowsePrefs(`${authority}/${pkg}`, name)
     if (!stored) return
     if (!params.has("filter") && stored.filter?.length) {
       void setFilterTokens(stored.filter, { history: "replace" })
@@ -106,11 +105,11 @@ export function KindBrowsePage() {
       void setSort(stored.sort, { history: "replace" })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per collection
-  }, [authority, pkg, plural])
+  }, [authority, pkg, name])
 
   /** Write-through: the store always mirrors the view the handlers just set. */
   function persist(next: { filter?: string[]; sort?: string }) {
-    saveBrowsePrefs(`${authority}/${pkg}`, plural, {
+    saveBrowsePrefs(`${authority}/${pkg}`, name, {
       filter: next.filter ?? filterTokens,
       sort:
         (next.sort ?? sort) === DEFAULT_SORT ? undefined : (next.sort ?? sort),
@@ -119,7 +118,7 @@ export function KindBrowsePage() {
 
   const registry = useQuery(kindsQueryOptions)
   const kindInfo = registry.data
-    ? kindByCollection(registry.data, authority, pkg, plural)
+    ? kindByCollection(registry.data, authority, pkg, name)
     : undefined
 
   const filters = useMemo(() => decodeFilters(filterTokens), [filterTokens])
@@ -139,7 +138,7 @@ export function KindBrowsePage() {
     undefined,
   ])
   const [pageIndex, setPageIndex] = useState(0)
-  const viewKey = `${authority}/${pkg}/${plural}|${JSON.stringify(recordFilter ?? null)}|${sort}`
+  const viewKey = `${authority}/${pkg}/${name}|${JSON.stringify(recordFilter ?? null)}|${sort}`
   const [lastViewKey, setLastViewKey] = useState(viewKey)
   if (lastViewKey !== viewKey) {
     setLastViewKey(viewKey)
@@ -150,7 +149,7 @@ export function KindBrowsePage() {
   const listOptions = recordsQueryOptions({
     authority,
     package: pkg,
-    name: plural,
+    name,
     first: PAGE_SIZE,
     after: cursorStack[pageIndex],
     filter: recordFilter,
@@ -165,7 +164,7 @@ export function KindBrowsePage() {
   const derivedTotal =
     records.data && !pageCursor && pageIndex === 0 ? rows.length : undefined
   const count = useQuery({
-    ...recordCountQueryOptions(authority, pkg, plural, recordFilter),
+    ...recordCountQueryOptions(authority, pkg, name, recordFilter),
     enabled: Boolean(kindInfo) && Boolean(pageCursor),
   })
   const totalText =
@@ -212,7 +211,7 @@ export function KindBrowsePage() {
     sorting,
     onSortingChange,
     getRowId: (row) => row.id,
-    prefsKey: `browse:${authority}/${pkg}/${plural}`,
+    prefsKey: `browse:${authority}/${pkg}/${name}`,
   })
 
   // Only the REGISTRY gates the whole page — it names the collection and it
@@ -246,7 +245,7 @@ export function KindBrowsePage() {
       <PageEmpty
         icon={<SearchXIcon />}
         title="Unknown collection"
-        description={`${authority}/${pkg}/${plural} is not in the kind registry.`}
+        description={`${authority}/${pkg}/${name} is not in the kind registry.`}
       />
     )
   }
@@ -280,7 +279,7 @@ export function KindBrowsePage() {
           render={
             <Link
               to="/data/$authority/$pkg/$name/new"
-              params={{ authority: authority, pkg: pkg, name: plural }}
+              params={{ authority: authority, pkg: pkg, name: name }}
             />
           }
         >
@@ -302,7 +301,7 @@ export function KindBrowsePage() {
           {records.isError ? (
             <PageEmpty
               icon={<SearchXIcon />}
-              title={`${kindInfo.plural} didn't load`}
+              title={`${kindInfo.name} records didn't load`}
               description={records.error.message}
             >
               <Button
@@ -342,7 +341,7 @@ export function KindBrowsePage() {
                       params: {
                         authority: authority,
                         pkg: pkg,
-                        name: plural,
+                        name,
                         id: row.id,
                       },
                     })
@@ -356,7 +355,7 @@ export function KindBrowsePage() {
                         <EmptyTitle>
                           {hasFilters
                             ? "Nothing matches"
-                            : `No ${kindInfo.plural} yet`}
+                            : `No ${kindInfo.name} records yet`}
                         </EmptyTitle>
                         <EmptyDescription>
                           {hasFilters

@@ -34,7 +34,7 @@ func TestBlobRefManifestSurvivesTheRoundTrip(t *testing.T) {
 		UpdatedAt: testNow.Add(-2 * time.Hour),
 	})
 
-	first, _ := h.mustRun("get", "tasks", "t9")
+	first, _ := h.mustRun("get", "task", "t9")
 	if !strings.Contains(first, "digest: "+digest+"\n") || !strings.Contains(first, "size: 2048\n") {
 		t.Fatalf("get did not render the manifest with a typed size:\n%s", first)
 	}
@@ -59,7 +59,7 @@ func TestBlobRefManifestSurvivesTheRoundTrip(t *testing.T) {
 		t.Fatalf("put body size = %#v (%T), want the integer 2048", sent["size"], sent["size"])
 	}
 
-	second, _ := h.mustRun("get", "tasks", "t9")
+	second, _ := h.mustRun("get", "task", "t9")
 	if first != second {
 		t.Fatalf("the document changed across get | apply | get:\n--- first\n%s\n--- second\n%s", first, second)
 	}

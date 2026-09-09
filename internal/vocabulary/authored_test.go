@@ -44,7 +44,7 @@ metadata: {id: a.example.com/a/widget}
 data:
   authority: a.example.com
   package: a
-  names: {singular: widget, plural: widgets}
+  names: {singular: widget}
   indices: [{properties: [status]}]
   properties:
     grade: {type: grade}
@@ -69,7 +69,7 @@ metadata: {id: a.example.com/a/row}
 data:
   authority: a.example.com
   package: a
-  names: {singular: row, plural: rows}
+  names: {singular: row}
   properties:
     label: {type: string}
     widget:

@@ -15,7 +15,6 @@ const taskKind: KindInfo = {
   authority: "samples.substrate.reamde.dev",
   package: "tasks",
   version: 0,
-  plural: "tasks",
   source: "installed",
   description: "",
   definition: {

@@ -25,7 +25,6 @@ function typeWith(
     authority: "providers.substrate.reamde.dev",
     package: "google",
     version: 0,
-    plural: "accounts",
     source: "installed",
     description: "",
     definition: { properties },

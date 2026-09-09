@@ -81,7 +81,7 @@ func TestUnmatchedAPIPathsAreJSONWithoutAWebDir(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
 	// `/api/v1/nope` matches no route at all — not even the generic
-	// {authority}/{plural} resource, whose own 404 is a JSON problem object
+	// {authority}/{package}/{name} resource, whose own 404 is a JSON problem object
 	// already — so it is the router's fallback that has to answer well.
 	wantErrorCode(t, env.do(t, http.MethodGet, "/api/v1/nope", tok, nil),
 		http.StatusNotFound, codeNotFound)

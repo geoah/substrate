@@ -28,7 +28,6 @@ const llmprovider: KindInfo = {
   authority: "substrate.reamde.dev",
   package: "core",
   version: 0,
-  plural: "llmproviders",
   source: "builtin",
   description: "",
   definition: {
@@ -287,7 +286,6 @@ const mappingKind: KindInfo = {
   authority: "crew.test.dev",
   package: "crew",
   version: 0,
-  plural: "mappings",
   source: "installed",
   description: "",
   definition: {
@@ -319,7 +317,6 @@ const agentKind: KindInfo = {
   authority: "substrate.reamde.dev",
   package: "core",
   version: 0,
-  plural: "agents",
   source: "builtin",
   description: "",
   definition: {
@@ -381,14 +378,13 @@ function agentRecord(properties: Record<string, unknown>): SubstrateRecord {
 
 /** The REGISTRY a pointer's pin resolves through: a `KindInfo` per pinned
  * kind, which is where the picker learns the collection to read. */
-function registryKind(identity: string, plural: string): KindInfo {
+function registryKind(identity: string): KindInfo {
   return {
     identity,
     name: identity.split("/")[2],
     authority: identity.split("/")[0],
     package: identity.split("/")[1],
     version: 0,
-    plural,
     source: "builtin",
     description: "",
     definition: {},
@@ -401,9 +397,9 @@ const KIND_RECORDS = [FUNCTION, KIND, LLMPROVIDER]
 
 const REGISTRY: KindInfo[] = [
   agentKind,
-  registryKind(FUNCTION, "functions"),
-  registryKind(KIND, "kinds"),
-  registryKind(LLMPROVIDER, "llmproviders"),
+  registryKind(FUNCTION),
+  registryKind(KIND),
+  registryKind(LLMPROVIDER),
 ]
 
 /** The collections the pickers read, served from one stub so a dropdown can be

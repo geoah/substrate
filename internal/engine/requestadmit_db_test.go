@@ -408,9 +408,9 @@ func TestTwoTargetsSmuggleNothing(t *testing.T) {
 	const gaugePackage = "gauge.example.com/gauge"
 	docs := []map[string]any{
 		vocabulary.PackageManifest(gaugePackage, 0),
-		vocabulary.KindManifest(gaugePackage, map[string]any{"singular": "safegauge", "plural": "safegauges"},
+		vocabulary.KindManifest(gaugePackage, map[string]any{"singular": "safegauge"},
 			map[string]any{"properties": map[string]any{"apiKey": map[string]any{"type": "string"}}}),
-		vocabulary.KindManifest(gaugePackage, map[string]any{"singular": "secretgauge", "plural": "secretgauges"},
+		vocabulary.KindManifest(gaugePackage, map[string]any{"singular": "secretgauge"},
 			map[string]any{"properties": map[string]any{"apiKey": map[string]any{"type": "secret"}}}),
 	}
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {

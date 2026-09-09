@@ -339,7 +339,7 @@ function NodeRow({
           <GraphNode
             authority={route.authority}
             pkg={route.pkg}
-            plural={route.name}
+            name={route.name}
             id={node.id}
             kind={node.kind}
             kinds={kinds}
@@ -370,7 +370,7 @@ function NodeRow({
 function IncomingGroupRow({
   authority,
   pkg,
-  plural,
+  name,
   id,
   property,
   fromKind,
@@ -382,7 +382,7 @@ function IncomingGroupRow({
 }: {
   authority: string
   pkg: string
-  plural: string
+  name: string
   id: string
   property: string
   fromKind: string
@@ -398,7 +398,7 @@ function IncomingGroupRow({
     [kinds, fromKind, property]
   )
   const rows = useInfiniteQuery({
-    ...incomingInfiniteOptions(authority, pkg, plural, id, GROUP_PAGE, {
+    ...incomingInfiniteOptions(authority, pkg, name, id, GROUP_PAGE, {
       property,
       fromKind,
     }),
@@ -486,7 +486,7 @@ function MemberMeta({ row }: { row: IncomingReference }) {
 function GraphNode({
   authority,
   pkg,
-  plural,
+  name,
   id,
   kind,
   kinds,
@@ -496,7 +496,7 @@ function GraphNode({
 }: {
   authority: string
   pkg: string
-  plural: string
+  name: string
   id: string
   kind: string
   kinds: KindInfo[]
@@ -505,14 +505,14 @@ function GraphNode({
   record?: SubstrateRecord
 }) {
   const fetched = useQuery({
-    ...recordQueryOptions(authority, pkg, plural, id),
+    ...recordQueryOptions(authority, pkg, name, id),
     enabled: !given,
   })
   const record = given ?? fetched.data
   const kindInfo = kindByIdentity(kinds, kind)
 
   const incoming = useInfiniteQuery(
-    incomingInfiniteOptions(authority, pkg, plural, id, 200)
+    incomingInfiniteOptions(authority, pkg, name, id, 200)
   )
   // The refs index walks (src_kind, src, property, …), so a bucket is not
   // contiguous and `groupIncoming` folds by key — which is what makes a group
@@ -591,7 +591,7 @@ function GraphNode({
               key={`${group.property} ${group.kind}`}
               authority={authority}
               pkg={pkg}
-              plural={plural}
+              name={name}
               id={id}
               property={group.property}
               fromKind={group.kind}
@@ -622,20 +622,20 @@ function GraphNode({
 export function GraphRail({
   authority,
   pkg,
-  plural,
+  name,
   record,
   kinds,
 }: {
   authority: string
   pkg: string
-  plural: string
+  name: string
   record: SubstrateRecord
   kinds: KindInfo[]
 }) {
   const kindInfo = kindByIdentity(kinds, record.kind)
   const outgoing = outgoingOf(record, kindInfo)
   const incoming = useInfiniteQuery(
-    incomingInfiniteOptions(authority, pkg, plural, record.id, 200)
+    incomingInfiniteOptions(authority, pkg, name, record.id, 200)
   )
   const empty =
     outgoing.length === 0 &&
@@ -694,7 +694,7 @@ export function GraphRail({
       <GraphNode
         authority={authority}
         pkg={pkg}
-        plural={plural}
+        name={name}
         id={record.id}
         kind={record.kind}
         kinds={kinds}

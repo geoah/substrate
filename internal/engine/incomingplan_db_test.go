@@ -52,10 +52,10 @@ func planDataset(t *testing.T) *dataset {
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
 		vocabulary.PackageManifest(planPackage, 0),
 		vocabulary.KindManifest(planPackage,
-			map[string]any{"singular": "hub", "plural": "hubs"},
+			map[string]any{"singular": "hub"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 		vocabulary.KindManifest(planPackage,
-			map[string]any{"singular": "spoke", "plural": "spokes"},
+			map[string]any{"singular": "spoke"},
 			map[string]any{"properties": map[string]any{
 				"hub": map[string]any{"type": "reference", "kind": planHub},
 			}}),

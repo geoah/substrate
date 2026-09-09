@@ -30,7 +30,7 @@ func TestIntegerPropertiesRenderAsIntegers(t *testing.T) {
 		Version: 1, CreatedAt: testNow, UpdatedAt: testNow,
 	})
 
-	out, _ := h.mustRun("get", "tasks", "t9", "-o", "yaml")
+	out, _ := h.mustRun("get", "task", "t9", "-o", "yaml")
 	for _, want := range []string{
 		"totpStep: 59545831",
 		"nanos: 1786080000123456789",
@@ -58,7 +58,7 @@ func TestIntegerPropertiesRenderAsIntegersInJSON(t *testing.T) {
 		Properties: map[string]any{"totpStep": int64(59545831), "nanos": int64(1786080000123456789)},
 		Version:    1, CreatedAt: testNow, UpdatedAt: testNow,
 	})
-	out, _ := h.mustRun("get", "tasks", "t9", "-o", "json")
+	out, _ := h.mustRun("get", "task", "t9", "-o", "json")
 	for _, want := range []string{`"totpStep": 59545831`, `"nanos": 1786080000123456789`} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("json = %s, want %s", out, want)

@@ -34,7 +34,7 @@ func TestABindParksAtTheRegistryDepLockBeforeItsBundleRow(t *testing.T) {
 			"installs":    []any{config},
 		}),
 		vocabulary.KindManifest(pkg,
-			map[string]any{"singular": "config", "plural": "configs"},
+			map[string]any{"singular": "config"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 	}
 	if _, err := ds.InstallBundleClosure(ctx, substrate.ActorAPI, closure, nil, substrate.BundleInstall{}); err != nil {
@@ -52,7 +52,7 @@ func TestABindParksAtTheRegistryDepLockBeforeItsBundleRow(t *testing.T) {
 	docs, err := parseVocabularyDocs([]map[string]any{
 		vocabulary.PackageManifest(publishPackage, 0),
 		vocabulary.KindManifest(publishPackage,
-			map[string]any{"singular": "lamp", "plural": "lamps"},
+			map[string]any{"singular": "lamp"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 	})
 	if err != nil {

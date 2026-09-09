@@ -62,7 +62,7 @@ func TestLegacyTitlesSurviveADisplayTemplate(t *testing.T) {
 	ctx := context.Background()
 	svc, ds := newDataset(t)
 
-	memoNames := map[string]any{"singular": "memo", "plural": "memos"}
+	memoNames := map[string]any{"singular": "memo"}
 	before := []map[string]any{
 		vocabulary.PackageManifest(tsPackage, 0),
 		vocabulary.KindManifest(tsPackage, memoNames, map[string]any{

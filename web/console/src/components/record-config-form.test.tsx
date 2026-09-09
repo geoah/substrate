@@ -21,7 +21,6 @@ const accountKind: KindInfo = {
   authority: "providers.substrate.reamde.dev",
   package: "google",
   version: 0,
-  plural: "accounts",
   source: "installed",
   description: "",
   definition: {

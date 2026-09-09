@@ -52,18 +52,18 @@ func TestABatchWritesAgainstItsOwnCandidate(t *testing.T) {
 			},
 		}),
 		vocabulary.KindManifest(candPackage,
-			map[string]any{"singular": "widget", "plural": "widgets"},
+			map[string]any{"singular": "widget"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 		vocabulary.KindManifest(candPackage,
-			map[string]any{"singular": "holder", "plural": "holders"},
+			map[string]any{"singular": "holder"},
 			map[string]any{"properties": map[string]any{
 				"points": map[string]any{"type": "reference", "kind": widget, "mustExist": true},
 			}}),
 		vocabulary.KindManifest(candPackage,
-			map[string]any{"singular": "subject", "plural": "subjects"},
+			map[string]any{"singular": "subject"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 		vocabulary.KindManifest(candPackage,
-			map[string]any{"singular": "mirror", "plural": "mirrors"},
+			map[string]any{"singular": "mirror"},
 			map[string]any{"properties": map[string]any{
 				"name": map[string]any{"type": "string"},
 				"subject": map[string]any{
@@ -139,7 +139,7 @@ func TestAClosureActorsDeclaredTierHoldsOnFirstInstall(t *testing.T) {
 		vocabulary.PackageManifest(pkg, 0),
 		actorDoc,
 		vocabulary.KindManifest(pkg,
-			map[string]any{"singular": "widget", "plural": "widgets"},
+			map[string]any{"singular": "widget"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 	}
 	if _, err := inst.InstallBundleClosure(ctx, keeper, closure, []substrate.PutInput{

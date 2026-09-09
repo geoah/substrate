@@ -42,7 +42,7 @@ func (e *testEnv) gql(t *testing.T, token, query string, vars map[string]any) gq
 func TestRegistryKeyTracksDefinitions(t *testing.T) {
 	widget := func(props map[string]any) []substrate.KindInfo {
 		return []substrate.KindInfo{{
-			Identity: "example.substrate.reamde.dev/example/widget", Version: 1, Plural: "widgets",
+			Identity: "example.substrate.reamde.dev/example/widget", Version: 1,
 			Definition: map[string]any{"properties": props},
 		}}
 	}
@@ -375,9 +375,9 @@ func TestGraphQLSchemaIsCachedPerRegistryFingerprint(t *testing.T) {
 	// Installing a type changes the fingerprint and must rebuild.
 	ds.types = append(ds.types, substrate.KindInfo{
 		Identity: "beeper.connectors.substrate.reamde.dev/beeper/thread", Name: "thread",
-		Authority: "beeper.connectors.substrate.reamde.dev", Version: 1, Plural: "threads",
+		Authority: "beeper.connectors.substrate.reamde.dev", Version: 1,
 		Source:     "installed",
-		Definition: map[string]any{"plural": "threads", "properties": map[string]any{"subject": map[string]any{"type": "string"}}},
+		Definition: map[string]any{"properties": map[string]any{"subject": map[string]any{"type": "string"}}},
 	})
 	// An installed type ALWAYS carries its authority and package (record
 	// 0058): the beeper bundle's thread is
@@ -588,13 +588,13 @@ func TestGraphQLNamesDoNotDependOnRegistryOrder(t *testing.T) {
 	shipped := substrate.KindInfo{
 		Identity: "substrate.reamde.dev/core/task", Name: "task",
 		Authority: "substrate.reamde.dev", Package: "core",
-		Version: 1, Plural: "tasks", Source: "builtin",
+		Version: 1, Source: "builtin",
 		Definition: map[string]any{"properties": map[string]any{"note": map[string]any{"type": "string"}}},
 	}
 	installed := substrate.KindInfo{
 		Identity: "acme.example.com/alpha/task", Name: "task",
 		Authority: "acme.example.com", Package: "alpha",
-		Version: 1, Plural: "tasks", Source: "installed",
+		Version: 1, Source: "installed",
 		Definition: map[string]any{"properties": map[string]any{"note": map[string]any{"type": "string"}}},
 	}
 
@@ -640,7 +640,7 @@ func TestGraphQLInstallingASameWordPackageKeepsExistingNames(t *testing.T) {
 		return substrate.KindInfo{
 			Identity: authority + "/tasks/task", Name: "task",
 			Authority: authority, Package: "tasks",
-			Version: 1, Plural: "tasks", Source: "installed",
+			Version: 1, Source: "installed",
 			Definition: map[string]any{"properties": map[string]any{"summary": map[string]any{"type": "string"}}},
 		}
 	}
@@ -685,7 +685,7 @@ func TestGraphQLDigitFirstAndHyphenatedAuthoritiesBuild(t *testing.T) {
 		return substrate.KindInfo{
 			Identity: authority + "/tasks/task", Name: "task",
 			Authority: authority, Package: "tasks",
-			Version: 1, Plural: "tasks", Source: "installed",
+			Version: 1, Source: "installed",
 			Definition: map[string]any{"properties": map[string]any{"note": map[string]any{"type": "string"}}},
 		}
 	}
@@ -714,7 +714,7 @@ func TestGraphQLDigitFirstAndHyphenatedAuthoritiesBuild(t *testing.T) {
 func TestGraphQLReservedNameCollisionIsRefused(t *testing.T) {
 	bad := substrate.KindInfo{
 		Identity: "substrate.reamde.dev/core/change", Name: "change", Authority: coreAuthorityName, Package: "core",
-		Version: 1, Plural: "changes", Source: "builtin",
+		Version: 1, Source: "builtin",
 		Definition: map[string]any{"properties": map[string]any{}},
 	}
 	_, err := gql.BuildSchema([]substrate.KindInfo{bad})
@@ -740,11 +740,11 @@ func TestGraphQLReferenceNameCollisionIsRefused(t *testing.T) {
 	}
 	task := substrate.KindInfo{
 		Identity: "samples.substrate.reamde.dev/tasks/task", Name: "task", Authority: "samples.substrate.reamde.dev", Package: "tasks",
-		Version: 1, Plural: "tasks", Source: "builtin", Definition: reference("noteX"),
+		Version: 1, Source: "builtin", Definition: reference("noteX"),
 	}
 	taskNote := substrate.KindInfo{
 		Identity: "samples.substrate.reamde.dev/tasks/taskNote", Name: "taskNote", Authority: "samples.substrate.reamde.dev", Package: "tasks",
-		Version: 1, Plural: "taskNotes", Source: "builtin", Definition: reference("x"),
+		Version: 1, Source: "builtin", Definition: reference("x"),
 	}
 
 	_, err := gql.BuildSchema([]substrate.KindInfo{task, taskNote})
@@ -807,7 +807,7 @@ func TestGraphQLLongScalarRoundTripsPast2e31(t *testing.T) {
 func TestGraphQLPropertyTypesListAndObject(t *testing.T) {
 	widget := substrate.KindInfo{
 		Identity: "tools.substrate.reamde.dev/tools/widget", Name: "widget", Authority: "tools.substrate.reamde.dev",
-		Version: 1, Plural: "widgets", Source: "builtin",
+		Version: 1, Source: "builtin",
 		Definition: map[string]any{"properties": map[string]any{
 			"scores":  map[string]any{"type": "int", "repeated": true},
 			"tags":    map[string]any{"type": "string", "repeated": true},
@@ -852,7 +852,7 @@ const widgetRef = "tools.substrate.reamde.dev/tools/widget"
 func widgetKind() substrate.KindInfo {
 	return substrate.KindInfo{
 		Identity: widgetRef, Name: "widget", Authority: "tools.substrate.reamde.dev", Package: "tools",
-		Version: 1, Plural: "widgets", Source: "builtin",
+		Version: 1, Source: "builtin",
 		Definition: map[string]any{"properties": map[string]any{
 			"count":  map[string]any{"type": "int"},
 			"scores": map[string]any{"type": "int", "repeated": true},

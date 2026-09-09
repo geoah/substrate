@@ -40,13 +40,12 @@ const llmprovider: KindInfo = {
   authority: "substrate.reamde.dev",
   package: "core",
   version: 1,
-  plural: "llmproviders",
   source: "builtin",
   description: "",
   definition: {
     authority: "substrate.reamde.dev",
     package: "core",
-    names: { singular: "llmprovider", plural: "llmproviders" },
+    names: { singular: "llmprovider" },
     displayTemplate: "{name} ({wire})",
     properties: {
       wire: {
@@ -78,7 +77,6 @@ const account: KindInfo = {
   authority: "substrate.reamde.dev",
   package: "core",
   version: 1,
-  plural: "accounts",
   source: "builtin",
   description: "",
   definition: {},

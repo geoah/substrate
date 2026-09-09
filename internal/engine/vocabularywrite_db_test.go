@@ -32,9 +32,9 @@ const (
 	swPackage   = swAuthority + "/widgets"
 )
 
-func swTypeDoc(singular, plural string, props map[string]any) map[string]any {
+func swTypeDoc(singular string, props map[string]any) map[string]any {
 	return vocabulary.KindManifest(swPackage,
-		map[string]any{"singular": singular, "plural": plural},
+		map[string]any{"singular": singular},
 		map[string]any{"properties": props})
 }
 
@@ -48,8 +48,8 @@ func TestSchemaApplyBatchAllOrNone(t *testing.T) {
 
 	_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
-		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
-		swTypeDoc("gadget", "gadgets", map[string]any{"weird": map[string]any{"type": "nosuchkind"}}),
+		swTypeDoc("widget", map[string]any{"name": map[string]any{"type": "string"}}),
+		swTypeDoc("gadget", map[string]any{"weird": map[string]any{"type": "nosuchkind"}}),
 	})
 	if err == nil {
 		t.Fatal("a batch with a bad document must fail whole")
@@ -116,7 +116,7 @@ func TestSchemaApplyActivatesOnCommit(t *testing.T) {
 
 	ents, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
-		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
+		swTypeDoc("widget", map[string]any{"name": map[string]any{"type": "string"}}),
 	})
 	if err != nil {
 		t.Fatalf("apply: %v", err)
@@ -148,7 +148,7 @@ func TestSchemaApplyActivatesOnCommit(t *testing.T) {
 	// And the declarations are ordinary, queryable records.
 	row := mustGet(t, ds, "substrate.reamde.dev/core/kind", swPackage+"/widget")
 	names, _ := row.Properties["names"].(map[string]any)
-	if row.Kind != "substrate.reamde.dev/core/kind" || names["plural"] != "widgets" ||
+	if row.Kind != "substrate.reamde.dev/core/kind" || names["singular"] != "widget" ||
 		row.Properties["source"] != "installed" {
 		t.Fatalf("declaration record = %v", row.Properties)
 	}
@@ -207,7 +207,7 @@ def main(input, host):
 	}
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
-		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
+		swTypeDoc("widget", map[string]any{"name": map[string]any{"type": "string"}}),
 		vocabulary.FunctionManifest(swPackage, "mirror", fnData("v1")),
 	}); err != nil {
 		t.Fatalf("apply v1: %v", err)
@@ -274,7 +274,7 @@ func TestSchemaWritesSerializeDataWritesFlow(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			_, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-				swTypeDoc(ty, ty+"s", map[string]any{"name": map[string]any{"type": "string"}}),
+				swTypeDoc(ty, map[string]any{"name": map[string]any{"type": "string"}}),
 			})
 			if err != nil {
 				errs <- fmt.Errorf("apply %s: %w", ty, err)
@@ -319,7 +319,7 @@ func TestSchemaDeleteRefusesWithInstances(t *testing.T) {
 
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
-		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
+		swTypeDoc("widget", map[string]any{"name": map[string]any{"type": "string"}}),
 	}); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -399,7 +399,7 @@ func TestProjectionStoresTheAuthoredDeclaration(t *testing.T) {
 				"values":    []any{"good", "bad"},
 			},
 		},
-		swTypeDoc("widget", "widgets", map[string]any{
+		swTypeDoc("widget", map[string]any{
 			"status": map[string]any{
 				"type":   "enum",
 				"values": []any{"draft", "live"},
@@ -467,7 +467,7 @@ func TestKindInfoDefinitionSurvivesAReload(t *testing.T) {
 	// No `version:` on the declaration — the authority's is what the row gets.
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 3),
-		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
+		swTypeDoc("widget", map[string]any{"name": map[string]any{"type": "string"}}),
 	}); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -508,7 +508,7 @@ func TestKindInfoDefinitionSurvivesAReload(t *testing.T) {
 	// A declaration that PINS its own version keeps reading it off KindInfo.
 	if _, err := applier(t, ds2).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.KindManifest(swPackage,
-			map[string]any{"singular": "gadget", "plural": "gadgets"},
+			map[string]any{"singular": "gadget"},
 			map[string]any{"version": 21, "properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 	}); err != nil {
 		t.Fatalf("apply the pinned declaration: %v", err)
@@ -533,7 +533,7 @@ func TestGenericWritesRouteThroughAdmission(t *testing.T) {
 
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
-		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
+		swTypeDoc("widget", map[string]any{"name": map[string]any{"type": "string"}}),
 	}); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -644,7 +644,7 @@ func TestDeclarationWritesRefuseWhatTheEngineOwns(t *testing.T) {
 	sa := applier(t, ds)
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
-		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
+		swTypeDoc("widget", map[string]any{"name": map[string]any{"type": "string"}}),
 	}); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -772,7 +772,7 @@ func TestDeclarationWritesNameTheDeletedSpellings(t *testing.T) {
 	fnID, agentID := swPackage+"/mirror", swPackage+"/thinker"
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
-		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
+		swTypeDoc("widget", map[string]any{"name": map[string]any{"type": "string"}}),
 		vocabulary.FunctionManifest(swPackage, "mirror", map[string]any{
 			"authority": swAuthority,
 			"package":   "widgets", "description": "mirrors widgets", "runtime": vocabulary.RuntimePython,
@@ -910,7 +910,7 @@ def main(input, host):
 	}
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
-		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
+		swTypeDoc("widget", map[string]any{"name": map[string]any{"type": "string"}}),
 		vocabulary.FunctionManifest(swPackage, "mirror", fnData),
 	}); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -1101,7 +1101,7 @@ func TestAnUntouchedKindKeepsItsStoredDeclarationAtEveryDoor(t *testing.T) {
 	_, ds := newDataset(t)
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
-		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
+		swTypeDoc("widget", map[string]any{"name": map[string]any{"type": "string"}}),
 	}); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -1185,9 +1185,9 @@ func dkDocs(members ...map[string]any) []map[string]any {
 	}, members...)
 }
 
-func dkKindDoc(singular, plural string) map[string]any {
+func dkKindDoc(singular string) map[string]any {
 	return vocabulary.KindManifest(dkPackage,
-		map[string]any{"singular": singular, "plural": plural},
+		map[string]any{"singular": singular},
 		map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}})
 }
 
@@ -1211,7 +1211,7 @@ func TestBundleUpgradeRefusesARowOfTheKindItRemoves(t *testing.T) {
 	actor := substrate.BundleActor(vocabulary.SplitPackageRef(dkPackage))
 
 	if _, err := inst.InstallBundleClosure(ctx, actor,
-		dkDocs(dkKindDoc("widget", "widgets"), dkKindDoc("gadget", "gadgets")), nil, substrate.BundleInstall{}); err != nil {
+		dkDocs(dkKindDoc("widget"), dkKindDoc("gadget")), nil, substrate.BundleInstall{}); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	if _, err := ds.KindByRef(ctx, dkPackage+"/widget"); err != nil {
@@ -1220,7 +1220,7 @@ func TestBundleUpgradeRefusesARowOfTheKindItRemoves(t *testing.T) {
 
 	// The upgrade drops `widget` (no live rows, so the opening count admits it)
 	// and carries a widget record in the same package.
-	_, err := inst.InstallBundleClosure(ctx, actor, dkDocs(dkKindDoc("gadget", "gadgets")),
+	_, err := inst.InstallBundleClosure(ctx, actor, dkDocs(dkKindDoc("gadget")),
 		[]substrate.PutInput{{
 			Kind: dkPackage + "/widget", ID: "late", Properties: map[string]any{"name": "late"},
 		}}, substrate.BundleInstall{})
@@ -1239,7 +1239,7 @@ func TestBundleUpgradeRefusesARowOfTheKindItRemoves(t *testing.T) {
 
 	// And the same upgrade WITHOUT the row admits: this is refuse-while-stranded,
 	// not refuse-forever.
-	if _, err := inst.InstallBundleClosure(ctx, actor, dkDocs(dkKindDoc("gadget", "gadgets")), nil, substrate.BundleInstall{}); err != nil {
+	if _, err := inst.InstallBundleClosure(ctx, actor, dkDocs(dkKindDoc("gadget")), nil, substrate.BundleInstall{}); err != nil {
 		t.Fatalf("an upgrade that removes an unused kind must admit: %v", err)
 	}
 	if _, err := ds.KindByRef(ctx, dkPackage+"/widget"); err == nil {

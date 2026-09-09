@@ -25,7 +25,7 @@ func TestConnectorFormDisplayNameAndEnumSurviveTypeRead(t *testing.T) {
 
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
-		swTypeDoc("gizmo", "gizmos", map[string]any{
+		swTypeDoc("gizmo", map[string]any{
 			"cadence": map[string]any{
 				"type":        "enum",
 				"values":      []any{"off", "hourly", "daily"},

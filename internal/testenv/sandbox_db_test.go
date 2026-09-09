@@ -43,7 +43,7 @@ metadata: {id: %s/note}
 data:
   authority: %s
   package: %s
-  names: {singular: note, plural: notes}
+  names: {singular: note}
   properties:
     note: {type: string, description: what a probe would emit if it emitted}
 `, probeRef, probeAuthority, probePackage)}

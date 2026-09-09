@@ -73,7 +73,7 @@ func newTierDataset(t *testing.T) *dataset {
 			vocabulary.PackageManifest(tierPackage, 0),
 			vocabulary.ActorManifest(tierPackage, string(tierSync)),
 			actorManifestTier(tierPackage, string(tierFixer), "bundle"),
-			vocabulary.KindManifest(tierPackage, map[string]any{"singular": "profile", "plural": "profiles"},
+			vocabulary.KindManifest(tierPackage, map[string]any{"singular": "profile"},
 				map[string]any{
 					"displayTemplate": "{name}",
 					"properties": map[string]any{
@@ -82,7 +82,7 @@ func newTierDataset(t *testing.T) *dataset {
 						"nickname": map[string]any{"type": "string"},
 					},
 				}),
-			vocabulary.KindManifest(tierPackage, map[string]any{"singular": "record", "plural": "records"},
+			vocabulary.KindManifest(tierPackage, map[string]any{"singular": "record"},
 				map[string]any{
 					"displayTemplate": "{name}",
 					"properties": map[string]any{

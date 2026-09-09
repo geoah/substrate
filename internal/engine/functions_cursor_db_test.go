@@ -97,7 +97,7 @@ func openCursorDataset(t *testing.T) *dataset {
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 0),
 			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
-			vocabulary.KindManifest(pkg, map[string]any{"singular": "widget", "plural": "widgets"},
+			vocabulary.KindManifest(pkg, map[string]any{"singular": "widget"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 			vocabulary.FunctionManifest(pkg, "mirror", map[string]any{
 				"description": "mirrors widgets into tasks",

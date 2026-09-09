@@ -28,7 +28,7 @@ metadata: {id: w.example.com/w/target}
 data:
   authority: w.example.com
   package: w
-  names: {singular: target, plural: targets}
+  names: {singular: target}
 `
 
 // dialectLoad loads one kind document's body against a authority that already
@@ -41,7 +41,7 @@ metadata: {id: w.example.com/w/widget}
 data:
   authority: w.example.com
   package: w
-  names: {singular: widget, plural: widgets}
+  names: {singular: widget}
 ` + body
 	return vocabulary.LoadFS(fstest.MapFS{
 		"w.example.com/w/all.yaml": &fstest.MapFile{Data: []byte(src)},

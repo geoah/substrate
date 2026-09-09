@@ -28,7 +28,7 @@ metadata:
 data:
   authority: ref.example.com
   package: ref
-  names: {singular: person, plural: people}
+  names: {singular: person}
   properties:
     label: {type: string}
 ---
@@ -38,7 +38,7 @@ metadata:
 data:
   authority: ref.example.com
   package: ref
-  names: {singular: membership, plural: memberships}
+  names: {singular: membership}
   properties:
     person:
 ` + person

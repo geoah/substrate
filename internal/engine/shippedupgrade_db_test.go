@@ -167,7 +167,7 @@ func TestShippedUpgradePreviewReportsARetiredName(t *testing.T) {
 	// Binary N+2 ships a `gadget` kind under core from a tree without the
 	// retirement: the boot refuses, and the preview on the same open says why.
 	reusing := shippedTree(t)
-	addShippedKind(t, reusing, corePackage, "gadget", "gadgets")
+	addShippedKind(t, reusing, corePackage, "gadget")
 	bumpPackageVersion(t, reusing, corePackage, "100")
 	var logs bytes.Buffer
 	svc, err := engine.OpenForTest(t, ctx, dsn,

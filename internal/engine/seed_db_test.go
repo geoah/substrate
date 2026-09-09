@@ -105,13 +105,13 @@ func bumpPackageVersion(t *testing.T, tree, pkg, to string) {
 }
 
 // addShippedKind drops a new record kind into a shipped package.
-func addShippedKind(t *testing.T, tree, pkg, singular, plural string) {
+func addShippedKind(t *testing.T, tree, pkg, singular string) {
 	t.Helper()
 	authority, name := vocabulary.SplitPackageRef(pkg)
 	doc := "kind: substrate.reamde.dev/core/kind\nmetadata:\n  id: " + pkg + "/" + singular +
 		"\ndata:\n  authority: " + authority + "\n  package: " + name +
 		"\n  names:\n    singular: " + singular +
-		"\n    plural: " + plural + "\n  displayTemplate: \"{title}\"\n  properties:\n    note:\n      type: string\n"
+		"\n  displayTemplate: \"{title}\"\n  properties:\n    note:\n      type: string\n"
 	if err := os.WriteFile(filepath.Join(tree, pkg, singular+".yaml"), []byte(doc), 0o600); err != nil {
 		t.Fatalf("add a shipped kind: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 	_ = svc1.Close()
 
 	// --- binary N+1: the core authority gains a kind and a version.
-	addShippedKind(t, tree, "substrate.reamde.dev/core", "widget", "widgets")
+	addShippedKind(t, tree, "substrate.reamde.dev/core", "widget")
 	bumpPackageVersion(t, tree, "substrate.reamde.dev/core", "99")
 
 	svc2 := openTree(t, dsn, tree)
@@ -544,7 +544,7 @@ func TestBootUpgradeNeverDowngrades(t *testing.T) {
 	ctx := context.Background()
 	dsn := engine.MigratedDSN(t)
 	tree := shippedTree(t)
-	addShippedKind(t, tree, "substrate.reamde.dev/core", "widget", "widgets")
+	addShippedKind(t, tree, "substrate.reamde.dev/core", "widget")
 	bumpPackageVersion(t, tree, "substrate.reamde.dev/core", "99")
 
 	svc1 := openTree(t, dsn, tree)
@@ -600,7 +600,7 @@ func TestDeclarationAuthority(t *testing.T) {
 			"data": map[string]any{
 				"authority": "mine.example.com",
 				"package":   "mine",
-				"names":     map[string]any{"singular": "gadget", "plural": "gadgets"},
+				"names":     map[string]any{"singular": "gadget"},
 				"properties": map[string]any{
 					"label": map[string]any{"type": "string"},
 				},
@@ -621,7 +621,7 @@ func TestDeclarationAuthority(t *testing.T) {
 			"data": map[string]any{
 				"authority": "substrate.reamde.dev",
 				"package":   "core",
-				"names":     map[string]any{"singular": "token", "plural": "tokens"},
+				"names":     map[string]any{"singular": "token"},
 				"properties": map[string]any{
 					"label": map[string]any{"type": "string"},
 				},

@@ -136,7 +136,6 @@ function kind(over: Partial<KindInfo>): KindInfo {
     authority: "samples.substrate.reamde.dev",
     package: "people",
     version: 1,
-    plural: "persons",
     source: "builtin",
     description: "",
     definition: {},
@@ -151,7 +150,6 @@ const KINDS: KindInfo[] = [
     name: "config",
     authority: "providers.substrate.reamde.dev",
     package: "google",
-    plural: "configs",
     definition: { traits: ["oauth2"] },
   }),
   kind({
@@ -159,7 +157,6 @@ const KINDS: KindInfo[] = [
     name: "contact",
     authority: "providers.substrate.reamde.dev",
     package: "google",
-    plural: "contacts",
   }),
 ]
 

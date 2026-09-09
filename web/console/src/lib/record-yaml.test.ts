@@ -24,7 +24,6 @@ const agentKind: KindInfo = {
   authority: "crew.test.dev",
   package: "crew",
   version: 0,
-  plural: "agents",
   source: "builtin",
   description: "",
   definition: {
@@ -101,7 +100,6 @@ describe("templateYAML", () => {
       authority: "substrate.reamde.dev",
       package: "core",
       version: 0,
-      plural: "kinds",
       source: "builtin",
       description: "",
       definition: {
@@ -111,7 +109,6 @@ describe("templateYAML", () => {
             type: "object",
             fields: {
               singular: { type: "string", required: true },
-              plural: { type: "string", required: true },
             },
           },
         },
@@ -123,17 +120,16 @@ metadata:
 data:
   properties:
     authority: tasks.example.com
-    names:
-      singular: task
+    names: {}
 `
     const messages = validateApplyDoc(doc, kindKind)
       .filter((p) => p.severity === "error")
       .map((p) => p.message)
     // `{}` used to sail through: only the fields a value CARRIES were checked.
-    expect(messages).toContain("`names.plural` is required.")
+    expect(messages).toContain("`names.singular` is required.")
     expect(
       validateApplyDoc(
-        doc.replace("singular: task", "singular: task\n      plural: tasks"),
+        doc.replace("names: {}", "names:\n      singular: task"),
         kindKind
       ).filter((p) => p.severity === "error")
     ).toEqual([])
@@ -224,7 +220,6 @@ describe("validateApplyDoc: the declaration id", () => {
     authority: "substrate.reamde.dev",
     package: "core",
     version: 0,
-    plural: "agents",
     source: "builtin",
     description: "",
     definition: { properties: { model: { type: "string" } } },
@@ -409,7 +404,6 @@ const taskKind: KindInfo = {
   authority: "samples.substrate.reamde.dev",
   package: "tasks",
   version: 0,
-  plural: "tasks",
   source: "installed",
   description: "",
   definition: {

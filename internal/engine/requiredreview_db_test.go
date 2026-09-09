@@ -34,7 +34,7 @@ func reviewDocs(required bool) []map[string]any {
 	return []map[string]any{
 		vocabulary.PackageManifest(reviewPackage, 0),
 		vocabulary.KindManifest(reviewPackage,
-			map[string]any{"singular": "note", "plural": "notes"},
+			map[string]any{"singular": "note"},
 			map[string]any{"properties": map[string]any{
 				"name": name,
 				"tags": map[string]any{"type": "string", "repeated": true},
@@ -83,7 +83,7 @@ func TestRequiredObjectFieldIsEnforced(t *testing.T) {
 	docs := []map[string]any{
 		vocabulary.PackageManifest(reviewAuthority+"/fields", 0),
 		vocabulary.KindManifest(reviewAuthority+"/fields",
-			map[string]any{"singular": "profile", "plural": "profiles"},
+			map[string]any{"singular": "profile"},
 			map[string]any{"properties": map[string]any{
 				"contact": map[string]any{"type": "object", "fields": map[string]any{
 					"email": map[string]any{"type": "email", "required": true},
@@ -134,10 +134,10 @@ func TestClearingARequiredReferenceIsRefused(t *testing.T) {
 	docs := []map[string]any{
 		vocabulary.PackageManifest(reviewAuthority+"/refs", 0),
 		vocabulary.KindManifest(reviewAuthority+"/refs",
-			map[string]any{"singular": "owner", "plural": "owners"},
+			map[string]any{"singular": "owner"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 		vocabulary.KindManifest(reviewAuthority+"/refs",
-			map[string]any{"singular": "asset", "plural": "assets"},
+			map[string]any{"singular": "asset"},
 			map[string]any{
 				"properties": map[string]any{
 					"name": map[string]any{"type": "string"},
@@ -199,7 +199,7 @@ func TestAddingARequiredFieldIsRefusedWhileObjectsLackIt(t *testing.T) {
 		return []map[string]any{
 			vocabulary.PackageManifest(pkg, 0),
 			vocabulary.KindManifest(pkg,
-				map[string]any{"singular": "profile", "plural": "profiles"},
+				map[string]any{"singular": "profile"},
 				map[string]any{"properties": map[string]any{
 					"contact": map[string]any{"type": "object", "fields": map[string]any{
 						"email": email,
@@ -253,7 +253,7 @@ func TestDefaultFillsACreateThatNamesNoProperties(t *testing.T) {
 	docs := []map[string]any{
 		vocabulary.PackageManifest(pkg, 0),
 		vocabulary.KindManifest(pkg,
-			map[string]any{"singular": "knob", "plural": "knobs"},
+			map[string]any{"singular": "knob"},
 			map[string]any{"properties": map[string]any{
 				"mode":  map[string]any{"type": "enum", "values": []any{"off", "on"}, "default": "off"},
 				"label": map[string]any{"type": "string"},

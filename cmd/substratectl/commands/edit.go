@@ -16,7 +16,7 @@ import (
 func (a *app) editCommand() *cobra.Command {
 	var pkg string
 	cmd := &cobra.Command{
-		Use:   "edit <plural> <id>",
+		Use:   "edit <kind> <id>",
 		Short: "Edit a record in $EDITOR and apply the result",
 		Long: `Open the record's manifest (kind/metadata/data/status) in
 $EDITOR, then apply what comes back. The ` + "`status`" + ` block is server-set and

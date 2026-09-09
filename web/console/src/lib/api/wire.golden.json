@@ -242,7 +242,6 @@
     "identity": true,
     "name": true,
     "package": true,
-    "plural": true,
     "source": true,
     "version": true
   },

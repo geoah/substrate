@@ -31,7 +31,7 @@ func TestSecretPropsDoNotAliasOneSealedRow(t *testing.T) {
 	docs := []map[string]any{
 		vocabulary.PackageManifest(aliasVaultPackage, 0),
 		vocabulary.KindManifest(aliasVaultPackage,
-			map[string]any{"singular": "vault", "plural": "vaults"},
+			map[string]any{"singular": "vault"},
 			map[string]any{"properties": map[string]any{
 				"name":    map[string]any{"type": "string"},
 				"secretA": map[string]any{"type": "secret"},

@@ -53,7 +53,7 @@ metadata:
 data:
   authority: hf.example.com
   package: hf
-  names: {singular: widget, plural: widgets}
+  names: {singular: widget}
 ---
 kind: substrate.reamde.dev/core/function
 metadata:

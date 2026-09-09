@@ -22,7 +22,7 @@ func TestApplyMaintainsDeclarationVersions(t *testing.T) {
 	nameOnly := map[string]any{"name": map[string]any{"type": "string"}}
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
-		swTypeDoc("widget", "widgets", nameOnly),
+		swTypeDoc("widget", nameOnly),
 	}); err != nil {
 		t.Fatalf("first apply: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestApplyMaintainsDeclarationVersions(t *testing.T) {
 
 	// An unchanged re-apply keeps the stored version: `get | apply` is a no-op.
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		swTypeDoc("widget", "widgets", nameOnly),
+		swTypeDoc("widget", nameOnly),
 	}); err != nil {
 		t.Fatalf("unchanged re-apply: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestApplyMaintainsDeclarationVersions(t *testing.T) {
 		"size": map[string]any{"type": "int"},
 	}
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		swTypeDoc("widget", "widgets", twoProps),
+		swTypeDoc("widget", twoProps),
 	}); err != nil {
 		t.Fatalf("changed apply: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestApplyMaintainsDeclarationVersions(t *testing.T) {
 	// An ECHOED version (get -o yaml | apply -f, edited) is not a pin: the
 	// change still increments.
 	echoed := vocabulary.KindManifest(swPackage,
-		map[string]any{"singular": "widget", "plural": "widgets"},
+		map[string]any{"singular": "widget"},
 		map[string]any{"version": 2, "properties": map[string]any{
 			"name": map[string]any{"type": "string"},
 			"size": map[string]any{"type": "int"},
@@ -79,7 +79,7 @@ func TestApplyMaintainsDeclarationVersions(t *testing.T) {
 
 	// An explicit version PAST the stored one is honored as written.
 	pinned := vocabulary.KindManifest(swPackage,
-		map[string]any{"singular": "widget", "plural": "widgets"},
+		map[string]any{"singular": "widget"},
 		map[string]any{"version": 10, "properties": twoProps})
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{pinned}); err != nil {
 		t.Fatalf("pinned apply: %v", err)

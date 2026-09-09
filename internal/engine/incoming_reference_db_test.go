@@ -28,10 +28,10 @@ func graphVocabulary(t *testing.T, ds substrate.Dataset) {
 	docs := []map[string]any{
 		vocabulary.PackageManifest(graphPackage, 0),
 		vocabulary.KindManifest(graphPackage,
-			map[string]any{"singular": "hub", "plural": "hubs"},
+			map[string]any{"singular": "hub"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 		vocabulary.KindManifest(graphPackage,
-			map[string]any{"singular": "spoke", "plural": "spokes"},
+			map[string]any{"singular": "spoke"},
 			map[string]any{"properties": map[string]any{
 				"hub": map[string]any{"type": "reference", "kind": hub, "inverse": "spokes"},
 			}}),
@@ -40,12 +40,12 @@ func graphVocabulary(t *testing.T, ds substrate.Dataset) {
 		// pointed here without reading every row of every kind. The index is
 		// keyed on the target, so there is nothing to enumerate.
 		vocabulary.KindManifest(graphPackage,
-			map[string]any{"singular": "loose", "plural": "looses"},
+			map[string]any{"singular": "loose"},
 			map[string]any{"properties": map[string]any{
 				"anything": map[string]any{"type": "reference", "kind": "any"},
 			}}),
 		vocabulary.KindManifest(graphPackage,
-			map[string]any{"singular": "fan", "plural": "fans"},
+			map[string]any{"singular": "fan"},
 			map[string]any{"properties": map[string]any{
 				"hubs": map[string]any{"type": "reference", "kind": hub, "repeated": true},
 			}}),
@@ -53,7 +53,7 @@ func graphVocabulary(t *testing.T, ds substrate.Dataset) {
 		// path to the site, so a nested pointer does not read as a second
 		// property of the same name.
 		vocabulary.KindManifest(graphPackage,
-			map[string]any{"singular": "nester", "plural": "nesters"},
+			map[string]any{"singular": "nester"},
 			map[string]any{"properties": map[string]any{
 				"tool": map[string]any{
 					"type": "object",

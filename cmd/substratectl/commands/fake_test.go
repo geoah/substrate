@@ -226,13 +226,13 @@ const (
 // typeRecord builds one registry row. `pkg` is the PACKAGE IDENTITY
 // (`{authority}/{package}`): a row carries the two apart, and its id is the
 // kind reference, which is the package identity plus the name.
-func typeRecord(name, pkg, plural, source string, definition map[string]any) map[string]any {
+func typeRecord(name, pkg, source string, definition map[string]any) map[string]any {
 	authority, pkgName := vocabulary.SplitPackageRef(pkg)
 	// THE PROPERTIES ARE THE DECLARATION: a kind record carries its names
 	// object and its declared properties directly, never a `definition` blob.
 	properties := map[string]any{
 		"authority": authority, "package": pkgName,
-		"names":   map[string]any{"singular": name, "plural": plural},
+		"names":   map[string]any{"singular": name},
 		"version": 1, "source": source,
 	}
 	for k, v := range definition {
@@ -245,12 +245,12 @@ func typeRecord(name, pkg, plural, source string, definition map[string]any) map
 	}
 }
 
-func builtin(name, pkg, plural string) map[string]any {
-	return typeRecord(name, pkg, plural, "builtin", nil)
+func builtin(name, pkg string) map[string]any {
+	return typeRecord(name, pkg, "builtin", nil)
 }
 
-func installed(name, pkg, plural string) map[string]any {
-	return typeRecord(name, pkg, plural, "installed", nil)
+func installed(name, pkg string) map[string]any {
+	return typeRecord(name, pkg, "installed", nil)
 }
 
 // taskDefinition is the one declaration the fake registry carries, because the
@@ -275,35 +275,34 @@ var taskDefinition = map[string]any{
 // shipped is an installed authority any more, so `installed` here means a
 // connector, always.
 //
-// The two connector authorities are what make the ambiguity path real rather than
-// hypothetical: every connector installs a type named exactly `syncrun` in its
-// own authority, so `syncruns` can never resolve bare — while `people`, `tasks`,
-// `calendarevents` and `books` each still belong to exactly one authority and must.
+// The two connector authorities are what make the ambiguity path real rather
+// than hypothetical: every connector installs a type named exactly `syncrun` in
+// its own authority, so `syncrun` can never resolve bare, while `person`,
+// `task`, `calendarevent` and `book` each still belong to exactly one authority
+// and must.
 var fakeRegistry = []map[string]any{
 	// The `connector`/`connectoraccount` core mirrors were removed at the v1
 	// freeze — a connection is an accountconfig-trait
 	// record now, so the fake registry no longer advertises those kinds.
-	builtin("recordmerge", "substrate.reamde.dev/core", "recordmerges"),
-	builtin("recordsplit", "substrate.reamde.dev/core", "recordsplits"),
-	builtin("kind", "substrate.reamde.dev/core", "kinds"),
-	builtin("token", "substrate.reamde.dev/core", "tokens"),
-	builtin("person", "samples.substrate.reamde.dev/people", "people"),
-	builtin("organization", "samples.substrate.reamde.dev/people", "organizations"),
-	builtin("conversationmessage", "samples.substrate.reamde.dev/messaging", "conversationmessages"),
-	builtin("calendarevent", "samples.substrate.reamde.dev/calendar", "calendarevents"),
-	builtin("calendareventseries", "samples.substrate.reamde.dev/calendar", "calendareventseries"),
-	typeRecord("task", "samples.substrate.reamde.dev/tasks", "tasks", "builtin", taskDefinition),
+	builtin("recordmerge", "substrate.reamde.dev/core"),
+	builtin("recordsplit", "substrate.reamde.dev/core"),
+	builtin("kind", "substrate.reamde.dev/core"),
+	builtin("token", "substrate.reamde.dev/core"),
+	builtin("person", "samples.substrate.reamde.dev/people"),
+	builtin("organization", "samples.substrate.reamde.dev/people"),
+	builtin("conversationmessage", "samples.substrate.reamde.dev/messaging"),
+	builtin("calendarevent", "samples.substrate.reamde.dev/calendar"),
+	builtin("calendareventseries", "samples.substrate.reamde.dev/calendar"),
+	typeRecord("task", "samples.substrate.reamde.dev/tasks", "builtin", taskDefinition),
 	// `library` is the fake's own vocabulary authority (nothing shipped by that
-	// name); its five types cover both plural shapes — `books`/`movies`/
-	// `podcasts`, whose plural is a word of its own, and `bookseries`/
-	// `tvseries`, whose plural is its singular.
-	builtin("book", "library.substrate.reamde.dev/library", "books"),
-	builtin("bookseries", "library.substrate.reamde.dev/library", "bookseries"),
-	builtin("movie", "library.substrate.reamde.dev/library", "movies"),
-	builtin("podcast", "library.substrate.reamde.dev/library", "podcasts"),
-	builtin("tvseries", "library.substrate.reamde.dev/library", "tvseries"),
-	installed("syncrun", "google.connectors.substrate.reamde.dev/google", "syncruns"),
-	installed("syncrun", "slack.connectors.substrate.reamde.dev/slack", "syncruns"),
+	// name), and its five kinds are what a bare name resolves against.
+	builtin("book", "library.substrate.reamde.dev/library"),
+	builtin("bookseries", "library.substrate.reamde.dev/library"),
+	builtin("movie", "library.substrate.reamde.dev/library"),
+	builtin("podcast", "library.substrate.reamde.dev/library"),
+	builtin("tvseries", "library.substrate.reamde.dev/library"),
+	installed("syncrun", "google.connectors.substrate.reamde.dev/google"),
+	installed("syncrun", "slack.connectors.substrate.reamde.dev/slack"),
 }
 
 // fakeTypesPageSize and fakeTypesMaxPage mirror the engine's defaultPageSize

@@ -34,7 +34,7 @@ func installPings(t *testing.T, ds substrate.Dataset) {
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(datetimePackage, 0),
 		vocabulary.KindManifest(datetimePackage,
-			map[string]any{"singular": "ping", "plural": "pings"},
+			map[string]any{"singular": "ping"},
 			map[string]any{"properties": map[string]any{
 				"firedAt": map[string]any{"type": "datetime"},
 			}}),

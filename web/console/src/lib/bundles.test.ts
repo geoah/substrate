@@ -93,7 +93,6 @@ function kindInfo(over: Partial<KindInfo> = {}): KindInfo {
     authority: "samples.substrate.reamde.dev",
     package: "people",
     version: 0,
-    plural: "persons",
     source: "builtin",
     description: "",
     definition: {},
@@ -747,7 +746,6 @@ describe("installedKindRows — the Kinds table", () => {
     name: "config",
     authority: "providers.substrate.reamde.dev",
     package: "google",
-    plural: "configs",
     definition: { traits: ["oauth2"] },
   })
   const accountKind = kindInfo({
@@ -755,7 +753,6 @@ describe("installedKindRows — the Kinds table", () => {
     name: "account",
     authority: "providers.substrate.reamde.dev",
     package: "google",
-    plural: "accounts",
     definition: { traits: ["accountconfig"] },
   })
   const contactKind = kindInfo({
@@ -763,7 +760,6 @@ describe("installedKindRows — the Kinds table", () => {
     name: "contact",
     authority: "providers.substrate.reamde.dev",
     package: "google",
-    plural: "contacts",
   })
   const registry = [configKind, accountKind, contactKind]
 
@@ -997,7 +993,6 @@ describe("declaresProviderInterfaces", () => {
     name: "account",
     authority: "providers.substrate.reamde.dev",
     package: "google",
-    plural: "accounts",
     definition: { traits: ["accountconfig"] },
   })
   const clientKind = kindInfo({
@@ -1005,7 +1000,6 @@ describe("declaresProviderInterfaces", () => {
     name: "config",
     authority: "providers.substrate.reamde.dev",
     package: "google",
-    plural: "configs",
     definition: { traits: ["oauth2"] },
   })
 
@@ -1044,7 +1038,6 @@ describe("declaresProviderInterfaces", () => {
       name: "config",
       authority: "samples.substrate.reamde.dev",
       package: "web",
-      plural: "configs",
     })
     expect(
       declaresProviderInterfaces(
@@ -1069,7 +1062,6 @@ describe("oauthConnectBlocked, the connect gate", () => {
     name: "config",
     authority: "providers.substrate.reamde.dev",
     package: "google",
-    plural: "configs",
     definition: { traits: ["oauth2"] },
   })
   const inputs = [

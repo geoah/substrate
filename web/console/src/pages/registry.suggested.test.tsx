@@ -122,7 +122,6 @@ const CORE_KIND: KindInfo = {
   authority: "substrate.reamde.dev",
   package: "core",
   version: 1,
-  plural: "bundles",
   source: "builtin",
   description: "",
   definition: {},
