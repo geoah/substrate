@@ -158,10 +158,12 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
   singulars and plurals and a package name stay `[a-z][a-z0-9]*`; an authority
   stays a dotted lowercase DNS name; an actor is a bare word or a prefixed
   machine hand, never a DNS name; enum and state values stay lowercase words.
-- **Reserved property names.** `title`, `body`, `at`, `endsAt`, `dueAt` are
-  the five properties every record already carries, each with its own storage
+- **Reserved property names.** `title`, `at`, `endsAt` and `dueAt` are the
+  four properties every record already carries, each with its own storage
   column; redeclaring one is a load error naming the built-in. The temporal
-  three arrive through the `temporal` trait. The built-in `title` is not a
+  three arrive through the `temporal` trait. `body` is not reserved: a kind
+  that declares it as a text-family property gets the hot `body` column, and a
+  kind that does not declare it carries none. The built-in `title` is not a
   kind's display storage either: a kind that has a heading declares its own
   property for it (`name`, `summary`, `subject`) and renders the title with a
   `displayTemplate`, which is what the engine writes into the column. On a

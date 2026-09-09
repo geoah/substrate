@@ -36,7 +36,7 @@ Like Kubernetes, the whole system is rules about a handful of primitives.
 
 | Term           | What it is                                                                                                                                                   |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **User**       | A human principal: a username, a password, and a TOTP second factor. One hard-coded invite code admits one. A user owns exactly one repository.              |
+| **User**       | A human principal: a username, a password, and a TOTP second factor. One invite code, configured on the service as `SUBSTRATE_INVITE_CODE`, admits people. A user owns exactly one repository. |
 | **Repository** | Everything a user has: one append-only changelog, the records computed from it, and the blobs and sealed secrets beside them. Nothing crosses from one to another. |
 | **Changelog**        | The repository's append-only, strictly sequential list of every change. It is the source of truth: replaying it rebuilds the records ([data model](data-model.md)). |
 | **Record**     | One instance of a kind, and the only thing there is. Tasks, people, tokens, and kind declarations are all records. Its identity is the pair `(kind, id)`.    |

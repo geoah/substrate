@@ -14,7 +14,7 @@ One **invite code**, configured on the service, admits people. Registering
 with it creates a **user** and, in the same transaction, that user's one
 **repository**, seeded with the core vocabulary — `substrate.reamde.dev/core`
 alone. Everything else, including the task kinds used below, is a
-[vocabulary bundle you import](builtin-kinds.md). With no invite code
+[sample you import](builtin-kinds.md). With no invite code
 configured, registration is closed;
 [users, tokens, and actors](auth.md#the-invite-code) has the detail.
 
@@ -79,8 +79,9 @@ Registration seeded the core vocabulary only, so the task kinds are not there
 yet. IMPORT the sample that ships them from the catalog built into the binary,
 and the collection exists. A catalog id is a package identity,
 `{authority}/{package}`, so the slash in it is percent-encoded to stay one path
-segment. Tasks name an assignee, so `people` is imported first: a bundle whose
-`requires:` is not met is refused:
+segment. Tasks name an assignee and bind the `recurring` trait, so `people`
+and `scheduling` are imported first: a bundle whose `requires:` is not met is
+refused:
 
 ```bash
 curl -X POST -H "Authorization: Bearer $TOKEN" \
@@ -153,7 +154,7 @@ substratectl watch
 ```http
 GET /api/v1/changes?watch=1
 
-{"bookmark": 412}
+{"bookmark": 412, "generation": "7f3a0c2e9b1d4e6f"}
 {"seq": 413, "ts": "2026-08-12T10:00:00.183742Z", "actor": "api", "op": "put",
  "kind": "ada.example.com/tasks/task", "recordId": "kq3v9x2m41pf",
  "payload": {"created": true, "properties": ["name", "dueAt"]}}

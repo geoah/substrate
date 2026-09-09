@@ -58,7 +58,7 @@ nothing, there are none.
 | **sample** | The other catalog tier: a package the user copies (`samples/`). It IMPORTS under the repository's own authority (`samples.substrate.reamde.dev/tasks/task` lands as `ada.example.com/tasks/task`) and is the repository's afterwards: writable, and offered an upgrade through the origin stamp its import left. Decision records 0048 and 0070. |
 | **vocabulary bundle** | A description, not a catalog tier: a bundle that happens to ship only kinds and rules, with no functions and no provider. Nothing in the code reads it. |
 | **input** | A bundle's named configuration need: it names a kind, and the engine resolves ONE record per input — the bound record, else the record whose id is `default`, else the sole live record, else nothing, surfaced per input on the bundle's status. No cardinality is enforced on the kind. |
-| **bind** | The explicit step of input resolution: a reference on the bundle's own record row, named for the input, pointing it at a chosen record. `POST /substrate.reamde.dev/core/bundle/{id}/bind`; an empty record unbinds. |
+| **bind** | The explicit step of input resolution: a reference on the bundle's own record row, named for the input, pointing it at a chosen record. `POST /api/v1/substrate.reamde.dev/core/bundle/{id}/bind`; an empty record unbinds. |
 | **account** | One configured connection to a provider: a record of an `accountconfig`-trait kind. The console groups these under **Connections**. |
 | **catalog** | The read-only list of the bundle closures built into the binary, each in one of the two tiers. A source to install or import from, never a package. |
 | **callable** | The union of function and agent — what a trigger binds and what dispatch invokes. |
@@ -77,7 +77,7 @@ nothing, there are none.
 | **sensitive** | The umbrella over `secret` and `digest`: redacted on every read surface, excluded from search, filtering, ordering, titles and change payloads. |
 | **secret** | Confidential material as a property. The record and the changelog store only an opaque ref; the material lives encrypted in the sealed store, resolved only by the host reads that spend it. Rotation deletes the old material. |
 | **digest** | A one-way SHA-256 the server minted to compare, never to reveal (a token's `hash`). Redacted like a secret but stored as the value itself: auth matches it in SQL. |
-| **sealed store** | The engine table holding secret material (property secrets, OAuth tokens, the password hash, the TOTP seed) encrypted under the repository's DEK, addressed by refs. |
+| **sealed store** | The `sealed` table and its mirror, one file per row under the repository directory's `sealed/`, holding secret material (property secrets, OAuth tokens, the password hash, the TOTP seed) encrypted under the repository's DEK, addressed by refs. The files are what a backup copies; a boot import reads them back. |
 | **DEK** | The repository's own data-encryption key. Wrapped twice: under the host credential key in the control plane (live operation) and to the user's age recipient in the `recoverykey` record (recovery). |
 | **recovery key** | The age identity the user keeps and the substrate never stores. It opens the `recoverykey` record's wrap, so a backup plus the identity is a complete recovery with no host key: `repository rewrap` opens a copied repository directory with it for a new host key. Enrolled at registration, or once via `recovery enroll`. |
 

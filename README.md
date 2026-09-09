@@ -69,8 +69,9 @@ toolchain: `mise install` once.
 ```bash
 mise run build:cli
 
-# Asks for the invite code, a username and a password, then stores the
-# minted token as a context in ~/.config/substratectl.
+# Asks for the invite code, a username, a password and a TOTP code from the
+# enrollment it prints, hands you a recovery key, then stores the minted
+# token as a context in ~/.config/substratectl.
 bin/substratectl register --server http://localhost:8080
 ```
 
@@ -359,7 +360,7 @@ today.
 ## Configuration
 
 Everything is an environment variable, and every one has a working default
-under `docker compose up`. Three matter before anyone else can reach your
+under `docker compose up`. Four matter before anyone else can reach your
 substrate: `DATABASE_URL` (the one Postgres), `SUBSTRATE_DATA_ROOT` (the
 directory every repository's changelog, sealed store and blobs live under, and
 the thing you back up), `SUBSTRATE_INVITE_CODE` (unset means registration is

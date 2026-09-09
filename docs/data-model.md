@@ -106,7 +106,7 @@ Three rules make the envelope predictable:
 
 - **`kind` is the record's kind reference**, and it is the only place the kind
   appears. Nothing splits it into parts.
-- **`data` carries one key, `properties`.** Everything authored, the built-in
+- **`data` carries one key, `properties`.** Everything authored, a declared
   `body`, the temporal properties and every pointer at another record
   included, lives there, so nothing needs a reserved list to
   name a property. (`title` sits there too, on a kind that does not derive it
@@ -176,8 +176,11 @@ The shipped vocabulary is split by subsystem, Kubernetes-style, each subsystem
 its own package: `samples.substrate.reamde.dev/people`,
 `samples.substrate.reamde.dev/messaging`,
 `samples.substrate.reamde.dev/calendar`, `samples.substrate.reamde.dev/tasks`,
-and the mneme-ported `health`, `fitness`, `routines`, `journal`, `places`,
-`food` and `commerce` under the same authority — each a bundle you
+`samples.substrate.reamde.dev/scheduling` (the `recurring` and `occurrencelog`
+traits that `calendar`, `tasks`, `health`, `fitness` and `routines` require),
+the mneme-ported `health`, `fitness`, `routines`, `journal`, `places`, `food`
+and `commerce`, and the function and agent examples `notes`, `llm`, `web`,
+`firecrawl` and `pebble` under the same authority — each a bundle you
 **import** — and `substrate.reamde.dev/core` for the substrate's own machinery,
 which is the only one a new repository is seeded with. Packages namespace
 names; they never partition the data: a reference crosses packages as easily as
