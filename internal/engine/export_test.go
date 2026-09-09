@@ -9,7 +9,6 @@ import (
 	"os"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
@@ -123,14 +122,8 @@ func WithTestSnapshotFault(fn func(stage, dir string) error) Option {
 // every test open loads unless it brings a patched tree.
 const CoreKindsDir = "../../kinds/substrate.reamde.dev/core"
 
-// TestClock is one test's TOTP clock: the wall clock plus what Advance has
-// added. Keyed on the full test name (ClockOf), so a subtest and a repeated
-// run (-count=N) start at zero.
-type TestClock struct {
-	mu     sync.Mutex
-	offset time.Duration
-}
-
+// testClocks holds one TestClock per test name (ClockOf), so a subtest and a
+// repeated run (-count=N) start at zero.
 var testClocks sync.Map
 
 // ClockOf is the test's clock, made on first use and forgotten when the test
@@ -143,20 +136,6 @@ func ClockOf(t *testing.T) *TestClock {
 		t.Cleanup(func() { testClocks.Delete(key) })
 	}
 	return c.(*TestClock)
-}
-
-// Now is the wall clock plus the advance.
-func (c *TestClock) Now() time.Time {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return time.Now().Add(c.offset).UTC()
-}
-
-// Advance moves the clock forward by d.
-func (c *TestClock) Advance(d time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.offset += d
 }
 
 // OpenForTest is the ONE way a test opens a service: Open with the shipped
@@ -219,6 +198,13 @@ func (s stagedThenFails) Stage(repoDir string, rec changelogfile.SealedRecord) e
 		return err
 	}
 	return ErrSealedStoreBroken
+}
+
+// ImportIncomplete reports whether the repository's import-progress marker
+// is set, read through the tamperer's seat.
+func ImportIncomplete(ctx context.Context, db dbx) (bool, error) {
+	_, incomplete, err := importIncomplete(ctx, db)
+	return incomplete, err
 }
 
 // WithCatchUpBatch sets how many changelog rows one page of the boot's

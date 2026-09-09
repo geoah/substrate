@@ -1,8 +1,7 @@
 package engine
 
 import (
-	"context"
-	"database/sql"
+	"sync"
 	"time"
 )
 
@@ -24,6 +23,28 @@ func WithTestTOTPClock(now func() time.Time) Option {
 // TOTPPeriod is the verifier's step, for a test that moves its clock one.
 const TOTPPeriod = totpPeriod
 
+// TestClock is a TOTP clock a test hands WithTestTOTPClock: the wall clock
+// plus what Advance has added, so a code spent in one window is followed by
+// the next window's code without a real 30 second wait.
+type TestClock struct {
+	mu     sync.Mutex
+	offset time.Duration
+}
+
+// Now is the wall clock plus the advance.
+func (c *TestClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return time.Now().Add(c.offset).UTC()
+}
+
+// Advance moves the clock forward by d.
+func (c *TestClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.offset += d
+}
+
 // WithTestImportFault runs fn at each durable step of a boot import
 // (repodir.go importEntries): after every batch of changelog rows commits,
 // with ImportAfterBatch, and after the first fold pass commits, with
@@ -40,13 +61,6 @@ const (
 	ImportAfterBatch     = importAfterBatch
 	ImportAfterFirstFold = importAfterFirstFold
 )
-
-// ImportIncomplete reports whether the repository's import-progress marker
-// is set, read through the caller's own connection.
-func ImportIncomplete(ctx context.Context, db *sql.DB) (bool, error) {
-	_, incomplete, err := importIncomplete(ctx, db)
-	return incomplete, err
-}
 
 // WithTestInvokeHook runs fn with a function's identity as the runner is
 // about to invoke its body (runner.go runCallableRaw): the moment a test

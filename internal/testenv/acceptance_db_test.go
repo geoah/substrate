@@ -3,18 +3,20 @@ package testenv_test
 // The release acceptance drill (#462, tracker #360): one repository holding
 // every state the release protects, stopped and snapshotted, restored into an
 // empty database on a host with another credential key through the recovery
-// key, and compared. Each stage is a subtest and none skips: a stage that
-// cannot run fails with its reason, and a state the restore does not
+// key, and compared. The drill as a whole skips under -short and without a
+// database, like every database test; once it runs, no stage skips: a stage
+// that cannot run fails with its reason, and a state the restore does not
 // reproduce is a failing assertion, never a weakened one.
 //
 // The doors are the real ones. Everything a client would do arrives over HTTP
-// with a token (records, vocabulary, blobs, merges, webhooks, function calls,
-// search, the change feed); what the operator does runs through the engine
-// the way substratectl and the substrated loops do (the trigger dispatcher
-// pass, the embed drain, the GC sweep, `repository snapshot`, `repository
-// rewrap`, `repository verify`). docs/operations.md is the procedure followed:
-// "Backups" for the snapshot, "Restore without the credential key" for the
-// rewrap and the boot that imports, "Restore" for the verify afterwards.
+// with a token (records, vocabulary, the provider install, blobs, merges,
+// webhooks, function calls, search, the change feed); what the operator does
+// runs through the engine the way substratectl and the substrated loops do
+// (the trigger dispatcher pass, the embed drain, the GC sweep, `repository
+// snapshot`, `repository rewrap`, `repository verify`). docs/operations.md is
+// the procedure followed: "Backups" for the snapshot, "Restore without the
+// credential key" for the rewrap and the boot that imports, "Restore" for the
+// verify afterwards.
 //
 // The blob store is the fs backend throughout; the s3 half of the procedure
 // (copying the listed objects back into the bucket) is not exercised here.
@@ -31,6 +33,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -39,7 +42,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -64,30 +67,71 @@ const (
 	legacyPassword  = "another-correct-horse-battery"
 	legacyAuthority = "legacy.example.com"
 
-	corePkg      = "substrate.reamde.dev/core"
-	embedAPIKey  = "sk-drill-embed-key"
-	embedModel   = "text-embedding-3-small"
-	fileBytesTxt = "the report the drill attaches: bytes that must read back after the restore"
+	corePkg        = "substrate.reamde.dev/core"
+	googlePkg      = "providers.substrate.reamde.dev/google"
+	embedAPIKey    = "sk-drill-embed-key"
+	embedModel     = "text-embedding-3-small"
+	fileBytes      = "the report the drill attaches: bytes that must read back after the restore"
+	mergeWinner    = "m-a"
+	mergeLoser     = "m-b"
+	subjectHold    = "Alex"
+	hookBody       = `{"say":"call the dentist"}`
+	holdBody       = `{"say":"hold the line"}`
+	pollInterval   = 10 * time.Millisecond
+	settleDeadline = 20 * time.Second
 
-	// coreKindsDir is the shipped core package, relative to this package,
-	// the tree the boot upgrade is patched against.
-	coreKindsDir = "../../kinds/substrate.reamde.dev/core"
+	// seedAuthorityDir is the shipped seed authority, relative to this
+	// package: the tree kinds.Seed() embeds, which the boot upgrade is patched
+	// against.
+	seedAuthorityDir = "../../kinds/substrate.reamde.dev"
+
+	// sealedValues is how many sealed files the source repository holds: the
+	// login credential's two (password hash, TOTP seed), the embeddings
+	// provider's apiKey, the OAuth-shaped kind's three, the google provider
+	// input's clientSecret. Each is one secret reference on a live record.
+	sealedValues = 7
 )
 
-// The drill's kinds: the rehomed samples and the packages it declares itself.
+// The drill's kinds: the rehomed samples, the installed provider and the
+// packages the drill declares itself.
 var (
-	taskKind    = drillAuthority + "/tasks/task"
-	projectKind = drillAuthority + "/tasks/project"
-	personKind  = drillAuthority + "/people/person"
-	widgetKind  = drillAuthority + "/auto/widget"
-	gadgetKind  = drillAuthority + "/auto/gadget"
-	flagKind    = drillAuthority + "/auto/flag"
-	echoKind    = drillAuthority + "/auto/echo"
-	subjectKind = drillAuthority + "/crm/subject"
-	contactKind = drillAuthority + "/dira/contact"
-	memberKind  = drillAuthority + "/dirb/member"
-	fileKind    = drillAuthority + "/attach/file"
-	oauthKind   = drillAuthority + "/creds/oauthclient"
+	taskKind     = drillAuthority + "/tasks/task"
+	projectKind  = drillAuthority + "/tasks/project"
+	personKind   = drillAuthority + "/people/person"
+	widgetKind   = drillAuthority + "/auto/widget"
+	gadgetKind   = drillAuthority + "/auto/gadget"
+	flagKind     = drillAuthority + "/auto/flag"
+	echoKind     = drillAuthority + "/auto/echo"
+	subjectKind  = drillAuthority + "/crm/subject"
+	contactKind  = drillAuthority + "/dira/contact"
+	memberKind   = drillAuthority + "/dirb/member"
+	fileKind     = drillAuthority + "/attach/file"
+	oauthKind    = drillAuthority + "/creds/oauthclient"
+	googleConfig = googlePkg + "/config"
+	legacyTask   = legacyAuthority + "/tasks/task"
+
+	// drillCollections is every collection the drill compares record by
+	// record.
+	drillCollections = []string{
+		taskKind, projectKind, personKind, widgetKind, gadgetKind, flagKind, echoKind,
+		subjectKind, contactKind, memberKind, fileKind, oauthKind, googleConfig, googlePkg + "/account",
+		corePkg + "/llmprovider", corePkg + "/trigger", corePkg + "/recordmerge", corePkg + "/recordsplit",
+		corePkg + "/blob", corePkg + "/token", corePkg + "/credential", corePkg + "/recoverykey",
+		corePkg + "/repository", corePkg + "/run", corePkg + "/kind", corePkg + "/function",
+		corePkg + "/recordmapping", corePkg + "/package", corePkg + "/bundle",
+	}
+	// drillTriggers are the triggers the drill writes; the provider install
+	// brings its own beside them.
+	drillTriggers   = []string{"on-mirror", "on-page", "on-hook", "on-hold"}
+	lexicalQueries  = []string{"ledger", "fold", "restored"}
+	semanticQueries = []string{"carry the values", "replay the ledger"}
+	// sampleImports is the samples a repository imports before it holds a
+	// task, in the order their `requires` demand.
+	sampleImports = []string{
+		"samples.substrate.reamde.dev/people",
+		"samples.substrate.reamde.dev/scheduling",
+		"samples.substrate.reamde.dev/tasks",
+	}
 )
 
 // The vocabulary the drill declares over /vocabulary/apply. Every function is
@@ -248,15 +292,17 @@ metadata:
 data:
   authority: drill.example.com
   package: auto
-  description: echoes a webhook request once a release flag exists, sleeping until then
+  description: echoes a webhook request once a release flag exists, waiting until then
   runtime: python
+  # The body waits for the flag with no give-up of its own: the drill releases
+  # it, and this bound is the one clock that ends a fire nothing releases.
   timeout: PT50S
   permissions:
     reads:
       kinds: [drill.example.com/auto/flag]
       budgets:
-        calls: 400
-        rows: 400
+        calls: 1000
+        rows: 1000
     writes: [drill.example.com/auto/echo]
   source: |
     import time
@@ -265,12 +311,8 @@ data:
     ECHO = "drill.example.com/auto/echo"
 
     def main(input, host):
-        for _ in range(160):
-            if host.records.get(FLAG, "release") is not None:
-                break
+        while host.records.get(FLAG, "release") is None:
             time.sleep(0.25)
-        else:
-            raise RuntimeError("release never came")
         env = input.get("envelope") or {}
         req = env.get("request") or {}
         headers = req.get("headers") or {}
@@ -283,10 +325,10 @@ data:
         return {"output": {}}
 `
 
-// crmVocabulary is the mapping target: the package that owns `subject`
-// declares the mappings from the two mirror packages onto it (decision 0049).
-// It is applied twice: the kind alone, before the mirrors that reference it,
-// then with the mappings once the source kinds exist.
+// crmKind is the mapping target: the package that owns `subject` declares the
+// mappings from the two mirror packages onto it (decision 0049). It is
+// applied twice: the kind alone, before the mirrors that reference it, then
+// with the mappings once the source kinds exist.
 const crmKind = `
 kind: substrate.reamde.dev/core/package
 metadata:
@@ -455,8 +497,10 @@ data:
 `
 }
 
-// credsVocabulary is an OAuth-shaped credential: a client id beside three
-// sealed values, the shape a provider's config and account carry.
+// credsVocabulary is an OAuth-shaped credential the user declares: a client
+// id beside three sealed values, the shape a provider's input record and its
+// `accountconfig` account carry. The installed google provider is the
+// provider-tier counterpart.
 const credsVocabulary = `
 kind: substrate.reamde.dev/core/package
 metadata:
@@ -494,26 +538,6 @@ data:
       description: when the access token expires
 `
 
-// drillClock is the TOTP clock both substrates verify against: the wall clock
-// plus what the drill advanced, so a login on the restored host does not
-// replay the registration's code within one 30 second window.
-type drillClock struct {
-	mu     sync.Mutex
-	offset time.Duration
-}
-
-func (c *drillClock) Now() time.Time {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return time.Now().Add(c.offset).UTC()
-}
-
-func (c *drillClock) Advance(d time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.offset += d
-}
-
 // fakeEmbed is an OpenAI-wire embeddings endpoint whose vectors are an
 // L2-normalised bag-of-words hash, so two drains over the same text buy the
 // same vectors and a semantic ranking compares equal across the restore. It
@@ -527,7 +551,7 @@ type fakeEmbed struct {
 	texts int
 }
 
-func newFakeEmbed(t *testing.T) *fakeEmbed {
+func newFakeEmbed(t testing.TB) *fakeEmbed {
 	t.Helper()
 	f := &fakeEmbed{}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.handle))
@@ -564,7 +588,7 @@ func (f *fakeEmbed) handle(w http.ResponseWriter, r *http.Request) {
 func (f *fakeEmbed) seen() (auths []string, texts int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]string(nil), f.auths...), f.texts
+	return slices.Clone(f.auths), f.texts
 }
 
 func (f *fakeEmbed) reset() {
@@ -597,19 +621,10 @@ func bagOfWords(s string, width int) []float32 {
 	return vec
 }
 
-// The operator seams off substrate.Service, asserted here the way the CLI
-// asserts them.
-type (
-	snapshotter interface {
-		SnapshotRepository(ctx context.Context, username, destRoot string) (engine.SnapshotReport, error)
-	}
-	verifier interface {
-		VerifyRepository(ctx context.Context, username string) (engine.VerifyReport, error)
-	}
-	folded interface {
-		FoldSnapshot(ctx context.Context) ([]byte, error)
-	}
-)
+// folded is the fold snapshot the rebuild tests compare, off the dataset.
+type folded interface {
+	FoldSnapshot(ctx context.Context) ([]byte, error)
+}
 
 // searchAnswer is one search's outcome: the hit ids in rank order and the
 // backlog, or the refusal's code and message.
@@ -623,9 +638,9 @@ type searchAnswer struct {
 // state is the observable state of one substrate, captured through the API
 // and the operator seams: what stage 1 records and stage 4 compares.
 type state struct {
-	// records is every record the collections below hold, keyed
-	// "<kind>/<id>", as a single-record GET returns it (propertyMeta
-	// included), decoded so the comparison is structural.
+	// records is every record the collections hold, keyed "<kind>/<id>", as
+	// a single-record GET returns it (propertyMeta included), decoded so the
+	// comparison is structural.
 	records map[string]any
 	// deleted is each collection's tombstone list, keyed by kind.
 	deleted map[string]any
@@ -641,7 +656,7 @@ type state struct {
 	// fold is the engine's fold snapshot: records, refs, provenance, the
 	// delivery ledger's tables.
 	fold []byte
-	// blobs is each attachment's bytes as GET /blobs served them.
+	// blobs is each stored blob's bytes as GET /blobs served them.
 	blobs map[string][]byte
 	// lexical and semantic are the fixed queries' answers.
 	lexical  map[string]searchAnswer
@@ -650,27 +665,39 @@ type state struct {
 	gen      string
 }
 
-// drill is the state the stages hand each other. root is the parent test:
-// everything a later stage reads (schemas, roots, running substrates) is
-// created against it, so a stage's end drops nothing the next one needs.
+// stageTB is a stage's own t with the parent's lifetime: what a stage hands
+// to Start, NewSchema, TempDir and the embed server, so a substrate or a
+// schema outlives the stage that made it while every failure inside them is
+// the stage's. A Fatalf on the parent from a subtest's goroutine is not a
+// failure the runner can attribute.
+type stageTB struct {
+	testing.TB
+	parent *testing.T
+}
+
+func (s stageTB) Cleanup(f func())          { s.parent.Cleanup(f) }
+func (s stageTB) TempDir() string           { return s.parent.TempDir() }
+func (d *drill) tb(t *testing.T) testing.TB { return stageTB{TB: t, parent: d.root} }
+
+// drill is the state the stages hand each other.
 type drill struct {
 	root  *testing.T
-	clock *drillClock
+	clock *engine.TestClock
 	embed *fakeEmbed
 
 	identity, legacyIdentity *age.X25519Identity
 	keyA, keyB               string
 	rootA, dsnA              string
+	dbs                      map[string]*sql.DB
 
-	// The source substrate, its token and the recorded state.
+	// The source substrate, its second user and the recorded state.
 	envA   *testenv.Env
 	legacy *testenv.Env
 	source *state
 
-	// What stage 1 has to hand later stages by name.
+	// What stage 1 hands later stages by name.
 	blobDigest     string
 	subjectID      string
-	mergeWinner    string
 	splitMergeID   string
 	pagedFailureID int64
 	pagedChain     string
@@ -681,10 +708,8 @@ type drill struct {
 	holdInvoked chan struct{}
 	runVersion  int64
 
-	// Stage 2: the snapshot roots and the recorded points.
+	// Stage 2: the snapshot root and the recorded points.
 	snapRoot   string
-	drillDir   string
-	legacyDir  string
 	snapHead   int64
 	legacyHead int64
 	legacyFold []byte
@@ -709,7 +734,7 @@ func TestReleaseAcceptanceDrill(t *testing.T) {
 	if os.Getenv("SUBSTRATE_EGRESS_ALLOW") == "" {
 		t.Setenv("SUBSTRATE_EGRESS_ALLOW", "127.0.0.0/8,::1/128")
 	}
-	d := &drill{root: t, clock: &drillClock{}, done: map[string]bool{}}
+	d := &drill{root: t, clock: &engine.TestClock{}, dbs: map[string]*sql.DB{}, done: map[string]bool{}}
 	stages := []struct {
 		name string
 		run  func(t *testing.T)
@@ -740,7 +765,41 @@ func TestReleaseAcceptanceDrill(t *testing.T) {
 // --- stage 1 --------------------------------------------------------------------
 
 func (d *drill) buildSource(t *testing.T) {
-	ctx := context.Background()
+	e := d.seedSource(t)
+	d.seedVocabulary(t, e)
+	d.writeRecordsAndMerges(t, e)
+	d.writeSecretsAndAttachment(t, e)
+	d.writeMirrors(t, e)
+	ds := d.parkAutomations(t, e)
+	// The drain buys the source's vectors, so the fixed queries are recorded
+	// over a full index.
+	drainEmbeds(t, ds)
+	d.writeLegacyRepository(t, e)
+	d.holdWebhook(t, e)
+
+	d.source = captureState(t, e, ds, d.scoped(t, d.dsnA, drillAuthority))
+	if st := d.source.statuses["on-hold"]; st.Pending != 1 {
+		t.Errorf("on-hold status = %+v, want one pending fire", st)
+	}
+	if st := d.source.statuses["on-mirror"]; st.Lag < 1 {
+		t.Errorf("on-mirror status = %+v, want a pending delivery (lag) at the stop", st)
+	}
+	if got := d.source.lexical["ledger"]; len(got.IDs) == 0 {
+		t.Errorf("lexical search found nothing for the fixed query: %+v", got)
+	}
+	if got := d.source.semantic["carry the values"]; len(got.IDs) == 0 || got.Pending != 0 {
+		t.Errorf("semantic search on the source = %+v, want hits over a drained index", got)
+	}
+	if !bytes.Equal(d.source.blobs[d.blobDigest], []byte(fileBytes)) {
+		t.Errorf("the attachment did not read back on the source")
+	}
+}
+
+// seedSource registers the source under a copy of the seed tree where `run`
+// is one version behind, then restarts it under the shipped tree, so the
+// repository's history holds a shipped kind upgraded at boot.
+func (d *drill) seedSource(t *testing.T) *testenv.Env {
+	tb := d.tb(t)
 	var err error
 	if d.identity, err = age.GenerateX25519Identity(); err != nil {
 		t.Fatal(err)
@@ -749,32 +808,31 @@ func (d *drill) buildSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.keyA, d.keyB = testenv.MintCredentialKey(), testenv.MintCredentialKey()
-	d.rootA = d.root.TempDir()
-	d.dsnA = testdb.NewSchema(d.root)
-	d.embed = newFakeEmbed(d.root)
+	if d.keyA == d.keyB {
+		t.Fatal("the two host keys are one key")
+	}
+	d.rootA = tb.TempDir()
+	d.dsnA = testdb.NewSchema(tb)
+	d.embed = newFakeEmbed(tb)
 
-	// A shipped kind upgraded: the first boot loads a copy of core where
-	// `run` is one version behind, registration seeds it at that version,
-	// and the second boot under the shipped tree appends the upgrade.
-	patched, shippedRun := patchedCoreTree(t, "run.yaml")
+	patched, shippedRun := patchedSeedTree(tb, "run.yaml")
 	d.runVersion = shippedRun
-	first := testenv.Start(d.root,
+	first := testenv.Start(tb,
 		testenv.WithUser(drillUser, drillPassword),
 		testenv.WithAuthority(drillAuthority),
 		testenv.WithRecoveryPublicKey(d.identity.Recipient().String()),
 		testenv.WithDSN(d.dsnA), testenv.WithDataRoot(d.rootA), testenv.WithCredentialKey(d.keyA),
-		testenv.WithClock(d.clock.Now), testenv.WithKindsDir(patched)).For(t)
+		testenv.WithClock(d.clock.Now), testenv.WithKindsDir(patched))
 	if first.Authority != drillAuthority {
 		t.Fatalf("registered authority %q, want %q", first.Authority, drillAuthority)
 	}
 	if got := kindVersions(t, first)[corePkg+"/run"]; got != shippedRun-1 {
 		t.Fatalf("run declared at %d under the patched tree, want %d", got, shippedRun-1)
 	}
-	token, totp := first.Token, first.TOTPSecret
 	first.Stop()
 
 	d.holdInvoked = make(chan struct{}, 16)
-	d.envA = testenv.Start(d.root,
+	d.envA = testenv.Start(tb,
 		testenv.WithUser(drillUser, drillPassword), testenv.WithoutRegistration(),
 		testenv.WithDSN(d.dsnA), testenv.WithDataRoot(d.rootA), testenv.WithCredentialKey(d.keyA),
 		testenv.WithClock(d.clock.Now),
@@ -786,19 +844,24 @@ func (d *drill) buildSource(t *testing.T) {
 				}
 			}
 		})))
-	d.envA.Token, d.envA.TOTPSecret, d.envA.Authority = token, totp, drillAuthority
+	// The restarted substrate speaks as the user registration created: the
+	// token and the seed carry over the restart, as they would for a client.
+	d.envA.Session = first.Session
 	e := d.envA.For(t)
 	if got := kindVersions(t, e)[corePkg+"/run"]; got != shippedRun {
 		t.Errorf("the boot upgrade did not land: run declared at %d, want the shipped %d", got, shippedRun)
 	}
+	return e
+}
 
-	// The samples, rehomed onto the repository's authority; then the drill's
-	// own packages, and the kind edit that bumps `file`.
+// seedVocabulary imports the samples (rehomed onto the repository's
+// authority), installs the google provider under its publisher's authority,
+// and declares the drill's own packages, editing one kind afterwards.
+func (d *drill) seedVocabulary(t *testing.T, e *testenv.Env) {
 	for _, id := range sampleImports {
-		if status, body := e.Do(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/import", nil); status/100 != 2 {
-			t.Fatalf("import %s: %d %s", id, status, body)
-		}
+		e.MustJSON(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/import", nil, nil)
 	}
+	e.MustJSON(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(googlePkg)+"/install", nil, nil)
 	e.ApplyVocabularyYAML(autoVocabulary)
 	e.ApplyVocabularyYAML(crmKind)
 	e.ApplyVocabularyYAML(mirrorVocabulary("dira", "contact", "synca"))
@@ -807,89 +870,70 @@ func (d *drill) buildSource(t *testing.T) {
 	e.ApplyVocabularyYAML(attachVocabulary(false))
 	e.ApplyVocabularyYAML(attachVocabulary(true))
 	e.ApplyVocabularyYAML(credsVocabulary)
-	if got := kindVersions(t, e)[fileKind]; got != 2 {
+	versions := kindVersions(t, e)
+	if got := versions[fileKind]; got != 2 {
 		t.Errorf("file declared at version %d after its edit, want 2", got)
 	}
+	if _, ok := versions[googleConfig]; !ok {
+		t.Errorf("the google provider install left no %s declaration", googleConfig)
+	}
+}
 
-	// Records: a project, tasks with a reference, labels, a transition, and
-	// the last label cleared to the empty map (#362).
-	put := func(kind, id string, body map[string]any) map[string]any {
-		t.Helper()
-		status, raw := e.Do(http.MethodPut, recordPath(kind, id), body)
-		if status/100 != 2 {
-			t.Fatalf("put %s/%s: %d %s", kind, id, status, raw)
-		}
-		return decodeAny(t, raw).(map[string]any)
-	}
-	patch := func(kind, id string, body map[string]any) map[string]any {
-		t.Helper()
-		status, raw := e.Do(http.MethodPatch, recordPath(kind, id), body)
-		if status/100 != 2 {
-			t.Fatalf("patch %s/%s: %d %s", kind, id, status, raw)
-		}
-		return decodeAny(t, raw).(map[string]any)
-	}
-	del := func(kind, id string) {
-		t.Helper()
-		if status, raw := e.Do(http.MethodDelete, recordPath(kind, id), nil); status/100 != 2 {
-			t.Fatalf("delete %s/%s: %d %s", kind, id, status, raw)
-		}
-	}
-	put(projectKind, "release", map[string]any{"properties": map[string]any{"name": "The release"}})
+// writeRecordsAndMerges writes the tasks: a reference, labels, a transition,
+// the last label cleared to the empty map (#362), a delete and the put that
+// restores it, a merge that stands and one that is split.
+func (d *drill) writeRecordsAndMerges(t *testing.T, e *testenv.Env) {
+	putRecord(t, e, projectKind, "release", map[string]any{"properties": map[string]any{"name": "The release"}})
 	due := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Second).Format(time.RFC3339)
-	put(taskKind, "fold", map[string]any{
+	putRecord(t, e, taskKind, "fold", map[string]any{
 		"properties": map[string]any{
 			"name": "Ship the fold", "description": "carry the values, not just the names",
 			"dueAt": due, "url": "https://example.com/1", "project": "release",
 		},
 		"labels": map[string]any{"owner/pinned": true},
 	})
-	put(taskKind, "rebuild", map[string]any{"properties": map[string]any{
+	putRecord(t, e, taskKind, "rebuild", map[string]any{"properties": map[string]any{
 		"name": "Rebuild the repository", "description": "replay every entry of the ledger", "project": "release",
 	}})
-	put(taskKind, "collect", map[string]any{"properties": map[string]any{"name": "Collect me", "description": "and then go"}})
-	patch(taskKind, "fold", map[string]any{
+	putRecord(t, e, taskKind, "collect", map[string]any{"properties": map[string]any{"name": "Collect me", "description": "and then go"}})
+	patchRecord(t, e, taskKind, "fold", map[string]any{
 		"properties":  map[string]any{"description": "values, replayable", "url": nil},
 		"labels":      map[string]any{"owner/pinned": nil, "owner/urgent": "yes"},
 		"annotations": map[string]any{"owner/note": map[string]any{"why": "the payload"}},
 	})
-	patch(taskKind, "fold", map[string]any{"properties": map[string]any{"status": "done"}})
-	cleared := patch(taskKind, "fold", map[string]any{"labels": map[string]any{"owner/urgent": nil}})
-	if labels, _ := cleared["labels"].(map[string]any); len(labels) != 0 {
-		t.Fatalf("the last label did not clear: %v", cleared["labels"])
+	patchRecord(t, e, taskKind, "fold", map[string]any{"properties": map[string]any{"status": "done"}})
+	cleared := patchRecord(t, e, taskKind, "fold", map[string]any{"labels": map[string]any{"owner/urgent": nil}})
+	if labels := labelsOf(t, cleared, "fold"); len(labels) != 0 {
+		t.Fatalf("the last label did not clear: %v", labels)
 	}
-	// A delete and the put that restores it.
-	del(taskKind, "collect")
-	put(taskKind, "collect", map[string]any{
+	// The tombstone a later put revives has to fold back as live with the
+	// new properties and labels, not as the record it was.
+	deleteRecord(t, e, taskKind, "collect")
+	putRecord(t, e, taskKind, "collect", map[string]any{
 		"properties": map[string]any{"name": "Collect me", "description": "restored"},
 		"labels":     map[string]any{"owner/kept": true},
 	})
 
-	// Merges: one pair stays merged, one is merged and split.
-	put(taskKind, "m-a", map[string]any{"properties": map[string]any{"name": "Winner", "description": "the record that stays"}})
-	put(taskKind, "m-b", map[string]any{"properties": map[string]any{"name": "Loser", "description": "the record that folds in"}})
-	status, raw := e.Do(http.MethodPost, "/api/v1/merge", map[string]any{"kind": taskKind, "winner": "m-a", "loser": "m-b"})
-	if status/100 != 2 {
-		t.Fatalf("merge: %d %s", status, raw)
-	}
-	d.mergeWinner = "m-a"
-	put(taskKind, "s-a", map[string]any{"properties": map[string]any{"name": "Split winner"}})
-	put(taskKind, "s-b", map[string]any{"properties": map[string]any{"name": "Split loser"}})
-	status, raw = e.Do(http.MethodPost, "/api/v1/merge", map[string]any{"kind": taskKind, "winner": "s-a", "loser": "s-b"})
-	if status/100 != 2 {
-		t.Fatalf("merge for the split: %d %s", status, raw)
-	}
-	mergeRecord := decodeAny(t, raw).(map[string]any)
+	putRecord(t, e, taskKind, mergeWinner, map[string]any{"properties": map[string]any{"name": "Winner", "description": "the record that stays"}})
+	putRecord(t, e, taskKind, mergeLoser, map[string]any{"properties": map[string]any{"name": "Loser", "description": "the record that folds in"}})
+	e.MustJSON(http.MethodPost, "/api/v1/merge", substrate.MergeInput{Kind: taskKind, Winner: mergeWinner, Loser: mergeLoser}, nil)
+	putRecord(t, e, taskKind, "s-a", map[string]any{"properties": map[string]any{"name": "Split winner"}})
+	putRecord(t, e, taskKind, "s-b", map[string]any{"properties": map[string]any{"name": "Split loser"}})
+	var mergeRecord map[string]any
+	e.MustJSON(http.MethodPost, "/api/v1/merge", substrate.MergeInput{Kind: taskKind, Winner: "s-a", Loser: "s-b"}, &mergeRecord)
 	d.splitMergeID, _ = mergeRecord["id"].(string)
 	if mergeRecord["kind"] != corePkg+"/recordmerge" || d.splitMergeID == "" {
 		t.Fatalf("merge answered with %v, want the recordmerge record", mergeRecord)
 	}
-	if status, raw := e.Do(http.MethodPost, "/api/v1/split", map[string]any{"merge": d.splitMergeID}); status/100 != 2 {
-		t.Fatalf("split: %d %s", status, raw)
-	}
+	e.MustJSON(http.MethodPost, "/api/v1/split", substrate.SplitInput{Merge: d.splitMergeID}, nil)
+}
 
-	// An attachment: bytes into the blob store, then a record naming them.
-	status, raw, _ = e.DoRaw(http.MethodPut, "/api/v1/blobs?name=report.txt", []byte(fileBytesTxt),
+// writeSecretsAndAttachment stores the attachment's bytes and the record
+// naming them, the embeddings provider whose apiKey is sealed, the
+// user-declared OAuth-shaped credential, and the installed provider's input
+// record with its sealed client secret.
+func (d *drill) writeSecretsAndAttachment(t *testing.T, e *testenv.Env) {
+	status, raw, _ := e.DoRaw(http.MethodPut, "/api/v1/blobs?name=report.txt", []byte(fileBytes),
 		map[string]string{"Content-Type": "text/plain"})
 	if status != http.StatusCreated {
 		t.Fatalf("put blob: %d %s", status, raw)
@@ -899,72 +943,75 @@ func (d *drill) buildSource(t *testing.T) {
 		t.Fatalf("blob upload answered %s: %v", raw, err)
 	}
 	d.blobDigest = blob.Digest
-	put(fileKind, "report", map[string]any{"properties": map[string]any{
+	putRecord(t, e, fileKind, "report", map[string]any{"properties": map[string]any{
 		"name": "report.txt", "data": blob.Digest, "notes": "attached before the restore",
 	}})
-
-	// Secrets: the embeddings provider's apiKey, and an OAuth-shaped set.
-	put(corePkg+"/llmprovider", "vectors", map[string]any{"properties": map[string]any{
+	putRecord(t, e, corePkg+"/llmprovider", "vectors", map[string]any{"properties": map[string]any{
 		"label": "vectors", "wire": "openai", "baseURL": d.embed.srv.URL,
 		"apiKey": embedAPIKey, "embedModel": embedModel,
 	}})
-	put(oauthKind, "github-app", map[string]any{"properties": map[string]any{
+	putRecord(t, e, oauthKind, "github-app", map[string]any{"properties": map[string]any{
 		"clientId": "Iv1.drill", "clientSecret": "gho_client_secret_value",
 		"accessToken": "gho_access_token_value", "refreshToken": "ghr_refresh_token_value",
 		"expiresAt": time.Now().UTC().Add(time.Hour).Truncate(time.Second).Format(time.RFC3339),
 	}})
+	putRecord(t, e, googleConfig, "default", map[string]any{"properties": map[string]any{
+		"clientId": "drill-google-client", "clientSecret": "google-client-secret-value",
+	}})
+}
 
-	// Conflicting integration values: two mirrors, one subject, two names;
-	// then the owner's hand on the same property, so both offers are
-	// alternatives beside a held value.
+// writeMirrors writes conflicting provider values: two mirror packages sync
+// one subject with two names, then the owner's hand takes the property, so
+// both offers stand as alternatives beside a held value.
+func (d *drill) writeMirrors(t *testing.T, e *testenv.Env) {
 	e.MustCallFunction("synca", map[string]any{"id": "a-1", "name": "Alexandra Papas", "email": "alex@example.com"})
 	e.MustCallFunction("syncb", map[string]any{"id": "b-1", "name": "Alex P", "email": "alex@example.com"})
 	contact := getRecord(t, e, contactKind, "a-1")
-	d.subjectID = refID(contact["properties"].(map[string]any)["subject"])
+	d.subjectID = refID(propOf(t, contact, "a-1", "subject"))
 	if d.subjectID == "" {
 		t.Fatalf("the contact names no subject: %v", contact["properties"])
 	}
-	subject := getRecord(t, e, subjectKind, d.subjectID)
-	if got := subject["properties"].(map[string]any)["name"]; got != "Alex P" {
+	if got := propOf(t, getRecord(t, e, subjectKind, d.subjectID), d.subjectID, "name"); got != "Alex P" {
 		t.Errorf("subject name after two syncs = %v, want the later source's \"Alex P\"", got)
 	}
-	patch(subjectKind, d.subjectID, map[string]any{"properties": map[string]any{"name": "Alex", "note": "held by hand"}})
-	subject = getRecord(t, e, subjectKind, d.subjectID)
-	meta := subject["propertyMeta"].(map[string]any)["name"].(map[string]any)
-	alts, _ := meta["alternatives"].([]any)
-	if meta["manager"] != "api" || len(alts) != 2 {
+	patchRecord(t, e, subjectKind, d.subjectID, map[string]any{"properties": map[string]any{"name": subjectHold, "note": "held by hand"}})
+	meta := metaOf(t, getRecord(t, e, subjectKind, d.subjectID), d.subjectID, "name")
+	if alts, _ := meta["alternatives"].([]any); meta["manager"] != "api" || len(alts) != 2 {
 		t.Errorf("subject name provenance = %v, want manager api with two alternatives", meta)
 	}
+}
 
-	// Automations. The triggers are records; the dispatcher pass is the
-	// engine's, as substrated's loop runs it.
+// parkAutomations writes the four triggers and drives them to the states the
+// release names: a settled delivery, a pending one, a paged drain parked at
+// cursor 2, a webhook parked with its request (#437), plus the purge and the
+// tombstone the sweep has not reached. The dispatcher pass is the engine's,
+// as substrated's loop runs it.
+func (d *drill) parkAutomations(t *testing.T, e *testenv.Env) substrate.Dataset {
+	ctx := context.Background()
 	ds, err := e.Service.Dataset(ctx, drillUser)
 	if err != nil {
 		t.Fatalf("open the source dataset: %v", err)
 	}
 	dispatcher := ds.(substrate.TriggerDispatcher)
 	callable := func(name string) string { return corePkg + "/function/" + drillAuthority + "/auto/" + name }
-	put(corePkg+"/trigger", "on-mirror", map[string]any{"properties": map[string]any{
+	putRecord(t, e, corePkg+"/trigger", "on-mirror", map[string]any{"properties": map[string]any{
 		"enabled": true, "source": map[string]any{"record": map[string]any{"kinds": []any{widgetKind}}}, "callable": callable("mirror"),
 	}})
-	put(corePkg+"/trigger", "on-page", map[string]any{"properties": map[string]any{
+	putRecord(t, e, corePkg+"/trigger", "on-page", map[string]any{"properties": map[string]any{
 		"enabled": true, "source": map[string]any{"record": map[string]any{"kinds": []any{gadgetKind}}}, "callable": callable("page"),
 	}})
-	put(corePkg+"/trigger", "on-hook", map[string]any{"properties": map[string]any{
+	putRecord(t, e, corePkg+"/trigger", "on-hook", map[string]any{"properties": map[string]any{
 		"enabled": true, "source": map[string]any{"webhook": map[string]any{}}, "callable": callable("hook"),
 	}})
-	put(corePkg+"/trigger", "on-hold", map[string]any{"properties": map[string]any{
+	putRecord(t, e, corePkg+"/trigger", "on-hold", map[string]any{"properties": map[string]any{
 		"enabled": true, "source": map[string]any{"webhook": map[string]any{}}, "callable": callable("hold"),
 	}})
-	// Completed: a widget mirrored into a task.
-	put(widgetKind, "w1", map[string]any{"properties": map[string]any{"name": "one"}})
-	// Parked mid-cursor: the paged drain commits pages 0 and 1 and cannot
-	// pass page 2 (#383, #426).
-	put(gadgetKind, "g1", map[string]any{"properties": map[string]any{"name": "big"}})
+	putRecord(t, e, widgetKind, "w1", map[string]any{"properties": map[string]any{"name": "one"}})
+	putRecord(t, e, gadgetKind, "g1", map[string]any{"properties": map[string]any{"name": "big"}})
 	if _, err := dispatcher.ProcessTriggers(ctx); err != nil {
 		t.Fatalf("dispatcher pass: %v", err)
 	}
-	if got := getRecord(t, e, taskKind, "t-w1")["properties"].(map[string]any)["name"]; got != "mirror of one" {
+	if got := propOf(t, getRecord(t, e, taskKind, "t-w1"), "t-w1", "name"); got != "mirror of one" {
 		t.Fatalf("the mirror did not deliver: %v", got)
 	}
 	for _, id := range []string{"p-0", "p-1"} {
@@ -978,8 +1025,7 @@ func (d *drill) buildSource(t *testing.T) {
 		t.Fatalf("paged failures = %+v, want the one park", parked)
 	}
 	d.pagedFailureID = parked[0].ID
-	scopedA := openScoped(t, d.dsnA, drillAuthority)
-	cursors := pagedCursors(t, scopedA)
+	cursors := pagedCursors(t, d.scoped(t, d.dsnA, drillAuthority))
 	if len(cursors) != 1 {
 		t.Fatalf("paged_cursors = %v, want the one chain", cursors)
 	}
@@ -989,12 +1035,11 @@ func (d *drill) buildSource(t *testing.T) {
 			t.Fatalf("paged cursor = %v, want 2 after pages 0 and 1", cur)
 		}
 	}
-	// Pending: a widget written after the pass, undelivered at the stop.
-	put(widgetKind, "w2", map[string]any{"properties": map[string]any{"name": "two"}})
+	// Written after the pass: undelivered at the stop.
+	putRecord(t, e, widgetKind, "w2", map[string]any{"properties": map[string]any{"name": "two"}})
 
-	// A purge: a tombstone the sweep collects. Then a tombstone that stays.
-	put(taskKind, "purge-me", map[string]any{"properties": map[string]any{"name": "Purge me"}})
-	del(taskKind, "purge-me")
+	putRecord(t, e, taskKind, "purge-me", map[string]any{"properties": map[string]any{"name": "Purge me"}})
+	deleteRecord(t, e, taskKind, "purge-me")
 	if _, err := ds.RunGC(ctx); err != nil {
 		t.Fatalf("gc: %v", err)
 	}
@@ -1004,63 +1049,43 @@ func (d *drill) buildSource(t *testing.T) {
 	if tombs := listRecords(t, e, taskKind, true); containsID(tombs, "purge-me") {
 		t.Fatalf("the purged record is still a tombstone: %v", tombs)
 	}
-	put(taskKind, "stays-deleted", map[string]any{"properties": map[string]any{"name": "Stays deleted", "description": "a tombstone the sweep has not reached"}})
-	del(taskKind, "stays-deleted")
+	// Deleted after the sweep, so it is a tombstone at the stop.
+	putRecord(t, e, taskKind, "stays-deleted", map[string]any{"properties": map[string]any{"name": "Stays deleted", "description": "a tombstone the sweep has not reached"}})
+	deleteRecord(t, e, taskKind, "stays-deleted")
 
-	// The parked webhook (#437): the door records the request and answers
-	// 202; the fire fails at its gate and parks under a retry id.
-	d.hookFireID = postWebhook(t, e, "on-hook", `{"say":"call the dentist"}`, "parked")
-	deadline := time.Now().Add(20 * time.Second)
-	for {
+	d.hookFireID = postWebhook(t, e, "on-hook", hookBody, "parked")
+	waitFor(t, "the webhook fire to park", func() bool {
 		parked = parkedOf(t, e, "on-hook")
-		if len(parked) == 1 && !strings.Contains(parked[0].LastError, "has not settled") {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the webhook fire did not park: %+v", parked)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+		return len(parked) == 1 && !strings.Contains(parked[0].LastError, "has not settled")
+	})
 	d.hookFailureID = parked[0].ID
 	if parked[0].FireID != d.hookFireID || !strings.Contains(parked[0].LastError, "hook gate closed") {
 		t.Fatalf("the parked webhook = %+v, want fire %s parked at its gate", parked[0], d.hookFireID)
 	}
+	return ds
+}
 
-	// Search on the source: the drain buys the vectors, then the fixed
-	// queries are recorded.
-	drainEmbeds(t, ds)
-
-	// A second repository on the same substrate, the one stage 6 takes
-	// through the oldest accepted format: plain writes a v0.47 binary could
-	// have made, a cleared label, a sealed value and a blob.
-	d.legacy = e.RegisterUser(legacyUser, legacyPassword,
-		testenv.WithAuthority(legacyAuthority),
-		testenv.WithRecoveryPublicKey(d.legacyIdentity.Recipient().String()))
+// writeLegacyRepository registers a second user on the same substrate and
+// writes what a v0.47 binary could have: tasks, a cleared label, a sealed
+// value and a blob. Stage 6 takes its snapshot through the oldest format
+// the reader accepts.
+func (d *drill) writeLegacyRepository(t *testing.T, e *testenv.Env) {
+	ctx := context.Background()
+	d.legacy = e.RegisterUser(legacyUser, legacyPassword, legacyAuthority, d.legacyIdentity.Recipient().String())
 	l := d.legacy.For(t)
 	for _, id := range sampleImports {
-		if status, body := l.Do(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/import", nil); status/100 != 2 {
-			t.Fatalf("legacy import %s: %d %s", id, status, body)
-		}
+		l.MustJSON(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/import", nil, nil)
 	}
-	legacyTask := legacyAuthority + "/tasks/task"
 	for i, name := range []string{"first", "second", "third"} {
-		if status, raw := l.Do(http.MethodPut, recordPath(legacyTask, fmt.Sprintf("l-%d", i)), map[string]any{
+		putRecord(t, l, legacyTask, fmt.Sprintf("l-%d", i), map[string]any{
 			"properties": map[string]any{"name": name, "description": "legacy " + name},
 			"labels":     map[string]any{"owner/legacy": true},
-		}); status/100 != 2 {
-			t.Fatalf("legacy put: %d %s", status, raw)
-		}
+		})
 	}
-	if status, raw := l.Do(http.MethodPatch, recordPath(legacyTask, "l-0"), map[string]any{
-		"labels": map[string]any{"owner/legacy": nil},
-	}); status/100 != 2 {
-		t.Fatalf("legacy label clear: %d %s", status, raw)
-	}
-	if status, raw := l.Do(http.MethodPut, recordPath(corePkg+"/llmprovider", "legacy-llm"), map[string]any{"properties": map[string]any{
+	patchRecord(t, l, legacyTask, "l-0", map[string]any{"labels": map[string]any{"owner/legacy": nil}})
+	putRecord(t, l, corePkg+"/llmprovider", "legacy-llm", map[string]any{"properties": map[string]any{
 		"label": "legacy", "wire": "openai", "baseURL": "https://llm.example.com/v1", "apiKey": "sk-legacy-value",
-	}}); status/100 != 2 {
-		t.Fatalf("legacy provider: %d %s", status, raw)
-	}
+	}})
 	if status, raw, _ := l.DoRaw(http.MethodPut, "/api/v1/blobs?name=legacy.txt", []byte("legacy bytes"),
 		map[string]string{"Content-Type": "text/plain"}); status != http.StatusCreated {
 		t.Fatalf("legacy blob: %d %s", status, raw)
@@ -1072,38 +1097,21 @@ func (d *drill) buildSource(t *testing.T) {
 	if d.legacyFold, err = lds.(folded).FoldSnapshot(ctx); err != nil {
 		t.Fatalf("legacy fold: %v", err)
 	}
+}
 
-	// The held webhook LAST: its fire sleeps until a `release` flag exists,
-	// the stop cancels it, and the entry stays pending for the restored
-	// dispatcher. The runner's invoke hook says when the body has started,
-	// so the stop below cancels a fire that is running, not one still queued.
-	// Everything after this point must finish inside the body's 40 second
-	// wait.
-	d.holdFireID = postWebhook(t, e, "on-hold", `{"say":"hold the line"}`, "held")
+// holdWebhook posts the webhook whose fire waits for a `release` flag, and
+// waits for the runner to start its body, so the stop in stage 2 cancels a
+// fire that is running, not one still queued. It is the last write of the
+// source; the entry stays pending for the restored dispatcher.
+func (d *drill) holdWebhook(t *testing.T, e *testenv.Env) {
+	d.holdFireID = postWebhook(t, e, "on-hold", holdBody, "held")
 	select {
 	case <-d.holdInvoked:
-	case <-time.After(20 * time.Second):
+	case <-time.After(settleDeadline):
 		t.Fatal("the held fire's body did not start within 20s of the 202")
 	}
 	if status, _ := e.Do(http.MethodGet, recordPath(echoKind, "hold-echo"), nil); status != http.StatusNotFound {
 		t.Fatalf("the held fire settled before the stop: hold-echo reads %d", status)
-	}
-
-	d.source = captureState(t, e, ds, scopedA)
-	if st := d.source.statuses["on-hold"]; st.Pending != 1 {
-		t.Errorf("on-hold status = %+v, want one pending fire", st)
-	}
-	if st := d.source.statuses["on-mirror"]; st.Lag < 1 {
-		t.Errorf("on-mirror status = %+v, want a pending delivery (lag) at the stop", st)
-	}
-	if got := d.source.lexical["ledger"]; len(got.IDs) == 0 {
-		t.Errorf("lexical search found nothing for the fixed query: %+v", got)
-	}
-	if got := d.source.semantic["carry the values"]; len(got.IDs) == 0 || got.Pending != 0 {
-		t.Errorf("semantic search on the source = %+v, want hits over a drained index", got)
-	}
-	if !bytes.Equal(d.source.blobs[d.blobDigest], []byte(fileBytesTxt)) {
-		t.Errorf("the attachment did not read back on the source")
 	}
 }
 
@@ -1122,14 +1130,14 @@ func (d *drill) stopAndSnapshot(t *testing.T) {
 		t.Fatalf("open the operator's process: %v", err)
 	}
 	defer func() { _ = operator.Close() }()
-	d.snapRoot = d.root.TempDir()
-	report, err := operator.(snapshotter).SnapshotRepository(ctx, drillUser, d.snapRoot)
+	d.snapRoot = d.tb(t).TempDir()
+	report, err := operator.(engine.Snapshotter).SnapshotRepository(ctx, drillUser, d.snapRoot)
 	if err != nil {
 		t.Fatalf("snapshot %s: %v", drillUser, err)
 	}
-	d.drillDir, d.snapHead = report.Directory, report.Head
-	if report.Head != d.source.head || report.Repository != drillAuthority || report.BlobStore != "fs" || report.Blobs < 1 {
-		t.Errorf("snapshot report = %+v, want head %d for %s under fs with the attachment", report, d.source.head, drillAuthority)
+	d.snapHead = report.Head
+	if report.Head != d.source.head || report.Repository != drillAuthority || report.BlobStore != "fs" || report.Blobs < 1 || report.SealedFiles != sealedValues {
+		t.Errorf("snapshot report = %+v, want head %d for %s under fs with the attachment and %d sealed files", report, d.source.head, drillAuthority, sealedValues)
 	}
 	snap, err := changelogfile.ReadSnapshot(report.Directory)
 	if err != nil {
@@ -1138,18 +1146,18 @@ func (d *drill) stopAndSnapshot(t *testing.T) {
 	if snap.Head != d.source.head || hex.EncodeToString(snap.HeadHash[:]) != report.HeadHash || snap.BlobLocation != "" {
 		t.Errorf("recorded point = seq %d %x at %q, want seq %d %s in the directory", snap.Head, snap.HeadHash, snap.BlobLocation, d.source.head, report.HeadHash)
 	}
-	if !slicesContain(snap.Blobs, d.blobDigest) {
+	if !slices.Contains(snap.Blobs, d.blobDigest) {
 		t.Errorf("snapshot.json lists %v, which lacks the attachment %s", snap.Blobs, d.blobDigest)
 	}
 	if _, err := os.Stat(filepath.Join(changelogfile.BlobsDir(report.Directory), d.blobDigest)); err != nil {
 		t.Errorf("the copy holds no bytes for %s: %v", d.blobDigest, err)
 	}
 
-	legacyReport, err := operator.(snapshotter).SnapshotRepository(ctx, legacyUser, d.snapRoot)
+	legacyReport, err := operator.(engine.Snapshotter).SnapshotRepository(ctx, legacyUser, d.snapRoot)
 	if err != nil {
 		t.Fatalf("snapshot %s: %v", legacyUser, err)
 	}
-	d.legacyDir, d.legacyHead = legacyReport.Directory, legacyReport.Head
+	d.legacyHead = legacyReport.Head
 	if legacyReport.Repository != legacyAuthority {
 		t.Errorf("legacy snapshot report = %+v", legacyReport)
 	}
@@ -1166,26 +1174,23 @@ func (d *drill) stopAndSnapshot(t *testing.T) {
 // and `repository verify` opens every sealed file and hashes every blob.
 func (d *drill) restore(t *testing.T) {
 	ctx := context.Background()
-	if d.keyA == d.keyB {
-		t.Fatal("the two host keys are one key")
-	}
+	tb := d.tb(t)
+	dsnB := testdb.NewSchema(tb)
+	restoreRoot := copyRoot(tb, d.snapRoot, drillAuthority)
+
 	// Without the rewrap the copy is inert on this host, and the refusal
-	// leaves no row behind.
-	refusedDSN := testdb.NewSchema(t)
-	refusedRoot := copyRoot(t, d.snapRoot, drillAuthority)
-	if svc, err := engine.Open(ctx, refusedDSN, engine.WithKindsFS(kinds.Seed()),
-		engine.WithDataRoot(refusedRoot), engine.WithCredentialKey(d.keyB)); err == nil {
+	// leaves no row behind on the very schema the restore then boots.
+	if svc, err := engine.Open(ctx, dsnB, engine.WithKindsFS(kinds.Seed()),
+		engine.WithDataRoot(restoreRoot), engine.WithCredentialKey(d.keyB)); err == nil {
 		_ = svc.Close()
 		t.Fatal("the directory imported under a key it was not written under")
 	} else if !strings.Contains(err.Error(), "SUBSTRATE_CREDENTIAL_KEY") {
 		t.Errorf("the refusal does not name the variable: %v", err)
 	}
-	if n := countRows(t, refusedDSN, "repositories"); n != 0 {
+	if n := d.countRows(t, dsnB, "repositories"); n != 0 {
 		t.Errorf("the refused import left %d repositories row(s)", n)
 	}
 
-	// The rewrap, in the restore location, with the new host's key.
-	restoreRoot := copyRoot(d.root, d.snapRoot, drillAuthority)
 	dir, err := changelogfile.RepoDir(restoreRoot, drillAuthority)
 	if err != nil {
 		t.Fatal(err)
@@ -1201,19 +1206,20 @@ func (d *drill) restore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rewrap: %v", err)
 	}
-	if report.Repository != drillAuthority || report.Username != drillUser || report.SealedFiles < 4 {
-		t.Errorf("rewrap report = %+v, want %s/%s with the credential, the provider key and the three oauth values", report, drillAuthority, drillUser)
+	if report.Repository != drillAuthority || report.Username != drillUser || report.SealedFiles != sealedValues {
+		t.Errorf("rewrap report = %+v, want %s/%s with %d sealed files opened", report, drillAuthority, drillUser, sealedValues)
 	}
-	d.pristine = copyRoot(d.root, restoreRoot, drillAuthority)
+	d.pristine = copyRoot(tb, restoreRoot, drillAuthority)
 
-	// The boot that imports: an empty schema, migrated from nothing, no
-	// registration.
-	dsnB := testdb.NewSchema(d.root)
-	d.envB = testenv.Start(d.root,
+	// The boot that imports: the same empty schema, migrated from nothing, no
+	// registration. The restored substrate speaks with the source's token,
+	// which is a record the import brought back.
+	d.envB = testenv.Start(tb,
 		testenv.WithUser(drillUser, drillPassword), testenv.WithoutRegistration(),
 		testenv.WithDSN(dsnB), testenv.WithDataRoot(restoreRoot), testenv.WithCredentialKey(d.keyB),
 		testenv.WithClock(d.clock.Now))
-	d.envB.TOTPSecret, d.envB.Authority = d.envA.TOTPSecret, drillAuthority
+	session := *d.envA.Session
+	d.envB.Session = &session
 	e := d.envB.For(t)
 	repos, err := e.Service.Repositories(ctx)
 	if err != nil {
@@ -1222,32 +1228,22 @@ func (d *drill) restore(t *testing.T) {
 	if len(repos) != 1 || repos[0].ID != drillAuthority || repos[0].Name != drillUser {
 		t.Fatalf("the restored database holds %+v, want the one imported repository", repos)
 	}
-	if incomplete, err := engine.ImportIncomplete(ctx, rawDB(t, dsnB)); err != nil || incomplete {
-		t.Fatalf("import marker after the boot = %v, %v; want cleared", incomplete, err)
-	}
-	// No auxiliary table came along: the schema was empty and the import
-	// wrote the repository's rows alone; its idempotency keys and its embed
-	// vectors are not in the directory.
-	for _, table := range []string{"idempotency_keys", "embeddings"} {
-		if n := countRows(t, dsnB, table); n != 0 {
-			t.Errorf("the restored database holds %d %s row(s) the directory could not have carried", n, table)
-		}
-	}
-	verified, err := e.Service.(verifier).VerifyRepository(ctx, drillUser)
+	verified, err := e.Service.(engine.Verifier).VerifyRepository(ctx, drillUser)
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
-	if !verified.OK || verified.Head != d.snapHead || verified.FileHead != d.snapHead {
+	if !verified.OK || verified.Head != d.snapHead || verified.FileHead != d.snapHead || len(verified.Findings) != 0 {
 		t.Errorf("the restored repository does not verify: %+v", verified)
 	}
 	if verified.Snapshot == nil || verified.Snapshot.Head != d.snapHead || verified.Snapshot.HeadHash != verified.HeadHash {
 		t.Errorf("verify did not report the recorded point: %+v (head %s)", verified.Snapshot, verified.HeadHash)
 	}
-	if verified.SealedOpened != verified.SealedFiles || verified.SealedOpened == 0 {
-		t.Errorf("verify opened %d of %d sealed files under the new key", verified.SealedOpened, verified.SealedFiles)
+	if verified.SealedFiles != sealedValues || verified.SealedOpened != sealedValues || verified.SecretRefs != sealedValues {
+		t.Errorf("verify: %d sealed files, %d opened under the new key, %d secret refs; want %d of each",
+			verified.SealedFiles, verified.SealedOpened, verified.SecretRefs, sealedValues)
 	}
-	if verified.Blobs < 1 || verified.SecretRefs < 4 {
-		t.Errorf("verify hashed %d blobs and held %d secret refs, want the attachment and the four sealed values", verified.Blobs, verified.SecretRefs)
+	if verified.Blobs < 1 {
+		t.Errorf("verify hashed %d blobs, want the attachment", verified.Blobs)
 	}
 	t.Logf("restore: imported %s at seq %d into an empty schema under a new key; verify opened %d sealed files and hashed %d blobs",
 		drillAuthority, verified.Head, verified.SealedOpened, verified.Blobs)
@@ -1256,18 +1252,25 @@ func (d *drill) restore(t *testing.T) {
 // --- stage 4 --------------------------------------------------------------------
 
 func (d *drill) compareAndResume(t *testing.T) {
-	ctx := context.Background()
 	e := d.envB.For(t)
-	// The original token authenticates: tokens are records.
-	e.Token = d.envA.Token
-	ds, err := e.Service.Dataset(ctx, drillUser)
+	ds, err := e.Service.Dataset(context.Background(), drillUser)
 	if err != nil {
 		t.Fatalf("open the restored dataset: %v", err)
 	}
-	scopedB := openScoped(t, e.DSN, drillAuthority)
+	d.compareRestored(t, e, ds)
+	d.resumeDispatch(t, e, ds)
+	d.retryParked(t, e)
+}
 
+// compareRestored holds the restored substrate to the recorded state before
+// anything resumes: records, provenance, the delivery ledger, auth, the
+// attachment, search before and after the embedding drain.
+func (d *drill) compareRestored(t *testing.T, e *testenv.Env, ds substrate.Dataset) {
 	// Before the drain: semantic search refuses with the backlog, which is
-	// not "no matches"; hybrid answers its lexical arm and reports it.
+	// not "no matches"; hybrid answers its lexical arm and reports it. The
+	// vectors and the queue are derived tables the directory does not carry,
+	// so this behavior, not a row count, is what proves the import queued
+	// them.
 	before := gqlSearch(t, e, "carry the values", "semantic", []string{taskKind})
 	if before.ErrCode != "unavailable" || !strings.Contains(before.ErrMsg, "pending") {
 		t.Errorf("semantic search before the drain = %+v, want the unavailable code naming the pending count", before)
@@ -1277,7 +1280,7 @@ func (d *drill) compareAndResume(t *testing.T) {
 	}
 
 	d.embed.reset()
-	d.restored = captureState(t, e, ds, scopedB)
+	d.restored = captureState(t, e, ds, d.scoped(t, e.DSN, drillAuthority))
 	// The comparison is only as strong as what the source recorded, so the
 	// record set is held to a floor before it is compared.
 	if n := len(d.source.records); n < 60 {
@@ -1286,58 +1289,45 @@ func (d *drill) compareAndResume(t *testing.T) {
 	if n := len(d.source.blobs); n != 3 {
 		t.Errorf("the source recorded %d blobs, want the attachment and the two spooled webhook bodies", n)
 	}
-	if n := len(d.source.statuses); n != 4 {
-		t.Errorf("the source recorded %d trigger statuses, want 4", n)
+	for _, id := range drillTriggers {
+		if _, ok := d.source.statuses[id]; !ok {
+			t.Errorf("the source recorded no status for trigger %s", id)
+		}
 	}
 	if tombs, _ := d.source.deleted[taskKind].([]any); !containsID(tombs, "stays-deleted") {
 		t.Errorf("the source's task tombstones lack stays-deleted: %v", tombs)
 	}
-	compareStates(t, "restored", d.source, d.restored)
+	for _, finding := range diffStates(d.source, d.restored) {
+		t.Errorf("restored: %s", finding)
+	}
 	t.Logf("compared %d records, %d collections' tombstones, %d kind versions, %d triggers, %d blobs, %d lexical and %d semantic queries; head %d",
 		len(d.source.records), len(d.source.deleted), len(d.source.kindVersions), len(d.source.statuses),
 		len(d.source.blobs), len(d.source.lexical), len(d.source.semantic), d.source.head)
 
-	// The states the release names, read back by name.
-	fold := getRecord(t, e, taskKind, "fold")
-	if labels, ok := fold["labels"].(map[string]any); !ok || len(labels) != 0 {
-		t.Errorf("the cleared label came back: labels = %v (#362)", fold["labels"])
-	}
-	if fold["version"] != d.source.records[taskKind+"/fold"].(map[string]any)["version"] {
-		t.Errorf("fold's version = %v, want the source's %v", fold["version"], d.source.records[taskKind+"/fold"].(map[string]any)["version"])
-	}
-	if winner := getRecord(t, e, taskKind, d.mergeWinner); !reflect.DeepEqual(winner["formerIds"], []any{"m-b"}) {
-		t.Errorf("the merge winner's former ids = %v, want [m-b]", winner["formerIds"])
-	}
-	if loser := getRecord(t, e, taskKind, "m-b"); loser["canonicalId"] != d.mergeWinner {
-		t.Errorf("the merged-away id resolves to %v, want %s", loser["canonicalId"], d.mergeWinner)
-	}
-	if split := getRecord(t, e, taskKind, "s-b"); split["canonicalId"] != nil || split["deletedAt"] != nil {
-		t.Errorf("the split loser is not its own live record again: %v", split)
-	}
-	if status, _ := e.Do(http.MethodGet, recordPath(taskKind, "purge-me"), nil); status != http.StatusNotFound {
-		t.Errorf("the purged record came back: %d", status)
-	}
-	if tombs := listRecords(t, e, taskKind, true); containsID(tombs, "purge-me") || !containsID(tombs, "stays-deleted") {
-		t.Errorf("task tombstones after the restore = %v", tombs)
-	}
-	subject := getRecord(t, e, subjectKind, d.subjectID)
-	meta := subject["propertyMeta"].(map[string]any)["name"].(map[string]any)
-	if alts, _ := meta["alternatives"].([]any); meta["manager"] != "api" || len(alts) != 2 {
-		t.Errorf("subject name provenance after the restore = %v, want the owner's hold over two offers", meta)
-	}
-	if got := d.restored.kindVersions[corePkg+"/run"]; got != d.runVersion {
-		t.Errorf("run declared at %d after the restore, want the shipped %d", got, d.runVersion)
-	}
-	if got := d.restored.kindVersions[fileKind]; got != 2 {
-		t.Errorf("file declared at %d after the restore, want 2", got)
-	}
-	file := getRecord(t, e, fileKind, "report")
-	if data, _ := file["properties"].(map[string]any)["data"].(map[string]any); data["digest"] != d.blobDigest || data["status"] != "stored" {
-		t.Errorf("the attachment reference resolves to %v, want the stored manifest %s", file["properties"].(map[string]any)["data"], d.blobDigest)
-	}
+	// The comparator's negative proof: a copy of the restored state with one
+	// property flipped and the head moved must be reported, by path.
+	t.Run("comparator reports a tampered copy", func(t *testing.T) {
+		tampered := *d.restored
+		tampered.records = maps.Clone(d.restored.records)
+		key := taskKind + "/fold"
+		var copyOf map[string]any
+		raw, _ := json.Marshal(d.restored.records[key])
+		if err := json.Unmarshal(raw, &copyOf); err != nil {
+			t.Fatal(err)
+		}
+		copyOf["properties"].(map[string]any)["name"] = "tampered"
+		tampered.records[key] = copyOf
+		tampered.head++
+		findings := diffStates(d.source, &tampered)
+		joined := strings.Join(findings, "\n")
+		if !strings.Contains(joined, key) || !strings.Contains(joined, "$.properties.name") || !strings.Contains(joined, "head") {
+			t.Errorf("the comparator missed the tamper; it reported:\n%s", joined)
+		}
+	})
 
 	// The delivery ledger before dispatch resumes: the parked webhook under
-	// its retry id, the paged drain at its cursor, the held fire pending.
+	// its retry id, the paged drain at its cursor, the held fire pending and
+	// unsettled, the pending mirror undelivered.
 	if got := d.restored.parked["on-hook"]; len(got) != 1 || got[0].ID != d.hookFailureID || got[0].FireID != d.hookFireID {
 		t.Errorf("restored on-hook parked = %+v, want failure %d for fire %s", got, d.hookFailureID, d.hookFireID)
 	}
@@ -1350,31 +1340,60 @@ func (d *drill) compareAndResume(t *testing.T) {
 	if st := d.restored.statuses["on-hold"]; st.Pending != 1 {
 		t.Errorf("restored on-hold status = %+v, want the held fire pending", st)
 	}
-	if status, _ := e.Do(http.MethodGet, recordPath(echoKind, "hold-echo"), nil); status != http.StatusNotFound {
-		t.Errorf("the held fire's echo exists before dispatch resumed: %d", status)
+	for _, id := range []string{"hold-echo", "hook-echo"} {
+		if status, _ := e.Do(http.MethodGet, recordPath(echoKind, id), nil); status != http.StatusNotFound {
+			t.Errorf("%s exists before dispatch resumed: %d", id, status)
+		}
 	}
 	if status, _ := e.Do(http.MethodGet, recordPath(taskKind, "t-w2"), nil); status != http.StatusNotFound {
 		t.Errorf("the pending delivery landed before dispatch resumed: t-w2 reads %d", status)
 	}
 
+	// The states the release names, read back by name.
+	fold := getRecord(t, e, taskKind, "fold")
+	if labels := labelsOf(t, fold, "fold"); len(labels) != 0 {
+		t.Errorf("the cleared label came back: labels = %v (#362)", labels)
+	}
+	if winner := getRecord(t, e, taskKind, mergeWinner); !reflect.DeepEqual(winner["formerIds"], []any{mergeLoser}) {
+		t.Errorf("the merge winner's former ids = %v, want [%s]", winner["formerIds"], mergeLoser)
+	}
+	if loser := getRecord(t, e, taskKind, mergeLoser); loser["canonicalId"] != mergeWinner {
+		t.Errorf("the merged-away id resolves to %v, want %s", loser["canonicalId"], mergeWinner)
+	}
+	if split := getRecord(t, e, taskKind, "s-b"); split["canonicalId"] != nil || split["deletedAt"] != nil {
+		t.Errorf("the split loser is not its own live record again: %v", split)
+	}
+	if status, _ := e.Do(http.MethodGet, recordPath(taskKind, "purge-me"), nil); status != http.StatusNotFound {
+		t.Errorf("the purged record came back: %d", status)
+	}
+	if tombs := listRecords(t, e, taskKind, true); containsID(tombs, "purge-me") || !containsID(tombs, "stays-deleted") {
+		t.Errorf("task tombstones after the restore = %v", tombs)
+	}
+	meta := metaOf(t, getRecord(t, e, subjectKind, d.subjectID), d.subjectID, "name")
+	if alts, _ := meta["alternatives"].([]any); meta["manager"] != "api" || len(alts) != 2 {
+		t.Errorf("subject name provenance after the restore = %v, want the owner's hold over two offers", meta)
+	}
+	file := getRecord(t, e, fileKind, "report")
+	if data, _ := propOf(t, file, "report", "data").(map[string]any); data["digest"] != d.blobDigest || data["status"] != "stored" {
+		t.Errorf("the attachment reference resolves to %v, want the stored manifest %s", file["properties"], d.blobDigest)
+	}
+	if got := d.restored.blobs[d.blobDigest]; !bytes.Equal(got, []byte(fileBytes)) {
+		t.Errorf("attachment bytes after the restore = %q", got)
+	}
+	sum := sha256.Sum256([]byte(fileBytes))
+	if want := "blob-sha256-" + hex.EncodeToString(sum[:]); d.blobDigest != want {
+		t.Errorf("attachment digest %s is not the bytes' %s", d.blobDigest, want)
+	}
+
 	// Authenticate with the original password and TOTP, one step later on
-	// the shared clock so the registration's code is not replayed.
+	// the shared clock so the registration's code is not replayed. The
+	// source's token authenticated every read above.
 	d.clock.Advance(engine.TOTPPeriod)
-	status, raw := e.Login(drillUser, drillPassword, e.TOTPCode())
-	if status != http.StatusCreated {
+	if status, raw := e.Login(drillUser, drillPassword, e.TOTPCode()); status != http.StatusCreated {
 		t.Errorf("login on the restored host: %d %s", status, raw)
 	}
 	if status, raw := e.Login(drillUser, "not-the-password", e.TOTPCode()); status/100 == 2 {
 		t.Errorf("a wrong password logged in on the restored host: %d %s", status, raw)
-	}
-
-	// The attachment's bytes.
-	if got := d.restored.blobs[d.blobDigest]; !bytes.Equal(got, []byte(fileBytesTxt)) {
-		t.Errorf("attachment bytes after the restore = %q", got)
-	}
-	sum := sha256.Sum256([]byte(fileBytesTxt))
-	if want := "blob-sha256-" + hex.EncodeToString(sum[:]); d.blobDigest != want {
-		t.Errorf("attachment digest %s is not the bytes' %s", d.blobDigest, want)
 	}
 
 	// The embedding drain: the restored repository buys its vectors with the
@@ -1390,22 +1409,31 @@ func (d *drill) compareAndResume(t *testing.T) {
 		}
 	}
 	for q, want := range d.source.semantic {
-		got := gqlSearch(t, e, q, "semantic", []string{taskKind})
-		if !reflect.DeepEqual(got, want) {
+		if got := gqlSearch(t, e, q, "semantic", []string{taskKind}); !reflect.DeepEqual(got, want) {
 			t.Errorf("semantic %q after the drain = %+v, want the source's %+v", q, got, want)
 		}
 	}
+}
 
-	// Dispatch resumes: the held fire completes under its fire id, the
-	// pending mirror delivers once, the settled one is not delivered again.
-	if status, raw := e.Do(http.MethodPut, recordPath(flagKind, "release"), map[string]any{"properties": map[string]any{"name": "release"}}); status/100 != 2 {
-		t.Fatalf("put release: %d %s", status, raw)
-	}
-	if _, err := ds.(substrate.TriggerDispatcher).ProcessTriggers(ctx); err != nil {
+// resumeDispatch releases the held fire and runs one dispatcher pass: the
+// fire completes under its fire id, the pending mirror delivers once, the
+// settled one is not delivered again. The resumed fire runs detached from
+// the pass, so its effects are awaited.
+func (d *drill) resumeDispatch(t *testing.T, e *testenv.Env, ds substrate.Dataset) {
+	putRecord(t, e, flagKind, "release", map[string]any{"properties": map[string]any{"name": "release"}})
+	if _, err := ds.(substrate.TriggerDispatcher).ProcessTriggers(context.Background()); err != nil {
 		t.Fatalf("dispatcher pass after the restore: %v", err)
 	}
-	if echo := getRecord(t, e, echoKind, "hold-echo"); echo["properties"].(map[string]any)["fire"] != d.holdFireID ||
-		echo["properties"].(map[string]any)["name"] != `{"say":"hold the line"}` {
+	var echo map[string]any
+	waitFor(t, "the held fire to settle", func() bool {
+		status, raw := e.Do(http.MethodGet, recordPath(echoKind, "hold-echo"), nil)
+		if status != http.StatusOK {
+			return false
+		}
+		echo = decodeAny(t, raw).(map[string]any)
+		return statusOf(t, e, "on-hold").Pending == 0
+	})
+	if propOf(t, echo, "hold-echo", "fire") != d.holdFireID || propOf(t, echo, "hold-echo", "name") != holdBody {
 		t.Errorf("the held fire's echo = %v, want fire %s with its body", echo["properties"], d.holdFireID)
 	}
 	if st := statusOf(t, e, "on-hold"); st.Pending != 0 || st.Parked != 0 {
@@ -1417,41 +1445,31 @@ func (d *drill) compareAndResume(t *testing.T) {
 	if w1 := getRecord(t, e, taskKind, "t-w1"); w1["version"] != float64(1) {
 		t.Errorf("the settled delivery was delivered again: version %v", w1["version"])
 	}
+}
 
-	// The parked webhook retries by hand under its restored id once its
-	// gate opens.
-	if status, raw := e.Do(http.MethodPut, recordPath(flagKind, "hook-gate"), map[string]any{"properties": map[string]any{"name": "hook-gate"}}); status/100 != 2 {
-		t.Fatalf("put hook-gate: %d %s", status, raw)
-	}
-	status, raw = e.Do(http.MethodPost, fmt.Sprintf("/api/v1/%s/trigger/on-hook/parked/%d/retry", corePkg, d.hookFailureID), nil)
-	if status/100 != 2 {
-		t.Errorf("retry the parked webhook %d: %d %s", d.hookFailureID, status, raw)
-	}
-	if echo := getRecord(t, e, echoKind, "hook-echo"); echo["properties"].(map[string]any)["fire"] != d.hookFireID ||
-		echo["properties"].(map[string]any)["want"] != "parked" || echo["properties"].(map[string]any)["name"] != `{"say":"call the dentist"}` {
+// retryParked retries the two parked deliveries by hand under their restored
+// ids once their gates open: the webhook echoes its recorded request, and
+// the paged drain continues from page 2 with pages 0 and 1 erased first, so
+// a restart from zero would have revived them.
+func (d *drill) retryParked(t *testing.T, e *testenv.Env) {
+	putRecord(t, e, flagKind, "hook-gate", map[string]any{"properties": map[string]any{"name": "hook-gate"}})
+	e.MustJSON(http.MethodPost, fmt.Sprintf("/api/v1/%s/trigger/on-hook/parked/%d/retry", corePkg, d.hookFailureID), nil, nil)
+	echo := getRecord(t, e, echoKind, "hook-echo")
+	if propOf(t, echo, "hook-echo", "fire") != d.hookFireID || propOf(t, echo, "hook-echo", "want") != "parked" || propOf(t, echo, "hook-echo", "name") != hookBody {
 		t.Errorf("the retried webhook's echo = %v, want fire %s with its header and body", echo["properties"], d.hookFireID)
 	}
 	if got := parkedOf(t, e, "on-hook"); len(got) != 0 {
 		t.Errorf("on-hook still parks %+v after the retry", got)
 	}
 
-	// The paged import continues from its cursor: pages 0 and 1 are erased
-	// first, so a restart from zero would recreate them.
 	for _, id := range []string{"p-0", "p-1"} {
-		if status, raw := e.Do(http.MethodDelete, recordPath(taskKind, id), nil); status/100 != 2 {
-			t.Fatalf("delete %s: %d %s", id, status, raw)
-		}
+		deleteRecord(t, e, taskKind, id)
 	}
-	if status, raw := e.Do(http.MethodPut, recordPath(flagKind, "page-gate"), map[string]any{"properties": map[string]any{"name": "page-gate"}}); status/100 != 2 {
-		t.Fatalf("put page-gate: %d %s", status, raw)
-	}
-	status, raw = e.Do(http.MethodPost, fmt.Sprintf("/api/v1/%s/trigger/on-page/parked/%d/retry", corePkg, d.pagedFailureID), nil)
-	if status/100 != 2 {
-		t.Errorf("retry the parked drain %d: %d %s", d.pagedFailureID, status, raw)
-	}
+	putRecord(t, e, flagKind, "page-gate", map[string]any{"properties": map[string]any{"name": "page-gate"}})
+	e.MustJSON(http.MethodPost, fmt.Sprintf("/api/v1/%s/trigger/on-page/parked/%d/retry", corePkg, d.pagedFailureID), nil, nil)
 	for _, id := range []string{"p-2", "p-3", "p-4"} {
-		if status, _ := e.Do(http.MethodGet, recordPath(taskKind, id), nil); status != http.StatusOK {
-			t.Errorf("resumed page %s reads %d, want 200", id, status)
+		if rec := getRecord(t, e, taskKind, id); rec["deletedAt"] != nil {
+			t.Errorf("resumed page %s is a tombstone", id)
 		}
 	}
 	for _, id := range []string{"p-0", "p-1"} {
@@ -1464,49 +1482,65 @@ func (d *drill) compareAndResume(t *testing.T) {
 	if got := parkedOf(t, e, "on-page"); len(got) != 0 {
 		t.Errorf("on-page still parks %+v after the resumed drain", got)
 	}
-	if cursors := pagedCursors(t, scopedB); len(cursors) != 0 {
+	if cursors := pagedCursors(t, d.scoped(t, e.DSN, drillAuthority)); len(cursors) != 0 {
 		t.Errorf("paged_cursors after the drain finished = %v, want none", cursors)
 	}
 }
 
 // --- stage 5 --------------------------------------------------------------------
 
-// interruptedImport boots the rewrapped copy into fresh schemas and kills the
-// boot at the import's durable steps (the progress-marker hook, #365): after
-// the first batch, then after the first fold pass, then a clean boot. Each
-// kill leaves the marker, and the boot that finishes reproduces the fold.
+// interruptedImport boots the rewrapped copy into a fresh schema and kills
+// the boot at the import's durable steps (the progress-marker hook, #365):
+// after the first batch, after a later batch of the resumed boot, then after
+// the first fold pass; the fourth boot finishes. Each kill leaves exactly the
+// rows its batches committed, the unfinished import is refused to a reader
+// and reported by verify, and the boot that finishes reproduces the fold.
+// internal/engine/repodir_db_test.go TestAnInterruptedImportResumesAtTheNextBoot
+// owns the crash schedule; this stage runs it over the drill's history.
 func (d *drill) interruptedImport(t *testing.T) {
 	ctx := context.Background()
-	const batch = 40
-	batches := int((d.snapHead + batch - 1) / batch)
-	if batches < 3 {
-		t.Fatalf("head %d spans %d batches of %d; the schedule needs at least 3", d.snapHead, batches, batch)
+	// Five batches or so, so three kills land on three distinct boundaries.
+	batch := int((d.snapHead + 4) / 5)
+	batches := int((d.snapHead + int64(batch) - 1) / int64(batch))
+	if batches < 4 {
+		t.Fatalf("head %d spans %d batches of %d; the schedule needs at least 4", d.snapHead, batches, batch)
 	}
 	errKilled := errors.New("the process died here")
+	// Each kill names the stage, its occurrence within that boot, and the
+	// changelog rows it must leave: the resumed boot's nth batch lands after
+	// the first boot's one.
 	crashes := []struct {
 		stage string
 		nth   int
+		rows  int64
 	}{
-		{engine.ImportAfterBatch, 1},
-		{engine.ImportAfterBatch, batches - 2},
-		{engine.ImportAfterFirstFold, 1},
+		{engine.ImportAfterBatch, 1, int64(batch)},
+		{engine.ImportAfterBatch, batches - 2, int64((batches - 1) * batch)},
+		{engine.ImportAfterFirstFold, 1, d.snapHead},
+	}
+	if !(crashes[0].rows < crashes[1].rows && crashes[1].rows < crashes[2].rows) {
+		t.Fatalf("the kills do not land on three distinct boundaries: %d, %d, %d rows", crashes[0].rows, crashes[1].rows, crashes[2].rows)
 	}
 	root := copyRoot(t, d.pristine, drillAuthority)
 	dsn := testdb.NewSchema(t)
+	open := func(opts ...engine.Option) (substrate.Service, error) {
+		return engine.Open(ctx, dsn, append([]engine.Option{
+			engine.WithKindsFS(kinds.Seed()), engine.WithDataRoot(root),
+			engine.WithCredentialKey(d.keyB), engine.WithTestTOTPClock(d.clock.Now),
+		}, opts...)...)
+	}
 	for i, c := range crashes {
 		seen := 0
-		svc, err := engine.Open(ctx, dsn, engine.WithKindsFS(kinds.Seed()),
-			engine.WithDataRoot(root), engine.WithCredentialKey(d.keyB),
-			engine.WithTestImportFault(batch, func(stage string) error {
-				if stage != c.stage {
-					return nil
-				}
-				seen++
-				if seen == c.nth {
-					return errKilled
-				}
+		svc, err := open(engine.WithTestImportFault(batch, func(stage string) error {
+			if stage != c.stage {
 				return nil
-			}))
+			}
+			seen++
+			if seen == c.nth {
+				return errKilled
+			}
+			return nil
+		}))
 		if err == nil {
 			_ = svc.Close()
 			t.Fatalf("boot %d did not die %s (occurrence %d)", i+1, c.stage, c.nth)
@@ -1514,31 +1548,35 @@ func (d *drill) interruptedImport(t *testing.T) {
 		if !errors.Is(err, errKilled) {
 			t.Fatalf("boot %d failed elsewhere: %v", i+1, err)
 		}
-		incomplete, err := engine.ImportIncomplete(ctx, rawDB(t, dsn))
-		if err != nil {
-			t.Fatal(err)
+		if n := d.countRows(t, dsn, "changelog"); int64(n) != c.rows {
+			t.Errorf("boot %d died %s and left %d changelog rows, want %d", i+1, c.stage, n, c.rows)
 		}
-		if !incomplete {
-			t.Errorf("boot %d died %s and left no import-progress marker", i+1, c.stage)
-		}
-		if n := countRows(t, dsn, "changelog"); int64(n) > d.snapHead {
-			t.Errorf("boot %d left %d changelog rows, the history has %d", i+1, n, d.snapHead)
+		if i > 0 {
+			continue
 		}
 		// What the crash left is not served: a read-only process refuses the
-		// repository until the boot finishes the import.
-		ro, err := engine.Open(ctx, dsn, engine.WithKindsFS(kinds.Seed()),
-			engine.WithDataRoot(root), engine.WithCredentialKey(d.keyB), engine.WithDirectoryReadOnly())
+		// repository until the boot finishes the import, and verify names
+		// the unfinished import while the files and the rows still agree.
+		ro, err := open(engine.WithDirectoryReadOnly())
 		if err != nil {
 			t.Fatalf("read-only open after boot %d: %v", i+1, err)
 		}
 		if _, err := ro.Dataset(ctx, drillUser); !errors.Is(err, engine.ErrImportIncomplete) {
 			t.Errorf("a read-only open after boot %d = %v, want ErrImportIncomplete", i+1, err)
 		}
+		report, err := ro.(engine.Verifier).VerifyRepository(ctx, drillUser)
+		if err != nil {
+			t.Fatalf("verify after boot %d: %v", i+1, err)
+		}
+		if report.OK || !slices.ContainsFunc(report.Findings, func(f string) bool {
+			return strings.Contains(f, "import of the repository directory has not completed")
+		}) {
+			t.Errorf("verify after boot %d does not name the unfinished import: %+v", i+1, report)
+		}
 		_ = ro.Close()
 	}
 
-	svc, err := engine.Open(ctx, dsn, engine.WithKindsFS(kinds.Seed()),
-		engine.WithDataRoot(root), engine.WithCredentialKey(d.keyB), engine.WithTestTOTPClock(d.clock.Now))
+	svc, err := open()
 	if err != nil {
 		t.Fatalf("the boot after the crashes: %v", err)
 	}
@@ -1546,9 +1584,6 @@ func (d *drill) interruptedImport(t *testing.T) {
 	ds, err := svc.Dataset(ctx, drillUser)
 	if err != nil {
 		t.Fatalf("open the repository after the import resumed: %v", err)
-	}
-	if incomplete, err := engine.ImportIncomplete(ctx, rawDB(t, dsn)); err != nil || incomplete {
-		t.Errorf("the import-progress marker outlived the import: %v %v", incomplete, err)
 	}
 	fold, err := ds.(folded).FoldSnapshot(ctx)
 	if err != nil {
@@ -1567,19 +1602,16 @@ func (d *drill) interruptedImport(t *testing.T) {
 	if head.Generation == d.source.gen {
 		t.Errorf("the resumed import kept the source's history generation %q", head.Generation)
 	}
-	report, err := svc.(verifier).VerifyRepository(ctx, drillUser)
-	if err != nil || !report.OK || report.Head != d.snapHead || report.SealedOpened != report.SealedFiles {
+	report, err := svc.(engine.Verifier).VerifyRepository(ctx, drillUser)
+	if err != nil || !report.OK || report.Head != d.snapHead || report.SealedOpened != sealedValues || len(report.Findings) != 0 {
 		t.Errorf("the resumed repository does not verify: %+v %v", report, err)
 	}
 	d.clock.Advance(engine.TOTPPeriod)
-	code, err := engine.TOTPCode(d.envA.TOTPSecret, engine.TOTPStep(d.clock.Now()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := svc.Login(ctx, substrate.LoginInput{Username: drillUser, Password: drillPassword, TOTPCode: code, Label: "resumed"}); err != nil {
+	if _, _, err := svc.Login(ctx, substrate.LoginInput{Username: drillUser, Password: drillPassword, TOTPCode: d.envA.For(t).TOTPCode(), Label: "resumed"}); err != nil {
 		t.Errorf("login after the resumed import: %v", err)
 	}
-	t.Logf("interrupted import: %d batches of %d, killed after batch 1, after batch %d and after the first fold pass; the fourth boot finished it", batches, batch, batches-2)
+	t.Logf("interrupted import: %d batches of %d, killed at %d, %d and %d rows; the fourth boot finished it",
+		batches, batch, crashes[0].rows, crashes[1].rows, crashes[2].rows)
 }
 
 // --- stage 6 --------------------------------------------------------------------
@@ -1587,16 +1619,18 @@ func (d *drill) interruptedImport(t *testing.T) {
 // formatTransition takes the legacy repository's snapshot through the oldest
 // format the reader accepts, the v0.47.0 through v0.51.0 directory: format 1
 // manifest stamped changelog dialect 2 with no vocabulary dialect, and lines
-// without a transaction frame (#363). It is rewrapped under the new key and
-// imported into an empty schema. Then a manifest above the binary's dialect
-// is refused by name before any row lands.
+// without a transaction frame (#363), the same fixture
+// internal/engine/manifest_db_test.go TestBootImportsAFormatOneDirectory
+// builds. The boot reads it directly under the key it was written with,
+// then a second copy goes through the rewrap under the other key. Then a
+// manifest above the binary's dialect is refused by name before any row
+// lands.
 func (d *drill) formatTransition(t *testing.T) {
 	ctx := context.Background()
 
-	// The boot reads format 1 itself: the same-key restore, a directory a
-	// v0.51 binary wrote copied under a server holding the key it was written
-	// under, imported and upgraded in place by the boot alone. No rewrap runs
-	// first, so a reader that stopped accepting format 1 fails here.
+	// The same-key restore: the boot's own reader imports format 1 and
+	// upgrades the manifest in place. No rewrap runs first, so a reader that
+	// stopped accepting format 1 fails here.
 	root := formatOneCopy(t, d.snapRoot)
 	dir, err := changelogfile.RepoDir(root, legacyAuthority)
 	if err != nil {
@@ -1607,7 +1641,8 @@ func (d *drill) formatTransition(t *testing.T) {
 		testenv.WithUser(legacyUser, legacyPassword), testenv.WithoutRegistration(),
 		testenv.WithDSN(dsn), testenv.WithDataRoot(root), testenv.WithCredentialKey(d.keyA),
 		testenv.WithClock(d.clock.Now))
-	e.TOTPSecret, e.Authority = d.legacy.TOTPSecret, legacyAuthority
+	session := *d.legacy.Session
+	e.Session = &session
 	ds, err := e.Service.Dataset(ctx, legacyUser)
 	if err != nil {
 		t.Fatalf("open the repository the boot imported from format 1: %v", err)
@@ -1626,7 +1661,7 @@ func (d *drill) formatTransition(t *testing.T) {
 	if err != nil || head.Seq != d.legacyHead {
 		t.Errorf("head after the format-1 import = %d (%v), want %d", head.Seq, err, d.legacyHead)
 	}
-	scoped := openScoped(t, dsn, legacyAuthority)
+	scoped := d.scoped(t, dsn, legacyAuthority)
 	var stamped int
 	if err := scoped.QueryRowContext(ctx, `SELECT dialect FROM changelog_dialect`).Scan(&stamped); err != nil || stamped != 2 {
 		t.Errorf("changelog dialect after the import = %d (%v), want the manifest's 2", stamped, err)
@@ -1635,18 +1670,14 @@ func (d *drill) formatTransition(t *testing.T) {
 	if status, raw := e.Login(legacyUser, legacyPassword, e.TOTPCode()); status != http.StatusCreated {
 		t.Errorf("login on the format-1 restore: %d %s", status, raw)
 	}
-	legacyTask := legacyAuthority + "/tasks/task"
-	l0 := getRecord(t, e, legacyTask, "l-0")
-	if labels, _ := l0["labels"].(map[string]any); len(labels) != 0 {
-		t.Errorf("the cleared label came back through format 1: %v", l0["labels"])
+	if labels := labelsOf(t, getRecord(t, e, legacyTask, "l-0"), "l-0"); len(labels) != 0 {
+		t.Errorf("the cleared label came back through format 1: %v", labels)
 	}
-	if l1 := getRecord(t, e, legacyTask, "l-1"); l1["labels"].(map[string]any)["owner/legacy"] != true {
-		t.Errorf("l-1 lost its label: %v", l1["labels"])
+	if labels := labelsOf(t, getRecord(t, e, legacyTask, "l-1"), "l-1"); labels["owner/legacy"] != true {
+		t.Errorf("l-1 lost its label: %v", labels)
 	}
 	// The first write moves the stamp and the manifest together.
-	if status, raw := e.Do(http.MethodPut, recordPath(legacyTask, "l-after"), map[string]any{"properties": map[string]any{"name": "after"}}); status/100 != 2 {
-		t.Fatalf("write after the format-1 import: %d %s", status, raw)
-	}
+	putRecord(t, e, legacyTask, "l-after", map[string]any{"properties": map[string]any{"name": "after"}})
 	if err := scoped.QueryRowContext(ctx, `SELECT dialect FROM changelog_dialect`).Scan(&stamped); err != nil || stamped != engine.MaxChangelogDialect() {
 		t.Errorf("changelog dialect after the first write = %d (%v), want %d", stamped, err, engine.MaxChangelogDialect())
 	}
@@ -1656,7 +1687,9 @@ func (d *drill) formatTransition(t *testing.T) {
 
 	// The other-key restore of the same format: `repository rewrap` reads the
 	// format-1 manifest, opens the DEK with the recovery key and rewrites the
-	// manifest under the new host's key; the boot then imports it.
+	// manifest under the new host's key; the boot then imports it. A second
+	// copy, because the imported one above now holds a row wrapped under the
+	// first key.
 	rewrapRoot := formatOneCopy(t, d.snapRoot)
 	rewrapDir, err := changelogfile.RepoDir(rewrapRoot, legacyAuthority)
 	if err != nil {
@@ -1672,8 +1705,7 @@ func (d *drill) formatTransition(t *testing.T) {
 	if rewrapped, err := changelogfile.ReadManifest(rewrapDir); err != nil || rewrapped.Format != changelogfile.ManifestFormat || rewrapped.ChangelogDialect != 2 {
 		t.Errorf("the rewrapped manifest = %+v (%v), want format %d at changelog dialect 2", rewrapped, err, changelogfile.ManifestFormat)
 	}
-	rewrapDSN := testdb.NewSchema(t)
-	rewrapped, err := engine.Open(ctx, rewrapDSN, engine.WithKindsFS(kinds.Seed()),
+	rewrapped, err := engine.Open(ctx, testdb.NewSchema(t), engine.WithKindsFS(kinds.Seed()),
 		engine.WithDataRoot(rewrapRoot), engine.WithCredentialKey(d.keyB), engine.WithTestTOTPClock(d.clock.Now))
 	if err != nil {
 		t.Fatalf("boot on the rewrapped format-1 directory: %v", err)
@@ -1687,11 +1719,7 @@ func (d *drill) formatTransition(t *testing.T) {
 		t.Errorf("the fold restored from the rewrapped format-1 directory is not the source's (%v)\n%s", err, firstDifference(d.legacyFold, rfold))
 	}
 	d.clock.Advance(engine.TOTPPeriod)
-	code, err := engine.TOTPCode(d.legacy.TOTPSecret, engine.TOTPStep(d.clock.Now()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := rewrapped.Login(ctx, substrate.LoginInput{Username: legacyUser, Password: legacyPassword, TOTPCode: code, Label: "rewrapped"}); err != nil {
+	if _, _, err := rewrapped.Login(ctx, substrate.LoginInput{Username: legacyUser, Password: legacyPassword, TOTPCode: d.legacy.For(t).TOTPCode(), Label: "rewrapped"}); err != nil {
 		t.Errorf("login on the rewrapped format-1 restore: %v", err)
 	}
 
@@ -1720,8 +1748,8 @@ func (d *drill) formatTransition(t *testing.T) {
 	if !errors.Is(err, engine.ErrChangelogDialectNewer) {
 		t.Errorf("the refusal = %v, want ErrChangelogDialectNewer", err)
 	}
-	for _, table := range []string{"repositories", "changelog", "records", "import_progress"} {
-		if n := countRows(t, newerDSN, table); n != 0 {
+	for _, table := range []string{"repositories", "changelog", "records"} {
+		if n := d.countRows(t, newerDSN, table); n != 0 {
 			t.Errorf("the refused import left %d %s row(s)", n, table)
 		}
 	}
@@ -1735,20 +1763,13 @@ func (d *drill) formatTransition(t *testing.T) {
 // handoff that resumes cleanly.
 func (d *drill) replacedHistoryCursor(t *testing.T) {
 	e := d.envB.For(t)
-	e.Token = d.envA.Token
 	if d.restored.gen == d.source.gen {
 		t.Errorf("the restore kept the source's history generation %q", d.source.gen)
 	}
 	// The head the reset names is the restored history's head NOW, after
 	// stage 4's writes, not the head at the import.
-	status, raw := e.Do(http.MethodGet, "/api/v1/changes?first=1", nil)
-	if status != http.StatusOK {
-		t.Fatalf("history page: %d %s", status, raw)
-	}
 	var current substrate.ChangePage
-	if err := json.Unmarshal(raw, &current); err != nil {
-		t.Fatal(err)
-	}
+	e.MustJSON(http.MethodGet, "/api/v1/changes?first=1", nil, &current)
 	if current.Generation != d.restored.gen || current.Head < d.restored.head {
 		t.Errorf("history page = head %d under %q, want at least %d under %q", current.Head, current.Generation, d.restored.head, d.restored.gen)
 	}
@@ -1775,14 +1796,8 @@ func (d *drill) replacedHistoryCursor(t *testing.T) {
 	}
 	// The re-list carries the handoff, and the resume under it streams a
 	// bookmark at the head.
-	status, raw = e.Do(http.MethodGet, recordPath(taskKind, "")+"?first=500", nil)
-	if status != http.StatusOK {
-		t.Fatalf("re-list: %d %s", status, raw)
-	}
 	var page substrate.Page
-	if err := json.Unmarshal(raw, &page); err != nil {
-		t.Fatal(err)
-	}
+	e.MustJSON(http.MethodGet, recordPath(taskKind, "")+"?first=500", nil, &page)
 	if page.Generation != d.restored.gen || page.Head < d.restored.head {
 		t.Errorf("re-list handoff = head %d under %q, want at least %d under %q", page.Head, page.Generation, d.restored.head, d.restored.gen)
 	}
@@ -1798,30 +1813,6 @@ func (d *drill) replacedHistoryCursor(t *testing.T) {
 
 // --- capturing and comparing state ------------------------------------------------
 
-// drillCollections is every collection the drill compares record by record.
-func drillCollections() []string {
-	return []string{
-		taskKind, projectKind, personKind, widgetKind, gadgetKind, flagKind, echoKind,
-		subjectKind, contactKind, memberKind, fileKind, oauthKind,
-		corePkg + "/llmprovider", corePkg + "/trigger", corePkg + "/recordmerge", corePkg + "/recordsplit",
-		corePkg + "/blob", corePkg + "/token", corePkg + "/credential", corePkg + "/recoverykey",
-		corePkg + "/repository", corePkg + "/run", corePkg + "/kind", corePkg + "/function",
-		corePkg + "/recordmapping", corePkg + "/package", corePkg + "/bundle",
-	}
-}
-
-var (
-	lexicalQueries  = []string{"ledger", "fold", "restored"}
-	semanticQueries = []string{"carry the values", "replay the ledger"}
-	// sampleImports is the samples a repository imports before it holds a
-	// task, in the order their `requires` demand.
-	sampleImports = []string{
-		"samples.substrate.reamde.dev/people",
-		"samples.substrate.reamde.dev/scheduling",
-		"samples.substrate.reamde.dev/tasks",
-	}
-)
-
 func captureState(t *testing.T, e *testenv.Env, ds substrate.Dataset, scoped *sql.DB) *state {
 	t.Helper()
 	ctx := context.Background()
@@ -1830,7 +1821,7 @@ func captureState(t *testing.T, e *testenv.Env, ds substrate.Dataset, scoped *sq
 		parked: map[string][]substrate.TriggerFailure{}, blobs: map[string][]byte{},
 		lexical: map[string]searchAnswer{}, semantic: map[string]searchAnswer{},
 	}
-	for _, kind := range drillCollections() {
+	for _, kind := range drillCollections {
 		for _, rec := range listRecords(t, e, kind, false) {
 			id, _ := rec.(map[string]any)["id"].(string)
 			s.records[kind+"/"+id] = getRecord(t, e, kind, id)
@@ -1852,10 +1843,10 @@ func captureState(t *testing.T, e *testenv.Env, ds substrate.Dataset, scoped *sq
 	}
 	for _, rec := range listRecords(t, e, corePkg+"/blob", false) {
 		m := rec.(map[string]any)
-		if m["properties"].(map[string]any)["status"] != "stored" {
+		digest, _ := m["id"].(string)
+		if propOf(t, m, digest, "status") != "stored" {
 			continue
 		}
-		digest := m["id"].(string)
 		status, raw, _ := e.DoRaw(http.MethodGet, "/api/v1/blobs/"+digest, nil, nil)
 		if status != http.StatusOK {
 			t.Errorf("GET blob %s: %d %s", digest, status, raw)
@@ -1877,77 +1868,79 @@ func captureState(t *testing.T, e *testenv.Env, ds substrate.Dataset, scoped *sq
 	return s
 }
 
-// compareStates holds `got` to `want` field by field. Every difference is
-// its own failing assertion, so one run lists them all.
-func compareStates(t *testing.T, label string, want, got *state) {
-	t.Helper()
-	keys := sortedKeys(want.records)
-	for _, k := range keys {
+// diffStates holds `got` to `want` field by field and returns every
+// difference as its own finding, so one run lists them all.
+func diffStates(want, got *state) []string {
+	var out []string
+	report := func(format string, args ...any) { out = append(out, fmt.Sprintf(format, args...)) }
+	for _, k := range slices.Sorted(maps.Keys(want.records)) {
 		g, ok := got.records[k]
 		if !ok {
-			t.Errorf("%s: record %s is missing", label, k)
+			report("record %s is missing", k)
 			continue
 		}
 		if diff := firstJSONDifference(want.records[k], g); diff != "" {
-			t.Errorf("%s: record %s differs: %s", label, k, diff)
+			report("record %s differs: %s", k, diff)
 		}
 	}
-	for _, k := range sortedKeys(got.records) {
+	for _, k := range slices.Sorted(maps.Keys(got.records)) {
 		if _, ok := want.records[k]; !ok {
-			t.Errorf("%s: record %s exists and the source had none", label, k)
+			report("record %s exists and the source had none", k)
 		}
 	}
-	for _, kind := range drillCollections() {
+	for _, kind := range drillCollections {
 		if diff := firstJSONDifference(want.deleted[kind], got.deleted[kind]); diff != "" {
-			t.Errorf("%s: the tombstones of %s differ: %s", label, kind, diff)
+			report("the tombstones of %s differ: %s", kind, diff)
 		}
 	}
 	if !reflect.DeepEqual(want.kindVersions, got.kindVersions) {
-		t.Errorf("%s: kind versions differ:\n%v\n%v", label, want.kindVersions, got.kindVersions)
+		report("kind versions differ:\n%v\n%v", want.kindVersions, got.kindVersions)
 	}
-	for id, w := range want.statuses {
+	for _, id := range slices.Sorted(maps.Keys(want.statuses)) {
+		w := want.statuses[id]
 		g, ok := got.statuses[id]
 		if !ok {
-			t.Errorf("%s: trigger %s has no status", label, id)
+			report("trigger %s has no status", id)
 			continue
 		}
 		// The cursor and the lag are scan positions: a restore comes back at
 		// the last acknowledged delivery, never past it (decision 0064).
 		if g.Enabled != w.Enabled || g.Kind != w.Kind || g.Parked != w.Parked || g.Pending != w.Pending || g.Error != w.Error {
-			t.Errorf("%s: trigger %s status = %+v, want %+v", label, id, g, w)
+			report("trigger %s status = %+v, want %+v", id, g, w)
 		}
 		if g.Cursor > w.Cursor {
-			t.Errorf("%s: trigger %s came back at cursor %d, past the source's %d", label, id, g.Cursor, w.Cursor)
+			report("trigger %s came back at cursor %d, past the source's %d", id, g.Cursor, w.Cursor)
 		}
 		if diff := firstJSONDifference(want.parked[id], got.parked[id]); diff != "" {
-			t.Errorf("%s: trigger %s parked list differs: %s", label, id, diff)
+			report("trigger %s parked list differs: %s", id, diff)
 		}
 	}
 	if !reflect.DeepEqual(want.pagedCursors, got.pagedCursors) {
-		t.Errorf("%s: paged cursors = %v, want %v", label, got.pagedCursors, want.pagedCursors)
+		report("paged cursors = %v, want %v", got.pagedCursors, want.pagedCursors)
 	}
 	if want.deliveries != got.deliveries {
-		t.Errorf("%s: %d delivery entries, want %d", label, got.deliveries, want.deliveries)
+		report("%d delivery entries, want %d", got.deliveries, want.deliveries)
 	}
 	if !bytes.Equal(want.fold, got.fold) {
-		t.Errorf("%s: the fold differs from the source's\n%s", label, firstDifference(want.fold, got.fold))
+		report("the fold differs from the source's\n%s", firstDifference(want.fold, got.fold))
 	}
-	for digest, w := range want.blobs {
-		if g, ok := got.blobs[digest]; !ok || !bytes.Equal(g, w) {
-			t.Errorf("%s: blob %s bytes differ (present %v)", label, digest, ok)
+	for _, digest := range slices.Sorted(maps.Keys(want.blobs)) {
+		if g, ok := got.blobs[digest]; !ok || !bytes.Equal(g, want.blobs[digest]) {
+			report("blob %s bytes differ (present %v)", digest, ok)
 		}
 	}
-	for q, w := range want.lexical {
-		if g := got.lexical[q]; !reflect.DeepEqual(g, w) {
-			t.Errorf("%s: lexical %q = %+v, want %+v", label, q, g, w)
+	for _, q := range slices.Sorted(maps.Keys(want.lexical)) {
+		if g := got.lexical[q]; !reflect.DeepEqual(g, want.lexical[q]) {
+			report("lexical %q = %+v, want %+v", q, g, want.lexical[q])
 		}
 	}
 	if want.head != got.head {
-		t.Errorf("%s: head %d, want %d", label, got.head, want.head)
+		report("head %d, want %d", got.head, want.head)
 	}
+	return out
 }
 
-// --- HTTP helpers ------------------------------------------------------------------
+// --- the record doors ----------------------------------------------------------------
 
 func recordPath(kind, id string) string {
 	p := "/api/v1/" + kind
@@ -1955,6 +1948,28 @@ func recordPath(kind, id string) string {
 		p += "/" + url.PathEscape(id)
 	}
 	return p
+}
+
+// putRecord, patchRecord and deleteRecord are the three writes every
+// repository in the drill goes through, so the legacy repository is written
+// by the same path as the source. Each returns the record the door answered.
+func putRecord(t *testing.T, e *testenv.Env, kind, id string, body map[string]any) map[string]any {
+	t.Helper()
+	var out map[string]any
+	e.MustJSON(http.MethodPut, recordPath(kind, id), body, &out)
+	return out
+}
+
+func patchRecord(t *testing.T, e *testenv.Env, kind, id string, body map[string]any) map[string]any {
+	t.Helper()
+	var out map[string]any
+	e.MustJSON(http.MethodPatch, recordPath(kind, id), body, &out)
+	return out
+}
+
+func deleteRecord(t *testing.T, e *testenv.Env, kind, id string) {
+	t.Helper()
+	e.MustJSON(http.MethodDelete, recordPath(kind, id), nil, nil)
 }
 
 func decodeAny(t *testing.T, raw []byte) any {
@@ -1968,11 +1983,44 @@ func decodeAny(t *testing.T, raw []byte) any {
 
 func getRecord(t *testing.T, e *testenv.Env, kind, id string) map[string]any {
 	t.Helper()
-	status, raw := e.Do(http.MethodGet, recordPath(kind, id), nil)
-	if status != http.StatusOK {
-		t.Fatalf("GET %s/%s: %d %s", kind, id, status, raw)
+	var out map[string]any
+	e.MustJSON(http.MethodGet, recordPath(kind, id), nil, &out)
+	return out
+}
+
+// propOf, labelsOf and metaOf read the optional parts of a record as the wire
+// carries them, failing the stage by record and field where the shape is not
+// the one expected: a `null` or an absent map is a finding here, never a
+// panic that ends the drill.
+func propOf(t *testing.T, rec map[string]any, id, name string) any {
+	t.Helper()
+	props, ok := rec["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("record %s carries no properties map: %v", id, rec["properties"])
 	}
-	return decodeAny(t, raw).(map[string]any)
+	return props[name]
+}
+
+func labelsOf(t *testing.T, rec map[string]any, id string) map[string]any {
+	t.Helper()
+	labels, ok := rec["labels"].(map[string]any)
+	if !ok {
+		t.Fatalf("record %s carries no labels map (a cleared record carries the empty map, #362): %v", id, rec["labels"])
+	}
+	return labels
+}
+
+func metaOf(t *testing.T, rec map[string]any, id, prop string) map[string]any {
+	t.Helper()
+	all, ok := rec["propertyMeta"].(map[string]any)
+	if !ok {
+		t.Fatalf("record %s carries no propertyMeta: %v", id, rec["propertyMeta"])
+	}
+	meta, ok := all[prop].(map[string]any)
+	if !ok {
+		t.Fatalf("record %s has no provenance for %s: %v", id, prop, all)
+	}
+	return meta
 }
 
 // listRecords is one collection's records, live or tombstoned, in the
@@ -1983,11 +2031,8 @@ func listRecords(t *testing.T, e *testenv.Env, kind string, deleted bool) []any 
 	if deleted {
 		path += "&filter=" + url.QueryEscape(`{"deleted":true}`)
 	}
-	status, raw := e.Do(http.MethodGet, path, nil)
-	if status != http.StatusOK {
-		t.Fatalf("list %s (deleted=%v): %d %s", kind, deleted, status, raw)
-	}
-	page := decodeAny(t, raw).(map[string]any)
+	var page map[string]any
+	e.MustJSON(http.MethodGet, path, nil, &page)
 	if page["cursor"] != nil && page["cursor"] != "" {
 		t.Fatalf("list %s spans more than one page of 500", kind)
 	}
@@ -1996,12 +2041,10 @@ func listRecords(t *testing.T, e *testenv.Env, kind string, deleted bool) []any 
 }
 
 func containsID(records []any, id string) bool {
-	for _, r := range records {
-		if m, ok := r.(map[string]any); ok && m["id"] == id {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(records, func(r any) bool {
+		m, ok := r.(map[string]any)
+		return ok && m["id"] == id
+	})
 }
 
 // kindVersions is every installed kind's declaration version.
@@ -2010,22 +2053,17 @@ func kindVersions(t *testing.T, e *testenv.Env) map[string]int64 {
 	out := map[string]int64{}
 	for _, rec := range listRecords(t, e, corePkg+"/kind", false) {
 		m := rec.(map[string]any)
-		v, _ := m["properties"].(map[string]any)["version"].(float64)
-		out[m["id"].(string)] = int64(v)
+		id, _ := m["id"].(string)
+		v, _ := propOf(t, m, id, "version").(float64)
+		out[id] = int64(v)
 	}
 	return out
 }
 
 func statuses(t *testing.T, e *testenv.Env) []substrate.TriggerStatus {
 	t.Helper()
-	status, raw := e.Do(http.MethodGet, "/api/v1/"+corePkg+"/trigger/status", nil)
-	if status != http.StatusOK {
-		t.Fatalf("trigger status: %d %s", status, raw)
-	}
 	var out substrate.OperationalList[substrate.TriggerStatus]
-	if err := json.Unmarshal(raw, &out); err != nil {
-		t.Fatalf("decode trigger status: %v (%s)", err, raw)
-	}
+	e.MustJSON(http.MethodGet, "/api/v1/"+corePkg+"/trigger/status", nil, &out)
 	return out.Items
 }
 
@@ -2042,27 +2080,14 @@ func statusOf(t *testing.T, e *testenv.Env, id string) substrate.TriggerStatus {
 
 func parkedOf(t *testing.T, e *testenv.Env, id string) []substrate.TriggerFailure {
 	t.Helper()
-	status, raw := e.Do(http.MethodGet, "/api/v1/"+corePkg+"/trigger/"+id+"/parked", nil)
-	if status != http.StatusOK {
-		t.Fatalf("parked of %s: %d %s", id, status, raw)
-	}
 	var out substrate.OperationalList[substrate.TriggerFailure]
-	if err := json.Unmarshal(raw, &out); err != nil {
-		t.Fatalf("decode parked of %s: %v (%s)", id, err, raw)
-	}
+	e.MustJSON(http.MethodGet, "/api/v1/"+corePkg+"/trigger/"+id+"/parked", nil, &out)
 	return out.Items
 }
 
 // gqlSearch runs one search through GraphQL, the one door search has.
 func gqlSearch(t *testing.T, e *testenv.Env, q, mode string, kinds []string) searchAnswer {
 	t.Helper()
-	status, raw := e.Do(http.MethodPost, "/api/v1/graphql", map[string]any{
-		"query":     `query($q: String!, $mode: String, $kinds: [String!]) { search(q: $q, mode: $mode, kinds: $kinds, k: 10) { hits { record { id } } pending } }`,
-		"variables": map[string]any{"q": q, "mode": mode, "kinds": kinds},
-	})
-	if status != http.StatusOK {
-		t.Fatalf("graphql search: %d %s", status, raw)
-	}
 	var out struct {
 		Data struct {
 			Search *struct {
@@ -2079,9 +2104,10 @@ func gqlSearch(t *testing.T, e *testenv.Env, q, mode string, kinds []string) sea
 			Extensions map[string]any `json:"extensions"`
 		} `json:"errors"`
 	}
-	if err := json.Unmarshal(raw, &out); err != nil {
-		t.Fatalf("decode graphql search: %v (%s)", err, raw)
-	}
+	e.MustJSON(http.MethodPost, "/api/v1/graphql", map[string]any{
+		"query":     `query($q: String!, $mode: String, $kinds: [String!]) { search(q: $q, mode: $mode, kinds: $kinds, k: 10) { hits { record { id } } pending } }`,
+		"variables": map[string]any{"q": q, "mode": mode, "kinds": kinds},
+	}, &out)
 	var a searchAnswer
 	if len(out.Errors) > 0 {
 		a.ErrMsg = out.Errors[0].Message
@@ -2089,7 +2115,7 @@ func gqlSearch(t *testing.T, e *testenv.Env, q, mode string, kinds []string) sea
 		return a
 	}
 	if out.Data.Search == nil {
-		t.Fatalf("graphql search answered neither hits nor an error: %s", raw)
+		t.Fatal("graphql search answered neither hits nor an error")
 	}
 	a.IDs = []string{}
 	for _, h := range out.Data.Search.Hits {
@@ -2100,26 +2126,19 @@ func gqlSearch(t *testing.T, e *testenv.Env, q, mode string, kinds []string) sea
 }
 
 // postWebhook posts one JSON request to the public webhook door and returns
-// the fire id. The request is built here, not through the harness, so the
-// stage can hold it to carrying no bearer: the door authenticates by path and
-// key alone, and a drill that sent a token would pass against a door that
-// started demanding one.
+// the fire id. The door authenticates by path and key alone, so the request
+// carries no bearer, and the request as sent is held to that: a drill that
+// sent a token would pass against a door that started demanding one.
 func postWebhook(t *testing.T, e *testenv.Env, trigger, body, event string) string {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodPost, e.URL+"/webhooks/"+drillAuthority+"/"+trigger, strings.NewReader(body))
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-GitHub-Event", event)
-	if _, has := req.Header["Authorization"]; has {
-		t.Fatalf("the webhook request carries an Authorization header")
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("webhook %s: %v", trigger, err)
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), settleDeadline)
+	defer cancel()
+	resp := e.Request(ctx, http.MethodPost, "/webhooks/"+drillAuthority+"/"+trigger, []byte(body),
+		map[string]string{"Content-Type": "application/json", "X-GitHub-Event": event, "Authorization": ""})
 	defer func() { _ = resp.Body.Close() }()
+	if _, sent := resp.Request.Header["Authorization"]; sent {
+		t.Fatalf("the webhook request to %s carried an Authorization header", trigger)
+	}
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatal(err)
@@ -2134,20 +2153,24 @@ func postWebhook(t *testing.T, e *testenv.Env, trigger, body, event string) stri
 	return accepted.Fire
 }
 
+// waitFor polls cond until it holds or the settle deadline passes.
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(settleDeadline)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("waited %s for %s", settleDeadline, what)
+		}
+		time.Sleep(pollInterval)
+	}
+}
+
 // firstStreamLine opens a watch and returns its first frame.
 func firstStreamLine(t *testing.T, e *testenv.Env, path string) []byte {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), settleDeadline)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, e.URL+path, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set("Authorization", "Bearer "+e.Token)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("watch: %v", err)
-	}
+	resp := e.Request(ctx, http.MethodGet, path, nil, nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -2178,30 +2201,38 @@ func refID(v any) string {
 
 // --- the engine and the files -------------------------------------------------------
 
-func openScoped(t *testing.T, dsn, authority string) *sql.DB {
+// scoped is the repository's own pool on one schema, opened once per DSN
+// and authority for the drill's lifetime.
+func (d *drill) scoped(t *testing.T, dsn, authority string) *sql.DB {
 	t.Helper()
+	key := "scoped|" + authority + "|" + dsn
+	if db, ok := d.dbs[key]; ok {
+		return db
+	}
 	db, err := engine.OpenScopedDB(dsn, authority, engine.RoleApp)
 	if err != nil {
 		t.Fatalf("open the repository's pool: %v", err)
 	}
-	t.Cleanup(func() { _ = db.Close() })
+	d.root.Cleanup(func() { _ = db.Close() })
+	d.dbs[key] = db
 	return db
 }
 
-func rawDB(t *testing.T, dsn string) *sql.DB {
+// countRows counts a table through the schema's own connection, opened once
+// per DSN.
+func (d *drill) countRows(t *testing.T, dsn, table string) int {
 	t.Helper()
-	db, err := sql.Open("pgx", dsn)
-	if err != nil {
-		t.Fatalf("open raw db: %v", err)
+	db, ok := d.dbs[dsn]
+	if !ok {
+		var err error
+		if db, err = sql.Open("pgx", dsn); err != nil {
+			t.Fatalf("open raw db: %v", err)
+		}
+		d.root.Cleanup(func() { _ = db.Close() })
+		d.dbs[dsn] = db
 	}
-	t.Cleanup(func() { _ = db.Close() })
-	return db
-}
-
-func countRows(t *testing.T, dsn, table string) int {
-	t.Helper()
 	var n int
-	if err := rawDB(t, dsn).QueryRowContext(context.Background(), `SELECT count(*) FROM `+table).Scan(&n); err != nil {
+	if err := db.QueryRowContext(context.Background(), `SELECT count(*) FROM `+table).Scan(&n); err != nil {
 		t.Fatalf("count %s: %v", table, err)
 	}
 	return n
@@ -2250,7 +2281,7 @@ func drainEmbeds(t *testing.T, ds substrate.Dataset) {
 
 // copyRoot copies one repository directory out of a data root into a fresh
 // root laid out the same way.
-func copyRoot(t *testing.T, srcRoot, authority string) string {
+func copyRoot(t testing.TB, srcRoot, authority string) string {
 	t.Helper()
 	src, err := changelogfile.RepoDir(srcRoot, authority)
 	if err != nil {
@@ -2270,61 +2301,78 @@ func copyRoot(t *testing.T, srcRoot, authority string) string {
 	return root
 }
 
-// patchedCoreTree copies the shipped core package and pins one kind one
-// version behind, so a repository seeded from it is a repository the shipped
-// tree upgrades at the next boot. It returns the copy and the shipped version.
-func patchedCoreTree(t *testing.T, file string) (string, int64) {
+// patchedSeedTree copies the shipped seed authority whole (its authority
+// document and its core package, the tree kinds.Seed() embeds) and pins one
+// core kind one version behind, so a repository seeded from it is one a
+// substrated-seeded repository could be, and the next boot under the shipped
+// tree upgrades that kind alone. It returns the copy and the shipped version.
+func patchedSeedTree(t testing.TB, file string) (string, int64) {
 	t.Helper()
-	dir := t.TempDir()
-	entries, err := os.ReadDir(coreKindsDir)
+	root := t.TempDir()
+	dst := filepath.Join(root, filepath.Base(seedAuthorityDir))
+	if err := os.CopyFS(dst, os.DirFS(seedAuthorityDir)); err != nil {
+		t.Fatalf("copy the shipped seed: %v", err)
+	}
+	path := filepath.Join(dst, "core", file)
+	raw, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read the shipped core: %v", err)
+		t.Fatal(err)
+	}
+	m := reDeclaredVersion.FindSubmatch(raw)
+	if m == nil {
+		t.Fatalf("%s pins no version of its own", file)
 	}
 	var shipped int64
-	for _, ent := range entries {
-		if ent.IsDir() {
-			continue
-		}
-		raw, err := os.ReadFile(filepath.Join(coreKindsDir, ent.Name()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if ent.Name() == file {
-			m := reDeclaredVersion.FindSubmatch(raw)
-			if m == nil {
-				t.Fatalf("%s pins no version of its own", file)
-			}
-			if _, err := fmt.Sscan(string(m[1]), &shipped); err != nil {
-				t.Fatal(err)
-			}
-			raw = reDeclaredVersion.ReplaceAll(raw, []byte(fmt.Sprintf("\n  version: %d\n", shipped-1)))
-		}
-		if err := os.WriteFile(filepath.Join(dir, ent.Name()), raw, 0o600); err != nil {
-			t.Fatal(err)
-		}
+	if _, err := fmt.Sscan(string(m[1]), &shipped); err != nil {
+		t.Fatal(err)
 	}
-	if shipped == 0 {
-		t.Fatalf("%s is not in the shipped core", file)
+	raw = reDeclaredVersion.ReplaceAll(raw, []byte(fmt.Sprintf("\n  version: %d\n", shipped-1)))
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
 	}
-	return dir, shipped
+	return root, shipped
 }
 
 // reDeclaredVersion is a declaration's own version line, at the `data:`
 // block's indentation, so a property named `version` is never the match.
 var reDeclaredVersion = regexp.MustCompile(`\n  version: (\d+)\n`)
 
+// formatOneCopy copies the legacy repository out of the snapshot root as a
+// v0.47.0 through v0.51.0 binary would have written it: lines without a
+// transaction frame, a format-1 manifest, no snapshot.json. It is the
+// fixture internal/engine/manifest_db_test.go builds for
+// TestBootImportsAFormatOneDirectory: current payloads on format-1 lines.
+func formatOneCopy(t *testing.T, snapRoot string) string {
+	t.Helper()
+	root := copyRoot(t, snapRoot, legacyAuthority)
+	dir, err := changelogfile.RepoDir(root, legacyAuthority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := changelogfile.ReadManifest(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unframeChangelog(t, changelogfile.ChangelogDir(dir))
+	writeFormatOneManifest(t, dir, m)
+	if err := os.Remove(filepath.Join(dir, changelogfile.SnapshotName)); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
 // unframeChangelog re-encodes a changelog directory without transaction
 // frames, the lines v0.46.0 through v0.51.0 wrote, recomputing each
-// checksum.
+// checksum, and checks the written lines carry no frame key.
 func unframeChangelog(t *testing.T, dir string) {
 	t.Helper()
-	log, err := changelogfile.OpenReadOnly(dir)
+	reader, err := changelogfile.OpenReadOnly(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var entries []changelogfile.Entry
-	if err := log.Walk(func(e changelogfile.Entry) error {
-		e.Payload = append(json.RawMessage(nil), e.Payload...)
+	if err := reader.Walk(func(e changelogfile.Entry) error {
+		e.Payload = slices.Clone(e.Payload)
 		e.Txn = 0
 		entries = append(entries, e)
 		return nil
@@ -2347,28 +2395,19 @@ func unframeChangelog(t *testing.T, dir string) {
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
-}
-
-// formatOneCopy copies the legacy repository out of the snapshot root as a
-// v0.47.0 through v0.51.0 binary would have written it: lines without a
-// transaction frame, a format-1 manifest, no snapshot.json.
-func formatOneCopy(t *testing.T, snapRoot string) string {
-	t.Helper()
-	root := copyRoot(t, snapRoot, legacyAuthority)
-	dir, err := changelogfile.RepoDir(root, legacyAuthority)
+	segments, err := changelogfile.Segments(dir)
+	if err != nil || len(segments) == 0 {
+		t.Fatalf("the rewritten changelog has no segment: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, segments[0].Name))
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := changelogfile.ReadManifest(dir)
-	if err != nil {
-		t.Fatal(err)
+	for i, line := range bytes.Split(bytes.TrimSpace(raw), []byte("\n")) {
+		if bytes.Contains(line, []byte(`"txn"`)) {
+			t.Fatalf("line %d of the format-1 fixture carries a transaction frame: %s", i+1, line)
+		}
 	}
-	unframeChangelog(t, changelogfile.ChangelogDir(dir))
-	writeFormatOneManifest(t, dir, m)
-	if err := os.Remove(filepath.Join(dir, changelogfile.SnapshotName)); err != nil {
-		t.Fatal(err)
-	}
-	return root
 }
 
 // writeFormatOneManifest writes the manifest v0.47.0 through v0.51.0 wrote:
@@ -2397,27 +2436,12 @@ func writeFormatOneManifest(t *testing.T, dir string, m changelogfile.Manifest) 
 
 // --- diffing ---------------------------------------------------------------------------
 
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func slicesContain(list []string, want string) bool {
-	for _, s := range list {
-		if s == want {
-			return true
-		}
-	}
-	return false
-}
-
 // firstJSONDifference names the first path at which two decoded JSON values
 // part, with both values there; "" when they are equal.
 func firstJSONDifference(a, b any) string {
+	if reflect.DeepEqual(a, b) {
+		return ""
+	}
 	return jsonDiff("$", a, b)
 }
 
@@ -2428,14 +2452,13 @@ func jsonDiff(path string, a, b any) string {
 		if !ok {
 			return fmt.Sprintf("%s: %s vs %s", path, short(a), short(b))
 		}
-		keys := map[string]bool{}
-		for k := range x {
-			keys[k] = true
-		}
+		keys := slices.Sorted(maps.Keys(x))
 		for k := range y {
-			keys[k] = true
+			if _, ok := x[k]; !ok {
+				keys = append(keys, k)
+			}
 		}
-		for _, k := range sortedKeys(keys) {
+		for _, k := range keys {
 			av, aok := x[k]
 			bv, bok := y[k]
 			if aok != bok {
@@ -2445,7 +2468,6 @@ func jsonDiff(path string, a, b any) string {
 				return d
 			}
 		}
-		return ""
 	case []any:
 		y, ok := b.([]any)
 		if !ok || len(x) != len(y) {
@@ -2456,13 +2478,12 @@ func jsonDiff(path string, a, b any) string {
 				return d
 			}
 		}
-		return ""
 	default:
 		if !reflect.DeepEqual(a, b) {
 			return fmt.Sprintf("%s: %s vs %s", path, short(a), short(b))
 		}
-		return ""
 	}
+	return ""
 }
 
 func short(v any) string {
@@ -2478,14 +2499,13 @@ func short(v any) string {
 func firstDifference(a, b []byte) string {
 	var sa, sb map[string]json.RawMessage
 	if json.Unmarshal(a, &sa) == nil && json.Unmarshal(b, &sb) == nil {
-		names := map[string]bool{}
-		for n := range sa {
-			names[n] = true
-		}
+		names := slices.Sorted(maps.Keys(sa))
 		for n := range sb {
-			names[n] = true
+			if _, ok := sa[n]; !ok {
+				names = append(names, n)
+			}
 		}
-		for _, n := range sortedKeys(names) {
+		for _, n := range names {
 			if string(sa[n]) != string(sb[n]) {
 				return "section " + n + ":\n" + firstByteDifference(sa[n], sb[n])
 			}

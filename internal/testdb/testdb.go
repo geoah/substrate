@@ -51,7 +51,7 @@ var (
 
 // DSN returns the base Postgres+pgvector DSN. It skips under -short, honors
 // SUBSTRATE_TEST_DATABASE_URL, and otherwise starts a shared container.
-func DSN(t *testing.T) string {
+func DSN(t testing.TB) string {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
@@ -162,7 +162,7 @@ func containerDSN(ctx context.Context, c *postgres.PostgresContainer) (string, e
 // NewSchema creates a throwaway Postgres schema and returns a DSN whose
 // search_path is baked in. The schema is dropped when the test ends. This is
 // the from-empty fixture: whatever opens the DSN runs every migration.
-func NewSchema(t *testing.T) string {
+func NewSchema(t testing.TB) string {
 	t.Helper()
 	base := DSN(t)
 	name := schemaName()
