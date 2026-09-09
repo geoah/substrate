@@ -233,6 +233,9 @@ func Start(t testing.TB, opts ...Option) *Env {
 		InviteCode:          InviteCode,
 		MaxDialect:          engine.MaxSchemaDialect(),
 		MaxChangelogDialect: engine.MaxChangelogDialect(),
+		// The auth rate limiter reads the same clock as the TOTP verifier, so
+		// a test spaces two logins by advancing it rather than sleeping.
+		Now: o.now,
 	})
 
 	// A real listener on a kernel-assigned port: two tests in one binary must

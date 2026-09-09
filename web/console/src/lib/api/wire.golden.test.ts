@@ -35,7 +35,7 @@
 import { describe, expect, it } from "vitest"
 
 import type { AgentEvent, AgentResult } from "./agents"
-import type { RegisterInput, RegisterResult } from "./auth"
+import type { LoginRequest, RegisterInput, RegisterResult } from "./auth"
 import type { RecordPatch } from "./records"
 import golden from "./wire.golden.json"
 import type {
@@ -336,6 +336,14 @@ const registerInput: Shape<RegisterInput> = {
   recoveryPublicKey: false,
 }
 
+/** Login (auth.ts): the two factors and the token label. */
+const loginRequest: Shape<LoginRequest> = {
+  username: true,
+  password: true,
+  totpCode: true,
+  label: false,
+}
+
 const sessionUser: Shape<SessionUser> = { username: true }
 
 const registerResult: Shape<RegisterResult> = {
@@ -568,6 +576,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   TOTPEnrollment: totpEnrollment,
   RegisterInput: registerInput,
   RegisterResult: registerResult,
+  LoginRequest: loginRequest,
   SessionUser: sessionUser,
   AgentResult: agentResult,
   AgentEvent: agentEvent,

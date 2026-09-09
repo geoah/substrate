@@ -747,7 +747,7 @@ func TestReleaseAcceptanceDrill(t *testing.T) {
 		{"04 compare the restored substrate and resume dispatch", d.compareAndResume, []string{"03"}},
 		{"05 interrupt the import at batch boundaries and resume", d.interruptedImport, []string{"03"}},
 		{"06 restore the oldest accepted format and refuse a newer one", d.formatTransition, []string{"02", "03"}},
-		{"07 a cursor from the replaced history is reset", d.replacedHistoryCursor, []string{"03"}},
+		{"07 a cursor from the replaced history is reset", d.replacedHistoryCursor, []string{"03", "04"}},
 	}
 	for _, s := range stages {
 		t.Run(s.name, func(t *testing.T) {
@@ -1385,15 +1385,21 @@ func (d *drill) compareRestored(t *testing.T, e *testenv.Env, ds substrate.Datas
 		t.Errorf("attachment digest %s is not the bytes' %s", d.blobDigest, want)
 	}
 
-	// Authenticate with the original password and TOTP, one step later on
-	// the shared clock so the registration's code is not replayed. The
-	// source's token authenticated every read above.
+	// Authenticate with the original password and TOTP. The wrong password
+	// goes first, so its refusal is the password check's and not the login
+	// limiter's; the clock then moves one TOTP step, past the limiter's
+	// allowance too (it reads the same clock), so the registration's code is
+	// not replayed and the right password is admitted. The source's token
+	// authenticated every read above.
+	d.clock.Advance(engine.TOTPPeriod)
+	status, raw := e.Login(drillUser, "not-the-password", e.TOTPCode())
+	var refusal substrate.ErrorEnvelope
+	if err := json.Unmarshal(raw, &refusal); status != http.StatusUnauthorized || err != nil || refusal.Error.Code != "auth" {
+		t.Errorf("a wrong password on the restored host: %d %s, want 401 auth", status, raw)
+	}
 	d.clock.Advance(engine.TOTPPeriod)
 	if status, raw := e.Login(drillUser, drillPassword, e.TOTPCode()); status != http.StatusCreated {
 		t.Errorf("login on the restored host: %d %s", status, raw)
-	}
-	if status, raw := e.Login(drillUser, "not-the-password", e.TOTPCode()); status/100 == 2 {
-		t.Errorf("a wrong password logged in on the restored host: %d %s", status, raw)
 	}
 
 	// The embedding drain: the restored repository buys its vectors with the

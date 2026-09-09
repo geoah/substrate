@@ -84,6 +84,15 @@ export function register(input: RegisterInput): Promise<RegisterResult> {
 
 // ── login ─────────────────────────────────────────────────────────────────
 
+/** The login request as the door decodes it (`substrate.LoginRequest`): the
+ * two factors and the label of the token the login mints. */
+export interface LoginRequest {
+  username: string
+  password: string
+  totpCode: string
+  label?: string
+}
+
 /** Login mints a token RECORD and returns its secret once: there is no session
  * concept beside it, the console holds a token like every other client. */
 export function login(
@@ -95,7 +104,7 @@ export function login(
   return request<MintedToken>(
     "POST",
     "/login",
-    { username, password, totpCode, label },
+    { username, password, totpCode, label } satisfies LoginRequest,
     { anonymous: true }
   )
 }
