@@ -705,8 +705,8 @@ is the function body.
   one name are two actors and neither reads as the other's echo. A causal chain deeper
   than the engine's cap (16) parks instead of spinning.
 - **No wedging.** A delivery that keeps failing is parked (3 attempts with
-  backoff; a deterministic trip like an allowlist or budget violation parks on
-  the first) and the trigger's cursor moves on. A false `when` is a skip, not a
+  backoff; a deterministic trip like an allowlist or budget violation, or an
+  installation retired by a redeploy mid-delivery, parks on the first) and the trigger's cursor moves on. A false `when` is a skip, not a
   failure.
 
 ## Driving triggers
@@ -717,16 +717,16 @@ that drive it live at the trigger resource, under
 resource). No path carries a repository segment: the bearer token implies the
 repository.
 
-- `GET …/triggers/status` is the one collection-level verb: every trigger's
+- `GET …/trigger/status` is the one collection-level verb: every trigger's
   kind, callable, cursor, head, lag, last fire, parked count and pending count
   (accepted webhook requests whose fire has not settled) in a single answer.
   There is no per-trigger `status`.
-- `POST …/triggers/{id}/replay` takes `{"from": seq}` and resets a
+- `POST …/trigger/{id}/replay` takes `{"from": seq}` and resets a
   record-sourced trigger's cursor for a retrospective run.
-- `POST …/triggers/{id}/run` takes `{"kind": …, "id": …}`, both required, and
+- `POST …/trigger/{id}/run` takes `{"kind": …, "id": …}`, both required, and
   synthesizes one delivery of that record's current state (guard applied,
   source filter not, cursor untouched).
-- `POST …/triggers/{id}/wake` scans now: a webhook fires once with no
+- `POST …/trigger/{id}/wake` scans now: a webhook fires once with no
   `request`, a record trigger drains its backlog, a schedule checks its due
   occurrence.
 - `POST /webhooks/{authority}/{trigger}` is the public door: no bearer, the
@@ -743,8 +743,8 @@ repository.
   does), and a fire that fails parks the same entry. An agent
   callable's fire claims that entry before its loop, so one interrupted
   mid-loop waits under `…/parked` for a hand like every agent delivery.
-- `GET …/triggers/{id}/parked` lists the deliveries the trigger gave up on,
-  and `POST …/triggers/{id}/parked/{failureId}/retry` re-runs one. A
+- `GET …/trigger/{id}/parked` lists the deliveries the trigger gave up on,
+  and `POST …/trigger/{id}/parked/{failureId}/retry` re-runs one. A
   failure's id is the seq of the changelog entry that parked it, so it
   survives a restore ([backups](operations.md#backups)). A webhook request
   is recorded there minus what a replay does not need, from the `202` on:

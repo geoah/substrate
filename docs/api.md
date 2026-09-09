@@ -173,6 +173,12 @@ Ids are stable while a record exists; they are not promised unique across
 time, so a writer that composes an id from a provider's key may delete and
 recreate at will.
 
+A `put` addressed to a former id (the loser of a merge) is refused `409
+conflict` naming the canonical id: a supplied id is the writer's own key, not
+an address to resolve. Reads, `patch` and `delete` through a former id resolve
+to the canonical record
+([merges](projection.md#former-ids-resolve-to-the-winner)).
+
 Every mutation takes an optional version precondition, and a stale one fails
 the whole write with a `conflict` (`409`) and changes nothing. `put` and
 `patch` take `ifVersion` in the body: the write applies only if the addressed
@@ -238,7 +244,7 @@ The contract, per key:
 
 - The effect runs once. A repeat under the same key with the same body
   answers the first attempt's outcome, the same body and the same status code
-  (`201` for the record a create made, `200` for a call), for 24 hours from
+  (`201` for the record a create, a merge or a split made, `200` for a call), for 24 hours from
   the moment the first attempt's outcome committed (not from when the request
   arrived); after that the key is free again. The key is
   looked up before the callable is resolved or admitted, so the repeat
@@ -253,8 +259,9 @@ The contract, per key:
   and the client retries after the first answers. A create, merge or split
   runs inside the repository's one write transaction, so its repeat waits for
   that commit and then answers the stored outcome. A running call's claim on
-  its key lasts its own deadline plus a minute; a claim a dead server left
-  behind is cleared when the repository next opens.
+  its key lasts its own deadline plus a minute of slack (a function call adds
+  two minutes for provisioning a PEP 723 body before its timeout starts); a
+  claim a dead server left behind is cleared when the repository next opens.
 - A failed attempt stores nothing. A `422`, a `500 function_failed` or a
   connection lost before the commit leaves no key behind, and the retry runs
   the operation again.
@@ -775,7 +782,7 @@ history generation the server does not hold. Its problem object names the
 current `head` and `generation`, telling a consumer that has fallen too far
 behind, or resumes after a restore, to re-list rather than silently miss rows.
 
-Every code a request can receive is above; those thirteen strings are the whole
+Every code a request can receive is above; those fourteen strings are the whole
 closed set, and nothing else appears in `error.code`. The
 [policy door](agents.md#the-policy-door)'s `gate` verdict is not one of them: it
 holds an agent's write for the owner's review and surfaces as a tool result
