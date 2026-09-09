@@ -454,8 +454,12 @@ func (ds *dataset) callFunctionOnce(ctx context.Context, name string, args any, 
 			return nil, 0, fmt.Errorf("%w: input: %w", substrate.ErrValidation, err)
 		}
 	}
-	// The reservation's lease follows the body's own clock from here.
-	if err := call.extendLease(ctx, nowUTC().Add(fn.Timeout)); err != nil {
+	// The reservation's lease follows the body's own clock from here, plus
+	// the provisioning a PEP 723 body may need first: a uv cache evicted
+	// since the last run re-resolves for up to runner's uvProvisionTimeout
+	// before fn.Timeout starts counting, and a lease that lapsed in that
+	// window would let a retry run the body a second time.
+	if err := call.extendLease(ctx, nowUTC().Add(fn.Timeout+idempotencyProvisionBudget)); err != nil {
 		return nil, 0, err
 	}
 	if fn.IsHost() {

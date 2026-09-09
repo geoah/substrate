@@ -371,3 +371,31 @@ func TestIdempotencyKeyExpiredIsSwept(t *testing.T) {
 		t.Fatal("a swept key still answered the first attempt")
 	}
 }
+
+// An outcome past the cap is not stored, and the repeat's refusal names the
+// record the first attempt wrote so the client can read it. Serial: it
+// lowers the package-level cap.
+func TestIdempotencyKeyOverCapCreateNamesTheRecord(t *testing.T) {
+	ds := openInternalDataset(t)
+	ctx := context.Background()
+	const task = "samples.substrate.reamde.dev/tasks/task"
+	cap := idempotencyOutcomeCap
+	idempotencyOutcomeCap = 1
+	t.Cleanup(func() { idempotencyOutcomeCap = cap })
+
+	in := substrate.PutInput{Kind: task, Properties: map[string]any{"name": "too big to keep"}}
+	first, err := ds.Put(substrate.WithIdempotencyKey(ctx, "big-1"), substrate.ActorAPI, in)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	_, err = ds.Put(substrate.WithIdempotencyKey(ctx, "big-1"), substrate.ActorAPI, in)
+	if !errors.Is(err, substrate.ErrConflict) {
+		t.Fatalf("repeat of an over-cap create: %v, want ErrConflict", err)
+	}
+	if want := task + "/" + first.ID; !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "read the record") {
+		t.Fatalf("the refusal does not name the record %s: %v", want, err)
+	}
+	if n := keyRows(t, ds, "big-1"); n != 1 {
+		t.Fatalf("the over-cap create left %d rows", n)
+	}
+}

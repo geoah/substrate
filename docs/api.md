@@ -237,9 +237,10 @@ The contract, per key:
 - The effect runs once. A repeat under the same key with the same body
   answers the first attempt's outcome, the same body and the same status code
   (`201` for the record a create made, `200` for a call), for 24 hours after
-  the first attempt settled; after that the key is free again. The key is looked up before the callable is
-  resolved or admitted, so the repeat answers even after the function or
-  agent was disabled, uninstalled or redeclared in between.
+  the first attempt settled; after that the key is free again. The key is
+  looked up before the callable is resolved or admitted, so the repeat
+  answers even after the function or agent was disabled, uninstalled or
+  redeclared in between.
 - The key binds to the repository and the operation, never to the token: a
   retry after `logout` and `login` still matches, and the same string sent to
   `/merge` and to a create is two keys.
@@ -262,7 +263,8 @@ The contract, per key:
   One key never opens two threads.
 - A stored outcome is capped at 1 MiB. A larger one is not kept: the effect
   still ran once, and the repeat is `409 conflict` saying the outcome was not
-  retained, so the client reads the record or the thread instead.
+  retained. For a create, merge or split the message names the record the
+  first attempt wrote, so the client reads it instead.
 - Agent chat streams and is excluded; there is no stored outcome to replay.
   `vocabulary/apply`, catalog import and `POST /tokens` do not take the header,
   and a `POST` to a vocabulary kind's collection (`kind`, `trait`, ...) refuses

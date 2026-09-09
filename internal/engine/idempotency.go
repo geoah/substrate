@@ -94,12 +94,19 @@ const (
 	// deadline by: the effects transaction and the settle after the body's
 	// clock runs out.
 	idempotencyLeaseSlack = time.Minute
-	// idempotencyOutcomeCap bounds the stored outcome. It is stated in
-	// docs/api.md; change both. An outcome past it is not stored: the row
-	// still settles, so the effect stays run-once, and the retry is told the
-	// outcome was not retained.
-	idempotencyOutcomeCap = 1 << 20
+	// idempotencyProvisionBudget is what a function body may spend before
+	// its own timeout starts: a PEP 723 body whose uv cache was evicted
+	// re-resolves for up to internal/runner's uvProvisionTimeout (120s). The
+	// lease covers it so a slow provision cannot hand the key to a retry.
+	idempotencyProvisionBudget = 120 * time.Second
 )
+
+// idempotencyOutcomeCap bounds the stored outcome. It is stated in
+// docs/api.md; change both. An outcome past it is not stored: the row still
+// settles, so the effect stays run-once, and the retry is told the outcome
+// was not retained and, for a record, where the record is. A variable only so
+// a test can lower it; nothing else writes it.
+var idempotencyOutcomeCap = 1 << 20
 
 // idempotencyKeyFrom reads the request's key off ctx, validated. Empty means
 // the request carried none and the operation runs as it always did.
@@ -134,6 +141,10 @@ type idempotencyRow struct {
 	// thread is the agent thread an in-flight agent call opened; empty for
 	// every other row.
 	thread string
+	// locator names what a dropped outcome was about, so the refusal can
+	// point the client at it: the record path of a created, merged or split
+	// record whose outcome exceeded the cap. Empty otherwise.
+	locator string
 }
 
 // replay decodes the stored outcome into out, or says why the row cannot
@@ -151,6 +162,10 @@ func (r *idempotencyRow) replay(key, fingerprint string, out any) error {
 		return fmt.Errorf("%w: Idempotency-Key %q: the first request is still running; retry after it answers", substrate.ErrConflict, key)
 	}
 	if r.outcome == nil {
+		if r.locator != "" {
+			return fmt.Errorf("%w: Idempotency-Key %q: the first request succeeded and wrote %s, but its outcome exceeded the %d byte retention cap and was not stored; read the record",
+				substrate.ErrConflict, key, r.locator, idempotencyOutcomeCap)
+		}
 		return fmt.Errorf("%w: Idempotency-Key %q: the first request succeeded but its outcome exceeded the %d byte retention cap and was not stored",
 			substrate.ErrConflict, key, idempotencyOutcomeCap)
 	}
@@ -163,7 +178,7 @@ func (r *idempotencyRow) replay(key, fingerprint string, out any) error {
 // idempotencySelectSQL reads the one LIVE row for a key: a row past its
 // expires_at is dead and reads as absent, whether or not the sweep has
 // reclaimed it yet.
-const idempotencySelectSQL = `SELECT fingerprint, settled_at IS NOT NULL, outcome, coalesce(thread, '')
+const idempotencySelectSQL = `SELECT fingerprint, settled_at IS NOT NULL, outcome, coalesce(thread, ''), coalesce(locator, '')
 	FROM idempotency_keys WHERE operation = $1 AND key = $2 AND expires_at > $3`
 
 type rowQuerier interface {
@@ -172,7 +187,7 @@ type rowQuerier interface {
 
 func idempotencyRead(ctx context.Context, q rowQuerier, op idempotentOp, key string, now time.Time) (*idempotencyRow, error) {
 	var r idempotencyRow
-	err := q.QueryRowContext(ctx, idempotencySelectSQL, string(op), key, now).Scan(&r.fingerprint, &r.settled, &r.outcome, &r.thread)
+	err := q.QueryRowContext(ctx, idempotencySelectSQL, string(op), key, now).Scan(&r.fingerprint, &r.settled, &r.outcome, &r.thread, &r.locator)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -264,19 +279,26 @@ func (ds *dataset) idempotentRecordTx(ctx context.Context, actor substrate.Actor
 		if err != nil {
 			return err
 		}
+		// A dropped outcome still names its record, so the refusal a repeat
+		// gets says where to read it.
+		var locator *string
+		if raw == nil {
+			path := e.Kind + "/" + e.ID
+			locator = &path
+		}
 		// The whole row in one statement: a dead row under the key (past its
 		// expires_at) is taken over, a live one cannot exist past the read
 		// above, and zero rows means one appeared anyway, which fails the
 		// write rather than settle over it.
 		res, err := t.exec(`
-			INSERT INTO idempotency_keys (operation, key, fingerprint, owner, outcome, settled_at, expires_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			INSERT INTO idempotency_keys (operation, key, fingerprint, owner, outcome, locator, settled_at, expires_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 			ON CONFLICT (repository, operation, key) DO UPDATE
 			   SET fingerprint = EXCLUDED.fingerprint, owner = EXCLUDED.owner, outcome = EXCLUDED.outcome,
-			       thread = NULL, created_at = EXCLUDED.created_at, settled_at = EXCLUDED.settled_at,
-			       expires_at = EXCLUDED.expires_at
-			 WHERE idempotency_keys.expires_at <= $6`,
-			string(op), key, fingerprint, owner, raw, t.now, t.now.Add(idempotencyRetention))
+			       locator = EXCLUDED.locator, thread = NULL, created_at = EXCLUDED.created_at,
+			       settled_at = EXCLUDED.settled_at, expires_at = EXCLUDED.expires_at
+			 WHERE idempotency_keys.expires_at <= $7`,
+			string(op), key, fingerprint, owner, raw, locator, t.now, t.now.Add(idempotencyRetention))
 		if err != nil {
 			return fmt.Errorf("settle idempotency key: %w", err)
 		}
@@ -364,7 +386,7 @@ func (c *idempotentCall) reserve(ctx context.Context) (bool, error) {
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (repository, operation, key) DO UPDATE
 		   SET fingerprint = EXCLUDED.fingerprint, owner = EXCLUDED.owner, outcome = NULL,
-		       thread = NULL, settled_at = NULL, created_at = EXCLUDED.created_at,
+		       locator = NULL, thread = NULL, settled_at = NULL, created_at = EXCLUDED.created_at,
 		       expires_at = EXCLUDED.expires_at
 		 WHERE idempotency_keys.expires_at <= $5
 		RETURNING true`,

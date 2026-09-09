@@ -15,8 +15,9 @@
 -- and jsonb refuses a \u0000 escape, which would fail the settle after the
 -- effects in the same transaction. NULL while the request is in flight and
 -- NULL after settlement when the answer exceeded the retention cap (the
--- effect still ran once, and the retry says so). `owner` is the attempt that
--- holds the row, a random token: a stale attempt whose lease lapsed can
+-- effect still ran once, and the retry says so; `locator` then names the
+-- record a create, merge or split wrote, so the retry can read it). `owner`
+-- is the attempt that holds the row, a random token: a stale attempt whose lease lapsed can
 -- neither release nor overwrite a successor's row. `thread` is the agent
 -- thread an agent call opened, written in the transaction that creates the
 -- thread: the loop's tool effects commit before the thread settles, so a
@@ -38,6 +39,7 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
     outcome     bytea,
     owner       text        NOT NULL,
     thread      text,
+    locator     text,
     created_at  timestamptz NOT NULL DEFAULT now(),
     settled_at  timestamptz,
     expires_at  timestamptz NOT NULL,
