@@ -201,8 +201,7 @@ func has(m map[string]any, key string) bool {
 }
 
 // bindRequest is the bind body: the declared input to point, and the record
-// to point it at. Record is omitempty because absence clears the choice, and
-// the OpenAPI document reads its required set off these tags.
+// to point it at. An absent record clears the choice.
 type bindRequest struct {
 	Input  string `json:"input"`
 	Record string `json:"record,omitempty"`

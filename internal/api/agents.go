@@ -43,9 +43,7 @@ func (h *handler) postAgentCall(w http.ResponseWriter, r *http.Request) {
 }
 
 type chatRequest struct {
-	// Thread continues an existing thread; empty or absent opens one, which
-	// is why it is omitempty: the OpenAPI document reads the required set off
-	// these tags.
+	// Thread continues an existing thread; empty or absent opens one.
 	Thread  string `json:"thread,omitempty"`
 	Message string `json:"message"`
 }

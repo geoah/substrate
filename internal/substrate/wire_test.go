@@ -12,10 +12,8 @@ import (
 
 // The console mirrors these shapes BY HAND. web/console/src/lib/api/types.ts is
 // several hundred lines of TypeScript interfaces written to match the structs
-// in this package, and nothing generates it. The OpenAPI document
-// (internal/api/openapi.yaml) is hand-written too, and no code generator runs
-// in this tree: a deliberate simplification, and the place the halves can
-// silently disagree.
+// in this package, and nothing generates it: a deliberate simplification, and
+// the place the two halves can silently disagree.
 //
 // A Go field renamed, added or retagged used to be invisible to the console
 // until something failed in a browser. This is the guard: the field names Go
@@ -23,9 +21,7 @@ import (
 // file, this test fails when they move, and a vitest beside the golden fails
 // when the TypeScript does not match it. The golden is the contract the two
 // sides meet at, and it is reviewed as a diff: one line per field, `true` for
-// a field the server always writes and `false` for one it may omit. The
-// OpenAPI document is held to the same structs by internal/api/openapi_test.go,
-// and every key here is a component there under the same name.
+// a field the server always writes and `false` for one it may omit.
 //
 // Adding a shape here is deliberate — it commits the console to tracking it.
 
@@ -97,8 +93,8 @@ var wireTypes = map[string]any{
 	// The console's RegisterInput and RegisterResult (auth.ts) mirror them.
 	"RegisterInput":  RegisterRequest{},
 	"RegisterResult": Registered{},
-	// Login: the request the door decodes, the openapi.yaml component of the
-	// same name. The console's LoginRequest (auth.ts) mirrors it.
+	// Login: the request the door decodes. The console's LoginRequest
+	// (auth.ts) mirrors it.
 	"LoginRequest": LoginRequest{},
 	// A credential change's answer: the repository the factors proved.
 	"SessionCredential": SessionCredential{},

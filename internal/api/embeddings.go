@@ -19,9 +19,8 @@ import "net/http"
 type reembedRequest struct {
 	// All ignores the stored provenance and enqueues every embeddable
 	// property. It is the answer to a gateway swapped behind an unchanged
-	// provider row and model name, which nothing stored can detect. It is
-	// omitempty because absent means the default scan, and the OpenAPI
-	// document reads the required set off these tags.
+	// provider row and model name, which nothing stored can detect. Absent
+	// means the default scan.
 	All bool `json:"all,omitempty"`
 }
 

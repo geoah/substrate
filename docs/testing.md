@@ -286,12 +286,7 @@ go test ./internal/substrate/ -run TestWireGolden -update   # accept the new sha
 
 and then fails the console's test until `types.ts` and its key map agree with
 it. Adding a shape to `wireTypes` in that Go test is a deliberate act: it
-commits the console to tracking it, and to the OpenAPI document too:
-`internal/api/openapi_test.go` requires a component of the same name in
-`internal/api/openapi.yaml` with the same properties, and holds every
-component's `required` list to the struct's tags. The same file walks the
-router and refuses a mounted route the document lacks, or a documented route
-nothing mounts ([the OpenAPI document](api.md#the-openapi-document)).
+commits the console to tracking it.
 
 ## The live tests
 

@@ -68,9 +68,8 @@ func normalizeVariables(v any) any {
 	return v
 }
 
-// graphqlRequest is the GraphQL-over-HTTP body. Only the query is required;
-// the rest is omitempty because a client may leave each out, and the OpenAPI
-// document reads the required set off these tags.
+// graphqlRequest is the GraphQL-over-HTTP body. Only the query is required; a
+// client may leave each of the rest out.
 type graphqlRequest struct {
 	Query         string         `json:"query"`
 	Variables     map[string]any `json:"variables,omitempty"`
