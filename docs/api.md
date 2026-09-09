@@ -155,7 +155,7 @@ the mutation's arguments, as `kind` on `patch`, `delete` and `merge`, and inside
 | `put`    | Create or upsert. Merges and never prunes: what the document omits is left alone.                                                                                   |
 | `patch`  | Edit in place: properties, labels, annotations. A null value deletes a key. State [transitions](data-model.md#validation-and-state-machines) travel only this way. |
 | `delete` | Soft delete: tombstones the record; hard deletion waits for finalizers to release.                                                                                  |
-| `merge`  | Join two records of one kind; the loser's id resolves to the winner forever ([merges](projection.md#merges)).                                                      |
+| `merge`  | Join two records of one kind; the loser's id resolves to the winner while the winner exists ([merges](projection.md#merges)).                                       |
 | `split`  | Reverse one merge, restoring the loser from the merge record.                                                                                                       |
 
 A pointer at another record is a property, so it is written by `put` and
@@ -165,7 +165,13 @@ change once the record exists; create-time resolution, `merge` and `split` are
 what move it.
 
 A `put` onto a tombstone restores that record: same id, same row, one
-changelog row saying so. It is undelete, not id reuse.
+changelog row saying so. The tombstone lasts until the garbage collector's
+next pass (every five minutes) purges it, or for as long as a finalizer holds
+it ([operations](operations.md#what-happens-at-boot)); after the purge the id is free, the same `put` creates a fresh record with a new
+history, and a reference another record still holds resolves to the new one.
+Ids are stable while a record exists; they are not promised unique across
+time, so a writer that composes an id from a provider's key may delete and
+recreate at will.
 
 Every mutation takes an optional version precondition, and a stale one fails
 the whole write with a `conflict` (`409`) and changes nothing. `put` and
