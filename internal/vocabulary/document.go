@@ -100,8 +100,7 @@ var deletedEnvelopeKeys = map[string]string{
 
 var metadataKeys = map[string]bool{"id": true, "labels": true, "annotations": true}
 
-// Document is one manifest: the envelope, parsed, plus the verbatim text it
-// was declared in.
+// Document is one manifest: the envelope, parsed.
 type Document struct {
 	// Kind is the LOCAL name of the envelope's kind reference — "kind"
 	// for `kind: substrate.reamde.dev/core/kind`. A manifest document is always
@@ -112,15 +111,10 @@ type Document struct {
 	Labels      map[string]string
 	Annotations map[string]string
 	Data        map[string]any
-
-	// Source is the document's own text, comments included. A manifest that
-	// arrived as a map (an installed connector payload) has no original text,
-	// so its source is the document marshaled back to YAML.
-	Source string
 }
 
 // ParseStream splits a `---` separated YAML stream into envelope-validated
-// documents, each carrying its own verbatim text.
+// documents.
 func ParseStream(data []byte) ([]Document, error) {
 	var out []Document
 	var problems []string
@@ -139,7 +133,7 @@ func ParseStream(data []byte) ([]Document, error) {
 			// A comment-only or empty document carries nothing to load.
 			continue
 		}
-		doc, errs := documentFrom(raw, text)
+		doc, errs := documentFrom(raw)
 		problems = append(problems, errs...)
 		if len(errs) == 0 {
 			out = append(out, doc)
@@ -151,19 +145,17 @@ func ParseStream(data []byte) ([]Document, error) {
 	return out, nil
 }
 
-// DocumentFromMap turns one already-decoded manifest — a connector's
-// installed payload is a JSON list of them — into a Document. It has no
-// original text, so its source is rendered from the map, deterministically,
-// which keeps the boot-time projection no-op suppressed.
+// DocumentFromMap turns one already-decoded manifest (a stored declaration
+// row's properties are one) into a Document.
 func DocumentFromMap(raw map[string]any) (Document, error) {
-	doc, problems := documentFrom(raw, "")
+	doc, problems := documentFrom(raw)
 	if len(problems) > 0 {
 		return Document{}, validationError(problems)
 	}
 	return doc, nil
 }
 
-func documentFrom(raw map[string]any, text string) (Document, []string) {
+func documentFrom(raw map[string]any) (Document, []string) {
 	var problems []string
 	errf := func(format string, args ...any) {
 		problems = append(problems, fmt.Sprintf(format, args...))
@@ -171,9 +163,8 @@ func documentFrom(raw map[string]any, text string) (Document, []string) {
 	ref := mstr(raw, "kind")
 	authority, pkg, local := SplitKindRef(ref)
 	d := Document{
-		Kind:   local,
-		Data:   mmap(raw, "data"),
-		Source: text,
+		Kind: local,
+		Data: mmap(raw, "data"),
 	}
 	for k := range raw {
 		if envelopeKeys[k] {
@@ -213,9 +204,6 @@ func documentFrom(raw map[string]any, text string) (Document, []string) {
 	if _, ok := raw["data"]; !ok {
 		errf("%s %s: data is required", d.Kind, d.ID)
 	}
-	if d.Source == "" {
-		d.Source = renderDocument(raw)
-	}
 	return d, problems
 }
 
@@ -238,21 +226,8 @@ func metaStrings(meta map[string]any, key, typ string, problems *[]string) map[s
 	return out
 }
 
-// renderDocument marshals a manifest map back to YAML: the best available
-// "original" for a document that arrived on the wire. Deterministic — yaml.v3
-// sorts map keys — so re-projecting an installed manifest writes nothing.
-func renderDocument(raw map[string]any) string {
-	out, err := yaml.Marshal(raw)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimRight(string(out), "\n")
-}
-
-// splitDocuments cuts a stream on its `---` separators. Slicing the text
-// rather than asking the YAML parser for node positions is what makes the
-// verbatim capture exact: a document's block is every line between two
-// separators, leading comments included.
+// splitDocuments cuts a stream on its `---` separators: a document's block is
+// every line between two of them, leading comments included.
 func splitDocuments(data []byte) ([]string, error) {
 	lines := splitLines(data)
 	var docs []string
@@ -265,8 +240,8 @@ func splitDocuments(data []byte) ([]string, error) {
 			continue
 		}
 		if strings.HasPrefix(t, "--- ") {
-			// YAML permits content on the separator line, but the verbatim
-			// slicer cannot capture it as a document of its own — refusing it
+			// YAML permits content on the separator line, but the line-based
+			// splitter cannot cut it into a document of its own, so refusing it
 			// keeps the loader fail-loud instead of silently dropping a
 			// manifest.
 			return nil, fmt.Errorf("line %d: a `---` separator must stand alone; move %q to the next line", i+1, strings.TrimPrefix(t, "--- "))

@@ -199,14 +199,12 @@ func run() error {
 		slog.Info("no SUBSTRATE_INVITE_CODE: registration is closed")
 	}
 	handler := api.New(api.Config{
-		Service:             svc,
-		WebDir:              cfg.WebDir,
-		Catalog:             cat,
-		ConsoleURL:          cfg.ConsoleURL,
-		InviteCode:          cfg.InviteCode,
-		TOTPDisabled:        cfg.InsecureDisableTOTP,
-		MaxDialect:          engine.MaxSchemaDialect(),
-		MaxChangelogDialect: engine.MaxChangelogDialect(),
+		Service:      svc,
+		WebDir:       cfg.WebDir,
+		Catalog:      cat,
+		ConsoleURL:   cfg.ConsoleURL,
+		InviteCode:   cfg.InviteCode,
+		TOTPDisabled: cfg.InsecureDisableTOTP,
 	})
 	httpSrv := &http.Server{
 		Addr:              ":" + cfg.Port,

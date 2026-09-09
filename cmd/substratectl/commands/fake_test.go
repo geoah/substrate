@@ -37,10 +37,6 @@ type fakeSubstrate struct {
 	// asymmetry is the contract, so the fake keeps it.
 	propertyMeta map[string]map[string]statusProperty
 
-	// incoming is the reverse-pointer block per record, served on a
-	// single-record GET and NEVER on a list, exactly like propertyMeta.
-	incoming map[string][]substrate.IncomingReference
-
 	// extraTypes are registry rows appended to fakeRegistry on the types read.
 	// Empty by default so the golden `types` table is unaffected; the
 	// shipped-example apply test seeds the `trigger` type here so the real
@@ -93,7 +89,6 @@ func newFake(t *testing.T) (*fakeSubstrate, *httptest.Server) {
 		records:      map[string]*substrate.Record{},
 		formerIDs:    map[string]string{},
 		propertyMeta: map[string]map[string]statusProperty{},
-		incoming:     map[string][]substrate.IncomingReference{},
 	}
 	srv := httptest.NewServer(f.handler())
 	t.Cleanup(srv.Close)
@@ -111,13 +106,6 @@ func (f *fakeSubstrate) seedMeta(id string, meta map[string]statusProperty) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.propertyMeta[id] = meta
-}
-
-// seedIncoming records a legacy incoming block on a single-record GET.
-func (f *fakeSubstrate) seedIncoming(id string, in []substrate.IncomingReference) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.incoming[id] = in
 }
 
 func (f *fakeSubstrate) record(id string) *substrate.Record {
@@ -240,12 +228,15 @@ const (
 // kind reference, which is the package identity plus the name.
 func typeRecord(name, pkg, plural, source string, definition map[string]any) map[string]any {
 	authority, pkgName := vocabulary.SplitPackageRef(pkg)
+	// THE PROPERTIES ARE THE DECLARATION: a kind record carries its names
+	// object and its declared properties directly, never a `definition` blob.
 	properties := map[string]any{
-		"name": name, "authority": authority, "package": pkgName, "plural": plural,
+		"authority": authority, "package": pkgName,
+		"names":   map[string]any{"singular": name, "plural": plural},
 		"version": 1, "source": source,
 	}
-	if definition != nil {
-		properties["definition"] = definition
+	for k, v := range definition {
+		properties[k] = v
 	}
 	return map[string]any{
 		"id":         pkg + "/" + name,
@@ -761,15 +752,12 @@ func (f *fakeSubstrate) handleGet(w http.ResponseWriter, r *http.Request) {
 	}
 	f.mu.Lock()
 	meta := f.propertyMeta[id]
-	inc := f.incoming[id]
 	f.mu.Unlock()
-	if !merged && meta == nil && inc == nil {
+	if !merged && meta == nil {
 		writeJSON(w, http.StatusOK, e)
 		return
 	}
 	// Detail-only fields ride alongside the record's own fields in this fake.
-	// Incoming is included only to prove the manifest ignores a server that
-	// answers with one.
 	body, _ := json.Marshal(e)
 	var out map[string]any
 	_ = json.Unmarshal(body, &out)
@@ -778,9 +766,6 @@ func (f *fakeSubstrate) handleGet(w http.ResponseWriter, r *http.Request) {
 	}
 	if meta != nil {
 		out["propertyMeta"] = meta
-	}
-	if inc != nil {
-		out["incoming"] = inc
 	}
 	writeJSON(w, http.StatusOK, out)
 }

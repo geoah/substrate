@@ -92,7 +92,7 @@ func TestCatalogPrintsUpgradesAndBlockersForCoreAndProviders(t *testing.T) {
 	}
 }
 
-// A server that previews no shipped upgrade (an older binary, or a dataset
+// A server that previews no shipped upgrade (a dataset
 // without the seam) still lists its catalog: the core row is simply absent.
 // So does one whose preview fails outright: the catalog read is the reason
 // the command was run, and the core row is the extra. The unexpected status

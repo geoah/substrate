@@ -128,8 +128,8 @@ type Property struct {
 	Name string
 	// DisplayName is the OPTIONAL human label a client renders instead of the
 	// raw camelCase property name (`backfillDepth` → "Backfill depth"). Absent
-	// leaves the client to humanize the name itself, so it stays backward
-	// compatible; a short label, no newlines, bounded like a description.
+	// leaves the client to humanize the name itself; a short label, no
+	// newlines, bounded like a description.
 	DisplayName string
 	// Description is the declared one-sentence explanation — the console's
 	// hover tooltip. One short sentence, enforced at load; the manifest's
@@ -557,9 +557,6 @@ type Trait struct {
 
 	// Definition is the manifest's data map.
 	Definition map[string]any
-	// SourceYAML is the verbatim manifest, comments included; installed
-	// authorities have no original text, so theirs is derived.
-	SourceYAML string
 }
 
 // Identity is "<authority>/<package>/<name>".
@@ -576,7 +573,6 @@ type PropertyType struct {
 	// Prop is the refinement as the property parser applies it.
 	Prop       *Property
 	Definition map[string]any
-	SourceYAML string
 }
 
 // Identity is "<authority>/<package>/<name>".
@@ -658,12 +654,6 @@ type Kind struct {
 	// Definition is the manifest's data map: what the GraphQL builder and the
 	// console read, exactly as it was authored.
 	Definition map[string]any
-
-	// SourceYAML is the verbatim manifest this type was declared in — the
-	// whole document, carrying the comments that say what the type is for.
-	// Installed types have no original text: theirs is their manifest
-	// marshaled back to YAML.
-	SourceYAML string
 }
 
 // Prop returns the declared property, if any.
@@ -812,9 +802,6 @@ type Package struct {
 	// Description is what the package or the authority is for, in the
 	// author's own words.
 	Description string
-
-	// SourceYAML is the package's own header manifest, verbatim.
-	SourceYAML string
 
 	// pending holds trait property contracts checked once every kind
 	// in the package is parsed.

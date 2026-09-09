@@ -105,13 +105,10 @@ func decodeTypeInfo(raw json.RawMessage) (substrate.KindInfo, bool) {
 	if err := json.Unmarshal(raw, &r); err != nil {
 		return substrate.KindInfo{}, false
 	}
+	// THE PROPERTIES ARE THE DECLARATION: a record row carries the
+	// description and the names object as properties. The bare-KindInfo shape
+	// keeps its own `definition` field.
 	definition := r.Definition
-	if definition == nil {
-		definition, _ = r.Properties["definition"].(map[string]any)
-	}
-	// THE PROPERTIES ARE THE DECLARATION: a typed row carries description and
-	// the names object directly, and `definition` survives only for a row an
-	// older substrate wrote. The bare-TypeInfo shape keeps its own fields.
 	if definition == nil {
 		definition = r.Properties
 	}
@@ -126,11 +123,11 @@ func decodeTypeInfo(raw json.RawMessage) (substrate.KindInfo, bool) {
 	}
 	ti := substrate.KindInfo{
 		Identity:    r.Identity,
-		Name:        firstNonEmpty(r.Name, propString(names, "singular"), propString(r.Properties, "name")),
+		Name:        firstNonEmpty(r.Name, propString(names, "singular")),
 		Authority:   firstNonEmpty(r.Authority, propString(r.Properties, "authority")),
 		Package:     firstNonEmpty(r.Package, propString(r.Properties, "package")),
 		Version:     declaredVersion,
-		Plural:      firstNonEmpty(r.Plural, propString(names, "plural"), propString(r.Properties, "plural")),
+		Plural:      firstNonEmpty(r.Plural, propString(names, "plural")),
 		Source:      firstNonEmpty(r.Source, propString(r.Properties, "source")),
 		Description: firstNonEmpty(r.Description, description),
 		Definition:  definition,

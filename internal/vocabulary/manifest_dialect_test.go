@@ -813,9 +813,9 @@ func TestEmptyIndexPropertiesRefused(t *testing.T) {
 
 // --- dialect 1's row spellings, at the YAML door ---------------------------------
 
-// A legacy EXPORT is a document too: `apply -f` of one arrives at this loader
-// carrying the `definition` blob, or a mirror a pre-typed projection wrote beside
-// it. The write path names each of them by what took its place (the engine's
+// A document that writes a retired ROW spelling (the `definition` blob, or a
+// mirror written beside it) reaches this loader through `apply -f` like any
+// other. The write path names each of them by what took its place (the engine's
 // checkDeclarationWrite), so this door says the same rather than "unknown key": a
 // writer working from an old export is owed the sentence that fixes the document,
 // whichever way it sent it.

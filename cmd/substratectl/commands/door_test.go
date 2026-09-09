@@ -64,10 +64,10 @@ func TestConfigRoundTrip(t *testing.T) {
 	}
 }
 
-// The collection path IS the kind reference, split into segments: three for a
-// published kind (authority, package, name), one for a repository-local one.
-// An id carrying a slash, and a declaration record's id IS a kind reference,
-// travels percent-encoded rather than as more path segments.
+// The collection path IS the kind reference, split into segments: an
+// authority, a package and a name, three for every kind. An id carrying a
+// slash, and a declaration record's id IS a kind reference, travels
+// percent-encoded rather than as more path segments.
 func TestCollectionPathIsTheKindReference(t *testing.T) {
 	cases := []struct {
 		pkg, kind string
@@ -76,8 +76,6 @@ func TestCollectionPathIsTheKindReference(t *testing.T) {
 	}{
 		{"samples.substrate.reamde.dev/tasks", "task", nil, "/api/v1/samples.substrate.reamde.dev/tasks/task"},
 		{"samples.substrate.reamde.dev/tasks", "task", []string{"t9"}, "/api/v1/samples.substrate.reamde.dev/tasks/task/t9"},
-		{"", "task", nil, "/api/v1/task"},
-		{"", "task", []string{"t9"}, "/api/v1/task/t9"},
 		{
 			"substrate.reamde.dev/core", "kind",
 			[]string{"samples.substrate.reamde.dev/tasks/task"},

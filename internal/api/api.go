@@ -56,18 +56,6 @@ type Config struct {
 	// fallback redirect target. Empty (local dev) posts to "*" and renders no
 	// redirect.
 	ConsoleURL string
-	// MaxDialect is the binary's maximum schema dialect, reported by
-	// GET /.well-known/substrate/server.json discovery. That endpoint touches no
-	// repository, so it surfaces the binary max only: a repository's STORED
-	// dialect lives in that repository's own `vocabulary_dialect` table and is
-	// served nowhere. Zero when unset.
-	MaxDialect int
-	// MaxChangelogDialect is the binary's maximum changelog dialect — the
-	// newest spelling of changelog entries it can replay — reported by the
-	// same discovery endpoint and per-repository in the same way: the STORED
-	// dialect lives in that repository's own `changelog_dialect` table and is
-	// served nowhere. Zero when unset.
-	MaxChangelogDialect int
 	// InviteCode is the ONE door into a fresh substrate: registering with it
 	// creates a user and their one repository. EMPTY TURNS REGISTRATION OFF —
 	// the endpoints answer `unsupported`, exactly like any capability this
@@ -97,8 +85,6 @@ type handler struct {
 	totpDisabled bool
 	catalog      *catalog.Catalog
 	consoleURL   string
-	maxDialect   int
-	maxChangelog int
 
 	// schemas is the GraphQL schema cache, one entry per repository, rebuilt
 	// on registry-fingerprint changes (internal/gql owns the key and builder).
@@ -123,8 +109,6 @@ func New(cfg Config) http.Handler {
 		totpDisabled: cfg.TOTPDisabled,
 		catalog:      cfg.Catalog,
 		consoleURL:   strings.TrimRight(cfg.ConsoleURL, "/"),
-		maxDialect:   cfg.MaxDialect,
-		maxChangelog: cfg.MaxChangelogDialect,
 		schemas:      gql.NewCache(),
 	}
 

@@ -6,7 +6,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -211,32 +210,4 @@ func TestSupportedChangeParamsStillWork(t *testing.T) {
 	}
 	generation := env.svc.datasets[fakeRepository].generation
 	wantNotRefused(t, env, changesPath+"?watch=1&from=3&generation="+generation+"&kinds=samples.substrate.reamde.dev/people/person", tok)
-}
-
-// --- discovery's schema note ------------------------------------------------
-
-// The note claimed the per-repository stored dialect was "on the repository". It is
-// not: it lives in each repository's own `vocabulary_dialect` table and appears on
-// neither the repository record nor `substratectl repository list`, so a client following the
-// note went looking for a field that does not exist.
-func TestDiscoverySchemaNoteDoesNotPointAtTheRepository(t *testing.T) {
-	env := newTestEnv(t)
-	rec := env.do(t, http.MethodGet, "/.well-known/substrate/server.json", "", nil)
-	wantStatus(t, rec, http.StatusOK)
-	doc := decodeJSON[discoveryDoc](t, rec)
-	if strings.Contains(doc.Vocabulary.Note, "on the repository") {
-		t.Errorf("note = %q, but nothing on the repository carries the stored dialect", doc.Vocabulary.Note)
-	}
-	if !strings.Contains(doc.Vocabulary.Note, "vocabulary_dialect") {
-		t.Errorf("note = %q, want it to name where the stored dialect actually lives", doc.Vocabulary.Note)
-	}
-	// The claim's own subject: the repository surface carries no dialect at all, so
-	// a note pointing there points at nothing. Should one ever be surfaced, this
-	// fails and the note gets to make the promise again.
-	ty := reflect.TypeOf(substrate.RepositoryInfo{})
-	for i := range ty.NumField() {
-		if strings.Contains(strings.ToLower(ty.Field(i).Name), "dialect") {
-			t.Fatalf("RepositoryInfo carries %q — surface it in the note instead", ty.Field(i).Name)
-		}
-	}
 }

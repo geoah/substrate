@@ -3,6 +3,7 @@ package vocabulary_test
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -614,148 +615,70 @@ data:
 	}
 }
 
-// --- source capture ------------------------------------------------------
+// --- listings -----------------------------------------------------------
 
-// The console shows a resource's schema by printing SourceYAML, so the loader
-// has to hand back the document's own text: comments, key order, formatting.
-// The document IS the block now, which makes the capture exact.
-func TestSourceYAMLIsTheDocument(t *testing.T) {
+// Registry listings are by identity, across authorities: a trait and a
+// property type are declarations of their own, listed beside the kinds.
+func TestTraitsAndPropertyTypesListByIdentity(t *testing.T) {
 	r := loadVocab(t)
-
-	// A type's source is its whole manifest, envelope included, with the
-	// comment above it that says what it is for — and nothing of its
-	// neighbors, in either direction.
-	book, _ := r.ByIdentity("vocab.example.com/vocab/book")
-	wantHead := strings.Join([]string{
-		`# one book, in whatever formats you hold it`,
-		`kind: substrate.reamde.dev/core/kind`,
-		`metadata:`,
-		`  id: vocab.example.com/vocab/book`,
-		`data:`,
-		`  authority: vocab.example.com`,
-		`  package: vocab`,
-		`  names: {singular: book, plural: books}`,
-	}, "\n")
-	if !strings.HasPrefix(book.SourceYAML, wantHead) {
-		t.Fatalf("book source:\n%s\nwant prefix:\n%s", book.SourceYAML, wantHead)
-	}
-	if !strings.HasSuffix(book.SourceYAML, "      onDelete: cascade") {
-		t.Fatalf("book source ends:\n%s", book.SourceYAML)
-	}
-	for _, leak := range []string{"contact.vocab", "task.vocab", "---"} {
-		if strings.Contains(book.SourceYAML, leak) {
-			t.Fatalf("book source leaked %q:\n%s", leak, book.SourceYAML)
-		}
-	}
-
-	// A package's source is its package manifest, carrying the file's own
-	// opening comment.
 	g, ok := r.PackageByName("core.example.com/core")
 	if !ok {
 		t.Fatal("core package missing")
 	}
-	wantAuthority := strings.Join([]string{
-		`# the substrate's own machinery`,
-		`kind: substrate.reamde.dev/core/package`,
-		`metadata:`,
-		`  id: core.example.com/core`,
-		`data:`,
-		`  authority: core.example.com`,
-		`  package: core`,
-		`  version: 1`,
-	}, "\n")
-	if g.SourceYAML != wantAuthority {
-		t.Fatalf("package source:\n%s\nwant:\n%s", g.SourceYAML, wantAuthority)
-	}
-
-	// Traits and custom property types are manifests too, so their
-	// text is exact rather than sliced.
 	temporal := g.Traits["temporal"]
 	if temporal.Identity() != "core.example.com/core/temporal" {
-		t.Fatalf("capability identity = %q", temporal.Identity())
-	}
-	if !strings.HasPrefix(temporal.SourceYAML, "# when a thing sits on the timeline") ||
-		!strings.Contains(temporal.SourceYAML, "  # backed by the physical at/ends_at/due_at columns") ||
-		!strings.HasSuffix(temporal.SourceYAML, "    - {name: range, properties: {at: datetime, endsAt: datetime}}") {
-		t.Fatalf("temporal source:\n%s", temporal.SourceYAML)
+		t.Fatalf("trait identity = %q", temporal.Identity())
 	}
 	if temporal.Definition["oneOf"] == nil {
-		t.Fatalf("capability definition = %v", temporal.Definition)
+		t.Fatalf("trait definition = %v", temporal.Definition)
 	}
-
 	vocab, _ := r.PackageByName("vocab.example.com/vocab")
 	asin := vocab.PropertyTypes["asin"]
 	if asin.Base != vocabulary.DatatypeString || asin.Identity() != "vocab.example.com/vocab/asin" {
 		t.Fatalf("asin datatype = %+v", asin)
 	}
-	if !strings.HasPrefix(asin.SourceYAML, "# Amazon's audiobook identifier") ||
-		!strings.HasSuffix(asin.SourceYAML, `  pattern: "^B0[A-Z0-9]{8}$"`) {
-		t.Fatalf("asin source:\n%s", asin.SourceYAML)
-	}
-
-	// Registry listings are by identity, across authorities.
 	caps := r.Traits()
 	if len(caps) != 1 || caps[0].Identity() != "core.example.com/core/temporal" {
-		t.Fatalf("capabilities = %+v", caps)
+		t.Fatalf("traits = %+v", caps)
 	}
 	dts := r.PropertyTypes()
 	if len(dts) != 1 || dts[0].Identity() != "vocab.example.com/vocab/asin" {
-		t.Fatalf("datatypes = %+v", dts)
+		t.Fatalf("property types = %+v", dts)
 	}
 }
 
-// Installed manifests arrive as maps, never as text: their source is derived,
-// and stable enough that re-projecting it writes nothing.
-func TestSourceYAMLForInstalledManifests(t *testing.T) {
-	m := gmailManifest()
-	g, err := vocabulary.ParseManifest(m)
+// parseInstalled parses already-decoded manifest documents (the shape a
+// stored closure reaches the loader in) into the one package they declare.
+func parseInstalled(docs ...map[string]any) (*vocabulary.Package, error) {
+	parsed := make([]vocabulary.Document, 0, len(docs))
+	for _, raw := range docs {
+		d, err := vocabulary.DocumentFromMap(raw)
+		if err != nil {
+			return nil, err
+		}
+		parsed = append(parsed, d)
+	}
+	pkgs, err := vocabulary.BuildPackages(parsed, vocabulary.SourceInstalled)
 	if err != nil {
-		t.Fatal(err)
+		return nil, err
 	}
-	got := g.Kinds["cursor"].SourceYAML
-	want := strings.Join([]string{
-		`data:`,
-		`    authority: gmail.connectors.example.com`,
-		`    names:`,
-		`        plural: cursors`,
-		`        singular: cursor`,
-		`    package: gmail`,
-		`    properties:`,
-		`        pageToken:`,
-		`            type: string`,
-		`kind: substrate.reamde.dev/core/kind`,
-		`metadata:`,
-		`    id: gmail.connectors.example.com/gmail/cursor`,
-	}, "\n")
-	if got != want {
-		t.Fatalf("installed source:\n%s\nwant:\n%s", got, want)
+	if len(pkgs) != 1 {
+		return nil, fmt.Errorf("%w: the documents declare %d packages, want one", substrate.ErrValidation, len(pkgs))
 	}
-	again, err := vocabulary.ParseManifest(gmailManifest())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if again.Kinds["cursor"].SourceYAML != got {
-		t.Fatal("derived source must be deterministic, or projections churn")
-	}
-	if again.SourceYAML == "" || !strings.Contains(again.SourceYAML, "kind: substrate.reamde.dev/core/package") {
-		t.Fatalf("installed package source:\n%s", again.SourceYAML)
-	}
+	return pkgs[0], nil
 }
 
-func gmailManifest() vocabulary.Manifest {
+// gmailDocs is one provider package as a document list.
+func gmailDocs() []map[string]any {
 	const authority = "gmail.connectors.example.com/gmail"
-	return vocabulary.Manifest{
-		Name:      "google.gmail",
-		Authority: authority,
-		Manifests: []map[string]any{
-			vocabulary.PackageManifest(authority, 1),
-			vocabulary.ActorManifest(authority, "connector:gmail"),
-			vocabulary.KindManifest(authority,
-				map[string]any{"singular": "cursor", "plural": "cursors"},
-				map[string]any{"properties": map[string]any{
-					"pageToken": map[string]any{"type": "string"},
-				}}),
-		},
+	return []map[string]any{
+		vocabulary.PackageManifest(authority, 1),
+		vocabulary.ActorManifest(authority, "connector:gmail"),
+		vocabulary.KindManifest(authority,
+			map[string]any{"singular": "cursor", "plural": "cursors"},
+			map[string]any{"properties": map[string]any{
+				"pageToken": map[string]any{"type": "string"},
+			}}),
 	}
 }
 
@@ -1043,15 +966,12 @@ data:
 func TestUnknownCapabilityRejected(t *testing.T) {
 	r := loadVocab(t)
 	const authority = "x.connectors.example.com/x"
-	g, err := vocabulary.ParseManifest(vocabulary.Manifest{
-		Name: "x", Authority: authority,
-		Manifests: []map[string]any{
-			vocabulary.PackageManifest(authority, 1),
-			vocabulary.KindManifest(authority,
-				map[string]any{"singular": "thing", "plural": "things"},
-				map[string]any{"traits": []any{"nosuchcapability"}}),
-		},
-	})
+	g, err := parseInstalled(
+		vocabulary.PackageManifest(authority, 1),
+		vocabulary.KindManifest(authority,
+			map[string]any{"singular": "thing", "plural": "things"},
+			map[string]any{"traits": []any{"nosuchcapability"}}),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1072,18 +992,15 @@ func TestInstalledGroupBindsLoadedCapability(t *testing.T) {
 	const authority = "media.connectors.example.com/media"
 	mk := func(binding string) *vocabulary.Package {
 		t.Helper()
-		g, err := vocabulary.ParseManifest(vocabulary.Manifest{
-			Name: "media", Authority: authority,
-			Manifests: []map[string]any{
-				vocabulary.PackageManifest(authority, 1),
-				vocabulary.KindManifest(authority,
-					map[string]any{"singular": "clip", "plural": "clips"},
-					map[string]any{
-						"traits":     []any{binding},
-						"properties": map[string]any{"mediaRef": map[string]any{"type": "url"}},
-					}),
-			},
-		})
+		g, err := parseInstalled(
+			vocabulary.PackageManifest(authority, 1),
+			vocabulary.KindManifest(authority,
+				map[string]any{"singular": "clip", "plural": "clips"},
+				map[string]any{
+					"traits":     []any{binding},
+					"properties": map[string]any{"mediaRef": map[string]any{"type": "url"}},
+				}),
+		)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1112,9 +1029,9 @@ func TestInstalledGroupBindsLoadedCapability(t *testing.T) {
 func TestInstallBumpsVersion(t *testing.T) {
 	r := loadVocab(t)
 	before := r.Version()
-	m := gmailManifest()
+	const authority = "gmail.connectors.example.com/gmail"
 	// Its one type reaches into another package for its owner.
-	m.Manifests = append(m.Manifests, vocabulary.KindManifest(m.Authority,
+	docs := append(gmailDocs(), vocabulary.KindManifest(authority,
 		map[string]any{"singular": "label", "plural": "labels"},
 		map[string]any{"properties": map[string]any{
 			"account": map[string]any{
@@ -1122,9 +1039,9 @@ func TestInstallBumpsVersion(t *testing.T) {
 				"required": true, "mustExist": true, "onDelete": "cascade",
 			},
 		}}))
-	g, err := vocabulary.ParseManifest(m)
+	g, err := parseInstalled(docs...)
 	if err != nil {
-		t.Fatalf("parse manifest: %v", err)
+		t.Fatalf("parse the documents: %v", err)
 	}
 	if err := r.Install(g); err != nil {
 		t.Fatalf("install: %v", err)
@@ -1162,24 +1079,21 @@ func TestInstalledMapping(t *testing.T) {
 	// The PROVIDER installs a mirror kind whose subject slot is unpinned and
 	// optional, and no mapping: the kind a slack user describes belongs to
 	// whoever installed this, and this package owns none (record 49).
-	prov, err := vocabulary.ParseManifest(vocabulary.Manifest{
-		Name: "slack", Authority: provider,
-		Manifests: []map[string]any{
-			vocabulary.PackageManifest(provider, 1),
-			vocabulary.ActorManifest(provider, "connector:slack"),
-			vocabulary.KindManifest(provider,
-				map[string]any{"singular": "slackuser", "plural": "slackusers"},
-				map[string]any{
-					"properties": map[string]any{
-						"realName": map[string]any{"type": "string"},
-						"email":    map[string]any{"type": "email"},
-						"person": map[string]any{
-							"type": "reference", "mustExist": true, "subject": true,
-						},
+	prov, err := parseInstalled(
+		vocabulary.PackageManifest(provider, 1),
+		vocabulary.ActorManifest(provider, "connector:slack"),
+		vocabulary.KindManifest(provider,
+			map[string]any{"singular": "slackuser", "plural": "slackusers"},
+			map[string]any{
+				"properties": map[string]any{
+					"realName": map[string]any{"type": "string"},
+					"email":    map[string]any{"type": "email"},
+					"person": map[string]any{
+						"type": "reference", "mustExist": true, "subject": true,
 					},
-				}),
-		},
-	})
+				},
+			}),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1195,21 +1109,18 @@ func TestInstalledMapping(t *testing.T) {
 	// singleton contribution, which is legal.
 	mk := func(mapping map[string]any) *vocabulary.Package {
 		t.Helper()
-		g, err := vocabulary.ParseManifest(vocabulary.Manifest{
-			Name: "home", Authority: home,
-			Manifests: []map[string]any{
-				vocabulary.PackageManifest(home, 1),
-				vocabulary.KindManifest(home,
-					map[string]any{"singular": "contactcard", "plural": "contactcards"},
-					map[string]any{
-						"properties": map[string]any{
-							"name":   map[string]any{"type": "string"},
-							"emails": map[string]any{"type": "email", "repeated": true},
-						},
-					}),
-				mapping,
-			},
-		})
+		g, err := parseInstalled(
+			vocabulary.PackageManifest(home, 1),
+			vocabulary.KindManifest(home,
+				map[string]any{"singular": "contactcard", "plural": "contactcards"},
+				map[string]any{
+					"properties": map[string]any{
+						"name":   map[string]any{"type": "string"},
+						"emails": map[string]any{"type": "email", "repeated": true},
+					},
+				}),
+			mapping,
+		)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1247,39 +1158,36 @@ func TestInstalledMapping(t *testing.T) {
 	// installing two mappings of its own where one's `to` is the other's
 	// `from` breaks the bipartite rule, and nothing of it stays installed.
 	const chain = "chain.example.com/chain"
-	g, err := vocabulary.ParseManifest(vocabulary.Manifest{
-		Name: "chain", Authority: chain,
-		Manifests: []map[string]any{
-			vocabulary.PackageManifest(chain, 1),
-			vocabulary.KindManifest(chain,
-				map[string]any{"singular": "leaf", "plural": "leaves"},
-				map[string]any{"properties": map[string]any{
-					"middle": map[string]any{
-						"type": "reference", "kind": chain + "/middle",
-						"required": true, "mustExist": true, "subject": true,
-					},
-				}}),
-			vocabulary.KindManifest(chain,
-				map[string]any{"singular": "middle", "plural": "middles"},
-				map[string]any{"properties": map[string]any{
-					"root": map[string]any{
-						"type": "reference", "kind": chain + "/root",
-						"required": true, "mustExist": true, "subject": true,
-					},
-				}}),
-			vocabulary.KindManifest(chain,
-				map[string]any{"singular": "root", "plural": "roots"},
-				map[string]any{"properties": map[string]any{
-					"name": map[string]any{"type": "string"},
-				}}),
-			vocabulary.MappingManifest(chain, "leafmiddle", map[string]any{
-				"from": chain + "/leaf", "to": chain + "/middle", "property": "middle",
-			}),
-			vocabulary.MappingManifest(chain, "middleroot", map[string]any{
-				"from": chain + "/middle", "to": chain + "/root", "property": "root",
-			}),
-		},
-	})
+	g, err := parseInstalled(
+		vocabulary.PackageManifest(chain, 1),
+		vocabulary.KindManifest(chain,
+			map[string]any{"singular": "leaf", "plural": "leaves"},
+			map[string]any{"properties": map[string]any{
+				"middle": map[string]any{
+					"type": "reference", "kind": chain + "/middle",
+					"required": true, "mustExist": true, "subject": true,
+				},
+			}}),
+		vocabulary.KindManifest(chain,
+			map[string]any{"singular": "middle", "plural": "middles"},
+			map[string]any{"properties": map[string]any{
+				"root": map[string]any{
+					"type": "reference", "kind": chain + "/root",
+					"required": true, "mustExist": true, "subject": true,
+				},
+			}}),
+		vocabulary.KindManifest(chain,
+			map[string]any{"singular": "root", "plural": "roots"},
+			map[string]any{"properties": map[string]any{
+				"name": map[string]any{"type": "string"},
+			}}),
+		vocabulary.MappingManifest(chain, "leafmiddle", map[string]any{
+			"from": chain + "/leaf", "to": chain + "/middle", "property": "middle",
+		}),
+		vocabulary.MappingManifest(chain, "middleroot", map[string]any{
+			"from": chain + "/middle", "to": chain + "/root", "property": "root",
+		}),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1293,25 +1201,22 @@ func TestInstalledMapping(t *testing.T) {
 	}
 }
 
-// A manifest is one authority's worth of documents; anything else is a mistake
-// the loader must not paper over.
+// A stored closure is one package's worth of documents; anything else is a
+// mistake the loader must not paper over.
 func TestManifestShapeRejected(t *testing.T) {
 	const authority = "x.connectors.example.com/x"
-	for name, m := range map[string]vocabulary.Manifest{
-		"no authority manifest": {Name: "x", Authority: authority, Manifests: []map[string]any{
+	for name, docs := range map[string][]map[string]any{
+		"no package manifest": {
 			vocabulary.KindManifest(authority, map[string]any{"singular": "thing", "plural": "things"}, nil),
-		}},
-		"two authorities": {Name: "x", Authority: authority, Manifests: []map[string]any{
+		},
+		"two packages": {
 			vocabulary.PackageManifest(authority, 1),
 			vocabulary.PackageManifest("y.connectors.example.com/y", 1),
-		}},
-		"authority mismatch": {Name: "x", Authority: authority, Manifests: []map[string]any{
-			vocabulary.PackageManifest("y.connectors.example.com/y", 1),
-		}},
-		"empty": {Name: "x", Authority: authority},
+		},
+		"empty": nil,
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := vocabulary.ParseManifest(m); err == nil {
+			if _, err := parseInstalled(docs...); err == nil {
 				t.Fatal("expected a validation error")
 			} else if !errors.Is(err, substrate.ErrValidation) {
 				t.Fatalf("expected ErrValidation, got %v", err)
@@ -1323,7 +1228,7 @@ func TestManifestShapeRejected(t *testing.T) {
 func TestCloneIsolatesInstalls(t *testing.T) {
 	base := loadVocab(t)
 	clone := base.Clone()
-	g, err := vocabulary.ParseManifest(gmailManifest())
+	g, err := parseInstalled(gmailDocs()...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1348,13 +1253,10 @@ func TestResolveAmbiguity(t *testing.T) {
 		t.Fatal("expected unknown type error")
 	}
 	const authority = "dup.connectors.example.com/dup"
-	g, err := vocabulary.ParseManifest(vocabulary.Manifest{
-		Name: "dup", Authority: authority,
-		Manifests: []map[string]any{
-			vocabulary.PackageManifest(authority, 1),
-			vocabulary.KindManifest(authority, map[string]any{"singular": "contact", "plural": "contacts"}, nil),
-		},
-	})
+	g, err := parseInstalled(
+		vocabulary.PackageManifest(authority, 1),
+		vocabulary.KindManifest(authority, map[string]any{"singular": "contact", "plural": "contacts"}, nil),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1904,19 +1806,16 @@ func TestInstallRechecksMappingsAgainstAChangedSourceKind(t *testing.T) {
 	}
 	// The provider's next release retypes `headline`, which the user's
 	// mapping reads onto a string property.
-	next, err := vocabulary.ParseManifest(vocabulary.Manifest{
-		Name: "p", Authority: "p.example.com/p",
-		Manifests: []map[string]any{
-			vocabulary.PackageManifest("p.example.com/p", 2),
-			vocabulary.KindManifest("p.example.com/p",
-				map[string]any{"singular": "issue", "plural": "issues"},
-				map[string]any{"properties": map[string]any{
-					"headline": map[string]any{"type": "int"},
-					"task":     map[string]any{"type": "reference", "mustExist": true, "subject": true},
-					"note":     map[string]any{"type": "reference", "mustExist": true, "subject": true},
-				}}),
-		},
-	})
+	next, err := parseInstalled(
+		vocabulary.PackageManifest("p.example.com/p", 2),
+		vocabulary.KindManifest("p.example.com/p",
+			map[string]any{"singular": "issue", "plural": "issues"},
+			map[string]any{"properties": map[string]any{
+				"headline": map[string]any{"type": "int"},
+				"task":     map[string]any{"type": "reference", "mustExist": true, "subject": true},
+				"note":     map[string]any{"type": "reference", "mustExist": true, "subject": true},
+			}}),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2853,9 +2752,6 @@ func TestShippedSchemaLoads(t *testing.T) {
 		if ty.Identity != ty.Package+"/"+ty.Name {
 			t.Errorf("identity %q is not %s/%s", ty.Identity, ty.Package, ty.Name)
 		}
-		if ty.SourceYAML == "" {
-			t.Errorf("%s carries no source", ty.Identity)
-		}
 		// Every shipped property carries a description: the console's hover
 		// tooltip, one short sentence. Implicit properties (machine stamps) are
 		// declared by a transition, not an author.
@@ -2863,11 +2759,6 @@ func TestShippedSchemaLoads(t *testing.T) {
 			if p := ty.Props[pn]; !p.Implicit && p.Description == "" {
 				t.Errorf("%s.%s carries no description", ty.Identity, pn)
 			}
-		}
-	}
-	for _, g := range r.PackageList() {
-		if g.SourceYAML == "" {
-			t.Errorf("authority %s carries no manifest text", g.Name)
 		}
 	}
 }

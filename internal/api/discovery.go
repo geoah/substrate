@@ -16,19 +16,13 @@ import (
 
 // discoveryDoc is the GET /.well-known/substrate/server.json body.
 type discoveryDoc struct {
-	// Versions are the served API prefixes: the primary v1 plus the sunset
-	// alias marked deprecated with its replacement.
+	// Versions are the served API prefixes, each with the status it is served
+	// under.
 	Versions []apiVersionInfo `json:"versions"`
 	// Server names the running build.
 	Server serverInfo `json:"server"`
-	// Vocabulary reports the binary's max vocabulary dialect. The per-repository
-	// STORED dialect is not on the wire anywhere: it lives in each
-	// repository's own `vocabulary_dialect` row, and this endpoint opens none.
-	Vocabulary vocabularyInfo `json:"vocabulary"`
-	// Changelog carries the retention horizon (the oldest resumable seq, 0
-	// today; ruling A4) and the binary's max changelog dialect. The stored
-	// changelog dialect is per-repository too, in that repository's own
-	// `changelog_dialect` row, and this endpoint opens none.
+	// Changelog carries the retention horizon: the oldest resumable seq, 0
+	// today (ruling A4).
 	Changelog changelogInfo `json:"changelog"`
 	// Features is the feature list a client reads instead of feature-probing.
 	Features []featureInfo `json:"features"`
@@ -123,9 +117,8 @@ type endpointsInfo struct {
 }
 
 type apiVersionInfo struct {
-	Name       string `json:"name"`
-	Status     string `json:"status"` // "served" | "deprecated"
-	ReplacedBy string `json:"replacedBy,omitempty"`
+	Name   string `json:"name"`
+	Status string `json:"status"` // "served" | "deprecated"
 }
 
 // serverInfo names the running build. Both fields come from internal/build,
@@ -136,17 +129,8 @@ type serverInfo struct {
 	Build   string `json:"build,omitempty"`
 }
 
-type vocabularyInfo struct {
-	MaxDialect int    `json:"maxDialect"`
-	Note       string `json:"note"`
-}
-
 type changelogInfo struct {
 	Horizon int64 `json:"horizon"`
-	// MaxDialect is the newest spelling of changelog entries this binary can
-	// replay. A repository whose entries are written above it refuses to open,
-	// which a client sees as `503 unavailable` on every request it carries.
-	MaxDialect int `json:"maxDialect"`
 }
 
 // featureInfo names one feature, how far its shape has settled, and WHICH
@@ -197,13 +181,9 @@ func (h *handler) embeddingsEnabled() bool {
 // getDiscovery serves GET /.well-known/substrate/server.json. No auth, no DB.
 func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 	doc := discoveryDoc{
-		Versions: []apiVersionInfo{{Name: APIVersion, Status: "served"}},
-		Server:   serverInfo{Version: build.Version(), Build: build.Commit()},
-		Vocabulary: vocabularyInfo{
-			MaxDialect: h.maxDialect,
-			Note:       "binary maximum; the stored dialect is per-repository, in that repository's own vocabulary_dialect row, and is not served",
-		},
-		Changelog: changelogInfo{Horizon: retentionHorizon(), MaxDialect: h.maxChangelog},
+		Versions:  []apiVersionInfo{{Name: APIVersion, Status: "served"}},
+		Server:    serverInfo{Version: build.Version(), Build: build.Commit()},
+		Changelog: changelogInfo{Horizon: retentionHorizon()},
 		Features:  h.features(),
 		Surfaces: surfacesInfo{
 			REST:    surfaceInfo{Endpoint: "/api/" + APIVersion, Compatibility: compatibilitySupported},

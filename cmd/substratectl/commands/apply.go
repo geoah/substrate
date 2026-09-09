@@ -27,8 +27,8 @@ func (a *app) applyCommand() *cobra.Command {
 
 Every document wears the envelope — kind, metadata, data:
 
-  kind: samples.substrate.reamde.dev/tasks/task             # the kind reference; bare for a
-                                         # repository-local kind (kind: task)
+  kind: samples.substrate.reamde.dev/tasks/task             # the kind reference; a bare
+                                         # kind: task resolves in the registry
   metadata:
     id: t9                               # the record id; omit to create
     labels:
