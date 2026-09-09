@@ -251,7 +251,7 @@ CREATE INDEX property_offers_record ON property_offers (repository, record_kind,
 --
 -- `txn` is the seq of the appending transaction's LAST entry, stamped at
 -- commit beside `hash` and carried by the segment line as `txn`
--- (changelogfile.Entry.Txn, line format 2), so the boot's table-to-file
+-- (changelogfile.Entry.Txn), so the boot's table-to-file
 -- catch-up appends whole transactions and never leaves a prefix of one in a
 -- segment (repodir.go appendFromTable).
 CREATE TABLE changelog (
@@ -269,8 +269,8 @@ CREATE TABLE changelog (
     txn        bigint,
     CONSTRAINT changelog_hash_len CHECK (hash IS NULL OR octet_length(hash) = 32),
     -- The cause is always an EARLIER entry (docs/changelog.md promises it);
-    -- pinning it here also keeps zero out, so the preimage's NULL/value
-    -- distinction (chain.go frameOptionalInt64) never meets a stored zero.
+    -- pinning it here also keeps zero out, so the checksum's NULL/value
+    -- distinction never meets a stored zero.
     CONSTRAINT changelog_caused_by_prior
         CHECK (caused_by IS NULL OR (caused_by >= 1 AND caused_by < seq)),
     -- `txn` ends the transaction the entry belongs to, so it is never below
