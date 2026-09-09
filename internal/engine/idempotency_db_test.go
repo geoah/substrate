@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/internal/engine"
+	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 )
@@ -265,16 +266,46 @@ func TestIdempotencyKeyFunctionCallRunsTheBodyOnce(t *testing.T) {
 }
 
 // The stored outcome is the marshaled bytes, not jsonb: an output carrying a
-// NUL escape, which jsonb refuses, settles and replays like any other.
+// NUL escape, which jsonb refuses, settles and replays like any other, and the
+// replay is the stored row's, not a second run of a body that happens to
+// answer the same thing twice.
 func TestIdempotencyKeyStoresAnOutcomeWithANulEscape(t *testing.T) {
 	t.Parallel()
+	ctx := context.Background()
+	svc, dsn := newService(t)
+	if _, err := svc.CreateRepository(ctx, testdb.Username(t), testdb.Authority(t)); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, testdb.Username(t))
+	if err != nil {
+		t.Fatalf("open dataset: %v", err)
+	}
+	importVocabulary(t, ds)
 	nul := pyFn("nul", map[string]any{}, []any{taskType}, `
 def main(input, host):
     return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "nul-task", "properties": {"name": "nul"}}],
             "output": {"s": "a\u0000b"}}
 `)
-	_, ops := newFnDataset(t, nil, nul)
+	if err := enginetest.Install(ctx, ds, owner, fnConnector(nil, nul)); err != nil {
+		t.Fatalf("register connector: %v", err)
+	}
+	ops := ds.(fnOps)
+	// The key rows, read on the repository's own scoped pool: the test's
+	// eyes on the store, under the same row level security the engine runs.
+	scoped, err := engine.OpenScopedDB(dsn, ds.Repository().ID, engine.RoleApp)
+	if err != nil {
+		t.Fatalf("open scoped db: %v", err)
+	}
+	t.Cleanup(func() { _ = scoped.Close() })
+	keyRows := func() int {
+		var n int
+		if err := scoped.QueryRowContext(ctx, `SELECT count(*) FROM idempotency_keys WHERE key = 'nul-1'`).Scan(&n); err != nil {
+			t.Fatalf("count key rows: %v", err)
+		}
+		return n
+	}
+
 	first, effects, err := ops.CallFunction(keyed("nul-1"), fnPackage+"/nul", nil)
 	if err != nil {
 		t.Fatalf("call: %v", err)
@@ -282,12 +313,22 @@ def main(input, host):
 	if effects != 1 || first.(map[string]any)["s"] != "a\x00b" {
 		t.Fatalf("first answer: %v (%d effects)", first, effects)
 	}
+	if n := keyRows(); n != 1 {
+		t.Fatalf("the settled call left %d key rows, want 1", n)
+	}
 	again, _, err := ops.CallFunction(keyed("nul-1"), fnPackage+"/nul", nil)
 	if err != nil {
 		t.Fatalf("repeat: %v", err)
 	}
 	if again.(map[string]any)["s"] != "a\x00b" {
 		t.Fatalf("repeat answered %v", again)
+	}
+	// The body ran once: one effect by the function's actor, one key row.
+	if rows := actorChanges(t, ds, fnPackage+"/nul"); len(rows) != 1 {
+		t.Fatalf("the body ran %d times under one key", len(rows))
+	}
+	if n := keyRows(); n != 1 {
+		t.Fatalf("the repeat left %d key rows, want 1", n)
 	}
 }
 
