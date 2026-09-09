@@ -813,8 +813,8 @@ func TestEmptyIndexPropertiesRefused(t *testing.T) {
 
 // --- dialect 1's row spellings, at the YAML door ---------------------------------
 
-// A document that writes a retired ROW spelling — the `definition` blob, or a
-// mirror written beside it — reaches this loader through `apply -f` like any
+// A document that writes a retired ROW spelling (the `definition` blob, or a
+// mirror written beside it) reaches this loader through `apply -f` like any
 // other. The write path names each of them by what took its place (the engine's
 // checkDeclarationWrite), so this door says the same rather than "unknown key": a
 // writer working from an old export is owed the sentence that fixes the document,

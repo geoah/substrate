@@ -145,8 +145,8 @@ func ParseStream(data []byte) ([]Document, error) {
 	return out, nil
 }
 
-// DocumentFromMap turns one already-decoded manifest — a stored declaration
-// row's properties are one — into a Document.
+// DocumentFromMap turns one already-decoded manifest (a stored declaration
+// row's properties are one) into a Document.
 func DocumentFromMap(raw map[string]any) (Document, error) {
 	doc, problems := documentFrom(raw)
 	if len(problems) > 0 {
@@ -241,7 +241,7 @@ func splitDocuments(data []byte) ([]string, error) {
 		}
 		if strings.HasPrefix(t, "--- ") {
 			// YAML permits content on the separator line, but the line-based
-			// splitter cannot cut it into a document of its own — refusing it
+			// splitter cannot cut it into a document of its own, so refusing it
 			// keeps the loader fail-loud instead of silently dropping a
 			// manifest.
 			return nil, fmt.Errorf("line %d: a `---` separator must stand alone; move %q to the next line", i+1, strings.TrimPrefix(t, "--- "))

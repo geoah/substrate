@@ -511,12 +511,8 @@ naming the property no row declares. An entry stands for every route behind
 it, so `bundles` appears only where both the lifecycle transitions and catalog
 install are served.
 
-Send every request to the `/api/v1` prefix. Today it is the only prefix
-served, and `versions` is where
-that is said: were a deployment ever to answer on a second one, it would be
-listed there as `deprecated` with the prefix that replaces it, and every
-response on it would carry a `Warning` header (RFC 7234 warn-code 299) naming
-that replacement.
+Send every request to the `/api/v1` prefix. It is the only prefix served,
+and `versions` lists it with status `served`.
 
 Within v1 the REST surface is **additive only**: fields and endpoints are
 added, never removed or narrowed under the same version. A deprecation is

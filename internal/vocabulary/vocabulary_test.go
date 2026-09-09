@@ -647,8 +647,8 @@ func TestTraitsAndPropertyTypesListByIdentity(t *testing.T) {
 	}
 }
 
-// parseInstalled parses already-decoded manifest documents — the shape a
-// stored closure reaches the loader in — into the one package they declare.
+// parseInstalled parses already-decoded manifest documents (the shape a
+// stored closure reaches the loader in) into the one package they declare.
 func parseInstalled(docs ...map[string]any) (*vocabulary.Package, error) {
 	parsed := make([]vocabulary.Document, 0, len(docs))
 	for _, raw := range docs {
