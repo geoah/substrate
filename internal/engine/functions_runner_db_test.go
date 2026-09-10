@@ -233,7 +233,7 @@ func TestTriggerEffectPutIfAbsent(t *testing.T) {
 	t.Parallel()
 	// The prototype's clobber finding: a minting function must never reset
 	// state owned by later stages — with ifAbsent, re-mention and replay are
-	// no-ds.
+	// no-ops.
 	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("mint", map[string]any{"kinds": []any{widgetType}})},
 		pyFn("mint", map[string]any{}, []any{taskType}, mintSource))
