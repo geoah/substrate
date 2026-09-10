@@ -85,9 +85,13 @@ func (s Snapshot) MarshalJSON() ([]byte, error) {
 	return json.Marshal(w)
 }
 
-// UnmarshalJSON parses the file form. The key set is closed, as the
-// manifest's is: a format is exactly its keys, and a later one announces
-// itself in `format`.
+// UnmarshalJSON parses the file form, refusing any format but
+// SnapshotFormat. The key set is closed, as the manifest's is: a format is
+// exactly its keys, so format 1 is the key set THIS binary writes, and a
+// later key set announces itself in `format`. Format 1 lost `blobLocation`
+// with the s3 blob backend (decision 0075) without a bump, which is sound
+// only because no snapshot written before that release exists: nothing was
+// installed. A key set change after v1 takes the next format number.
 func (s *Snapshot) UnmarshalJSON(data []byte) error {
 	var probe struct {
 		Format int `json:"format"`

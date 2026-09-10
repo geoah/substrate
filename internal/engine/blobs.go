@@ -87,10 +87,10 @@ func (ds *dataset) PutBlob(ctx context.Context, actor substrate.Actor, up substr
 	if err != nil {
 		return nil, err
 	}
-	return ds.putBlobExternal(ctx, actor, store, digest, name, up.MediaType, data)
+	return ds.putBlobBytes(ctx, actor, store, digest, name, up.MediaType, data)
 }
 
-// putBlobExternal is the blob store path, where the bytes and the manifest
+// putBlobBytes is the blob store path, where the bytes and the manifest
 // cannot commit together. It runs in three steps, and the order is the whole
 // design:
 //
@@ -107,7 +107,7 @@ func (ds *dataset) PutBlob(ctx context.Context, actor substrate.Actor, up substr
 // the same collectable state, and in neither does a reader see a `stored`
 // manifest whose bytes are missing, because only step 3 writes that word and
 // only with the bytes already durable.
-func (ds *dataset) putBlobExternal(ctx context.Context, actor substrate.Actor, store blobbytes.Store, digest, name, mediaType string, data []byte) (*substrate.BlobInfo, error) {
+func (ds *dataset) putBlobBytes(ctx context.Context, actor substrate.Actor, store blobbytes.Store, digest, name, mediaType string, data []byte) (*substrate.BlobInfo, error) {
 	size := int64(len(data))
 	var auth blobRecordMeta
 	err := ds.inTx(ctx, actor, true, func(t *txn) error {

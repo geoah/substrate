@@ -166,12 +166,10 @@ always the truth. The bytes are always at
 repository directory beside the changelog, so one copy of the directory is a
 whole backup.
 
-There is nothing to configure. There was a second backend, an S3 bucket, and
-no deployment selected it; v1 ships the filesystem alone and
-`SUBSTRATE_BLOB_STORE` no longer exists
+There is nothing to configure: one store, no variable
 ([0075](decisions/0075-v1-ships-the-fs-blob-backend-alone.md)). A host that
-still sets it, or any `SUBSTRATE_BLOB_S3_*` variable, boots and ignores it:
-the server reads no such variable.
+still sets `SUBSTRATE_BLOB_STORE`, or any `SUBSTRATE_BLOB_S3_*` variable,
+boots and ignores it, because the server reads no such variable.
 
 **Isolation is not the database's job here.** The repository is half of every
 key, and it comes from the authenticated token's repository, never from the

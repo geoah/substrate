@@ -15,10 +15,9 @@ nothing has been installed yet, so the backend had no user. It cost 1,039
 lines: 834 in `internal/blobbytes`, 172 of them an AWS SigV4 signer written
 by hand, 70 in `internal/config` for eight environment variables, and a
 135-line MinIO harness in the engine's export suite. It also cost two MinIO
-containers: `internal/blobbytes` took 53.1 s against 4.9 s without its s3
-suite, and `TestExportStreamsBlobsOutOfS3` alone took 63.8 s. Every
-external-store decision, every operator procedure and the snapshot file
-carried a second branch for it.
+containers, one per test binary, which is why `internal/blobbytes` needed
+Docker and a database at all. Every external-store decision, every operator
+procedure and the snapshot file carried a second branch for it.
 
 ## Considered Options
 
@@ -56,7 +55,9 @@ This amends four accepted records without reversing any of them:
   `pending` mint, the bytes, then the settle to `stored` is still exactly
   what an upload does. Only the plural is wrong: `fs` is the one backend
   outside Postgres, so the "listing per pass on s3" cost is now a directory
-  read.
+  read. Its confirmation now lives at
+  `internal/engine/blobs_store_db_test.go`, renamed with the engine's
+  `putBlobBytes`, because "external" had nothing left to be external to.
 - **[0031](0031-blob-bytes-outside-postgres-are-stored-plaintext.md)**:
   bytes are still stored as they arrived. "On every backend" is now one
   backend, and the at-rest answer is disk encryption under the data root; the
@@ -82,8 +83,8 @@ already superseded by
   so 0051's backup unit, 0065's snapshot and 0069's export each have one
   procedure instead of two.
 - Good, because 1,039 lines and two MinIO containers leave the tree, and
-  `internal/blobbytes` drops from 53.1 s to 4.9 s of unit tests that need
-  neither Docker nor a database.
+  `internal/blobbytes` needs neither Docker nor a database, so it leaves
+  `test:db` for the short suite.
 - Good, because no hand-written request signer ships.
 - Bad, because a deployment whose disk cannot hold its attachments has no
   answer in v1 beyond a bigger disk or a network filesystem under the data
@@ -92,6 +93,11 @@ already superseded by
   removes, and a `snapshot.json` written by this release does not carry the
   key such a backend would need. The snapshot format's key set is closed, so
   that is a format change, not an added key.
+- Bad, because `snapshot.json` loses `blobLocation` while `SnapshotFormat`
+  stays 1, which the format's own rule would otherwise refuse. It is sound
+  here only because nothing was installed, so no snapshot written before this
+  release exists to be read. After v1 the same edit takes the next format
+  number.
 
 ### Confirmation
 
