@@ -16,7 +16,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// THE ONE LOOP (primitives §5, ticket 007 ruling 3). Every agent invocation
+// THE ONE LOOP. Every agent invocation
 // — a trigger delivery, the call API, a sub-agent call, an interactive chat
 // turn — runs this loop: completions through internal/llm against the
 // provider row's wire, tool schemas from function manifests, tool calls dispatched
@@ -885,10 +885,10 @@ func (l *agentLoop) putRow(ctx context.Context, actor substrate.Actor, in substr
 // on-wire schema stays stable across turns.
 //
 // THE BUILT-INS TAKE THE SAME PATH AS EVERY OTHER CALLABLE, because they are
-// function records: their cards used to be Go literals here, and they are the
-// `description` and the `arguments:` of the four `runtime: host` declarations
-// core ships. What still differs is only WHERE the body lives — a host function
-// dispatches in this loop, anything else goes to the runner — which is what
+// function records: a built-in's card is the `description` and the
+// `arguments:` of one of the four `runtime: host` declarations core ships,
+// never a Go literal here. Only WHERE the body lives differs (a host function
+// dispatches in this loop, anything else goes to the runner), which is what
 // agentTool.builtin carries.
 func (l *agentLoop) buildTools() error {
 	l.byName = map[string]agentTool{}

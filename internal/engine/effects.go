@@ -16,9 +16,9 @@ import (
 // makes a put create-only (a minting function never resets state owned by
 // later stages), and a put or patch addressed to a FORMER id resolves onto
 // the canonical winner instead of parking (the deterministic-id trap after a
-// merge). The patch effect's `offer` write-kind was REMOVED in v1 (ticket
-// 002, ruling A10) — the key is refused at decode naming the removal; an
-// bundle contributes by shipping its own source type + recordmapping.
+// merge). There is no `offer` write-kind on a patch effect: the key is
+// refused at decode naming the removal, and a bundle contributes by shipping
+// its own source type + recordmapping.
 // Nothing here can crash the dispatcher — every error is a delivery error
 // the caller retries and parks.
 
