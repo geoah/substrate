@@ -1,10 +1,11 @@
-package substratefn
+package runner
 
-// The deterministic-id contract: the Go SDK's ids are byte-identical to the
-// Python SDK's. The golden vectors in ../testdata/id_vectors.json were minted
-// by host.py; this test recomputes them through substratefn — a divergence here is
-// a cross-runtime dedupe break. It also covers the empty-component rejection
-// and the ASCII-only slug (Unicode dropped, not kept).
+// The deterministic-id contract: ids.go is byte-identical to host.py's
+// `ids.external` and `ids.url`. The golden vectors in testdata/id_vectors.json
+// were minted by host.py; this test recomputes them through ids.go, so a
+// refactor of either side that changes an id fails here instead of silently
+// splitting one harvested record into two. It also covers the ASCII-only slug
+// (Unicode dropped, not kept).
 
 import (
 	"encoding/json"
@@ -14,7 +15,7 @@ import (
 )
 
 func TestIDVectorsMatchPython(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "testdata", "id_vectors.json"))
+	raw, err := os.ReadFile(filepath.Join("testdata", "id_vectors.json"))
 	if err != nil {
 		t.Fatalf("read vectors: %v", err)
 	}
@@ -50,9 +51,8 @@ func TestIDVectorsMatchPython(t *testing.T) {
 }
 
 func TestSlugifyASCIIOnly(t *testing.T) {
-	// Unicode letters/digits are DROPPED (not kept), so the slug is provably
-	// ASCII and byte-identical to Python's — the divergence the old
-	// unicode.IsLetter path had.
+	// Unicode letters and digits are DROPPED (not kept), so the slug is
+	// provably ASCII and byte-identical to Python's.
 	for in, want := range map[string]string{
 		"prov":            "prov",
 		"Provider Name!!": "provider-name",
@@ -64,19 +64,5 @@ func TestSlugifyASCIIOnly(t *testing.T) {
 		if got := slugify(in); got != want {
 			t.Errorf("slugify(%q) = %q, want %q", in, got, want)
 		}
-	}
-}
-
-func TestIDEmptyComponentRejected(t *testing.T) {
-	h := &Host{}
-	h.initSDK(nil)
-	if got := h.IDs.External("", "a", "b"); got != "" || h.sdkErr == nil {
-		t.Fatalf("empty provider: got %q err=%v, want an sdkErr and empty id", got, h.sdkErr)
-	}
-
-	h2 := &Host{}
-	h2.initSDK(nil)
-	if got := h2.IDs.URL("   "); got != "" || h2.sdkErr == nil {
-		t.Fatalf("whitespace-only url: got %q err=%v, want an sdkErr and empty id", got, h2.sdkErr)
 	}
 }

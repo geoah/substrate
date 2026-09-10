@@ -223,10 +223,8 @@ but not as asserted, and at least one case must have asserted.
 SUBSTRATE_TEST_REQUIRE_SANDBOX=1 go test -count=1 -short ./internal/sandbox/... ./internal/runner/...
 ```
 
-`-short` because `TestGoBuildAndInvoke` compiles a body with the host
-toolchain, which is slow and has a VCS-stamping failure mode of its own; every
-confinement case runs in the short suite, which is also the only half of
-`ci:go` that reaches `internal/runner`.
+`-short` because every confinement case runs in the short suite, which is also
+the only half of `ci:go` that reaches `internal/runner`.
 
 `ci:go`, `ci:race` and `ci:coverage` set the variable; `mise run test` does
 not, so a laptop with Landlock left out of its `lsm=` list still runs the rest

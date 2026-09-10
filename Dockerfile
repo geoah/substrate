@@ -55,19 +55,10 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
       -X github.com/geoah/substrate/internal/build.commit=${COMMIT}" \
       -o /out/substratectl ./cmd/substratectl
 
-# ---- go toolchain for the runtime (TARGET arch) -------------------------
-# Pulled at the target platform (no BUILDPLATFORM override) so the toolchain
-# binaries actually run in the final image — the build stage above is native
-# build-arch for cross-compile speed and its toolchain is the wrong arch.
-FROM golang:1.26-alpine AS gotoolchain
-
 # ---- runtime ------------------------------------------------------------
-# The shared function runner executes inline bundle code as child processes,
-# so the image must carry the languages it runs: python3 (the Python host)
-# and the Go toolchain (Go functions compile at registration). The runner
-# builds guests hermetically (GOPROXY=off) and cannot download a toolchain,
-# so an apk `go` (older) would break Go-function registration — the exact
-# 1.26 toolchain is copied instead.
+# The shared function runner executes inline bundle code as child processes, so
+# the image must carry the language it runs: python3, the host every function
+# body is exec'd into.
 #
 # uv (the Astral installer/runner, a single static binary) is the connector
 # runtime: a Python function body that carries a PEP 723 `# /// script` block
@@ -75,30 +66,25 @@ FROM golang:1.26-alpine AS gotoolchain
 # venv with those deps and runs the body — so a connector can `import
 # googleapiclient` by declaring it inline, with NO pip in the base image and no
 # change to the fast dependency-free python host. uv resolves at provision time
-# (network); the cache lives under HOME. Dependency-free Python and all Go
-# functions never touch uv. To warm first-run of common connectors, a build may
-# optionally pre-populate uv's cache with the common provider SDKs
+# (network); the cache lives under HOME. A dependency-free body never touches
+# uv. To warm first-run of common connectors, a build may optionally
+# pre-populate uv's cache with the common provider SDKs
 # (google-api-python-client, requests, …) via `uv cache` — a documented cache
 # warm, NOT a hard dependency: nothing in the base image imports them.
 FROM alpine:3.24
 RUN apk add --no-cache ca-certificates tzdata python3 uv
 
 # The runner spawns bundle code as child processes, and NONE of it needs root.
-# uv's cache, the python host and the Go toolchain all write under HOME, so the
-# unprivileged user owns one; GOCACHE sits in /tmp, which it can also write.
-# /keys is where a deployment that mints its own credential key keeps it (see
-# compose.yaml). Docker copies this directory's ownership onto a fresh named
-# volume, which is what lets the unprivileged user write the key it mints.
+# uv's cache and the python host both write under HOME, so the unprivileged
+# user owns one. /keys is where a deployment that mints its own credential key
+# keeps it (see compose.yaml). Docker copies this directory's ownership onto a
+# fresh named volume, which is what lets the unprivileged user write the key it
+# mints.
 RUN addgroup -g 65532 -S substrate \
     && adduser -u 65532 -S -G substrate -h /home/substrate substrate \
     && install -d -o substrate -g substrate /home/substrate /keys
 
-COPY --from=gotoolchain /usr/local/go /usr/local/go
-ENV PATH=/usr/local/go/bin:$PATH \
-    GOTOOLCHAIN=local \
-    GOFLAGS=-mod=mod \
-    GOCACHE=/tmp/gocache \
-    HOME=/home/substrate
+ENV HOME=/home/substrate
 COPY --from=build /out/substrate /usr/local/bin/substrate
 COPY --from=build /out/substratectl /usr/local/bin/substratectl
 COPY --from=web /web/console/dist /web

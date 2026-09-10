@@ -1,13 +1,10 @@
 // Package runner is the function runner: a child process of the substrate
 // (same host, same container, NEVER in-process) for every installed function
-// body. ONE PROCESS PER INSTALLATION, always: python bodies get their own
-// interpreter with the source exec'd into it, go bodies compile at
-// registration to a binary in a content-addressed build cache and run
-// supervised. Live runner state is keyed by repository + function identity +
-// content hash, so nothing is ever shared across repositories or functions; the
-// build cache alone is shared, because its artifacts are immutable and it is
-// mounted read-only into every body. Both runtimes speak the same JSON-lines
-// protocol (protocol.go documents the frames), pinned so moving to Connect
+// body. ONE PROCESS PER INSTALLATION, always: a python body gets its own
+// interpreter with the source exec'd into it. Live runner state is keyed by
+// repository + function identity + content hash, so nothing is ever shared
+// across repositories or functions. The child speaks a JSON-lines protocol
+// (protocol.go documents the frames), pinned so moving to Connect
 // Describe/Invoke on a local socket, or moving a bundle into its own
 // container, is a placement change, not a contract change.
 //
@@ -48,7 +45,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -65,7 +61,7 @@ import (
 // manifest so this package needs no registry.
 type Spec struct {
 	// Repository and Function pin the INSTALLATION identity: live runner state
-	// (python module namespaces, Go processes) never crosses repositories or
+	// (an interpreter and its module namespace) never crosses repositories or
 	// functions, even for byte-identical source.
 	//
 	// Repository is the repository's ID, never its name. The id is the
@@ -76,7 +72,7 @@ type Spec struct {
 	Repository string
 	Function   string // "<authority>/<name>"
 
-	Runtime string // vocabulary.RuntimePython | vocabulary.RuntimeGo
+	Runtime string // vocabulary.RuntimePython
 	Source  string
 	// TimeoutMs is the wall-clock bound in milliseconds. The declaration's
 	// source of truth is the `duration` property the loader parses and caps
@@ -103,25 +99,24 @@ type Spec struct {
 	// the declared host PATTERNS is not done yet.
 	Network []string
 	// Modules are the SHARED bundle library modules this function's bundle
-	// ships, filename → source. `.py` files land on a bundle-scoped PYTHONPATH
-	// dir the isolated Python process imports; `.go` files land in the built
-	// binary's `substratefn.local/lib` package. Nil for a standalone function.
-	// Modules re-key the installation (contentHash), so changing one rebuilds
-	// or re-registers, exactly like changing the body.
+	// ships, filename → source. The `.py` files land on a bundle-scoped
+	// PYTHONPATH dir the isolated Python process imports. Nil for a standalone
+	// function. Modules re-key the installation (contentHash), so changing one
+	// re-registers, exactly like changing the body.
 	Modules map[string]string
 }
 
 // Key is the LIVE state identity: repository, function and the content hash. Two
 // installations of identical source get separate registrations and separate
-// processes — only the compiled ARTIFACT is shared, through the build cache.
+// processes, sharing nothing.
 func (s Spec) Key() string {
 	return s.Repository + "|" + s.Function + "|" + s.contentHash()
 }
 
 // contentHash fingerprints the body, its shared modules AND the part of the
 // capability envelope the sandbox enforces at process start: a change to any
-// of them re-keys the installation, so a new process is started and (Python)
-// re-registered or (Go) rebuilt against the new inputs.
+// of them re-keys the installation, so a new process is started and registered
+// against the new inputs.
 //
 // The network state has to be in here. The sandbox policy is applied ONCE, when
 // the process starts, so a manifest that drops `permissions.network` without
@@ -169,11 +164,6 @@ func (s Spec) pythonModules() map[string]string {
 	return modulesWithExt(s.Modules, ".py")
 }
 
-// goModules is the shared modules vendored into the Go build's `lib` package.
-func (s Spec) goModules() map[string]string {
-	return modulesWithExt(s.Modules, ".go")
-}
-
 func modulesWithExt(mods map[string]string, ext string) map[string]string {
 	var out map[string]string
 	for name, src := range mods {
@@ -209,14 +199,13 @@ func (s Spec) timeout() time.Duration {
 // against one process serialize.
 type Runner struct {
 	mu sync.Mutex
-	// pys and gos hold the live processes, one per INSTALLATION (Spec.Key) in
-	// both cases. There is no per-call-level pool any more and none is needed:
+	// pys holds the live processes, one per INSTALLATION (Spec.Key). There is
+	// no per-call-level pool any more and none is needed:
 	// a body N host-Calls deep is by definition a DIFFERENT function: the
 	// engine refuses direct and mutual recursion before the call reaches here
 	// (engine/runner.go, the identity stack), so a nested invocation never
 	// queues on the process its caller is blocking.
 	pys map[string]*proc
-	gos map[string]*proc
 	// retired holds the installation keys Reconcile retired and nothing has
 	// re-admitted since: a start under the key (the engine asking for the
 	// body again) or a later Reconcile listing it live clears the mark. It is
@@ -224,8 +213,7 @@ type Runner struct {
 	// retired one, which must not: the registry no longer has that body.
 	retired map[string]struct{}
 	// sandbox confines every child. Built once, because it probes the kernel.
-	sandbox  *sandbox.Confiner
-	cacheDir string
+	sandbox *sandbox.Confiner
 	// reaping is set once the idle sweeper is running. It starts with the
 	// first process rather than with the runner, so a substrate that never
 	// runs a function never has the goroutine.
@@ -250,7 +238,7 @@ func New() *Runner {
 		mode = sandbox.ModeEnforce
 	}
 	return &Runner{
-		pys: map[string]*proc{}, gos: map[string]*proc{}, retired: map[string]struct{}{},
+		pys: map[string]*proc{}, retired: map[string]struct{}{},
 		sandbox: sandbox.New(mode),
 	}
 }
@@ -266,9 +254,6 @@ func (r *Runner) Sandbox() *sandbox.Confiner { return r.sandbox }
 // that cannot compile or load.
 func (r *Runner) Warm(ctx context.Context, spec Spec) error {
 	switch spec.Runtime {
-	case vocabulary.RuntimeGo:
-		_, err := r.goProc(ctx, spec)
-		return err
 	case vocabulary.RuntimePython:
 		// Provision at registration, where a slow cold uv resolve belongs,
 		// not on the first delivery's timeout, and register the body, so a
@@ -285,9 +270,7 @@ func (r *Runner) Warm(ctx context.Context, spec Spec) error {
 // the registry-publish hook: the process serving a removed or superseded
 // installation stops. With one process per installation there is nothing to
 // deregister any more; retiring a body is closing its process, which takes its
-// module namespace, its open descriptors and its scratch with it. The
-// content-addressed BUILD cache is deliberately untouched: its artifacts are
-// immutable and read-only to every body; eviction is a later, bounded policy.
+// module namespace, its open descriptors and its scratch with it.
 func (r *Runner) Reconcile(_ context.Context, repository string, live []Spec) {
 	keep := map[string]bool{}
 	for _, s := range live {
@@ -297,13 +280,11 @@ func (r *Runner) Reconcile(_ context.Context, repository string, live []Spec) {
 
 	r.mu.Lock()
 	var stop []*proc
-	for _, live := range []map[string]*proc{r.gos, r.pys} {
-		for key, p := range live {
-			if strings.HasPrefix(key, prefix) && !keep[key] {
-				delete(live, key)
-				r.retired[key] = struct{}{}
-				stop = append(stop, p)
-			}
+	for key, p := range r.pys {
+		if strings.HasPrefix(key, prefix) && !keep[key] {
+			delete(r.pys, key)
+			r.retired[key] = struct{}{}
+			stop = append(stop, p)
 		}
 	}
 	for key := range keep {
@@ -404,8 +385,6 @@ func (r *Runner) proc(ctx context.Context, spec Spec) (*proc, error) {
 		// is a different function, so it lands on a different process and can
 		// never queue behind the caller that is blocking on it.
 		return r.pythonProc(ctx, spec)
-	case vocabulary.RuntimeGo:
-		return r.goProc(ctx, spec)
 	default:
 		return nil, fmt.Errorf("runner: unknown runtime %q", spec.Runtime)
 	}
@@ -413,93 +392,6 @@ func (r *Runner) proc(ctx context.Context, spec Spec) (*proc, error) {
 
 //go:embed host.py
 var hostPy string
-
-// --- the go binaries ---------------------------------------------------------
-
-// goProc returns the live process for one installation, building the cached
-// artifact and starting a verified process if needed. A binary that cannot
-// exec or answer a describe — a corrupt or protocol-stale artifact — is
-// invalidated and rebuilt exactly once.
-func (r *Runner) goProc(ctx context.Context, spec Spec) (*proc, error) {
-	key := spec.Key()
-	r.mu.Lock()
-	if p, ok := r.gos[key]; ok && p.alive() {
-		p.touch()
-		r.mu.Unlock()
-		return p, nil
-	}
-	r.mu.Unlock()
-	var lastErr error
-	for range 2 {
-		bin, err := r.ensureBinary(ctx, spec)
-		if err != nil {
-			return nil, err
-		}
-		p, err := r.startVerified(ctx, spec, bin)
-		if err == nil {
-			r.mu.Lock()
-			if cur, ok := r.gos[key]; ok && cur.alive() {
-				r.mu.Unlock()
-				p.kill()
-				return cur, nil
-			}
-			r.gos[key] = p
-			// A start is the engine admitting the installation again.
-			delete(r.retired, key)
-			r.reap()
-			r.mu.Unlock()
-			return p, nil
-		}
-		lastErr = err
-		// Invalidate once: the artifact failed to exec or to speak the
-		// protocol, so the cache entry cannot be trusted.
-		_ = os.Remove(bin)
-	}
-	return nil, lastErr
-}
-
-// startVerified starts one compiled body and proves it speaks the protocol
-// with a describe roundtrip before anyone invokes through it.
-func (r *Runner) startVerified(ctx context.Context, spec Spec, bin string) (*proc, error) {
-	work, err := r.goWorkDir(spec)
-	if err != nil {
-		return nil, err
-	}
-	tmpDir, err := scratch(work)
-	if err != nil {
-		return nil, err
-	}
-	cmd := exec.Command(bin)
-	cmd.Dir = work
-	// The compiled body's own scratch, not the shared /tmp: the sandbox
-	// grants this directory and no other writable path.
-	cmd.Env = childEnv("TMPDIR=" + tmpDir)
-	// The build cache is read-and-EXECUTE: the binary lives there and every
-	// other installation's does too, so a writable grant would let one body
-	// replace an artifact another is about to run.
-	p, err := r.startCmd(cmd, policyFor(spec, work, filepath.Dir(bin)))
-	if err != nil {
-		return nil, fmt.Errorf("runner: start %s: %w", bin, err)
-	}
-	dctx, cancel := context.WithTimeout(ctx, spec.timeout())
-	defer cancel()
-	resp, err := p.roundtrip(dctx, spec.timeout(), frame{Op: "describe"}, nil)
-	if err != nil {
-		p.kill()
-		return nil, fmt.Errorf("runner: describe %s: %w", bin, err)
-	}
-	if !resp.OK {
-		p.kill()
-		return nil, fmt.Errorf("runner: describe %s: %s", bin, resp.Error)
-	}
-	// The version negotiation: a binary speaking another protocol is a stale
-	// artifact — refused here so goProc invalidates and rebuilds it.
-	if resp.Protocol != ProtocolVersion {
-		p.kill()
-		return nil, fmt.Errorf("runner: describe %s: protocol %d, want %d", bin, resp.Protocol, ProtocolVersion)
-	}
-	return p, nil
-}
 
 // --- frames -------------------------------------------------------------------
 
@@ -529,8 +421,10 @@ type response struct {
 	// More, present, is the paged-checkpoint continuation (protocol.go): this
 	// page is done, re-invoke with More.Cursor. Absent means drained.
 	More *Continuation `json:"more"`
-	// Protocol rides the describe response only: the child's pinned wire
-	// version, asserted against ProtocolVersion before anything invokes.
+	// Protocol rides the describe response only: host.py's pinned wire
+	// version. Nothing invokes describe today (there is one SDK and it ships in
+	// this binary), so nothing reads this; hostpy_test.go is what holds the
+	// number host.py answers to ProtocolVersion.
 	Protocol int `json:"protocol"`
 }
 
@@ -544,7 +438,7 @@ type hostCall struct {
 
 const (
 	// maxScanBytes is the parent's frame ceiling. Children cap their own
-	// frames well below it (host.py / substratefn MAX_FRAME_BYTES = 8 MiB); a
+	// frames well below it (host.py's MAX_FRAME_BYTES = 8 MiB); a
 	// line over the ceiling is a scanner error that KILLS the child instead
 	// of leaving it blocked on its pipe.
 	maxScanBytes = 16 << 20
@@ -689,22 +583,20 @@ func (r *Runner) reap() {
 func (r *Runner) sweep(now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for _, live := range []map[string]*proc{r.gos, r.pys} {
-		for key, p := range live {
-			if !p.alive() {
-				delete(live, key)
-				continue
-			}
-			if p.idleFor(now) < idleTTL {
-				continue
-			}
-			if !p.mu.TryLock() {
-				continue
-			}
-			delete(live, key)
-			p.kill()
-			p.mu.Unlock()
+	for key, p := range r.pys {
+		if !p.alive() {
+			delete(r.pys, key)
+			continue
 		}
+		if p.idleFor(now) < idleTTL {
+			continue
+		}
+		if !p.mu.TryLock() {
+			continue
+		}
+		delete(r.pys, key)
+		p.kill()
+		p.mu.Unlock()
 	}
 }
 
@@ -768,8 +660,8 @@ func (r *Runner) runGatedCmd(cmd *exec.Cmd) error {
 // construction; callers add only their own KEY=VALUE plumbing via `extra`.
 //
 // The base is the platform basics a child legitimately needs: PATH (to find an
-// interpreter it may shell out to), HOME (uv, python and the go toolchain all
-// read it), TMPDIR (scratch), and the locale so text handling is stable.
+// interpreter it may shell out to), HOME (uv and python both read it), TMPDIR
+// (scratch), and the locale so text handling is stable.
 func childEnv(extra ...string) []string {
 	base := passEnv(
 		"PATH", "HOME", "TMPDIR",
@@ -799,7 +691,7 @@ func startCmd(cmd *exec.Cmd) (*proc, error) {
 	stderr := &capBuf{cap: stderrCap}
 	cmd.Stderr = stderr
 	// Default-deny env: unless the caller already built a minimal, explicit env
-	// (the isolated python host and the go build do, with their own plumbing),
+	// (the isolated python host does, with its own plumbing),
 	// start the child with the minimal allowlisted base — NEVER the substrate's
 	// os.Environ(), which carries the master secrets a bundle body could
 	// otherwise read straight out of its own process environment.

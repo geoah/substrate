@@ -42,7 +42,7 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
-	"github.com/geoah/substrate/internal/runner/substratefn"
+	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -620,10 +620,10 @@ func TestWhoopBundleFakeSyncMirrors(t *testing.T) {
 	drainTriggers(t, ds)
 
 	// The recovery mirrors are CYCLE-KEYED: provider "whoop", the account, and
-	// the cycle id — recomputed here through the Go SDK, so the two runtimes'
-	// composed ids are proven byte-identical. The date is derived display
+	// the cycle id, recomputed here through runner.ExternalID, so what the
+	// python body composed is proven byte for byte. The date is derived display
 	// data, never the identity.
-	cycle1 := substratefn.ExternalID("whoop", account.ID, "recovery-1")
+	cycle1 := runner.ExternalID("whoop", account.ID, "recovery-1")
 	rec1, err := ds.Get(ctx, whoopRecoveryType, cycle1)
 	if err != nil {
 		t.Fatalf("recovery cycle one did not sync: %v", err)
@@ -643,7 +643,7 @@ func TestWhoopBundleFakeSyncMirrors(t *testing.T) {
 	// Cycle two arrived over the nextToken hop — the page-two proof — and it
 	// was created on the SAME UTC date as cycle one: both rows land, the
 	// second never overwrites the first (the date-keyed collision, fixed).
-	cycle2 := substratefn.ExternalID("whoop", account.ID, "recovery-2")
+	cycle2 := runner.ExternalID("whoop", account.ID, "recovery-2")
 	rec2, err := ds.Get(ctx, whoopRecoveryType, cycle2)
 	if err != nil {
 		t.Fatalf("recovery cycle two (page two, same UTC date) did not sync: %v", err)
@@ -662,7 +662,7 @@ func TestWhoopBundleFakeSyncMirrors(t *testing.T) {
 	}
 
 	// The sleep mirror: provider-id keyed, stage durations rolled up.
-	sleep, err := ds.Get(ctx, whoopSleepType, substratefn.ExternalID("whoop", account.ID, "sleep-1a2b3c"))
+	sleep, err := ds.Get(ctx, whoopSleepType, runner.ExternalID("whoop", account.ID, "sleep-1a2b3c"))
 	if err != nil {
 		t.Fatalf("sleep did not sync: %v", err)
 	}
@@ -678,7 +678,7 @@ func TestWhoopBundleFakeSyncMirrors(t *testing.T) {
 	}
 
 	// The workout mirror: sport, strain, and kilojoules converted to kcal.
-	workout, err := ds.Get(ctx, whoopWorkoutType, substratefn.ExternalID("whoop", account.ID, "workout-9f8e7d"))
+	workout, err := ds.Get(ctx, whoopWorkoutType, runner.ExternalID("whoop", account.ID, "workout-9f8e7d"))
 	if err != nil {
 		t.Fatalf("workout did not sync: %v", err)
 	}

@@ -1,22 +1,49 @@
 package runner
 
-// THE TWO SDKs SPELL ONE GRAMMAR. host.py's `_RE_KIND` and substratefn's
-// `reKind` are the same regular expression written twice, so a body learns its
-// mistake in the runtime it is written in rather than at admission, and the two
-// runtimes never disagree about what a kind reference is. This runs the Python
-// side against the same table the Go side asserts (substratefn/kindref_test.go).
+// host.py is the SDK, so what it accepts is part of the contract. These two
+// tests hold it to the engine's own kind grammar (vocabulary/naming.go) and to
+// the protocol version this package pins. Both are written twice, once in Go
+// and once in Python, and nothing but a test notices the two drifting.
 
 import (
 	"encoding/json"
+	"os"
 	"os/exec"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
 
+// The protocol number is written twice: protocol.go's ProtocolVersion, which
+// documents the frames, and the integer host.py answers a describe with. The
+// parent no longer negotiates it at startup (there is one SDK, shipped in the
+// same binary), so nothing but this test would notice the two disagreeing, and
+// the frames a reader trusts would be the ones nobody serves.
+func TestHostPythonPinsTheProtocolVersion(t *testing.T) {
+	src, err := os.ReadFile("host.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`"protocol":\s*(\d+)`).FindAllSubmatch(src, -1)
+	if len(m) == 0 {
+		t.Fatal("host.py answers no `protocol` in its describe response")
+	}
+	for _, hit := range m {
+		got, err := strconv.Atoi(string(hit[1]))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != ProtocolVersion {
+			t.Errorf("host.py speaks protocol %d, protocol.go pins %d", got, ProtocolVersion)
+		}
+	}
+}
+
 func TestHostPythonKindGrammarMatchesTheEngine(t *testing.T) {
 	python, err := exec.LookPath("python3")
 	if err != nil {
-		t.Skip("python3 is not on PATH; the Python SDK's grammar is checked where it is")
+		t.Skip("python3 is not on PATH; host.py's grammar cannot be probed here")
 	}
 	// _need_kind is the door every staged effect passes: it answers with the
 	// value or raises, so the probe reports one bool per case.

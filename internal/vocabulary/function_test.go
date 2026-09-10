@@ -251,14 +251,26 @@ func TestFunctionLoadErrors(t *testing.T) {
 `,
 			want: "data.runtime",
 		},
-		"runtime is python, go or host": {
+		"runtime is python or host": {
 			data: `  description: d
   runtime: cel
   permissions:
     writes: [fn.example.com/fn/gadget]
   source: "def main(input, host): return {}"
 `,
-			want: "python, go, host",
+			want: "python, host",
+		},
+		// The go runtime was removed (issue 495), so the value is retired: the
+		// error says so instead of listing the enum, because the author did not
+		// typo, they wrote a runtime this substrate used to compile.
+		"the retired go runtime is refused by name": {
+			data: `  description: d
+  runtime: go
+  permissions:
+    writes: [fn.example.com/fn/gadget]
+  source: "func Main() {}"
+`,
+			want: `data.runtime: "go" is retired`,
 		},
 		"source is required": {
 			data: `  description: d

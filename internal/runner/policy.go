@@ -15,12 +15,12 @@ import (
 // serves and the capability envelope the manifest declared. Two rules shape
 // every policy here:
 //
-//   - Nothing SHARED is writable. The Go build cache, uv's cache and the
-//     interpreter prefixes are read-and-execute; only the installation's own
-//     work dir and its private scratch are writable. A writable shared cache is
-//     a cross-installation code-execution vector: plant an artifact under the
-//     hash a neighbor will exec, and it survives one-process-per-installation
-//     untouched, so the filesystem layer is the only thing that closes it.
+//   - Nothing SHARED is writable. uv's cache and the interpreter prefixes are
+//     read-and-execute; only the installation's own work dir and its private
+//     scratch are writable. A writable shared cache is a cross-installation
+//     code-execution vector: plant a module under a name a neighbor imports, and
+//     it survives one-process-per-installation untouched, so the filesystem
+//     layer is the only thing that closes it.
 //   - Nothing is granted under /proc. That is what makes the runner's env
 //     allowlist a boundary rather than a gesture: with no rule naming it,
 //     `open("/proc/1/environ")` cannot reach the substrate's own environment,
@@ -71,11 +71,11 @@ var systemReadOnly = []string{
 	"/etc/ld.so.conf", "/etc/ld.so.conf.d", "/etc/ld.so.cache",
 }
 
-// deviceReadWrite are the character devices every runtime opens as a matter of
-// course: CPython rebinds stdin to /dev/null before a body runs, the Go
-// toolchain writes build output to it, and both draw seeds from urandom. They
-// are named ONE BY ONE rather than granting /dev, which would hand a body the
-// block devices, /dev/mem and the terminal along with them.
+// deviceReadWrite are the character devices a child opens as a matter of
+// course: CPython rebinds stdin to /dev/null before a body runs and draws its
+// seeds from urandom. They are named ONE BY ONE rather than granting /dev,
+// which would hand a body the block devices, /dev/mem and the terminal along
+// with them.
 var deviceReadWrite = []string{
 	"/dev/null", "/dev/zero", "/dev/full", "/dev/random", "/dev/urandom",
 }
@@ -91,8 +91,8 @@ const (
 
 // policyFor builds the confinement for one body process. work is the
 // installation's own directory: the one thing it may write, and readExec
-// carries whatever else it must be able to run: the venv interpreter uv
-// provisioned, or the build cache the compiled binary lives in.
+// carries whatever else it must be able to run, which is the venv interpreter
+// uv provisioned.
 func policyFor(spec Spec, work string, readExec ...string) sandbox.Policy {
 	return sandbox.Policy{
 		ReadExec:  append(append([]string{}, systemReadExec...), readExec...),

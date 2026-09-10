@@ -38,7 +38,6 @@ import (
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/runner"
-	"github.com/geoah/substrate/internal/runner/substratefn"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -736,7 +735,7 @@ func TestGoogleGmailFakeSyncMirrors(t *testing.T) {
 	effects := s.drainApplying(nil)
 
 	// The mirrors landed under the SDK-derived ids.
-	msgID := substratefn.ExternalID("gmail-message", "acct-step", "m1")
+	msgID := runner.ExternalID("gmail-message", "acct-step", "m1")
 	mirror, err := ds.Get(ctx, googleMessageType, msgID)
 	if err != nil {
 		t.Fatalf("message mirror did not sync: %v", err)
@@ -763,7 +762,7 @@ func TestGoogleGmailFakeSyncMirrors(t *testing.T) {
 	// inside a label, which must not cut the label short, and two `<a>` tags
 	// with no `</a>`, which must end at the paragraph and the list item
 	// rather than swallowing what follows into the link.
-	htmlID := substratefn.ExternalID("gmail-message", "acct-step", "m3")
+	htmlID := runner.ExternalID("gmail-message", "acct-step", "m3")
 	htmlMirror, err := ds.Get(ctx, googleMessageType, htmlID)
 	if err != nil {
 		t.Fatalf("html message did not sync: %v", err)
@@ -778,7 +777,7 @@ func TestGoogleGmailFakeSyncMirrors(t *testing.T) {
 	}
 	// MIRRORS ONLY (record 49): no core messaging row is written at all, and
 	// the mirror is where the flattened body lands.
-	threadID := substratefn.ExternalID("gmail-thread", "acct-step", "t-m1")
+	threadID := runner.ExternalID("gmail-thread", "acct-step", "t-m1")
 	if got := fmt.Sprint(mirror.Properties["threadId"]); got != "t-m1" {
 		t.Fatalf("message mirror threadId = %q", got)
 	}
@@ -794,7 +793,7 @@ func TestGoogleGmailFakeSyncMirrors(t *testing.T) {
 
 	// Every address on a header lands as one emailaddress mirror, with an
 	// EMPTY subject slot: the kind it describes is the repository's to say.
-	addrID := substratefn.ExternalID("google-address", "acct-step", "alice@example.com")
+	addrID := runner.ExternalID("google-address", "acct-step", "alice@example.com")
 	addrRow, err := ds.Get(ctx, googleAddressType, addrID)
 	if err != nil {
 		t.Fatalf("emailaddress record did not sync: %v", err)
@@ -886,7 +885,7 @@ func TestGoogleGmailFlattenerCapsGuardTheBody(t *testing.T) {
 	s := newGoogleStepper(t, ds, googleGmailFn, googleStepConfig(gmailStepProps(nil)))
 	s.drainApplying(nil)
 
-	capID := substratefn.ExternalID("gmail-message", "acct-step", "mcap")
+	capID := runner.ExternalID("gmail-message", "acct-step", "mcap")
 	capMirror, err := ds.Get(ctx, googleMessageType, capID)
 	if err != nil {
 		t.Fatalf("inline-photo message did not sync: %v", err)
@@ -895,7 +894,7 @@ func TestGoogleGmailFlattenerCapsGuardTheBody(t *testing.T) {
 		t.Fatalf("an inline photo past the source cap replaced the body: text = %q", got)
 	}
 
-	lblID := substratefn.ExternalID("gmail-message", "acct-step", "mlbl")
+	lblID := runner.ExternalID("gmail-message", "acct-step", "mlbl")
 	lblMirror, err := ds.Get(ctx, googleMessageType, lblID)
 	if err != nil {
 		t.Fatalf("long-body message did not sync: %v", err)
@@ -939,8 +938,8 @@ func TestGoogleGmailHistoryExpiryAndSweepScope(t *testing.T) {
 	// Two rows a previous run left behind, both under a stale generation: one
 	// INSIDE the coming re-read window (last30d back from now) and one deep in
 	// the archive, years before it.
-	inside := substratefn.ExternalID("gmail-message", "acct-step", "stale-inside")
-	archived := substratefn.ExternalID("gmail-message", "acct-step", "archived")
+	inside := runner.ExternalID("gmail-message", "acct-step", "stale-inside")
+	archived := runner.ExternalID("gmail-message", "acct-step", "archived")
 	for id, sentAt := range map[string]string{
 		inside:   googleAgo(24 * time.Hour),
 		archived: googleAgo(7 * 365 * 24 * time.Hour),
@@ -1174,7 +1173,7 @@ func TestGoogleGmailAddressConverges(t *testing.T) {
 	// records, one person, and it is the address book's person.
 	var addrs []string
 	for _, account := range []string{"acct-a", "acct-b"} {
-		id := substratefn.ExternalID("google-address", account, "ada@example.com")
+		id := runner.ExternalID("google-address", account, "ada@example.com")
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: googleAddressType, ID: id,
 			Properties: map[string]any{
@@ -1242,7 +1241,7 @@ func TestGoogleGmailCappedRereadDefersSweep(t *testing.T) {
 	// A row a previous generation left behind, INSIDE the coming window and
 	// BEHIND the page cap — the capped walk never reaches it, so nothing this
 	// run learns says it should die.
-	inside := substratefn.ExternalID("gmail-message", "acct-step", "stale-inside")
+	inside := runner.ExternalID("gmail-message", "acct-step", "stale-inside")
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: googleMessageType, ID: inside,
 		Properties: map[string]any{
@@ -1289,7 +1288,7 @@ func TestGoogleGmailCappedRereadDefersSweep(t *testing.T) {
 		drainApplying(nil)
 
 	if _, err := ds.Get(ctx, googleMessageType,
-		substratefn.ExternalID("gmail-message", "acct-step", "m3")); err != nil {
+		runner.ExternalID("gmail-message", "acct-step", "m3")); err != nil {
 		t.Fatalf("the resumed run never read the page behind the cap: %v", err)
 	}
 	row, err = ds.Get(ctx, googleMessageType, inside)
@@ -1303,7 +1302,7 @@ func TestGoogleGmailCappedRereadDefersSweep(t *testing.T) {
 	// The rows the resumed walk did stamp survive it.
 	for _, id := range []string{"m1", "m2", "m3"} {
 		kept, err := ds.Get(ctx, googleMessageType,
-			substratefn.ExternalID("gmail-message", "acct-step", id))
+			runner.ExternalID("gmail-message", "acct-step", id))
 		if err != nil || kept.DeletedAt != nil {
 			t.Fatalf("the sweep deleted %s, which this generation stamped: %v %v", id, kept, err)
 		}
@@ -1355,7 +1354,7 @@ func TestGoogleGmailStaleResumeTokenRestarts(t *testing.T) {
 			"of restarting its window", stamp["syncStatus"])
 	}
 	if _, err := ds.Get(ctx, googleMessageType,
-		substratefn.ExternalID("gmail-message", "acct-step", "m1")); err != nil {
+		runner.ExternalID("gmail-message", "acct-step", "m1")); err != nil {
 		t.Fatalf("the restarted window synced nothing: %v", err)
 	}
 	if held, _ := stamp["gmailBackfillResume"].(map[string]any); len(held) != 0 {
@@ -1403,7 +1402,7 @@ func TestGoogleGmailHistoryDeltaAddsAndSkips(t *testing.T) {
 		gmailStepProps(map[string]any{"gmailHistoryId": "9000"}))).drainApplying(nil)
 
 	if _, err := ds.Get(ctx, googleMessageType,
-		substratefn.ExternalID("gmail-message", "acct-step", "m1")); err != nil {
+		runner.ExternalID("gmail-message", "acct-step", "m1")); err != nil {
 		t.Fatalf("the delta's added message did not sync: %v", err)
 	}
 	// Both ids were fetched; the 404 did not abort the batch behind it.
@@ -1464,8 +1463,8 @@ func TestGoogleGmailHistoryDeleteRetractsEmptyThread(t *testing.T) {
 	// Round one: an ordinary backfill writes the message and its thread.
 	newGoogleStepper(t, ds, googleGmailFn, googleStepConfig(gmailStepProps(nil))).
 		drainApplying(nil)
-	msgID := substratefn.ExternalID("gmail-message", "acct-step", "m9")
-	threadID := substratefn.ExternalID("gmail-thread", "acct-step", "t-m9")
+	msgID := runner.ExternalID("gmail-message", "acct-step", "m9")
+	threadID := runner.ExternalID("gmail-thread", "acct-step", "t-m9")
 	for _, ref := range []struct{ typ, id string }{
 		{googleMessageType, msgID},
 		{googleThreadType, threadID},
@@ -1534,12 +1533,12 @@ func TestGoogleGmailMalformedAddressSkipped(t *testing.T) {
 	if stamp["syncStatus"] != "ok" {
 		t.Fatalf("syncStatus = %v", stamp["syncStatus"])
 	}
-	msgID := substratefn.ExternalID("gmail-message", "acct-step", "m1")
+	msgID := runner.ExternalID("gmail-message", "acct-step", "m1")
 	if _, err := ds.Get(ctx, googleMessageType, msgID); err != nil {
 		t.Fatalf("message mirror did not sync: %v", err)
 	}
 	for _, bad := range []string{"a..b@example.com", ".a@example.com", "a.@example.com"} {
-		id := substratefn.ExternalID("google-address", "acct-step", bad)
+		id := runner.ExternalID("google-address", "acct-step", bad)
 		if row, err := ds.Get(ctx, googleAddressType, id); err == nil && row.DeletedAt == nil {
 			t.Fatalf("the sync wrote an emailaddress the engine would refuse: %q", bad)
 		}
@@ -1585,15 +1584,15 @@ func TestGoogleGmailSyncsWithNoMappingDeclared(t *testing.T) {
 	if stamp := googleAccountStamp(t, effects, "acct-step"); stamp["syncStatus"] != "ok" {
 		t.Fatalf("syncStatus = %v, want a clean run with no mapping declared", stamp["syncStatus"])
 	}
-	msgID := substratefn.ExternalID("gmail-message", "acct-step", "m1")
+	msgID := runner.ExternalID("gmail-message", "acct-step", "m1")
 	if got := mustGetRow(t, ds, googleMessageType, msgID).Properties["subject"]; got != "Rack layout" {
 		t.Fatalf("message mirror subject = %v", got)
 	}
-	threadID := substratefn.ExternalID("gmail-thread", "acct-step", "t-m1")
+	threadID := runner.ExternalID("gmail-thread", "acct-step", "t-m1")
 	if _, err := ds.Get(ctx, googleThreadType, threadID); err != nil {
 		t.Fatalf("thread mirror did not sync: %v", err)
 	}
-	addrID := substratefn.ExternalID("google-address", "acct-step", "alice@example.com")
+	addrID := runner.ExternalID("google-address", "acct-step", "alice@example.com")
 	addr, err := ds.Get(ctx, googleAddressType, addrID)
 	if err != nil {
 		t.Fatalf("emailaddress mirror did not sync: %v", err)
@@ -1688,7 +1687,7 @@ func TestGoogleGmailBackfillBoundedByInvocations(t *testing.T) {
 	}
 	for _, id := range ids {
 		if _, err := ds.Get(ctx, googleMessageType,
-			substratefn.ExternalID("gmail-message", "acct-step", id)); err != nil {
+			runner.ExternalID("gmail-message", "acct-step", id)); err != nil {
 			t.Fatalf("%s never synced across %d runs: %v", id, runs, err)
 		}
 	}

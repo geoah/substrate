@@ -31,7 +31,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
-	"github.com/geoah/substrate/internal/runner/substratefn"
+	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -403,7 +403,7 @@ func TestGoogleCalendarFakeSyncMirrors(t *testing.T) {
 	s := newGoogleStepper(t, ds, googleCalendarFn, googleStepConfig(calStepProps(nil)))
 	effects := s.drainApplying(nil)
 
-	calID := substratefn.ExternalID("gcal-calendar", "acct-step", "primary@example.com")
+	calID := runner.ExternalID("gcal-calendar", "acct-step", "primary@example.com")
 	mirror, err := ds.Get(ctx, googleCalendarType, calID)
 	if err != nil {
 		t.Fatalf("calendar mirror did not sync: %v", err)
@@ -425,7 +425,7 @@ func TestGoogleCalendarFakeSyncMirrors(t *testing.T) {
 
 	// The freeBusyReader share carries no content: never mirrored, never
 	// walked for events.
-	busyID := substratefn.ExternalID("gcal-calendar", "acct-step", "busy@example.com")
+	busyID := runner.ExternalID("gcal-calendar", "acct-step", "busy@example.com")
 	if row, err := ds.Get(ctx, googleCalendarType, busyID); err == nil && row.DeletedAt == nil {
 		t.Fatalf("a freeBusyReader share was mirrored")
 	}
@@ -438,7 +438,7 @@ func TestGoogleCalendarFakeSyncMirrors(t *testing.T) {
 	// Both pages' events landed, in BOTH shapes, on ids that nest the
 	// calendar's own (a Google event id is unique per calendar, not globally).
 	for _, id := range []string{"e1", "e2"} {
-		evtID := substratefn.ExternalID("gcal-event", calID, id)
+		evtID := runner.ExternalID("gcal-event", calID, id)
 		row, err := ds.Get(ctx, googleEventType, evtID)
 		if err != nil {
 			t.Fatalf("event mirror %s did not sync: %v", id, err)
@@ -454,7 +454,7 @@ func TestGoogleCalendarFakeSyncMirrors(t *testing.T) {
 		}
 		// Every attendee address lands as an emailaddress mirror with an
 		// EMPTY subject slot: what a person is belongs to the repository.
-		addrID := substratefn.ExternalID("google-address", "acct-step", "alice@example.com")
+		addrID := runner.ExternalID("google-address", "acct-step", "alice@example.com")
 		addr, err := ds.Get(ctx, googleAddressType, addrID)
 		if err != nil {
 			t.Fatalf("emailaddress mirror did not sync: %v", err)
@@ -465,7 +465,7 @@ func TestGoogleCalendarFakeSyncMirrors(t *testing.T) {
 	}
 
 	// responseStatus is on the MIRROR, where the per-attendee answer belongs.
-	e1 := substratefn.ExternalID("gcal-event", calID, "e1")
+	e1 := runner.ExternalID("gcal-event", calID, "e1")
 	evt, err := ds.Get(ctx, googleEventType, e1)
 	if err != nil {
 		t.Fatalf("get event mirror: %v", err)
@@ -535,8 +535,8 @@ func TestGoogleCalendarMirrorsCarryTheRecurrence(t *testing.T) {
 	newGoogleStepper(t, ds, googleCalendarFn, googleStepConfig(calStepProps(nil))).
 		drainApplying(nil)
 
-	calID := substratefn.ExternalID("gcal-calendar", "acct-step", "primary@example.com")
-	r2 := substratefn.ExternalID("gcal-event", calID, "r2")
+	calID := runner.ExternalID("gcal-calendar", "acct-step", "primary@example.com")
+	r2 := runner.ExternalID("gcal-event", calID, "r2")
 	mirror, err := ds.Get(ctx, googleEventType, r2)
 	if err != nil {
 		t.Fatalf("the instance mirror did not sync: %v", err)
@@ -555,7 +555,7 @@ func TestGoogleCalendarMirrorsCarryTheRecurrence(t *testing.T) {
 	// writes only its own. The master is still fetched, because the rule
 	// lives nowhere else, ONCE for the delivery, and the instance list never
 	// being a singleEvents walk.
-	if _, err := ds.Get(ctx, coreSeriesType, substratefn.ExternalID("gcal-series", calID, "master-1")); err == nil {
+	if _, err := ds.Get(ctx, coreSeriesType, runner.ExternalID("gcal-series", calID, "master-1")); err == nil {
 		t.Fatalf("the sync wrote %s, a kind this package does not own", coreSeriesType)
 	}
 	var fetched int
@@ -588,11 +588,11 @@ func TestGoogleCalendarAccountDisconnectCascades(t *testing.T) {
 	s := newGoogleStepper(t, ds, googleCalendarFn, googleStepConfig(calStepProps(nil)))
 	s.drainApplying(nil)
 
-	calID := substratefn.ExternalID("gcal-calendar", "acct-step", "primary@example.com")
+	calID := runner.ExternalID("gcal-calendar", "acct-step", "primary@example.com")
 	if _, err := ds.Get(ctx, googleCalendarType, calID); err != nil {
 		t.Fatalf("calendar mirror did not sync: %v", err)
 	}
-	evtID := substratefn.ExternalID("gcal-event", calID, "e1")
+	evtID := runner.ExternalID("gcal-event", calID, "e1")
 	if _, err := ds.Get(ctx, googleEventType, evtID); err != nil {
 		t.Fatalf("event mirror did not sync: %v", err)
 	}
@@ -628,7 +628,7 @@ func TestGoogleCalendarTokenGoneFullReread(t *testing.T) {
 
 	// Round one: the windowed full read stores st-1 on the calendar mirror.
 	newGoogleStepper(t, ds, googleCalendarFn, cfg).drainApplying(nil)
-	calID := substratefn.ExternalID("gcal-calendar", "acct-step", "primary@example.com")
+	calID := runner.ExternalID("gcal-calendar", "acct-step", "primary@example.com")
 
 	// Two rows a previous run left behind under a stale generation: one INSIDE
 	// the coming re-read window, one deep in the archive before it.
@@ -636,9 +636,9 @@ func TestGoogleCalendarTokenGoneFullReread(t *testing.T) {
 	// floor, and ABOVE its horizon. The last is the one an incremental delta
 	// legitimately stores — a delta carries no time bounds at all — and the
 	// windowed re-read (timeMax = now + 365d) can never re-stamp it.
-	inside := substratefn.ExternalID("gcal-event", calID, "stale-inside")
-	archived := substratefn.ExternalID("gcal-event", calID, "archived")
-	beyond := substratefn.ExternalID("gcal-event", calID, "beyond-horizon")
+	inside := runner.ExternalID("gcal-event", calID, "stale-inside")
+	archived := runner.ExternalID("gcal-event", calID, "archived")
+	beyond := runner.ExternalID("gcal-event", calID, "beyond-horizon")
 	for id, startAt := range map[string]string{
 		inside:   googleAgo(24 * time.Hour),
 		archived: googleAgo(7 * 365 * 24 * time.Hour),
@@ -698,7 +698,7 @@ func TestGoogleCalendarTokenGoneFullReread(t *testing.T) {
 	}
 
 	// The retracted event is gone.
-	e1 := substratefn.ExternalID("gcal-event", calID, "e1")
+	e1 := runner.ExternalID("gcal-event", calID, "e1")
 	row, err := ds.Get(ctx, googleEventType, e1)
 	if err != nil {
 		t.Fatalf("get %s %s: %v", googleEventType, e1, err)
@@ -792,8 +792,8 @@ func TestGoogleCalendarDeletedCalendarRetracted(t *testing.T) {
 	// Round one: the ordinary sync mirrors the calendar and its events.
 	cfg := googleStepConfig(calStepProps(nil))
 	newGoogleStepper(t, ds, googleCalendarFn, cfg).drainApplying(nil)
-	calID := substratefn.ExternalID("gcal-calendar", "acct-step", "primary@example.com")
-	e1 := substratefn.ExternalID("gcal-event", calID, "e1")
+	calID := runner.ExternalID("gcal-calendar", "acct-step", "primary@example.com")
+	e1 := runner.ExternalID("gcal-event", calID, "e1")
 	if _, err := ds.Get(ctx, googleEventType, e1); err != nil {
 		t.Fatalf("round one synced no events: %v", err)
 	}

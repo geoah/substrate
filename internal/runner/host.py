@@ -150,7 +150,7 @@ class HostError(Exception):
 #
 # The runner passes ONE `host` object to every body (`main(input, host)`). It
 # carries the capability-scoped reads (get/list/search/call, unchanged) and,
-# namespaced beside them, the SDK surface both runtimes share:
+# namespaced beside them, the SDK surface:
 #
 #   host.records.get/list/search   typed, type-scoped reads (committed state)
 #   host.functions.call             function-to-function composition
@@ -182,10 +182,9 @@ _KIND_RECORDPATCHREQUEST = "substrate.reamde.dev/core/recordpatchrequest"
 
 def _slugify(s):
     """Lowercase, then keep ONLY ASCII [a-z0-9] and collapse every other run to
-    one dash. ASCII-only (no Unicode letters/digits, no case folding) so the
-    slug is byte-identical to the Go SDK's — a non-ASCII numeric like ½ that
-    Python's str.isalnum() once kept diverged across runtimes AND was rejected
-    by the engine's ASCII-only id alphabet."""
+    one dash. ASCII-only (no Unicode letters/digits, no case folding): a
+    non-ASCII numeric like halfwidth ½, which Python's str.isalnum() once kept,
+    is rejected by the engine's ASCII-only id alphabet."""
     out, prev_dash = [], False
     for ch in str(s):
         if "A" <= ch <= "Z":
@@ -220,8 +219,9 @@ class Ids:
     """Deterministic, URL-safe, hash-backed id helpers. A function composes the
     ids of what it writes; hashing the provider key removes the truncate-a-URL
     collision foot-gun (the harvester's old `page-<slug>`). Every component is a
-    required non-empty string, and the human slug is ASCII-folded, so the two
-    runtimes' outputs are byte-identical."""
+    required non-empty string, and the human slug is ASCII-folded. runner's
+    ids.go recomputes these in Go for the engine's tests, so the two are held
+    to one golden (testdata/id_vectors.json)."""
 
     def external(self, provider, account, external_id):
         """A stable id for one external record: provider + account + its id."""
@@ -252,8 +252,9 @@ class Page:
     """The paged-checkpoint wrapper. `resume()` returns the opaque cursor the
     previous page of this invocation chain returned (None on a fresh delivery).
     `more(cursor)` builds the continuation a paged body returns as its `more`,
-    so bodies stop hand-building `{"cursor": ...}` dicts. `resume` is a METHOD
-    to match the Go SDK's `host.Page.Resume()`."""
+    so bodies stop hand-building `{"cursor": ...}` dicts. `resume` is a METHOD,
+    never an attribute, so a body that forgets the call gets an error rather
+    than a bound method that is always truthy."""
 
     def __init__(self, resume):
         self._resume = resume
@@ -565,9 +566,9 @@ class Host:
 
     def version(self, record):
         """The integer version of a record read (0 for an absent read) — the
-        value to pass as `if_version` for a guarded write. The mirror of Go's
-        `substratefn.Version(e.Version)`; keeps the CAS idiom off raw dict access,
-        which would hand back a float and defeat the precondition."""
+        value to pass as `if_version` for a guarded write. It keeps the CAS
+        idiom off raw dict access, which would hand back a float and defeat the
+        precondition."""
         if not record:
             return 0
         v = record.get("version")

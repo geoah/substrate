@@ -64,7 +64,6 @@ import (
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/runner"
-	"github.com/geoah/substrate/internal/runner/substratefn"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -696,7 +695,7 @@ func TestGithubBundleFakeSyncMirrors(t *testing.T) {
 	drainTriggers(t, ds)
 
 	// The connected user's mirror, written whole off /user.
-	me, err := ds.Get(ctx, githubUserType, substratefn.ExternalID("github", account.ID, "user/octocat"))
+	me, err := ds.Get(ctx, githubUserType, runner.ExternalID("github", account.ID, "user/octocat"))
 	if err != nil {
 		t.Fatalf("%s did not sync: %v", githubUserType, err)
 	}
@@ -706,19 +705,19 @@ func TestGithubBundleFakeSyncMirrors(t *testing.T) {
 
 	// The repository from the listing, and the stub minted for the foreign
 	// repo the review-requested PR lives in.
-	repo, err := ds.Get(ctx, githubRepoType, substratefn.ExternalID("github", account.ID, "repo/octocat/hello-world"))
+	repo, err := ds.Get(ctx, githubRepoType, runner.ExternalID("github", account.ID, "repo/octocat/hello-world"))
 	if err != nil {
 		t.Fatalf("repository did not sync: %v", err)
 	}
 	if repo.Properties["fullName"] != "octocat/hello-world" {
 		t.Fatalf("repo fullName = %v", repo.Properties["fullName"])
 	}
-	if _, err := ds.Get(ctx, githubRepoType, substratefn.ExternalID("github", account.ID, "repo/acme/tools")); err != nil {
+	if _, err := ds.Get(ctx, githubRepoType, runner.ExternalID("github", account.ID, "repo/acme/tools")); err != nil {
 		t.Fatalf("foreign repo stub did not mint: %v", err)
 	}
 
 	// The issue mirror off the involves: search.
-	issue, err := ds.Get(ctx, githubIssueType, substratefn.ExternalID("github", account.ID, "issue/octocat/hello-world#3"))
+	issue, err := ds.Get(ctx, githubIssueType, runner.ExternalID("github", account.ID, "issue/octocat/hello-world#3"))
 	if err != nil {
 		t.Fatalf("%s did not sync: %v", githubIssueType, err)
 	}
@@ -730,21 +729,21 @@ func TestGithubBundleFakeSyncMirrors(t *testing.T) {
 	// one row at the deterministic id, upserted, never duplicated. PR 9
 	// arrived ONLY over review-requested: (involves: does not cover review
 	// requests), with alice's author stub minted beside it.
-	pr7, err := ds.Get(ctx, githubPullType, substratefn.ExternalID("github", account.ID, "pull/octocat/hello-world#7"))
+	pr7, err := ds.Get(ctx, githubPullType, runner.ExternalID("github", account.ID, "pull/octocat/hello-world#7"))
 	if err != nil {
 		t.Fatalf("pull 7 did not sync: %v", err)
 	}
 	if pr7.Properties["state"] != "merged" {
 		t.Fatalf("pull 7 state = %v, want merged", pr7.Properties["state"])
 	}
-	pr9, err := ds.Get(ctx, githubPullType, substratefn.ExternalID("github", account.ID, "pull/acme/tools#9"))
+	pr9, err := ds.Get(ctx, githubPullType, runner.ExternalID("github", account.ID, "pull/acme/tools#9"))
 	if err != nil {
 		t.Fatalf("review-requested pull 9 did not sync: %v", err)
 	}
 	if pr9.Properties["authorLogin"] != "alice" {
 		t.Fatalf("pull 9 author = %v", pr9.Properties["authorLogin"])
 	}
-	if _, err := ds.Get(ctx, githubUserType, substratefn.ExternalID("github", account.ID, "user/alice")); err != nil {
+	if _, err := ds.Get(ctx, githubUserType, runner.ExternalID("github", account.ID, "user/alice")); err != nil {
 		t.Fatalf("alice's author stub did not mint: %v", err)
 	}
 	var pulls int

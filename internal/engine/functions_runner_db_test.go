@@ -10,13 +10,11 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// The shared runner's acceptance gate: the Go ingestion path (compile at
-// registration, cached binary, same protocol), the capability-scoped host
-// reads with their allowlist and budget parking immediately, per-invocation
-// timeouts riding the retries, the upgraded effect vocabulary — ifAbsent,
-// former-id resolution, capability-gated merge/split — and the
-// callable contract: input/output schemas, mode call, host Call with its
-// gates.
+// The shared runner's acceptance gate: the capability-scoped host reads with
+// their allowlist and budget parking immediately, per-invocation timeouts
+// riding the retries, the upgraded effect vocabulary — ifAbsent, former-id
+// resolution, capability-gated merge/split — and the callable contract:
+// input/output schemas, mode call, host Call with its gates.
 
 func onlyParked(t *testing.T, ds substrate.Dataset, triggerID string) substrate.TriggerFailure {
 	t.Helper()
@@ -28,51 +26,6 @@ func onlyParked(t *testing.T, ds substrate.Dataset, triggerID string) substrate.
 		t.Fatalf("parked rows: %+v", parked)
 	}
 	return parked[0]
-}
-
-// goFn renders a `runtime: go` function manifest.
-func goFn(name string, data map[string]any, writes []any, source string) map[string]any {
-	data["runtime"] = vocabulary.RuntimeGo
-	data["source"] = source
-	fnPermissions(data)["writes"] = writes
-	return fnDoc(name, data)
-}
-
-func TestTriggerGoRuntime(t *testing.T) {
-	t.Parallel()
-	// One inline Go body: compiled at registration against the embedded
-	// substratefn SDK, run as a supervised subprocess on the same protocol —
-	// effects, logs and errors ride exactly the python path.
-	ds := newFnDataset(t,
-		[]enginetest.Trigger{trigOn("gomirror", map[string]any{"kinds": []any{widgetType}})},
-		goFn("gomirror", map[string]any{}, []any{taskType}, `
-import "substratefn.local/substratefn"
-
-func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, error) {
-	c := in.Envelope.Change
-	name, _ := in.Envelope.Record.Properties["name"].(string)
-	host.Logf("mirroring %s", c.ID)
-	return &substratefn.Result{Effects: []substratefn.Effect{{
-		Action: "put", Kind: "samples.substrate.reamde.dev/tasks/task", ID: "t-" + c.ID,
-		Properties: map[string]any{"name": name},
-	}}}, nil
-}
-`))
-
-	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "compiled"}})
-	process(t, ds)
-	if got := mustGet(t, ds, taskType, "t-"+w.ID); got.Title != "compiled" {
-		t.Fatalf("go task title: %q", got.Title)
-	}
-	// Idempotent replay holds for the compiled arm too.
-	before := dataSeq(t, ds)
-	if err := ds.ReplayTrigger(context.Background(), trigID("gomirror"), 0); err != nil {
-		t.Fatalf("replay: %v", err)
-	}
-	process(t, ds)
-	if after := dataSeq(t, ds); after != before {
-		t.Fatalf("replay wrote data: seq %d → %d", before, after)
-	}
 }
 
 // readerSource exercises every host read; the widget's own properties select

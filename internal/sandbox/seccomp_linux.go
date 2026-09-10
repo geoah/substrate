@@ -29,7 +29,7 @@ import (
 //     error it may retry forever.
 //
 // SHAPE. A deny-list, not an allowlist, and this is a deliberate limit on what
-// the layer claims. An allowlist over CPython, uv and the Go toolchain would be
+// the layer claims. An allowlist over CPython and uv would be
 // a standing breakage risk for third-party bodies: every wheel with a new
 // syscall is an outage, and it would not be the boundary anyway: Landlock is.
 // This filter removes the classes with no legitimate use in a function body and

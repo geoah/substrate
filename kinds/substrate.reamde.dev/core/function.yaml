@@ -49,10 +49,22 @@ data:
   # `duration` datatype (an ISO 8601 string). The datatype declares no min or
   # max, so the loader keeps the old 60s cap and 5s default in Go. The bump is
   # what carries the retype into repositories that stored the int property.
-  version: 13
+  # version 14: the `go` value left the runtime enum. That runtime compiled an
+  # inline Go body at registration and cost the image a Go toolchain; no
+  # shipped function ever declared it (issue 495). Dropping an enum value is a
+  # narrowing, safe here because no record holds it, and the value is retired
+  # below so it can never be declared again.
+  version: 14
   names:
     singular: function
   displayTemplate: "{localName}"
+  # The spent enum value, listed once and carried forward for good (decision
+  # 0055): a later declaration naming `go` again is refused on every door
+  # rather than quietly meaning something new.
+  retired:
+    values:
+      runtime:
+        - go
   properties:
     # Every declaration carries its own version: the declaring package's,
     # unless the declaration overrides it. It is what the boot-time upgrade
@@ -109,7 +121,6 @@ data:
       type: enum
       values:
         - python
-        - go
         - host
       required: true
       description: the language the inline body is written in, or host for

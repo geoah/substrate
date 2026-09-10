@@ -22,7 +22,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
-	"github.com/geoah/substrate/internal/runner/substratefn"
+	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -46,11 +46,11 @@ const (
 )
 
 // webPageID mirrors the findurls body's id EXACTLY: the id is host.ids.url(u),
-// a hash of the URL (no truncated-slug collision). Computing it through the Go
-// SDK's substratefn.URLID also proves the two runtimes agree byte-for-byte — the
-// Python body minted these ids, this Go mirror recomputes them.
+// a hash of the URL (no truncated-slug collision). The Python body minted these
+// ids and runner.URLID recomputes them, so a divergence between host.py and the
+// Go mirror fails here as well as in the runner's own vectors.
 func webPageID(u string) string {
-	return substratefn.URLID(u)
+	return runner.URLID(u)
 }
 
 // loadYAMLDocs decodes a `---`-separated manifest file into raw envelope maps.

@@ -100,9 +100,8 @@ func ParseMode(s string) (Mode, error) {
 // toolchain prefixes differ across images.
 type Policy struct {
 	// ReadExec are the prefixes the child may read and execute: the
-	// interpreter, its standard library, the shared libraries it links, the
-	// certificate store, the Go toolchain. Read-only: a body cannot rewrite
-	// its own interpreter.
+	// interpreter, its standard library, the shared libraries it links and the
+	// certificate store. Read-only: a body cannot rewrite its own interpreter.
 	ReadExec []string `json:"readExec,omitempty"`
 	// ReadOnly are prefixes the child may read but not execute.
 	ReadOnly []string `json:"readOnly,omitempty"`
