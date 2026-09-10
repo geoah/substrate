@@ -34,7 +34,7 @@ const publishPackage = "publish.example.substrate.reamde.dev/publish"
 func TestTheRegistryPublishesBeforeTheHeadSignal(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	open, _ := w2Opener(t)
+	open, _ := reopenableWidgetDataset(t)
 	ds := open()
 	const kind = publishPackage + "/beacon"
 
@@ -78,7 +78,7 @@ func TestTheRegistryPublishesBeforeTheHeadSignal(t *testing.T) {
 func TestAParkedWriteResolvesThePublishedDeclaration(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	open, _ := w2Opener(t)
+	open, _ := reopenableWidgetDataset(t)
 	ds := open()
 	const kind = publishPackage + "/gizmo"
 	gizmo := func(props map[string]any) []map[string]any {
@@ -162,7 +162,7 @@ func TestAParkedWriteResolvesThePublishedDeclaration(t *testing.T) {
 func TestAnIndexTheEngineCannotBuildRefusesTheApplyWhole(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	open, _ := w2Opener(t)
+	open, _ := reopenableWidgetDataset(t)
 	ds := open()
 	const kind = publishPackage + "/gauge"
 	before := maxSeqOf(t, ds)
@@ -201,7 +201,7 @@ func TestAnIndexTheEngineCannotBuildRefusesTheApplyWhole(t *testing.T) {
 func TestARefusedIndexDefinitionLeavesNoIndexBehind(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	open, _ := w2Opener(t)
+	open, _ := reopenableWidgetDataset(t)
 	ds := open()
 	const kind = publishPackage + "/dial"
 

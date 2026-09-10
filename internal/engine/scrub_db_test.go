@@ -201,7 +201,7 @@ func noVaultNotes(t *testing.T, ds substrate.Dataset) {
 	}
 }
 
-// Final review #3: an injected secret copied into a RETURNED effect — a plain
+// An injected secret copied into a RETURNED effect — a plain
 // property value or an addressed id — is rejected before decode, so nothing
 // persists. The scrubber cannot redact addressed data in place, so refusal is
 // the only safe move.

@@ -448,3 +448,79 @@ func TestSchemaEvolutionRenamedFromRoundTrips(t *testing.T) {
 	}
 	assertStored("after rebuild from rows")
 }
+
+// TestSchemaEvolutionRefusesReferenceAndObjectNarrowing: refuse-narrowing recurses into a reference's `to:` target and an object's
+// fields, each refused with the stranded live-row count — not silently
+// admitted as the outer-kind-only classifier did.
+func TestSchemaEvolutionRefusesReferenceAndObjectNarrowing(t *testing.T) {
+	t.Parallel()
+	_, ds := newDataset(t)
+	if err := evoRefApply(t, ds, evoRefBaseProps()); err != nil {
+		t.Fatalf("install base authority: %v", err)
+	}
+	// One holder: its reference points at widget, its object carries both fields.
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: evoRefPackage + "/holder",
+		Properties: map[string]any{
+			"ref":  vocabulary.RecordPath(evoRefPackage+"/widget", "w1"),
+			"spec": map[string]any{"a": "x", "b": 5},
+		},
+	})
+
+	t.Run("reference target narrowed", func(t *testing.T) {
+		props := evoRefBaseProps()
+		props["ref"] = map[string]any{"type": "reference", "kind": "gadget"}
+		wantNarrowingGuard(t, evoRefApply(t, ds, props),
+			`reference "ref" narrows its target to `+evoRefPackage+`/gadget`, "1 live records")
+	})
+
+	t.Run("object field dropped", func(t *testing.T) {
+		props := evoRefBaseProps()
+		props["spec"] = map[string]any{"type": "object", "fields": map[string]any{
+			"a": map[string]any{"type": "string"},
+		}}
+		wantNarrowingGuard(t, evoRefApply(t, ds, props),
+			`object "spec" drops field "b"`, "1 live records")
+	})
+
+	t.Run("object field kind changed", func(t *testing.T) {
+		props := evoRefBaseProps()
+		props["spec"] = map[string]any{"type": "object", "fields": map[string]any{
+			"a": map[string]any{"type": "string"},
+			"b": map[string]any{"type": "string"},
+		}}
+		wantNarrowingGuard(t, evoRefApply(t, ds, props),
+			`object "spec" field "b" changes kind int → string`, "1 live records")
+	})
+}
+
+// evoRefDocs builds the authority with two referent kinds and a holder carrying a
+// reference and an object property whose fields drive the object-narrowing
+// checks.
+func evoRefDocs(holderProps map[string]any) []map[string]any {
+	return []map[string]any{
+		vocabulary.PackageManifest(evoRefPackage, 0),
+		vocabulary.KindManifest(evoRefPackage, map[string]any{"singular": "widget"}, map[string]any{}),
+		vocabulary.KindManifest(evoRefPackage, map[string]any{"singular": "gadget"}, map[string]any{}),
+		vocabulary.KindManifest(evoRefPackage, map[string]any{"singular": "holder"},
+			map[string]any{"properties": holderProps}),
+	}
+}
+
+func evoRefBaseProps() map[string]any {
+	return map[string]any{
+		"ref": map[string]any{"type": "reference", "kind": "any"},
+		"spec": map[string]any{"type": "object", "fields": map[string]any{
+			"a": map[string]any{"type": "string"},
+			"b": map[string]any{"type": "int"},
+		}},
+	}
+}
+
+func evoRefApply(t *testing.T, ds substrate.Dataset, holderProps map[string]any) error {
+	t.Helper()
+	_, err := ds.ApplyVocabularyDocuments(context.Background(), owner, evoRefDocs(holderProps))
+	return err
+}
+
+const evoRefPackage = "evoref.example.substrate.reamde.dev/evoref"

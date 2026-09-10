@@ -1,6 +1,6 @@
 package engine
 
-// #10 (internal half): a PENDING manifest — a reference created ahead of an
+// A PENDING manifest — a reference created ahead of an
 // upload that never arrived — has no byte row, so the old byte-table-only sweep
 // left it immortal. The union sweep (manifests ∪ byte rows) collects it once its
 // last reference is gone.

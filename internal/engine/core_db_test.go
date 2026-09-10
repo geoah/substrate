@@ -18,6 +18,7 @@ const (
 	people = substrate.Actor("connector:people")
 	beeper = substrate.Actor("connector:beeper")
 	engram = substrate.Actor("engram")
+	gcal   = substrate.Actor("connector:calendar")
 	owner  = substrate.ActorAPI
 )
 
@@ -1037,5 +1038,183 @@ func TestAcceptFailuresAnnotateConflict(t *testing.T) {
 	}
 	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "orphan-task"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the orphan task should not exist: %v", err)
+	}
+}
+
+// The agent-loop vocabulary is CORE's: llmprovider/llmthread/llmmessage resolve there
+// — the substrate maintains the agent runtime, so it publishes its data kinds
+// beside the rest of its machinery — and NOT under the retired
+// agents.substrate.reamde.dev or the folded-away ai.substrate.reamde.dev.
+func TestAgentLoopKindsResolveInCore(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+
+	for _, id := range []string{"substrate.reamde.dev/core/llmprovider", "substrate.reamde.dev/core/llmthread", "substrate.reamde.dev/core/llmmessage"} {
+		ti, err := ds.KindByRef(ctx, id)
+		if err != nil {
+			t.Fatalf("agent-loop kind %s does not resolve: %v", id, err)
+		}
+		if ti.Authority != "substrate.reamde.dev" || ti.Package != "core" {
+			t.Fatalf("agent-loop kind %s is in %q/%q, want substrate.reamde.dev/core", id, ti.Authority, ti.Package)
+		}
+	}
+	// The old authorities are gone.
+	for _, id := range []string{
+		"agents.substrate.reamde.dev/agents/llm", "agents.substrate.reamde.dev/agents/thread", "agents.substrate.reamde.dev/agents/message",
+		"ai.substrate.reamde.dev/ai/llm", "ai.substrate.reamde.dev/ai/thread", "ai.substrate.reamde.dev/ai/message",
+	} {
+		if _, err := ds.KindByRef(ctx, id); err == nil {
+			t.Fatalf("the retired kind %s still resolves", id)
+		}
+	}
+	// A provider row is DATA of a core kind, written by its owner — the kind
+	// resolves on a fresh repository, and no row of it exists there.
+	row := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "substrate.reamde.dev/core/llmprovider", ID: "openai",
+		Properties: map[string]any{"label": "openai", "wire": "openai"},
+	})
+	if row.Kind != "substrate.reamde.dev/core/llmprovider" {
+		t.Fatalf("llmprovider row kind = %q", row.Kind)
+	}
+}
+
+// The connector kinds are no longer writable through the ordinary API: a put
+// naming connector/connectoraccount fails to resolve the kind.
+func TestConnectorKindsRemoved(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	for _, typ := range []string{"substrate.reamde.dev/core/connector", "substrate.reamde.dev/core/connectoraccount"} {
+		if _, err := ds.KindByRef(ctx, typ); err == nil {
+			t.Fatalf("%s still resolves as a kind", typ)
+		}
+		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+			Kind: typ, Properties: map[string]any{"name": "x"},
+		})
+		if err == nil || !errors.Is(err, substrate.ErrValidation) {
+			t.Fatalf("put %s: want a validation error for the removed kind, got %v", typ, err)
+		}
+	}
+}
+
+// A7's PATCH semantics, verified against the engine: a top-level null DELETES
+// the property (never stores a null — literal null is unwritable), and a state
+// value among the properties is a TRANSITION that stamps its clock.
+func TestPatchNullDeletesAPropertyAndAStateValueTransitions(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+
+	created := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "samples.substrate.reamde.dev/tasks/task",
+		Properties: map[string]any{
+			"title":       "ship it",
+			"description": "wire the last handler",
+		},
+	})
+	if created.Properties["description"] != "wire the last handler" {
+		t.Fatalf("seed description = %v", created.Properties["description"])
+	}
+	if got := created.Properties["status"]; got != "open" {
+		t.Fatalf("initial status = %v, want open", got)
+	}
+
+	// null DELETES the property — it must not read back as a stored null.
+	patched, err := ds.Patch(ctx, owner, "samples.substrate.reamde.dev/tasks/task", created.ID, substrate.PatchInput{
+		Properties: map[string]any{"description": nil},
+	})
+	if err != nil {
+		t.Fatalf("null-delete patch: %v", err)
+	}
+	if v, present := patched.Properties["description"]; present {
+		t.Fatalf("description survived a null-delete as %v (present=%v); literal null is unwritable", v, present)
+	}
+
+	// A state value among the properties is a TRANSITION (open → done), and the
+	// declared stamp lands.
+	done, err := ds.Patch(ctx, owner, "samples.substrate.reamde.dev/tasks/task", created.ID, substrate.PatchInput{
+		Properties: map[string]any{"status": "done"},
+	})
+	if err != nil {
+		t.Fatalf("state transition patch: %v", err)
+	}
+	if done.Properties["status"] != "done" {
+		t.Fatalf("status after transition = %v, want done", done.Properties["status"])
+	}
+	if _, stamped := done.Properties["completedAt"]; !stamped {
+		t.Fatalf("the open→done transition must stamp completedAt; properties = %v", done.Properties)
+	}
+}
+
+// An outbound message is written, not sent: the owner names `draft` on the
+// create, the owner and the connector walk it through the declared delivery
+// states (each stamping its clock), and the provider's echo of the same
+// message at the same id writes nothing.
+func TestDeliveryStatesStampAndAProviderEchoIsANoOp(t *testing.T) {
+	t.Parallel()
+	_, ds := newDataset(t)
+	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
+		t.Fatalf("install account type: %v", err)
+	}
+	acc := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: enginetest.AccountType, ID: "beeper-account:a",
+		Properties: map[string]any{"provider": "beeper", "label": "Personal"},
+	})
+	conv := mustPut(t, ds, beeper, substrate.PutInput{
+		Kind: "conversation", ID: "slack-channel:x1",
+		Properties: map[string]any{"category": "direct", "account": enginetest.AccountType + "/" + acc.ID},
+	})
+	me := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "person", Properties: map[string]any{"name": "George"},
+	})
+
+	// A creating write may NAME any declared state: an outbound
+	// message is born a draft.
+	msg := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "conversationmessage",
+		Properties: map[string]any{
+			"at": "2026-08-05T09:00:00Z", "text": "on my way", "delivery": "draft",
+			"conversation": conv.ID,
+			"author":       me.ID,
+		},
+	})
+	if msg.Properties["delivery"] != "draft" {
+		t.Fatalf("owner message states = %v", msg.Properties)
+	}
+	// Transitions carry no guard: "utterances require a human decision" is a
+	// convention between clients until authorization lands.
+	mustPatch(t, ds, owner, msg.Kind, msg.ID, substrate.PatchInput{Properties: map[string]any{"delivery": "queued"}})
+	// The connector reconciles it outward.
+	mustPatch(t, ds, beeper, msg.Kind, msg.ID, substrate.PatchInput{Properties: map[string]any{"delivery": "sending"}})
+	sent := mustPatch(t, ds, beeper, msg.Kind, msg.ID, substrate.PatchInput{
+		Properties: map[string]any{"delivery": "sent"},
+	})
+	if sent.Properties["delivery"] != "sent" {
+		t.Fatalf("states = %v", sent.Properties)
+	}
+	if sent.Properties["sentAt"] == nil {
+		t.Fatalf("sentAt not stamped: %v", sent.Properties)
+	}
+
+	// The provider echoes the message back in an ordinary sync: the connector
+	// puts at the id it already holds and nothing changes.
+	before := maxSeq(t, ds)
+	echo := mustPut(t, ds, beeper, substrate.PutInput{
+		Kind: "conversationmessage", ID: msg.ID,
+		Properties: map[string]any{
+			"at": "2026-08-05T09:00:00Z", "text": "on my way",
+			"conversation": conv.ID,
+			"author":       me.ID,
+		},
+	})
+	if echo.ID != msg.ID {
+		t.Fatalf("echo created a duplicate: %s vs %s", echo.ID, msg.ID)
+	}
+	if rows := changesSince(t, ds, before); len(rows) != 0 {
+		t.Fatalf("provider echo wrote %d changelog rows: %+v", len(rows), rows)
+	}
+	if echo.Version != sent.Version {
+		t.Fatalf("echo bumped version %d → %d", sent.Version, echo.Version)
 	}
 }

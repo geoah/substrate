@@ -61,7 +61,7 @@ func refRowsOf(t *testing.T, ds *dataset, kind, id, property string) int {
 func TestDataWriteParksAtTheRegistryDepLockAndKeepsItsRefsRow(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	open, _ := w2Opener(t)
+	open, _ := reopenableWidgetDataset(t)
 	ds := open()
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, refLockDocs()); err != nil {
 		t.Fatalf("install the reflock authority: %v", err)
@@ -137,7 +137,7 @@ func TestDataWriteParksAtTheRegistryDepLockAndKeepsItsRefsRow(t *testing.T) {
 func TestPatchParksAtTheRegistryDepLock(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	open, _ := w2Opener(t)
+	open, _ := reopenableWidgetDataset(t)
 	ds := open()
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, refLockDocs()); err != nil {
 		t.Fatalf("install the reflock authority: %v", err)

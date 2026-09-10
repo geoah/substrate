@@ -1,15 +1,15 @@
 package engine
 
-// review-final #5, #6, #7: the advisory-lock composition barriers, driven from
-// inside the package so the interleavings land exactly where the reviewer's
-// scenarios need them. All three share ONE global lock order (the contract "lock
-// ordering"): registry-dep < subject-type < record. Each test holds the lock
-// that comes FIRST in that order and proves the racing transaction parks there
-// without having reached for a later one — the shape a reintroduced cycle
-// would break.
+// The advisory-lock composition barriers, driven from inside the package so
+// the interleavings land exactly where they must. Every write path shares ONE
+// global lock order: registry-dep < subject-kind < record. Each test holds the
+// lock that comes FIRST in that order and proves the racing transaction parks
+// there without having reached for a later one, which is the shape a
+// reintroduced cycle would break.
 
 import (
 	"context"
+	"database/sql"
 	"sync"
 	"testing"
 	"time"
@@ -40,7 +40,7 @@ func tryLockFree(t *testing.T, ds *dataset, key string) bool {
 	return free
 }
 
-// review-final #5: a former id and its canonical target locked in opposite
+// A former id and its canonical target locked in opposite
 // dependency positions. Pre-fix lockEffectTargets locked only the RAW
 // addresses, discovering the canonical hop when the effect applied — so a
 // former id `a`→`x` let one list lock {a, z} then wait for x while another
@@ -79,7 +79,7 @@ func TestEffectFormerIDFoldsCanonicalIntoLockOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The reviewer's list: it addresses the FORMER id first, then zzz. The
+	// The list addresses the FORMER id first, then zzz. The
 	// canonical mmm must be locked before zzz, so this parks at the barrier.
 	list := []effect{
 		{Action: effectPatch, Type: raceWidget, ID: "aaa", Properties: map[string]any{"name": "a2"}},
@@ -191,7 +191,7 @@ func personOfContact(t *testing.T, ds *dataset, contactID string) string {
 	return dst
 }
 
-// review-final #6: an effect list's subject lock and a mapping-source write's
+// An effect list's subject lock and a mapping-source write's
 // subject lock must share ONE order. Pre-fix the effect plan took only record
 // locks, so an effect prelocking target x, patching it, then putting source
 // s would wait for subject|<type> while holding record|x — and a concurrent
@@ -216,7 +216,7 @@ func TestEffectSubjectLockPrecedesRecordLocks(t *testing.T) {
 	}
 	person := personOfContact(t, ds, cx.ID)
 
-	// The reviewer's effect list: patch the subject x, and put a NEW source
+	// The effect list: patch the subject x, and put a NEW source
 	// s. The put makes the plan take subject|person; the patch targets x.
 	list := []effect{
 		{Action: effectPatch, Type: subjPerson, ID: person, Properties: map[string]any{"name": "Xavier"}},
@@ -357,7 +357,7 @@ func TestEffectSubjectLockCoversAReferencedSource(t *testing.T) {
 	}
 }
 
-// review-final #6, the live race: {patch x, put s} against an ordinary source
+// The live race: {patch x, put s} against an ordinary source
 // write resolving to x. Both now take subject|person before any record lock,
 // so neither Postgres-aborts the other.
 func TestEffectAndSourceWriteComposeWithoutDeadlock(t *testing.T) {
@@ -413,7 +413,7 @@ func TestEffectAndSourceWriteComposeWithoutDeadlock(t *testing.T) {
 	}
 }
 
-// review-final #7: an owner trigger write and connector registration must take
+// An owner trigger write and connector registration must take
 // the shared registry-dep lock in the SAME position relative to the trigger's
 // record lock. Pre-fix the owner write locked the trigger record first and
 // asked for the shared dep lock in apply — while registration held the dep
@@ -426,17 +426,17 @@ func TestEffectAndSourceWriteComposeWithoutDeadlock(t *testing.T) {
 func TestOwnerTriggerTakesRegistryDepBeforeRecord(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	open, _ := w2Opener(t)
+	open, _ := reopenableWidgetDataset(t)
 	ds := open()
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, w2Manifest(false)); err != nil {
+	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, widgetsManifest(false)); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 
-	const trigID = w2Package + "/owntrig"
+	const trigID = widgetsPackage + "/owntrig"
 	props := map[string]any{
 		"enabled":  true,
-		"source":   map[string]any{"record": map[string]any{"kinds": []any{w2Widget}, "ops": []any{"create", "update"}}},
-		"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", w2Mirror),
+		"source":   map[string]any{"record": map[string]any{"kinds": []any{widgetsWidget}, "ops": []any{"create", "update"}}},
+		"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", widgetsMirror),
 	}
 
 	// The barrier: hold the registry-dep lock EXCLUSIVE, as a schema batch /
@@ -479,5 +479,198 @@ func TestOwnerTriggerTakesRegistryDepBeforeRecord(t *testing.T) {
 	}
 	if _, _, err := ds.triggerByID(ctx, trigID); err != nil {
 		t.Fatalf("the owner trigger did not land after the barrier lifted: %v", err)
+	}
+}
+
+func TestEffectAddressingSerializesWithMerge(t *testing.T) {
+	t.Parallel()
+	// An effect addressed at the loser must not resolve BEFORE a concurrent
+	// merge commits, wait out the merge on the row lock, and then resurrect
+	// the tombstoned loser. The write takes the per-record advisory lock
+	// before resolving;
+	// this test parks a merge mid-flight on a held row lock (the merge holds
+	// its advisory locks by then), proves the effect queues BEHIND the
+	// advisory lock instead of resolving stale, and asserts the invariant
+	// the old code violated.
+	ds := newRaceDataset(t)
+	ctx := context.Background()
+	w := racePut(t, ds, map[string]any{"name": "winner"})
+	l := racePut(t, ds, map[string]any{"name": "loser"})
+
+	// The barrier: a raw transaction holds the loser's ROW lock, so the
+	// merge (advisory locks acquired first) parks inside loadRow FOR UPDATE.
+	barrier, err := ds.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("barrier: %v", err)
+	}
+	if _, err := barrier.ExecContext(ctx,
+		`SELECT id FROM records WHERE id = $1 FOR UPDATE`, l.ID); err != nil {
+		t.Fatalf("barrier lock: %v", err)
+	}
+
+	mergeDone := make(chan error, 1)
+	go func() {
+		_, err := ds.Merge(ctx, substrate.ActorAPI, substrate.MergeInput{Kind: w.Kind, Winner: w.ID, Loser: l.ID})
+		mergeDone <- err
+	}()
+	time.Sleep(300 * time.Millisecond) // the merge now holds the advisory locks
+
+	effectDone := make(chan error, 1)
+	go func() {
+		effectDone <- ds.inTx(ctx, raceActor, false, func(tx *txn) error {
+			return tx.applyEffect(effect{
+				Action: effectPut, Type: raceWidget, ID: l.ID,
+				Properties: map[string]any{"name": "from-effect"},
+			})
+		})
+	}()
+	time.Sleep(300 * time.Millisecond) // the effect must queue behind the advisory lock
+
+	select {
+	case err := <-effectDone:
+		t.Fatalf("the effect did not serialize behind the merge: %v", err)
+	default:
+	}
+	_ = barrier.Rollback()
+
+	if err := <-mergeDone; err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	if err := <-effectDone; err != nil {
+		t.Fatalf("effect: %v", err)
+	}
+
+	// The invariant: the loser is tombstoned AND its former-id trail names
+	// the winner — never a live loser behind a trail (the resurrection).
+	var deletedAt sql.NullTime
+	if err := ds.db.QueryRowContext(ctx,
+		`SELECT deleted_at FROM records WHERE id = $1`, l.ID).Scan(&deletedAt); err != nil {
+		t.Fatalf("loser row: %v", err)
+	}
+	if !deletedAt.Valid {
+		t.Fatal("the merge's loser is live again — the effect resurrected it")
+	}
+	var target string
+	if err := ds.db.QueryRowContext(ctx,
+		`SELECT record_id FROM former_ids WHERE former_id = $1`, l.ID).Scan(&target); err != nil {
+		t.Fatalf("former id: %v", err)
+	}
+	if target != w.ID {
+		t.Fatalf("former trail points at %s, want %s", target, w.ID)
+	}
+	// The effect landed on the canonical winner.
+	winner, err := ds.Get(ctx, w.Kind, w.ID)
+	if err != nil {
+		t.Fatalf("get winner: %v", err)
+	}
+	if winner.Properties["name"] != "from-effect" {
+		t.Fatalf("the effect's write is lost: %v", winner.Properties)
+	}
+}
+
+// Before ANY effect applies, the whole list's statically
+// addressed records lock in one global ascending order. The barrier holds
+// the SMALLEST id and proves neither concurrent effect list has touched the
+// larger one — pre-fix, the list-order patch would already hold it, and the
+// two merges would deadlock across the transactions.
+func TestEffectListLocksInGlobalOrder(t *testing.T) {
+	t.Parallel()
+	ds := newRaceDataset(t)
+	ctx := context.Background()
+	a, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: raceWidget, ID: "aaa", Properties: map[string]any{"name": "a"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	z, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: raceWidget, ID: "zzz", Properties: map[string]any{"name": "z"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The barrier: hold the smallest id's advisory lock, so both effect
+	// transactions must park at the FIRST lock of the global order.
+	barrier, err := ds.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := barrier.ExecContext(ctx,
+		`SELECT pg_advisory_xact_lock(`+advisoryKeySQL+`)`, ds.scope.lockKey("record|"+raceWidget+"|"+a.ID)); err != nil {
+		t.Fatal(err)
+	}
+
+	apply := func(effects []effect) error {
+		return ds.inTx(ctx, raceActor, false, func(tx *txn) error {
+			if err := tx.lockEffectTargets(effects); err != nil {
+				return err
+			}
+			for _, ef := range effects {
+				if err := tx.applyEffect(ef); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
+	// One list patches z FIRST then merges the
+	// pair; the other patches a first then performs the same merge.
+	calleeFirst := []effect{
+		{Action: effectPatch, Type: raceWidget, ID: z.ID, Properties: map[string]any{"name": "z2"}},
+		{Action: effectMerge, Type: raceWidget, ID: z.ID, Loser: a.ID},
+	}
+	callerFirst := []effect{
+		{Action: effectPatch, Type: raceWidget, ID: a.ID, Properties: map[string]any{"name": "a2"}},
+		{Action: effectMerge, Type: raceWidget, ID: z.ID, Loser: a.ID},
+	}
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for _, effects := range [][]effect{calleeFirst, callerFirst} {
+		wg.Add(1)
+		go func(effects []effect) {
+			defer wg.Done()
+			errs <- apply(effects)
+		}(effects)
+	}
+	// Both must be parked at the barrier — and neither may hold the LARGER
+	// id yet: the probe's try-lock on z succeeds only if both transactions
+	// queued at a first, in the global order.
+	time.Sleep(400 * time.Millisecond)
+	var free bool
+	probe, err := ds.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := probe.QueryRowContext(ctx,
+		`SELECT pg_try_advisory_xact_lock(`+advisoryKeySQL+`)`, ds.scope.lockKey("record|"+raceWidget+"|"+z.ID)).Scan(&free); err != nil {
+		t.Fatal(err)
+	}
+	_ = probe.Rollback()
+	if !free {
+		t.Fatal("an effect transaction locked the larger id before the global order let it — the deadlock ordering is back")
+	}
+	select {
+	case err := <-errs:
+		t.Fatalf("an effect transaction did not park at the barrier: %v", err)
+	default:
+	}
+
+	_ = barrier.Rollback()
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("effect transaction: %v", err)
+		}
+	}
+	// The pair merged exactly once; the second merge replayed as a verified
+	// no-op — and no transaction was aborted by the deadlock detector.
+	merged, err := ds.Get(ctx, a.Kind, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if merged.CanonicalID != z.ID {
+		t.Fatalf("the merge did not land: %+v", merged)
 	}
 }

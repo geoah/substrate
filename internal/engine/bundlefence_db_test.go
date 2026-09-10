@@ -1,6 +1,6 @@
 package engine
 
-// Final review #2: the lifecycle fence covers AGENTS and NESTED cross-bundle
+// The bundle lifecycle fence covers AGENTS and NESTED cross-bundle
 // callables, not just top-level functions. The one dataset-wide fence is held
 // once at an invocation tree's root (through its last message, settlement and
 // cursor write) and every nested host Call / function tool / sub-agent
@@ -24,7 +24,7 @@ import (
 // next admission refuses. The agent's model call blocks on a barrier, so the
 // invocation is provably in flight (past admission, holding the fence) while
 // the disable races it.
-func TestFinalFenceDrainsBundledAgent(t *testing.T) {
+func TestDisableDrainsAnInFlightBundledAgent(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
@@ -104,7 +104,7 @@ func TestFinalFenceDrainsBundledAgent(t *testing.T) {
 // A bundled agent TRIGGER delivery holds the fence through its cursor advance:
 // a disable racing the delivery drains it (the agent's message lands, the
 // cursor moves) before returning, and afterwards the trigger skips loudly.
-func TestFinalFenceDrainsBundledAgentTrigger(t *testing.T) {
+func TestDisableDrainsABundledAgentTriggerDelivery(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
@@ -233,7 +233,7 @@ def main(input, host):
 // A live (non-bundled) agent's function tool that targets a DISABLED bundle's
 // function is refused under the root's held fence — the tool result carries
 // the lifecycle refusal and no effect lands.
-func TestFinalCrossBundleAgentToolRefused(t *testing.T) {
+func TestAgentToolRefusesADisabledBundlesFunction(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
@@ -309,7 +309,7 @@ def main(input, host):
 // A live bundle's function host-Calling a DISABLED bundle's function is
 // refused: the nested Call re-checks the callee's lifecycle under the root's
 // held fence, so the callee never runs and its effects never commit.
-func TestFinalCrossBundleHostCallRefused(t *testing.T) {
+func TestHostCallRefusesADisabledBundlesFunction(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)

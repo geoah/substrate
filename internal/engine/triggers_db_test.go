@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -212,5 +213,51 @@ func TestCallAtDepthCapRefuses(t *testing.T) {
 	}
 	if _, err := cyclic.Call(ctx, ident, nil); err == nil || !strings.Contains(err.Error(), "recursion") {
 		t.Fatalf("recursive call returned %v", err)
+	}
+}
+
+// The default trigger installer is create-only, so TOMBSTONES count as existing and an
+// owner's edit stands — a re-registration never resurrects a deliberately
+// deleted default trigger and never rewires an edited one.
+func TestDefaultTriggerCreateOnlyHonorsOwnerState(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	open, _ := reopenableWidgetDataset(t)
+	ds := open()
+	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, widgetsManifest(true)); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	triggerID := "on-" + widgetsMirror
+
+	// The owner disables the trigger; re-registration must not re-enable it.
+	if _, err := ds.Patch(ctx, substrate.ActorAPI, typeTrigger, triggerID, substrate.PatchInput{
+		Properties: map[string]any{"enabled": false},
+	}); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, widgetsManifest(true)); err != nil {
+		t.Fatalf("re-register: %v", err)
+	}
+	tr, _, err := ds.triggerByID(ctx, triggerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr.Enabled {
+		t.Fatal("re-registration re-enabled an owner-edited default trigger")
+	}
+
+	// The owner deletes it; re-registration must not resurrect the tombstone.
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, typeTrigger, triggerID, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, widgetsManifest(true)); err != nil {
+		t.Fatalf("re-register: %v", err)
+	}
+	row, err := ds.loadRowDB(ctx, eref{Kind: typeTrigger, ID: triggerID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row == nil || row.DeletedAt == nil {
+		t.Fatalf("re-registration resurrected a tombstoned default trigger: %+v", row)
 	}
 }

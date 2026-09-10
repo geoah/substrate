@@ -1,10 +1,10 @@
 package engine_test
 
-// Regression gate for the connector "Add account" form fixes: a property may
+// What the console's "Add account" form reads and writes: a property may
 // carry a human `displayName` and a string `enum` of allowed `values`, both
-// survive the kind read the console/GraphQL consume, an out-of-enum
-// value is rejected on write, and an account's email is populated by the OAuth
-// facility from the grant (writer: oauth) rather than typed by the owner.
+// survive the kind read the console and GraphQL consume, an out-of-enum value
+// is refused on write, and an account's email is written by the OAuth facility
+// from the grant (writer: oauth) rather than typed by the owner.
 
 import (
 	"context"
@@ -15,9 +15,9 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// displayName + enum values survive a round-trip on the type read, and an
+// displayName and enum values survive a round-trip on the type read, and an
 // out-of-set enum value is refused on write.
-func TestConnectorFormDisplayNameAndEnumSurviveTypeRead(t *testing.T) {
+func TestDisplayNameAndEnumValuesSurviveTheKindRead(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)

@@ -1,9 +1,9 @@
 package engine_test
 
-// B1's done-when, as tests: two repositories cannot see each other's rows even
-// with the Go-side scoping deliberately dropped, and the policies, the FORCE
-// flag and the two roles are asserted to exist so the enforcement cannot
-// quietly degrade into discipline.
+// Two repositories cannot see each other's rows even with the Go-side scoping
+// deliberately dropped, and the policies, the FORCE flag and the two roles are
+// asserted to exist, so the enforcement cannot quietly degrade into
+// discipline.
 
 import (
 	"context"
@@ -317,5 +317,42 @@ func TestAdvisoryLocksArePerRepository(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("beta's write blocked on alpha's changelog lock — the lock is still global")
+	}
+}
+
+// A repository's own `repository` record describes only itself: the ledger
+// Dataset() and ExchangeOTP() resolve through is a table on the maintenance
+// pool that substrate_app holds no grant on, so one repository can neither
+// list nor delete another's row out from under it.
+func TestARepositorySeesOnlyItsOwnDescription(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, _ := newService(t)
+	alpha, err := svc.CreateRepository(ctx, "alpha.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateRepository(ctx, "beta.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	ds, err := svc.Dataset(ctx, "alpha.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := ds.List(ctx, substrate.Query{
+		Filter: substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/repository"}}, First: 50,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Records) != 1 || page.Records[0].ID != alpha.ID {
+		t.Fatalf("alpha sees %v, want only its own description", ids(page.Records))
+	}
+	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/repository", alpha.ID, substrate.DeleteInput{}); err == nil {
+		t.Fatal("deleting the repository's own description succeeded")
+	}
+	// beta stays reachable whatever alpha does with its own rows.
+	if _, err := svc.Dataset(ctx, "beta.example.com"); err != nil {
+		t.Fatalf("repository beta became unreachable: %v", err)
 	}
 }

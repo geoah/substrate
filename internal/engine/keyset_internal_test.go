@@ -82,7 +82,7 @@ func TestKeysetRoundTrip(t *testing.T) {
 	if got.K[0] == nil || *got.K[0] != "hello" || got.K[1] != nil {
 		t.Fatalf("token keys = %v", got.K)
 	}
-	// The first page's head rides the cursor (codex regress #3) so every page of
+	// The first page's head rides the cursor, so every page of
 	// one walk reports the same head, and the history generation that head
 	// belongs to rides beside it so List can refuse a cursor minted against a
 	// history an import has since replaced.

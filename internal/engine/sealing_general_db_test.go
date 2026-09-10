@@ -243,3 +243,23 @@ func TestDisplayTemplateRefusesSensitiveProps(t *testing.T) {
 	_, err := ds.ApplyVocabularyDocuments(context.Background(), owner, docs)
 	wantErr(t, err, substrate.ErrValidation, "secret in a display template")
 }
+
+// The clientSecret never sits in the record's JSONB: the stored value is a
+// sealed-store ref, and a raw database read shows no plaintext.
+func TestOAuthClientSecretIsSealedAtRest(t *testing.T) {
+	t.Parallel()
+	_, _, db, _, _ := installBarrierOAuthBundle(t)
+	var props string
+	if err := db.QueryRow(
+		`SELECT props::text FROM records WHERE kind = $1 AND deleted_at IS NULL`, mbConfigType).
+		Scan(&props); err != nil {
+		t.Fatalf("read config props: %v", err)
+	}
+	if strings.Contains(props, "s3cret") {
+		t.Fatalf("the client secret is plaintext at rest: %s", props)
+	}
+	if !strings.Contains(props, `"clientSecret": "secret:`) &&
+		!strings.Contains(props, `"clientSecret":"secret:`) {
+		t.Fatalf("the client secret is not a sealed-store ref: %s", props)
+	}
+}

@@ -19,7 +19,7 @@ import (
 func TestABindParksAtTheRegistryDepLockBeforeItsBundleRow(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	open, _ := w2Opener(t)
+	open, _ := reopenableWidgetDataset(t)
 	ds := open()
 	const (
 		pkg    = "bindlock.example.substrate.reamde.dev/bindlock"

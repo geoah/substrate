@@ -14,6 +14,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
@@ -450,7 +451,7 @@ func TestBundleInputBoundToAMergedRecordResolvesToTheWinner(t *testing.T) {
 
 // A binding is a changelog write like any other: clear the fold, replay, and
 // the bound resolution must come back — the bind verb's edge and version bump
-// ride its entry's fold ops.
+// ride its entry's fold ds.
 func TestBundleInputBindSurvivesRebuild(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -754,5 +755,402 @@ func TestBundlePurgeDeletesData(t *testing.T) {
 	// Idempotent: nothing left to purge.
 	if again, err := ds.PurgeBundle(ctx, mbPackage); err != nil || again != 0 {
 		t.Fatalf("re-purge: %d %v", again, err)
+	}
+}
+
+// bundleLocalTraitDoc renders a trait document declared inside the mail bundle package.
+func bundleLocalTraitDoc(name string, props map[string]any) map[string]any {
+	authority, pkg := vocabulary.SplitPackageRef(mbPackage)
+	data := map[string]any{
+		"authority": authority, "package": pkg,
+		"description": "a bundle-local trait named like a core one",
+	}
+	if len(props) > 0 {
+		data["properties"] = props
+	}
+	return map[string]any{
+		"kind":     vocabulary.CoreKind(vocabulary.DocTrait),
+		"metadata": map[string]any{"id": mbPackage + "/" + name},
+		"data":     data,
+	}
+}
+
+// A bundle whose oauth2 clientInput kind binds a LOCAL trait named "oauth2"
+// declares no client at all: the host key is the resolved identity
+// substrate.reamde.dev/core/oauth2, and a same-named local trait does not count.
+func TestShadowOAuth2TraitFailsBundleAdmission(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	docs := mbDocs(nil,
+		bundleLocalTraitDoc("oauth2", map[string]any{"clientId": "string", "clientSecret": "secret"}),
+		vocabulary.KindManifest(mbPackage,
+			map[string]any{"singular": "mailconfig"},
+			map[string]any{
+				// Resolves in-authority FIRST: this binds the local shadow, never core.
+				"traits":     []any{"oauth2"},
+				"properties": map[string]any{"note": map[string]any{"type": "string"}},
+			}),
+		mbMessageTypeDoc())
+	_, err := ds.ApplyVocabularyDocuments(ctx, owner, docs)
+	if err == nil || !strings.Contains(err.Error(), "does not implement the oauth2 trait") {
+		t.Fatalf("a shadow oauth2 trait satisfied bundle admission: %v", err)
+	}
+}
+
+// A bundle-local trait named "accountconfig" shadows the core one for the
+// authority's own bindings — and the host then treats NONE of its records as
+// connected accounts: no OAuth, no status counts, no runner injection, no
+// core-trait query hits.
+func TestShadowAccountConfigTraitIsNotAnAccount(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds, _ := newDatasetWithSchemaDB(t,
+		engine.WithOAuth("test-state-key", "https://substrate.example/cb", nil))
+	docs := mbDocs(nil,
+		mbConfigTypeDoc(),
+		bundleLocalTraitDoc("accountconfig", nil),
+		// Binds bare "accountconfig" — in-authority resolution finds the SHADOW.
+		mbAccountTypeDoc(),
+		mbMessageTypeDoc(),
+		mbFnDoc("echo", mbEchoSource))
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
+	shadow := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: mbAccountType, Properties: map[string]any{"address": "shadow@example.com"},
+	})
+
+	// OAuth refuses: the shadow trait is not the core accountconfig, so the
+	// id resolves within NO accountconfig implementor type — a not-found,
+	// never an account.
+	if _, err := ds.StartOAuth(ctx, owner, shadow.ID); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("StartOAuth on a shadow-trait record: %v", err)
+	}
+	// Status counts no accounts.
+	st, err := ds.BundleStatus(ctx, mbPackage)
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if st.Accounts != 0 {
+		t.Fatalf("a shadow-trait record counted as an account: %+v", st)
+	}
+	// The core trait query does not list the shadow-bound kind.
+	types, err := ds.TypesImplementing(ctx, "substrate.reamde.dev/core/accountconfig")
+	if err != nil {
+		t.Fatalf("implementors: %v", err)
+	}
+	for _, ti := range types {
+		if ti.Identity == mbAccountType {
+			t.Fatalf("shadow-bound kind answers the core trait query: %+v", types)
+		}
+	}
+	// The BARE name is now ambiguous — core and shadow both declare it — and
+	// an ambiguous bare filter errors instead of aggregating look-alikes.
+	if _, err := ds.TypesImplementing(ctx, "accountconfig"); err == nil ||
+		!strings.Contains(err.Error(), "ambiguous trait") {
+		t.Fatalf("ambiguous bare trait filter: %v", err)
+	}
+	// The runner injects no shadow records as accounts.
+	out, _, err := ds.CallFunction(ctx, mbEchoFn, map[string]any{})
+	if err != nil {
+		t.Fatalf("call echo: %v", err)
+	}
+	cfg, _ := out.(map[string]any)["config"].(map[string]any)
+	if cfg == nil {
+		t.Fatalf("no config in output: %v", out)
+	}
+	if accounts, _ := cfg["accounts"].([]any); len(accounts) != 0 {
+		t.Fatalf("the runner injected shadow-trait records as accounts: %v", accounts)
+	}
+}
+
+func TestMergeAndSplitRefuseFrozenBundleRecords(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := installMailBundle(t)
+
+	a1 := mustPut(t, ds, owner, substrate.PutInput{Kind: mbAccountType, Properties: map[string]any{"address": "a1@x.co"}})
+	a2 := mustPut(t, ds, owner, substrate.PutInput{Kind: mbAccountType, Properties: map[string]any{"address": "a2@x.co"}})
+
+	// Disabled: accounts are frozen — merge refuses like put/patch/delete do.
+	if err := ds.DisableBundle(ctx, mbPackage); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	_, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: a1.Kind, Winner: a1.ID, Loser: a2.ID})
+	wantErr(t, err, substrate.ErrGuard, "merge of frozen accounts")
+	if err := ds.EnableBundle(ctx, mbPackage); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: a1.Kind, Winner: a1.ID, Loser: a2.ID})
+	if err != nil {
+		t.Fatalf("merge while live: %v", err)
+	}
+	// Disabled again: the split would resurrect a frozen account.
+	if err := ds.DisableBundle(ctx, mbPackage); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	_, err = ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID})
+	wantErr(t, err, substrate.ErrGuard, "split resurrecting a frozen account")
+	if err := ds.EnableBundle(ctx, mbPackage); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
+		t.Fatalf("split while live: %v", err)
+	}
+
+	// Uninstall refuses while the merged account still lives — a guard with the
+	// count — so a merge/split cannot strand data behind a torn-down kind. It
+	// tears the authority down only once purge has cleared the data.
+	i1 := mustPut(t, ds, owner, substrate.PutInput{Kind: mbItemType, Properties: map[string]any{"name": "i1"}})
+	_ = mustPut(t, ds, owner, substrate.PutInput{Kind: mbItemType, Properties: map[string]any{"name": "i2"}})
+	err = ds.UninstallBundle(ctx, mbPackage)
+	wantErr(t, err, substrate.ErrGuard, "uninstall with live data")
+	if !strings.Contains(err.Error(), "live records") {
+		t.Fatalf("uninstall refusal must carry the count: %v", err)
+	}
+	if err := ds.DisableBundle(ctx, mbPackage); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	if _, err := ds.PurgeBundle(ctx, mbPackage); err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+	if err := ds.UninstallBundle(ctx, mbPackage); err != nil {
+		t.Fatalf("uninstall after purge: %v", err)
+	}
+	// The kind is gone: a merge no longer resolves it.
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: i1.Kind, Winner: i1.ID, Loser: "whatever"}); err == nil {
+		t.Fatal("merge resolved a torn-down kind")
+	}
+}
+
+// Merge EFFECTS pass the same admission: a function outside the bundle, with
+// the merge grant and emit on the account kind, cannot merge a disabled
+// bundle's frozen accounts either — the effect path and the direct verb are
+// one code path, and both refuse.
+func TestAMergeEffectRefusesFrozenBundleRecords(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := installMailBundle(t)
+	const toolPackage = "wtool.test.dev/wtool"
+	mergerDocs := []map[string]any{
+		vocabulary.PackageManifest(toolPackage, 0),
+		vocabulary.ActorManifest(toolPackage, vocabulary.PackageActor(toolPackage)),
+		vocabulary.FunctionManifest(toolPackage, "merger", map[string]any{
+			"description": "merges two mail accounts",
+			"runtime":     vocabulary.RuntimePython,
+			"source": `
+def main(input, host):
+    a = input["args"]
+    return {"effects": [{"action": "merge", "kind": "` + mbAccountType + `",
+                         "id": a["winner"], "loser": a["loser"]}]}
+`,
+			"permissions": map[string]any{"writes": []any{mbAccountType}, "mutations": []any{"merge"}},
+		}),
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, mergerDocs); err != nil {
+		t.Fatalf("install merger: %v", err)
+	}
+	a1 := mustPut(t, ds, owner, substrate.PutInput{Kind: mbAccountType, Properties: map[string]any{"address": "e1@x.co"}})
+	a2 := mustPut(t, ds, owner, substrate.PutInput{Kind: mbAccountType, Properties: map[string]any{"address": "e2@x.co"}})
+	if err := ds.DisableBundle(ctx, mbPackage); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	args := map[string]any{"winner": a1.ID, "loser": a2.ID}
+	_, _, err := ds.CallFunction(ctx, toolPackage+"/merger", args)
+	if err == nil || !strings.Contains(err.Error(), "frozen") {
+		t.Fatalf("a merge effect bypassed the bundle freeze: %v", err)
+	}
+	// Both accounts still live and unmerged.
+	if got := mustGet(t, ds, a2.Kind, a2.ID); got.DeletedAt != nil {
+		t.Fatalf("frozen loser was merged away: %+v", got)
+	}
+	// Enabled again, the same effect lands.
+	if err := ds.EnableBundle(ctx, mbPackage); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	if _, n, err := ds.CallFunction(ctx, toolPackage+"/merger", args); err != nil || n != 1 {
+		t.Fatalf("merge effect while live: %d %v", n, err)
+	}
+}
+
+// A split that resurrects a second record of an input's kind is an ordinary
+// resurrection now — no cardinality is enforced anywhere — and the input
+// simply reads AMBIGUOUS until one record is bound or named "default". The
+// merge record is fabricated the way legacy/imported data would carry it.
+func TestSplitResurrectingASecondInputReadsAmbiguous(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds, db := newDatasetWithSchemaDB(t)
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, mbStandardDocs()); err != nil {
+		t.Fatalf("install bundle: %v", err)
+	}
+	c1 := mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
+	if _, err := ds.Delete(ctx, owner, c1.Kind, c1.ID, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete c1: %v", err)
+	}
+	c2 := mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
+
+	// The fabricated merge record: c1 was "merged into" c2 before this data
+	// arrived here.
+	const rec = "fabmerge0001"
+	if _, err := db.Exec(`
+		INSERT INTO records (id, kind, props)
+		VALUES ($1, 'substrate.reamde.dev/core/recordmerge',
+			jsonb_build_object('moved', '{}'::jsonb, 'winner', $2::text, 'loser', $3::text))`,
+		rec, mbConfigType+"/"+c2.ID, mbConfigType+"/"+c1.ID); err != nil {
+		t.Fatalf("insert merge record: %v", err)
+	}
+	// The row is planted behind the engine's back, so its projection in the
+	// refs index has to be planted with it: split reads the pair off the record
+	// and the reverse reads read the index.
+	for property, dst := range map[string]string{"winner": c2.ID, "loser": c1.ID} {
+		if _, err := db.Exec(`
+			INSERT INTO refs (src_kind, src, property, path, ord, dst_kind, dst)
+			VALUES ('substrate.reamde.dev/core/recordmerge', $1, $2, '', 0, $3, $4)`,
+			rec, property, mbConfigType, dst); err != nil {
+			t.Fatalf("insert the %s row: %v", property, err)
+		}
+	}
+
+	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec}); err != nil {
+		t.Fatalf("split resurrecting a second record of an input's kind: %v", err)
+	}
+	got := mustGet(t, ds, c1.Kind, c1.ID)
+	if got.DeletedAt != nil {
+		t.Fatalf("c1 not resurrected: %+v", got)
+	}
+	// Two live records, none bound or named "default": the input is
+	// ambiguous — surfaced per input, never tie-broken, never a refusal of
+	// the split itself.
+	st, err := ds.BundleStatus(ctx, mbPackage)
+	if err != nil || len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupAmbiguous {
+		t.Fatalf("post-split status: %+v %v", st, err)
+	}
+}
+
+// fenceWaiterSource polls for a flag record, then emits one message: the barrier
+// that keeps an invocation in flight while a lifecycle verb races it.
+const fenceWaiterSource = `
+import time
+def main(input, host):
+    for _ in range(150):
+        got = host.get("mail.bundles.substrate.reamde.dev/mail/mailitem", "fence-flag")
+        if got:
+            return {"effects": [{"action": "put", "kind": "mail.bundles.substrate.reamde.dev/mail/mailmessage",
+                                 "id": "fence-done", "properties": {"subject": "done"}}]}
+        time.sleep(0.05)
+    return {"effects": []}
+`
+
+func fenceWaiterDoc() map[string]any {
+	return vocabulary.FunctionManifest(mbPackage, "waiter", map[string]any{
+		"description": "waits for the fence flag",
+		"runtime":     vocabulary.RuntimePython,
+		"source":      fenceWaiterSource,
+		"timeout":     "PT20S",
+		"permissions": map[string]any{
+			"writes": []any{mbMessageType},
+			"reads":  map[string]any{"kinds": []any{mbItemType}, "budgets": map[string]any{"calls": 500}},
+		},
+	})
+}
+
+// Disable takes the exclusive side of the per-bundle fence: an invocation
+// already past admission commits its effects BEFORE the disable returns, and
+// the next invocation refuses.
+func TestDisableDrainsAnAdmittedInvocation(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	docs := mbDocs(nil,
+		mbConfigTypeDoc(), mbAccountTypeDoc(), mbItemTypeDoc(), mbMessageTypeDoc(),
+		fenceWaiterDoc())
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	const waiterFn = mbPackage + "/waiter"
+
+	type callRes struct {
+		effects int
+		err     error
+	}
+	callDone := make(chan callRes, 1)
+	go func() {
+		_, n, err := ds.CallFunction(ctx, waiterFn, map[string]any{})
+		callDone <- callRes{n, err}
+	}()
+	time.Sleep(1 * time.Second) // the invocation is admitted and polling
+
+	disableDone := make(chan error, 1)
+	go func() { disableDone <- ds.DisableBundle(ctx, mbPackage) }()
+	select {
+	case err := <-disableDone:
+		select {
+		case r := <-callDone:
+			t.Fatalf("disable returned while an admitted invocation was in flight: %v (call settled early: %d %v)", err, r.effects, r.err)
+		default:
+			t.Fatalf("disable returned while an admitted invocation was in flight: %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		// Blocked at the fence, as it must be.
+	}
+
+	// Release the barrier: the invocation finishes and commits, THEN the
+	// disable lands.
+	mustPut(t, ds, owner, substrate.PutInput{Kind: mbItemType, ID: "fence-flag", Properties: map[string]any{"name": "go"}})
+	select {
+	case err := <-disableDone:
+		if err != nil {
+			t.Fatalf("disable: %v", err)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("disable never returned")
+	}
+	// The invocation's effect committed before the disable returned.
+	if got := mustGet(t, ds, mbMessageType, "fence-done"); got.Properties["subject"] != "done" {
+		t.Fatalf("drained invocation's effect: %+v", got.Properties)
+	}
+	r := <-callDone
+	if r.err != nil || r.effects != 1 {
+		t.Fatalf("drained invocation: %d %v", r.effects, r.err)
+	}
+	// And the next admission refuses.
+	if _, _, err := ds.CallFunction(ctx, waiterFn, map[string]any{}); err == nil ||
+		!strings.Contains(err.Error(), "disabled") {
+		t.Fatalf("post-disable invocation: %v", err)
+	}
+}
+
+// Enable refuses the purging transition: an interrupted purge leaves the
+// marker standing, and only a purge run to completion clears it.
+func TestEnableRefusesAnInterruptedPurge(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds, db := newDatasetWithSchemaDB(t)
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, mbStandardDocs()); err != nil {
+		t.Fatalf("install bundle: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: mbItemType, Properties: map[string]any{"name": "x"}})
+	if err := ds.DisableBundle(ctx, mbPackage); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	// Simulate a purge that died mid-run: the marker is set, the data is
+	// half-gone or whole — either way the bundle must not come live.
+	if _, err := db.Exec(`
+		UPDATE records SET props = jsonb_set(props, '{purging}', 'true') WHERE id = $1`, mbPackage); err != nil {
+		t.Fatalf("fabricate interrupted purge: %v", err)
+	}
+	if err := ds.EnableBundle(ctx, mbPackage); err == nil || !errors.Is(err, substrate.ErrGuard) ||
+		!strings.Contains(err.Error(), "purging") {
+		t.Fatalf("enable during purge: %v", err)
+	}
+	// A purge run to completion clears the marker; enable then works.
+	if _, err := ds.PurgeBundle(ctx, mbPackage); err != nil {
+		t.Fatalf("re-purge: %v", err)
+	}
+	if err := ds.EnableBundle(ctx, mbPackage); err != nil {
+		t.Fatalf("enable after a completed purge: %v", err)
 	}
 }
