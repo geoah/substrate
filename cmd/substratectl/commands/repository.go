@@ -40,9 +40,9 @@ func (a *app) repositoryCommand() *cobra.Command {
 		Aliases: []string{"repositories", "repo"},
 	}
 	cmd.AddCommand(a.repositoryListCommand(), a.repositoryInspectCommand(),
-		a.repositoryRebuildCommand(), a.repositoryVerifyCommand(),
-		a.repositorySnapshotCommand(), a.repositoryRewrapCommand(),
-		a.repositoryRotateGenerationCommand())
+		a.repositoryRebuildCommand(), a.repositoryReembedCommand(),
+		a.repositoryVerifyCommand(), a.repositorySnapshotCommand(),
+		a.repositoryRewrapCommand(), a.repositoryRotateGenerationCommand())
 	return cmd
 }
 
@@ -256,6 +256,62 @@ func parseRecoveryIdentity(r io.Reader) (string, error) {
 		return "", errors.New("the recovery key is not an X25519 age identity (AGE-SECRET-KEY-1...)")
 	}
 	return id.String(), nil
+}
+
+func (a *app) repositoryReembedCommand() *cobra.Command {
+	var all bool
+	cmd := &cobra.Command{
+		Use:   "reembed <repository>",
+		Short: "Queue a repository's vectors for re-embedding through its current provider",
+		Long: `Enqueue every embeddable property whose stored vectors did not come from the
+repository's current embeddings provider and model.
+
+A repository buys its vectors from the one llmprovider row that declares
+'embedModel', and every stored vector names the row and the model that produced
+it. Change either and the old vectors are from a different model: cosine
+distance between two models' vectors is not a distance, so search would go
+wrong with no error anywhere. Semantic search scores only the current pair's
+vectors, so until this runs the older ones are simply invisible.
+
+This buys nothing. It writes queue rows, and the server's drain loop pays for
+them a batch at a time, which is why an interrupted re-embed resumes by itself
+and why a large repository catches up over minutes rather than in one call.
+
+--all ignores the stored provenance and queues everything. It is the answer to
+a gateway swapped behind an unchanged provider row and model name, which
+nothing stored can tell apart.
+
+It runs beside a live server: the engine opens read-only against the data
+root, and the queue rows it writes are not changelog entries.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			svc, err := a.openEngineReadOnly(cmd.Context())
+			if err != nil {
+				return err
+			}
+			defer func() { _ = svc.Close() }()
+			ds, err := svc.Dataset(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			report, err := ds.Reembed(cmd.Context(), all)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(a.out, "repository %s queued for re-embedding\n", args[0])
+			fmt.Fprintf(a.out, "  provider: %s\n", report.Provider)
+			fmt.Fprintf(a.out, "  model:    %s\n", report.Model)
+			fmt.Fprintf(a.out, "  queued:   %d properties\n", report.Enqueued)
+			if report.All {
+				fmt.Fprintf(a.out, "  scope:    every embeddable property (--all)\n")
+			}
+			fmt.Fprintf(a.out, "the server's drain loop buys the vectors; nothing was bought here\n")
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&all, "all", false,
+		"queue every embeddable property, not only the ones another provider or model embedded")
+	return cmd
 }
 
 func (a *app) repositoryListCommand() *cobra.Command {

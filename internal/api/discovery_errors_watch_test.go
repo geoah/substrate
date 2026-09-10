@@ -233,10 +233,11 @@ func discoveryFeatures(t *testing.T, svc substrate.Service) map[string]string {
 // with the stability the surface has actually reached. `stable` means frozen
 // for v1, and every feature of the supported REST surface is: the wire
 // changes #360 tracked have landed. `search` stays beta because its only door
-// is the preview GraphQL surface, which is `embeddings`' only door too;
-// `agents` and `embeddings` stay alpha because their shapes are still moving. Change a stamp here and in
-// features() together, and a stable one only with a decision record, as 0053
-// scheduled this flip: it is a promise a client has already read.
+// is the preview GraphQL surface, and that surface is the only door to
+// embeddings too. `agents` and `embeddings` stay alpha because both shapes
+// are still moving. Change a stamp here and in features() together, and a
+// stable one only with a decision record, as 0053 scheduled this flip: it is
+// a promise a client has already read.
 func TestDiscoveryStampsEachFeatureStability(t *testing.T) {
 	svc := newFakeService()
 	svc.embeddings = true

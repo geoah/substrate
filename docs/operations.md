@@ -152,11 +152,14 @@ What that means for an operator:
   hybrid search returns its lexical arm alone until that row exists.
 - Every stored vector names the row and the model that produced it. Change
   either and the older vectors stop being searched, which is deliberate: cosine
-  distance between two models' vectors is not a distance. A `semantic` search
-  that finds only the old pair's vectors refuses rather than rank them.
-- Nothing requeues a repository's vectors in place: no CLI command and no REST
-  verb reaches the engine's re-embed, so replacing them means restoring the
-  repository's directory into a database that holds no row for it.
+  distance between two models' vectors is not a distance, and a `semantic`
+  search that finds only the old pair's vectors refuses rather than rank them.
+  Run `substratectl --dsn … repository reembed <repository>` to queue their
+  replacement: it writes queue rows, and the server's drain loop buys the
+  vectors a batch at a time, so an interrupted re-embed resumes by itself.
+  There is no REST verb for it; it is the operator's hat, on the box.
+- A gateway swapped behind an unchanged row and model name is invisible to the
+  provenance columns, so that case takes `reembed --all`.
 - A repository restored from its directory queues every embeddable property
   by itself, because the vectors were never in the directory; see
   [Backups](#backups).
@@ -378,7 +381,7 @@ refusal, beside the two per-repository ones above, and it closes the rollback
 even when no repository was written: a new binary that carries a migration
 applies it at its first boot. The operator commands that open the engine run
 the same runner, so an older `substratectl repository verify`, `repository
-rebuild` or `user reset` refuses the same database;
+rebuild`, `repository reembed` or `user reset` refuses the same database;
 `repository list` and `inspect` read the tables directly and do not.
 
 **A migration this binary does not recognize stops the boot too.** The same
@@ -715,7 +718,8 @@ Until the first vectors land, a `semantic` search refuses with the
 every `semantic` and `hybrid` answer carries `pending`, the number still
 queued, so a client can tell a ranking over a partial index from a full one.
 The new vectors come from new provider calls, so a ranking may differ from
-before the copy.
+before the copy. `reembed` is not part of a restore; it is for a row
+re-pointed at another model.
 
 **Encrypt the copy.** The changelog and the blobs are plaintext in the
 directory, on the backup host and in the dump alike. The substrate does not
@@ -728,17 +732,17 @@ Operator commands (the "operator hat" of
 directly and hold no token. They need `--dsn` (or `DATABASE_URL`) and
 `SUBSTRATE_DATA_ROOT`, and refuse before touching anything without them.
 
-**Three of them run beside a live server; four need it stopped; one takes no
-database.** `repository list`, `repository inspect` and `repository verify`
-open the engine read-only, so they run no boot check and
+**Four of them run beside a live server; four need it stopped; one takes no
+database.** `repository list`, `repository inspect`, `repository verify` and
+`repository reembed` open the engine read-only, so they run no boot check and
 append nothing: `verify` reports an unfinished final transaction or a table
-ahead of its file as a finding instead of repairing it. `repository rebuild`,
+ahead of its file as a finding instead of repairing it, and `reembed` writes
+queue rows, which are not changelog entries. `repository rebuild`,
 `repository rotate-generation`, `repository snapshot` and `user reset` open the
 repository as its changelog writer, and a running server holds that lock: the
-command refuses, naming the lock, until the server is stopped.
-`repository rewrap` acts on a copied directory
-before any boot has imported it, so it needs `SUBSTRATE_CREDENTIAL_KEY` and
-the directory, and no DSN.
+command refuses, naming the lock, until the server is stopped. `repository
+rewrap` acts on a copied directory before any boot has imported it, so it
+needs `SUBSTRATE_CREDENTIAL_KEY` and the directory, and no DSN.
 
 ```
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository list

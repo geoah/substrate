@@ -1084,7 +1084,8 @@ func (d *fakeDataset) ProcessEmbedQueue(context.Context, int) (int, error) {
 }
 
 // Reembed is on the frozen Dataset core, so the fake carries it; no HTTP door
-// reaches it, and the engine's own drain is what calls it.
+// reaches it any more, and the operator's `substratectl repository reembed`
+// is what calls it, over the DSN.
 func (d *fakeDataset) Reembed(_ context.Context, all bool) (substrate.ReembedReport, error) {
 	return substrate.ReembedReport{Provider: "vectors", Model: "text-embedding-3-small", Enqueued: 7, All: all}, nil
 }

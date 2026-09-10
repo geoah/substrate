@@ -143,6 +143,38 @@ func TestVersion(t *testing.T) {
 	}
 }
 
+// The vocabulary is the contract too: `identity` and `tenant` are dead words,
+// and help text is where a dead word survives longest. `.mise/docscheck.sh`
+// greps docs/ and README.md alone, so this is the only check on the CLI's own
+// help.
+func TestHelpSpeaksTheV1Vocabulary(t *testing.T) {
+	h := newHarness(t)
+	var all strings.Builder
+	for _, args := range [][]string{
+		{"--help"},
+		{"login", "--help"},
+		{"register", "--help"},
+		{"logout", "--help"},
+		{"token", "--help"},
+		{"token", "create", "--help"},
+		{"user", "--help"},
+		{"user", "reset", "--help"},
+		{"repository", "--help"},
+		{"repository", "inspect", "--help"},
+		{"repository", "rebuild", "--help"},
+		{"repository", "reembed", "--help"},
+		{"repository", "rotate-generation", "--help"},
+	} {
+		out, _ := h.mustRun(args...)
+		all.WriteString(out)
+	}
+	for _, dead := range []string{"tenant", "identity", "schemagroup", "otp exchange", "scopes"} {
+		if strings.Contains(strings.ToLower(all.String()), dead) {
+			t.Errorf("help text still says %q", dead)
+		}
+	}
+}
+
 func TestLoginStoresTokenWithTightPermissions(t *testing.T) {
 	h := newHarness(t)
 	h.stdin.WriteString("hunter2\n")

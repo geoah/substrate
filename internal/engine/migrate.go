@@ -45,8 +45,8 @@ type recorded struct {
 // newer binary migrated the database. Every boot step after the runner writes
 // to the schema (the orphan sweep, the declared indexes, the data root
 // import), so the open refuses before applying or serving anything. The
-// operator commands that open the engine (verify, rebuild, user reset) run
-// the same runner and refuse the same way.
+// operator commands that open the engine (verify, rebuild, reembed, user
+// reset) run the same runner and refuse the same way.
 var ErrDatabaseNewer = errors.New("substrate/engine: the database applied migrations this binary does not carry")
 
 // migrate applies every pending migration to the schema the DSN's

@@ -497,8 +497,10 @@ repository's recovery export, a tar of its directory in the snapshot format
 ([backups](operations.md#backups)), and 0053 did not name it; it freezes by a
 decision of its own, not by age.
 `agents` and `embeddings` report `alpha`: their shapes are still moving, and
-the `rest` in their `surfaces` says where they are served, not that they are
-frozen.
+a surface in their `surfaces` says where they are served, not that they are
+frozen. `agents` is served on `rest`, `embeddings` on `graphql` alone: its
+one REST verb, `POST /api/v1/embeddings/reembed`, was withdrawn, and
+re-embedding is now the operator's `substratectl repository reembed`.
 
 The list is derived from what the deployment implements, not written out, so a
 feature is never advertised without the code that serves it: a substrate that
@@ -515,7 +517,9 @@ Send every request to the `/api/v1` prefix. It is the only prefix served,
 and `versions` lists it with status `served`.
 
 Within v1 the REST surface is **additive only**: fields and endpoints are
-added, never removed or narrowed under the same version. A deprecation is
+added, never removed or narrowed under the same version, except where a
+feature reports `alpha`, which licenses withdrawing one of its routes (the
+`embeddings` re-embed verb above is the case). A deprecation is
 signalled, not a silent break: a `Warning` HTTP header on the REST response,
 with a minimum sunset window before removal. GraphQL makes no such promise
 ([REST and GraphQL](#rest-and-graphql) below). There is no Kubernetes-style

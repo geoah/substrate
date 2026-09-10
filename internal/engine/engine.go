@@ -154,7 +154,7 @@ func WithConversionCeiling(n int64) Option {
 }
 
 // WithDirectoryReadOnly opens the service as a second process beside a running
-// server: the operator hat's `repository verify`. Open runs no
+// server: the operator hat's `repository verify` and `reembed`. Open runs no
 // boot check and no orphan sweep, a dataset opens no changelog writer and
 // refuses every inTx write with ErrDirectoryReadOnly, and VerifyRepository
 // reports an incomplete tail or a table ahead of its file as findings instead of

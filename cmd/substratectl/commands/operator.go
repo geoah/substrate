@@ -63,8 +63,8 @@ func (a *app) dsn() (string, error) {
 
 // openEngineReadOnly opens the engine BESIDE a running server: no boot check,
 // no changelog writer, every write refused (engine.WithDirectoryReadOnly). It
-// is what `repository verify` rides, because it must be safe against a live
-// server and it appends to no repository. Whatever
+// is what `repository verify` and `reembed` ride, because both must be safe
+// against a live server and neither appends to a repository. Whatever
 // credential key the environment holds is used; its absence is not fatal
 // here, since nothing sealed is written.
 func (a *app) openEngineReadOnly(ctx context.Context) (substrate.Service, error) {

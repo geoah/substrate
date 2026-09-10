@@ -23,21 +23,19 @@ substratectl export                       # the recovery export, a tar of the re
 `substratectl` addresses a substrate two different ways, and the flags say which.
 
 **The user's hat** speaks HTTP and carries a token: everything above, plus
-`register`, `login`, `logout`, `token`,
-`trigger`, `function`, `bundle`, `catalog`, `import`,
-`install` and `export`. It needs a server and a token, and it can run
-anywhere. Changing your own password or second factor is the console's account
-page; the CLI has no command for either.
+`register`, `login`, `logout`, `token`, `trigger`, `function`, `bundle`,
+`catalog`, `import`, `install` and `export`. It needs a server and a token,
+and it can run anywhere. Changing your own password or second factor is the
+console's account page; the CLI has no command for either.
 
 **The operator's hat** speaks to the box's Postgres directly and holds no token
-at all: `user reset`, `repository list`, `repository inspect`,
-`repository verify`, `repository snapshot`, `repository rebuild`,
-`repository rotate-generation`. It needs
-`--dsn` (or `DATABASE_URL`) and
-`SUBSTRATE_DATA_ROOT`, and without them every operator command refuses before
-touching anything. The one exception is `repository rewrap`, which opens a
-copied repository directory with the user's recovery key for a new
-`SUBSTRATE_CREDENTIAL_KEY` and needs no database at all.
+at all: `user reset`, `repository list`, `repository inspect`, `repository
+verify`, `repository snapshot`, `repository rebuild`, `repository
+rotate-generation` and `repository reembed`. It needs `--dsn` (or
+`DATABASE_URL`) and `SUBSTRATE_DATA_ROOT`, and without them every operator
+command refuses before touching anything. The one exception is `repository
+rewrap`, which opens a copied repository directory with the user's recovery
+key for a new `SUBSTRATE_CREDENTIAL_KEY` and needs no database at all.
 [Running a substrate](operations.md) is where that hat lives.
 
 `substratectl version` belongs to neither hat: it prints the client version

@@ -389,10 +389,9 @@ not 1536 wide ([decision
 0026](decisions/0026-embedding-vectors-are-1536-wide-or-refused.md)). Every
 stored vector names the row and the model that produced it, and semantic search
 scores only the current pair's vectors, so changing either hides the older ones
-rather than mixing two models' distances. No command and no REST verb requeues
-them: replacing them means restoring the repository's directory into a database
-that holds no row for it, which queues every embeddable property
-([backups](operations.md#backups)).
+rather than mixing two models' distances. `substratectl --dsn … repository
+reembed <repository>` queues their replacement, which the server's drain loop
+buys a batch at a time.
 
 **Nothing seeds a provider.** A fresh repository holds no `llmprovider` row at
 all: a row is where the wire, the endpoint and the key live, and a substrate

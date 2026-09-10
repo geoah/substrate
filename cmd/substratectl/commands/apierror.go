@@ -97,7 +97,7 @@ func (e *apiError) hint() string {
 		// no ACLs — so a forbidden is never about the token's reach. It is the
 		// substrate refusing the write itself: a reserved actor, or one of the
 		// two auth kinds, which change only through their own endpoints.
-		return "this write is refused on principle, not for lack of access: credentials and tokens change only through `substratectl login`, `substratectl user password` and `substratectl token`, and the substrate's own actors cannot be claimed"
+		return "this write is refused on principle, not for lack of access: a password or second factor changes only on the console's account page, a token only through `substratectl login` and `substratectl token`, and the substrate's own actors cannot be claimed"
 	}
 	return ""
 }

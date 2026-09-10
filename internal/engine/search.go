@@ -270,8 +270,9 @@ func (ds *dataset) pairHasVectors(ctx context.Context, provider *embedProvider) 
 // a repository restored from its directory (whose vectors were never in the
 // directory, only its queue rows are) or a re-embed the drain has not reached,
 // and the number falls as the drain buys. No work and vectors from another
-// pair is a row re-pointed at a model nobody ran `reembed` for: nothing will
-// change by itself, so that is substrate.ErrValidation naming the command, as
+// pair is a row re-pointed at a model nobody ran `substratectl repository
+// reembed` for: nothing will change by itself, so that is
+// substrate.ErrValidation naming the operator command exactly, as
 // the missing-row refusal above names the property. No work and no vectors at
 // all is a repository with nothing embeddable: nil, and the caller answers
 // empty. Hybrid never comes here: its lexical arm is the documented answer
@@ -286,7 +287,7 @@ func (ds *dataset) refuseSemantic(ctx context.Context, provider *embedProvider, 
 		return fmt.Errorf("substrate/engine: semantic search: %w", err)
 	}
 	if others {
-		return fmt.Errorf("%w: semantic search has no vectors from llmprovider %q model %q and the stored vectors are another pair's: run reembed to replace them",
+		return fmt.Errorf("%w: semantic search has no vectors from llmprovider %q model %q and the stored vectors are another pair's: run substratectl repository reembed to replace them",
 			substrate.ErrValidation, provider.id, provider.model)
 	}
 	return nil
