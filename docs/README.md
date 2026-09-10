@@ -5,14 +5,25 @@ it. Messages, mail, calendar, people, tasks and media go into one typed set of
 records behind one API, stored in Postgres on a machine you run. Assistants
 read those records and write back through the same API.
 
-These pages build one thing — a to-do list — from registration through to the
-API call that completes a task. Start at the
-[introduction](introduction.md).
+The design borrows from Kubernetes, which answers the same problem: many
+semi-trusted programs cooperating over shared typed state.
+
+- the substrate is the **API server**: typed records, declared validation, an
+  ordered change feed;
+- every application and integration is a **controller**: it watches, decides,
+  and writes back through the same public API;
+- behavior lives in **declarations** (kinds, states, mappings, functions), not
+  in bespoke endpoints. The write API is five generic mutations, forever:
+  `put`, `patch`, `delete`, `merge`, `split`;
+- a closure of those declarations installs and uninstalls as one unit, a
+  **bundle**, which is how a provider integration or an automation reaches the
+  data without a substrate code change.
+
+These pages build one thing, a to-do list, from registration through to the
+API call that completes a task.
 
 ## Start here
 
-- [Understanding the substrate](introduction.md) — scope, vocabulary, and the
-  running example
 - [Terms](terms.md) — one word per thing, and the dead words they replaced
 - [Getting started](getting-started.md) — register, log in, write a record
 
@@ -28,9 +39,8 @@ API call that completes a task. Start at the
 
 ## The API
 
-- [The API](api.md) — REST, filters, mutations, errors
+- [The API](api.md) — REST and GraphQL, filters, mutations, search, errors
 - [Users, tokens, and actors](auth.md)
-- [GraphQL and search](graphql-and-search.md)
 - [The changelog and watch](changelog.md)
 
 ## Bundles

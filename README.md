@@ -15,8 +15,7 @@ It is, roughly, Kubernetes for your own data and the agents acting on it, and
 the borrowing is deliberate: the substrate is the API server, a kind is a
 declared type it validates every write against, and every app or agent is a
 controller that watches the ordered change feed and writes back through the
-same API. [docs/introduction.md](docs/introduction.md) draws the comparison
-out.
+same API. [docs/README.md](docs/README.md) draws the comparison out.
 
 ## Features
 
@@ -200,11 +199,9 @@ bin/substratectl watch --from 1
 ```
 
 The same records answer on REST at `/api/v1/geoah.me/chores/task`, on
-GraphQL at `/graphql`, and in full-text and semantic search:
-[docs/api.md](docs/api.md) and
-[docs/graphql-and-search.md](docs/graphql-and-search.md).
-[docs/getting-started.md](docs/getting-started.md) is the longer
-walkthrough.
+GraphQL at `/api/v1/graphql`, and in full-text and semantic search:
+[docs/api.md](docs/api.md). [docs/getting-started.md](docs/getting-started.md)
+is the longer walkthrough.
 
 ## Manage them with a function and an agent
 
@@ -397,7 +394,6 @@ rules. [docs/testing.md](docs/testing.md) maps the test suites.
 | ---------------------------------------------------- | ----------------------------------------------------------------- |
 | [docs/README.md](docs/README.md)                     | the documentation index; the pages build one running example      |
 | [docs/getting-started.md](docs/getting-started.md)   | register, log in, write a record                                  |
-| [docs/introduction.md](docs/introduction.md)         | the design, its terms, and what it borrows from Kubernetes        |
 | [docs/data-model.md](docs/data-model.md)             | the repository, its changelog, records, kinds and the envelope    |
 | [docs/api.md](docs/api.md)                           | REST, filters, mutations, errors                                  |
 | [docs/terms.md](docs/terms.md)                       | one word per thing, and the dead words each replaced              |
@@ -405,5 +401,5 @@ rules. [docs/testing.md](docs/testing.md) maps the test suites.
 | [kinds/](kinds), [samples/](samples)                 | the shipped vocabulary and the sample packages, as YAML           |
 | [AGENTS.md](AGENTS.md)                               | how to work on this code                                          |
 | [SECURITY.md](SECURITY.md)                           | how to report a vulnerability                                     |
-| [CHANGELOG.md](CHANGELOG.md)                         | released versions                                                 |
+| [Releases](https://github.com/geoah/substrate/releases) | every released version and what changed in it                  |
 | [Issues](https://github.com/geoah/substrate/issues)  | known bugs and planned work                                       |

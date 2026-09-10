@@ -6,9 +6,10 @@ mutations. REST serves all of them but `search`, which is the GraphQL query's
 alone. REST is the supported developer interface and the whole of GraphQL is a
 preview; [discovery](#discovery) says so per surface. A new kind never adds an
 endpoint: the REST path pattern is the same routes for every package, and the
-[GraphQL](graphql-and-search.md) schema is generated from the loaded kinds.
-This page is the REST surface, the filter grammar, pagination, the mutations,
-errors, and discovery. Authentication has a page of its own,
+GraphQL schema is generated from the loaded kinds.
+This page is both surfaces: the REST routes, the filter grammar, pagination,
+the mutations, discovery, the generated GraphQL names, search and the errors.
+Authentication has a page of its own,
 [users and tokens](auth.md). The record model, the filter grammar and the
 mutations hold identically over REST and GraphQL; where the two surfaces
 differ, [REST and GraphQL](#rest-and-graphql) below lists how.
@@ -486,21 +487,15 @@ is served and works today.
 **Every feature of the supported REST surface that
 [decision 0053](decisions/0053-rest-is-supported-all-of-graphql-is-preview.md)
 names reports `stable`**: `triggers`, `functions`, `bundles`, `blobs` and
-`changefeed` froze once the release's wire changes landed. The
-changefeed's were the last two: a change cursor bound to a history generation
-([decision 0056](decisions/0056-a-change-cursor-is-a-seq-under-a-history-generation.md))
-and a change event that names the affected records
-([decision 0061](decisions/0061-a-change-event-names-the-affected-records-and-clients-fetch-them.md)).
-`search` reports `beta`: its only door is the preview GraphQL surface.
-`export` is new and reports `beta`: `GET /api/v1/export` streams the
-repository's recovery export, a tar of its directory in the snapshot format
-([backups](operations.md#backups)), and 0053 did not name it; it freezes by a
-decision of its own, not by age.
-`agents` and `embeddings` report `alpha`: their shapes are still moving, and
-a surface in their `surfaces` says where they are served, not that they are
-frozen. `agents` is served on `rest`, `embeddings` on `graphql` alone: its
-one REST verb, `POST /api/v1/embeddings/reembed`, was withdrawn, and
-re-embedding is now the operator's `substratectl repository reembed`.
+`changefeed`. `search` reports `beta`, because its only door is the preview
+GraphQL surface. `export` reports `beta` because 0053 did not name it:
+`GET /api/v1/export` streams the repository's recovery export, a tar of its
+directory in the snapshot format ([backups](operations.md#backups)), and it
+freezes by a decision of its own, not by age. `agents` and `embeddings` report
+`alpha`, so their shapes may still move; a surface in their `surfaces` says
+where they are served, not that they are frozen. `agents` is served on `rest`
+and `embeddings` on `graphql` alone, where the semantic arm of
+[`search`](#search) is its one door.
 
 The list is a literal in the server (`internal/api/discovery.go`), and it is
 every feature the build serves: one implementation serves them all, so there
@@ -520,8 +515,9 @@ and `versions` lists it with status `served`.
 
 Within v1 the REST surface is **additive only**: fields and endpoints are
 added, never removed or narrowed under the same version, except where a
-feature reports `alpha`, which licenses withdrawing one of its routes (the
-`embeddings` re-embed verb above is the case). A deprecation is
+feature reports `alpha`, which licenses withdrawing one of its routes
+(`POST /api/v1/embeddings/reembed` was withdrawn that way, and re-embedding is
+the operator's `substratectl repository reembed`). A deprecation is
 signalled, not a silent break: a `Warning` HTTP header on the REST response,
 with a minimum sunset window before removal. GraphQL makes no such promise
 ([REST and GraphQL](#rest-and-graphql) below). There is no Kubernetes-style
@@ -578,6 +574,158 @@ list never carries it on either surface. Both are listed here rather than left
 for a client to find out by trying, which is the rule: an asymmetry is written
 down or it is a bug
 ([decision 0053](decisions/0053-rest-is-supported-all-of-graphql-is-preview.md)).
+
+GraphQL's whole read and write surface serves at one endpoint,
+`POST /api/v1/graphql`, and its `filter` argument takes
+[the filter grammar](#the-filter-grammar) whole. Every argument carries that
+grammar in its **description**, so a client with only introspection to read
+(an agent holding the `graphql` tool) gets the accepted keys, the condition
+operators and a worked date range without leaving the endpoint, and a filter
+key the grammar does not have is a `validation` error naming the keys it does.
+`records(filter, orderBy, first, after)` is the list query and
+`record(kind, id)` the single lookup, which takes both because identity is the
+pair. A page carries the same `cursor`, `head` and `generation` a REST list
+does, and no `total`: a keyset walk counts nothing.
+
+```graphql
+query ($f: JSON) {
+  records(filter: $f, first: 20) {
+    nodes { id kind title ... on Ada_example_com_Tasks_Task { status } }
+    cursor
+    head
+  }
+}
+# variables:
+# {"f": {"kinds": ["ada.example.com/tasks/task"],
+#        "properties": {"status": {"eq": "open"}}}}
+```
+
+### Generated names and scalars
+
+A GraphQL type name is a pure function of the kind's reference and where the
+kind came from, so the schema is deterministic and installing one bundle can
+never rename another kind. The rule has two arms. A **seeded kind keeps its
+bare singular**: `substrate.reamde.dev/core/token` is `Token`. That is the core
+package alone, because creation seeds core and nothing else: every sample a
+repository imports, `people` and `tasks` included, installs as the repository's
+own. Every **other kind carries its authority and its package**: the authority
+folded (a dot becomes `_`, a hyphen becomes `__`, and a digit-first authority
+gains a leading `_`), the package's word, then the singular, each TitleCased
+and joined by underscores. The fold reads back unambiguously because an
+authority never carries an underscore, so two authorities never share a name:
+`my-host.example.com` is `My__host_example_com` and `myhost.example.com` is
+`Myhost_example_com`. The repository `ada.example.com`
+that imported the `tasks` sample has `Ada_example_com_Tasks_Task`, and the
+installed Notion provider has `Providers_substrate_reamde_dev_Notion_Page`. The
+underscore keeps every one of them out of reach of any seeded name, the
+package keeps two packages apart that declare one singular, and the authority
+keeps two authorities apart that publish a package of one word, so a name
+never depends on which of its neighbours are installed and a later install
+never renames an earlier kind
+([decision 0058](decisions/0058-a-graphql-name-always-carries-the-authority.md)).
+Interfaces follow the same determinism: one per trait that carries properties
+(a pure marker trait adds none), and one per distinct state-property name
+(`HasStatus`, `HasProminence`). They span packages, so "everything with a
+status, anywhere" is one query.
+
+Two kinds that still resolve to one name are **refused when the second is
+declared**, at the same moment every other narrowing refusal happens, and a
+kind whose computed name would land on a structural name (`Record`, `Change`,
+`Reference`, a scalar, an interface) is refused at schema build with a
+named error. Neither is ever silently renamed.
+
+Three groups of fields are the **`Long`** scalar, a 64-bit signed integer
+serialized as a JSON number: `version` and `seq`; the changelog resume seqs
+`head` and `from` with the `ifVersion` precondition; and every `int`
+property, scalar, repeated or a reference's link property. GraphQL's built-in
+`Int` is 32-bit, and graphql-go serializes a value past 2^31-1 (about 2.1
+billion) as `null` with no error. The engine accepts an `int` up to 2^53-1
+([decision 0012](decisions/0012-numbers-are-exact-or-refused.md)) and a
+repository's version or seq counter has no bound at all, so `Long` carries the
+full int64 range on the wire. The `first` and `k` page sizes stay `Int`. A
+`decimal` property is a `String` holding its exact digit string, never a
+`Float`. A JavaScript client should read the 64-bit fields through a
+64-bit-safe path if a counter can exceed 2^53, since a JSON number past that
+loses precision in the browser's `Number`.
+
+A number inside an inline JSON argument (`put(input: {properties: {count:
+5}})`) reaches the engine as a number, exactly as the same value in a variable
+does, and is held to the same types: an inline `price: 19.90` on a `decimal`
+property is refused as a bare number (decision 0012), and an inline `id: 42` is
+refused because `id` is a string. Write them as `price: "19.90"` and
+`id: "42"`, as a variable or a REST body already must.
+
+Property types render as their proper shapes. A `repeated` property is a GraphQL
+list of its element type for every kind (`[Long]`, `[Float]`, `[Boolean]`,
+`[String]`), not a bare scalar. An `object` property (inline structured fields)
+renders as the `JSON` scalar, lossless, rather than flattening to `String`. A
+`reference` property is its own generated OBJECT type, `<Kind><Property>Reference`:
+`ref` is the referent's path as the named `Reference` scalar, `target` resolves
+the referent itself (null when the pointer dangles), and each declared link
+property is a typed field beside them. A reference that declares no link
+properties generates the same object, so adding one later adds a field instead
+of replacing a scalar. A client that wants the path alone selects `{ ref }`.
+
+## Search
+
+Search is one query, `search(q, mode, kinds, k)`, served over GraphQL and
+nowhere else. It has two arms:
+
+- **Lexical**, on by default for every kind. The title and every
+  string-family property index into full-text search, weighted in three bands
+  (title first, then declared string properties, then the rest), and `q` takes
+  web-search syntax: bare words, quoted phrases, `-exclusions`. A property opts
+  out with `fts: false`; secret-typed properties never index. Changing what a
+  kind indexes re-indexes its existing records in the same apply, without
+  moving their `version` or `updatedAt`.
+- **Semantic**, strictly opt-in per property with `embed: true` (the shipped
+  vocabulary opts in long prose: message and mail bodies, task and event
+  descriptions, and transcripts). Opted-in text is chunked into overlapping windows
+  and embedded **asynchronously** after commit, off a queue, so writes never
+  wait on an embedding call. Vectors live in Postgres (pgvector) beside
+  everything else, 1536 wide
+  ([0026](decisions/0026-embedding-vectors-are-1536-wide-or-refused.md)).
+
+`mode` picks `lexical`, `semantic`, or `hybrid` (the default): hybrid runs both
+arms, normalizes each against its own best hit, and merges. The answer is
+`hits` and `pending`. Every hit carries the record beside its raw per-arm
+scores, `lexical` and `semantic`, so a caller can threshold rather than trust a
+rank. `pending` is the number of properties the drain has yet to buy vectors
+for, counted whenever the semantic arm was asked for: non-zero means the
+ranking covers a partial index (a repository [restored from its
+directory](operations.md#backups), a `reembed` in progress), and it falls to 0
+as the drain buys. In a repository that has named no embeddings provider,
+hybrid degrades to lexical and `semantic` reports an error rather than
+pretending. While properties are queued and no vector from the resolved
+provider and model has landed yet, `semantic` refuses with the `unavailable`
+code and the count, so "no vectors yet" never reads as "no matches"; hybrid
+returns its lexical arm alone. With nothing queued, a repository with nothing
+embeddable returns no hits, and a row re-pointed at a model nobody ran
+`substratectl repository reembed` for is refused naming the command.
+
+**Which model bought the vectors is data, per repository.** The one
+[`llmprovider`](agents.md#providers) row declaring `embedModel` is where a
+repository buys them, each stored vector names that row and that model, and the
+semantic arm scores only the currently resolved pair. Re-point the row and the
+older vectors stop being scored rather than being ranked against the new ones:
+cosine distance between two models' vectors is not a distance. `substratectl
+--dsn … repository reembed <repository>` queues their replacement, which the
+server's drain loop buys a batch at a time. There is no REST verb for it: it is
+the operator's hat, on the box.
+
+The substrate does retrieval only: it returns typed records with scores, and
+anything generative built on top (a RAG loop, an assistant) is a client
+reading this API like every other. [Functions](functions.md) run on the shared
+runner and reach the same search through a host call, under their declared
+read allowlist.
+
+One ranking rule is built in: the shipped `person` carries a two-state
+`prominence` machine (`utility` at birth, `known` once something promotes it,
+an address-book sync or the owner), and search ranks `utility` people below
+every `known` match, so the recruiter who emailed once never outranks a
+friend. The demotion participates in the top-k ordering, so in a mixed-kind
+search a high-scoring utility person can be pushed out of the `k` rows
+entirely.
 
 ## Actors
 

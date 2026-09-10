@@ -209,7 +209,7 @@ var features = []featureInfo{
 	{Name: "changefeed", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST, surfaceGraphQL}},
 	// Search's only door is the GraphQL schema, a preview generated per
 	// repository from that repository's kinds
-	// (docs/graphql-and-search.md), so the feature stays beta.
+	// (docs/api.md), so the feature stays beta.
 	{Name: "search", Stability: substrate.StabilityBeta, Surfaces: []string{surfaceGraphQL}},
 	// Embeddings are alpha and GraphQL is their only door: they reach a caller
 	// as the semantic arm of that same query, and the vector width is a

@@ -93,11 +93,10 @@ mise run test:db:engine                # about 70 s on 16 cores; the answer you 
 go test ./internal/engine/ -run TestFold -v
 ```
 
-The engine package is about 850 top-level tests: about 70 s of wall time on a 16
-core machine (measured 2026-09-08, down from 134 s the same day; the section
-below says where the time went), and longer on a 4 vCPU CI runner (six to
-eight minutes before that change; a shard's log says what it is now), so the
-comment above is this machine's number, not a promise.
+The engine package is about 850 top-level tests: about 70 s of wall time on a
+16 core machine (measured 2026-09-08) and longer on a 4 vCPU CI runner, where
+a shard's log says what it costs, so the comment above is this machine's
+number, not a promise.
 
 `test:db:engine` is the engine package with `test:db`'s flags, and it is also
 the task CI shards: with `SHARD` and `SHARDS` in the environment it runs one
@@ -110,9 +109,8 @@ under [What CI runs](#what-ci-runs).
 
 Almost every engine test opens its own service, creates a repository and
 imports the sample vocabulary. Four things the harness does keep that under
-a minute and a half on 16 cores; each was measured on its own, and
-`docs/testing.md` is the one place that explains them (the code comments
-point here).
+90 s on 16 cores, and this page is the one place that explains them (the code
+comments point here).
 
 **A migrated template database, copied per test.** `engine.Open` runs once
 per binary on a template (`migratedTemplate` in
@@ -123,13 +121,11 @@ shipped indexes and nothing else; `engine.MigratedDSN(t)` hands each test a
 on the copy and skips only the DDL. A copy beside an empty data root is
 exactly a fresh install: nothing on either side. The migration runner's
 advisory lock is keyed on `current_schema()`, like the engine's other three
-(no effect on a deployment, one schema per database), which is what the
+(no effect on a deployment, which is one schema per database), so tests
+migrating in parallel do not queue behind each other; that is what the
 packages still on `testdb.NewSchema` (catalog, testenv, substratectl) get.
-Keyed on one constant instead, it serializes the parallel suite's migrations
-one test at a time: measured before the change, that lock was 90% of
-Postgres's time in a run. The from-empty
-migration still runs three times per engine binary: the template build,
-`TestRepositoryProvisioningAndProjections` and
+The from-empty migration runs three times per engine binary: the template
+build, `TestRepositoryProvisioningAndProjections` and
 `TestAssertPoolPrincipalRejectsSuperuser`.
 
 **One opener per binary.** `engine.OpenForTest(t, ctx, dsn, opts...)` is
@@ -148,24 +144,22 @@ starts runs with `fsync=off`, `synchronous_commit=off` and
 `full_page_writes=off` on its command line: it dies with the binary, and
 `DROP DATABASE` forces a checkpoint that fsync makes slow. `testdb` connects
 to the container's own IP where the host can route to it, else the published
-port: the published port is docker-proxy, one process relaying every
-connection, and it is the queue every test would otherwise wait in (measured
-at the change: 98 s to 84 s). Each test drops its copy in its cleanup and
-`testdb.Main` drops what is left after
-`m.Run` (a dropper goroutine off the tests' path measured no gain: 69 to
-80 s against 67 s). CI's service containers keep their data directory on a
-tmpfs (`--tmpfs` in the job's `options`) and take no command line, so the
-jobs set `SUBSTRATE_TEST_DATABASE_DISPOSABLE=true` and `testdb` applies the
-same three settings through `ALTER SYSTEM`. The one test that starts a
-container of its own (`TestOpenFailsClosedWithoutSafeRoles`) passes
-`testdb.DurabilityOff()`, and a dev database `mise run dev` creates carries
-the flags on its command line (a container created without them keeps the
-image's defaults until `dev:wipe` recreates it).
+port, because the published port is docker-proxy, one process relaying every
+connection that every test then queues in. Each test drops its copy in its
+cleanup and `testdb.Main` drops what is left after `m.Run`. CI's service
+containers keep their data directory on a tmpfs (`--tmpfs` in the job's
+`options`) and take no command line, so the jobs set
+`SUBSTRATE_TEST_DATABASE_DISPOSABLE=true` and `testdb` applies the same three
+settings through `ALTER SYSTEM`. The one test that starts a container of its
+own (`TestOpenFailsClosedWithoutSafeRoles`) passes `testdb.DurabilityOff()`,
+and a dev database `mise run dev` creates carries the flags on its command
+line (a container created without them keeps the image's defaults until
+`dev:wipe` recreates it).
 
 **The data roots on tmpfs.** Every changelog write fsyncs
 ([0062](decisions/0062-a-write-is-on-disk-before-its-commit-and-its-final-newline-is-the-commit-marker.md)),
-and sixteen repositories fsyncing one ext4 journal serialize on it (84 s to
-67 s). `testdb.Main` puts `TMPDIR`, and with it every `t.TempDir()`, under
+and sixteen repositories fsyncing one ext4 journal serialize on it.
+`testdb.Main` puts `TMPDIR`, and with it every `t.TempDir()`, under
 `/dev/shm` when that is a tmpfs with at least 512 MB free, and says so once
 on stderr. A container's 64 MB `/dev/shm` falls back to the default;
 `TMPDIR=/tmp` opts out.

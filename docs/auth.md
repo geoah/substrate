@@ -255,5 +255,5 @@ material and a new credential record and prints a fresh enrollment. The data is
 untouched; the account gets new keys. [Running a substrate](operations.md)
 covers it.
 
-Next: [GraphQL and search](graphql-and-search.md), the same records at one
-endpoint.
+Next: [the changelog and watch](changelog.md), the one changelog every write
+lands in.
