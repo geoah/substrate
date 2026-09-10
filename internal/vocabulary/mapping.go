@@ -14,9 +14,9 @@ import (
 // record, moved only by merge and split, never `onDelete: cascade`, and no
 // reference anywhere else may land on a mapped source kind.
 
-// Merge is how one target property combines contributions (§7.1): atomic —
-// one source's value wins whole — or union, the deduped union of every live
-// source's items, only onto repeated properties.
+// Merge is how one target property combines contributions: atomic takes one
+// source's value whole, union takes the deduped union of every live source's
+// items, only onto repeated properties.
 const (
 	MergeAtomic = "atomic"
 	MergeUnion  = "union"
@@ -33,13 +33,13 @@ type Mapping struct {
 	From     string
 	To       string
 	Property string
-	// Match is the ordered identifier probes (§6.1): when a source record
+	// Match is the ordered identifier probes: when a source record
 	// arrives without a subject, the first probe whose values find candidates
 	// decides — exactly one candidate links, zero or several create a fresh
 	// subject. May be empty: a link-only mapping always creates.
 	Match []MatchRule
 	// Map is assignment paths per target property, nothing else — no
-	// expression language, computation stays in connector normalize (§7.1).
+	// expression language, computation stays in connector normalize.
 	// May be empty.
 	Map      map[string]*MapRule
 	MapOrder []string
@@ -114,7 +114,7 @@ func ParsePath(s string) (Path, error) {
 
 // columnProp resolves the column-backed properties a record carries but no
 // manifest declares: title always, the temporals when a capability binds them.
-// They are legal path sources and map targets (§7.1, hot props). `body` is NOT
+// They are legal path sources and map targets (hot props). `body` is NOT
 // here: a kind that carries a body declares it (#68), so the declaration in
 // t.Props resolves it, and a kind that does not declare body has none to map.
 func columnProp(t *Kind, name string) (*Property, bool) {
@@ -131,7 +131,7 @@ func columnProp(t *Kind, name string) (*Property, bool) {
 
 // PathProperty type-checks a path against a declared type: the terminal
 // property, and whether evaluating the path against a stored row yields a
-// list. The engine reuses it to evaluate map and match paths (§7.1); the
+// list. The engine reuses it to evaluate map and match paths; the
 // loader is where a disagreement fails, on the manifest that caused it.
 func PathProperty(t *Kind, p Path) (*Property, bool, error) {
 	prop, ok := t.Props[p.Prop]
@@ -205,7 +205,7 @@ func (l *loader) parseMapping(d Document) *Mapping {
 		l.errf("%s: data.to is required", where)
 		return nil
 	case !Qualified(m.To):
-		l.errf("%s: data.to is a full type name (\"samples.substrate.reamde.dev/people/person\"), never a bare one (§6.1)", where)
+		l.errf("%s: data.to is a full type name (\"samples.substrate.reamde.dev/people/person\"), never a bare one", where)
 		return nil
 	}
 	// WHO MAY DECLARE THIS MAPPING (record 49). Ownership of the TARGET is what
@@ -259,8 +259,7 @@ func (l *loader) parseMapping(d Document) *Mapping {
 		rule := &MapRule{Merge: MergeAtomic}
 		// A rule is an OBJECT. The bare path string is refused: one property has
 		// one shape, which is what lets the meta-kind declare a rule's own fields.
-		// Nothing translates a stored mapping written that way: the rung that
-		// did was deleted before the first release (#217), so the store it
+		// Nothing translates a stored mapping written that way, so the store it
 		// comes from is refused at open.
 		if s, bare := rv.(string); bare {
 			l.errf("%s: %q is a bare path — a rule is an object: {path: %s}", mwhere, s, s)
@@ -294,7 +293,7 @@ func (l *loader) parseMapping(d Document) *Mapping {
 // resolveMapping validates one mapping once every reference pin is a resolved
 // identity: the subject reference's shape, and every path against both declared
 // kinds, so a disagreement fails on the manifest that caused it and not on the
-// first sync that hits it (§7.1).
+// first sync that hits it.
 func (r *Registry) resolveMapping(m *Mapping) []string {
 	var problems []string
 	where := DocRecordMapping + " " + m.Identity()
@@ -316,7 +315,7 @@ func (r *Registry) resolveMapping(m *Mapping) []string {
 		errf("%s: data.to: unknown type %q", where, m.To)
 		return problems
 	}
-	// The subject reference's shape (§6.1): a kind's own reference property,
+	// The subject reference's shape: a kind's own reference property,
 	// marked `subject: true`, single, mustExist and never cascading. The PIN is
 	// the declaring package's choice (record 49): a mirror kind whose targets
 	// its own package cannot know leaves the reference unpinned and optional,
@@ -348,7 +347,7 @@ func (r *Registry) resolveMapping(m *Mapping) []string {
 			errf("%s: data.property: the subject reference is single-valued — a record that describes two things is two records", where)
 		}
 		if sp.Cascades() {
-			errf("%s: data.property: the subject reference never cascades — deleting the subject must not collect the records that describe it (§6.1)", where)
+			errf("%s: data.property: the subject reference never cascades — deleting the subject must not collect the records that describe it", where)
 		}
 	}
 	// Match probes are identifier lookups: both ends stay in the short-string
@@ -424,7 +423,7 @@ func (r *Registry) resolveMapping(m *Mapping) []string {
 // reference stay refused (record 49). The source-to-subject graph stays
 // bipartite: a mapping's `to` may never itself be any mapping's `from`, and
 // no reference anywhere may land on a mapped source kind, which keeps
-// resolution one hop deep (§6.2). Registry-wide, because a mapping installs
+// resolution one hop deep. Registry-wide, because a mapping installs
 // with its connector long after the vocabulary that names its target was
 // loaded.
 func (r *Registry) mappingInvariantProblems() []string {
@@ -526,7 +525,7 @@ type mappingSlot struct{ from, property string }
 // --- registry lookups ------------------------------------------------------
 
 // Mappings lists every loaded mapping, ordered by identity — one mirror
-// record each (§9.1).
+// record each.
 func (r *Registry) Mappings() []*Mapping {
 	var out []*Mapping
 	for _, g := range r.PackageList() {
@@ -566,7 +565,7 @@ func (r *Registry) MappingFor(from, property string) (*Mapping, bool) {
 
 // MappingsTo lists every mapping onto the given type identity, ordered by
 // mapping identity. Empty means nothing manages it: its properties are
-// whatever was written to it directly (§7.1). Non-empty also means its id is
+// whatever was written to it directly. Non-empty also means its id is
 // always server-assigned — nothing external names a subject.
 func (r *Registry) MappingsTo(to string) []*Mapping {
 	var out []*Mapping
@@ -578,6 +577,5 @@ func (r *Registry) MappingsTo(to string) []*Mapping {
 	return out
 }
 
-// A manager row stores its tier at write time (primitives §6), read from
-// the write context's actor DATA — Registry.ActorTier answers
-// the declared-actor half of it.
+// A manager row stores its tier at write time, read from the write context's
+// actor DATA; Registry.ActorTier answers the declared-actor half of it.

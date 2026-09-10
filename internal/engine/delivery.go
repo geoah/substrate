@@ -12,14 +12,12 @@ import (
 
 // THE DELIVERY LEDGER.
 //
-// A trigger's bookkeeping used to be Postgres-only: the cursor a record
-// trigger had reached, the occurrence a schedule trigger last fired, the
-// failures it parked and the resume row of a paged drain lived in four tables
-// the changelog never described, so a repository directory imported into an
-// empty database came back with every trigger at head, every parked failure
-// gone and every drain restarted ([#366](https://github.com/geoah/substrate/issues/366)).
+// A trigger's bookkeeping is described by the changelog, not held in Postgres
+// alone: the cursor a record trigger has reached, the occurrence a schedule
+// trigger last fired, the failures it parked and the resume row of a paged
+// drain must survive a repository directory imported into an empty database.
 //
-// The ledger closes that. Every motion of those four tables is a FOLD EFFECT
+// Every motion of those four tables is a FOLD EFFECT
 // (fold.go: cursor, schedule, park, unpark, page, unpage, forget), applied
 // here through the same foldOne a replay drives, and recorded on a `delivery`
 // entry (substrate.OpDelivery) appended in the transaction that commits the

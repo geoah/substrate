@@ -393,7 +393,7 @@ func (t *txn) bumpedVersion(q string, args ...any) (bool, int64, error) {
 	return true, version, nil
 }
 
-// --- former ids (merge trails, proposal §6.3) ---
+// --- former ids (merge trails) ---
 //
 // A former id resolves WITHIN ITS TYPE: merge only ever joins two records of
 // one type, so the trail row carries that type and a lookup names it.
@@ -518,7 +518,7 @@ func (t *txn) applyAnnotation(ref eref, key string, value any) (bool, error) {
 // --- property managers ---
 //
 // The ledger records which actor last had a change ACCEPTED on each property,
-// at which TIER that write stood (primitives README §6), and which PRINCIPAL
+// at which TIER that write stood, and which PRINCIPAL
 // — the token id the door verified — stood behind it. It is
 // attribution on every direct write, and it is load-bearing:
 // mapping recompute yields to any manager row above the machine tier, which

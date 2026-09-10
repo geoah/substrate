@@ -1960,7 +1960,7 @@ func cappedQuarantineReason(reason string) string {
 // source of its kinds. Shipped authorities load exactly like installed ones,
 // each carrying the `source` its rows record.
 //
-// Issue 010: a stored closure that no longer admits under this binary (a
+// A stored closure that no longer admits under this binary (a
 // tightened trait/schema contract on an already-installed bundle) must not
 // brick the whole repository. When the whole set fails to admit together, the
 // admissible subset opens and every closure that still fails is QUARANTINED —
@@ -2172,7 +2172,7 @@ func (ds *dataset) storedPackages(ctx context.Context, skip func(string) bool) (
 		// so one authority whose manifests no longer parse under this binary
 		// (an agent still naming the deleted `llm` key, say) would take down
 		// every authority that shares its source — and with it the repository's
-		// open. Issue 010's quarantine, one step earlier: rebuild per
+		// open. The quarantine, one step earlier: rebuild per
 		// authority, keep the ones that still parse.
 		good, bad, cerr := buildPackagesSeparately(all, source)
 		if cerr != nil {

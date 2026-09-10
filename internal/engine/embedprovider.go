@@ -42,8 +42,7 @@ type embedProvider struct {
 }
 
 // Embed and Dimension make embedProvider a substrate.Embedder, so the queue
-// drains through the resolved row exactly as it used to drain through the
-// process-wide client.
+// drains through the resolved row.
 func (p *embedProvider) Embed(ctx context.Context, texts []string) ([][]float32, error) {
 	return p.client.Embed(ctx, texts)
 }
@@ -528,7 +527,7 @@ func (t *txn) admitProviderRow(id string, props map[string]any) error {
 	// LOCK ORDER. The changelog lock is already held: inTx takes it before
 	// anything else (rows.go changelogLockKey), so this key is never taken
 	// ahead of an append by one transaction and behind it by another, which
-	// is the cycle an effect-written provider row used to be able to form.
+	// is the cycle an effect-written provider row would otherwise form.
 	if err := t.lockKey("embedprovider"); err != nil {
 		return err
 	}

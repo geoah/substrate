@@ -124,7 +124,7 @@ func indexExpr(t *vocabulary.Kind, name string) (string, error) {
 		return col, err
 	}
 	// A bare name that is a STATE property indexes the states column: the
-	// declaration says `properties`, the storage says `states` (MODEL §11.4),
+	// declaration says `properties`, the storage says `states`,
 	// and an index built against the wrong one silently indexes nothing.
 	if _, ok := t.StateProp(name); ok {
 		return `(states->>` + sqlLiteral(name) + `)`, nil

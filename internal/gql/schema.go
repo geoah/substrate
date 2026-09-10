@@ -343,7 +343,7 @@ func (b *schemaBuilder) recordFields() graphql.Fields {
 		"id":   &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
 		"kind": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 		// Set only when the read was addressed by a former id: the record is
-		// the canonical one, and this says so (MODEL §4.1). Null — not "" —
+		// the canonical one, and this says so. Null — not "" —
 		// on a canonical read: GraphQL cannot omit a requested field, so
 		// absent has to be spelled null.
 		"canonicalId": &graphql.Field{Type: graphql.ID, Resolve: resolveCanonicalID},
@@ -362,7 +362,7 @@ func (b *schemaBuilder) recordFields() graphql.Fields {
 		"labels":      &graphql.Field{Type: jsonScalar},
 		"annotations": &graphql.Field{Type: jsonScalar},
 		// The raw property map, state properties included; there is no
-		// separate states map (MODEL §11.4, §11.6).
+		// separate states map.
 		"properties": &graphql.Field{Type: jsonScalar},
 		// Per-property provenance: manager, updatedAt and the
 		// alternatives. Non-null only on single-record reads — record(id) —
@@ -709,9 +709,9 @@ func (b *schemaBuilder) queryType() *graphql.Object {
 		Name: "ChangePage",
 		Fields: graphql.Fields{
 			"changes": &graphql.Field{Type: graphql.NewList(graphql.NewNonNull(b.changeType))},
-			// `from` is a transparent seq, not an opaque cursor (ruling A5's one
-			// continuation rule): it is the last seq shown, passed back as the
-			// next call's `from` to resume the forward walk.
+			// `from` is a transparent seq, not an opaque cursor: it is the last
+			// seq shown, passed back as the next call's `from` to resume the
+			// forward walk.
 			"from": &graphql.Field{Type: longScalar},
 		},
 	})
@@ -965,7 +965,7 @@ func resolveHotColumn(name string) graphql.FieldResolveFn {
 }
 
 // resolveState reads a state property out of the properties map: a machine is
-// a property, and its current state is that property's value (MODEL §11.4).
+// a property, and its current state is that property's value.
 func resolveState(name string) graphql.FieldResolveFn {
 	return func(p graphql.ResolveParams) (any, error) {
 		e := recordOf(p)

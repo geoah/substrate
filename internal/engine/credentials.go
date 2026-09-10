@@ -101,9 +101,8 @@ func (t *txn) putCredential(ref string, account eref, tok *oauth2.Token) error {
 // still exist, still belong to the same LIVE account, and still carry the
 // updated_at generation the refresh read its input token at. A refresh that
 // lost to teardown (finalizer delete) or to a concurrent reconnect writes
-// nothing — an upsert here is how a slow provider call used to resurrect an
-// orphan credential for a deleted account. Returns
-// whether the swap landed.
+// nothing: an upsert here would let a slow provider call resurrect an orphan
+// credential for a deleted account. Returns whether the swap landed.
 func (ds *dataset) updateCredential(ctx context.Context, ref string, account eref, tok *oauth2.Token, seen time.Time) (bool, error) {
 	payload, expires, err := ds.sealToken(tok, sealedAAD(ref, account.Kind, account.ID))
 	if err != nil {

@@ -9,10 +9,9 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// An agent is a manifest kind (deliberately unnumbered — the normative kind
-// list lives in the contract): a callable whose body is an LLM loop
-// (primitives §5). The row IS the prompt store — the changelog is its version
-// history — and everything else on it is references: one `provider`
+// An agent is a manifest kind: a callable whose body is an LLM loop. The row
+// IS the prompt store (the changelog is its version history) and everything
+// else on it is references: one `provider`
 // data-record id plus the `model` it asks that provider for,
 // `tools:` (callable functions, the four host built-ins among them, each
 // optionally aliased for the agent's own prompt context), `subagents:`
@@ -157,8 +156,8 @@ type Agent struct {
 type AgentTool struct {
 	// Builtin is DERIVED, never authored: the built-in word when Callable names
 	// one of the four host functions, empty otherwise. The grant checks and the
-	// loop's dispatch switch read it, so what used to be a second arm of the
-	// `tools:` union is now one lookup on the identity the entry already carries.
+	// loop's dispatch switch read it: one lookup on the identity the entry
+	// already carries.
 	Builtin string
 	// Callable is the identity `function:` names — always set, built-ins
 	// included. The authored key is `function` because an entry admits nothing
@@ -222,8 +221,7 @@ var agentDataKeys = map[string]bool{
 // agent's two grants group under `permissions:` with a function's five, and the
 // permission to write is named for writing: a bare `emit:` said nothing about
 // being a grant at all. No compatibility shim, and nothing translates a row
-// written that way: the rung that did was deleted before the first release
-// (#217), so the store it comes from is refused at open.
+// written that way, so the store it comes from is refused at open.
 var deletedAgentKeys = map[string]string{
 	"emit":   "permissions.writes: the grants group under `permissions:`, and the permission to write is named for writing",
 	"reads":  "permissions.reads: the grants group under `permissions:`",
@@ -498,8 +496,7 @@ func (l *loader) parseAgentParams(where string, data map[string]any, a *Agent) b
 // declared, and it is gone now that they are records. And `{callable: x}` said
 // the entry might name something other than a function; it never could, since a
 // sub-agent is named on `subagents:`. Nothing translates a stored row written any
-// of those ways: the rung that did was deleted before the first release
-// (#217), so the store it comes from is refused at open.
+// of those ways, so the store it comes from is refused at open.
 func (l *loader) parseAgentTools(where string, data map[string]any, a *Agent) bool {
 	seen := map[string]bool{}
 	add := func(i int, t AgentTool) bool {

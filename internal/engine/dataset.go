@@ -166,8 +166,8 @@ type dataset struct {
 	// against the same base and both commit. Data writes never take it.
 	vocabularyWriteMu sync.Mutex
 
-	// lifecycleFence is the ONE dataset-wide lifecycle fence (bundles.go,
-	// review #2). An invocation TREE — a trigger delivery, a direct
+	// lifecycleFence is the ONE dataset-wide lifecycle fence (bundles.go).
+	// An invocation TREE — a trigger delivery, a direct
 	// call/chat/fire, and every nested host Call, function tool and sub-agent
 	// under it — takes the SHARED side ONCE at its root and holds it through
 	// its last effect, message, thread-settlement and cursor/fire-state write;
@@ -245,8 +245,8 @@ func (ds *dataset) KindByRef(ctx context.Context, ref string) (substrate.KindInf
 //
 // `Definition` is RENDERED FROM THE PARSED DECLARATION — the data map the loader
 // left behind, which is the same map the projection writes as the row's
-// properties (vocabularywrite.go packageDeclarations) — and no longer read out
-// of a `definition` property, because no row carries one.
+// properties (vocabularywrite.go packageDeclarations). No row carries a
+// `definition` property to read it out of.
 //
 // It is the AUTHORED half of that map: the engine's own `version` is dropped,
 // because a declaration that pinned none has one stamped onto its row, and after
@@ -389,7 +389,7 @@ type txn struct {
 	// (interactions.go admitInteraction).
 	interactionThread bool
 	// policyDecision marks the ENGINE's own judge-driven decision on a
-	// policy-gated request (phase 4): the one bundle-tier hand the gated
+	// policy-gated request: the one bundle-tier hand the gated
 	// guard admits.
 	policyDecision bool
 	// folded holds the fold effects this transaction has applied and not yet
@@ -415,7 +415,7 @@ type txn struct {
 	// refusal leaves as the not-found it is rather than as a shape problem
 	// (references.go validateReferences).
 	refMissing []error
-	// recomputing marks a mapping recompute's own write (§7.1): recompute
+	// recomputing marks a mapping recompute's own write: recompute
 	// never triggers recompute, and the manager ledger records the winning
 	// contributor's actor — recomputeManagers, per accepted property —
 	// instead of the transaction's, always at the machine tier (attribution

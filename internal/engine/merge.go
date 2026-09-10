@@ -21,7 +21,7 @@ const (
 	payloadLoser  = "loser"
 )
 
-// corePackage names the substrate's own machinery: none of it merges (§6).
+// corePackage names the substrate's own machinery: none of it merges.
 const corePackage = "substrate.reamde.dev/core"
 
 // Merge and split, the two manual verbs. Nothing fuses by
@@ -151,10 +151,10 @@ func (t *txn) mergeRecordIf(winnerRef, loserRef eref, winnerVersion, loserVersio
 		}
 	}
 
-	// Bundle lifecycle admission, same rules as put/patch/delete (wave-3
-	// review #8): merge mutates rows directly, so without this a disabled
-	// bundle's frozen accounts — or an uninstalled bundle's read-only rows —
-	// could be merged through the back door. Both participants share the one
+	// Bundle lifecycle admission, same rules as put/patch/delete: merge
+	// mutates rows directly, so without this a disabled bundle's frozen
+	// accounts, or an uninstalled bundle's read-only rows, could be merged
+	// through the back door. Both participants share the one
 	// checked type. After the replay branch above: a verified no-op replays
 	// clean whatever the lifecycle says, because it writes nothing.
 	if err := t.checkBundleDelete(ty); err != nil {
@@ -180,9 +180,9 @@ func (t *txn) mergeRecordIf(winnerRef, loserRef eref, winnerVersion, loserVersio
 	// would be this verb reaching into records it was not asked about, and split
 	// would then have to put every one of them back.
 
-	// Properties do NOT migrate: the winner now has more
-	// sources pointing at it, so §7.1 recomputes them — through the same
-	// yield rules, so a hand edit on the winner survives its own merge.
+	// Properties do NOT migrate: the winner now has more sources pointing at
+	// it, so recompute rebuilds them through the same yield rules, and a hand
+	// edit on the winner survives its own merge.
 	// Copying values across would freeze a stale answer into the winner.
 	// The loser's MANAGER rows migrate where the winner has none — tier and
 	// all, recorded so split can put them back. Its offer rows go with its
@@ -337,8 +337,8 @@ func (t *txn) openMergeOf(ref eref) (string, error) {
 }
 
 // moveManagers copies the loser's property-manager rows onto the winner
-// where the winner has none — the winner's stand (§6.4) — tier included: an
-// bundle pin on the loser is a bundle pin on the winner, and the
+// where the winner has none (the winner's stand), tier included: a bundle
+// pin on the loser is a bundle pin on the winner, and the
 // recorded set says so, so split can take exactly it back. The loser keeps
 // its own rows: its property values stay on the tombstone, and their
 // attribution with them.

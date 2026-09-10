@@ -19,9 +19,9 @@ import (
 // nothing (the column default raises) and selects nothing (the policy's
 // predicate is NULL).
 //
-// The scope also keys the per-repository advisory locks (lockKey): the write
-// serialization that used to be one lock for the whole database is now one
-// lock per repository per purpose.
+// The scope also keys the per-repository advisory locks (lockKey): write
+// serialization is one lock per repository per purpose, never one for the
+// whole database.
 type Scope struct {
 	// Repository is the repository id, the `repositories` row's primary key,
 	// which is the repository's authority (`ada.example.com`). A REST path

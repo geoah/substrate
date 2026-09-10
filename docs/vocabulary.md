@@ -528,8 +528,7 @@ property is a machine; under another datatype the entry lies dormant, so the
 property is free to change shape. An entry needs no live subject, so
 `values.level` may name a property the kind no longer declares. Nested object
 fields, a reference's link properties, traits, property types, functions and
-agents have no reservation today. Names removed before this landed carry none
-either.
+agents have no reservation today.
 
 ## The reserved keys
 

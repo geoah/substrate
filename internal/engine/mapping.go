@@ -18,8 +18,8 @@ import (
 // type carrying a recordmapping records what ONE SOURCE holds; the record its
 // declared subject reference points at is the subject those records describe,
 // and recompute carries the mapped properties onto it — yielding to any manager
-// row above the machine tier (primitives §6), so a hand edit — the owner's
-// or a bundle's — survives a sync, legibly.
+// row above the machine tier, so a hand edit (the owner's or a bundle's)
+// survives a sync, legibly.
 
 // --- subject resolution -----------------------------------------------------
 
@@ -122,8 +122,8 @@ func (t *txn) liveCanonical(stored eref) (eref, error) {
 
 // subjectOf resolves the record a source record describes THROUGH ONE MAPPING,
 // matching or minting the subject an unpointed record implies and storing the
-// pointer in line (proposal §6.2: every source record has its subject from the
-// first moment). The caller chooses the mapping, because a source kind may
+// pointer in line (every source record has its subject from the first
+// moment). The caller chooses the mapping, because a source kind may
 // carry one per subject property (record 49).
 //
 // It runs OUT OF BAND — inside somebody else's write, when a reference names
@@ -174,10 +174,10 @@ func (t *txn) writeSubject(src eref, property string, target eref) error {
 	return err
 }
 
-// ensureSubject gives a source record the subject proposal §6.2 promises it, on
-// its OWN write: a record whose provider carries nothing shared — a contact
-// with neither email nor phone — still describes a person, and refusing the
-// write would lose the record instead of the link. A record whose target was
+// ensureSubject gives a source record its subject on its OWN write: a record
+// whose provider carries nothing shared (a contact with neither email nor
+// phone) still describes a person, and refusing the write would lose the
+// record instead of the link. A record whose target was
 // deleted is pointed again the same way.
 //
 // It writes the value INTO THE ROW the caller is about to fold, and never
@@ -225,7 +225,7 @@ func (t *txn) ensureSubject(sp *applySpec, row *erow, m *vocabulary.Mapping) (bo
 
 // matchOrMint resolves an unpointed source record to its subject: the match
 // probes run in order, and the first probe whose values find candidates
-// decides — exactly one is taken, zero or several mint a fresh subject (§6.2).
+// decides: exactly one is taken, zero or several mint a fresh subject.
 // A shared family address matching two people creates a third rather than
 // guessing; a probe never merges. It returns the subject's id and writes
 // nothing onto the source: the caller stores the pointer. The caller holds the
@@ -364,7 +364,7 @@ func (t *txn) probeCandidates(toIdentity string, tp *vocabulary.Property, values
 	return out, nil
 }
 
-// checkSubjectWrite enforces proposal §6.1: a subject reference is set when the
+// checkSubjectWrite holds the subject reference still: it is set when the
 // record is created, and moved only by merge and split. Re-asserting the same
 // target is what every re-sync does, so only a DIFFERENT LIVE target is refused.
 // BOTH SIDES are resolved through the former-id trail before they are compared,
@@ -432,7 +432,7 @@ func isHotProp(name string) bool {
 	return name == substrate.PropTitle || name == substrate.PropBody || isHotTime(name)
 }
 
-// evalPath evaluates a declared path against a stored row (§7.1): `a` reads a
+// evalPath evaluates a declared path against a stored row: `a` reads a
 // property (column-backed included), `a.b` walks into an object property,
 // `a[].b` extracts one field across a repeated one — nil when absent, and the
 // `[]` form yields a list.
@@ -580,11 +580,11 @@ func (t *txn) syncOffersOf(target eref) error {
 	return t.syncOffers(target, in.props, in.unionProp, in.srcs)
 }
 
-// recompute recomputes targetID's mapped properties from its live sources
-// (§7.1, primitives §6). Pure function of the live records, with yield: a
-// manager row above the machine tier — the owner above all, a bundle's
-// pin beside it — keeps its property, and what the recompute would have
-// written stays legible as the source's offer row. A record with zero live
+// recompute recomputes targetID's mapped properties from its live sources.
+// Pure function of the live records, with yield: a manager row above the
+// machine tier (the owner above all, a bundle's pin beside it) keeps its
+// property, and what the recompute would have written stays legible as the
+// source's offer row. A record with zero live
 // sources keeps only what was written to it directly.
 func (t *txn) recompute(target eref) error {
 	if t.recomputing {
@@ -760,7 +760,7 @@ func contributionOf(s mappedSource, name string) any {
 }
 
 // asItems renders a contribution as union items: a list is its items, a
-// scalar path contributes a singleton (§7.1).
+// scalar path contributes a singleton.
 func asItems(v any) []any {
 	if v == nil {
 		return nil
@@ -806,8 +806,8 @@ func contributionsFor(name string, srcs []mappedSource) []contribution {
 	return out
 }
 
-// selectValue applies the §7.1 selection to one property's ordered
-// candidates: atomic — the first candidate wins whole; union — the deduped
+// selectValue applies the selection to one property's ordered candidates:
+// atomic takes the first candidate whole, union takes the deduped
 // concatenation of every candidate's items, attributed to the first
 // contributing one. nil, "" when nothing live carries the property.
 func selectValue(union bool, cands []contribution) (any, string) {
@@ -846,11 +846,10 @@ func selectValue(union bool, cands []contribution) (any, string) {
 	return items, actor
 }
 
-// property_offers holds ONE population (ticket 002, ruling A10 — the
-// bundle-offer write-kind left v1): recompute's projection of what each
-// live source's actor would write — rebuilt and pruned on every recompute,
-// the rows behind propertyMeta's alternatives. Extensions contribute by
-// shipping their own source type + recordmapping.
+// property_offers holds ONE population: recompute's projection of what each
+// live source's actor would write, rebuilt and pruned on every recompute,
+// the rows behind propertyMeta's alternatives. A bundle contributes by
+// shipping its own source type + recordmapping.
 
 // syncOffers upserts one property_offers row per (property, actor) a live
 // source contributes — computed with the same selection, restricted to that
@@ -967,8 +966,7 @@ type managerRow struct {
 }
 
 // managersOf reads the target's property-manager ledger, property → manager.
-// The tier column is NOT NULL since ticket 002 (destructive re-base; deploy
-// wipes repositories), so the row is the whole answer.
+// The tier column is NOT NULL, so the row is the whole answer.
 func (t *txn) managersOf(ref eref) (map[string]managerRow, error) {
 	rows, err := t.query(`SELECT property, actor, tier FROM property_managers WHERE record_kind = $1 AND record_id = $2`,
 		ref.Kind, ref.ID)

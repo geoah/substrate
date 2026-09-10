@@ -1,6 +1,6 @@
 package engine
 
-// The recordpatchpolicy door (docs/plans/thread-interactions.md phase 3):
+// The recordpatchpolicy door:
 // what happens between a BUNDLE-tier actor wanting a put/patch/delete and the
 // write landing, strictly inside the emit ceiling. Deterministic and cheap —
 // no model call sits inside a tool call: `allow` lands the write (the policy
@@ -41,7 +41,7 @@ const (
 )
 
 // policyRule is one recordpatchpolicy record, parsed for the door. The judge
-// half (phase 4) parses beside it so one loader serves both.
+// half parses beside it so one loader serves both.
 type policyRule struct {
 	id         string
 	version    int64

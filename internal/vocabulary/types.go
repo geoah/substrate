@@ -65,7 +65,7 @@ const (
 	DatatypeBlobRef Datatype = "blobref"
 	// DatatypeState is a state machine declared as a property: states, initial
 	// and transitions live on the property, its current value is the record's
-	// current state (MODEL §11.4).
+	// current state.
 	DatatypeState Datatype = "state"
 	// DatatypeObject is an inline structured property: named fields declared
 	// right on the property, each a scalar, a reference or another object, to
@@ -298,7 +298,7 @@ type Property struct {
 	// refinements, references or further objects, each in its own container
 	// (single, Repeated or Keyed), nesting to MaxFieldDepth. Nil for every other
 	// kind. Objects and keyed maps stay out of FTS, embed and the filter grammar
-	// at every level until a consumer arrives (§15).
+	// at every level until a consumer arrives.
 	Fields     map[string]*Property
 	FieldOrder []string
 	// Implicit marks a synthesized property: a machine-stamp target the
@@ -506,15 +506,14 @@ type Transition struct {
 	// Notifies names the reference property (pinned to core's llmthread)
 	// whose thread this transition reports into: the engine writes the
 	// resolution's `system` message there and schedules the resume, the one
-	// primitive under proposal decisions and interaction answers alike
-	// (docs/plans/thread-interactions.md). Empty for the ordinary transition
-	// that reports nowhere.
+	// primitive under proposal decisions and interaction answers alike. Empty
+	// for the ordinary transition that reports nowhere.
 	Notifies string
 }
 
 // Machine is a state property's machine — the entire behavioral seam. Its
 // name IS the property's name; storage keeps states in their own column, the
-// wire shows them in `properties` (MODEL §11.4).
+// wire shows them in `properties`.
 type Machine struct {
 	Name        string
 	States      []string
@@ -634,8 +633,7 @@ type Kind struct {
 
 	Props     map[string]*Property
 	PropOrder []string
-	// Machines indexes the state properties by name — the same machinery the
-	// deleted `machines:` key used to fill (MODEL §11.4).
+	// Machines indexes the state properties by name.
 	Machines map[string]*Machine
 
 	Traits  []TraitBinding

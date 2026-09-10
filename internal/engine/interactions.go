@@ -1,7 +1,6 @@
 package engine
 
-// The llminteraction kind's own admission and guards
-// (docs/plans/thread-interactions.md phase 2), symmetric to the request
+// The llminteraction kind's own admission and guards, symmetric to the request
 // kind's (admitRequestDiff, guardImmutableEnvelope): the generic object
 // machinery checks field SHAPE only, so everything an ask promises — unique
 // question ids, bounded batches, materialized yes/no options, answers only

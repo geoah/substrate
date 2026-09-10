@@ -9,19 +9,15 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// Nothing in core has endpoint-shaped collection behavior any more: the
-// connector collection and its POST install shim went at the v1 freeze (ticket
-// 004, ruling A12) and the repositories collection went with the control plane
-// (B1), so every core collection is an ordinary resource and the sole install
-// path is the schema-apply batch.
+// Every core collection is an ordinary resource: nothing here has
+// endpoint-shaped collection behavior, and the sole install path is the
+// schema-apply batch.
 
-// The token endpoints moved OUT of the versioned resource tree and out of
-// this file: `/register`, `/login`, `/tokens` sit beside `/api/…`
-//  and live in auth_endpoints.go. With them went the whole
-// least-privilege apparatus — scopes, the actor delegation check, the
-// narrowing rules — because a token now has full access to its repository
-// and nothing else. The repository-management endpoints went with
-// the control plane in B1.
+// The token endpoints sit beside `/api/…` rather than inside the versioned
+// resource tree, and live in auth_endpoints.go. There is no least-privilege
+// apparatus (no scopes, no actor delegation check, no narrowing rules): a
+// token has full access to its repository and nothing else. Repository
+// management is the operator's DSN door, not an endpoint.
 
 // idempotencyHeader is the request header a client names one attempt with.
 // The engine reads it off the context (substrate.IdempotencyKeyFrom) and

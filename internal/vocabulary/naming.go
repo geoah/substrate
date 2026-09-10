@@ -22,7 +22,7 @@ const (
 	kindRefRE = `(` + authorityRE + `/` + wordRE + `/)?` + wordRE
 )
 
-// Naming rules enforced at load (proposal §3, the contract).
+// Naming rules enforced at load.
 // Identifiers are storage keys and URL segments; readability lives in display
 // templates.
 var (

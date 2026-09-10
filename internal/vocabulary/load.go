@@ -383,10 +383,9 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 			l.errf("%s: declared twice in %s", where, name)
 			continue
 		}
-		// The manager tier is an EXPLICIT attribute of the actor (ticket 002,
-		// ruling A10's second half): declared data, never inferred from the
-		// actor's spelling. Authority-declared actors are the sync machinery, so
-		// machine is the default.
+		// The manager tier is an EXPLICIT attribute of the actor: declared data,
+		// never inferred from the actor's spelling. Authority-declared actors
+		// are the sync machinery, so machine is the default.
 		tier := substrate.TierMachine
 		switch declared := mstr(d.Data, "tier"); declared {
 		case "":
@@ -568,8 +567,8 @@ var traitVariantKeys = map[string]bool{"name": true, "properties": true}
 // name ({name, properties}), and the LIST of them is the one spelling: a mapping
 // of name to properties is refused, because a keyed map of keyed maps leaves
 // every reader guessing which level a path addresses. Nothing translates a
-// stored trait written that way: the rung that did was deleted before the first
-// release (#217), so the store it comes from is refused at open.
+// stored trait written that way, so the store it comes from is refused at
+// open.
 //
 // Nil when nothing is declared, which is what makes a trait variant-free.
 func (l *loader) parseTraitVariants(where string, raw any) map[string]map[string]Datatype {
@@ -844,7 +843,7 @@ func (l *loader) parseType(doc Document) *Kind {
 	}
 	t.DisplayTemplate = mstr(d, "displayTemplate")
 
-	// properties, state machines among them (MODEL §11.4)
+	// properties, state machines among them
 	for pname, pdef := range mmap(d, "properties") {
 		if !ValidCamel(pname) {
 			l.errf("%s: data.properties.%s: must be %s", where, pname, camelRule)
@@ -962,12 +961,10 @@ func (l *loader) parseType(doc Document) *Kind {
 		t.applyCapability(*b)
 	}
 
-	// indices. An index NAMES its properties (`{properties: [...]}`); the bare
-	// list of names a kind used to be written with is refused, since one shape
-	// per property is what lets the meta-kind declare this one. Nothing
-	// translates a stored row written that way: the rung that did was deleted
-	// before the first release (#217), so the store it comes from is refused
-	// at open.
+	// indices. An index NAMES its properties (`{properties: [...]}`); a bare
+	// list of names is refused, since one shape per property is what lets the
+	// meta-kind declare this one. Nothing translates a stored row written that
+	// way, so the store it comes from is refused at open.
 	for _, iv := range mslice(d, "indices") {
 		if cols, bare := iv.([]any); bare {
 			l.errf("%s: data.indices: a bare list of property names — an index names them: {properties: %v}", where, cols)
@@ -984,11 +981,10 @@ func (l *loader) parseType(doc Document) *Kind {
 			l.errf("%s: data.indices: properties is a list of property names", where)
 			continue
 		}
-		// An index over no properties covers nothing, so the loader used to drop
-		// it silently. The kind now declares `indices[].properties` required, and
-		// a projected record keeps the authored empty list, which that required
-		// then refuses: refuse the empty list here so the loader and the record
-		// agree.
+		// An index over no properties covers nothing. The kind declares
+		// `indices[].properties` required and a projected record keeps the
+		// authored empty list, which that required then refuses, so refuse the
+		// empty list here and the loader and the record agree.
 		if len(cols) == 0 {
 			l.errf("%s: data.indices: an index names at least one property, not an empty list", where)
 			continue
@@ -1258,8 +1254,8 @@ const maxDescription = 200
 // not a tooltip either: it is the model-facing tool CARD, the whole text an LLM
 // reads before deciding to call. The four host functions' cards teach an entire
 // surface — the `graphql` one names every root, the batching advice and the two
-// refusals — and they used to be Go string literals with no bound at all. Still
-// one line: a folded scalar (`>-`) is how a declaration wraps one.
+// refusals. Still one line: a folded scalar (`>-`) is how a declaration
+// wraps one.
 const maxCallableDescription = 1000
 
 // maxKindDescription bounds a KIND's description. A kind's is not a tooltip:
@@ -1698,7 +1694,7 @@ var propKeys = map[string]bool{
 	// that does not name it stores. Both also ride into Definition, where the
 	// read surfaces (the console's config/account form) consume them verbatim.
 	// ADDING `required` to a stored declaration is a narrowing change, refused
-	// by admission while live rows lack the property (ticket 003, ruling A3).
+	// by admission while live rows lack the property.
 	"required": true, "default": true,
 	// renamedFrom is the property's previous name: admitted and stored (it
 	// rides in the Definition map like everything else), and the engine moves
@@ -1737,8 +1733,8 @@ var writerRoles = map[string]bool{
 }
 
 // objectPropKeys is an object property's own key set: no fts, no
-// embed, no filter machinery — object properties stay out of all three until
-// a consumer arrives (§15). `repeated: true` is allowed, and `keyed: true` is
+// embed, no filter machinery: object properties stay out of all three until
+// a consumer arrives. `repeated: true` is allowed, and `keyed: true` is
 // its twin.
 // `unique` is absent on purpose: an object's identifying value is one of its
 // fields, and `unique` on a field is refused too (parseFields), so the whole
@@ -1847,7 +1843,7 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 		}
 	}
 
-	// A state property IS the machine (MODEL §11.4): its own key set, its own
+	// A state property IS the machine: its own key set, its own
 	// parser, and nothing else on this branch applies to it.
 	if kind == DatatypeState {
 		l.checkKeys(where, d, machineKeys)
@@ -2568,7 +2564,7 @@ func (r *Registry) resolvePackage(g *Package) []string {
 		// A `notifies:` transition reports into a thread, so the marker must
 		// name a reference property PINNED to core's llmthread — and, until
 		// the resume bounds have earned wider trust, only core's own kinds
-		// carry it (docs/plans/thread-interactions.md): a bundle kind minting
+		// carry it: a bundle kind minting
 		// resume-on-transition would be an unbounded paid-compute trigger.
 		machineNames := make([]string, 0, len(t.Machines))
 		for mn := range t.Machines {
@@ -2785,9 +2781,7 @@ func (r *Registry) graphqlNameProblems() []string {
 	return problems
 }
 
-// Two bundles sharing a first label used to be refused here
-// (bundleNameProblems), because they shared the actor an install wrote under
-// and each one's writes read as the other's trigger echo. An actor carries the
-// full authority now (record 0025), so the label is a display name and a
-// GraphQL prefix: a real collision is one GraphQL name claimed twice, which
-// graphqlNameProblems above refuses and names both kinds in.
+// Two bundles may share a first label: an actor carries the full authority
+// (record 0025), so the label is a display name and a GraphQL prefix. A real
+// collision is one GraphQL name claimed twice, which graphqlNameProblems
+// above refuses and names both kinds in.

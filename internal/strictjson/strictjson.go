@@ -192,10 +192,9 @@ func cleanDecodeError(err error) error {
 	return err
 }
 
-// retiredKeys maps a key the RECORD ENVELOPE no longer accepts onto the
-// spelling that took its job. A caller who writes one is not guessing at the
-// grammar, they are working from something that used to be true, so the refusal
-// says where the data goes now instead of leaving them to diff two documents.
+// retiredKeys maps a key the RECORD ENVELOPE refuses onto the spelling that
+// took its job, so the refusal says where the data goes instead of leaving
+// the caller to diff two documents.
 // substratectl says the same thing about a YAML document
 // (commands/document.go); this is the half a raw HTTP client meets.
 var retiredKeys = map[string]string{

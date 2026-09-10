@@ -112,7 +112,7 @@ func agentResult(advance bool, ares *substrate.AgentResult) deliverResult {
 // concurrent dispatcher's duplicate loses the swap there and runs nothing.
 func (ds *dataset) agentFire(ctx context.Context, tr *trigger, mode, fid string, at time.Time, envelope map[string]any, settle *settlement) (int, error) {
 	// Admission under the lifecycle fence, held through the claim, the
-	// loop's writes and the completion below (bundles.go, review #2).
+	// loop's writes and the completion below (bundles.go).
 	ctx, release, err := ds.admitCallable(ctx, tr.Agent.Package, tr.Agent.Identity())
 	if err != nil {
 		return 0, err
@@ -193,7 +193,7 @@ func (ds *dataset) callAgentOnce(ctx context.Context, name string, input any, ca
 	}
 	// Admission under the lifecycle fence, held through the whole loop's writes
 	// (thread, every message, settlement) — a disable draining this call waits
-	// for the thread to settle before it returns (bundles.go, review #2).
+	// for the thread to settle before it returns (bundles.go).
 	ctx, release, err := ds.admitCallable(ctx, ag.Package, ag.Identity())
 	if err != nil {
 		return nil, err
@@ -246,8 +246,8 @@ func agentEntryError(err error) error {
 	return fmt.Errorf("%w: %w", substrate.ErrValidation, err)
 }
 
-// ChatAgent is the same loop with a live client attached (ticket 007 ruling
-// 3): open or continue a thread against any agent with a user message, the
+// ChatAgent is the same loop with a live client attached: open or continue
+// a thread against any agent with a user message, the
 // assistant turns streaming through emit. No trigger, no cursor — the thread
 // is ordinary data the console renders.
 func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name, threadID, message string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
@@ -263,7 +263,7 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name, t
 			substrate.ErrValidation, ag.Identity())
 	}
 	// Admission under the lifecycle fence, held through the whole chat turn's
-	// writes (thread claim/mint, every message, settlement) — review #2.
+	// writes (thread claim/mint, every message, settlement).
 	ctx, release, err := ds.admitCallable(ctx, ag.Package, ag.Identity())
 	if err != nil {
 		return nil, err

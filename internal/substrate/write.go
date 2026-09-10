@@ -14,7 +14,7 @@ type PutInput struct {
 	// Properties carries everything authored — `title`, `body` and the
 	// temporal properties among the declared ones. A state property may name
 	// only the state creations are born into; transitions happen through
-	// Patch (MODEL §11.4).
+	// Patch.
 	Properties  map[string]any `json:"properties,omitempty"`
 	Labels      map[string]any `json:"labels,omitempty"`
 	Annotations map[string]any `json:"annotations,omitempty"`
@@ -24,7 +24,7 @@ type PutInput struct {
 
 // PatchInput mutates in place. Maps merge key-wise (a null value deletes
 // the key); nil fields are untouched. A state property named in Properties
-// is a machine transition (MODEL §11.4); anyone may perform any declared
+// is a machine transition; anyone may perform any declared
 // transition.
 type PatchInput struct {
 	Properties  map[string]any `json:"properties,omitempty"`

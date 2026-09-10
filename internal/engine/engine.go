@@ -591,8 +591,8 @@ func (s *service) Close() error {
 	return err
 }
 
-// Repositories lists every repository. It replaces the control-plane dataset
-// the background loops used to enumerate through: the ledger is one table now.
+// Repositories lists every repository: the ledger is one table, and the
+// background loops enumerate through it.
 func (s *service) Repositories(ctx context.Context) ([]substrate.RepositoryInfo, error) {
 	repos, err := s.listRepositories(ctx)
 	if err != nil {
@@ -882,7 +882,7 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 		}
 		// The repository's own read-only description of itself. `lifecycle` is
 		// the state a creation is born into, so naming it is assertion, not
-		// transition (MODEL §11.4).
+		// transition.
 		if err := t.asActor(substrate.ActorSystem, func() error {
 			_, err := t.put(substrate.PutInput{
 				Kind: kindRepository, ID: repo.ID,

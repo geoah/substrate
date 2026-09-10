@@ -7,8 +7,7 @@ package engine
 // bundle authenticates over the host OAuth facility. The resolved map
 // crosses only into the invocation; the invocation SCRUBBER (scrub.go)
 // holds every surface that leaves the runner boundary — logs, errors,
-// outputs — to the injected values. Functions outside any bundle get nil,
-// exactly as wave 1 left it.
+// outputs — to the injected values. Functions outside any bundle get nil.
 
 import (
 	"context"
@@ -20,15 +19,13 @@ import (
 // tokenRef is a secret-typed credential-store reference — never a raw token —
 // tokenStatus is the connection state the facility last reported, and
 // grantedScopes is the scope set the last consent was granted for. All three
-// carry `writer: oauth`: only the OAuth facility may set them (review-google
-// #2).
+// carry `writer: oauth`: only the OAuth facility may set them.
 const (
 	propTokenRef      = "tokenRef"
 	propTokenStatus   = "tokenStatus"
 	propGrantedScopes = "grantedScopes"
-	// propClientSecret is the oauth2 trait's client secret — an OAuth-facility
-	// input the host consumes, never injected into a function (review-google
-	// #4).
+	// propClientSecret is the oauth2 trait's client secret: an OAuth-facility
+	// input the host consumes, never injected into a function.
 	propClientSecret = "clientSecret"
 )
 

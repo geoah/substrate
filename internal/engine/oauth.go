@@ -1,9 +1,8 @@
 package engine
 
-// OAuth as a host facility (substrate-primitives §4): the connectors
-// service's OAuth engine, ported. Bundles DECLARE auth — the oauth2 trait's
-// standard fields live on the client input's resolved record — and the
-// host runs it: the start/callback pair connects an account record, tokens
+// OAuth as a host facility: bundles DECLARE auth (the oauth2 trait's
+// standard fields live on the client input's resolved record) and the host
+// runs it: the start/callback pair connects an account record, tokens
 // land in the credential store as secret-typed refs, a refresh loop keeps
 // them fresh, and account deletion revokes the grant through the ordinary
 // finalizer flow before GC collects.

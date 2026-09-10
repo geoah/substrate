@@ -22,7 +22,7 @@ package engine
 //     import) so a dataset never appends onto a file that is not at the
 //     table's head.
 //
-// The five boot cases, from docs/plans/filesystem-changelog.md:
+// The five boot cases:
 //
 //  1. Row and directory, heads equal, the common tail's checksums agree: ok.
 //  2. Table ahead of the file: append the missing rows to the file.

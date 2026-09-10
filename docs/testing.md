@@ -121,13 +121,12 @@ the template holds the recorded migrations, the roles' grants and the
 shipped indexes and nothing else; `engine.MigratedDSN(t)` hands each test a
 `CREATE DATABASE ... TEMPLATE` copy. `engine.Open` still runs every boot step
 on the copy and skips only the DDL. A copy beside an empty data root is
-exactly a fresh install: nothing on either side. Before this, every test
-migrated a fresh schema, and the migration runner's advisory lock was
-keyed on one constant, so the parallel suite ran its migrations one test at
-a time: 90% of Postgres's time in a run was that lock. The lock is keyed on
-`current_schema()` now, like the engine's other three (no effect on a
+exactly a fresh install: nothing on either side. The migration runner's advisory lock is
+keyed on `current_schema()`, like the engine's other three (no effect on a
 deployment, one schema per database), which is what the packages still on
-`testdb.NewSchema` (catalog, testenv, substratectl) get. The from-empty
+`testdb.NewSchema` (catalog, testenv, substratectl) get. Keyed on one
+constant instead, it serializes the parallel suite's migrations one test at
+a time, and that lock is 90% of Postgres's time in a run. The from-empty
 migration still runs three times per engine binary: the template build,
 `TestRepositoryProvisioningAndProjections` and
 `TestAssertPoolPrincipalRejectsSuperuser`.
@@ -140,8 +139,8 @@ same thing. It lives in `export_test.go`, so a package across the line cannot
 call it: `internal/providertest` keeps its own opener and its own template
 (`harness_test.go`) over the exported `engine.Open`. The clock
 (`engine.ClockOf(t)`, keyed on the full test name and forgotten when the
-test ends) is what `waitStep` advances by one `engine.TOTPPeriod` where it
-used to sleep through a real 30 second window.
+test ends) is what `waitStep` advances by one `engine.TOTPPeriod` instead of
+sleeping through a real 30 second window.
 
 **The container, and how it is reached.** The pgvector container `testdb`
 starts runs with `fsync=off`, `synchronous_commit=off` and
@@ -149,7 +148,8 @@ starts runs with `fsync=off`, `synchronous_commit=off` and
 `DROP DATABASE` forces a checkpoint that fsync makes slow. `testdb` connects
 to the container's own IP where the host can route to it, else the published
 port: the published port is docker-proxy, one process relaying every
-connection, and it was the queue every test waited in (98 s to 84 s). Each
+connection, and it is the queue every test would otherwise wait in (98 s to
+84 s). Each
 test drops its copy in its cleanup and `testdb.Main` drops what is left after
 `m.Run` (a dropper goroutine off the tests' path measured no gain: 69 to
 80 s against 67 s). CI's service containers keep their data directory on a
@@ -158,8 +158,8 @@ jobs set `SUBSTRATE_TEST_DATABASE_DISPOSABLE=true` and `testdb` applies the
 same three settings through `ALTER SYSTEM`. The one test that starts a
 container of its own (`TestOpenFailsClosedWithoutSafeRoles`) passes
 `testdb.DurabilityOff()`, and a dev database `mise run dev` creates carries
-the flags on its command line (one created before this keeps the image's
-defaults until `dev:wipe` recreates it).
+the flags on its command line (a container created without them keeps the
+image's defaults until `dev:wipe` recreates it).
 
 **The data roots on tmpfs.** Every changelog write fsyncs
 ([0062](decisions/0062-a-write-is-on-disk-before-its-commit-and-its-final-newline-is-the-commit-marker.md)),
@@ -272,8 +272,8 @@ Vitest with jsdom, beside the code it covers: every module in
 
 `web/console/src/lib/api/types.ts` is written **by hand** to mirror the Go
 structs in `internal/substrate`. Nothing generates it, so the two halves can
-disagree silently, and a renamed Go field used to stay invisible until
-something broke in a browser.
+disagree silently: without a guard, a renamed Go field stays invisible until
+something breaks in a browser.
 
 `wire.golden.json` is the contract they meet at. The Go test
 `internal/substrate/wire_test.go` reflects over the structs and writes, per

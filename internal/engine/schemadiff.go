@@ -972,9 +972,9 @@ func objectFieldNarrowings(ident string, path []fieldStep, curP, candP *vocabula
 				query: q, args: args,
 			})
 		}
-		// A field's enum set narrows exactly as a property's does, and nothing
-		// classified it: a value removed from a field at any depth used to land
-		// with every row still holding it, in any container.
+		// A field's enum set narrows exactly as a property's does: unclassified,
+		// a value removed from a field at any depth would land with every row
+		// still holding it, in any container.
 		if removed := removedStrings(curF.ValueStrings(), candF.ValueStrings()); len(removed) > 0 {
 			q, args := valuesAtPath(ident, containerPath(path, curF, fname), removed)
 			out = append(out, narrowing{

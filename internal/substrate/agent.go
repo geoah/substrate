@@ -1,6 +1,6 @@
 package substrate
 
-// The agent loop's wire shapes (primitives §5): what the call API returns
+// The agent loop's wire shapes: what the call API returns
 // and what the chat stream carries. Conversation state itself is llmthread +
 // llmmessage RECORDS in substrate.reamde.dev/core — these types are only the live
 // transport around one invocation.
@@ -23,8 +23,8 @@ const (
 	// AgentStability marks the agent kind + its core vocabulary + /agents as
 	// alpha.
 	AgentStability = StabilityAlpha
-	// FeatureAgents is the discovery feature key ticket 005 lists the agent
-	// surface under, carrying AgentStability as its stability.
+	// FeatureAgents is the discovery feature key the agent surface is listed
+	// under, carrying AgentStability as its stability.
 	FeatureAgents = "agents"
 )
 

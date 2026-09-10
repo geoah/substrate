@@ -30,8 +30,8 @@ import (
 // tool refuses with the narrowing hint instead.
 const agentGQLMaxBytes = 64 << 10
 
-// The card shape of the graphql and mutate built-ins — v4's two-field contract,
-// a document plus its variables — is no longer a literal here: it is the
+// The card shape of the graphql and mutate built-ins (a document plus its
+// variables) is not a literal here: it is the
 // `arguments:` of the `substrate.reamde.dev/core/graphql` and `…/mutate`
 // declarations, compiled by the loader like any other function's.
 

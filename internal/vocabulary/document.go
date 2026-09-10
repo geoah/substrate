@@ -106,7 +106,7 @@ type Document struct {
 	// for `kind: substrate.reamde.dev/core/kind`. A manifest document is always
 	// a core kind; the authority being DECLARED INTO is `data.authority`.
 	Kind string
-	// ID is metadata.id: the resource's identity (FORMAT.md §2).
+	// ID is metadata.id: the resource's identity.
 	ID          string
 	Labels      map[string]string
 	Annotations map[string]string
@@ -208,7 +208,7 @@ func documentFrom(raw map[string]any) (Document, []string) {
 }
 
 // metaStrings reads a labels/annotations block: namespaced keys, string
-// values (FORMAT.md §1).
+// values.
 func metaStrings(meta map[string]any, key, typ string, problems *[]string) map[string]string {
 	raw := mmap(meta, key)
 	if len(raw) == 0 {

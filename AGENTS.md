@@ -22,12 +22,9 @@ is the truth and the **records** table is its fold. Tokens and the login credent
 has full access to its repository. There are no tenants, no identities, no
 user-managed keys, no sharing, no scopes and no roles.
 
-There is no written contract document. There was one — 3000 lines that
-declared six absent documents its superior, described a tree that no longer
-existed, and told you to send a trigger key the loader refuses — and it was
-deleted rather than patched. **The code is the contract**; the tests are what
-it promises. A replacement will be written from the code, small, when someone
-needs it.
+There is no written contract document. **The code is the contract**; the tests
+are what it promises. A replacement will be written from the code, small, when
+someone needs it.
 
 ## Build and run
 
@@ -173,7 +170,7 @@ to the same admission. The import REHOMES the closure onto the repository's own
 authority, so what lands is `<authority>/tasks/task`, not the shipped spelling
 (record 0048). A PROVIDER (`providers.substrate.reamde.dev/google`) takes the
 other door, `…/install`, and lands under the authority that publishes it. A
-snippet that opens with `get people` on a fresh substrate is wrong, and was.
+snippet that opens with `get people` on a fresh substrate is wrong.
 
 Config is `~/.config/substratectl/config.yaml` (override with
 `SUBSTRATECTL_CONFIG`): named contexts of `{name, server, repository, token,
@@ -254,9 +251,9 @@ work and it has not happened. Do not half-do it. Its character budget is
 reserved
 ([0014](docs/decisions/0014-authorities-widen-only-outside-the-id-alphabet.md)):
 the record id alphabet is frozen and never gains `%`, and an authority widens
-only with characters the id alphabet excludes and never gains a raw `/`. 0047
-amends that record's third-job sentence, because the package segment is a third
-job for `/`; the rest of it stands, first-label reservation included. The
+only with characters the id alphabet excludes and never gains a raw `/`; the
+package segment is the third job for `/`
+([0047](docs/decisions/0047-a-kind-lives-in-a-package.md)). The
 actors are `bundle:<authority>:<package>`,
 `function:<authority>:<package>:<name>` and
 `agent:<authority>:<package>:<name>`, derived by the engine and never declared
@@ -266,8 +263,7 @@ dots folded to underscores (`Ada_example_com_Tasks_Task`); only the seeded
 `core` kinds keep the bare singular. The authority is always in the name and
 never a tie-break, so installing a package cannot rename another kind's type
 ([0058](docs/decisions/0058-a-graphql-name-always-carries-the-authority.md)).
-Nothing keys on a first label any more, which is 0014's last reservation
-discharged.
+Nothing keys on a first label.
 
 ## House rules
 
@@ -326,8 +322,8 @@ discharged.
   escape hatch
   ([0020](docs/decisions/0020-dialect-keys-are-reserved-not-tolerated.md)).
   `unique` and `deprecated` are reserved today: stored, refused where they
-  could not be honored, and acted on by nothing. `renamedFrom` was reserved
-  the same way and is live, on a property and on an enum value entry alike:
+  could not be honored, and acted on by nothing. `renamedFrom` is live, on a
+  property and on an enum value entry alike:
   admitting the declaration moves every live record's value to the new name,
   or rewrites the old spelling to the new one, inside the apply's
   transaction, as ordinary record writes
@@ -335,7 +331,7 @@ discharged.
   [0066](docs/decisions/0066-a-backfill-and-an-enum-remap-are-ordinary-record-writes.md)).
   `required` beside a `default` backfills the same way, and a remap onto a
   value the stored declaration still admits is refused as lossy.
-  `edges.<rel>.properties` was reserved with them and left with `data.edges`:
+  There is no `edges.<rel>.properties` and no `data.edges`:
   a reference is the only link between records, data on the link is the
   reference property's own `properties:` block, and a write carrying a link
   property the reference does not declare is refused

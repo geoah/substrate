@@ -5,8 +5,7 @@ package engine
 // reports itself into that thread: the same transaction writes ONE `system`
 // llmmessage — the kind's envelope plus the transition's changelog entries —
 // and, after commit, the thread RESUMES so the agent's next turn reacts to
-// it. PR #72 hardcoded this for recordpatchrequest; the marker is the same
-// mechanism, declared (docs/plans/thread-interactions.md). The message is an
+// it. The marker is declared, never hardcoded per kind. The message is an
 // ordinary record: any reader of the thread (the console, GraphQL, the watch
 // stream) sees the resolution without this package's help, and the loop's
 // history replay hands it to the model as context.
@@ -79,8 +78,8 @@ func (t *txn) recordResolution(ty *vocabulary.Kind, rec *erow, note *resolutionN
 // resolutionEnvelope is the system row's content: self-describing JSON,
 // exactly like a trigger delivery's user message, so the model and any other
 // reader parse the same bytes. The only universal key is `event`; the rest
-// is the kind's own contract — the request's decision shape is grandfathered
-// from PR #72, and a kind without an enrichment gets the generic form.
+// is the kind's own contract: the request and the interaction kinds carry
+// their own enrichment, and a kind without one gets the generic form.
 func (t *txn) resolutionEnvelope(ty *vocabulary.Kind, rec *erow, note *resolutionNote) (map[string]any, error) {
 	if ty.Identity == vocabulary.KindRecordPatchRequest && note.machine == propDecision {
 		return t.proposalDecisionEnvelope(rec, note.state)

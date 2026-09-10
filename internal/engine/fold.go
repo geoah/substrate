@@ -591,18 +591,17 @@ func (t *txn) reprojectFTS(reg *vocabulary.Registry, kinds []string) error {
 // --- the resync effect (merge and split) ---
 //
 // Merge and split do not move one row at a time. They REWRITE the side stores
-// around the pair they join — every annotation, manager row and former-id trail
-// hanging off either — with set-shaped statements, and the entry they wrote
-// carried the moved SETS, which exist for split's undo and describe the
-// operation in reverse. A fold cannot replay a reverse set, so a repository
-// that had ever merged used to rebuild to a refusal.
+// around the pair they join (every annotation, manager row and former-id
+// trail hanging off either) with set-shaped statements. The moved SETS the
+// entry carries exist for split's undo and describe the operation in
+// reverse, and a fold cannot replay a reverse set.
 //
-// The resync effect closes that. Instead of describing each row it moved, a
-// merge names a SCOPE of records and carries the side-store rows that hold
-// AFTER the rewrite. Replaying it deletes every row keyed on a scope record —
-// the same statements a purge uses — and writes the recorded ones back, so the
-// stores land exactly where the merge left them whatever route the live
-// statements took to get there.
+// So a merge also names a SCOPE of records and carries the side-store rows
+// that hold AFTER the rewrite, rather than describing each row it moved.
+// Replaying it deletes every row keyed on a scope record (the same
+// statements a purge uses) and writes the recorded ones back, so the stores
+// land exactly where the merge left them whatever route the live statements
+// took to get there.
 //
 // THE SCOPE IS THE CONTRACT. Every row the rewrite touches must be keyed on a
 // record in the scope, or the replay will neither delete nor restate it.

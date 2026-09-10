@@ -8,16 +8,15 @@
 // Describe/Invoke on a local socket, or moving a bundle into its own
 // container, is a placement change, not a contract change.
 //
-// WHY ONE PROCESS PER INSTALLATION. Python bodies used to share one
-// interpreter per call level for the whole substrate, one module namespace
-// each. A module namespace is not a boundary: a body could read a neighbor's
-// globals straight off `sys.modules['__main__']`, monkeypatch `json` or
+// WHY ONE PROCESS PER INSTALLATION. A module namespace is not a boundary, so
+// bodies sharing one interpreter share everything: a body reads a neighbor's
+// globals straight off `sys.modules['__main__']`, monkeypatches `json` or
 // `urllib` to intercept what another function was handed, including the live
-// provider tokens the connector bundles receive on their config, and reach the
-// protocol's own file descriptors to forge frames at the parent. That was
-// cross-REPOSITORY, not merely cross-function. The shared host is gone; the
-// cost is one interpreter per live installation, which the idle reaper below
-// bounds.
+// provider tokens the connector bundles receive on their config, and reaches
+// the protocol's own file descriptors to forge frames at the parent. A shared
+// interpreter leaks across REPOSITORIES, not merely across functions. The
+// cost of one interpreter per live installation is bounded by the idle reaper
+// below.
 //
 // Every child is CONFINED (internal/sandbox): Landlock for the filesystem,
 // seccomp for the syscall surface and the network capability, rlimits for the

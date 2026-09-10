@@ -312,7 +312,7 @@ func marshalDocument(d any) ([]byte, error) {
 // envelopeProbe reads the keys that decide whether a document is a manifest at
 // all: the envelope's own, plus every spelling the envelope replaced, so the
 // error can name the replacement rather than the absence. The `data` keys it
-// carries are the ones the wire no longer has: decoding silently ignores an
+// carries are the ones the wire does not have: decoding silently ignores an
 // unknown key, and a document whose whole property block went unread would
 // apply clean having written nothing.
 type envelopeProbe struct {
