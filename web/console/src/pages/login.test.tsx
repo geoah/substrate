@@ -239,7 +239,7 @@ describe("LoginPage and the door's own answer", () => {
     await waitFor(() =>
       expect(screen.queryByLabelText("One-time code")).toBeNull()
     )
-    // The two fields survived the answer — a password manager fills them the
+    // The two fields survived the answer. A password manager fills them the
     // moment the page paints, and nothing here may throw that away.
     expect(
       (screen.getByLabelText("Repository") as HTMLInputElement).value

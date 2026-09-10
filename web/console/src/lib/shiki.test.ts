@@ -1,7 +1,9 @@
-/** The tinting itself, against the real highlighter. This is the only suite
- * that loads shiki: the components that render tokens stub `useCodeTokens`, so
- * what the grammars and the css-variables theme actually produce is pinned
- * once, here, where no DOM is involved.
+/** The tokenizer itself, against the real highlighter, under node. What the
+ * grammars and the css-variables theme produce is pinned here, where no DOM is
+ * involved and the load costs 55 ms. `yaml-view.test.tsx` stubs
+ * `useCodeTokens` instead of tokenizing for real; the suites that render
+ * `CodeBlock` (tool-call, trigger-context, row-detail) still reach the real
+ * hook, so they load the grammar bundle too.
  *
  * Two things are worth pinning. Every color must ride a `--shiki-*` variable,
  * because that is what makes the tint follow light and dark (the app defines

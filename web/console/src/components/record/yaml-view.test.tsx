@@ -3,7 +3,7 @@
  * — there's no syntax highlight", and "I cannot hover to see the description of
  * one of the properties". They are ONE surface, so the test pins them together:
  * the tint must actually reach the rendered runs, and the schema hovers must
- * stand whether or not it does — the annotations belong to the kind, not to the
+ * stand whether or not it does: the annotations belong to the kind, not to the
  * highlighter.
  *
  * `useCodeTokens` is stubbed, so no grammar is loaded here. What this view
@@ -41,27 +41,33 @@ function stubTokens(source: string): CodeToken[][] {
   )
 }
 
-vi.mock("@/lib/code", () => ({
-  /** The real hook resolves a dynamic `import()` of the grammar bundle and
-   * then tokenizes; the stub keeps the one thing the view can see, which is
-   * that the tint arrives a render AFTER the text. */
-  useCodeTokens: (source: string) => {
-    const [tokens, setTokens] = useState<CodeToken[][] | undefined>(undefined)
-    useEffect(() => {
-      let cancelled = false
-      // A microtask, not the same render: the real hook awaits a dynamic
-      // `import()`, and the first paint being untinted is the whole point of
-      // the "before the highlighter lands" case below.
-      void Promise.resolve().then(() => {
-        if (!cancelled) setTokens(stubTokens(source))
-      })
-      return () => {
-        cancelled = true
-      }
-    }, [source])
-    return tokens
-  },
-}))
+vi.mock("@/lib/code", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/code")>()
+  return {
+    ...real,
+    /** The real hook resolves a dynamic `import()` of the grammar bundle and
+     * then tokenizes; the stub keeps the one thing the view can see, which is
+     * that the tint arrives a render AFTER the text. Only this one export is
+     * replaced, so a later import of `prettyJSON` from the same module still
+     * gets the real function. */
+    useCodeTokens: (source: string) => {
+      const [tokens, setTokens] = useState<CodeToken[][] | undefined>(undefined)
+      useEffect(() => {
+        let cancelled = false
+        // A microtask, not the same render: the real hook awaits a dynamic
+        // `import()`, and the first paint being untinted is the whole point of
+        // the "before the highlighter lands" case below.
+        void Promise.resolve().then(() => {
+          if (!cancelled) setTokens(stubTokens(source))
+        })
+        return () => {
+          cancelled = true
+        }
+      }, [source])
+      return tokens
+    },
+  }
+})
 
 import { YamlView } from "./yaml-view"
 import type { KeyDocs } from "@/lib/yaml-annotations"
@@ -131,8 +137,8 @@ describe("YamlView", () => {
 
   it("hovers every described key BEFORE the highlighter lands", () => {
     // Synchronous first paint: the tokens are still absent. The hovers must
-    // already be there — a shiki chunk that never arrives (or arrives late)
-    // may cost the color, never the schema.
+    // already be there. A shiki chunk that never arrives (or arrives late) may
+    // cost the color, never the schema.
     const { container } = renderView()
     expect(container.querySelector("pre span[style]")).toBeNull()
     expect(triggers(container)).toEqual(["name", "wire"])
