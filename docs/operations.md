@@ -152,12 +152,12 @@ What that means for an operator:
   hybrid search returns its lexical arm alone until that row exists.
 - Every stored vector names the row and the model that produced it. Change
   either and the older vectors stop being searched, which is deliberate: cosine
-  distance between two models' vectors is not a distance. Run
-  `substratectl --dsn … repository reembed <repository>` to queue their
-  replacement, or `POST
-  /api/v1/embeddings/reembed` from the repository's
-  own token. Both write queue rows; the server's drain loop buys the vectors a
-  batch at a time, so an interrupted re-embed resumes by itself.
+  distance between two models' vectors is not a distance, and a `semantic`
+  search that finds only the old pair's vectors refuses rather than rank them.
+  Run `substratectl --dsn … repository reembed <repository>` to queue their
+  replacement: it writes queue rows, and the server's drain loop buys the
+  vectors a batch at a time, so an interrupted re-embed resumes by itself.
+  There is no REST verb for it; it is the operator's hat, on the box.
 - A gateway swapped behind an unchanged row and model name is invisible to the
   provenance columns, so that case takes `reembed --all`.
 - A repository restored from its directory queues every embeddable property
@@ -732,7 +732,7 @@ Operator commands (the "operator hat" of
 directly and hold no token. They need `--dsn` (or `DATABASE_URL`) and
 `SUBSTRATE_DATA_ROOT`, and refuse before touching anything without them.
 
-**Four of them run beside a live server; five need it stopped; one takes no
+**Four of them run beside a live server; four need it stopped; one takes no
 database.** `repository list`, `repository inspect`, `repository verify` and
 `repository reembed` open the engine read-only, so they run no boot check and
 append nothing: `verify` reports an unfinished final transaction or a table
@@ -740,10 +740,9 @@ ahead of its file as a finding instead of repairing it, and `reembed` writes
 queue rows, which are not changelog entries. `repository rebuild`,
 `repository rotate-generation`, `repository snapshot` and `user reset` open the
 repository as its changelog writer, and a running server holds that lock: the
-command refuses, naming the lock, until the server is stopped.
-`repository rewrap` acts on a copied directory
-before any boot has imported it, so it needs `SUBSTRATE_CREDENTIAL_KEY` and
-the directory, and no DSN.
+command refuses, naming the lock, until the server is stopped. `repository
+rewrap` acts on a copied directory before any boot has imported it, so it
+needs `SUBSTRATE_CREDENTIAL_KEY` and the directory, and no DSN.
 
 ```
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository list

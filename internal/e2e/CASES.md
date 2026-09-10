@@ -241,4 +241,4 @@ them.
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
-| EMB-01 | an `embed: true` property queues on write; `embeddings/reembed` requeues; the fake provider's embedding lands | egress | planned |
+| EMB-01 | an `embed: true` property queues on write; the fake provider's embedding lands | egress | planned |

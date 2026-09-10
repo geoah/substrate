@@ -61,9 +61,6 @@ const (
 	pathRegisterEnroll = "/register/enroll"
 	pathRegister       = "/register"
 	pathLogin          = "/login"
-	pathPassword       = "/password"
-	pathTOTPEnroll     = "/totp/enroll"
-	pathTOTP           = "/totp"
 	pathTokens         = "/tokens"
 )
 
@@ -378,25 +375,13 @@ type registerResult struct {
 	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
 }
 
-// factors is both current factors presented directly: it authenticates a
-// login, and it is the password-factor rule's evidence on every endpoint that
-// changes auth material. A bearer token is never a substitute.
+// factors is both current factors presented directly, which is what a login
+// authenticates with. A bearer token is never a substitute.
 type factors struct {
 	Repository string `json:"repository"`
 	Password   string `json:"password"`
 	TOTPCode   string `json:"totpCode"`
 	Label      string `json:"label,omitempty"`
-}
-
-type passwordRequest struct {
-	factors
-	NewPassword string `json:"newPassword"`
-}
-
-type totpRequest struct {
-	factors
-	NewTOTPSecret string `json:"newTotpSecret"`
-	NewTOTPCode   string `json:"newTotpCode"`
 }
 
 // tokenResult is what every mint answers with: the token record's metadata,
@@ -454,22 +439,6 @@ func (c *client) login(ctx context.Context, in factors) (*tokenResult, error) {
 		return nil, err
 	}
 	return &out, nil
-}
-
-func (c *client) changePassword(ctx context.Context, in passwordRequest) error {
-	return c.do(ctx, http.MethodPost, pathPassword, nil, in, nil)
-}
-
-func (c *client) totpEnroll(ctx context.Context, in factors) (*substrate.TOTPEnrollment, error) {
-	var out substrate.TOTPEnrollment
-	if err := c.do(ctx, http.MethodPost, pathTOTPEnroll, nil, in, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (c *client) reenrollTOTP(ctx context.Context, in totpRequest) error {
-	return c.do(ctx, http.MethodPost, pathTOTP, nil, in, nil)
 }
 
 // mintToken is login's authenticated twin: the same token record, the same

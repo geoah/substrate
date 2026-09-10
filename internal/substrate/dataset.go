@@ -91,7 +91,7 @@ type Dataset interface {
 	// pulling the rest.
 	Incoming(ctx context.Context, typ, id string, opts IncomingOptions) (*IncomingPage, error)
 
-	// --- background loops (service wiring calls these) ---
+	// --- background loops and the operator's re-embed ---
 	// RunGC performs one owner-reference mark-and-collect sweep for
 	// records tombstoned with no remaining finalizers; returns collected.
 	RunGC(ctx context.Context) (int, error)
@@ -101,8 +101,10 @@ type Dataset interface {
 	ProcessEmbedQueue(ctx context.Context, batch int) (int, error)
 	// Reembed enqueues every embeddable property whose stored vectors did not
 	// come from the repository's currently resolved embeddings provider and
-	// model. It buys nothing itself: the queue is the work, and the drain is
-	// what pays for it, so an interrupted re-embed resumes on the next pass.
+	// model. Its one caller is the operator's `substratectl repository
+	// reembed`, over the DSN; no HTTP route reaches it. It buys nothing
+	// itself: the queue is the work, and the drain is what pays for it, so an
+	// interrupted re-embed resumes on the next pass.
 	// all enqueues every embeddable property regardless of what produced its
 	// vectors, which is the answer to a gateway swapped behind an unchanged
 	// provider row and model name.

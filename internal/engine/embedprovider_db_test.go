@@ -233,8 +233,8 @@ func TestReembedReplacesVectorsAndResumes(t *testing.T) {
 		Properties: map[string]any{"embedModel": "text-embedding-ada-002"},
 	})
 	_, err := searchHits(ds.Search(ctx, substrate.SearchInput{Q: "marmalade prose", Mode: substrate.SearchSemantic}))
-	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "run reembed") {
-		t.Fatalf("semantic search with only the old model's vectors = %v, want ErrValidation naming reembed", err)
+	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "run substratectl repository reembed") {
+		t.Fatalf("semantic search with only the old model's vectors = %v, want ErrValidation naming the operator command", err)
 	}
 
 	report, err := ds.Reembed(ctx, false)

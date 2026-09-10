@@ -298,7 +298,8 @@ func TestImportConvergesTheVectorsAnOlderDatabaseHolds(t *testing.T) {
 // The directory re-points the repository's llmprovider row at another model
 // while every blurb stays the same: the older database's vectors carry the
 // old pair, so the text hash alone would call them current, and semantic
-// search would refuse naming `reembed` until an operator ran it. The import
+// search would refuse naming `substratectl repository reembed` until an
+// operator ran it. The import
 // holds a chunk current only under the pair the folded records resolve, so
 // the old vectors go, the property is queued and the answer counts it.
 func TestImportRequeuesWhenTheDirectoryRepointsTheModel(t *testing.T) {

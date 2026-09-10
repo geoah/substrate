@@ -224,13 +224,13 @@ func (ds *dataset) enqueueReembed(ctx context.Context, provider *embedProvider, 
 // changed, so a restore does not re-buy a repository. Current means the text
 // AND the pair: a chunk bought by a row or model the folded records no longer
 // resolve (the directory re-pointed the row while the text stood) is stale
-// too, or the restored repository would answer the `reembed` refusal until an
-// operator ran it by hand. Returns how many properties were queued.
+// too, or the restored repository would answer the semantic refusal until an
+// operator ran `substratectl repository reembed` by hand. Returns how many properties were queued.
 //
 // The registry decides what is embeddable, and it is also the gap: a closure
 // the import parks (loadDeclarationsForReplay leaves out what does not admit)
 // has no kinds here, so its records are neither reconciled nor queued until
-// the closure admits and a `reembed` runs. The live write skips the same
+// the closure admits and a re-embed runs. The live write skips the same
 // records for the same reason.
 func (ds *dataset) reconcileEmbeddings(ctx context.Context, q dbx, at time.Time) (int, error) {
 	// No row, or two claiming rows, is no pair, and then no stored vector is

@@ -390,8 +390,8 @@ not 1536 wide ([decision
 stored vector names the row and the model that produced it, and semantic search
 scores only the current pair's vectors, so changing either hides the older ones
 rather than mixing two models' distances. `substratectl --dsn … repository
-reembed <repository>` and `POST
-/api/v1/embeddings/reembed` queue their replacement.
+reembed <repository>` queues their replacement, which the server's drain loop
+buys a batch at a time.
 
 **Nothing seeds a provider.** A fresh repository holds no `llmprovider` row at
 all: a row is where the wire, the endpoint and the key live, and a substrate

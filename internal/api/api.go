@@ -245,10 +245,6 @@ func (h *handler) mountResources(r chi.Router) {
 			// The boot upgrade's preview: what this binary would move in the
 			// shipped packages here, and the guard lines it refused on.
 			r.Get("/vocabulary/upgrade", h.getVocabularyUpgrade)
-			// Re-embed: enqueue every embeddable property whose stored vectors
-			// did not come from the llmprovider row this repository currently
-			// buys embeddings from.
-			r.Post("/embeddings/reembed", h.postReembed)
 			// The owner's recovery export: the repository directory as of
 			// one committed point, as a tar (decision 0069).
 			r.Get(exportRoute, h.getExport)

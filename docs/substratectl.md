@@ -3,7 +3,7 @@
 `substratectl` is the command-line client: kubectl-shaped, speaking the
 [REST surface](api.md). Everything in a repository is a record of a declared
 kind, addressed as `{authority}/{package}/{kind}/{id}`, and the CLI mirrors that:
-kinds, get, apply, import, patch, delete, edit, watch. It lives in the
+kinds, get, apply, import, patch, delete, watch. It lives in the
 same repository as the substrate (`cmd/substratectl`) and builds with Go.
 
 ```
@@ -23,20 +23,19 @@ substratectl export                       # the recovery export, a tar of the re
 `substratectl` addresses a substrate two different ways, and the flags say which.
 
 **The user's hat** speaks HTTP and carries a token: everything above, plus
-`register`, `login`, `logout`, `token`, `user password`, `user totp`,
-`trigger`, `function`, `bundle`, `catalog`, `import`,
-`install` and `export`. It needs a server and a token, and it can run
-anywhere.
+`register`, `login`, `logout`, `token`, `trigger`, `function`, `bundle`,
+`catalog`, `import`, `install` and `export`. It needs a server and a token,
+and it can run anywhere. Changing your own password or second factor is the
+console's account page; the CLI has no command for either.
 
 **The operator's hat** speaks to the box's Postgres directly and holds no token
-at all: `user reset`, `repository list`, `repository inspect`,
-`repository verify`, `repository snapshot`, `repository rebuild`,
-`repository rotate-generation`, `repository reembed`. It needs
-`--dsn` (or `DATABASE_URL`) and
-`SUBSTRATE_DATA_ROOT`, and without them every operator command refuses before
-touching anything. The one exception is `repository rewrap`, which opens a
-copied repository directory with the user's recovery key for a new
-`SUBSTRATE_CREDENTIAL_KEY` and needs no database at all.
+at all: `user reset`, `repository list`, `repository inspect`, `repository
+verify`, `repository snapshot`, `repository rebuild`, `repository
+rotate-generation` and `repository reembed`. It needs `--dsn` (or
+`DATABASE_URL`) and `SUBSTRATE_DATA_ROOT`, and without them every operator
+command refuses before touching anything. The one exception is `repository
+rewrap`, which opens a copied repository directory with the user's recovery
+key for a new `SUBSTRATE_CREDENTIAL_KEY` and needs no database at all.
 [Running a substrate](operations.md) is where that hat lives.
 
 `substratectl version` belongs to neither hat: it prints the client version
@@ -67,10 +66,10 @@ forgets it, because a session is its [token record](auth.md#tokens).
 `substratectl token create --label backup` mints a token for a script or a device and
 prints the secret exactly once; `--expires` takes a duration (`720h`) or an
 RFC 3339 instant. `token list` and `token revoke <id>` are metadata and one
-delete. `substratectl user password` and `substratectl user totp` change your factors, and
-both send **no bearer token at all**: the
+delete. A password or second-factor change goes through the console, which
+sends **no bearer token at all**: the
 [password-factor rule](auth.md#the-credential-and-the-password-factor-rule)
-refuses one, so carrying it would only teach the wrong habit.
+refuses one as evidence.
 
 Every prompt has a flag or a `--*-stdin` twin so the same command scripts
 headlessly, and a password is never an argument.
@@ -121,8 +120,6 @@ output applies back unchanged.
   [transitions](data-model.md#validation-and-state-machines) (apply cannot
   move a state), `--prop` for properties, `--label` for labels, and `-p` for a
   raw JSON patch, where a null value deletes a key.
-- `edit <kind> <id>` opens the manifest in `$EDITOR` and applies what comes
-  back.
 - `delete <kind> <id>` tombstones; hard deletion waits on finalizers.
 
 A pointer at another record is a property, so `apply` and `patch` write it like

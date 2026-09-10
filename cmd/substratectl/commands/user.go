@@ -9,160 +9,19 @@ import (
 	"github.com/geoah/substrate/internal/engine"
 )
 
-// A user is a repository, a password and a TOTP secret. Two of these commands
-// change a user's own factors over HTTP and one is the operator's door on the
-// box; they sit together because they are the same subject, and each says
-// which hat it wears.
-//
-// THE PASSWORD-FACTOR RULE is why `password` and `totp` prompt
-// for the current password and code even when a perfectly good token is
-// sitting in the config: a bearer token is REFUSED as evidence by these
-// endpoints, so a leaked token's blast radius is the data, never the account.
+// A user is a repository, a password and a TOTP secret. Changing either factor
+// is the console's account page, which presents both current factors in the
+// request body because `POST /password` and `POST /totp` refuse a bearer token
+// as evidence. `reset` is the operator's door on the box, and nothing
+// reachable from the network reaches it.
 
 func (a *app) userCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "user",
-		Short:   "Change your own factors, or reset a user's on the box",
+		Short:   "Operator: reset a user's factors on the box (direct database, no HTTP)",
 		Aliases: []string{"users"},
 	}
-	cmd.AddCommand(a.userPasswordCommand(), a.userTOTPCommand(), a.userResetCommand())
-	return cmd
-}
-
-func (a *app) userPasswordCommand() *cobra.Command {
-	var (
-		repository       string
-		code             string
-		passwordStdin    bool
-		newPasswordStdin bool
-	)
-	cmd := &cobra.Command{
-		Use:   "password",
-		Short: "Change your password (both current factors required)",
-		Long: `Change the password of a user.
-
-The current password and one current code go in the request body: a bearer
-token is not accepted here and never will be, so a stolen token cannot rotate
-the account it stole.
-
-  substratectl user password --repository geoah
-  substratectl user password --repository geoah --totp-code 123456 \
-      --password-stdin --new-password-stdin <<< $'current\nnew'`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			repository, err := a.askRepository(repository)
-			if err != nil {
-				return err
-			}
-			password, err := a.secret(passwordStdin, "Current password: ")
-			if err != nil {
-				return err
-			}
-			cl, err := a.doorClient()
-			if err != nil {
-				return err
-			}
-			code, err := a.askCodeIfRequired(cmd.Context(), cl, code, "Current TOTP code: ")
-			if err != nil {
-				return err
-			}
-			newPassword, err := a.newSecret(newPasswordStdin, "New password: ", "New password (again): ")
-			if err != nil {
-				return err
-			}
-			if err := cl.changePassword(cmd.Context(), passwordRequest{
-				factors:     factors{Repository: repository, Password: password, TOTPCode: code},
-				NewPassword: newPassword,
-			}); err != nil {
-				return authError(err)
-			}
-			fmt.Fprintf(a.out, "password changed for %s\n", repository)
-			fmt.Fprintln(a.out, "  existing tokens keep working — revoke them with `substratectl token revoke <id>` if the old password leaked")
-			return nil
-		},
-	}
-	f := cmd.Flags()
-	f.StringVar(&repository, "repository", "", "repository (defaults to the context's)")
-	f.StringVar(&code, "totp-code", "", "current 6-digit code (prompted for when omitted)")
-	f.BoolVar(&passwordStdin, "password-stdin", false, "read the current password from stdin (one line)")
-	f.BoolVar(&newPasswordStdin, "new-password-stdin", false, "read the new password from stdin (the next line)")
-	return cmd
-}
-
-func (a *app) userTOTPCommand() *cobra.Command {
-	var (
-		repository    string
-		code          string
-		newSecret     string
-		newCode       string
-		passwordStdin bool
-	)
-	cmd := &cobra.Command{
-		Use:   "totp",
-		Short: "Re-enroll the second factor (both current factors required)",
-		Long: `Replace a user's TOTP secret.
-
-The current password and code prove the account; a code from the NEW enrollment
-proves it landed in an authenticator before the swap. The old secret stops
-working the moment the swap commits.
-
-  substratectl user totp --repository geoah
-  substratectl user totp --repository geoah --totp-code 123456 --password-stdin \
-      --new-totp-secret BASE32SEED --new-totp-code 654321 < password`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			repository, err := a.askRepository(repository)
-			if err != nil {
-				return err
-			}
-			password, err := a.secret(passwordStdin, "Current password: ")
-			if err != nil {
-				return err
-			}
-			cl, err := a.doorClient()
-			if err != nil {
-				return err
-			}
-			// The CURRENT code follows the deployment; the NEW one is asked for
-			// regardless, because it is what proves the seed being installed
-			// landed somewhere — the substrate verifies that either way.
-			code, err := a.askCodeIfRequired(cmd.Context(), cl, code, "Current TOTP code: ")
-			if err != nil {
-				return err
-			}
-			current := factors{Repository: repository, Password: password, TOTPCode: code}
-			if newSecret == "" {
-				// The enrollment call writes NOTHING: an abandoned
-				// re-enrollment cannot lock anyone out of their account.
-				enrollment, err := cl.totpEnroll(cmd.Context(), current)
-				if err != nil {
-					return authError(err)
-				}
-				newSecret = enrollment.Secret
-				a.printEnrollment(enrollment.URI, enrollment.Secret)
-				fmt.Fprintln(a.out, "  the old secret keeps working until the code below is accepted")
-				fmt.Fprintln(a.out)
-			}
-			newCode, err = a.askCode(newCode, "TOTP code from the new enrollment: ")
-			if err != nil {
-				return err
-			}
-			if err := cl.reenrollTOTP(cmd.Context(), totpRequest{
-				factors: current, NewTOTPSecret: newSecret, NewTOTPCode: newCode,
-			}); err != nil {
-				return authError(err)
-			}
-			fmt.Fprintf(a.out, "second factor replaced for %s\n", repository)
-			fmt.Fprintln(a.out, "  the previous secret stopped working — delete its authenticator entry")
-			return nil
-		},
-	}
-	f := cmd.Flags()
-	f.StringVar(&repository, "repository", "", "repository (defaults to the context's)")
-	f.StringVar(&code, "totp-code", "", "current 6-digit code (prompted for when omitted)")
-	f.StringVar(&newSecret, "new-totp-secret", "", "base32 seed to enroll (default: ask the substrate for one)")
-	f.StringVar(&newCode, "new-totp-code", "", "6-digit code from the new enrollment (prompted for when omitted)")
-	f.BoolVar(&passwordStdin, "password-stdin", false, "read the current password from stdin (one line)")
+	cmd.AddCommand(a.userResetCommand())
 	return cmd
 }
 
@@ -228,16 +87,4 @@ opens the repository as its writer, and a running server holds that lock.
 	}
 	cmd.Flags().BoolVar(&passwordStdin, "password-stdin", false, "read the new password from stdin (one line)")
 	return cmd
-}
-
-// doorClient builds a client for the endpoints that take no bearer token: the
-// credential changes carry their evidence in the body, and a context with a
-// stale token must not stop a user from fixing their password.
-func (a *app) doorClient() (*client, error) {
-	ctx, err := a.resolveContext()
-	if err != nil {
-		return nil, err
-	}
-	server := firstNonEmpty(ctx.Server, defaultServer)
-	return newClient(server, "", a.hc), nil
 }

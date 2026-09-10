@@ -143,21 +143,10 @@ func TestVersion(t *testing.T) {
 	}
 }
 
-func TestHelpListsEveryCommand(t *testing.T) {
-	h := newHarness(t)
-	out, _ := h.mustRun("--help")
-	for _, want := range []string{
-		"register", "login", "logout", "token", "kinds", "get", "apply",
-		"delete", "edit", "watch", "export", "user", "repository", "version",
-	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("--help output missing %q:\n%s", want, out)
-		}
-	}
-}
-
 // The vocabulary is the contract too: `identity` and `tenant` are dead words,
-// and help text is where a dead word survives longest.
+// and help text is where a dead word survives longest. `.mise/docscheck.sh`
+// greps docs/ and README.md alone, so this is the only check on the CLI's own
+// help.
 func TestHelpSpeaksTheV1Vocabulary(t *testing.T) {
 	h := newHarness(t)
 	var all strings.Builder
@@ -173,6 +162,7 @@ func TestHelpSpeaksTheV1Vocabulary(t *testing.T) {
 		{"repository", "--help"},
 		{"repository", "inspect", "--help"},
 		{"repository", "rebuild", "--help"},
+		{"repository", "reembed", "--help"},
 		{"repository", "rotate-generation", "--help"},
 	} {
 		out, _ := h.mustRun(args...)
@@ -1683,69 +1673,6 @@ func TestTokenRevokeDeletesTheRecord(t *testing.T) {
 	}
 }
 
-// The password-factor rule: the current password and code go in
-// the BODY, and a bearer token is not evidence — so the change carries no
-// Authorization header at all.
-func TestUserPasswordSendsBothFactorsAndNoBearer(t *testing.T) {
-	h := newHarness(t)
-	h.writeConfig()
-	h.stdin.WriteString("hunter2\nhunter3\n")
-	out, _ := h.mustRun("user", "password", "--repository", "geoah", "--totp-code", "123456",
-		"--password-stdin", "--new-password-stdin")
-	if got := h.lastRequest(); got != "POST /password" {
-		t.Fatalf("password change hit %q", got)
-	}
-	for field, want := range map[string]string{
-		"repository": "geoah", "password": "hunter2", "totpCode": "123456", "newPassword": "hunter3",
-	} {
-		var got string
-		if err := json.Unmarshal(h.fake.lastBody[field], &got); err != nil {
-			t.Fatalf("decode %s: %v", field, err)
-		}
-		if got != want {
-			t.Errorf("%s sent = %q, want %q", field, got, want)
-		}
-	}
-	if h.fake.lastAuth != "" {
-		t.Errorf("the credential change sent a bearer token (%q); the endpoint refuses one as evidence", h.fake.lastAuth)
-	}
-	if !strings.Contains(out, "password changed for geoah") {
-		t.Errorf("output:\n%s", out)
-	}
-}
-
-// Re-enrollment is the same two calls registration is: a candidate seed that
-// writes nothing, then the swap proving a code from it.
-func TestUserTOTPEnrollsThenSwaps(t *testing.T) {
-	h := newHarness(t)
-	h.writeConfig()
-	h.stdin.WriteString("hunter2\n654321\n")
-	out, _ := h.mustRun("user", "totp", "--repository", "geoah", "--totp-code", "123456", "--password-stdin")
-	if got := h.fake.requests; len(got) != 2 || got[0] != "POST /totp/enroll" || got[1] != "POST /totp" {
-		t.Fatalf("requests = %v, want the candidate then the swap", got)
-	}
-	for field, want := range map[string]string{
-		"newTotpSecret": fakeTOTPSecret, "newTotpCode": "654321", "password": "hunter2",
-	} {
-		var got string
-		if err := json.Unmarshal(h.fake.lastBody[field], &got); err != nil {
-			t.Fatalf("decode %s: %v", field, err)
-		}
-		if got != want {
-			t.Errorf("%s sent = %q, want %q", field, got, want)
-		}
-	}
-	for _, want := range []string{
-		"otpauth URI: " + fakeOtpauthURI,
-		"the old secret keeps working until the code below is accepted",
-		"second factor replaced for geoah",
-	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("output missing %q:\n%s", want, out)
-		}
-	}
-}
-
 func TestEnvOverridesConfig(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
@@ -1831,48 +1758,6 @@ func TestHumanAge(t *testing.T) {
 	for _, tc := range cases {
 		if got := humanAge(base, tc.then); got != tc.want {
 			t.Errorf("humanAge(%v) = %q, want %q", tc.then, got, tc.want)
-		}
-	}
-}
-
-func TestEditDiffAndRoundTrip(t *testing.T) {
-	h := newHarness(t)
-	h.writeConfig()
-	seedTask(h)
-	// A fake editor that rewrites the title in place — inside `data.properties`,
-	// where everything authored lives. Written portably: BSD sed has no GNU
-	// `-i`, so the rewrite goes through a temp file.
-	editor := filepath.Join(t.TempDir(), "editor.sh")
-	script := "#!/bin/sh\nsed 's/^    title: .*/    title: Edited by hand/' \"$1\" > \"$1.tmp\" && mv \"$1.tmp\" \"$1\"\n"
-	if err := os.WriteFile(editor, []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("SUBSTRATE_EDITOR", editor)
-	out, _ := h.mustRun("edit", "task", "t9")
-	if !strings.Contains(out, "-     title: Send rack layout to Alex") ||
-		!strings.Contains(out, "+     title: Edited by hand") {
-		t.Fatalf("edit diff:\n%s", out)
-	}
-	if !strings.Contains(out, "samples.substrate.reamde.dev/tasks/task/t9 updated") {
-		t.Fatalf("edit apply result:\n%s", out)
-	}
-	if got := h.fake.record("t9"); got.Properties["title"] != "Edited by hand" {
-		t.Fatalf("record title = %q", got.Properties["title"])
-	}
-}
-
-func TestEditNoChangeIsNoWrite(t *testing.T) {
-	h := newHarness(t)
-	h.writeConfig()
-	seedTask(h)
-	t.Setenv("SUBSTRATE_EDITOR", "true")
-	out, _ := h.mustRun("edit", "task", "t9")
-	if !strings.Contains(out, "unchanged (edit canceled)") {
-		t.Fatalf("edit output:\n%s", out)
-	}
-	for _, req := range h.fake.requests {
-		if strings.HasPrefix(req, "PUT ") {
-			t.Fatalf("a canceled edit must not write: %v", h.fake.requests)
 		}
 	}
 }
