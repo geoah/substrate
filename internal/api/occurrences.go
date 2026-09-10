@@ -162,8 +162,9 @@ func ruleOf(props map[string]any) (occurrence.Rule, bool) {
 
 // indexLogs keys every occurrencelog row by the recurring record its reference
 // names and the slot its scheduledAt answers. The property's name is each
-// kind's own (schedule, routine, task), so every reference the log carries is
-// keyed: identity is the (kind, id) pair, and the slot pins the rest.
+// kind's own (`task` on a tasklog, `schedule` elsewhere), so every reference
+// the log carries is keyed: identity is the (kind, id) pair, and the slot pins
+// the rest.
 func indexLogs(logs []*substrate.Record) map[string]*substrate.OccurrenceLog {
 	marks := make(map[string]*substrate.OccurrenceLog)
 	for _, l := range logs {

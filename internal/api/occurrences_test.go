@@ -13,16 +13,16 @@ import (
 // silent, problems named instead of dropped.
 
 const (
-	kindMedSchedule = "samples.substrate.reamde.dev/health/medicationschedule"
-	kindMedLog      = "samples.substrate.reamde.dev/health/medicationschedulelog"
-	kindSeries      = "samples.substrate.reamde.dev/calendar/calendareventseries"
+	kindDoseSchedule = "doses.e2e.example/dosing/schedule"
+	kindDoseLog      = "doses.e2e.example/dosing/doselog"
+	kindSeries       = "samples.substrate.reamde.dev/calendar/calendareventseries"
 )
 
 func seedRecurring(ds *fakeDataset) {
-	ds.traits[traitRecurring] = []string{kindMedSchedule, kindSeries}
-	ds.traits[traitOccurrencelog] = []string{kindMedLog}
+	ds.traits[traitRecurring] = []string{kindDoseSchedule, kindSeries}
+	ds.traits[traitOccurrencelog] = []string{kindDoseLog}
 	ds.records["meds"] = &substrate.Record{
-		ID: "meds", Kind: kindMedSchedule, Title: "Levothyroxine daily",
+		ID: "meds", Kind: kindDoseSchedule, Title: "Levothyroxine daily",
 		Properties: map[string]any{
 			"recurrence": "RRULE:FREQ=DAILY",
 			"timezone":   "Europe/Athens",
@@ -40,14 +40,14 @@ func seedRecurring(ds *fakeDataset) {
 		},
 	}
 	ds.records["log1"] = &substrate.Record{
-		ID: "log1", Kind: kindMedLog,
+		ID: "log1", Kind: kindDoseLog,
 		// The log names the recurring record it marks with a reference
-		// property of its own name (`schedule` here, `routine` or `task`
+		// property of its own name (`schedule` here, `task`
 		// elsewhere), stored as the object holding the full record path
 		// under `ref` (0044).
 		Properties: map[string]any{
 			"scheduledAt": "2026-07-02T06:00:00Z", "status": "done",
-			"schedule": map[string]any{"ref": kindMedSchedule + "/meds"},
+			"schedule": map[string]any{"ref": kindDoseSchedule + "/meds"},
 		},
 	}
 }
@@ -59,12 +59,12 @@ func TestOccurrencesComputeRulesLogsAndStamps(t *testing.T) {
 	seedRecurring(ds)
 	// A rule the budget refuses is a named problem, never a silent absence.
 	ds.records["dense"] = &substrate.Record{
-		ID: "dense", Kind: kindMedSchedule,
+		ID: "dense", Kind: kindDoseSchedule,
 		Properties: map[string]any{"recurrence": "FREQ=SECONDLY", "at": "2020-01-01T00:00:00Z"},
 	}
 	// An as-needed schedule (no rule, no rdates) simply has no occurrences.
 	ds.records["asneeded"] = &substrate.Record{
-		ID: "asneeded", Kind: kindMedSchedule,
+		ID: "asneeded", Kind: kindDoseSchedule,
 		Properties: map[string]any{"doseUnit": "tablet"},
 	}
 
