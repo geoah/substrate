@@ -1,9 +1,12 @@
 # Running one locally
 
 A local substrate is the binary from this tree and a Postgres container beside
-it. `mise run dev` starts both: Postgres on `:5433`, the server on `:8080`
-serving the API and the console at `/`, invite code `let-me-in`, and every
-piece of state under `.dev/`. It runs the binary rather than an image, so a
+it. `mise run dev` starts both: Postgres on `:5433`, the server on `:8080`,
+invite code `let-me-in`, and every piece of state under `.dev/`. It serves the
+API alone until `web/console/dist` exists, because the dev task passes
+`WEB_DIR` only when it does: run `mise run console:build` once and the console
+is at `/` from the next start, or `mise run console:dev` to serve it on `:5173`
+proxying `/api` to `:8080`. It runs the binary rather than an image, so a
 change is a restart and not a rebuild. `mise tasks` lists the whole family;
 these are the ones a day needs:
 
@@ -55,15 +58,19 @@ bin/substratectl register --server http://localhost:8080 --repository ada
 ```
 
 The operator commands take the DSN and the data root instead of a token, and
-`dev:status` prints the two exports they want:
+both have to be in the environment of the command itself: the dev tasks export
+`SUBSTRATE_DATA_ROOT` into the server they start, not into your shell, and an
+operator command refuses without it, naming the variable. `mise run dev:status`
+prints the two export lines to copy, one for the data root and one for the
+credential key that the commands writing sealed material need:
 
 ```bash
-bin/substratectl --dsn "$(mise run dev:dsn)" repository list
+SUBSTRATE_DATA_ROOT="$PWD/.dev/data" \
+  bin/substratectl --dsn "$(mise run dev:dsn)" repository list
 ```
 
-[The operator commands](operations.md#operator-recovery) is what each one does.
-`mise run console:build` puts the console at `/`, and `mise run console:dev`
-serves it on `:5173` proxying `/api` to `:8080` instead.
+[The operator commands](operations.md#operator-recovery) is what each one does,
+and which of them need the server stopped.
 
 ## Running the binary by hand
 
