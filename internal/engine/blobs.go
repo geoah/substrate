@@ -87,10 +87,10 @@ func (ds *dataset) PutBlob(ctx context.Context, actor substrate.Actor, up substr
 	if err != nil {
 		return nil, err
 	}
-	return ds.putBlobExternal(ctx, actor, store, digest, name, up.MediaType, data)
+	return ds.putBlobBytes(ctx, actor, store, digest, name, up.MediaType, data)
 }
 
-// putBlobExternal is the fs and s3 path, where the bytes and the manifest
+// putBlobBytes is the blob store path, where the bytes and the manifest
 // cannot commit together. It runs in three steps, and the order is the whole
 // design:
 //
@@ -107,7 +107,7 @@ func (ds *dataset) PutBlob(ctx context.Context, actor substrate.Actor, up substr
 // the same collectable state, and in neither does a reader see a `stored`
 // manifest whose bytes are missing, because only step 3 writes that word and
 // only with the bytes already durable.
-func (ds *dataset) putBlobExternal(ctx context.Context, actor substrate.Actor, store blobbytes.Store, digest, name, mediaType string, data []byte) (*substrate.BlobInfo, error) {
+func (ds *dataset) putBlobBytes(ctx context.Context, actor substrate.Actor, store blobbytes.Store, digest, name, mediaType string, data []byte) (*substrate.BlobInfo, error) {
 	size := int64(len(data))
 	var auth blobRecordMeta
 	err := ds.inTx(ctx, actor, true, func(t *txn) error {
@@ -177,7 +177,7 @@ func (t *txn) authoritativeBlobMeta(digest, name, mediaType string, size int64) 
 }
 
 // blobBytes binds the configured backend to this repository. The repository is
-// half of every key the fs and s3 backends build (and the scoped pool is what
+// half of every key the fs backend builds (and the scoped pool is what
 // row level security would bind for a backend that runs on it), so a store
 // handed to a request can only ever reach that request's repository.
 func (ds *dataset) blobBytes() (blobbytes.Store, error) {
@@ -268,11 +268,10 @@ func checkBlobName(name string) (string, error) {
 
 // settleBlobRecord mints the blob manifest at status=stored, or transitions an
 // existing pending/failed manifest to stored, INSIDE the caller's byte-store
-// transaction. A manifest already stored is a no-op (no-op
-// suppression writes no changelog). The bytes are already durable when this
-// runs — inserted in this same transaction on the postgres backend, written to
-// the store before it on fs and s3 — so guardBlobWrite's "stored ⇒ bytes
-// exist" invariant holds, and the guard proves it either way.
+// transaction. A manifest already stored is a no-op (no-op suppression writes
+// no changelog). The bytes were written to the store before this runs, so
+// guardBlobWrite's "stored implies the bytes exist" invariant holds, and the
+// guard proves it per write rather than by construction.
 func (t *txn) settleBlobRecord(actor substrate.Actor, digest string, size int64, name, mediaType string) error {
 	var status sql.NullString
 	err := t.row(
@@ -323,11 +322,10 @@ func (t *txn) settleBlobRecord(actor substrate.Actor, digest string, size int64,
 // reaches a `blob` record. The generic record API cannot reach one
 // at all (kindBlob is a systemType), so this guards the internal byte-store path
 // and any future internal writer: the id IS the digest, and a manifest may only
-// be `stored` once its bytes actually exist in the byte store. The probe is a
-// query on the postgres backend, taken inside this transaction so it sees the
-// insert beside it, and an existence request against fs or s3 otherwise. A
-// forged stored manifest with no bytes (or false size/mime claimed ahead of
-// upload) is refused, forced to stay pending.
+// be `stored` once its bytes actually exist in the byte store. The probe is an
+// existence request against the store. A forged stored manifest with no bytes
+// (or false size/mime claimed ahead of upload) is refused, forced to stay
+// pending.
 func (t *txn) guardBlobWrite(sp *applySpec) error {
 	if sp.ty.Identity != kindBlob {
 		return nil
@@ -614,7 +612,7 @@ func (ds *dataset) blobGCPass(ctx context.Context) (int, error) {
 		// manifest whose bytes are already gone.
 		if err := ds.deleteOrphanBytes(ctx, store, digest); err != nil {
 			ds.svc.log.Warn("substrate: a collected blob's bytes could not be deleted; the orphan sweep will retry",
-				"digest", digest, "backend", store.Backend(), "error", err)
+				"digest", digest, "error", err)
 		}
 	}
 	if err := ds.blobOrphanSweep(ctx, store); err != nil {
@@ -632,7 +630,7 @@ func (ds *dataset) blobGCPass(ctx context.Context) (int, error) {
 //
 // A raw transaction, not inTx: it appends nothing, and inTx takes the
 // changelog lock first (rows.go changelogLockKey), which would park every
-// writer of the repository behind an fs or s3 delete. The per-digest lock is
+// writer of the repository behind a store delete. The per-digest lock is
 // the only one it needs.
 func (ds *dataset) deleteOrphanBytes(ctx context.Context, store blobbytes.Store, digest string) error {
 	return ds.inRawTx(ctx, func(t *txn) error {

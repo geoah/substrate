@@ -389,10 +389,10 @@ func (s *service) verifyBlobs(ctx context.Context, tx dbx, db *sql.DB, repo Repo
 		n, digest, err := hashBlob(ctx, store, b.digest)
 		switch {
 		case errors.Is(err, blobbytes.ErrNotStored):
-			found(fmt.Sprintf("blob %s: the manifest is stored and the %s store holds no bytes", b.digest, store.Backend()))
+			found(fmt.Sprintf("blob %s: the manifest is stored and the blob store holds no bytes", b.digest))
 			continue
 		case err != nil:
-			found(fmt.Sprintf("blob %s: reading the %s store: %v", b.digest, store.Backend(), err))
+			found(fmt.Sprintf("blob %s: reading the blob store: %v", b.digest, err))
 			return nil
 		}
 		report.BlobBytes += n

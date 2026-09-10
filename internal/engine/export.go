@@ -158,8 +158,8 @@ func (ds *dataset) pinExport(ctx context.Context) (*export, error) {
 		digests = append(digests, b.digest)
 	}
 	taken := nowUTC()
-	// The bytes ride in the archive under blobs/ whatever store the server
-	// runs, so the copy is laid out for fs and names no location.
+	// The bytes ride in the archive under blobs/, so the copy is laid out the
+	// way a repository directory is.
 	e.snapshot = changelogfile.Snapshot{
 		Format: changelogfile.SnapshotFormat, TakenAt: taken,
 		Head: head, HeadHash: headHash, SealedFiles: len(e.sealed),

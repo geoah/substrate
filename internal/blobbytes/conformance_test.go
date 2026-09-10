@@ -1,8 +1,8 @@
 package blobbytes_test
 
-// One contract, two backends. Everything a Store promises is asserted here
-// and each backend's own file runs the whole set, so `fs` and `s3` cannot
-// quietly mean something else by Put, Delete or List than the other does.
+// The Store contract, asserted once. Everything a Store promises is here and
+// the backend's own file runs the whole set, so a second backend would have to
+// mean the same thing by Put, Delete and List before it could be added.
 
 import (
 	"context"
@@ -193,8 +193,8 @@ func conformance(t *testing.T, open openStore) {
 	})
 }
 
-// repositoryIsolation is the fs and s3 case: row level security does not reach
-// either, so the repository half of the key is what keeps two repositories
+// repositoryIsolation is the case row level security does not reach: the bytes
+// are files, so the repository half of the key is what keeps two repositories
 // apart. Row level security over the tables is internal/engine's isolation
 // suite.
 func repositoryIsolation(t *testing.T, open openStore) {

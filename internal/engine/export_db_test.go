@@ -3,14 +3,13 @@ package engine_test
 // The owner's recovery export over the API: the archive a running service
 // streams is a data root a fresh server imports, it records the point it
 // holds, the point is pinned while writes go on, and the blob bytes come out
-// of whichever store the server runs.
+// of the repository directory with it.
 
 import (
 	"archive/tar"
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -24,15 +23,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
-
 	"github.com/geoah/substrate/internal/api"
-	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
-	"github.com/geoah/substrate/internal/testdb"
 )
 
 // exportResponse is one GET /api/v1/export, read whole.
@@ -225,7 +219,7 @@ func TestExportOverTheAPIRestoresIntoAnEmptyDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the archive carries no readable %s: %v", changelogfile.SnapshotName, err)
 	}
-	if snap.Head != head || snap.BlobStore != "fs" || snap.BlobLocation != "" || len(snap.Blobs) != 1 || snap.Blobs[0] != digest {
+	if snap.Head != head || snap.BlobStore != "fs" || len(snap.Blobs) != 1 || snap.Blobs[0] != digest {
 		t.Fatalf("snapshot = %+v, want head %d with the one blob %s under fs", snap, head, digest)
 	}
 	m, err := changelogfile.ReadManifest(dir2)
@@ -511,140 +505,5 @@ func TestExportPinsWithEveryPoolConnectionHeld(t *testing.T) {
 	}
 	if got := maxSeq(t, ds); got != head+writers {
 		t.Fatalf("head = %d after %d writes from %d", got, writers, head)
-	}
-}
-
-// The MinIO container the s3 export test runs against, started once per
-// test binary as internal/blobbytes starts its own. Throwaway root
-// credentials, reachable only from this test's docker network.
-const (
-	minioImage  = "minio/minio:RELEASE.2025-09-07T16-13-09Z"
-	minioUser   = "substratetest"
-	minioSecret = "substratetestsecret"
-	minioBucket = "export-test"
-)
-
-var (
-	minioOnce     sync.Once
-	minioEndpoint string
-	minioErr      error
-)
-
-func minioURL(t *testing.T) string {
-	t.Helper()
-	// Before the container, as internal/blobbytes does: the short suite must
-	// not start MinIO, or fail for want of Docker, before testdb skips it.
-	if testing.Short() {
-		t.Skip("skipping integration test in -short mode")
-	}
-	minioOnce.Do(func() {
-		ctx := context.Background()
-		c, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-			Started: true,
-			ContainerRequest: testcontainers.ContainerRequest{
-				Image:        minioImage,
-				ExposedPorts: []string{"9000/tcp"},
-				Cmd:          []string{"server", "/data"},
-				Env: map[string]string{
-					"MINIO_ROOT_USER":     minioUser,
-					"MINIO_ROOT_PASSWORD": minioSecret,
-				},
-				// `/cluster` is the one health endpoint that waits for the
-				// object layer (internal/blobbytes/s3_db_test.go, #353).
-				WaitingFor: wait.ForHTTP("/minio/health/cluster").
-					WithPort("9000/tcp").WithStartupTimeout(120 * time.Second),
-			},
-		})
-		if err != nil {
-			minioErr = err
-			return
-		}
-		host, err := c.Host(ctx)
-		if err != nil {
-			minioErr = err
-			return
-		}
-		port, err := c.MappedPort(ctx, "9000/tcp")
-		if err != nil {
-			minioErr = err
-			return
-		}
-		minioEndpoint = fmt.Sprintf("http://%s:%s", host, port.Port())
-		// The bucket, made with the image's own client: a substrate is
-		// pointed at a bucket an operator already made, so the backend has
-		// no door for this and the test does what the operator would.
-		for _, cmd := range [][]string{
-			{"mc", "alias", "set", "local", "http://127.0.0.1:9000", minioUser, minioSecret},
-			{"mc", "mb", "--ignore-existing", "local/" + minioBucket},
-		} {
-			code, out, err := c.Exec(ctx, cmd)
-			if err == nil && code != 0 {
-				raw, _ := io.ReadAll(out)
-				err = fmt.Errorf("%s exited %d: %s", strings.Join(cmd, " "), code, raw)
-			}
-			if err != nil {
-				minioErr = err
-				return
-			}
-		}
-	})
-	if minioErr != nil {
-		t.Fatalf("start the minio container: %v", minioErr)
-	}
-	return minioEndpoint
-}
-
-// A repository whose blob bytes live in a bucket exports them into the
-// archive under blobs/, hashed on the way, and the archive records fs: a
-// host running the fs store restores it with nothing else, and verify hashes
-// the blob out of the restored directory.
-func TestExportStreamsBlobsOutOfS3(t *testing.T) {
-	t.Parallel()
-	s3, err := blobbytes.NewS3(blobbytes.S3Config{
-		Endpoint: minioURL(t), Bucket: minioBucket, Region: "us-east-1",
-		AccessKeyID: minioUser, SecretAccessKey: minioSecret, PathStyle: true,
-	})
-	if err != nil {
-		t.Fatalf("open the s3 backend: %v", err)
-	}
-	svc, ds := newDataset(t, engine.WithBlobStore(s3))
-	ctx := context.Background()
-	payload := bytes.Repeat([]byte("bytes in the bucket "), 4096)
-	digest := putBlob(t, ds, payload)
-	id := repositoryIDOf(t, ds)
-	if _, err := os.Stat(filepath.Join(changelogfile.BlobsDir(repoDirOf(t, svc, ds)), digest)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("the bytes landed in the directory, not the bucket: %v", err)
-	}
-	before := foldOf(t, ds)
-	head := maxSeq(t, ds)
-
-	root2, point, snap := exportToRoot(t, ds)
-	if point.Blobs != 1 || snap.BlobStore != "fs" || snap.BlobLocation != "" || len(snap.Blobs) != 1 || snap.Blobs[0] != digest {
-		t.Fatalf("point %+v, snapshot %+v: want the one blob carried under fs", point, snap)
-	}
-	dir2, err := changelogfile.RepoDir(root2, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := os.ReadFile(filepath.Join(changelogfile.BlobsDir(dir2), digest))
-	if err != nil || !bytes.Equal(got, payload) {
-		t.Fatalf("the archive's blob is not the bucket's bytes (%d bytes, %v)", len(got), err)
-	}
-
-	// An fs host imports the archive as it is.
-	svc2 := mustReopen(t, engine.MigratedDSN(t), root2)
-	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if after := foldOf(t, ds2); string(after) != string(before) {
-		t.Fatalf("the restored fold is not the original\n%s", firstDifference(before, after))
-	}
-	if got := getBlob(t, ds2, digest); !bytes.Equal(got, payload) {
-		t.Fatalf("blob bytes = %d bytes, want %d", len(got), len(payload))
-	}
-	verified := mustVerify(t, svc2, testdb.Repository(t))
-	if !verified.OK || verified.Head != head || verified.Blobs != 1 || verified.BlobBytes != int64(len(payload)) {
-		t.Fatalf("the restored repository does not verify: %+v", verified)
 	}
 }

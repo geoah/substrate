@@ -1,9 +1,9 @@
 package engine_test
 
-// The engine against a blob store Postgres cannot join: bytes and manifest no
-// longer commit together, so what these assert is the ORDER — that no crash
-// between them leaves a reader looking at a `stored` manifest whose bytes are
-// missing, and that whatever a crash does leave is collectable.
+// The engine against a blob store Postgres cannot join: the bytes and the
+// manifest cannot commit together, so what these assert is the ORDER, that no
+// crash between them leaves a reader looking at a `stored` manifest whose
+// bytes are missing, and that whatever a crash does leave is collectable.
 
 import (
 	"context"
@@ -85,7 +85,7 @@ func TestBlobFSRoundTrip(t *testing.T) {
 	}
 
 	// A dedup PUT of the same bytes under another name returns the first
-	// writer's, exactly as it does on the postgres backend.
+	// writer's: the digest is the identity, and a name is descriptive.
 	again, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{Name: "other.txt"}, data, "")
 	if err != nil {
 		t.Fatalf("re-put: %v", err)

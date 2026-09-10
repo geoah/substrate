@@ -17,9 +17,6 @@ package testenv_test
 // the procedure followed: "Backups" for the snapshot, "Restore without the
 // credential key" for the rewrap and the boot that imports, "Restore" for the
 // verify afterwards.
-//
-// The blob store is the fs backend throughout; the s3 half of the procedure
-// (copying the listed objects back into the bucket) is not exercised here.
 
 import (
 	"bufio"
@@ -1138,8 +1135,8 @@ func (d *drill) stopAndSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the copy carries no readable snapshot.json: %v", err)
 	}
-	if snap.Head != d.source.head || hex.EncodeToString(snap.HeadHash[:]) != report.HeadHash || snap.BlobLocation != "" {
-		t.Errorf("recorded point = seq %d %x at %q, want seq %d %s in the directory", snap.Head, snap.HeadHash, snap.BlobLocation, d.source.head, report.HeadHash)
+	if snap.Head != d.source.head || hex.EncodeToString(snap.HeadHash[:]) != report.HeadHash || snap.BlobStore != "fs" {
+		t.Errorf("recorded point = seq %d %x laid out for %q, want seq %d %s under fs in the directory", snap.Head, snap.HeadHash, snap.BlobStore, d.source.head, report.HeadHash)
 	}
 	if !slices.Contains(snap.Blobs, d.blobDigest) {
 		t.Errorf("snapshot.json lists %v, which lacks the attachment %s", snap.Blobs, d.blobDigest)

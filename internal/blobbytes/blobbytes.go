@@ -2,11 +2,10 @@
 // blob manifest is a record in Postgres and stays the truth; only the bytes
 // live here.
 //
-// There are two backends: `fs` (the default) keeps the bytes at
+// There is one backend, `fs`: the bytes sit at
 // <root>/repositories/<repository>/blobs/<digest>, inside the repository
-// directory that is the backup unit, and `s3` keeps them at
-// <prefix><repository>/<digest> under a bucket. Nothing moves bytes between
-// them.
+// directory that is the backup unit, so one copy of the directory is a whole
+// backup. Nothing selects anything else and there is no variable to set.
 //
 // A Store is bound to ONE repository before a caller can reach it. The
 // repository is half of every key and no method takes one, so a caller holding
@@ -25,20 +24,18 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// The backend names, which are also the SUBSTRATE_BLOB_STORE values.
-const (
-	BackendFS = "fs"
-	BackendS3 = "s3"
-)
+// BackendFS names the one backend. It is what a snapshot and an export record
+// in `snapshot.json` as the layout their blob bytes are written for.
+const BackendFS = "fs"
 
 // ErrNotStored is what a read or an open reports when the store holds no bytes
 // under that digest. The engine maps it to a not-found.
 var ErrNotStored = errors.New("blobbytes: no bytes are stored under this digest")
 
 // reDigest matches a blob digest: the fixed prefix plus a sha-256 in lowercase
-// hex. It is checked HERE as well as in the engine because for fs and s3 the
-// digest is a path segment, and a digest that could hold `/` or `..` would
-// address bytes outside the repository it was handed to.
+// hex. It is checked HERE as well as in the engine because the digest is a
+// path segment, and one that could hold `/` or `..` would address bytes
+// outside the repository it was handed to.
 var reDigest = regexp.MustCompile(`^blob-sha256-[0-9a-f]{64}$`)
 
 // checkDigest refuses anything that is not a blob digest.
@@ -75,14 +72,11 @@ type Object struct {
 //
 // Put takes an io.Reader and Open returns an io.ReadCloser so that a later
 // streaming read path (range requests, a cap above 64 MiB) is a change to the
-// callers rather than to the backends.
+// callers rather than to the backend.
 type Store interface {
-	// Backend names the backend this store belongs to: BackendFS or
-	// BackendS3.
-	Backend() string
-	// Put writes exactly size bytes read from r under digest. The bytes must
-	// hash to digest: the s3 backend signs the request with that hash, so a
-	// reader that disagrees with its digest is refused by the endpoint.
+	// Put writes exactly size bytes read from r under digest. The caller has
+	// already hashed the bytes: the digest is the key, not a claim this store
+	// re-checks.
 	Put(ctx context.Context, digest string, size int64, r io.Reader) error
 	// Open returns the stored bytes, or ErrNotStored.
 	Open(ctx context.Context, digest string) (io.ReadCloser, error)
@@ -98,23 +92,13 @@ type Store interface {
 	List(ctx context.Context, after string, limit int) ([]Object, error)
 }
 
-// Backend is the configured store, before it is bound to a repository. One
-// Backend serves every repository the process opens.
+// Backend is the byte store before it is bound to a repository. One Backend
+// serves every repository the process opens. *FS is the only implementation;
+// the interface stays because the engine takes it as an option and a test
+// substitutes a store that refuses.
 type Backend interface {
-	// Name is the backend's name, the same value its stores report.
-	Name() string
 	// Repository binds the backend to one repository.
 	Repository(repository string) (Store, error)
-}
-
-// Locator is implemented by a backend whose objects live outside the
-// repository directory (the s3 backend), for the snapshot that has to name
-// where a repository's bytes are so a restore can copy them.
-type Locator interface {
-	// Location is the prefix every object of the repository sits under, as a
-	// URL a person can act on: `s3://<bucket>/<prefix><repository>/`. An
-	// object is that plus its digest.
-	Location(repository string) (string, error)
 }
 
 // ReadAll reads a stored object whole, refusing one longer than size. It is

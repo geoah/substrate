@@ -57,12 +57,10 @@ after, with snapshot.json recording the committed point the copy holds.
 The copy lands at <destination root>/repositories/<authority>/, the layout a
 data root has, so a restore copies it straight under SUBSTRATE_DATA_ROOT. It
 holds the manifest, every changelog segment and sidecar, every committed
-sealed file and, under the fs blob store, the bytes of every stored blob,
-each hashed against its digest on the way. Under the s3 blob store the bytes
-stay in the bucket: snapshot.json lists the objects the copy needs and where
-they are, and the restore copies them. snapshot.json is written last and
-names the head seq, its checksum and when the copy was taken; 'repository
-verify' on the restored repository prints it and holds the files to it.
+sealed file and the bytes of every stored blob, each hashed against its
+digest on the way. snapshot.json is written last and names the head seq, its
+checksum and when the copy was taken; 'repository verify' on the restored
+repository prints it and holds the files to it.
 
 Before anything is copied the repository is verified whole: the changelog in
 both places, every stored blob's bytes, every live secret reference and, under
@@ -118,12 +116,7 @@ repository with this binary's dialects, which an older server then refuses.
 			fmt.Fprintf(a.out, "  point:     seq %d, checksum %s\n", report.Head, report.HeadHash)
 			fmt.Fprintf(a.out, "  changelog: %d segment(s)\n", report.Segments)
 			fmt.Fprintf(a.out, "  sealed:    %d file(s), every one opened under %s\n", report.SealedFiles, credentialKeyEnv)
-			if report.BlobLocation != "" {
-				fmt.Fprintf(a.out, "  blobs:     %d object(s) listed in %s under %s; copy them with the directory\n",
-					report.Blobs, changelogfile.SnapshotName, report.BlobLocation)
-			} else {
-				fmt.Fprintf(a.out, "  blobs:     %d copied (%d bytes), each hashed against its digest\n", report.Blobs, report.BlobBytes)
-			}
+			fmt.Fprintf(a.out, "  blobs:     %d copied (%d bytes), each hashed against its digest\n", report.Blobs, report.BlobBytes)
 			fmt.Fprintf(a.out, "  took:      %s\n", report.Took.Round(time.Millisecond))
 			return nil
 		},

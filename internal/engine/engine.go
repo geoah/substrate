@@ -163,10 +163,10 @@ func WithConversionCeiling(n int64) Option {
 // ErrChangelogLocked at the first repository it opens for writing.
 func WithDirectoryReadOnly() Option { return func(o *options) { o.dirReadOnly = true } }
 
-// WithBlobStore puts blob bytes somewhere other than the default, which is the
-// fs backend under the data root (<root>/repositories/<authority>/blobs). The s3
-// backend trades the one-directory backup for bytes in a bucket;
-// internal/blobbytes says what each one keeps.
+// WithBlobStore hands the engine the blob byte store to use, which is
+// otherwise built here: the fs backend under the data root
+// (<root>/repositories/<authority>/blobs). It exists so the operator hat and
+// the tests can pass a store rooted somewhere else.
 func WithBlobStore(b blobbytes.Backend) Option { return func(o *options) { o.blobs = b } }
 
 // ErrNoDataRoot is Open's refusal when no data root was given, or the given
