@@ -202,11 +202,12 @@ type xqStream struct {
 	cancel context.CancelFunc
 }
 
-// xqOpenStream opens a watch and asserts it streams. The stream outlives any
-// sane client timeout, so it gets its own client and its own deadline.
+// xqOpenStream opens a watch and asserts it streams. The stream outlives one
+// exchange, so it gets its own client and its own deadline: the caller's
+// floor, raised by SUBSTRATE_E2E_TIMEOUT on a loaded machine.
 func xqOpenStream(c *C, path string, deadline time.Duration) *xqStream {
 	c.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), deadline)
+	ctx, cancel := context.WithTimeout(context.Background(), c.r.streamDeadline(deadline))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.r.base+path, nil)
 	if err != nil {
 		cancel()

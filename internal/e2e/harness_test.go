@@ -33,10 +33,11 @@ const (
 	envTimeout   = "SUBSTRATE_E2E_TIMEOUT"
 )
 
-// defaultRequestTimeout bounds one exchange. A request the server abandons
-// mid-write leaves the repository refusing writes until a restart, so on a
-// loaded machine the timeout has to be raised rather than tripped:
-// SUBSTRATE_E2E_TIMEOUT takes any Go duration.
+// defaultRequestTimeout bounds one exchange: it is the CLIENT's timeout, and
+// tripping it abandons a request the server is still serving. A write
+// abandoned mid-commit leaves the repository refusing writes until the server
+// restarts (issue #516), so on a loaded machine raise the timeout rather than
+// trip it: SUBSTRATE_E2E_TIMEOUT takes any Go duration.
 const defaultRequestTimeout = 30 * time.Second
 
 func requestTimeout(t *testing.T) time.Duration {
@@ -49,6 +50,18 @@ func requestTimeout(t *testing.T) time.Duration {
 		t.Fatalf("%s=%q is not a positive Go duration", envTimeout, raw)
 	}
 	return d
+}
+
+// streamDeadline bounds a WATCH, which outlives any single exchange: the
+// stream is open until the case has what it waited for. The case's own
+// minimum is the floor (a heartbeat case has to outlast the heartbeat
+// interval) and SUBSTRATE_E2E_TIMEOUT raises it, so one knob moves every
+// deadline the suite holds.
+func (r *run) streamDeadline(min time.Duration) time.Duration {
+	if r.timeout > min {
+		return r.timeout
+	}
+	return min
 }
 
 // authWindow paces the credential endpoints: the door admits one attempt per
@@ -70,9 +83,10 @@ type run struct {
 	password   string
 	token      string // the first token's secret; every case call carries it
 	tokenID    string
-	totpSecret string    // the enrolled seed, when the server enforces the factor
-	lastAuth   time.Time // when the door last saw a credential attempt
-	lastStep   int64     // the TOTP step a code was last consumed at
+	totpSecret string        // the enrolled seed, when the server enforces the factor
+	timeout    time.Duration // what one exchange gets before the client gives up
+	lastAuth   time.Time     // when the door last saw a credential attempt
+	lastStep   int64         // the TOTP step a code was last consumed at
 }
 
 func newRun(t *testing.T, base string) *run {
@@ -85,11 +99,13 @@ func newRun(t *testing.T, base string) *run {
 	// it a legal DNS label and two runs in the same second apart. It is a
 	// bare label, which the door completes under its own host.
 	repository := "e2e" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	timeout := requestTimeout(t)
 	return &run{
 		t:          t,
 		base:       strings.TrimRight(base, "/"),
 		invite:     invite,
-		hc:         &http.Client{Timeout: requestTimeout(t)},
+		timeout:    timeout,
+		hc:         &http.Client{Timeout: timeout},
 		repository: repository,
 		password:   "correct-horse-battery-staple",
 		rep:        &report{Server: base, Started: time.Now()},

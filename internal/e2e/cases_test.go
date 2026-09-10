@@ -522,14 +522,16 @@ func (c *C) readChangesForwardWith(token string, from int64, v url.Values) []cha
 // row the stream delivers for recordID.
 func (c *C) watchForWrite(from int64, recordID string, write func()) changeRow {
 	c.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// The stream outlives one exchange, so it carries its own deadline: the
+	// case's floor, raised by SUBSTRATE_E2E_TIMEOUT on a loaded machine.
+	ctx, cancel := context.WithTimeout(context.Background(), c.r.streamDeadline(30*time.Second))
 	defer cancel()
 	_, generation := c.changelogHead()
 	u := fmt.Sprintf("%s/api/v1/changes?watch=1&from=%d&generation=%s", c.r.base, from, generation)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	c.requiref(err == nil, "building the watch request: %v", err)
 	req.Header.Set("Authorization", "Bearer "+c.r.token)
-	// The stream outlives any sane client timeout, so it gets its own client.
+	// No client timeout: the deadline above is the one that ends the stream.
 	resp, err := (&http.Client{}).Do(req)
 	c.requiref(err == nil, "opening the watch: %v", err)
 	defer resp.Body.Close()

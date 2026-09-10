@@ -423,9 +423,9 @@ need, `SUBSTRATE_E2E_CREDENTIAL_KEY` the key those commands read, and
 server of your own when the shared dev stack is somebody else's.
 
 `SUBSTRATE_E2E_TIMEOUT` bounds one exchange and defaults to 30s. Raise it on
-a loaded machine: a request the client abandons mid-write leaves the
-repository refusing writes until the server restarts, so every case after it
-fails for a reason that is not the code's.
+a loaded machine: a write this client abandons can wedge the repository
+([issue 516](https://github.com/geoah/substrate/issues/516)), and every case
+after it then fails for a reason that is not the code's.
 
 A case a unit suite already pins is not in the list: `internal/api` against
 its fake, `internal/engine` against a real Postgres, and
