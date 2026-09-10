@@ -99,7 +99,7 @@ describe("authorityCountsQueryOptions", () => {
     expect(opts.staleTime).toBeGreaterThanOrEqual(5 * 60_000)
   })
 
-  it("probes one kind at a time, in order — a zone holds one connection", async () => {
+  it("probes one kind at a time, in order: a zone holds one connection", async () => {
     const kinds = [
       kindInfo("a", "g.dev"),
       kindInfo("b", "g.dev"),

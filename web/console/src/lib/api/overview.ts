@@ -9,7 +9,7 @@
  *   connections; a repository with dozens of kinds firing them all at once
  *   stampedes the pipe and the other zones queue behind its probes. So each
  *   authority's zone holds one connection, and the ceiling is the number of
- *   zones on the page. Counts cache for minutes — the dashboard is a glance,
+ *   zones on the page. Counts cache for minutes: the dashboard is a glance,
  *   not a ledger. */
 
 import { queryOptions } from "@tanstack/react-query"

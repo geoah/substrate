@@ -3,7 +3,7 @@
  * answers what just happened (the changelog's feed, 60s refetch, no watch), zone 2
  * what needs a verdict (the merge queue's evidence cards and the pending
  * changes beneath them), zone 3 what the substrate
- * holds (per-kind counts behind a concurrency gate, the repository's own
+ * holds (per-kind counts, one probe at a time, the repository's own
  * authorities only — the machinery is in the nav, not on the glance). Each
  * zone loads, empties and fails on its own — one slow surface never blanks
  * the glance. */
