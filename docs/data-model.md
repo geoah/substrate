@@ -28,9 +28,7 @@ changelog through that same fold code
 The changelog does not carry the side stores' bytes, so **a backup is changelog plus blobs
 plus sealed, as one unit**: the repository's directory under
 `SUBSTRATE_DATA_ROOT`, which holds all three
-([backups](operations.md#backups)). Where blob bytes are configured to live in
-a bucket, that unit is two artifacts
-([the blob store](operations.md#the-blob-store)).
+([backups](operations.md#backups)).
 
 Sequence numbers are per repository, gapless, and assigned at commit, so
 commit-visibility order **is** sequence order and a consumer resuming from a
@@ -524,9 +522,8 @@ accepts that same object and uses only its `digest`, so a document read with
 the other keys are the manifest's own, and writing them changes nothing. A
 digest whose manifest is gone reads as the bare `{digest}` and is refused on
 write as before (`blob … is unknown`). The manifest is always a record in
-Postgres; where the BYTES sit is an operator's choice of backend
-([the blob store](operations.md#the-blob-store)), and nothing on the wire
-changes with it.
+Postgres; the BYTES sit in the repository's directory under the data root
+([the blob store](operations.md#the-blob-store)).
 
 A blob's `name` and `mediaType` are both **optional and descriptive**. The
 upload says them — the name as `?name=` or a `Content-Disposition` filename,

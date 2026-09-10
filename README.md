@@ -367,8 +367,8 @@ the thing you back up), `SUBSTRATE_INVITE_CODE` (unset means registration is
 closed), and `SUBSTRATE_CREDENTIAL_KEY` (base64 of exactly 32 bytes; it wraps
 the key every secret is sealed under, and a server without it refuses to
 boot).
-[docs/operations.md](docs/operations.md) has the full table, blob stores and
-egress rules included.
+[docs/operations.md](docs/operations.md) has the full table, the blob store
+and the egress rules included.
 
 ## Development
 

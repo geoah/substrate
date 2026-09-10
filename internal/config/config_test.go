@@ -125,31 +125,6 @@ func TestLoadData(t *testing.T) {
 	}
 }
 
-// There are two stores, and the default is fs under the data root. Any other
-// name is refused by the variable's name rather than falling back.
-func TestBlobsBackend(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	for _, store := range []string{"", "fs"} {
-		b, err := (Blobs{Store: store}).Backend(root)
-		if err != nil {
-			t.Fatalf("Store %q: %v", store, err)
-		}
-		if b.Name() != "fs" {
-			t.Fatalf("Store %q built the %s backend, want fs", store, b.Name())
-		}
-	}
-	for _, store := range []string{"postgres", "disk"} {
-		_, err := (Blobs{Store: store}).Backend(root)
-		if err == nil || !strings.Contains(err.Error(), "SUBSTRATE_BLOB_STORE") {
-			t.Fatalf("Store %q was not refused by the variable's name: %v", store, err)
-		}
-	}
-	if _, err := (Blobs{Store: "fs"}).Backend("relative"); err == nil {
-		t.Fatal("the fs backend accepted a relative data root")
-	}
-}
-
 func mustRandom(t *testing.T, n int) []byte {
 	t.Helper()
 	b := make([]byte, n)

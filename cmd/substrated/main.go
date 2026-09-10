@@ -108,16 +108,12 @@ func run() error {
 	// per pass. The process holds no key that could reach a
 	// repository-chosen endpoint.
 
-	// Where blob bytes live. The default is the fs backend under the data
-	// root, so a deployment that sets nothing has its bytes in the repository
-	// directory beside everything else the repository needs to come back.
-	blobs, err := cfg.Blobs.Backend(cfg.Data.Root)
+	// Where blob bytes live: under the data root, in each repository's own
+	// directory, beside everything else that repository needs to come back.
+	// There is nothing to configure, because there is one backend.
+	blobs, err := blobbytes.NewFS(cfg.Data.Root)
 	if err != nil {
 		return err
-	}
-	if blobs.Name() != blobbytes.BackendFS {
-		slog.Info("blob bytes are stored outside the data root: a repository directory is no longer a whole backup",
-			"backend", blobs.Name())
 	}
 
 	opts := []engine.Option{

@@ -13,8 +13,8 @@ import (
 const MinChangelogSegmentBytes int64 = 1 << 20
 
 // Data says where the server keeps every repository's directory: the
-// changelog segments, the sealed store's files, the manifest and (on the fs
-// blob backend) the blob bytes, one subdirectory per repository under
+// changelog segments, the sealed store's files, the manifest and the blob
+// bytes, one subdirectory per repository under
 // <Root>/repositories. It is part of Config and also loadable on its own,
 // because substratectl's operator hat opens the engine over a DSN and needs
 // the same root without the rest of the server's configuration.

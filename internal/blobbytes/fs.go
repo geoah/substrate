@@ -24,10 +24,10 @@ const (
 const tmpPrefix = ".incoming-"
 
 // FS keeps blob bytes under the data root, inside each repository's own
-// directory: <root>/repositories/<repository>/blobs/<digest>. It is the
-// default, and the one backend under which the repository directory is the
-// whole backup: the changelog segments, the sealed store and the bytes travel
-// together when the directory is copied.
+// directory: <root>/repositories/<repository>/blobs/<digest>. It is the one
+// backend, which is why the repository directory is the whole backup: the
+// changelog segments, the sealed store and the bytes travel together when the
+// directory is copied.
 //
 // Row level security does not reach the bytes: the repository is a
 // directory, and anything that can read the root can read every repository,
@@ -61,9 +61,6 @@ func NewFS(root string) (*FS, error) {
 	return &FS{root: filepath.Clean(root)}, nil
 }
 
-// Name is BackendFS.
-func (*FS) Name() string { return BackendFS }
-
 // Repository binds the backend to one repository's blobs directory,
 // <root>/repositories/<authority>/blobs. The id is checked against the
 // authority grammar first, so it is always exactly one path segment. Nothing
@@ -77,8 +74,6 @@ func (f *FS) Repository(repository string) (Store, error) {
 }
 
 type fsStore struct{ dir string }
-
-func (*fsStore) Backend() string { return BackendFS }
 
 // path is the one place a key is built. The digest is checked against the
 // digest grammar, so it is one path segment and cannot escape the directory.

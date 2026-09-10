@@ -85,7 +85,7 @@ func TestBlobFSRoundTrip(t *testing.T) {
 	}
 
 	// A dedup PUT of the same bytes under another name returns the first
-	// writer's, exactly as it does on the postgres backend.
+	// writer's: the digest is the identity, and a name is descriptive.
 	again, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{Name: "other.txt"}, data, "")
 	if err != nil {
 		t.Fatalf("re-put: %v", err)

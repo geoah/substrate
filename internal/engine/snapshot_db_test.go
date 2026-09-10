@@ -76,7 +76,7 @@ func TestVerifyReportsMissingAndDamagedSideStoreFiles(t *testing.T) {
 		t.Fatalf("a copy short of a blob's bytes and a live secret's file verified: %+v", report)
 	}
 	for _, want := range []string{
-		"blob " + missing + ": the manifest is stored and the fs store holds no bytes",
+		"blob " + missing + ": the manifest is stored and the blob store holds no bytes",
 		"blob " + damaged + ": the stored bytes hash to blob-sha256-",
 		"secret " + ref + ": " + typeProvider + " openai names it in apiKey and sealed/ has no file for it",
 	} {
@@ -200,7 +200,7 @@ func TestSnapshotRecordsThePointAndRestoresIntoAnEmptyDatabase(t *testing.T) {
 	if snap.Head != head || hex.EncodeToString(snap.HeadHash[:]) != report.HeadHash || report.HeadHash == "" {
 		t.Fatalf("recorded point = seq %d %x, want seq %d %s", snap.Head, snap.HeadHash, head, report.HeadHash)
 	}
-	if len(snap.Blobs) != 1 || snap.Blobs[0] != digest || snap.BlobLocation != "" || snap.SealedFiles != report.SealedFiles {
+	if len(snap.Blobs) != 1 || snap.Blobs[0] != digest || snap.SealedFiles != report.SealedFiles {
 		t.Fatalf("snapshot = %+v, want the one stored digest %s in the directory", snap, digest)
 	}
 	if _, err := operator.(snapshotter).SnapshotRepository(ctx, "ada.example.com", dest); !errors.Is(err, engine.ErrSnapshotExists) {

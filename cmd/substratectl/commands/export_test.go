@@ -52,7 +52,7 @@ func exportArchive(t *testing.T, complete bool) []byte {
 	write("blobs/blob-sha256-"+strings.Repeat("a", 64), "attachment bytes")
 	if complete {
 		write("snapshot.json", `{"format":1,"takenAt":"2026-09-08T10:00:00Z","head":42,"headHash":"`+
-			strings.Repeat("ab", 32)+`","sealedFiles":1,"blobStore":"fs","blobLocation":"","blobs":["blob-sha256-`+strings.Repeat("a", 64)+`"]}`+"\n")
+			strings.Repeat("ab", 32)+`","sealedFiles":1,"blobStore":"fs","blobs":["blob-sha256-`+strings.Repeat("a", 64)+`"]}`+"\n")
 	}
 	if err := tw.Close(); err != nil {
 		t.Fatal(err)

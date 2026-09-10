@@ -23,9 +23,6 @@ type Config struct {
 	// Data is the data root every repository directory lives under. Its own
 	// type, because the operator hat loads it without the rest (LoadData).
 	Data Data
-	// Blobs says where blob bytes live. Its own type, because the operator
-	// hat loads it without the rest (LoadBlobs).
-	Blobs Blobs
 	// InviteCode is the ONE door into a fresh substrate: registering with it
 	// creates a user and their one repository. UNSET TURNS REGISTRATION OFF —
 	// /register answers `unsupported` — which is the right default for a

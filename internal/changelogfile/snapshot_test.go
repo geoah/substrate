@@ -18,8 +18,8 @@ func sampleSnapshot() Snapshot {
 	return Snapshot{
 		Format: SnapshotFormat, TakenAt: time.Date(2026, 9, 8, 10, 0, 0, 123456000, time.UTC),
 		Head: 42, HeadHash: sum, SealedFiles: 3,
-		BlobStore: "s3", BlobLocation: "s3://bucket/prefix/ada.example.com/",
-		Blobs: []string{"blob-sha256-" + strings.Repeat("a", 64)},
+		BlobStore: "fs",
+		Blobs:     []string{"blob-sha256-" + strings.Repeat("a", 64)},
 	}
 }
 
@@ -43,7 +43,7 @@ func TestSnapshotRoundTrip(t *testing.T) {
 	for _, want := range []string{
 		`"format": 1`, `"takenAt": "2026-09-08T10:00:00.123456Z"`, `"head": 42`,
 		`"headHash": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"`, `"sealedFiles": 3`,
-		`"blobStore": "s3"`, `"blobLocation": "s3://bucket/prefix/ada.example.com/"`,
+		`"blobStore": "fs"`,
 	} {
 		if !bytes.Contains(raw, []byte(want)) {
 			t.Errorf("snapshot lacks %s:\n%s", want, raw)
@@ -54,7 +54,7 @@ func TestSnapshotRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.Head != s.Head || got.HeadHash != s.HeadHash || !got.TakenAt.Equal(s.TakenAt) || got.SealedFiles != 3 ||
-		got.BlobStore != "s3" || got.BlobLocation != s.BlobLocation || len(got.Blobs) != 1 || got.Blobs[0] != s.Blobs[0] {
+		got.BlobStore != "fs" || len(got.Blobs) != 1 || got.Blobs[0] != s.Blobs[0] {
 		t.Fatalf("round trip changed the snapshot:\n%+v\n%+v", s, got)
 	}
 }

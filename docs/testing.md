@@ -74,8 +74,7 @@ key with the recovery key and imported into an empty schema, then compared
 record by record and resumed. Its later stages kill the import at batch
 boundaries, take a second repository through the oldest directory format the
 reader accepts, and resume a saved change cursor against the replaced
-history. It runs with the rest of `test:db` and takes about ten seconds; the
-fs blob store is the only one it exercises.
+history. It runs with the rest of `test:db` and takes about ten seconds.
 
 ```bash
 go test -count=1 -run TestReleaseAcceptanceDrill -v ./internal/testenv/
@@ -127,7 +126,7 @@ keyed on one constant, so the parallel suite ran its migrations one test at
 a time: 90% of Postgres's time in a run was that lock. The lock is keyed on
 `current_schema()` now, like the engine's other three (no effect on a
 deployment, one schema per database), which is what the packages still on
-`testdb.NewSchema` (blobbytes, catalog, testenv, substratectl) get. The from-empty
+`testdb.NewSchema` (catalog, testenv, substratectl) get. The from-empty
 migration still runs three times per engine binary: the template build,
 `TestRepositoryProvisioningAndProjections` and
 `TestAssertPoolPrincipalRejectsSuperuser`.

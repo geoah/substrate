@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-08-17
 decision-makers: geoah
+amended-by: 0075
 ---
 
 # 0031. Blob bytes outside Postgres are stored plaintext

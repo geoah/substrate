@@ -48,13 +48,6 @@ boot.
 | `SUBSTRATE_SANDBOX`            | `best-effort`                          | How hard to confine function bodies: `off`, `best-effort`, or `enforce` (refuse to run a body unconfined). |
 | `SUBSTRATE_SANDBOX_EGRESS_ALLOW` | —                                   | A comma-separated list of CIDRs (or bare addresses) a network body may reach despite the private-range block. A body that declares `permissions.network` reaches the public internet but not the deployment's own loopback, link-local or RFC1918 ranges, so a local provider (a loopback Ollama) needs its address listed here. Empty blocks every private range. |
 | `SUBSTRATE_EGRESS_ALLOW`       | —                                      | A comma-separated list of CIDRs (or bare addresses) the SERVER may dial for a repository-chosen URL despite the private-range block. An `llmprovider` row's `baseURL` is written by the repository owner, so the engine confines its completion and embedding dials to public destinations, refusing the deployment's own loopback, link-local, RFC1918 and CGNAT ranges at connect time (issue #241). A local provider (a loopback Ollama) needs its address listed here. Empty blocks every private range. This is the server's own dials; `SUBSTRATE_SANDBOX_EGRESS_ALLOW` is the separate escape for a function body's dials. |
-| `SUBSTRATE_BLOB_STORE`         | `fs`                                   | Where blob bytes live: `fs` (under the repository directory in the data root) or `s3` (a bucket). See [the blob store](#the-blob-store). |
-| `SUBSTRATE_BLOB_S3_ENDPOINT`   | —                                      | `s3` only: the service URL, scheme included (`https://s3.us-east-1.amazonaws.com`, or a self-hosted endpoint).                       |
-| `SUBSTRATE_BLOB_S3_BUCKET`     | —                                      | `s3` only: the bucket. It must be PRIVATE — the bytes are stored as they arrived.                                                    |
-| `SUBSTRATE_BLOB_S3_REGION`     | `us-east-1`                            | `s3` only: the region the request is signed for.                                                                                     |
-| `SUBSTRATE_BLOB_S3_ACCESS_KEY_ID` / `SUBSTRATE_BLOB_S3_SECRET_ACCESS_KEY` | — | `s3` only: the credentials every request is signed with. `SUBSTRATE_BLOB_S3_SESSION_TOKEN` beside them for temporary ones.        |
-| `SUBSTRATE_BLOB_S3_PREFIX`     | —                                      | `s3` only: a key prefix, for a bucket this substrate shares with something else.                                                     |
-| `SUBSTRATE_BLOB_S3_PATH_STYLE` | `true`                                 | `s3` only: address the bucket as a path segment rather than a subdomain. Self-hosted endpoints want it; AWS accepts it.               |
 
 `SUBSTRATE_CREDENTIAL_KEY` is the one that must be backed up apart from the
 data root: without it, sealed material is unreadable
@@ -168,35 +161,33 @@ What that means for an operator:
 
 A blob is two halves: a **manifest**, which is an ordinary record keyed by the
 content digest, and the **bytes**. The manifest is always in Postgres and is
-always the truth. `SUBSTRATE_BLOB_STORE` says where the bytes go.
+always the truth. The bytes are always at
+`$SUBSTRATE_DATA_ROOT/repositories/<authority>/blobs/<digest>`, inside the
+repository directory beside the changelog, so one copy of the directory is a
+whole backup.
 
-| Backend            | Where the bytes are                                        | Backup                                  |
-| ------------------ | ---------------------------------------------------------- | --------------------------------------- |
-| `fs`               | `$SUBSTRATE_DATA_ROOT/repositories/<authority>/blobs/<digest>` | the repository directory, and nothing else |
-| `s3`               | `<prefix><authority>/<digest>` in the bucket               | the directory **plus** the bucket        |
-
-`fs` is the default: the bytes sit in the repository directory beside the
-changelog, so one copy of the directory is a whole backup. `s3` is for a
-deployment whose disk cannot hold the attachments, and it makes the backup two
-artifacts. Those are the two stores; any other value of
-`SUBSTRATE_BLOB_STORE` refuses the boot by name rather than falling back to
-the default.
+There is nothing to configure. There was a second backend, an S3 bucket, and
+no deployment selected it; v1 ships the filesystem alone and
+`SUBSTRATE_BLOB_STORE` no longer exists
+([0075](decisions/0075-v1-ships-the-fs-blob-backend-alone.md)). A host that
+still sets it, or any `SUBSTRATE_BLOB_S3_*` variable, boots and ignores it:
+the server reads no such variable.
 
 **Isolation is not the database's job here.** The repository is half of every
 key, and it comes from the authenticated token's repository, never from the
 request: a read resolves the manifest first, under row level security, and only
 then fetches bytes. So a caller cannot reach another repository's blob by
-guessing a digest. But anything that can read the data root or the bucket can
-read every repository's blobs: the store is as trusted as the database. Keep
-the bucket private, with credentials only this substrate holds.
+guessing a digest. But anything that can read the data root can read every
+repository's blobs: the store is as trusted as the database. The directory and
+the files in it are mode `0700` and `0600`, so on a shared box the mode is what
+keeps another local account out.
 
-**Blob bytes are never sealed, on any backend.** The sealed store covers
-secret-typed properties; an object on disk and an object in a bucket are stored
-exactly as they arrived, and no credential key is involved in reading either
+**Blob bytes are never sealed.** The sealed store covers secret-typed
+properties; a blob object is stored exactly as it arrived, and no credential
+key is involved in reading it
 ([0031](decisions/0031-blob-bytes-outside-postgres-are-stored-plaintext.md)).
-Whoever holds the directory or the bucket holds every attachment in the clear.
-For encryption at rest, put it under the store: disk encryption for the data
-root, the bucket's own server-side encryption for `s3`.
+Whoever holds the directory holds every attachment in the clear. For encryption
+at rest, put it under the store: disk encryption for the data root.
 
 **An upload becomes two steps, and a crash between them is cheap.** Outside
 Postgres the bytes cannot commit with the manifest, so the manifest is written
@@ -209,15 +200,12 @@ Deleting works the same way in reverse: the manifest is tombstoned, then the
 object is deleted, and an object left behind by a failure is reaped by a later
 sweep that lists the store.
 
-**Pick the store before the first upload.** `SUBSTRATE_BLOB_STORE` is read at
-boot and nothing moves bytes between the two stores: a server pointed at a
-store the bytes are not in serves a 404 for every blob, and a 404 reads like a
-deletion. Changing it on a substrate that already holds blobs means copying
-`<data root>/repositories/<authority>/blobs/` into the bucket (or back) by
-hand, with the server stopped.
+**The bytes follow the data root.** A server pointed at a data root the bytes
+are not in serves a 404 for every blob, and a 404 reads like a deletion. Move
+`<data root>/repositories/` whole, with the server stopped.
 
 The 64 MiB cap on one upload and the absence of range reads are the contract,
-not the backend: neither changes with the store.
+not the store.
 
 ## The function sandbox
 
@@ -452,14 +440,14 @@ verified before and after: it takes the repository's writer lock (a running
 server refuses it), runs the whole `repository verify` including the blob
 hashes and the sealed files opened under `SUBSTRATE_CREDENTIAL_KEY` (which it
 requires), refuses on any finding, copies the manifest, every segment and
-sidecar, every committed sealed file and, on the `fs` blob store, the bytes
-of every `stored` blob, each hashed against its digest on the way, verifies
-the copy's changelog and sealed files, and writes `snapshot.json` last. That
-file names the point: the head seq, that entry's checksum and when the copy
-was taken, plus the blob store, the digests the copy needs and, under `s3`,
-where they are. A directory carrying one is a copy that finished; the boot
-ignores the file, and `repository verify` on the restored repository prints
-the point and checks that the entry it names is in the files with that
+sidecar, every committed sealed file and the bytes of every `stored` blob,
+each hashed against its digest on the way, verifies the copy's changelog and
+sealed files, and writes `snapshot.json` last. That file names the point: the
+head seq, that entry's checksum and when the copy was taken, plus the digests
+the copy carries under `blobs/`. A directory carrying one is a copy that
+finished; the boot ignores the file, and `repository verify` on the restored
+repository prints the point and checks that the entry it names is in the
+files with that
 checksum ([decision 0065](decisions/0065-a-snapshot-is-a-stopped-server-copy-that-records-its-head.md)).
 A destination that already holds a directory for the repository is refused;
 a snapshot is a fresh copy, never a merge over an older one. The copy is
@@ -481,17 +469,6 @@ until the snapshot finishes.
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository snapshot ada /srv/substrate-backup/2026-09-08
 ```
 
-**Under the `s3` blob store the objects are the second half of the snapshot.**
-The bytes stay in the bucket, and `snapshot.json` lists them: `blobLocation`
-is the repository's object prefix (`s3://<bucket>/<prefix><authority>/`) and
-`blobs` every digest a `stored` manifest names, so each object is the
-location plus a digest. Copy them with the directory, with the bucket's own
-tooling, and copy them back into the bucket the restored server is configured
-with before the boot that imports the directory; `repository verify` then
-reads each one out of the bucket and hashes it, and names every object that
-is missing or is not its digest's bytes. Under `fs` the bytes are in the
-copy's `blobs/` and `blobLocation` is empty.
-
 **An owner downloads the same snapshot from a running server.**
 `GET /api/v1/export`, or `substratectl export`, streams the repository as a
 tar laid out as a data root: `repositories/<authority>/` with
@@ -510,13 +487,9 @@ archive still holds one committed state. It carries no host key:
 lets a same-key restore boot with nothing else, and the `recoverykey` record
 in the changelog holds the DEK wrapped to the owner's recovery key, which is
 what opens the archive anywhere else. The blob bytes ride in the archive
-whatever store the server runs, `s3` included, so `snapshot.json` records
-`fs` and no location: an export is self-contained, because its owner has no
-bucket. Restoring an export onto an `s3` host takes one more step: upload
-the extracted `blobs/*` to the bucket under the repository's prefix
-(`<prefix><authority>/<digest>`) before the boot that imports the directory,
-or `repository verify` names every blob whose bytes the bucket lacks. One
-export streams per repository at a time; a second request while one is
+under `blobs/`, so an export is self-contained: extract it under a data root
+and the boot that imports the directory has every attachment. One export
+streams per repository at a time; a second request while one is
 running answers `409 conflict`. An archive that ends before `snapshot.json` was cut short;
 `substratectl export` refuses and removes one, and the server aborts the
 response rather than finish a tar it could not complete.
@@ -617,10 +590,7 @@ move that directory out of the root or restore it from an older copy, then
 boot again. A directory whose `repository.json` carries a DEK the host's
 `SUBSTRATE_CREDENTIAL_KEY` does not open refuses the boot the same way, naming
 the repository and the variable, because importing it would create a
-repository no login could open. Under the `s3` blob store the bucket is the
-second artifact: copy the objects `snapshot.json` lists back into the bucket
-(above), or the manifests come back `stored` with no bytes behind them, which
-`repository verify` names one blob at a time.
+repository no login could open.
 
 ### Restore without the credential key
 
@@ -815,8 +785,7 @@ the exec path needs nothing open at all.
   copies (and a server that opens the repository first while it runs meets
   the same lock). The copy is built beside the destination and renamed into
   place last, so a failed snapshot leaves nothing there. Run it with the
-  server's binary, as with `rebuild`. Under `s3` it lists the objects the
-  copy needs instead of copying them.
+  server's binary, as with `rebuild`.
 - **`repository rebuild <repository>`** replays the segment files into a fresh
   fold, in one transaction, under that repository's own lock, after running
   the same check the boot runs. It reproduces the fold bit for bit and appends

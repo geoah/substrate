@@ -15,6 +15,7 @@ import (
 	// imported.
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/config"
 	"github.com/geoah/substrate/internal/engine"
@@ -119,15 +120,10 @@ func (a *app) openEngineWithKey(ctx context.Context, credKey string, readOnly bo
 	if err != nil {
 		return nil, err
 	}
-	// The blob store the server runs with, from the same variables:
+	// The blob store the server runs with, off the same data root:
 	// `repository verify` reads every stored blob's bytes and `repository
-	// snapshot` copies or lists them, and under `s3` the engine's default
-	// (fs under the data root) would hold none of them.
-	blobs, err := config.LoadBlobs()
-	if err != nil {
-		return nil, err
-	}
-	store, err := blobs.Backend(data.Root)
+	// snapshot` copies them.
+	store, err := blobbytes.NewFS(data.Root)
 	if err != nil {
 		return nil, err
 	}

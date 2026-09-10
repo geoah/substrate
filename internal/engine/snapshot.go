@@ -7,12 +7,11 @@ package engine
 // refuses it, and it needs the credential key, because a snapshot promises
 // that every sealed file it carries opens. It copies what a restore needs and
 // nothing else: the manifest, every segment and sidecar, every committed
-// sealed file, and under the fs blob store the bytes of every `stored`
-// manifest, each hashed against its digest on the way. Under a store that
-// keeps the bytes elsewhere (s3) the snapshot lists the objects instead. The
-// copy is built under a dot-prefixed temporary root beside the destination
-// and renamed into place only once `snapshot.json` is durable, so a failure
-// leaves nothing at the destination and the boot never lists a partial.
+// sealed file, and the bytes of every `stored` blob manifest, each hashed
+// against its digest on the way. The copy is built under a dot-prefixed
+// temporary root beside the destination and renamed into place only once
+// `snapshot.json` is durable, so a failure leaves nothing at the destination
+// and the boot never lists a partial.
 
 import (
 	"bytes"
@@ -42,14 +41,13 @@ type SnapshotReport struct {
 	// SealedFiles is how many sealed files the copy holds, every one opened
 	// under the DEK before the copy was taken and again in the copy.
 	SealedFiles int `json:"sealedFiles"`
-	// BlobStore is the source's blob backend. Blobs and BlobBytes are the
-	// `stored` manifests' bytes copied into the directory, or under a store
-	// that keeps them elsewhere, listed in the snapshot at BlobLocation.
-	BlobStore    string        `json:"blobStore"`
-	BlobLocation string        `json:"blobLocation,omitempty"`
-	Blobs        int           `json:"blobs"`
-	BlobBytes    int64         `json:"blobBytes"`
-	Took         time.Duration `json:"took"`
+	// BlobStore is the layout the copy's blob bytes are written for, which is
+	// the one backend. Blobs and BlobBytes are the `stored` manifests' bytes
+	// copied into the directory.
+	BlobStore string        `json:"blobStore"`
+	Blobs     int           `json:"blobs"`
+	BlobBytes int64         `json:"blobBytes"`
+	Took      time.Duration `json:"took"`
 }
 
 // Snapshotter is the operator hat's snapshot seam, off substrate.Service like
@@ -124,7 +122,7 @@ func (s *service) SnapshotRepository(ctx context.Context, repository, destRoot s
 	if err != nil {
 		return SnapshotReport{}, err
 	}
-	report := SnapshotReport{Repository: repo.ID, BlobStore: s.blobs.Name()}
+	report := SnapshotReport{Repository: repo.ID, BlobStore: blobbytes.BackendFS}
 	// The destination before the lock: a snapshot that would land on an
 	// older copy is refused before it opens anything.
 	dst, err := changelogfile.RepoDir(destRoot, repo.ID)
@@ -235,13 +233,7 @@ func (s *service) buildSnapshot(ctx context.Context, ds *dataset, repo Repositor
 		digests = append(digests, b.digest)
 	}
 	report.Blobs = len(blobs)
-	if loc, ok := s.blobs.(blobbytes.Locator); ok {
-		// The bytes live outside the directory: the snapshot names where,
-		// and the restore copies the listed objects there.
-		if report.BlobLocation, err = loc.Location(repo.ID); err != nil {
-			return "", err
-		}
-	} else if report.BlobBytes, err = s.copyBlobs(ctx, ds, repo, tmpRoot, digests); err != nil {
+	if report.BlobBytes, err = s.copyBlobs(ctx, ds, repo, tmpRoot, digests); err != nil {
 		return "", err
 	}
 
@@ -270,15 +262,13 @@ func (s *service) buildSnapshot(ctx context.Context, ds *dataset, repo Repositor
 	if err := s.checkCopiedSealed(ds, partial, files); err != nil {
 		return "", err
 	}
-	if report.BlobLocation == "" {
-		if err := checkCopiedBlobs(ctx, tmpRoot, repo, digests); err != nil {
-			return "", err
-		}
+	if err := checkCopiedBlobs(ctx, tmpRoot, repo, digests); err != nil {
+		return "", err
 	}
 	if err := changelogfile.WriteSnapshot(partial, changelogfile.Snapshot{
 		Format: changelogfile.SnapshotFormat, TakenAt: nowUTC(),
 		Head: report.Head, HeadHash: headHash, SealedFiles: len(files),
-		BlobStore: report.BlobStore, BlobLocation: report.BlobLocation, Blobs: digests,
+		BlobStore: report.BlobStore, Blobs: digests,
 	}); err != nil {
 		return "", err
 	}

@@ -46,33 +46,27 @@ type Snapshot struct {
 	// SealedFiles is how many files under sealed/ the copy holds, every one
 	// of them opened under the repository's DEK when the snapshot was taken.
 	SealedFiles int
-	// BlobStore names the blob backend the copy is laid out for (fs or s3),
-	// and BlobLocation where the repository's objects live when they are not
-	// in the directory: empty under fs, where they are `blobs/<digest>`, and
-	// the object prefix under s3 (`s3://<bucket>/<prefix><authority>/`),
-	// where each object is that prefix plus the digest. An operator's
-	// snapshot records the backend the source ran; the owner's export
-	// records fs whatever the source ran, because it carries the bytes
-	// under blobs/.
-	BlobStore    string
-	BlobLocation string
+	// BlobStore names the layout the copy's blob bytes are written for. There
+	// is one backend, `fs`, and under it the bytes are `blobs/<digest>` in
+	// the directory itself, so the field says how to read the copy rather
+	// than which of several stores took it.
+	BlobStore string
 	// Blobs is every digest a `stored` blob manifest named at Head, sorted:
-	// the bytes the copy holds under fs, and the objects a restore copies
-	// under s3. A blob the fold does not name is not listed and not needed.
+	// the bytes the copy holds under blobs/. A blob the fold does not name is
+	// not listed and not needed.
 	Blobs []string
 }
 
 // snapshotWire is the JSON form. TakenAt is written in TSFormat and read as
 // any RFC 3339 time; the checksum is hex.
 type snapshotWire struct {
-	Format       int      `json:"format"`
-	TakenAt      string   `json:"takenAt"`
-	Head         int64    `json:"head"`
-	HeadHash     string   `json:"headHash"`
-	SealedFiles  int      `json:"sealedFiles"`
-	BlobStore    string   `json:"blobStore"`
-	BlobLocation string   `json:"blobLocation"`
-	Blobs        []string `json:"blobs"`
+	Format      int      `json:"format"`
+	TakenAt     string   `json:"takenAt"`
+	Head        int64    `json:"head"`
+	HeadHash    string   `json:"headHash"`
+	SealedFiles int      `json:"sealedFiles"`
+	BlobStore   string   `json:"blobStore"`
+	Blobs       []string `json:"blobs"`
 }
 
 // MarshalJSON renders the snapshot in its file form.
@@ -83,7 +77,7 @@ func (s Snapshot) MarshalJSON() ([]byte, error) {
 	}
 	w := snapshotWire{
 		Format: s.Format, Head: s.Head, HeadHash: hex.EncodeToString(s.HeadHash[:]),
-		SealedFiles: s.SealedFiles, BlobStore: s.BlobStore, BlobLocation: s.BlobLocation, Blobs: blobs,
+		SealedFiles: s.SealedFiles, BlobStore: s.BlobStore, Blobs: blobs,
 	}
 	if !s.TakenAt.IsZero() {
 		w.TakenAt = s.TakenAt.UTC().Format(TSFormat)
@@ -118,7 +112,7 @@ func (s *Snapshot) UnmarshalJSON(data []byte) error {
 	}
 	*s = Snapshot{
 		Format: w.Format, TakenAt: taken, Head: w.Head, HeadHash: [32]byte(sum),
-		SealedFiles: w.SealedFiles, BlobStore: w.BlobStore, BlobLocation: w.BlobLocation, Blobs: w.Blobs,
+		SealedFiles: w.SealedFiles, BlobStore: w.BlobStore, Blobs: w.Blobs,
 	}
 	return nil
 }

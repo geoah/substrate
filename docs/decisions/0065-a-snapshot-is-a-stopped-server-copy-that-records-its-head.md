@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-08
 decision-makers: George Antoniadis
+amended-by: 0075
 ---
 
 # 0065. A snapshot is a stopped-server copy that records its head and lists what it needs
