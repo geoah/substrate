@@ -364,8 +364,8 @@ func (t *txn) probeCandidates(toIdentity string, tp *vocabulary.Property, values
 	return out, nil
 }
 
-// checkSubjectWrite holds the subject reference still: it is set when the
-// record is created, and moved only by merge and split. Re-asserting the same
+// checkSubjectWrite refuses a change of the subject reference: it is set when
+// the record is created, and moved only by merge and split. Re-asserting the same
 // target is what every re-sync does, so only a DIFFERENT LIVE target is refused.
 // BOTH SIDES are resolved through the former-id trail before they are compared,
 // because a merge moves the subject out from under a connector that is still
@@ -846,10 +846,11 @@ func selectValue(union bool, cands []contribution) (any, string) {
 	return items, actor
 }
 
-// property_offers holds ONE population: recompute's projection of what each
-// live source's actor would write, rebuilt and pruned on every recompute,
-// the rows behind propertyMeta's alternatives. A bundle contributes by
-// shipping its own source type + recordmapping.
+// property_offers holds ONE population, because there is no bundle-offer
+// write-kind: recompute's projection of what each live source's actor would
+// write, rebuilt and pruned on every recompute, the rows behind
+// propertyMeta's alternatives. A bundle contributes by shipping its own
+// source type + recordmapping.
 
 // syncOffers upserts one property_offers row per (property, actor) a live
 // source contributes — computed with the same selection, restricted to that

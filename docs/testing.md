@@ -121,12 +121,13 @@ the template holds the recorded migrations, the roles' grants and the
 shipped indexes and nothing else; `engine.MigratedDSN(t)` hands each test a
 `CREATE DATABASE ... TEMPLATE` copy. `engine.Open` still runs every boot step
 on the copy and skips only the DDL. A copy beside an empty data root is
-exactly a fresh install: nothing on either side. The migration runner's advisory lock is
-keyed on `current_schema()`, like the engine's other three (no effect on a
-deployment, one schema per database), which is what the packages still on
-`testdb.NewSchema` (catalog, testenv, substratectl) get. Keyed on one
-constant instead, it serializes the parallel suite's migrations one test at
-a time, and that lock is 90% of Postgres's time in a run. The from-empty
+exactly a fresh install: nothing on either side. The migration runner's
+advisory lock is keyed on `current_schema()`, like the engine's other three
+(no effect on a deployment, one schema per database), which is what the
+packages still on `testdb.NewSchema` (catalog, testenv, substratectl) get.
+Keyed on one constant instead, it serializes the parallel suite's migrations
+one test at a time: measured before the change, that lock was 90% of
+Postgres's time in a run. The from-empty
 migration still runs three times per engine binary: the template build,
 `TestRepositoryProvisioningAndProjections` and
 `TestAssertPoolPrincipalRejectsSuperuser`.
@@ -148,9 +149,9 @@ starts runs with `fsync=off`, `synchronous_commit=off` and
 `DROP DATABASE` forces a checkpoint that fsync makes slow. `testdb` connects
 to the container's own IP where the host can route to it, else the published
 port: the published port is docker-proxy, one process relaying every
-connection, and it is the queue every test would otherwise wait in (98 s to
-84 s). Each
-test drops its copy in its cleanup and `testdb.Main` drops what is left after
+connection, and it is the queue every test would otherwise wait in (measured
+at the change: 98 s to 84 s). Each test drops its copy in its cleanup and
+`testdb.Main` drops what is left after
 `m.Run` (a dropper goroutine off the tests' path measured no gain: 69 to
 80 s against 67 s). CI's service containers keep their data directory on a
 tmpfs (`--tmpfs` in the job's `options`) and take no command line, so the

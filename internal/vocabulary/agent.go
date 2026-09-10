@@ -11,11 +11,11 @@ import (
 
 // An agent is a manifest kind: a callable whose body is an LLM loop. The row
 // IS the prompt store (the changelog is its version history) and everything
-// else on it is references: one `provider`
-// data-record id plus the `model` it asks that provider for,
-// `tools:` (callable functions, the four host built-ins among them, each
-// optionally aliased for the agent's own prompt context), `subagents:`
-// (sub-agents), `budgets:` and `permissions:`. Agents dispatch exactly like
+// else on it is references: one `provider` data-record id plus the `model` it
+// asks that provider for, `tools:` (callable functions, the four host
+// built-ins among them, each optionally aliased for the agent's own prompt
+// context), `subagents:` (sub-agents), `budgets:` and `permissions:`. Agents
+// dispatch exactly like
 // functions — triggers, the call API, sub-agent calls — under their own actor,
 // `agent:<authority>:<name>`; the loop itself is host-side
 // (engine/agentloop.go).

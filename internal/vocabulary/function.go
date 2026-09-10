@@ -732,7 +732,8 @@ func (l *loader) parseFunctionBody(where string, data map[string]any, fn *Functi
 // parseFunctionCaps reads the capability envelope out of `permissions:`.
 // `writes` is OPTIONAL, and an absent one is a function that writes nothing: a
 // pure function returns its output and stages no effect, which the emit gate
-// then refuses every effect against.
+// then refuses every effect against. Requiring it taught authors to declare a
+// kind they never write to.
 //
 // ONE object holds all five, because a bare `emit:` beside `returns:` said
 // nothing about being a permission and read as the output shape. The

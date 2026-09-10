@@ -31,9 +31,9 @@ const maxPageSize = 500
 
 // Get reads one record by its full (type, id) identity. A former id — the id
 // of a record a merge fused away — resolves to the canonical record WITHIN
-// THE TYPE, which says so through CanonicalID. The tombstone
-// itself is still readable through a deleted filter; what an id must never do
-// is silently name a record the graph has moved past.
+// THE TYPE, which says so through CanonicalID. The tombstone itself is still
+// readable through a deleted filter; what an id must never do is silently
+// name a record the graph has moved past.
 func (ds *dataset) Get(ctx context.Context, typ, id string) (*substrate.Record, error) {
 	ty, err := ds.resolveType(typ)
 	if err != nil {

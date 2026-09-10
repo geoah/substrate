@@ -253,7 +253,8 @@ reserved
 the record id alphabet is frozen and never gains `%`, and an authority widens
 only with characters the id alphabet excludes and never gains a raw `/`; the
 package segment is the third job for `/`
-([0047](docs/decisions/0047-a-kind-lives-in-a-package.md)). The
+([0047](docs/decisions/0047-a-kind-lives-in-a-package.md)), and the rest of
+0014 stands, first-label reservation included. The
 actors are `bundle:<authority>:<package>`,
 `function:<authority>:<package>:<name>` and
 `agent:<authority>:<package>:<name>`, derived by the engine and never declared

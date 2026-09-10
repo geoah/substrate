@@ -132,8 +132,8 @@ func (ds *dataset) runnerSpecIn(fn *vocabulary.Function, reg *vocabulary.Registr
 // runCallable executes one function body and returns EVERY effect to apply —
 // sub-call effects first, in call order, then the body's own — plus the
 // output value. The body runs BEFORE the effects transaction opens. It
-// discards any paged-checkpoint continuation: the single-shot callers (manual run, host Call, the call API,
-// the agent loop) never page.
+// discards any paged-checkpoint continuation: the single-shot callers
+// (manual run, host Call, the call API, the agent loop) never page.
 func (ds *dataset) runCallable(ctx context.Context, fn *vocabulary.Function, in runner.Input) ([]effect, any, error) {
 	effects, output, _, err := ds.runCallableRaw(ctx, fn, in)
 	return effects, output, err

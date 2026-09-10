@@ -13,9 +13,11 @@ import (
 // THE DELIVERY LEDGER.
 //
 // A trigger's bookkeeping is described by the changelog, not held in Postgres
-// alone: the cursor a record trigger has reached, the occurrence a schedule
-// trigger last fired, the failures it parked and the resume row of a paged
-// drain must survive a repository directory imported into an empty database.
+// alone: the cursor a record trigger has reached (`trigger_cursors`), the
+// occurrence a schedule trigger last fired (`trigger_schedule`), the failures
+// it parked (`trigger_failures`) and the resume row of a paged drain
+// (`paged_cursors`) must survive a repository directory imported into an
+// empty database.
 //
 // Every motion of those four tables is a FOLD EFFECT
 // (fold.go: cursor, schedule, park, unpark, page, unpage, forget), applied

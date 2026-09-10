@@ -134,10 +134,10 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 	// or kind-changed, an enum value or state removed, required added)
 	// is refused while live rows still hold the old shape, with the count.
 	//
-	// Both doors honor the same guard. A boot upgrade that projected a
-	// narrowing an operator's hand-applied change is refused would leave rows
-	// shaped one way under a declaration that says another, with nothing
-	// anywhere reporting it. A guard only one door honors is not a guard.
+	// Both doors honor the same guard: a narrowing the apply door refuses is
+	// refused at boot too, otherwise rows would be shaped one way under a
+	// declaration that says another, with nothing anywhere reporting it. A
+	// guard only one door honors is not a guard.
 	st.narrowings = classifyNarrowingsExcept(current, reg, st.upgrade, keptIdents)
 
 	// The default check `/vocabulary/apply` takes, for the same reason the

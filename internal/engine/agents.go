@@ -246,10 +246,10 @@ func agentEntryError(err error) error {
 	return fmt.Errorf("%w: %w", substrate.ErrValidation, err)
 }
 
-// ChatAgent is the same loop with a live client attached: open or continue
-// a thread against any agent with a user message, the
-// assistant turns streaming through emit. No trigger, no cursor — the thread
-// is ordinary data the console renders.
+// ChatAgent is the same loop with a live client attached: open or continue a
+// thread against any agent with a user message, the assistant turns
+// streaming through emit. No trigger, no cursor — the thread is ordinary
+// data the console renders.
 func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name, threadID, message string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
 	ag, err := ds.registry().ResolveAgent(name)
 	if err != nil {

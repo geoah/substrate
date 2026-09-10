@@ -24,7 +24,7 @@
 // — so it is idempotent by construction.
 //
 // The catalog is the set of closures baked into the binary: there is no
-// remote-URL install and no versioned one.
+// remote-URL install, and nothing installs a chosen version.
 package catalog
 
 import (

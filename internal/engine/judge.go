@@ -3,11 +3,11 @@ package engine
 // The judge: when a policy that gated a request (or matched a voluntary
 // propose) names one, the ENGINE runs it and the ENGINE decides; the judge
 // only ever recommends. It is an ordinary agent run TOOL-LESS over a typed
-// projection of exactly what
-// a human reviewer reads (the frozen envelope, the proposer's identity, the
-// policy's criteria, and — only when the policy's `context: thread` opted in
-// — the proposing thread's recent turns, delimited as data). Its whole
-// contract is the structured reply {verdict, confidence, rationale}.
+// projection of exactly what a human reviewer reads (the frozen envelope, the
+// proposer's identity, the policy's criteria, and — only when the policy's
+// `context: thread` opted in — the proposing thread's recent turns, delimited
+// as data). Its whole contract is the structured reply {verdict, confidence,
+// rationale}.
 //
 // Routing fails closed at every gap: sub-threshold confidence, an escalate
 // verdict, malformed output, transport failure, a request that moved under
