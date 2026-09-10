@@ -82,7 +82,7 @@ func TestPutCreatesAndSuppressesNoops(t *testing.T) {
 func TestNoopSuppressionAcrossRecords(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, ds := newDataset(t)
+	_, ds := newVocabularyDataset(t, "messaging")
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
@@ -701,7 +701,7 @@ func TestSystemTypesRejectGenericWrites(t *testing.T) {
 func TestPutResurrectsATombstone(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, ds := newDataset(t)
+	_, ds := newVocabularyDataset(t, "calendar")
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
@@ -775,7 +775,7 @@ func TestPutResurrectsATombstone(t *testing.T) {
 func TestResurrectDoesNotCascade(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, ds := newDataset(t)
+	_, ds := newVocabularyDataset(t, "messaging")
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
@@ -1153,7 +1153,7 @@ func TestPatchNullDeletesAPropertyAndAStateValueTransitions(t *testing.T) {
 // message at the same id writes nothing.
 func TestDeliveryStatesStampAndAProviderEchoIsANoOp(t *testing.T) {
 	t.Parallel()
-	_, ds := newDataset(t)
+	_, ds := newVocabularyDataset(t, "messaging")
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}

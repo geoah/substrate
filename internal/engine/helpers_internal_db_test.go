@@ -40,7 +40,7 @@ func newRaceDataset(t *testing.T) *dataset {
 	if !ok {
 		t.Fatalf("dataset is a %T", d)
 	}
-	importVocabulary(t, ds)
+	importVocabulary(t, ds, "tasks")
 	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
 		Name: "race", Authority: racePackage,
 		Manifests: []map[string]any{
@@ -100,7 +100,7 @@ func reopenableWidgetDataset(t *testing.T) (open func() *dataset, closeSvc func(
 			t.Fatalf("open dataset: %v", err)
 		}
 		if !imported {
-			importVocabulary(t, d)
+			importVocabulary(t, d, "tasks")
 			imported = true
 		}
 		return d.(*dataset)

@@ -50,7 +50,7 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	importVocabulary(t, ds)
+	importVocabulary(t, ds, enginetest.Vocabulary...)
 	// The control plane is a TABLE now, not a repository: one row per user,
 	// carrying the username and the day they arrived and nothing else — the
 	// auth material is sealed rows behind the credential record.

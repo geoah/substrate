@@ -37,7 +37,7 @@ func newDatasetWithDB(t *testing.T, opts ...engine.Option) (substrate.Dataset, *
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
-	importVocabulary(t, ds)
+	importVocabulary(t, ds, "tasks")
 	raw, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleApp)
 	if err != nil {
 		t.Fatalf("open raw: %v", err)
@@ -366,7 +366,7 @@ func TestApplyDiffChecksTargetVersion(t *testing.T) {
 func TestRequiredReferencesEnforcedOnCreate(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, ds := newDataset(t)
+	_, ds := newVocabularyDataset(t, "messaging")
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}

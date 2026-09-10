@@ -87,7 +87,7 @@ func newHeldHookDataset(t *testing.T, released bool) (substrate.Service, substra
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
-	importVocabulary(t, ds)
+	importVocabulary(t, ds, "tasks")
 	connector := fnConnector(
 		[]enginetest.Trigger{hookTrigger("hook-held", webhookSource(""), "hookhold", true)},
 		pyFn("hookhold", map[string]any{

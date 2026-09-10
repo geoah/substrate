@@ -279,7 +279,7 @@ func TestIdempotencyKeyStoresAnOutcomeWithANulEscape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
-	importVocabulary(t, ds)
+	importVocabulary(t, ds, "tasks")
 	nul := pyFn("nul", map[string]any{}, []any{taskType}, `
 def main(input, host):
     return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",

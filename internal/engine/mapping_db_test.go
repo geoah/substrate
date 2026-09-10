@@ -871,7 +871,7 @@ func TestSubjectEdgeIsCreateTimeOnly(t *testing.T) {
 // connector actually has, and the stored value lands on the person.
 func TestOneHopResolution(t *testing.T) {
 	t.Parallel()
-	_, ds := newDataset(t)
+	_, ds := newVocabularyDataset(t, "messaging")
 	installPeopleSources(t, ds)
 
 	s := syncSource(t, ds, slack, typeSlackUser, "s-U1", map[string]any{"realName": "alex"})
@@ -897,6 +897,7 @@ func TestUnlinkedSourceGetsAShell(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, raw, _ := newDatasetWithDB(t)
+	importVocabulary(t, ds, "messaging")
 	installPeopleSources(t, ds)
 
 	g := syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alex")})
@@ -1104,6 +1105,7 @@ func TestConcurrentShellBirthMintsOneShell(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, raw, _ := newDatasetWithDB(t)
+	importVocabulary(t, ds, "messaging")
 	installPeopleSources(t, ds)
 
 	src := syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alex")})

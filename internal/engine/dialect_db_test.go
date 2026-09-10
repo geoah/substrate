@@ -249,7 +249,7 @@ func TestStoreRefusesANullDefinitionAtTheRow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	importVocabulary(t, ds)
+	importVocabulary(t, ds, "messaging")
 	installShippedBundle(t, ds, "web")
 	db, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleApp)
 	if err != nil {
@@ -303,7 +303,7 @@ func TestStoreRefusesADeletedGrantSpelling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	importVocabulary(t, ds)
+	importVocabulary(t, ds, "messaging")
 	installShippedBundle(t, ds, "web")
 	db, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleApp)
 	if err != nil {

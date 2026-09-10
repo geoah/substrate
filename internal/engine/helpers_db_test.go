@@ -59,15 +59,32 @@ func newService(t *testing.T, opts ...engine.Option) (substrate.Service, string)
 	return svc, dsn
 }
 
-// newDataset provisions a repository, imports the shipped vocabulary and
-// returns its dataset. Creation seeds CORE ALONE — people/tasks/messaging/
-// calendar/media are vocabulary bundles a user imports — so the import here is
-// what a repository these tests can exercise actually looks like. Use
-// newCoreDataset for the tests that are about the seed itself.
+// newDataset provisions a repository, imports the TASKS sample package and
+// returns its dataset. Creation seeds core alone, so a test that reads any
+// sample kind imports one; tasks `requires:` people and scheduling, so the
+// three arrive together and cover task, project, tasklog, person, team,
+// organization and the recurrence traits. That is what nearly every test in
+// this package reads, and each package costs a full registry build and
+// projection pass, so the packages nothing here touches are not imported by
+// default: a test that reads a messaging or calendar kind calls
+// newVocabularyDataset with the packages it reads. Use newCoreDataset for the
+// tests that are about the seed itself.
 func newDataset(t *testing.T, opts ...engine.Option) (substrate.Service, substrate.Dataset) {
 	t.Helper()
 	svc, ds := newCoreDataset(t, opts...)
-	importVocabulary(t, ds)
+	importVocabulary(t, ds, "tasks")
+	return svc, ds
+}
+
+// newVocabularyDataset provisions a repository and imports exactly the named
+// sample packages instead of the default tasks: the fixture for a test that
+// reads a kind tasks does not bring. Naming none fails the test through
+// importVocabulary's guard rather than quietly meaning all five;
+// `enginetest.Vocabulary...` is how a caller asks for the whole shipped set.
+func newVocabularyDataset(t *testing.T, names ...string) (substrate.Service, substrate.Dataset) {
+	t.Helper()
+	svc, ds := newCoreDataset(t)
+	importVocabulary(t, ds, names...)
 	return svc, ds
 }
 
@@ -87,10 +104,17 @@ func newCoreDataset(t *testing.T, opts ...engine.Option) (substrate.Service, sub
 	return svc, ds
 }
 
-// importVocabulary imports the shipped vocabulary bundles (all of them when
-// none are named) through the ordinary install path.
+// importVocabulary imports the named shipped sample packages through the
+// ordinary install path, each package's `requires:` ahead of it. Name what the
+// test reads: every package is a registry build and a projection pass. An
+// empty list reaches enginetest's own default, the shipped five, which is a
+// caller that forgot rather than a caller that wants all of them:
+// `enginetest.Vocabulary...` says that on purpose.
 func importVocabulary(t *testing.T, ds substrate.Dataset, names ...string) {
 	t.Helper()
+	if len(names) == 0 {
+		t.Fatal("importVocabulary: name the sample packages this test reads")
+	}
 	if err := enginetest.ImportVocabulary(context.Background(), ds, names...); err != nil {
 		t.Fatalf("import the shipped vocabulary: %v", err)
 	}
@@ -233,6 +257,23 @@ func wantErr(t *testing.T, err, target error, what string) {
 	t.Helper()
 	if !errors.Is(err, target) {
 		t.Fatalf("%s: expected %v, got %v", what, target, err)
+	}
+}
+
+// wantRefusal asserts a write was refused for the reason the case is about:
+// the sentinel, and a substring of the message. `err != nil` alone is
+// satisfied by an unknown-kind error, so a case whose subject is a property
+// rule on a kind the fixture may not import proves nothing without the text.
+func wantRefusal(t *testing.T, err, target error, naming string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("expected a refusal naming %q, got no error", naming)
+	}
+	if !errors.Is(err, target) {
+		t.Fatalf("expected %v naming %q, got %v", target, naming, err)
+	}
+	if !strings.Contains(err.Error(), naming) {
+		t.Fatalf("the refusal does not name %q: %v", naming, err)
 	}
 }
 

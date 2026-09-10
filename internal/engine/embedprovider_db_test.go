@@ -325,7 +325,7 @@ func TestEmbedQueueDoesNotPublishStaleVectors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
-	importVocabulary(t, ds)
+	importVocabulary(t, ds, "tasks")
 	installShelf(t, ds)
 	installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
 

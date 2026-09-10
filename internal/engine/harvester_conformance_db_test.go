@@ -195,6 +195,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	}
 	ctx := context.Background()
 	ds := openInternalDataset(t)
+	importVocabulary(t, ds, "messaging")
 	if err := enginetest.InstallAccountType(ctx, ds, substrate.ActorAPI); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
