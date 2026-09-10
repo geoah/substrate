@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** The gated card's three server paths, each pinned to the kind-name segment
  * (decision 0033): the thread read that names the proposer, the live-target
  * read behind the before → after preview, and the standing rule the

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** The Registry page as the reader meets it on a FRESH repository: core alone
  * is held, so every row is an invitation and the only questions that matter are
  * what it will do, where it will land, and whether it can happen at all.

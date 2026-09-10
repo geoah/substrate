@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** The table instance's column prefs: visibility and order edits round-trip
  * localStorage per surface, defaults apply until overridden, and a reset
  * clears the store — the owner-ruled behavior every table shares. */

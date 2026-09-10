@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** The record editor as the owner meets it: two lenses over one document.
  *
  * The contract under test is the one the old surface broke — that what you type

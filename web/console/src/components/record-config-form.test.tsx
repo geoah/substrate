@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** The config/account dialog's rendering contract (GUIDE §8 + rule 13): human
  * labels (schema displayName or humanized id, never a raw camelCase property),
  * an enum property as a real <select>, host-managed props (writer!=owner) never

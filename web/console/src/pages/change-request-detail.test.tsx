@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** The review page's contract, the parts a pure test cannot hold: a patch
  * shows the target's live value beside the proposed one, a create previews the
  * record it would mint, a delete says out loud that it deletes, and the accept

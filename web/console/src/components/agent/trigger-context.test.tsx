@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** The transcript's one opening promise: a triggered thread's first user turn
  * is a delivery envelope, and it renders as the trigger's context — what fired
  * and which record arrived, as a pill — never as a JSON bubble. A thread whose

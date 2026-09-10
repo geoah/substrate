@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { expect, it } from "vitest"
 
 /** node 26 answers `sessionStorage` itself and `localStorage` with `undefined`,

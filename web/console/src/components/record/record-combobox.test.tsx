@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** The record dropdown. It replaced a datalist, which hung off a text box and
  * showed nothing but the value: what a person is owed here is a list they can
  * OPEN and read, so the contract under test is that clicking shows the records

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** The editor's FORM lens over an `llmprovider`-shaped kind: the issue's own
  * worked example, where setting an `apiKey` was only ever possible through raw
  * YAML with no help in it.
