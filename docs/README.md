@@ -56,6 +56,7 @@ API call that completes a task.
 
 - [substratectl](substratectl.md) — the CLI
 - [The web console](console.md)
+- [Running one locally](running-locally.md)
 - [Running a substrate](operations.md)
 - [Testing](testing.md) — every suite, which to reach for, and how to give the
   live one keys

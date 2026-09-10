@@ -389,9 +389,9 @@ not 1536 wide ([decision
 0026](decisions/0026-embedding-vectors-are-1536-wide-or-refused.md)). Every
 stored vector names the row and the model that produced it, and semantic search
 scores only the current pair's vectors, so changing either hides the older ones
-rather than mixing two models' distances. `substratectl --dsn … repository
-reembed <repository>` queues their replacement, which the server's drain loop
-buys a batch at a time.
+rather than mixing two models' distances. `repository reembed` is how their
+replacement is bought, on the box and never over HTTP
+([there is no LLM configuration](operations.md#there-is-no-llm-configuration)).
 
 **Nothing seeds a provider.** A fresh repository holds no `llmprovider` row at
 all: a row is where the wire, the endpoint and the key live, and a substrate
@@ -410,10 +410,10 @@ the model is the agent's own word now.
 
 ### Registering a provider
 
-A provider is a record, so adding one is a write — `apply -f`, or the console
-at **Data → `substrate.reamde.dev/core` → llmproviders → New**. (The Agents
-page does not list providers: an agent names one by id, and that pointer reads
-on the agent's own record.) All three below are ordinary data documents:
+A provider is a record, so adding one is a write: `apply -f`, or the console at
+**Data → `substrate.reamde.dev/core` → llmproviders → New**. (The Agents page
+does not list providers: an agent names one by id, and that pointer reads on
+the agent's own record.) All four below are ordinary data documents,
 `data.properties`, never a declaration.
 
 ```yaml
@@ -451,16 +451,7 @@ data:
     wire: azure
     baseURL: https://example-resource.openai.azure.com
     apiKey: …
-```
-
-Every one of the three carries its own `apiKey`, and must: there is no host key
-to fall back to. Nothing checks that at write time — a half-written row applies
-fine and refuses at the first dispatch that resolves it, naming the row and
-what it lacks. The embeddings rules are the exception, and are checked at the
-write, because the row that carries them is resolved by a background loop with
-nobody watching:
-
-```yaml
+---
 # The embeddings provider: one row per repository declares embedModel.
 kind: substrate.reamde.dev/core/llmprovider
 metadata: {id: vectors}
@@ -473,28 +464,19 @@ data:
     embedModel: text-embedding-3-small
 ```
 
-`apiKey` is secret-typed: every read surface hands back `<redacted>`, and
-writing the sentinel back is a round trip, so
+**What is checked when.** A half-written row applies fine and refuses at the
+first dispatch that resolves it, naming the row and what it lacks. The
+embeddings rules are the exception and are checked at the write, because the
+row that carries them is resolved by a background loop with nobody watching.
 
-```sh
-substratectl get llmprovider -o yaml
-```
-
-is both a safe way to read the rows and directly `apply -f`-able — an edit of
-the baseURL beside an untouched key is one round trip, and the key never
-leaves the box.
-
-### Setting or rotating the key
-
-The key is a property, so it is a record write like any other: **Data →
-llmproviders → the row → Edit**, put it in `apiKey`, apply. Because
-`apiKey` is secret-typed it reads back redacted — the field shows nothing of
-what is stored, writing it again replaces it, and that is also how a rotation
-is done. There is no separate credentials screen, and no way to read a stored
-key back out of the substrate.
-
-From the CLI it is the same write. A here-document keeps the key out of your
-shell history:
+**Setting a key and rotating one are the same write.** `apiKey` is
+secret-typed: every read surface hands back `<redacted>`, there is no way to
+read a stored key back out, and writing the property again replaces what is
+sealed. Because `apply` merges and never prunes, naming `apiKey` alone leaves
+the row's wire, endpoint and pricing exactly as they were, and writing the
+`<redacted>` sentinel back is a round trip, so `substratectl get llmprovider
+-o yaml` is both a safe read and directly `apply -f`-able. A here-document
+keeps the key out of your shell history:
 
 ```sh
 cat <<'EOF' | substratectl apply -f -
@@ -504,14 +486,6 @@ data:
   properties: {apiKey: sk-ant-…}
 EOF
 ```
-
-`apply` merges and never prunes, so naming `apiKey` alone leaves the row's
-wire, endpoint and pricing exactly as they were.
-
-The editor is a YAML textarea today, which knows nothing about the kind it is
-editing — a number where a string belongs is refused by the substrate rather
-than by the field. Making it schema-aware is
-[issue 17](https://github.com/geoah/substrate/issues/17).
 
 ### Testing a provider
 
@@ -538,12 +512,12 @@ data:
   budgets: {maxTurns: 1}
 ```
 
-No `tools:` and no `permissions:`, so it can write nothing at all. Swap `provider:`
-for the row under test and `model:` for an id that row serves — on the
-`default` gateway row the alias form (`anthropic/claude-haiku-4-5`), on a
-native `anthropic` row the bare id.
+No `tools:` and no `permissions:`, so it can write nothing at all. Swap
+`provider:` for the row under test and `model:` for an id that row serves: on a
+gateway row the alias form (`anthropic/claude-haiku-4-5`), on a native
+`anthropic` row the bare id.
 
-There is no agent verb on `substratectl` — `function call` is functions only —
+There is no agent verb on `substratectl` (`function call` is functions only),
 so a run is the call API or the console's chat:
 
 ```sh
@@ -552,8 +526,8 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:8080/api/v1/substrate.reamde.dev/core/agent/smoke.example.com%2Fsmoke%2Fecho/call
 ```
 
-The id carries two slashes, so the path segment spells each `%2F`. The answer carries
-`reply` and the `thread` id, and the thread is the durable half:
+The id carries two slashes, so the path segment spells each `%2F`. The answer
+carries `reply` and the `thread` id, and the thread is the durable half:
 
 ```sh
 substratectl get llmthread <thread> -o yaml
@@ -564,11 +538,11 @@ working provider, and `costUSD` is non-zero exactly when the row prices the
 model it just used. The two failures read differently, and the difference is
 where they happen:
 
-- **A row that cannot resolve** — no `wire`, a `baseURL` without an `apiKey`,
-  an `azure` row missing either — refuses **before** a thread exists. The call
+- **A row that cannot resolve** (no `wire`, a `baseURL` without an `apiKey`, an
+  `azure` row missing either) refuses **before** a thread exists. The call
   answers `422` naming the row and what it lacks; nothing is minted.
-- **A row that resolves but does not work** — a wrong key, an unreachable
-  endpoint, a model id the endpoint does not serve — settles the thread it
+- **A row that resolves but does not work** (a wrong key, an unreachable
+  endpoint, a model id the endpoint does not serve) settles the thread it
   already opened at `status: error`, with the transport's own words in
   `reason`.
 

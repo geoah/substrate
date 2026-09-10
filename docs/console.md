@@ -150,8 +150,8 @@ cards fill in live and are replaced by the stored rows when it settles.
 The [`llmprovider`](agents.md#providers) rows are **not** on this page: an agent
 names a provider by id, and that pointer reads on the agent's own record.
 They live under Data → `substrate.reamde.dev/core` → llmproviders, and
-[setting a key](agents.md#setting-or-rotating-the-key) is an ordinary record
-edit.
+[registering one](agents.md#registering-a-provider) is an ordinary record
+write.
 
 [Triggers](functions.md#triggers) have no section of their own: they are
 ordinary records, so `substrate.reamde.dev/core/trigger` in the data nav is
@@ -171,5 +171,5 @@ Behind the session menu, beside logging out:
   browser and every script that holds access is one of these rows, and
   revoking one is deleting it.
 
-Next: [running a substrate](operations.md), the deployment underneath all of
-this.
+Next: [running one locally](running-locally.md), the substrate on your own
+machine.

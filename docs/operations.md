@@ -3,7 +3,9 @@
 The substrate is one Go binary and one Postgres database. It serves the
 [API](api.md) and the [console](console.md) on one port, runs its own
 background loops in-process, and needs nothing else to be useful. This page is
-how to stand one up and look after it.
+the deployment: what it needs, how it is configured, what a boot does, and the
+backup and recovery procedures. A substrate on your own machine is
+[running one locally](running-locally.md), which is shorter.
 
 ## What it needs
 
@@ -136,26 +138,23 @@ and embeddings alike are bought through a repository's own
 endpoint, the key and (for embeddings) the model. The process holds no bearer,
 so no host-wide key can reach a repository-chosen endpoint.
 
-What that means for an operator:
+Three consequences an operator meets:
 
 - A fresh repository has no agents and no semantic search until its owner
-  writes a provider row. Nothing seeds one; the
-  [LLM sample bundle](bundles-catalog.md#llm-sample) ships two ready to key.
-- Semantic search runs against the one row that declares `embedModel`, and
-  hybrid search returns its lexical arm alone until that row exists.
-- Every stored vector names the row and the model that produced it. Change
-  either and the older vectors stop being searched, which is deliberate: cosine
-  distance between two models' vectors is not a distance, and a `semantic`
-  search that finds only the old pair's vectors refuses rather than rank them.
-  Run `substratectl --dsn … repository reembed <repository>` to queue their
-  replacement: it writes queue rows, and the server's drain loop buys the
-  vectors a batch at a time, so an interrupted re-embed resumes by itself.
-  There is no REST verb for it; it is the operator's hat, on the box.
-- A gateway swapped behind an unchanged row and model name is invisible to the
-  provenance columns, so that case takes `reembed --all`.
+  writes a provider row. Nothing seeds one, and
+  [registering a provider](agents.md#registering-a-provider) is where that
+  write is described.
+- Hybrid search returns its lexical arm alone until one row declares
+  `embedModel`, and the vectors it buys name that row and that model, so
+  re-pointing either stops the older vectors being scored. `substratectl
+  --dsn … repository reembed <repository>` queues their replacement and the
+  drain loop buys the vectors a batch at a time, so an interrupted re-embed
+  resumes by itself. There is no REST verb for it: it is the operator's hat,
+  on the box. A gateway swapped behind an unchanged row and model name
+  is invisible to the provenance columns, so that case takes `reembed --all`.
 - A repository restored from its directory queues every embeddable property
-  by itself, because the vectors were never in the directory; see
-  [Backups](#backups).
+  by itself, because the vectors were never in the directory
+  ([backups](#backups)).
 
 ## The blob store
 
@@ -415,85 +414,50 @@ sealed file it missed; and a copy that reads `blobs/` before `changelog/`
 can hold a blob manifest marked `stored` whose bytes it missed, because an
 upload writes the bytes first and the `stored` manifest after
 ([the blob store](#the-blob-store)), and `rsync` reads `blobs/` before
-`changelog/`. So a copy is a backup once `repository verify` passes
-on it (boot a scratch server over the copy with an empty database, which
-imports it, then verify with `SUBSTRATE_CREDENTIAL_KEY` set); one that fails is
-retaken. Verify reads every `stored` blob's bytes and hashes them, holds every
-live record's secret reference to a sealed file and opens every sealed file
-under the key, so a copy that missed one of those files fails after the
-import, where the files alone could not tell. It proves the files
-are undamaged, not that their replay is the fold they came from: an entry
-written before this fix that removed a record's last label replays with the
-label back, on import as on rebuild ([the caveat under `repository
-rebuild`](#operator-recovery)). A cron running this is enough:
+`changelog/`. So a copy is a backup once
+[`repository verify`](#operator-recovery) passes on it: boot a scratch server
+over the copy with an empty database, which imports it, then verify with
+`SUBSTRATE_CREDENTIAL_KEY` set, so every sealed file is opened and a copy that
+missed one fails where the files alone could not tell. A copy that fails is
+retaken. A cron running this is enough:
 
 ```
 rsync -a --delete "$SUBSTRATE_DATA_ROOT"/ backup-host:/srv/substrate-backup/
 ```
 
 **A snapshot is a copy with a recorded point, taken with the server stopped.**
-`repository snapshot <repository> <destination root>` writes
-`<destination root>/repositories/<authority>/`, the layout a data root has,
-verified before and after: it takes the repository's writer lock (a running
-server refuses it), runs the whole `repository verify` including the blob
-hashes and the sealed files opened under `SUBSTRATE_CREDENTIAL_KEY` (which it
-requires), refuses on any finding, copies the manifest, every segment and
-sidecar, every committed sealed file and the bytes of every `stored` blob,
-each hashed against its digest on the way, verifies the copy's changelog and
-sealed files, and writes `snapshot.json` last. That file names the point: the
-head seq, that entry's checksum and when the copy was taken, plus the digests
-the copy carries under `blobs/`. A directory carrying one is a copy that
-finished; the boot ignores the file, and `repository verify` on the restored
-repository prints the point and checks that the entry it names is in the
-files with that
-checksum ([decision 0065](decisions/0065-a-snapshot-is-a-stopped-server-copy-that-records-its-head.md)).
-A destination that already holds a directory for the repository is refused;
-a snapshot is a fresh copy, never a merge over an older one. The copy is
-built under a dot-prefixed temporary directory beside `repositories/` and
-renamed into place once `snapshot.json` is on disk, so a snapshot that fails
-leaves nothing at the destination and the same destination takes the retry.
-The copy holds what the fold needs and nothing else: a pending upload, a
-tombstoned blob's bytes and a staged sealed file are not copied. Run it with
-the binary the server runs, as with `rebuild`: it opens the repository the
-way the server does, so a newer `substratectl` stamps the source with its own
-dialects and the older server then refuses the repository. The lock it takes
-is the changelog writer's, held from the server's first open of the
-repository until it exits, so a snapshot cannot slip between two
-transactions of a running server; a server that has not opened the
-repository yet holds nothing, and its first open fails with the lock named
-until the snapshot finishes.
+[`repository snapshot <repository> <destination root>`](#operator-recovery)
+writes `<destination root>/repositories/<authority>/`, the layout a data root
+has, and `snapshot.json` last. That file names the point: the head seq, that
+entry's checksum, when the copy was taken, and the digests the copy carries
+under `blobs/`. A directory carrying one is a copy that finished; the boot
+ignores the file, and `repository verify` on the restored repository prints the
+point and checks that the entry it names is in the files with that checksum
+([decision 0065](decisions/0065-a-snapshot-is-a-stopped-server-copy-that-records-its-head.md)).
 
 ```
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository snapshot ada /srv/substrate-backup/2026-09-08
 ```
 
 **An owner downloads the same snapshot from a running server.**
-`GET /api/v1/export`, or `substratectl export`, streams the repository as a
-tar laid out as a data root: `repositories/<authority>/` with
-`repository.json`, `changelog/` (every finished segment with its sidecar and
-the active segment cut at the point), `sealed/`, `blobs/` and, as the last
-entry, `snapshot.json` recording the head seq and checksum the archive holds
-([decision 0069](decisions/0069-the-owner-export-is-the-snapshot-streamed-as-a-tar.md)).
-The bearer token is the whole credential: a token already reads every record
-and blob the archive carries, and the sealed files in it are ciphertext under
-the repository's DEK. The server pins the point under the repository's writer
-lock, which every commit holds from its first byte to its final newline, and
-streams the files afterwards, so writes go on during the download and the
-archive still holds one committed state. It carries no host key:
-`repository.json` keeps the DEK wrapped under this server's
-`SUBSTRATE_CREDENTIAL_KEY`, ciphertext that opens nothing without the key and
-lets a same-key restore boot with nothing else, and the `recoverykey` record
-in the changelog holds the DEK wrapped to the owner's recovery key, which is
-what opens the archive anywhere else. The blob bytes ride in the archive
-under `blobs/`, so an export is self-contained: extract it under a data root
-and the boot that imports the directory has every attachment. One export
-streams per repository at a time; a second request while one is
-running answers `409 conflict`. An archive that ends before `snapshot.json` was cut short;
-`substratectl export` refuses and removes one, and the server aborts the
-response rather than finish a tar it could not complete.
+`GET /api/v1/export` streams the repository as a tar laid out as a data root,
+`snapshot.json` last
+([decision 0069](decisions/0069-the-owner-export-is-the-snapshot-streamed-as-a-tar.md));
+[`substratectl export`](substratectl.md#exporting) is the client, and the
+bearer token is the whole credential. The server pins the point under the
+repository's writer lock, which every commit holds from its first byte to its
+final newline, and streams the files afterwards, so writes go on during the
+download and the archive still holds one committed state. It carries no host
+key: `repository.json` keeps the DEK wrapped under this server's
+`SUBSTRATE_CREDENTIAL_KEY`, so a same-key restore boots with nothing else, and
+the `recoverykey` record in the changelog holds the same DEK wrapped to the
+owner's recovery key, which is what opens the archive anywhere else. The blob
+bytes ride under `blobs/`, so an export is self-contained. One export streams
+per repository at a time and a second request answers `409 conflict`; a
+response the server could not finish is aborted rather than closed as a tar
+that looks complete.
 
 ```
-substratectl export                       # writes <authority>-<head>.tar, never over an existing file
 tar -x -C "$SUBSTRATE_DATA_ROOT" -f ada.example.com-1234.tar   # on a stopped server with the same key, then boot
 ```
 
@@ -524,17 +488,13 @@ fastest way back to a known state, but a fresh database and the directory are
 enough.
 
 **Restore.** Stop the server. Copy the repository directories into a fresh
-server's data root (an export extracts straight into it: `tar -x -C
-"$SUBSTRATE_DATA_ROOT" -f ada.example.com-1234.tar`), set the same
-`SUBSTRATE_CREDENTIAL_KEY`, and boot: a
-directory with no row in `repositories` is imported, which creates the row from
-its manifest, loads `sealed/` into the table, inserts every changelog entry
-with its checksum and folds them through `fold.go`. The import is the same
-replay `repository rebuild` runs, so a label clear an old entry lost comes
-back here too (the caveat below). Then verify each one, with the key in the
-environment so every sealed file is opened; a directory that came from a
-snapshot prints the recorded point (`recovery point: seq N, checksum …`) and
-the head it came back at is that seq:
+server's data root (an export extracts straight into it), set the same
+`SUBSTRATE_CREDENTIAL_KEY`, and boot: the boot imports a directory with no row
+in `repositories`, which is the restore path and the only one
+([what happens at boot](#what-happens-at-boot)). Then verify each repository
+with the key in the environment, so every sealed file is opened; a directory
+that came from a snapshot prints the recorded point (`recovery point: seq N,
+checksum …`) and the head it came back at is that seq:
 
 ```
 rsync -a ./substrate-backup/repositories/ "$SUBSTRATE_DATA_ROOT"/repositories/
@@ -563,32 +523,17 @@ Every client then re-lists once at its next resume instead of continuing past
 writes the restored history never had. A restart and `repository rebuild`
 change nothing here.
 
-Each directory under `repositories/` is one repository, named by its
-authority: `./substrate-backup/repositories/ada.example.com/` is Ada's, and
-its `repository.json` names the authority the operator commands take.
-
-**An import that dies is resumed, not served.** The boot marks the repository
-in `import_progress` before the first changelog entry lands and clears the
-mark only when the last fold pass commits. A boot that dies in between (the
-entries all inserted but not folded, or folded once without the references
-and the weighted search index the second pass adds) leaves the mark. The next
-boot check finishes the import and logs `resuming an interrupted import`:
-entries already in the table are not inserted again, and nothing is appended.
-The server runs that check when it starts, and so do `repository rebuild` and
-`user reset`, which open the engine the same way, so each resumes the import
-before its own work. A read-only process runs no boot check: opening the
-repository there refuses with `the import of the repository directory has not
+**An import that dies is resumed, not served.** The next boot check finishes
+it and logs `resuming an interrupted import`, and so do `repository rebuild`
+and `user reset`, which open the engine the same way. Until one of them runs,
+a read-only open refuses with `the import of the repository directory has not
 completed`, and `repository verify` reports the unfinished import as a finding
-while the files and the rows still verify. A repository a release before this
-one served empty after such a crash is repaired with `repository rebuild`.
+while the files and the rows still verify.
 
-A directory whose files do not verify (a bad `sum`, a sidecar that does not
-match) refuses the boot with the repository and the seq or the file named;
-move that directory out of the root or restore it from an older copy, then
-boot again. A directory whose `repository.json` carries a DEK the host's
-`SUBSTRATE_CREDENTIAL_KEY` does not open refuses the boot the same way, naming
-the repository and the variable, because importing it would create a
-repository no login could open.
+A boot that refuses a directory names what it refused: a bad `sum`, a sidecar
+that does not match, or a DEK this host's `SUBSTRATE_CREDENTIAL_KEY` does not
+open. Move that directory out of the root, or restore it from an older copy,
+and boot again.
 
 ### Restore without the credential key
 
@@ -680,14 +625,11 @@ queued the repository's embeddable properties` with the count). Into an empty
 database that is every property; a newer directory restored over an older
 database dump queues only what changed, so it does not re-buy the repository.
 The drain loop then buys the vectors a batch at a time once the repository's
-`llmprovider` row resolves; with no such row the queue rows wait for one.
-Until the first vectors land, a `semantic` search refuses with the
-`unavailable` code and the number of properties still queued; from then on
-every `semantic` and `hybrid` answer carries `pending`, the number still
-queued, so a client can tell a ranking over a partial index from a full one.
-The new vectors come from new provider calls, so a ranking may differ from
-before the copy. `reembed` is not part of a restore; it is for a row
-re-pointed at another model.
+`llmprovider` row resolves; with no such row the queue rows wait for one. A
+`semantic` search says which of the two it is answering from, refused or
+partial ([search](api.md#search)). The new vectors come from new provider
+calls, so a ranking may differ from before the copy. `reembed` is not part of
+a restore; it is for a row re-pointed at another model.
 
 **Encrypt the copy.** The changelog and the blobs are plaintext in the
 directory, on the backup host and in the dump alike. The substrate does not
@@ -695,10 +637,9 @@ encrypt the storage under it; do that yourself.
 
 ## Operator recovery
 
-Operator commands (the "operator hat" of
-[substratectl](substratectl.md#two-hats)) speak to Postgres and the data root
-directly and hold no token. They need `--dsn` (or `DATABASE_URL`) and
-`SUBSTRATE_DATA_ROOT`, and refuse before touching anything without them.
+These are the [operator hat](substratectl.md#two-hats): no token, `--dsn` (or
+`DATABASE_URL`) and `SUBSTRATE_DATA_ROOT`, and a refusal before touching
+anything without them.
 
 **Four of them run beside a live server; four need it stopped; one takes no
 database.** `repository list`, `repository inspect`, `repository verify` and
@@ -772,17 +713,24 @@ the exec path needs nothing open at all.
   does not prove who wrote them
   ([the checksum](changelog.md#the-checksum-and-the-segment-files)).
 - **`repository snapshot <repository> <destination root>`** writes a verified
-  copy of the repository directory at
-  `<destination root>/repositories/<authority>/` with `snapshot.json`
-  recording the head seq and checksum the copy holds
-  ([backups](#backups)). It needs `SUBSTRATE_CREDENTIAL_KEY`, runs the whole
-  `verify` first and refuses on any finding, refuses a destination that
-  already holds the repository, and refuses beside a running server, because
-  it opens the repository as its changelog writer so nothing lands while it
-  copies (and a server that opens the repository first while it runs meets
-  the same lock). The copy is built beside the destination and renamed into
-  place last, so a failed snapshot leaves nothing there. Run it with the
-  server's binary, as with `rebuild`.
+  copy of the repository directory, carrying the recorded point described
+  under [backups](#backups). It needs `SUBSTRATE_CREDENTIAL_KEY`, runs the
+  whole `verify` first and refuses on any finding, then copies the manifest,
+  every segment and sidecar, every committed sealed file and the bytes of
+  every `stored` blob, each hashed against its digest on the way, and verifies
+  the copy's changelog and sealed files before writing `snapshot.json`. The
+  copy holds what the fold needs and nothing else: a pending upload, a
+  tombstoned blob's bytes and a staged sealed file are not copied. It refuses
+  a destination that already holds the repository, so a snapshot is never a
+  merge over an older copy, and it refuses beside a running server, because it
+  opens the repository as its changelog writer (a server that opens the
+  repository first while it runs meets the same lock). The copy is built under
+  a dot-prefixed directory beside `repositories/` and renamed into place last,
+  so a failed snapshot leaves nothing at the destination and the same
+  destination takes the retry. Run it with the binary the server runs, as with
+  `rebuild`: it opens the repository the way the server does, so a newer
+  `substratectl` stamps the source with its own dialects and the older server
+  then refuses the repository.
 - **`repository rebuild <repository>`** replays the segment files into a fresh
   fold, in one transaction, under that repository's own lock, after running
   the same check the boot runs. It reproduces the fold bit for bit and appends
