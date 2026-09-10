@@ -11,8 +11,8 @@ import (
 //
 // Two rules keep these off the repository the earlier cases built. The
 // vocabulary cases own their OWN authority (`upgrades.e2e.example`), applied
-// here and nowhere else, so an upgrade or a refused narrowing can never move
-// a shipped declaration. The lifecycle case works a THROWAWAY bundle
+// here and nowhere else, so an upgrade can never move a shipped declaration.
+// The lifecycle case works a THROWAWAY bundle
 // (`notes`, a worked example that needs no network and no credentials): it is
 // installed here, disabled, purged, uninstalled and reinstalled, while
 // people, scheduling, tasks and calendar are only ever read.
@@ -57,11 +57,6 @@ func init() {
 			"property and an enum value: both were refused before the upgrade and both write after it, "+
 			"the declarations' versions move, and the record written under the old shape reads unchanged.",
 		xvCaseAdditiveUpgrade)
-	registerCase(410, "VOC-03", "A narrowing is refused while live records hold the old shape",
-		"Retyping a property, removing an enum value a live record uses, adding required to a property "+
-			"live records lack, and dropping a property live records carry are each refused with a guard "+
-			"naming the property and counting the records; the stored vocabulary does not move.",
-		xvCaseNarrowingRefused)
 	registerCase(420, "VOC-04", "An unknown declaration key is refused at the door",
 		"A declaration carrying a key the dialect does not know is refused with a validation error naming "+
 			"the key and its path, and the authority is not created: over the API an unknown key never "+
@@ -81,11 +76,6 @@ func init() {
 			"disabled bundle, uninstall needs no live records, and the reinstalled bundle comes back "+
 			"disabled because the disable outlives the uninstall.",
 		xvCaseBundleLifecycle)
-	registerCase(460, "BUN-05", "An up-to-date bundle offers no upgrade",
-		"The catalog flags the installed bundles and carries an upgrade preview only where the shipped "+
-			"closure has moved past what this repository stored; for a bundle installed from that same "+
-			"binary the upgrade field is absent, in the listing and in the item detail.",
-		xvCaseNoUpgradeOffered)
 	registerCase(470, "BUN-06", "Trait endpoints see through installed kinds",
 		"The temporal trait's implementors list the kinds that declare it, across every installed "+
 			"authority, and its records endpoint pages records of exactly those kinds; an unknown trait "+
@@ -183,7 +173,7 @@ func xvClosure(version int, properties map[string]any) []map[string]any {
 }
 
 // xvPropertiesV1 and xvPropertiesV2 are the two shapes the upgrade sits
-// between. Each call builds a fresh map so a case may narrow a copy.
+// between. Each call builds a fresh map so a case may edit a copy.
 func xvPropertiesV1() map[string]any {
 	return map[string]any{
 		"name": map[string]any{"type": "string", "description": "the widget's heading"},
@@ -273,61 +263,6 @@ func xvCaseAdditiveUpgrade(c *C) {
 	c.requiref(medium.prop("size") == "medium" && medium.prop("color") == "teal",
 		"the post-upgrade widget landed wrong: %v", medium.Properties)
 	c.stepf("wrote widget `%s` using both additions: `size: medium` and `color: teal` now land", medium.ID)
-}
-
-// xvCaseNarrowingRefused: VOC-03. Every attempt declares version 3, and none
-// of them may leave a trace.
-func xvCaseNarrowingRefused(c *C) {
-	// Each narrowing is built from the live version-2 shape, so the ONLY
-	// difference between an admitted apply and a refused one is the narrowing.
-	retype := xvPropertiesV2()
-	retype["name"] = map[string]any{"type": "int", "description": "the widget's heading"}
-
-	dropValue := xvPropertiesV2()
-	dropValue["size"] = map[string]any{
-		"type":        "enum",
-		"values":      []string{"medium", "large"},
-		"description": "how big it is",
-	}
-
-	required := xvPropertiesV2()
-	required["color"] = map[string]any{"type": "string", "required": true, "description": "what color it is"}
-
-	dropProperty := xvPropertiesV2()
-	delete(dropProperty, "color")
-
-	for _, narrowing := range []struct {
-		what     string
-		property string
-		props    map[string]any
-	}{
-		{"retyping `name` from string to int", "name", retype},
-		{"removing the enum value `small`", "size", dropValue},
-		{"making `color` required", "color", required},
-		{"dropping `color`", "color", dropProperty},
-	} {
-		status, raw := c.xvApply(xvClosure(3, narrowing.props))
-		c.requiref(status == http.StatusForbidden,
-			"%s answered %d, want a 403 guard: %s", narrowing.what, status, raw)
-		ref := c.xvRefused(raw)
-		c.requiref(ref.Code == "guard", "%s was refused with code %q, want `guard`: %s", narrowing.what, ref.Code, ref.Message)
-		c.requiref(strings.Contains(ref.Message, `property "`+narrowing.property+`"`),
-			"the refusal of %s does not name the property: %s", narrowing.what, ref.Message)
-		c.requiref(strings.Contains(ref.Message, "live records"),
-			"the refusal of %s does not count the live records standing in the way: %s", narrowing.what, ref.Message)
-		c.stepf("%s was refused 403 `guard`: %s", narrowing.what, ref.Message)
-	}
-
-	// Nothing moved: the stored declaration is still version 2, and a record
-	// still writes with the enum value the second narrowing tried to remove.
-	c.requiref(c.xvDeclarationVersion(xvPackageCollection, xvPkg) == 2,
-		"a refused narrowing moved the authority's stored version off 2")
-	c.requiref(c.xvDeclarationVersion(xvKindCollection, xvWidgetKind) == 2,
-		"a refused narrowing moved the widget declaration's stored version off 2")
-	still := c.putRec(xvWidgetCollection, "xv-widget-still-small",
-		map[string]any{"name": "Still small", "size": "small"})
-	c.requiref(still.prop("size") == "small", "a widget can no longer be written `small` after the refusals")
-	c.stepf("the stored vocabulary is untouched: both declarations are still version 2 and `%s` writes `size: small`", still.ID)
 }
 
 // xvSparkleClosure is one authority whose gadget kind carries the unknown key
@@ -670,62 +605,6 @@ func xvCaseBundleLifecycle(c *C) {
 	c.requiref(strings.Contains(string(raw), "ifVersion"), "the refusal does not name ifVersion: %s", raw)
 	c.requiref(c.xvStatus(xvNotesBundle).Enabled, "a refused lifecycle PATCH disabled the bundle anyway")
 	c.stepf("`disabled: false` enables too; two states in one PATCH is a 400, and `ifVersion` is refused rather than ignored, because the transition takes no compare-and-set. The bundle is left installed and enabled")
-}
-
-// xvCatalogItems reads the catalog as raw maps, so a case can assert a field
-// is ABSENT rather than merely zero.
-func (c *C) xvCatalogItems() map[string]map[string]any {
-	c.t.Helper()
-	var listing struct {
-		Items []map[string]any `json:"items"`
-	}
-	status, raw := c.do(http.MethodGet, "/api/v1/catalog", nil, &listing)
-	c.requiref(status == http.StatusOK, "the catalog answered %d: %s", status, raw)
-	items := map[string]map[string]any{}
-	for _, item := range listing.Items {
-		id, _ := item["id"].(string)
-		items[id] = item
-	}
-	return items
-}
-
-// xvCaseNoUpgradeOffered: BUN-05.
-func xvCaseNoUpgradeOffered(c *C) {
-	items := c.xvCatalogItems()
-	tasks := items[tasksBundleID]
-	c.requiref(tasks != nil, "the catalog does not list %s", tasksBundleID)
-	installed, _ := tasks["installed"].(bool)
-	c.requiref(installed, "%s is not installed; the earlier cases install it", tasksBundleID)
-	_, offered := tasks["upgrade"]
-	c.requiref(!offered, "the catalog offers an upgrade for a bundle installed from this same binary: %v", tasks["upgrade"])
-	c.stepf("`%s` lists installed=true with NO `upgrade` field: the shipped closure has not moved past what this repository stored, so there is nothing to offer",
-		tasksBundleID)
-
-	installedCount, offers := 0, []string{}
-	for id, item := range items {
-		if on, _ := item["installed"].(bool); !on {
-			// An uninstalled bundle never carries a preview: an upgrade of
-			// something absent means nothing.
-			_, has := item["upgrade"]
-			c.requiref(!has, "the catalog offers an upgrade for the uninstalled %s", id)
-			continue
-		}
-		installedCount++
-		if _, has := item["upgrade"]; has {
-			offers = append(offers, id)
-		}
-	}
-	c.requiref(len(offers) == 0, "the catalog offers upgrades for bundles this binary just installed: %v", offers)
-	c.stepf("the same holds across the listing: %d installed bundles, %d upgrade offers, and no offer on any uninstalled entry", installedCount, len(offers))
-
-	var detail map[string]any
-	status, raw := c.do(http.MethodGet, "/api/v1/catalog/"+url.PathEscape(tasksBundleID), nil, &detail)
-	c.requiref(status == http.StatusOK, "the catalog item answered %d: %s", status, raw)
-	_, offered = detail["upgrade"]
-	c.requiref(!offered, "the item detail offers an upgrade: %v", detail["upgrade"])
-	version, _ := detail["version"].(float64)
-	c.stepf("the item detail agrees: `%s` is at version %d with no `upgrade` field. The preview is attached only when a re-install would move a declaration",
-		tasksBundleID, int64(version))
 }
 
 // xvCaseTraitEndpoints: BUN-06.

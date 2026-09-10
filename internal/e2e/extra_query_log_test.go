@@ -41,15 +41,6 @@ func init() {
 		"The collection path already names the kind, so a filter that names one too is a 400 rather than a "+
 			"silent overwrite: both the path's own kind and a foreign one are refused with the same message.",
 		xqCaseCollectionKindsFilter)
-	registerCase(320, "QRY-03", "An unsupported query parameter is named, not ignored",
-		"An unknown parameter is a 400 quoting it on both the collection list and the changelog feed, and a "+
-			"singular/plural slip (`kind` for `kinds`, `filters` for `filter`) is told the spelling that works.",
-		xqCaseUnknownParams)
-	registerCase(330, "QRY-04", "The list hands off to the watch",
-		"A list page carries the changelog head it was read at; a watch opened from that head bookmarks the "+
-			"same seq, delivers a write that lands afterwards, and delivers every row the forward read holds "+
-			"between the two: no change is skipped and no row at or below the head is delivered twice.",
-		xqCaseListWatchHandoff)
 	registerCase(340, "LOG-02", "The backward page walks history to its end",
 		"`before`/`first` pages the changelog newest-first: the seqs strictly decrease across the whole walk, "+
 			"the cursor is absent on the last page alone, and the walk reads exactly the rows the forward read "+
@@ -211,11 +202,12 @@ type xqStream struct {
 	cancel context.CancelFunc
 }
 
-// xqOpenStream opens a watch and asserts it streams. The stream outlives any
-// sane client timeout, so it gets its own client and its own deadline.
+// xqOpenStream opens a watch and asserts it streams. The stream outlives one
+// exchange, so it gets its own client and its own deadline: the caller's
+// floor, raised by SUBSTRATE_E2E_TIMEOUT on a loaded machine.
 func xqOpenStream(c *C, path string, deadline time.Duration) *xqStream {
 	c.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), deadline)
+	ctx, cancel := context.WithTimeout(context.Background(), c.r.streamDeadline(deadline))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.r.base+path, nil)
 	if err != nil {
 		cancel()
@@ -394,81 +386,6 @@ func xqCaseCollectionKindsFilter(c *C) {
 		e := xqBadRequest(c, path, want)
 		c.stepf("`filter.kinds=[%s]` on the task collection was refused 400 `%s`: %q", kind, e.Error.Code, e.Error.Message)
 	}
-}
-
-// xqCaseUnknownParams pins that an unsupported parameter is named rather than
-// dropped, on both read modes. A dropped narrowing returns the WHOLE
-// collection looking like a filtered one.
-func xqCaseUnknownParams(c *C) {
-	e := xqBadRequest(c, tasksCollection+"?bogus=1", `unknown query parameter "bogus"`)
-	c.stepf("`?bogus=1` on the task collection: 400 `%s`, %q", e.Error.Code, e.Error.Message)
-	e = xqBadRequest(c, xqChanges+"?bogus=1", `unknown query parameter "bogus"`)
-	c.stepf("`?bogus=1` on the changelog feed: 400 `%s`, %q", e.Error.Code, e.Error.Message)
-
-	// The near misses: the feed's filter keys are plural and the list's
-	// filter document is singular, and each slip is told the other spelling.
-	e = xqBadRequest(c, xqChanges+"?kind=x", `unknown query parameter "kind"`)
-	c.requiref(strings.Contains(e.Error.Message, `did you mean "kinds"`),
-		"the singular `kind` was refused without naming `kinds`: %q", e.Error.Message)
-	c.stepf("`?kind=x` on the feed: 400 naming the plural, %q", e.Error.Message)
-	e = xqBadRequest(c, tasksCollection+"?filters=1", `unknown query parameter "filters"`)
-	c.requiref(strings.Contains(e.Error.Message, `did you mean "filter"`),
-		"the plural `filters` was refused without naming `filter`: %q", e.Error.Message)
-	c.stepf("`?filters=1` on the collection: 400 naming the singular, %q", e.Error.Message)
-}
-
-// xqCaseListWatchHandoff proves the seam between the two reads: a list page's
-// head is exactly where a watch resumes, with no row seen twice and none lost
-// in between.
-func xqCaseListWatchHandoff(c *C) {
-	page := xqListTasks(c, xqValues("first", "1"))
-	head := page.Head
-	c.requiref(head > 0, "the list page carries head %d, and the stories wrote hundreds of rows", head)
-	c.requiref(page.Generation != "", "the list page carries no history generation beside head %d", head)
-	c.stepf("a task list page answered head %d under generation %s, the changelog position it was read at", head, page.Generation)
-
-	st := xqOpenStream(c, fmt.Sprintf("%s?watch=1&from=%d&generation=%s", xqChanges, head, page.Generation), 30*time.Second)
-	defer st.close()
-	c.requiref(st.bookmark(c) == head, "the watch bookmarked a different seq than the list's head %d", head)
-
-	// The write lands with the stream already open, so what proves the handoff
-	// is a live delivery and never a backfill of rows that predate the watch.
-	const probe = "x-handoff"
-	c.putRec(tasksCollection, probe, map[string]any{"name": "The list-to-watch handoff"})
-
-	var delivered []changeRow
-	var got changeRow
-	for {
-		row, ok := st.row(c)
-		c.requiref(ok, "the watch never delivered the write of `%s`: %v", probe, st.sc.Err())
-		c.requiref(row.Seq > head, "the watch re-delivered seq %d, at or below the list's head %d", row.Seq, head)
-		delivered = append(delivered, row)
-		if row.RecordID == probe && row.Kind == xqTaskKind {
-			got = row
-			break
-		}
-	}
-
-	// The forward read is the truth the watch is held against, in both
-	// directions: nothing delivered is absent from it, and nothing it holds
-	// up to the probe was skipped by the stream.
-	forward := c.readChangesForward(head)
-	inForward := xqSeqSet(forward)
-	for _, row := range delivered {
-		c.requiref(inForward[row.Seq],
-			"the watch delivered seq %d, which a forward read from %d does not hold", row.Seq, head)
-	}
-	watched := xqSeqSet(delivered)
-	for _, row := range forward {
-		if row.Seq > got.Seq {
-			continue
-		}
-		c.requiref(watched[row.Seq],
-			"the forward read holds seq %d in (%d, %d], which the watch never delivered: the handoff skipped a change",
-			row.Seq, head, got.Seq)
-	}
-	c.stepf("the watch opened at head %d delivered `%s` at seq %d and the %d rows in between, exactly the "+
-		"rows a forward read from %d holds: nothing skipped, nothing repeated", head, probe, got.Seq, len(delivered)-1, head)
 }
 
 // xqCaseBackwardPage walks the changelog newest-first to its bottom.

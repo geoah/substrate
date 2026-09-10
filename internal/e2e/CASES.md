@@ -11,6 +11,12 @@ The suite mocks the world, never the substrate: a fake LLM answers the OpenAI
 wire, a fake OAuth provider answers the token endpoint, but every substrate
 call crosses the real HTTP door of the real binary against the real database.
 
+A case a unit suite already pins is not listed here. `internal/api` drives
+every route against a hand-written fake, `internal/engine` drives the same
+writes against a real Postgres, and `internal/testenv` drives the published
+error codes over a real socket against the real engine, so this list holds
+what only a live server, a live database and a real client show.
+
 Status: `slice` is implemented today, `planned` is not yet. Needs: `totp` runs
 only against the enforced door (`mise run dev:totp`), `egress` needs
 `SUBSTRATE_EGRESS_ALLOW` pointed at loopback on the server, `dsn` needs the
@@ -44,32 +50,25 @@ the rows below into one coherent repository.
 | AUTH-01 | register with the invite code, mint and use the first token, log in, revoke | | slice |
 | AUTH-02 | a wrong invite code is a 401; a closed door (no code configured) is a 501 | | implemented |
 | AUTH-03 | a taken username is refused with a 422 naming it | | slice (in AUTH-01) |
-| AUTH-10 | a refused registration writes nothing: the loser's changelog gains no row | | implemented |
-| AUTH-04 | a username outside `[a-z][a-z0-9]{1,29}` and an out-of-bounds password are refused at validation | | implemented |
 | AUTH-05 | full TOTP registration: enroll a seed, register with a live code, the code that registered cannot also log in | totp | planned |
 | AUTH-06 | password change with both factors; the old password stops working; bearer on `/password` is refused 403 | | planned |
 | AUTH-07 | TOTP swap: enroll a candidate seed, prove it, the old seed stops working | totp | planned |
 | AUTH-08 | recovery-key enrollment is one-shot: the second attempt is a conflict | | planned |
-| AUTH-09 | login failures are one indistinguishable 401 (unknown user, wrong password, wrong code) | | implemented |
 
 ## Tokens
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
 | TOK-01 | mint via `POST /tokens`, list, revoke; the revoked secret is a 401, the others survive | | slice (in AUTH-01) |
-| TOK-02 | a token with `expiresAt` in the past is refused at authenticate | | implemented |
 | TOK-03 | tokens are records: `DELETE /api/v1/substrate.reamde.dev/core/token/{id}` revokes the same as `DELETE /tokens/{id}` | | implemented |
-| TOK-04 | a garbage bearer is 401; a missing header is 401; the `X-Substrate-Actor` reserved spellings are 403 | | implemented |
 
 ## Records
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
 | REC-01 | the record lifecycle: create (201, version 1), read, put-merge (200, version up, nothing pruned), state transition with its stamp, delete (tombstone) | | slice |
-| REC-02 | `ifVersion` optimistic concurrency: a stale write is a conflict | | implemented |
 | REC-03 | a PATCH with `null` deletes the property; a state property in a PATCH is a transition; an undeclared transition is refused | | implemented |
 | REC-04 | a write with an undeclared property is refused naming it | | implemented |
-| REC-05 | the title derives from the declared property through `displayTemplate`; a written `title` on such a kind is ignored | | implemented |
 | REC-06 | client-chosen ids: POST with `id`, PUT at the id; `incoming` is refused as an id and is the only reserved word left | | implemented |
 | REC-07 | labels and annotations round-trip; annotations only appear with `withAnnotations=1` | | implemented |
 | REC-08 | `propertyMeta` on a single GET names the managing actor and tier after two actors write the same property | | implemented |
@@ -93,8 +92,6 @@ strings, and every list carries them inline.
 | --- | --- | --- | --- |
 | QRY-01 | `filter` selects on properties; `orderBy` orders; `first`/`after` keyset-page without skips or repeats | | implemented |
 | QRY-02 | `filter.kinds` on a collection list is a 400 (the path already names the kind) | | implemented |
-| QRY-03 | an unknown query parameter is a 400 naming it, with the did-you-mean for singular/plural slips | | implemented |
-| QRY-04 | list `head` hands off to `watch?from=head` with no skipped and no duplicated change | | implemented |
 
 ## The changelog
 
@@ -114,7 +111,6 @@ strings, and every list carries them inline.
 | --- | --- | --- | --- |
 | VOC-01 | `vocabulary/apply` admits a new kind; records of it write and read | | story (in STORY-02) |
 | VOC-02 | an additive upgrade (new optional property, new enum value) lands; the version moves | | implemented |
-| VOC-03 | a narrowing (drop, retype, add required) is refused while live records hold the old shape | | implemented |
 | VOC-04 | an unknown dialect key is refused at apply naming it (quarantine is the repository-open path, unreachable over the API) | | implemented |
 | VOC-05 | a kind reference as a record id round-trips percent-encoded (`%2F`) | | implemented |
 
@@ -126,7 +122,6 @@ strings, and every list carries them inline.
 | BUN-02 | `requires:` ordering: installing a dependent before its dependency is refused naming what is missing | | slice (in REC-01) |
 | BUN-03 | disable, enable, uninstall, purge through the bundle PATCH lifecycle; records survive uninstall and die with purge | | implemented |
 | BUN-04 | a bundle input binds through `…/bundle/{id}/bind`; resolution order is the bound reference, the id `default`, then the sole record | | implemented |
-| BUN-05 | an up-to-date bundle offers no `upgrade`; a moved closure needs a second binary, which one live server cannot stage | | implemented (no-motion half) |
 | BUN-06 | trait endpoints: `…/trait/{id}/implementors` and `…/trait/{id}/records` see through installed kinds | | implemented |
 
 ## Functions
@@ -144,8 +139,6 @@ strings, and every list carries them inline.
 | --- | --- | --- | --- |
 | TRG-01 | a trigger on a kind fires its function on write; the run record shows the delivery | | story (in STORY-02) |
 | TRG-02 | `…/trigger/{id}/run` synthesizes one delivery; `wake` scans now instead of on the 5s tick | | story (in STORY-02) |
-| TRG-03 | a failing delivery parks; `…/parked/{fid}/retry` re-runs it | | implemented |
-| TRG-04 | `replay` resets the cursor and re-delivers | | implemented |
 
 ## Agents, against a fake LLM
 
@@ -194,12 +187,6 @@ strings, and every list carries them inline.
 | ERR-02 | the wrong-shape routes answer 405 naming the working spelling (PUT at the collection, POST at an id) | | planned |
 | ERR-03 | an unknown collection is a 404 naming it; the body cap is a 413 | | planned |
 | ERR-04 | every published error code is reachable (the conformance suite already pins this in-process; here over the live door) | | planned |
-
-## Rate limiting
-
-| id | case | needs | status |
-| --- | --- | --- | --- |
-| RL-01 | a second auth attempt inside the window is a 429 with `Retry-After`; waiting it out succeeds | | implemented |
 
 ## Isolation and durability
 

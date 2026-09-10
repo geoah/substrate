@@ -3,24 +3,20 @@ package e2e
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 )
 
-// The record, reference, merge and split cases: CASES.md REC-02 through
-// REC-08, REF-01, REF-03, REF-04, MRG-01 and MRG-02. They run after the stories,
-// over the repository the stories built, and every record they write or
-// delete carries the `x-` id prefix so the acme world stays as it was left.
+// The record, reference, merge and split cases: CASES.md REC-03, REC-04,
+// REC-06, REC-07, REC-08, REF-01, REF-03, REF-04, MRG-01 and MRG-02. They run
+// after the stories, over the repository the stories built, and every record
+// they write or delete carries the `x-` id prefix so the acme world stays as
+// it was left.
 // The one exception is REC-06, which has to write the reserved words
 // themselves; it says so where it does.
 func init() {
-	registerCase(200, "REC-02", "Optimistic concurrency through ifVersion",
-		"A put carrying the stored version wins; a second put carrying the same, now stale, version is a 409 "+
-			"`conflict` naming both numbers, and leaves the record exactly as the winner left it.",
-		xrCaseIfVersion)
 	registerCase(210, "REC-03", "What a PATCH can do to a property",
 		"A null deletes the property outright, a state property is a transition that stamps its own time, and a "+
 			"transition the kind does not declare is a 403 `guard` naming the pair it refused.",
@@ -29,11 +25,6 @@ func init() {
 		"A create and a patch that carry a property the kind never declared both answer 422 `validation` with the "+
 			"problem addressed to `props.bogusprop`, and no record is written.",
 		xrCaseUndeclaredProperty)
-	registerCase(230, "REC-05", "The heading derives from the declared property",
-		"A task's title is rendered from its `name` through the `{name|title}` displayTemplate: a `title` written "+
-			"beside the name is dropped without a word, and a task written with a title alone reads back with no "+
-			"title at all.",
-		xrCaseTitleDerivation)
 	registerCase(240, "REC-06", "Client-chosen ids, and the two reserved words",
 		"A POST carrying an id lands at that id and a PUT lands at the path's id whatever the body says; "+
 			"`incoming` is refused as an id at the record path in both directions, and it is the only word that is.",
@@ -74,11 +65,8 @@ func init() {
 // The ids this group writes. Everything is `x-` prefixed: the stories own
 // every other id in the repository.
 const (
-	xrCASTask     = "x-rec-cas"
 	xrPatchTask   = "x-rec-patch"
 	xrPropTask    = "x-rec-prop"
-	xrTitleTask   = "x-rec-title"
-	xrTitleOnly   = "x-rec-title-only"
 	xrChosenPost  = "x-chosen"
 	xrChosenPut   = "x-chosen2"
 	xrChosenGhost = "x-chosen-elsewhere"
@@ -222,51 +210,6 @@ func xrDoAs(c *C, actor, method, path string, body, out any) (int, []byte) {
 	return resp.StatusCode, raw
 }
 
-// xrCaseIfVersion: REC-02. The CAS precondition is `ifVersion` on the put
-// input, and the whole point is that the SECOND writer holding a stale
-// version loses instead of overwriting.
-func xrCaseIfVersion(c *C) {
-	var created xrRecord
-	status, raw := c.do(http.MethodPut, xrTaskPath(xrCASTask),
-		map[string]any{"properties": map[string]any{"name": "The concurrency probe"}}, &created)
-	c.requiref(status == http.StatusCreated, "creating %s answered %d: %s", xrCASTask, status, raw)
-	c.requiref(created.Version == 1, "a fresh record's version is %d, want 1", created.Version)
-
-	// Read the version back rather than assuming it: a client's precondition
-	// comes from what it last read.
-	stored := xrGet(c, xrTaskPath(xrCASTask)).Version
-
-	var won xrRecord
-	status, raw = c.do(http.MethodPut, xrTaskPath(xrCASTask), map[string]any{
-		"ifVersion":  stored,
-		"properties": map[string]any{"description": "written by the writer holding version 1"},
-	}, &won)
-	c.requiref(status == http.StatusOK, "the put at version %d answered %d: %s", stored, status, raw)
-	c.requiref(won.Version == stored+1, "the winning put left version %d, want %d", won.Version, stored+1)
-	c.stepf("a put carrying `ifVersion: %d` landed and moved the record to version %d", stored, won.Version)
-
-	// The same precondition a second time is the stale writer: it read
-	// version 1, someone else has since written version 2.
-	status, raw = c.do(http.MethodPut, xrTaskPath(xrCASTask), map[string]any{
-		"ifVersion":  stored,
-		"properties": map[string]any{"description": "written by the writer that never re-read"},
-	}, nil)
-	c.requiref(status == http.StatusConflict, "the stale put answered %d, want 409: %s", status, raw)
-	p := xrRefusal(c, raw)
-	c.requiref(p.Error.Code == "conflict", "the stale put's code is %q, want conflict", p.Error.Code)
-	want := fmt.Sprintf("ifVersion %d, stored %d", stored, stored+1)
-	c.requiref(strings.Contains(p.Error.Message, want),
-		"the conflict message does not name both versions (%q): %q", want, p.Error.Message)
-	c.stepf("the same `ifVersion: %d` a second time was refused: 409 `conflict`, %q", stored, p.Error.Message)
-
-	// A refused write writes nothing: the record still reads as the winner
-	// left it, version and value both.
-	after := xrGet(c, xrTaskPath(xrCASTask))
-	c.requiref(after.Version == stored+1 && after.prop("description") == "written by the writer holding version 1",
-		"the refused put still changed the record: version %d, description %q", after.Version, after.prop("description"))
-	c.stepf("the loser changed nothing: version is still %d and the description is the winner's", after.Version)
-}
-
 // xrCasePatch: REC-03. Three different things a property can be in a PATCH
 // body, and only two of them are ordinary writes.
 func xrCasePatch(c *C) {
@@ -349,53 +292,6 @@ func xrCaseUndeclaredProperty(c *C) {
 	c.requiref(xrRefusal(c, raw).Error.Problems[0] == want, "the patch refusal reads differently: %s", raw)
 	c.requiref(!xrGet(c, xrTaskPath(xrPropTask)).hasProp("bogusprop"), "the refused patch wrote the property anyway")
 	c.stepf("the patch door refuses it identically, so an existing record cannot grow the property either")
-}
-
-// xrCaseTitleDerivation: REC-05. A task declares `name` and renders its
-// heading with the displayTemplate `{name|title}`, so `name` is where a
-// writer puts the heading and the built-in title slot is derived storage
-// (decision 0016).
-func xrCaseTitleDerivation(c *C) {
-	// A `title` beside the name is NOT refused as undeclared: it names the
-	// built-in slot, which every kind has. It is dropped instead, silently,
-	// because the kind declares a template.
-	var created xrRecord
-	status, raw := c.do(http.MethodPost, tasksCollection, map[string]any{
-		"id": xrTitleTask,
-		"properties": map[string]any{
-			"name":  "The real heading",
-			"title": "A written title",
-		},
-	}, &created)
-	c.requiref(status == http.StatusCreated, "the create carrying a title answered %d, want 201: %s", status, raw)
-	c.requiref(created.prop("name") == "The real heading", "the name did not land: %q", created.prop("name"))
-	c.requiref(created.prop("title") == "The real heading",
-		"the record's title is %q; the displayTemplate `{name|title}` must render the name", created.prop("title"))
-	c.stepf("a create carrying both `name` and `title` was admitted (201) and the written title was dropped: the record's title reads `%s`", created.prop("title"))
-
-	// The heading FOLLOWS the property, on every write, because it is
-	// rendered and not stored input.
-	var renamed xrRecord
-	status, raw = c.do(http.MethodPut, xrTaskPath(xrTitleTask),
-		map[string]any{"properties": map[string]any{"name": "A renamed heading"}}, &renamed)
-	c.requiref(status == http.StatusOK, "the rename answered %d: %s", status, raw)
-	c.requiref(renamed.prop("title") == "A renamed heading", "the title did not follow the name: %q", renamed.prop("title"))
-	row, ok := xrListFind(c, tasksCollection+"?first=200", xrTitleTask)
-	c.requiref(ok && row.prop("title") == "A renamed heading",
-		"the list row carries title %q, want the derived heading", row.prop("title"))
-	c.stepf("renaming the `name` moved the title with it, on the record and in the list row")
-
-	// The `|title` half of the template is the LEGACY fallback for records
-	// written before `name` existed, and a live write can never reach it: the
-	// same write path that renders the template also drops the written title,
-	// so a task written with a title alone ends up with no title at all.
-	var titleOnly xrRecord
-	status, raw = c.do(http.MethodPut, xrTaskPath(xrTitleOnly),
-		map[string]any{"properties": map[string]any{"title": "Only a written title"}}, &titleOnly)
-	c.requiref(status == http.StatusCreated, "the title-only create answered %d: %s", status, raw)
-	c.requiref(!titleOnly.hasProp("title"),
-		"the title-only record reads back title %v; a written title on a templated kind lands nowhere", titleOnly.Properties["title"])
-	c.stepf("a task written with `title` and no `name` reads back with NO title: the writer's title never reaches the `{name|title}` fallback, so the heading belongs to `name`")
 }
 
 // xrCaseChosenIDs: REC-06. Who names a record, and the two words no record

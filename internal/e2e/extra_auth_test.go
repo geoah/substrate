@@ -1,19 +1,15 @@
 package e2e
 
-// The door, the tokens, the rate window and the isolation between two
-// repositories: CASES.md rows AUTH-02, AUTH-04, AUTH-09, AUTH-10, TOK-02,
-// TOK-03, TOK-04, RL-01, ISO-01 and ISO-02, orders 100-199.
+// The door, the tokens and the isolation between two repositories: CASES.md
+// rows AUTH-02, TOK-03, ISO-01 and ISO-02, orders 100-199.
 //
 // These run after the stories, over the repository they left. Everything here
-// either refuses or reads, with two exceptions that add and leave: the tokens
-// TOK-02 and TOK-03 mint (both end revoked or expired), and the second user
-// ISO-01 registers. The story graph is never touched.
+// either refuses or reads, with two exceptions that add and leave: TOK-03
+// mints a token (it ends revoked) and ISO-01 registers a second user. The
+// story graph is never touched.
 
 import (
-	"bytes"
 	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -44,34 +40,10 @@ func init() {
 		"Both halves of the registration gesture refuse an invite code that is not the configured one, "+
 			"with a 401 `auth` that names the code and nothing about the username.",
 		xaCaseInviteCode)
-	registerCase(110, "AUTH-04", "Username and password are validated before anything is written",
-		"A username outside `[a-z][a-z0-9]{1,29}` and a password under the minimum length are refused "+
-			"with a 422 `validation` naming the rule that refused them.",
-		xaCaseCredentialValidation)
-	registerCase(120, "AUTH-09", "A login failure is one indistinguishable answer",
-		"An unknown username and a wrong password answer the same status and the byte-identical body, "+
-			"so the door is no oracle for which usernames exist.",
-		xaCaseLoginOracle)
-	registerCase(130, "AUTH-10", "A refused registration writes nothing",
-		"A duplicate registration is refused 422 and the existing user's changelog gains no row: the "+
-			"refusal happens before any write, so a taken username cannot be used to touch its repository.",
-		xaCaseRefusedRegistrationWrites)
-	registerCase(140, "TOK-02", "An expiry is server-enforced",
-		"A token minted with `expiresAt` a few seconds out authenticates until that instant and answers "+
-			"401 after it, without anything revoking it.",
-		xaCaseTokenExpiry)
 	registerCase(150, "TOK-03", "Tokens are records, and deleting the record revokes",
 		"`DELETE /api/v1/substrate.reamde.dev/core/token/{id}` tombstones the token record and the secret "+
 			"stops authenticating, the same revocation `DELETE /tokens/{id}` performs.",
 		xaCaseTokenRecordRevoke)
-	registerCase(160, "TOK-04", "The bearer and the actor header are both checked",
-		"A garbage bearer and a missing Authorization header are each a 401 `auth`; an ordinary actor is "+
-			"accepted; the substrate's own writing hands are refused 403 `forbidden` on `X-Substrate-Actor`.",
-		xaCaseBearerAndActor)
-	registerCase(170, "RL-01", "The rate window is real and it reopens",
-		"A second login attempt inside the window is a 429 carrying `Retry-After`; waiting that many "+
-			"seconds out, the next attempt is admitted and mints a token.",
-		xaCaseRateWindow)
 	registerCase(180, "ISO-01", "A second user sees none of the first user's repository",
 		"A freshly registered second user's token finds the first user's collections absent, its record "+
 			"404, and its own changelog holding core rows alone, while the first user's token still answers.",
@@ -107,37 +79,6 @@ func xaErrorOf(c *C, raw []byte) xaError {
 // base36 nanoseconds keep two of them apart.
 func xaName(prefix string) string {
 	return prefix + strconv.FormatInt(time.Now().UnixNano(), 36)
-}
-
-// xaSend is the harness's do with the two things it does not carry: extra
-// REQUEST headers, and the RESPONSE headers back. TOK-04 has to set
-// `X-Substrate-Actor` and RL-01 has to read `Retry-After`.
-func xaSend(c *C, token, method, path string, body any, header map[string]string) (int, http.Header, []byte) {
-	c.t.Helper()
-	var rd io.Reader
-	if body != nil {
-		b, err := json.Marshal(body)
-		c.requiref(err == nil, "encoding the %s %s body: %v", method, path, err)
-		rd = bytes.NewReader(b)
-	}
-	req, err := http.NewRequest(method, c.r.base+path, rd)
-	c.requiref(err == nil, "building %s %s: %v", method, path, err)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	for k, v := range header {
-		req.Header.Set(k, v)
-	}
-	resp, err := c.r.hc.Do(req)
-	c.requiref(err == nil, "%s %s: %v", method, path, err)
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(resp.Body)
-	c.requiref(err == nil, "reading %s %s: %v", method, path, err)
-	c.stepf("`%s %s` answered %d", method, path, resp.StatusCode)
-	return resp.StatusCode, resp.Header, raw
 }
 
 // xaChangesForward reads one repository's whole forward feed under an
@@ -221,156 +162,6 @@ func xaCaseInviteCode(c *C) {
 	c.stepf("SKIPPED the closed-door half: a substrate with no invite code configured answers 501 `unsupported`, and this one is open")
 }
 
-// --- AUTH-04 ---------------------------------------------------------------
-
-// xaCaseCredentialValidation walks the two validation rules registration
-// enforces on its own inputs, each with the invite code CORRECT so the 422
-// cannot be confused with the 401 AUTH-02 pins.
-func xaCaseCredentialValidation(c *C) {
-	r := c.r
-
-	// Both spellings are outside `[a-z][a-z0-9]{1,29}`: one leads with a
-	// digit, the other carries an uppercase letter.
-	for _, name := range []string{"9bad", "Bad"} {
-		c.paceAuth()
-		status, raw := c.doAs("", http.MethodPost, "/register",
-			map[string]any{"inviteCode": r.invite, "repository": name, "password": r.password}, nil)
-		c.requiref(status == http.StatusUnprocessableEntity,
-			"registering the username %q answered %d, want 422%s", name, status, redacted(status, raw))
-		e := xaErrorOf(c, raw)
-		c.requiref(e.Error.Code == "validation", "the refusal of %q has code %q, want `validation`", name, e.Error.Code)
-		c.requiref(strings.Contains(e.Error.Message, `must match [a-z][a-z0-9]{1,29}`),
-			"the refusal of %q does not name the grammar: %q", name, e.Error.Message)
-		c.requiref(strings.Contains(e.Error.Message, name),
-			"the refusal of %q does not name the username it refused: %q", name, e.Error.Message)
-	}
-	c.stepf("the usernames `9bad` and `Bad` were both refused 422 `validation` naming `[a-z][a-z0-9]{1,29}`")
-
-	// A well-formed username with a password under the floor: the refusal
-	// names the length rule and the number.
-	name := xaName("xapw")
-	c.paceAuth()
-	status, raw := c.doAs("", http.MethodPost, "/register",
-		map[string]any{"inviteCode": r.invite, "repository": name, "password": "short"}, nil)
-	c.requiref(status == http.StatusUnprocessableEntity,
-		"registering with a five-character password answered %d, want 422: %s", status, raw)
-	e := xaErrorOf(c, raw)
-	c.requiref(e.Error.Code == "validation", "the short-password refusal has code %q, want `validation`", e.Error.Code)
-	c.requiref(strings.Contains(e.Error.Message, "the password must be at least 12 characters"),
-		"the short-password refusal does not name the length rule: %q", e.Error.Message)
-	c.stepf("a five-character password was refused 422 `validation`: %q", e.Error.Message)
-}
-
-// --- AUTH-09 ---------------------------------------------------------------
-
-// xaCaseLoginOracle asserts the two failures are the same ANSWER, not merely
-// the same status: a body that differed in a word would still name which
-// usernames exist.
-func xaCaseLoginOracle(c *C) {
-	r := c.r
-
-	ghost := xaName("xaghost")
-	c.paceAuth()
-	unknownStatus, unknownRaw := c.doAs("", http.MethodPost, "/login",
-		map[string]any{"repository": ghost, "password": r.password}, nil)
-	c.requiref(unknownStatus == http.StatusUnauthorized,
-		"logging in as the unregistered `%s` answered %d, want 401%s", ghost, unknownStatus, redacted(unknownStatus, unknownRaw))
-
-	c.paceAuth()
-	wrongStatus, wrongRaw := c.doAs("", http.MethodPost, "/login",
-		map[string]any{"repository": r.repository, "password": "definitely-not-the-password"}, nil)
-	c.requiref(wrongStatus == http.StatusUnauthorized,
-		"a wrong password for `%s` answered %d, want 401%s", r.repository, wrongStatus, redacted(wrongStatus, wrongRaw))
-
-	c.requiref(unknownStatus == wrongStatus,
-		"an unknown user answered %d and a wrong password answered %d", unknownStatus, wrongStatus)
-	c.requiref(string(unknownRaw) == string(wrongRaw),
-		"the two failures differ:\nunknown user:   %s\nwrong password: %s", unknownRaw, wrongRaw)
-	e := xaErrorOf(c, unknownRaw)
-	c.requiref(e.Error.Code == "auth", "the login failure's code is %q, want `auth`", e.Error.Code)
-	c.stepf("an unknown username and a wrong password answered the identical 401 body: `%s`, %q",
-		e.Error.Code, e.Error.Message)
-}
-
-// --- AUTH-10 ---------------------------------------------------------------
-
-// xaCaseRefusedRegistrationWrites proves the refusal of a taken username
-// costs the existing repository nothing. The changelog is the truth, so the
-// assertion is on the changelog: no row landed, of any kind, by any actor.
-func xaCaseRefusedRegistrationWrites(c *C) {
-	r := c.r
-
-	before := c.readChangesForward(0)
-	c.requiref(len(before) > 0, "the changelog is empty; the stories should have filled it")
-	head := before[len(before)-1].Seq
-
-	c.paceAuth()
-	status, raw := c.doAs("", http.MethodPost, "/register",
-		map[string]any{"inviteCode": r.invite, "repository": r.repository, "password": "a-completely-different-password"}, nil)
-	c.requiref(status == http.StatusUnprocessableEntity,
-		"re-registering `%s` answered %d, want 422%s", r.repository, status, redacted(status, raw))
-	e := xaErrorOf(c, raw)
-	c.requiref(e.Error.Code == "validation", "the duplicate refusal's code is %q, want `validation`", e.Error.Code)
-	c.requiref(strings.Contains(e.Error.Message, "already exists"),
-		"the duplicate refusal does not say the user exists: %q", e.Error.Message)
-
-	after := xaChangesForward(c, r.token)
-	c.requiref(len(after) > 0 && after[len(after)-1].Seq >= head, "the changelog shrank: head was %d", head)
-	var landed []string
-	for _, row := range after {
-		if row.Seq > head {
-			landed = append(landed, fmt.Sprintf("seq %d %s %s `%s` by %s", row.Seq, row.Op, row.Kind, row.RecordID, row.Actor))
-		}
-	}
-	c.requiref(len(landed) == 0,
-		"the refused registration was followed by %d new changelog rows: %s", len(landed), strings.Join(landed, "; "))
-	c.stepf("the refused duplicate left the changelog at seq %d: a taken username is refused before any write", head)
-}
-
-// --- TOK-02 ----------------------------------------------------------------
-
-// xaCaseTokenExpiry mints a token that dies on its own. The expiry is a few
-// seconds out on purpose: the case has to OUTLIVE it, and a longer one would
-// only make the suite slower.
-func xaCaseTokenExpiry(c *C) {
-	// RFC3339 carries no sub-second part, so the instant the server stores is
-	// this truncated one; the wait below is measured against the same value.
-	// The suite and the dev server share one host, so one clock; the margins
-	// below absorb truncation, not skew.
-	expiresAt := time.Now().Add(4 * time.Second).UTC().Truncate(time.Second)
-	var minted struct {
-		Token struct {
-			ID        string `json:"id"`
-			ExpiresAt string `json:"expiresAt"`
-		} `json:"token"`
-		Secret string `json:"secret"`
-	}
-	status, raw := c.do(http.MethodPost, "/tokens",
-		map[string]any{"label": "xa-expiring", "expiresAt": expiresAt.Format(time.RFC3339)}, &minted)
-	c.requiref(status == http.StatusCreated, "minting an expiring token answered %d, want 201%s", status, redacted(status, raw))
-	c.requiref(minted.Token.ExpiresAt != "", "the minted token carries no expiresAt")
-	c.requiref(minted.Secret != "", "the mint returned no secret")
-
-	status, raw = c.doAs(minted.Secret, http.MethodGet, "/tokens", nil, nil)
-	c.requiref(status == http.StatusOK, "the expiring token answered %d before its expiry, want 200: %s", status, raw)
-	c.stepf("minted token `%s` expiring at %s; it authenticates while it is alive", minted.Token.ID, minted.Token.ExpiresAt)
-
-	// A margin past the stored instant: the server compares against its own
-	// clock, so the wait has to clear the expiry rather than merely reach it.
-	if wait := time.Until(expiresAt) + 1500*time.Millisecond; wait > 0 {
-		c.stepf("waited %s for the expiry to pass", wait.Round(100*time.Millisecond))
-		time.Sleep(wait)
-	}
-
-	status, raw = c.doAs(minted.Secret, http.MethodGet, "/tokens", nil, nil)
-	c.requiref(status == http.StatusUnauthorized, "the expired token answered %d, want 401: %s", status, raw)
-	e := xaErrorOf(c, raw)
-	c.requiref(e.Error.Code == "auth", "the expired token's refusal has code %q, want `auth`", e.Error.Code)
-	status, _ = c.do(http.MethodGet, "/tokens", nil, nil)
-	c.requiref(status == http.StatusOK, "the run's own token stopped working when an unrelated token expired")
-	c.stepf("past %s the same secret is a 401 `auth`; nothing revoked it and the run's token is untouched", minted.Token.ExpiresAt)
-}
-
 // --- TOK-03 ----------------------------------------------------------------
 
 // xaCaseTokenRecordRevoke revokes through the RECORD route rather than
@@ -408,104 +199,6 @@ func xaCaseTokenRecordRevoke(c *C) {
 	status, _ = c.do(http.MethodGet, "/tokens", nil, nil)
 	c.requiref(status == http.StatusOK, "the run's own token stopped working after an unrelated revocation")
 	c.stepf("deleting the token RECORD `%s` revoked it: the secret is a 401 and the run's token still answers", minted.Token.ID)
-}
-
-// --- TOK-04 ----------------------------------------------------------------
-
-// xaCaseBearerAndActor covers the two ways a request arrives with no usable
-// credential, and the one thing a request may never say about itself.
-func xaCaseBearerAndActor(c *C) {
-	status, raw := c.doAs("nonsense", http.MethodGet, "/tokens", nil, nil)
-	c.requiref(status == http.StatusUnauthorized, "a garbage bearer answered %d, want 401: %s", status, raw)
-	garbage := xaErrorOf(c, raw)
-	c.requiref(garbage.Error.Code == "auth", "the garbage bearer's refusal has code %q, want `auth`", garbage.Error.Code)
-	c.requiref(garbage.Error.Message == "invalid token",
-		"the garbage bearer's refusal says %q, want `invalid token`", garbage.Error.Message)
-
-	status, raw = c.doAs("", http.MethodGet, "/tokens", nil, nil)
-	c.requiref(status == http.StatusUnauthorized, "a missing Authorization header answered %d, want 401: %s", status, raw)
-	missing := xaErrorOf(c, raw)
-	c.requiref(missing.Error.Code == "auth", "the missing header's refusal has code %q, want `auth`", missing.Error.Code)
-	c.requiref(missing.Error.Message == "missing bearer token",
-		"the missing header's refusal says %q, want `missing bearer token`", missing.Error.Message)
-	c.stepf("a garbage bearer is 401 `auth` %q and no header at all is 401 `auth` %q", "invalid token", "missing bearer token")
-
-	// An ordinary door name is attribution the caller declares, and it is
-	// accepted: the header is not refused wholesale, only the reserved names.
-	status, _, raw = xaSend(c, c.r.token, http.MethodGet, "/tokens", nil,
-		map[string]string{"X-Substrate-Actor": "console"})
-	c.requiref(status == http.StatusOK, "a request claiming the actor `console` answered %d, want 200: %s", status, raw)
-
-	// The substrate's own writing hands: a request that could claim one could
-	// forge a credential ref or a shipped declaration.
-	for _, actor := range []string{"substrate", "bundle:samples.substrate.reamde.dev:tasks"} {
-		status, _, raw = xaSend(c, c.r.token, http.MethodGet, "/tokens", nil,
-			map[string]string{"X-Substrate-Actor": actor})
-		c.requiref(status == http.StatusForbidden,
-			"a valid token claiming the actor %q answered %d, want 403: %s", actor, status, raw)
-		e := xaErrorOf(c, raw)
-		c.requiref(e.Error.Code == "forbidden", "claiming %q was refused with code %q, want `forbidden`", actor, e.Error.Code)
-		c.requiref(strings.Contains(e.Error.Message, "is reserved"),
-			"the refusal of %q does not say the actor is reserved: %q", actor, e.Error.Message)
-	}
-	c.stepf("`X-Substrate-Actor: console` is accepted; `substrate` and `bundle:samples.substrate.reamde.dev:tasks` are 403 `forbidden`, reserved for the substrate's own hands")
-}
-
-// --- RL-01 -----------------------------------------------------------------
-
-// xaCaseRateWindow is the one case that deliberately does NOT pace itself: it
-// pays the window's price to prove the window exists, then waits out exactly
-// what the server asked for and proves it reopened.
-func xaCaseRateWindow(c *C) {
-	r := c.r
-	// The first two attempts carry a wrong password on purpose: neither may
-	// succeed, and neither spends a TOTP code on a door that enforces one.
-	wrong := map[string]any{"repository": r.repository, "password": "definitely-not-the-password"}
-
-	c.paceAuth()
-	status, _, raw := xaSend(c, "", http.MethodPost, "/login", wrong, nil)
-	c.requiref(status == http.StatusUnauthorized,
-		"the first attempt answered %d, want the ordinary 401%s", status, redacted(status, raw))
-
-	// No pacing here: this is the case's subject.
-	status, header, raw := xaSend(c, "", http.MethodPost, "/login", wrong, nil)
-	c.requiref(status == http.StatusTooManyRequests,
-		"a second attempt inside the window answered %d, want 429%s", status, redacted(status, raw))
-	e := xaErrorOf(c, raw)
-	c.requiref(e.Error.Code == "rate_limited", "the 429's code is %q, want `rate_limited`", e.Error.Code)
-	retryAfter := header.Get("Retry-After")
-	c.requiref(retryAfter != "", "the 429 carries no Retry-After header")
-	seconds, err := strconv.Atoi(retryAfter)
-	c.requiref(err == nil && seconds >= 1, "Retry-After is %q, want a whole number of seconds", retryAfter)
-	c.stepf("a second login inside the window answered 429 `rate_limited` with `Retry-After: %s`", retryAfter)
-
-	// Wait exactly what the server asked, plus a margin for the clock skew
-	// between this process and the server's.
-	wait := time.Duration(seconds)*time.Second + 500*time.Millisecond
-	time.Sleep(wait)
-	c.stepf("waited the %s the server asked for", wait.Round(100*time.Millisecond))
-
-	// The window reopened, so the correct credentials get through and mint.
-	login := map[string]any{"repository": r.repository, "password": r.password, "label": "e2e-rate-window"}
-	if r.totpSecret != "" {
-		login["totpCode"] = r.nextTOTPCode(c)
-	}
-	var out struct {
-		Token struct {
-			ID string `json:"id"`
-		} `json:"token"`
-		Secret string `json:"secret"`
-	}
-	status, _, raw = xaSend(c, "", http.MethodPost, "/login", login, nil)
-	c.requiref(status == http.StatusCreated,
-		"the attempt after Retry-After answered %d, want 201%s", status, redacted(status, raw))
-	c.requiref(json.Unmarshal(raw, &out) == nil, "the login answer is undecodable")
-	c.requiref(out.Secret != "", "the login after the window returned no secret")
-	c.stepf("after the wait the door admitted the attempt and minted token `%s`", out.Token.ID)
-
-	// The run's pacing clock has to learn about the attempts made here, or
-	// the next case's paceAuth would measure from before them.
-	r.lastAuth = time.Now()
 }
 
 // --- ISO-01 ----------------------------------------------------------------

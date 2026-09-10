@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -26,6 +27,32 @@ func TestMintTokenIsAuthenticatedAndUnmetered(t *testing.T) {
 	// unauthenticated mint any more.
 	wantErrorCode(t, env.do(t, http.MethodPost, tokensPath, "", map[string]any{"label": "x"}),
 		http.StatusUnauthorized, codeAuth)
+}
+
+// The mint body's `expiresAt` reaches the dataset. The engine's own expiry
+// test mints through the Go surface, so without this nothing proves the HTTP
+// door decodes the key and hands it down: a handler that dropped it would
+// mint a token that never expires and still answer 201.
+func TestMintTokenCarriesTheExpiryToTheDataset(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	// The fake's MintToken echoes the expiry it was handed, so the answer is
+	// the assertion: an expiry in the reply is one the dataset received.
+	expiresAt := time.Date(2027, 3, 4, 5, 6, 7, 0, time.UTC)
+	rec := env.do(t, http.MethodPost, tokensPath, tok,
+		map[string]any{"label": "expiring", "expiresAt": expiresAt.Format(time.RFC3339)})
+	wantStatus(t, rec, http.StatusCreated)
+	out := decodeJSON[substrate.MintedToken](t, rec)
+	if out.Token.ExpiresAt == nil || !out.Token.ExpiresAt.Equal(expiresAt) {
+		t.Fatalf("the dataset was handed expiry %v, want %v", out.Token.ExpiresAt, expiresAt)
+	}
+	// A mint that names no expiry hands down none. A zero time here would be
+	// an expiry in the past, which authenticate refuses.
+	rec = env.do(t, http.MethodPost, tokensPath, tok, map[string]any{"label": "immortal"})
+	wantStatus(t, rec, http.StatusCreated)
+	if got := decodeJSON[substrate.MintedToken](t, rec).Token.ExpiresAt; got != nil {
+		t.Fatalf("a mint with no expiresAt handed down %v", got)
+	}
 }
 
 func TestTokenListAndRevoke(t *testing.T) {

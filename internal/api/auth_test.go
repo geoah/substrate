@@ -86,6 +86,9 @@ func TestActorHeaderRefusesTheHostNamespace(t *testing.T) {
 		"substrate.oauth",    // the OAuth facility's hand
 		"substrate.engine",   // the engine's own
 		"substrate.anything", // anything else under it
+		// A bundle's derived hand: it writes the declarations it ships, so a
+		// request that could claim it could forge one.
+		"bundle:samples.substrate.reamde.dev:tasks",
 	} {
 		rec := env.do(t, http.MethodPost, "/api/v1/samples.substrate.reamde.dev/people/person", tok,
 			map[string]any{"properties": map[string]any{"name": "forged"}},

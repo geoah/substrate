@@ -413,6 +413,24 @@ The test itself (`internal/e2e`) skips wherever `SUBSTRATE_E2E_SERVER` is
 unset, so `mise run test` and CI never touch it, the same shape as the live
 suite's key gate.
 
+The suite reads its whole environment from those variables, so it runs against
+any substrate, not only the dev one: `SUBSTRATE_E2E_SERVER` is the base URL,
+`SUBSTRATE_E2E_INVITE` the invite code (default `let-me-in`),
+`SUBSTRATE_E2E_DSN` and `SUBSTRATE_E2E_CTL` the operator hat the `dsn` cases
+need, `SUBSTRATE_E2E_CREDENTIAL_KEY` the key those commands read, and
+`SUBSTRATE_E2E_REPORT_DIR` where the report lands. Point them at a throwaway
+server of your own when the shared dev stack is somebody else's.
+
+`SUBSTRATE_E2E_TIMEOUT` bounds one exchange and defaults to 30s. Raise it on
+a loaded machine: a write this client abandons can wedge the repository
+([issue 516](https://github.com/geoah/substrate/issues/516)), and every case
+after it then fails for a reason that is not the code's.
+
+A case a unit suite already pins is not in the list: `internal/api` against
+its fake, `internal/engine` against a real Postgres, and
+`internal/testenv`'s conformance table over a real socket hold those, and
+CASES.md holds what only a live server shows.
+
 ## What CI runs
 
 Every job is one `mise run ci:<job>`, defined once in `.mise.toml` so the
