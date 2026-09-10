@@ -508,14 +508,8 @@ func (ds *dataset) callFunctionOnce(ctx context.Context, name string, args any, 
 	}
 	actor := substrate.Actor(fn.Actor())
 	err = ds.inTx(ctx, actor, false, func(t *txn) error {
-		t.setEffectEmit(fn.Caps.Emit)
-		if err := t.lockEffectTargets(effects); err != nil {
+		if err := t.applyEffects(fn.Caps.Emit, effects); err != nil {
 			return err
-		}
-		for _, ef := range effects {
-			if err := t.applyEffect(ef); err != nil {
-				return err
-			}
 		}
 		return call.settleIn(t, outcome)
 	})

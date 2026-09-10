@@ -1,4 +1,4 @@
-package engine
+package providertest
 
 // The Notion bundle — the sync-only workspace mirror, from the shipped
 // closure at ../../kinds/providers.substrate.reamde.dev/notion. Three tests:
@@ -47,23 +47,23 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
-	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 const (
-	notionExampleDir  = "../../kinds/providers.substrate.reamde.dev/notion"
+	notionDir = providersDir + "/notion"
+	// The SAMPLE that declares a `page` of its own: installed beside notion,
+	// the bare name is ambiguous.
+	webDir            = samplesDir + "/web"
+	webPageType       = "samples.substrate.reamde.dev/web/page"
 	notionPackage     = "providers.substrate.reamde.dev/notion"
 	notionConfigType  = notionPackage + "/config"
 	notionAccountType = notionPackage + "/account"
@@ -103,68 +103,27 @@ func notionDashed(id string) string {
 // admission the batch apply runs, minus the function-body warm.
 func TestNotionBundleAdmitsSchema(t *testing.T) {
 	t.Parallel()
-	// The registry an install actually admits into: the seeded tree (core
-	// alone) plus the shipped VOCABULARY bundles this repository imported —
-	// what a closure declaring onto people/tasks/messaging/calendar/media
-	// needs present, and what `requires:` names.
-	reg, err := enginetest.SeededRegistry(CoreKindsDir)
-	if err != nil {
-		t.Fatalf("build the repository registry: %v", err)
-	}
-	data, err := os.ReadFile(notionExampleDir + "/bundle.yaml")
-	if err != nil {
-		t.Fatalf("read bundle.yaml: %v", err)
-	}
-	docs, err := vocabulary.ParseStream(data)
-	if err != nil {
-		t.Fatalf("parse bundle.yaml: %v", err)
-	}
-	authorities, err := vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
-	if err != nil {
-		t.Fatalf("build the bundle authority: %v", err)
-	}
-	if err := reg.InstallAll(authorities); err != nil {
-		t.Fatalf("the bundle closure did not admit: %v", err)
-	}
+	reg := bundleRegistry(t, notionDir)
 
 	// The bundle exists, declares the one `connector` input injected into
 	// its functions, and — the token model — declares NO oauth2 manifest
 	// block: the host's exchange cannot speak Notion's Basic-auth token
 	// endpoint, so nothing here pretends to.
-	b, ok := reg.BundleOf(notionPackage)
-	if !ok {
-		t.Fatalf("no bundle owns %s after install", notionPackage)
-	}
-	in, ok := b.Inputs["connector"]
-	if !ok {
-		t.Fatalf("bundle declares no connector input: %v", b.InputOrder)
-	}
-	if in.Kind != notionConfigType {
-		t.Fatalf("connector input kind = %q, want %q", in.Kind, notionConfigType)
-	}
-	if in.Inject != vocabulary.BundleInputInjectFunctions {
-		t.Fatalf("connector input inject = %q, want %q", in.Inject, vocabulary.BundleInputInjectFunctions)
-	}
+	b := assertBundleInput(t, reg, notionPackage, "connector", notionConfigType, vocabulary.BundleInputInjectFunctions)
 	if b.OAuth2 != nil {
 		t.Fatalf("bundle declares oauth2 provider metadata — the token model must not")
 	}
 
 	// The config type: NOT oauth2 — its integrationToken is the connector's
 	// own secret, injected plaintext.
-	cfg, ok := reg.ByIdentity(notionConfigType)
-	if !ok {
-		t.Fatalf("config type %s missing", notionConfigType)
-	}
+	cfg := mustKind(t, reg, notionConfigType)
 	if cfg.Implements(vocabulary.TraitOAuth2Core) {
 		t.Fatalf("%s implements oauth2 — a token-model bundle must not (the loader pairs the trait with an oauth2 manifest block)", notionConfigType)
 	}
 
 	// The account type: accountconfig (the console's accounts view and the
 	// runner's config resolution), and not oauth2.
-	acct, ok := reg.ByIdentity(notionAccountType)
-	if !ok {
-		t.Fatalf("account type %s missing", notionAccountType)
-	}
+	acct := mustKind(t, reg, notionAccountType)
 	if !acct.Implements(vocabulary.TraitAccountConfigCore) {
 		t.Fatalf("%s does not implement %s", notionAccountType, vocabulary.TraitAccountConfigCore)
 	}
@@ -175,10 +134,7 @@ func TestNotionBundleAdmitsSchema(t *testing.T) {
 	// The page mirror carries its optional polymorphic parent edge — a page's
 	// parent is a page OR a data source, so the target is `any` and never
 	// required (workspace-parented pages have none).
-	page, ok := reg.ByIdentity(notionPageType)
-	if !ok {
-		t.Fatalf("page type %s missing", notionPageType)
-	}
+	page := mustKind(t, reg, notionPageType)
 	ed, ok := page.Prop("parent")
 	if !ok {
 		t.Fatalf("%s declares no `parent` reference", notionPageType)
@@ -211,9 +167,8 @@ type notionSearchPage struct {
 // observable. It enforces the pinned 2025-09-03 version and records every
 // start_cursor it is asked for, so a replayed stale cursor is visible.
 type notionFake struct {
-	ts *httptest.Server
+	fakeAPI
 
-	mu         sync.Mutex
 	searches   int
 	blockHits  int
 	cursors    []string
@@ -341,8 +296,7 @@ func newNotionFake(t *testing.T) *notionFake {
 			"object": "list", "results": blocks, "has_more": false, "next_cursor": nil,
 		})
 	})
-	f.ts = httptest.NewServer(mux)
-	t.Cleanup(f.ts.Close)
+	f.serve(t, mux)
 	return f
 }
 
@@ -387,83 +341,34 @@ func notionPageObj(id, edited, title string, parent map[string]any) map[string]a
 // sync body through uv, so it skips when uv is absent or cannot provision.
 func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the sync body warms through uv at install")
-	}
+	requireUV(t)
 	ctx := context.Background()
-	ds := openInternalDataset(t)
+	_, ds := newDataset(t)
 
-	// The atomic install from the shipped manifest. A schema problem is
-	// already caught deterministically by the loader test above, so an apply
-	// error here is treated as a uv provisioning failure (offline) and skips.
-	vocabularyDocs := loadYAMLDocs(t, notionExampleDir+"/bundle.yaml")
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, vocabularyDocs); err != nil {
-		if isUVProvisionError(err) {
-			t.Skipf("bundle install could not warm the PEP 723 body (uv offline?): %v", err)
-		}
-		t.Fatalf("install the notion bundle: %v", err)
-	}
+	// The atomic install from the shipped manifest.
+	install(t, ds, notionDir, nil)
 
 	// The bundle row and every schema member landed as its own record.
-	for id, wantType := range map[string]string{
-		notionPackage:     "substrate.reamde.dev/core/bundle",
-		notionConfigType:  "substrate.reamde.dev/core/kind",
-		notionAccountType: "substrate.reamde.dev/core/kind",
-		notionPageType:    "substrate.reamde.dev/core/kind",
-		notionDBType:      "substrate.reamde.dev/core/kind",
-		notionSyncFn:      "substrate.reamde.dev/core/function",
-	} {
-		row, err := ds.Get(ctx, wantType, id)
-		if err != nil {
-			t.Fatalf("member %s did not install: %v", id, err)
-		}
-		if row.Kind != wantType {
-			t.Fatalf("member %s is a %s, want %s", id, row.Kind, wantType)
-		}
-	}
+	assertMembers(t, ds, map[string]string{
+		notionPackage:     typeBundle,
+		notionConfigType:  typeKind,
+		notionAccountType: typeKind,
+		notionPageType:    typeKind,
+		notionDBType:      typeKind,
+		notionSyncFn:      typeFunction,
+	})
 
 	// Computed status: installed, enabled, one function, the connector input
 	// unresolved so far.
-	st, err := ds.BundleStatus(ctx, notionPackage)
-	if err != nil {
-		t.Fatalf("bundle status: %v", err)
-	}
-	if !st.Installed || !st.Enabled {
-		t.Fatalf("bundle not live: installed=%v enabled=%v", st.Installed, st.Enabled)
-	}
-	if len(st.Inputs) != 1 || st.Inputs[0].Name != "connector" || st.Inputs[0].Kind != notionConfigType {
-		t.Fatalf("status inputs = %+v, want the one connector input", st.Inputs)
-	}
-	if st.Inputs[0].Record != "" || st.Inputs[0].Via != "" {
-		t.Fatalf("connector input resolved with no config record created: %+v", st.Inputs[0])
-	}
-	if len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupMissing || st.Setup[0].Input != "connector" {
-		t.Fatalf("status setup = %+v, want the one missing-input item", st.Setup)
-	}
-	if st.Functions != 1 {
-		t.Fatalf("status functions = %d, want 1", st.Functions)
-	}
+	assertUnresolvedInput(t, ds, notionPackage, "connector", notionConfigType, 1)
 
 	// The delivery wiring installs as ordinary data records.
-	for _, m := range loadYAMLDocs(t, notionExampleDir+"/triggers.yaml") {
-		putDataDoc(t, ds, m)
-	}
-	for _, id := range []string{"notion-on-connect", "notion-scheduled"} {
-		row, err := ds.Get(ctx, typeTrigger, id)
-		if err != nil {
-			t.Fatalf("trigger %s did not install: %v", id, err)
-		}
-		if row.Kind != typeTrigger {
-			t.Fatalf("trigger %s is a %s", id, row.Kind)
-		}
-	}
+	installTriggers(t, ds, notionDir)
+	assertTriggers(t, ds, "notion-on-connect", "notion-scheduled")
 
 	// --- the fake API and the one config record (token + apiBase seam) -----
 	fake := newNotionFake(t)
-	mustPutInternal(t, ds, substrate.PutInput{
+	mustPut(t, ds, substrate.PutInput{
 		Kind: notionConfigType,
 		Properties: map[string]any{
 			"integrationToken": "secret-notion-integration-token",
@@ -499,7 +404,7 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 		})
 	})
 
-	acct := mustPutInternal(t, ds, substrate.PutInput{
+	acct := mustPut(t, ds, substrate.PutInput{
 		Kind: notionAccountType, ID: "notion-acct-1",
 		Properties: map[string]any{
 			"displayName": "Test workspace", "enabledPages": true,
@@ -519,7 +424,7 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 	if _, err := ds.Get(ctx, notionDBType, db); err != nil {
 		t.Fatalf("page-one effects did not commit before the disable: %v", err)
 	}
-	if row := mustGetInternal(t, ds, notionAccountType, acct.ID); row.Properties["lastSyncedAt"] != nil {
+	if row := mustGet(t, ds, notionAccountType, acct.ID); row.Properties["lastSyncedAt"] != nil {
 		t.Fatalf("a half-drained account must not be stamped: lastSyncedAt=%v", row.Properties["lastSyncedAt"])
 	}
 	if got := parkedFailures(t, ds); got != parkedBefore {
@@ -584,7 +489,7 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 	if !strings.Contains(content, "# Heading") || !strings.Contains(content, "Some paragraph text.") {
 		t.Fatalf("pg1 content not normalized: %q", content)
 	}
-	if storedReferencePath(p1.Properties["account"]) != notionAccountType+"/"+acct.ID || p1.Properties["archived"] != false {
+	if storedRefPath(p1.Properties["account"]) != notionAccountType+"/"+acct.ID || p1.Properties["archived"] != false {
 		t.Fatalf("pg1 props wrong: account=%v archived=%v", p1.Properties["account"], p1.Properties["archived"])
 	}
 	if _, ok := p1.Properties["lastEditedAt"]; !ok {
@@ -627,7 +532,7 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 
 	// The account is stamped: the completion marker and the ok status, both
 	// connector-written; the on-connect guard has dropped.
-	acctRow := mustGetInternal(t, ds, notionAccountType, acct.ID)
+	acctRow := mustGet(t, ds, notionAccountType, acct.ID)
 	if _, ok := acctRow.Properties["lastSyncedAt"]; !ok {
 		t.Fatalf("account carries no lastSyncedAt after the first sync")
 	}
@@ -649,12 +554,12 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 	if got := fake.blockCount(); got != blocksBefore {
 		t.Fatalf("re-sync fetched blocks (%d -> %d) — the last_edited_time short-circuit is dead", blocksBefore, got)
 	}
-	p1Again := mustGetInternal(t, ds, notionPageType, pg1)
+	p1Again := mustGet(t, ds, notionPageType, pg1)
 	if p1Again.Version != p1Version {
 		t.Fatalf("re-sync bumped the unchanged pg1 mirror: version %d -> %d", p1Version, p1Again.Version)
 	}
 	// The re-sync still stamps the account — completion, not change.
-	if got := mustGetInternal(t, ds, notionAccountType, acct.ID).Properties["syncStatus"]; got != "ok" {
+	if got := mustGet(t, ds, notionAccountType, acct.ID).Properties["syncStatus"]; got != "ok" {
 		t.Fatalf("re-sync left syncStatus = %v", got)
 	}
 
@@ -682,7 +587,7 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 	if _, err := ds.Get(ctx, notionPageType, pg5); err != nil {
 		t.Fatalf("pg5 did not mirror once shared: %v", err)
 	}
-	p4Fixed := mustGetInternal(t, ds, notionPageType, pg4)
+	p4Fixed := mustGet(t, ds, notionPageType, pg4)
 	if tg := parentRef(p4Fixed); tg != notionPageRef(pg5) {
 		t.Fatalf("pg4 parent = %q after repair, want %s", tg, pg5)
 	}
@@ -728,7 +633,7 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 	if _, err := ds.Get(ctx, notionPageType, runner.ExternalID("notion", acct.ID, notionOldID)); err == nil {
 		t.Fatalf("the below-cutoff relic mirrored — the cutoff is dead")
 	}
-	if got := mustGetInternal(t, ds, notionAccountType, acct.ID).Properties["syncStatus"]; got != "ok" {
+	if got := mustGet(t, ds, notionAccountType, acct.ID).Properties["syncStatus"]; got != "ok" {
 		t.Fatalf("cutoff-stopped sync left syncStatus = %v, want ok", got)
 	}
 
@@ -737,7 +642,7 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 	// mirror the same workspace twice. The lexicographically-first row is
 	// the connection — the second is stamped, never synced.
 	searchesBefore = fake.searchCount()
-	acct2 := mustPutInternal(t, ds, substrate.PutInput{
+	acct2 := mustPut(t, ds, substrate.PutInput{
 		Kind: notionAccountType, ID: "notion-acct-2",
 		Properties: map[string]any{
 			"displayName": "Duplicate workspace", "enabledPages": true,
@@ -745,7 +650,7 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 		},
 	})
 	drainTriggers(t, ds)
-	acct2Row := mustGetInternal(t, ds, notionAccountType, acct2.ID)
+	acct2Row := mustGet(t, ds, notionAccountType, acct2.ID)
 	if got := acct2Row.Properties["syncStatus"]; got != notionDuplicateNote {
 		t.Fatalf("duplicate account syncStatus = %v, want %q", got, notionDuplicateNote)
 	}
@@ -764,7 +669,7 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 	if _, _, err := ds.CallFunction(ctx, notionSyncFn, map[string]any{"account": acct.ID}); err != nil {
 		t.Fatalf("erroring sync must degrade, not fail the call: %v", err)
 	}
-	status, _ := mustGetInternal(t, ds, notionAccountType, acct.ID).Properties["syncStatus"].(string)
+	status, _ := mustGet(t, ds, notionAccountType, acct.ID).Properties["syncStatus"].(string)
 	if !strings.HasPrefix(status, "erroring: ") {
 		t.Fatalf("provider failure left syncStatus = %q, want an erroring stamp", status)
 	}
@@ -772,7 +677,7 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 	if _, _, err := ds.CallFunction(ctx, notionSyncFn, map[string]any{"account": acct.ID}); err != nil {
 		t.Fatalf("recovery sync: %v", err)
 	}
-	if got := mustGetInternal(t, ds, notionAccountType, acct.ID).Properties["syncStatus"]; got != "ok" {
+	if got := mustGet(t, ds, notionAccountType, acct.ID).Properties["syncStatus"]; got != "ok" {
 		t.Fatalf("recovery left syncStatus = %v, want ok", got)
 	}
 }
@@ -793,37 +698,26 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 // to nothing at all after the rename. The read normalizes them.
 func TestNotionSyncResolvesParentsBesideASecondPageType(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the sync body warms through uv at install")
-	}
+	requireUV(t)
 	ctx := context.Background()
-	ds := openInternalDataset(t)
+	_, ds := newDataset(t)
 
 	// Two bundles, two `page` types. Order does not matter; both must admit.
-	for _, dir := range []string{exampleDir, notionExampleDir} {
-		if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, loadYAMLDocs(t, dir+"/bundle.yaml")); err != nil {
-			if isUVProvisionError(err) {
-				t.Skipf("bundle install could not warm the PEP 723 bodies (uv offline?): %v", err)
-			}
-			t.Fatalf("install %s: %v", dir, err)
-		}
+	for _, dir := range []string{webDir, notionDir} {
+		install(t, ds, dir, nil)
 	}
 	// The precondition this test exists for: the bare name is now ambiguous,
-	// so anything still passing it to the engine fails.
-	if _, err := ds.resolveType("page"); err == nil {
+	// so anything still passing it to the engine fails. A read addressed at
+	// the bare name is the shortest door to the live registry's answer.
+	if _, err := ds.Get(ctx, "page", "any"); err == nil {
 		t.Fatalf("bare \"page\" still resolves — the two-bundle precondition did not hold")
 	} else if !strings.Contains(err.Error(), "ambiguous") {
 		t.Fatalf("bare \"page\" failed with %v, want an ambiguity", err)
 	}
-	for _, m := range loadYAMLDocs(t, notionExampleDir+"/triggers.yaml") {
-		putDataDoc(t, ds, m)
-	}
+	installTriggers(t, ds, notionDir)
 
 	fake := newNotionFake(t)
-	mustPutInternal(t, ds, substrate.PutInput{
+	mustPut(t, ds, substrate.PutInput{
 		Kind: notionConfigType,
 		Properties: map[string]any{
 			"integrationToken": "secret-notion-integration-token",
@@ -842,7 +736,7 @@ func TestNotionSyncResolvesParentsBesideASecondPageType(t *testing.T) {
 		notionPageObj(notionPg4ID, recent, "Orphan child",
 			map[string]any{"type": "page_id", "page_id": notionDashed(notionPg5ID)}),
 	}})
-	acct := mustPutInternal(t, ds, substrate.PutInput{
+	acct := mustPut(t, ds, substrate.PutInput{
 		Kind: notionAccountType, ID: "notion-acct-1",
 		Properties: map[string]any{
 			"displayName": "Test workspace", "enabledPages": true,
@@ -860,15 +754,15 @@ func TestNotionSyncResolvesParentsBesideASecondPageType(t *testing.T) {
 	pg4 := runner.ExternalID("notion", acct.ID, notionPg4ID)
 	pg5 := runner.ExternalID("notion", acct.ID, notionPg5ID)
 
-	if tg := parentRef(mustGetInternal(t, ds, notionPageType, pg2)); tg != notionPageRef(pg1) {
+	if tg := parentRef(mustGet(t, ds, notionPageType, pg2)); tg != notionPageRef(pg1) {
 		t.Fatalf("pg2 parent = %q, want the page mirror %s", tg, pg1)
 	}
-	pend, ok := mustGetInternal(t, ds, notionPageType, pg4).Properties["pendingParent"].([]any)
+	pend, ok := mustGet(t, ds, notionPageType, pg4).Properties["pendingParent"].([]any)
 	if !ok || len(pend) != 2 || pend[0] != notionPageType || pend[1] != pg5 {
 		t.Fatalf("pg4 pendingParent = %v, want [%s %s]", pend, notionPageType, pg5)
 	}
 	// The web mirror is untouched: nothing wrote across the authority boundary.
-	if n := countLivePages(t, ds); n != 0 {
+	if n := countLive(t, ds, webPageType); n != 0 {
 		t.Fatalf("the notion sync minted %d web pages", n)
 	}
 
@@ -894,7 +788,7 @@ func TestNotionSyncResolvesParentsBesideASecondPageType(t *testing.T) {
 	if _, _, err := ds.CallFunction(ctx, notionSyncFn, map[string]any{"account": acct.ID}); err != nil {
 		t.Fatalf("legacy pendingParent repair: %v", err)
 	}
-	p4 := mustGetInternal(t, ds, notionPageType, pg4)
+	p4 := mustGet(t, ds, notionPageType, pg4)
 	if tg := parentRef(p4); tg != notionPageRef(pg5) {
 		t.Fatalf("pg4 parent = %q after the legacy repair, want %s", tg, pg5)
 	}
@@ -906,20 +800,10 @@ func TestNotionSyncResolvesParentsBesideASecondPageType(t *testing.T) {
 // parentRef reads a record's `parent` reference as its record path, "" when
 // unset.
 func parentRef(e *substrate.Record) string {
-	return storedReferencePath(e.Properties["parent"])
+	return storedRefPath(e.Properties["parent"])
 }
 
 // notionPageRef is the stored path a page mirror's `parent` carries when it
 // names another page mirror. The parent is unpinned, so the value is a full
 // path and a test comparing bare ids would be comparing the wrong thing.
 func notionPageRef(id string) string { return vocabulary.RecordPath(notionPageType, id) }
-
-// mustGetInternal is mustPutInternal's read twin, local to this file.
-func mustGetInternal(t *testing.T, ds *dataset, typ, id string) *substrate.Record {
-	t.Helper()
-	e, err := ds.Get(context.Background(), typ, id)
-	if err != nil {
-		t.Fatalf("get %s: %v", id, err)
-	}
-	return e
-}

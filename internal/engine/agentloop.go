@@ -1384,17 +1384,8 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, fn *vocabulary.Functio
 	if len(effects) > 0 {
 		err = l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
 			t.causedBy = l.in.causedBy
-			t.setEffectEmit(l.emit)
 			t.changeSink = &l.dispatchChanges
-			if err := t.lockEffectTargets(effects); err != nil {
-				return err
-			}
-			for _, ef := range effects {
-				if err := t.applyEffect(ef); err != nil {
-					return err
-				}
-			}
-			return nil
+			return t.applyEffects(l.emit, effects)
 		})
 		if err != nil {
 			return toolError(err.Error()), false

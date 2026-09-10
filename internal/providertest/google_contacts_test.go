@@ -1,4 +1,4 @@
-package engine
+package providertest
 
 // The Google contacts bundle — the substrate's first real connector (ticket
 // 010). Two proofs, from the shipped closure at.
@@ -24,41 +24,13 @@ package engine
 // against a connected account.
 
 import (
-	"context"
 	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
-	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
-)
-
-const (
-	googleExampleDir  = "../../kinds/providers.substrate.reamde.dev/google"
-	googlePackage     = "providers.substrate.reamde.dev/google"
-	googleConfigType  = googlePackage + "/config"
-	googleAccountType = googlePackage + "/account"
-	googleContactType = googlePackage + "/contact"
-	googleSyncFn      = googlePackage + "/contactssync"
-	googlePersonType  = "samples.substrate.reamde.dev/people/person"
-
-	// The gmail + calendar half of the same closure.
-	googleAddressType  = googlePackage + "/emailaddress"
-	googleThreadType   = googlePackage + "/thread"
-	googleMessageType  = googlePackage + "/message"
-	googleCalendarType = googlePackage + "/calendar"
-	googleEventType    = googlePackage + "/event"
-	googleGmailFn      = googlePackage + "/gmailsync"
-	googleCalendarFn   = googlePackage + "/calendarsync"
-
-	coreThreadType   = "samples.substrate.reamde.dev/messaging/emailthread"
-	coreMessageType  = "samples.substrate.reamde.dev/messaging/emailmessage"
-	coreCalendarType = "samples.substrate.reamde.dev/calendar/calendar"
-	coreEventType    = "samples.substrate.reamde.dev/calendar/calendarevent"
-	coreSeriesType   = "samples.substrate.reamde.dev/calendar/calendareventseries"
 )
 
 // TestGoogleContactsBundleAdmitsSchema loads the builtin schema, then installs
@@ -67,55 +39,17 @@ const (
 // assertion is a rule the loader enforces at admission time.
 func TestGoogleContactsBundleAdmitsSchema(t *testing.T) {
 	t.Parallel()
-	// The registry an install actually admits into: the seeded tree (core
-	// alone) plus the shipped VOCABULARY bundles this repository imported —
-	// what a closure declaring onto people/tasks/messaging/calendar/media
-	// needs present, and what `requires:` names.
-	reg, err := enginetest.SeededRegistry(CoreKindsDir)
-	if err != nil {
-		t.Fatalf("build the repository registry: %v", err)
-	}
-	data, err := os.ReadFile(googleExampleDir + "/bundle.yaml")
-	if err != nil {
-		t.Fatalf("read bundle.yaml: %v", err)
-	}
-	docs, err := vocabulary.ParseStream(data)
-	if err != nil {
-		t.Fatalf("parse bundle.yaml: %v", err)
-	}
-	authorities, err := vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
-	if err != nil {
-		t.Fatalf("build the bundle authority: %v", err)
-	}
-	if err := reg.InstallAll(authorities); err != nil {
-		t.Fatalf("the bundle closure did not admit: %v", err)
-	}
+	reg := bundleRegistry(t, googleDir)
 
 	// The bundle exists and declares the `client` input the oauth2 block
 	// names: facility-read, so it must NOT inject.
-	b, ok := reg.BundleOf(googlePackage)
-	if !ok {
-		t.Fatalf("no bundle owns %s after install", googlePackage)
-	}
-	in, ok := b.Inputs["client"]
-	if !ok {
-		t.Fatalf("bundle declares no client input: %v", b.InputOrder)
-	}
-	if in.Kind != googleConfigType {
-		t.Fatalf("client input kind = %q, want %q", in.Kind, googleConfigType)
-	}
-	if in.Inject != "" {
-		t.Fatalf("client input inject = %q, but the OAuth client is facility-read, never injected", in.Inject)
-	}
+	b := assertBundleInput(t, reg, googlePackage, "client", googleConfigType, "")
 	if b.OAuth2 == nil || b.OAuth2.ClientInput != "client" {
 		t.Fatalf("oauth2 clientInput does not name the client input: %+v", b.OAuth2)
 	}
 
 	// The config type: oauth2 (client fields), the client input's kind.
-	cfg, ok := reg.ByIdentity(googleConfigType)
-	if !ok {
-		t.Fatalf("config type %s missing", googleConfigType)
-	}
+	cfg := mustKind(t, reg, googleConfigType)
 	if !cfg.Implements(vocabulary.TraitOAuth2Core) {
 		t.Fatalf("config type does not implement %s", vocabulary.TraitOAuth2Core)
 	}
@@ -123,10 +57,7 @@ func TestGoogleContactsBundleAdmitsSchema(t *testing.T) {
 	// The account type: accountconfig (the OAuth facility's two hands), and NOT
 	// oauth2 — the as-built facility binds client creds on the config, tokens on
 	// the account.
-	acct, ok := reg.ByIdentity(googleAccountType)
-	if !ok {
-		t.Fatalf("account type %s missing", googleAccountType)
-	}
+	acct := mustKind(t, reg, googleAccountType)
 	if !acct.Implements(vocabulary.TraitAccountConfigCore) {
 		t.Fatalf("account type does not implement %s", vocabulary.TraitAccountConfigCore)
 	}
@@ -136,10 +67,7 @@ func TestGoogleContactsBundleAdmitsSchema(t *testing.T) {
 
 	// The contact mirror carries an EMPTY subject slot: single, unpinned and
 	// optional (record 49). The repository's own mapping pins it.
-	contact, ok := reg.ByIdentity(googleContactType)
-	if !ok {
-		t.Fatalf("source type %s missing", googleContactType)
-	}
+	contact := mustKind(t, reg, googleContactType)
 	ed, ok := contact.Prop("person")
 	if !ok {
 		t.Fatalf("contact declares no `person` slot")
@@ -220,106 +148,42 @@ func TestGoogleContactsBundleAdmitsSchema(t *testing.T) {
 // so it skips when uv is absent or cannot provision.
 func TestGoogleContactsBundleInstalls(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the sync body warms through uv at install")
-	}
-	ctx := context.Background()
-	ds := openInternalDataset(t)
+	requireUV(t)
+	_, ds := newDataset(t)
 
-	// The atomic install from the shipped manifest. A failure here is either a
-	// schema problem (already caught deterministically by the loader test
-	// above, without uv) or a uv provisioning failure (offline) — so treat an
-	// apply error as a skip rather than double-reporting a schema break.
-	vocabularyDocs := loadYAMLDocs(t, googleExampleDir+"/bundle.yaml")
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, vocabularyDocs); err != nil {
-		if isUVProvisionError(err) {
-			t.Skipf("bundle install could not warm the PEP 723 body (uv offline?): %v", err)
-		}
-		t.Fatalf("install the google bundle: %v", err)
-	}
+	// The atomic install from the shipped manifest.
+	install(t, ds, googleDir, nil)
 
 	// The bundle row and every schema member landed as its own record.
-	for id, wantType := range map[string]string{
-		googlePackage:     "substrate.reamde.dev/core/bundle",
-		googleConfigType:  "substrate.reamde.dev/core/kind",
-		googleAccountType: "substrate.reamde.dev/core/kind",
-		googleContactType: "substrate.reamde.dev/core/kind",
-		googleSyncFn:      "substrate.reamde.dev/core/function",
+	assertMembers(t, ds, map[string]string{
+		googlePackage:     typeBundle,
+		googleConfigType:  typeKind,
+		googleAccountType: typeKind,
+		googleContactType: typeKind,
+		googleSyncFn:      typeFunction,
 		// The gmail and calendar closure installs from the same
 		// atomic manifest: four mirror types, the shared address source and two
 		// sync functions. No mapping: this package owns no person (record 49).
-		googleAddressType:  "substrate.reamde.dev/core/kind",
-		googleThreadType:   "substrate.reamde.dev/core/kind",
-		googleMessageType:  "substrate.reamde.dev/core/kind",
-		googleCalendarType: "substrate.reamde.dev/core/kind",
-		googleEventType:    "substrate.reamde.dev/core/kind",
-		googleGmailFn:      "substrate.reamde.dev/core/function",
-		googleCalendarFn:   "substrate.reamde.dev/core/function",
-	} {
-		row, err := ds.Get(ctx, wantType, id)
-		if err != nil {
-			t.Fatalf("member %s did not install: %v", id, err)
-		}
-		if row.Kind != wantType {
-			t.Fatalf("member %s is a %s, want %s", id, row.Kind, wantType)
-		}
-	}
+		googleAddressType:  typeKind,
+		googleThreadType:   typeKind,
+		googleMessageType:  typeKind,
+		googleCalendarType: typeKind,
+		googleEventType:    typeKind,
+		googleGmailFn:      typeFunction,
+		googleCalendarFn:   typeFunction,
+	})
 
 	// Computed status: installed, enabled, and the closure's member counts.
-	st, err := ds.BundleStatus(ctx, googlePackage)
-	if err != nil {
-		t.Fatalf("bundle status: %v", err)
-	}
-	if !st.Installed || !st.Enabled {
-		t.Fatalf("bundle not live: installed=%v enabled=%v", st.Installed, st.Enabled)
-	}
-	if len(st.Inputs) != 1 || st.Inputs[0].Name != "client" || st.Inputs[0].Kind != googleConfigType {
-		t.Fatalf("status inputs = %+v, want the one client input", st.Inputs)
-	}
-	if st.Inputs[0].Record != "" || st.Inputs[0].Via != "" {
-		t.Fatalf("client input resolved with no config record created: %+v", st.Inputs[0])
-	}
-	if len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupMissing || st.Setup[0].Input != "client" {
-		t.Fatalf("status setup = %+v, want the one missing-input item", st.Setup)
-	}
-	if st.Functions != 3 {
-		t.Fatalf("status functions = %d, want the three syncs", st.Functions)
-	}
+	assertUnresolvedInput(t, ds, googlePackage, "client", googleConfigType, 3)
 
 	// The delivery wiring installs as ordinary data records, two triggers per
 	// stream, each bound to its own sync function.
-	for _, m := range loadYAMLDocs(t, googleExampleDir+"/triggers.yaml") {
-		putDataDoc(t, ds, m)
-	}
-	for _, id := range []string{
+	installTriggers(t, ds, googleDir)
+	assertTriggers(t, ds,
 		"google-contacts-on-connect", "google-contacts-scheduled",
 		"google-gmail-on-connect", "google-gmail-scheduled",
 		"google-calendar-on-connect", "google-calendar-scheduled",
-	} {
-		row, err := ds.Get(ctx, typeTrigger, id)
-		if err != nil {
-			t.Fatalf("trigger %s did not install: %v", id, err)
-		}
-		if row.Kind != typeTrigger {
-			t.Fatalf("trigger %s is a %s", id, row.Kind)
-		}
-	}
-}
-
-// isUVProvisionError reports whether a bundle-install error is the PEP 723 body
-// failing to warm (uv resolve/provision), as opposed to a schema admission
-// problem. Preparation failures surface as "body failed to prepare".
-func isUVProvisionError(err error) bool {
-	s := strings.ToLower(err.Error())
-	for _, marker := range []string{"failed to prepare", "uv", "provision", "resolve", "register"} {
-		if strings.Contains(s, marker) {
-			return true
-		}
-	}
-	return false
+	)
 }
 
 // TestGoogleContactsSyncWritesDeclaredFields: an object property's fields are
@@ -333,7 +197,7 @@ func isUVProvisionError(err error) bool {
 // body.
 func TestGoogleContactsSyncWritesDeclaredFields(t *testing.T) {
 	t.Parallel()
-	data, err := os.ReadFile(googleExampleDir + "/bundle.yaml")
+	data, err := os.ReadFile(googleDir + "/bundle.yaml")
 	if err != nil {
 		t.Fatalf("read bundle.yaml: %v", err)
 	}

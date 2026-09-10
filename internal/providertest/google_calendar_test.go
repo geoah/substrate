@@ -1,4 +1,4 @@
-package engine
+package providertest
 
 // The Google bundle's CALENDAR stream, proved the same two ways
 // as the gmail stream: pure schema admission (the scope, the two mirror
@@ -21,12 +21,8 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
-	"net/http/httptest"
-	"os/exec"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -38,7 +34,7 @@ import (
 
 func TestGoogleCalendarBundleAdmitsSchema(t *testing.T) {
 	t.Parallel()
-	reg := googleRegistry(t)
+	reg := bundleRegistry(t, googleDir)
 
 	b, ok := reg.BundleOf(googlePackage)
 	if !ok {
@@ -49,19 +45,13 @@ func TestGoogleCalendarBundleAdmitsSchema(t *testing.T) {
 		t.Fatalf("enabledCalendar scopes = %v, want the single calendar.readonly", scopes)
 	}
 
-	cal, ok := reg.ByIdentity(googleCalendarType)
-	if !ok {
-		t.Fatalf("mirror type %s missing", googleCalendarType)
-	}
+	cal := mustKind(t, reg, googleCalendarType)
 	// The per-calendar sync token lives HERE, not on the account: a
 	// {calendarId: token} map on one account row would let one calendar's
 	// advance skip another's tail.
 	mustProps(t, cal, "account", "calendarId", "summary", "timezone",
 		"accessRole", "primary", "selected", "syncToken", "syncGeneration", "raw")
-	evt, ok := reg.ByIdentity(googleEventType)
-	if !ok {
-		t.Fatalf("mirror type %s missing", googleEventType)
-	}
+	evt := mustKind(t, reg, googleEventType)
 	mustProps(t, evt, "account", "calendarId", "eventId", "icalUID",
 		"syncGeneration", "status", "summary", "description", "location",
 		"startAt", "endAt", "allDay", "timezone", "recurringEventId",
@@ -93,10 +83,7 @@ func TestGoogleCalendarBundleAdmitsSchema(t *testing.T) {
 		t.Fatalf("calendarsync declares PEP 723 dependencies — it is meant to run on the dependency-free fast path")
 	}
 
-	acct, ok := reg.ByIdentity(googleAccountType)
-	if !ok {
-		t.Fatalf("account type missing")
-	}
+	acct := mustKind(t, reg, googleAccountType)
 	for _, name := range []string{
 		"calendarBackfillAnchorAt",
 		"calendarLastSyncedAt",
@@ -131,10 +118,7 @@ func TestGoogleCalendarBundleAdmitsSchema(t *testing.T) {
 // --- the loopback Google Calendar -------------------------------------------
 
 type fakeGCal struct {
-	ts *httptest.Server
-
-	mu      sync.Mutex
-	queries []string
+	fakeAPI
 
 	// cals is the calendarList page.
 	cals []any
@@ -148,12 +132,6 @@ type fakeGCal struct {
 	syncToken string
 	// gone makes any request CARRYING a syncToken answer 410 GONE.
 	gone bool
-}
-
-func (f *fakeGCal) seen() []string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]string(nil), f.queries...)
 }
 
 // calendarPath is the events walk's own path prefix. The recorded request is
@@ -189,10 +167,10 @@ func masterIDOf(pathOrQuery string) string {
 func newFakeGCal(t *testing.T) *fakeGCal {
 	t.Helper()
 	f := &fakeGCal{syncToken: "st-1"}
-	writeJSON := func(w http.ResponseWriter, v any) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(v)
-	}
+	// The recorded request is the ESCAPED path plus the query, because the
+	// calendar id lives in the PATH and nowhere else: recording the query
+	// alone made "was this calendar walked?" an assertion that could never
+	// fail.
 	record := func(r *http.Request) {
 		f.mu.Lock()
 		f.queries = append(f.queries, r.URL.EscapedPath()+"?"+r.URL.RawQuery)
@@ -258,30 +236,14 @@ func newFakeGCal(t *testing.T) *fakeGCal {
 		}
 		writeJSON(w, out)
 	})
-	f.ts = httptest.NewServer(mux)
-	t.Cleanup(f.ts.Close)
+	f.serve(t, mux)
 	return f
-}
-
-// googlePointCalendarAt rewrites the calendar body's API base to the loopback
-// fake; the body's origin pin allows loopback as the test seam.
-func googlePointCalendarAt(docs []map[string]any, baseURL string) {
-	for _, d := range docs {
-		data, _ := d["data"].(map[string]any)
-		if data == nil || d["kind"] != vocabulary.CoreKind("function") {
-			continue
-		}
-		if src, ok := data["source"].(string); ok {
-			data["source"] = strings.ReplaceAll(src,
-				`CAL_API = "https://www.googleapis.com"`, `CAL_API = "`+baseURL+`"`)
-		}
-	}
 }
 
 func gcalEvent(id, summary, start, end string) map[string]any {
 	return map[string]any{
 		"id": id, "status": "confirmed", "summary": summary,
-		"iCalUID": id + "@google.com", "updated": googleAgo(time.Hour),
+		"iCalUID": id + "@google.com", "updated": ago(time.Hour),
 		"eventType": "default", "transparency": "opaque", "visibility": "default",
 		"hangoutLink": "https://meet.google.com/" + id,
 		"start":       map[string]any{"dateTime": start},
@@ -345,23 +307,17 @@ func gcalStrings(value any) []string {
 }
 
 func calStepProps(extra map[string]any) map[string]any {
-	props := map[string]any{
-		"enabledCalendar": true, "syncFrequency": "hourly", "backfillDepth": "last30d",
-	}
-	for k, v := range extra {
-		props[k] = v
-	}
-	return props
+	return syncProps(extra, "enabledCalendar")
 }
 
-func newCalendarFixture(t *testing.T) (*fakeGCal, *dataset) {
+// calStepConfig is the calendar account a stepped invocation walks.
+func calStepConfig(props map[string]any) map[string]any {
+	return stepConfig(googleAccountType, googleAccountID, props)
+}
+
+func newCalendarFixture(t *testing.T) (*fakeGCal, substrate.Dataset) {
 	t.Helper()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the closure's contacts body warms through uv at install")
-	}
+	requireUV(t)
 	fake := newFakeGCal(t)
 	fake.cals = []any{
 		map[string]any{
@@ -379,14 +335,12 @@ func newCalendarFixture(t *testing.T) (*fakeGCal, *dataset) {
 	// last-30-days window" today sits outside it thirty days from now, and the
 	// window assertions below would start failing on a calendar.
 	fake.pages = [][]any{
-		{gcalEvent("e1", "Standup", googleAhead(24*time.Hour), googleAhead(25*time.Hour))},
-		{gcalEvent("e2", "Design review", googleAhead(48*time.Hour), googleAhead(49*time.Hour))},
+		{gcalEvent("e1", "Standup", ahead(24*time.Hour), ahead(25*time.Hour))},
+		{gcalEvent("e2", "Design review", ahead(48*time.Hour), ahead(49*time.Hour))},
 	}
-	ds := openInternalDataset(t)
-	googleInstallRewired(t, ds, func(docs []map[string]any) {
-		googlePointCalendarAt(docs, fake.ts.URL)
-	})
-	googleSeedAccount(t, ds, "acct-step")
+	_, ds := newDataset(t)
+	googleInstall(t, ds, calendarAPIAt(fake.ts.URL))
+	googleSeedAccount(t, ds, googleAccountID)
 	return fake, ds
 }
 
@@ -400,7 +354,7 @@ func TestGoogleCalendarFakeSyncMirrors(t *testing.T) {
 	ctx := context.Background()
 	fake, ds := newCalendarFixture(t)
 
-	s := newGoogleStepper(t, ds, googleCalendarFn, googleStepConfig(calStepProps(nil)))
+	s := newStepper(t, ds, googleCalendarFn, calStepConfig(calStepProps(nil)))
 	effects := s.drainApplying(nil)
 
 	calID := runner.ExternalID("gcal-calendar", "acct-step", "primary@example.com")
@@ -501,7 +455,7 @@ func TestGoogleCalendarFakeSyncMirrors(t *testing.T) {
 		t.Fatalf("full=%d incremental=%d over %v", full, incremental, fake.seen())
 	}
 
-	stamp := googleAccountStamp(t, effects, "acct-step")
+	stamp := accountStamp(t, effects, googleAccountType, googleAccountID)
 	// The rollup the console reads AND this stream's own cadence anchor.
 	if stamp["syncStatus"] != "ok" {
 		t.Fatalf("syncStatus = %v", stamp["syncStatus"])
@@ -528,11 +482,11 @@ func TestGoogleCalendarMirrorsCarryTheRecurrence(t *testing.T) {
 	ctx := context.Background()
 	fake, ds := newCalendarFixture(t)
 	fake.masters = map[string]any{"master-1": gcalMaster("master-1", "Weekly sync")}
-	slot := googleAhead(96 * time.Hour)
+	slot := ahead(96 * time.Hour)
 	fake.pages = [][]any{{gcalRecurring("r2", "Weekly sync",
-		googleAhead(72*time.Hour), googleAhead(73*time.Hour), "master-1", slot)}}
+		ahead(72*time.Hour), ahead(73*time.Hour), "master-1", slot)}}
 
-	newGoogleStepper(t, ds, googleCalendarFn, googleStepConfig(calStepProps(nil))).
+	newStepper(t, ds, googleCalendarFn, calStepConfig(calStepProps(nil))).
 		drainApplying(nil)
 
 	calID := runner.ExternalID("gcal-calendar", "acct-step", "primary@example.com")
@@ -585,7 +539,7 @@ func TestGoogleCalendarAccountDisconnectCascades(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newCalendarFixture(t)
 
-	s := newGoogleStepper(t, ds, googleCalendarFn, googleStepConfig(calStepProps(nil)))
+	s := newStepper(t, ds, googleCalendarFn, calStepConfig(calStepProps(nil)))
 	s.drainApplying(nil)
 
 	calID := runner.ExternalID("gcal-calendar", "acct-step", "primary@example.com")
@@ -624,10 +578,10 @@ func TestGoogleCalendarTokenGoneFullReread(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	fake, ds := newCalendarFixture(t)
-	cfg := googleStepConfig(calStepProps(nil))
+	cfg := calStepConfig(calStepProps(nil))
 
 	// Round one: the windowed full read stores st-1 on the calendar mirror.
-	newGoogleStepper(t, ds, googleCalendarFn, cfg).drainApplying(nil)
+	newStepper(t, ds, googleCalendarFn, cfg).drainApplying(nil)
 	calID := runner.ExternalID("gcal-calendar", "acct-step", "primary@example.com")
 
 	// Two rows a previous run left behind under a stale generation: one INSIDE
@@ -640,9 +594,9 @@ func TestGoogleCalendarTokenGoneFullReread(t *testing.T) {
 	archived := runner.ExternalID("gcal-event", calID, "archived")
 	beyond := runner.ExternalID("gcal-event", calID, "beyond-horizon")
 	for id, startAt := range map[string]string{
-		inside:   googleAgo(24 * time.Hour),
-		archived: googleAgo(7 * 365 * 24 * time.Hour),
-		beyond:   googleAhead(400 * 24 * time.Hour),
+		inside:   ago(24 * time.Hour),
+		archived: ago(7 * 365 * 24 * time.Hour),
+		beyond:   ahead(400 * 24 * time.Hour),
 	} {
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: googleEventType, ID: id,
@@ -663,15 +617,15 @@ func TestGoogleCalendarTokenGoneFullReread(t *testing.T) {
 	retracted := map[string]any{"id": "e1", "status": "cancel" + "led"}
 	fake.pages = [][]any{{
 		retracted,
-		gcalEvent("e2", "Design review", googleAhead(48*time.Hour), googleAhead(49*time.Hour)),
+		gcalEvent("e2", "Design review", ahead(48*time.Hour), ahead(49*time.Hour)),
 	}}
 	before := len(fake.seen())
-	effects := newGoogleStepper(t, ds, googleCalendarFn, cfg).drainApplying(nil)
+	effects := newStepper(t, ds, googleCalendarFn, cfg).drainApplying(nil)
 
 	// A delta ALWAYS carries cancellations: they are the provider's ordinary
 	// housekeeping, not a failure. Counting them as "skipped" made every
 	// healthy calendar sync read as partially broken on the console.
-	if stamp := googleAccountStamp(t, effects, "acct-step"); stamp["syncStatus"] != "ok" {
+	if stamp := accountStamp(t, effects, googleAccountType, googleAccountID); stamp["syncStatus"] != "ok" {
 		t.Fatalf("syncStatus = %v — a canceled event is not a skipped one",
 			stamp["syncStatus"])
 	}
@@ -746,24 +700,17 @@ func TestGoogleCalendarTokenGoneFullReread(t *testing.T) {
 // origin the body refuses to send the token, stamps erroring, and completes.
 func TestGoogleCalendarOriginPinRefusal(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the closure's contacts body warms through uv at install")
-	}
-	ds := openInternalDataset(t)
-	googleInstallRewired(t, ds, func(docs []map[string]any) {
-		googlePointCalendarAt(docs, "https://intercepted.example")
-	})
-	googleSeedAccount(t, ds, "acct-step")
+	requireUV(t)
+	_, ds := newDataset(t)
+	googleInstall(t, ds, calendarAPIAt("https://intercepted.example"))
+	googleSeedAccount(t, ds, googleAccountID)
 
-	s := newGoogleStepper(t, ds, googleCalendarFn, googleStepConfig(calStepProps(nil)))
+	s := newStepper(t, ds, googleCalendarFn, calStepConfig(calStepProps(nil)))
 	effects, _, cur := s.step(nil)
 	if cur != nil {
 		t.Fatalf("the refusal did not end the chain")
 	}
-	stamp := googleAccountStamp(t, effects, "acct-step")
+	stamp := accountStamp(t, effects, googleAccountType, googleAccountID)
 	status, _ := stamp["syncStatus"].(string)
 	if !strings.HasPrefix(status, "erroring: ") ||
 		!strings.Contains(status, "refusing to send credentials") {
@@ -790,8 +737,8 @@ func TestGoogleCalendarDeletedCalendarRetracted(t *testing.T) {
 	fake, ds := newCalendarFixture(t)
 
 	// Round one: the ordinary sync mirrors the calendar and its events.
-	cfg := googleStepConfig(calStepProps(nil))
-	newGoogleStepper(t, ds, googleCalendarFn, cfg).drainApplying(nil)
+	cfg := calStepConfig(calStepProps(nil))
+	newStepper(t, ds, googleCalendarFn, cfg).drainApplying(nil)
 	calID := runner.ExternalID("gcal-calendar", "acct-step", "primary@example.com")
 	e1 := runner.ExternalID("gcal-event", calID, "e1")
 	if _, err := ds.Get(ctx, googleEventType, e1); err != nil {
@@ -804,7 +751,7 @@ func TestGoogleCalendarDeletedCalendarRetracted(t *testing.T) {
 		"accessRole": "owner", "primary": true, "deleted": true,
 	}}
 	before := len(fake.seen())
-	newGoogleStepper(t, ds, googleCalendarFn, cfg).drainApplying(nil)
+	newStepper(t, ds, googleCalendarFn, cfg).drainApplying(nil)
 
 	// The sync ASKED for deleted entries — without that the entry is simply
 	// absent and nothing below can ever happen.
@@ -844,27 +791,20 @@ func TestGoogleCalendarDeletedCalendarRetracted(t *testing.T) {
 // RAISES the shared rollup.
 func TestGoogleCalendarErrorRecordedBesideGmailError(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the closure's contacts body warms through uv at install")
-	}
-	ds := openInternalDataset(t)
-	googleInstallRewired(t, ds, func(docs []map[string]any) {
-		googlePointCalendarAt(docs, "https://intercepted.example")
-	})
-	googleSeedAccount(t, ds, "acct-step")
+	requireUV(t)
+	_, ds := newDataset(t)
+	googleInstall(t, ds, calendarAPIAt("https://intercepted.example"))
+	googleSeedAccount(t, ds, googleAccountID)
 
 	// The gmail stream failed first and owns the rollup.
 	props := calStepProps(map[string]any{
 		"syncStatus":      "erroring: gmail returned HTTP 500",
 		"gmailSyncStatus": "erroring: gmail returned HTTP 500",
 	})
-	s := newGoogleStepper(t, ds, googleCalendarFn, googleStepConfig(props))
+	s := newStepper(t, ds, googleCalendarFn, calStepConfig(props))
 	effects, _, _ := s.step(nil)
 
-	stamp := googleAccountStamp(t, effects, "acct-step")
+	stamp := accountStamp(t, effects, googleAccountType, googleAccountID)
 	status, _ := stamp["calendarSyncStatus"].(string)
 	if !strings.HasPrefix(status, "erroring: ") ||
 		!strings.Contains(status, "refusing to send credentials") {

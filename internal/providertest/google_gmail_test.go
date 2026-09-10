@@ -1,4 +1,4 @@
-package engine
+package providertest
 
 // The Google bundle's GMAIL stream. Two kinds of proof, both
 // from the shipped closure at ../../kinds/providers.substrate.reamde.dev/google:
@@ -24,15 +24,10 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
-	"os"
-	"os/exec"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -42,83 +37,9 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// googleRegistry loads the builtin schema and installs the shipped google
-// closure on top of it through the ordinary loader/resolver — the same
-// admission the batch apply runs, minus the function-body warm.
-func googleRegistry(t *testing.T) *vocabulary.Registry {
-	t.Helper()
-	// The registry an install actually admits into: the seeded tree (core
-	// alone) plus the shipped VOCABULARY bundles this repository imported —
-	// what a closure declaring onto people/tasks/messaging/calendar/media
-	// needs present, and what `requires:` names.
-	reg, err := enginetest.SeededRegistry(CoreKindsDir)
-	if err != nil {
-		t.Fatalf("build the repository registry: %v", err)
-	}
-	data, err := os.ReadFile(googleExampleDir + "/bundle.yaml")
-	if err != nil {
-		t.Fatalf("read bundle.yaml: %v", err)
-	}
-	docs, err := vocabulary.ParseStream(data)
-	if err != nil {
-		t.Fatalf("parse bundle.yaml: %v", err)
-	}
-	authorities, err := vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
-	if err != nil {
-		t.Fatalf("build the bundle authority: %v", err)
-	}
-	if err := reg.InstallAll(authorities); err != nil {
-		t.Fatalf("the bundle closure did not admit: %v", err)
-	}
-	return reg
-}
-
-// mustEmit asserts a function's emit ceiling names every identity: a type
-// missing here is a write the engine refuses at effect decode.
-func mustEmit(t *testing.T, fn *vocabulary.Function, want ...string) {
-	t.Helper()
-	have := map[string]bool{}
-	for _, ty := range fn.Caps.Emit {
-		have[ty] = true
-	}
-	for _, ty := range want {
-		if !have[ty] {
-			t.Fatalf("%s emit %v does not name %s — the write would be refused",
-				fn.Identity(), fn.Caps.Emit, ty)
-		}
-	}
-}
-
-// mustRead asserts a function's read allowlist names every identity.
-func mustRead(t *testing.T, fn *vocabulary.Function, want ...string) {
-	t.Helper()
-	if fn.Caps.Reads == nil {
-		t.Fatalf("%s declares no reads", fn.Identity())
-	}
-	have := map[string]bool{}
-	for _, ty := range fn.Caps.Reads.Kinds {
-		have[ty] = true
-	}
-	for _, ty := range want {
-		if !have[ty] {
-			t.Fatalf("%s reads %v does not name %s", fn.Identity(), fn.Caps.Reads.Kinds, ty)
-		}
-	}
-}
-
-// mustProps asserts a type declares every named property.
-func mustProps(t *testing.T, ty *vocabulary.Kind, names ...string) {
-	t.Helper()
-	for _, name := range names {
-		if _, ok := ty.Prop(name); !ok {
-			t.Fatalf("%s declares no property %q — the body writes it", ty.Identity, name)
-		}
-	}
-}
-
 func TestGoogleGmailBundleAdmitsSchema(t *testing.T) {
 	t.Parallel()
-	reg := googleRegistry(t)
+	reg := bundleRegistry(t, googleDir)
 
 	// The gmail toggle maps to a REAL scope now: review-google #1's gate was
 	// "an unwired feature requests nothing", so this asserts the opposite is
@@ -136,10 +57,7 @@ func TestGoogleGmailBundleAdmitsSchema(t *testing.T) {
 	// and optional, and no mapping of its own. The kind it reaches is the
 	// repository's to choose (record 49), and the repository's own mapping is
 	// what carries a match probe.
-	addr, ok := reg.ByIdentity(googleAddressType)
-	if !ok {
-		t.Fatalf("source type %s missing", googleAddressType)
-	}
+	addr := mustKind(t, reg, googleAddressType)
 	mustProps(t, addr, "account", "address", "displayName")
 	ed, ok := addr.Prop("person")
 	if !ok {
@@ -157,16 +75,10 @@ func TestGoogleGmailBundleAdmitsSchema(t *testing.T) {
 	}
 
 	// The two mirrors carry what the body writes.
-	thread, ok := reg.ByIdentity(googleThreadType)
-	if !ok {
-		t.Fatalf("mirror type %s missing", googleThreadType)
-	}
+	thread := mustKind(t, reg, googleThreadType)
 	mustProps(t, thread, "account", "threadId", "syncGeneration", "subject",
 		"preview", "lastMessageAt", "participants")
-	msg, ok := reg.ByIdentity(googleMessageType)
-	if !ok {
-		t.Fatalf("mirror type %s missing", googleMessageType)
-	}
+	msg := mustKind(t, reg, googleMessageType)
 	mustProps(t, msg, "account", "messageId", "threadId", "rfcMessageId",
 		"historyId", "syncGeneration", "labelIds", "subject", "preview",
 		"text", "from", "to", "cc", "bcc", "sentAt", "sizeEstimate",
@@ -202,10 +114,7 @@ func TestGoogleGmailBundleAdmitsSchema(t *testing.T) {
 	}
 
 	// The stream's own state, all connector-owned.
-	acct, ok := reg.ByIdentity(googleAccountType)
-	if !ok {
-		t.Fatalf("account type missing")
-	}
+	acct := mustKind(t, reg, googleAccountType)
 	for _, name := range []string{
 		"gmailHistoryId",
 		"gmailBackfillAnchorAt",
@@ -228,12 +137,7 @@ func TestGoogleGmailBundleAdmitsSchema(t *testing.T) {
 // off, one history page, the backfill listing and the message payloads. Its
 // dials drive the expiry and vanishing-message paths.
 type fakeGmail struct {
-	ts *httptest.Server
-
-	mu       sync.Mutex
-	paths    []string
-	queries  []string
-	msgCalls int
+	fakeAPI
 
 	// historyID is what users.getProfile reports — the run-start watermark.
 	historyID string
@@ -262,38 +166,15 @@ type fakeGmail struct {
 
 func newFakeGmail(t *testing.T) *fakeGmail {
 	t.Helper()
-	f := &fakeGmail{historyID: "9000", msgs: map[string]any2{}, missing: map[string]bool{}}
-	return f
+	return &fakeGmail{
+		historyID: "9000",
+		msgs:      map[string]map[string]any{},
+		missing:   map[string]bool{},
+	}
 }
 
-// any2 keeps the map literal above readable; Go needs the element type named.
-type any2 = map[string]any
-
-func (f *fakeGmail) record(r *http.Request) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.paths = append(f.paths, r.URL.Path)
-	f.queries = append(f.queries, r.URL.RawQuery)
-}
-
-func (f *fakeGmail) seen() []string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]string(nil), f.queries...)
-}
-
-// seenPaths is the request PATHS, which is where a messages.get names its id.
-func (f *fakeGmail) seenPaths() []string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]string(nil), f.paths...)
-}
-
-func (f *fakeGmail) gets() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.msgCalls
-}
+// gets is how many messages.get calls the run made.
+func (f *fakeGmail) gets() int { return f.count("get") }
 
 // listPages is `pages` when it is set and the one-page `listed` otherwise.
 func (f *fakeGmail) listPages() [][]string {
@@ -305,15 +186,10 @@ func (f *fakeGmail) listPages() [][]string {
 
 func (f *fakeGmail) start(t *testing.T) {
 	t.Helper()
-	writeJSON := func(w http.ResponseWriter, v any) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(v)
-	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/gmail/v1/users/me/profile", func(w http.ResponseWriter, r *http.Request) {
 		f.record(r)
-		if r.Header.Get("Authorization") != "Bearer at-1" {
-			w.WriteHeader(http.StatusUnauthorized)
+		if !bearer(w, r) {
 			return
 		}
 		writeJSON(w, map[string]any{"emailAddress": "geoah@example.com", "historyId": f.historyID})
@@ -370,9 +246,7 @@ func (f *fakeGmail) start(t *testing.T) {
 	})
 	mux.HandleFunc("/gmail/v1/users/me/messages/", func(w http.ResponseWriter, r *http.Request) {
 		f.record(r)
-		f.mu.Lock()
-		f.msgCalls++
-		f.mu.Unlock()
+		f.bump("get")
 		id := strings.TrimPrefix(r.URL.Path, "/gmail/v1/users/me/messages/")
 		if f.missing[id] {
 			w.WriteHeader(http.StatusNotFound)
@@ -385,8 +259,7 @@ func (f *fakeGmail) start(t *testing.T) {
 		}
 		writeJSON(w, msg)
 	})
-	f.ts = httptest.NewServer(mux)
-	t.Cleanup(f.ts.Close)
+	f.serve(t, mux)
 }
 
 // gmailMessage builds one messages.get payload the body can parse.
@@ -450,237 +323,13 @@ func b64url(s string) string {
 	return out.String()
 }
 
-// googlePointGmailAt rewrites the gmail body's API base to the loopback fake.
-// The body's origin pin allows loopback as the test seam, so it admits.
-func googlePointGmailAt(docs []map[string]any, baseURL string) {
-	for _, d := range docs {
-		data, _ := d["data"].(map[string]any)
-		if data == nil || d["kind"] != vocabulary.CoreKind("function") {
-			continue
-		}
-		if src, ok := data["source"].(string); ok {
-			data["source"] = strings.ReplaceAll(src,
-				`GMAIL_API = "https://gmail.googleapis.com"`, `GMAIL_API = "`+baseURL+`"`)
-		}
-	}
-}
-
-// googleGmailConst rewrites ONE module-level constant in the gmail body — the
-// same source seam the API base uses. A bound worth 20 list pages in
-// production takes 100 invocations to reach, so the test lowers the bound
-// rather than lowering what is asserted about it. The replacement is asserted
-// to have matched, so a renamed constant fails loudly instead of silently
-// testing the shipped value.
-func googleGmailConst(t *testing.T, docs []map[string]any, old, replacement string) {
-	t.Helper()
-	var hit bool
-	for _, d := range docs {
-		data, _ := d["data"].(map[string]any)
-		if data == nil || d["kind"] != vocabulary.CoreKind("function") {
-			continue
-		}
-		src, ok := data["source"].(string)
-		if !ok || !strings.Contains(src, "GMAIL_API") {
-			continue
-		}
-		if !strings.Contains(src, old) {
-			t.Fatalf("the gmail body no longer declares %q", old)
-		}
-		data["source"] = strings.ReplaceAll(src, old, replacement)
-		hit = true
-	}
-	if !hit {
-		t.Fatalf("no gmail body found to rewrite %q in", old)
-	}
-}
-
-// googleAgo/googleAhead date every fixture RELATIVE to now. Hard-coded
-// instants rot: a row seeded at a fixed date as "inside the last-30-days
-// window" silently falls out of it thirty days after the test was written,
-// and the assertion that the sweep spared it starts failing on a calendar.
-func googleAgo(d time.Duration) string {
-	return time.Now().UTC().Add(-d).Truncate(time.Second).Format(time.RFC3339)
-}
-
-func googleAhead(d time.Duration) string {
-	return time.Now().UTC().Add(d).Truncate(time.Second).Format(time.RFC3339)
-}
-
-// googleMillisAgo is the same instant as Gmail's internalDate: epoch millis.
-func googleMillisAgo(d time.Duration) string {
-	return strconv.FormatInt(time.Now().UTC().Add(-d).UnixMilli(), 10)
-}
-
-// googleInstallRewired installs the shipped closure with the two sync bodies
-// pointed at the loopback fakes.
-func googleInstallRewired(t *testing.T, ds *dataset, rewire func([]map[string]any)) {
-	t.Helper()
-	docs := loadYAMLDocs(t, googleExampleDir+"/bundle.yaml")
-	rewire(docs)
-	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, docs); err != nil {
-		if isUVProvisionError(err) {
-			t.Skipf("bundle install could not warm the PEP 723 body (uv offline?): %v", err)
-		}
-		t.Fatalf("install the google bundle: %v", err)
-	}
-	// The closure ships NO mapping and writes no kind it does not own
-	// (record 49), so the shipped default is what a test gets: mirrors, with
-	// every subject slot empty. The mappings onto `person` are the PEOPLE
-	// sample's, dropped when it was imported before this provider existed; a
-	// test that wants the mint, the projection or the one-hop resolution
-	// re-applies that closure afterwards (enginetest.DeclareMappings), which
-	// is the re-import that lands them.
-}
-
-// googleStepper drives one sync body page by page through the runner — no
-// trigger machinery — so the paged-checkpoint CURSOR itself is observable.
-type googleStepper struct {
-	t   *testing.T
-	ds  *dataset
-	fn  *vocabulary.Function
-	n   int
-	cfg map[string]any
-}
-
-func newGoogleStepper(t *testing.T, ds *dataset, id string, cfg map[string]any) *googleStepper {
-	t.Helper()
-	fn, err := ds.registry().ResolveFunction(id)
-	if err != nil {
-		t.Fatalf("resolve %s: %v", id, err)
-	}
-	return &googleStepper{t: t, ds: ds, fn: fn, cfg: cfg}
-}
-
-// step runs ONE invocation of the chain: resume is the previous page's cursor
-// (nil for a fresh delivery). It returns the effects, the output and the
-// continuation cursor (nil when drained) WITHOUT committing anything.
-func (s *googleStepper) step(resume any) ([]effect, any, map[string]any) {
-	s.t.Helper()
-	s.n++
-	effects, out, more, err := s.ds.runCallableRaw(context.Background(), s.fn, runner.Input{
-		Mode:           runner.ModeCall,
-		Config:         s.cfg,
-		Resume:         resume,
-		IdempotencyKey: fmt.Sprintf("test/googlestep/%d", s.n),
-	})
-	if err != nil {
-		s.t.Fatalf("step %d: %v", s.n, err)
-	}
-	if more == nil {
-		return effects, out, nil
-	}
-	cur, ok := more.Cursor.(map[string]any)
-	if !ok {
-		s.t.Fatalf("step %d: cursor is a %T, want an object", s.n, more.Cursor)
-	}
-	return effects, out, cur
-}
-
-// drainApplying steps until the chain completes, APPLYING each page's effects
-// the way the dispatcher does, and returns every effect the run produced.
-func (s *googleStepper) drainApplying(resume any) []effect {
-	s.t.Helper()
-	var all []effect
-	for i := 0; ; i++ {
-		if i > 40 {
-			s.t.Fatalf("the paged chain did not drain in 40 steps")
-		}
-		effects, _, cur := s.step(resume)
-		all = append(all, effects...)
-		s.apply(effects)
-		if cur == nil {
-			return all
-		}
-		resume = cur
-	}
-}
-
-// apply commits one page's effects the way the dispatcher does: one
-// transaction, under the CALLABLE's own actor (so the connector-owned
-// account properties admit), the effect emit ceiling armed, targets locked in
-// the global order, then each effect in list order.
-func (s *googleStepper) apply(effects []effect) {
-	s.t.Helper()
-	if len(effects) == 0 {
-		return
-	}
-	actor := substrate.Actor(s.fn.Actor())
-	if err := s.ds.inTx(context.Background(), actor, false, func(tx *txn) error {
-		tx.setEffectEmit(s.fn.Caps.Emit)
-		if err := tx.lockEffectTargets(effects); err != nil {
-			return err
-		}
-		for _, ef := range effects {
-			if err := tx.applyEffect(ef); err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
-		s.t.Fatalf("apply effects: %v", err)
-	}
-}
-
-// googlePersonOf reads the person a source record's subject edge resolved to.
-func googlePersonOf(t *testing.T, ds *dataset, typ, id string) string {
-	t.Helper()
-	row, err := ds.Get(context.Background(), typ, id)
-	if err != nil {
-		t.Fatalf("get %s %s: %v", typ, id, err)
-	}
-	ids := refIDs(row, "person")
-	if len(ids) != 1 {
-		t.Fatalf("%s %s points at %d persons, want 1", typ, id, len(ids))
-	}
-	return ids[0]
-}
-
-// googleAccountStamp finds the connector stamp patch in a run's effects.
-func googleAccountStamp(t *testing.T, effects []effect, id string) map[string]any {
-	t.Helper()
-	for i := len(effects) - 1; i >= 0; i-- {
-		ef := &effects[i]
-		if ef.Action == "patch" && ef.Type == googleAccountType && ef.ID == id {
-			return ef.Properties
-		}
-	}
-	t.Fatalf("no account stamp patch in %d effects", len(effects))
-	return nil
-}
-
-// googleSeedAccount creates the connection record the core rows point at:
-// emailthread.account and calendar.account are trait-pinned cascading references
-// (0034). A reference does not refuse a missing target at write, but the
-// account must exist for the cascade to collect the rows it owns and for a read
-// to resolve the pointer, so the sync seeds it. The injected config carries the
-// properties the body reads.
-func googleSeedAccount(t *testing.T, ds *dataset, id string) {
-	t.Helper()
-	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
-		Kind: googleAccountType, ID: id,
-		Properties: map[string]any{"enabledGmail": true, "enabledCalendar": true},
-	}); err != nil {
-		t.Fatalf("seed account %s: %v", id, err)
-	}
-}
-
-func googleStepConfig(props map[string]any) map[string]any {
-	return map[string]any{
-		"accounts": []any{map[string]any{
-			"id": "acct-step", "type": googleAccountType,
-			"properties": props, "token": "at-1",
-		}},
-	}
-}
-
 func gmailStepProps(extra map[string]any) map[string]any {
-	props := map[string]any{
-		"enabledGmail": true, "syncFrequency": "hourly", "backfillDepth": "last30d",
-	}
-	for k, v := range extra {
-		props[k] = v
-	}
-	return props
+	return syncProps(extra, "enabledGmail")
+}
+
+// gmailStepConfig is the gmail account a stepped invocation walks.
+func gmailStepConfig(props map[string]any) map[string]any {
+	return stepConfig(googleAccountType, googleAccountID, props)
 }
 
 // TestGoogleGmailFakeSyncMirrors drives a first (backfill) sync against the
@@ -690,28 +339,23 @@ func gmailStepProps(extra map[string]any) map[string]any {
 // stamp carrying the RUN-START historyId.
 func TestGoogleGmailFakeSyncMirrors(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the closure's contacts body warms through uv at install")
-	}
+	requireUV(t)
 	ctx := context.Background()
 	fake := newFakeGmail(t)
 	fake.listed = []string{"m1", "m2"}
 	fake.msgs["m1"] = gmailMessage("m1", "t-m1", "Rack layout",
 		"Alice Example <alice@example.com>", "Ada <ada@example.com>",
-		googleMillisAgo(48*time.Hour), "the cold aisle plan")
+		millisAgo(48*time.Hour), "the cold aisle plan")
 	fake.msgs["m2"] = gmailMessage("m2", "t-m1", "Re: Rack layout",
 		"Ada <ada@example.com>", "alice@example.com",
-		googleMillisAgo(24*time.Hour), "looks good")
+		millisAgo(24*time.Hour), "looks good")
 	// The html message, in a thread of its own so the newest-wins assertions
 	// on t-m1 keep their subject. Its text/plain alternative is whitespace,
 	// which is a body only a sender's template thinks it is.
 	fake.listed = append(fake.listed, "m3")
 	fake.msgs["m3"] = gmailHTMLMessage("m3", "t-m3", "Datacenter tour",
 		"Bob <bob@example.com>", "ada@example.com",
-		googleMillisAgo(72*time.Hour), "\r\n   \r\n",
+		millisAgo(72*time.Hour), "\r\n   \r\n",
 		`<html><head><style>a{color:red}</style></head><body>`+
 			`<img src="data:image/png;base64,`+strings.Repeat("A", 600)+`">`+
 			`<p>Book a slot&nbsp;now: <a href="https://example.com/tour?a=1&amp;b=2">`+
@@ -724,14 +368,12 @@ func TestGoogleGmailFakeSyncMirrors(t *testing.T) {
 			`</body></html>`)
 	fake.start(t)
 
-	ds := openInternalDataset(t)
-	googleInstallRewired(t, ds, func(docs []map[string]any) {
-		googlePointGmailAt(docs, fake.ts.URL)
-	})
+	_, ds := newDataset(t)
+	googleInstall(t, ds, gmailAPIAt(fake.ts.URL))
 
-	googleSeedAccount(t, ds, "acct-step")
+	googleSeedAccount(t, ds, googleAccountID)
 
-	s := newGoogleStepper(t, ds, googleGmailFn, googleStepConfig(gmailStepProps(nil)))
+	s := newStepper(t, ds, googleGmailFn, gmailStepConfig(gmailStepProps(nil)))
 	effects := s.drainApplying(nil)
 
 	// The mirrors landed under the SDK-derived ids.
@@ -816,7 +458,7 @@ func TestGoogleGmailFakeSyncMirrors(t *testing.T) {
 	}
 
 	// The stamp: the RUN-START historyId, never a later one.
-	stamp := googleAccountStamp(t, effects, "acct-step")
+	stamp := accountStamp(t, effects, googleAccountType, googleAccountID)
 	if stamp["gmailHistoryId"] != "9000" {
 		t.Fatalf("gmailHistoryId = %v, want the run-start 9000", stamp["gmailHistoryId"])
 	}
@@ -841,12 +483,7 @@ func TestGoogleGmailFakeSyncMirrors(t *testing.T) {
 // the assertions turn on.
 func TestGoogleGmailFlattenerCapsGuardTheBody(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the closure's contacts body warms through uv at install")
-	}
+	requireUV(t)
 	ctx := context.Background()
 	fake := newFakeGmail(t)
 	fake.listed = []string{"mcap", "mlbl"}
@@ -858,7 +495,7 @@ func TestGoogleGmailFlattenerCapsGuardTheBody(t *testing.T) {
 	// now and the letter survives.
 	fake.msgs["mcap"] = gmailHTMLMessage("mcap", "t-mcap", "Inline photo",
 		"Bob <bob@example.com>", "ada@example.com",
-		googleMillisAgo(72*time.Hour), "\r\n   \r\n",
+		millisAgo(72*time.Hour), "\r\n   \r\n",
 		`<html><body><img src="data:image/png;base64,`+
 			strings.Repeat("A", 400)+`"><p>letter after the photo</p></body></html>`)
 
@@ -868,21 +505,20 @@ func TestGoogleGmailFlattenerCapsGuardTheBody(t *testing.T) {
 	// unclosed `[` is backed off now, leaving the padding it wrote before it.
 	fake.msgs["mlbl"] = gmailHTMLMessage("mlbl", "t-mlbl", "Long body",
 		"Bob <bob@example.com>", "ada@example.com",
-		googleMillisAgo(71*time.Hour), "\r\n   \r\n",
+		millisAgo(71*time.Hour), "\r\n   \r\n",
 		`<html><body><p>paddingpaddingpaddingpaddi</p>`+
 			`<p><a href="https://example.com/x">read the full report now</a></p>`+
 			`</body></html>`)
 	fake.start(t)
 
-	ds := openInternalDataset(t)
-	googleInstallRewired(t, ds, func(docs []map[string]any) {
-		googlePointGmailAt(docs, fake.ts.URL)
-		googleGmailConst(t, docs, "HTML_SOURCE_MAX = 4000000", "HTML_SOURCE_MAX = 200")
-		googleGmailConst(t, docs, "TEXT_MAX = 8000", "TEXT_MAX = 40")
-	})
-	googleSeedAccount(t, ds, "acct-step")
+	_, ds := newDataset(t)
+	// The caps are lowered through the source seam so the fixtures stay small.
+	googleInstall(t, ds, gmailAPIAt(fake.ts.URL),
+		[2]string{"HTML_SOURCE_MAX = 4000000", "HTML_SOURCE_MAX = 200"},
+		[2]string{"TEXT_MAX = 8000", "TEXT_MAX = 40"})
+	googleSeedAccount(t, ds, googleAccountID)
 
-	s := newGoogleStepper(t, ds, googleGmailFn, googleStepConfig(gmailStepProps(nil)))
+	s := newStepper(t, ds, googleGmailFn, gmailStepConfig(gmailStepProps(nil)))
 	s.drainApplying(nil)
 
 	capID := runner.ExternalID("gmail-message", "acct-step", "mcap")
@@ -914,26 +550,19 @@ func TestGoogleGmailFlattenerCapsGuardTheBody(t *testing.T) {
 // sentAt predates the window survives with its old generation intact.
 func TestGoogleGmailHistoryExpiryAndSweepScope(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the closure's contacts body warms through uv at install")
-	}
+	requireUV(t)
 	ctx := context.Background()
 	fake := newFakeGmail(t)
 	fake.historyGone = true
 	fake.listed = []string{"m1"}
 	fake.msgs["m1"] = gmailMessage("m1", "t-m1", "Rack layout",
-		"alice@example.com", "ada@example.com", googleMillisAgo(24*time.Hour), "hi")
+		"alice@example.com", "ada@example.com", millisAgo(24*time.Hour), "hi")
 	fake.start(t)
 
-	ds := openInternalDataset(t)
-	googleInstallRewired(t, ds, func(docs []map[string]any) {
-		googlePointGmailAt(docs, fake.ts.URL)
-	})
+	_, ds := newDataset(t)
+	googleInstall(t, ds, gmailAPIAt(fake.ts.URL))
 
-	googleSeedAccount(t, ds, "acct-step")
+	googleSeedAccount(t, ds, googleAccountID)
 
 	// Two rows a previous run left behind, both under a stale generation: one
 	// INSIDE the coming re-read window (last30d back from now) and one deep in
@@ -941,8 +570,8 @@ func TestGoogleGmailHistoryExpiryAndSweepScope(t *testing.T) {
 	inside := runner.ExternalID("gmail-message", "acct-step", "stale-inside")
 	archived := runner.ExternalID("gmail-message", "acct-step", "archived")
 	for id, sentAt := range map[string]string{
-		inside:   googleAgo(24 * time.Hour),
-		archived: googleAgo(7 * 365 * 24 * time.Hour),
+		inside:   ago(24 * time.Hour),
+		archived: ago(7 * 365 * 24 * time.Hour),
 	} {
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: googleMessageType, ID: id,
@@ -955,7 +584,7 @@ func TestGoogleGmailHistoryExpiryAndSweepScope(t *testing.T) {
 		}
 	}
 
-	s := newGoogleStepper(t, ds, googleGmailFn, googleStepConfig(gmailStepProps(
+	s := newStepper(t, ds, googleGmailFn, gmailStepConfig(gmailStepProps(
 		map[string]any{"gmailHistoryId": "8000"})))
 	s.drainApplying(nil)
 
@@ -994,28 +623,21 @@ func TestGoogleGmailHistoryExpiryAndSweepScope(t *testing.T) {
 // as an erroring stamp rather than silently full-re-reading the mailbox.
 func TestGoogleGmailHistoryBadStatusPropagates(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the closure's contacts body warms through uv at install")
-	}
+	requireUV(t)
 	fake := newFakeGmail(t)
 	fake.historyBad = true
 	fake.start(t)
 
-	ds := openInternalDataset(t)
-	googleInstallRewired(t, ds, func(docs []map[string]any) {
-		googlePointGmailAt(docs, fake.ts.URL)
-	})
+	_, ds := newDataset(t)
+	googleInstall(t, ds, gmailAPIAt(fake.ts.URL))
 
-	googleSeedAccount(t, ds, "acct-step")
+	googleSeedAccount(t, ds, googleAccountID)
 
-	s := newGoogleStepper(t, ds, googleGmailFn, googleStepConfig(gmailStepProps(
+	s := newStepper(t, ds, googleGmailFn, gmailStepConfig(gmailStepProps(
 		map[string]any{"gmailHistoryId": "8000"})))
 	effects := s.drainApplying(nil)
 
-	stamp := googleAccountStamp(t, effects, "acct-step")
+	stamp := accountStamp(t, effects, googleAccountType, googleAccountID)
 	status, _ := stamp["syncStatus"].(string)
 	if !strings.HasPrefix(status, "erroring: ") || !strings.Contains(status, "400") {
 		t.Fatalf("syncStatus = %q, want an erroring HTTP 400", status)
@@ -1037,25 +659,18 @@ func TestGoogleGmailHistoryBadStatusPropagates(t *testing.T) {
 // erroring with the refusal, and the chain completes instead of parking.
 func TestGoogleGmailOriginPinRefusal(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the closure's contacts body warms through uv at install")
-	}
-	ds := openInternalDataset(t)
-	googleInstallRewired(t, ds, func(docs []map[string]any) {
-		googlePointGmailAt(docs, "https://intercepted.example")
-	})
+	requireUV(t)
+	_, ds := newDataset(t)
+	googleInstall(t, ds, gmailAPIAt("https://intercepted.example"))
 
-	googleSeedAccount(t, ds, "acct-step")
+	googleSeedAccount(t, ds, googleAccountID)
 
-	s := newGoogleStepper(t, ds, googleGmailFn, googleStepConfig(gmailStepProps(nil)))
+	s := newStepper(t, ds, googleGmailFn, gmailStepConfig(gmailStepProps(nil)))
 	effects, _, cur := s.step(nil)
 	if cur != nil {
 		t.Fatalf("the refusal did not end the chain")
 	}
-	stamp := googleAccountStamp(t, effects, "acct-step")
+	stamp := accountStamp(t, effects, googleAccountType, googleAccountID)
 	status, _ := stamp["syncStatus"].(string)
 	if !strings.HasPrefix(status, "erroring: ") ||
 		!strings.Contains(status, "refusing to send credentials") {
@@ -1075,24 +690,17 @@ func TestGoogleGmailOriginPinRefusal(t *testing.T) {
 // grant stamps only itself, and the account behind it still syncs.
 func TestGoogleGmailPerAccountIsolation(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the closure's contacts body warms through uv at install")
-	}
+	requireUV(t)
 	fake := newFakeGmail(t)
 	fake.listed = []string{"m1"}
 	fake.msgs["m1"] = gmailMessage("m1", "t-m1", "Rack layout",
-		"alice@example.com", "ada@example.com", googleMillisAgo(24*time.Hour), "hi")
+		"alice@example.com", "ada@example.com", millisAgo(24*time.Hour), "hi")
 	fake.start(t)
 
-	ds := openInternalDataset(t)
-	googleInstallRewired(t, ds, func(docs []map[string]any) {
-		googlePointGmailAt(docs, fake.ts.URL)
-	})
+	_, ds := newDataset(t)
+	googleInstall(t, ds, gmailAPIAt(fake.ts.URL))
 
-	googleSeedAccount(t, ds, "acct-step")
+	googleSeedAccount(t, ds, googleAccountID)
 	googleSeedAccount(t, ds, "acct-dead")
 
 	cfg := map[string]any{"accounts": []any{
@@ -1106,15 +714,10 @@ func TestGoogleGmailPerAccountIsolation(t *testing.T) {
 			"properties": gmailStepProps(nil), "token": "at-1",
 		},
 	}}
-	s := newGoogleStepper(t, ds, googleGmailFn, cfg)
+	s := newStepper(t, ds, googleGmailFn, cfg)
 	effects := s.drainApplying(nil)
 
-	var dead map[string]any
-	for i := range effects {
-		if effects[i].Action == "patch" && effects[i].ID == "acct-dead" {
-			dead = effects[i].Properties
-		}
-	}
+	dead := stampOf(effects, "acct-dead")
 	if dead == nil {
 		t.Fatalf("the dead-grant account got no stamp")
 	}
@@ -1126,7 +729,7 @@ func TestGoogleGmailPerAccountIsolation(t *testing.T) {
 			t.Fatalf("the erroring account advanced its %s", key)
 		}
 	}
-	live := googleAccountStamp(t, effects, "acct-step")
+	live := accountStamp(t, effects, googleAccountType, googleAccountID)
 	if live["syncStatus"] != "ok" {
 		t.Fatalf("the healthy account behind a poisoned one did not sync: %v", live)
 	}
@@ -1138,15 +741,10 @@ func TestGoogleGmailPerAccountIsolation(t *testing.T) {
 // that person rather than minting a shell beside it.
 func TestGoogleGmailAddressConverges(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the closure's contacts body warms through uv at install")
-	}
+	requireUV(t)
 	ctx := context.Background()
-	ds := openInternalDataset(t)
-	googleInstallRewired(t, ds, func([]map[string]any) {})
+	_, ds := newDataset(t)
+	googleInstall(t, ds)
 	// The PEOPLE SAMPLE ships the two mappings this test needs, onto `contact`
 	// and `emailaddress` (record 49). They were dropped when people was
 	// imported, because this provider was absent; re-applying that closure
@@ -1212,12 +810,7 @@ func TestGoogleGmailAddressConverges(t *testing.T) {
 // must sweep — otherwise the reconciliation is silently lost instead.
 func TestGoogleGmailCappedRereadDefersSweep(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the closure's contacts body warms through uv at install")
-	}
+	requireUV(t)
 	ctx := context.Background()
 	fake := newFakeGmail(t)
 	fake.historyGone = true
@@ -1227,16 +820,14 @@ func TestGoogleGmailCappedRereadDefersSweep(t *testing.T) {
 	for i, id := range []string{"m1", "m2", "m3"} {
 		fake.msgs[id] = gmailMessage(id, "t-"+id, "Rack layout "+id,
 			"alice@example.com", "ada@example.com",
-			googleMillisAgo(time.Duration(i+1)*24*time.Hour), "hi")
+			millisAgo(time.Duration(i+1)*24*time.Hour), "hi")
 	}
 	fake.start(t)
 
-	ds := openInternalDataset(t)
-	googleInstallRewired(t, ds, func(docs []map[string]any) {
-		googlePointGmailAt(docs, fake.ts.URL)
-		googleGmailConst(t, docs, "MAX_LIST_PAGES = 20", "MAX_LIST_PAGES = 2")
-	})
-	googleSeedAccount(t, ds, "acct-step")
+	_, ds := newDataset(t)
+	googleInstall(t, ds, gmailAPIAt(fake.ts.URL),
+		[2]string{"MAX_LIST_PAGES = 20", "MAX_LIST_PAGES = 2"})
+	googleSeedAccount(t, ds, googleAccountID)
 
 	// A row a previous generation left behind, INSIDE the coming window and
 	// BEHIND the page cap — the capped walk never reaches it, so nothing this
@@ -1247,14 +838,14 @@ func TestGoogleGmailCappedRereadDefersSweep(t *testing.T) {
 		Properties: map[string]any{
 			"account": "acct-step", "messageId": "stale-inside",
 			"threadId": "t-old", "syncGeneration": "an-older-generation",
-			"sentAt": googleAgo(36 * time.Hour),
+			"sentAt": ago(36 * time.Hour),
 		},
 	}); err != nil {
 		t.Fatalf("seed the in-window row: %v", err)
 	}
 
 	props := gmailStepProps(map[string]any{"gmailHistoryId": "8000"})
-	first := newGoogleStepper(t, ds, googleGmailFn, googleStepConfig(props)).
+	first := newStepper(t, ds, googleGmailFn, gmailStepConfig(props)).
 		drainApplying(nil)
 
 	// ROUND ONE — truncated. The row the walk never reached is still live.
@@ -1266,7 +857,7 @@ func TestGoogleGmailCappedRereadDefersSweep(t *testing.T) {
 		t.Fatalf("a TRUNCATED full re-read swept a row its walk never reached — " +
 			"every message older than the last page it read is gone")
 	}
-	stamp := googleAccountStamp(t, first, "acct-step")
+	stamp := accountStamp(t, first, googleAccountType, googleAccountID)
 	resume, _ := stamp["gmailBackfillResume"].(map[string]any)
 	if resume == nil || resume["pageToken"] == "" {
 		t.Fatalf("the capped walk persisted no resume: %v", stamp["gmailBackfillResume"])
@@ -1284,7 +875,7 @@ func TestGoogleGmailCappedRereadDefersSweep(t *testing.T) {
 	props = gmailStepProps(map[string]any{
 		"gmailHistoryId": "8000", "gmailBackfillResume": resume,
 	})
-	second := newGoogleStepper(t, ds, googleGmailFn, googleStepConfig(props)).
+	second := newStepper(t, ds, googleGmailFn, gmailStepConfig(props)).
 		drainApplying(nil)
 
 	if _, err := ds.Get(ctx, googleMessageType,
@@ -1307,7 +898,7 @@ func TestGoogleGmailCappedRereadDefersSweep(t *testing.T) {
 			t.Fatalf("the sweep deleted %s, which this generation stamped: %v %v", id, kept, err)
 		}
 	}
-	stamp = googleAccountStamp(t, second, "acct-step")
+	stamp = accountStamp(t, second, googleAccountType, googleAccountID)
 	if held, _ := stamp["gmailBackfillResume"].(map[string]any); len(held) != 0 {
 		t.Fatalf("a drained walk left a resume behind: %v", held)
 	}
@@ -1320,35 +911,28 @@ func TestGoogleGmailCappedRereadDefersSweep(t *testing.T) {
 // next run repeats it. The window restarts from page one instead.
 func TestGoogleGmailStaleResumeTokenRestarts(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the closure's contacts body warms through uv at install")
-	}
+	requireUV(t)
 	ctx := context.Background()
 	fake := newFakeGmail(t)
 	fake.listed = []string{"m1"}
 	fake.msgs["m1"] = gmailMessage("m1", "t-m1", "Rack layout",
-		"alice@example.com", "ada@example.com", googleMillisAgo(24*time.Hour), "hi")
+		"alice@example.com", "ada@example.com", millisAgo(24*time.Hour), "hi")
 	fake.start(t)
 
-	ds := openInternalDataset(t)
-	googleInstallRewired(t, ds, func(docs []map[string]any) {
-		googlePointGmailAt(docs, fake.ts.URL)
-	})
-	googleSeedAccount(t, ds, "acct-step")
+	_, ds := newDataset(t)
+	googleInstall(t, ds, gmailAPIAt(fake.ts.URL))
+	googleSeedAccount(t, ds, googleAccountID)
 
 	// A resume the fake will never honor: this is what a page token looks
 	// like an hour after it was issued.
 	props := gmailStepProps(map[string]any{"gmailBackfillResume": map[string]any{
-		"pageToken": "p-issued-last-run", "floor": googleAgo(30 * 24 * time.Hour),
+		"pageToken": "p-issued-last-run", "floor": ago(30 * 24 * time.Hour),
 		"generation": "gen-1", "historyId": "8500",
 	}})
-	effects := newGoogleStepper(t, ds, googleGmailFn, googleStepConfig(props)).
+	effects := newStepper(t, ds, googleGmailFn, gmailStepConfig(props)).
 		drainApplying(nil)
 
-	stamp := googleAccountStamp(t, effects, "acct-step")
+	stamp := accountStamp(t, effects, googleAccountType, googleAccountID)
 	if stamp["syncStatus"] != "ok" {
 		t.Fatalf("syncStatus = %v — a stale page token parked the account instead "+
 			"of restarting its window", stamp["syncStatus"])
@@ -1377,28 +961,21 @@ func TestGoogleGmailStaleResumeTokenRestarts(t *testing.T) {
 // delta and the fetch is retracted and COUNTED, and the stamp says so.
 func TestGoogleGmailHistoryDeltaAddsAndSkips(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the closure's contacts body warms through uv at install")
-	}
+	requireUV(t)
 	ctx := context.Background()
 	fake := newFakeGmail(t)
 	fake.historyID = "9500"
 	fake.history = []string{"m1", "m2"}
 	fake.missing["m2"] = true
 	fake.msgs["m1"] = gmailMessage("m1", "t-m1", "Rack layout",
-		"alice@example.com", "ada@example.com", googleMillisAgo(2*time.Hour), "hi")
+		"alice@example.com", "ada@example.com", millisAgo(2*time.Hour), "hi")
 	fake.start(t)
 
-	ds := openInternalDataset(t)
-	googleInstallRewired(t, ds, func(docs []map[string]any) {
-		googlePointGmailAt(docs, fake.ts.URL)
-	})
-	googleSeedAccount(t, ds, "acct-step")
+	_, ds := newDataset(t)
+	googleInstall(t, ds, gmailAPIAt(fake.ts.URL))
+	googleSeedAccount(t, ds, googleAccountID)
 
-	effects := newGoogleStepper(t, ds, googleGmailFn, googleStepConfig(
+	effects := newStepper(t, ds, googleGmailFn, gmailStepConfig(
 		gmailStepProps(map[string]any{"gmailHistoryId": "9000"}))).drainApplying(nil)
 
 	if _, err := ds.Get(ctx, googleMessageType,
@@ -1418,7 +995,7 @@ func TestGoogleGmailHistoryDeltaAddsAndSkips(t *testing.T) {
 	if !sawGet {
 		t.Fatalf("no messages.get for m1: %v", fake.seenPaths())
 	}
-	stamp := googleAccountStamp(t, effects, "acct-step")
+	stamp := accountStamp(t, effects, googleAccountType, googleAccountID)
 	if stamp["syncStatus"] != "ok (1 skipped)" {
 		t.Fatalf("syncStatus = %v, want the vanished message counted", stamp["syncStatus"])
 	}
@@ -1441,27 +1018,20 @@ func TestGoogleGmailHistoryDeltaAddsAndSkips(t *testing.T) {
 // here is stale in both halves forever.
 func TestGoogleGmailHistoryDeleteRetractsEmptyThread(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the closure's contacts body warms through uv at install")
-	}
+	requireUV(t)
 	ctx := context.Background()
 	fake := newFakeGmail(t)
 	fake.listed = []string{"m9"}
 	fake.msgs["m9"] = gmailMessage("m9", "t-m9", "Rack layout",
-		"alice@example.com", "ada@example.com", googleMillisAgo(4*time.Hour), "hi")
+		"alice@example.com", "ada@example.com", millisAgo(4*time.Hour), "hi")
 	fake.start(t)
 
-	ds := openInternalDataset(t)
-	googleInstallRewired(t, ds, func(docs []map[string]any) {
-		googlePointGmailAt(docs, fake.ts.URL)
-	})
-	googleSeedAccount(t, ds, "acct-step")
+	_, ds := newDataset(t)
+	googleInstall(t, ds, gmailAPIAt(fake.ts.URL))
+	googleSeedAccount(t, ds, googleAccountID)
 
 	// Round one: an ordinary backfill writes the message and its thread.
-	newGoogleStepper(t, ds, googleGmailFn, googleStepConfig(gmailStepProps(nil))).
+	newStepper(t, ds, googleGmailFn, gmailStepConfig(gmailStepProps(nil))).
 		drainApplying(nil)
 	msgID := runner.ExternalID("gmail-message", "acct-step", "m9")
 	threadID := runner.ExternalID("gmail-thread", "acct-step", "t-m9")
@@ -1477,7 +1047,7 @@ func TestGoogleGmailHistoryDeleteRetractsEmptyThread(t *testing.T) {
 	// Round two: the delta says the thread's only message is gone.
 	fake.historyID = "9600"
 	fake.deleted = []string{"m9"}
-	newGoogleStepper(t, ds, googleGmailFn, googleStepConfig(gmailStepProps(
+	newStepper(t, ds, googleGmailFn, gmailStepConfig(gmailStepProps(
 		map[string]any{"gmailHistoryId": "9000"}))).drainApplying(nil)
 
 	for _, ref := range []struct{ typ, id, what string }{
@@ -1502,12 +1072,7 @@ func TestGoogleGmailHistoryDeleteRetractsEmptyThread(t *testing.T) {
 // parks there deterministically on every retry.
 func TestGoogleGmailMalformedAddressSkipped(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the closure's contacts body warms through uv at install")
-	}
+	requireUV(t)
 	ctx := context.Background()
 	fake := newFakeGmail(t)
 	fake.listed = []string{"m1"}
@@ -1517,19 +1082,17 @@ func TestGoogleGmailMalformedAddressSkipped(t *testing.T) {
 	fake.msgs["m1"] = gmailMessage("m1", "t-m1", "Rack layout",
 		"alice@example.com",
 		`a..b@example.com, .a@example.com, ada@example.com, a.@example.com`,
-		googleMillisAgo(3*time.Hour), "hi")
+		millisAgo(3*time.Hour), "hi")
 	fake.start(t)
 
-	ds := openInternalDataset(t)
-	googleInstallRewired(t, ds, func(docs []map[string]any) {
-		googlePointGmailAt(docs, fake.ts.URL)
-	})
-	googleSeedAccount(t, ds, "acct-step")
+	_, ds := newDataset(t)
+	googleInstall(t, ds, gmailAPIAt(fake.ts.URL))
+	googleSeedAccount(t, ds, googleAccountID)
 
-	effects := newGoogleStepper(t, ds, googleGmailFn, googleStepConfig(
+	effects := newStepper(t, ds, googleGmailFn, gmailStepConfig(
 		gmailStepProps(nil))).drainApplying(nil)
 
-	stamp := googleAccountStamp(t, effects, "acct-step")
+	stamp := accountStamp(t, effects, googleAccountType, googleAccountID)
 	if stamp["syncStatus"] != "ok" {
 		t.Fatalf("syncStatus = %v", stamp["syncStatus"])
 	}
@@ -1557,35 +1120,28 @@ func TestGoogleGmailMalformedAddressSkipped(t *testing.T) {
 // connect looks like.
 func TestGoogleGmailSyncsWithNoMappingDeclared(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the closure's contacts body warms through uv at install")
-	}
+	requireUV(t)
 	ctx := context.Background()
 	fake := newFakeGmail(t)
 	fake.listed = []string{"m1"}
 	fake.msgs["m1"] = gmailMessage("m1", "t-m1", "Rack layout",
 		"Alice Example <alice@example.com>", "ada@example.com",
-		googleMillisAgo(24*time.Hour), "the cold aisle plan")
+		millisAgo(24*time.Hour), "the cold aisle plan")
 	fake.start(t)
 
-	ds := openCoreDataset(t)
-	googleInstallRewired(t, ds, func(docs []map[string]any) {
-		googlePointGmailAt(docs, fake.ts.URL)
-	})
-	googleSeedAccount(t, ds, "acct-step")
+	_, ds := newCoreDataset(t)
+	googleInstall(t, ds, gmailAPIAt(fake.ts.URL))
+	googleSeedAccount(t, ds, googleAccountID)
 
-	effects := newGoogleStepper(t, ds, googleGmailFn, googleStepConfig(gmailStepProps(nil))).
+	effects := newStepper(t, ds, googleGmailFn, gmailStepConfig(gmailStepProps(nil))).
 		drainApplying(nil)
 
 	// The run completed, and the mirrors are all there.
-	if stamp := googleAccountStamp(t, effects, "acct-step"); stamp["syncStatus"] != "ok" {
+	if stamp := accountStamp(t, effects, googleAccountType, googleAccountID); stamp["syncStatus"] != "ok" {
 		t.Fatalf("syncStatus = %v, want a clean run with no mapping declared", stamp["syncStatus"])
 	}
 	msgID := runner.ExternalID("gmail-message", "acct-step", "m1")
-	if got := mustGetRow(t, ds, googleMessageType, msgID).Properties["subject"]; got != "Rack layout" {
+	if got := mustGet(t, ds, googleMessageType, msgID).Properties["subject"]; got != "Rack layout" {
 		t.Fatalf("message mirror subject = %v", got)
 	}
 	threadID := runner.ExternalID("gmail-thread", "acct-step", "t-m1")
@@ -1602,16 +1158,6 @@ func TestGoogleGmailSyncsWithNoMappingDeclared(t *testing.T) {
 	}
 }
 
-// mustGetRow is Get with the error folded into the test.
-func mustGetRow(t *testing.T, ds *dataset, kind, id string) *substrate.Record {
-	t.Helper()
-	row, err := ds.Get(context.Background(), kind, id)
-	if err != nil {
-		t.Fatalf("get %s %s: %v", kind, id, err)
-	}
-	return row
-}
-
 // TestGoogleGmailBackfillBoundedByInvocations is the LIVELOCK regression.
 //
 // The engine bounds a paged drain by cumulative wall clock from the chain's
@@ -1625,12 +1171,7 @@ func mustGetRow(t *testing.T, ds *dataset, kind, id string) *substrate.Record {
 // last, so the walk actually finishes across runs.
 func TestGoogleGmailBackfillBoundedByInvocations(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the closure's contacts body warms through uv at install")
-	}
+	requireUV(t)
 	ctx := context.Background()
 	fake := newFakeGmail(t)
 	ids := []string{"m1", "m2", "m3", "m4", "m5", "m6"}
@@ -1638,18 +1179,16 @@ func TestGoogleGmailBackfillBoundedByInvocations(t *testing.T) {
 		fake.pages = append(fake.pages, []string{id})
 		fake.msgs[id] = gmailMessage(id, "t-"+id, "Rack layout "+id,
 			"alice@example.com", "ada@example.com",
-			googleMillisAgo(time.Duration(i+1)*time.Hour), "hi")
+			millisAgo(time.Duration(i+1)*time.Hour), "hi")
 	}
 	fake.start(t)
 
-	ds := openInternalDataset(t)
-	googleInstallRewired(t, ds, func(docs []map[string]any) {
-		googlePointGmailAt(docs, fake.ts.URL)
-		// Six pages is well under the 20-page cap: only the invocation bound
-		// can stop this walk, which is exactly the point.
-		googleGmailConst(t, docs, "MAX_CALLS = 12", "MAX_CALLS = 4")
-	})
-	googleSeedAccount(t, ds, "acct-step")
+	_, ds := newDataset(t)
+	// Six pages is well under the 20-page cap: only the invocation bound can
+	// stop this walk, which is exactly the point.
+	googleInstall(t, ds, gmailAPIAt(fake.ts.URL),
+		[2]string{"MAX_CALLS = 12", "MAX_CALLS = 4"})
+	googleSeedAccount(t, ds, googleAccountID)
 
 	var resume map[string]any
 	seenTokens := map[string]bool{}
@@ -1663,13 +1202,12 @@ func TestGoogleGmailBackfillBoundedByInvocations(t *testing.T) {
 		if resume != nil {
 			extra["gmailBackfillResume"] = resume
 		}
-		s := newGoogleStepper(t, ds, googleGmailFn,
-			googleStepConfig(gmailStepProps(extra)))
+		s := newStepper(t, ds, googleGmailFn, gmailStepConfig(gmailStepProps(extra)))
 		effects := s.drainApplying(nil)
 		if s.n > 8 {
 			t.Fatalf("run %d took %d invocations — the bound did not bind", runs, s.n)
 		}
-		stamp := googleAccountStamp(t, effects, "acct-step")
+		stamp := accountStamp(t, effects, googleAccountType, googleAccountID)
 		held, _ := stamp["gmailBackfillResume"].(map[string]any)
 		if len(held) == 0 {
 			break

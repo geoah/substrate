@@ -1,4 +1,4 @@
-package engine
+package providertest
 
 // The WHOOP bundle — the sync-only wearable integration. Three proofs, from
 // the shipped closure at ../../kinds/providers.substrate.reamde.dev/whoop:
@@ -30,26 +30,19 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"math"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
-	"os"
-	"os/exec"
 	"strings"
-	"sync"
 	"testing"
 
-	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
-	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 const (
-	whoopExampleDir   = "../../kinds/providers.substrate.reamde.dev/whoop"
+	whoopDir          = providersDir + "/whoop"
 	whoopPackage      = "providers.substrate.reamde.dev/whoop"
 	whoopConfigType   = whoopPackage + "/config"
 	whoopAccountType  = whoopPackage + "/account"
@@ -66,46 +59,11 @@ const (
 // admission the batch apply runs, minus the function-body warm.
 func TestWhoopBundleAdmitsSchema(t *testing.T) {
 	t.Parallel()
-	// The registry an install actually admits into: the seeded tree (core
-	// alone) plus the shipped VOCABULARY bundles this repository imported —
-	// what a closure declaring onto people/tasks/messaging/calendar/media
-	// needs present, and what `requires:` names.
-	reg, err := enginetest.SeededRegistry(CoreKindsDir)
-	if err != nil {
-		t.Fatalf("build the repository registry: %v", err)
-	}
-	data, err := os.ReadFile(whoopExampleDir + "/bundle.yaml")
-	if err != nil {
-		t.Fatalf("read bundle.yaml: %v", err)
-	}
-	docs, err := vocabulary.ParseStream(data)
-	if err != nil {
-		t.Fatalf("parse bundle.yaml: %v", err)
-	}
-	authorities, err := vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
-	if err != nil {
-		t.Fatalf("build the bundle authority: %v", err)
-	}
-	if err := reg.InstallAll(authorities); err != nil {
-		t.Fatalf("the bundle closure did not admit: %v", err)
-	}
+	reg := bundleRegistry(t, whoopDir)
 
 	// The bundle exists and declares the `client` input the oauth2 block
 	// names: facility-read, so it must NOT inject.
-	b, ok := reg.BundleOf(whoopPackage)
-	if !ok {
-		t.Fatalf("no bundle owns %s after install", whoopPackage)
-	}
-	in, ok := b.Inputs["client"]
-	if !ok {
-		t.Fatalf("bundle declares no client input: %v", b.InputOrder)
-	}
-	if in.Kind != whoopConfigType {
-		t.Fatalf("client input kind = %q, want %q", in.Kind, whoopConfigType)
-	}
-	if in.Inject != "" {
-		t.Fatalf("client input inject = %q, but the OAuth client is facility-read, never injected", in.Inject)
-	}
+	b := assertBundleInput(t, reg, whoopPackage, "client", whoopConfigType, "")
 
 	// The trusted oauth2 block compiled: WHOOP endpoints, the email derivation
 	// pair, and every toggle mapped — each scope list carrying its read scope
@@ -156,20 +114,14 @@ func TestWhoopBundleAdmitsSchema(t *testing.T) {
 	}
 
 	// The config type: oauth2 (client fields), the client input's kind.
-	cfg, ok := reg.ByIdentity(whoopConfigType)
-	if !ok {
-		t.Fatalf("config type %s missing", whoopConfigType)
-	}
+	cfg := mustKind(t, reg, whoopConfigType)
 	if !cfg.Implements(vocabulary.TraitOAuth2Core) {
 		t.Fatalf("config type does not implement %s", vocabulary.TraitOAuth2Core)
 	}
 
 	// The account type: accountconfig, and NOT oauth2 — client creds bind on
 	// the config; the facility's and the connector's hands carry writer roles.
-	acct, ok := reg.ByIdentity(whoopAccountType)
-	if !ok {
-		t.Fatalf("account type %s missing", whoopAccountType)
-	}
+	acct := mustKind(t, reg, whoopAccountType)
 	if !acct.Implements(vocabulary.TraitAccountConfigCore) {
 		t.Fatalf("account type does not implement %s", vocabulary.TraitAccountConfigCore)
 	}
@@ -232,81 +184,30 @@ func TestWhoopBundleAdmitsSchema(t *testing.T) {
 // so it skips when uv is absent or cannot provision.
 func TestWhoopBundleInstalls(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the sync body warms through uv at install")
-	}
-	ctx := context.Background()
-	ds := openInternalDataset(t)
+	requireUV(t)
+	_, ds := newDataset(t)
 
-	// The atomic install from the shipped manifest. A failure here is either a
-	// schema problem (caught deterministically by the loader test above,
-	// without uv) or a uv provisioning failure (offline) — so treat an apply
-	// error as a skip rather than double-reporting a schema break.
-	vocabularyDocs := loadYAMLDocs(t, whoopExampleDir+"/bundle.yaml")
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, vocabularyDocs); err != nil {
-		if isUVProvisionError(err) {
-			t.Skipf("bundle install could not warm the PEP 723 body (uv offline?): %v", err)
-		}
-		t.Fatalf("install the whoop bundle: %v", err)
-	}
+	// The atomic install from the shipped manifest.
+	install(t, ds, whoopDir, nil)
 
 	// The bundle row and every schema member landed as its own record.
-	for id, wantType := range map[string]string{
-		whoopPackage:      "substrate.reamde.dev/core/bundle",
-		whoopConfigType:   "substrate.reamde.dev/core/kind",
-		whoopAccountType:  "substrate.reamde.dev/core/kind",
-		whoopRecoveryType: "substrate.reamde.dev/core/kind",
-		whoopSleepType:    "substrate.reamde.dev/core/kind",
-		whoopWorkoutType:  "substrate.reamde.dev/core/kind",
-		whoopSyncFn:       "substrate.reamde.dev/core/function",
-	} {
-		row, err := ds.Get(ctx, wantType, id)
-		if err != nil {
-			t.Fatalf("member %s did not install: %v", id, err)
-		}
-		if row.Kind != wantType {
-			t.Fatalf("member %s is a %s, want %s", id, row.Kind, wantType)
-		}
-	}
+	assertMembers(t, ds, map[string]string{
+		whoopPackage:      typeBundle,
+		whoopConfigType:   typeKind,
+		whoopAccountType:  typeKind,
+		whoopRecoveryType: typeKind,
+		whoopSleepType:    typeKind,
+		whoopWorkoutType:  typeKind,
+		whoopSyncFn:       typeFunction,
+	})
 
 	// Computed status: installed, enabled, and the closure's member counts.
-	st, err := ds.BundleStatus(ctx, whoopPackage)
-	if err != nil {
-		t.Fatalf("bundle status: %v", err)
-	}
-	if !st.Installed || !st.Enabled {
-		t.Fatalf("bundle not live: installed=%v enabled=%v", st.Installed, st.Enabled)
-	}
-	if len(st.Inputs) != 1 || st.Inputs[0].Name != "client" || st.Inputs[0].Kind != whoopConfigType {
-		t.Fatalf("status inputs = %+v, want the one client input", st.Inputs)
-	}
-	if st.Inputs[0].Record != "" || st.Inputs[0].Via != "" {
-		t.Fatalf("client input resolved with no config record created: %+v", st.Inputs[0])
-	}
-	if len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupMissing || st.Setup[0].Input != "client" {
-		t.Fatalf("status setup = %+v, want the one missing-input item", st.Setup)
-	}
-	if st.Functions != 1 {
-		t.Fatalf("status functions = %d, want 1", st.Functions)
-	}
+	assertUnresolvedInput(t, ds, whoopPackage, "client", whoopConfigType, 1)
 
 	// The delivery wiring installs as ordinary data records, both bound to
 	// the sync function.
-	for _, m := range loadYAMLDocs(t, whoopExampleDir+"/triggers.yaml") {
-		putDataDoc(t, ds, m)
-	}
-	for _, id := range []string{"whoop-on-connect", "whoop-scheduled"} {
-		row, err := ds.Get(ctx, typeTrigger, id)
-		if err != nil {
-			t.Fatalf("trigger %s did not install: %v", id, err)
-		}
-		if row.Kind != typeTrigger {
-			t.Fatalf("trigger %s is a %s", id, row.Kind)
-		}
-	}
+	installTriggers(t, ds, whoopDir)
+	assertTriggers(t, ds, "whoop-on-connect", "whoop-scheduled")
 }
 
 // fakeWhoop is a WHOOP in a box: the OAuth endpoints the manifest is rewired
@@ -314,28 +215,12 @@ func TestWhoopBundleInstalls(t *testing.T) {
 // three v2 collections the sync pages — recovery over TWO pages (a nextToken
 // hop) with one deliberately malformed record on page one.
 type fakeWhoop struct {
-	ts *httptest.Server
-
-	mu            sync.Mutex
-	recoveryPages int
-	sleepPages    int
-	workoutPages  int
+	fakeAPI
 }
 
 func newFakeWhoop(t *testing.T) *fakeWhoop {
 	t.Helper()
 	f := &fakeWhoop{}
-	writeJSON := func(w http.ResponseWriter, v any) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(v)
-	}
-	bearer := func(w http.ResponseWriter, r *http.Request) bool {
-		if r.Header.Get("Authorization") != "Bearer at-1" {
-			w.WriteHeader(http.StatusUnauthorized)
-			return false
-		}
-		return true
-	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/oauth/oauth2/token", func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
@@ -374,9 +259,7 @@ func newFakeWhoop(t *testing.T) *fakeWhoop {
 		if !bearer(w, r) {
 			return
 		}
-		f.mu.Lock()
-		f.recoveryPages++
-		f.mu.Unlock()
+		f.bump("recovery")
 		if r.URL.Query().Get("nextToken") == "" {
 			// Page one: a good cycle, and a malformed record (no cycle_id and
 			// no sleep_id — nothing to key by) the sync must SKIP AND COUNT
@@ -416,9 +299,7 @@ func newFakeWhoop(t *testing.T) *fakeWhoop {
 		if !bearer(w, r) {
 			return
 		}
-		f.mu.Lock()
-		f.sleepPages++
-		f.mu.Unlock()
+		f.bump("sleep")
 		writeJSON(w, map[string]any{
 			"records": []any{
 				map[string]any{
@@ -442,9 +323,7 @@ func newFakeWhoop(t *testing.T) *fakeWhoop {
 		if !bearer(w, r) {
 			return
 		}
-		f.mu.Lock()
-		f.workoutPages++
-		f.mu.Unlock()
+		f.bump("workout")
 		writeJSON(w, map[string]any{
 			"records": []any{
 				map[string]any{
@@ -456,66 +335,21 @@ func newFakeWhoop(t *testing.T) *fakeWhoop {
 			"next_token": "",
 		})
 	})
-	f.ts = httptest.NewServer(mux)
-	t.Cleanup(f.ts.Close)
+	f.serve(t, mux)
 	return f
 }
 
-// whoopPointProviderAt rewrites the closure's every prod-WHOOP reference to
-// the loopback fake: the bundle document's trusted oauth2 endpoints (the
-// mbPointOAuthAt move — a static manifest cannot bake a dynamic httptest URL)
-// and the sync body's API base constant, so the paged fetch drains against
-// the same box.
-func whoopPointProviderAt(docs []map[string]any, baseURL string) {
-	for _, d := range docs {
-		data, _ := d["data"].(map[string]any)
-		if data == nil {
-			continue
-		}
-		switch d["kind"] {
-		case vocabulary.CoreKind("bundle"):
-			o, _ := data["oauth2"].(map[string]any)
-			for k, v := range o {
-				if s, ok := v.(string); ok && strings.HasPrefix(s, whoopProdBase) {
-					o[k] = baseURL + strings.TrimPrefix(s, whoopProdBase)
-				}
-			}
-		case vocabulary.CoreKind("function"):
-			if src, ok := data["source"].(string); ok {
-				data["source"] = strings.ReplaceAll(src, whoopProdBase, baseURL)
-			}
-		}
-	}
-}
-
-// openWhoopOAuthDataset is openInternalDataset with the OAuth facility on —
-// the fake-provider round trip needs the state key, the callback URL and the
-// loopback HTTP client wired at engine open.
-func openWhoopOAuthDataset(t *testing.T, hc *http.Client) *dataset {
+// whoopInstallRewired installs the closure with every prod-WHOOP reference
+// pointed at the loopback fake: the bundle document's trusted oauth2
+// endpoints (a static manifest cannot bake a dynamic httptest URL) and the
+// sync body's API base constant, so the paged fetch drains against the same
+// box.
+func whoopInstallRewired(t *testing.T, ds substrate.Dataset, baseURL string) {
 	t.Helper()
-	ctx := context.Background()
-	dsn := MigratedDSN(t)
-	svc, err := OpenForTest(t, ctx, dsn,
-		WithDataRoot(t.TempDir()),
-		WithCredentialKey(TestCredentialKey), WithKindsDir(CoreKindsDir),
-		WithOAuth("test-state-key", "https://substrate.example/api/v1/substrate.reamde.dev/core/oauth/callback", hc),
-		WithCredentialKey(TestCredentialKey))
-	if err != nil {
-		t.Fatalf("open engine: %v", err)
-	}
-	t.Cleanup(func() { _ = svc.Close() })
-	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
-		t.Fatalf("create repository: %v", err)
-	}
-	d, err := svc.Dataset(ctx, testdb.Repository(t))
-	if err != nil {
-		t.Fatalf("open dataset: %v", err)
-	}
-	ds, ok := d.(*dataset)
-	if !ok {
-		t.Fatalf("dataset is a %T", d)
-	}
-	return ds
+	install(t, ds, whoopDir, func(docs []map[string]any) {
+		rewriteOAuthEndpoints(t, docs, baseURL, whoopProdBase)
+		rewriteSource(t, docs, whoopProdBase, baseURL)
+	})
 }
 
 func whoopPropFloat(t *testing.T, e *substrate.Record, name string) float64 {
@@ -537,32 +371,14 @@ func whoopPropFloat(t *testing.T, e *substrate.Record, name string) float64 {
 // paged sync and assert the mirrors, the skip tally and the stamp.
 func TestWhoopBundleFakeSyncMirrors(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the sync body warms through uv at install")
-	}
+	requireUV(t)
 	ctx := context.Background()
 	fake := newFakeWhoop(t)
-	ds := openWhoopOAuthDataset(t, fake.ts.Client())
-
-	docs := loadYAMLDocs(t, whoopExampleDir+"/bundle.yaml")
-	whoopPointProviderAt(docs, fake.ts.URL)
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
-		if isUVProvisionError(err) {
-			t.Skipf("bundle install could not warm the PEP 723 body (uv offline?): %v", err)
-		}
-		t.Fatalf("install the whoop bundle: %v", err)
-	}
+	svc, ds := newOAuthDataset(t, fake.ts.Client())
+	whoopInstallRewired(t, ds, fake.ts.URL)
 	// Only the on-connect trigger: the schedule would race catch-up fires into
 	// the drain below and prove nothing this test is after.
-	for _, m := range loadYAMLDocs(t, whoopExampleDir+"/triggers.yaml") {
-		meta, _ := m["metadata"].(map[string]any)
-		if meta["id"] == "whoop-on-connect" {
-			putDataDoc(t, ds, m)
-		}
-	}
+	installTriggers(t, ds, whoopDir, "whoop-on-connect")
 
 	// Configure the client record (the sole record resolves the input), then
 	// add one pending account with every collection on.
@@ -601,9 +417,7 @@ func TestWhoopBundleFakeSyncMirrors(t *testing.T) {
 			t.Fatalf("consent scope misses %s: %q", scope, cu.Query().Get("scope"))
 		}
 	}
-	if _, err := ds.svc.CompleteOAuth(ctx, cu.Query().Get("state"), "code-123"); err != nil {
-		t.Fatalf("oauth callback: %v", err)
-	}
+	completeOAuth(t, svc, cu.Query().Get("state"), "code-123")
 	connected, err := ds.Get(ctx, account.Kind, account.ID)
 	if err != nil {
 		t.Fatalf("get account: %v", err)
@@ -621,8 +435,8 @@ func TestWhoopBundleFakeSyncMirrors(t *testing.T) {
 
 	// The recovery mirrors are CYCLE-KEYED: provider "whoop", the account, and
 	// the cycle id, recomputed here through runner.ExternalID, so what the
-	// python body composed is proven byte for byte. The date is derived display
-	// data, never the identity.
+	// python body composed is proven byte for byte. The date is derived
+	// display data, never the identity.
 	cycle1 := runner.ExternalID("whoop", account.ID, "recovery-1")
 	rec1, err := ds.Get(ctx, whoopRecoveryType, cycle1)
 	if err != nil {
@@ -654,10 +468,7 @@ func TestWhoopBundleFakeSyncMirrors(t *testing.T) {
 	if got := whoopPropFloat(t, rec2, "recoveryScore"); got != 55 {
 		t.Fatalf("cycle two recoveryScore = %v, want 55", got)
 	}
-	fake.mu.Lock()
-	pages := fake.recoveryPages
-	fake.mu.Unlock()
-	if pages != 2 {
+	if pages := fake.count("recovery"); pages != 2 {
 		t.Fatalf("recovery fetched %d pages, want 2 (a nextToken hop)", pages)
 	}
 

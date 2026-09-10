@@ -103,7 +103,8 @@ comment above is this machine's number, not a promise.
 the task CI shards: with `SHARD` and `SHARDS` in the environment it runs one
 slice of the package (`SHARD=3 SHARDS=8 mise run test:db:engine`), which is
 how a red shard is reproduced by number. `test:db:rest` is every other
-database package. The cut is described under [What CI runs](#what-ci-runs).
+database package, `internal/providertest` among them. The cut is described
+under [What CI runs](#what-ci-runs).
 
 ### The engine fixture, and where the time goes
 
@@ -131,10 +132,13 @@ migration still runs three times per engine binary: the template build,
 `TestRepositoryProvisioningAndProjections` and
 `TestAssertPoolPrincipalRejectsSuperuser`.
 
-**One opener.** `engine.OpenForTest(t, ctx, dsn, opts...)` is `engine.Open`
-with the shipped core kinds (`engine.CoreKindsDir`), the binary's credential
-key and the test's TOTP clock; every test open goes through it, and a
-caller's options win where they name the same thing. The clock
+**One opener per binary.** `engine.OpenForTest(t, ctx, dsn, opts...)` is
+`engine.Open` with the shipped core kinds (`engine.CoreKindsDir`), the
+binary's credential key and the test's TOTP clock; every open in the engine's
+own binary goes through it, and a caller's options win where they name the
+same thing. It lives in `export_test.go`, so a package across the line cannot
+call it: `internal/providertest` keeps its own opener and its own template
+(`harness_test.go`) over the exported `engine.Open`. The clock
 (`engine.ClockOf(t)`, keyed on the full test name and forgotten when the
 test ends) is what `waitStep` advances by one `engine.TOTPPeriod` where it
 used to sleep through a real 30 second window.
@@ -466,10 +470,12 @@ reruns exactly what shard 3 ran. The shard count is written once, as the
 `shard:` matrix in `.github/workflows/ci.yml`; the job name and `SHARDS` both
 read `strategy.job-total`.
 
-The short suite rides in `go test` with the four small database packages
-rather than on a runner of its own: together they are about a minute of test
+The short suite rides in `go test` with the small database packages rather
+than on a runner of its own: together they are a couple of minutes of test
 time, and a job's setup (checkout, toolchain, cache, service container) is
-half of that again.
+half of that again. `internal/providertest` needs `uv` on the runner beside
+the database, because every case there warms a provider closure's PEP 723
+body through it; the toolchain pins uv, so `mise` installs it in every job.
 
 `changes` is the path gate. `.mise/changescheck.sh` diffs the merge base with
 the PR's base branch against the tree and answers `go=false` only when every

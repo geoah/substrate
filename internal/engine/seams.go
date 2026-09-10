@@ -11,6 +11,14 @@ import (
 // file (export_test.go) could not give it. Each installs a hook the
 // production path already carries; none changes what the engine does when
 // the hook is absent.
+//
+// The stepper in steptest.go is the second kind of seam and stays in its own
+// file: it does not install a hook, it DRIVES a production path (one
+// invocation of a callable, then the dispatcher's own effect commit,
+// txn.applyEffects) with the dispatcher's bookkeeping left off. The
+// distinction is what each one promises — a hook here promises the engine
+// behaves as if it were absent, the stepper there promises only the write
+// half it shares with production.
 
 // WithTestTOTPClock is the clock the TOTP verifier reads (auth.go totpVerify
 // callers), and nothing else: the record timestamps stay on the wall clock.
