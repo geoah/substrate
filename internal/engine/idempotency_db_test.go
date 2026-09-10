@@ -165,21 +165,20 @@ func TestIdempotencyKeyMergeAndSplitReplay(t *testing.T) {
 func TestIdempotencyKeyAnswersAfterTheFunctionIsDisabled(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ds, ops := installMailBundle(t)
-	fops := ds.(fnOps)
+	ds := installMailBundle(t)
 	args := map[string]any{}
 
-	out, effects, err := fops.CallFunction(keyed("echo-1"), mbEchoFn, args)
+	out, effects, err := ds.CallFunction(keyed("echo-1"), mbEchoFn, args)
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
-	if err := ops.DisableBundle(ctx, mbPackage); err != nil {
+	if err := ds.DisableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
-	if _, _, err := fops.CallFunction(ctx, mbEchoFn, args); err == nil || !strings.Contains(err.Error(), "disabled") {
+	if _, _, err := ds.CallFunction(ctx, mbEchoFn, args); err == nil || !strings.Contains(err.Error(), "disabled") {
 		t.Fatalf("a fresh call to the disabled function: %v", err)
 	}
-	again, againEffects, err := fops.CallFunction(keyed("echo-1"), mbEchoFn, args)
+	again, againEffects, err := ds.CallFunction(keyed("echo-1"), mbEchoFn, args)
 	if err != nil {
 		t.Fatalf("repeat after the disable: %v", err)
 	}
@@ -214,7 +213,7 @@ def main(input, host):
 
 func TestIdempotencyKeyFunctionCallRunsTheBodyOnce(t *testing.T) {
 	t.Parallel()
-	ds, ops := newFnDataset(t, nil, gatedFn())
+	ds := newFnDataset(t, nil, gatedFn())
 	args := map[string]any{"flag": "open-the-gate"}
 
 	type answer struct {
@@ -225,7 +224,7 @@ func TestIdempotencyKeyFunctionCallRunsTheBodyOnce(t *testing.T) {
 	answers := make(chan answer, callers)
 	for range callers {
 		go func() {
-			out, _, err := ops.CallFunction(keyed("call-1"), fnPackage+"/gated", args)
+			out, _, err := ds.CallFunction(keyed("call-1"), fnPackage+"/gated", args)
 			answers <- answer{out, err}
 		}()
 	}
@@ -248,7 +247,7 @@ func TestIdempotencyKeyFunctionCallRunsTheBodyOnce(t *testing.T) {
 
 	// After the first attempt settled, the repeat answers its outcome and
 	// applies nothing.
-	out, effects, err := ops.CallFunction(keyed("call-1"), fnPackage+"/gated", args)
+	out, effects, err := ds.CallFunction(keyed("call-1"), fnPackage+"/gated", args)
 	if err != nil {
 		t.Fatalf("repeat: %v", err)
 	}
@@ -261,7 +260,7 @@ func TestIdempotencyKeyFunctionCallRunsTheBodyOnce(t *testing.T) {
 	if rows := actorChanges(t, ds, fnPackage+"/gated"); len(rows) != 1 {
 		t.Fatalf("the repeat ran the body: %d runs", len(rows))
 	}
-	_, _, err = ops.CallFunction(keyed("call-1"), fnPackage+"/gated", map[string]any{"flag": "other"})
+	_, _, err = ds.CallFunction(keyed("call-1"), fnPackage+"/gated", map[string]any{"flag": "other"})
 	wantErr(t, err, substrate.ErrConflict, "same call key, different input")
 }
 
@@ -290,7 +289,6 @@ def main(input, host):
 	if err := enginetest.Install(ctx, ds, owner, fnConnector(nil, nul)); err != nil {
 		t.Fatalf("register connector: %v", err)
 	}
-	ops := ds.(fnOps)
 	// The key rows, read on the repository's own scoped pool: the test's
 	// eyes on the store, under the same row level security the engine runs.
 	scoped, err := engine.OpenScopedDB(dsn, ds.Repository().ID, engine.RoleApp)
@@ -306,7 +304,7 @@ def main(input, host):
 		return n
 	}
 
-	first, effects, err := ops.CallFunction(keyed("nul-1"), fnPackage+"/nul", nil)
+	first, effects, err := ds.CallFunction(keyed("nul-1"), fnPackage+"/nul", nil)
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -316,7 +314,7 @@ def main(input, host):
 	if n := keyRows(); n != 1 {
 		t.Fatalf("the settled call left %d key rows, want 1", n)
 	}
-	again, _, err := ops.CallFunction(keyed("nul-1"), fnPackage+"/nul", nil)
+	again, _, err := ds.CallFunction(keyed("nul-1"), fnPackage+"/nul", nil)
 	if err != nil {
 		t.Fatalf("repeat: %v", err)
 	}

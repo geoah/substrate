@@ -16,9 +16,12 @@ import (
 // (internal/api/fake_test.go). A consumer calls the method; no endpoint has a
 // "this deployment cannot" branch to take.
 //
-// The five mutations and the reads are the core of the supported REST
-// contract (decision 0053), and every feature discovery lists (stability.go)
-// is served from here, which is why that list is a literal.
+// THE WHOLE INTERFACE IS WHAT v1 FREEZES: a method here is part of the
+// library contract and moves under the rules the REST surface moves under
+// (decision 0053, additive within v1, a break announced). Every feature
+// discovery lists (stability.go) is served from here, which is why that list
+// is a literal, and a feature's own stability stamp is what says how far its
+// shape has settled.
 type Dataset interface {
 	Repository() RepositoryInfo
 
@@ -203,10 +206,11 @@ type Dataset interface {
 	// blob the stream carries, and the sealed files in it are ciphertext under
 	// a key the stream does not hold.
 	//
-	// Export pins the committed point and returns the export that streams it. Pinning is short and serializes with the repository's
-	// writes; the streaming does not, so writes go on while a client downloads
-	// and the stream stays the point it pinned. The context is the stream's
-	// too: a caller that goes away ends it.
+	// Export pins the committed point and returns the export that streams
+	// it. Pinning is short and serializes with the repository's writes; the
+	// streaming does not, so writes go on while a client downloads and the
+	// stream stays the point it pinned. The context is the stream's too: a
+	// caller that goes away ends it.
 	Export(ctx context.Context) (Export, error)
 }
 

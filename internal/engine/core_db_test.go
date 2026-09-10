@@ -949,7 +949,7 @@ def main(input, host):
          "properties": {"decision": "accepted"}}
     ]}
 `
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{
 			trigOn("deputy", map[string]any{"kinds": []any{widgetType}, "ops": []any{"create"}}),
 			trigOn("allowed", map[string]any{"kinds": []any{widgetType}, "ops": []any{"create"}}),
@@ -964,14 +964,14 @@ def main(input, host):
 	ctx := context.Background()
 
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "w"}})
-	process(t, ops)
+	process(t, ds)
 
 	// The confused deputy is refused: no task was smuggled in, and its delivery
 	// parked instead of committing.
 	if _, err := ds.Get(ctx, taskType, "deputy-task-"+w.ID); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the deputy smuggled a task past its emit ceiling: %v", err)
 	}
-	if parked, err := ops.TriggerFailures(ctx, trigID("deputy")); err != nil || len(parked) == 0 {
+	if parked, err := ds.TriggerFailures(ctx, trigID("deputy")); err != nil || len(parked) == 0 {
 		t.Fatalf("the deputy's confused-deputy delivery should have parked: parked=%d err=%v", len(parked), err)
 	}
 

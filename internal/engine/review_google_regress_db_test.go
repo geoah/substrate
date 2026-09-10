@@ -30,7 +30,7 @@ import (
 func TestReviewGoogleEndpointsFromManifest(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, ds, ops, p, account := installOAuthBundle(t)
+	svc, ds, p, account := installOAuthBundle(t)
 
 	// An authenticated caller patches a would-be token endpoint on the config.
 	// The property still exists on the mail config type, but the engine ignores
@@ -42,7 +42,7 @@ func TestReviewGoogleEndpointsFromManifest(t *testing.T) {
 		},
 	})
 
-	consent, err := ops.StartOAuth(ctx, owner, account.ID)
+	consent, err := ds.StartOAuth(ctx, owner, account.ID)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -69,12 +69,12 @@ func TestReviewGoogleEndpointsFromManifest(t *testing.T) {
 func TestReviewGoogleScopeFromTogglesOnly(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, ds, ops, _, account := installOAuthBundle(t)
+	_, ds, _, account := installOAuthBundle(t)
 
 	mustPatch(t, ds, owner, account.Kind, account.ID, substrate.PatchInput{
 		Properties: map[string]any{"enabledMail": false},
 	})
-	consent, err := ops.StartOAuth(ctx, owner, account.ID)
+	consent, err := ds.StartOAuth(ctx, owner, account.ID)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -87,10 +87,10 @@ func TestReviewGoogleScopeFromTogglesOnly(t *testing.T) {
 func TestReviewGoogleOAuthStartOwnerGated(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, ds, ops, _, account := installOAuthBundle(t)
+	_, ds, _, account := installOAuthBundle(t)
 	_ = ds
 	connector := substrate.FunctionActor(vocabulary.SplitKindRef(mbEchoFn))
-	_, err := ops.StartOAuth(ctx, connector, account.ID)
+	_, err := ds.StartOAuth(ctx, connector, account.ID)
 	wantErr(t, err, substrate.ErrForbidden, "non-owner oauth/start")
 }
 
@@ -98,7 +98,7 @@ func TestReviewGoogleOAuthStartOwnerGated(t *testing.T) {
 func TestReviewGoogleConfigAccountCreateOwnerGated(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, ds, _, _, account := installOAuthBundle(t)
+	_, ds, _, account := installOAuthBundle(t)
 	connector := substrate.FunctionActor(vocabulary.SplitKindRef(mbEchoFn))
 
 	if _, err := ds.Put(ctx, connector, substrate.PutInput{
@@ -121,7 +121,7 @@ func TestReviewGoogleConfigAccountCreateOwnerGated(t *testing.T) {
 func TestReviewGooglePropertyOwnership(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, ds, _, _, account := installOAuthBundle(t)
+	_, ds, _, account := installOAuthBundle(t)
 
 	for _, prop := range []map[string]any{
 		{"tokenRef": "forged-ref"},
@@ -159,7 +159,7 @@ func TestReviewGooglePropertyOwnership(t *testing.T) {
 // is a sealed-store ref, and a raw database read shows no plaintext.
 func TestReviewGoogleClientSecretSealedAtRest(t *testing.T) {
 	t.Parallel()
-	_, _, db, _, _, _ := installW3OAuthBundle(t)
+	_, _, db, _, _ := installW3OAuthBundle(t)
 	var props string
 	if err := db.QueryRow(
 		`SELECT props::text FROM records WHERE kind = $1 AND deleted_at IS NULL`, mbConfigType).

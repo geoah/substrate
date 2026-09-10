@@ -1076,9 +1076,9 @@ func (d *fakeDataset) ProcessEmbedQueue(context.Context, int) (int, error) {
 	return 0, nil
 }
 
-// Reembed is on the frozen Dataset core, so the fake carries it; no HTTP door
-// reaches it any more, and the operator's `substratectl repository reembed`
-// is what calls it, over the DSN.
+// Reembed is on substrate.Dataset, so the fake carries it; no HTTP door
+// reaches it, and the operator's `substratectl repository reembed` is what
+// calls it, over the DSN.
 func (d *fakeDataset) Reembed(_ context.Context, all bool) (substrate.ReembedReport, error) {
 	return substrate.ReembedReport{Provider: "vectors", Model: "text-embedding-3-small", Enqueued: 7, All: all}, nil
 }
@@ -1099,9 +1099,11 @@ func noSuch(what, which string) error {
 	return fmt.Errorf("%w: no such %s %q", substrate.ErrNotFound, what, which)
 }
 
-// The rest of substrate.Dataset. This fake holds no trigger, bundle or agent,
-// so a verb addressed at one answers not-found and a listing answers empty:
-// the answers a real repository with none gives.
+// The rest of substrate.Dataset. This fake models an EMPTY repository: it
+// holds no trigger, bundle or agent, so a verb addressed at one answers
+// not-found and a listing answers empty. Two of those answers are emptier
+// than any real repository's, which always holds the seeded core package:
+// PlanShippedUpgrade previews nothing and TypesImplementing names no kind.
 
 func (d *fakeDataset) PlanShippedUpgrade(context.Context) ([]substrate.ShippedUpgrade, error) {
 	return nil, nil

@@ -65,7 +65,7 @@ func TestDiscoveryReportsVersionsAndBuild(t *testing.T) {
 	}
 	// A list, never null: a client that decodes an array must not have to
 	// handle a missing one. What is in it is the two tests below.
-	if body := rec.Body.String(); !strings.Contains(body, `"features":[{"name":"triggers"`) {
+	if body := rec.Body.String(); !strings.Contains(body, `"features":[{`) {
 		t.Fatalf("features did not serialize as a list: %s", body)
 	}
 }

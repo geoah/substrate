@@ -87,17 +87,13 @@ func jsonHook(body, header string) substrate.WebhookRequest {
 
 // newHookDataset is newFnDataset keeping the SERVICE too: the door is a
 // service method, since a public request carries no dataset.
-func newHookDataset(t *testing.T, triggers []enginetest.Trigger, fns ...map[string]any) (substrate.Service, substrate.Dataset, fnOps) {
+func newHookDataset(t *testing.T, triggers []enginetest.Trigger, fns ...map[string]any) (substrate.Service, substrate.Dataset) {
 	t.Helper()
 	svc, ds := newDataset(t)
 	if err := enginetest.Install(context.Background(), ds, owner, fnConnector(triggers, fns...)); err != nil {
 		t.Fatalf("register connector: %v", err)
 	}
-	ops, ok := ds.(fnOps)
-	if !ok {
-		t.Fatal("dataset does not implement the automation seam")
-	}
-	return svc, ds, ops
+	return svc, ds
 }
 
 func hookEcho(t *testing.T, ds substrate.Dataset, id string) map[string]any {
@@ -116,7 +112,7 @@ func hookEcho(t *testing.T, ds substrate.Dataset, id string) map[string]any {
 func TestWebhookDelivery(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, ds, ops := newHookDataset(t,
+	svc, ds := newHookDataset(t,
 		[]enginetest.Trigger{
 			hookTrigger("hook-open", webhookSource(""), "hookecho", true),
 			hookTrigger("hook-keyed", webhookSource(hookKey), "hookecho", true),
@@ -220,7 +216,7 @@ func TestWebhookDelivery(t *testing.T) {
 	})
 
 	t.Run("status carries the path", func(t *testing.T) {
-		statuses, err := ops.TriggerStatuses(ctx)
+		statuses, err := ds.TriggerStatuses(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -283,7 +279,7 @@ func TestWebhookParkedRetryReplaysRequest(t *testing.T) {
 	t.Cleanup(func() { engine.BlobUploadGrace = prev })
 
 	ctx := context.Background()
-	svc, ds, ops := newHookDataset(t,
+	svc, ds := newHookDataset(t,
 		[]enginetest.Trigger{hookTrigger("hook-gated", webhookSource(""), "hookgated", true)},
 		pyFn("hookgated", map[string]any{
 			"permissions": map[string]any{"reads": map[string]any{"kinds": []any{widgetType}}},
@@ -306,7 +302,7 @@ func TestWebhookParkedRetryReplaysRequest(t *testing.T) {
 	if _, err := ds.Get(ctx, widgetType, "gated-echo"); err == nil {
 		t.Fatal("the gated body wrote through a closed gate")
 	}
-	failures, err := ops.TriggerFailures(ctx, "hook-gated")
+	failures, err := ds.TriggerFailures(ctx, "hook-gated")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -332,14 +328,14 @@ func TestWebhookParkedRetryReplaysRequest(t *testing.T) {
 
 	// Open the gate; the retry carries the original request.
 	mustPut(t, ds, owner, substrate.PutInput{Kind: widgetType, ID: "gate", Properties: map[string]any{"name": "open"}})
-	if _, err := ops.RetryTriggerFailure(ctx, "hook-gated", failures[0].ID); err != nil {
+	if _, err := ds.RetryTriggerFailure(ctx, "hook-gated", failures[0].ID); err != nil {
 		t.Fatalf("retry: %v", err)
 	}
 	got := hookEcho(t, ds, "gated-echo")
 	if got["name"] != "call the dentist" || got["want"] != "parked" || got["target"] != digest || got["record"] != fid {
 		t.Fatalf("retried delivery echoed %v", got)
 	}
-	if left, err := ops.TriggerFailures(ctx, "hook-gated"); err != nil || len(left) != 0 {
+	if left, err := ds.TriggerFailures(ctx, "hook-gated"); err != nil || len(left) != 0 {
 		t.Fatalf("failures after retry = %v, %v", left, err)
 	}
 	// With the park gone and the digest held by a plain string property only,

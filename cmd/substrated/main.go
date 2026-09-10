@@ -269,9 +269,8 @@ func pass(ctx context.Context, name string, fn func(context.Context)) {
 // maintenance pool, then do each repository's WORK on that repository's own
 // scoped pool — so a loop is bound by row level security exactly like a request
 // is, and the maintenance bypass is spent on the listing alone. One repository
-// never ends the pass: an unopenable repository, an unimplemented seam and a
-// failing call all log and CONTINUE, or the alphabet would decide whose
-// triggers run.
+// never ends the pass: an unopenable repository and a failing call both log
+// and CONTINUE, or the alphabet would decide whose triggers run.
 func repositoryDatasets(ctx context.Context, svc substrate.Service) []substrate.Dataset {
 	repos, err := svc.Repositories(ctx)
 	if err != nil {

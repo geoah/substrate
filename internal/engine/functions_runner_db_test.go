@@ -18,9 +18,9 @@ import (
 // callable contract: input/output schemas, mode call, host Call with its
 // gates.
 
-func onlyParked(t *testing.T, ops fnOps, triggerID string) substrate.TriggerFailure {
+func onlyParked(t *testing.T, ds substrate.Dataset, triggerID string) substrate.TriggerFailure {
 	t.Helper()
-	parked, err := ops.TriggerFailures(context.Background(), triggerID)
+	parked, err := ds.TriggerFailures(context.Background(), triggerID)
 	if err != nil {
 		t.Fatalf("failures: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestTriggerGoRuntime(t *testing.T) {
 	// One inline Go body: compiled at registration against the embedded
 	// substratefn SDK, run as a supervised subprocess on the same protocol —
 	// effects, logs and errors ride exactly the python path.
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("gomirror", map[string]any{"kinds": []any{widgetType}})},
 		goFn("gomirror", map[string]any{}, []any{taskType}, `
 import "substratefn.local/substratefn"
@@ -60,16 +60,16 @@ func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, e
 `))
 
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "compiled"}})
-	process(t, ops)
+	process(t, ds)
 	if got := mustGet(t, ds, taskType, "t-"+w.ID); got.Title != "compiled" {
 		t.Fatalf("go task title: %q", got.Title)
 	}
 	// Idempotent replay holds for the compiled arm too.
 	before := dataSeq(t, ds)
-	if err := ops.ReplayTrigger(context.Background(), trigID("gomirror"), 0); err != nil {
+	if err := ds.ReplayTrigger(context.Background(), trigID("gomirror"), 0); err != nil {
 		t.Fatalf("replay: %v", err)
 	}
-	process(t, ops)
+	process(t, ds)
 	if after := dataSeq(t, ds); after != before {
 		t.Fatalf("replay wrote data: seq %d → %d", before, after)
 	}
@@ -121,12 +121,12 @@ func readerTrigger(name string) enginetest.Trigger {
 
 func TestTriggerHostReads(t *testing.T) {
 	t.Parallel()
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{readerTrigger("reader")},
 		readerFn("reader", nil))
 
 	base := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "anchor"}})
-	process(t, ops)
+	process(t, ds)
 
 	// Get resolves through the ordinary read surface; absence is None.
 	found := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"mode": "get", "target": base.ID}})
@@ -134,7 +134,7 @@ func TestTriggerHostReads(t *testing.T) {
 	// List rides the filter grammar; Search rides the lexical arm.
 	listed := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"mode": "list", "match": "anchor"}})
 	searched := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"mode": "search", "q": "anchor"}})
-	process(t, ops)
+	process(t, ds)
 
 	for id, want := range map[string]string{
 		"t-" + found.ID:    widgetType,
@@ -150,15 +150,15 @@ func TestTriggerHostReads(t *testing.T) {
 
 func TestTriggerReadAllowlistViolationParksImmediately(t *testing.T) {
 	t.Parallel()
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{readerTrigger("fenced")},
 		readerFn("fenced", nil))
 	ctx := context.Background()
 
 	s := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"mode": "forbidden"}})
-	process(t, ops)
+	process(t, ds)
 
-	failure := onlyParked(t, ops, trigID("fenced"))
+	failure := onlyParked(t, ds, trigID("fenced"))
 	if failure.RecordID != s.ID || !strings.Contains(failure.LastError, "allowlist") {
 		t.Fatalf("parked: %+v", failure)
 	}
@@ -170,23 +170,23 @@ func TestTriggerReadAllowlistViolationParksImmediately(t *testing.T) {
 	if _, err := ds.Get(ctx, taskType, "t-"+s.ID); err == nil {
 		t.Fatal("effects applied after a violation")
 	}
-	if st := statusOf(t, ops, trigID("fenced")); st.Lag != 0 {
+	if st := statusOf(t, ds, trigID("fenced")); st.Lag != 0 {
 		t.Fatalf("park did not advance: %+v", st)
 	}
 }
 
 func TestTriggerReadBudgetTripParksImmediately(t *testing.T) {
 	t.Parallel()
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{readerTrigger("thrifty")},
 		readerFn("thrifty", func(data map[string]any) {
 			fnPermissions(data)["reads"].(map[string]any)["budgets"] = map[string]any{"calls": 2}
 		}))
 
 	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"mode": "burn", "calls": float64(5)}})
-	process(t, ops)
+	process(t, ds)
 
-	failure := onlyParked(t, ops, trigID("thrifty"))
+	failure := onlyParked(t, ds, trigID("thrifty"))
 	if failure.Attempts != 1 || !strings.Contains(failure.LastError, "budget") {
 		t.Fatalf("parked: %+v", failure)
 	}
@@ -197,7 +197,7 @@ func TestTriggerTimeoutRetriesThenParks(t *testing.T) {
 	// A stuck body blows the manifest timeout; the runner kills and restarts
 	// the child, and the delivery rides the full attempts before parking —
 	// a wall timeout is not deterministic (load could clear it).
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("stuck", map[string]any{"kinds": []any{widgetType}})},
 		pyFn("stuck", map[string]any{"timeout": "PT0.25S"}, []any{taskType}, `
 import time
@@ -207,15 +207,15 @@ def main(input, host):
 `))
 
 	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType})
-	process(t, ops)
+	process(t, ds)
 
-	failure := onlyParked(t, ops, trigID("stuck"))
+	failure := onlyParked(t, ds, trigID("stuck"))
 	if failure.Attempts != 3 || !strings.Contains(failure.LastError, "exceeded") {
 		t.Fatalf("parked: %+v", failure)
 	}
 	// The killed host restarted and re-registered: a healthy neighbor of the
 	// same runtime still delivers.
-	if st := statusOf(t, ops, trigID("stuck")); st.Lag != 0 {
+	if st := statusOf(t, ds, trigID("stuck")); st.Lag != 0 {
 		t.Fatalf("park did not advance: %+v", st)
 	}
 }
@@ -233,14 +233,14 @@ func TestTriggerEffectPutIfAbsent(t *testing.T) {
 	t.Parallel()
 	// The prototype's clobber finding: a minting function must never reset
 	// state owned by later stages — with ifAbsent, re-mention and replay are
-	// no-ops.
-	ds, ops := newFnDataset(t,
+	// no-ds.
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("mint", map[string]any{"kinds": []any{widgetType}})},
 		pyFn("mint", map[string]any{}, []any{taskType}, mintSource))
 	ctx := context.Background()
 
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "a"}})
-	process(t, ops)
+	process(t, ds)
 	if got := mustGet(t, ds, taskType, "mint-"+w.ID); got.Title != "pending" {
 		t.Fatalf("minted title: %q", got.Title)
 	}
@@ -251,7 +251,7 @@ func TestTriggerEffectPutIfAbsent(t *testing.T) {
 	// untouched and nothing lands in the changelog under the function.
 	rows := len(actorChanges(t, ds, fnPackage+"/mint"))
 	mustPatch(t, ds, fnActor, w.Kind, w.ID, substrate.PatchInput{Properties: map[string]any{"name": "b"}})
-	process(t, ops)
+	process(t, ds)
 	if got := mustGet(t, ds, taskType, "mint-"+w.ID); got.Title != "owned downstream" {
 		t.Fatalf("ifAbsent put reset downstream state: %q", got.Title)
 	}
@@ -261,10 +261,10 @@ func TestTriggerEffectPutIfAbsent(t *testing.T) {
 
 	// Replay from zero is quiet the same way.
 	before := dataSeq(t, ds)
-	if err := ops.ReplayTrigger(ctx, trigID("mint"), 0); err != nil {
+	if err := ds.ReplayTrigger(ctx, trigID("mint"), 0); err != nil {
 		t.Fatalf("replay: %v", err)
 	}
-	process(t, ops)
+	process(t, ds)
 	if after := dataSeq(t, ds); after != before {
 		t.Fatalf("replay wrote data: seq %d → %d", before, after)
 	}
@@ -275,13 +275,13 @@ func TestTriggerEffectResolvesFormerID(t *testing.T) {
 	// The deterministic-id parking trap: after the owner merges the task a
 	// function addresses by composed id, the function's next put must land on
 	// the canonical winner, not be refused as a former id.
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("mirror", map[string]any{"kinds": []any{widgetType}})},
 		pyFn("mirror", map[string]any{}, []any{taskType}, mirrorSource))
 	ctx := context.Background()
 
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "before"}})
-	process(t, ops)
+	process(t, ds)
 
 	// The owner merges the function's task away into their own.
 	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"name": "the real task"}})
@@ -291,8 +291,8 @@ func TestTriggerEffectResolvesFormerID(t *testing.T) {
 
 	// The next delivery writes through the former id onto the winner.
 	mustPatch(t, ds, fnActor, w.Kind, w.ID, substrate.PatchInput{Properties: map[string]any{"name": "after"}})
-	process(t, ops)
-	if parked, err := ops.TriggerFailures(ctx, trigID("mirror")); err != nil || len(parked) != 0 {
+	process(t, ds)
+	if parked, err := ds.TriggerFailures(ctx, trigID("mirror")); err != nil || len(parked) != 0 {
 		t.Fatalf("former-id put parked: %v %v", parked, err)
 	}
 	if got := mustGet(t, ds, winner.Kind, winner.ID); got.Title != "after" {
@@ -305,7 +305,7 @@ func TestTriggerEffectWiresAReference(t *testing.T) {
 	// The gadget declares a `widget` reference; the function points it and
 	// clears it with patch effects, driven by the gadget's own properties.
 	// Pointing and clearing are the SAME verb: a reference is a property value.
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("wirer", map[string]any{
 			"kinds": []any{gadgetType},
 			"when":  `record != null && "wire" in record.properties`,
@@ -324,18 +324,18 @@ def main(input, host):
 	g := mustPut(t, ds, fnActor, substrate.PutInput{Kind: gadgetType})
 
 	mustPatch(t, ds, fnActor, g.Kind, g.ID, substrate.PatchInput{Properties: map[string]any{"wire": "point", "target": w.ID}})
-	process(t, ops)
+	process(t, ds)
 	want := vocabulary.RecordPath(widgetType, w.ID)
 	if got := mustGet(t, ds, g.Kind, g.ID); storedRefPath(got.Properties["widget"]) != want {
 		t.Fatalf("the effect did not point the reference: %v", got.Properties)
 	}
 
 	mustPatch(t, ds, fnActor, g.Kind, g.ID, substrate.PatchInput{Properties: map[string]any{"wire": "clear"}})
-	process(t, ops)
+	process(t, ds)
 	if got := mustGet(t, ds, g.Kind, g.ID); got.Properties["widget"] != nil {
 		t.Fatalf("the effect did not clear the reference: %v", got.Properties)
 	}
-	if parked, err := ops.TriggerFailures(ctx, trigID("wirer")); err != nil || len(parked) != 0 {
+	if parked, err := ds.TriggerFailures(ctx, trigID("wirer")); err != nil || len(parked) != 0 {
 		t.Fatalf("parked: %v %v", parked, err)
 	}
 }
@@ -357,7 +357,7 @@ func TestTriggerEffectMergeSplitNeedGrant(t *testing.T) {
 	t.Parallel()
 	// Same body, no mutations grant: the merge effect is refused at decode
 	// and the delivery parks — the polite default stays the *request path.
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("ungranted", map[string]any{
 			"kinds": []any{widgetType}, "ops": []any{"update"},
 		})},
@@ -369,9 +369,9 @@ func TestTriggerEffectMergeSplitNeedGrant(t *testing.T) {
 	mustPatch(t, ds, fnActor, w.Kind, w.ID, substrate.PatchInput{Properties: map[string]any{
 		"op": "merge", "winner": a.ID, "loser": b.ID,
 	}})
-	process(t, ops)
+	process(t, ds)
 
-	failure := onlyParked(t, ops, trigID("ungranted"))
+	failure := onlyParked(t, ds, trigID("ungranted"))
 	if !strings.Contains(failure.LastError, "mutations grant") {
 		t.Fatalf("parked: %+v", failure)
 	}
@@ -382,7 +382,7 @@ func TestTriggerEffectMergeSplitNeedGrant(t *testing.T) {
 
 func TestTriggerEffectMergeAndSplit(t *testing.T) {
 	t.Parallel()
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("fuser", map[string]any{
 			"kinds": []any{widgetType}, "ops": []any{"update"},
 		})},
@@ -399,8 +399,8 @@ func TestTriggerEffectMergeAndSplit(t *testing.T) {
 	mustPatch(t, ds, fnActor, w.Kind, w.ID, substrate.PatchInput{Properties: map[string]any{
 		"op": "merge", "winner": a.ID, "loser": b.ID,
 	}})
-	process(t, ops)
-	if parked, err := ops.TriggerFailures(ctx, trigID("fuser")); err != nil || len(parked) != 0 {
+	process(t, ds)
+	if parked, err := ds.TriggerFailures(ctx, trigID("fuser")); err != nil || len(parked) != 0 {
 		t.Fatalf("merge parked: %v %v", parked, err)
 	}
 	merged := mustGet(t, ds, b.Kind, b.ID)
@@ -423,8 +423,8 @@ func TestTriggerEffectMergeAndSplit(t *testing.T) {
 	mustPatch(t, ds, fnActor, w.Kind, w.ID, substrate.PatchInput{Properties: map[string]any{
 		"op": "split", "record": recordID,
 	}})
-	process(t, ops)
-	if parked, err := ops.TriggerFailures(ctx, trigID("fuser")); err != nil || len(parked) != 0 {
+	process(t, ds)
+	if parked, err := ds.TriggerFailures(ctx, trigID("fuser")); err != nil || len(parked) != 0 {
 		t.Fatalf("split parked: %v %v", parked, err)
 	}
 	restored := mustGet(t, ds, b.Kind, b.ID)

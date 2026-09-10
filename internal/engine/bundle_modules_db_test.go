@@ -101,8 +101,7 @@ func TestBundleSharedModuleImportable(t *testing.T) {
 		t.Fatalf("install bundle with modules: %v", err)
 	}
 
-	fops := ds.(fnOps)
-	out, _, err := fops.CallFunction(ctx, mbImpFn, map[string]any{})
+	out, _, err := ds.CallFunction(ctx, mbImpFn, map[string]any{})
 	if err != nil {
 		t.Fatalf("call function importing the shared module: %v", err)
 	}
@@ -154,8 +153,7 @@ func TestModuleOnlyChangeStillPreparesTheBodiesThatImportIt(t *testing.T) {
 
 	// The refusal left the install alone: the old module is still what the
 	// function imports, because preparation happens BEFORE the transaction.
-	fops := ds.(fnOps)
-	out, _, err := fops.CallFunction(ctx, mbImpFn, map[string]any{})
+	out, _, err := ds.CallFunction(ctx, mbImpFn, map[string]any{})
 	if err != nil {
 		t.Fatalf("call after the refused batch: %v", err)
 	}
@@ -168,7 +166,7 @@ func TestModuleOnlyChangeStillPreparesTheBodiesThatImportIt(t *testing.T) {
 	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, mbModuleDocs(fixed)); err != nil {
 		t.Fatalf("a valid module-only change was refused: %v", err)
 	}
-	out, _, err = fops.CallFunction(ctx, mbImpFn, map[string]any{})
+	out, _, err = ds.CallFunction(ctx, mbImpFn, map[string]any{})
 	if err != nil {
 		t.Fatalf("call after the module-only change: %v", err)
 	}

@@ -175,10 +175,6 @@ func TestSchemaApplySwapsFunctionsLive(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	ops, ok := ds.(fnOps)
-	if !ok {
-		t.Fatal("dataset does not implement the functions seam")
-	}
 
 	fnData := func(title string) map[string]any {
 		return map[string]any{
@@ -217,7 +213,7 @@ def main(input, host):
 	}
 
 	a := mustPut(t, ds, owner, substrate.PutInput{Kind: swPackage + "/widget", Properties: map[string]any{"name": "a"}})
-	process(t, ops)
+	process(t, ds)
 	if got := mustGet(t, ds, taskType, "t-"+a.ID); got.Title != "v1" {
 		t.Fatalf("v1 delivery title = %q", got.Title)
 	}
@@ -230,7 +226,7 @@ def main(input, host):
 		t.Fatalf("apply v2: %v", err)
 	}
 	b := mustPut(t, ds, owner, substrate.PutInput{Kind: swPackage + "/widget", Properties: map[string]any{"name": "b"}})
-	process(t, ops)
+	process(t, ds)
 	if got := mustGet(t, ds, taskType, "t-"+b.ID); got.Title != "v2" {
 		t.Fatalf("post-swap delivery title = %q (the old registry answered)", got.Title)
 	}
@@ -874,10 +870,6 @@ func TestTriggerOutlivesItsCallable(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	ops, ok := ds.(fnOps)
-	if !ok {
-		t.Fatal("dataset does not implement the automation seam")
-	}
 
 	fnData := map[string]any{
 		"authority":   swAuthority,
@@ -910,7 +902,7 @@ def main(input, host):
 		t.Fatalf("put trigger: %v", err)
 	}
 	a := mustPut(t, ds, owner, substrate.PutInput{Kind: swPackage + "/widget", Properties: map[string]any{"name": "a"}})
-	process(t, ops)
+	process(t, ds)
 	if _, err := ds.Get(ctx, taskType, "t-"+a.ID); err != nil {
 		t.Fatalf("first incarnation never delivered: %v", err)
 	}
@@ -921,11 +913,11 @@ def main(input, host):
 		t.Fatalf("delete function: %v", err)
 	}
 	b := mustPut(t, ds, owner, substrate.PutInput{Kind: swPackage + "/widget", Properties: map[string]any{"name": "b"}})
-	process(t, ops)
+	process(t, ds)
 	if _, err := ds.Get(ctx, taskType, "t-"+b.ID); err == nil {
 		t.Fatal("a trigger with no callable delivered")
 	}
-	st := statusOf(t, ops, triggerID)
+	st := statusOf(t, ds, triggerID)
 	if st.Error == "" || st.Lag == 0 {
 		t.Fatalf("callable-less trigger status: %+v", st)
 	}
@@ -937,11 +929,11 @@ def main(input, host):
 	}); err != nil {
 		t.Fatalf("reinstall: %v", err)
 	}
-	process(t, ops)
+	process(t, ds)
 	if _, err := ds.Get(ctx, taskType, "t-"+b.ID); err != nil {
 		t.Fatalf("the outage's backlog did not deliver after reinstall: %v", err)
 	}
-	if st := statusOf(t, ops, triggerID); st.Lag != 0 || st.Error != "" {
+	if st := statusOf(t, ds, triggerID); st.Lag != 0 || st.Error != "" {
 		t.Fatalf("post-reinstall status: %+v", st)
 	}
 }

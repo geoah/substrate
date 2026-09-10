@@ -112,7 +112,7 @@ func (p *fakeProvider) configProps() map[string]any {
 // installOAuthBundle stands up a repository with the oauth facility on, the
 // mail bundle installed, its config record created against the fake
 // provider, and one pending account record.
-func installOAuthBundle(t *testing.T) (substrate.Service, substrate.Dataset, substrate.Dataset, *fakeProvider, *substrate.Record) {
+func installOAuthBundle(t *testing.T) (substrate.Service, substrate.Dataset, *fakeProvider, *substrate.Record) {
 	t.Helper()
 	p := newFakeProvider(t)
 	svc, ds := newDataset(t,
@@ -128,7 +128,7 @@ func installOAuthBundle(t *testing.T) (substrate.Service, substrate.Dataset, sub
 	account := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: mbAccountType, Properties: map[string]any{"address": "geo@example.com", "enabledMail": true},
 	})
-	return svc, ds, ds, p, account
+	return svc, ds, p, account
 }
 
 // stateFrom lifts the signed state out of a consent URL.
@@ -147,9 +147,9 @@ func stateFrom(t *testing.T, consentURL string) string {
 func TestOAuthRoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, ds, ops, p, account := installOAuthBundle(t)
+	svc, ds, p, account := installOAuthBundle(t)
 
-	consent, err := ops.StartOAuth(ctx, owner, account.ID)
+	consent, err := ds.StartOAuth(ctx, owner, account.ID)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -204,10 +204,10 @@ func TestOAuthRoundTrip(t *testing.T) {
 func TestOAuthRunnerConfigAndRefresh(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, ds, ops, p, account := installOAuthBundle(t)
+	svc, ds, p, account := installOAuthBundle(t)
 	p.expiresIn = 120 // inside the 10m refresh window, outside the 1m inline one
 
-	consent, err := ops.StartOAuth(ctx, owner, account.ID)
+	consent, err := ds.StartOAuth(ctx, owner, account.ID)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestOAuthRunnerConfigAndRefresh(t *testing.T) {
 	}
 
 	// The echo function answers with its resolved config.
-	out, _, err := ds.(fnOps).CallFunction(ctx, mbEchoFn, map[string]any{})
+	out, _, err := ds.CallFunction(ctx, mbEchoFn, map[string]any{})
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -256,14 +256,14 @@ func TestOAuthRunnerConfigAndRefresh(t *testing.T) {
 	}
 
 	// The refresh loop trades the expiring token centrally.
-	n, err := ops.RefreshOAuthTokens(ctx)
+	n, err := ds.RefreshOAuthTokens(ctx)
 	if err != nil || n != 1 {
 		t.Fatalf("refresh: %d %v", n, err)
 	}
 	if p.refreshes != 1 {
 		t.Fatalf("provider refreshes: %d", p.refreshes)
 	}
-	out, _, err = ds.(fnOps).CallFunction(ctx, mbEchoFn, map[string]any{})
+	out, _, err = ds.CallFunction(ctx, mbEchoFn, map[string]any{})
 	if err != nil {
 		t.Fatalf("call after refresh: %v", err)
 	}
@@ -283,9 +283,9 @@ func TestOAuthRunnerConfigAndRefresh(t *testing.T) {
 func TestOAuthAccountDeletionRevokes(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, ds, ops, p, account := installOAuthBundle(t)
+	svc, ds, p, account := installOAuthBundle(t)
 
-	consent, err := ops.StartOAuth(ctx, owner, account.ID)
+	consent, err := ds.StartOAuth(ctx, owner, account.ID)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -297,7 +297,7 @@ func TestOAuthAccountDeletionRevokes(t *testing.T) {
 	}
 	// The tombstone waits on the facility's hold; the pass revokes, drops
 	// the credential and releases.
-	released, err := ops.ProcessOAuthFinalizers(ctx)
+	released, err := ds.ProcessOAuthFinalizers(ctx)
 	if err != nil || released != 1 {
 		t.Fatalf("finalizers: %d %v", released, err)
 	}

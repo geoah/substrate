@@ -123,7 +123,7 @@ func TestScrubberHoldsFunctionOutput(t *testing.T) {
 	// The body sees the raw secret; the output crossing back out does not.
 	ctx := context.Background()
 	ds := installVaultBundle(t)
-	out, _, err := ds.(fnOps).CallFunction(ctx, vPackage+"/spill", map[string]any{})
+	out, _, err := ds.CallFunction(ctx, vPackage+"/spill", map[string]any{})
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestScrubberHoldsErrorsAndParkedFailures(t *testing.T) {
 
 	// A crash whose exception text embeds the secret: the call error is
 	// scrubbed before anything (API response, run row) renders it.
-	_, _, err := ds.(fnOps).CallFunction(ctx, vPackage+"/crash", map[string]any{})
+	_, _, err := ds.CallFunction(ctx, vPackage+"/crash", map[string]any{})
 	if err == nil {
 		t.Fatal("crash returned no error")
 	}
@@ -166,10 +166,10 @@ func TestScrubberHoldsErrorsAndParkedFailures(t *testing.T) {
 		},
 	})
 	mustPatch(t, ds, owner, vConfigType, mustConfigID(t, ds), substrate.PatchInput{Properties: map[string]any{"note": "poke"}})
-	if _, err := ds.(fnOps).ProcessTriggers(ctx); err != nil {
+	if _, err := ds.ProcessTriggers(ctx); err != nil {
 		t.Fatalf("process: %v", err)
 	}
-	failures, err := ds.(fnOps).TriggerFailures(ctx, tr.ID)
+	failures, err := ds.TriggerFailures(ctx, tr.ID)
 	if err != nil {
 		t.Fatalf("failures: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestScrubberRejectsSecretInEffectValue(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := installVaultBundle(t)
-	_, _, err := ds.(fnOps).CallFunction(ctx, vPackage+"/leakval", map[string]any{})
+	_, _, err := ds.CallFunction(ctx, vPackage+"/leakval", map[string]any{})
 	if err == nil {
 		t.Fatal("a secret in an effect property value was applied")
 	}
@@ -223,7 +223,7 @@ func TestScrubberRejectsSecretInEffectID(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := installVaultBundle(t)
-	_, _, err := ds.(fnOps).CallFunction(ctx, vPackage+"/leakid", map[string]any{})
+	_, _, err := ds.CallFunction(ctx, vPackage+"/leakid", map[string]any{})
 	if err == nil {
 		t.Fatal("a secret in an effect id was applied")
 	}
@@ -238,7 +238,7 @@ func TestScrubberRejectsSecretThroughHostCall(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := installVaultBundle(t)
-	_, _, err := ds.(fnOps).CallFunction(ctx, vPackage+"/callerleak", map[string]any{})
+	_, _, err := ds.CallFunction(ctx, vPackage+"/callerleak", map[string]any{})
 	if err == nil {
 		t.Fatal("a callee's secret effect escaped through a host Call")
 	}
@@ -264,10 +264,10 @@ func TestScrubberRejectsSecretThroughParkedTrigger(t *testing.T) {
 		},
 	})
 	mustPatch(t, ds, owner, vConfigType, mustConfigID(t, ds), substrate.PatchInput{Properties: map[string]any{"note": "poke"}})
-	if _, err := ds.(fnOps).ProcessTriggers(ctx); err != nil {
+	if _, err := ds.ProcessTriggers(ctx); err != nil {
 		t.Fatalf("process: %v", err)
 	}
-	failures, err := ds.(fnOps).TriggerFailures(ctx, tr.ID)
+	failures, err := ds.TriggerFailures(ctx, tr.ID)
 	if err != nil {
 		t.Fatalf("failures: %v", err)
 	}

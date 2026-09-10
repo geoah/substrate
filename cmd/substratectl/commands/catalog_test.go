@@ -92,13 +92,12 @@ func TestCatalogPrintsUpgradesAndBlockersForCoreAndProviders(t *testing.T) {
 	}
 }
 
-// A server that previews no shipped upgrade (a dataset
-// without the seam) still lists its catalog: the core row is simply absent.
-// So does one whose preview fails outright: the catalog read is the reason
-// the command was run, and the core row is the extra. The unexpected status
-// is said once, on stderr.
+// A server that does not serve /vocabulary/upgrade still lists its catalog:
+// the core row is simply absent. So does one whose preview fails outright:
+// the catalog read is the reason the command was run, and the core row is the
+// extra. Any status but the expected 404 is said once, on stderr.
 func TestCatalogListsWithoutAShippedPreview(t *testing.T) {
-	for _, status := range []int{404, 501, 500} {
+	for _, status := range []int{404, 500} {
 		h := newHarness(t)
 		h.writeConfig()
 		h.fake.shippedStatus = status
@@ -119,7 +118,7 @@ func TestCatalogListsWithoutAShippedPreview(t *testing.T) {
 			t.Fatalf("%d: a core row was invented without a preview:\n%s", status, stdout)
 		}
 		if noted := strings.Contains(stderr, "answered 500"); noted != (status == 500) {
-			t.Fatalf("%d: stderr = %q; only an unexpected status is noted", status, stderr)
+			t.Fatalf("%d: stderr = %q; only a status other than 404 is noted", status, stderr)
 		}
 	}
 }
@@ -147,7 +146,7 @@ func TestCatalogPrintsNoMotionForAnUnavailableUpgrade(t *testing.T) {
 func TestCatalogJSONIsAListWhenEmpty(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
-	h.fake.shippedStatus = 501
+	h.fake.shippedStatus = 404
 	stdout, _ := h.mustRun("catalog", "-o", "json")
 	if strings.TrimSpace(stdout) != "[]" {
 		t.Fatalf("catalog json = %q, want []", stdout)

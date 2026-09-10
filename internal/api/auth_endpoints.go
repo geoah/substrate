@@ -108,8 +108,9 @@ func (h *handler) authGate(w http.ResponseWriter, r *http.Request, repository st
 }
 
 // inviteOK compares the presented invite code with the configured one in
-// constant time. An unconfigured code means registration is OFF — the
-// endpoint answers `unsupported`, the same way every absent capability does.
+// constant time. An unconfigured code means registration is OFF, and this is
+// the one door that answers `unsupported`: a 501 here is configuration, not a
+// capability the build lacks.
 func (h *handler) inviteOK(w http.ResponseWriter, presented string) bool {
 	if h.inviteCode == "" {
 		writeUnsupported(w, "this substrate is not open for registration")

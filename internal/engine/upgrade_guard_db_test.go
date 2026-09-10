@@ -384,7 +384,7 @@ func TestBootUpgradeRefusesARaisedDecimalMinWithLiveRows(t *testing.T) {
 func TestBundleUpgradeRefusesATightenedPatternWithLiveRows(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ds, _ := installMailBundle(t)
+	ds := installMailBundle(t)
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: mbItemType, ID: "kept", Properties: map[string]any{"name": "keep me"},
 	})

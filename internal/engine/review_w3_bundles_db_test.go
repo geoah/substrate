@@ -181,7 +181,7 @@ func (p *w3Provider) configProps() map[string]any {
 
 // installW3OAuthBundle stands up the mail bundle against the barrier-capable
 // provider, with one pending account.
-func installW3OAuthBundle(t *testing.T) (substrate.Service, substrate.Dataset, *sql.DB, substrate.Dataset, *w3Provider, *substrate.Record) {
+func installW3OAuthBundle(t *testing.T) (substrate.Service, substrate.Dataset, *sql.DB, *w3Provider, *substrate.Record) {
 	t.Helper()
 	p := newW3Provider(t)
 	svc, ds, db := newW3Env(t,
@@ -197,7 +197,7 @@ func installW3OAuthBundle(t *testing.T) (substrate.Service, substrate.Dataset, *
 	account := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: mbAccountType, Properties: map[string]any{"address": "w3@example.com", "enabledMail": true},
 	})
-	return svc, ds, db, ds, p, account
+	return svc, ds, db, p, account
 }
 
 func w3Connect(t *testing.T, svc substrate.Service, ops substrate.Dataset, accountID string) {
@@ -219,7 +219,7 @@ func w3Connect(t *testing.T, svc substrate.Service, ops substrate.Dataset, accou
 func TestW3OAuthStateReplayRefused(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, _, _, ops, p, account := installW3OAuthBundle(t)
+	svc, ops, _, p, account := installW3OAuthBundle(t)
 
 	consent, err := ops.StartOAuth(ctx, owner, account.ID)
 	if err != nil {
@@ -274,7 +274,7 @@ func TestW3OAuthEmptyStateKeyRefused(t *testing.T) {
 func TestW3OAuthExchangeErrorSanitized(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, _, _, ops, _, account := installW3OAuthBundle(t)
+	svc, ops, _, _, account := installW3OAuthBundle(t)
 
 	consent, err := ops.StartOAuth(ctx, owner, account.ID)
 	if err != nil {
@@ -297,9 +297,9 @@ func TestW3OAuthExchangeErrorSanitized(t *testing.T) {
 func TestW3OAuthCallbackVsDeleteBarrier(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, ds, db, ops, p, account := installW3OAuthBundle(t)
+	svc, ds, db, p, account := installW3OAuthBundle(t)
 
-	consent, err := ops.StartOAuth(ctx, owner, account.ID)
+	consent, err := ds.StartOAuth(ctx, owner, account.ID)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -322,7 +322,7 @@ func TestW3OAuthCallbackVsDeleteBarrier(t *testing.T) {
 	if _, err := ds.Delete(ctx, owner, account.Kind, account.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete during exchange: %v", err)
 	}
-	if _, err := ops.ProcessOAuthFinalizers(ctx); err != nil {
+	if _, err := ds.ProcessOAuthFinalizers(ctx); err != nil {
 		t.Fatalf("finalizers: %v", err)
 	}
 	close(p.holdExchange)
@@ -340,11 +340,11 @@ func TestW3OAuthCallbackVsDeleteBarrier(t *testing.T) {
 func TestW3OAuthRefreshVsFinalizerBarrier(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, ds, db, ops, p, account := installW3OAuthBundle(t)
+	svc, ds, db, p, account := installW3OAuthBundle(t)
 	p.mu.Lock()
 	p.expiresIn = 120 // inside the 10m refresh window
 	p.mu.Unlock()
-	w3Connect(t, svc, ops, account.ID)
+	w3Connect(t, svc, ds, account.ID)
 	if n := w3CredentialCount(t, db); n != 1 {
 		t.Fatalf("connected credential rows: %d", n)
 	}
@@ -360,7 +360,7 @@ func TestW3OAuthRefreshVsFinalizerBarrier(t *testing.T) {
 	}
 	done := make(chan res, 1)
 	go func() {
-		n, err := ops.RefreshOAuthTokens(ctx)
+		n, err := ds.RefreshOAuthTokens(ctx)
 		done <- res{n, err}
 	}()
 	select {
@@ -372,7 +372,7 @@ func TestW3OAuthRefreshVsFinalizerBarrier(t *testing.T) {
 	if _, err := ds.Delete(ctx, owner, account.Kind, account.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete during refresh: %v", err)
 	}
-	if released, err := ops.ProcessOAuthFinalizers(ctx); err != nil || released != 1 {
+	if released, err := ds.ProcessOAuthFinalizers(ctx); err != nil || released != 1 {
 		t.Fatalf("finalizers: %d %v", released, err)
 	}
 	if n := w3CredentialCount(t, db); n != 0 {
@@ -399,7 +399,7 @@ func TestW3OAuthRefreshVsFinalizerBarrier(t *testing.T) {
 func TestW3BundlePurgeRevokesAccounts(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, _, db, ops, p, account := installW3OAuthBundle(t)
+	svc, ops, db, p, account := installW3OAuthBundle(t)
 	w3Connect(t, svc, ops, account.ID)
 
 	if err := ops.DisableBundle(ctx, mbPackage); err != nil {
@@ -428,8 +428,8 @@ func TestW3BundlePurgeRevokesAccounts(t *testing.T) {
 func TestW3OAuthRevoke500StillReleases(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, ds, db, ops, p, account := installW3OAuthBundle(t)
-	w3Connect(t, svc, ops, account.ID)
+	svc, ds, db, p, account := installW3OAuthBundle(t)
+	w3Connect(t, svc, ds, account.ID)
 	p.mu.Lock()
 	p.revokeStatus = http.StatusInternalServerError
 	p.mu.Unlock()
@@ -437,7 +437,7 @@ func TestW3OAuthRevoke500StillReleases(t *testing.T) {
 	if _, err := ds.Delete(ctx, owner, account.Kind, account.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	released, err := ops.ProcessOAuthFinalizers(ctx)
+	released, err := ds.ProcessOAuthFinalizers(ctx)
 	if err != nil || released != 1 {
 		t.Fatalf("a provider 500 on revoke must not strand the deletion: %d %v", released, err)
 	}
@@ -555,7 +555,7 @@ func TestW3ShadowAccountConfigIsNotAnAccount(t *testing.T) {
 		t.Fatalf("ambiguous bare trait filter: %v", err)
 	}
 	// The runner injects no shadow records as accounts.
-	out, _, err := ds.(fnOps).CallFunction(ctx, mbEchoFn, map[string]any{})
+	out, _, err := ds.CallFunction(ctx, mbEchoFn, map[string]any{})
 	if err != nil {
 		t.Fatalf("call echo: %v", err)
 	}
@@ -573,18 +573,18 @@ func TestW3ShadowAccountConfigIsNotAnAccount(t *testing.T) {
 func TestW3MergeSplitBundleLifecycleGuards(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ds, ops := installMailBundle(t)
+	ds := installMailBundle(t)
 
 	a1 := mustPut(t, ds, owner, substrate.PutInput{Kind: mbAccountType, Properties: map[string]any{"address": "a1@x.co"}})
 	a2 := mustPut(t, ds, owner, substrate.PutInput{Kind: mbAccountType, Properties: map[string]any{"address": "a2@x.co"}})
 
 	// Disabled: accounts are frozen — merge refuses like put/patch/delete do.
-	if err := ops.DisableBundle(ctx, mbPackage); err != nil {
+	if err := ds.DisableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
 	_, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: a1.Kind, Winner: a1.ID, Loser: a2.ID})
 	wantErr(t, err, substrate.ErrGuard, "merge of frozen accounts")
-	if err := ops.EnableBundle(ctx, mbPackage); err != nil {
+	if err := ds.EnableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
 	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: a1.Kind, Winner: a1.ID, Loser: a2.ID})
@@ -592,12 +592,12 @@ func TestW3MergeSplitBundleLifecycleGuards(t *testing.T) {
 		t.Fatalf("merge while live: %v", err)
 	}
 	// Disabled again: the split would resurrect a frozen account.
-	if err := ops.DisableBundle(ctx, mbPackage); err != nil {
+	if err := ds.DisableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
 	_, err = ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID})
 	wantErr(t, err, substrate.ErrGuard, "split resurrecting a frozen account")
-	if err := ops.EnableBundle(ctx, mbPackage); err != nil {
+	if err := ds.EnableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
 	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
@@ -609,18 +609,18 @@ func TestW3MergeSplitBundleLifecycleGuards(t *testing.T) {
 	// tears the authority down only once purge has cleared the data.
 	i1 := mustPut(t, ds, owner, substrate.PutInput{Kind: mbItemType, Properties: map[string]any{"name": "i1"}})
 	_ = mustPut(t, ds, owner, substrate.PutInput{Kind: mbItemType, Properties: map[string]any{"name": "i2"}})
-	err = ops.UninstallBundle(ctx, mbPackage)
+	err = ds.UninstallBundle(ctx, mbPackage)
 	wantErr(t, err, substrate.ErrGuard, "uninstall with live data")
 	if !strings.Contains(err.Error(), "live records") {
 		t.Fatalf("uninstall refusal must carry the count: %v", err)
 	}
-	if err := ops.DisableBundle(ctx, mbPackage); err != nil {
+	if err := ds.DisableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
-	if _, err := ops.PurgeBundle(ctx, mbPackage); err != nil {
+	if _, err := ds.PurgeBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("purge: %v", err)
 	}
-	if err := ops.UninstallBundle(ctx, mbPackage); err != nil {
+	if err := ds.UninstallBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("uninstall after purge: %v", err)
 	}
 	// The type is gone: a merge no longer resolves it.
@@ -636,7 +636,7 @@ func TestW3MergeSplitBundleLifecycleGuards(t *testing.T) {
 func TestW3MergeEffectBundleGuard(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ds, ops := installMailBundle(t)
+	ds := installMailBundle(t)
 	const toolPackage = "wtool.test.dev/wtool"
 	mergerDocs := []map[string]any{
 		vocabulary.PackageManifest(toolPackage, 0),
@@ -658,11 +658,11 @@ def main(input, host):
 	}
 	a1 := mustPut(t, ds, owner, substrate.PutInput{Kind: mbAccountType, Properties: map[string]any{"address": "e1@x.co"}})
 	a2 := mustPut(t, ds, owner, substrate.PutInput{Kind: mbAccountType, Properties: map[string]any{"address": "e2@x.co"}})
-	if err := ops.DisableBundle(ctx, mbPackage); err != nil {
+	if err := ds.DisableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
 	args := map[string]any{"winner": a1.ID, "loser": a2.ID}
-	_, _, err := ds.(fnOps).CallFunction(ctx, toolPackage+"/merger", args)
+	_, _, err := ds.CallFunction(ctx, toolPackage+"/merger", args)
 	if err == nil || !strings.Contains(err.Error(), "frozen") {
 		t.Fatalf("a merge effect bypassed the bundle freeze: %v", err)
 	}
@@ -671,10 +671,10 @@ def main(input, host):
 		t.Fatalf("frozen loser was merged away: %+v", got)
 	}
 	// Enabled again, the same effect lands.
-	if err := ops.EnableBundle(ctx, mbPackage); err != nil {
+	if err := ds.EnableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
-	if _, n, err := ds.(fnOps).CallFunction(ctx, toolPackage+"/merger", args); err != nil || n != 1 {
+	if _, n, err := ds.CallFunction(ctx, toolPackage+"/merger", args); err != nil || n != 1 {
 		t.Fatalf("merge effect while live: %d %v", n, err)
 	}
 }
@@ -776,7 +776,6 @@ func TestW3LifecycleFenceDrainsInvocation(t *testing.T) {
 	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	fops := ds.(fnOps)
 	const waiterFn = mbPackage + "/waiter"
 
 	type callRes struct {
@@ -785,7 +784,7 @@ func TestW3LifecycleFenceDrainsInvocation(t *testing.T) {
 	}
 	callDone := make(chan callRes, 1)
 	go func() {
-		_, n, err := fops.CallFunction(ctx, waiterFn, map[string]any{})
+		_, n, err := ds.CallFunction(ctx, waiterFn, map[string]any{})
 		callDone <- callRes{n, err}
 	}()
 	time.Sleep(1 * time.Second) // the invocation is admitted and polling
@@ -824,7 +823,7 @@ func TestW3LifecycleFenceDrainsInvocation(t *testing.T) {
 		t.Fatalf("drained invocation: %d %v", r.effects, r.err)
 	}
 	// And the next admission refuses.
-	if _, _, err := fops.CallFunction(ctx, waiterFn, map[string]any{}); err == nil ||
+	if _, _, err := ds.CallFunction(ctx, waiterFn, map[string]any{}); err == nil ||
 		!strings.Contains(err.Error(), "disabled") {
 		t.Fatalf("post-disable invocation: %v", err)
 	}

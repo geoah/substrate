@@ -16,7 +16,7 @@ import (
 
 func TestChangesBeforePagesNewestFirst(t *testing.T) {
 	t.Parallel()
-	ds, _ := newFnDataset(t, nil)
+	ds := newFnDataset(t, nil)
 	ctx := context.Background()
 
 	for _, name := range []string{"one", "two", "three"} {
@@ -59,7 +59,7 @@ func seqsOf(changes []substrate.Change) []int64 {
 
 func TestChangesQSubstringFilter(t *testing.T) {
 	t.Parallel()
-	ds, _ := newFnDataset(t, nil)
+	ds := newFnDataset(t, nil)
 	ctx := context.Background()
 
 	ada := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"assignee": "kim"}})
@@ -99,7 +99,7 @@ func TestChangeTriggersStates(t *testing.T) {
 	// The mirror errors on a widget without a name (record.properties.name),
 	// which is what parks a delivery; taskType is in the source so the
 	// function's own task writes exercise self-actor exclusion.
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("mirror", map[string]any{"kinds": []any{widgetType, taskType}})},
 		pyFn("mirror", map[string]any{}, []any{taskType}, mirrorSource))
 	ctx := context.Background()
@@ -107,7 +107,7 @@ func TestChangeTriggersStates(t *testing.T) {
 
 	processed := mustPut(t, ds, owner, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "fine"}})
 	poisoned := mustPut(t, ds, owner, substrate.PutInput{Kind: widgetType})
-	process(t, ops)
+	process(t, ds)
 	pending := mustPut(t, ds, owner, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "later"}})
 	unmatched := mustPut(t, ds, owner, substrate.PutInput{Kind: gadgetType, Properties: map[string]any{"count": 1.0}})
 

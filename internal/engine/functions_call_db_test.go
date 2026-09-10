@@ -30,11 +30,11 @@ func TestBodyFaultIsNotValidation(t *testing.T) {
 def main(input, host):
     raise Exception("body exploded")
 `)
-	_, ops := newFnDataset(t, nil, boom)
+	ds := newFnDataset(t, nil, boom)
 	ctx := context.Background()
 
 	// Valid input, faulting body: the run reached the body and it raised.
-	_, _, err := ops.CallFunction(ctx, fnPackage+"/boom", map[string]any{"title": "ok"})
+	_, _, err := ds.CallFunction(ctx, fnPackage+"/boom", map[string]any{"title": "ok"})
 	if err == nil {
 		t.Fatal("a raising body returned no error")
 	}
@@ -46,7 +46,7 @@ def main(input, host):
 	}
 
 	// Missing the required argument refuses BEFORE the body runs, as validation.
-	_, _, err = ops.CallFunction(ctx, fnPackage+"/boom", map[string]any{})
+	_, _, err = ds.CallFunction(ctx, fnPackage+"/boom", map[string]any{})
 	if !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("missing required input is %v, want ErrValidation", err)
 	}
@@ -75,12 +75,12 @@ def main(input, host):
 
 func TestCallModeValidatesAndApplies(t *testing.T) {
 	t.Parallel()
-	ds, ops := newFnDataset(t, nil, adderFn())
+	ds := newFnDataset(t, nil, adderFn())
 	ctx := context.Background()
 
 	// A valid call: input passes the schema, effects apply under the
 	// function's actor, the output comes back shaped.
-	out, effects, err := ops.CallFunction(ctx, fnPackage+"/adder", map[string]any{"title": "from a call"})
+	out, effects, err := ds.CallFunction(ctx, fnPackage+"/adder", map[string]any{"title": "from a call"})
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestCallModeValidatesAndApplies(t *testing.T) {
 		"undeclared key":   map[string]any{"title": "x", "extra": true},
 		"not an object":    "just a string",
 	} {
-		if _, _, err := ops.CallFunction(ctx, fnPackage+"/adder", args); err == nil {
+		if _, _, err := ds.CallFunction(ctx, fnPackage+"/adder", args); err == nil {
 			t.Fatalf("%s: invalid input accepted", name)
 		}
 	}
@@ -137,7 +137,7 @@ def main(input, host):
 	ownBroken := `{"action": "patch", "kind": "samples.substrate.reamde.dev/tasks/task",
                    "id": "missing-" + e["id"], "properties": {"name": "x"}}`
 
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{
 			trigOn("granted", map[string]any{"kinds": []any{widgetType}, "ops": []any{"create"}, "when": `record != null && record.properties.assignee == "granted"`}),
 			trigOn("broken", map[string]any{"kinds": []any{widgetType}, "ops": []any{"create"}, "when": `record != null && record.properties.assignee == "broken"`}),
@@ -152,7 +152,7 @@ def main(input, host):
 
 	// Granted: one delivery applies the callee's put AND the caller's own.
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "wired", "assignee": "granted"}})
-	process(t, ops)
+	process(t, ds)
 	if got := mustGet(t, ds, taskType, "call-wired"); got.Title != "wired" {
 		t.Fatalf("callee effect missing: %+v", got)
 	}
@@ -161,26 +161,26 @@ def main(input, host):
 	}
 	// Both landed in the CALLER's delivery: one transaction, one causal
 	// parent — the callee wrote no delivery of its own.
-	if parked, err := ops.TriggerFailures(ctx, trigID("granted")); err != nil || len(parked) != 0 {
+	if parked, err := ds.TriggerFailures(ctx, trigID("granted")); err != nil || len(parked) != 0 {
 		t.Fatalf("granted parked: %+v %v", parked, err)
 	}
 
 	// Broken caller: its OWN effect fails, so the callee's put must roll
 	// back with the delivery — sub-call effects are not a separate commit.
 	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "halfway", "assignee": "broken"}})
-	process(t, ops)
+	process(t, ds)
 	if _, err := ds.Get(ctx, taskType, "call-halfway"); err == nil {
 		t.Fatal("a sub-call effect survived its caller's rollback")
 	}
-	if parked, err := ops.TriggerFailures(ctx, trigID("broken")); err != nil || len(parked) != 1 {
+	if parked, err := ds.TriggerFailures(ctx, trigID("broken")); err != nil || len(parked) != 1 {
 		t.Fatalf("broken parked: %+v %v", parked, err)
 	}
 
 	// Ungranted: the call trips the allowlist, deterministically — one
 	// attempt, parked, nothing applied.
 	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "sneaky", "assignee": "ungranted"}})
-	process(t, ops)
-	parked, err := ops.TriggerFailures(ctx, trigID("ungranted"))
+	process(t, ds)
+	parked, err := ds.TriggerFailures(ctx, trigID("ungranted"))
 	if err != nil || len(parked) != 1 {
 		t.Fatalf("ungranted parked: %+v %v", parked, err)
 	}
@@ -228,7 +228,7 @@ def main(input, host):
     return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
                          "id": "a-" + mid, "properties": {"name": "a survived " + mid}}]}
 `)
-	ds, ops := newFnDataset(t, nil,
+	ds := newFnDataset(t, nil,
 		leaf,
 		mid("raiser", `raise Exception("b explodes")`),
 		mid("badeffect", `return {"effects": [{"action": "conjure", "kind": "samples.substrate.reamde.dev/tasks/task", "id": "x"}], "output": {"ok": True}}`),
@@ -238,7 +238,7 @@ def main(input, host):
 	ctx := context.Background()
 
 	for _, mid := range []string{"raiser", "badeffect", "badoutput"} {
-		if _, _, err := ops.CallFunction(ctx, fnPackage+"/catcher", map[string]any{"mid": mid}); err != nil {
+		if _, _, err := ds.CallFunction(ctx, fnPackage+"/catcher", map[string]any{"mid": mid}); err != nil {
 			t.Fatalf("%s: the catching caller failed: %v", mid, err)
 		}
 		if _, err := ds.Get(ctx, taskType, "a-"+mid); err != nil {
@@ -278,27 +278,27 @@ def main(input, host):
     out = host.call("`+fnPackage+`/silent", None)
     return {"output": out}
 `)
-	ds, ops := newFnDataset(t, nil, silent, nuller, anyOut, nestCaller)
+	ds := newFnDataset(t, nil, silent, nuller, anyOut, nestCaller)
 	ctx := context.Background()
 
 	// Top level: omitted and explicit-null both refuse, and no effects land.
-	if _, _, err := ops.CallFunction(ctx, fnPackage+"/silent", nil); err == nil ||
+	if _, _, err := ds.CallFunction(ctx, fnPackage+"/silent", nil); err == nil ||
 		!strings.Contains(err.Error(), "output") {
 		t.Fatalf("an omitted output passed the declared shape: %v", err)
 	}
 	if _, err := ds.Get(ctx, taskType, "silent-effect"); err == nil {
 		t.Fatal("effects applied under a refused output")
 	}
-	if _, _, err := ops.CallFunction(ctx, fnPackage+"/nuller", nil); err == nil ||
+	if _, _, err := ds.CallFunction(ctx, fnPackage+"/nuller", nil); err == nil ||
 		!strings.Contains(err.Error(), "output") {
 		t.Fatalf("an explicit null passed the declared shape: %v", err)
 	}
 	// An undeclared result side stays open.
-	if _, _, err := ops.CallFunction(ctx, fnPackage+"/anyout", nil); err != nil {
+	if _, _, err := ds.CallFunction(ctx, fnPackage+"/anyout", nil); err != nil {
 		t.Fatalf("any refused nil: %v", err)
 	}
 	// Nested: the host Call surfaces the same violation to the caller.
-	if _, _, err := ops.CallFunction(ctx, fnPackage+"/nestcaller", nil); err == nil ||
+	if _, _, err := ds.CallFunction(ctx, fnPackage+"/nestcaller", nil); err == nil ||
 		!strings.Contains(err.Error(), "output") {
 		t.Fatalf("a nested omitted output passed: %v", err)
 	}
@@ -324,8 +324,8 @@ def main(input, host):
     k2 = host.call("`+fnPackage+`/echo", {"n": 2})
     return {"output": [k1, k2]}
 `)
-	_, ops := newFnDataset(t, nil, echo, twice)
-	out, _, err := ops.CallFunction(context.Background(), fnPackage+"/twice", nil)
+	ds := newFnDataset(t, nil, echo, twice)
+	out, _, err := ds.CallFunction(context.Background(), fnPackage+"/twice", nil)
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -347,21 +347,21 @@ func TestRunRetentionKeepsFailuresPrunesSuccesses(t *testing.T) {
 	t.Parallel()
 	// The ledger's cleanup policy: parked runs are kept, ok/skipped runs
 	// prune to the newest runRetention (20) per trigger.
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("mirror", map[string]any{"kinds": []any{widgetType}})},
 		pyFn("mirror", map[string]any{}, []any{taskType}, mirrorSource))
 	ctx := context.Background()
 
 	// One poisoned delivery parks (kept forever)…
 	poisoned := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType})
-	process(t, ops)
+	process(t, ds)
 
 	// …then 24 healthy deliveries, each an ok run.
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "v0"}})
-	process(t, ops)
+	process(t, ds)
 	for i := 1; i < 23; i++ {
 		mustPatch(t, ds, fnActor, w.Kind, w.ID, substrate.PatchInput{Properties: map[string]any{"name": "v" + string(rune('a'+i))}})
-		process(t, ops)
+		process(t, ds)
 	}
 
 	oks := runRowsOf(t, ds, trigID("mirror"), "ok")
@@ -376,7 +376,7 @@ func TestRunRetentionKeepsFailuresPrunesSuccesses(t *testing.T) {
 	if parked[0].Properties["record"] != wantRecord {
 		t.Fatalf("parked run names %v, want %s", parked[0].Properties["record"], wantRecord)
 	}
-	if _, err := ops.TriggerFailures(ctx, trigID("mirror")); err != nil {
+	if _, err := ds.TriggerFailures(ctx, trigID("mirror")); err != nil {
 		t.Fatalf("failures: %v", err)
 	}
 }
