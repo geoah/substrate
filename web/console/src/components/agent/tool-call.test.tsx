@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** The tool card's one navigational promise: a settled `propose` did NOT change
  * the graph, it landed a row somebody has to decide, so the card carries the
  * proposal — its live state, and the way to the full review. Everything else

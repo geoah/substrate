@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** The change detail band. Two things it must do: say which records the
  * write moved and where each stands (`affected`, decision 0061), and drop
  * nothing the wire said, so the whole payload stays one `raw` toggle away.

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** The bundle detail after it lands, answering the same questions the
  * Registry row answered before: what this bundle IS (Provider / Sample, at
  * which shipped version), what it declared against (each

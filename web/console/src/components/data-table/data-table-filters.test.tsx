@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** The toolbar's contract, pinned after the 2026-08-06 redlines: the × is a
  * real button that removes its filter (it used to be an svg inside the
  * trigger Button, dead under `[&_svg]:pointer-events-none`), and one active

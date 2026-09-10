@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import {
   cleanup,
   fireEvent,
@@ -23,9 +24,20 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }))
 
-/** What GET /.well-known/substrate/server.json said about the door; discovery.test.ts covers the fetching. */
-const policy = vi.hoisted(() => ({ totpRequired: true }))
-vi.mock("@/lib/api/discovery", () => ({ useAuthPolicy: () => policy }))
+/** What GET /.well-known/substrate/server.json said about the door;
+ * discovery.test.ts covers the fetching. `policy.live` hands the hook back to
+ * the real module for the last describe, which is about the answer arriving
+ * after the reader has already submitted the first step. */
+const policy = vi.hoisted(() => ({ totpRequired: true, live: false }))
+vi.mock("@/lib/api/discovery", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/api/discovery")>()
+  return {
+    ...real,
+    useAuthPolicy: () => (policy.live ? real.useAuthPolicy() : policy),
+  }
+})
+
+import { resetAuthPolicy } from "@/lib/api/discovery"
 
 import { RegisterPage } from "./register"
 
@@ -79,6 +91,7 @@ describe("RegisterPage", () => {
     clearSession()
     navigate.mockClear()
     policy.totpRequired = true
+    policy.live = false
   })
 
   afterEach(() => {
@@ -249,5 +262,112 @@ describe("RegisterPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))
     await screen.findByText(/Registration is closed/i)
     expect(getToken()).toBeNull()
+  })
+})
+
+/** The same page against the REAL discovery hook: the reader (or a password
+ * manager) can complete and submit the first step before
+ * `GET /.well-known/substrate/server.json` answers, and the answer decides
+ * whether there is a second step at all. */
+describe("RegisterPage and the door's own answer", () => {
+  const fetchMock = vi.fn<typeof fetch>()
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", fetchMock)
+    clearSession()
+    navigate.mockClear()
+    policy.live = true
+    resetAuthPolicy()
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+  })
+
+  it("drops an enrollment bought before discovery said there is no second factor", async () => {
+    let releaseDiscovery: (() => void) | undefined
+    const discovered = new Promise<void>((resolve) => {
+      releaseDiscovery = resolve
+    })
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input)
+      if (url === "/.well-known/substrate/server.json") {
+        await discovered
+        return jsonResponse(200, { registration: { totpRequired: false } })
+      }
+      if (url === "/register/enroll") return jsonResponse(200, ENROLLMENT)
+      return jsonResponse(201, MINT)
+    })
+
+    render(<RegisterPage />)
+    fireEvent.change(screen.getByLabelText("Invite code"), {
+      target: { value: "INV-1" },
+    })
+    fireEvent.change(screen.getByLabelText("Repository"), {
+      target: { value: "geoah" },
+    })
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: PASSWORD },
+    })
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: PASSWORD },
+    })
+    // Submitted under the strict default, because nothing has answered yet.
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await screen.findByText("SEED")
+
+    releaseDiscovery!()
+    // The answer retires the whole second step: no seed on screen, no code to
+    // prove, and the button is the commit.
+    await waitFor(() => expect(screen.queryByText("SEED")).toBeNull())
+    expect(screen.queryByLabelText("One-time code")).toBeNull()
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create my repository" })
+    )
+    await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
+    const call = fetchMock.mock.calls.find(
+      ([url]) => String(url) === "/register"
+    )!
+    // An empty seed asks the substrate to mint the one it seals: the seed the
+    // abandoned enrollment handed out is not smuggled into the commit.
+    // The bare label the reader typed, completed under this console's host
+    // (jsdom serves from `localhost`), because the reader left it derived.
+    expect(JSON.parse((call[1] as RequestInit).body as string)).toEqual({
+      inviteCode: "INV-1",
+      repository: "geoah.localhost",
+      password: PASSWORD,
+      totpSecret: "",
+      totpCode: "",
+      label: "console",
+    })
+  })
+
+  it("keeps the enrollment step where discovery never answers", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input)
+      if (url === "/.well-known/substrate/server.json")
+        throw new TypeError("offline")
+      if (url === "/register/enroll") return jsonResponse(200, ENROLLMENT)
+      return jsonResponse(201, MINT)
+    })
+    render(<RegisterPage />)
+    fireEvent.change(screen.getByLabelText("Invite code"), {
+      target: { value: "INV-1" },
+    })
+    fireEvent.change(screen.getByLabelText("Repository"), {
+      target: { value: "geoah" },
+    })
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: PASSWORD },
+    })
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: PASSWORD },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await screen.findByText("SEED")
+    expect(screen.getByLabelText("One-time code")).toBeTruthy()
   })
 })

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** The YAML lens's wiring: the editor holds the page's document, an edit made
  * in it is reported out, and a change made ELSEWHERE (the form lens, a reseed)
  * is dispatched in without rebuilding the editor under the cursor. */

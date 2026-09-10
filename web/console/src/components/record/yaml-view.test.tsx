@@ -1,17 +1,66 @@
+// @vitest-environment jsdom
 /** The manifest view. Two owner reports live here: "the YAML is not formatted
  * — there's no syntax highlight", and "I cannot hover to see the description of
  * one of the properties". They are ONE surface, so the test pins them together:
- * shiki must actually tint, and the schema hovers must stand whether or not it
- * does — the annotations belong to the kind, not to the highlighter. */
+ * the tint must actually reach the rendered runs, and the schema hovers must
+ * stand whether or not it does — the annotations belong to the kind, not to the
+ * highlighter.
+ *
+ * `useCodeTokens` is stubbed, so no grammar is loaded here. What this view
+ * needs from the hook is its SHAPE: nothing on the first paint, one token row
+ * per line a tick later. What the real highlighter produces from that grammar,
+ * `src/lib/shiki.test.ts` pins. */
 
+import { useEffect, useState } from "react"
 import { cleanup, render, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { afterEach, describe, expect, it, vi } from "vitest"
+
+import type { CodeToken } from "@/lib/shiki"
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ to, children }: { to: string; children: React.ReactNode }) => (
     <a href={to}>{children}</a>
   ),
+}))
+
+/** One token per word and per run of punctuation, which is the granularity the
+ * real grammar gives a YAML line and the granularity an annotation needs: a
+ * described key or a linked reference lands on the run whose whole text is it.
+ * The colors alternate so a test can tell one run's tint from its neighbour's. */
+function stubTokens(source: string): CodeToken[][] {
+  return source.split("\n").map((line, row) =>
+    line
+      .split(/([\s:]+)/)
+      .filter((run) => run !== "")
+      .map((content, col) => ({
+        content,
+        color: `var(--shiki-token-${(row + col) % 2 ? "keyword" : "string"})`,
+        italic: false,
+      }))
+  )
+}
+
+vi.mock("@/lib/code", () => ({
+  /** The real hook resolves a dynamic `import()` of the grammar bundle and
+   * then tokenizes; the stub keeps the one thing the view can see, which is
+   * that the tint arrives a render AFTER the text. */
+  useCodeTokens: (source: string) => {
+    const [tokens, setTokens] = useState<CodeToken[][] | undefined>(undefined)
+    useEffect(() => {
+      let cancelled = false
+      // A microtask, not the same render: the real hook awaits a dynamic
+      // `import()`, and the first paint being untinted is the whole point of
+      // the "before the highlighter lands" case below.
+      void Promise.resolve().then(() => {
+        if (!cancelled) setTokens(stubTokens(source))
+      })
+      return () => {
+        cancelled = true
+      }
+    }, [source])
+    return tokens
+  },
 }))
 
 import { YamlView } from "./yaml-view"
@@ -63,7 +112,7 @@ const triggers = (root: ParentNode) =>
 afterEach(cleanup)
 
 describe("YamlView", () => {
-  it("tints the manifest — every color rides a --shiki-* variable", async () => {
+  it("paints each run in the token's own color", async () => {
     const { container } = renderView()
     await waitFor(() => {
       expect(container.querySelector("pre span[style]")).toBeTruthy()
@@ -73,15 +122,17 @@ describe("YamlView", () => {
         (el) => el.style.color
       )
     )
-    // The css-variables theme is what makes the tint follow light/dark.
-    expect(colors.size).toBeGreaterThan(1)
-    for (const color of colors) expect(color).toContain("--shiki-")
+    // Every color the hook handed over reached an element, and none was
+    // flattened into one: the view carries the token's color, not its own.
+    expect(colors).toEqual(
+      new Set(["var(--shiki-token-keyword)", "var(--shiki-token-string)"])
+    )
   })
 
   it("hovers every described key BEFORE the highlighter lands", () => {
-    // Synchronous first paint: the tokens query is still pending. The hovers
-    // must already be there — a shiki chunk that never arrives (or arrives
-    // late) may cost the color, never the schema.
+    // Synchronous first paint: the tokens are still absent. The hovers must
+    // already be there — a shiki chunk that never arrives (or arrives late)
+    // may cost the color, never the schema.
     const { container } = renderView()
     expect(container.querySelector("pre span[style]")).toBeNull()
     expect(triggers(container)).toEqual(["name", "wire"])

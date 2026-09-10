@@ -29,7 +29,11 @@ export default defineConfig({
     },
   },
   test: {
-    environment: "jsdom",
+    // `node` is the default because most suites are pure logic: a jsdom window
+    // per file costs more than every assertion in the suite put together. A
+    // suite that renders declares `// @vitest-environment jsdom` on its first
+    // line, and `src/test-setup.ts` installs the browser gaps only there.
+    environment: "node",
     include: ["src/**/*.test.{ts,tsx}"],
     setupFiles: ["./src/test-setup.ts"],
   },

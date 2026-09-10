@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** The Graph tab's layout contract: direction is said once per section
  * (Outgoing/Incoming), the current record heads the tree, groups carry the
  * shared kind and the count, and every target is a RecordPill — not a bare

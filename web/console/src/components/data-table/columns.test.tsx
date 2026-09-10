@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** The shared column factories: the time voices (wire ISO always rides the
  * hover — the cell text is the local rendering) and the config each factory
  * stamps on its ColumnDef (ids, labels, widths — what the Columns dropdown

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** The Registry's SUGGESTED MAPPINGS (decision record 0049): what a sample
  * would project, what is projecting already, and the one action that lands the
  * rest.

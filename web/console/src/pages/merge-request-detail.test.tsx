@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** The side-by-side's rendering contract: the pair's values are read off two
  * live records and the cell has no declaration to consult, so a value that
  * carries the served reference shape renders as the referent's pill rather

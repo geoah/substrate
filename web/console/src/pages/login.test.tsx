@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import {
   cleanup,
   fireEvent,
@@ -27,11 +28,23 @@ vi.mock("@/router", () => ({
   loginRoute: { useSearch: () => ({ redirect: undefined }) },
 }))
 
-/** What GET /.well-known/substrate/server.json said about the door. Mocked at the module so the fetch
- * assertions below stay about the login call itself; discovery.test.ts covers
- * the fetching. */
-const policy = vi.hoisted(() => ({ totpRequired: true }))
-vi.mock("@/lib/api/discovery", () => ({ useAuthPolicy: () => policy }))
+/** What GET /.well-known/substrate/server.json said about the door. A settled
+ * answer is what most cases want, so the fetch assertions below stay about the
+ * login call itself; discovery.test.ts covers the fetching.
+ *
+ * `policy.live` hands the hook back to the real module for the last describe,
+ * which is about the one render the stub cannot show: the policy landing after
+ * the first paint, with whatever the reader already typed in the fields. */
+const policy = vi.hoisted(() => ({ totpRequired: true, live: false }))
+vi.mock("@/lib/api/discovery", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/api/discovery")>()
+  return {
+    ...real,
+    useAuthPolicy: () => (policy.live ? real.useAuthPolicy() : policy),
+  }
+})
+
+import { resetAuthPolicy } from "@/lib/api/discovery"
 
 import { LoginPage } from "./login"
 
@@ -72,6 +85,7 @@ describe("LoginPage", () => {
     clearSession()
     navigate.mockClear()
     policy.totpRequired = true
+    policy.live = false
   })
 
   afterEach(() => {
@@ -174,5 +188,94 @@ describe("LoginPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
     await screen.findByText("Enter the current 6-digit code.")
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+/** The same page against the REAL discovery hook: the policy lands one render
+ * after the first paint, and whatever the reader (or their password manager)
+ * put in the fields before then has to survive it. */
+describe("LoginPage and the door's own answer", () => {
+  const fetchMock = vi.fn<typeof fetch>()
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", fetchMock)
+    clearSession()
+    navigate.mockClear()
+    policy.live = true
+    resetAuthPolicy()
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+  })
+
+  it("keeps what was typed before the policy landed, and asks for no code after", async () => {
+    let releaseDiscovery: (() => void) | undefined
+    const discovered = new Promise<void>((resolve) => {
+      releaseDiscovery = resolve
+    })
+    fetchMock.mockImplementation(async (input) => {
+      if (String(input) === "/.well-known/substrate/server.json") {
+        await discovered
+        return jsonResponse(200, { registration: { totpRequired: false } })
+      }
+      return jsonResponse(201, MINT)
+    })
+
+    render(<LoginPage />)
+    // Discovery has not answered yet: the strict door is what renders, so a
+    // deployment that DOES want a code never hides the field.
+    expect(screen.getByLabelText("One-time code")).toBeTruthy()
+    fireEvent.change(screen.getByLabelText("Repository"), {
+      target: { value: "geoah" },
+    })
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct horse battery" },
+    })
+
+    releaseDiscovery!()
+    await waitFor(() =>
+      expect(screen.queryByLabelText("One-time code")).toBeNull()
+    )
+    // The two fields survived the answer — a password manager fills them the
+    // moment the page paints, and nothing here may throw that away.
+    expect(
+      (screen.getByLabelText("Repository") as HTMLInputElement).value
+    ).toBe("geoah")
+    expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe(
+      "correct horse battery"
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
+    await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
+    const call = fetchMock.mock.calls.find(([url]) => String(url) === "/login")!
+    expect(JSON.parse((call[1] as RequestInit).body as string)).toEqual({
+      repository: "geoah",
+      password: "correct horse battery",
+      totpCode: "",
+      label: "console",
+    })
+  })
+
+  it("still refuses to sign in without a code where discovery never answers", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      if (String(input) === "/.well-known/substrate/server.json")
+        throw new TypeError("offline")
+      return jsonResponse(201, MINT)
+    })
+    render(<LoginPage />)
+    fireEvent.change(screen.getByLabelText("Repository"), {
+      target: { value: "geoah" },
+    })
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct horse battery" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
+    await screen.findByText("Enter the current 6-digit code.")
+    expect(fetchMock.mock.calls.some(([url]) => String(url) === "/login")).toBe(
+      false
+    )
   })
 })

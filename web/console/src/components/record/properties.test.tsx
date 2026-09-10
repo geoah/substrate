@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** The Properties tab (issue #38): a clicked row's data must read field by
  * field (prose as a block, a reference as a link, a secret as its sentinel),
  * with the declared shape visible even where the record holds nothing, and

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** The kind Definition view (owner ask: "I go to the llmproviders kind … I
  * don't have a tab to see its definition — I want to see the kind YAML"). It must show
  * the declaration as YAML AND as a readable table — name, type, description,
