@@ -92,13 +92,26 @@ func requirePython(t *testing.T) {
 	}
 }
 
-// isUVProvisionError reports whether a bundle-install error is the PEP 723
-// body failing to warm (uv resolve/provision) rather than a schema admission
-// problem, which the admission tests catch without uv. Preparation failures
-// surface as "body failed to prepare".
-func isUVProvisionError(err error) bool {
-	s := strings.ToLower(err.Error())
-	for _, marker := range []string{"failed to prepare", "uv", "provision", "resolve", "register"} {
+// uvProvisionFailed reports whether an install failed because uv could not
+// build the environment a PEP 723 body declares — the offline machine, and
+// the ONLY install failure a suite may skip on. The runner words that failure
+// three ways and no others (internal/runner/pyhost.go provisionUV): uv gone
+// from PATH after the gate read it, the resolve itself failing, and the
+// resolved interpreter not coming back.
+//
+// Everything else is a hard failure, and the distinction is the whole point:
+// a body with a syntax error, a bad import or a startup fault fails at
+// REGISTRATION ("runner: python register: …", pyhost.go), and no admission
+// test warms a body — bundleRegistry stops at the loader. A predicate wide
+// enough to match "register" would turn every one of those into a skip and
+// leave a broken closure with nothing red anywhere.
+func uvProvisionFailed(err error) bool {
+	s := err.Error()
+	for _, marker := range []string{
+		"runner: uv is not on PATH",
+		"runner: uv sync:",
+		"runner: uv python find",
+	} {
 		if strings.Contains(s, marker) {
 			return true
 		}
@@ -285,9 +298,9 @@ func bundleRegistry(t *testing.T, dir string) *vocabulary.Registry {
 // the documents first: a static manifest cannot bake a dynamic httptest URL,
 // so the loopback substitutions happen here.
 //
-// A schema problem is already caught deterministically by the admission test,
-// so an apply error is treated as a uv provisioning failure (offline) and
-// skips rather than double-reporting a schema break.
+// A uv resolve that cannot reach the network skips (uvProvisionFailed); every
+// other apply error FAILS, including a body that will not register, because
+// no admission test warms a body and a skip there would hide it.
 func install(t *testing.T, ds substrate.Dataset, dir string, rewire func([]map[string]any)) {
 	t.Helper()
 	docs := loadDocs(t, dir+"/bundle.yaml")
@@ -295,8 +308,8 @@ func install(t *testing.T, ds substrate.Dataset, dir string, rewire func([]map[s
 		rewire(docs)
 	}
 	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, docs); err != nil {
-		if isUVProvisionError(err) {
-			t.Skipf("bundle install could not warm the PEP 723 body (uv offline?): %v", err)
+		if uvProvisionFailed(err) {
+			t.Skipf("uv could not resolve the closure's PEP 723 dependencies (offline?): %v", err)
 		}
 		t.Fatalf("install %s: %v", dir, err)
 	}
