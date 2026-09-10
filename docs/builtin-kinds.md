@@ -4,10 +4,9 @@ Every repository is seeded at creation with **`substrate.reamde.dev/core` and no
 else** — the substrate's own machinery, including the delivery plumbing and the
 agent runtime's data. Everything else is a **sample you import**: people,
 tasks, messaging, calendar, scheduling (the two traits the repeating kinds
-bind), and the function and agent examples notes, llm, web and firecrawl
-(each described with its functions in the
-[bundles catalog](bundles-catalog.md)) and pebble
-([samples/pebble/README.md](../samples/pebble/README.md)). Each ships in the
+bind), and the function and agent examples notes, llm, web, firecrawl and
+pebble, each described with its functions in the
+[bundles catalog](bundles-catalog.md). Each ships in the
 binary under `samples.substrate.reamde.dev` and is a starting point, not a
 dependency
 ([decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)):

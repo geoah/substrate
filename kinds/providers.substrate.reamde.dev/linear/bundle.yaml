@@ -22,7 +22,7 @@
 #   properties (review-google #1).
 # Connect:  create an account, then run the host OAuth flow against it —
 #   the callback URL registered on the Linear OAuth app is the host's
-#   GET …/api/v1/oauth/callback (see README).
+#   GET …/api/v1/oauth/callback (see docs/bundles-catalog.md).
 # ---- the owned package --------------------------------------------------------
 kind: substrate.reamde.dev/core/package
 metadata:
@@ -30,44 +30,6 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: linear
-  # version 2: THE TYPED CORE SWEEP. Declarations in this closure moved to the
-  # declared spellings — whichever of them they used: a tool entry naming its arm,
-  # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
-  # naming its properties. THE PACKAGE IS VERSIONED AS A UNIT, so this bump
-  # carries the closure whole rather than saying every declaration in it moved.
-  # version 3: the grants group under one `permissions:` object, and the permission
-  # to write is `writes:` inside it. This closure's functions and agents
-  # follow core's declaration.
-  # version 5: the task machine's `dropped` state is `abandoned` (decision
-  # record 0013); taskprojection's source says so where it explains what it
-  # never touches.
-  # version 6: taskprojection writes the issue's title to the task's declared
-  # `name` property. The task's heading left the built-in title slot (#123),
-  # which a kind with a displayTemplate no longer stores. THIS UPGRADE NEEDS
-  # samples.substrate.reamde.dev/tasks AT VERSION 4 FIRST: `requires:` names the
-  # package and not a version of it, so upgrading this closure against a
-  # task kind that still declares no `name` parks every issue delivery on an
-  # undeclared property.
-  # version 7: `account` on every mirror kind is a pinned owner
-  # reference instead of a string, so disconnecting an account collects
-  # the rows it synced (docs/decisions/0032).
-  # version 9: the inline functions' `timeoutMs` (int ms) is `timeout`, the
-  # duration datatype (ISO 8601); the retype rides core's function kind bump.
-  # version 10: every link is a `type: reference` property. `user.person` and
-  # `issue.assignee` are `subject: true` references the two mappings name with
-  # `property:`, `issue.team` carries `mustExist: true`, and every account
-  # reference carries `onDelete: cascade`.
-  # version 11: MIRRORS ONLY. Both `-> person` mappings are gone and
-  # `user.person` and `issue.assignee` are unpinned, optional subject slots,
-  # because a mapping onto a kind is declared by the package that owns that
-  # kind (docs/decisions/0049) and this package owns no person. `taskprojection`
-  # goes with them, and `requires:` with it: this closure wrote `task` rows
-  # into a package it does not own, and what an issue means to the repository
-  # is now the repository's own declaration.
-  # version 12: `issue.task` is a second unpinned, optional subject slot, so
-  # an issue can reach the repository's own task kind as well as its person
-  # kind: two slots, one mapping each (docs/decisions/0049). The tasks sample
-  # ships the mapping that fills it; this package still declares none.
   version: 12
 ---
 # ---- the bundle document: the install unit --------------------------------
@@ -503,7 +465,7 @@ data:
 #
 # SYNC-ONLY: no mutation ever goes to Linear (writeback waits on the outbound
 # outbox, issue 009). Deleted/unassigned issues are not swept — their mirrors
-# stay until a future tombstone slice (see README).
+# stay until a future tombstone slice (see docs/bundles-catalog.md).
 kind: substrate.reamde.dev/core/function
 metadata:
   id: providers.substrate.reamde.dev/linear/issuessync

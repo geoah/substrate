@@ -18,42 +18,6 @@ data:
     invoked by a trigger or called directly. The declaration IS the record
     — a write admits it, the commit activates it, and the dispatcher reads
     the registry this row rebuilds into.
-  # version 2: the display template dropped the authority. A declaration's
-  # identity is `<authority>/<package>/<name>` and the dotted composite it used
-  # to render names nothing — the bump is what carries the new template into
-  # repositories that already stored the old one.
-  # version 3: the declaration gained a `description` — the bump is what
-  # carries it into repositories that already stored the version 2 one.
-  # version 4: TYPED. `definition` and `name` are gone; the runtime, the body,
-  # the flat argument lists and the five capability keys are properties.
-  # version 5: `runtime: host` joined the enum and `source` stopped being
-  # required — a host function's body IS the engine, so its declaration is a
-  # card and nothing else. The bump is what admits the four host function rows
-  # core now ships into a repository that stored the version 4 enum.
-  # version 6: the five grant keys became one `permissions` object, and `emit`
-  # is `writes` inside it. Dropping five properties is a narrowing, and this
-  # one is safe because dialect 2 has never shipped in a release: no store
-  # outside our own development instances holds a row with them, and the
-  # dialect rung rewrites the ones that do.
-  # version 8: the declaration's own `version` became an incremental
-  # integer, maintained by the engine.
-  # version 9: `effect` and `confirmation` — the author's objective facts for
-  # the policy door (docs/plans/thread-interactions.md phase 3): what class
-  # of effect the body has, and a floor no policy or judge loosens.
-  # version 10: the `network` property description names the entry grammar the
-  # loader now enforces (a host, host:port or CIDR; docs/decisions/0038).
-  # version 11: an argument and a return each require a `type`. The loader
-  # refuses an entry whose type it does not recognize, so the requirement
-  # moves onto the declaration.
-  # version 12: `timeoutMs` (an int of milliseconds) became `timeout`, the
-  # `duration` datatype (an ISO 8601 string). The datatype declares no min or
-  # max, so the loader keeps the old 60s cap and 5s default in Go. The bump is
-  # what carries the retype into repositories that stored the int property.
-  # version 14: the `go` value left the runtime enum. That runtime compiled an
-  # inline Go body at registration and cost the image a Go toolchain; no
-  # shipped function ever declared it (issue 495). Dropping an enum value is a
-  # narrowing, safe here because no record holds it, and the value is retired
-  # below so it can never be declared again.
   version: 14
   names:
     singular: function

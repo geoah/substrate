@@ -9,7 +9,7 @@
 # runner and scrubbed from what it returns.
 #
 # SYNC-ONLY: this bundle reads rooms and messages. It never sends — outbound
-# needs the outbox contract (issue 009), which is pending. See README.md.
+# needs the outbox contract (issue 009), which is pending. See docs/bundles-catalog.md.
 #
 # Install:   substratectl apply -f bundle.yaml -f triggers.yaml
 # Configure: create a config record — the homeserver base URL and the
@@ -34,25 +34,6 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: beeper
-  # version 2: THE TYPED CORE SWEEP. Declarations in this closure moved to the
-  # declared spellings — whichever of them they used: a tool entry naming its arm,
-  # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
-  # naming its properties. THE PACKAGE IS VERSIONED AS A UNIT, so this bump
-  # carries the closure whole rather than saying every declaration in it moved.
-  # version 3: the grants group under one `permissions:` object, and the permission
-  # to write is `writes:` inside it. This closure's functions and agents
-  # follow core's declaration.
-  # version 5: `account` on every mirror kind is a pinned owner
-  # reference instead of a string, so disconnecting an account collects
-  # the rows it synced (docs/decisions/0032).
-  # version 6: the sync function's `permissions.network` drops the
-  # `beeper.com/*` glob for the bare host `beeper.com`, the form the network
-  # grammar admits (docs/decisions/0038).
-  # version 8: the inline functions' `timeoutMs` (int ms) is `timeout`, the
-  # duration datatype (ISO 8601); the retype rides core's function kind bump.
-  # version 9: `message.room` is a `type: reference` property with
-  # `mustExist: true`, and every owning reference in this closure carries
-  # `onDelete: cascade`.
   version: 9
 ---
 # ---- the bundle document: the install unit --------------------------------

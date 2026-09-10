@@ -5,12 +5,6 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: core
-  # version 16: the authority owns packages and nothing else. The version, the
-  # actors, the origin and the quarantine mark moved to the `package` row
-  # beside it (decision record 0047); what stays is the name and what it is
-  # for.
-  # version 17: `source` gains `published`, the origin a provider install
-  # writes (decision record 0048).
   version: 17
   description: >-
     One authority whose packages this repository holds, named by its DNS-style

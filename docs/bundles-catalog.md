@@ -1,6 +1,6 @@
 # Bundles catalog
 
-The substrate ships ten of these bundles in the binary, in the two tiers
+The substrate ships eleven of these bundles in the binary, in the two tiers
 [decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
 draws. (The vocabulary samples beside them, `people`, `tasks`, `calendar` and
 the rest, are in [built-in kinds](builtin-kinds.md).)
@@ -8,13 +8,13 @@ the rest, are in [built-in kinds](builtin-kinds.md).)
 **Six providers**: Google, GitHub, Linear, WHOOP, Notion and Beeper. Each is a
 package its publisher owns, installed under
 `providers.substrate.reamde.dev` and upgraded there. Every one syncs from the
-provider into the repository; none writes back, and each ships a README
-stating its limits.
+provider into the repository, and none writes back.
 
-**Four samples**: LLM, notes, the web harvester and Firecrawl. Each is a worked
-example to read and copy, imported under the repository's own authority and
-owned by it afterwards. A fix here reaches a repository that imported it as
-an upgrade offer read off the copy's origin stamp, taken by importing again
+**Five samples**: LLM, notes, the web harvester, Firecrawl and Pebble. Each is
+a worked example to read and copy, imported under the repository's own
+authority and owned by it afterwards. A fix here reaches a repository that
+imported it as an upgrade offer read off the copy's origin stamp, taken by
+importing again
 ([0070](decisions/0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md);
 [0015](decisions/0015-unproven-kinds-stay-out-of-the-stable-set.md) is what
 0048 amends).
@@ -59,6 +59,52 @@ thing, and the Records column counts them.
 | Notes         | Sample   | none           | 1     | 2         | 0       | 2      |
 | Firecrawl     | Sample   | API key        | 2     | 2         | 0       | 0      |
 | Web harvester | Sample   | none           | 2     | 4         | 4       | 3      |
+| Pebble        | Sample   | none           | 2     | 1         | 2       | 1      |
+
+## Connecting an OAuth provider
+
+Google, GitHub, Linear and WHOOP take the same four steps, because the host
+runs the flow and the bundle only declares it
+([bundles](bundles.md#the-oauth-facility)):
+
+1. **Register an app** with the provider and note its client id and secret.
+   Its redirect URI is the host's one callback,
+   `https://<your-substrate-host>/api/v1/oauth/callback`, the value of
+   `SUBSTRATE_OAUTH_CALLBACK_URL` ([operations](operations.md#configuration)).
+2. **Create a `config` record** carrying `clientId` and `clientSecret`. The
+   endpoints and the toggle-to-scope map are trusted metadata on the bundle
+   document, so there is nothing else to type; the bundle's `client` input
+   resolves the record (the sole one, the one named `default`, or a bound one)
+   and the flow refuses while it does not.
+3. **Create an `account`**, switch on the streams you want, and pick a
+   `syncFrequency` and a `backfillDepth`. It starts `tokenStatus: pending`.
+4. **Connect** (`substratectl bundle connect`, or `POST …/oauth/start` with
+   the account's id as `record`). Consent at the provider, and the callback
+   stores the grant, sets `tokenStatus: connected`, and fires each enabled
+   stream's on-connect trigger.
+
+Notion and Beeper take a pasted token instead: their `config` record holds it
+and there is no consent step, so step 4 is the account's own create.
+
+**`backfillDepth` bounds the FIRST window only.** Every run after it reads
+from that stream's own stored watermark instead, so the value decides how far
+back the first sync reaches and nothing else: `none` is from connect time
+forward, `last30d` / `last90d` / `last1y` reach that far back, and `all` is
+unbounded (WHOOP reads from a fixed pre-API epoch, its stand-in for
+unbounded).
+
+Where that floor is measured from is each bundle's own, and they differ.
+Google's gmail and calendar streams derive it from the backfill anchor their
+first run stamped, so their reach cannot creep forward night after night
+(`_floor`, `kinds/providers.substrate.reamde.dev/google/bundle.yaml`). Notion,
+GitHub, Linear and Beeper compute a dated window from the clock of the run
+that needs one (`_cutoff`, `_backfill_since`, `_since_floor`, `_cutoff_ms`),
+so a first sync deferred by a day reaches a day later. No provider reaches
+behind the connect under `none`: Notion pins it with the `backfillAnchor` its
+first sync stamps, GitHub persists that run's own start, Linear takes the same
+start and then its `lastSyncedAt`, and Beeper queues no history walk at all.
+Google's contacts stream ignores the property altogether, because the People
+sync token gives it full-plus-incremental with no window.
 
 ## LLM (sample)
 
@@ -122,6 +168,15 @@ curl -s -X POST "$SUBSTRATE_SERVER/api/v1/substrate.reamde.dev/core/agent/noteke
   -H "Authorization: Bearer $SUBSTRATE_TOKEN" -H 'Content-Type: application/json' \
   -d '{"input": {"text": "id: my-note\n\nSomething worth keeping."}}'
 ```
+
+One run leaves TWO `llmthread` rows, the root agent's and the sub-agent's own,
+each with its own turn and token tallies; cost rolls up onto the root. If the
+`default` row points straight at Anthropic rather than at a gateway, two things
+about the row differ: model names are bare there (`claude-sonnet-5` and
+`claude-haiku-4-5-20251001`, where these manifests carry the gateway aliases
+`anthropic/claude-sonnet-5` and `anthropic/claude-haiku-4-5`), and `pricing` is
+keyed by the model string AS SENT, so a model the table does not name runs
+uncosted ([providers](agents.md#providers)).
 
 ## Google
 
@@ -192,9 +247,23 @@ instance of it. Deriving a series record from those is the repository's to do,
 from a kind of its own. The account's `calendarSeries` property is deprecated
 and inert.
 
+**The three streams read `backfillDepth` differently.** Gmail and calendar
+each stamp their own backfill anchor on the first run and take the window off
+that stored instant, so neither reach creeps forward; contacts ignores the
+property entirely, because the People sync token gives it full-plus-incremental
+with no window. The calendar walk also caps its forward reach at now plus 365
+days, or a recurring event exploded to 2099 would page forever. Gmail's own cap
+is a quota: `messages.get` costs 20 units against a ceiling of 6,000 units per
+minute per user, which is what sizes the 25-message hydrate batch and the
+20-page backfill.
+
 **What this slice does not do**: no attachment bytes (metadata and the
 attachment id only), no label kind (core keeps provider label ids as plain
-strings), and no writeback.
+strings), and no writeback. The calendar stream also carries no resume state
+where gmail's backfill has `gmailBackfillResume`, so a repository with very
+many very large calendars can still outrun the engine's drain deadline: it
+needs an account property rather than a constant, and is filed rather than
+papered over.
 
 ## GitHub
 
@@ -217,9 +286,19 @@ code work you are involved in.
   installing this package afterwards is not enough on its own: import `people`
   again ([suggested mappings](bundles.md#suggested-mappings)).
 
+Deletes are not reconciled: the search feed carries no tombstones, so a
+deleted issue simply stops updating and its mirror stands.
+
 Scopes are derived per toggle (`read:user`, and `repo` for repositories, issues
 and pull requests), and the facility reads the account's public email from
-`GET /user` after the exchange. GitHub revokes app grants over a Basic-auth
+`GET /user` after the exchange. GitHub's classic scopes are coarse: `repo`
+grants read and write on private repositories even though this bundle only ever
+reads, so consent to the toggles you want and no more; public-only use can
+narrow that to `public_repo` by editing the manifest. `user:email` is
+deliberately never requested, so the identity probe sees the PUBLIC profile
+email only: an account whose profile sets none carries a blank `email` and
+displays as its `login`, and a person mapping mints a shell for it rather than
+matching. GitHub revokes app grants over a Basic-auth
 call the facility cannot speak, so the bundle declares no `revocationEndpoint`:
 disconnecting deletes the stored credential, and the grant itself is revoked
 from GitHub's settings.
@@ -247,6 +326,19 @@ import it first and the mapping is reported `waiting` for this package, and
 installing this package afterwards is not enough on its own: import that
 sample again ([suggested mappings](bundles.md#suggested-mappings)).
 
+It mirrors issues and nothing around them: no comments, no attachments, no
+cycles, no projects. Nothing sweeps either, so an issue deleted or unassigned
+upstream keeps its mirror until a tombstone slice adds reconciliation.
+
+`read` is the only scope this bundle ever requests. Linear exposes no userinfo
+endpoint the facility could read at the exchange, so the account's `email` is
+stamped by the sync from the GraphQL `viewer` query instead, and the owner
+never types it. A workspace that HIDES the viewer's email leaves an issue with
+no address to probe, so the sync points each issue's `assignee` slot at the
+viewer's own `user` mirror: a mapping that reaches people through that mirror
+resolves in one hop, and a hidden address costs one shell per login rather
+than one per issue.
+
 A projected task's `status` is not mapped and cannot be: a state moves through
 its declared transitions, never through a mapping
 ([0040](decisions/0040-the-four-occurrence-logs-say-done.md)), so the task the
@@ -271,9 +363,20 @@ wearable's daily physiology.
 
 Every feature toggle carries its read scope plus `read:profile` and `offline`,
 so a refresh token is minted and the facility can derive the connected address.
+The five to enable on the WHOOP app are therefore `read:recovery`,
+`read:sleep`, `read:workout`, `read:profile` and `offline`.
 WHOOP's documented revocation is an OAuth-authenticated delete, a shape the
-facility does not speak, so the bundle declares no `revocationEndpoint` and
-revocation is manual.
+facility does not speak, so the bundle declares no `revocationEndpoint`:
+deleting the account tears down the stored credential, and the grant itself is
+revoked by hand in the WHOOP app (App & Privacy, connected apps).
+
+Windows, not sync tokens: WHOOP's v2 API has no incremental cursor, so each
+collection is read over a `[start, end]` window: the first one starts where
+`backfillDepth` says (`all` reads from a fixed pre-API epoch), and every later
+run re-reads a 48-hour overlap behind `lastSyncedAt`, because recovery and
+sleep scores settle hours after a record first appears. The provider-keyed puts
+make the overlap converge instead of duplicate, and under `none` a record from
+up to two days before the connect can still land once its score settles.
 
 ## Notion
 
@@ -296,6 +399,20 @@ The integration token is a secret on the configuration record, origin-pinned to
 Notion's API host. Only one account per repository syncs: every other account
 row is stamped `syncStatus: ignored: duplicate account`.
 
+Setting it up takes two steps in Notion. Create an internal integration
+(Settings, Connections, Develop or manage integrations) with read-content
+capabilities only, and paste its token onto the `config` record. Then SHARE
+each top-level page, database or teamspace with that integration: the search
+API returns only what has been shared with it, so an unshared page is invisible
+to the sync rather than refused. A page's mirrored `content` truncates at 500
+blocks and nesting depth 2, closed by a `[content truncated]` marker.
+
+The search walk stops at the first below-cutoff result, descending by
+`last_edited_time`, so a narrow `backfillDepth` never scans the whole
+workspace. The flip side of a window that moves with the clock: a mirror that
+falls behind it stops being visited, so a `pendingParent` it still holds stops
+being repaired.
+
 ## Beeper
 
 Package `providers.substrate.reamde.dev/beeper`. A non-OAuth provider: it connects a
@@ -317,6 +434,23 @@ The token is a secret on the configuration record, origin-pinned to Beeper's
 hosts or loopback. Only one account per repository syncs: every other account
 row is stamped `syncStatus: ignored: duplicate account`.
 
+The token is a Matrix access token, from `bbctl login` (which writes it to
+`~/.config/bbctl/config.json`) or from Beeper Desktop's Settings, Developer;
+treat it like a password. The config's `homeserverUrl` defaults to
+`https://matrix.beeper.com` and a set one must be `https` on a `beeper.com`
+host; the account carries the `userId` it belongs to (`@you:beeper.com`). Its
+optional `roomFilter` narrows the walk to rooms whose name or bridged network
+contains a case-insensitive substring (`whatsapp` syncs only WhatsApp rooms),
+and it falls back to the stored mirror when a delta carries neither field, so a
+matching room never silently stops syncing.
+
+History arrives across runs: one drain walks at most 2,000 events per room;
+a room with deeper history inside its `backfillDepth` window is recorded in the
+account's `backfillResume`, stamped `syncStatus: ok (N rooms backfill
+pending)`, and resumed by the next run rather than cut off. Message edits,
+reactions and redactions are not folded in: an edit arrives as its own event
+and the original row stands.
+
 ## Firecrawl (sample)
 
 Package `samples.substrate.reamde.dev/firecrawl`. Not a provider: no
@@ -335,7 +469,13 @@ tools, behind an API key.
 
 The API key is a secret on the configuration record, and the bodies refuse any
 base URL that is not the pinned Firecrawl origin or loopback, so an edit of the
-owner-editable `baseUrl` can never redirect the key.
+owner-editable `baseUrl` can never redirect the key. Keys come from
+[firecrawl.dev](https://www.firecrawl.dev) and look like `fc-…`; a scraped
+page's markdown is capped at 24,000 characters, and `truncated: true` marks a
+cut. An agent that binds `scrapepage` must name `webdocument` in its own
+`permissions.writes` as well, because a tool's effective writes are its own
+intersected with its caller's
+([agents](agents.md#sub-agents-budgets-and-the-emit-ceiling)).
 
 ## Web harvester (sample)
 
@@ -367,6 +507,58 @@ the running example these pages build on.
   what the agent does is what picks the model, not a tier.
 
 Its functions are deterministic stubs, because the bundle exists to exercise
-the machinery rather than talk to a provider.
+the machinery rather than talk to a provider. The `config` record carries the
+two knobs they read: `denyDomains`, the hosts `findurls` skips, and the
+secret-typed `firecrawlKey` a production `fetchpage` body would spend.
+
+## Pebble (sample)
+
+Package `samples.substrate.reamde.dev/pebble`. Voice capture from a Pebble
+Index 01 ring: the phone app POSTs each capture to a webhook, and the bundle
+saves it as a `recording`, plus an `instruction` an agent turns into tasks when
+the capture came from a press-and-hold. It requires
+`samples.substrate.reamde.dev/tasks`, which the agent writes into.
+
+- **Kinds (2)**: `recording` (one capture: the `transcription` it heads itself
+  with, `recordedAt`, `mode`, `client` and the `audio` blob digest) and
+  `instruction` (the agent-mode capture's `text`, pointing back at its
+  recording).
+- **Functions (1)**: `ingest` writes both records off one webhook fire. The id
+  is derived from the fire id, so a retried delivery updates the same records.
+- **Triggers (2)**: `pebble-webhook` receives the POST; `pebble-on-instruction`
+  delivers each new instruction to the agent.
+- **Agents (1)**: `assistant` reads the open tasks through the `graphql` host
+  function and writes `samples.substrate.reamde.dev/tasks/task` records through
+  `mutate`. It names `provider: default`, a row nothing seeds.
+
+**The endpoint** is `POST
+https://<your-substrate-host>/webhooks/<authority>/pebble-webhook`, where
+`<authority>` is the repository's own authority;
+`substratectl trigger status` prints the path in its `WEBHOOK` column. It is
+open as shipped, and setting `source.webhook.key` on the `pebble-webhook`
+trigger (16 to 128 characters of `[A-Za-z0-9_-]`) makes the server require that
+key as a trailing path segment, as `?key=<key>`, or as a bearer token
+([functions](functions.md#triggers)).
+
+**The request** is `multipart/form-data` with four parts: `transcription`
+(text), `audio` (`audio/mp4`), `recordedAt` (milliseconds since the Unix
+epoch, as text) and `client` (the text `ring`). The host stores the audio in
+the repository's blob store before the function runs, and the function writes
+the digest to the recording's `audio`. The two gestures are told apart by a
+header rather than by URL: a single press sends `X-Pebble-Mode: note`, a
+press-and-hold `X-Pebble-Mode: agent`, and a request with neither is saved as
+a note. So the ring app carries the same URL twice, once per header value,
+with "Send" set to transcription and recording. Transcription alone works too;
+the recording then has no `audio`. One fire, mimicked by hand:
+
+```bash
+printf '' > empty.m4a
+curl -s -X POST "https://<your-substrate-host>/webhooks/<authority>/pebble-webhook" \
+  -H "X-Pebble-Mode: agent" \
+  -F "transcription=call the dentist tomorrow morning" \
+  -F "recordedAt=$(( $(date +%s) * 1000 ))" \
+  -F "client=ring" \
+  -F "audio=@empty.m4a;type=audio/mp4;filename=recording.m4a"
+```
 
 Next: [substratectl](substratectl.md), the command line over all of it.

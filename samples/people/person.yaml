@@ -15,13 +15,6 @@ data:
     person" lands here. What one source holds about them — a Google contact,
     a GitHub user — is that bundle's own record pointing here, so a person
     carries many provider identities and stays one row.
-  # version 2: the first version this kind pins itself, above the 1 it took
-  # from the package. `memberOf` gained a declared `properties` block (issue
-  # 111): additive, and the first shipped use of the block.
-  # version 3: `names.plural` retired (issue 253, decision 0033).
-  # version 4: `memberOf` is a repeated `type: reference` property with
-  # `mustExist: true`; the role and start date it carries are the reference's
-  # own `properties` block.
   version: 4
   names:
     singular: person

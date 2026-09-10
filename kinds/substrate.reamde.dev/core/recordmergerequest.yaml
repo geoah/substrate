@@ -10,13 +10,6 @@ data:
     or an app writes one and accepting the decision is what performs the merge;
     the row is also the rejection memory, since an existing request suppresses
     re-suggesting the pair.
-  # The declaration inherited the package's version before this pin.
-  # version 10: `decidedAt` is a declared property (datetime, managed). The
-  # decision transitions stamped it as an undeclared string before.
-  # version 11: a display template, so a random-id request reads as the
-  # decision and the pair it proposes instead of its opaque id.
-  # version 13: `winner` and `loser` are unpinned `type: reference` properties
-  # with `mustExist: true`, so a request names two records of any one kind.
   version: 13
   names:
     singular: recordmergerequest

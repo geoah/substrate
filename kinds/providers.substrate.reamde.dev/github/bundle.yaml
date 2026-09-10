@@ -19,7 +19,7 @@
 #   never config-record properties (review-google #1).
 # Connect:  create an account, then run the host OAuth flow against it —
 #   the callback URL registered on the GitHub OAuth app is the host's
-#   GET …/api/v1/oauth/callback (see README).
+#   GET …/api/v1/oauth/callback (see docs/bundles-catalog.md).
 #
 # This file is the SCHEMA closure (the atomic install unit). The delivery
 # wiring lives beside it in triggers.yaml as ordinary data records.
@@ -30,31 +30,6 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: github
-  # version 2: THE TYPED CORE SWEEP. Declarations in this closure moved to the
-  # declared spellings — whichever of them they used: a tool entry naming its arm,
-  # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
-  # naming its properties. THE PACKAGE IS VERSIONED AS A UNIT, so this bump
-  # carries the closure whole rather than saying every declaration in it moved.
-  # version 3: the grants group under one `permissions:` object, and the permission
-  # to write is `writes:` inside it. This closure's functions and agents
-  # follow core's declaration.
-  # version 5: `account` on every mirror kind is a pinned owner
-  # reference instead of a string, so disconnecting an account collects
-  # the rows it synced (docs/decisions/0032).
-  # version 7: issue and pullrequest DECLARE `body` (type text) instead of
-  # riding the former built-in column, which stops being reserved (#68,
-  # docs/decisions/0041). An additive property, so the upgrade is clean.
-  # version 8: the inline functions' `timeoutMs` (int ms) is `timeout`, the
-  # duration datatype (ISO 8601); the retype rides core's function kind bump.
-  # version 9: every link is a `type: reference` property. `user.person` is a
-  # `subject: true` reference the mapping names with `property:`, the issue
-  # and pullrequest `repository` references carry `mustExist: true`, and every
-  # account reference carries `onDelete: cascade`.
-  # version 10: the `user` -> `person` mapping is GONE, and `user.person` is an
-  # unpinned, optional subject slot. A mapping onto a kind is declared by the
-  # package that owns that kind (docs/decisions/0049), and this package owns no
-  # person; the slot stays empty until the repository declares a mapping that
-  # fills it, so this closure names no vocabulary it does not own.
   version: 10
 ---
 # ---- the bundle document: the install unit --------------------------------

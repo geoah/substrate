@@ -5,15 +5,6 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: core
-  # version 16: the package is the unit a declaration is versioned, owned and
-  # quarantined in. This row is what the authority row used to be.
-  # version 17: `source` gains `published`. A provider install writes it, and
-  # it is what closes the package to the repository's own token (decision
-  # record 0048).
-  # version 18: `origin`, `originVersion` and `originDigest`, the provenance a
-  # sample import stamps on the copy it lands.
-  # version 19: `retired` declares the kind names the package has spent
-  # (decision record 0055). Additive.
   version: 19
   description: >-
     One package whose kinds this repository holds: the group a declaration

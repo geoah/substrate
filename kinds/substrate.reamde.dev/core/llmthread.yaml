@@ -16,34 +16,6 @@ data:
     the thread IS the run. Status, turns, tokens and cost accumulate as the
     loop goes, and a root thread's tally rolls up every sub-agent's spend,
     so one number answers what a chain cost.
-  # version 3: the `llm` column split into `provider` + `model` — the run records
-  # WHERE it bought its completions and WHAT model it sent. The bump is what
-  # carries the new columns into repositories that stored the package's
-  # version 2 projection.
-  # version 4: `agent` and `parent` became REFERENCES. A thread is the audit row
-  # of a run and must keep naming the agent that ran it, which the link of the
-  # day could not do: a purge collected the link from either end, so deleting
-  # an agent erased every thread's record of what ran. A reference survives as
-  # a dangling pointer, and the graph reads it in reverse either way.
-  # version 5: the index names its properties, the declared spelling.
-  # version 6: the title FOLLOWS the reference instead of reading a property off
-  # the referent. core/agent stopped declaring `name`, so `{agent.name}` read
-  # nothing and every thread titled ": running"; a bare token on a reference
-  # renders the referent's own title, which is agent's `{localName}`.
-  # version 7: the agent and parent pointers pin with `kind:`, the reference
-  # property's own word.
-  # version 8: `mode` and `status` become enums, the loop's own closed sets
-  # (agentloop.go). `judge` joins mode: the loop already mints it (judge.go),
-  # the old prose just never named it.
-  # version 9: the numeric and constructor invariants. Every counter and the
-  # cost carry `min: 0`, `agentDepth` carries `max: 3` (the sub-agent depth
-  # cap), and the six fields the loop stamps at open (`provider`, `model`,
-  # `mode`, `status`, `agentDepth`, `startedAt`) are required. The `parent`
-  # inverse label is `subagentThreads`, the spelling the rest of the subagent
-  # vocabulary uses.
-  # version 11: the record-delivery mode value is `record`, where it was
-  # `trigger`, matching the trigger source arm (record/schedule/webhook) the
-  # delivery came from; the `trigger` kind and actor prefix are unchanged.
   version: 11
   names:
     singular: llmthread

@@ -9,7 +9,7 @@
 #   substratectl function call stats --input '{"text": "hello world"}'
 #
 # The agents want an `llmprovider` row at the id they name (`default`); the
-# functions want nothing at all. See README.md beside this file.
+# functions want nothing at all. See docs/bundles-catalog.md.
 #
 # What it demonstrates, in the order the loop hits it:
 #
@@ -37,18 +37,6 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: notes
-  # version 2: THE TYPED CORE SWEEP. Declarations in this closure moved to the
-  # declared spellings — whichever of them they used: a tool entry naming its arm,
-  # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
-  # naming its properties. THE PACKAGE IS VERSIONED AS A UNIT, so this bump
-  # carries the closure whole rather than saying every declaration in it moved.
-  # version 3: the grants group under one `permissions:` object, and the permission
-  # to write is `writes:` inside it. This closure's functions and agents
-  # follow core's declaration.
-  # version 5: an agent's sub-agent list is `subagents`, where it was `agents`
-  # (issue 51).
-  # version 6: the inline functions' `timeoutMs` (int ms) is `timeout`, the
-  # duration datatype (ISO 8601); the retype rides core's function kind bump.
   version: 6
 ---
 kind: substrate.reamde.dev/core/bundle

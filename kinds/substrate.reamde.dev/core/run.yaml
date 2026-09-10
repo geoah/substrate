@@ -16,32 +16,6 @@ data:
     settles: what fired, what ran, what it applied, and why it parked. Parked
     runs are kept until their failure is retried away; the rest are pruned
     to the newest few per trigger.
-  # version 10: `mode` and `status` become enums, the engine's own closed sets
-  # (functions.go holds every run row to them). The first own pin lands above
-  # the package's version 9, which this declaration projected with until
-  # now.
-  # version 11: `callable` spells the new actor grammar, which carries the
-  # declaring authority (record 0025). Stored values keep whatever the run
-  # recorded.
-  # version 12: the numeric and constructor invariants of a settled run. Every
-  # run belongs to a trigger and names what ran, fired in a mode and settled
-  # in a status, over a run bounded by a start and a finish, so those seven are
-  # required. `seq` counts from 1 (a changelog seq), an effect count from 1,
-  # and `pages` from 2 (a one-page delivery omits it). `attempt` counts from 0:
-  # a delivery parked at the causal depth cap burns none. A display template
-  # reads a random-id row as its outcome. `error` is renamed `reason`, the word
-  # `llmthread` already uses for why a non-success run settled.
-  # version 14: the record-delivery mode value is `record`, where it was
-  # `trigger`, matching the trigger source arm the delivery came from and the
-  # same rename on `llmthread.mode`.
-  # version 15: `trigger` retypes from a bare id string to a reference (a
-  # `<kind>/<id>` path) pinned to the trigger kind. This is a narrowing, so a
-  # database with live run rows needs a wipe. `record` and `callable` stay
-  # strings: `record` can name ANY kind, and that kind may be uninstalled while
-  # a delivery is still pending past the cursor, so validating it as a reference
-  # would fail the settle transaction and wedge the trigger; a run is an audit
-  # row and its record pointer must never block the write. `callable` spells an
-  # actor (record 0025), which no reference targets.
   version: 15
   names:
     singular: run
@@ -56,6 +30,13 @@ data:
       kind: substrate.reamde.dev/core/trigger
       required: true
       description: the trigger this delivery belongs to
+    # `callable` and `record` stay strings where `trigger` is a reference:
+    # `record` can name ANY kind, and that kind may be uninstalled while a
+    # delivery is still pending past the cursor, so validating it as a
+    # reference would fail the settle transaction and wedge the trigger: a
+    # run is an audit row and its record pointer must never block the write.
+    # `callable` spells an actor (decision record 0025), which no reference
+    # targets.
     callable:
       type: string
       required: true

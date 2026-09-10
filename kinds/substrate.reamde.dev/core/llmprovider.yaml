@@ -27,24 +27,6 @@ data:
     the key that reaches it, and what its models cost. An agent names a provider
     and a model, so re-pointing every agent on a provider is one patch to
     this row.
-  # version 3: wire became an enum, and headers/defaults/pricing became declared
-  # objects instead of json. The bump is what carries the shapes into
-  # repositories that already stored the version 2 declaration — and what makes
-  # the upgrade guard speak up there, naming the rows that still hold the old
-  # shape instead of leaving the kind quietly behind.
-  # version 4: pricing moved from float to decimal, the exact string-carried
-  # number, taken now rather than after stored rows make the retype a
-  # migration. A repository whose provider rows still hold float prices keeps
-  # version 3, loudly, until the rows are rewritten.
-  # version 5: embedModel arrived, and the host gateway left. An empty baseURL
-  # on an openai row used to mean "the host's configured gateway"; it now means
-  # the row names no endpoint, and refuses. Every stored openai row must be
-  # given its own baseURL and apiKey.
-  # version 6: `wire` is required. A row names no default wire, and dispatch
-  # refuses one without it, so the requirement moves to the write.
-  # version 8: the human label property is `label`, where it was `name`. A
-  # provider row's id is its reference, so the free-text field is a label, not
-  # the local name that a kind, task or person derives its title from.
   version: 8
   names:
     singular: llmprovider

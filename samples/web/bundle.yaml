@@ -25,22 +25,6 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: web
-  # version 2: THE TYPED CORE SWEEP. Declarations in this closure moved to the
-  # declared spellings — whichever of them they used: a tool entry naming its arm,
-  # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
-  # naming its properties. THE PACKAGE IS VERSIONED AS A UNIT, so this bump
-  # carries the closure whole rather than saying every declaration in it moved.
-  # version 3: the built-ins are function records, so the two agents' tool
-  # entries name them under `function:` like any other function.
-  # version 4: the grants group under one `permissions:` object, and the permission
-  # to write is `writes:` inside it. This closure's functions and agents
-  # follow core's declaration.
-  # version 7: an agent's sub-agent list is `subagents`, where it was `agents`
-  # (issue 51).
-  # version 8: `page.source` is an unpinned `type: reference` property with
-  # `mustExist: true`, the link back to whatever carried the URL.
-  # version 9: the bundle pins the floor under the package it requires
-  # (`requiresAtLeast`, decision record 0070). Additive.
   version: 9
 ---
 # ---- the bundle document: the install unit --------------------------------
