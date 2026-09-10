@@ -1,7 +1,7 @@
 package engine
 
-// The manager tiers as explicit actor data: a
-// bundle write on a mapped property is a VISIBLE pin — legible in
+// The manager tiers as explicit actor data: a bundle write on a mapped
+// property is a VISIBLE pin — legible in
 // propertyMeta, releasable by the null-patch — never a silent recompute
 // freeze; the tier comes from the ACTOR RECORD (a declared actor's `tier:`
 // attribute, a function/agent dispatch context), never from the actor's

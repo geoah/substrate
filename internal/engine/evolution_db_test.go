@@ -449,9 +449,9 @@ func TestSchemaEvolutionRenamedFromRoundTrips(t *testing.T) {
 	assertStored("after rebuild from rows")
 }
 
-// TestSchemaEvolutionRefusesReferenceAndObjectNarrowing: refuse-narrowing recurses into a reference's `to:` target and an object's
-// fields, each refused with the stranded live-row count — not silently
-// admitted as the outer-kind-only classifier did.
+// Refuse-narrowing recurses into a reference's `to:` target and into an
+// object's fields, refusing each with the count of live rows it would strand,
+// where the outer-kind-only classifier admitted both silently.
 func TestSchemaEvolutionRefusesReferenceAndObjectNarrowing(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)

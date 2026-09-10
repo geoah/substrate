@@ -2,7 +2,10 @@ package engine
 
 // The trigger machinery's internal regressions: a schedule fire is idempotent
 // under stable fire ids and missed occurrences drain in order, and a host
-// Call at the causal-depth cap refuses. (The dispatcher's per-repository
+// Call at the causal-depth cap refuses; the default trigger installer is
+// create-only; a trigger's status resolves an agent callable as well as a
+// function one; and a record trigger carrying an account syncs only that
+// account. (The dispatcher's per-repository
 // independence and its self-actor exclusion are proved end to end, through the
 // public surface, in functions_db_test.go.)
 
@@ -259,5 +262,75 @@ func TestDefaultTriggerCreateOnlyHonorsOwnerState(t *testing.T) {
 	}
 	if row == nil || row.DeletedAt == nil {
 		t.Fatalf("re-registration resurrected a tombstoned default trigger: %+v", row)
+	}
+}
+
+// `trigger status` reports the dispatcher's own verdict, and the dispatcher
+// skips on runnable(): a trigger resolves into EITHER a function or an agent.
+// Testing `Callable == nil` instead marked every agent-backed trigger
+// "callable … does not resolve" while it was dispatching perfectly — on a clean
+// install that is the shipped conformance bundle looking broken out of the box.
+func TestTriggerStatusResolvesAgentCallables(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := openAgentDataset(t)
+
+	agentTrigger, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: typeTrigger,
+		Properties: map[string]any{
+			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/agent", crewPackage+"/classifier"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("put agent trigger: %v", err)
+	}
+	functionTrigger, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: typeTrigger,
+		Properties: map[string]any{
+			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", crewPackage+"/annotate"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("put function trigger: %v", err)
+	}
+
+	statuses, err := ds.TriggerStatuses(ctx)
+	if err != nil {
+		t.Fatalf("statuses: %v", err)
+	}
+	seen := map[string]substrate.TriggerStatus{}
+	for _, st := range statuses {
+		seen[st.ID] = st
+	}
+	for _, id := range []string{agentTrigger.ID, functionTrigger.ID} {
+		st, ok := seen[id]
+		if !ok {
+			t.Fatalf("no status for trigger %s", id)
+		}
+		if st.Error != "" {
+			t.Errorf("trigger %s (callable %s) reports %q; it resolves and dispatches", id, st.Callable, st.Error)
+		}
+	}
+
+	// A callable that genuinely does not resolve still says so — the fix
+	// widens the test, it does not silence it. The row is written past
+	// admission (which refuses an unknown callable) the way an uninstall
+	// leaves one behind.
+	if _, err := ds.db.ExecContext(ctx,
+		`UPDATE records SET props = jsonb_set(props, '{callable}', to_jsonb($3::text))
+		 WHERE kind = $1 AND id = $2`, typeTrigger, agentTrigger.ID,
+		vocabulary.RecordPath(kindAgent, "crew.test.dev/crew/ghost")); err != nil {
+		t.Fatalf("strand the callable: %v", err)
+	}
+	statuses, err = ds.TriggerStatuses(ctx)
+	if err != nil {
+		t.Fatalf("statuses: %v", err)
+	}
+	for _, st := range statuses {
+		if st.ID == agentTrigger.ID && st.Error == "" {
+			t.Fatal("a stranded callable reports no error; the status is not honest")
+		}
 	}
 }
