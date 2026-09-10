@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// The record, reference, merge and split cases: CASES.md REC-03, REC-04,
+// The record, reference, merge and split cases: REC-03, REC-04,
 // REC-06, REC-07, REC-08, REF-01, REF-03, REF-04, MRG-01 and MRG-02. They run
 // after the stories, over the repository the stories built, and every record
 // they write or delete carries the `x-` id prefix so the acme world stays as

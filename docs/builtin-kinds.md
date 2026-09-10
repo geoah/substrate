@@ -1,39 +1,17 @@
 # Built-in kinds
 
-Every repository is seeded at creation with **`substrate.reamde.dev/core` and nothing
-else** — the substrate's own machinery, including the delivery plumbing and the
-agent runtime's data. Everything else is a **sample you import**: people,
-tasks, messaging, calendar, scheduling (the two traits the repeating kinds
-bind), and the function and agent examples notes, llm, web, firecrawl and
-pebble, each described with its functions in the
-[bundles catalog](bundles-catalog.md). Each ships in the
-binary under `samples.substrate.reamde.dev` and is a starting point, not a
-dependency
-([decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)):
-importing rewrites the closure onto **your own authority**, so
-`samples.substrate.reamde.dev/tasks/task` lands as `ada.example.com/tasks/task`
-and is yours to add a property to the next day. So a brand-new repository has
-no `person` kind until you ask for one, and the one it gets is its own.
+A map of the vocabulary the binary ships: the samples first, then the seeded
+`substrate.reamde.dev/core` package [below](#substratereamdedevcore). A sample
+is copied into your repository under your own authority and a provider is
+installed under the authority that publishes it
+([the two doors](bundles.md#the-two-doors)); the provider packages are in the
+[bundles catalog](bundles-catalog.md). Each heading spells the package as the
+tree does, under the placeholder authority an import rewrites, and every kind
+is named `<authority>/<package>/<name>`.
 
-Importing is one action per sample (`substratectl import <sample>`, or the
-console's Registry page), and a sample that declares onto another says so in
-its `requires:`. Importing `tasks` before `people` is refused, naming what to
-import first under your own authority. What it landed belongs to you, and the
-copy records where it came from, so a later binary's newer sample is offered
-as an upgrade you take by importing again
-([bundles](bundles.md#the-two-doors)). Every declaration is queryable in your own
-repository (`substratectl kinds`, or `GET …/substrate.reamde.dev/core/kind`),
-descriptions included, so this page is the map, not the source of truth.
-
-The PROVIDER packages are the other tier, published rather than copied, and
-they are in the [bundles catalog](bundles-catalog.md).
-
-Kinds are named `<authority>/<package>/<name>`. The tables below give the
-name; the heading gives the package as the tree spells it, under the
-placeholder authority an import rewrites.
-
-The tables for core are [below](#substratereamdedevcore); what follows first is
-the vocabulary you import.
+Each declaration is queryable in your own repository (`substratectl kinds`, or
+`GET …/substrate.reamde.dev/core/kind`), descriptions included, so this page is
+the map and not the source of truth.
 
 ## samples.substrate.reamde.dev/people (a sample)
 
@@ -55,7 +33,7 @@ yours.
 `person` carries a two-state `prominence` machine: `utility` at birth, `known`
 once something promotes it (an address-book sync, or you). Search ranks
 `utility` people below every `known` match
-([search](graphql-and-search.md#search)). Its `pronouns` are free text, never
+([search](api.md#search)). Its `pronouns` are free text, never
 an enum, and empty means unknown: a surface rendering a person without a
 value says so and falls back to they/them.
 
@@ -149,5 +127,4 @@ The ten [declarable kinds](vocabulary.md#the-declarable-kinds) — `authority`,
 `temporal`, which puts a record on the timeline, and the `accountconfig` and
 `oauth2` interfaces the OAuth facility recognizes.
 
-Back to [the README](../README.md), or reread the [introduction](introduction.md) with the pieces
-in place.
+Back to [the README](../README.md), or to [the index](README.md).

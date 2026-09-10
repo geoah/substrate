@@ -204,7 +204,7 @@ State machines get the same treatment one level down: every distinct
 state-property name becomes a `Has…` interface (`HasStatus`,
 `HasProminence`) carrying the state and its stamp timestamps, so "everything
 with a status, anywhere" is also one query.
-[GraphQL and search](graphql-and-search.md#generated-names-and-scalars) pins
+[Generated names and scalars](api.md#generated-names-and-scalars) pins
 the naming determinism and the collision refusals.
 
 ## Where traits do work beyond queries

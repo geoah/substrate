@@ -1,7 +1,7 @@
 package e2e
 
-// The door, the tokens and the isolation between two repositories: CASES.md
-// rows AUTH-02, TOK-03, ISO-01 and ISO-02, orders 100-199.
+// The door, the tokens and the isolation between two repositories: cases
+// AUTH-02, TOK-03, ISO-01 and ISO-02, orders 100-199.
 //
 // These run after the stories, over the repository they left. Everything here
 // either refuses or reads, with two exceptions that add and leave: TOK-03

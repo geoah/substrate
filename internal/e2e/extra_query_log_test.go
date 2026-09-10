@@ -15,8 +15,8 @@ import (
 	"time"
 )
 
-// The query, changelog and blob cases (CASES.md's Queries, The changelog and
-// Blobs groups). They run over the repository the stories left behind and
+// The query, changelog and blob cases: QRY-01, QRY-02, LOG-02 through LOG-06,
+// BLOB-01 and BLOB-02. They run over the repository the stories left behind and
 // write only under the `x-` prefix, so nothing a story asserts on moves.
 
 const (

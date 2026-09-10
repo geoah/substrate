@@ -93,11 +93,9 @@ mise run test:db:engine                # about 70 s on 16 cores; the answer you 
 go test ./internal/engine/ -run TestFold -v
 ```
 
-The engine package is about 850 top-level tests: about 70 s of wall time on a 16
-core machine (measured 2026-09-08, down from 134 s the same day; the section
-below says where the time went), and longer on a 4 vCPU CI runner (six to
-eight minutes before that change; a shard's log says what it is now), so the
-comment above is this machine's number, not a promise.
+The engine package is about 850 top-level tests, about 70 s of wall time on a
+16 core machine and longer on a 4 vCPU CI runner, where a shard's own log says
+what it took. The comment above is one machine's number, not a promise.
 
 `test:db:engine` is the engine package with `test:db`'s flags, and it is also
 the task CI shards: with `SHARD` and `SHARDS` in the environment it runs one
@@ -105,64 +103,51 @@ slice of the package (`SHARD=3 SHARDS=8 mise run test:db:engine`), which is
 how a red shard is reproduced by number. `test:db:rest` is every other
 database package. The cut is described under [What CI runs](#what-ci-runs).
 
-### The engine fixture, and where the time goes
+### The engine fixture
 
 Almost every engine test opens its own service, creates a repository and
-imports the sample vocabulary. Four things the harness does keep that under
-a minute and a half on 16 cores; each was measured on its own, and
-`docs/testing.md` is the one place that explains them (the code comments
-point here).
+imports the sample vocabulary. Four things in the harness make that cheap, and
+this page is the one place that explains them (the code comments point here).
 
-**A migrated template database, copied per test.** `engine.Open` runs once
-per binary on a template (`migratedTemplate` in
+**A migrated template database, copied per test.** `engine.Open` runs once per
+binary on a template (`migratedTemplate` in
 `internal/engine/export_test.go`, a `testdb.Template`) with no repository, so
-the template holds the recorded migrations, the roles' grants and the
-shipped indexes and nothing else; `engine.MigratedDSN(t)` hands each test a
+the template holds the recorded migrations, the roles' grants and the shipped
+indexes and nothing else; `engine.MigratedDSN(t)` hands each test a
 `CREATE DATABASE ... TEMPLATE` copy. `engine.Open` still runs every boot step
-on the copy and skips only the DDL. A copy beside an empty data root is
-exactly a fresh install: nothing on either side. Before this, every test
-migrated a fresh schema, and the migration runner's advisory lock was
-keyed on one constant, so the parallel suite ran its migrations one test at
-a time: 90% of Postgres's time in a run was that lock. The lock is keyed on
-`current_schema()` now, like the engine's other three (no effect on a
-deployment, one schema per database), which is what the packages still on
-`testdb.NewSchema` (catalog, testenv, substratectl) get. The from-empty
-migration still runs three times per engine binary: the template build,
-`TestRepositoryProvisioningAndProjections` and
-`TestAssertPoolPrincipalRejectsSuperuser`.
+on the copy and skips only the DDL, and a copy beside an empty data root is
+exactly a fresh install: nothing on either side. The migration runner's
+advisory lock is keyed on `current_schema()`, like the engine's other three,
+so the parallel suite does not serialize on it; a deployment holds one schema
+per database, where the key makes no difference.
 
 **One opener.** `engine.OpenForTest(t, ctx, dsn, opts...)` is `engine.Open`
 with the shipped core kinds (`engine.CoreKindsDir`), the binary's credential
-key and the test's TOTP clock; every test open goes through it, and a
-caller's options win where they name the same thing. The clock
-(`engine.ClockOf(t)`, keyed on the full test name and forgotten when the
-test ends) is what `waitStep` advances by one `engine.TOTPPeriod` where it
-used to sleep through a real 30 second window.
+key and the test's TOTP clock; every test open goes through it, and a caller's
+options win where they name the same thing. The clock (`engine.ClockOf(t)`,
+keyed on the full test name and forgotten when the test ends) is what
+`waitStep` advances by one `engine.TOTPPeriod` rather than sleeping through a
+real 30 second window.
 
-**The container, and how it is reached.** The pgvector container `testdb`
-starts runs with `fsync=off`, `synchronous_commit=off` and
-`full_page_writes=off` on its command line: it dies with the binary, and
-`DROP DATABASE` forces a checkpoint that fsync makes slow. `testdb` connects
-to the container's own IP where the host can route to it, else the published
-port: the published port is docker-proxy, one process relaying every
-connection, and it was the queue every test waited in (98 s to 84 s). Each
-test drops its copy in its cleanup and `testdb.Main` drops what is left after
-`m.Run` (a dropper goroutine off the tests' path measured no gain: 69 to
-80 s against 67 s). CI's service containers keep their data directory on a
-tmpfs (`--tmpfs` in the job's `options`) and take no command line, so the
-jobs set `SUBSTRATE_TEST_DATABASE_DISPOSABLE=true` and `testdb` applies the
-same three settings through `ALTER SYSTEM`. The one test that starts a
-container of its own (`TestOpenFailsClosedWithoutSafeRoles`) passes
-`testdb.DurabilityOff()`, and a dev database `mise run dev` creates carries
-the flags on its command line (one created before this keeps the image's
-defaults until `dev:wipe` recreates it).
+**The container runs without durability.** The pgvector container `testdb`
+starts takes `fsync=off`, `synchronous_commit=off` and `full_page_writes=off`
+on its command line, and dies with the test binary; each test drops its copy
+in its cleanup and `testdb.Main` drops what is left after `m.Run`. CI's
+service containers take no command line, so the jobs set
+`SUBSTRATE_TEST_DATABASE_DISPOSABLE=true` and `testdb` applies the same three
+settings through `ALTER SYSTEM`; the one test that starts a container itself
+(`TestOpenFailsClosedWithoutSafeRoles`) passes `testdb.DurabilityOff()`, and
+the database `mise run dev` creates carries the three flags too (one created
+before that keeps the image's defaults until `dev:wipe` recreates it).
+`testdb` connects to the container's own IP where the host can route to it and
+falls back to the published port, which relays every connection through one
+docker-proxy process.
 
 **The data roots on tmpfs.** Every changelog write fsyncs
 ([0062](decisions/0062-a-write-is-on-disk-before-its-commit-and-its-final-newline-is-the-commit-marker.md)),
-and sixteen repositories fsyncing one ext4 journal serialize on it (84 s to
-67 s). `testdb.Main` puts `TMPDIR`, and with it every `t.TempDir()`, under
-`/dev/shm` when that is a tmpfs with at least 512 MB free, and says so once
-on stderr. A container's 64 MB `/dev/shm` falls back to the default;
+so `testdb.Main` puts `TMPDIR`, and with it every `t.TempDir()`, under
+`/dev/shm` when that is a tmpfs with at least 512 MB free, and says so once on
+stderr. A container's 64 MB `/dev/shm` falls back to the default;
 `TMPDIR=/tmp` opts out.
 
 To see what a run spent, capture it as JSON once and read it:
@@ -394,9 +379,10 @@ effect of running the tests.
 `mise run test:e2e` drives the dev substrate over HTTP exactly as a client
 would: it rebuilds and restarts the server so the binary is this tree's,
 registers a fresh throwaway user through the real registration flow, and
-walks the implemented cases in
-[internal/e2e/CASES.md](../internal/e2e/CASES.md). Two things distinguish it
-from every other suite:
+walks the cases its test files register, each one carrying its own id, title
+and claim ([internal/e2e/CASES.md](../internal/e2e/CASES.md) describes the
+suite and holds the backlog). Two things distinguish it from every other
+suite:
 
 - **It leaves its data.** The user and repository the run builds stay in
   place, so a human can sign into the console (the report has the

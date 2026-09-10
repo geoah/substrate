@@ -1,6 +1,7 @@
 // Package e2e drives a LIVE substrate over HTTP, exactly as a user's client
-// would: it registers a fresh user through the real door, walks the cases in
-// CASES.md, writes a markdown report of every step under .dev/e2e/, and
+// would: it registers a fresh user through the real door, walks the cases the
+// test files register, writes a markdown report of every step under .dev/e2e/,
+// and
 // LEAVES the repository in place so a human can open the console or
 // substratectl and review what the run built. `mise run dev:wipe` is the
 // cleanup; nothing here deletes anything.

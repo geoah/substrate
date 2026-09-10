@@ -176,7 +176,7 @@ resume without a gap.
 
 - Declare a kind of your own, or read what the shipped ones say:
   [the data model](data-model.md) and [vocabulary as records](vocabulary.md).
-- Query across kinds, or search: [GraphQL and search](graphql-and-search.md).
+- Query across kinds, or search: [GraphQL and search](api.md#graphql).
 - Connect a provider, or install an automation:
   [bundles](bundles.md) and the [catalog](bundles-catalog.md).
 - Mint a token for a script: `substratectl token create --label backup`.

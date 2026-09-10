@@ -395,7 +395,7 @@ shared email address, scoring overlapping names, whatever the matcher
 decides), one request per strong candidate. The owner reviews the queue in
 the [console](console.md) and accepts or rejects, with the request's
 rationale beside a field-by-field comparison of the two records. Merging without a request is the same mutation driven directly:
-`merge` over [GraphQL](graphql-and-search.md), or a REST post naming the kind
+`merge` over [GraphQL](api.md#graphql), or a REST post naming the kind
 and the two ids:
 
 ```http

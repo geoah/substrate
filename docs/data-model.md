@@ -72,7 +72,7 @@ Three more words, used precisely on every page:
 
 The envelope is the YAML form. It is what [`substratectl get -o yaml`](substratectl.md)
 emits and what `apply` and the batch vocabulary apply consume.
-[REST](api.md) and [GraphQL](graphql-and-search.md) reads return the record
+[REST](api.md) and [GraphQL](api.md#graphql) reads return the record
 flat, as one JSON object, not wrapped in an envelope.
 
 ## The envelope
@@ -344,7 +344,7 @@ the immutable changelog. Every read, whatever the surface, returns the sentinel
 stored value alone, so a read-edit-apply round trip never wipes a
 credential. A secret offers no filter operators and cannot be ordered by
 (comparing against a redacted value would reconstruct it one probe at a
-time), never indexes into [search](graphql-and-search.md#search), never
+time), never indexes into [search](api.md#search), never
 renders into a title, and a [record mapping](projection.md) may never read
 one: a secret never leaves its record.
 
@@ -554,7 +554,7 @@ validates.
 **Search coverage.** Full-text search covers the title and every string-family
 property by default; a property may additionally declare `embed: true` to opt
 into the semantic pipeline. Both are covered in
-[GraphQL and search](graphql-and-search.md#search).
+[search](api.md#search).
 
 ## Traits
 
