@@ -34,7 +34,7 @@ func refDocs() []map[string]any {
 
 func installRefAuthority(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, refDocs()); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), owner, refDocs()); err != nil {
 		t.Fatalf("install ref authority: %v", err)
 	}
 }

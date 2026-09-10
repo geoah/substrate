@@ -35,33 +35,14 @@ func (d statusErrDataset) BundleStatus(context.Context, string) (substrate.Bundl
 	return substrate.BundleStatus{}, d.err
 }
 
-// The rest of the substrate.BundleOps seam is stubbed: this fake exists only
-// to fail the status reads while still resolving as a bundle-running dataset.
+// BundlePackage resolves, so the lifecycle gate passes and the status read is
+// what fails.
 func (d statusErrDataset) BundlePackage(context.Context, string) (string, error) {
 	return "samples.substrate.reamde.dev/web", nil
 }
-func (d statusErrDataset) DisableBundle(context.Context, string) error { return nil }
-func (d statusErrDataset) BindBundleInput(context.Context, string, string, string) error {
-	return nil
-}
-func (d statusErrDataset) EnableBundle(context.Context, string) error    { return nil }
-func (d statusErrDataset) UninstallBundle(context.Context, string) error { return nil }
-func (d statusErrDataset) PurgeBundle(context.Context, string) (int, error) {
-	return 0, nil
-}
-
-func (d statusErrDataset) StartOAuth(context.Context, substrate.Actor, string) (string, error) {
-	return "", nil
-}
-
-func (d statusErrDataset) TypesImplementing(context.Context, string) ([]substrate.KindInfo, error) {
-	return nil, nil
-}
-
-var _ substrate.BundleOps = statusErrDataset{}
 
 // statusErrService authenticates into a statusErrDataset, so the handler
-// resolves a dataset whose bundle-status seam fails.
+// resolves a dataset whose bundle-status reads fail.
 type statusErrService struct {
 	*fakeService
 	err error
@@ -138,28 +119,6 @@ func (d upgradeErrDataset) PlanBundleUpgrade(context.Context, []map[string]any) 
 func (d upgradeErrDataset) BundlePackage(context.Context, string) (string, error) {
 	return googleBundleID, nil
 }
-func (d upgradeErrDataset) DisableBundle(context.Context, string) error { return nil }
-func (d upgradeErrDataset) BindBundleInput(context.Context, string, string, string) error {
-	return nil
-}
-func (d upgradeErrDataset) EnableBundle(context.Context, string) error    { return nil }
-func (d upgradeErrDataset) UninstallBundle(context.Context, string) error { return nil }
-func (d upgradeErrDataset) PurgeBundle(context.Context, string) (int, error) {
-	return 0, nil
-}
-
-func (d upgradeErrDataset) StartOAuth(context.Context, substrate.Actor, string) (string, error) {
-	return "", nil
-}
-
-func (d upgradeErrDataset) TypesImplementing(context.Context, string) ([]substrate.KindInfo, error) {
-	return nil, nil
-}
-
-var (
-	_ substrate.BundleOps            = upgradeErrDataset{}
-	_ substrate.BundleUpgradePlanner = upgradeErrDataset{}
-)
 
 type upgradeErrService struct {
 	*fakeService
@@ -447,28 +406,6 @@ func (d heldDataset) BundleStatus(_ context.Context, id string) (substrate.Bundl
 }
 
 func (d heldDataset) BundlePackage(context.Context, string) (string, error) { return d.id, nil }
-func (d heldDataset) DisableBundle(context.Context, string) error           { return nil }
-func (d heldDataset) BindBundleInput(context.Context, string, string, string) error {
-	return nil
-}
-func (d heldDataset) EnableBundle(context.Context, string) error    { return nil }
-func (d heldDataset) UninstallBundle(context.Context, string) error { return nil }
-func (d heldDataset) PurgeBundle(context.Context, string) (int, error) {
-	return 0, nil
-}
-
-func (d heldDataset) StartOAuth(context.Context, substrate.Actor, string) (string, error) {
-	return "", nil
-}
-
-func (d heldDataset) TypesImplementing(context.Context, string) ([]substrate.KindInfo, error) {
-	return nil, nil
-}
-
-var (
-	_ substrate.BundleOps            = heldDataset{}
-	_ substrate.BundleUpgradePlanner = heldDataset{}
-)
 
 type heldService struct {
 	*fakeService
@@ -595,8 +532,6 @@ func (d installerDataset) InstallBundleClosure(_ context.Context, _ substrate.Ac
 	*d.last = opts
 	return nil, nil
 }
-
-var _ substrate.BundleInstaller = installerDataset{}
 
 type installerService struct {
 	*fakeService

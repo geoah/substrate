@@ -38,8 +38,6 @@ func (s *webhookSvc) ReceiveWebhook(_ context.Context, authority, trigger, key s
 	return s.fid, s.err
 }
 
-var _ substrate.WebhookReceiver = (*webhookSvc)(nil)
-
 func webhookHandler(fid string, err error) (*webhookSvc, http.Handler) {
 	svc := &webhookSvc{fakeService: newFakeService(), fid: fid, err: err}
 	return svc, New(Config{Service: svc})
@@ -135,16 +133,13 @@ func TestWebhookKeyFromPathQueryOrHeader(t *testing.T) {
 	}
 }
 
-// Every service refusal is one 404, and a service without the seam says so.
+// Every service refusal is one 404: no such trigger, wrong key and disabled
+// must not be told apart.
 func TestWebhookRefusals(t *testing.T) {
 	_, h := webhookHandler("", substrate.ErrNotFound)
 	rec := postHook(h, "/webhooks/geoah.example.com/nope", []byte("{}"), nil)
 	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "not_found") {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
-	}
-	plain := New(Config{Service: newFakeService()})
-	if rec := postHook(plain, "/webhooks/geoah.example.com/nope", []byte("{}"), nil); rec.Code != http.StatusNotImplemented {
-		t.Fatalf("no seam: status = %d", rec.Code)
 	}
 }
 

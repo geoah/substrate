@@ -17,10 +17,9 @@ func TestApplyMaintainsDeclarationVersions(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	sa := applier(t, ds)
 
 	nameOnly := map[string]any{"name": map[string]any{"type": "string"}}
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
 		swTypeDoc("widget", nameOnly),
 	}); err != nil {
@@ -38,7 +37,7 @@ func TestApplyMaintainsDeclarationVersions(t *testing.T) {
 	}
 
 	// An unchanged re-apply keeps the stored version: `get | apply` is a no-op.
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		swTypeDoc("widget", nameOnly),
 	}); err != nil {
 		t.Fatalf("unchanged re-apply: %v", err)
@@ -52,7 +51,7 @@ func TestApplyMaintainsDeclarationVersions(t *testing.T) {
 		"name": map[string]any{"type": "string"},
 		"size": map[string]any{"type": "int"},
 	}
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		swTypeDoc("widget", twoProps),
 	}); err != nil {
 		t.Fatalf("changed apply: %v", err)
@@ -70,7 +69,7 @@ func TestApplyMaintainsDeclarationVersions(t *testing.T) {
 			"size": map[string]any{"type": "int"},
 			"hue":  map[string]any{"type": "string"},
 		}})
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{echoed}); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{echoed}); err != nil {
 		t.Fatalf("echoed-version apply: %v", err)
 	}
 	if v := widget(); v != 3 {
@@ -81,7 +80,7 @@ func TestApplyMaintainsDeclarationVersions(t *testing.T) {
 	pinned := vocabulary.KindManifest(swPackage,
 		map[string]any{"singular": "widget"},
 		map[string]any{"version": 10, "properties": twoProps})
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{pinned}); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{pinned}); err != nil {
 		t.Fatalf("pinned apply: %v", err)
 	}
 	if v := widget(); v != 10 {
@@ -110,11 +109,11 @@ func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, e
 			"permissions": map[string]any{"writes": []any{swPackage + "/widget"}},
 		})
 	}
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{fnBody("one")}); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{fnBody("one")}); err != nil {
 		t.Fatalf("apply the function: %v", err)
 	}
 	before := packageVersion()
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{fnBody("two")}); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{fnBody("two")}); err != nil {
 		t.Fatalf("change the function: %v", err)
 	}
 	if v := packageVersion(); v != before+1 {

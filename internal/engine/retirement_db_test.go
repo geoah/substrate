@@ -98,7 +98,7 @@ func TestRetirementRefusesOnEveryDoor(t *testing.T) {
 	ctx := context.Background()
 	svc, ds := newDataset(t)
 	apply := func(docs ...map[string]any) error {
-		_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs)
+		_, err := ds.ApplyVocabularyDocuments(ctx, owner, docs)
 		return err
 	}
 	// The base closure's header carries an EMPTY list, which is no retirement:
@@ -217,10 +217,6 @@ func TestRetirementRefusesOnEveryDoor(t *testing.T) {
 	// The install door: a published closure retires a kind, a later closure
 	// that declares it again is refused, and one that omits the block keeps
 	// it. The same admission the catalog's install and import ride.
-	inst, ok := ds.(substrate.BundleInstaller)
-	if !ok {
-		t.Fatal("dataset does not implement the closure-install seam")
-	}
 	const pkg = "acme.example.com/mirror"
 	actor := substrate.BundleActor(vocabulary.SplitPackageRef(pkg))
 	closure := func(header map[string]any, members ...map[string]any) []map[string]any {
@@ -235,7 +231,7 @@ func TestRetirementRefusesOnEveryDoor(t *testing.T) {
 		}, members...)
 	}
 	install := func(docs []map[string]any) error {
-		_, err := inst.InstallBundleClosure(ctx, actor, docs, nil, substrate.BundleInstall{Published: true})
+		_, err := ds.InstallBundleClosure(ctx, actor, docs, nil, substrate.BundleInstall{Published: true})
 		return err
 	}
 	label := map[string]any{"label": map[string]any{"type": "string"}}
@@ -253,11 +249,7 @@ func TestRetirementRefusesOnEveryDoor(t *testing.T) {
 		"kind acme.example.com/mirror/other is retired and declared")
 	// The upgrade preview reports the same line the install refuses on,
 	// without writing anything.
-	planner, ok := ds.(substrate.BundleUpgradePlanner)
-	if !ok {
-		t.Fatal("dataset does not plan bundle upgrades")
-	}
-	plan, err := planner.PlanBundleUpgrade(ctx, closure(packageDocRetiring(pkg), thing, other))
+	plan, err := ds.PlanBundleUpgrade(ctx, closure(packageDocRetiring(pkg), thing, other))
 	if err != nil {
 		t.Fatalf("plan the upgrade: %v", err)
 	}

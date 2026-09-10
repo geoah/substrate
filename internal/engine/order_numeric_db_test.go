@@ -20,7 +20,7 @@ func TestOrderByAnIntPropertySortsNumerically(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(orderPackage, 0),
 		vocabulary.KindManifest(orderPackage,
 			map[string]any{"singular": "step"},
@@ -73,7 +73,7 @@ func TestOrderAndFilterByADecimalPropertyCompareNumerically(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(orderPackage, 0),
 		vocabulary.KindManifest(orderPackage,
 			map[string]any{"singular": "price"},
@@ -142,7 +142,7 @@ func TestOrderByAStringPropertyStaysTextual(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(orderPackage, 0),
 		vocabulary.KindManifest(orderPackage,
 			map[string]any{"singular": "step"},

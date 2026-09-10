@@ -16,12 +16,9 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// exportingDataset is the fake with the export seam: the route type-asserts
-// substrate.Exporter per request, so the plain fake keeps answering 501 and
+// exportingDataset is the fake with an export: the plain fake models none, so
 // this one answers the archive.
 type exportingDataset struct{ *fakeDataset }
-
-var _ substrate.Exporter = (*exportingDataset)(nil)
 
 // fakeExport is a two-entry archive: the manifest and snapshot.json, in the
 // order the engine writes them. Midway failure stops after the first.
@@ -119,13 +116,9 @@ func TestExportStreamsTheArchiveUnderTheBearerToken(t *testing.T) {
 	wantErrorCode(t, env.do(t, http.MethodGet, "/api/v1/export", "", nil), http.StatusUnauthorized, codeAuth)
 }
 
-// A dataset without the seam answers 501, and a refusal before the first byte
-// is an ordinary error body with its status, not half an archive.
+// A refusal before the first byte is an ordinary error body with its status,
+// not half an archive.
 func TestExportRefusesWithAStatusBeforeTheFirstByte(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	wantErrorCode(t, env.do(t, http.MethodGet, "/api/v1/export", tok, nil), http.StatusNotImplemented, codeUnsupported)
-
 	env, ds, tok := exportEnv(t)
 	ds.exportErr = fmt.Errorf("%w: the directory is behind the tables", substrate.ErrUnavailable)
 	rec := env.do(t, http.MethodGet, "/api/v1/export", tok, nil)

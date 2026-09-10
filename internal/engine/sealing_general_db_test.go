@@ -195,7 +195,7 @@ func TestDigestRedactsWithoutIndirection(t *testing.T) {
 				"fingerprint": map[string]any{"type": "digest"},
 			}}),
 	}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), owner, docs); err != nil {
 		t.Fatalf("declare digest kind: %v", err)
 	}
 
@@ -240,6 +240,6 @@ func TestDisplayTemplateRefusesSensitiveProps(t *testing.T) {
 				},
 			}),
 	}
-	_, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, docs)
+	_, err := ds.ApplyVocabularyDocuments(context.Background(), owner, docs)
 	wantErr(t, err, substrate.ErrValidation, "secret in a display template")
 }

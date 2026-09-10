@@ -305,11 +305,7 @@ func sweepGC(ctx context.Context, svc substrate.Service) {
 
 func sweepResolutions(ctx context.Context, svc substrate.Service) {
 	for _, ds := range repositoryDatasets(ctx, svc) {
-		rs, ok := ds.(substrate.ResolutionSweeper)
-		if !ok {
-			continue
-		}
-		n, err := rs.SweepResolutions(ctx)
+		n, err := ds.SweepResolutions(ctx)
 		if err != nil {
 			slog.Error("resolution sweep", "repository", ds.Repository().ID, "error", err)
 			continue
@@ -327,11 +323,7 @@ func sweepResolutions(ctx context.Context, svc substrate.Service) {
 // to one fire.
 func dispatchTriggers(ctx context.Context, svc substrate.Service) {
 	for _, ds := range repositoryDatasets(ctx, svc) {
-		fr, ok := ds.(substrate.TriggerDispatcher)
-		if !ok {
-			continue
-		}
-		n, err := fr.ProcessTriggers(ctx)
+		n, err := ds.ProcessTriggers(ctx)
 		if err != nil {
 			slog.Error("trigger dispatch", "repository", ds.Repository().ID, "error", err)
 			continue
@@ -344,16 +336,12 @@ func dispatchTriggers(ctx context.Context, svc substrate.Service) {
 
 func maintainOAuth(ctx context.Context, svc substrate.Service) {
 	for _, ds := range repositoryDatasets(ctx, svc) {
-		om, ok := ds.(substrate.OAuthMaintainer)
-		if !ok {
-			continue
-		}
-		if n, err := om.RefreshOAuthTokens(ctx); err != nil {
+		if n, err := ds.RefreshOAuthTokens(ctx); err != nil {
 			slog.Error("oauth refresh", "repository", ds.Repository().ID, "error", err)
 		} else if n > 0 {
 			slog.Info("oauth refresh", "repository", ds.Repository().ID, "refreshed", n)
 		}
-		if n, err := om.ProcessOAuthFinalizers(ctx); err != nil {
+		if n, err := ds.ProcessOAuthFinalizers(ctx); err != nil {
 			slog.Error("oauth finalizers", "repository", ds.Repository().ID, "error", err)
 		} else if n > 0 {
 			slog.Info("oauth finalizers", "repository", ds.Repository().ID, "released", n)

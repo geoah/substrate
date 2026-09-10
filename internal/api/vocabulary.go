@@ -51,26 +51,16 @@ func (h *handler) applyVocabulary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	sa, ok := DatasetFrom(ctx).(substrate.VocabularyApplier)
-	if !ok {
-		writeUnsupported(w, "this service cannot apply schema documents")
-		return
-	}
+	ds := DatasetFrom(ctx)
 	var ents []*substrate.Record
 	var err error
 	if req.Confirm != nil || req.Origin != "" {
-		// A confirmation is meaningful only where the dataset plans: one that
-		// cannot has no lossy plan to confirm, and a bare apply is the answer.
-		// An origin claim rides the same seam, because the plan is what says
-		// whether the claimed copy was edited.
-		planner, ok := sa.(substrate.VocabularyPlanner)
-		if !ok {
-			writeUnsupported(w, "this service does not plan a vocabulary apply, so there is nothing to confirm and no origin to record")
-			return
-		}
-		ents, err = planner.ApplyVocabularyDocumentsWith(ctx, ActorFrom(ctx), req.Documents, substrate.VocabularyApply{Confirm: req.Confirm, Origin: req.Origin})
+		// A confirmation and an origin claim both ride the decided form: the
+		// plan is what says whether a conversion is lossy and whether the
+		// claimed copy was edited.
+		ents, err = ds.ApplyVocabularyDocumentsWith(ctx, ActorFrom(ctx), req.Documents, substrate.VocabularyApply{Confirm: req.Confirm, Origin: req.Origin})
 	} else {
-		ents, err = sa.ApplyVocabularyDocuments(ctx, ActorFrom(ctx), req.Documents)
+		ents, err = ds.ApplyVocabularyDocuments(ctx, ActorFrom(ctx), req.Documents)
 	}
 	if err != nil {
 		writeSubstrateError(w, err)
@@ -91,12 +81,8 @@ func (h *handler) planVocabulary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	planner, ok := DatasetFrom(ctx).(substrate.VocabularyPlanner)
-	if !ok {
-		writeUnsupported(w, "this service does not plan a vocabulary apply")
-		return
-	}
-	plan, err := planner.PlanVocabularyApplyWith(ctx, ActorFrom(ctx), req.Documents, substrate.VocabularyApply{Origin: req.Origin})
+	ds := DatasetFrom(ctx)
+	plan, err := ds.PlanVocabularyApplyWith(ctx, ActorFrom(ctx), req.Documents, substrate.VocabularyApply{Origin: req.Origin})
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
@@ -114,12 +100,8 @@ func (h *handler) planVocabulary(w http.ResponseWriter, r *http.Request) {
 // declarations and names no kind (decision 0033).
 func (h *handler) getVocabularyUpgrade(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	planner, ok := DatasetFrom(ctx).(substrate.ShippedUpgradePlanner)
-	if !ok {
-		writeUnsupported(w, "this service does not preview the shipped upgrade")
-		return
-	}
-	items, err := planner.PlanShippedUpgrade(ctx)
+	ds := DatasetFrom(ctx)
+	items, err := ds.PlanShippedUpgrade(ctx)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return

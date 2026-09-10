@@ -128,28 +128,27 @@ func TestRESTFilterWithAnEdgesKeyIsAPlainUnknownField(t *testing.T) {
 }
 
 // TestTriggerVerbsLiveUnderCore is ruling A8's verb placement: the trigger
-// verbs answer AT the resource, and trigger records are CORE's — the substrate
-// maintains its own delivery plumbing, so it publishes it (the former
-// automation.substrate.reamde.dev folded into core, 2026-08-12, and that path is gone
-// rather than deprecated). The fake runs no triggers, so the route answers 501
-// unsupported — which still proves it reached the trigger handler (an unknown
-// collection would be 404).
+// verbs answer AT the resource, and trigger records are CORE's. The fake holds
+// no trigger, so the status read answers an empty list, which is the trigger
+// handler answering (an unknown collection would be 404).
 func TestTriggerVerbsLiveUnderCore(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
 
 	rec := env.do(t, http.MethodGet, "/api/v1/substrate.reamde.dev/core/trigger/status", tok, nil)
-	wantErrorCode(t, rec, http.StatusNotImplemented, codeUnsupported)
+	wantStatus(t, rec, http.StatusOK)
+	if body := rec.Body.String(); body != "{\"items\":[]}\n" {
+		t.Fatalf("body = %s, want an empty items list", body)
+	}
 	if w := rec.Header().Get("Warning"); w != "" {
 		t.Fatalf("the resource path must not carry a deprecation Warning: %q", w)
 	}
 
-	// The folded-away authority is not a route: it resolves as an unknown
-	// collection, never as a second spelling of the verbs.
+	// The folded-away authority (automation.substrate.reamde.dev, folded into
+	// core 2026-08-12) is not a route: it resolves as an unknown collection,
+	// never as a second spelling of the verbs.
 	rec = env.do(t, http.MethodGet, "/api/v1/automation.substrate.reamde.dev/triggers/status", tok, nil)
-	if rec.Code == http.StatusNotImplemented {
-		t.Fatal("the retired automation.substrate.reamde.dev path still reaches the trigger verbs")
-	}
+	wantStatus(t, rec, http.StatusNotFound)
 }
 
 // TestWatchRejectsListParams and TestIncomingRejectsListParams are ruling A8's

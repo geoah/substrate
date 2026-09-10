@@ -216,17 +216,8 @@ func (h *handler) takeCatalogBundle(w http.ResponseWriter, r *http.Request,
 		landed = b.LandedID(homeAuthority(ctx))
 	}
 	// The response is the landed bundle's computed status, the one schema
-	// this endpoint promises. A dataset that could install the closure runs the
-	// bundle lifecycle; if the required post-install status still cannot be
-	// computed, that is a fault, surfaced as an error rather than a false
-	// success in a different shape.
-	ops, ok := bundlesFrom(ctx)
-	if !ok {
-		writeError(w, http.StatusInternalServerError, codeInternal,
-			"installed bundle "+landed+" but this substrate computes no bundle status")
-		return
-	}
-	st, err := ops.BundleStatus(ctx, landed)
+	// this endpoint promises.
+	st, err := DatasetFrom(ctx).BundleStatus(ctx, landed)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
@@ -247,18 +238,13 @@ type bundleTaken struct {
 	SuggestedMappings []substrate.SuggestedMapping `json:"suggestedMappings,omitempty"`
 }
 
-// installedBundles is every bundle installed in this repository. A dataset
-// that runs no bundle lifecycle has none: an empty set, no error. A status
+// installedBundles is every bundle installed in this repository. A status
 // READ that fails is a fault (repository/database), returned as an error so
 // the caller fails with the normal substrate error shape instead of silently
 // reporting installed providers as available.
 func (h *handler) installedBundles(ctx context.Context) (installedSet, error) {
 	out := installedSet{byID: map[string]*substrate.BundleStatus{}, held: map[string]bool{}}
-	ops, ok := bundlesFrom(ctx)
-	if !ok {
-		return out, nil
-	}
-	statuses, err := ops.BundleStatuses(ctx)
+	statuses, err := DatasetFrom(ctx).BundleStatuses(ctx)
 	if err != nil {
 		return installedSet{}, err
 	}

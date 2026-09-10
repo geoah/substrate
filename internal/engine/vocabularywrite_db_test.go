@@ -18,15 +18,6 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-func applier(t *testing.T, ds substrate.Dataset) substrate.VocabularyApplier {
-	t.Helper()
-	sa, ok := ds.(substrate.VocabularyApplier)
-	if !ok {
-		t.Fatal("dataset does not implement the schema apply seam")
-	}
-	return sa
-}
-
 const (
 	swAuthority = "widgets.example.substrate.reamde.dev"
 	swPackage   = swAuthority + "/widgets"
@@ -46,7 +37,7 @@ func TestSchemaApplyBatchAllOrNone(t *testing.T) {
 	_, ds := newDataset(t)
 	before := maxSeq(t, ds)
 
-	_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	_, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
 		swTypeDoc("widget", map[string]any{"name": map[string]any{"type": "string"}}),
 		swTypeDoc("gadget", map[string]any{"weird": map[string]any{"type": "nosuchkind"}}),
@@ -114,7 +105,7 @@ func TestSchemaApplyActivatesOnCommit(t *testing.T) {
 	}
 	before := maxSeq(t, ds)
 
-	ents, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	ents, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
 		swTypeDoc("widget", map[string]any{"name": map[string]any{"type": "string"}}),
 	})
@@ -184,7 +175,6 @@ func TestSchemaApplySwapsFunctionsLive(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	sa := applier(t, ds)
 	ops, ok := ds.(fnOps)
 	if !ok {
 		t.Fatal("dataset does not implement the functions seam")
@@ -205,7 +195,7 @@ def main(input, host):
 `,
 		}
 	}
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
 		swTypeDoc("widget", map[string]any{"name": map[string]any{"type": "string"}}),
 		vocabulary.FunctionManifest(swPackage, "mirror", fnData("v1")),
@@ -234,7 +224,7 @@ def main(input, host):
 
 	// Swap the body. The write commits, the pointer publishes, the very next
 	// delivery runs v2 — the restart-to-activate hazard is dead.
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.FunctionManifest(swPackage, "mirror", fnData("v2")),
 	}); err != nil {
 		t.Fatalf("apply v2: %v", err)
@@ -259,9 +249,8 @@ func TestSchemaWritesSerializeDataWritesFlow(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	sa := applier(t, ds)
 
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
 	}); err != nil {
 		t.Fatalf("apply authority: %v", err)
@@ -273,7 +262,7 @@ func TestSchemaWritesSerializeDataWritesFlow(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+			_, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 				swTypeDoc(ty, map[string]any{"name": map[string]any{"type": "string"}}),
 			})
 			if err != nil {
@@ -315,9 +304,8 @@ func TestSchemaDeleteRefusesWithInstances(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	sa := applier(t, ds)
 
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
 		swTypeDoc("widget", map[string]any{"name": map[string]any{"type": "string"}}),
 	}); err != nil {
@@ -387,7 +375,7 @@ func TestProjectionStoresTheAuthoredDeclaration(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
 		{
 			"kind":     vocabulary.CoreKind(vocabulary.DocPropertyType),
@@ -465,7 +453,7 @@ func TestKindInfoDefinitionSurvivesAReload(t *testing.T) {
 		t.Fatal(err)
 	}
 	// No `version:` on the declaration — the authority's is what the row gets.
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 3),
 		swTypeDoc("widget", map[string]any{"name": map[string]any{"type": "string"}}),
 	}); err != nil {
@@ -506,7 +494,7 @@ func TestKindInfoDefinitionSurvivesAReload(t *testing.T) {
 		t.Fatalf("the version did not survive the reload: %+v", after)
 	}
 	// A declaration that PINS its own version keeps reading it off KindInfo.
-	if _, err := applier(t, ds2).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds2.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.KindManifest(swPackage,
 			map[string]any{"singular": "gadget"},
 			map[string]any{"version": 21, "properties": map[string]any{"name": map[string]any{"type": "string"}}}),
@@ -529,9 +517,8 @@ func TestGenericWritesRouteThroughAdmission(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	sa := applier(t, ds)
 
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
 		swTypeDoc("widget", map[string]any{"name": map[string]any{"type": "string"}}),
 	}); err != nil {
@@ -641,8 +628,7 @@ func TestDeclarationWritesRefuseWhatTheEngineOwns(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	sa := applier(t, ds)
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
 		swTypeDoc("widget", map[string]any{"name": map[string]any{"type": "string"}}),
 	}); err != nil {
@@ -688,7 +674,7 @@ func TestDeclarationWritesRefuseWhatTheEngineOwns(t *testing.T) {
 
 	// A TRAIT's version is the engine's whole and simple: its document admits no
 	// `version:` at all, so an invented one is refused and the stored one echoes.
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{{
 		"kind":     "substrate.reamde.dev/core/trait",
 		"metadata": map[string]any{"id": swPackage + "/spanned"},
 		"data": map[string]any{
@@ -766,11 +752,10 @@ func TestDeclarationWritesNameTheDeletedSpellings(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	sa := applier(t, ds)
 	const fnKind = "substrate.reamde.dev/core/function"
 	const agentKind = "substrate.reamde.dev/core/agent"
 	fnID, agentID := swPackage+"/mirror", swPackage+"/thinker"
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
 		swTypeDoc("widget", map[string]any{"name": map[string]any{"type": "string"}}),
 		vocabulary.FunctionManifest(swPackage, "mirror", map[string]any{
@@ -889,7 +874,6 @@ func TestTriggerOutlivesItsCallable(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	sa := applier(t, ds)
 	ops, ok := ds.(fnOps)
 	if !ok {
 		t.Fatal("dataset does not implement the automation seam")
@@ -908,7 +892,7 @@ def main(input, host):
                          "id": "t-" + c["id"], "properties": {"name": "mirrored"}}]}
 `,
 	}
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
 		swTypeDoc("widget", map[string]any{"name": map[string]any{"type": "string"}}),
 		vocabulary.FunctionManifest(swPackage, "mirror", fnData),
@@ -948,7 +932,7 @@ def main(input, host):
 
 	// Reinstall: the trigger resumes from where it stood — the interim
 	// change delivers late, not lost.
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.FunctionManifest(swPackage, "mirror", fnData),
 	}); err != nil {
 		t.Fatalf("reinstall: %v", err)
@@ -970,16 +954,15 @@ func TestBuiltinActorRowsRefuseRedeclaration(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	sa := applier(t, ds)
 
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
 	}); err != nil {
 		t.Fatalf("apply authority: %v", err)
 	}
 
 	// Through the batch verb.
-	_, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	_, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.ActorManifest(swPackage, "api"),
 	})
 	wantErr(t, err, substrate.ErrForbidden, "batch redeclares a shipped actor")
@@ -1099,7 +1082,7 @@ func TestAnUntouchedKindKeepsItsStoredDeclarationAtEveryDoor(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
 		swTypeDoc("widget", map[string]any{"name": map[string]any{"type": "string"}}),
 	}); err != nil {
@@ -1125,13 +1108,9 @@ func TestAnUntouchedKindKeepsItsStoredDeclarationAtEveryDoor(t *testing.T) {
 	})
 
 	t.Run("an install's data documents", func(t *testing.T) {
-		inst, ok := ds.(substrate.BundleInstaller)
-		if !ok {
-			t.Fatal("dataset does not implement the closure-install seam")
-		}
 		closure := []map[string]any{vocabulary.PackageManifest(swInstallPackage, 0)}
 
-		_, err := inst.InstallBundleClosure(ctx, owner, closure, []substrate.PutInput{{
+		_, err := ds.InstallBundleClosure(ctx, owner, closure, []substrate.PutInput{{
 			Kind: swPackage + "/widget", ID: "from-install",
 			Properties: map[string]any{"name": "ok", "color": "red"},
 		}}, substrate.BundleInstall{})
@@ -1145,7 +1124,7 @@ func TestAnUntouchedKindKeepsItsStoredDeclarationAtEveryDoor(t *testing.T) {
 		}
 
 		// The same install with a declared property admits both halves.
-		if _, err := inst.InstallBundleClosure(ctx, owner, closure, []substrate.PutInput{{
+		if _, err := ds.InstallBundleClosure(ctx, owner, closure, []substrate.PutInput{{
 			Kind: swPackage + "/widget", ID: "from-install",
 			Properties: map[string]any{"name": "ok"},
 		}}, substrate.BundleInstall{}); err != nil {
@@ -1204,13 +1183,9 @@ func TestBundleUpgradeRefusesARowOfTheKindItRemoves(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newCoreDataset(t)
-	inst, ok := ds.(substrate.BundleInstaller)
-	if !ok {
-		t.Fatal("dataset does not implement the closure-install seam")
-	}
 	actor := substrate.BundleActor(vocabulary.SplitPackageRef(dkPackage))
 
-	if _, err := inst.InstallBundleClosure(ctx, actor,
+	if _, err := ds.InstallBundleClosure(ctx, actor,
 		dkDocs(dkKindDoc("widget"), dkKindDoc("gadget")), nil, substrate.BundleInstall{}); err != nil {
 		t.Fatalf("install: %v", err)
 	}
@@ -1220,7 +1195,7 @@ func TestBundleUpgradeRefusesARowOfTheKindItRemoves(t *testing.T) {
 
 	// The upgrade drops `widget` (no live rows, so the opening count admits it)
 	// and carries a widget record in the same package.
-	_, err := inst.InstallBundleClosure(ctx, actor, dkDocs(dkKindDoc("gadget")),
+	_, err := ds.InstallBundleClosure(ctx, actor, dkDocs(dkKindDoc("gadget")),
 		[]substrate.PutInput{{
 			Kind: dkPackage + "/widget", ID: "late", Properties: map[string]any{"name": "late"},
 		}}, substrate.BundleInstall{})
@@ -1239,7 +1214,7 @@ func TestBundleUpgradeRefusesARowOfTheKindItRemoves(t *testing.T) {
 
 	// And the same upgrade WITHOUT the row admits: this is refuse-while-stranded,
 	// not refuse-forever.
-	if _, err := inst.InstallBundleClosure(ctx, actor, dkDocs(dkKindDoc("gadget")), nil, substrate.BundleInstall{}); err != nil {
+	if _, err := ds.InstallBundleClosure(ctx, actor, dkDocs(dkKindDoc("gadget")), nil, substrate.BundleInstall{}); err != nil {
 		t.Fatalf("an upgrade that removes an unused kind must admit: %v", err)
 	}
 	if _, err := ds.KindByRef(ctx, dkPackage+"/widget"); err == nil {

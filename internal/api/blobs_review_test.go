@@ -51,8 +51,6 @@ func (b *blockingBlobDS) GetBlob(_ context.Context, _ string) (*substrate.BlobIn
 	return nil, nil, substrate.ErrNotFound
 }
 
-var _ substrate.BlobStore = (*blockingBlobDS)(nil)
-
 func TestBlobPutIsConcurrencyBounded(t *testing.T) {
 	ds := &blockingBlobDS{
 		fakeDataset: newFakeDataset(fakeRepository),

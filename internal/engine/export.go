@@ -30,8 +30,6 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-var _ substrate.Exporter = (*dataset)(nil)
-
 var (
 	// ErrExportNoWriter is the refusal of a dataset that is not the
 	// directory's writer: a read-only process cannot pin a point, because

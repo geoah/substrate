@@ -85,7 +85,7 @@ func tmInstall(t *testing.T, ds substrate.Dataset) {
 	ctx := context.Background()
 	docs := append(tmProviderDocs(), tmTaskDocs()...)
 	docs = append(docs, tmMappingDoc())
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
 		t.Fatalf("install the provider, the kind and the mapping: %v", err)
 	}
 }
@@ -145,7 +145,7 @@ func TestDeclaringAMappingMakesTheTargetsIDsServerAssigned(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	docs := append(tmProviderDocs(), tmTaskDocs()...)
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
 		t.Fatalf("install the provider and the kind: %v", err)
 	}
 	// Nothing points at `task` yet, so the writer names its own id.
@@ -153,7 +153,7 @@ func TestDeclaringAMappingMakesTheTargetsIDsServerAssigned(t *testing.T) {
 		Kind: tmTaskType, ID: "groceries", Properties: map[string]any{"name": "Groceries"},
 	})
 
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{tmMappingDoc()}); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{tmMappingDoc()}); err != nil {
 		t.Fatalf("declare the mapping: %v", err)
 	}
 	_, err := ds.Put(ctx, owner, substrate.PutInput{
@@ -204,7 +204,7 @@ func TestOneMirrorReachesTwoKindsThroughTwoSlots(t *testing.T) {
 			"map": map[string]any{"summary": map[string]any{"path": "headline"}},
 		}),
 	)
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
 		t.Fatalf("install two mappings from one mirror: %v", err)
 	}
 
@@ -242,7 +242,7 @@ func TestTheMappingPinsAnUnpinnedSubjectSlot(t *testing.T) {
 				"summary": map[string]any{"type": "string"},
 			}}),
 		tmMappingDoc())
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	note := mustPut(t, ds, owner, substrate.PutInput{
@@ -331,7 +331,7 @@ func TestSubjectHopRefusesTwoAdmittedMappings(t *testing.T) {
 			"map": map[string]any{"name": map[string]any{"path": "headline"}},
 		}),
 	}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	issue := mustPut(t, ds, owner, substrate.PutInput{
@@ -377,11 +377,7 @@ func TestDroppingAMappedSourceKindIsRefusedAtEveryDoor(t *testing.T) {
 	}
 
 	// The PREVIEW says so without writing anything.
-	planner, ok := ds.(substrate.BundleUpgradePlanner)
-	if !ok {
-		t.Fatal("dataset does not plan bundle upgrades")
-	}
-	plan, err := planner.PlanBundleUpgrade(ctx, shrunk)
+	plan, err := ds.PlanBundleUpgrade(ctx, shrunk)
 	if err != nil {
 		t.Fatalf("plan the upgrade: %v", err)
 	}
@@ -390,7 +386,7 @@ func TestDroppingAMappedSourceKindIsRefusedAtEveryDoor(t *testing.T) {
 	}
 
 	// The APPLY refuses on the same line.
-	_, err = applier(t, ds).ApplyVocabularyDocuments(ctx, owner, shrunk)
+	_, err = ds.ApplyVocabularyDocuments(ctx, owner, shrunk)
 	wantErr(t, err, substrate.ErrGuard, "an upgrade dropping a mapped source kind")
 	if !tmBlocked([]string{err.Error()}) {
 		t.Fatalf("the refusal must name the mapping: %v", err)
@@ -405,7 +401,7 @@ func TestDroppingAMappedSourceKindIsRefusedAtEveryDoor(t *testing.T) {
 	// first, on its own closure rule.
 	const plainPackage = "plain.example.com/plain"
 	const plainRowType = plainPackage + "/row"
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(plainPackage, 1),
 		vocabulary.KindManifest(plainPackage,
 			map[string]any{"singular": "row"},
@@ -445,11 +441,10 @@ func TestUninstallRefusesWhileAMappingNamesTheProvidersKind(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	tmInstall(t, ds)
-	ops := bundler(t, ds)
 
 	// No live mirror rows, so the only thing standing in the way is the
 	// mapping the repository's own package declares.
-	err := ops.UninstallBundle(ctx, tmPackage)
+	err := ds.UninstallBundle(ctx, tmPackage)
 	wantErr(t, err, substrate.ErrGuard, "uninstall while a mapping names the provider's kind")
 	if !strings.Contains(err.Error(), tmMapping) || !strings.Contains(err.Error(), tmIssueType) {
 		t.Fatalf("the refusal must name the mapping and the kind: %v", err)
@@ -463,7 +458,7 @@ func TestUninstallRefusesWhileAMappingNamesTheProvidersKind(t *testing.T) {
 	if _, err := ds.Delete(ctx, owner, tmMappingKind, tmMapping, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the mapping: %v", err)
 	}
-	if err := ops.UninstallBundle(ctx, tmPackage); err != nil {
+	if err := ds.UninstallBundle(ctx, tmPackage); err != nil {
 		t.Fatalf("uninstall after the mapping went: %v", err)
 	}
 	if hasType(t, ds, tmIssueType) {

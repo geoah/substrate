@@ -233,13 +233,11 @@ func noDeliveryInFeed(t *testing.T, ds substrate.Dataset) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if feed, ok := ds.(substrate.ChangeFeedOps); ok {
-		backward, err := feed.ChangesBefore(ctx, 0, substrate.ChangeFilter{}, 100000)
-		if err != nil {
-			t.Fatal(err)
-		}
-		changes = append(changes, backward...)
+	backward, err := ds.ChangesBefore(ctx, 0, substrate.ChangeFilter{}, 100000)
+	if err != nil {
+		t.Fatal(err)
 	}
+	changes = append(changes, backward...)
 	for _, ch := range changes {
 		if ch.Op == substrate.OpDelivery {
 			t.Fatalf("a delivery entry reached the public feed: seq %d", ch.Seq)
@@ -260,7 +258,7 @@ func resumedHook(t *testing.T, ds substrate.Dataset, fid, name string, blob bool
 		t.Fatalf("the resumed fire's file part = %q, want a blob digest: %v", digest, blob)
 	}
 	if blob {
-		if _, data, err := blobStoreOf(t, ds).GetBlob(context.Background(), digest); err != nil || string(data) != string(heldAudio) {
+		if _, data, err := ds.GetBlob(context.Background(), digest); err != nil || string(data) != string(heldAudio) {
 			t.Fatalf("the file part's bytes at delivery: %v", err)
 		}
 	}
@@ -318,9 +316,8 @@ func TestWebhookAcceptedRequestSurvivesAStopBeforeTheFire(t *testing.T) {
 			if _, err := ds.RunGC(ctx); err != nil {
 				t.Fatalf("gc: %v", err)
 			}
-			bs := blobStoreOf(t, ds)
 			for _, digest := range digests {
-				if _, _, err := bs.GetBlob(ctx, digest); err != nil {
+				if _, _, err := ds.GetBlob(ctx, digest); err != nil {
 					t.Fatalf("the sweep collected %s while the request was pending: %v", digest, err)
 				}
 			}

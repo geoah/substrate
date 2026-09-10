@@ -413,7 +413,7 @@ func TestTwoTargetsSmuggleNothing(t *testing.T) {
 		vocabulary.KindManifest(gaugePackage, map[string]any{"singular": "secretgauge"},
 			map[string]any{"properties": map[string]any{"apiKey": map[string]any{"type": "secret"}}}),
 	}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
 		t.Fatalf("install the gauge authority: %v", err)
 	}
 	safe := mustPut(t, ds, owner, substrate.PutInput{

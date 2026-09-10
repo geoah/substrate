@@ -38,7 +38,7 @@ func lpBaseProps() map[string]any {
 
 func lpApply(t *testing.T, ds substrate.Dataset, props map[string]any) error {
 	t.Helper()
-	_, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, []map[string]any{
+	_, err := ds.ApplyVocabularyDocuments(context.Background(), owner, []map[string]any{
 		vocabulary.PackageManifest(lpPackage, 0),
 		vocabulary.KindManifest(lpPackage,
 			map[string]any{"singular": "node"},

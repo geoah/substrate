@@ -44,7 +44,7 @@ func TestIncompatibleClosureQuarantinesInsteadOfBricking(t *testing.T) {
 		t.Fatal(err)
 	}
 	importVocabulary(t, ds, "tasks")
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, mbStandardDocs()); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, mbStandardDocs()); err != nil {
 		t.Fatalf("install bundle: %v", err)
 	}
 
@@ -70,10 +70,9 @@ func TestIncompatibleClosureQuarantinesInsteadOfBricking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a repository with one incompatible stored closure failed to open: %v", err)
 	}
-	ops2 := bundler(t, ds2)
 
 	// The bad bundle is quarantined, its reason names the admission failure.
-	st := bundleStatusFor(t, ops2, mbPackage)
+	st := bundleStatusFor(t, ds2, mbPackage)
 	if !st.Quarantined {
 		t.Fatalf("mail bundle should be quarantined: %+v", st)
 	}
@@ -94,10 +93,10 @@ func TestIncompatibleClosureQuarantinesInsteadOfBricking(t *testing.T) {
 	mustPut(t, ds2, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "still alive"}})
 
 	// (b) Re-installing the valid closure clears the quarantine.
-	if _, err := applier(t, ds2).ApplyVocabularyDocuments(ctx, owner, mbStandardDocs()); err != nil {
+	if _, err := ds2.ApplyVocabularyDocuments(ctx, owner, mbStandardDocs()); err != nil {
 		t.Fatalf("re-install valid closure: %v", err)
 	}
-	st = bundleStatusFor(t, ops2, mbPackage)
+	st = bundleStatusFor(t, ds2, mbPackage)
 	if st.Quarantined {
 		t.Fatalf("re-install must clear the quarantine: %+v", st)
 	}
@@ -115,7 +114,7 @@ func TestIncompatibleClosureQuarantinesInsteadOfBricking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen after re-install: %v", err)
 	}
-	st = bundleStatusFor(t, bundler(t, ds3), mbPackage)
+	st = bundleStatusFor(t, ds3, mbPackage)
 	if st.Quarantined || !st.Enabled {
 		t.Fatalf("a healthy closure must open live: %+v", st)
 	}
@@ -124,7 +123,7 @@ func TestIncompatibleClosureQuarantinesInsteadOfBricking(t *testing.T) {
 // bundleStatusFor finds one package's status in the full listing, failing the
 // test on the query error or a missing package. A bundle's status is keyed by
 // its id, which IS the package identity.
-func bundleStatusFor(t *testing.T, ops bundleOps, pkg string) substrate.BundleStatus {
+func bundleStatusFor(t *testing.T, ops substrate.Dataset, pkg string) substrate.BundleStatus {
 	t.Helper()
 	statuses, err := ops.BundleStatuses(context.Background())
 	if err != nil {

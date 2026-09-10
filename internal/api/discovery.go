@@ -8,8 +8,9 @@ import (
 )
 
 // Discovery: GET /.well-known/substrate/server.json answers what this
-// deployment serves so a client adapts to what is present WITHOUT
-// probing for 501s. It is unversioned, unauthenticated, and touches no
+// deployment serves, so a client reads the stability of each feature, the
+// compatibility of each surface and what registration asks for instead of
+// trying a route. It is unversioned, unauthenticated, and touches no
 // repository — the same class of endpoint as /healthz — and its well-known
 // path is what lets an outside system tell whether a domain is a substrate
 // at all before it speaks the rest of the contract.
@@ -161,21 +162,64 @@ const (
 	surfaceGraphQL = "graphql"
 )
 
-// featureEmbeddings is the one entry a deployment may lack for a reason that
-// is not a seam: the embedder is configuration, not a method set.
-const featureEmbeddings = "embeddings"
-
-// featureExport is the recovery export's entry, served by substrate.Exporter.
-const featureExport = "export"
-
-// embeddingsEnabled asks the service whether it can embed at all, through
-// substrate.EmbeddingsReporter: the seam is asserted at runtime like the
-// dataset seams, so Service stays frozen and discovery carries no second copy
-// of a wiring a host could forget to set. A service that does not implement it
-// reports no embeddings, which is the safe answer.
-func (h *handler) embeddingsEnabled() bool {
-	ops, ok := h.svc.(substrate.EmbeddingsReporter)
-	return ok && ops.EmbeddingsEnabled()
+// features is what this deployment serves, written out. It is a literal
+// because substrate.Dataset is one interface with one implementation: there
+// is nothing to ask, and every entry below is served wherever this binary
+// runs.
+//
+// Each stability says how far the feature's shape has settled, it binds on
+// the REST door alone, and `stable` means frozen for v1: additive only, a
+// break announced (see substrate.StabilityStable). The GraphQL door is
+// `preview` for every feature whatever the feature stamps (the `surfaces`
+// object, decision 0053), so a stable `changefeed` does not make the
+// `changelog` field stable, and `search`, served on GraphQL alone, stays
+// beta. `agents` stays alpha on `rest` and `embeddings` alpha on `graphql`,
+// because both shapes are still moving.
+//
+// Each entry's surfaces are the doors that actually exist today, and they are
+// about the feature's OWN verbs, never its records: a trigger and a blob
+// manifest are ordinary records, readable through `records`/`record` on both
+// surfaces whatever this list says. Search and embeddings are the two REST
+// does not serve: REST filters (`?filter=`) and GraphQL's
+// `search(q, mode, kinds, k)` ranks, and the semantic arm of that same query
+// is the only door to a vector. The changefeed is read on both; everything
+// else is a set of REST verbs with no GraphQL field.
+//
+// A feature added here is a route added beside it, and a route removed takes
+// its entry: nothing computes the list, so the two are held together by
+// review and by the roster in discovery_errors_watch_test.go.
+var features = []featureInfo{
+	{Name: "triggers", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST}},
+	{Name: "functions", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST}},
+	// The bundle entry stands for the lifecycle verbs and catalog install
+	// together: a client reads one entry and gets every route behind it.
+	{Name: "bundles", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST}},
+	{Name: "blobs", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST}},
+	// The recovery export is one REST verb, `GET /export`, streaming a tar in
+	// the snapshot format (decision 0069). Beta: the archive's layout is the
+	// repository directory's and its snapshot.json is the operator's, both
+	// settled, but this is the surface's first release.
+	{Name: "export", Stability: substrate.StabilityBeta, Surfaces: []string{surfaceREST}},
+	// The changefeed is the one feature both surfaces read: REST pages it
+	// (`GET …/changes?before=`), resumes it forward (`?from=`) and tails it
+	// (`?watch=1`), GraphQL resumes it forward (`changelog(from, filter,
+	// first)`) but streams nothing, because there is no subscription. The
+	// stamp freezes the REST routes; the GraphQL field stays a preview with
+	// the rest of its surface.
+	{Name: "changefeed", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST, surfaceGraphQL}},
+	// Search's only door is the GraphQL schema, a preview generated per
+	// repository from that repository's kinds
+	// (docs/graphql-and-search.md), so the feature stays beta.
+	{Name: "search", Stability: substrate.StabilityBeta, Surfaces: []string{surfaceGraphQL}},
+	// Embeddings are alpha and GraphQL is their only door: they reach a caller
+	// as the semantic arm of that same query, and the vector width is a
+	// constant in the engine (vectorDim) that no declaration can move. The
+	// provider is a repository's own llmprovider row, not a host setting an
+	// operator can omit, so the feature is served wherever the substrate is; a
+	// repository that declares no row is told so by its first query, naming
+	// the property.
+	{Name: "embeddings", Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceGraphQL}},
+	{Name: substrate.FeatureAgents, Stability: substrate.AgentStability, Surfaces: []string{surfaceREST}},
 }
 
 // getDiscovery serves GET /.well-known/substrate/server.json. No auth, no DB.
@@ -184,7 +228,7 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 		Versions:  []apiVersionInfo{{Name: APIVersion, Status: "served"}},
 		Server:    serverInfo{Version: build.Version(), Build: build.Commit()},
 		Changelog: changelogInfo{Horizon: retentionHorizon()},
-		Features:  h.features(),
+		Features:  features,
 		Surfaces: surfacesInfo{
 			REST:    surfaceInfo{Endpoint: "/api/" + APIVersion, Compatibility: compatibilitySupported},
 			GraphQL: surfaceInfo{Endpoint: "/api/" + APIVersion + graphqlRoute, Compatibility: compatibilityPreview},
@@ -211,94 +255,4 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 		},
 	}
 	writeJSON(w, http.StatusOK, doc)
-}
-
-// features asks the service which seams its datasets satisfy
-// (substrate.SeamReporter) and lists what those serve. A service that does not
-// report them lists only what substrate.Dataset itself guarantees: guessing at
-// an extension would send a client to a 501, while hiding a core read would
-// hide a capability that works.
-func (h *handler) features() []featureInfo {
-	var seams substrate.Dataset
-	if reporter, ok := h.svc.(substrate.SeamReporter); ok {
-		seams = reporter.DatasetSeams()
-	}
-	return features(seams, h.embeddingsEnabled())
-}
-
-// features derives the capability list from the extension interfaces a dataset
-// of this deployment satisfies, so an entry cannot outlive the endpoints it
-// stands for: the handler type-asserts the same interface per request before
-// it serves any of these verbs, and a seam that goes away takes its feature
-// off this list instead of leaving it advertised over a 501. A feature served
-// by more than one seam names them all, because a client reads one entry and
-// gets every route behind it.
-//
-// Each stability says how far the feature's shape has settled, it binds on
-// the REST door alone, and `stable` means frozen for v1: additive only, a
-// break announced (see substrate.StabilityStable). Every feature of the
-// supported REST surface is
-// stable: the wire changes #360 tracked have landed, the changefeed's among
-// them (the cursor of decision 0056 and the change event of decision 0061).
-// The GraphQL door is `preview` for every feature whatever the feature stamps
-// (the `surfaces` object, decision 0053): a stable `changefeed` does not make
-// the `changelog` field stable, and `search`, served on GraphQL alone, stays
-// beta. `agents` stays alpha on `rest` and `embeddings` alpha on `graphql`,
-// because both shapes are still moving.
-//
-// Each entry's surfaces are the doors that actually exist today. Search and
-// embeddings are the two the REST surface does not serve: REST filters
-// (`?filter=`) and the GraphQL `search(q, mode, kinds, k)` query ranks, and
-// the semantic arm of that same query is the only door to a vector. The
-// changefeed is read on both. Everything else is a set of REST verbs with no
-// GraphQL field.
-func features(seams substrate.Dataset, embeddings bool) []featureInfo {
-	out := make([]featureInfo, 0, 8)
-	add := func(present bool, name, stability string, surfaces []string) {
-		if present {
-			out = append(out, featureInfo{Name: name, Stability: stability, Surfaces: surfaces})
-		}
-	}
-	// One seam serves both: AutomationOps carries the trigger verbs and
-	// CallFunction.
-	_, automation := seams.(substrate.AutomationOps)
-	add(automation, "triggers", substrate.StabilityStable, []string{surfaceREST})
-	add(automation, "functions", substrate.StabilityStable, []string{surfaceREST})
-	// The bundle surface spans two seams: BundleOps serves the lifecycle verbs
-	// and BundleInstaller serves catalog install, which fails outright without
-	// it. BundleUpgradePlanner is NOT required: a dataset that cannot plan an
-	// upgrade answers a nil preview by design (internal/catalog), and the rest
-	// of the surface still works.
-	_, bundles := seams.(substrate.BundleOps)
-	_, installer := seams.(substrate.BundleInstaller)
-	add(bundles && installer, "bundles", substrate.StabilityStable, []string{surfaceREST})
-	_, blobs := seams.(substrate.BlobStore)
-	add(blobs, "blobs", substrate.StabilityStable, []string{surfaceREST})
-	// The recovery export is one REST verb, `GET /export`, streaming a tar
-	// in the snapshot format (decision 0069). Beta: the archive's layout is
-	// the repository directory's and its snapshot.json is the operator's,
-	// both settled, but this is the surface's first release.
-	_, exporter := seams.(substrate.Exporter)
-	add(exporter, featureExport, substrate.StabilityBeta, []string{surfaceREST})
-	// The changefeed is the one feature both surfaces read: REST pages it
-	// (`GET …/changes?before=`), resumes it forward (`?from=`) and tails it
-	// (`?watch=1`), GraphQL resumes it forward
-	// (`changelog(from, filter, first)`) but streams nothing, because there is
-	// no subscription. The stamp freezes the REST routes; the GraphQL field
-	// stays a preview with the rest of its surface.
-	_, changefeed := seams.(substrate.ChangeFeedOps)
-	add(changefeed, "changefeed", substrate.StabilityStable, []string{surfaceREST, surfaceGraphQL})
-	// Search is not an extension: Search is on the frozen Dataset core, so
-	// every dataset serves it and it is listed unconditionally. What it is NOT
-	// is stable, because the only door to it is the GraphQL schema, a preview
-	// generated per repository from that repository's kinds
-	// (docs/graphql-and-search.md).
-	add(true, "search", substrate.StabilityBeta, []string{surfaceGraphQL})
-	// Embeddings are alpha, and GraphQL is their only door: they reach a
-	// caller as the semantic arm of that same query, and the vector width is a
-	// constant in the engine (vectorDim) that no declaration can move.
-	add(embeddings, featureEmbeddings, substrate.StabilityAlpha, []string{surfaceGraphQL})
-	_, agents := seams.(substrate.AgentOps)
-	add(agents, substrate.FeatureAgents, substrate.AgentStability, []string{surfaceREST})
-	return out
 }

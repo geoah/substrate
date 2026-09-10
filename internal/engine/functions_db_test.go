@@ -151,7 +151,6 @@ func TestPrepareBatchCountCap(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	sa := applier(t, ds)
 	docs := []map[string]any{
 		vocabulary.PackageManifest(fnPackage, 0),
 		vocabulary.ActorManifest(fnPackage, vocabulary.PackageActor(fnPackage)),
@@ -164,7 +163,7 @@ func TestPrepareBatchCountCap(t *testing.T) {
 		docs = append(docs, pyFn(name, map[string]any{}, []any{widgetType},
 			"def main(input, host):\n    return {}\n"))
 	}
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, docs); err == nil ||
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err == nil ||
 		!strings.Contains(err.Error(), "at most 64 function bodies") {
 		t.Fatalf("a batch over the prepare cap was admitted: %v", err)
 	}

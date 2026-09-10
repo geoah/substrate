@@ -1,7 +1,6 @@
 package substrate
 
 import (
-	"context"
 	"time"
 )
 
@@ -70,21 +69,6 @@ type TriggerFailure struct {
 	ParkedAt  time.Time `json:"parkedAt"`
 }
 
-// AutomationOps is the trigger-delivery seam, an optional Dataset extension
-// (see Dataset): status is computed, a replay is a cursor reset, a run is one
-// synthesized delivery, a wake is an immediate scan, and CallFunction is the
-// callable invocation API (`mode: call`). A dataset without it has no trigger
-// verbs.
-type AutomationOps interface {
-	TriggerStatuses(ctx context.Context) ([]TriggerStatus, error)
-	ReplayTrigger(ctx context.Context, id string, from int64) error
-	RunTrigger(ctx context.Context, id, recordKind, recordID string) (int, error)
-	WakeTrigger(ctx context.Context, id string) (int, error)
-	TriggerFailures(ctx context.Context, id string) ([]TriggerFailure, error)
-	RetryTriggerFailure(ctx context.Context, id string, failureID int64) (int, error)
-	CallFunction(ctx context.Context, name string, args any) (any, int, error)
-}
-
 // TriggerReplayed is the reply to a replay: the seq the trigger's cursor was
 // reset to, echoed so the caller sees what the dispatcher will walk from.
 type TriggerReplayed struct {
@@ -103,12 +87,4 @@ type TriggerRan struct {
 type FunctionCalled struct {
 	Output  any `json:"output"`
 	Effects int `json:"effects"`
-}
-
-// TriggerDispatcher is the dispatcher pass the service loop drives, an
-// optional Dataset extension (see Dataset): each enabled trigger drains its
-// changelog backlog to head or fires its due occurrence. It is separate from
-// AutomationOps because nothing reachable from the network calls it.
-type TriggerDispatcher interface {
-	ProcessTriggers(ctx context.Context) (int, error)
 }

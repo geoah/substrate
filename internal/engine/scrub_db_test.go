@@ -109,7 +109,7 @@ def main(input, host):
     return {"effects": [], "output": {}}
 `),
 	}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), owner, docs); err != nil {
 		t.Fatalf("install vault bundle: %v", err)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{

@@ -1,7 +1,5 @@
 package substrate
 
-import "context"
-
 // WebhookRequest is one public webhook delivery as the API layer hands it to
 // the service: transport facts only, no net/http types, so the seam is
 // testable without a listener and the engine never parses HTTP.
@@ -32,16 +30,6 @@ type WebhookPart struct {
 	MediaType string
 	Value     string
 	Data      []byte
-}
-
-// WebhookReceiver is the Service half of public webhook ingress, an optional
-// Service extension (see Service). The request carries no bearer: the path
-// names the repository's AUTHORITY and the trigger, and the trigger's own key,
-// when it declares one, is the credential. Returns the fire id the delivery
-// runs under; every refusal that must not distinguish "no such trigger" from
-// "wrong key" or "disabled" is ErrNotFound.
-type WebhookReceiver interface {
-	ReceiveWebhook(ctx context.Context, authority, trigger, key string, req WebhookRequest) (string, error)
 }
 
 // WebhookAccepted is the 202 a webhook door answers with: the fire id the

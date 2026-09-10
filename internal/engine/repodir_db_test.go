@@ -271,7 +271,7 @@ func putProvider(t *testing.T, ds substrate.Dataset, dsn, id, key string) string
 
 func putBlob(t *testing.T, ds substrate.Dataset, data []byte) string {
 	t.Helper()
-	info, err := ds.(substrate.BlobStore).PutBlob(context.Background(), owner,
+	info, err := ds.PutBlob(context.Background(), owner,
 		substrate.BlobUpload{Name: "note.txt", MediaType: "text/plain"}, data, "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
@@ -281,7 +281,7 @@ func putBlob(t *testing.T, ds substrate.Dataset, data []byte) string {
 
 func getBlob(t *testing.T, ds substrate.Dataset, digest string) []byte {
 	t.Helper()
-	_, data, err := ds.(substrate.BlobStore).GetBlob(context.Background(), digest)
+	_, data, err := ds.GetBlob(context.Background(), digest)
 	if err != nil {
 		t.Fatalf("get blob %s: %v", digest, err)
 	}

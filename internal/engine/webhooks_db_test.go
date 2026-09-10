@@ -200,7 +200,7 @@ func TestWebhookDelivery(t *testing.T) {
 		if !strings.HasPrefix(digest, "blob-sha256-") {
 			t.Fatalf("file part carried %q, want a blob digest", digest)
 		}
-		_, data, err := blobStoreOf(t, ds).GetBlob(ctx, digest)
+		_, data, err := ds.GetBlob(ctx, digest)
 		if err != nil {
 			t.Fatalf("spooled blob unreadable: %v", err)
 		}
@@ -237,11 +237,7 @@ func TestWebhookDelivery(t *testing.T) {
 	})
 
 	t.Run("the door itself fires in the background", func(t *testing.T) {
-		rc, ok := svc.(substrate.WebhookReceiver)
-		if !ok {
-			t.Fatal("service does not implement the webhook seam")
-		}
-		if _, err := rc.ReceiveWebhook(ctx, authority, "hook-open", "", jsonHook("detached", "bg")); err != nil {
+		if _, err := svc.ReceiveWebhook(ctx, authority, "hook-open", "", jsonHook("detached", "bg")); err != nil {
 			t.Fatalf("receive: %v", err)
 		}
 		deadline := time.Now().Add(15 * time.Second)
@@ -320,7 +316,6 @@ func TestWebhookParkedRetryReplaysRequest(t *testing.T) {
 
 	// The spooled blob is referenced by nothing but the parked payload, and
 	// GC leaves it alone for that reason.
-	bs := blobStoreOf(t, ds)
 	if _, err := ds.RunGC(ctx); err != nil {
 		t.Fatalf("gc: %v", err)
 	}
@@ -331,7 +326,7 @@ func TestWebhookParkedRetryReplaysRequest(t *testing.T) {
 	if digest == "" {
 		t.Fatal("the spooled blob's manifest is gone")
 	}
-	if _, data, err := bs.GetBlob(ctx, digest); err != nil || string(data) != string(audio) {
+	if _, data, err := ds.GetBlob(ctx, digest); err != nil || string(data) != string(audio) {
 		t.Fatalf("parked payload's blob was collected: %v", err)
 	}
 
@@ -352,7 +347,7 @@ func TestWebhookParkedRetryReplaysRequest(t *testing.T) {
 	if _, err := ds.RunGC(ctx); err != nil {
 		t.Fatalf("gc: %v", err)
 	}
-	if _, _, err := bs.GetBlob(ctx, digest); err == nil {
+	if _, _, err := ds.GetBlob(ctx, digest); err == nil {
 		t.Fatal("orphan blob survived gc once nothing parked named it")
 	}
 }

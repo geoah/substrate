@@ -66,16 +66,15 @@ func TestBundleSharedModuleImportable(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	sa := applier(t, ds)
 
 	// A bad module is a load error, refused at admission before the bundle
 	// installs — a non-.py/.go extension and an empty source both.
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner,
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner,
 		mbModuleDocs(map[string]any{"connkit.txt": "x = 1\n"})); err == nil ||
 		!strings.Contains(err.Error(), ".py or .go") {
 		t.Fatalf("a non-.py/.go module was admitted: %v", err)
 	}
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner,
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner,
 		mbModuleDocs(map[string]any{"connkit.py": "  \n"})); err == nil ||
 		!strings.Contains(err.Error(), "source is required") {
 		t.Fatalf("an empty module was admitted: %v", err)
@@ -86,19 +85,19 @@ func TestBundleSharedModuleImportable(t *testing.T) {
 	// admission — the protocol host can never be corrupted before it is
 	// established.
 	for _, name := range []string{"sitecustomize.py", "host.py"} {
-		if _, err := sa.ApplyVocabularyDocuments(ctx, owner,
+		if _, err := ds.ApplyVocabularyDocuments(ctx, owner,
 			mbModuleDocs(map[string]any{name: "x = 1\n"})); err == nil ||
 			!strings.Contains(err.Error(), "reserved module name") {
 			t.Fatalf("a reserved module %q was admitted: %v", name, err)
 		}
 	}
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner,
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner,
 		mbModuleDocs(map[string]any{"json.py": "x = 1\n"})); err == nil ||
 		!strings.Contains(err.Error(), "standard-library module") {
 		t.Fatalf("a stdlib-shadowing module json.py was admitted: %v", err)
 	}
 
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, mbModuleDocs(goodModules())); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, mbModuleDocs(goodModules())); err != nil {
 		t.Fatalf("install bundle with modules: %v", err)
 	}
 
@@ -135,9 +134,8 @@ func TestModuleOnlyChangeStillPreparesTheBodiesThatImportIt(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	sa := applier(t, ds)
 
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, mbModuleDocs(goodModules())); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, mbModuleDocs(goodModules())); err != nil {
 		t.Fatalf("install bundle with modules: %v", err)
 	}
 
@@ -145,7 +143,7 @@ func TestModuleOnlyChangeStillPreparesTheBodiesThatImportIt(t *testing.T) {
 	// module moved, and it no longer parses. The importing body cannot
 	// register against it, so admission must refuse the batch.
 	broken := map[string]any{"connkit.py": "def greet(who:\n    return 'hi ' + who\n"}
-	_, err := sa.ApplyVocabularyDocuments(ctx, owner, mbModuleDocs(broken))
+	_, err := ds.ApplyVocabularyDocuments(ctx, owner, mbModuleDocs(broken))
 	if err == nil {
 		t.Fatal("a module-only change that breaks an importing body was admitted — " +
 			"the bodies skipped preparation and the first delivery will park")
@@ -167,7 +165,7 @@ func TestModuleOnlyChangeStillPreparesTheBodiesThatImportIt(t *testing.T) {
 
 	// And a module-only change that DOES load lands, body untouched.
 	fixed := map[string]any{"connkit.py": "def greet(who):\n    return 'hey ' + who\n"}
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, mbModuleDocs(fixed)); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, mbModuleDocs(fixed)); err != nil {
 		t.Fatalf("a valid module-only change was refused: %v", err)
 	}
 	out, _, err = fops.CallFunction(ctx, mbImpFn, map[string]any{})

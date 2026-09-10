@@ -223,7 +223,7 @@ func TestSchemaRowsStoreNoSourceYAML(t *testing.T) {
 
 	// An installed pkg's rows store none either.
 	const pkg = "srcless.example.substrate.reamde.dev/srcless"
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(pkg, 0),
 		vocabulary.KindManifest(pkg,
 			map[string]any{"singular": "widget"},

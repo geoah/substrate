@@ -23,13 +23,9 @@ func TestImportRefusesARetiredKindName(t *testing.T) {
 
 	// The repository retires `task` under its own `tasks` package before the
 	// sample arrives: the header is the repository's to write.
-	sa, ok := ds.(substrate.VocabularyApplier)
-	if !ok {
-		t.Fatal("dataset does not apply vocabulary documents")
-	}
 	header := vocabulary.PackageManifest(homeAuthority+"/tasks", 0)
 	header["data"].(map[string]any)["retired"] = map[string]any{"kinds": []any{"task"}}
-	if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{header}); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{header}); err != nil {
 		t.Fatalf("retire task under the repository's tasks package: %v", err)
 	}
 

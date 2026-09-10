@@ -1,7 +1,5 @@
 package substrate
 
-import "context"
-
 // BlobDigestPrefix is the fixed prefix of every content-addressed blob's
 // digest, which is also the blob record's id: "blob-sha256-" + lowercase hex.
 // One hash function, named in the id, so a future algorithm is a new prefix
@@ -46,12 +44,4 @@ type BlobUpload struct {
 	// address anything.
 	Name      string
 	MediaType string
-}
-
-// BlobStore is the content-addressed byte store, an optional Dataset
-// extension (see Dataset): store bytes (deriving the digest, minting the blob
-// manifest) and stream them back by digest, both repository-scoped.
-type BlobStore interface {
-	PutBlob(ctx context.Context, actor Actor, up BlobUpload, data []byte, wantDigest string) (*BlobInfo, error)
-	GetBlob(ctx context.Context, digest string) (*BlobInfo, []byte, error)
 }

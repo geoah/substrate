@@ -88,7 +88,7 @@ func firstClassVocabulary(t *testing.T, ds substrate.Dataset) {
 				},
 			}),
 	}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), owner, docs); err != nil {
 		t.Fatalf("install the reference vocabulary: %v", err)
 	}
 }
@@ -331,7 +331,7 @@ func TestReferenceDotSkipsASensitiveReferentProperty(t *testing.T) {
 				},
 			}),
 	}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), owner, docs); err != nil {
 		t.Fatalf("install the sensitive-reference vocabulary: %v", err)
 	}
 

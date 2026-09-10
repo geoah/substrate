@@ -130,9 +130,9 @@ func New(cfg Config) http.Handler {
 	})
 
 	// GET /.well-known/substrate/server.json is discovery: unversioned,
-	// unauthenticated, and DB-free like /healthz. It replaces 501-style
-	// feature detection, and its well-known path is what lets a caller ask
-	// "is this domain a substrate at all" before it knows anything else.
+	// unauthenticated, and DB-free like /healthz. Its well-known path is what
+	// lets a caller ask "is this domain a substrate at all" before it knows
+	// anything else.
 	r.Get("/.well-known/substrate/server.json", h.getDiscovery)
 
 	// The door, BESIDE the API and outside every version prefix. No repository

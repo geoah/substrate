@@ -14,12 +14,10 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// callableFake is the fake dataset with the automation and agent seams the
-// plain fake does not carry. The trigger verbs are promoted from the nil
-// interface and never called; the three callables record the key they saw.
+// callableFake is the fake dataset with the three callables replaced by ones
+// that record the idempotency key they saw.
 type callableFake struct {
 	*fakeDataset
-	substrate.AutomationOps
 
 	mu   sync.Mutex
 	keys map[string]string

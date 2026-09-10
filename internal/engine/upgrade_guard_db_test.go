@@ -401,11 +401,7 @@ func TestBundleUpgradeRefusesATightenedPatternWithLiveRows(t *testing.T) {
 	}
 	want := `type ` + mbItemType + `: property "name" changes its pattern to ^[a-z]+$`
 
-	planner, ok := ds.(substrate.BundleUpgradePlanner)
-	if !ok {
-		t.Fatal("dataset does not plan bundle upgrades")
-	}
-	plan, err := planner.PlanBundleUpgrade(ctx, closure("^[a-z]+$"))
+	plan, err := ds.PlanBundleUpgrade(ctx, closure("^[a-z]+$"))
 	if err != nil {
 		t.Fatalf("plan the upgrade: %v", err)
 	}
@@ -419,10 +415,10 @@ func TestBundleUpgradeRefusesATightenedPatternWithLiveRows(t *testing.T) {
 		t.Fatalf("the preview must carry the guard line %q, got %+v", want, plan.Blockers)
 	}
 
-	_, err = applier(t, ds).ApplyVocabularyDocuments(ctx, owner, closure("^[a-z]+$"))
+	_, err = ds.ApplyVocabularyDocuments(ctx, owner, closure("^[a-z]+$"))
 	wantNarrowingGuard(t, err, want, "1 live records")
 
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, closure("^[a-z ]+$")); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, closure("^[a-z ]+$")); err != nil {
 		t.Fatalf("a pattern every stored value matches must land: %v", err)
 	}
 }
@@ -600,11 +596,7 @@ func TestBootUpgradeConvertsAShippedRename(t *testing.T) {
 		t.Fatalf("the boot did not move the value: %v", got.Properties)
 	}
 	// Landed, the preview reports the rename as done: nothing to write.
-	planner, ok := ds.(substrate.ShippedUpgradePlanner)
-	if !ok {
-		t.Fatal("dataset does not plan the shipped upgrade")
-	}
-	plans, err := planner.PlanShippedUpgrade(ctx)
+	plans, err := ds.PlanShippedUpgrade(ctx)
 	if err != nil {
 		t.Fatalf("plan the shipped upgrade: %v", err)
 	}
@@ -706,7 +698,7 @@ func TestBootUpgradeRefusesARenameAStoredMappingReads(t *testing.T) {
 		if err != nil {
 			t.Fatalf("dataset: %v", err)
 		}
-		if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, mapping(path)); err != nil {
+		if _, err := ds.ApplyVocabularyDocuments(ctx, owner, mapping(path)); err != nil {
 			t.Fatalf("declare the mapping: %v", err)
 		}
 		return ds
@@ -747,7 +739,7 @@ func TestBootUpgradeRefusesARenameAStoredMappingReads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, mapping("username")); err == nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, mapping("username")); err == nil {
 		t.Fatal("a mapping path onto the new name must not compile before the rename landed")
 	}
 	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/recordmapping", ownerPackage+"/gadgethandleowner", substrate.DeleteInput{}); err != nil {
@@ -874,7 +866,7 @@ func TestBootUpgradeRefusesARenameAStoredTemplateReads(t *testing.T) {
 		if err != nil {
 			t.Fatalf("dataset: %v", err)
 		}
-		if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, viewer(tmpl)); err != nil {
+		if _, err := ds.ApplyVocabularyDocuments(ctx, owner, viewer(tmpl)); err != nil {
 			t.Fatalf("declare the viewer kind: %v", err)
 		}
 	}
@@ -971,11 +963,7 @@ func TestBootUpgradeConvertsAShippedBackfillAndRemap(t *testing.T) {
 		t.Fatalf("the boot rewrote a row no step touched: %v", guarded.Properties)
 	}
 	// Landed, the preview reports nothing pending.
-	planner, ok := ds.(substrate.ShippedUpgradePlanner)
-	if !ok {
-		t.Fatal("dataset does not plan the shipped upgrade")
-	}
-	plans, err := planner.PlanShippedUpgrade(ctx)
+	plans, err := ds.PlanShippedUpgrade(ctx)
 	if err != nil {
 		t.Fatalf("plan the shipped upgrade: %v", err)
 	}
@@ -1043,11 +1031,7 @@ func TestBootUpgradeRefusesAShippedLossyRemap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
-	planner, ok := ds.(substrate.ShippedUpgradePlanner)
-	if !ok {
-		t.Fatal("dataset does not plan the shipped upgrade")
-	}
-	plans, err := planner.PlanShippedUpgrade(ctx)
+	plans, err := ds.PlanShippedUpgrade(ctx)
 	if err != nil {
 		t.Fatalf("plan the shipped upgrade: %v", err)
 	}

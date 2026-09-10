@@ -112,7 +112,7 @@ func (p *fakeProvider) configProps() map[string]any {
 // installOAuthBundle stands up a repository with the oauth facility on, the
 // mail bundle installed, its config record created against the fake
 // provider, and one pending account record.
-func installOAuthBundle(t *testing.T) (substrate.Service, substrate.Dataset, bundleOps, *fakeProvider, *substrate.Record) {
+func installOAuthBundle(t *testing.T) (substrate.Service, substrate.Dataset, substrate.Dataset, *fakeProvider, *substrate.Record) {
 	t.Helper()
 	p := newFakeProvider(t)
 	svc, ds := newDataset(t,
@@ -121,14 +121,14 @@ func installOAuthBundle(t *testing.T) (substrate.Service, substrate.Dataset, bun
 	)
 	docs := mbStandardDocs()
 	mbPointOAuthAt(docs, p.ts.URL)
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), owner, docs); err != nil {
 		t.Fatalf("install bundle: %v", err)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: p.configProps()})
 	account := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: mbAccountType, Properties: map[string]any{"address": "geo@example.com", "enabledMail": true},
 	})
-	return svc, ds, bundler(t, ds), p, account
+	return svc, ds, ds, p, account
 }
 
 // stateFrom lifts the signed state out of a consent URL.
@@ -162,11 +162,7 @@ func TestOAuthRoundTrip(t *testing.T) {
 		t.Fatalf("consent query: %v", q)
 	}
 
-	oc, ok := svc.(substrate.OAuthCompleter)
-	if !ok {
-		t.Fatal("service does not implement the oauth completer seam")
-	}
-	record, err := oc.CompleteOAuth(ctx, stateFrom(t, consent), "code-123")
+	record, err := svc.CompleteOAuth(ctx, stateFrom(t, consent), "code-123")
 	if err != nil {
 		t.Fatalf("callback: %v", err)
 	}
@@ -197,7 +193,7 @@ func TestOAuthRoundTrip(t *testing.T) {
 	}
 
 	// A tampered state is refused, never resolved.
-	if _, err := oc.CompleteOAuth(ctx, stateFrom(t, consent)+"x", "code-123"); err == nil {
+	if _, err := svc.CompleteOAuth(ctx, stateFrom(t, consent)+"x", "code-123"); err == nil {
 		t.Fatal("a tampered state completed")
 	}
 }
@@ -215,7 +211,7 @@ func TestOAuthRunnerConfigAndRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	if _, err := svc.(substrate.OAuthCompleter).CompleteOAuth(ctx, stateFrom(t, consent), "code-123"); err != nil {
+	if _, err := svc.CompleteOAuth(ctx, stateFrom(t, consent), "code-123"); err != nil {
 		t.Fatalf("callback: %v", err)
 	}
 
@@ -293,7 +289,7 @@ func TestOAuthAccountDeletionRevokes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	if _, err := svc.(substrate.OAuthCompleter).CompleteOAuth(ctx, stateFrom(t, consent), "code-123"); err != nil {
+	if _, err := svc.CompleteOAuth(ctx, stateFrom(t, consent), "code-123"); err != nil {
 		t.Fatalf("callback: %v", err)
 	}
 	if _, err := ds.Delete(ctx, owner, account.Kind, account.ID, substrate.DeleteInput{}); err != nil {

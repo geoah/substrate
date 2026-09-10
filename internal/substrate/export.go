@@ -1,26 +1,9 @@
 package substrate
 
 import (
-	"context"
 	"io"
 	"time"
 )
-
-// Exporter is the owner's recovery export, an optional Dataset extension (see
-// Dataset): the repository's directory as of one committed point, streamed as
-// a tar in the layout a data root has and the format an operator's
-// `repository snapshot` writes (decision 0069). The bearer token is the whole
-// credential, because a token already reads every record and every blob the
-// stream carries, and the sealed files in it are ciphertext under a key the
-// stream does not hold.
-type Exporter interface {
-	// Export pins a committed point of the repository and returns the export
-	// that streams it. Pinning is short and serializes with the repository's
-	// writes; the streaming does not, so writes go on while a client
-	// downloads and the stream stays the point it pinned. The context is the
-	// stream's too: a caller that goes away ends it.
-	Export(ctx context.Context) (Export, error)
-}
 
 // Export is one pinned export: the point it holds and the stream of it. A
 // caller that pins streams: the repository's one export slot is held from

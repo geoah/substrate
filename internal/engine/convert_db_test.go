@@ -39,18 +39,8 @@ func cvDocs(props map[string]any) []map[string]any {
 // cvApply declares the widget kind with the given properties.
 func cvApply(t *testing.T, ds substrate.Dataset, props map[string]any) error {
 	t.Helper()
-	_, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, cvDocs(props))
+	_, err := ds.ApplyVocabularyDocuments(context.Background(), owner, cvDocs(props))
 	return err
-}
-
-// cvPlanner is the dataset's preview and confirmed-apply seam.
-func cvPlanner(t *testing.T, ds substrate.Dataset) substrate.VocabularyPlanner {
-	t.Helper()
-	p, ok := ds.(substrate.VocabularyPlanner)
-	if !ok {
-		t.Fatal("the dataset does not plan a vocabulary apply")
-	}
-	return p
 }
 
 // wantLossyRefusal asserts a refusal under both the guard and the named lossy
@@ -370,7 +360,7 @@ func TestRemapRecomputesTheSubjectsOfAMappedSource(t *testing.T) {
 	ctx := context.Background()
 	svc, ds, dsn := newDatasetWithDSN(t)
 	const source = cvPackage + "/widgetsource"
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, cvMappedClosure([]any{"open", "active"})); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, cvMappedClosure([]any{"open", "active"})); err != nil {
 		t.Fatalf("install the package: %v", err)
 	}
 	lib := substrate.Actor("connector:library")
@@ -393,7 +383,7 @@ func TestRemapRecomputesTheSubjectsOfAMappedSource(t *testing.T) {
 		t.Fatalf("offer before the remap = %s", got)
 	}
 
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, cvMappedClosure([]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, cvMappedClosure([]any{
 		"open", map[string]any{"value": "working", "renamedFrom": "active"},
 	})); err != nil {
 		t.Fatalf("the remap must land: %v", err)
@@ -440,7 +430,6 @@ func TestLossyPlanRunsOnlyWithAConfirmationBoundToItsPreview(t *testing.T) {
 		}},
 	}
 	docs := cvDocs(lossy)
-	planner := cvPlanner(t, ds)
 
 	// The bare verb refuses it, naming the step and the count.
 	wantLossyRefusal(t, ds, cvApply(t, ds, lossy), held,
@@ -449,7 +438,7 @@ func TestLossyPlanRunsOnlyWithAConfirmationBoundToItsPreview(t *testing.T) {
 
 	// The preview: one lossy step with its count, the work, the hash and the
 	// head, and nothing blocking.
-	plan, err := planner.PlanVocabularyApply(ctx, owner, docs)
+	plan, err := ds.PlanVocabularyApply(ctx, owner, docs)
 	if err != nil {
 		t.Fatalf("plan: %v", err)
 	}
@@ -467,23 +456,23 @@ func TestLossyPlanRunsOnlyWithAConfirmationBoundToItsPreview(t *testing.T) {
 	// whether or not the write touched what the plan counts.
 	mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"status": "open"}})
 	stale := substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
-	_, err = planner.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &stale})
+	_, err = ds.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &stale})
 	if !errors.Is(err, substrate.ErrConflict) || !strings.Contains(err.Error(), "the changelog moved since the plan was previewed") {
 		t.Fatalf("a confirmation after an intervening write must refuse as stale, got: %v", err)
 	}
 
 	// Previewed again, confirmed for another plan: refused, naming both.
-	if plan, err = planner.PlanVocabularyApply(ctx, owner, docs); err != nil {
+	if plan, err = ds.PlanVocabularyApply(ctx, owner, docs); err != nil {
 		t.Fatalf("plan again: %v", err)
 	}
 	other := substrate.ConversionConfirm{PlanHash: "0000", ChangelogSeq: plan.ChangelogSeq}
-	_, err = planner.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &other})
+	_, err = ds.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &other})
 	wantLossyRefusal(t, ds, err, held, "the confirmation is for another plan", plan.PlanHash)
 
 	// The previewed pair lands the plan: both records read `open`, the one
 	// that moved appended one entry, and the changelog still holds `active`.
 	confirm := substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
-	if _, err := planner.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &confirm}); err != nil {
+	if _, err := ds.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &confirm}); err != nil {
 		t.Fatalf("the confirmed plan must land: %v", err)
 	}
 	if got := mustGet(t, ds, cvWidget, held.ID); got.Properties["status"] != "open" || got.Version == held.Version {
@@ -522,14 +511,14 @@ func TestRemapOntoARetainedValueNobodyHoldsIsLossless(t *testing.T) {
 			map[string]any{"value": "open", "renamedFrom": "active"},
 		}},
 	})
-	plan, err := cvPlanner(t, ds).PlanVocabularyApply(ctx, owner, docs)
+	plan, err := ds.PlanVocabularyApply(ctx, owner, docs)
 	if err != nil {
 		t.Fatalf("plan: %v", err)
 	}
 	if plan.Lossy || len(plan.Steps) != 1 || plan.Steps[0].Lossy || plan.Steps[0].Records != 1 {
 		t.Fatalf("a remap onto a value nobody holds must be lossless: %+v", plan)
 	}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
 		t.Fatalf("a lossless remap must land unconfirmed: %v", err)
 	}
 	if got := mustGet(t, ds, cvWidget, only.ID); got.Properties["status"] != "open" {
@@ -562,8 +551,7 @@ func TestRemapOnARenamedPropertyCountsUnderTheOldName(t *testing.T) {
 		}},
 	}
 	docs := cvDocs(renamed)
-	planner := cvPlanner(t, ds)
-	plan, err := planner.PlanVocabularyApply(ctx, owner, docs)
+	plan, err := ds.PlanVocabularyApply(ctx, owner, docs)
 	if err != nil {
 		t.Fatalf("plan: %v", err)
 	}
@@ -581,7 +569,7 @@ func TestRemapOnARenamedPropertyCountsUnderTheOldName(t *testing.T) {
 	}
 	wantLossyRefusal(t, ds, cvApply(t, ds, renamed), high, `value "high" rewritten to "low" on 1 live records`)
 	confirm := substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
-	if _, err := planner.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &confirm}); err != nil {
+	if _, err := ds.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &confirm}); err != nil {
 		t.Fatalf("the door must recount the plan the preview hashed: %v", err)
 	}
 	for _, r := range []*substrate.Record{high, low} {
@@ -613,8 +601,7 @@ func TestBackfillOfARenamedPropertyCountsUnderTheOldName(t *testing.T) {
 	docs := cvDocs(map[string]any{
 		"dimensions": map[string]any{"type": "string", "required": true, "default": "unsized", "renamedFrom": "size"},
 	})
-	planner := cvPlanner(t, ds)
-	plan, err := planner.PlanVocabularyApply(ctx, owner, docs)
+	plan, err := ds.PlanVocabularyApply(ctx, owner, docs)
 	if err != nil {
 		t.Fatalf("plan: %v", err)
 	}
@@ -630,10 +617,10 @@ func TestBackfillOfARenamedPropertyCountsUnderTheOldName(t *testing.T) {
 		}
 	}
 	other := substrate.ConversionConfirm{PlanHash: "0000", ChangelogSeq: plan.ChangelogSeq}
-	_, err = planner.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &other})
+	_, err = ds.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &other})
 	wantLossyRefusal(t, ds, err, a, "the confirmation is for another plan")
 	confirm := substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
-	if _, err := planner.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &confirm}); err != nil {
+	if _, err := ds.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &confirm}); err != nil {
 		t.Fatalf("the door must recount the plan the preview hashed: %v", err)
 	}
 	if got := mustGet(t, ds, cvWidget, a.ID); got.Properties["dimensions"] != "big" || got.Properties["color"] != nil {
@@ -683,11 +670,10 @@ func TestNullStepRemovesADroppedPropertyOnConfirmation(t *testing.T) {
 
 	dropped := map[string]any{"name": map[string]any{"type": "string"}}
 	docs := cvDocs(dropped)
-	planner := cvPlanner(t, ds)
 	wantLossyRefusal(t, ds, cvApply(t, ds, dropped), full,
 		`property "mood" dropped, its value removed from 1 live records`,
 		`property "token" dropped, its value removed from 1 live records`)
-	plan, err := planner.PlanVocabularyApply(ctx, owner, docs)
+	plan, err := ds.PlanVocabularyApply(ctx, owner, docs)
 	if err != nil {
 		t.Fatalf("plan: %v", err)
 	}
@@ -701,7 +687,7 @@ func TestNullStepRemovesADroppedPropertyOnConfirmation(t *testing.T) {
 		}
 	}
 	confirm := substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
-	if _, err := planner.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &confirm}); err != nil {
+	if _, err := ds.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &confirm}); err != nil {
 		t.Fatalf("the confirmed drop must land: %v", err)
 	}
 
@@ -756,17 +742,13 @@ func TestLosslessPlanInstallsUnconfirmed(t *testing.T) {
 		t.Fatalf("install the package: %v", err)
 	}
 	r := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"name": "a"}})
-	inst, ok := ds.(substrate.BundleInstaller)
-	if !ok {
-		t.Fatal("the dataset does not install closures")
-	}
 	// Lossless: `mood` becomes required with a default, and the backfill
 	// runs with nothing to confirm.
 	backfill := cvDocs(map[string]any{
 		"name": map[string]any{"type": "string"},
 		"mood": map[string]any{"type": "string", "required": true, "default": "neutral"},
 	})
-	if _, err := inst.InstallBundleClosure(ctx, owner, backfill, nil, substrate.BundleInstall{}); err != nil {
+	if _, err := ds.InstallBundleClosure(ctx, owner, backfill, nil, substrate.BundleInstall{}); err != nil {
 		t.Fatalf("a lossless plan must install unconfirmed: %v", err)
 	}
 	if got := mustGet(t, ds, cvWidget, r.ID); got.Properties["mood"] != "neutral" {
@@ -775,14 +757,14 @@ func TestLosslessPlanInstallsUnconfirmed(t *testing.T) {
 	// Lossy: dropping `mood` while the record carries it.
 	drop := cvDocs(map[string]any{"name": map[string]any{"type": "string"}})
 	before := mustGet(t, ds, cvWidget, r.ID)
-	_, err := inst.InstallBundleClosure(ctx, owner, drop, nil, substrate.BundleInstall{})
+	_, err := ds.InstallBundleClosure(ctx, owner, drop, nil, substrate.BundleInstall{})
 	wantLossyRefusal(t, ds, err, before, `property "mood" dropped`)
-	plan, err := cvPlanner(t, ds).PlanVocabularyApply(ctx, owner, drop)
+	plan, err := ds.PlanVocabularyApply(ctx, owner, drop)
 	if err != nil {
 		t.Fatalf("plan: %v", err)
 	}
 	confirm := substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
-	if _, err := inst.InstallBundleClosure(ctx, owner, drop, nil, substrate.BundleInstall{Confirm: &confirm}); err != nil {
+	if _, err := ds.InstallBundleClosure(ctx, owner, drop, nil, substrate.BundleInstall{Confirm: &confirm}); err != nil {
 		t.Fatalf("the confirmed install must land: %v", err)
 	}
 	if got := mustGet(t, ds, cvWidget, r.ID); got.Properties["mood"] != nil {
@@ -814,7 +796,7 @@ func TestConversionAboveTheCeilingIsRefused(t *testing.T) {
 	if got := mustGet(t, ds, cvWidget, a.ID); got.Version != a.Version {
 		t.Fatalf("a refused plan touched the record: %+v", got)
 	}
-	plan, err := cvPlanner(t, ds).PlanVocabularyApply(ctx, owner, cvDocs(over))
+	plan, err := ds.PlanVocabularyApply(ctx, owner, cvDocs(over))
 	if err != nil {
 		t.Fatalf("plan: %v", err)
 	}

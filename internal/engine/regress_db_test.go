@@ -118,7 +118,7 @@ func evoRefBaseProps() map[string]any {
 
 func evoRefApply(t *testing.T, ds substrate.Dataset, holderProps map[string]any) error {
 	t.Helper()
-	_, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, evoRefDocs(holderProps))
+	_, err := ds.ApplyVocabularyDocuments(context.Background(), owner, evoRefDocs(holderProps))
 	return err
 }
 

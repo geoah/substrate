@@ -36,7 +36,7 @@ const (
 	kindKindRef    = "substrate.reamde.dev/core/kind"
 )
 
-// bundleLifecycler is the lifecycle half of substrate.BundleOps: the verbs a
+// bundleLifecycler is the lifecycle half of the dataset interface: the verbs a
 // repository user keeps on a provider's bundle.
 type bundleLifecycler interface {
 	DisableBundle(ctx context.Context, id string) error
@@ -202,10 +202,6 @@ func TestPublishedDeclarationsRefuseATokenWrite(t *testing.T) {
 	if _, _, err := c.Install(ctx, substrate.ActorAPI, whoopID, ds); err != nil {
 		t.Fatalf("install %s: %v", whoopID, err)
 	}
-	applier, ok := ds.(substrate.VocabularyApplier)
-	if !ok {
-		t.Fatal("dataset does not support ApplyVocabularyDocuments")
-	}
 
 	// The narrowest possible edit: one added property on one mirror kind,
 	// which is exactly what breaks the next sync.
@@ -222,7 +218,7 @@ func TestPublishedDeclarationsRefuseATokenWrite(t *testing.T) {
 		},
 	}}
 	for _, actor := range []substrate.Actor{substrate.ActorAPI, substrate.ActorConsole, substrate.ActorCLI} {
-		_, err := applier.ApplyVocabularyDocuments(ctx, actor, edit)
+		_, err := ds.ApplyVocabularyDocuments(ctx, actor, edit)
 		if !errors.Is(err, substrate.ErrForbidden) {
 			t.Fatalf("actor %s writing a published declaration: err = %v, want ErrForbidden", actor, err)
 		}
@@ -256,11 +252,7 @@ func TestPublishedDeclarationsRefuseATokenWrite(t *testing.T) {
 	if got := sourceOf(t, ds, kindKindRef, whoopID+"/recovery"); got != vocabulary.SourcePublished {
 		t.Fatalf("kind source after a reopen = %q, want %q", got, vocabulary.SourcePublished)
 	}
-	applier, ok = ds.(substrate.VocabularyApplier)
-	if !ok {
-		t.Fatal("the reopened dataset does not support ApplyVocabularyDocuments")
-	}
-	if _, err := applier.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, edit); !errors.Is(err, substrate.ErrForbidden) {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, edit); !errors.Is(err, substrate.ErrForbidden) {
 		t.Fatalf("a batch apply after a reopen: err = %v, want ErrForbidden", err)
 	}
 	// The other door into the same chokepoint: a declaration record is a
@@ -393,14 +385,10 @@ func TestAProvidersRecordsAndLifecycleStayTheUsers(t *testing.T) {
 func TestAnInstalledProviderIsPromotedByTheCatalogInstall(t *testing.T) {
 	ds := newDataset(t)
 	ctx := context.Background()
-	applier, ok := ds.(substrate.VocabularyApplier)
-	if !ok {
-		t.Fatal("dataset does not support ApplyVocabularyDocuments")
-	}
 
 	// The hand door: the closure's own files, applied by the repository's
 	// token. What lands is the repository's, and it stays writable.
-	if _, err := applier.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, whoopClosure(t)); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, whoopClosure(t)); err != nil {
 		t.Fatalf("apply the whoop closure by hand: %v", err)
 	}
 	if got := sourceOf(t, ds, kindPackageRef, whoopID); got != vocabulary.SourceInstalled {
@@ -420,7 +408,7 @@ func TestAnInstalledProviderIsPromotedByTheCatalogInstall(t *testing.T) {
 	}
 
 	// And it stuck: the write the hand door allowed a moment ago is refused now.
-	_, err := applier.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{{
+	_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{{
 		"kind":     kindKindRef,
 		"metadata": map[string]any{"id": whoopID + "/sleep"},
 		"data": map[string]any{
@@ -473,12 +461,8 @@ func TestPublishedPackageStillUpgrades(t *testing.T) {
 func TestAProviderInstallLeavesTheAuthorityRowOpen(t *testing.T) {
 	ds := newDataset(t)
 	ctx := context.Background()
-	applier, ok := ds.(substrate.VocabularyApplier)
-	if !ok {
-		t.Fatal("dataset does not support ApplyVocabularyDocuments")
-	}
 
-	if _, err := applier.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, whoopClosure(t)); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, whoopClosure(t)); err != nil {
 		t.Fatalf("apply the whoop closure by hand: %v", err)
 	}
 	const notionID = whoopAuthority + "/notion"
@@ -495,7 +479,7 @@ func TestAProviderInstallLeavesTheAuthorityRowOpen(t *testing.T) {
 
 	// So the first provider re-applies by hand, authority document and all,
 	// which is the door the catalog install must not have shut.
-	if _, err := applier.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, whoopClosure(t)); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, whoopClosure(t)); err != nil {
 		t.Fatalf("re-apply the whoop closure by hand after a provider install: %v", err)
 	}
 	if got := sourceOf(t, ds, kindPackageRef, whoopID); got != vocabulary.SourceInstalled {

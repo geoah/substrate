@@ -32,7 +32,7 @@ const (
 	codeRateLimited = "rate_limited" // 429 (+ Retry-After)
 	codeBadRequest  = "bad_request"  // 400
 	codeInternal    = "internal"     // 500 — a genuine, unexpected server fault
-	codeUnsupported = "unsupported"  // 501 — a capability absent from this deployment
+	codeUnsupported = "unsupported"  // 501 — a door this deployment does not open
 	codeUnavailable = "unavailable"  // 503 — transient; ALWAYS with Retry-After
 	codeCompacted   = "compacted"    // 410: a change cursor the changelog cannot resume; re-list
 	// codeFunctionFailed is 500: a callable's body faulted while running. It is
@@ -71,10 +71,10 @@ func writeError(w http.ResponseWriter, status int, code, msg string, problems ..
 	writeJSON(w, status, substrate.ErrorEnvelope{Error: substrate.ErrorPayload{Code: code, Message: msg, Problems: problems}})
 }
 
-// writeUnsupported is the 501 emit: a capability this deployment does not
-// carry (no bundles, no change feed, no agents, …). It is NOT a server fault
-// and NOT the way to feature-detect — GET /.well-known/substrate/server.json
-// discovery is.
+// writeUnsupported is the 501 emit: a door this deployment does not open. The
+// register endpoints on a deployment with no invite code configured are the
+// one, and it is configuration, not a missing method set; discovery says so
+// as registration.open. It is not a server fault.
 func writeUnsupported(w http.ResponseWriter, msg string) {
 	writeError(w, http.StatusNotImplemented, codeUnsupported, msg)
 }

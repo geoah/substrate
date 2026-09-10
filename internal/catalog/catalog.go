@@ -545,10 +545,6 @@ func (c *Catalog) installable(actor substrate.Actor, id string) (*Bundle, error)
 // the delivery wiring commit as a single repository transaction. `opts` is
 // where the tier arrives: `Published` for a provider, zero for a sample.
 func install(ctx context.Context, ds substrate.Dataset, actor substrate.Actor, vocabularyDocs, dataDocs []map[string]any, opts substrate.BundleInstall) error {
-	inst, ok := ds.(substrate.BundleInstaller)
-	if !ok {
-		return errors.New("catalog: this dataset cannot install bundle closures")
-	}
 	// Pre-admit every data document BEFORE the schema apply: a malformed
 	// delivery-wiring envelope fails here, before anything is touched, rather
 	// than after the schema closure has already committed.
@@ -560,15 +556,13 @@ func install(ctx context.Context, ds substrate.Dataset, actor substrate.Actor, v
 		}
 		dataInputs = append(dataInputs, in)
 	}
-	_, err := inst.InstallBundleClosure(ctx, actor, vocabularyDocs, dataInputs, opts)
+	_, err := ds.InstallBundleClosure(ctx, actor, vocabularyDocs, dataInputs, opts)
 	return err
 }
 
 // Upgrade previews what taking a shipped bundle again over ds's stored
 // declarations would do: the version motion and the blockers, computed by the
-// dataset against the same closure the door applies. A dataset that offers no
-// preview answers nil, not an error: the catalog still lists and installs
-// there, it just cannot say what an install would change.
+// dataset against the same closure the door applies.
 //
 // A PROVIDER is previewed as shipped: its closure landed verbatim and the
 // install verb re-applies it verbatim. A SAMPLE is previewed as the import
@@ -586,10 +580,6 @@ func (c *Catalog) Upgrade(ctx context.Context, id string, ds substrate.Dataset, 
 	b, ok := c.byID[id]
 	if !ok {
 		return nil, fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
-	}
-	p, ok := ds.(substrate.BundleUpgradePlanner)
-	if !ok {
-		return nil, nil
 	}
 	var vocabularyDocs []map[string]any
 	if b.Tier == substrate.TierSample {
@@ -615,7 +605,7 @@ func (c *Catalog) Upgrade(ctx context.Context, id string, ds substrate.Dataset, 
 				"%s still mentions %s after the rehome, so it would declare under an authority this repository does not own",
 				strings.Join(left, ", "), b.Authority)}}, nil
 		}
-		plan, err := p.PlanBundleUpgrade(ctx, vocabularyDocs)
+		plan, err := ds.PlanBundleUpgrade(ctx, vocabularyDocs)
 		if err != nil {
 			return nil, err
 		}
@@ -631,7 +621,7 @@ func (c *Catalog) Upgrade(ctx context.Context, id string, ds substrate.Dataset, 
 	if err != nil {
 		return nil, err
 	}
-	plan, err := p.PlanBundleUpgrade(ctx, vocabularyDocs)
+	plan, err := ds.PlanBundleUpgrade(ctx, vocabularyDocs)
 	if err != nil {
 		return nil, err
 	}

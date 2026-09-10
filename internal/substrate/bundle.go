@@ -1,7 +1,5 @@
 package substrate
 
-import "context"
-
 // BundleStatus is one installed bundle's runtime state, computed on read:
 // lifecycle (Installed/Enabled), each declared input's resolution, and the
 // setup steps that stand between the bundle and every runtime path it ships.
@@ -259,28 +257,6 @@ const (
 	SetupProvider = "provider"
 )
 
-// BundleOps is the bundle-lifecycle seam, an optional Dataset extension (see
-// Dataset). Status is computed; disable/enable and uninstall are reversible
-// runtime state; purge tombstones the owned package's data through the
-// finalizer flow; StartOAuth begins the host connect flow for one account
-// record. A dataset without it has no bundle verbs.
-type BundleOps interface {
-	BundleStatuses(ctx context.Context) ([]BundleStatus, error)
-	BundleStatus(ctx context.Context, id string) (BundleStatus, error)
-	// BundlePackage resolves the package a bundle owns (from the live registry
-	// or stored rows) for the lifecycle scope gate.
-	BundlePackage(ctx context.Context, id string) (string, error)
-	DisableBundle(ctx context.Context, id string) error
-	EnableBundle(ctx context.Context, id string) error
-	// BindBundleInput points a bundle's input at a chosen record (empty
-	// record clears the choice), the explicit step of input resolution.
-	BindBundleInput(ctx context.Context, id, input, record string) error
-	UninstallBundle(ctx context.Context, id string) error
-	PurgeBundle(ctx context.Context, id string) (int, error)
-	StartOAuth(ctx context.Context, actor Actor, recordID string) (string, error)
-	TypesImplementing(ctx context.Context, trait string) ([]KindInfo, error)
-}
-
 // BundleUninstalled is the reply to an uninstall. The bundle has no status
 // afterwards (uninstall tears its rows down), so the reply is the fact alone.
 type BundleUninstalled struct {
@@ -297,14 +273,6 @@ type BundlePurged struct {
 // browser visits next.
 type OAuthStarted struct {
 	URL string `json:"url"`
-}
-
-// BundleInstaller is the atomic install verb an installable target must
-// offer, an optional Dataset extension (see Dataset): the vocabulary closure
-// AND the shipped delivery wiring admitted as ONE repository transaction, so
-// a data-document failure rolls the vocabulary apply back with it.
-type BundleInstaller interface {
-	InstallBundleClosure(ctx context.Context, actor Actor, vocabularyDocs []map[string]any, dataDocs []PutInput, opts BundleInstall) ([]*Record, error)
 }
 
 // BundleInstall is what the caller decides about an install beyond the
@@ -330,29 +298,4 @@ type BundleInstall struct {
 	// install refuses a lossy plan without one and a lossless plan ignores it
 	// (decision 0067).
 	Confirm *ConversionConfirm
-}
-
-// BundleUpgradePlanner is the read-only preview beside BundleInstaller, an
-// optional Dataset extension (see Dataset): what installing the shipped
-// closure over the stored declarations would move, the guard lines the
-// install would refuse it on, and the conversion plan it would run.
-type BundleUpgradePlanner interface {
-	PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[string]any) (BundleUpgrade, error)
-}
-
-// OAuthMaintainer is the OAuth upkeep pass the service loop drives, an
-// optional Dataset extension (see Dataset): refresh keeps stored tokens
-// fresh, the finalizer pass revokes and releases deleted accounts ahead of
-// GC.
-type OAuthMaintainer interface {
-	RefreshOAuthTokens(ctx context.Context) (int, error)
-	ProcessOAuthFinalizers(ctx context.Context) (int, error)
-}
-
-// OAuthCompleter is the Service half of the connect flow, an optional Service
-// extension (see Service): the callback carries no bearer, the signed state
-// IS the authentication, so it resolves the repository itself. Its Dataset
-// half is BundleOps.StartOAuth.
-type OAuthCompleter interface {
-	CompleteOAuth(ctx context.Context, state, code string) (string, error)
 }

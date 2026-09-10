@@ -31,11 +31,7 @@ import (
 // repository holds.
 func planCore(t *testing.T, ds substrate.Dataset) substrate.ShippedUpgrade {
 	t.Helper()
-	planner, ok := ds.(substrate.ShippedUpgradePlanner)
-	if !ok {
-		t.Fatal("the dataset does not preview the shipped upgrade")
-	}
-	plans, err := planner.PlanShippedUpgrade(context.Background())
+	plans, err := ds.PlanShippedUpgrade(context.Background())
 	if err != nil {
 		t.Fatalf("plan the shipped upgrade: %v", err)
 	}

@@ -69,7 +69,7 @@ func TestLegacyTitlesSurviveADisplayTemplate(t *testing.T) {
 			"properties": map[string]any{"note": map[string]any{"type": "string"}},
 		}),
 	}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, before); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, before); err != nil {
 		t.Fatalf("install the memo kind: %v", err)
 	}
 	memo := mustPut(t, ds, owner, substrate.PutInput{
@@ -89,7 +89,7 @@ func TestLegacyTitlesSurviveADisplayTemplate(t *testing.T) {
 			},
 		}),
 	}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, after); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, after); err != nil {
 		t.Fatalf("upgrade the memo kind: %v", err)
 	}
 

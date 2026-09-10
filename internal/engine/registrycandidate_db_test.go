@@ -30,10 +30,6 @@ func TestABatchWritesAgainstItsOwnCandidate(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newCoreDataset(t)
-	inst, ok := ds.(substrate.BundleInstaller)
-	if !ok {
-		t.Fatal("dataset does not implement the closure-install seam")
-	}
 	const (
 		widget  = candPackage + "/widget"
 		holder  = candPackage + "/holder"
@@ -95,7 +91,7 @@ def main(input, host):
 			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", candPackage+"/onwidget"),
 		}},
 	}
-	if _, err := inst.InstallBundleClosure(ctx, owner, closure, data, substrate.BundleInstall{}); err != nil {
+	if _, err := ds.InstallBundleClosure(ctx, owner, closure, data, substrate.BundleInstall{}); err != nil {
 		t.Fatalf("a closure must be able to ship records of the kinds it declares: %v", err)
 	}
 
@@ -124,10 +120,6 @@ func TestAClosureActorsDeclaredTierHoldsOnFirstInstall(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newCoreDataset(t)
-	inst, ok := ds.(substrate.BundleInstaller)
-	if !ok {
-		t.Fatal("dataset does not implement the closure-install seam")
-	}
 	const (
 		pkg    = "keeper.example.substrate.reamde.dev/keeper"
 		widget = pkg + "/widget"
@@ -142,7 +134,7 @@ func TestAClosureActorsDeclaredTierHoldsOnFirstInstall(t *testing.T) {
 			map[string]any{"singular": "widget"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 	}
-	if _, err := inst.InstallBundleClosure(ctx, keeper, closure, []substrate.PutInput{
+	if _, err := ds.InstallBundleClosure(ctx, keeper, closure, []substrate.PutInput{
 		{Kind: widget, ID: "w1", Properties: map[string]any{"name": "kept"}},
 	}, substrate.BundleInstall{}); err != nil {
 		t.Fatalf("install under the declared actor: %v", err)

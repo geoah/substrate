@@ -42,7 +42,7 @@ func dwDocs(holderProps map[string]any) []map[string]any {
 
 func dwApply(t *testing.T, ds substrate.Dataset, holderProps map[string]any) error {
 	t.Helper()
-	_, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, dwDocs(holderProps))
+	_, err := ds.ApplyVocabularyDocuments(context.Background(), owner, dwDocs(holderProps))
 	return err
 }
 
@@ -367,7 +367,7 @@ func TestDerivedTitleTokens(t *testing.T) {
 				},
 			}),
 	}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), owner, docs); err != nil {
 		t.Fatalf("install the template authority: %v", err)
 	}
 
@@ -469,7 +469,7 @@ func TestLLMThreadTitleFollowsItsAgent(t *testing.T) {
 			"model":       "example-model",
 		}),
 	}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
 		t.Fatalf("install the agent: %v", err)
 	}
 	thread := mustPut(t, ds, owner, substrate.PutInput{
@@ -525,7 +525,7 @@ func TestStoredNestedReferenceDeclarationSurvivesAReopen(t *testing.T) {
 				},
 			}}),
 	}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
 		t.Fatalf("admit the declaration: %v", err)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{Kind: pkg + "/target", ID: "a"})

@@ -31,22 +31,6 @@ const (
 	mbEchoFn      = mbPackage + "/echo"
 )
 
-// bundleOps is what these tests reach for: the bundle verbs the HTTP layer
-// calls, plus the OAuth upkeep pass the service loop drives.
-type bundleOps interface {
-	substrate.BundleOps
-	substrate.OAuthMaintainer
-}
-
-func bundler(t *testing.T, ds substrate.Dataset) bundleOps {
-	t.Helper()
-	b, ok := ds.(bundleOps)
-	if !ok {
-		t.Fatal("dataset does not implement the bundle seam")
-	}
-	return b
-}
-
 // mbConfigTypeDoc declares the bundle's client kind: oauth2, so it carries
 // the standard client fields. Records of it are ordinary — any number may
 // exist; the bundle's `client` input resolves one.
@@ -210,13 +194,13 @@ func mbWireEmail(docs []map[string]any) {
 }
 
 // installMailBundle applies the standard closure into a fresh repository.
-func installMailBundle(t *testing.T) (substrate.Dataset, bundleOps) {
+func installMailBundle(t *testing.T) (substrate.Dataset, substrate.Dataset) {
 	t.Helper()
 	_, ds := newDataset(t)
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, mbStandardDocs()); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), owner, mbStandardDocs()); err != nil {
 		t.Fatalf("install bundle: %v", err)
 	}
-	return ds, bundler(t, ds)
+	return ds, ds
 }
 
 // mbTrigger binds mailitem creations to the mark function.
@@ -284,13 +268,12 @@ func TestBundleInstallClosureRefusals(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	sa := applier(t, ds)
 
 	// installs missing a declared member.
 	short := mbDocs([]string{mbConfigType, mbAccountType, mbItemType, mbMessageType, mbMarkFn},
 		mbConfigTypeDoc(), mbAccountTypeDoc(), mbItemTypeDoc(), mbMessageTypeDoc(),
 		mbFnDoc("mark", mbMarkSource), mbFnDoc("echo", mbEchoSource))
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, short); err == nil ||
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, short); err == nil ||
 		!strings.Contains(err.Error(), "closure is the package") {
 		t.Fatalf("undeclared member must refuse: %v", err)
 	}
@@ -299,7 +282,7 @@ func TestBundleInstallClosureRefusals(t *testing.T) {
 	extra := mbDocs([]string{mbConfigType, mbAccountType, mbItemType, mbMessageType, mbMarkFn, mbEchoFn, mbPackage + "/ghost"},
 		mbConfigTypeDoc(), mbAccountTypeDoc(), mbItemTypeDoc(), mbMessageTypeDoc(),
 		mbFnDoc("mark", mbMarkSource), mbFnDoc("echo", mbEchoSource))
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, extra); err == nil ||
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, extra); err == nil ||
 		!strings.Contains(err.Error(), "closure is the package") {
 		t.Fatalf("phantom install must refuse: %v", err)
 	}
@@ -313,7 +296,7 @@ func TestBundleInstallClosureRefusals(t *testing.T) {
 		vocabulary.ActorManifest(mbPackage, vocabulary.PackageActor(mbPackage)),
 		mbMessageTypeDoc(),
 	}
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, headless); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, headless); err != nil {
 		t.Fatalf("a package without a bundle document must install: %v", err)
 	}
 
@@ -328,7 +311,7 @@ func TestBundleInstallClosureRefusals(t *testing.T) {
 			}
 		}
 	}
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, badConfig); err == nil ||
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, badConfig); err == nil ||
 		!strings.Contains(err.Error(), "does not implement the oauth2 trait") {
 		t.Fatalf("non-oauth2 clientInput must refuse: %v", err)
 	}
@@ -472,10 +455,9 @@ func TestBundleInputBindSurvivesRebuild(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, ds := newDataset(t)
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, mbStandardDocs()); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, mbStandardDocs()); err != nil {
 		t.Fatalf("install bundle: %v", err)
 	}
-	ops := bundler(t, ds)
 	mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
 	chosen := mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
 	if err := ds.(interface {
@@ -492,7 +474,7 @@ func TestBundleInputBindSurvivesRebuild(t *testing.T) {
 	if _, err := rb.RebuildRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
-	st, err := ops.BundleStatus(ctx, mbPackage)
+	st, err := ds.BundleStatus(ctx, mbPackage)
 	if err != nil || len(st.Setup) != 0 {
 		t.Fatalf("post-rebuild status: %+v %v", st, err)
 	}
@@ -568,7 +550,6 @@ func TestBundleUpgradeRefusesBreakage(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, _ := installMailBundle(t)
-	sa := applier(t, ds)
 	mbTrigger(t, ds)
 	mustPut(t, ds, owner, substrate.PutInput{Kind: mbItemType, Properties: map[string]any{"name": "keep"}})
 
@@ -576,7 +557,7 @@ func TestBundleUpgradeRefusesBreakage(t *testing.T) {
 	noItem := mbDocs(nil,
 		mbConfigTypeDoc(), mbAccountTypeDoc(), mbMessageTypeDoc(),
 		mbFnDoc("mark", mbMarkSource), mbFnDoc("echo", mbEchoSource))
-	_, err := sa.ApplyVocabularyDocuments(ctx, owner, noItem)
+	_, err := ds.ApplyVocabularyDocuments(ctx, owner, noItem)
 	wantErr(t, err, substrate.ErrGuard, "dropping a type with live rows")
 	if !strings.Contains(err.Error(), "live records") {
 		t.Fatalf("live-rows refusal: %v", err)
@@ -586,7 +567,7 @@ func TestBundleUpgradeRefusesBreakage(t *testing.T) {
 	noMark := mbDocs(nil,
 		mbConfigTypeDoc(), mbAccountTypeDoc(), mbItemTypeDoc(), mbMessageTypeDoc(),
 		mbFnDoc("echo", mbEchoSource))
-	_, err = sa.ApplyVocabularyDocuments(ctx, owner, noMark)
+	_, err = ds.ApplyVocabularyDocuments(ctx, owner, noMark)
 	wantErr(t, err, substrate.ErrGuard, "dropping a referenced function")
 	if !strings.Contains(err.Error(), "referenced by live trigger") {
 		t.Fatalf("referenced-function refusal: %v", err)
@@ -596,7 +577,7 @@ func TestBundleUpgradeRefusesBreakage(t *testing.T) {
 	noEcho := mbDocs(nil,
 		mbConfigTypeDoc(), mbAccountTypeDoc(), mbItemTypeDoc(), mbMessageTypeDoc(),
 		mbFnDoc("mark", mbMarkSource))
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, noEcho); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, noEcho); err != nil {
 		t.Fatalf("dropping an unreferenced function: %v", err)
 	}
 	if _, _, err := ds.(fnOps).CallFunction(ctx, mbEchoFn, nil); err == nil {
@@ -691,7 +672,7 @@ func TestBundleUninstallTearsDownAuthority(t *testing.T) {
 	}
 
 	// Re-applying the closure is a fresh install: the authority comes back.
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, mbStandardDocs()); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, mbStandardDocs()); err != nil {
 		t.Fatalf("re-install: %v", err)
 	}
 	if !hasType(t, ds, mbItemType) {

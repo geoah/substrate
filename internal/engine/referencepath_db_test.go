@@ -75,7 +75,7 @@ func TestReferencePathAuthoredStoredAndReadBack(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, pathDocs()); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, pathDocs()); err != nil {
 		t.Fatalf("install the paths authority: %v", err)
 	}
 
@@ -185,7 +185,7 @@ func TestReferencePathRefusals(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, pathDocs()); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, pathDocs()); err != nil {
 		t.Fatalf("install the paths authority: %v", err)
 	}
 

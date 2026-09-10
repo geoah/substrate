@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -14,25 +13,10 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// bundlesFrom resolves the request's dataset to the bundle-lifecycle seam; a
-// dataset without it has no bundle verbs.
-func bundlesFrom(ctx context.Context) (substrate.BundleOps, bool) {
-	ops, ok := DatasetFrom(ctx).(substrate.BundleOps)
-	return ops, ok
-}
-
-func writeNoBundles(w http.ResponseWriter) {
-	writeUnsupported(w, "this substrate runs no bundles")
-}
-
 // getBundleStatuses lists every installed bundle's computed runtime state.
 func (h *handler) getBundleStatuses(w http.ResponseWriter, r *http.Request) {
-	ops, ok := bundlesFrom(r.Context())
-	if !ok {
-		writeNoBundles(w)
-		return
-	}
-	statuses, err := ops.BundleStatuses(r.Context())
+	ds := DatasetFrom(r.Context())
+	statuses, err := ds.BundleStatuses(r.Context())
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
@@ -43,12 +27,8 @@ func (h *handler) getBundleStatuses(w http.ResponseWriter, r *http.Request) {
 // getBundleStatus is one bundle's computed state — lifecycle, input
 // resolution, setup steps, account and record counts.
 func (h *handler) getBundleStatus(w http.ResponseWriter, r *http.Request) {
-	ops, ok := bundlesFrom(r.Context())
-	if !ok {
-		writeNoBundles(w)
-		return
-	}
-	st, err := ops.BundleStatus(r.Context(), pathParam(r, "id"))
+	ds := DatasetFrom(r.Context())
+	st, err := ds.BundleStatus(r.Context(), pathParam(r, "id"))
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
@@ -61,8 +41,8 @@ func (h *handler) getBundleStatus(w http.ResponseWriter, r *http.Request) {
 // the whole repository, and the bundle's own lifecycle rules —
 // not a capability list — decide what the verb may do. On failure it has
 // already written the response.
-func (h *handler) bundleLifecycleGate(w http.ResponseWriter, r *http.Request, ops substrate.BundleOps) (string, bool) {
-	authority, err := ops.BundlePackage(r.Context(), pathParam(r, "id"))
+func (h *handler) bundleLifecycleGate(w http.ResponseWriter, r *http.Request, ds substrate.Dataset) (string, bool) {
+	authority, err := ds.BundlePackage(r.Context(), pathParam(r, "id"))
 	if err != nil {
 		writeSubstrateError(w, err)
 		return "", false
@@ -91,13 +71,9 @@ const (
 //
 // Disable, enable and bind answer with the refreshed status; uninstall removes
 // the row (no status to reload) and acks {"uninstalled": true}; purge answers
-// with the tombstoned count. The guards live in the engine ops, unchanged.
+// with the tombstoned count. The guards live in the engine, unchanged.
 func (h *handler) patchBundleLifecycle(w http.ResponseWriter, r *http.Request, id string) {
-	ops, ok := bundlesFrom(r.Context())
-	if !ok {
-		writeNoBundles(w)
-		return
-	}
+	ds := DatasetFrom(r.Context())
 	var in substrate.PatchInput
 	if err := decodeRecordBody(r, &in); err != nil {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
@@ -131,7 +107,7 @@ func (h *handler) patchBundleLifecycle(w http.ResponseWriter, r *http.Request, i
 	// binds it as `a3` (addr.id), not the `{id}` chi param the bind sub-path
 	// uses, so this cannot reuse bundleLifecycleGate — that reads `pathParam
 	// "id"`, which is empty here.
-	if _, err := ops.BundlePackage(r.Context(), id); err != nil {
+	if _, err := ds.BundlePackage(r.Context(), id); err != nil {
 		writeSubstrateError(w, err)
 		return
 	}
@@ -151,15 +127,15 @@ func (h *handler) patchBundleLifecycle(w http.ResponseWriter, r *http.Request, i
 		}
 		var err error
 		if disable {
-			err = ops.DisableBundle(ctx, id)
+			err = ds.DisableBundle(ctx, id)
 		} else {
-			err = ops.EnableBundle(ctx, id)
+			err = ds.EnableBundle(ctx, id)
 		}
 		if err != nil {
 			writeSubstrateError(w, err)
 			return
 		}
-		st, err := ops.BundleStatus(ctx, id)
+		st, err := ds.BundleStatus(ctx, id)
 		if err != nil {
 			writeSubstrateError(w, err)
 			return
@@ -170,7 +146,7 @@ func (h *handler) patchBundleLifecycle(w http.ResponseWriter, r *http.Request, i
 			writeError(w, http.StatusBadRequest, codeBadRequest, propBundleUninstalled+" transitions only to true")
 			return
 		}
-		if err := ops.UninstallBundle(ctx, id); err != nil {
+		if err := ds.UninstallBundle(ctx, id); err != nil {
 			writeSubstrateError(w, err)
 			return
 		}
@@ -180,7 +156,7 @@ func (h *handler) patchBundleLifecycle(w http.ResponseWriter, r *http.Request, i
 			writeError(w, http.StatusBadRequest, codeBadRequest, propBundlePurging+" transitions only to true")
 			return
 		}
-		purged, err := ops.PurgeBundle(ctx, id)
+		purged, err := ds.PurgeBundle(ctx, id)
 		if err != nil {
 			writeSubstrateError(w, err)
 			return
@@ -211,12 +187,8 @@ type bindRequest struct {
 // (record "" or absent), then answers with the refreshed status so the
 // caller sees the resolution it just changed.
 func (h *handler) postBundleBind(w http.ResponseWriter, r *http.Request) {
-	ops, ok := bundlesFrom(r.Context())
-	if !ok {
-		writeNoBundles(w)
-		return
-	}
-	if _, ok := h.bundleLifecycleGate(w, r, ops); !ok {
+	ds := DatasetFrom(r.Context())
+	if _, ok := h.bundleLifecycleGate(w, r, ds); !ok {
 		return
 	}
 	var body bindRequest
@@ -229,11 +201,11 @@ func (h *handler) postBundleBind(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := pathParam(r, "id")
-	if err := ops.BindBundleInput(r.Context(), id, body.Input, body.Record); err != nil {
+	if err := ds.BindBundleInput(r.Context(), id, body.Input, body.Record); err != nil {
 		writeSubstrateError(w, err)
 		return
 	}
-	st, err := ops.BundleStatus(r.Context(), id)
+	st, err := ds.BundleStatus(r.Context(), id)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
@@ -244,12 +216,8 @@ func (h *handler) postBundleBind(w http.ResponseWriter, r *http.Request) {
 // getTraitImplementors lists the record types implementing a trait — the
 // trait-as-interface query.
 func (h *handler) getTraitImplementors(w http.ResponseWriter, r *http.Request) {
-	ops, ok := bundlesFrom(r.Context())
-	if !ok {
-		writeNoBundles(w)
-		return
-	}
-	types, err := ops.TypesImplementing(r.Context(), pathParam(r, "id"))
+	ds := DatasetFrom(r.Context())
+	types, err := ds.TypesImplementing(r.Context(), pathParam(r, "id"))
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
@@ -293,11 +261,7 @@ type oauthStartRequest struct {
 // postOAuthStart begins the host connect flow for an account record: the
 // response carries the provider consent URL the browser should visit.
 func (h *handler) postOAuthStart(w http.ResponseWriter, r *http.Request) {
-	ops, ok := bundlesFrom(r.Context())
-	if !ok {
-		writeNoBundles(w)
-		return
-	}
+	ds := DatasetFrom(r.Context())
 	var req oauthStartRequest
 	if err := decodeBody(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
@@ -307,7 +271,7 @@ func (h *handler) postOAuthStart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, codeBadRequest, "an account record id is required")
 		return
 	}
-	url, err := ops.StartOAuth(r.Context(), ActorFrom(r.Context()), req.Record)
+	url, err := ds.StartOAuth(r.Context(), ActorFrom(r.Context()), req.Record)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
@@ -326,13 +290,8 @@ func (h *handler) postOAuthStart(w http.ResponseWriter, r *http.Request) {
 // the operator joins against the server log, where the fixed message + the
 // engine's real error are recorded.
 func (h *handler) getOAuthCallback(w http.ResponseWriter, r *http.Request) {
-	oc, ok := h.svc.(substrate.OAuthCompleter)
-	if !ok {
-		writeNoBundles(w)
-		return
-	}
 	q := r.URL.Query()
-	record, err := oc.CompleteOAuth(r.Context(), q.Get("state"), q.Get("code"))
+	record, err := h.svc.CompleteOAuth(r.Context(), q.Get("state"), q.Get("code"))
 	if err != nil {
 		corr := middleware.GetReqID(r.Context())
 		slog.Warn("oauth callback failed", "correlation", corr, "error", err)
