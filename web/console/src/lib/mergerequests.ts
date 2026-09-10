@@ -92,16 +92,6 @@ export function evidenceSignals(evidence: unknown): EvidenceSignal[] {
   return out
 }
 
-/** The matcher's confidence, one number for a table cell: the strongest
- * score any signal carries; undefined when no signal is scored (an exact
- * email match needs no number). */
-export function evidenceScore(evidence: unknown): number | undefined {
-  const scores = evidenceSignals(evidence)
-    .map((s) => s.score)
-    .filter((n): n is number => n !== undefined)
-  return scores.length ? Math.max(...scores) : undefined
-}
-
 /** A signal said plainly: `both carry alex@acme.com`, `names match, 0.86`.
  * A signal the console has no words for keeps its wire fields. */
 export function signalText(s: EvidenceSignal): string {

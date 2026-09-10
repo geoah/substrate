@@ -4,8 +4,8 @@
  * api/overview.ts) so the zone is deliberately cheap two ways: rows paint
  * from the registry at once and the probes wait until every OTHER zone has
  * its data (a one-way latch on the query cache going idle — the glance
- * answers "is everything okay" before the ledger starts counting), and the
- * walks run behind the shared concurrency gate and cache for minutes.
+ * answers "is everything okay" before the ledger starts counting), and each
+ * zone walks its kinds one probe at a time and caches for minutes.
  *
  * It shows the repository's OWN authorities. The substrate's machinery (core
  * and whatever a bundle installed) is not a glance question — it is always

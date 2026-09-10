@@ -199,11 +199,3 @@ export function buildKindNav(kinds: KindInfo[]): KindNav {
   )
   return { authorities: [...schema, ...machinery] }
 }
-
-/** The login probe: the smallest authenticated read there is. Success means
- * the token is live; the caller stores it. Carries the candidate token
- * explicitly so a bad one never touches the stored session. */
-export async function probeToken(token: string): Promise<void> {
-  const q = new URLSearchParams({ first: "1" })
-  await request<Page>("GET", `${corePath(KINDS)}?${q}`, undefined, { token })
-}

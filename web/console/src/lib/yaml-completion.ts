@@ -166,7 +166,7 @@ export function writtenProperties(lines: string[]): Set<string> {
 /** The keys the object ROW around `line` already writes. A repeated object is
  * a list of rows, so the row is bounded by its own `- ` item, not by the
  * property block. */
-export function writtenFields(lines: string[], line: number): Set<string> {
+function writtenFields(lines: string[], line: number): Set<string> {
   const taken = new Set<string>()
   const want = contentIndent(lines[line] ?? "")
   const bounds = (i: number) => {

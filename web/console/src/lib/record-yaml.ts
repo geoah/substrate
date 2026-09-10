@@ -69,7 +69,7 @@ function shorten(text: string): string {
  * its datatype (an enum lists what it admits), the declaration's one-liner, and
  * a worked example of the datatype. Everything a person needs to fill the line
  * in, read off the declaration alone. */
-export function specComment(spec: PropSpec): string {
+function specComment(spec: PropSpec): string {
   const parts = [spec.required ? "required" : "optional"]
   if (spec.values?.length) {
     parts.push(
@@ -95,7 +95,7 @@ export function specComment(spec: PropSpec): string {
  * Document with comments. `kind` is fixed to the kind reference; `metadata.id`
  * is blank (omit to let the substrate mint one); `data.properties` carries
  * every declared property, required first, each seeded and commented. */
-export function templateDoc(kind: KindInfo): Document {
+function templateDoc(kind: KindInfo): Document {
   // A MANAGED property is the engine's stamp, and it refuses a write that
   // disagrees with what it stamped, so a template that seeded one with a
   // typed zero would hand every create a value the substrate then refuses.
@@ -172,7 +172,7 @@ function withoutManaged(
  * Order-preserving so the yaml serializes what the read served. Labels ride
  * in `metadata`; a pointer at another record is a `reference` property, so it
  * travels inside `data.properties` like every other value. */
-export function applyManifestOf(
+function applyManifestOf(
   record: SubstrateRecord,
   kind?: KindInfo
 ): Record<string, unknown> {

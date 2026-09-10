@@ -254,18 +254,6 @@ export function patchRecord(
   )
 }
 
-export async function deleteRecord(
-  authority: string,
-  pkg: string,
-  name: string,
-  id: string
-): Promise<void> {
-  await request<void>(
-    "DELETE",
-    `${collectionPath(authority, pkg, name)}/${seg(id)}`
-  )
-}
-
 // ── incoming references (record 57) ─────────────────────────────────────────
 
 /** The fan-in of one record. `property`/`fromKind` narrow it to ONE group,

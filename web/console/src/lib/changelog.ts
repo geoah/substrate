@@ -104,13 +104,13 @@ export function changeSummary(row: ChangeRow): string {
 
 /** One affected record, said in English: what became of it and which record
  * it is (`<kind>/<id>`). */
-export interface AffectedLine {
+interface AffectedLine {
   /** `deleted`, `version N`, or `changed` when the entry predates versions. */
   verb: string
   target: string
 }
 
-export function affectedVerb(a: AffectedRecord): string {
+function affectedVerb(a: AffectedRecord): string {
   if (a.deleted) return "deleted"
   if (typeof a.version === "number") return `version ${a.version}`
   return "changed"
@@ -211,7 +211,7 @@ export function parseTimeInput(raw: string): number | undefined {
  * filters it to nothing rather than the console silently widening the AND. */
 const NO_KIND = "∅"
 
-export interface ChangelogQuery {
+interface ChangelogQuery {
   filter: ChangeFeedFilter
   /** Client floor for the time range (wire has no param; recorded). */
   sinceMs?: number

@@ -55,7 +55,7 @@ export function decodeFilters(tokens: string[] | null): ActiveFilter[] {
 
 /** Coerce a text value to the declared kind, so `?filter=` compares like for
  * like (jsonb equality is typed). */
-export function coerceValue(raw: string, prop?: DeclaredProperty): unknown {
+function coerceValue(raw: string, prop?: DeclaredProperty): unknown {
   const kind = prop?.kind
   if (kind === "int" || kind === "float") {
     const n = Number(raw)
