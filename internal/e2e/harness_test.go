@@ -30,7 +30,26 @@ const (
 	envReportDir = "SUBSTRATE_E2E_REPORT_DIR"
 	envDSN       = "SUBSTRATE_E2E_DSN"
 	envCtl       = "SUBSTRATE_E2E_CTL"
+	envTimeout   = "SUBSTRATE_E2E_TIMEOUT"
 )
+
+// defaultRequestTimeout bounds one exchange. A request the server abandons
+// mid-write leaves the repository refusing writes until a restart, so on a
+// loaded machine the timeout has to be raised rather than tripped:
+// SUBSTRATE_E2E_TIMEOUT takes any Go duration.
+const defaultRequestTimeout = 30 * time.Second
+
+func requestTimeout(t *testing.T) time.Duration {
+	raw := os.Getenv(envTimeout)
+	if raw == "" {
+		return defaultRequestTimeout
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		t.Fatalf("%s=%q is not a positive Go duration", envTimeout, raw)
+	}
+	return d
+}
 
 // authWindow paces the credential endpoints: the door admits one attempt per
 // five seconds per (peer, repository), so the suite waits the window out
@@ -70,7 +89,7 @@ func newRun(t *testing.T, base string) *run {
 		t:          t,
 		base:       strings.TrimRight(base, "/"),
 		invite:     invite,
-		hc:         &http.Client{Timeout: 30 * time.Second},
+		hc:         &http.Client{Timeout: requestTimeout(t)},
 		repository: repository,
 		password:   "correct-horse-battery-staple",
 		rep:        &report{Server: base, Started: time.Now()},

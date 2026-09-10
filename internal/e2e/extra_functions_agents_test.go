@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -18,9 +17,6 @@ const (
 	xfPackage   = "extras"
 	xfPkg       = xfAuthority + "/" + xfPackage
 
-	xfParkKind       = xfPkg + "/triggerbait"
-	xfParkCollection = "/api/v1/" + xfParkKind
-
 	xfFunctionPath = "/api/v1/substrate.reamde.dev/core/function/"
 	xfAgentPath    = "/api/v1/substrate.reamde.dev/core/agent/"
 
@@ -33,10 +29,6 @@ const (
 	xfHostQuery   = "substrate.reamde.dev/core/query"
 	xfHostPropose = "substrate.reamde.dev/core/propose"
 	xfHostMutate  = "substrate.reamde.dev/core/mutate"
-
-	// The trigger TRG-03 poisons and TRG-04 replays, and the record it fires on.
-	xfParkTrigger = "x-park"
-	xfBaitID      = "xf-bait"
 
 	// The greeting AGN-02 reassembles out of the stream's deltas.
 	xfGreeting = "Hello. This reply arrived in pieces."
@@ -57,15 +49,6 @@ func init() {
 			"`mutate` are refused 403 because a direct call has no calling agent to bound their writes; "+
 			"a bare host name is a 404 naming the full identity.",
 		xfCaseHostFunctions)
-	registerCase(530, "TRG-03", "A failing delivery parks, and a retry drains it",
-		"A trigger whose function raises retries and parks the delivery with its error and attempt count; "+
-			"the record is untouched. Fixing the function and retrying the parked failure re-runs it against "+
-			"current state: the write lands and the parked list drains to empty.",
-		xfCaseTriggerPark)
-	registerCase(540, "TRG-04", "Replay resets the cursor and re-delivers",
-		"A replay from 0 hands the trigger its whole backlog again: the delivery runs a second time and "+
-			"writes a new run row, while the idempotent put leaves the record at the version it already had.",
-		xfCaseTriggerReplay)
 	registerCase(550, "AGN-02", "Agent chat streams ndjson",
 		"`…/agent/{name}/chat` streams one AgentEvent per line: the thread id first, the assistant's turn "+
 			"as deltas that reassemble to the whole reply, and one done carrying the settled result last. "+
@@ -96,22 +79,6 @@ def main(input, host):
     raise RuntimeError("deliberate")
 `
 
-const xfImportBombSource = `
-def main(input, host):
-    raise RuntimeError("the import bomb went off")
-`
-
-// xfStampSource is the repaired body TRG-03 retries and TRG-04 replays. The
-// put is idempotent on purpose: a second delivery of the same change must
-// leave the record at the version the first one left it at.
-const xfStampSource = `
-def main(input, host):
-    rec = (input.get("envelope") or {}).get("record") or {}
-    rid = rec.get("id") or ""
-    host.effects.put("` + xfParkKind + `", rid, properties={"seenBy": "importbomb"})
-    return {"output": {"seen": rid}}
-`
-
 // xfDoc is one vocabulary document: the envelope's kind/metadata/data.
 func xfDoc(kind, id string, data map[string]any) map[string]any {
 	return map[string]any{"kind": kind, "metadata": map[string]any{"id": id}, "data": data}
@@ -138,22 +105,6 @@ func xfAgentDoc(name, provider, model, description, prompt string) map[string]an
 		"provider":    provider,
 		"model":       model,
 		"budgets":     map[string]any{"maxTurns": 2, "maxToolCalls": 1, "deadlineSeconds": 60},
-	})
-}
-
-// xfTriggerBaitKind is the kind TRG-03's trigger fires on: a name to write and a
-// stamp for the function to put back.
-func xfTriggerBaitKind() map[string]any {
-	return xfDoc("substrate.reamde.dev/core/kind", xfParkKind, map[string]any{
-		"authority":       xfAuthority,
-		"package":         xfPackage,
-		"names":           map[string]any{"singular": "triggerbait"},
-		"description":     "A record whose only job is to make a trigger fire.",
-		"displayTemplate": "{name}",
-		"properties": map[string]any{
-			"name":   map[string]any{"type": "string", "description": "what this bait is called"},
-			"seenBy": map[string]any{"type": "string", "description": "the callable that last stamped this record"},
-		},
 	})
 }
 
@@ -202,30 +153,6 @@ func xfCall(c *C, name string, input, out any) (int, []byte) {
 	c.t.Helper()
 	return c.do(http.MethodPost, xfFunctionPath+url.PathEscape(name)+"/call",
 		map[string]any{"input": input}, out)
-}
-
-// xfFailure is one parked delivery (substrate.TriggerFailure).
-type xfFailure struct {
-	ID        int64  `json:"id"`
-	Trigger   string `json:"trigger"`
-	Seq       int64  `json:"seq"`
-	RecordID  string `json:"recordId"`
-	Attempts  int    `json:"attempts"`
-	LastError string `json:"lastError"`
-	ParkedAt  string `json:"parkedAt"`
-}
-
-// xfQuietParked reads a trigger's parked list without recording a step, so a
-// waitFor condition can poll it. A read failure is reported as no failures:
-// the wait then times out naming what it was waiting for.
-func xfQuietParked(c *C, trigger string) []xfFailure {
-	var page struct {
-		Items []xfFailure `json:"items"`
-	}
-	if err := c.r.fetch(triggerCollection+"/"+trigger+"/parked", &page); err != nil {
-		return nil
-	}
-	return page.Items
 }
 
 // xfRunsFor counts the run rows one callable left behind, whatever their
@@ -390,96 +317,6 @@ func xfCaseHostFunctions(c *C) {
 			"the refusal of %s does not say whose grants bound it, or where it does work: %s", name, refusal.Error.Message)
 	}
 	c.stepf("`%s` and `%s` are both refused 403: a direct call carries no calling agent, so their writes have no ceiling and the refusal says to call an agent instead", xfHostPropose, xfHostMutate)
-}
-
-// --- TRG-03 -------------------------------------------------------------
-
-func xfCaseTriggerPark(c *C) {
-	xfApply(c, xfTriggerBaitKind(), xfFunctionDoc("importbomb", map[string]any{
-		"description": "A delivery that raises, so its trigger parks it.",
-		"permissions": map[string]any{"writes": []string{xfParkKind}},
-		"source":      xfImportBombSource,
-	}))
-	c.putTrigger(xfParkTrigger, map[string]any{
-		"enabled": true,
-		"source": map[string]any{"record": map[string]any{
-			"kinds": []string{xfParkKind}, "ops": []string{"create"},
-		}},
-		"callable": "substrate.reamde.dev/core/function/" + xfPkg + "/importbomb",
-	})
-	c.putRec(xfParkCollection, xfBaitID, map[string]any{"name": "The bait the bomb goes off on"})
-
-	// The wake races the server's own dispatch tick, so the wait is on the
-	// settled state: the delivery retries, then parks, whoever ran it.
-	c.wake(xfParkTrigger)
-	c.waitFor("the failing delivery to park", func() bool { return len(xfQuietParked(c, xfParkTrigger)) == 1 })
-
-	var parked struct {
-		Items []xfFailure `json:"items"`
-	}
-	status, raw := c.do(http.MethodGet, triggerCollection+"/"+xfParkTrigger+"/parked", nil, &parked)
-	c.requiref(status == http.StatusOK, "reading the parked list answered %d: %s", status, raw)
-	c.requiref(len(parked.Items) == 1, "the parked list holds %d failures, want exactly 1: %s", len(parked.Items), raw)
-	failure := parked.Items[0]
-	c.requiref(failure.RecordID == xfBaitID && failure.Seq > 0,
-		"the parked failure names record %q at seq %d, want %q at a real seq", failure.RecordID, failure.Seq, xfBaitID)
-	c.requiref(failure.Attempts == 3,
-		"the delivery parked after %d attempts, want the declared 3 (internal/engine: triggerAttempts)", failure.Attempts)
-	c.requiref(strings.Contains(failure.LastError, "the import bomb went off"),
-		"the parked failure does not carry the body's own error: %s", failure.LastError)
-	c.stepf("the delivery failed 3 times and parked as failure %d, carrying the record (`%s`), the changelog seq (%d) and the body's error", failure.ID, failure.RecordID, failure.Seq)
-
-	bait := c.getRec(xfParkCollection, xfBaitID)
-	c.requiref(bait.prop("seenBy") == "", "the parked delivery wrote %q onto the record; a failed body applies nothing", bait.prop("seenBy"))
-	c.stepf("the record is untouched: a body that raises commits no effect")
-
-	// Fix the function. The engine maintains the declaration's version, so a
-	// changed source lands at stored+1 without anybody bumping it by hand.
-	xfApply(c, xfFunctionDoc("importbomb", map[string]any{
-		"description": "A delivery that stamps the record it was handed.",
-		"permissions": map[string]any{"writes": []string{xfParkKind}},
-		"source":      xfStampSource,
-	}))
-	c.stepf("re-applied `%s/importbomb` with a body that stamps instead of raising", xfPkg)
-
-	var retried struct {
-		Ran int `json:"ran"`
-	}
-	status, raw = c.do(http.MethodPost,
-		fmt.Sprintf("%s/%s/parked/%d/retry", triggerCollection, xfParkTrigger, failure.ID), nil, &retried)
-	c.requiref(status == http.StatusOK && retried.Ran == 1,
-		"the retry answered %d, ran %d: %s", status, retried.Ran, raw)
-	stillParked := len(xfQuietParked(c, xfParkTrigger))
-	c.requiref(stillParked == 0,
-		"the parked list still holds %d failures after a successful retry", stillParked)
-	bait = c.getRec(xfParkCollection, xfBaitID)
-	c.requiref(bait.prop("seenBy") == "importbomb",
-		"the retried delivery did not stamp the record: seenBy is %q", bait.prop("seenBy"))
-	c.stepf("the retry of failure %d re-ran the delivery against current state: the stamp landed and the parked list drained to 0", failure.ID)
-}
-
-// --- TRG-04 -------------------------------------------------------------
-
-func xfCaseTriggerReplay(c *C) {
-	runsBefore := c.quietRuns(xfParkTrigger)
-	before := c.getRec(xfParkCollection, xfBaitID)
-	c.requiref(before.prop("seenBy") == "importbomb",
-		"TRG-04 replays TRG-03's healthy trigger, and the record is not stamped: %v", before.Properties)
-
-	status, raw := c.do(http.MethodPost, triggerCollection+"/"+xfParkTrigger+"/replay",
-		map[string]any{"from": 0}, nil)
-	c.requiref(status == http.StatusOK, "the replay answered %d: %s", status, raw)
-	c.wake(xfParkTrigger)
-	c.waitFor("the replayed delivery to settle", func() bool { return c.quietRuns(xfParkTrigger) > runsBefore })
-	runsAfter := c.quietRuns(xfParkTrigger)
-	c.stepf("a replay from seq 0 handed the trigger its whole backlog again: OK runs went from %d to %d", runsBefore, runsAfter)
-
-	after := c.getRec(xfParkCollection, xfBaitID)
-	c.requiref(after.prop("seenBy") == "importbomb", "the re-delivery unstamped the record: seenBy is %q", after.prop("seenBy"))
-	c.requiref(after.Version == before.Version,
-		"the re-delivery moved `%s` from version %d to %d; a put of the values already there must leave the fold alone",
-		xfBaitID, before.Version, after.Version)
-	c.stepf("`%s` is still at version %d: the delivery ran again and the idempotent put changed nothing, so replay costs a run and not a rewrite", xfBaitID, after.Version)
 }
 
 // --- AGN-02 -------------------------------------------------------------

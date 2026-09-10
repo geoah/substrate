@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/testenv"
 )
@@ -167,6 +168,18 @@ func conformanceCases() []codeCase {
 				"properties": map[string]any{"subject": "written against a version that has moved"},
 			})
 			wantError(t, status, body, http.StatusConflict, "conflict")
+			// The message carries both numbers, because a client that has to
+			// re-read needs to know which version it lost to.
+			if !strings.Contains(string(body), "ifVersion 1, stored 2") {
+				t.Errorf("the conflict does not name both versions: %s", body)
+			}
+			// A refused write writes nothing: the record still reads as the
+			// second write left it.
+			status, body = e.Do(http.MethodGet, path, nil)
+			rec := wantRecord(t, status, body, http.StatusOK)
+			if rec.Version != 2 || rec.Properties["subject"] != "the second write" {
+				t.Fatalf("the refused put changed the record: %+v", rec)
+			}
 		},
 	}, {
 		name: "a put that moves a state answers 403 guard",
@@ -291,13 +304,31 @@ func conformanceCases() []codeCase {
 		run: func(t *testing.T, e *testenv.Env) {
 			// A username of this case's own, so the per-(IP, username) bucket
 			// is untouched by the registration Start already performed.
-			attempt := map[string]any{"repository": "conformance-pacing.example.com", "password": "wrong"}
+			attempt, err := json.Marshal(map[string]any{
+				"repository": "conformance-pacing.example.com", "password": "wrong",
+			})
+			if err != nil {
+				t.Fatalf("marshal the attempt: %v", err)
+			}
+			headers := map[string]string{"Content-Type": "application/json"}
 			// The first attempt spends the whole allowance; whether it is
 			// refused for the password or already for the pace is not this
 			// case's assertion.
-			e.Do(http.MethodPost, "/login", attempt)
-			status, body := e.Do(http.MethodPost, "/login", attempt)
+			e.DoRaw(http.MethodPost, "/login", attempt, headers)
+			status, body, header := e.DoRaw(http.MethodPost, "/login", attempt, headers)
 			wantError(t, status, body, http.StatusTooManyRequests, "rate_limited")
+			// A 429 a client can obey: the wait is a whole number of seconds
+			// in Retry-After, and waiting it out reopens the door. Without
+			// the header a client can only guess, and a guess that is short
+			// is another 429.
+			seconds, err := strconv.Atoi(header.Get("Retry-After"))
+			if err != nil || seconds < 1 {
+				t.Fatalf("429 Retry-After = %q, want a whole number of seconds: %v", header.Get("Retry-After"), err)
+			}
+			time.Sleep(time.Duration(seconds)*time.Second + 250*time.Millisecond)
+			if status, body, _ := e.DoRaw(http.MethodPost, "/login", attempt, headers); status == http.StatusTooManyRequests {
+				t.Fatalf("the door was still paced after the %ds Retry-After asked for: %s", seconds, body)
+			}
 		},
 	}, {
 		// The retention horizon is 0 today, so only a NEGATIVE cursor sits
