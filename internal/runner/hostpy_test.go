@@ -1,9 +1,10 @@
 package runner
 
 // host.py is the SDK, so what it accepts is part of the contract. These two
-// tests hold it to the engine's own kind grammar (vocabulary/naming.go) and to
-// the protocol version this package pins. Both are written twice, once in Go
-// and once in Python, and nothing but a test notices the two drifting.
+// tests hold it to the engine's own kind grammar (vocabulary.ValidKindReference,
+// which host.py's `_RE_KIND` mirrors) and to the protocol version this package
+// pins. Each is written twice, once in Go and once in Python, and nothing but a
+// test notices the two drifting.
 
 import (
 	"encoding/json"
@@ -13,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The protocol number is written twice: protocol.go's ProtocolVersion, which
@@ -61,13 +64,14 @@ for case in json.load(sys.stdin):
         out[case] = False
 print(json.dumps(out))
 `
-	admitted := []string{
+	// The corpus. What each one SHOULD be is not written here: the engine's own
+	// vocabulary.ValidKindReference answers that below, so the two cannot be
+	// edited apart.
+	corpus := []string{
 		"widget",
 		"samples.substrate.reamde.dev/tasks/task",
 		"acme.example.com/tools/widget2",
 		"a.b/c/d",
-	}
-	refused := []string{
 		"",
 		// The retired two-segment form: an authority and a name, no package.
 		"samples.substrate.reamde.dev/task",
@@ -77,8 +81,10 @@ print(json.dumps(out))
 		"acme.example.com/Tools/widget",
 		"acme.example.com/tools/Widget",
 		"acme/tools/widget",
+		// A glob is a capability spelling, never a staged effect's kind.
+		"acme.example.com/tools/*",
 	}
-	cases, err := json.Marshal(append(append([]string{}, admitted...), refused...))
+	cases, err := json.Marshal(corpus)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,14 +101,15 @@ print(json.dumps(out))
 	if err := json.Unmarshal(out, &got); err != nil {
 		t.Fatalf("decode the probe's answer %q: %v", out, err)
 	}
-	for _, ok := range admitted {
-		if !got[ok] {
-			t.Errorf("host.py refuses %q, which the engine admits", ok)
+	verb := map[bool]string{true: "admits", false: "refuses"}
+	for _, kind := range corpus {
+		answer, probed := got[kind]
+		if !probed {
+			t.Errorf("the probe answered nothing for %q", kind)
+			continue
 		}
-	}
-	for _, bad := range refused {
-		if got[bad] {
-			t.Errorf("host.py admits %q, which the engine refuses", bad)
+		if want := vocabulary.ValidKindReference(kind); answer != want {
+			t.Errorf("host.py %s %q, the engine %s it", verb[answer], kind, verb[want])
 		}
 	}
 }

@@ -19,6 +19,12 @@ import (
 // bundle tests compare a Python body's actual writes against ExternalID here,
 // so a divergence fails a suite rather than silently splitting one record in
 // two.
+//
+// They mirror the ALGORITHM and not the argument check: host.py refuses an
+// empty provider, account, external id or url before it hashes anything, and
+// these two hash whatever they are handed. A caller passing an empty component
+// gets a digest here and an error in a body, so the vectors and the callers
+// both stay on non-empty components.
 
 // ExternalID is a stable id for one external record: provider + account + its
 // id. The provider becomes a human-readable slug in front of the digest;

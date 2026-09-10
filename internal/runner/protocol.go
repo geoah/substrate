@@ -60,10 +60,12 @@ import (
 // below the parent's scanner ceiling; a frame over the ceiling is a scanner
 // error that kills the child rather than wedging it.
 
-// ProtocolVersion pins the wire contract above. host.py answers a describe
-// with the same number, and hostpy_test.go refuses the two disagreeing: the
-// parent no longer negotiates a version at startup, so nothing else would
-// notice the frames a reader trusts being frames nobody serves.
+// ProtocolVersion pins the wire contract above, and host.py answers a describe
+// with the same number. NOTHING AT RUNTIME COMPARES THE TWO: the parent
+// negotiated a version when a compiled artifact could outlive the binary that
+// built it, and one SDK shipping inside this binary cannot. hostpy_test.go is
+// what refuses them drifting, so the frames a reader trusts stay the frames
+// the child serves.
 const ProtocolVersion = 5
 
 // The invocation modes.

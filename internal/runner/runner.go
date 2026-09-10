@@ -421,11 +421,6 @@ type response struct {
 	// More, present, is the paged-checkpoint continuation (protocol.go): this
 	// page is done, re-invoke with More.Cursor. Absent means drained.
 	More *Continuation `json:"more"`
-	// Protocol rides the describe response only: host.py's pinned wire
-	// version. Nothing invokes describe today (there is one SDK and it ships in
-	// this binary), so nothing reads this; hostpy_test.go is what holds the
-	// number host.py answers to ProtocolVersion.
-	Protocol int `json:"protocol"`
 }
 
 // hostCall is a child's interleaved read request.

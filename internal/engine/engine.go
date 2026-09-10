@@ -733,8 +733,8 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 			return nil, err
 		}
 	}
-	// Bodies prepare at open exactly as they do at registration: Go builds
-	// hit the cache, python sources register into the shared host.
+	// Bodies prepare at open exactly as they do at registration: each python
+	// source registers into a process of its own.
 	ds.warmFunctions()
 	s.mu.Lock()
 	defer s.mu.Unlock()

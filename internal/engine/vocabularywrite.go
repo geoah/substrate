@@ -354,9 +354,9 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 	candidate, touched := st.candidate, st.touched
 
 	// Bodies prepare BEFORE the transaction — and therefore before
-	// activation: every function the batch adds or changes must compile (Go)
-	// or register (python) NOW, and the first failure fails the whole batch
-	// as an admission error. Registration never accepts source that cannot
+	// activation: every function the batch adds or changes must register NOW,
+	// and the first failure fails the whole batch as an admission error.
+	// Registration never accepts source that cannot
 	// run; the lazy restart path stays what it is — recovery, not
 	// validation.
 	var prepare []*vocabulary.Function
@@ -560,8 +560,8 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		return nil, err
 	}
 	// Bodies prepared synchronously above; what remains after publish is the
-	// opposite motion — retiring runner state (python registrations, Go
-	// processes) that no live installation references anymore.
+	// opposite motion — retiring the python registrations no live installation
+	// references anymore.
 	ds.reconcileRunner(ctx)
 	return written, nil
 }

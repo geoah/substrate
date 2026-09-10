@@ -223,8 +223,9 @@ but not as asserted, and at least one case must have asserted.
 SUBSTRATE_TEST_REQUIRE_SANDBOX=1 go test -count=1 -short ./internal/sandbox/... ./internal/runner/...
 ```
 
-`-short` because every confinement case runs in the short suite, which is also
-the only half of `ci:go` that reaches `internal/runner`.
+`-short` because the short suite is the only half of `ci:go` that reaches
+`internal/runner`, so this is the command CI runs; neither package skips a case
+under it.
 
 `ci:go`, `ci:race` and `ci:coverage` set the variable; `mise run test` does
 not, so a laptop with Landlock left out of its `lsm=` list still runs the rest

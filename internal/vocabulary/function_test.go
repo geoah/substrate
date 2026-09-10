@@ -270,7 +270,7 @@ func TestFunctionLoadErrors(t *testing.T) {
     writes: [fn.example.com/fn/gadget]
   source: "func Main() {}"
 `,
-			want: `data.runtime: "go" is retired`,
+			want: `data.runtime: "go" is retired; write the body in python`,
 		},
 		"source is required": {
 			data: `  description: d

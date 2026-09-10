@@ -51,11 +51,12 @@ var functionRuntimes = map[string]bool{
 // retiredFunctionRuntimes are the runtimes the enum has SPENT, each naming what
 // a body writes instead. A retired value is refused by its retirement rather
 // than by a bare "not in the enum", because the two are different facts: an
-// author who wrote `go` did not typo, they wrote a runtime this substrate used
-// to run. The `function` kind lists them under `retired:`, so the same value is
-// refused on a data record too (decision record 0055).
+// author who wrote `go` did not typo, they named a runtime that is gone. The
+// `function` kind lists the same values under `retired:`, which is what refuses
+// them on a stored declaration (decision record 0055);
+// retiredruntime_test.go holds the two spellings equal.
 var retiredFunctionRuntimes = map[string]string{
-	"go": "an inline Go body compiled at registration and cost the image a Go toolchain; nothing shipped one. Rewrite the body in python",
+	"go": "write the body in python",
 }
 
 // The four host functions the engine implements, by identity. They are ordinary
@@ -291,7 +292,7 @@ var (
 )
 
 // FunctionCELEnv is the one environment `when:` guards compile and evaluate
-// in. CEL is the guard dialect and nothing more: bodies are Python/Go.
+// in. CEL is the guard dialect and nothing more: a body is Python.
 func FunctionCELEnv() (*cel.Env, error) {
 	celEnvOnce.Do(func() {
 		celEnvVal, celEnvErr = cel.NewEnv(
@@ -653,7 +654,7 @@ func (l *loader) parseFunction(d Document) *Function {
 
 	fn.Runtime = mstr(d.Data, "runtime")
 	if spent, retired := retiredFunctionRuntimes[fn.Runtime]; retired {
-		l.errf("%s: data.runtime: %q is retired. %s", where, fn.Runtime, spent)
+		l.errf("%s: data.runtime: %q is retired; %s", where, fn.Runtime, spent)
 		return nil
 	}
 	if !functionRuntimes[fn.Runtime] {
