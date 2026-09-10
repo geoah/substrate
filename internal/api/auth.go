@@ -119,8 +119,8 @@ func (h *handler) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, status, code, msg := h.authenticate(r)
 		if ctx == nil {
-			// A 503 is transient: ruling A6 makes Retry-After mandatory on
-			// every unavailable, the auth path included.
+			// A 503 is transient: Retry-After is mandatory on every
+			// unavailable, the auth path included.
 			if status == http.StatusServiceUnavailable {
 				w.Header().Set("Retry-After", "1")
 			}

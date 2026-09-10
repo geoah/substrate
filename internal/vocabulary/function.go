@@ -63,9 +63,8 @@ var retiredFunctionRuntimes = map[string]string{
 // function records — seeded, browsable, pickable as agent tools by reference —
 // and these constants are what the dispatch switch and the grant checks key on.
 const (
-	// The declared effect classes and confirmation floors
-	// (docs/plans/thread-interactions.md): the author's objective facts the
-	// policy layer reads.
+	// The declared effect classes and confirmation floors: the author's
+	// objective facts the policy layer reads.
 	FunctionEffectRead         = "read"
 	FunctionEffectWrite        = "write"
 	FunctionEffectExternal     = "external"
@@ -229,10 +228,10 @@ func (f *Function) IsHost() bool { return f.Runtime == RuntimeHost }
 // the actor its effects are attributed to and the one trigger self-exclusion
 // keys on.
 //
-// It carries the DECLARING AUTHORITY, not the local name alone. Two
-// authorities declaring a function of one name used to write under one actor,
-// so each one's trigger excluded the other's writes as its own echo and
-// dropped them silently (record 0025). The colon is the separator because
+// It carries the DECLARING AUTHORITY, not the local name alone. Under a bare
+// name, two authorities declaring a function of one name would write under
+// one actor, and each one's trigger would drop the other's writes silently
+// as its own echo (record 0025). The colon is the separator because
 // `<actor>/<name>` metadata keys reserve the slash.
 func (f *Function) Actor() string {
 	authority, pkg := SplitPackageRef(f.Package)
@@ -584,18 +583,14 @@ var functionDataKeys = map[string]bool{
 	// The IO shapes are `data`'s own; the grant is ONE key beside them, holding
 	// the five of functionPermissionKeys.
 	"arguments": true, "returns": true, "permissions": true,
-	// The author's OBJECTIVE facts for the policy layer
-	// (docs/plans/thread-interactions.md): what class of effect the body has,
-	// and a confirmation floor no policy or judge loosens.
+	// The author's OBJECTIVE facts for the policy layer: what class of effect
+	// the body has, and a confirmation floor no policy or judge loosens.
 	"effect": true, "confirmation": true,
 }
 
-// deletedFunctionKeys are the removed keys, each naming what replaced it: the
-// CEL and wasm bodies are removed (POC verdicts, ticket 009), the subscription
-// moved onto trigger records, and the typed core retired the wrapper and the
-// recursive IO schemas. No compatibility shim for any of them, and nothing
-// translates a row written that way: the rung that did was deleted before the
-// first release (#217), so the store it comes from is refused at open.
+// deletedFunctionKeys are the removed keys, each naming what replaced it.
+// Nothing translates a row written that way and no shim admits one: a store
+// that carries any of these keys is refused at open.
 var deletedFunctionKeys = map[string]string{
 	"run":          "runtime + source — the CEL and wasm run arms are removed; CEL survives only as the trigger's when: guard",
 	"on":           "a trigger record (substrate.reamde.dev/core) — the subscription lives on the trigger, the function is a pure callable",
@@ -737,9 +732,8 @@ func (l *loader) parseFunctionBody(where string, data map[string]any, fn *Functi
 // parseFunctionCaps reads the capability envelope out of `permissions:`.
 // `writes` is OPTIONAL, and an absent one is a function that writes nothing: a
 // pure function returns its output and stages no effect, which the emit gate
-// then refuses every effect against. It used to be required and non-empty, which
-// taught authors to declare a kind they never wrote to (firecrawl's websearch
-// declared `webdocument` and apologized for it in a comment).
+// then refuses every effect against. Requiring it taught authors to declare a
+// kind they never write to.
 //
 // ONE object holds all five, because a bare `emit:` beside `returns:` said
 // nothing about being a permission and read as the output shape. The

@@ -1,26 +1,21 @@
 // Package enginetest holds test-only install helpers shared by the engine's
 // internal (package engine) and external (package engine_test) test suites.
 //
-// It exists because the v1 freeze removed the
-// connector-registration shim — POST …/connectors, Dataset.RegisterConnector,
-// and the substrate.ConnectorManifest/ConnectorTrigger wire types — and the
-// retired connector/connectoraccount core kinds. Tests that used to install a
-// authority (and hang sync-account fixtures off it) through that shim now go
-// through the surviving install path, the schema-apply batch verb
-// (ApplyVocabularyDocuments), with this package standing in for the old
-// convenience:
+// There is no connector-registration door and no connector/connectoraccount
+// core kind: a test installs an authority through the one install path, the
+// schema-apply batch verb (ApplyVocabularyDocuments), and this package is
+// the convenience over it:
 //
-//   - Install replays the old RegisterConnector shape (an authority's manifest
-//     documents plus its default trigger records) over ApplyVocabularyDocuments.
+//   - Install renders an authority's manifest documents plus its default
+//     trigger records and applies them over ApplyVocabularyDocuments.
 //
-//   - AccountType / AccountManifest give tests a stand-in for the removed
-//     connectoraccount core kind: a plain installable account type they link
-//     the shipped `account` reference (now unpinned) at.
+//   - AccountType / AccountManifest give tests a plain installable account
+//     type they link the shipped `account` reference (unpinned) at.
 //
-//   - ImportVocabulary / SeededRegistry stand in for the creation seed's lost
-//     half: repository creation seeds the CORE PACKAGE ALONE now, and the
-//     shipped vocabulary (people, tasks, messaging, calendar) is a set of
-//     sample packages a repository installs.
+//   - ImportVocabulary / SeededRegistry install the sample packages:
+//     repository creation seeds the CORE PACKAGE ALONE, and the shipped
+//     vocabulary (people, tasks, messaging, calendar) is a set of sample
+//     packages a repository installs.
 //
 // It imports only substrate and schema, so both engine and engine_test may
 // import it without a cycle.
@@ -63,8 +58,8 @@ const (
 // SamplePackage is a sample's package identity, from its bare name.
 func SamplePackage(name string) string { return SampleAuthority + "/" + name }
 
-// Vocabulary names the shipped SAMPLE packages a repository creation used to
-// seed and no longer does (a fresh repository holds the core package alone).
+// Vocabulary names the shipped SAMPLE packages a test installs; a fresh
+// repository holds the core package alone.
 // Order follows the requires: people and scheduling come before the packages
 // that declare against them (messaging and calendar map onto people; tasks and
 // calendar bind scheduling's traits).
@@ -74,8 +69,7 @@ var Vocabulary = []string{"people", "scheduling", "tasks", "messaging", "calenda
 // ("people", "calendar") through the ONE install path — the schema-apply batch
 // verb, under the bundle's own actor, exactly as a catalog install does. A test
 // that reads or writes `samples.substrate.reamde.dev/people/person` calls this
-// first, because the creation seed no longer writes that vocabulary into the
-// repository.
+// first, because the creation seed writes the core package alone.
 func ImportVocabulary(ctx context.Context, ds substrate.Dataset, names ...string) error {
 	if len(names) == 0 {
 		names = Vocabulary
@@ -441,8 +435,8 @@ func AccountManifest() Manifest {
 
 // --- the repository's own mappings ---------------------------------------------
 
-// PersonKind is the shipped people sample's person kind, the target every
-// provider mirror used to map onto itself.
+// PersonKind is the shipped people sample's person kind, the target a
+// provider mirror maps onto.
 const PersonKind = SampleAuthority + "/people/person"
 
 // PeopleMapping renders a recordmapping declared BY the people package. Since

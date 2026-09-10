@@ -131,10 +131,9 @@ func (ds *dataset) runnerSpecIn(fn *vocabulary.Function, reg *vocabulary.Registr
 
 // runCallable executes one function body and returns EVERY effect to apply —
 // sub-call effects first, in call order, then the body's own — plus the
-// output value. The body runs BEFORE the effects transaction opens, exactly
-// where the CEL evaluation used to sit. It discards any paged-checkpoint
-// continuation: the single-shot callers (manual run, host Call, the call API,
-// the agent loop) never page.
+// output value. The body runs BEFORE the effects transaction opens. It
+// discards any paged-checkpoint continuation: the single-shot callers
+// (manual run, host Call, the call API, the agent loop) never page.
 func (ds *dataset) runCallable(ctx context.Context, fn *vocabulary.Function, in runner.Input) ([]effect, any, error) {
 	effects, output, _, err := ds.runCallableRaw(ctx, fn, in)
 	return effects, output, err
@@ -443,8 +442,8 @@ func (ds *dataset) callFunctionOnce(ctx context.Context, name string, args any, 
 	}
 	// Admission under the bundle lifecycle fence, held until the effects
 	// commit: a concurrent disable/uninstall/purge waits this invocation out
-	// instead of racing effects in behind it (bundles.go, review #2). The
-	// leased context flows into runCallable so nested host Calls inherit it.
+	// instead of racing effects in behind it (bundles.go). The leased context
+	// flows into runCallable so nested host Calls inherit it.
 	ctx, release, err := ds.admitCallable(ctx, fn.Package, fn.Identity())
 	if err != nil {
 		return nil, 0, err
@@ -639,8 +638,8 @@ func (ds *dataset) warmFunctions() {
 // registry-publish hook: the process holding a removed or superseded body's
 // registration stops, and its module namespace, descriptors and scratch go with
 // it. An uninstalled bundle's functions are
-// gone from the registry (uninstall tears the authority down, ticket 034), so they
-// drop out here with everything else the last apply removed. A DISABLED
+// gone from the registry (uninstall tears the authority down), so they drop
+// out here with everything else the last apply removed. A DISABLED
 // bundle's functions stay registered — disable only refuses invocation.
 // A host function is absent from the live set for the same reason it is absent
 // from warm and prepare: it never registered anything, so there is no state of

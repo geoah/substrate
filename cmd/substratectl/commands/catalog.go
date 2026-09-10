@@ -262,9 +262,8 @@ const tierSeed = "seed"
 // catalogCommand lists every package the binary ships and where this repository
 // stands on each: the seeded core package from `GET /api/v1/vocabulary/upgrade`
 // and the catalog's providers and samples from `GET /api/v1/catalog`. It is the
-// one place the CLI prints an upgrade: a refused core boot upgrade used to be a
-// server log line and nothing else, and a provider's blocked upgrade was on the
-// wire and in the console but never in a terminal.
+// one place the CLI prints an upgrade: a refused core boot upgrade and a
+// provider's blocked upgrade both reach a terminal here.
 func (a *app) catalogCommand() *cobra.Command {
 	var output string
 	cmd := &cobra.Command{

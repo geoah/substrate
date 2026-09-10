@@ -15,7 +15,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// The trigger dispatcher (substrate-primitives §3): every enabled trigger
+// The trigger dispatcher: every enabled trigger
 // record owns delivery. An record-sourced trigger owns a changelog cursor —
 // the dispatcher reads past it, filters by the source, evaluates the `when:`
 // guard against the record's CURRENT state, runs the callable's body in the
@@ -640,8 +640,8 @@ func (ds *dataset) deliver(ctx context.Context, tr *trigger, ch substrate.Change
 	// effect commit below: disable/uninstall/purge take the exclusive side,
 	// so a delivery that already passed admission finishes — effects and
 	// cursor together — BEFORE the verb returns, and nothing admits after it
-	// (bundles.go, review #2). The leased context flows into runCallable so
-	// nested host Calls inherit the lease instead of re-locking.
+	// (bundles.go). The leased context flows into runCallable so nested host
+	// Calls inherit the lease instead of re-locking.
 	ctx, release, err := ds.admitCallable(ctx, tr.Callable.Package, tr.Callable.Identity())
 	if err != nil {
 		return res, err
@@ -999,7 +999,7 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 // landing only when the drain finishes.
 func (ds *dataset) functionFire(ctx context.Context, tr *trigger, mode, fid string, at time.Time, envelope map[string]any, settle *settlement) (int, error) {
 	// The lifecycle fence's shared side, admission through effect + fire-state
-	// commit (bundles.go, review #2).
+	// commit (bundles.go).
 	ctx, release, err := ds.admitCallable(ctx, tr.Callable.Package, tr.Callable.Identity())
 	if err != nil {
 		return 0, err
@@ -1266,8 +1266,8 @@ type pagedPage struct {
 	more    *runner.Continuation
 }
 
-// pagedOwner is the lifecycle identity a paged_cursors row carries (review-p1
-// #8): the trigger that owns the chain, and enough to match its parked failure.
+// pagedOwner is the lifecycle identity a paged_cursors row carries: the
+// trigger that owns the chain, and enough to match its parked failure.
 type pagedOwner struct {
 	triggerID string
 	kind      string // pagedKindRecord | pagedKindFire
@@ -1275,8 +1275,8 @@ type pagedOwner struct {
 }
 
 // pagedProgress is a chain's persisted state: the resume cursor and version
-// (the CAS fence, review-p1 #1) plus the cumulative budget counters (review-p1
-// #2). `exists` is false for a fresh chain — a drain that has committed nothing.
+// (the CAS fence) plus the cumulative budget counters. `exists` is false for
+// a fresh chain, a drain that has committed nothing.
 type pagedProgress struct {
 	cursor    any
 	version   int64

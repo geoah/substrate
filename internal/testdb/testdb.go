@@ -547,12 +547,11 @@ func pgCode(err error) string {
 // Repository is the repository a test registers, and so its id: the test's
 // name folded to a DNS label ([a-z][a-z0-9]{1,29}) with a hash of the whole
 // name behind it, under example.com — the shape a real registration mints
-// from a bare label and the request host. Every test used to register
-// "geoah", which was harmless while the runner keyed function processes on a
-// minted id. The authority is the repository id now (decision record 0052),
-// so two parallel tests registering one name share one id in the
-// process-wide runner.Shared, and either test's Close (Reconcile against an
-// empty live set) retires the other's function process mid-delivery. A
+// from a bare label and the request host. The name must be the test's own:
+// the authority IS the repository id (decision record 0052), so two parallel
+// tests registering one name share one id in the process-wide runner.Shared,
+// and either test's Close (Reconcile against an empty live set) retires the
+// other's function process mid-delivery. A
 // subtest's name is its own, so a subtest that opens the repository its
 // parent created takes the parent's name.
 func Repository(t *testing.T) string {

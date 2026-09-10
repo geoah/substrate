@@ -37,7 +37,7 @@ func (h *handler) getBundleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 // bundleLifecycleGate resolves the bundle's owning authority for a lifecycle
-// verb. It no longer AUTHORIZES anything: the token that reached here holds
+// verb. It AUTHORIZES nothing: the token that reached here holds
 // the whole repository, and the bundle's own lifecycle rules —
 // not a capability list — decide what the verb may do. On failure it has
 // already written the response.

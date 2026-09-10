@@ -13,7 +13,6 @@ type RepositoryInfo struct {
 	State     string `json:"state"` // lifecycle machine state
 }
 
-// The connector-registration types (ConnectorManifest / ConnectorTrigger) and
-// the POST …/connectors shim were REMOVED at the v1 freeze (ticket 004,
-// ruling A12). Connections are accountconfig-trait records and the sole
-// install path is the schema-apply batch verb (a bundle closure).
+// Connections are accountconfig-trait records and the sole install path is
+// the schema-apply batch verb (a bundle closure): there is no connector
+// registration type and no POST …/connectors door.

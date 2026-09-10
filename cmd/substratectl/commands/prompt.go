@@ -15,8 +15,7 @@ import (
 // PROMPTS ARE THE DEFAULT AND FLAGS ARE THE SEAM. Every door command asks for
 // what it needs — a password never as an argument, where it would land in the
 // shell history and the process table — and every prompt has a flag or a
-// --*-stdin twin so the same command scripts headlessly (BUILD B8: "the
-// operator can run the B3 done-when loop headlessly").
+// --*-stdin twin so the same command scripts headlessly.
 //
 // Secrets read from stdin are read ONE LINE AT A TIME through a single reader
 // shared by the whole invocation, so a command needing two of them (the

@@ -16,7 +16,7 @@ type Record struct {
 	Kind string `json:"kind"`
 	// CanonicalID is set only when the read was addressed by a FORMER id: a
 	// merged-away record's id still resolves, and the answer says which
-	// record it resolved to (the canonical-id contract, proposal §6.3).
+	// record it resolved to (the canonical-id contract).
 	CanonicalID string `json:"canonicalId,omitempty"`
 	// FormerIDs lists the ids merges fused into this one, flattened and
 	// server-set. A former id is this record's own discarded name.
@@ -33,7 +33,7 @@ type Record struct {
 
 	// Properties carries every declared value slot, state properties
 	// included: a machine is a property of type `state` and its current
-	// state reads back here like any other value (MODEL §11.4).
+	// state reads back here like any other value.
 	Properties  map[string]any `json:"properties"`
 	Labels      map[string]any `json:"labels"`
 	Annotations map[string]any `json:"annotations,omitempty"`

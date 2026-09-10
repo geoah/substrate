@@ -127,8 +127,8 @@ type BundleInput struct {
 // crosses into function invocations. Facility-read inputs leave it empty.
 const BundleInputInjectFunctions = "functions"
 
-// BundleOAuth2 is a bundle's compiled OAuth provider metadata (review-google
-// #1). The client record keeps only the client id and secret; every endpoint
+// BundleOAuth2 is a bundle's compiled OAuth provider metadata. The client
+// record keeps only the client id and secret; every endpoint
 // and the feature→scope mapping are here, admitted from the manifest and
 // immutable at runtime.
 type BundleOAuth2 struct {
@@ -543,8 +543,7 @@ func (l *loader) parseBundleOAuth2(where string, data map[string]any) *BundleOAu
 			// map of LISTS is the one shape the property dialect cannot state — keyed
 			// and repeated are the two containers and a declaration is one or the
 			// other — so the value takes a field. Nothing translates a stored bundle
-			// written the bare way: the rung that did was deleted before the first
-			// release (#217), so the store it comes from is refused at open.
+			// written the bare way, so the store it comes from is refused at open.
 			inner := asMapOrNil(fs[toggle])
 			if inner == nil {
 				l.errf("%s.featureScopes[%q]: a bare list of scopes — the toggle's value names them: {scopes: [...]}", w, toggle)

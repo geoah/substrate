@@ -8,8 +8,7 @@
 // function sandbox is the first: `internal/runner` can prove a body cannot
 // read /proc, and `internal/api` can prove a route is wired, but only a real
 // server can prove that a function ARRIVING THROUGH A BUNDLE INSTALL, invoked
-// over HTTP with a real token, runs confined. The pieces were each right
-// before, and the property still would not have held.
+// over HTTP with a real token, runs confined.
 //
 // The database half reuses internal/testdb, so a package that already runs
 // against the shared container costs nothing extra here; the schema is

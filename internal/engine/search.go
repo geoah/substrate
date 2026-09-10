@@ -148,7 +148,7 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) (substr
 		}
 		combined[id] = c
 	}
-	// Prominence demotion (MODEL §7): a person the machine still calls
+	// Prominence demotion: a person the machine still calls
 	// `utility` ranks below every `known` match, however well they score.
 	// The engine stays otherwise unopinionated — filtering is the client's.
 	sort.SliceStable(order, func(i, j int) bool {

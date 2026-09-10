@@ -16,7 +16,7 @@ type Cond struct {
 
 // Filter is the grammar of the one generic records query. Filterable ≡
 // indexed ≡ declared. State properties filter through Properties like every
-// other property — there is no separate `states` arm (MODEL §11.4).
+// other property: there is no separate `states` arm.
 type Filter struct {
 	Kinds []string `json:"kinds,omitempty"`
 	// Implements narrows to a capability or machine interface, cross-authority. It

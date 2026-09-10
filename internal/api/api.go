@@ -228,10 +228,9 @@ func (h *handler) mountResources(r chi.Router) {
 			// and names no kind, so it leaves the kind namespace entirely: a
 			// two-segment kind reference can never collide with a one-segment
 			// reserved word, which is what lets them drop their authority prefix
-			// without a separator. This also frees the collections the old verb
-			// paths shadowed — `substrate.reamde.dev/core/recordmerge` and
-			// `/recordsplit` are reachable now that merge and split moved here
-			// (#202).
+			// without a separator, and it keeps the
+			// `substrate.reamde.dev/core/recordmerge` and `/recordsplit`
+			// collections reachable while merge and split sit here (#202).
 			r.Post(graphqlRoute, h.postGraphQL)
 			// The batch vocabulary verb (a declaration is a record): every
 			// document admitted or none, one transaction, activation on commit.
@@ -395,8 +394,7 @@ const (
 // A path that names a static asset is the ONE thing the fallback does not
 // cover. A tab left open across a rebuild asks for the chunk hashes it was
 // built with, and those files are gone: answering them with index.html turns a
-// plain 404 into a MIME-type parse error the app cannot report on, which is
-// exactly how the console's lazy YAML lens used to fail after a deploy.
+// plain 404 into a MIME-type parse error the app cannot report on.
 func spaHandler(dir string) http.HandlerFunc {
 	root := filepath.Clean(dir)
 	if abs, err := filepath.Abs(root); err == nil {

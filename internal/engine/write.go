@@ -38,7 +38,7 @@ type applySpec struct {
 	// deletes, exactly as it does on every other property.
 	clearHot map[string]bool
 
-	// states are the state PROPERTIES this write names (MODEL §11.4): they
+	// states are the state PROPERTIES this write names: they
 	// arrive in the properties map and are split out here, because storage
 	// keeps them in their own column.
 	states map[string]string
@@ -53,7 +53,7 @@ type applySpec struct {
 func (sp *applySpec) ref() eref { return eref{Kind: sp.ty.Identity, ID: sp.id} }
 
 // propTarget and propTargetVersion carry an edit's CAS contract: the version
-// of the target the stored diff was computed against (§7).
+// of the target the stored diff was computed against.
 const (
 	propTarget        = "target"
 	propTargetVersion = "targetVersion"
@@ -286,11 +286,11 @@ func (t *txn) checkID(typ, id string) error {
 	return nil
 }
 
-// checkCreateID enforces proposal §6's naming rule, which is about WHO NAMES a
-// new record: a type some mapping points at is always server-assigned,
-// because nothing external names a subject. Addressing a record that already
-// exists is not naming it, so `PUT …/{name}/{id}` — the console's Save, and
-// `substrate apply` — works on every type.
+// checkCreateID enforces who names a new record: a type some mapping points
+// at is always server-assigned, because nothing external names a subject.
+// Addressing a record that already exists is not naming it, so
+// `PUT …/{name}/{id}` (the console's Save, and `substrate apply`) works on
+// every type.
 func (t *txn) checkCreateID(ty *vocabulary.Kind) error {
 	if len(t.declarations().MappingsTo(ty.Identity)) == 0 {
 		return nil
@@ -569,7 +569,7 @@ func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error
 			return nil, err
 		}
 	}
-	// Lock, then resolve: the addressing must not race a merge (§6.3).
+	// Lock, then resolve: the addressing must not race a merge.
 	ref, err = t.lockCanonical(ref)
 	if err != nil {
 		return nil, err
@@ -727,7 +727,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// clears the manager row rather than claiming it, and on a
 	// mapped target it is the release trigger recompute refills from.
 	deleted := map[string]bool{}
-	// srcMappings is non-empty when this type is a source record (§6.1): each
+	// srcMappings is non-empty when this type is a source record: each
 	// mapping's subject reference is guarded, ensured, and recomputed through.
 	// A kind carries one per subject property (record 49).
 	srcMappings := t.declarations().MappingsFrom(sp.ty.Identity)
@@ -1114,8 +1114,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		// (release — record 51), a recompute credits the WINNING SOURCE's
 		// actor at the MACHINE tier (attribution never pins — the machine's
 		// own rows stay the machine's to overwrite), and every direct write
-		// claims its own actor at the write context's tier (ticket 002:
-		// actor data, never name grammar).
+		// claims its own actor at the write context's tier.
 		managers := map[string]any{}
 		for _, name := range accepted {
 			switch {
@@ -1461,9 +1460,9 @@ func (t *txn) checkManagedProps(sp *applySpec) error {
 }
 
 // actorMayWriteProp reports whether this transaction's actor fills a
-// property-writer role: oauth is the facility's own actor, connector is an
-// bundle-tier write context (installed code — the tier is write-context
-// data, ticket 002), owner is an owner-tier one.
+// property-writer role: oauth is the facility's own actor, connector is a
+// bundle-tier write context (installed code; the tier is write-context
+// data), owner is an owner-tier one.
 func (t *txn) actorMayWriteProp(writer string) bool {
 	switch writer {
 	case vocabulary.WriterOAuth:
@@ -1661,7 +1660,7 @@ const (
 )
 
 // propDecision is the change-request state property whose transition to
-// accepted/rejected is the reviewed decision (§7).
+// accepted/rejected is the reviewed decision.
 const propDecision = "decision"
 
 // canonicalizeResubmittedDiff makes an IDENTICAL re-proposal a no-op. A replayed
@@ -1700,7 +1699,7 @@ func (t *txn) canonicalizeResubmittedDiff(sp *applySpec) error {
 	var ty *vocabulary.Kind
 	if ident != "" {
 		// An unresolvable kind cannot canonicalize anything: leave the write to
-		// the guard rather than refusing a re-put that used to pass.
+		// the guard rather than refusing the re-put here.
 		resolved, err := t.resolveType(ident)
 		if err != nil {
 			return nil
@@ -1992,10 +1991,10 @@ func normalizeDiff(ty *vocabulary.Kind, diff map[string]any, op string) (map[str
 			problems = append(problems, fmt.Sprintf("%q is immutable — a change cannot alter a record's kind or identity", name))
 			continue
 		}
-		// Declaration is checked BEFORE the null-cleanup exception (review-p0
-		// #5): a proposal against an UNDECLARED property is a model-visible
-		// error even when it is `{bogus: null}`, so a malformed name never
-		// reaches the inbox to become an accept-time no-op or a legacy delete.
+		// Declaration is checked BEFORE the null-cleanup exception: a proposal
+		// against an UNDECLARED property is a model-visible error even when it
+		// is `{bogus: null}`, so a malformed name never reaches the inbox to
+		// become an accept-time no-op or a legacy delete.
 		if !propertyWritable(ty, name) {
 			problems = append(problems, fmt.Sprintf("%q is not a property of %s", name, ty.Identity))
 			continue
@@ -2139,7 +2138,7 @@ func isRequestRefusal(err error) bool {
 }
 
 // applyEditDiff materializes an accepted change request in the transition's
-// transaction (§7). It branches on the request's `op`: a patch applies the
+// transaction. It branches on the request's `op`: a patch applies the
 // stored diff to an existing target, a create mints the named record
 // create-if-absent, a delete tombstones it — every one idempotent on replay
 // and every failure a visible transition failure (a rolled-back diffConflict),
@@ -2199,9 +2198,9 @@ func (t *txn) applyPatchRequest(edit *erow) error {
 	if target.ID == "" {
 		return fmt.Errorf("%w: patch request %s has no target", substrate.ErrValidation, edit.ID)
 	}
-	// Resolve the target under the request lock to bound the accept (review-p0
-	// #1: the transitive patch is authorized against the accepting actor's
-	// effective emit set) and to refuse a target that vanished after propose.
+	// Resolve the target under the request lock to bound the accept (the
+	// transitive patch is authorized against the accepting actor's effective
+	// emit set) and to refuse a target that vanished after propose.
 	canon, err := t.lockCanonical(target)
 	if err != nil {
 		return err
@@ -2225,7 +2224,7 @@ func (t *txn) applyPatchRequest(edit *erow) error {
 			"%w: the diff changes nothing — a proposal must name at least one property to change", substrate.ErrValidation)
 	}
 	// The diff was computed against a version of the target; anything newer
-	// means an owner write would be clobbered (§7).
+	// means an owner write would be clobbered.
 	if in.IfVersion == nil {
 		v, ok := asInt64(edit.Props[propTargetVersion])
 		if !ok {
@@ -2509,10 +2508,10 @@ func (t *txn) softDeleteIf(ref eref, ifVersion *int64) (*substrate.Record, error
 	if err := t.lockRegistryDepShared(); err != nil {
 		return nil, err
 	}
-	// A former id denotes its canonical record everywhere (§6.3) —
-	// including here, or a delete through a merged-away id 404s while
-	// every read and patch of the same id resolves. Lock, then resolve: the
-	// addressing must not race a merge.
+	// A former id denotes its canonical record everywhere, including here, or
+	// a delete through a merged-away id 404s while every read and patch of
+	// the same id resolves. Lock, then resolve: the addressing must not race
+	// a merge.
 	ref, err := t.lockCanonical(ref)
 	if err != nil {
 		return nil, err

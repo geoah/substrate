@@ -50,7 +50,7 @@ func coerceProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, error)
 		if p.IsState() {
 			// Reached only by engine code building a props map directly: the
 			// write path splits state properties out before validation, and a
-			// state has no value form to coerce (MODEL §11.4).
+			// state has no value form to coerce.
 			problems = append(problems, fmt.Sprintf("props.%s: a state property moves by transition, not by assignment", name))
 			continue
 		}

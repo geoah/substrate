@@ -530,9 +530,9 @@ previews with the origin (`POST /api/v1/vocabulary/plan` takes `origin` too)
 and confirms.
 
 `import` on a provider id is refused naming `install`. `install` on a sample id
-still admits the closure verbatim, under the placeholder authority: nothing
-needs it now that no provider names a sample package, but a repository that
-wants the shipped vocabulary under the shipped authority may still ask for it.
+admits the closure verbatim, under the placeholder authority, for a repository
+that wants the shipped vocabulary under the shipped authority; no provider
+names a sample package, so nothing else needs it.
 
 **No provider requires a sample package, and every provider installs on a bare
 repository.** A provider ships mirror kinds in its own shape and writes nothing

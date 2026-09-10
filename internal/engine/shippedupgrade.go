@@ -4,11 +4,9 @@ package engine
 //
 // upgradeShippedVocabulary (seed.go) decides at a repository's first open under
 // a new binary whether the shipped packages move here and whether a
-// refuse-breakage guard refuses the move. Until this file that decision was a
-// write or one log line: a refused core upgrade left the repository open on its
-// old declarations with nothing a repository token could read about it, because
-// core is not a catalog entry and the catalog's preview (upgradeplan.go) covers
-// installed providers alone.
+// refuse-breakage guard refuses the move. A refused core upgrade must be
+// readable by a repository token: core is not a catalog entry, and the
+// catalog's preview (upgradeplan.go) covers installed providers alone.
 //
 // stageShippedUpgrade is the boot decision minus the write and minus the count:
 // the version diff per declaration, the narrowings whose live rows must be
@@ -136,10 +134,10 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 	// or kind-changed, an enum value or state removed, required added)
 	// is refused while live rows still hold the old shape, with the count.
 	//
-	// The two doors used to disagree. An operator applying the same change by
-	// hand was refused; the boot upgrade projected it silently, leaving rows
-	// shaped one way under a declaration that said another, with nothing
-	// anywhere reporting it. A guard only one door honors is not a guard.
+	// Both doors honor the same guard: a narrowing the apply door refuses is
+	// refused at boot too, otherwise rows would be shaped one way under a
+	// declaration that says another, with nothing anywhere reporting it. A
+	// guard only one door honors is not a guard.
 	st.narrowings = classifyNarrowingsExcept(current, reg, st.upgrade, keptIdents)
 
 	// The default check `/vocabulary/apply` takes, for the same reason the

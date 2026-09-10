@@ -46,10 +46,10 @@ func writeWatchError(enc *json.Encoder, flusher http.Flusher, err error) {
 
 func (h *handler) getChanges(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(r.Context())
-	// The feed's filter keys are PLURAL (`kinds`, `ops`, `actors`), so the
-	// plausible singular guess used to be dropped in silence and answer with the
-	// WHOLE feed looking like a filtered one. Ruling A8: an unsupported
-	// parameter is a bad_request naming the key.
+	// The feed's filter keys are PLURAL (`kinds`, `ops`, `actors`), and a
+	// plausible singular guess dropped in silence would answer with the WHOLE
+	// feed looking like a filtered one. An unsupported parameter is a
+	// bad_request naming the key.
 	if bad := unsupportedParam(r, changeParams...); bad != "" {
 		writeError(w, http.StatusBadRequest, codeBadRequest, bad)
 		return

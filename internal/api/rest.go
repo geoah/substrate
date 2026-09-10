@@ -80,10 +80,10 @@ func addressed(r *http.Request) (address, bool) {
 //
 // wantID says which shape the caller serves. A method that means one thing at a
 // collection and nothing at a record (or the reverse) answers 405 naming the
-// path that works, and never falls through to a write: `POST` at a record path
-// used to resolve the collection, discard the id and create a record under a
-// server-assigned id (#202), and `PUT` at a collection created under a random
-// one.
+// path that works, and never falls through to a write: `POST` at a record
+// path must not resolve the collection, discard the id and create a record
+// under a server-assigned id (#202), and `PUT` at a collection must not
+// create under a random one.
 func (h *handler) collection(w http.ResponseWriter, r *http.Request, wantID bool) (substrate.Dataset, substrate.KindInfo, address, bool) {
 	addr, ok := addressed(r)
 	if !ok {
@@ -361,7 +361,7 @@ var (
 // gives one deterministic message) outside `allowed`, or "" when every
 // parameter is honored. A near miss — the singular `kind=`/`op=`/`actor=` of
 // the changes feed, or a casing slip — is told the spelling that works, since
-// that guess is exactly the one that used to return the whole unfiltered feed.
+// that guess would otherwise return the whole unfiltered feed as a filtered one.
 func unsupportedParam(r *http.Request, allowed ...string) string {
 	ok := make(map[string]bool, len(allowed))
 	for _, n := range allowed {

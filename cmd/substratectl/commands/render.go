@@ -66,7 +66,7 @@ func dash(s string) string {
 }
 
 // recordTitle reads the title out of the property map, which is where
-// everything authored lives (FORMAT.md §3). The TITLE column is the one place
+// everything authored lives. The TITLE column is the one place
 // the CLI names a property rather than printing the document.
 func recordTitle(e *substrate.Record) string {
 	s, _ := e.Properties["title"].(string)

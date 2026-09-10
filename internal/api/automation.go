@@ -10,8 +10,8 @@ import (
 )
 
 // mountTriggerVerbs registers the trigger delivery verbs under one authority.
-// It is mounted at substrate.reamde.dev/core, where the trigger records live (ruling A8:
-// a resource's operational verbs sit at the resource).
+// It is mounted at substrate.reamde.dev/core, where the trigger records live:
+// a resource's operational verbs sit at the resource.
 func (h *handler) mountTriggerVerbs(r chi.Router, authority string) {
 	r.Get("/"+authority+"/trigger/status", h.getTriggerStatus)
 	r.Post("/"+authority+"/trigger/{id}/replay", h.postTriggerReplay)

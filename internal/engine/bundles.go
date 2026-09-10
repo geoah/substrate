@@ -1,6 +1,6 @@
 package engine
 
-// The bundle lifecycle (substrate-primitives §4, ticket 034): a bundle
+// The bundle lifecycle: a bundle
 // installs as one atomic schema apply of its whole closure (schemawrite.go
 // replaces the owned package whenever a batch carries a bundle document). Three
 // verbs act on it afterwards:
@@ -57,8 +57,8 @@ const (
 )
 
 // bundleState is one bundle's runtime lifecycle, read off its record row.
-// Uninstall is no longer a state — it tears the bundle row down —
-// so a bundle is either live, disabled, or mid-purge.
+// Uninstall is not a state: it tears the bundle row down, so a bundle is
+// either live, disabled, or mid-purge.
 type bundleState struct {
 	Disabled bool
 	Purging  bool
@@ -176,8 +176,8 @@ func (ds *dataset) admitCallable(ctx context.Context, authority, identity string
 // checkBundleWrite is the put/patch admission for records of bundle-owned
 // types: a disabled bundle's inputs and accounts are frozen. No cardinality
 // is enforced on any kind — records of an input's kind are ordinary and
-// unbounded, and resolution (inputs.go) picks one. (Uninstall no longer
-// freezes writes: it tears the types down, so an uninstalled authority's
+// unbounded, and resolution (inputs.go) picks one. (Uninstall does not
+// freeze writes: it tears the types down, so an uninstalled authority's
 // types stop resolving entirely.) Internal writes (projection, lifecycle
 // verbs, the OAuth facility) bypass.
 func (t *txn) checkBundleWrite(ty *vocabulary.Kind, id string, create bool) error {

@@ -74,9 +74,8 @@ func hasDueAt(def map[string]any) bool {
 }
 
 // typeMachines maps each declared STATE PROPERTY to the stamp properties its
-// transitions write. A machine is a property of kind `state` (MODEL §11.4);
-// the HasX interfaces key on that property's name, exactly as they keyed on
-// the machine's name before.
+// transitions write. A machine is a property of kind `state`, and the HasX
+// interfaces key on that property's name.
 func typeMachines(def map[string]any) map[string][]string {
 	out := map[string][]string{}
 	for name, raw := range definitionMap(def, "properties") {
@@ -309,12 +308,12 @@ func argError(arg string, dst any, err error) error {
 }
 
 // remarshal moves a JSON-scalar argument (a GraphQL filter/orderBy/put/patch
-// input) onto a contract struct through the SAME strict decoder REST uses
-// (codex regress #9): unknown or miscased top-level keys are refused, not
-// silently dropped — so a typo'd `ifversion` can no longer quietly disable CAS,
-// and a misspelled filter key can no longer broaden a query. Openness stays
-// only inside the map-valued fields (properties/labels/annotations, a Cond
-// operator), exactly as on the REST path.
+// input) onto a contract struct through the SAME strict decoder REST uses:
+// unknown or miscased top-level keys are refused, not silently dropped, so a
+// typo'd `ifversion` cannot quietly disable CAS and a misspelled filter key
+// cannot broaden a query. Openness stays only inside the map-valued fields
+// (properties/labels/annotations, a Cond operator), exactly as on the REST
+// path.
 func remarshal(v, dst any) error {
 	if v == nil {
 		return nil

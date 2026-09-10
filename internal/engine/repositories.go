@@ -17,9 +17,9 @@ import (
 
 // The control plane is one table and one row per user: the
 // user IS the `repositories` row. There is no control-plane repository, no
-// `system` repository and no ledger of repositories kept as records — the ledger
-// that used to live inside a repository's own store is this table, read and
-// written on the BYPASSRLS maint pool and invisible to substrate_app.
+// `system` repository and no ledger of repositories kept as records: the
+// ledger is this table, read and written on the BYPASSRLS maint pool and
+// invisible to substrate_app.
 
 // Repository is one row of the control-plane table.
 type Repository struct {
@@ -537,8 +537,6 @@ func (s *service) listRepositories(ctx context.Context) ([]Repository, error) {
 	return out, rows.Err()
 }
 
-// The bootstrap TOTP credential that used to live in this table — the
-// totp_secret/step/fails/locked_until columns and the four methods around
-// them — is GONE (B3). A user's factors are the credential record and its
-// sealed rows; there is nothing about a user in the control plane but the
+// A user's factors are the credential record and its sealed rows, never a
+// column in this table: the control plane holds nothing about a user but the
 // repository they own and the day they arrived.

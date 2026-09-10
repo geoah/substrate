@@ -79,8 +79,7 @@ one element per record, in the order the entry touched them.
   /api/v1/{kind}/{id}` takes.
 - `version` is the version the record reached in this entry, the number a
   read of the record returns until its next change. It is absent on a purge
-  (a `gc` entry: the record has no version afterwards) and on every entry
-  written before this change, whose effects recorded no version.
+  (a `gc` entry: the record has no version afterwards).
 - `deleted` is `true` when the entry tombstoned or purged the record. A read
   of a tombstoned record still answers, with `deletedAt` set; a purged one is
   `not_found`.

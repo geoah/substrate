@@ -23,8 +23,8 @@
 // bundle's own upgrade/refuse-breakage semantics — the whole-package re-apply
 // — so it is idempotent by construction.
 //
-// The catalog is the set of closures baked in today; remote-URL / versioned
-// install is ticket 011, out of scope.
+// The catalog is the set of closures baked into the binary: there is no
+// remote-URL install, and nothing installs a chosen version.
 package catalog
 
 import (

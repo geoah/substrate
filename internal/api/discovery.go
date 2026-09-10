@@ -23,7 +23,7 @@ type discoveryDoc struct {
 	// Server names the running build.
 	Server serverInfo `json:"server"`
 	// Changelog carries the retention horizon: the oldest resumable seq, 0
-	// today (ruling A4).
+	// while nothing is pruned.
 	Changelog changelogInfo `json:"changelog"`
 	// Features is the feature list a client reads instead of feature-probing.
 	Features []featureInfo `json:"features"`

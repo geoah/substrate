@@ -80,7 +80,7 @@ func writeUnsupported(w http.ResponseWriter, msg string) {
 }
 
 // writeUnavailable is the 503 emit: a transient condition the caller should
-// retry. Ruling A6 makes Retry-After mandatory on every unavailable, so it is
+// retry. Retry-After is mandatory on every unavailable, so it is
 // set here and cannot be forgotten at a call site. retryAfter rounds up to at
 // least one second.
 func writeUnavailable(w http.ResponseWriter, retryAfter time.Duration, msg string) {
