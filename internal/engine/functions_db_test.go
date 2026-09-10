@@ -222,7 +222,7 @@ func TestTriggerSourceMatchingAndGlob(t *testing.T) {
 		[]enginetest.Trigger{
 			// Exact source, create only.
 			trigOn("exact", map[string]any{"kinds": []any{widgetType}, "ops": []any{"create"}}),
-			// Authority glob, all ds.
+			// Authority glob, all ops.
 			trigOn("glob", map[string]any{"kinds": []any{fnPackage + "/*"}}),
 		},
 		pyFn("exact", map[string]any{}, []any{taskType}, `
