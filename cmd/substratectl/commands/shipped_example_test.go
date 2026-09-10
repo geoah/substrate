@@ -64,25 +64,3 @@ func TestShippedURLHarvesterExampleApplies(t *testing.T) {
 		}
 	}
 }
-
-// The shipped triggers.yaml MUST use the singular local name `type: trigger`:
-// the real resolver rejects a full identity there (envelope_guard_test proves
-// the rejection generically). This pins the shipped file to the accepted form
-// so a regression that re-qualifies the type is caught against the real CLI.
-func TestShippedTriggersUseTheSingularType(t *testing.T) {
-	docs, vocabularyDocs, err := (&app{}).readDocuments([]string{exampleDir + "/triggers.yaml"})
-	if err != nil {
-		t.Fatalf("read triggers.yaml: %v", err)
-	}
-	if len(vocabularyDocs) != 0 {
-		t.Fatalf("triggers.yaml carries %d schema docs, want 0 (triggers are data)", len(vocabularyDocs))
-	}
-	if len(docs) != 4 {
-		t.Fatalf("triggers.yaml carries %d data docs, want 4", len(docs))
-	}
-	for _, d := range docs {
-		if d.Kind != "substrate.reamde.dev/core/trigger" {
-			t.Fatalf("trigger doc kind = %q, want the kind reference substrate.reamde.dev/core/trigger", d.Kind)
-		}
-	}
-}

@@ -166,33 +166,32 @@ scores, `lexical` and `semantic`, so a caller can threshold rather than trust a
 rank. `pending` is the number of properties the drain has yet to buy vectors
 for, counted whenever the semantic arm was asked for: non-zero means the
 ranking covers a partial index (a repository [restored from its
-directory](operations.md#backups), a `reembed` in progress), and it falls to 0
-as the drain buys. In a repository that has named no embeddings provider,
+directory](operations.md#backups) is the case that queues them), and it falls
+to 0 as the drain buys. In a repository that has named no embeddings provider,
 hybrid degrades to lexical and `semantic` reports an error rather than
 pretending. While properties are queued and no vector from the resolved
 provider and model has landed yet, `semantic` refuses with the `unavailable`
 code and the count, so "no vectors yet" never reads as "no matches"; hybrid
 returns its lexical arm alone. With nothing queued, a repository with nothing
-embeddable returns no hits, and a row re-pointed at a model nobody ran
-`reembed` for is refused naming the command.
+embeddable returns no hits, and a row re-pointed at a model whose vectors were
+never bought is refused, naming the provider and model it found no vectors for.
 
 **Which model bought the vectors is data, per repository.** The one
 [`llmprovider`](agents.md#providers) row declaring `embedModel` is where a
 repository buys them, each stored vector names that row and that model, and the
 semantic arm scores only the currently resolved pair. Re-point the row and the
 older vectors stop being scored rather than being ranked against the new ones:
-cosine distance between two models' vectors is not a distance. `substratectl
---dsn … repository reembed <repository>` and `POST
-/api/v1/embeddings/reembed` queue their replacement,
-which the server's drain loop buys a batch at a time.
+cosine distance between two models' vectors is not a distance. Nothing requeues
+them in place: restoring the repository's directory into a database that holds
+no row for it queues every embeddable property, and the server's drain loop
+buys the vectors a batch at a time.
 
 There are two honest boundaries. There is no REST search endpoint: filtering is
 REST's job (`?filter=`), ranking is the GraphQL query's, and discovery says so
 rather than leaving a client to try a route: the `search` feature reports
-`"surfaces": ["graphql"]` (`embeddings`, listed only where an embedder is
-configured, lists both surfaces, because `reembed` is a REST verb), and
-[REST and GraphQL](api.md#rest-and-graphql) lists every other difference
-between the two surfaces. And the substrate does
+`"surfaces": ["graphql"]`, as does `embeddings` where an embedder is
+configured. [REST and GraphQL](api.md#rest-and-graphql) lists every other
+difference between the two surfaces. And the substrate does
 retrieval only: it returns typed records with scores, and anything generative
 built on top (a RAG loop, an assistant) is a client reading this API like every
 other. [Functions](functions.md) run on the shared runner and reach the same

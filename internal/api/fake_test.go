@@ -297,10 +297,6 @@ type fakeDataset struct {
 	trStates map[int64][]substrate.ChangeTrigger
 	signals  chan int64
 
-	// reembedCalls records each Reembed's `all` flag, in order; reembedErr is
-	// what the verb answers instead.
-	reembedCalls []bool
-	reembedErr   error
 	// exportErr refuses Export before a point is pinned; exportFailMidway
 	// makes the stream fail after its first entry (export_test.go).
 	exportErr        error
@@ -1087,13 +1083,9 @@ func (d *fakeDataset) ProcessEmbedQueue(context.Context, int) (int, error) {
 	return 0, nil
 }
 
-// reembed records what the verb was asked for, so the route test can assert
-// the `all` flag reached the dataset and not just that the call returned 200.
+// Reembed is on the frozen Dataset core, so the fake carries it; no HTTP door
+// reaches it, and the engine's own drain is what calls it.
 func (d *fakeDataset) Reembed(_ context.Context, all bool) (substrate.ReembedReport, error) {
-	if d.reembedErr != nil {
-		return substrate.ReembedReport{}, d.reembedErr
-	}
-	d.reembedCalls = append(d.reembedCalls, all)
 	return substrate.ReembedReport{Provider: "vectors", Model: "text-embedding-3-small", Enqueued: 7, All: all}, nil
 }
 

@@ -157,9 +157,6 @@ func (f *fakeSubstrate) handler() http.Handler {
 	mux.HandleFunc("POST /register/enroll", f.handleRegisterEnroll)
 	mux.HandleFunc("POST /register", f.handleRegister)
 	mux.HandleFunc("POST /login", f.handleLogin)
-	mux.HandleFunc("POST /password", f.handlePasswordChange)
-	mux.HandleFunc("POST /totp/enroll", f.handleTOTPEnroll)
-	mux.HandleFunc("POST /totp", f.handleTOTPReenroll)
 	mux.HandleFunc("POST /tokens", f.handleMint)
 	mux.HandleFunc("GET /tokens", f.handleTokens)
 	mux.HandleFunc("DELETE /tokens/{id}", f.handleRevoke)
@@ -561,60 +558,6 @@ func (f *fakeSubstrate) handleLogin(w http.ResponseWriter, r *http.Request) {
 		"token":  substrate.TokenInfo{ID: "tk01", Label: label, Created: testNow},
 		"secret": fakeSecret,
 	})
-}
-
-// handlePasswordChange enforces the password-factor rule the way the substrate
-// does: a request without both current factors in the BODY is refused with 403,
-// whatever bearer token it carries.
-func (f *fakeSubstrate) handlePasswordChange(w http.ResponseWriter, r *http.Request) {
-	f.noteRequest(r)
-	if !f.factorsPresented(w) {
-		return
-	}
-	if f.authFails(w) {
-		return
-	}
-	var username string
-	_ = json.Unmarshal(f.lastBody["username"], &username)
-	writeJSON(w, http.StatusOK, map[string]string{"repository": username})
-}
-
-func (f *fakeSubstrate) handleTOTPEnroll(w http.ResponseWriter, r *http.Request) {
-	f.noteRequest(r)
-	if !f.factorsPresented(w) {
-		return
-	}
-	if f.authFails(w) {
-		return
-	}
-	writeJSON(w, http.StatusOK, substrate.TOTPEnrollment{
-		Secret: fakeTOTPSecret, URI: fakeOtpauthURI,
-	})
-}
-
-func (f *fakeSubstrate) handleTOTPReenroll(w http.ResponseWriter, r *http.Request) {
-	f.noteRequest(r)
-	if !f.factorsPresented(w) {
-		return
-	}
-	if f.authFails(w) {
-		return
-	}
-	var username string
-	_ = json.Unmarshal(f.lastBody["username"], &username)
-	writeJSON(w, http.StatusOK, map[string]string{"repository": username})
-}
-
-func (f *fakeSubstrate) factorsPresented(w http.ResponseWriter) bool {
-	var password, code string
-	_ = json.Unmarshal(f.lastBody["password"], &password)
-	_ = json.Unmarshal(f.lastBody["totpCode"], &code)
-	if password != "" && code != "" {
-		return true
-	}
-	writeError(w, http.StatusForbidden, "forbidden",
-		"changing auth material requires the current password and TOTP code in the request body — a bearer token is not accepted", nil)
-	return false
 }
 
 func (f *fakeSubstrate) handleMint(w http.ResponseWriter, r *http.Request) {

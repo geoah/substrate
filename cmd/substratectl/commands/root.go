@@ -226,7 +226,6 @@ user and no privileged endpoint: ` + "`user reset`" + `, ` + "`repository inspec
 		a.installCommand(),
 		a.patchCommand(),
 		a.deleteCommand(),
-		a.editCommand(),
 		a.watchCommand(),
 		a.exportCommand(),
 		a.triggerCommand(),

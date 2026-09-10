@@ -243,13 +243,14 @@ func (h *handler) features() []featureInfo {
 // The GraphQL door is `preview` for every feature whatever the feature stamps
 // (the `surfaces` object, decision 0053): a stable `changefeed` does not make
 // the `changelog` field stable, and `search`, served on GraphQL alone, stays
-// beta. `agents` and `embeddings` list `rest` and stay alpha, because their
-// shapes are still moving.
+// beta. `agents` stays alpha on `rest` and `embeddings` alpha on `graphql`,
+// because both shapes are still moving.
 //
-// Each entry's surfaces are the doors that actually exist today. Search is the
-// one the REST surface does not serve: REST filters (`?filter=`) and the
-// GraphQL `search(q, mode, kinds, k)` query ranks. The changefeed and
-// embeddings are read on both. Everything else is a set of REST verbs with no
+// Each entry's surfaces are the doors that actually exist today. Search and
+// embeddings are the two the REST surface does not serve: REST filters
+// (`?filter=`) and the GraphQL `search(q, mode, kinds, k)` query ranks, and
+// the semantic arm of that same query is the only door to a vector. The
+// changefeed is read on both. Everything else is a set of REST verbs with no
 // GraphQL field.
 func features(seams substrate.Dataset, embeddings bool) []featureInfo {
 	out := make([]featureInfo, 0, 8)
@@ -293,11 +294,10 @@ func features(seams substrate.Dataset, embeddings bool) []featureInfo {
 	// generated per repository from that repository's kinds
 	// (docs/graphql-and-search.md).
 	add(true, "search", substrate.StabilityBeta, []string{surfaceGraphQL})
-	// Embeddings are alpha: they reach a caller as the semantic arm of that
-	// same query and through one REST verb, `POST /embeddings/reembed`, which
-	// requeues a repository's vectors, and the vector width is a constant in
-	// the engine (vectorDim) that no declaration can move.
-	add(embeddings, featureEmbeddings, substrate.StabilityAlpha, []string{surfaceREST, surfaceGraphQL})
+	// Embeddings are alpha, and GraphQL is their only door: they reach a
+	// caller as the semantic arm of that same query, and the vector width is a
+	// constant in the engine (vectorDim) that no declaration can move.
+	add(embeddings, featureEmbeddings, substrate.StabilityAlpha, []string{surfaceGraphQL})
 	_, agents := seams.(substrate.AgentOps)
 	add(agents, substrate.FeatureAgents, substrate.AgentStability, []string{surfaceREST})
 	return out
