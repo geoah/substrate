@@ -197,6 +197,20 @@ jobs:
             ~/.cache/go-build
           key: ${{ runner.os }}-go-test-${{ hashFiles('go.sum') }}
           restore-keys: ${{ runner.os }}-go-test-
+      # uv's own cache, which only this job needs: internal/providertest warms
+      # a PEP 723 body for every provider closure, and uv resolves and
+      # downloads each one's dependencies to run it. Its own cache entry, not
+      # a third path on the Go one, because the two are invalidated by
+      # different files: the key is the uv pin plus the bundle documents whose
+      # `# /// script` blocks say what gets resolved, so a go.sum bump does
+      # not throw the wheels away.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/uv
+          key: >-
+            ${{ runner.os }}-uv-${{ hashFiles('.mise.toml', 'kinds/providers.substrate.reamde.dev/*/bundle.yaml')
+            }}
+          restore-keys: ${{ runner.os }}-uv-
       - run: mise run ci:go
 
   engine:

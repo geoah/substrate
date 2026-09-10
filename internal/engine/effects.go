@@ -289,6 +289,30 @@ func (t *txn) lockEffectTargets(effects []effect) error {
 	return nil
 }
 
+// applyEffects is the WRITE HALF of every effect commit, in the one order it
+// is allowed to happen in: arm the emit ceiling, take every lock the whole
+// list needs, then apply each effect in list order. Six callers share it —
+// the record delivery, the fire, each page of a paged drain, the agent loop's
+// tool batch, a direct call, and the provider suites' stepper (steptest.go) —
+// so the seam a test drives cannot drift from what production does.
+//
+// What varies stays with the caller, because it is not part of this order:
+// the causal seq (t.causedBy), the change sink, the resume cursor and the
+// delivery's settlement. Each of those is set on the transaction before or
+// after this call.
+func (t *txn) applyEffects(emit []string, effects []effect) error {
+	t.setEffectEmit(emit)
+	if err := t.lockEffectTargets(effects); err != nil {
+		return err
+	}
+	for _, ef := range effects {
+		if err := t.applyEffect(ef); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // applyEffect routes one effect through the ordinary write path inside the
 // dispatcher's transaction: no-op suppression, the manager ledger,
 // transitions (a patch naming a state value) and validation all apply

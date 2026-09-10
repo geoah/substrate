@@ -1,4 +1,4 @@
-package engine
+package providertest
 
 // The Linear bundle — sync-only issue mirroring with a jointly-owned task
 // projection. Three proofs, from the shipped closure at.
@@ -40,24 +40,19 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
-	"os"
-	"os/exec"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
-	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 const (
-	linearExampleDir  = "../../kinds/providers.substrate.reamde.dev/linear"
+	linearDir         = providersDir + "/linear"
 	linearPackage     = "providers.substrate.reamde.dev/linear"
 	linearConfigType  = linearPackage + "/config"
 	linearAccountType = linearPackage + "/account"
@@ -86,48 +81,13 @@ const (
 // assertion is a rule the loader enforces at admission time.
 func TestLinearBundleAdmitsSchema(t *testing.T) {
 	t.Parallel()
-	// The registry an install actually admits into: the seeded tree (core
-	// alone) plus the shipped VOCABULARY bundles this repository imported —
-	// what a closure declaring onto people/tasks/messaging/calendar/media
-	// needs present, and what `requires:` names.
-	reg, err := enginetest.SeededRegistry(CoreKindsDir)
-	if err != nil {
-		t.Fatalf("build the repository registry: %v", err)
-	}
-	data, err := os.ReadFile(linearExampleDir + "/bundle.yaml")
-	if err != nil {
-		t.Fatalf("read bundle.yaml: %v", err)
-	}
-	docs, err := vocabulary.ParseStream(data)
-	if err != nil {
-		t.Fatalf("parse bundle.yaml: %v", err)
-	}
-	authorities, err := vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
-	if err != nil {
-		t.Fatalf("build the bundle authority: %v", err)
-	}
-	if err := reg.InstallAll(authorities); err != nil {
-		t.Fatalf("the bundle closure did not admit: %v", err)
-	}
+	reg := bundleRegistry(t, linearDir)
 
 	// The bundle exists, declares the `client` input the oauth2 block names
 	// (facility-read, never injected), and carries the TRUSTED
 	// oauth2 provider metadata: Linear's endpoints and the
 	// enabledIssues→read scope map live on the immutable install artifact.
-	b, ok := reg.BundleOf(linearPackage)
-	if !ok {
-		t.Fatalf("no bundle owns %s after install", linearPackage)
-	}
-	in, ok := b.Inputs["client"]
-	if !ok {
-		t.Fatalf("bundle declares no client input: %v", b.InputOrder)
-	}
-	if in.Kind != linearConfigType {
-		t.Fatalf("client input kind = %q, want %q", in.Kind, linearConfigType)
-	}
-	if in.Inject != "" {
-		t.Fatalf("client input inject = %q, but the OAuth client is facility-read, never injected", in.Inject)
-	}
+	b := assertBundleInput(t, reg, linearPackage, "client", linearConfigType, "")
 	if b.OAuth2 == nil {
 		t.Fatal("the bundle compiled no oauth2 manifest metadata")
 	}
@@ -143,20 +103,14 @@ func TestLinearBundleAdmitsSchema(t *testing.T) {
 	}
 
 	// The config type: oauth2 (client fields), the client input's kind.
-	cfg, ok := reg.ByIdentity(linearConfigType)
-	if !ok {
-		t.Fatalf("config type %s missing", linearConfigType)
-	}
+	cfg := mustKind(t, reg, linearConfigType)
 	if !cfg.Implements(vocabulary.TraitOAuth2Core) {
 		t.Fatalf("config type does not implement %s", vocabulary.TraitOAuth2Core)
 	}
 
 	// The account type: accountconfig, and NOT oauth2 — client creds bind on
 	// the config, tokens on the account.
-	acct, ok := reg.ByIdentity(linearAccountType)
-	if !ok {
-		t.Fatalf("account type %s missing", linearAccountType)
-	}
+	acct := mustKind(t, reg, linearAccountType)
 	if !acct.Implements(vocabulary.TraitAccountConfigCore) {
 		t.Fatalf("account type does not implement %s", vocabulary.TraitAccountConfigCore)
 	}
@@ -167,17 +121,11 @@ func TestLinearBundleAdmitsSchema(t *testing.T) {
 	// The mirror types carry their subject SLOTS: single, unpinned and
 	// optional, because the kind they reach is the repository's to choose
 	// (record 49). The issue's team edge is an ordinary pinned reference.
-	user, ok := reg.ByIdentity(linearUserType)
-	if !ok {
-		t.Fatalf("mirror type %s missing", linearUserType)
-	}
+	user := mustKind(t, reg, linearUserType)
 	if ed, ok := user.Prop("person"); !ok || ed.To != "" || ed.Required || ed.Repeated || !ed.Subject {
 		t.Fatalf("user person slot shape wrong: %+v (ok=%v)", ed, ok)
 	}
-	issue, ok := reg.ByIdentity(linearIssueType)
-	if !ok {
-		t.Fatalf("mirror type %s missing", linearIssueType)
-	}
+	issue := mustKind(t, reg, linearIssueType)
 	if ed, ok := issue.Prop("assignee"); !ok || ed.To != "" || ed.Required || ed.Repeated || !ed.Subject {
 		t.Fatalf("issue assignee slot shape wrong: %+v (ok=%v)", ed, ok)
 	}
@@ -218,86 +166,37 @@ func TestLinearBundleAdmitsSchema(t *testing.T) {
 // so it skips when uv is absent or cannot provision.
 func TestLinearBundleInstalls(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the sync body warms through uv at install")
-	}
-	ctx := context.Background()
-	ds := openInternalDataset(t)
+	requireUV(t)
+	_, ds := newDataset(t)
 
-	vocabularyDocs := loadYAMLDocs(t, linearExampleDir+"/bundle.yaml")
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, vocabularyDocs); err != nil {
-		if isUVProvisionError(err) {
-			t.Skipf("bundle install could not warm the PEP 723 body (uv offline?): %v", err)
-		}
-		t.Fatalf("install the linear bundle: %v", err)
-	}
+	install(t, ds, linearDir, nil)
 
 	// The bundle row and every schema member landed as its own record.
-	for id, wantType := range map[string]string{
-		linearPackage:     "substrate.reamde.dev/core/bundle",
-		linearConfigType:  "substrate.reamde.dev/core/kind",
-		linearAccountType: "substrate.reamde.dev/core/kind",
-		linearUserType:    "substrate.reamde.dev/core/kind",
-		linearTeamType:    "substrate.reamde.dev/core/kind",
-		linearIssueType:   "substrate.reamde.dev/core/kind",
-		linearSyncFn:      "substrate.reamde.dev/core/function",
-	} {
-		row, err := ds.Get(ctx, wantType, id)
-		if err != nil {
-			t.Fatalf("member %s did not install: %v", id, err)
-		}
-		if row.Kind != wantType {
-			t.Fatalf("member %s is a %s, want %s", id, row.Kind, wantType)
-		}
-	}
+	assertMembers(t, ds, map[string]string{
+		linearPackage:     typeBundle,
+		linearConfigType:  typeKind,
+		linearAccountType: typeKind,
+		linearUserType:    typeKind,
+		linearTeamType:    typeKind,
+		linearIssueType:   typeKind,
+		linearSyncFn:      typeFunction,
+	})
 
 	// Computed status: installed, enabled, unconfigured, one function.
-	st, err := ds.BundleStatus(ctx, linearPackage)
-	if err != nil {
-		t.Fatalf("bundle status: %v", err)
-	}
-	if !st.Installed || !st.Enabled {
-		t.Fatalf("bundle not live: installed=%v enabled=%v", st.Installed, st.Enabled)
-	}
-	if len(st.Inputs) != 1 || st.Inputs[0].Name != "client" || st.Inputs[0].Kind != linearConfigType {
-		t.Fatalf("status inputs = %+v, want the one client input", st.Inputs)
-	}
-	if st.Inputs[0].Record != "" || st.Inputs[0].Via != "" {
-		t.Fatalf("client input resolved with no config record created: %+v", st.Inputs[0])
-	}
-	if len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupMissing || st.Setup[0].Input != "client" {
-		t.Fatalf("status setup = %+v, want the one missing-input item", st.Setup)
-	}
-	if st.Functions != 1 {
-		t.Fatalf("status functions = %d, want the sync alone", st.Functions)
-	}
+	assertUnresolvedInput(t, ds, linearPackage, "client", linearConfigType, 1)
 
 	// The delivery wiring installs as ordinary data records.
-	for _, m := range loadYAMLDocs(t, linearExampleDir+"/triggers.yaml") {
-		putDataDoc(t, ds, m)
-	}
-	for _, id := range []string{
+	installTriggers(t, ds, linearDir)
+	assertTriggers(t, ds,
 		"linear-issues-on-connect", "linear-issues-scheduled",
-	} {
-		row, err := ds.Get(ctx, typeTrigger, id)
-		if err != nil {
-			t.Fatalf("trigger %s did not install: %v", id, err)
-		}
-		if row.Kind != typeTrigger {
-			t.Fatalf("trigger %s is a %s", id, row.Kind)
-		}
-	}
+	)
 }
 
 // linearFakeProvider is Linear's OAuth half in a box: /token answers the code
 // exchange (and a refresh, should one fire) with a fixed grant.
 type linearFakeProvider struct {
-	ts *httptest.Server
+	fakeAPI
 
-	mu        sync.Mutex
 	exchanges int
 }
 
@@ -334,8 +233,7 @@ func newLinearFakeProvider(t *testing.T) *linearFakeProvider {
 	mux.HandleFunc("/revoke", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	p.ts = httptest.NewServer(mux)
-	t.Cleanup(p.ts.Close)
+	p.serve(t, mux)
 	return p
 }
 
@@ -346,9 +244,8 @@ func newLinearFakeProvider(t *testing.T) *linearFakeProvider {
 // transition (an open-family drag, a completion, a team move, a team loss)
 // against mirrors that already exist.
 type linearFakeAPI struct {
-	ts *httptest.Server
+	fakeAPI
 
-	mu             sync.Mutex
 	pages          int
 	mutations      int
 	badAuth        int
@@ -433,8 +330,7 @@ func newLinearFakeAPI(t *testing.T) *linearFakeAPI {
 			},
 		})
 	})
-	f.ts = httptest.NewServer(mux)
-	t.Cleanup(f.ts.Close)
+	f.serve(t, mux)
 	return f
 }
 
@@ -470,123 +366,18 @@ func (f *linearFakeAPI) moveIssueBTeam(team map[string]any) {
 	f.issueBTeam = team
 }
 
-// linearOpenDataset opens a throwaway repository with the OAuth facility and the
-// credential key ON (openInternalDataset, plus the two options the connect
-// flow needs), returning the concrete service for its callback seam.
-func linearOpenDataset(t *testing.T, client *http.Client) (*service, *dataset) {
+// linearInstallRewired installs the closure with its TRUSTED oauth2
+// endpoints and the sync body's GraphQL URL pointed at the loopback fakes: a
+// fixture cannot bake a dynamic httptest URL into a static manifest, so the
+// substitution lands exactly where the trusted metadata is authored. The
+// shipped file itself stays pinned to the live endpoints.
+func linearInstallRewired(t *testing.T, ds substrate.Dataset, oauthBase, graphqlURL string) {
 	t.Helper()
-	ctx := context.Background()
-	dsn := MigratedDSN(t)
-	svc, err := OpenForTest(t, ctx, dsn,
-		WithDataRoot(t.TempDir()),
-		WithCredentialKey(TestCredentialKey), WithKindsDir(CoreKindsDir),
-		WithOAuth("test-state-key", "https://substrate.example/api/v1/substrate.reamde.dev/core/oauth/callback", client),
-		WithCredentialKey(TestCredentialKey))
-	if err != nil {
-		t.Fatalf("open engine: %v", err)
-	}
-	t.Cleanup(func() { _ = svc.Close() })
-	s, ok := svc.(*service)
-	if !ok {
-		t.Fatalf("service is a %T", svc)
-	}
-	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
-		t.Fatalf("create repository: %v", err)
-	}
-	d, err := svc.Dataset(ctx, testdb.Repository(t))
-	if err != nil {
-		t.Fatalf("open dataset: %v", err)
-	}
-	ds, ok := d.(*dataset)
-	if !ok {
-		t.Fatalf("dataset is a %T", d)
-	}
-	importVocabulary(t, ds)
-	return s, ds
-}
-
-// linearPointAt rewrites the closure's TRUSTED oauth2 endpoints and the sync
-// body's GraphQL URL at the loopback fakes — a fixture cannot bake a dynamic
-// httptest URL into a static manifest, so it injects them exactly where the
-// trusted metadata is authored (the mbPointOAuthAt pattern). The shipped file
-// itself stays pinned to the live endpoints.
-func linearPointAt(t *testing.T, docs []map[string]any, oauthBase, graphqlURL string) {
-	t.Helper()
-	var oauthDone, sourceDone bool
-	for _, d := range docs {
-		data, _ := d["data"].(map[string]any)
-		if d["kind"] == vocabulary.CoreKind(vocabulary.DocBundle) {
-			o, _ := data["oauth2"].(map[string]any)
-			if o == nil {
-				t.Fatal("the bundle document carries no oauth2 block")
-			}
-			o["authorizationEndpoint"] = oauthBase + "/authorize"
-			o["tokenEndpoint"] = oauthBase + "/token"
-			o["revocationEndpoint"] = oauthBase + "/revoke"
-			oauthDone = true
-		}
-		meta, _ := d["metadata"].(map[string]any)
-		if d["kind"] == vocabulary.CoreKind(vocabulary.DocFunction) && meta["id"] == linearSyncFn {
-			src, _ := data["source"].(string)
-			if !strings.Contains(src, linearLiveGraphQL) {
-				t.Fatalf("the sync body no longer names %s — the fixture substitution broke", linearLiveGraphQL)
-			}
-			data["source"] = strings.ReplaceAll(src, linearLiveGraphQL, graphqlURL)
-			sourceDone = true
-		}
-	}
-	if !oauthDone || !sourceDone {
-		t.Fatalf("closure rewrite incomplete: oauth=%v source=%v", oauthDone, sourceDone)
-	}
-}
-
-func linearGet(t *testing.T, ds *dataset, typ, id string) *substrate.Record {
-	t.Helper()
-	e, err := ds.Get(context.Background(), typ, id)
-	if err != nil {
-		t.Fatalf("get %s: %v", id, err)
-	}
-	return e
-}
-
-// linearResync clears the account's completion marker and drains: the removal
-// is itself an account update the on-connect guard matches, so the one patch
-// both resets the guard and fires the re-sync.
-//
-// Two constraints decide whose hand it is. `lastSyncedAt` is
-// `writer: connector`, so only a BUNDLE-tier actor may clear it, and a
-// declared function's actor is that tier. And a callable never sees its own
-// writes (the dispatcher's self-exclusion), so the clear cannot be stamped as
-// the sync itself. The linear closure ships one callable now, the sync, so the
-// hand is a declared function of the TEST's own: installLinearResyncHand.
-func linearResync(t *testing.T, ds *dataset, accountID string) {
-	t.Helper()
-	hand := substrate.FunctionActor(vocabulary.SplitKindRef(linearResyncFn))
-	if _, err := ds.Patch(context.Background(), hand, linearAccountType, accountID, substrate.PatchInput{
-		Properties: map[string]any{"lastSyncedAt": nil},
-	}); err != nil {
-		t.Fatalf("clear lastSyncedAt: %v", err)
-	}
-	drainTriggers(t, ds)
-}
-
-// linearResyncFn is the test's own bundle-tier hand: a declared function that
-// never runs, installed only so its actor resolves at the bundle tier.
-const linearResyncFn = "resync.example.com/hand/clear"
-
-func installLinearResyncHand(t *testing.T, ds *dataset) {
-	t.Helper()
-	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI,
-		[]map[string]any{
-			vocabulary.PackageManifest("resync.example.com/hand", 1),
-			vocabulary.FunctionManifest("resync.example.com/hand", "clear", map[string]any{
-				"description": "a bundle-tier hand for the re-sync clear; never called",
-				"runtime":     vocabulary.RuntimePython,
-				"source":      "def main(input, host):\n    return {}\n",
-			}),
-		}); err != nil {
-		t.Fatalf("install the re-sync hand: %v", err)
-	}
+	install(t, ds, linearDir, func(docs []map[string]any) {
+		rewriteOAuthEndpoints(t, docs, oauthBase,
+			"https://linear.app/oauth", "https://api.linear.app/oauth")
+		rewriteSource(t, docs, linearLiveGraphQL, graphqlURL)
+	})
 }
 
 // TestLinearBundleFakeSyncMirrors drives the whole connector against loopback
@@ -599,28 +390,16 @@ func installLinearResyncHand(t *testing.T, ds *dataset) {
 // tier and an owner write wins).
 func TestLinearBundleFakeSyncMirrors(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the sync body runs through uv")
-	}
+	requireUV(t)
 	ctx := context.Background()
 	p := newLinearFakeProvider(t)
 	api := newLinearFakeAPI(t)
-	svc, ds := linearOpenDataset(t, p.ts.Client())
+	svc, ds := newOAuthDataset(t, p.ts.Client())
 
 	// Install the closure from the shipped files, endpoints re-pointed at the
 	// fakes (loopback http is admissible manifest metadata; the live file
 	// stays https-only).
-	docs := loadYAMLDocs(t, linearExampleDir+"/bundle.yaml")
-	linearPointAt(t, docs, p.ts.URL, api.ts.URL+"/graphql")
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
-		if isUVProvisionError(err) {
-			t.Skipf("bundle install could not warm the PEP 723 body (uv offline?): %v", err)
-		}
-		t.Fatalf("install the linear bundle: %v", err)
-	}
+	linearInstallRewired(t, ds, p.ts.URL, api.ts.URL+"/graphql")
 	// The closure ships no mapping (record 49): the repository declares how
 	// linear's mirrors reach the kinds it owns, and TWO SAMPLES already carry
 	// those declarations as suggested mappings: people's `user -> person` and
@@ -630,9 +409,7 @@ func TestLinearBundleFakeSyncMirrors(t *testing.T) {
 	// them. That re-import is exactly what the console asks a reader for
 	// (decision records 0048 and 0049).
 	importVocabulary(t, ds, "people", "tasks")
-	for _, m := range loadYAMLDocs(t, linearExampleDir+"/triggers.yaml") {
-		putDataDoc(t, ds, m)
-	}
+	installTriggers(t, ds, linearDir)
 
 	// Configure and connect: the client's config record (the sole record
 	// resolves the input), pending account, host OAuth
@@ -667,13 +444,11 @@ func TestLinearBundleFakeSyncMirrors(t *testing.T) {
 	if scope := cu.Query().Get("scope"); scope != "read" {
 		t.Fatalf("requested scope = %q, want read (derived from enabledIssues)", scope)
 	}
-	if _, err := svc.CompleteOAuth(ctx, cu.Query().Get("state"), "code-123"); err != nil {
-		t.Fatalf("oauth callback: %v", err)
-	}
+	completeOAuth(t, svc, cu.Query().Get("state"), "code-123")
 
 	// The backfill: on-connect fires the sync, which drains both pages off
 	// the causal chain.
-	installLinearResyncHand(t, ds)
+	installResyncHand(t, ds)
 	drainTriggers(t, ds)
 
 	issueAID := runner.ExternalID("linear", account.ID, "issue:uuid-a")
@@ -686,7 +461,7 @@ func TestLinearBundleFakeSyncMirrors(t *testing.T) {
 	}
 
 	// The issue mirror, in Linear's shape, with its team reference.
-	issueA := linearGet(t, ds, linearIssueType, issueAID)
+	issueA := mustGet(t, ds, linearIssueType, issueAID)
 	for k, want := range map[string]any{
 		"identifier": "ENG-1", "state": "In Progress", "stateType": "started",
 		"priority": "high", "assigneeEmail": linearViewerEmail,
@@ -698,19 +473,19 @@ func TestLinearBundleFakeSyncMirrors(t *testing.T) {
 	if tg := refIDs(issueA, "team"); len(tg) != 1 || tg[0] != teamID {
 		t.Fatalf("issue team = %+v, want %s", tg, teamID)
 	}
-	if got := linearGet(t, ds, linearTeamType, teamID).Properties["name"]; got != "Engineering" {
+	if got := mustGet(t, ds, linearTeamType, teamID).Properties["name"]; got != "Engineering" {
 		t.Fatalf("team mirror name = %v", got)
 	}
 
 	// Identity: the viewer's user matched-or-minted a person, and the issue's
 	// assignee resolved onto the SAME human.
-	user := linearGet(t, ds, linearUserType, userID)
+	user := mustGet(t, ds, linearUserType, userID)
 	pe := refIDs(user, "person")
 	if len(pe) != 1 {
 		t.Fatalf("user person unresolved: %+v", user.Properties)
 	}
 	personID := pe[0]
-	person := linearGet(t, ds, linearPersonType, personID)
+	person := mustGet(t, ds, linearPersonType, personID)
 	emails, _ := person.Properties["emails"].([]any)
 	found := false
 	for _, e := range emails {
@@ -727,7 +502,7 @@ func TestLinearBundleFakeSyncMirrors(t *testing.T) {
 
 	// The completion stamp: lastSyncedAt, syncStatus, and the viewer's email
 	// (writer: connector — Linear has no userinfo GET for the facility).
-	acct := linearGet(t, ds, linearAccountType, account.ID)
+	acct := mustGet(t, ds, linearAccountType, account.ID)
 	if acct.Properties["lastSyncedAt"] == nil || acct.Properties["syncStatus"] != "ok" {
 		t.Fatalf("account not stamped: %v / %v", acct.Properties["lastSyncedAt"], acct.Properties["syncStatus"])
 	}
@@ -743,7 +518,7 @@ func TestLinearBundleFakeSyncMirrors(t *testing.T) {
 	if len(taskRefs) != 1 {
 		t.Fatalf("the issue mirror's task slot = %+v, want the one the mapping minted", taskRefs)
 	}
-	task := linearGet(t, ds, linearTaskType, taskRefs[0])
+	task := mustGet(t, ds, linearTaskType, taskRefs[0])
 	if got := task.Properties["name"]; got != linearIssueATitle {
 		t.Fatalf("the mapping did not project the heading: name = %v", got)
 	}
@@ -770,8 +545,8 @@ func TestLinearBundleFakeSyncMirrors(t *testing.T) {
 	}
 	const retitled = "Fix the flux capacitor, properly"
 	api.retitleIssueA(retitled)
-	linearResync(t, ds, account.ID)
-	after := linearGet(t, ds, linearTaskType, task.ID)
+	resyncAccount(t, ds, linearAccountType, account.ID)
+	after := mustGet(t, ds, linearTaskType, task.ID)
 	if got := after.Properties["status"]; got != "done" {
 		t.Fatalf("the re-sync took the owner's status back: %v", got)
 	}
@@ -784,9 +559,9 @@ func TestLinearBundleFakeSyncMirrors(t *testing.T) {
 
 	// An idle re-sync writes nothing: the mirrors are patched, never re-put
 	// whole, so no-op suppression holds end to end.
-	beforeVersion := linearGet(t, ds, linearIssueType, issueAID).Version
-	linearResync(t, ds, account.ID)
-	if got := linearGet(t, ds, linearIssueType, issueAID).Version; got != beforeVersion {
+	beforeVersion := mustGet(t, ds, linearIssueType, issueAID).Version
+	resyncAccount(t, ds, linearAccountType, account.ID)
+	if got := mustGet(t, ds, linearIssueType, issueAID).Version; got != beforeVersion {
 		t.Fatalf("an idle re-sync rewrote the issue mirror: version %d -> %d",
 			beforeVersion, got)
 	}
@@ -796,19 +571,19 @@ func TestLinearBundleFakeSyncMirrors(t *testing.T) {
 	// — the new team — never an accumulated pair.
 	team2ID := runner.ExternalID("linear", account.ID, "team:uuid-t2")
 	api.moveIssueBTeam(map[string]any{"id": "uuid-t2", "key": "OPS", "name": "Operations"})
-	linearResync(t, ds, account.ID)
-	movedB := linearGet(t, ds, linearIssueType, issueBID)
+	resyncAccount(t, ds, linearAccountType, account.ID)
+	movedB := mustGet(t, ds, linearIssueType, issueBID)
 	if tg := refIDs(movedB, "team"); len(tg) != 1 || tg[0] != team2ID {
 		t.Fatalf("team move did not stay current: team=%+v, want exactly %s", tg, team2ID)
 	}
-	if got := linearGet(t, ds, linearTeamType, team2ID).Properties["name"]; got != "Operations" {
+	if got := mustGet(t, ds, linearTeamType, team2ID).Properties["name"]; got != "Operations" {
 		t.Fatalf("the new team did not mirror: name=%v", got)
 	}
 	// ...and an issue that LOST its team upstream sheds the stale pointer: the
 	// sync writes the property null, which is what clears a reference.
 	api.moveIssueBTeam(nil)
-	linearResync(t, ds, account.ID)
-	if tg := refIDs(linearGet(t, ds, linearIssueType, issueBID), "team"); len(tg) != 0 {
+	resyncAccount(t, ds, linearAccountType, account.ID)
+	if tg := refIDs(mustGet(t, ds, linearIssueType, issueBID), "team"); len(tg) != 0 {
 		t.Fatalf("a stale team reference survived the team's removal: %+v", tg)
 	}
 

@@ -1,4 +1,4 @@
-package engine
+package providertest
 
 // The GitHub bundle — the substrate's second real integration, SYNC-ONLY
 // (no writeback until the outbound outbox, issue 009, exists). Five proofs,
@@ -52,24 +52,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
-	"os"
-	"os/exec"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
-	"github.com/geoah/substrate/internal/engine/enginetest"
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 const (
-	githubExampleDir  = "../../kinds/providers.substrate.reamde.dev/github"
+	githubDir         = providersDir + "/github"
 	githubPackage     = "providers.substrate.reamde.dev/github"
 	githubConfigType  = githubPackage + "/config"
 	githubAccountType = githubPackage + "/account"
@@ -78,6 +74,9 @@ const (
 	githubIssueType   = githubPackage + "/issue"
 	githubPullType    = githubPackage + "/pullrequest"
 	githubSyncFn      = githubPackage + "/githubsync"
+
+	// githubAccountID is the account the stepping cases walk.
+	githubAccountID = "acct-step"
 )
 
 // TestGithubBundleAdmitsSchema loads the builtin schema, then installs the
@@ -86,46 +85,11 @@ const (
 // assertion is a rule the loader enforces at admission time.
 func TestGithubBundleAdmitsSchema(t *testing.T) {
 	t.Parallel()
-	// The registry an install actually admits into: the seeded tree (core
-	// alone) plus the shipped VOCABULARY bundles this repository imported —
-	// what a closure declaring onto people/tasks/messaging/calendar/media
-	// needs present, and what `requires:` names.
-	reg, err := enginetest.SeededRegistry(CoreKindsDir)
-	if err != nil {
-		t.Fatalf("build the repository registry: %v", err)
-	}
-	data, err := os.ReadFile(githubExampleDir + "/bundle.yaml")
-	if err != nil {
-		t.Fatalf("read bundle.yaml: %v", err)
-	}
-	docs, err := vocabulary.ParseStream(data)
-	if err != nil {
-		t.Fatalf("parse bundle.yaml: %v", err)
-	}
-	authorities, err := vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
-	if err != nil {
-		t.Fatalf("build the bundle authority: %v", err)
-	}
-	if err := reg.InstallAll(authorities); err != nil {
-		t.Fatalf("the bundle closure did not admit: %v", err)
-	}
+	reg := bundleRegistry(t, githubDir)
 
 	// The bundle exists and declares the `client` input the oauth2 block
 	// names: facility-read, so it must NOT inject.
-	b, ok := reg.BundleOf(githubPackage)
-	if !ok {
-		t.Fatalf("no bundle owns %s after install", githubPackage)
-	}
-	in, ok := b.Inputs["client"]
-	if !ok {
-		t.Fatalf("bundle declares no client input: %v", b.InputOrder)
-	}
-	if in.Kind != githubConfigType {
-		t.Fatalf("client input kind = %q, want %q", in.Kind, githubConfigType)
-	}
-	if in.Inject != "" {
-		t.Fatalf("client input inject = %q, but the OAuth client is facility-read, never injected", in.Inject)
-	}
+	b := assertBundleInput(t, reg, githubPackage, "client", githubConfigType, "")
 
 	// The trusted provider metadata compiled off the manifest (review-google
 	// #1): the github endpoints, and every feature toggle mapped to scopes —
@@ -166,20 +130,14 @@ func TestGithubBundleAdmitsSchema(t *testing.T) {
 	}
 
 	// The config type: oauth2 (client fields), the client input's kind.
-	cfg, ok := reg.ByIdentity(githubConfigType)
-	if !ok {
-		t.Fatalf("config type %s missing", githubConfigType)
-	}
+	cfg := mustKind(t, reg, githubConfigType)
 	if !cfg.Implements(vocabulary.TraitOAuth2Core) {
 		t.Fatalf("%s does not implement %s", githubConfigType, vocabulary.TraitOAuth2Core)
 	}
 
 	// The account type: accountconfig (the OAuth facility's hands), and NOT
 	// oauth2 — client creds bind on the config, tokens on the account.
-	acct, ok := reg.ByIdentity(githubAccountType)
-	if !ok {
-		t.Fatalf("account type %s missing", githubAccountType)
-	}
+	acct := mustKind(t, reg, githubAccountType)
 	if !acct.Implements(vocabulary.TraitAccountConfigCore) {
 		t.Fatalf("%s does not implement %s", githubAccountType, vocabulary.TraitAccountConfigCore)
 	}
@@ -208,10 +166,7 @@ func TestGithubBundleAdmitsSchema(t *testing.T) {
 	// optional, because the kind it reaches belongs to the repository and this
 	// package owns none (record 49). A mapping the owner of that kind declares
 	// is what pins it.
-	user, ok := reg.ByIdentity(githubUserType)
-	if !ok {
-		t.Fatalf("source type %s missing", githubUserType)
-	}
+	user := mustKind(t, reg, githubUserType)
 	ed, ok := user.Prop("person")
 	if !ok {
 		t.Fatalf("%s declares no `person` slot", githubUserType)
@@ -273,112 +228,51 @@ func TestGithubBundleAdmitsSchema(t *testing.T) {
 // so it skips when uv is absent or cannot provision.
 func TestGithubBundleInstalls(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the sync body warms through uv at install")
-	}
-	ctx := context.Background()
-	ds := openInternalDataset(t)
+	requireUV(t)
+	_, ds := newDataset(t)
 
-	// The atomic install from the shipped manifest. A failure here is either a
-	// schema problem (already caught deterministically by the loader test
-	// above, without uv) or a uv provisioning failure (offline) — so treat an
-	// apply error as a skip rather than double-reporting a schema break.
-	vocabularyDocs := loadYAMLDocs(t, githubExampleDir+"/bundle.yaml")
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, vocabularyDocs); err != nil {
-		if isUVProvisionError(err) {
-			t.Skipf("bundle install could not warm the PEP 723 body (uv offline?): %v", err)
-		}
-		t.Fatalf("install the github bundle: %v", err)
-	}
+	// The atomic install from the shipped manifest.
+	install(t, ds, githubDir, nil)
 
 	// The bundle row and every schema member landed as its own record.
-	for id, wantType := range map[string]string{
-		githubPackage:     "substrate.reamde.dev/core/bundle",
-		githubConfigType:  "substrate.reamde.dev/core/kind",
-		githubAccountType: "substrate.reamde.dev/core/kind",
-		githubUserType:    "substrate.reamde.dev/core/kind",
-		githubRepoType:    "substrate.reamde.dev/core/kind",
-		githubIssueType:   "substrate.reamde.dev/core/kind",
-		githubPullType:    "substrate.reamde.dev/core/kind",
-		githubSyncFn:      "substrate.reamde.dev/core/function",
-	} {
-		row, err := ds.Get(ctx, wantType, id)
-		if err != nil {
-			t.Fatalf("member %s did not install: %v", id, err)
-		}
-		if row.Kind != wantType {
-			t.Fatalf("member %s is a %s, want %s", id, row.Kind, wantType)
-		}
-	}
+	assertMembers(t, ds, map[string]string{
+		githubPackage:     typeBundle,
+		githubConfigType:  typeKind,
+		githubAccountType: typeKind,
+		githubUserType:    typeKind,
+		githubRepoType:    typeKind,
+		githubIssueType:   typeKind,
+		githubPullType:    typeKind,
+		githubSyncFn:      typeFunction,
+	})
 
 	// Computed status: installed, enabled, and the closure's member counts.
-	st, err := ds.BundleStatus(ctx, githubPackage)
-	if err != nil {
-		t.Fatalf("bundle status: %v", err)
-	}
-	if !st.Installed || !st.Enabled {
-		t.Fatalf("bundle not live: installed=%v enabled=%v", st.Installed, st.Enabled)
-	}
-	if len(st.Inputs) != 1 || st.Inputs[0].Name != "client" || st.Inputs[0].Kind != githubConfigType {
-		t.Fatalf("status inputs = %+v, want the one client input", st.Inputs)
-	}
-	if st.Inputs[0].Record != "" || st.Inputs[0].Via != "" {
-		t.Fatalf("client input resolved with no config record created: %+v", st.Inputs[0])
-	}
-	if len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupMissing || st.Setup[0].Input != "client" {
-		t.Fatalf("status setup = %+v, want the one missing-input item", st.Setup)
-	}
-	if st.Functions != 1 {
-		t.Fatalf("status functions = %d, want 1", st.Functions)
-	}
+	assertUnresolvedInput(t, ds, githubPackage, "client", githubConfigType, 1)
 
 	// The delivery wiring installs as ordinary data records, both bound to
 	// the sync function.
-	for _, m := range loadYAMLDocs(t, githubExampleDir+"/triggers.yaml") {
-		putDataDoc(t, ds, m)
-	}
-	for _, id := range []string{"github-on-connect", "github-scheduled"} {
-		row, err := ds.Get(ctx, typeTrigger, id)
-		if err != nil {
-			t.Fatalf("trigger %s did not install: %v", id, err)
-		}
-		if row.Kind != typeTrigger {
-			t.Fatalf("trigger %s is a %s", id, row.Kind)
-		}
-	}
+	installTriggers(t, ds, githubDir)
+	assertTriggers(t, ds, "github-on-connect", "github-scheduled")
 }
 
-// githubPointProviderAt rewrites the closure's provider references to the
-// loopback fake: the bundle document's trusted oauth2 endpoints (a static
-// manifest cannot bake a dynamic httptest URL) and the sync body's API base
-// constant. The body's origin pin allows loopback as the test seam, so the
-// rewritten base admits; API_HOST and the htmlURL stubs are left alone.
-func githubPointProviderAt(docs []map[string]any, baseURL string) {
-	for _, d := range docs {
-		data, _ := d["data"].(map[string]any)
-		if data == nil {
-			continue
-		}
-		switch vocabulary.KindName(fmt.Sprint(d["kind"])) {
-		case "bundle":
-			o, _ := data["oauth2"].(map[string]any)
-			for k, v := range o {
-				if s, ok := v.(string); ok {
-					s = strings.ReplaceAll(s, "https://api.github.com", baseURL)
-					s = strings.ReplaceAll(s, "https://github.com", baseURL)
-					o[k] = s
-				}
-			}
-		case "function":
-			if src, ok := data["source"].(string); ok {
-				data["source"] = strings.ReplaceAll(src,
-					`API = "https://api.github.com"`, `API = "`+baseURL+`"`)
-			}
-		}
-	}
+// githubInstallRewired installs the closure with every provider reference
+// pointed at the loopback fake: the bundle document's trusted oauth2
+// endpoints (a static manifest cannot bake a dynamic httptest URL) and the
+// sync body's API base constant. The body's origin pin allows loopback as the
+// test seam, so the rewritten base admits; API_HOST and the htmlURL stubs are
+// left alone.
+func githubInstallRewired(t *testing.T, ds substrate.Dataset, baseURL string) {
+	t.Helper()
+	install(t, ds, githubDir, func(docs []map[string]any) {
+		rewriteOAuthEndpoints(t, docs, baseURL, "https://api.github.com", "https://github.com")
+		rewriteSource(t, docs, `API = "https://api.github.com"`, `API = "`+baseURL+`"`)
+	})
+}
+
+// githubStepConfig is one connected account with every feature the case
+// names, as the injected config a stepped invocation receives.
+func githubStepConfig(props map[string]any) map[string]any {
+	return stepConfig(githubAccountType, githubAccountID, props)
 }
 
 // fakeGithub is a GitHub in a box: the token exchange the manifest is rewired
@@ -387,10 +281,7 @@ func githubPointProviderAt(docs []map[string]any, baseURL string) {
 // answering all three qualifiers. It records every search `q` so tests can
 // assert windows and the review-requested query.
 type fakeGithub struct {
-	ts *httptest.Server
-
-	mu       sync.Mutex
-	searchQs []string
+	fakeAPI
 
 	// The stepping scenario's dials (TestGithubBundleCursorAndWatermarks):
 	// issue pages come 100-full until the query floor moves off the
@@ -425,17 +316,6 @@ var githubPagedBase = time.Now().UTC().AddDate(0, 0, -10).Truncate(time.Second)
 func newFakeGithub(t *testing.T) *fakeGithub {
 	t.Helper()
 	f := &fakeGithub{}
-	writeJSON := func(w http.ResponseWriter, v any) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(v)
-	}
-	bearer := func(w http.ResponseWriter, r *http.Request) bool {
-		if r.Header.Get("Authorization") != "Bearer at-1" {
-			w.WriteHeader(http.StatusUnauthorized)
-			return false
-		}
-		return true
-	}
 	issueItem := func(repo string, number int, node, updated, author string) map[string]any {
 		return map[string]any{
 			"node_id": node, "number": number, "state": "open",
@@ -499,8 +379,8 @@ func newFakeGithub(t *testing.T) *fakeGithub {
 		}
 		q := r.URL.Query().Get("q")
 		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		f.record(r)
 		f.mu.Lock()
-		f.searchQs = append(f.searchQs, q)
 		pageIssues, pullsIncomplete := f.pageIssues, f.pullsIncomplete
 		if pageIssues && strings.Contains(q, "type:issue") && f.issuesFloor == "" {
 			f.issuesFloor = githubSearchFloor(q)
@@ -552,60 +432,24 @@ func newFakeGithub(t *testing.T) *fakeGithub {
 				githubPagedBase.Add(time.Hour).Format("2006-01-02T15:04:05Z"), "octocat"))
 		}
 	})
-	f.ts = httptest.NewServer(mux)
-	t.Cleanup(f.ts.Close)
+	f.serve(t, mux)
 	return f
 }
 
+// queries is every search `q` the run sent, which is where a window clause
+// and the review-requested qualifier land.
 func (f *fakeGithub) queries() []string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]string(nil), f.searchQs...)
-}
-
-// openGithubOAuthDataset is openInternalDataset with the OAuth facility on —
-// the fake-provider round trip needs the state key, the callback URL and the
-// loopback HTTP client wired at engine open.
-func openGithubOAuthDataset(t *testing.T, hc *http.Client) *dataset {
-	t.Helper()
-	ctx := context.Background()
-	dsn := MigratedDSN(t)
-	svc, err := OpenForTest(t, ctx, dsn,
-		WithDataRoot(t.TempDir()),
-		WithCredentialKey(TestCredentialKey), WithKindsDir(CoreKindsDir),
-		WithOAuth("test-state-key", "https://substrate.example/api/v1/substrate.reamde.dev/core/oauth/callback", hc),
-		WithCredentialKey(TestCredentialKey))
-	if err != nil {
-		t.Fatalf("open engine: %v", err)
-	}
-	t.Cleanup(func() { _ = svc.Close() })
-	if _, err := svc.CreateRepository(ctx, "octocat.example.com"); err != nil {
-		t.Fatalf("create repository: %v", err)
-	}
-	d, err := svc.Dataset(ctx, "octocat.example.com")
-	if err != nil {
-		t.Fatalf("open dataset: %v", err)
-	}
-	ds, ok := d.(*dataset)
-	if !ok {
-		t.Fatalf("dataset is a %T", d)
-	}
-	importVocabulary(t, ds)
-	return ds
-}
-
-// githubInstallRewired applies the closure with every provider reference
-// pointed at the fake, skipping when uv cannot warm the body.
-func githubInstallRewired(t *testing.T, ds *dataset, baseURL string) {
-	t.Helper()
-	docs := loadYAMLDocs(t, githubExampleDir+"/bundle.yaml")
-	githubPointProviderAt(docs, baseURL)
-	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, docs); err != nil {
-		if isUVProvisionError(err) {
-			t.Skipf("bundle install could not warm the PEP 723 body (uv offline?): %v", err)
+	var out []string
+	for _, raw := range f.seen() {
+		v, err := url.ParseQuery(raw)
+		if err != nil {
+			continue
 		}
-		t.Fatalf("install the github bundle: %v", err)
+		if q := v.Get("q"); q != "" {
+			out = append(out, q)
+		}
 	}
+	return out
 }
 
 // TestGithubBundleFakeSyncMirrors drives the whole integration against the
@@ -614,25 +458,15 @@ func githubInstallRewired(t *testing.T, ds *dataset, baseURL string) {
 // three-search sync and assert the mirrors, the dedupe and the stamp.
 func TestGithubBundleFakeSyncMirrors(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the sync body warms through uv at install")
-	}
+	requireUV(t)
 	ctx := context.Background()
 	fake := newFakeGithub(t)
-	ds := openGithubOAuthDataset(t, fake.ts.Client())
+	svc, ds := newOAuthDataset(t, fake.ts.Client())
 	githubInstallRewired(t, ds, fake.ts.URL)
 
 	// Only the on-connect trigger: the schedule would race catch-up fires into
 	// the drain below and prove nothing this test is after.
-	for _, m := range loadYAMLDocs(t, githubExampleDir+"/triggers.yaml") {
-		meta, _ := m["metadata"].(map[string]any)
-		if meta["id"] == "github-on-connect" {
-			putDataDoc(t, ds, m)
-		}
-	}
+	installTriggers(t, ds, githubDir, "github-on-connect")
 
 	// Configure the client record (the sole record resolves the input), then
 	// add one pending account with every feature on.
@@ -676,9 +510,7 @@ func TestGithubBundleFakeSyncMirrors(t *testing.T) {
 	if strings.Contains(scope, "user:email") {
 		t.Fatalf("consent asks for user:email the bundle never uses: %q", scope)
 	}
-	if _, err := ds.svc.CompleteOAuth(ctx, cu.Query().Get("state"), "code-123"); err != nil {
-		t.Fatalf("oauth callback: %v", err)
-	}
+	completeOAuth(t, svc, cu.Query().Get("state"), "code-123")
 	connected, err := ds.Get(ctx, account.Kind, account.ID)
 	if err != nil {
 		t.Fatalf("get account: %v", err)
@@ -746,13 +578,7 @@ func TestGithubBundleFakeSyncMirrors(t *testing.T) {
 	if _, err := ds.Get(ctx, githubUserType, runner.ExternalID("github", account.ID, "user/alice")); err != nil {
 		t.Fatalf("alice's author stub did not mint: %v", err)
 	}
-	var pulls int
-	if err := ds.db.QueryRowContext(ctx,
-		`SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL`,
-		githubPullType).Scan(&pulls); err != nil {
-		t.Fatal(err)
-	}
-	if pulls != 2 {
+	if pulls := countLive(t, ds, githubPullType); pulls != 2 {
 		t.Fatalf("pullrequest rows = %d, want 2 (PR 7 deduped across searches)", pulls)
 	}
 
@@ -801,90 +627,6 @@ func TestGithubBundleFakeSyncMirrors(t *testing.T) {
 	}
 }
 
-// githubStepper drives the sync body page by page through the runner — no
-// trigger machinery — so the paged-checkpoint CURSOR itself is observable.
-type githubStepper struct {
-	t   *testing.T
-	ds  *dataset
-	fn  *vocabulary.Function
-	n   int
-	cfg map[string]any
-}
-
-func newGithubStepper(t *testing.T, ds *dataset, cfg map[string]any) *githubStepper {
-	t.Helper()
-	fn, err := ds.registry().ResolveFunction(githubSyncFn)
-	if err != nil {
-		t.Fatalf("resolve %s: %v", githubSyncFn, err)
-	}
-	return &githubStepper{t: t, ds: ds, fn: fn, cfg: cfg}
-}
-
-// step runs ONE invocation of the chain: resume is the previous page's
-// cursor (nil for a fresh delivery). It returns the staged effects, the
-// output and the continuation cursor (nil when drained).
-func (s *githubStepper) step(resume any) ([]effect, any, map[string]any) {
-	s.t.Helper()
-	s.n++
-	effects, out, more, err := s.ds.runCallableRaw(context.Background(), s.fn, runner.Input{
-		Mode:           runner.ModeCall,
-		Config:         s.cfg,
-		Resume:         resume,
-		IdempotencyKey: fmt.Sprintf("test/githubstep/%d", s.n),
-	})
-	if err != nil {
-		s.t.Fatalf("step %d: %v", s.n, err)
-	}
-	if more == nil {
-		return effects, out, nil
-	}
-	cur, ok := more.Cursor.(map[string]any)
-	if !ok {
-		s.t.Fatalf("step %d: cursor is a %T, want an object", s.n, more.Cursor)
-	}
-	return effects, out, cur
-}
-
-// drain steps until the chain completes, returning the LAST invocation's
-// effects (the one carrying the account stamp) and how many steps ran.
-func (s *githubStepper) drain(resume any) ([]effect, int) {
-	s.t.Helper()
-	steps := 0
-	for {
-		steps++
-		if steps > 40 {
-			s.t.Fatalf("the paged chain did not drain in 40 steps")
-		}
-		effects, _, cur := s.step(resume)
-		if cur == nil {
-			return effects, steps
-		}
-		resume = cur
-	}
-}
-
-// githubAccountStamp finds the connector stamp patch in a step's effects.
-func githubAccountStamp(t *testing.T, effects []effect, id string) map[string]any {
-	t.Helper()
-	for i := range effects {
-		ef := &effects[i]
-		if ef.Action == "patch" && ef.Type == githubAccountType && ef.ID == id {
-			return ef.Properties
-		}
-	}
-	t.Fatalf("no account stamp patch in %d effects", len(effects))
-	return nil
-}
-
-func githubStepConfig(props map[string]any) map[string]any {
-	return map[string]any{
-		"accounts": []any{map[string]any{
-			"id": "acct-step", "type": githubAccountType,
-			"properties": props, "token": "at-1",
-		}},
-	}
-}
-
 // TestGithubBundleCursorAndWatermarks proves the paged cursor's shape and the
 // per-stage watermark discipline without any trigger machinery: the stage
 // list pins at queue-head (a mid-drain toggle-off neither crashes nor shifts
@@ -895,16 +637,11 @@ func githubStepConfig(props map[string]any) map[string]any {
 // stage's window independently, 120s of overlap behind the floor.
 func TestGithubBundleCursorAndWatermarks(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the sync body warms through uv at install")
-	}
+	requireUV(t)
 	fake := newFakeGithub(t)
 	fake.pageIssues = true
 	fake.pullsIncomplete = true
-	ds := openInternalDataset(t)
+	_, ds := newDataset(t)
 	githubInstallRewired(t, ds, fake.ts.URL)
 
 	props := map[string]any{
@@ -912,7 +649,7 @@ func TestGithubBundleCursorAndWatermarks(t *testing.T) {
 		"enabledIssues": true, "enabledPullRequests": true,
 		"syncFrequency": "hourly", "backfillDepth": "last30d",
 	}
-	s := newGithubStepper(t, ds, githubStepConfig(props))
+	s := newStepper(t, ds, githubSyncFn, githubStepConfig(props))
 
 	// Step 1 — the user stage pins the run's shape into the cursor: the
 	// stage list, the run-start watermark, and one floor per search stage.
@@ -953,14 +690,14 @@ func TestGithubBundleCursorAndWatermarks(t *testing.T) {
 		flipped[k] = v
 	}
 	flipped["enabledPullRequests"] = false
-	s.cfg = githubStepConfig(flipped)
+	s.setConfig(githubStepConfig(flipped))
 
 	// Walk the rest of the chain, watching the issues partition hop: page 10
 	// comes back full (the 1,000-result ceiling), so the stage restarts at
 	// page one with the drained boundary as its new floor.
 	var sawPartition bool
 	resume := any(cur)
-	var last []effect
+	var last []engine.StepEffect
 	for range 40 {
 		effects, _, next := s.step(resume)
 		if next == nil {
@@ -1006,7 +743,7 @@ func TestGithubBundleCursorAndWatermarks(t *testing.T) {
 	// The stamp: issues and pullsReview completed, so they carry the
 	// RUN-START watermark; pulls answered incomplete_results, so its
 	// watermark REFUSED to advance — it still reads the original floor.
-	stamp := githubAccountStamp(t, last, "acct-step")
+	stamp := accountStamp(t, last, githubAccountType, githubAccountID)
 	if got, _ := stamp["syncStatus"].(string); got != "ok (partial: pulls)" {
 		t.Fatalf("syncStatus = %v, want \"ok (partial: pulls)\"", stamp["syncStatus"])
 	}
@@ -1035,7 +772,7 @@ func TestGithubBundleCursorAndWatermarks(t *testing.T) {
 		stored[k] = v
 	}
 	stored["syncCursor"] = `{"issues":"2026-08-05T00:00:00Z","pulls":"2026-08-06T00:00:00Z","pullsReview":"2026-08-07T00:00:00Z"}`
-	s.cfg = githubStepConfig(stored)
+	s.setConfig(githubStepConfig(stored))
 	before := len(fake.queries())
 	s.drain(nil)
 	wantFloors := map[string]string{
@@ -1060,7 +797,7 @@ func TestGithubBundleCursorAndWatermarks(t *testing.T) {
 		legacy[k] = v
 	}
 	legacy["syncCursor"] = "2026-08-05T12:00:00Z"
-	s.cfg = githubStepConfig(legacy)
+	s.setConfig(githubStepConfig(legacy))
 	before = len(fake.queries())
 	s.drain(nil)
 	for _, q := range fake.queries()[before:] {
@@ -1077,14 +814,9 @@ func TestGithubBundleCursorAndWatermarks(t *testing.T) {
 // and the chain completes instead of parking.
 func TestGithubBundleOriginPinRefusal(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the sync body warms through uv at install")
-	}
-	ds := openInternalDataset(t)
-	docs := loadYAMLDocs(t, githubExampleDir+"/bundle.yaml")
+	requireUV(t)
+	_, ds := newDataset(t)
+	docs := loadDocs(t, githubDir+"/bundle.yaml")
 	for _, d := range docs {
 		data, _ := d["data"].(map[string]any)
 		if data == nil || d["kind"] != vocabulary.CoreKind("function") {
@@ -1102,14 +834,14 @@ func TestGithubBundleOriginPinRefusal(t *testing.T) {
 		t.Fatalf("install the github bundle: %v", err)
 	}
 
-	s := newGithubStepper(t, ds, githubStepConfig(map[string]any{
+	s := newStepper(t, ds, githubSyncFn, githubStepConfig(map[string]any{
 		"enabledIssues": true, "syncFrequency": "hourly", "backfillDepth": "last30d",
 	}))
 	effects, steps := s.drain(nil)
 	if steps != 1 {
 		t.Fatalf("the refusal took %d steps, want 1 (refused before any page)", steps)
 	}
-	stamp := githubAccountStamp(t, effects, "acct-step")
+	stamp := accountStamp(t, effects, githubAccountType, githubAccountID)
 	status, _ := stamp["syncStatus"].(string)
 	if !strings.HasPrefix(status, "erroring: ") || !strings.Contains(status, "refusing to send credentials") {
 		t.Fatalf("syncStatus = %q, want an erroring refusal", status)

@@ -1,4 +1,4 @@
-package engine
+package providertest
 
 // The Beeper bundle — the substrate's first NON-OAUTH connector. Proofs, from
 // the shipped closure at ../../kinds/providers.substrate.reamde.dev/beeper:
@@ -41,22 +41,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
-	"os"
-	"os/exec"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
-	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 const (
-	beeperExampleDir  = "../../kinds/providers.substrate.reamde.dev/beeper"
+	beeperDir         = providersDir + "/beeper"
 	beeperPackage     = "providers.substrate.reamde.dev/beeper"
 	beeperConfigType  = beeperPackage + "/config"
 	beeperAccountType = beeperPackage + "/account"
@@ -83,47 +78,12 @@ const (
 // that make this bundle the non-OAuth one.
 func TestBeeperBundleAdmitsSchema(t *testing.T) {
 	t.Parallel()
-	// The registry an install actually admits into: the seeded tree (core
-	// alone) plus the shipped VOCABULARY bundles this repository imported —
-	// what a closure declaring onto people/tasks/messaging/calendar/media
-	// needs present, and what `requires:` names.
-	reg, err := enginetest.SeededRegistry(CoreKindsDir)
-	if err != nil {
-		t.Fatalf("build the repository registry: %v", err)
-	}
-	data, err := os.ReadFile(beeperExampleDir + "/bundle.yaml")
-	if err != nil {
-		t.Fatalf("read bundle.yaml: %v", err)
-	}
-	docs, err := vocabulary.ParseStream(data)
-	if err != nil {
-		t.Fatalf("parse bundle.yaml: %v", err)
-	}
-	authorities, err := vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
-	if err != nil {
-		t.Fatalf("build the bundle authority: %v", err)
-	}
-	if err := reg.InstallAll(authorities); err != nil {
-		t.Fatalf("the bundle closure did not admit: %v", err)
-	}
+	reg := bundleRegistry(t, beeperDir)
 
 	// The bundle exists, declares the one `connector` input injected into its
 	// functions, and carries NO oauth2 manifest block — a Matrix access token
 	// is pasted, never exchanged.
-	b, ok := reg.BundleOf(beeperPackage)
-	if !ok {
-		t.Fatalf("no bundle owns %s after install", beeperPackage)
-	}
-	in, ok := b.Inputs["connector"]
-	if !ok {
-		t.Fatalf("bundle declares no connector input: %v", b.InputOrder)
-	}
-	if in.Kind != beeperConfigType {
-		t.Fatalf("connector input kind = %q, want %q", in.Kind, beeperConfigType)
-	}
-	if in.Inject != vocabulary.BundleInputInjectFunctions {
-		t.Fatalf("connector input inject = %q, want %q", in.Inject, vocabulary.BundleInputInjectFunctions)
-	}
+	b := assertBundleInput(t, reg, beeperPackage, "connector", beeperConfigType, vocabulary.BundleInputInjectFunctions)
 	if b.OAuth2 != nil {
 		t.Fatalf("bundle carries an oauth2 manifest block — Beeper is not OAuth")
 	}
@@ -132,10 +92,7 @@ func TestBeeperBundleAdmitsSchema(t *testing.T) {
 	// manifest block and mark the client secret facility-owned; the pasted
 	// token works BECAUSE this kind stays a plain connector config whose
 	// secret injects usable.
-	cfg, ok := reg.ByIdentity(beeperConfigType)
-	if !ok {
-		t.Fatalf("config type %s missing", beeperConfigType)
-	}
+	cfg := mustKind(t, reg, beeperConfigType)
 	if cfg.Implements(vocabulary.TraitOAuth2Core) {
 		t.Fatalf("config type implements oauth2 — there is no OAuth client to declare")
 	}
@@ -147,10 +104,7 @@ func TestBeeperBundleAdmitsSchema(t *testing.T) {
 	// properties (tokenRef/tokenStatus/grantedScopes) admit as dormant
 	// declarations, and the token does NOT live here — an accountconfig-trait
 	// secret seals at rest and injects as ciphertext.
-	acct, ok := reg.ByIdentity(beeperAccountType)
-	if !ok {
-		t.Fatalf("account type %s missing", beeperAccountType)
-	}
+	acct := mustKind(t, reg, beeperAccountType)
 	if !acct.Implements(vocabulary.TraitAccountConfigCore) {
 		t.Fatalf("account type does not implement %s", vocabulary.TraitAccountConfigCore)
 	}
@@ -186,10 +140,7 @@ func TestBeeperBundleAdmitsSchema(t *testing.T) {
 	}
 
 	// The message mirror hangs off its room: required, single, cascading.
-	msg, ok := reg.ByIdentity(beeperMessageType)
-	if !ok {
-		t.Fatalf("message type %s missing", beeperMessageType)
-	}
+	msg := mustKind(t, reg, beeperMessageType)
 	ed, ok := msg.Prop("room")
 	if !ok || ed.Datatype != vocabulary.DatatypeReference {
 		t.Fatalf("message declares no `room` reference")
@@ -273,10 +224,9 @@ func beeperRoomOfPath(path string) string {
 // events, and a switchable hard-failure mode (F3). Every request
 // must present the pasted token — the body's one credential.
 type beeperFakeHS struct {
-	t   *testing.T
-	srv *httptest.Server
+	fakeAPI
+	t *testing.T
 
-	mu       sync.Mutex
 	fail     bool
 	msgFroms map[string][]string // room id -> the /messages `from` tokens seen
 }
@@ -287,8 +237,7 @@ func newBeeperFakeHS(t *testing.T) *beeperFakeHS {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/_matrix/client/v3/sync", f.handleSync)
 	mux.HandleFunc("/_matrix/client/v3/rooms/", f.handleMessages)
-	f.srv = httptest.NewServer(mux)
-	t.Cleanup(f.srv.Close)
+	f.serve(t, mux)
 	return f
 }
 
@@ -404,66 +353,38 @@ func (f *beeperFakeHS) handleMessages(w http.ResponseWriter, r *http.Request) {
 
 // beeperInstall applies the shipped closure + triggers into the repository,
 // skipping when uv cannot warm the PEP 723 body.
-func beeperInstall(t *testing.T, ds *dataset) {
+func beeperInstall(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
-	ctx := context.Background()
-	vocabularyDocs := loadYAMLDocs(t, beeperExampleDir+"/bundle.yaml")
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, vocabularyDocs); err != nil {
-		if isUVProvisionError(err) {
-			t.Skipf("bundle install could not warm the PEP 723 body (uv offline?): %v", err)
+	install(t, ds, beeperDir, nil)
+	installTriggers(t, ds, beeperDir)
+	// The hand resyncAccount clears the completion marker under.
+	installResyncHand(t, ds)
+}
+
+// beeperCountByAccount counts one kind's live mirrors that name an account.
+// `account` is an owner reference (record 0032), so the STORED value is the
+// account's record path and not the bare id the sync wrote.
+func beeperCountByAccount(t *testing.T, ds substrate.Dataset, kind, accountID string) int {
+	t.Helper()
+	return countLiveWithRef(t, ds, kind, "account", beeperAccountType+"/"+accountID)
+}
+
+// beeperMaxRunPages is the most pages any one run of the sync took, off the
+// run records the dispatcher writes: the initial sync must span more than one
+// frame for the paging assertions to mean anything.
+func beeperMaxRunPages(t *testing.T, ds substrate.Dataset) int {
+	t.Helper()
+	var most int
+	for _, run := range listLive(t, ds, typeRun) {
+		pages, ok := run.Properties["pages"].(float64)
+		if !ok {
+			continue
 		}
-		t.Fatalf("install the beeper bundle: %v", err)
+		if int(pages) > most {
+			most = int(pages)
+		}
 	}
-	for _, m := range loadYAMLDocs(t, beeperExampleDir+"/triggers.yaml") {
-		putDataDoc(t, ds, m)
-	}
-}
-
-// beeperResync clears the account's completion marker under a DIFFERENT
-// function actor's dispatch context (writer: connector admits any
-// bundle-tier write context — ticket 002: the tier is dispatch data, so
-// the test stamps it the way runCallable's effect apply does; the trigger's
-// self-actor exclusion only screens the sync's own stamps), so the
-// on-connect trigger re-fires and the next drain runs incrementally off the
-// stored syncToken.
-func beeperResync(t *testing.T, ds *dataset, accountID string) {
-	t.Helper()
-	actor := substrate.Actor("function.testresync." + beeperPackage)
-	if err := ds.inTx(context.Background(), actor, false, func(tx *txn) error {
-		tx.tier = substrate.TierBundle // the dispatch write context
-		_, err := tx.patch(eref{Kind: beeperAccountType, ID: accountID}, substrate.PatchInput{
-			Properties: map[string]any{"lastSyncedAt": nil},
-		})
-		return err
-	}); err != nil {
-		t.Fatalf("clear lastSyncedAt: %v", err)
-	}
-	drainTriggers(t, ds)
-}
-
-func beeperCountByAccount(t *testing.T, ds *dataset, typ, accountID string) int {
-	t.Helper()
-	var n int
-	// `account` is an owner reference (record 0032), so the STORED value is the
-	// account's record path and not the bare id the sync wrote.
-	if err := ds.db.QueryRowContext(context.Background(),
-		`SELECT count(*) FROM records
-		 WHERE kind = $1 AND deleted_at IS NULL AND `+referencePathSQL("props", "account")+` = $2`,
-		typ, beeperAccountType+"/"+accountID).Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	return n
-}
-
-func beeperMaxRunPages(t *testing.T, ds *dataset) int {
-	t.Helper()
-	var pages int
-	if err := ds.db.QueryRowContext(context.Background(),
-		`SELECT COALESCE(MAX((props->>'pages')::int), 0) FROM records
-		 WHERE kind = $1 AND deleted_at IS NULL`, typeRun).Scan(&pages); err != nil {
-		t.Fatal(err)
-	}
-	return pages
+	return most
 }
 
 // TestBeeperBundleInstallsAndSyncs applies the whole closure into a live
@@ -474,56 +395,25 @@ func beeperMaxRunPages(t *testing.T, ds *dataset) int {
 // skips when uv is absent or cannot provision.
 func TestBeeperBundleInstallsAndSyncs(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the sync body warms through uv at install")
-	}
+	requireUV(t)
 	ctx := context.Background()
-	ds := openInternalDataset(t)
+	_, ds := newDataset(t)
 	beeperInstall(t, ds)
 
 	// The bundle row and every schema member landed as its own record.
-	for id, wantType := range map[string]string{
-		beeperPackage:     "substrate.reamde.dev/core/bundle",
-		beeperConfigType:  "substrate.reamde.dev/core/kind",
-		beeperAccountType: "substrate.reamde.dev/core/kind",
-		beeperRoomType:    "substrate.reamde.dev/core/kind",
-		beeperMessageType: "substrate.reamde.dev/core/kind",
-		beeperSyncFn:      "substrate.reamde.dev/core/function",
-	} {
-		row, err := ds.Get(ctx, wantType, id)
-		if err != nil {
-			t.Fatalf("member %s did not install: %v", id, err)
-		}
-		if row.Kind != wantType {
-			t.Fatalf("member %s is a %s, want %s", id, row.Kind, wantType)
-		}
-	}
+	assertMembers(t, ds, map[string]string{
+		beeperPackage:     typeBundle,
+		beeperConfigType:  typeKind,
+		beeperAccountType: typeKind,
+		beeperRoomType:    typeKind,
+		beeperMessageType: typeKind,
+		beeperSyncFn:      typeFunction,
+	})
 
 	// Computed status: installed, enabled, the connector input unresolved
 	// (surfaced as a missing setup item) until a config row exists, one
 	// function.
-	st, err := ds.BundleStatus(ctx, beeperPackage)
-	if err != nil {
-		t.Fatalf("bundle status: %v", err)
-	}
-	if !st.Installed || !st.Enabled {
-		t.Fatalf("bundle not live: installed=%v enabled=%v", st.Installed, st.Enabled)
-	}
-	if len(st.Inputs) != 1 || st.Inputs[0].Name != "connector" || st.Inputs[0].Kind != beeperConfigType {
-		t.Fatalf("status inputs = %+v, want the one connector input", st.Inputs)
-	}
-	if st.Inputs[0].Record != "" || st.Inputs[0].Via != "" {
-		t.Fatalf("connector input resolved with no config record created: %+v", st.Inputs[0])
-	}
-	if len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupMissing || st.Setup[0].Input != "connector" {
-		t.Fatalf("status setup = %+v, want the one missing-input item", st.Setup)
-	}
-	if st.Functions != 1 {
-		t.Fatalf("status functions = %d, want 1", st.Functions)
-	}
+	assertUnresolvedInput(t, ds, beeperPackage, "connector", beeperConfigType, 1)
 	for _, id := range []string{"beeper-messages-on-connect", "beeper-messages-scheduled"} {
 		row, err := ds.Get(ctx, typeTrigger, id)
 		if err != nil {
@@ -541,7 +431,7 @@ func TestBeeperBundleInstallsAndSyncs(t *testing.T) {
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: beeperConfigType, ID: "beeper-config",
 		Properties: map[string]any{
-			"homeserverUrl": f.srv.URL,
+			"homeserverUrl": f.ts.URL,
 			"accessToken":   beeperFakeToken,
 		},
 	}); err != nil {
@@ -588,7 +478,7 @@ func TestBeeperBundleInstallsAndSyncs(t *testing.T) {
 		if got := room.Properties["network"]; got != wantNet {
 			t.Fatalf("room %02d network = %v, want %s", i, got, wantNet)
 		}
-		if got := storedReferencePath(room.Properties["account"]); got != beeperAccountType+"/"+acctID {
+		if got := storedRefPath(room.Properties["account"]); got != beeperAccountType+"/"+acctID {
 			t.Fatalf("room %02d account = %v", i, got)
 		}
 	}
@@ -673,7 +563,7 @@ func TestBeeperBundleInstallsAndSyncs(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("set roomFilter: %v", err)
 	}
-	beeperResync(t, ds, acctID)
+	resyncAccount(t, ds, beeperAccountType, acctID)
 
 	room0, err := ds.Get(ctx, beeperRoomType, runner.ExternalID("beeper", acctID, beeperRoomID(0)))
 	if err != nil {
@@ -721,7 +611,7 @@ func TestBeeperBundleInstallsAndSyncs(t *testing.T) {
 	// written, bounded, delivery completed — instead of freezing the status
 	// at its last value while the chain parks.
 	f.setFail(true)
-	beeperResync(t, ds, acctID)
+	resyncAccount(t, ds, beeperAccountType, acctID)
 	acct, err = ds.Get(ctx, beeperAccountType, acctID)
 	if err != nil {
 		t.Fatalf("get account: %v", err)
@@ -744,10 +634,9 @@ func TestBeeperBundleInstallsAndSyncs(t *testing.T) {
 // page cap: every /messages page returns three fresh events and another end
 // token, until finish() flips it to a drained history.
 type beeperCapFake struct {
-	t   *testing.T
-	srv *httptest.Server
+	fakeAPI
+	t *testing.T
 
-	mu       sync.Mutex
 	finished bool
 	pageSeq  int
 	froms    []string
@@ -818,8 +707,7 @@ func newBeeperCapFake(t *testing.T) *beeperCapFake {
 			"chunk": chunk, "end": fmt.Sprintf("end-%d", page),
 		})
 	})
-	f.srv = httptest.NewServer(mux)
-	t.Cleanup(f.srv.Close)
+	f.serve(t, mux)
 	return f
 }
 
@@ -846,21 +734,16 @@ func (f *beeperCapFake) lastFrom() string {
 // clears the pending state.
 func TestBeeperBundleBackfillCapResumes(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the sync body warms through uv at install")
-	}
+	requireUV(t)
 	ctx := context.Background()
-	ds := openInternalDataset(t)
+	_, ds := newDataset(t)
 	beeperInstall(t, ds)
 
 	f := newBeeperCapFake(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: beeperConfigType, ID: "beeper-config",
 		Properties: map[string]any{
-			"homeserverUrl": f.srv.URL,
+			"homeserverUrl": f.ts.URL,
 			"accessToken":   beeperFakeToken,
 		},
 	}); err != nil {
@@ -909,7 +792,7 @@ func TestBeeperBundleBackfillCapResumes(t *testing.T) {
 	// The next run RESUMES from exactly the recorded token, finds the
 	// history's end, and clears the pending state.
 	f.finish()
-	beeperResync(t, ds, acctID)
+	resyncAccount(t, ds, beeperAccountType, acctID)
 	if got := f.lastFrom(); got != "end-20" {
 		t.Fatalf("the resumed walk started from %q, want the recorded end-20", got)
 	}

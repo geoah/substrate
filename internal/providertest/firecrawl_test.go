@@ -1,4 +1,4 @@
-package engine
+package providertest
 
 // The Firecrawl bundle — a CAPABILITY BUNDLE (web search + scraping as
 // callable agent tools), not an account integration. Two proofs, from the
@@ -28,20 +28,17 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"os/exec"
 	"strings"
 	"sync/atomic"
 	"testing"
 
-	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 const (
-	firecrawlExampleDir = "../../samples/firecrawl"
+	firecrawlDir        = samplesDir + "/firecrawl"
 	firecrawlPackage    = "samples.substrate.reamde.dev/firecrawl"
 	firecrawlConfigType = firecrawlPackage + "/config"
 	firecrawlDocType    = firecrawlPackage + "/webdocument"
@@ -58,57 +55,19 @@ const (
 // rule the loader enforces at admission time.
 func TestFirecrawlBundleAdmitsSchema(t *testing.T) {
 	t.Parallel()
-	// The registry an install actually admits into: the seeded tree (core
-	// alone) plus the shipped VOCABULARY bundles this repository imported —
-	// what a closure declaring onto people/tasks/messaging/calendar/media
-	// needs present, and what `requires:` names.
-	reg, err := enginetest.SeededRegistry(CoreKindsDir)
-	if err != nil {
-		t.Fatalf("build the repository registry: %v", err)
-	}
-	data, err := os.ReadFile(firecrawlExampleDir + "/bundle.yaml")
-	if err != nil {
-		t.Fatalf("read bundle.yaml: %v", err)
-	}
-	docs, err := vocabulary.ParseStream(data)
-	if err != nil {
-		t.Fatalf("parse bundle.yaml: %v", err)
-	}
-	authorities, err := vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
-	if err != nil {
-		t.Fatalf("build the bundle authority: %v", err)
-	}
-	if err := reg.InstallAll(authorities); err != nil {
-		t.Fatalf("the bundle closure did not admit: %v", err)
-	}
+	reg := bundleRegistry(t, firecrawlDir)
 
 	// The bundle exists, it declares the one `connector` input injected into
 	// its functions, and it ships no oauth2 manifest block — a capability
 	// bundle, not an integration.
-	b, ok := reg.BundleOf(firecrawlPackage)
-	if !ok {
-		t.Fatalf("no bundle owns %s after install", firecrawlPackage)
-	}
-	in, ok := b.Inputs["connector"]
-	if !ok {
-		t.Fatalf("bundle declares no connector input: %v", b.InputOrder)
-	}
-	if in.Kind != firecrawlConfigType {
-		t.Fatalf("connector input kind = %q, want %q", in.Kind, firecrawlConfigType)
-	}
-	if in.Inject != vocabulary.BundleInputInjectFunctions {
-		t.Fatalf("connector input inject = %q, want %q", in.Inject, vocabulary.BundleInputInjectFunctions)
-	}
+	b := assertBundleInput(t, reg, firecrawlPackage, "connector", firecrawlConfigType, vocabulary.BundleInputInjectFunctions)
 	if b.OAuth2 != nil {
 		t.Fatalf("bundle carries an oauth2 block — a bearer-key bundle declares no OAuth client")
 	}
 
 	// The config type: deliberately neither oauth2 (no client creds) nor
 	// accountconfig (no per-user accounts).
-	cfg, ok := reg.ByIdentity(firecrawlConfigType)
-	if !ok {
-		t.Fatalf("config type %s missing", firecrawlConfigType)
-	}
+	cfg := mustKind(t, reg, firecrawlConfigType)
 	if cfg.Implements(vocabulary.TraitOAuth2Core) {
 		t.Fatalf("%s implements oauth2 — the apiKey is a bearer token, not an OAuth client", firecrawlConfigType)
 	}
@@ -132,10 +91,7 @@ func TestFirecrawlBundleAdmitsSchema(t *testing.T) {
 	// The webdocument type carries the scrape's durable shape, every mirror
 	// property labeled (fleet review F7). `title` stays the reserved
 	// built-in — never a declared property.
-	doc, ok := reg.ByIdentity(firecrawlDocType)
-	if !ok {
-		t.Fatalf("document type %s missing", firecrawlDocType)
-	}
+	doc := mustKind(t, reg, firecrawlDocType)
 	for _, name := range []string{"url", "content", "truncated", "fetchedAt", "raw"} {
 		p, ok := doc.Prop(name)
 		if !ok {
@@ -187,14 +143,9 @@ func TestFirecrawlBundleAdmitsSchema(t *testing.T) {
 // host is the only runtime requirement.
 func TestFirecrawlBundleCallsTools(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not on PATH — the bodies register into the shared host")
-	}
+	requirePython(t)
 	ctx := context.Background()
-	ds := openInternalDataset(t)
+	_, ds := newDataset(t)
 
 	// The fake Firecrawl: bearer-checked /v2/search and /v2/scrape. The first
 	// scrape answers markdown far past the 24000-char cap; the second answers
@@ -248,25 +199,17 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 
 	// The atomic install from the shipped manifest — bundle.yaml ALONE: the
 	// closure ships zero triggers, and it admits.
-	vocabularyDocs := loadYAMLDocs(t, firecrawlExampleDir+"/bundle.yaml")
+	vocabularyDocs := loadDocs(t, firecrawlDir+"/bundle.yaml")
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, vocabularyDocs); err != nil {
 		t.Fatalf("install the firecrawl bundle: %v", err)
 	}
-	for id, wantType := range map[string]string{
-		firecrawlPackage:    "substrate.reamde.dev/core/bundle",
-		firecrawlConfigType: "substrate.reamde.dev/core/kind",
-		firecrawlDocType:    "substrate.reamde.dev/core/kind",
-		firecrawlSearchFn:   "substrate.reamde.dev/core/function",
-		firecrawlScrapeFn:   "substrate.reamde.dev/core/function",
-	} {
-		row, err := ds.Get(ctx, wantType, id)
-		if err != nil {
-			t.Fatalf("member %s did not install: %v", id, err)
-		}
-		if row.Kind != wantType {
-			t.Fatalf("member %s is a %s, want %s", id, row.Kind, wantType)
-		}
-	}
+	assertMembers(t, ds, map[string]string{
+		firecrawlPackage:    typeBundle,
+		firecrawlConfigType: typeKind,
+		firecrawlDocType:    typeKind,
+		firecrawlSearchFn:   typeFunction,
+		firecrawlScrapeFn:   typeFunction,
+	})
 	st, err := ds.BundleStatus(ctx, firecrawlPackage)
 	if err != nil {
 		t.Fatalf("bundle status: %v", err)
@@ -317,7 +260,7 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 			t.Fatalf("%s against a hostile baseUrl applied %d effects", fn, applied)
 		}
 	}
-	if n := countLiveOf(t, ds, firecrawlDocType); n != 0 {
+	if n := countLive(t, ds, firecrawlDocType); n != 0 {
 		t.Fatalf("a refused call minted %d webdocuments", n)
 	}
 
@@ -348,7 +291,7 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 	if n := scrapes.Load(); n != 0 {
 		t.Fatalf("an invalid url reached the provider %d times — validation must run before the call", n)
 	}
-	if n := countLiveOf(t, ds, firecrawlDocType); n != 0 {
+	if n := countLive(t, ds, firecrawlDocType); n != 0 {
 		t.Fatalf("an invalid url minted %d webdocuments — validation must run before hashing", n)
 	}
 
@@ -370,7 +313,7 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 		first["snippet"] != "the primitive set, end to end" {
 		t.Fatalf("websearch first hit: %v", first)
 	}
-	if n := countLiveOf(t, ds, firecrawlDocType); n != 0 {
+	if n := countLive(t, ds, firecrawlDocType); n != 0 {
 		t.Fatalf("websearch minted %d webdocuments", n)
 	}
 
@@ -431,7 +374,7 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 		t.Fatalf("re-scrape shape: truncated=%v version %d -> %d",
 			updated.Properties["truncated"], doc.Version, updated.Version)
 	}
-	if n := countLiveOf(t, ds, firecrawlDocType); n != 1 {
+	if n := countLive(t, ds, firecrawlDocType); n != 1 {
 		t.Fatalf("re-scrape left %d webdocuments, want the one", n)
 	}
 }

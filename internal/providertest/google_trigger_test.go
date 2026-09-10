@@ -1,12 +1,7 @@
-package engine
+package providertest
 
 import (
-	"context"
-	"fmt"
-	"os/exec"
 	"testing"
-
-	"github.com/geoah/substrate/internal/runner"
 )
 
 // The record-triggered branch: an on-connect delivery names ONE account in its
@@ -22,22 +17,15 @@ import (
 // synced at all. Nothing covered it, which is why the rename did not catch it.
 func TestGoogleRecordTriggerSyncsOnlyTheNamedAccount(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	if _, err := exec.LookPath("uv"); err != nil {
-		t.Skip("uv not on PATH — the closure's contacts body warms through uv at install")
-	}
+	requireUV(t)
 	fake := newFakeGmail(t)
 	fake.listed = []string{"m1"}
 	fake.msgs["m1"] = gmailMessage("m1", "t-m1", "Rack layout",
 		"alice@example.com", "ada@example.com", "1754820000000", "hi")
 	fake.start(t)
 
-	ds := openInternalDataset(t)
-	googleInstallRewired(t, ds, func(docs []map[string]any) {
-		googlePointGmailAt(docs, fake.ts.URL)
-	})
+	_, ds := newDataset(t)
+	googleInstall(t, ds, gmailAPIAt(fake.ts.URL))
 
 	googleSeedAccount(t, ds, "acct-named")
 	googleSeedAccount(t, ds, "acct-other")
@@ -61,21 +49,23 @@ func TestGoogleRecordTriggerSyncsOnlyTheNamedAccount(t *testing.T) {
 	envelope := map[string]any{
 		"change": map[string]any{
 			"seq": int64(1), "op": "update", "id": "acct-named",
-			"kind": googlePackage + "/account",
+			"kind": googleAccountType,
 		},
 		"record": map[string]any{
-			"id": "acct-named", "kind": googlePackage + "/account",
+			"id": "acct-named", "kind": googleAccountType,
 			"properties": gmailStepProps(nil),
 		},
 		"repository": map[string]any{"owner": "test"},
 	}
 
-	effects := drainGoogleDelivery(t, ds, googleGmailFn, cfg, envelope)
+	s := newStepper(t, ds, googleGmailFn, cfg)
+	s.setEnvelope(envelope)
+	effects := s.drainApplying(nil)
 
 	stamped := map[string]bool{}
 	for i := range effects {
 		ef := &effects[i]
-		if ef.Action == "patch" && ef.Type == googleAccountType {
+		if ef.Action == "patch" && ef.Kind == googleAccountType {
 			stamped[ef.ID] = true
 		}
 	}
@@ -83,49 +73,7 @@ func TestGoogleRecordTriggerSyncsOnlyTheNamedAccount(t *testing.T) {
 		t.Fatalf("the account the envelope named was not synced; stamps: %v", stamped)
 	}
 	if stamped["acct-other"] {
-		t.Fatalf("an record-triggered delivery synced an account the envelope did not name; "+
+		t.Fatalf("a record-triggered delivery synced an account the envelope did not name; "+
 			"stamps: %v", stamped)
-	}
-}
-
-// drainGoogleDelivery runs a DELIVERY (envelope carried on every page of the
-// chain, the way the dispatcher does it) to completion, applying each page's
-// effects, and returns every effect the run produced.
-func drainGoogleDelivery(t *testing.T, ds *dataset, fnID string,
-	cfg, envelope map[string]any,
-) []effect {
-	t.Helper()
-	fn, err := ds.registry().ResolveFunction(fnID)
-	if err != nil {
-		t.Fatalf("resolve %s: %v", fnID, err)
-	}
-	s := &googleStepper{t: t, ds: ds, fn: fn, cfg: cfg}
-	var all []effect
-	var resume any
-	for i := 0; ; i++ {
-		if i > 40 {
-			t.Fatalf("the paged chain did not drain in 40 steps")
-		}
-		s.n++
-		effects, _, more, err := ds.runCallableRaw(context.Background(), fn, runner.Input{
-			Mode:           runner.ModeCall,
-			Config:         cfg,
-			Envelope:       envelope,
-			Resume:         resume,
-			IdempotencyKey: fmt.Sprintf("test/googledelivery/%d", s.n),
-		})
-		if err != nil {
-			t.Fatalf("delivery step %d: %v", s.n, err)
-		}
-		all = append(all, effects...)
-		s.apply(effects)
-		if more == nil {
-			return all
-		}
-		cur, ok := more.Cursor.(map[string]any)
-		if !ok {
-			t.Fatalf("delivery step %d: cursor is a %T, want an object", s.n, more.Cursor)
-		}
-		resume = cur
 	}
 }

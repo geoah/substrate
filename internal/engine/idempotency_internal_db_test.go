@@ -15,6 +15,16 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
+// mustGetInternal is Get with the error folded into the test.
+func mustGetInternal(t *testing.T, ds *dataset, kind, id string) *substrate.Record {
+	t.Helper()
+	row, err := ds.Get(context.Background(), kind, id)
+	if err != nil {
+		t.Fatalf("get %s %s: %v", kind, id, err)
+	}
+	return row
+}
+
 func keyRows(t *testing.T, ds *dataset, key string) int {
 	t.Helper()
 	var n int

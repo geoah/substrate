@@ -686,14 +686,8 @@ func (ds *dataset) deliver(ctx context.Context, tr *trigger, ch substrate.Change
 	res = settledResult(advance, effectsSummary(effects), 1)
 	err = ds.inTx(ctx, actor, false, func(t *txn) error {
 		t.causedBy = ch.Seq
-		t.setEffectEmit(tr.Callable.Caps.Emit)
-		if err := t.lockEffectTargets(effects); err != nil {
+		if err := t.applyEffects(tr.Callable.Caps.Emit, effects); err != nil {
 			return err
-		}
-		for _, ef := range effects {
-			if err := t.applyEffect(ef); err != nil {
-				return err
-			}
 		}
 		return settle.settle(t, res)
 	})
@@ -1049,14 +1043,8 @@ func (ds *dataset) functionFire(ctx context.Context, tr *trigger, mode, fid stri
 	}
 	res := settledResult(false, effectsSummary(effects), 1)
 	err = ds.inTx(ctx, actor, false, func(t *txn) error {
-		t.setEffectEmit(tr.Callable.Caps.Emit)
-		if err := t.lockEffectTargets(effects); err != nil {
+		if err := t.applyEffects(tr.Callable.Caps.Emit, effects); err != nil {
 			return err
-		}
-		for _, ef := range effects {
-			if err := t.applyEffect(ef); err != nil {
-				return err
-			}
 		}
 		return settle.settle(t, res)
 	})
@@ -1359,14 +1347,8 @@ func (ds *dataset) pagedDrain(ctx context.Context, fn *vocabulary.Function, base
 		merged := mergedSummary(summary, effects)
 		err := ds.inTx(ctx, actor, false, func(t *txn) error {
 			t.causedBy = causedBy
-			t.setEffectEmit(emit)
-			if err := t.lockEffectTargets(effects); err != nil {
+			if err := t.applyEffects(emit, effects); err != nil {
 				return err
-			}
-			for _, ef := range effects {
-				if err := t.applyEffect(ef); err != nil {
-					return err
-				}
 			}
 			if done {
 				// Drained: drop the resume cursor — under the SAME version
