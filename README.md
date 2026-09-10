@@ -383,6 +383,8 @@ mise tasks              # everything else
 `docker compose up` builds an image; `mise run dev` runs the binary from the
 tree, so a change is a restart rather than a rebuild. Registration is
 one-shot per user, so testing it twice means `mise run dev:wipe`.
+[docs/running-locally.md](docs/running-locally.md) has what those tasks set and
+where the local state lives.
 
 [AGENTS.md](AGENTS.md) is the working guide for anyone, person or agent,
 changing this code: the model in one paragraph, every task, and the house

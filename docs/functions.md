@@ -190,23 +190,19 @@ body. Core ships five of them, and they are the agent
 | `substrate.reamde.dev/core/ask` | lands one `llminteraction` carrying a batch of at most eight questions for the user; it returns the record id, not the answer, which arrives in a later turn |
 
 They are **ordinary function records**: seeded into every new repository,
-delivered to an existing one by the [boot upgrade](vocabulary.md), listed in the
-`functions` collection, and named by an agent under `function:` like any other
-function. They used to be engine constants and a `tools: [{builtin: query}]` arm
-— the one thing an agent could name that no record declared.
-
-**The declaration is the card.** The `description` and the `arguments:` on each
-of the five are what the model is shown, rendered from the declaration by the
-same code that renders a bundle function's, so changing what an LLM reads about
+delivered to an existing one by the [boot upgrade](vocabulary.md), listed in
+the `functions` collection, and named by an agent under `function:` like any
+other function. Their declarations are
+`kinds/substrate.reamde.dev/core/hostfunctions.yaml`, and the `description` and
+`arguments:` there are exactly what a model is shown, rendered by the same code
+that renders a bundle function's card: changing what an LLM reads about
 `graphql` is a record write and not a release.
 
-**The grant is the caller's**, which is what the empty write permission and the absent
-`permissions.reads` on three of them mean: `query` is held to the calling agent's reads,
+**The grant is the caller's.** `query` is held to the calling agent's reads,
 `mutate` to its effective emit, and `graphql` needs no grant at all because
 declaring it *is* the grant (there is no narrower scope to state over a whole
 repository). `propose` and `ask` each carry a `permissions.writes` of their
-own, because each writes one kind and always the same one: `propose` a
-`recordpatchrequest`, `ask` an `llminteraction`.
+own, because each writes one kind and always the same one.
 
 That is also what decides **where each is callable**:
 
@@ -220,15 +216,14 @@ That is also what decides **where each is callable**:
   borrow grants from, so the row is refused at admission rather than parked
   forever, and the refusal names the same shape: an agent carrying the tool,
   with the trigger targeting the agent.
-- **As another function's `permissions.call` target**, none: a function body has no grants
-  to lend, so naming one is a load error.
+- **As another function's `permissions.call` target**, none: a function body
+  has no grants to lend, so naming one is a load error.
 
 Two smaller rules follow. A host function is admissible **only from the shipped
-build** — the engine implements what the engine ships, so a bundle or an owner
-declaring one would name a body nothing has — and a **bare name never resolves
-to one**. The five are named for what they do, which is exactly what a
-repository's own function is likeliest to be called, so `query` keeps meaning
-the user's `query` and the built-in answers its full reference.
+build**, so a bundle or an owner declaring one is refused, and a **bare name
+never resolves to one**: the five are named for what they do, which is exactly
+what a repository's own function is likeliest to be called, so `query` keeps
+meaning the user's `query` and the built-in answers its full reference.
 
 ## The delivery envelope
 
@@ -492,105 +487,84 @@ a verified no-op, and any other state is a conflict that parks.
 ## The SDK
 
 The runner passes one `host` object to every body: a namespaced surface whose
-multi-field calls take keyword arguments (`host.effects.put(kind, id, …)`).
+multi-field calls take keyword arguments. The SDK is
+`internal/runner/host.py`, and its docstrings are the reference for each call.
+The whole surface:
 
-**Reads.** `host.records.get(kind, id)`, `host.records.list(kinds, where?,
-first?, after?, order?)`, `host.records.search(q, kinds, k?, mode?)` (`mode` is
-`lexical`, `semantic` or `hybrid`, and defaults to `hybrid`; the answer is the
-hits with `pending` beside them, the number of properties the drain has yet to
-buy vectors for, carried on the returned list as `.pending`), and
-`host.functions.call(function, input?)`. `get` addresses one record by its full
-reference, the (kind, id) pair; a bare id names nothing and the frame is
-refused. Reads see committed state, never this delivery's own staged effects,
-so a local overlay can never lie. A forbidden kind answers exactly like an
-absent id (same nil shape, same budget charge), so a disallowed `get` is never
-an existence or kind oracle. Reads are held to the `permissions.reads` grant:
-with no `reads:` block the allowlist is empty, so every `list` and `search` is
-refused and every `get` answers absent. Calls are charged before they run,
-`first` and `k` clamp to the remaining row budget, and returned rows charge on
-top. `host.version(record)` returns a read's version as an integer, which is
-what `if_version` takes, so a read feeds a guarded write directly.
+```python
+host.records.get(kind, id)                        # the record, or None
+host.records.list(kinds, where=None, first=None, after=None, order=None)
+host.records.search(q, kinds, k=None, mode=None)  # hits, with .pending beside them
+host.functions.call(function, input=None)         # permissions.call gated
+host.effects.put(kind, id, properties=None, if_absent=False, if_version=...)
+host.effects.patch(kind, id, properties=None, if_version=...)
+host.effects.delete(kind, id)
+host.effects.merge(kind, id, loser)
+host.effects.split(kind, merge)
+host.effects.propose(id, target_kind, target_id, diff=None, op="patch", rationale=None)
+host.ids.external(provider, account, external_id)
+host.ids.url(url)
+host.page.resume()                                # the previous page's cursor
+host.page.more(cursor)                            # the continuation to return
+host.version(record)                              # an int, for if_version
+host.config()
+host.log(msg)
+```
 
-**Writes, the buffered-effects builder.** `host.effects.put(kind, id,
-properties?, if_absent?, if_version?)`, `.patch(kind, id, properties?,
-if_version?)`, `.delete(kind, id)`, `.merge(kind, id, loser)` and
-`.split(kind, merge)` each append a staged effect to a write-only buffer and
-return a staged-effect handle, never a record and never a value to inspect.
-There is no `flush()`: the buffer is the return. The builder validates shape
-locally against the engine's own alphabets (a URL-safe id, a kind reference, a
-boolean `if_absent`, a
-non-negative integer `if_version`, no self-merge) and snapshot-copies caller
-maps through JSON, so a mistake is a clear body error rather than an engine
-park. The action needs no checking: it is the method you called. The engine
-stays authoritative for the emit ceiling and kind admission.
+The `effects` calls stage into a write-only buffer and return a handle, never
+a record: there is no `flush()`, the buffer is the return, and a body either
+returns an explicit `effects` list **or** stages on the builder, never both.
+The builder validates shape locally so a mistake is a body error rather than an
+engine park; the rest is the engine's half, and this is what it holds bodies
+to.
 
-**Proposing instead of writing.**
-`host.effects.propose(id, target_kind, target_id, diff?, op?, rationale?)`
-stages a change the **owner** decides on rather than one that lands: the effect
-is an ordinary put of a `substrate.reamde.dev/core/recordpatchrequest`, and
-accepting it is what applies the change. `id` is the request's own id, so a
-replayed delivery re-proposes the same request instead of a second one; `op` is
-`patch` (the default), `create` or `delete`; `target_kind`/`target_id` name the
-record the change is about — the existing target of a patch or delete, the
-record a create would mint; and `diff` carries the proposed values, wrapped
-under `properties` or as a plain property map the engine wraps. A `delete`
-carries no diff at all, and passing one is refused rather than dropped. A
-proposing function names the **request** kind in its `permissions.writes` and
-nothing else: it is not writing the target, it is asking. The diff is validated
-against the target kind at admission, so a malformed proposal is a refused
-write the delivery parks on, never a request the owner cannot accept — and
-because the request id is the body's own, a replayed delivery re-proposes the
-same request as a verified no-op.
+**Reads are scoped and budgeted.** Reads see committed state, never this
+delivery's own staged effects, so a local overlay can never lie. They are held
+to the `permissions.reads` grant: with no `reads:` block the allowlist is
+empty, so every `list` and `search` is refused and every `get` answers absent.
+A forbidden kind answers exactly like an absent id, same nil shape and same
+budget charge, so a disallowed `get` is never an existence or kind oracle.
+Calls are charged before they run, `first` and `k` clamp to the remaining row
+budget, and returned rows charge on top.
 
-**One mode per invocation.** A body **either** returns an explicit `effects`
-list **or** stages on the builder, never both. The two apply orders are
-unrelated (returned first, then staged) and could reverse writes or
-self-conflict under the version check, so a result carrying explicit effects
-while the buffer is non-empty is refused outright, naming both counts. The
-example above stages on the builder and returns no `effects` key.
+**Writes are held to the declaration.** The engine stays authoritative for the
+emit ceiling and kind admission, on a staged effect exactly as on a returned
+one ([effects](#effects)). A proposing function names the
+`recordpatchrequest` kind in its `permissions.writes` and nothing else: it is
+not writing the target, it is asking. The diff is validated against the target
+kind at admission, so a malformed proposal is a refused write the delivery
+parks on, never a request the owner cannot accept.
 
-**Deterministic ids.** `host.ids.external(provider, account, external_id)` and
-`host.ids.url(url)` produce stable, URL-safe, hash-backed ids. A deterministic
-id is scoped to one kind: the same derived id used for two different kinds
-names two independent records, so the writer names the kind on every put and
-get that uses it. `ids.url` hashes the exact URL with only
-surrounding-whitespace trimming and no canonicalization, so distinct spellings
-are distinct ids by design; a structural canonicalizer, when needed, is a
-separate named helper.
+**A deterministic id is scoped to one kind.** The same derived id used for two
+different kinds names two independent records, so the writer names the kind on
+every put and get that uses it.
 
-**Paging.** `host.page.resume()` returns the opaque cursor the previous page
-returned (absent on a fresh delivery), and `host.page.more(cursor)` builds the
-continuation a paged body returns as its `more`. This is the first-class
-wrapper over the paged-checkpoint protocol, so a body syncing a provider one
-page per invocation stops hand-building cursor dicts. The host drains those
-pages off the causal chain — every re-invocation carries the delivery's
-original causal depth — and each page's effects commit with its cursor, so a
-backfill of any length runs at constant depth and a crash mid-drain resumes
-from the last committed page.
+**A paged body runs at constant causal depth.** The host drains the pages off
+the causal chain, every re-invocation carrying the delivery's original causal
+depth, and each page's effects commit with its cursor, so a backfill of any
+length costs one depth and a crash mid-drain resumes from the last committed
+page.
 
-**Configuration and connected accounts.** `host.config()` returns the
-callable's resolved configuration: the owning `bundle`, which is its package
-identity, the bundle's `inject: functions` inputs each resolved to one record
-under `inputs` (keyed by input name; an unresolved input's key is absent), and
-every [connection](bundles.md#connections) the bundle declares under
-`accounts`, each flattened to its id, kind and stored properties. For an OAuth
-bundle the host resolves each account's credential itself and hands the body a
-live `token` on the account entry, or a `tokenError` string when the grant is
-dead, so one broken account never parks the whole delivery. The OAuth
-facility's own secrets, the client record's `clientSecret` and an account's
-`tokenRef`, are never injected: a body gets the resolved token and nothing it
-could exfiltrate a credential with. Every injected secret value is scrubbed out
-of whatever crosses back over the runner boundary.
+**`host.config()` resolves the callable's configuration.** It carries the
+owning `bundle`, which is its package identity, the bundle's
+`inject: functions` inputs each resolved to one record under `inputs` (an
+unresolved input's key is absent), and every
+[connection](bundles.md#connections) the bundle declares under `accounts`,
+each flattened to its id, kind and stored properties. For an OAuth bundle the
+host resolves each account's credential itself and hands the body a live
+`token` on the account entry, or a `tokenError` string when the grant is dead,
+so one broken account never parks the whole delivery. The OAuth facility's own
+secrets, the client record's `clientSecret` and an account's `tokenRef`, are
+never injected, and every injected secret value is scrubbed out of whatever
+crosses back over the runner boundary.
 
-**Logging.** `host.log(msg)` records a line on the invocation's run record.
-Lines are truncated at 4096 characters and capped at 200 per invocation, with
-the remainder counted rather than kept, so a chatty body cannot flood the
-record.
-
-**Frames and ceilings.** One message between a body and the runner is a single
-JSON line capped at **8 MiB**. A response that would exceed it is replaced by a
-clear error rather than a truncated frame, which is the real reason a body that
-walks a provider pages instead of returning everything at once.
+**Two ceilings.** `host.log(msg)` records a line on the invocation's run
+record, truncated at 4096 characters and capped at 200 lines per invocation
+with the remainder counted rather than kept. One message between a body and the
+runner is a single JSON line capped at **8 MiB**, and a response that would
+exceed it is replaced by a clear error rather than a truncated frame, which is
+the real reason a body that walks a provider pages instead of returning
+everything at once.
 
 ## Host call
 

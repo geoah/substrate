@@ -5,8 +5,9 @@ compiled into the binary. This page takes it from there to a task you can read
 back, in four moves: register, log in, write a record, watch it land.
 
 You need a running substrate and its invite code.
-[Running a substrate](operations.md) covers standing one up; if somebody else
-runs yours, they hand you the address and the code.
+[Running one locally](running-locally.md) stands one up on your own machine and
+[running a substrate](operations.md) is the deployment; if somebody else runs
+yours, they hand you the address and the code.
 
 ## Registration needs an invite code
 

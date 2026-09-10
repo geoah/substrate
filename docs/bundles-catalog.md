@@ -129,13 +129,11 @@ kind to practise on and six agents:
   summarizer is `hiddenFromChat`: off the chat list, callable only by other
   agents.
 
-Importing it gives you rows that refuse until you key them. The key is a
-record write: **Data → llmproviders → `anthropic` → Edit**, put it in `apiKey`,
-apply. It is secret-typed, so it reads back redacted from then on and rotating
-it is the same write again. The `openai` row is the other wire, pointed at
-`https://api.openai.com/v1` and re-pointable at any gateway that speaks it;
-an `openai` row needs a `baseURL`, and every row needs its own `apiKey`:
-[providers](agents.md#providers) has the wires and pricing.
+Importing it gives you two rows that refuse until you key them: `anthropic` on
+its own wire and `openai` pointed at `https://api.openai.com/v1`, re-pointable
+at any gateway that speaks that wire. Keying one is an ordinary record write,
+and [registering a provider](agents.md#registering-a-provider) is where that
+write, the wires and the pricing table are described.
 
 ## Notes (sample)
 
