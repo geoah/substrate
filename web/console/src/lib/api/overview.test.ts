@@ -4,64 +4,8 @@ import {
   authorityCountsQueryOptions,
   recentChangesQueryOptions,
   RECENT_CHANGES_PAGE,
-  Semaphore,
 } from "./overview"
 import type { ChangeRow, KindInfo } from "./types"
-
-function deferred() {
-  let resolve!: () => void
-  const promise = new Promise<void>((r) => {
-    resolve = r
-  })
-  return { promise, resolve }
-}
-
-describe("Semaphore", () => {
-  it("never holds more than `limit` tasks in flight", async () => {
-    const gate = new Semaphore(3)
-    let inFlight = 0
-    let peak = 0
-    const gates = Array.from({ length: 7 }, deferred)
-    const run = Promise.all(
-      gates.map((g) =>
-        gate.run(async () => {
-          inFlight++
-          peak = Math.max(peak, inFlight)
-          await g.promise
-          inFlight--
-        })
-      )
-    )
-    await Promise.resolve()
-    expect(inFlight).toBe(3)
-    for (const g of gates) g.resolve()
-    await run
-    expect(peak).toBe(3)
-  })
-
-  it("returns each task's own result", async () => {
-    const gate = new Semaphore(2)
-    const out = await Promise.all(
-      [3, 1, 2].map((n) =>
-        gate.run(async () => {
-          await new Promise((r) => setTimeout(r, n))
-          return n * 10
-        })
-      )
-    )
-    expect(out).toEqual([30, 10, 20])
-  })
-
-  it("releases the slot when a task throws, and keeps serving", async () => {
-    const gate = new Semaphore(1)
-    await expect(
-      gate.run(async () => {
-        throw new Error("boom")
-      })
-    ).rejects.toThrow("boom")
-    expect(await gate.run(async () => "alive")).toBe("alive")
-  })
-})
 
 // ── the activity read: one flat page ────────────────────────────────────────
 
@@ -155,14 +99,13 @@ describe("authorityCountsQueryOptions", () => {
     expect(opts.staleTime).toBeGreaterThanOrEqual(5 * 60_000)
   })
 
-  it("walks every kind through the shared gate, bounded and in order", async () => {
+  it("probes one kind at a time, in order — a zone holds one connection", async () => {
     const kinds = [
       kindInfo("a", "g.dev"),
       kindInfo("b", "g.dev"),
       kindInfo("c", "g.dev"),
       kindInfo("d", "g.dev"),
     ]
-    const gate = new Semaphore(1)
     let inFlight = 0
     let peak = 0
     const savedFetch = globalThis.fetch
@@ -174,12 +117,13 @@ describe("authorityCountsQueryOptions", () => {
       return new Response(JSON.stringify({ records: [] }), { status: 200 })
     }) as typeof fetch
     try {
-      const opts = authorityCountsQueryOptions("g.dev", kinds, gate)
+      const opts = authorityCountsQueryOptions("g.dev", kinds)
       const out = await opts.queryFn!({ signal: undefined } as never)
       expect(out.map((c) => c.kind.name)).toEqual(["a", "b", "c", "d"])
       expect(out.every((c) => c.count?.value === 0 && !c.count.capped)).toBe(
         true
       )
+      // Four kinds, never two probes at once: the walk is the ceiling.
       expect(peak).toBe(1)
     } finally {
       globalThis.fetch = savedFetch
@@ -200,11 +144,7 @@ describe("authorityCountsQueryOptions", () => {
       }
       return new Response(JSON.stringify({ records: [] }), { status: 200 })
     }) as typeof fetch
-    const opts = authorityCountsQueryOptions(
-      "core.dev",
-      kinds,
-      new Semaphore(2)
-    )
+    const opts = authorityCountsQueryOptions("core.dev", kinds)
     const out = await opts.queryFn!({ signal: undefined } as never)
     expect(out).toEqual([
       { kind: kinds[1], count: { value: 0, capped: false } }, // actor sorts first

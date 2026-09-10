@@ -207,16 +207,3 @@ export function corePath(name: string, id?: string): string {
 export function rootPath(...segments: string[]): string {
   return `${API_BASE}/${segments.map(seg).join("/")}`
 }
-
-/** A sub-resource or action of one record: the record's path, then the
- * sub-resource segments, one level below the id where no id can collide with
- * them (`.../{id}/incoming`, `.../{name}/call`). */
-export function recordSubPath(
-  authority: string,
-  pkg: string,
-  name: string,
-  id: string,
-  ...sub: string[]
-): string {
-  return `${collectionPath(authority, pkg, name)}/${seg(id)}/${sub.map(seg).join("/")}`
-}

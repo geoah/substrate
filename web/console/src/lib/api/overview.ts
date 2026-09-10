@@ -4,12 +4,13 @@
  *
  * - a single recent-changes page (no watch, no paging — a 60s refetch keeps
  *   the dashboard honest without the changelog's live machinery), and
- * - per-authority record counts behind ONE shared concurrency gate. A count is
- *   a bounded keyset walk (countRecords), and the browser gives an origin six
- *   HTTP/1.1 connections — ungated, a repository with dozens of kinds stampedes
- *   the pipe and the other zones queue behind its probes. The gate is
- *   module-level so the ceiling holds across authorities; counts cache for
- *   minutes — the dashboard is a glance, not a ledger. */
+ * - per-authority record counts, walked ONE AT A TIME. A count is a bounded
+ *   keyset walk (countRecords), and the browser gives an origin six HTTP/1.1
+ *   connections; a repository with dozens of kinds firing them all at once
+ *   stampedes the pipe and the other zones queue behind its probes. So each
+ *   authority's zone holds one connection, and the ceiling is the number of
+ *   zones on the page. Counts cache for minutes — the dashboard is a glance,
+ *   not a ledger. */
 
 import { queryOptions } from "@tanstack/react-query"
 
@@ -34,34 +35,6 @@ export function recentChangesQueryOptions() {
   })
 }
 
-// ── bounded concurrency ─────────────────────────────────────────────────────
-
-/** A counting semaphore: at most `limit` tasks run at once; the rest wait
- * their turn in FIFO order. One instance shared across queries is what makes
- * the ceiling global — TanStack Query fires every mounted queryFn eagerly. */
-export class Semaphore {
-  private active = 0
-  private readonly waiters: Array<() => void> = []
-  private readonly limit: number
-
-  constructor(limit: number) {
-    this.limit = limit
-  }
-
-  async run<T>(task: () => Promise<T>): Promise<T> {
-    if (this.active >= this.limit) {
-      await new Promise<void>((resolve) => this.waiters.push(resolve))
-    }
-    this.active++
-    try {
-      return await task()
-    } finally {
-      this.active--
-      this.waiters.shift()?.()
-    }
-  }
-}
-
 // ── per-authority record counts ─────────────────────────────────────────────
 
 export interface KindCount {
@@ -72,20 +45,12 @@ export interface KindCount {
   count?: RecordCount
 }
 
-/** Probe walks in flight at once, across the whole dashboard. Each walk is
- * itself serial, so this is also the count zone's whole connection budget —
- * three of the browser's six, leaving the pipe open for the other zones. */
-export const COUNT_CONCURRENCY = 3
-
-const countGate = new Semaphore(COUNT_CONCURRENCY)
-
 /** All of one authority's kind counts as one cached answer, name-sorted like
  * the sidebar. Cached for minutes: counts back a glanceable zone, and every
  * tile is a door into the browse where the count is exact and fresher. */
 export function authorityCountsQueryOptions(
   authority: string,
-  kinds: KindInfo[],
-  gate: Semaphore = countGate
+  kinds: KindInfo[]
 ) {
   const sorted = kinds
     .filter((k) => k.authority === authority)
@@ -100,26 +65,34 @@ export function authorityCountsQueryOptions(
       authority,
       sorted.map((k) => `${k.package}/${k.name}`),
     ],
-    queryFn: ({ signal }) =>
-      Promise.all(
-        sorted.map(async (k): Promise<KindCount> => {
-          try {
-            return {
-              kind: k,
-              count: await gate.run(() =>
-                countRecords(k.authority, k.package, k.name, undefined, signal)
-              ),
-            }
-          } catch (cause) {
-            // An API refusal is that kind's answer ("—"), not the authority's
-            // failure; anything else (network, abort) stays an error.
-            if (cause instanceof ApiError && cause.status >= 400) {
-              return { kind: k }
-            }
-            throw cause
+    queryFn: async ({ signal }) => {
+      const counts: KindCount[] = []
+      // One probe at a time, in the sorted order: a zone holds one connection
+      // however many kinds its authority has.
+      for (const k of sorted) {
+        try {
+          counts.push({
+            kind: k,
+            count: await countRecords(
+              k.authority,
+              k.package,
+              k.name,
+              undefined,
+              signal
+            ),
+          })
+        } catch (cause) {
+          // An API refusal is that kind's answer ("—"), not the authority's
+          // failure; anything else (network, abort) stays an error.
+          if (cause instanceof ApiError && cause.status >= 400) {
+            counts.push({ kind: k })
+            continue
           }
-        })
-      ),
+          throw cause
+        }
+      }
+      return counts
+    },
     staleTime: 5 * 60_000,
   })
 }

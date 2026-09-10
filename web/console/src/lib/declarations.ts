@@ -23,12 +23,12 @@ export const ACTOR_KIND = `${CORE_PACKAGE}/actor`
 export const AGENT_KIND = `${CORE_PACKAGE}/agent`
 export const AUTHORITY_KIND = `${CORE_PACKAGE}/authority`
 export const BUNDLE_KIND = `${CORE_PACKAGE}/bundle`
-export const FUNCTION_KIND = `${CORE_PACKAGE}/function`
+const FUNCTION_KIND = `${CORE_PACKAGE}/function`
 export const KIND_KIND = `${CORE_PACKAGE}/kind`
-export const PACKAGE_KIND = `${CORE_PACKAGE}/package`
-export const PROPERTY_TYPE_KIND = `${CORE_PACKAGE}/propertytype`
-export const RECORD_MAPPING_KIND = `${CORE_PACKAGE}/recordmapping`
-export const TRAIT_KIND = `${CORE_PACKAGE}/trait`
+const PACKAGE_KIND = `${CORE_PACKAGE}/package`
+const PROPERTY_TYPE_KIND = `${CORE_PACKAGE}/propertytype`
+const RECORD_MAPPING_KIND = `${CORE_PACKAGE}/recordmapping`
+const TRAIT_KIND = `${CORE_PACKAGE}/trait`
 
 export const DECLARATION_KINDS: readonly string[] = [
   ACTOR_KIND,

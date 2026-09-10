@@ -148,11 +148,11 @@ const BOOLEAN = new Set(["bool", "boolean"])
 const OBJECT = new Set(["json", "object", "map"])
 const PROSE = new Set(["text", "markdown"])
 
-export function isNumericKind(kind: string): boolean {
+function isNumericKind(kind: string): boolean {
   return NUMERIC.has(kind)
 }
 
-export function isBooleanKind(kind: string): boolean {
+function isBooleanKind(kind: string): boolean {
   return BOOLEAN.has(kind)
 }
 
@@ -491,7 +491,7 @@ function validTimezone(name: string): boolean {
 /** Check ONE value against the declaration's element rules, ignoring whether
  * the property is repeated: a list's item and a scalar property answer to the
  * same datatype. */
-export function checkItem(spec: PropSpec, value: unknown): string | undefined {
+function checkItem(spec: PropSpec, value: unknown): string | undefined {
   if (isObjectKind(spec.kind)) {
     if (spec.kind === "json") {
       return value === undefined ? "expected a value" : undefined

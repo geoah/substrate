@@ -128,7 +128,7 @@ export function mergeBundles(
 /** The Registry's sections: the published packages, the copyable ones, and
  * anything applied outside the shipped catalog, which has no tier to sit
  * under and so is listed on its own rather than guessed into one. */
-export interface BundleSections {
+interface BundleSections {
   providers: BundleRow[]
   samples: BundleRow[]
   applied: BundleRow[]
@@ -538,7 +538,7 @@ export function importFailureText(error: unknown): string {
 }
 
 /** A kind carries a trait when its reconciled declaration lists it. */
-export function hasTrait(kind: KindInfo, trait: string): boolean {
+function hasTrait(kind: KindInfo, trait: string): boolean {
   const traits = (kind.definition as { traits?: unknown } | undefined)?.traits
   return Array.isArray(traits) && traits.includes(trait)
 }
@@ -580,7 +580,7 @@ export interface KindRow {
 /** The kind identities a bundle's declared inputs resolve records of, from the
  * two places a declaration can be read: the computed status (once installed)
  * and the shipped catalog entry (before). */
-export function inputKindsOf(
+function inputKindsOf(
   inputs?: InputStatus[],
   catalog?: CatalogItem
 ): Set<string> {
@@ -687,7 +687,7 @@ export function declaresProviderInterfaces(
 /** The OAuth client input: the declared input whose kind implements the core
  * `oauth2` trait (clientId + clientSecret). The status does not name it, so it
  * is read the way the loader validated it, off the input kinds' traits. */
-export function oauthClientInput(
+function oauthClientInput(
   bundle: Pick<BundleStatus, "inputs">,
   kinds: KindInfo[]
 ): InputStatus | undefined {
@@ -699,7 +699,7 @@ export function oauthClientInput(
 
 /** The setup codes that are an input's own resolution problems; the rest
  * (oauth-client, provider) stand on their own as warning rows. */
-export const INPUT_SETUP_CODES = ["missing", "ambiguous", "dangling"] as const
+const INPUT_SETUP_CODES = ["missing", "ambiguous", "dangling"] as const
 
 export function isInputSetupCode(code: SetupItem["code"]): boolean {
   return (INPUT_SETUP_CODES as readonly string[]).includes(code)

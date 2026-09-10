@@ -2,8 +2,9 @@
  * and its renderer are one module by design; nothing here hot-reloads alone. */
 
 /** THE table system (owner ruling, 2026-08-06): one modular DataTable every
- * big list in the console rides — type browse, changelog, actor log, merge
- * requests, record activity/incoming/provenance, connectors, sync runs.
+ * big list in the console rides — kind browse, the changelog, an authority's
+ * kinds, agents, bundle detail, the registry, and a record's activity,
+ * definition and provenance.
  *
  * Split in two so surfaces differ by config, not code:
  * - `useDataTable` builds the TanStack v9 instance in fully manual mode (the

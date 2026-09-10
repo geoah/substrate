@@ -25,7 +25,7 @@ export interface KeyDocs {
   properties: Record<string, KeyDoc>
 }
 
-export const NO_DOCS: KeyDocs = { properties: {} }
+const NO_DOCS: KeyDocs = { properties: {} }
 
 /** The kind's declaration as the hover vocabulary: every declared property
  * that says anything at all. Built from the SAME registry query the page
