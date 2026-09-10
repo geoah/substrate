@@ -828,8 +828,8 @@ func TestGithubBundleOriginPinRefusal(t *testing.T) {
 		}
 	}
 	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, docs); err != nil {
-		if isUVProvisionError(err) {
-			t.Skipf("bundle install could not warm the PEP 723 body (uv offline?): %v", err)
+		if uvProvisionFailed(err) {
+			t.Skipf("uv could not resolve the closure's PEP 723 dependencies (offline?): %v", err)
 		}
 		t.Fatalf("install the github bundle: %v", err)
 	}
