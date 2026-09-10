@@ -1205,7 +1205,7 @@ func TestATriggerAndAnUpgradeDroppingItsCallableCannotBothLand(t *testing.T) {
 	triggerDone := make(chan error, 1)
 	go func() {
 		_, err := ds.Put(ctx, owner, substrate.PutInput{
-			Kind: "substrate.reamde.dev/core/trigger", ID: "on-w3-barrier",
+			Kind: "substrate.reamde.dev/core/trigger", ID: "on-upgrade-barrier",
 			Properties: map[string]any{
 				"enabled":  true,
 				"source":   map[string]any{"record": map[string]any{"kinds": []any{mbItemType}, "ops": []any{"create"}}},
