@@ -19,6 +19,7 @@ package engine_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -27,6 +28,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
@@ -1098,5 +1100,147 @@ func TestBootUpgradeConvertsARemapOntoARetainedValueNobodyHolds(t *testing.T) {
 	}
 	if got := mustGet(t, ds, provider, "guarded"); got.Properties["wire"] != "openai" {
 		t.Fatalf("the boot did not convert the row: %v", got.Properties)
+	}
+}
+
+func TestBundleUpgradeRefusesDroppingATriggerReferencedAgent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	const wagPackage = "wagent.bundles.substrate.reamde.dev/wagent"
+	configDoc := vocabulary.KindManifest(wagPackage,
+		map[string]any{"singular": "wagconfig"},
+		map[string]any{"properties": map[string]any{
+			"note": map[string]any{"type": "string"},
+		}})
+	agentDoc := vocabulary.AgentManifest(wagPackage, "helper", map[string]any{
+		"description": "a bundled agent", "prompt": "You help.",
+		"provider": "default", "model": "claude-opus-5",
+	})
+	withAgent := []map[string]any{
+		vocabulary.PackageManifest(wagPackage, 0),
+		vocabulary.BundleManifest(wagPackage, map[string]any{
+			"description": "the agent bundle",
+			"installs":    []any{wagPackage + "/wagconfig", wagPackage + "/helper"},
+		}),
+		configDoc, agentDoc,
+	}
+	sa := ds
+	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, withAgent); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "substrate.reamde.dev/core/trigger", ID: "on-wag-helper",
+		Properties: map[string]any{
+			"enabled":  true,
+			"source":   map[string]any{"record": map[string]any{"kinds": []any{wagPackage + "/wagconfig"}, "ops": []any{"create"}}},
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/agent", wagPackage+"/helper"),
+		},
+	})
+
+	// The upgrade drops the agent while the trigger references it: refused.
+	withoutAgent := []map[string]any{
+		vocabulary.PackageManifest(wagPackage, 0),
+		vocabulary.BundleManifest(wagPackage, map[string]any{
+			"description": "the agent bundle",
+			"installs":    []any{wagPackage + "/wagconfig"},
+		}),
+		configDoc,
+	}
+	_, err := sa.ApplyVocabularyDocuments(ctx, owner, withoutAgent)
+	wantErr(t, err, substrate.ErrGuard, "dropping a trigger-referenced agent")
+	if !strings.Contains(err.Error(), "referenced by live trigger") || !strings.Contains(err.Error(), wagPackage+"/helper") {
+		t.Fatalf("agent upgrade refusal: %v", err)
+	}
+	// Rewire the trigger away; the same upgrade then lands.
+	if _, err := ds.Delete(ctx, owner, "substrate.reamde.dev/core/trigger", "on-wag-helper", substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete trigger: %v", err)
+	}
+	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, withoutAgent); err != nil {
+		t.Fatalf("upgrade after rewire: %v", err)
+	}
+}
+
+// The registry-dependency barrier: with an in-flight trigger admission
+// holding the shared side (simulated on a raw connection), the upgrade's
+// dropped-reference check blocks; whatever the interleaving, an upgrade that
+// drops a callable and a trigger create referencing that callable can never
+// BOTH succeed.
+func TestATriggerAndAnUpgradeDroppingItsCallableCannotBothLand(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds, db := newDatasetWithSchemaDB(t)
+	sa := ds
+	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, mbStandardDocs()); err != nil {
+		t.Fatalf("install bundle: %v", err)
+	}
+
+	// The raw shared holder: an admission that validated and has not
+	// committed yet.
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock_shared(`+engine.AdvisoryKeySQL+`)`, ds.Repository().ID+"|registrydep"); err != nil {
+		t.Fatalf("shared lock: %v", err)
+	}
+
+	// The upgrade that drops mark; it must block at the exclusive side.
+	noMark := mbDocs(nil,
+		mbConfigTypeDoc(), mbAccountTypeDoc(), mbItemTypeDoc(), mbMessageTypeDoc(),
+		mbFnDoc("echo", mbEchoSource))
+	upgradeDone := make(chan error, 1)
+	go func() {
+		_, err := sa.ApplyVocabularyDocuments(ctx, owner, noMark)
+		upgradeDone <- err
+	}()
+	select {
+	case err := <-upgradeDone:
+		t.Fatalf("the upgrade committed across a held shared registry lock: %v", err)
+	case <-time.After(500 * time.Millisecond):
+		// Blocked, as it must be.
+	}
+
+	// A trigger create referencing mark races the pending upgrade.
+	triggerDone := make(chan error, 1)
+	go func() {
+		_, err := ds.Put(ctx, owner, substrate.PutInput{
+			Kind: "substrate.reamde.dev/core/trigger", ID: "on-w3-barrier",
+			Properties: map[string]any{
+				"enabled":  true,
+				"source":   map[string]any{"record": map[string]any{"kinds": []any{mbItemType}, "ops": []any{"create"}}},
+				"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", mbMarkFn),
+			},
+		})
+		triggerDone <- err
+	}()
+
+	// Release the in-flight admission; the queued exclusive and shared
+	// holders settle in whatever order Postgres grants them.
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit raw tx: %v", err)
+	}
+	var upgradeErr, triggerErr error
+	select {
+	case upgradeErr = <-upgradeDone:
+	case <-time.After(30 * time.Second):
+		t.Fatal("upgrade never settled")
+	}
+	select {
+	case triggerErr = <-triggerDone:
+	case <-time.After(30 * time.Second):
+		t.Fatal("trigger create never settled")
+	}
+	if upgradeErr == nil && triggerErr == nil {
+		t.Fatal("the upgrade dropped mark AND a trigger referencing mark landed — the barrier failed")
+	}
+	if upgradeErr != nil && triggerErr != nil {
+		t.Fatalf("both sides failed: upgrade %v; trigger %v", upgradeErr, triggerErr)
+	}
+	if upgradeErr != nil && !errors.Is(upgradeErr, substrate.ErrGuard) {
+		t.Fatalf("upgrade refusal: %v", upgradeErr)
+	}
+	if triggerErr != nil && !errors.Is(triggerErr, substrate.ErrValidation) {
+		t.Fatalf("trigger refusal: %v", triggerErr)
 	}
 }

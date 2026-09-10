@@ -1,7 +1,6 @@
 package engine
 
-// The manager tiers as explicit actor data (ticket 002, ruling A10; the
-// original tiers landed for primitives README §6 and wave-1 review #12): an
+// The manager tiers as explicit actor data: a
 // bundle write on a mapped property is a VISIBLE pin — legible in
 // propertyMeta, releasable by the null-patch — never a silent recompute
 // freeze; the tier comes from the ACTOR RECORD (a declared actor's `tier:`
@@ -155,12 +154,11 @@ func wantMeta(t *testing.T, e *substrate.Record, property, manager string, tier 
 	}
 }
 
-// An bundle actor's direct write on a mapped property is a visible
-// EXTENSION pin: the recompute yields exactly as it yields to the owner,
-// propertyMeta says which tier holds it, the fresher source value stays
-// readable as an alternative, and the owner's null-patch releases it — the
-// wave-1 review's silent-freeze (#12), made legible. The actor's tier is its
-// DECLARED attribute (`tier: bundle`), not its spelling.
+// A bundle actor's direct write on a mapped property is a visible pin, not a
+// silent freeze: the recompute yields to it exactly as it yields to the owner,
+// propertyMeta says which tier holds the property, the fresher source value
+// stays readable as an alternative, and the owner's null-patch releases it. The
+// actor's tier is its DECLARED attribute (`tier: bundle`), never its spelling.
 func TestExtensionWriteIsAVisiblePin(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {

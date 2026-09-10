@@ -192,7 +192,7 @@ def main(input, host):
 	}
 }
 
-// Review W2 #2: A calls B, B calls C (which succeeds and emits an effect),
+// A calls B, B calls C (which succeeds and emits an effect),
 // then B fails — target error, effect decode error or output validation
 // error. A CATCHES the failure and returns success. C's effects must have
 // been truncated with B's failure: only A's own effect applies.
@@ -250,7 +250,7 @@ def main(input, host):
 	}
 }
 
-// Review W2 #8: a declared `returns:` validates even an omitted or null
+// A declared `returns:` validates even an omitted or null
 // answer, on BOTH call paths; a function that declares no result side stays
 // open to nil.
 func TestDeclaredOutputRefusesNil(t *testing.T) {
@@ -307,7 +307,7 @@ def main(input, host):
 	}
 }
 
-// Review W2 #9: two calls to the SAME callee in one root invocation carry
+// Two calls to the SAME callee in one root invocation carry
 // two distinct idempotency keys — the caller's stack path plus a
 // per-invocation call ordinal — so an external deduper never folds them.
 func TestRepeatedSubCallsGetDistinctIdempotencyKeys(t *testing.T) {

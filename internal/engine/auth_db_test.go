@@ -682,3 +682,52 @@ func TestInsecureDisableTOTPKeepsASuppliedSeed(t *testing.T) {
 		t.Fatal("a malformed seed was accepted")
 	}
 }
+
+// A token's optional expiry, against the engine: a live one round-trips onto
+// the TokenInfo and the stored record, and a passed one makes Authenticate
+// fail with an auth error — server-enforced, no revoke step.
+func TestTokenExpiryIsServerEnforced(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds := newDataset(t)
+
+	future := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
+	info, secret, err := ds.MintToken(ctx, "scripted", &future)
+	if err != nil {
+		t.Fatalf("mint with an expiry: %v", err)
+	}
+	if info.ExpiresAt == nil || !info.ExpiresAt.Equal(future) {
+		t.Fatalf("minted expiresAt = %v, want %v", info.ExpiresAt, future)
+	}
+
+	_, got, err := svc.Authenticate(ctx, secret)
+	if err != nil {
+		t.Fatalf("authenticate live token: %v", err)
+	}
+	if got.ExpiresAt == nil || !got.ExpiresAt.Equal(future) {
+		t.Fatalf("authenticated expiresAt = %v, want %v", got.ExpiresAt, future)
+	}
+	if got.Label != "scripted" {
+		t.Fatalf("authenticated label = %q", got.Label)
+	}
+	row := mustGet(t, ds, "substrate.reamde.dev/core/token", info.ID)
+	if row.Properties["expiresAt"] == nil {
+		t.Fatalf("token row missing expiresAt: %v", row.Properties)
+	}
+	// The hash is secret-typed: the read surface redacts it, so a token list
+	// can never hand back the digest it authenticates against.
+	if row.Properties["hash"] != "<redacted>" {
+		t.Fatalf("token row exposed its hash: %v", row.Properties["hash"])
+	}
+
+	past := time.Now().Add(-time.Hour).UTC()
+	_, expiredSecret, err := ds.MintToken(ctx, "stale", &past)
+	if err != nil {
+		t.Fatalf("mint expired token: %v", err)
+	}
+	if _, _, err := svc.Authenticate(ctx, expiredSecret); err == nil {
+		t.Fatal("an expired token must not authenticate")
+	} else {
+		wantErr(t, err, substrate.ErrAuth, "expired token")
+	}
+}

@@ -415,3 +415,9 @@ func storedRefPaths(v any) []string {
 	}
 	return out
 }
+
+// refPathValue reads a single-valued reference off a projected record, in
+// either value shape.
+func refPathValue(e *substrate.Record, name string) string {
+	return storedRefPath(e.Properties[name])
+}

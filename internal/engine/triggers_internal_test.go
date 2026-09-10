@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
+	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -89,5 +90,29 @@ func TestTriggerCallableReadsTheReleasedPairAndTheFlatPath(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal must name %q, got: %v", want, err)
 		}
+	}
+}
+
+// TestCoalesceChangesKeysByKindAndID: trigger coalescing keys pending changes
+// by the FULL (kind, id) identity, not the bare id. Two matched kinds that
+// happen to share an id are two distinct records — keying on id alone dropped
+// one delivery while the cursor advanced past it.
+func TestCoalesceChangesKeysByKindAndID(t *testing.T) {
+	// Two changes, identical ids, different kinds: both must survive coalescing.
+	both := coalesceChanges([]substrate.Change{
+		{Seq: 1, Kind: "a.substrate.reamde.dev/a/widget", RecordID: "dup"},
+		{Seq: 2, Kind: "b.substrate.reamde.dev/b/gadget", RecordID: "dup"},
+	})
+	if len(both) != 2 {
+		t.Fatalf("coalesced two distinct (kind, id) records into %d — a delivery was dropped", len(both))
+	}
+
+	// Same (kind, id) repeated: coalescing keeps the LAST, as before.
+	one := coalesceChanges([]substrate.Change{
+		{Seq: 1, Kind: "a.substrate.reamde.dev/a/widget", RecordID: "dup"},
+		{Seq: 2, Kind: "a.substrate.reamde.dev/a/widget", RecordID: "dup"},
+	})
+	if len(one) != 1 || one[0].Seq != 2 {
+		t.Fatalf("same-identity coalescing = %+v, want the last (seq 2) only", one)
 	}
 }

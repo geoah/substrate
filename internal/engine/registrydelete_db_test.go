@@ -83,7 +83,7 @@ func rowLockFree(t *testing.T, ds *dataset, kind, id string) bool {
 func TestADeleteParksAtTheRegistryDepLockBeforeItsRecordLock(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	open, _ := w2Opener(t)
+	open, _ := reopenableWidgetDataset(t)
 	ds := open()
 	const kind = publishPackage + "/token"
 	token := func(props map[string]any) []map[string]any {
@@ -154,7 +154,7 @@ func TestADeleteParksAtTheRegistryDepLockBeforeItsRecordLock(t *testing.T) {
 func TestASplitParksAtTheRegistryDepLockBeforeItsRowLock(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	open, _ := w2Opener(t)
+	open, _ := reopenableWidgetDataset(t)
 	ds := open()
 	const kind = publishPackage + "/badge"
 	badge := func(props map[string]any) []map[string]any {
