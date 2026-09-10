@@ -5,9 +5,10 @@ package engine
 // global lock order: registry-dep < subject-kind < record. Each test holds the
 // lock that comes FIRST in that order and proves the racing transaction parks
 // there without having reached for a later one, which is the shape a
-// reintroduced cycle would break. The last two hold the same line for the
-// GC sweep: it serializes with a put at the same id, and both take the
-// changelog lock before the row.
+// reintroduced cycle would break. TestGCSweepSerializesWithPutAtSameID and
+// TestPutAndSweepOnOneTombstoneTakeTheChangelogFirst hold that line for the GC
+// sweep: it serializes with a put at the same id, and both take the changelog
+// lock before the row.
 
 import (
 	"context"
@@ -199,10 +200,10 @@ func personOfContact(t *testing.T, ds *dataset, contactID string) string {
 // An effect list's subject lock and a mapping-source write's
 // subject lock must share ONE order. Pre-fix the effect plan took only record
 // locks, so an effect prelocking target x, patching it, then putting source
-// s would wait for subject|<type> while holding record|x — and a concurrent
-// source write holding subject|<type> and recomputing into x closed the cycle.
-// The fix puts the subject-type lock in the effect plan, ahead of every record
-// lock, matching the ordinary source write.
+// s would wait for subject|<kind> while holding record|x, and a concurrent
+// source write holding subject|<kind> and recomputing into x closed the cycle.
+// The subject-kind lock is in the effect plan, ahead of every record lock,
+// matching the ordinary source write.
 //
 // The barrier holds subject|person: an effect list touching a source must park
 // there before it locks any record.

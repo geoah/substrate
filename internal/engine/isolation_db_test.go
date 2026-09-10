@@ -34,7 +34,7 @@ var repositoryScopedTables = []string{
 }
 
 // pair is two registered users, each with one task written at the SAME
-// (type, id): the collision is the point, since one shared table now holds
+// (kind, id): the collision is the point, since one shared table now holds
 // both rows.
 type pair struct {
 	svc         substrate.Service
@@ -338,7 +338,7 @@ func TestRepositoryIsolation(t *testing.T) {
 		t.Cleanup(func() { _ = raw.Close() })
 
 		// The unqualified read: one row, alpha's, even though beta wrote the same
-		// (type, id) pair into the same table.
+		// (kind, id) pair into the same table.
 		var n int
 		if err := raw.QueryRowContext(ctx,
 			`SELECT count(*) FROM records WHERE id = 'shared-id'`).Scan(&n); err != nil {
@@ -415,9 +415,8 @@ func TestRepositoryIsolation(t *testing.T) {
 	})
 
 	// A connection that carries no repository at all reads nothing and writes
-	// nothing. The policy's
-	// missing_ok current_setting fails closed, and the column default raises
-	// rather than inventing a repository.
+	// nothing: the policy's missing_ok current_setting fails closed, and the
+	// column default raises rather than inventing a repository.
 	t.Run("an unscoped connection is blind and mute", func(t *testing.T) {
 		t.Parallel()
 		ctx := context.Background()
@@ -525,9 +524,9 @@ func TestRepositoryIsolation(t *testing.T) {
 		}
 	})
 
-	// The write lock is per repository: one lock id for the whole database meant
-	// a held changelog lock stalled every
-	// write on the box. Holding alpha's must leave beta's writes alone.
+	// The write lock is per repository: one lock id for the whole database
+	// meant a held changelog lock stalled every write on the box. Holding
+	// alpha's must leave beta's writes alone.
 	t.Run("advisory locks are per repository", func(t *testing.T) {
 		t.Parallel()
 		ctx := context.Background()

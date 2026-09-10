@@ -542,7 +542,7 @@ func TestReferencesResolveAcrossTheCalendarSample(t *testing.T) {
 const refPackage = "refs.example.substrate.reamde.dev/refs"
 
 // refDocs installs a tiny authority for the reference property type:
-// two target types (widget, gadget) and a holder carrying a pinned reference,
+// two target kinds (widget, gadget) and a holder carrying a pinned reference,
 // an unconstrained one, and a repeated one.
 func refDocs() []map[string]any {
 	return []map[string]any{
@@ -588,8 +588,8 @@ func asRef(t *testing.T, v any) (kind, id string) {
 	return kind, id
 }
 
-// TestReferenceRoundTrip writes a reference from a bare {type, id} and reads
-// back the canonical {authority, type, id}, then re-applies that canonical value —
+// TestReferenceRoundTrip writes a reference from a bare {kind, id} and reads
+// back the canonical {authority, package, kind, id}, then re-applies that value —
 // the get -o yaml → apply round trip. The referent record need not exist.
 func TestReferenceRoundTrip(t *testing.T) {
 	t.Parallel()
@@ -619,9 +619,9 @@ func TestReferenceRoundTrip(t *testing.T) {
 	}
 }
 
-// TestReferenceUnknownTypeRefused refuses a reference whose referent type is
-// not a known type.
-func TestReferenceUnknownTypeRefused(t *testing.T) {
+// TestReferenceUnknownKindRefused refuses a reference whose referent kind is
+// not a known kind.
+func TestReferenceUnknownKindRefused(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
 	installRefAuthority(t, ds)
@@ -633,8 +633,8 @@ func TestReferenceUnknownTypeRefused(t *testing.T) {
 	wantErr(t, err, substrate.ErrValidation, "unknown referent type")
 }
 
-// TestReferenceToMismatchRefused refuses a value whose type is not the pinned
-// `to:` type.
+// TestReferenceToMismatchRefused refuses a value whose kind is not the one
+// the declaration pins with `kind:`.
 func TestReferenceToMismatchRefused(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
@@ -647,9 +647,9 @@ func TestReferenceToMismatchRefused(t *testing.T) {
 	wantErr(t, err, substrate.ErrValidation, "to mismatch")
 }
 
-// TestReferenceAnyNeedsType refuses a bare id on a `to: any` reference — there
-// is no declaration to supply the type.
-func TestReferenceAnyNeedsType(t *testing.T) {
+// TestReferenceAnyNeedsAKind refuses a bare id on a `kind: any` reference:
+// there is no declaration to supply the kind.
+func TestReferenceAnyNeedsAKind(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
 	installRefAuthority(t, ds)

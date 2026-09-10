@@ -378,7 +378,7 @@ func TestAChangedIndexDefinitionRebuildsTheStaleOrdinalIndex(t *testing.T) {
 	}
 }
 
-// THE LOCK ORDER ON THE DELETE AND SPLIT PATHS: registry-dep < subject-type <
+// THE LOCK ORDER ON THE DELETE AND SPLIT PATHS: registry-dep < subject-kind <
 // record, the order every put takes. A delete or a split that locked its row
 // first and then queued for the shared registry-dependency lock would deadlock
 // against a vocabulary apply holding the exclusive side while waiting on that
@@ -591,7 +591,6 @@ func TestASplitParksAtTheRegistryDepLockBeforeItsRowLock(t *testing.T) {
 
 const refLockPackage = "reflock.example.substrate.reamde.dev/reflock"
 
-// refLockDocs is one authority: a target kind and a holder pointing at it.
 // The registry-dependency barrier from the DATA WRITE's side.
 //
 // A write derives two things from the declaration it resolved: the row's
@@ -608,6 +607,8 @@ const refLockPackage = "reflock.example.substrate.reamde.dev/reflock"
 // side across its reprojection. The cases below drive the interleaving from
 // inside the package, holding the exclusive side as the apply does and
 // proving the racing write parks rather than slipping past.
+
+// refLockDocs is one authority: a target kind and a holder pointing at it.
 func refLockDocs() []map[string]any {
 	return []map[string]any{
 		vocabulary.PackageManifest(refLockPackage, 0),
@@ -680,7 +681,7 @@ func TestDataWriteParksAtTheRegistryDepLockAndKeepsItsRefsRow(t *testing.T) {
 	default:
 	}
 	// It parked at the DEP lock, which is FIRST in the order (registry-dep <
-	// subject-type < record), so it has not reached its own record lock. A write
+	// subject-kind < record), so it has not reached its own record lock. A write
 	// that took the dep lock only later would already be holding this one.
 	if !tryLockFree(t, ds, "record|"+refLockPackage+"/holder|"+holderID) {
 		t.Fatal("the data write locked its record before the registry-dep lock; the write can still commit across a reprojection")
