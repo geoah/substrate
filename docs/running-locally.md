@@ -2,21 +2,28 @@
 
 A local substrate is the binary from this tree and a Postgres container beside
 it. `mise run dev` starts both: Postgres on `:5433`, the server on `:8080`,
-invite code `let-me-in`, and every piece of state under `.dev/`. It serves the
-API alone until `web/console/dist` exists, because the dev task passes
-`WEB_DIR` only when it does: run `mise run console:build` once and the console
-is at `/` from the next start, or `mise run console:dev` to serve it on `:5173`
-proxying `/api` to `:8080`. It runs the binary rather than an image, so a
-change is a restart and not a rebuild. `mise tasks` lists the whole family;
-these are the ones a day needs:
+invite code `let-me-in`. It serves the API alone until `web/console/dist`
+exists, because the dev task passes `WEB_DIR` only when that directory is
+there: run `mise run console:build` once and the console is at `/` from the
+next start, or `mise run console:dev` to serve it on `:5173` proxying `/api` to
+`:8080`. The binary runs from the tree rather than an image, so a change is a
+restart and not a rebuild.
+
+The state lives in two places, which is why throwing it away is a task and not
+an `rm`: `.dev/` in the tree holds the data root, the pid, the log and the
+credential key, and Postgres keeps its own files in the docker volume
+`substrate-dev-db-data`. Both ports move when a second worktree already holds
+them: `SUBSTRATE_DEV_PORT` for the server and `SUBSTRATE_DEV_DB_PORT` for the
+database. `mise tasks` lists the whole family; these are the ones a day needs:
 
 ```bash
 mise run dev            # foreground; dev:up is the same in the background
 mise run dev:totp       # the same substrate with the second factor ENFORCED
 mise run dev:status     # the database, the server, the console, the URLs
 mise run dev:restart    # rebuild and restart; the data stays
+mise run dev:stop       # stop the server and its Postgres; the data stays
 mise run dev:logs
-mise run dev:wipe       # DELETE the database and .dev/data
+mise run dev:wipe       # DELETE the database, the volume and .dev/
 mise run dev:dsn        # the DSN the operator hat takes as --dsn
 ```
 
@@ -27,7 +34,9 @@ mise run dev:dsn        # the DSN the operator hat takes as --dsn
 - `SUBSTRATE_CREDENTIAL_KEY` is minted once into `.dev/credential.key` and
   every start reuses it. It wraps each repository's data-encryption key, and
   an operator command that writes sealed material reads the same file.
-  `mise run dev:status` prints both paths.
+  `mise run dev:status` prints both paths. `dev:wipe` removes `.dev/` whole,
+  that file included, so the next start mints a new key: it goes with the
+  sealed material it wrapped.
 - `SUBSTRATE_INVITE_CODE` is `let-me-in`.
 - `SUBSTRATE_INSECURE_DISABLE_TOTP` is `true` on every `dev*` task except
   `dev:totp`, so registering and signing in are a repository name and a
@@ -39,11 +48,12 @@ mise run dev:dsn        # the DSN the operator hat takes as --dsn
   variable against anything else
   ([the local switch](auth.md#the-second-factor-can-be-switched-off-locally)).
 
-## The database and the data root are wiped together
+## The database, the data root and the key are wiped together
 
-`mise run dev:wipe` removes both, and it has to: a data root that outlives its
-database is imported at the next boot, and a database that outlives its root is
-written back out ([what happens at boot](operations.md#what-happens-at-boot)).
+`mise run dev:wipe` removes the volume, the data root and `.dev/` around it,
+and it has to: a data root that outlives its database is imported at the next
+boot, and a database that outlives its root is written back out
+([what happens at boot](operations.md#what-happens-at-boot)).
 Registration is one-shot per repository and there is no unregister, so testing
 the door a second time means wiping first. `mise run dev:reset` is the wipe and
 a fresh start in one.
@@ -57,12 +67,13 @@ Register against the local address and the invite code above, then read
 bin/substratectl register --server http://localhost:8080 --repository ada
 ```
 
-The operator commands take the DSN and the data root instead of a token, and
-both have to be in the environment of the command itself: the dev tasks export
-`SUBSTRATE_DATA_ROOT` into the server they start, not into your shell, and an
-operator command refuses without it, naming the variable. `mise run dev:status`
-prints the two export lines to copy, one for the data root and one for the
-credential key that the commands writing sealed material need:
+The operator commands take a DSN and a data root instead of a token: `--dsn`
+(or `DATABASE_URL`), which `mise run dev:dsn` prints, and
+`SUBSTRATE_DATA_ROOT`, which an operator command refuses to run without,
+naming the variable. The dev tasks export that variable into the server they
+start, never into your shell, so the command needs it itself.
+`mise run dev:status` prints the two lines to copy: the data root, and the
+credential key the commands that write sealed material read.
 
 ```bash
 SUBSTRATE_DATA_ROOT="$PWD/.dev/data" \

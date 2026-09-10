@@ -390,7 +390,8 @@ not 1536 wide ([decision
 stored vector names the row and the model that produced it, and semantic search
 scores only the current pair's vectors, so changing either hides the older ones
 rather than mixing two models' distances. `repository reembed` is how their
-replacement is bought ([the operator commands](operations.md#operator-recovery)).
+replacement is bought, on the box and never over HTTP
+([there is no LLM configuration](operations.md#there-is-no-llm-configuration)).
 
 **Nothing seeds a provider.** A fresh repository holds no `llmprovider` row at
 all: a row is where the wire, the endpoint and the key live, and a substrate

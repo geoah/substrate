@@ -149,7 +149,8 @@ Three consequences an operator meets:
   re-pointing either stops the older vectors being scored. `substratectl
   --dsn … repository reembed <repository>` queues their replacement and the
   drain loop buys the vectors a batch at a time, so an interrupted re-embed
-  resumes by itself. A gateway swapped behind an unchanged row and model name
+  resumes by itself. There is no REST verb for it: it is the operator's hat,
+  on the box. A gateway swapped behind an unchanged row and model name
   is invisible to the provenance columns, so that case takes `reembed --all`.
 - A repository restored from its directory queues every embeddable property
   by itself, because the vectors were never in the directory
@@ -636,8 +637,9 @@ encrypt the storage under it; do that yourself.
 
 ## Operator recovery
 
-These are the [operator hat](substratectl.md#two-hats): no token, a DSN and a
-data root, and a refusal before touching anything without them.
+These are the [operator hat](substratectl.md#two-hats): no token, `--dsn` (or
+`DATABASE_URL`) and `SUBSTRATE_DATA_ROOT`, and a refusal before touching
+anything without them.
 
 **Four of them run beside a live server; four need it stopped; one takes no
 database.** `repository list`, `repository inspect`, `repository verify` and

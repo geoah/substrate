@@ -496,8 +496,8 @@ host.records.get(kind, id)                        # the record, or None
 host.records.list(kinds, where=None, first=None, after=None, order=None)
 host.records.search(q, kinds, k=None, mode=None)  # hits, with .pending beside them
 host.functions.call(function, input=None)         # permissions.call gated
-host.effects.put(kind, id, properties=None, if_absent=False, if_version=...)
-host.effects.patch(kind, id, properties=None, if_version=...)
+host.effects.put(kind, id, properties=None, if_absent=False, if_version=<int>)
+host.effects.patch(kind, id, properties=None, if_version=<int>)
 host.effects.delete(kind, id)
 host.effects.merge(kind, id, loser)
 host.effects.split(kind, merge)
@@ -510,6 +510,11 @@ host.version(record)                              # an int, for if_version
 host.config()
 host.log(msg)
 ```
+
+`if_version` is unset unless a caller passes one, and the sentinel for that is
+private, so `if_version=0` is a real precondition meaning "no such record". A
+`put` refuses `if_absent` and `if_version` together: `if_absent` makes an
+existing row a no-op before the version check could run.
 
 The `effects` calls stage into a write-only buffer and return a handle, never
 a record: there is no `flush()`, the buffer is the return, and a body either
@@ -533,7 +538,8 @@ one ([effects](#effects)). A proposing function names the
 `recordpatchrequest` kind in its `permissions.writes` and nothing else: it is
 not writing the target, it is asking. The diff is validated against the target
 kind at admission, so a malformed proposal is a refused write the delivery
-parks on, never a request the owner cannot accept.
+parks on, never a request the owner cannot accept, and an `op: delete`
+proposal carries no diff at all: passing one is refused rather than dropped.
 
 **A deterministic id is scoped to one kind.** The same derived id used for two
 different kinds names two independent records, so the writer names the kind on
