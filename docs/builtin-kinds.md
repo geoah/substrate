@@ -4,8 +4,7 @@ Every repository is seeded at creation with **`substrate.reamde.dev/core` and no
 else** — the substrate's own machinery, including the delivery plumbing and the
 agent runtime's data. Everything else is a **sample you import**: people,
 tasks, messaging, calendar, scheduling (the two traits the repeating kinds
-bind), the mneme-ported health, fitness, routines, journal, places, food and
-commerce, and the function and agent examples notes, llm, web and firecrawl
+bind), and the function and agent examples notes, llm, web and firecrawl
 (each described with its functions in the
 [bundles catalog](bundles-catalog.md)) and pebble
 ([samples/pebble/README.md](../samples/pebble/README.md)). Each ships in the
@@ -72,9 +71,9 @@ value says so and falls back to they/them.
 
 ## samples.substrate.reamde.dev/scheduling (a sample)
 
-Traits only, no kinds. `calendar`, `tasks`, `health`, `fitness` and `routines`
-`require` it and bind its two traits across packages, the way every package
-binds core's `temporal` ([traits](traits.md)).
+Traits only, no kinds. `calendar` and `tasks` `require` it and bind its two
+traits across packages, the way every package binds core's `temporal`
+([traits](traits.md)).
 
 | Trait           | What it is                                                                                                                         |
 | --------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
@@ -104,67 +103,6 @@ never `status`, which is a state and moves only through its own transitions.
 Like every suggested mapping it lands only where the Linear provider is already
 installed, and importing this sample again is what lands it afterwards
 ([suggested mappings](bundles.md#suggested-mappings)).
-
-Seven further samples are ported from mneme v4. The recurring
-kinds share one stance: a schedule stores an RFC 5545 RRULE the substrate
-never expands, an occurrence exists only when a log records it, and "missed"
-is computed from absence, never stored.
-
-## samples.substrate.reamde.dev/health (a sample)
-
-| Kind                    | What it is                                                                    |
-| ----------------------- | ----------------------------------------------------------------------------- |
-| `observation`           | The definition of one tracked measure; with an RRULE it is a habit.           |
-| `observationlog`        | One recorded value, typed by its observation's `valueKind`.                   |
-| `medication`            | One medication at one strength and form; a new strength is a new record.      |
-| `medicationschedule`    | When and how much: a dose, an RRULE, a span. No recurrence means as-needed.   |
-| `medicationschedulelog` | One dose, done or skipped; absence in the logs is what missed means.          |
-| `bloodtest`             | One blood draw; markers worth tracking are observationlogs pointing at it.    |
-
-## samples.substrate.reamde.dev/fitness (a sample)
-
-| Kind              | What it is                                                              |
-| ----------------- | ------------------------------------------------------------------------ |
-| `exercise`        | One movement in the catalog; performances are workoutsets pointing here. |
-| `workout`         | One session; with an RRULE it is the recurring plan.                     |
-| `workoutset`      | One set: which exercise, how heavy, how many, how it felt.               |
-| `workouttemplate` | A reusable session plan built from the catalog.                          |
-| `workoutlog`      | The done-or-skipped mark against a recurring workout's occurrence.       |
-
-## samples.substrate.reamde.dev/routines (a sample)
-
-| Kind         | What it is                                                                  |
-| ------------ | ---------------------------------------------------------------------------- |
-| `routine`    | The generic recurring obligation, with a window for how literally its time-of-day is meant. |
-| `routinelog` | One occurrence, done or skipped.                                             |
-
-## samples.substrate.reamde.dev/journal (a sample)
-
-| Kind           | What it is                                                              |
-| -------------- | ------------------------------------------------------------------------ |
-| `journalentry` | One day's reflection; its timeline anchor is the day written about.      |
-| `note`         | Anything else written down; `audience` declares who it is for, `status` its handled lifecycle. |
-
-## samples.substrate.reamde.dev/places (a sample)
-
-| Kind    | What it is                                                          |
-| ------- | -------------------------------------------------------------------- |
-| `place` | Somewhere worth remembering; what happened there points at it.       |
-
-## samples.substrate.reamde.dev/food (a sample)
-
-| Kind     | What it is                                                            |
-| -------- | ---------------------------------------------------------------------- |
-| `recipe` | Instructions for one dish; cooking it is a meal pointing here.         |
-| `meal`   | One sitting on the timeline; nutrition numbers are observationlogs whose `derivedFrom` is the meal. |
-
-## samples.substrate.reamde.dev/commerce (a sample)
-
-| Kind        | What it is                                                            |
-| ----------- | ---------------------------------------------------------------------- |
-| `order`     | One purchase; the lifecycle stamps `shippedAt` and `deliveredAt` itself. |
-| `orderitem` | One line inside an order; the order owns it.                           |
-| `currency`  | A property type: an ISO 4217 code, kept separate from the amount.      |
 
 ## substrate.reamde.dev/core
 

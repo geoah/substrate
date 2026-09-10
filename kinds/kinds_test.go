@@ -353,7 +353,7 @@ func readTreeDocuments(t *testing.T) []vocabulary.Document {
 	var docs []vocabulary.Document
 	// BOTH SHIPPED TREES: the kinds/ tree and the samples/ tree are one
 	// vocabulary as far as these rules go, and a rule that read only one of
-	// them would stop covering seventeen packages the day they moved.
+	// them would stop covering half the shipped packages the day they moved.
 	for _, fsys := range []fs.FS{kinds.All(), samples.Samples()} {
 		err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() || filepath.Ext(path) != ".yaml" {

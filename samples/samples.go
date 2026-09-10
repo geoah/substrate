@@ -24,10 +24,8 @@ const Authority = "samples.substrate.reamde.dev"
 // sample that silently stops existing in production while every other test
 // still passes. kinds_test.go holds it to the tree on disk.
 //
-//go:embed all:authority.yaml all:calendar all:commerce all:firecrawl all:fitness
-//go:embed all:food all:health all:journal all:llm all:messaging all:notes
-//go:embed all:pebble all:people all:places all:routines all:scheduling
-//go:embed all:tasks all:web
+//go:embed all:authority.yaml all:calendar all:firecrawl all:llm all:messaging
+//go:embed all:notes all:pebble all:people all:scheduling all:tasks all:web
 var files embed.FS
 
 // Samples is the whole sample tree, as a filesystem whose root holds one

@@ -407,11 +407,10 @@ trait is queryable.
 The **catalog** lists everything shipped in the binary, in the two tiers
 [0048](decisions/0048-providers-are-published-samples-are-copied.md) draws:
 the six **providers** under `kinds/providers.substrate.reamde.dev`, and the
-seventeen **samples** under `samples/` (`people`, `tasks`, `messaging`,
-`calendar`, `scheduling`, the mneme-ported `health`, `fitness`, `routines`,
-`journal`, `places`, `food`, `commerce`, and the worked examples `llm`,
-`notes`, `web`, `pebble`, `firecrawl`) a repository takes because creation
-seeds `substrate.reamde.dev/core` alone.
+ten **samples** under `samples/` (`people`, `tasks`, `messaging`, `calendar`,
+`scheduling`, and the worked examples `llm`, `notes`, `web`, `pebble`,
+`firecrawl`) a repository takes because creation seeds
+`substrate.reamde.dev/core` alone.
 
 The catalog is a read model over the bundle closures baked in, parsed once at
 boot: each entry carries `id` (the package it ships), `name`, `authority`,

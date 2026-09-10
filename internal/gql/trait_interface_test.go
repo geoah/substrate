@@ -52,12 +52,12 @@ func TestTraitInterfaceFieldsTakeTheImplementersTypes(t *testing.T) {
 
 	// Two implementers that disagree on a property's type share the interface
 	// without that field; each object keeps its own.
-	workout := traitKind("samples.substrate.reamde.dev/fitness/workout", "workout", "samples.substrate.reamde.dev/fitness", map[string]any{
+	plan := traitKind("plans.example/plans/plan", "plan", "plans.example/plans", map[string]any{
 		"name":        map[string]any{"type": "string"},
 		"recurrence":  map[string]any{"type": "recurrence"},
 		"completedAt": map[string]any{"type": "string"},
 	})
-	schema, err = BuildSchema([]substrate.KindInfo{task, workout})
+	schema, err = BuildSchema([]substrate.KindInfo{task, plan})
 	if err != nil {
 		t.Fatalf("two implementers disagreeing on a type: %v", err)
 	}

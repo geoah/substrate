@@ -61,8 +61,8 @@ traits:
 
 and must then declare those four properties with those datatypes (the
 admission checks), plus whatever shape of its own it wants on top:
-`medicationschedule` marks `rdates` and `exdates` `repeated: true` and adds a
-dose; `calendareventseries` adds its `startsAt` anchor.
+`task` marks `rdates` and `exdates` `repeated: true` and adds a due date;
+`calendareventseries` adds its `startsAt` anchor.
 
 Two refinements exist, both introduced by core's `temporal` and covered in
 [the data model](data-model.md#traits): a trait may declare **variants**
@@ -179,13 +179,13 @@ span every implementor:
 nodes { id kind title ... on Temporal { at } }
 ```
 
-Run against a repository holding medication schedules, dose logs and calendar
-events, that query answers all three in one ordered page:
+Run against a repository holding tasks, task logs and calendar events, that
+query answers all three in one ordered page:
 
 ```json
-{ "at": "2026-08-17T06:00:00Z", "id": "levothyroxine-daily",    "kind": "samples.substrate.reamde.dev/health/medicationschedule" }
+{ "at": "2026-08-17T06:00:00Z", "id": "t9",                     "kind": "samples.substrate.reamde.dev/tasks/task" }
 { "at": "2026-08-17T09:30:00Z", "id": "x-cal-standup-20260817", "kind": "samples.substrate.reamde.dev/calendar/calendarevent" }
-{ "at": "2026-08-18T06:20:00Z", "id": "x-occ-dose-tue",         "kind": "samples.substrate.reamde.dev/health/medicationschedulelog" }
+{ "at": "2026-08-18T06:20:00Z", "id": "x-tasklog-tue",          "kind": "samples.substrate.reamde.dev/tasks/tasklog" }
 ```
 
 Where the interface's fields come from has two arms:

@@ -5,12 +5,12 @@
 # trait carries values, only property presence and datatype, so a binding kind
 # keeps its own enum states and its own owner reference.
 #
-# It ships no kinds, only traits, so the five packages that repeat things
-# (tasks, fitness, health, routines, calendar) `require` it and bind its traits
-# cross-package, the way every package binds core's `temporal`. It is a
-# separate package rather than core because it is domain vocabulary, not
-# engine machinery: `temporal` is backed by the physical at/endsAt/dueAt
-# columns, these two are ordinary declared properties.
+# It ships no kinds, only traits, so the two packages that repeat things
+# (tasks and calendar) `require` it and bind its traits cross-package, the way
+# every package binds core's `temporal`. It is a separate package rather than
+# core because it is domain vocabulary, not engine machinery: `temporal` is
+# backed by the physical at/endsAt/dueAt columns, these two are ordinary
+# declared properties.
 #
 # no new actors: writes arrive under the actor of whatever runs.
 kind: substrate.reamde.dev/core/package

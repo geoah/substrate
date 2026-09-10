@@ -48,13 +48,13 @@ func init() {
 			"window shows the time change at the boundary, and each series' /incoming holds exactly its half.",
 		xcCaseSeriesSplit)
 	registerCase(640, "OCC-01", "The occurrences read: a daily-forever dose beside the calendar",
-		"A medication taken every day forever is ONE schedule record whose RRULE the substrate stores and "+
-			"never expands (decision 0039); GET /occurrences computes its instants in any window (decision "+
-			"0043) beside the calendar's materialized rows, the connector-stamped series stay silent where "+
-			"their rows answer, a logged dose annotates its slot without suppressing it, and a travel week "+
-			"moves seven doses to another timezone with exdates plus rdates, the same mechanics a Google "+
-			"instance override uses.",
-		xoCaseMedicationWeek)
+		"A dose taken every day forever is ONE schedule record, of a kind this case declares itself, whose "+
+			"RRULE the substrate stores and never expands (decision 0039); GET /occurrences computes its "+
+			"instants in any window (decision 0043) beside the calendar's materialized rows, the "+
+			"connector-stamped series stay silent where their rows answer, a logged dose annotates its slot "+
+			"without suppressing it, and a travel week moves seven doses to another timezone with exdates "+
+			"plus rdates, the same mechanics a Google instance override uses.",
+		xoCaseDoseWeek)
 }
 
 // xcMonday anchors the whole block: the most recent Monday, 09:30 UTC, at
@@ -488,12 +488,97 @@ func xcCaseSeriesSplit(c *C) {
 
 // --- OCC-01 ----------------------------------------------------------------
 
+// OCC-01 owns its OWN authority, declared here and nowhere else: a dosing
+// schedule that binds `recurring` and a dose log that binds `occurrencelog`,
+// which is the whole of what the occurrences read contracts on. The traits
+// come from the `scheduling` sample the earlier cases installed, so the
+// binding also proves a kind under one authority binds another's trait.
 const (
-	medCollection         = "/api/v1/samples.substrate.reamde.dev/health/medication"
-	medScheduleCollection = "/api/v1/samples.substrate.reamde.dev/health/medicationschedule"
-	medScheduleKind       = "samples.substrate.reamde.dev/health/medicationschedule"
-	medLogCollection      = "/api/v1/samples.substrate.reamde.dev/health/medicationschedulelog"
+	xoAuthority          = "doses.e2e.example"
+	xoPackage            = "dosing"
+	xoPkg                = xoAuthority + "/" + xoPackage
+	xoScheduleKind       = xoPkg + "/schedule"
+	xoScheduleCollection = "/api/v1/" + xoPkg + "/schedule"
+	xoLogKind            = xoPkg + "/doselog"
+	xoLogCollection      = "/api/v1/" + xoPkg + "/doselog"
 )
+
+// xoClosure is the whole dosing authority in one apply batch: the package
+// header, the recurring schedule, and the log that marks its occurrences.
+func xoClosure() []map[string]any {
+	return []map[string]any{
+		{
+			"kind":     "substrate.reamde.dev/core/package",
+			"metadata": map[string]any{"id": xoPkg},
+			"data": map[string]any{
+				"authority": xoAuthority, "package": xoPackage, "version": 1,
+			},
+		},
+		{
+			"kind":     "substrate.reamde.dev/core/kind",
+			"metadata": map[string]any{"id": xoScheduleKind},
+			"data": map[string]any{
+				"authority":       xoAuthority,
+				"package":         xoPackage,
+				"names":           map[string]any{"singular": "schedule"},
+				"description":     "When and how much: a dose, an RRULE, and the span the schedule runs.",
+				"displayTemplate": "{name}",
+				"traits":          []any{"temporal(range)", "recurring"},
+				"properties": map[string]any{
+					"name": map[string]any{"type": "string", "description": "an optional label"},
+					"recurrence": map[string]any{
+						"type": "recurrence", "description": "the RRULE, stored and never expanded",
+					},
+					"exdates": map[string]any{
+						"type": "datetime", "repeated": true,
+						"description": "occurrence datetimes the rule skips",
+					},
+					"rdates": map[string]any{
+						"type": "datetime", "repeated": true,
+						"description": "extra occurrence datetimes beside the rule",
+					},
+					"timezone": map[string]any{
+						"type": "timezone", "description": "the zone a time-of-day rule resolves in",
+					},
+				},
+			},
+		},
+		{
+			"kind":     "substrate.reamde.dev/core/kind",
+			"metadata": map[string]any{"id": xoLogKind},
+			"data": map[string]any{
+				"authority":       xoAuthority,
+				"package":         xoPackage,
+				"names":           map[string]any{"singular": "doselog"},
+				"description":     "One dose, done or skipped; absence in the logs is what missed means.",
+				"displayTemplate": "{status}",
+				"traits":          []any{"temporal(point)", "occurrencelog"},
+				"properties": map[string]any{
+					"status": map[string]any{
+						"type": "state", "description": "done or skipped",
+						"states":  []any{"done", "skipped"},
+						"initial": "done",
+						"transitions": []any{
+							map[string]any{"from": "done", "to": "skipped"},
+							map[string]any{"from": "skipped", "to": "done"},
+						},
+					},
+					"scheduledAt": map[string]any{
+						"type": "datetime", "description": "the occurrence this log answers",
+					},
+					"details": map[string]any{
+						"type": "markdown", "description": "anything worth saying about this dose",
+					},
+					"schedule": map[string]any{
+						"type": "reference", "kind": "schedule",
+						"required": true, "mustExist": true, "onDelete": "cascade",
+						"description": "the schedule this dose belongs to",
+					},
+				},
+			},
+		},
+	}
+}
 
 // xoList mirrors substrate.OccurrenceList, the computed half of an agenda.
 type xoList struct {
@@ -534,26 +619,27 @@ func xoRead(c *C, from, to time.Time) xoList {
 func xoDoses(list xoList, id string) []string {
 	var ats []string
 	for _, o := range list.Occurrences {
-		if o.Kind == medScheduleKind && o.ID == id {
+		if o.Kind == xoScheduleKind && o.ID == id {
 			ats = append(ats, o.At)
 		}
 	}
 	return ats
 }
 
-func xoCaseMedicationWeek(c *C) {
-	c.xvInstall("samples.substrate.reamde.dev/health")
+func xoCaseDoseWeek(c *C) {
+	status, raw := c.xvApply(xoClosure())
+	c.requiref(status == http.StatusOK, "applying `%s` answered %d: %s", xoPkg, status, raw)
+	c.stepf("declared `%s`: a schedule binding `recurring` and a log binding `occurrencelog`, both traits from the installed `scheduling` sample", xoPkg)
+
 	base := xcMonday(c.r).Truncate(24 * time.Hour) // the block's Monday, 00:00Z
 	dose := base.Add(6 * time.Hour)                // 09:00 Athens in summer
 	week2, week3, week4 := base.AddDate(0, 0, 7), base.AddDate(0, 0, 14), base.AddDate(0, 0, 21)
 
-	c.putRec(medCollection, "levothyroxine", map[string]any{"name": "Levothyroxine"})
-	c.putRec(medScheduleCollection, "levothyroxine-daily", map[string]any{
-		"doseAmount": 1, "doseUnit": "tablet",
+	c.putRec(xoScheduleCollection, "levothyroxine-daily", map[string]any{
+		"name":       "Levothyroxine",
 		"recurrence": "RRULE:FREQ=DAILY",
 		"timezone":   "Europe/Athens",
 		"at":         dose.Format(time.RFC3339), // the anchor: temporal(range)'s own start
-		"medication": "samples.substrate.reamde.dev/health/medication/levothyroxine",
 	})
 	c.stepf("one schedule record holds the forever-daily rule, anchored %s", dose.Format(time.RFC3339))
 
@@ -584,10 +670,10 @@ func xoCaseMedicationWeek(c *C) {
 
 	// A taken dose is an occurrencelog; it annotates the slot, never hides it.
 	tue := dose.AddDate(0, 0, 1)
-	c.putRec(medLogCollection, "x-occ-dose-tue", map[string]any{
+	c.putRec(xoLogCollection, "x-occ-dose-tue", map[string]any{
 		"at":          tue.Add(20 * time.Minute).Format(time.RFC3339),
 		"scheduledAt": tue.Format(time.RFC3339),
-		"schedule":    "samples.substrate.reamde.dev/health/medicationschedule/levothyroxine-daily",
+		"schedule":    recPath(xoScheduleKind, "levothyroxine-daily"),
 	})
 	occs = xoRead(c, base, week2)
 	marked := 0
@@ -614,7 +700,7 @@ func xoCaseMedicationWeek(c *C) {
 		exdates = append(exdates, dose.AddDate(0, 0, 7+i).Format(time.RFC3339))
 		rdates = append(rdates, base.AddDate(0, 0, 7+i).Add(13*time.Hour).Format(time.RFC3339))
 	}
-	status, raw := c.do(http.MethodPatch, medScheduleCollection+"/levothyroxine-daily",
+	status, raw = c.do(http.MethodPatch, xoScheduleCollection+"/levothyroxine-daily",
 		map[string]any{"properties": map[string]any{"exdates": exdates, "rdates": rdates}}, nil)
 	c.requiref(status == http.StatusOK, "the travel-week override answered %d: %s", status, raw)
 
