@@ -68,11 +68,11 @@ func TestBundleSharedModuleImportable(t *testing.T) {
 	_, ds := newDataset(t)
 
 	// A bad module is a load error, refused at admission before the bundle
-	// installs — a non-.py/.go extension and an empty source both.
+	// installs — a non-.py extension and an empty source both.
 	if _, err := ds.ApplyVocabularyDocuments(ctx, owner,
 		mbModuleDocs(map[string]any{"connkit.txt": "x = 1\n"})); err == nil ||
-		!strings.Contains(err.Error(), ".py or .go") {
-		t.Fatalf("a non-.py/.go module was admitted: %v", err)
+		!strings.Contains(err.Error(), "ends in .py") {
+		t.Fatalf("a non-.py module was admitted: %v", err)
 	}
 	if _, err := ds.ApplyVocabularyDocuments(ctx, owner,
 		mbModuleDocs(map[string]any{"connkit.py": "  \n"})); err == nil ||

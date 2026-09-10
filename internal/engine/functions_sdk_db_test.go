@@ -13,8 +13,7 @@ import (
 // host.effects.* builder accumulates effects the engine applies exactly like a
 // returned list, host.ids.* mints deterministic ids, and put/patch effects
 // honor the ifVersion optimistic precondition (the decode gap effects.go
-// closed). These exercise the shared Python host (host.py); the Go substratefn
-// builder is the byte-identical mirror.
+// closed). host.py is the SDK these run through.
 
 func TestSDKBuilderEffectsAndIds(t *testing.T) {
 	t.Parallel()
@@ -61,46 +60,6 @@ def main(input, host):
 	}
 	if again := mustGet(t, ds, taskType, id); again.Title != "staged" {
 		t.Fatalf("if_absent did not hold — the second put reset state: %q", again.Title)
-	}
-}
-
-func TestSDKBuilderGoRuntime(t *testing.T) {
-	t.Parallel()
-	// The Go substratefn builder mirror, compiled and run for real: host.IDs and
-	// host.Effects stage a put, and the id it mints is byte-identical to the
-	// Python ids.external for the same inputs (cross-runtime consistency).
-	ds := newFnDataset(t, nil, goFn("gosdk", map[string]any{}, []any{taskType}, `
-import "substratefn.local/substratefn"
-
-func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, error) {
-	a, _ := in.Args.(map[string]any)
-	id := host.IDs.External("prov", a["account"].(string), a["ext"].(string))
-	host.Effects.Put(substratefn.PutEffect{
-		Kind: "samples.substrate.reamde.dev/tasks/task", ID: id,
-		Properties: map[string]any{"name": a["title"]},
-		IfAbsent:   true,
-	})
-	return &substratefn.Result{Output: map[string]any{"id": id}}, nil
-}
-`))
-	ctx := context.Background()
-	out, n, err := ds.CallFunction(ctx, fnPackage+"/gosdk", map[string]any{
-		"account": "acct1", "ext": "rec/9", "title": "go-staged",
-	})
-	if err != nil {
-		t.Fatalf("call: %v", err)
-	}
-	if n != 1 {
-		t.Fatalf("go staged effect count = %d, want 1", n)
-	}
-	id, _ := out.(map[string]any)["id"].(string)
-	// The same id the Python ids.external mints for ("prov","acct1","rec/9").
-	const wantID = "prov-743191e31fee28539c17cfbfe1124285"
-	if id != wantID {
-		t.Fatalf("Go ids.External diverged from Python: %q, want %q", id, wantID)
-	}
-	if got := mustGet(t, ds, taskType, id); got.Title != "go-staged" {
-		t.Fatalf("go staged put did not apply: %+v", got)
 	}
 }
 
@@ -260,39 +219,31 @@ def main(input, host):
 	}
 }
 
-func TestSDKBuilderGoGuardedPatch(t *testing.T) {
+func TestSDKBuilderGuardedPatchFromRead(t *testing.T) {
 	t.Parallel()
-	// The Go typed read → guarded write idiom end to end: Records.Get returns a
-	// *ReadRecord whose int64 Version feeds substratefn.Version(e.Version) on a patch.
-	// A matching version applies; the same stale version then conflicts.
-	ds := newFnDataset(t, nil, goFn("goguard",
+	// The read then guarded write idiom end to end: host.records.get answers the
+	// committed row, host.version(record) turns it into the integer if_version
+	// wants, and the patch applies. Re-run after an owner write and it applies
+	// again, which is what proves the body read the row's REAL version rather
+	// than a zero or a rounded float the precondition would refuse.
+	ds := newFnDataset(t, nil, pyFn("guard",
 		map[string]any{"permissions": map[string]any{"reads": map[string]any{"kinds": []any{taskType}}}},
 		[]any{taskType}, `
-import "substratefn.local/substratefn"
-
-func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, error) {
-	a, _ := in.Args.(map[string]any)
-	id, _ := a["id"].(string)
-	e, err := host.Records.Get("samples.substrate.reamde.dev/tasks/task", id)
-	if err != nil {
-		return nil, err
-	}
-	if e == nil {
-		return &substratefn.Result{Output: map[string]any{"found": false}}, nil
-	}
-	host.Effects.Patch(substratefn.PatchEffect{
-		Kind: "samples.substrate.reamde.dev/tasks/task", ID: id,
-		Properties: map[string]any{"name": "guarded"},
-		IfVersion:  substratefn.Version(e.Version),
-	})
-	return &substratefn.Result{Output: map[string]any{"version": e.Version}}, nil
-}
+def main(input, host):
+    tid = input["args"]["id"]
+    rec = host.records.get("samples.substrate.reamde.dev/tasks/task", tid)
+    if not rec:
+        return {"output": {"found": False}}
+    v = host.version(rec)
+    host.effects.patch("samples.substrate.reamde.dev/tasks/task", tid,
+                       properties={"name": "guarded"}, if_version=v)
+    return {"output": {"version": v}}
 `))
 	ctx := context.Background()
-	fn := fnPackage + "/goguard"
+	fn := fnPackage + "/guard"
 	task := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"name": "v"}})
 
-	// The typed read's version feeds a matching guarded patch — it applies.
+	// The read's version feeds a matching guarded patch, so it applies.
 	if _, _, err := ds.CallFunction(ctx, fn, map[string]any{"id": task.ID}); err != nil {
 		t.Fatalf("guarded patch: %v", err)
 	}
@@ -301,8 +252,7 @@ func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, e
 	}
 
 	// Concurrently advance the row, then re-run: the body reads the FRESH
-	// version, so a second guarded patch also applies (proving it read the real
-	// int64 version, not a rounded/zero one that would conflict or clobber).
+	// version, so a second guarded patch also applies.
 	if _, err := ds.Patch(ctx, owner, task.Kind, task.ID, substrate.PatchInput{Properties: map[string]any{"name": "moved"}}); err != nil {
 		t.Fatalf("owner patch: %v", err)
 	}
@@ -478,42 +428,5 @@ def main(input, host):
 		"diff": map[string]any{},
 	}); err == nil || !strings.Contains(err.Error(), "proposes no values") {
 		t.Fatalf("a delete proposal carrying an empty diff: %v", err)
-	}
-}
-
-func TestSDKProposeGoRuntime(t *testing.T) {
-	t.Parallel()
-	// The Go mirror, compiled and run for real: the same helper, the same
-	// request, the same accept.
-	ds := newFnDataset(t, nil, goFn("goproposer", map[string]any{}, []any{requestKind}, `
-import "substratefn.local/substratefn"
-
-func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, error) {
-	a, _ := in.Args.(map[string]any)
-	host.Effects.Propose(substratefn.ProposeEffect{
-		ID: "req-go", TargetKind: "samples.substrate.reamde.dev/tasks/task",
-		TargetID:  a["target"].(string),
-		Diff:      map[string]any{"description": "from Go"},
-		Rationale: "the mirror",
-	})
-	return &substratefn.Result{}, nil
-}
-`))
-	ctx := context.Background()
-	task := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: taskType, ID: "t-go-proposed", Properties: map[string]any{"name": "draft"},
-	})
-	if _, _, err := ds.CallFunction(ctx, fnPackage+"/goproposer", map[string]any{"target": task.ID}); err != nil {
-		t.Fatalf("call: %v", err)
-	}
-	req := mustGet(t, ds, requestKind, "req-go")
-	if req.Properties["rationale"] != "the mirror" {
-		t.Fatalf("go proposal: %+v", req.Properties)
-	}
-	if err := accept(t, ds, "req-go"); err != nil {
-		t.Fatalf("accept the go proposal: %v", err)
-	}
-	if got := mustGet(t, ds, taskType, task.ID); got.Properties["description"] != "from Go" {
-		t.Fatalf("the accepted go proposal did not apply: %+v", got.Properties)
 	}
 }

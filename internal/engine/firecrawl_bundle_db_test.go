@@ -35,7 +35,7 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
-	"github.com/geoah/substrate/internal/runner/substratefn"
+	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -376,7 +376,7 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 
 	// scrapepage: the content caps at 24000, ONE webdocument lands under
 	// host.ids.url(url), and the built-in title rides the put.
-	docID := substratefn.URLID(firecrawlPageURL)
+	docID := runner.URLID(firecrawlPageURL)
 	out, applied, err = ds.CallFunction(ctx, firecrawlScrapeFn, map[string]any{"url": firecrawlPageURL})
 	if err != nil {
 		t.Fatalf("call scrapepage: %v", err)

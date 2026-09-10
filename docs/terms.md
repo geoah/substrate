@@ -63,7 +63,7 @@ nothing, there are none.
 | **account** | One configured connection to a provider: a record of an `accountconfig`-trait kind. The console groups these under **Connections**. |
 | **catalog** | The read-only list of the bundle closures built into the binary, each in one of the two tiers. A source to install or import from, never a package. |
 | **callable** | The union of function and agent — what a trigger binds and what dispatch invokes. |
-| **function** | A callable whose body is inline Python or Go, bounded by its declared `permissions`: `reads`, `writes`, `call`, `network` and `mutations`, five grants in one object on the declaration. |
+| **function** | A callable whose body is inline Python, bounded by its declared `permissions`: `reads`, `writes`, `call`, `network` and `mutations`, five grants in one object on the declaration. |
 | **agent** | A callable whose body is an LLM loop. Alpha. |
 | **llmprovider** | One place an agent buys completions: a wire, an endpoint and a key, as data. Alpha. |
 | **wire** | The protocol an `llmprovider`'s adapter speaks — `openai`, `anthropic` or `azure` — never a company: a gateway that speaks OpenAI's wire is an `openai` row. |

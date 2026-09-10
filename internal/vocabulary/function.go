@@ -17,7 +17,7 @@ import (
 )
 
 // A function is the seventh manifest kind: a pure reusable CALLABLE — a named
-// piece of real code, inline Python or Go source on the manifest (`runtime:`
+// piece of real code, inline Python source on the manifest (`runtime:`
 // + `source:`) — with a model-facing `description`, optional `arguments:` and
 // `returns:` shapes, and a `permissions:` grant (reads, writes, call, network,
 // mutations). A function has NO subscription:
@@ -27,13 +27,11 @@ import (
 // engine applies plus an output value for callers; CEL survives ONLY as the
 // trigger's `when:` guard dialect — load-compiled, read-free.
 
-// The two inline runtimes. Python source is exec'd into the shared runner
-// host at registration; Go source compiles at registration to a cached
-// binary the runner supervises.
+// The inline runtime: Python source, exec'd into the body's own runner process
+// at registration.
 const (
 	RuntimePython = "python"
-	RuntimeGo     = "go"
-	// RuntimeHost is the third runtime, and the one with no body: the ENGINE is
+	// RuntimeHost is the second runtime, and the one with no body: the ENGINE is
 	// the implementation. A host function's declaration is its whole
 	// card — the description, `arguments:` and `returns:` — and it never reaches
 	// the child-process runner. It is admissible ONLY in a builtin build
@@ -44,10 +42,21 @@ const (
 )
 
 // FunctionRuntimes lists the runtimes in the order the errors name them.
-var FunctionRuntimes = []string{RuntimePython, RuntimeGo, RuntimeHost}
+var FunctionRuntimes = []string{RuntimePython, RuntimeHost}
 
 var functionRuntimes = map[string]bool{
-	RuntimePython: true, RuntimeGo: true, RuntimeHost: true,
+	RuntimePython: true, RuntimeHost: true,
+}
+
+// retiredFunctionRuntimes are the runtimes the enum has SPENT, each naming what
+// a body writes instead. A retired value is refused by its retirement rather
+// than by a bare "not in the enum", because the two are different facts: an
+// author who wrote `go` did not typo, they named a runtime that is gone. The
+// `function` kind lists the same values under `retired:`, which is what refuses
+// them on a stored declaration (decision record 0055);
+// retiredruntime_test.go holds the two spellings equal.
+var retiredFunctionRuntimes = map[string]string{
+	"go": "write the body in python",
 }
 
 // The four host functions the engine implements, by identity. They are ordinary
@@ -115,10 +124,8 @@ type Function struct {
 	// only tighten.
 	Confirmation string
 	// Runtime names the body's language; Source is the inline body itself.
-	// Python's entrypoint is `main(input, host)`; Go's is
-	// `Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, error)`.
-	// On RuntimeHost there is no body at all: Source is empty and the engine is
-	// the implementation.
+	// Python's entrypoint is `main(input, host)`. On RuntimeHost there is no
+	// body at all: Source is empty and the engine is the implementation.
 	Runtime string
 	Source  string
 	// Timeout bounds one inline invocation's wall clock, declared as the
@@ -285,7 +292,7 @@ var (
 )
 
 // FunctionCELEnv is the one environment `when:` guards compile and evaluate
-// in. CEL is the guard dialect and nothing more: bodies are Python/Go.
+// in. CEL is the guard dialect and nothing more: a body is Python.
 func FunctionCELEnv() (*cel.Env, error) {
 	celEnvOnce.Do(func() {
 		celEnvVal, celEnvErr = cel.NewEnv(
@@ -646,6 +653,10 @@ func (l *loader) parseFunction(d Document) *Function {
 	}
 
 	fn.Runtime = mstr(d.Data, "runtime")
+	if spent, retired := retiredFunctionRuntimes[fn.Runtime]; retired {
+		l.errf("%s: data.runtime: %q is retired; %s", where, fn.Runtime, spent)
+		return nil
+	}
 	if !functionRuntimes[fn.Runtime] {
 		l.errf("%s: data.runtime: %q — one of %s", where, fn.Runtime, strings.Join(FunctionRuntimes, ", "))
 		return nil
@@ -692,8 +703,8 @@ func (l *loader) parseFunction(d Document) *Function {
 func (l *loader) parseFunctionBody(where string, data map[string]any, fn *Function) bool {
 	if fn.IsHost() {
 		if l.source != SourceBuiltin {
-			l.errf("%s: data.runtime: host is the ENGINE's own implementation and only a shipped declaration may name one — an installed function declares its body (%s or %s)",
-				where, RuntimePython, RuntimeGo)
+			l.errf("%s: data.runtime: host is the ENGINE's own implementation and only a shipped declaration may name one — an installed function declares its body (%s)",
+				where, RuntimePython)
 			return false
 		}
 		if _, declared := data["source"]; declared {

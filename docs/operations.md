@@ -15,10 +15,10 @@ how to stand one up and look after it.
 - **One port**. The service serves the API under `/api`, the authentication
   endpoints beside it, and the console at `/`.
 - **Nothing else.** Search, the change feed, the function runner, and the OAuth
-  facility are all in the one process; the image also carries `python3`, the Go
-  toolchain, and `uv`, because [functions](functions.md) run as child
-  processes of the substrate. It carries `substratectl` too, so the operator
-  commands below run inside the container.
+  facility are all in the one process; the image also carries `python3` and
+  `uv`, because [functions](functions.md) run as child processes of the
+  substrate. It carries `substratectl` too, so the operator commands below run
+  inside the container.
 
 Everything lives in one Postgres schema. Repositories are separated by a
 `repository` column plus `FORCE ROW LEVEL SECURITY` keyed on the authenticated

@@ -1,14 +1,14 @@
 # Functions and the host SDK
 
-A function is a **pure callable**: a named piece of real code, Python or Go,
-carried inline on its manifest. It has no subscription and no schedule of its
-own. What fires it is a separate [trigger](#triggers). When it runs it reads
-its input, computes, and returns a list of **effects** the engine applies
-through the ordinary write path under the function's own actor, plus an output
-value for whoever called it. Writes are never blocked: a function is a
-subscriber, not a gatekeeper. There is one reference per function and four
-ways to invoke it: a trigger delivery, another function's host call, the HTTP
-call API, or a manual per-trigger run.
+A function is a **pure callable**: a named piece of real Python code, carried
+inline on its manifest. It has no subscription and no schedule of its own. What
+fires it is a separate [trigger](#triggers). When it runs it reads its input,
+computes, and returns a list of **effects** the engine applies through the
+ordinary write path under the function's own actor, plus an output value for
+whoever called it. Writes are never blocked: a function is a subscriber, not a
+gatekeeper. There is one reference per function and four ways to invoke it: a
+trigger delivery, another function's host call, the HTTP call API, or a manual
+per-trigger run.
 
 Functions ship inside a [bundle](bundles.md), beside the kinds they
 read and write. Here is one shaped like the URL harvester's, which turns a
@@ -52,7 +52,7 @@ trigger, a host call and the call API all address it with.
   they must match the two segments in front of the name in `metadata.id`.
 - **`description`** is model-facing and required: the function is its own tool
   card wherever it appears as a callable.
-- **`runtime`** is `python`, `go`, or [`host`](#host-functions).
+- **`runtime`** is `python` or [`host`](#host-functions).
 - **`source`** is the inline body (bounded, at most 256 KiB), on an inline
   runtime. A `host` function has none: the engine is its body.
 - **`timeout`** bounds one invocation's wall clock, host calls included. It is
@@ -103,13 +103,12 @@ sandbox, while the host patterns themselves are still only documentation (see
 `reads.kinds` and `call` is a full reference, `<authority>/<package>/<name>`,
 and none of them admit globs.
 
-The body's entrypoint is `main(input, host)` in Python
-(`Main(in, host)` in Go), and it returns `{effects, output}`. `input` names
-the `mode` that woke the body (`record`, `schedule`, `webhook`, `manual` or
-`call`) beside an `idempotencyKey`, a `causalDepth` and a `callDepth`, then
-carries that mode's payload: a delivery puts the envelope under
-`input["envelope"]`, while a direct call puts the caller's own JSON under
-**`input["args"]`**.
+The body's entrypoint is `main(input, host)`, and it returns
+`{effects, output}`. `input` names the `mode` that woke the body (`record`,
+`schedule`, `webhook`, `manual` or `call`) beside an `idempotencyKey`, a
+`causalDepth` and a `callDepth`, then carries that mode's payload: a delivery
+puts the envelope under `input["envelope"]`, while a direct call puts the
+caller's own JSON under **`input["args"]`**.
 
 ### Arguments and returns
 
@@ -343,17 +342,16 @@ is.
 ## How the body runs
 
 A function's source is prepared **at install**, synchronously, and a body that
-cannot run fails the install rather than the first delivery. Python source
-registers into a shared runner host; Go source compiles to a cached binary the
-runner supervises. Both speak the same JSON-lines protocol to that runner, a
-child process of the substrate, never in-process user code. Preparation is
-bounded so one apply cannot hold the vocabulary write path: at most 64 bodies warm
-per batch, sequentially, under a five-minute aggregate deadline.
+cannot run fails the install rather than the first delivery. The source is
+registered into a runner process of its own, which speaks a JSON-lines protocol
+to the substrate: a child process, never in-process user code. Preparation is
+bounded so one apply cannot hold the vocabulary write path: at most 64 bodies
+warm per batch, sequentially, under a five-minute aggregate deadline.
 
-A dependency-free Python function and every Go function take the fast path. A
-Python body that needs libraries declares them with a
-[PEP 723](https://peps.python.org/pep-0723/) inline metadata block, and the
-runner provisions a cached virtual environment with `uv` at registration:
+A dependency-free body takes the fast path. A body that needs libraries
+declares them with a [PEP 723](https://peps.python.org/pep-0723/) inline
+metadata block, and the runner provisions a cached virtual environment with
+`uv` at registration:
 
 ```python
 # /// script
@@ -448,13 +446,12 @@ the proven path is closed). On non-Linux hosts (a macOS laptop running
 A bundle may ship library modules its functions import (`modules:` on the
 bundle manifest, filename to inline source, at most 256 KiB each), so a
 provider's functions dedupe a shared HTTP client or normalizers instead of
-every body re-implementing them. `.py` files land on a per-installation module
-path (appended after the interpreter boots, so no `sitecustomize.py` can
-auto-run and no `json.py` can shadow the stdlib); `.go` files vendor into the
-Go build as `substratefn.local/lib`. Modules are inline sources on the bundle
-document, not closure members, so they never appear in `installs:`, and
-changing one re-registers or rebuilds the function exactly like changing the
-body.
+every body re-implementing them. A module is a `.py` file and lands on a
+per-installation module path (appended after the interpreter boots, so no
+`sitecustomize.py` can auto-run and no `json.py` can shadow the stdlib).
+Modules are inline sources on the bundle document, not closure members, so they
+never appear in `installs:`, and changing one re-registers the function exactly
+like changing the body.
 
 ## Effects
 
@@ -494,34 +491,25 @@ a verified no-op, and any other state is a conflict that parks.
 
 ## The SDK
 
-The runner passes one `host` object to every body. It carries the same
-namespaced surface in both runtimes, concept for concept; only the spelling
-follows each language, so a multi-field call takes Python keyword arguments
-where Go takes an option struct (`host.effects.put(kind, id, …)` against
-`host.Effects.Put(substratefn.PutEffect{…})`) while the fixed-arity ones stay
-positional in Go (`Get`, `Delete`, `Merge`, `Split`). One name differs between
-the two: Python's `order` is Go's `OrderBy`. Go also adds typed read results
-Python has no need of.
+The runner passes one `host` object to every body: a namespaced surface whose
+multi-field calls take keyword arguments (`host.effects.put(kind, id, …)`).
 
-**Reads.** `host.records.get(kind, id)`,
-`host.records.list(kinds, where?, first?, after?, order?)`,
-`host.records.search(q, kinds, k?, mode?)` (`mode` is `lexical`, `semantic`
-or `hybrid`, and defaults to `hybrid`; the answer is the hits with `pending`
-beside them, the number of properties the drain has yet to buy vectors for:
-Python's list carries it as `.pending`, and Go's `Records.SearchResult` returns
-`{Hits, Pending}` where `Records.Search` returns the hits alone), and
-`host.functions.call(function, input?)`. `get` addresses one record by its
-full reference, the (kind, id) pair; a bare id names nothing and the frame is
+**Reads.** `host.records.get(kind, id)`, `host.records.list(kinds, where?,
+first?, after?, order?)`, `host.records.search(q, kinds, k?, mode?)` (`mode` is
+`lexical`, `semantic` or `hybrid`, and defaults to `hybrid`; the answer is the
+hits with `pending` beside them, the number of properties the drain has yet to
+buy vectors for, carried on the returned list as `.pending`), and
+`host.functions.call(function, input?)`. `get` addresses one record by its full
+reference, the (kind, id) pair; a bare id names nothing and the frame is
 refused. Reads see committed state, never this delivery's own staged effects,
 so a local overlay can never lie. A forbidden kind answers exactly like an
 absent id (same nil shape, same budget charge), so a disallowed `get` is never
 an existence or kind oracle. Reads are held to the `permissions.reads` grant:
-with no `reads:` block the allowlist is empty, so every `list` and `search` is refused
-and every `get` answers absent. Calls are charged before they run, `first` and
-`k` clamp to the remaining row budget, and returned rows charge on top. In Go
-the typed read returns a `*ReadRecord` whose `Version` is an `int64`, so the
-CAS idiom `IfVersion: substratefn.Version(e.Version)` is writable straight off a
-read; in Python `host.version(record)` returns that integer.
+with no `reads:` block the allowlist is empty, so every `list` and `search` is
+refused and every `get` answers absent. Calls are charged before they run,
+`first` and `k` clamp to the remaining row budget, and returned rows charge on
+top. `host.version(record)` returns a read's version as an integer, which is
+what `if_version` takes, so a read feeds a guarded write directly.
 
 **Writes, the buffered-effects builder.** `host.effects.put(kind, id,
 properties?, if_absent?, if_version?)`, `.patch(kind, id, properties?,
@@ -536,22 +524,22 @@ maps through JSON, so a mistake is a clear body error rather than an engine
 park. The action needs no checking: it is the method you called. The engine
 stays authoritative for the emit ceiling and kind admission.
 
-**Proposing instead of writing.** `host.effects.propose(id, target_kind,
-target_id, diff?, op?, rationale?)` (`host.Effects.Propose(substratefn.ProposeEffect{…})`
-in Go) stages a change the **owner** decides on rather than one that lands: the
-effect is an ordinary put of a
-`substrate.reamde.dev/core/recordpatchrequest`, and accepting it is what applies
-the change. `id` is the request's own id, so a replayed delivery re-proposes the
-same request instead of a second one; `op` is `patch` (the default), `create` or
-`delete`; `target_kind`/`target_id` name the record the change is about — the
-existing target of a patch or delete, the record a create would mint; and `diff`
-carries the proposed values, wrapped under `properties` or as a plain property
-map the engine wraps. A `delete` carries no diff at all, and passing one is
-refused rather than dropped. A proposing function names the **request** kind in
-its `permissions.writes` and nothing else: it is not writing the target, it is asking. The diff
-is validated against the target kind at admission, so a malformed proposal is a
-refused write the delivery parks on, never a request the owner cannot accept —
-and because the request id is the body's own, a replayed delivery re-proposes the
+**Proposing instead of writing.**
+`host.effects.propose(id, target_kind, target_id, diff?, op?, rationale?)`
+stages a change the **owner** decides on rather than one that lands: the effect
+is an ordinary put of a `substrate.reamde.dev/core/recordpatchrequest`, and
+accepting it is what applies the change. `id` is the request's own id, so a
+replayed delivery re-proposes the same request instead of a second one; `op` is
+`patch` (the default), `create` or `delete`; `target_kind`/`target_id` name the
+record the change is about — the existing target of a patch or delete, the
+record a create would mint; and `diff` carries the proposed values, wrapped
+under `properties` or as a plain property map the engine wraps. A `delete`
+carries no diff at all, and passing one is refused rather than dropped. A
+proposing function names the **request** kind in its `permissions.writes` and
+nothing else: it is not writing the target, it is asking. The diff is validated
+against the target kind at admission, so a malformed proposal is a refused
+write the delivery parks on, never a request the owner cannot accept — and
+because the request id is the body's own, a replayed delivery re-proposes the
 same request as a verified no-op.
 
 **One mode per invocation.** A body **either** returns an explicit `effects`
@@ -562,13 +550,13 @@ while the buffer is non-empty is refused outright, naming both counts. The
 example above stages on the builder and returns no `effects` key.
 
 **Deterministic ids.** `host.ids.external(provider, account, external_id)` and
-`host.ids.url(url)` produce stable, URL-safe, hash-backed ids, byte-identical
-across the two runtimes. A deterministic id is scoped to one kind: the same
-derived id used for two different kinds names two independent records, so the
-writer names the kind on every put and get that uses it. `ids.url` hashes the
-exact URL with only surrounding-whitespace trimming and no canonicalization, so
-distinct spellings are distinct ids by design; a structural canonicalizer,
-when needed, is a separate named helper.
+`host.ids.url(url)` produce stable, URL-safe, hash-backed ids. A deterministic
+id is scoped to one kind: the same derived id used for two different kinds
+names two independent records, so the writer names the kind on every put and
+get that uses it. `ids.url` hashes the exact URL with only
+surrounding-whitespace trimming and no canonicalization, so distinct spellings
+are distinct ids by design; a structural canonicalizer, when needed, is a
+separate named helper.
 
 **Paging.** `host.page.resume()` returns the opaque cursor the previous page
 returned (absent on a fresh delivery), and `host.page.more(cursor)` builds the
@@ -580,30 +568,29 @@ original causal depth — and each page's effects commit with its cursor, so a
 backfill of any length runs at constant depth and a crash mid-drain resumes
 from the last committed page.
 
-**Configuration and connected accounts.** `host.config()` (`host.Config()` in
-Go) returns the callable's resolved configuration: the owning `bundle`, which
-is its package identity, the bundle's `inject: functions` inputs each resolved
-to one record under `inputs` (keyed by input name; an unresolved input's key is
-absent), and every [connection](bundles.md#connections) the bundle declares
-under `accounts`, each flattened to its id, kind and stored properties. For an OAuth
-bundle the host resolves each account's credential itself and hands the body
-a live `token` on the account entry, or a `tokenError` string when the grant is
+**Configuration and connected accounts.** `host.config()` returns the
+callable's resolved configuration: the owning `bundle`, which is its package
+identity, the bundle's `inject: functions` inputs each resolved to one record
+under `inputs` (keyed by input name; an unresolved input's key is absent), and
+every [connection](bundles.md#connections) the bundle declares under
+`accounts`, each flattened to its id, kind and stored properties. For an OAuth
+bundle the host resolves each account's credential itself and hands the body a
+live `token` on the account entry, or a `tokenError` string when the grant is
 dead, so one broken account never parks the whole delivery. The OAuth
 facility's own secrets, the client record's `clientSecret` and an account's
 `tokenRef`, are never injected: a body gets the resolved token and nothing it
 could exfiltrate a credential with. Every injected secret value is scrubbed out
 of whatever crosses back over the runner boundary.
 
-**Logging.** `host.log(msg)` in Python, `host.Logf(format, args...)` in Go,
-records a line on the invocation's run record. Lines are truncated at 4096
-characters and capped at 200 per invocation, with the remainder counted rather
-than kept, so a chatty body cannot flood the record.
+**Logging.** `host.log(msg)` records a line on the invocation's run record.
+Lines are truncated at 4096 characters and capped at 200 per invocation, with
+the remainder counted rather than kept, so a chatty body cannot flood the
+record.
 
 **Frames and ceilings.** One message between a body and the runner is a single
-JSON line capped at **8 MiB**, in both runtimes. A response that would exceed
-it is replaced by a clear error rather than a truncated frame, which is the
-real reason a body that walks a provider pages instead of returning everything
-at once.
+JSON line capped at **8 MiB**. A response that would exceed it is replaced by a
+clear error rather than a truncated frame, which is the real reason a body that
+walks a provider pages instead of returning everything at once.
 
 ## Host call
 

@@ -18,7 +18,7 @@ Ten kinds declare everything:
 | `substrate.reamde.dev/core/propertytype`  | one custom property type: a refinement of a base type | [Data model](data-model.md#property-types)       |
 | `substrate.reamde.dev/core/trait`         | one trait, bound by kinds                             | [Data model](data-model.md#traits)               |
 | `substrate.reamde.dev/core/recordmapping` | how a source record's properties reach its subject    | [Projection](projection.md)                      |
-| `substrate.reamde.dev/core/function`      | one pure callable in Python or Go                     | [Functions](functions.md)                        |
+| `substrate.reamde.dev/core/function`      | one pure callable in Python                           | [Functions](functions.md)                        |
 | `substrate.reamde.dev/core/agent`         | one callable whose body is an LLM loop                | [Agents](agents.md)                              |
 | `substrate.reamde.dev/core/bundle`        | one bundle: the closure it installs as a unit      | [Bundles](bundles.md)                      |
 | `substrate.reamde.dev/core/actor`         | one name writes are attributed to                     | [The API](api.md#actors)                         |

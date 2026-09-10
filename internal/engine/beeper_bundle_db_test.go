@@ -50,7 +50,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
-	"github.com/geoah/substrate/internal/runner/substratefn"
+	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -574,7 +574,7 @@ func TestBeeperBundleInstallsAndSyncs(t *testing.T) {
 	// working host.page.more handoff reaches — with names, the ghost-derived
 	// network, and the account stamp.
 	for i := range beeperRoomsTotal {
-		room, err := ds.Get(ctx, beeperRoomType, substratefn.ExternalID("beeper", acctID, beeperRoomID(i)))
+		room, err := ds.Get(ctx, beeperRoomType, runner.ExternalID("beeper", acctID, beeperRoomID(i)))
 		if err != nil {
 			t.Fatalf("room %02d mirror missing (did the rooms page hand off?): %v", i, err)
 		}
@@ -595,7 +595,7 @@ func TestBeeperBundleInstallsAndSyncs(t *testing.T) {
 	if n := beeperCountByAccount(t, ds, beeperMessageType, acctID); n != beeperRoomsTotal {
 		t.Fatalf("message mirrors = %d, want %d (one seed per room)", n, beeperRoomsTotal)
 	}
-	msg, err := ds.Get(ctx, beeperMessageType, substratefn.ExternalID("beeper", acctID, "$seed07"))
+	msg, err := ds.Get(ctx, beeperMessageType, runner.ExternalID("beeper", acctID, "$seed07"))
 	if err != nil {
 		t.Fatalf("seed message mirror missing: %v", err)
 	}
@@ -675,7 +675,7 @@ func TestBeeperBundleInstallsAndSyncs(t *testing.T) {
 	}
 	beeperResync(t, ds, acctID)
 
-	room0, err := ds.Get(ctx, beeperRoomType, substratefn.ExternalID("beeper", acctID, beeperRoomID(0)))
+	room0, err := ds.Get(ctx, beeperRoomType, runner.ExternalID("beeper", acctID, beeperRoomID(0)))
 	if err != nil {
 		t.Fatalf("room 00 gone after the delta: %v", err)
 	}
@@ -690,10 +690,10 @@ func TestBeeperBundleInstallsAndSyncs(t *testing.T) {
 		t.Fatalf("room 00 raw not patched from the delta summary: %v — the filter "+
 			"dropped a matching room instead of reading the stored mirror", room0.Properties["raw"])
 	}
-	if _, err := ds.Get(ctx, beeperMessageType, substratefn.ExternalID("beeper", acctID, "$delta1")); err != nil {
+	if _, err := ds.Get(ctx, beeperMessageType, runner.ExternalID("beeper", acctID, "$delta1")); err != nil {
 		t.Fatalf("the delta message did not mirror: %v", err)
 	}
-	room1, err := ds.Get(ctx, beeperRoomType, substratefn.ExternalID("beeper", acctID, beeperRoomID(1)))
+	room1, err := ds.Get(ctx, beeperRoomType, runner.ExternalID("beeper", acctID, beeperRoomID(1)))
 	if err != nil {
 		t.Fatalf("room 01 gone after the delta: %v", err)
 	}
@@ -703,7 +703,7 @@ func TestBeeperBundleInstallsAndSyncs(t *testing.T) {
 	if got := room1.Properties["network"]; got != "telegram" {
 		t.Fatalf("room 01 network = %v", got)
 	}
-	if _, err := ds.Get(ctx, beeperMessageType, substratefn.ExternalID("beeper", acctID, "$delta2")); err == nil {
+	if _, err := ds.Get(ctx, beeperMessageType, runner.ExternalID("beeper", acctID, "$delta2")); err == nil {
 		t.Fatalf("$delta2 mirrored — the filter passed a room whose stored network does not match")
 	}
 	acct, err = ds.Get(ctx, beeperAccountType, acctID)

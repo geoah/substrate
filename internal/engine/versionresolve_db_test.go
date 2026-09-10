@@ -96,14 +96,11 @@ func TestApplyMaintainsDeclarationVersions(t *testing.T) {
 	}
 	fnBody := func(logLine string) map[string]any {
 		return vocabulary.FunctionManifest(swPackage, "poke", map[string]any{
-			"runtime": vocabulary.RuntimeGo,
+			"runtime": vocabulary.RuntimePython,
 			"source": `
-import "substratefn.local/substratefn"
-
-func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, error) {
-	host.Logf("` + logLine + `")
-	return &substratefn.Result{}, nil
-}
+def main(input, host):
+    host.log("` + logLine + `")
+    return {}
 `,
 			"description": "test function poke",
 			"permissions": map[string]any{"writes": []any{swPackage + "/widget"}},

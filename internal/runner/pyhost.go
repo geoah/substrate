@@ -40,14 +40,14 @@ import (
 // uvProvisionTimeout is the floor for provisioning: a cold uv resolve
 // (download, build a venv) can outlast a body's invoke timeout, so it gets its
 // own budget. It only takes effect under a context that allows it: Warm
-// (registration) does; a cold Invoke is still clamped by the manifest timeout,
-// exactly like the Go build path.
+// (registration) does; a cold Invoke is still clamped by the manifest
+// timeout.
 const uvProvisionTimeout = 120 * time.Second
 
 // pythonProc returns the live process for one installation, provisioning,
-// starting and registering it if needed. Mirrors goProc: one supervised
-// process per Spec.Key, proved to speak the protocol by its register roundtrip
-// before anyone invokes through it.
+// starting and registering it if needed: one supervised process per Spec.Key,
+// proved to speak the protocol by its register roundtrip before anyone invokes
+// through it.
 func (r *Runner) pythonProc(ctx context.Context, spec Spec) (*proc, error) {
 	key := spec.Key()
 	r.mu.Lock()

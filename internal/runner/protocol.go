@@ -52,19 +52,20 @@ import (
 // the CALLER's delivery transaction) and replies with the target's output.
 //
 // One frame per line, JSON. The protocol stream is the child's ORIGINAL
-// stdout, which both hosts detach from user code before any body runs: the
-// python host dups fd 1 for itself and rebinds sys.stdout into the
-// invocation's capped logs (and sys.stdin to /dev/null), the Go SDK grabs
-// os.Stdout for its encoder and rebinds the os.Stdout variable to stderr. A
-// body's print therefore lands in logs, never on the wire. Child stderr is
-// captured by the parent into a capped ring buffer surfaced on failures.
-// Children cap their response frames and changelog lines below the parent's
-// scanner ceiling; a frame over the ceiling is a scanner error that kills the
-// child rather than wedging it.
+// stdout, which the host detaches from user code before any body runs: it dups
+// fd 1 for itself and rebinds sys.stdout into the invocation's capped logs (and
+// sys.stdin to /dev/null). A body's print therefore lands in logs, never on the
+// wire. Child stderr is captured by the parent into a capped ring buffer
+// surfaced on failures. The child caps its response frames and changelog lines
+// below the parent's scanner ceiling; a frame over the ceiling is a scanner
+// error that kills the child rather than wedging it.
 
-// ProtocolVersion pins the wire contract above. It participates in the Go
-// build cache key, so a binary compiled against an older protocol is rebuilt
-// instead of desyncing; the describe response carries it for verification.
+// ProtocolVersion pins the wire contract above, and host.py answers a describe
+// with the same number. NOTHING AT RUNTIME COMPARES THE TWO: the parent
+// negotiated a version when a compiled artifact could outlive the binary that
+// built it, and one SDK shipping inside this binary cannot. hostpy_test.go is
+// what refuses them drifting, so the frames a reader trusts stay the frames
+// the child serves.
 const ProtocolVersion = 5
 
 // The invocation modes.

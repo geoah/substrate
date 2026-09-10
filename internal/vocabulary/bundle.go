@@ -89,11 +89,10 @@ type Bundle struct {
 	// Modules are the bundle's SHARED library modules, filename → inline
 	// source, that its functions import to dedup helpers (a shared http
 	// client, provider auth, normalizers) instead of each ≤256 KiB body
-	// re-implementing them. `.py` files go on the Python import path of an
-	// isolated per-installation process; `.go` files are vendored into a
-	// function's Go build as the `substratefn.local/lib` package. Modules are
-	// inline sources on the bundle document, not member records, so they do
-	// not participate in the install closure.
+	// re-implementing them. A `.py` file goes on the Python import path of an
+	// isolated per-installation process. Modules are inline sources on the
+	// bundle document, not member records, so they do not participate in the
+	// install closure.
 	Modules map[string]string
 
 	// OAuth2 is the bundle's TRUSTED OAuth provider metadata, compiled from
@@ -458,24 +457,22 @@ func (l *loader) parseBundleModules(where string, data map[string]any) map[strin
 			l.errf("%s: a module filename is a bare base name, no path separators", w)
 			continue
 		}
-		if !strings.HasSuffix(name, ".py") && !strings.HasSuffix(name, ".go") {
-			l.errf("%s: a module filename ends in .py or .go — the bundle selects the runtime that imports it", w)
+		if !strings.HasSuffix(name, ".py") {
+			l.errf("%s: a module filename ends in .py, the extension the runtime imports", w)
 			continue
 		}
-		// A `.py` module's base name lands on the isolated process's import
-		// path: refuse names the interpreter/runner reserve or the stdlib owns,
-		// so a `sitecustomize.py`/`json.py`/`host.py` can never desync the
-		// protocol host or shadow its serializer (finding #11).
-		if base, ok := strings.CutSuffix(name, ".py"); ok {
-			lb := strings.ToLower(base)
-			if reservedPyModules[lb] {
-				l.errf("%s: %q is a reserved module name — it would run or shadow the runner host; rename it", w, name)
-				continue
-			}
-			if stdlibPyModules[lb] {
-				l.errf("%s: %q shadows a Python standard-library module — rename it to a bundle-specific name", w, name)
-				continue
-			}
+		// The module's base name lands on the isolated process's import path:
+		// refuse names the interpreter/runner reserve or the stdlib owns, so a
+		// `sitecustomize.py`/`json.py`/`host.py` can never desync the protocol
+		// host or shadow its serializer (finding #11).
+		lb := strings.ToLower(strings.TrimSuffix(name, ".py"))
+		if reservedPyModules[lb] {
+			l.errf("%s: %q is a reserved module name — it would run or shadow the runner host; rename it", w, name)
+			continue
+		}
+		if stdlibPyModules[lb] {
+			l.errf("%s: %q shadows a Python standard-library module — rename it to a bundle-specific name", w, name)
+			continue
 		}
 		src := mstr(m, name)
 		if strings.TrimSpace(src) == "" {

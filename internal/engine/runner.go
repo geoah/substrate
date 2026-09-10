@@ -92,9 +92,10 @@ func isMissingKeyErr(err error) bool {
 }
 
 // runnerSpec flattens one function's body and capabilities for the runner,
-// pinned to this repository: live runner state (python namespaces, Go processes)
-// is keyed by repository ID + function identity, never by bare source and never
-// by the repository's NAME, which two different repositories can share.
+// pinned to this repository: live runner state (one python process per
+// installation, its module namespace inside it) is keyed by repository ID +
+// function identity, never by bare source and never by the repository's NAME,
+// which two different repositories can share.
 func (ds *dataset) runnerSpec(fn *vocabulary.Function) runner.Spec {
 	return ds.runnerSpecIn(fn, ds.registry())
 }
@@ -641,12 +642,12 @@ func (ds *dataset) warmFunctions() {
 }
 
 // reconcileRunner retires runner state no live registration references — the
-// registry-publish hook: python registrations of removed or superseded bodies
-// deregister, their Go processes stop. An uninstalled bundle's functions are
+// registry-publish hook: the process holding a removed or superseded body's
+// registration stops, and its module namespace, descriptors and scratch go with
+// it. An uninstalled bundle's functions are
 // gone from the registry (uninstall tears the authority down, ticket 034), so they
 // drop out here with everything else the last apply removed. A DISABLED
 // bundle's functions stay registered — disable only refuses invocation.
-// Build-cache artifacts stay (immutable, shared; eviction is a later policy).
 // A host function is absent from the live set for the same reason it is absent
 // from warm and prepare: it never registered anything, so there is no state of
 // its own to retire — and including it would name a spec with no body, which

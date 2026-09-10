@@ -36,7 +36,7 @@ out.
   Linear, Notion, Beeper and Whoop, so a mailbox or a calendar becomes
   records you own rather than an API you rent, plus Firecrawl functions
   agents can call to search and read the web.
-- **Functions and triggers.** A function is real code, Python or Go, stored
+- **Functions and triggers.** A function is real Python code, stored
   in your repository and run by the substrate; a trigger fires it when a
   matching record changes, on a schedule, or when something POSTs to the
   trigger's public webhook URL. Automation lives beside the data it manages,

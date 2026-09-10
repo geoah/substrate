@@ -57,7 +57,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
-	"github.com/geoah/substrate/internal/runner/substratefn"
+	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -515,7 +515,7 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 	if cs := fake.seenCursors(); len(cs) != 1 || cs[0] != "" {
 		t.Fatalf("mid-drain disable: search cursors %v, want one empty", cs)
 	}
-	db := substratefn.ExternalID("notion", acct.ID, notionDSID)
+	db := runner.ExternalID("notion", acct.ID, notionDSID)
 	if _, err := ds.Get(ctx, notionDBType, db); err != nil {
 		t.Fatalf("page-one effects did not commit before the disable: %v", err)
 	}
@@ -552,10 +552,10 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 	}
 	drainTriggers(t, ds)
 
-	pg1 := substratefn.ExternalID("notion", acct.ID, notionPg1ID)
-	pg2 := substratefn.ExternalID("notion", acct.ID, notionPg2ID)
-	pg4 := substratefn.ExternalID("notion", acct.ID, notionPg4ID)
-	pg5 := substratefn.ExternalID("notion", acct.ID, notionPg5ID)
+	pg1 := runner.ExternalID("notion", acct.ID, notionPg1ID)
+	pg2 := runner.ExternalID("notion", acct.ID, notionPg2ID)
+	pg4 := runner.ExternalID("notion", acct.ID, notionPg4ID)
+	pg5 := runner.ExternalID("notion", acct.ID, notionPg5ID)
 
 	// The data-source mirror: keyed by the data source, naming its
 	// containing database — the 2025-09-03 model, where a multi-source
@@ -722,10 +722,10 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 	if got := fake.searchCount(); got != searchesBefore+1 {
 		t.Fatalf("cutoff walk ran %d searches, want 1 — the below-cutoff result must end the walk", got-searchesBefore)
 	}
-	if _, err := ds.Get(ctx, notionPageType, substratefn.ExternalID("notion", acct.ID, notionNewID)); err != nil {
+	if _, err := ds.Get(ctx, notionPageType, runner.ExternalID("notion", acct.ID, notionNewID)); err != nil {
 		t.Fatalf("the fresh page did not mirror: %v", err)
 	}
-	if _, err := ds.Get(ctx, notionPageType, substratefn.ExternalID("notion", acct.ID, notionOldID)); err == nil {
+	if _, err := ds.Get(ctx, notionPageType, runner.ExternalID("notion", acct.ID, notionOldID)); err == nil {
 		t.Fatalf("the below-cutoff relic mirrored — the cutoff is dead")
 	}
 	if got := mustGetInternal(t, ds, notionAccountType, acct.ID).Properties["syncStatus"]; got != "ok" {
@@ -755,7 +755,7 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 	if got := fake.searchCount(); got != searchesBefore {
 		t.Fatalf("duplicate account reached the provider: %d -> %d searches", searchesBefore, got)
 	}
-	if _, err := ds.Get(ctx, notionPageType, substratefn.ExternalID("notion", acct2.ID, notionNewID)); err == nil {
+	if _, err := ds.Get(ctx, notionPageType, runner.ExternalID("notion", acct2.ID, notionNewID)); err == nil {
 		t.Fatalf("duplicate account minted its own mirrors")
 	}
 
@@ -855,10 +855,10 @@ func TestNotionSyncResolvesParentsBesideASecondPageType(t *testing.T) {
 		t.Fatalf("the sync parked beside a second `page` type: %d -> %d parked deliveries", parkedBefore, got)
 	}
 
-	pg1 := substratefn.ExternalID("notion", acct.ID, notionPg1ID)
-	pg2 := substratefn.ExternalID("notion", acct.ID, notionPg2ID)
-	pg4 := substratefn.ExternalID("notion", acct.ID, notionPg4ID)
-	pg5 := substratefn.ExternalID("notion", acct.ID, notionPg5ID)
+	pg1 := runner.ExternalID("notion", acct.ID, notionPg1ID)
+	pg2 := runner.ExternalID("notion", acct.ID, notionPg2ID)
+	pg4 := runner.ExternalID("notion", acct.ID, notionPg4ID)
+	pg5 := runner.ExternalID("notion", acct.ID, notionPg5ID)
 
 	if tg := parentRef(mustGetInternal(t, ds, notionPageType, pg2)); tg != notionPageRef(pg1) {
 		t.Fatalf("pg2 parent = %q, want the page mirror %s", tg, pg1)

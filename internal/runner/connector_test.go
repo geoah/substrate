@@ -10,7 +10,8 @@ import (
 // The connector-ergonomics half of the runner: PEP 723 detection and uv
 // dispatch, the isolated-vs-shared path decision, and shared bundle modules on
 // the import path. The uv-run tests skip (never fail) when uv is absent from
-// the sandbox, and the pure-Go detection/dispatch checks run everywhere.
+// the sandbox; the detection and dispatch checks start no process and run
+// everywhere.
 
 // hasUV reports whether `uv` is on PATH; the integration tests skip without it.
 func hasUV() bool {
@@ -20,7 +21,7 @@ func hasUV() bool {
 
 func TestPEP723Detection(t *testing.T) {
 	// A body with a `# /// script` block is detected; a dependency-free body
-	// and a non-script block are not. Pure Go — runs everywhere.
+	// and a non-script block are not. No process starts, so it runs everywhere.
 	withDeps := `# /// script
 # requires-python = ">=3.11"
 # dependencies = ["six"]
@@ -155,38 +156,6 @@ def main(input, host):
 	r.mu.Unlock()
 	if live != 1 {
 		t.Fatalf("expected one process for the one installation, got %d", live)
-	}
-}
-
-func TestGoSharedModuleImportable(t *testing.T) {
-	// A bundle's shared `.go` module is vendored into the build as the
-	// `substratefn.local/lib` package and importable from the body. Compiles with
-	// the host toolchain, so it skips in short mode like the Go build test.
-	if testing.Short() {
-		t.Skip("compiles with the host toolchain")
-	}
-	r := New()
-	spec := Spec{
-		Repository: "t1", Function: "gouser.g.test", Runtime: "go",
-		Source: `
-import (
-	"substratefn.local/lib"
-	"substratefn.local/substratefn"
-)
-
-func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, error) {
-	return &substratefn.Result{Output: lib.Greet("mail")}, nil
-}
-`,
-		TimeoutMs: 30000,
-		Modules:   map[string]string{"greet.go": "package lib\n\nfunc Greet(who string) string { return \"hi \" + who }\n"},
-	}
-	res, err := r.Invoke(context.Background(), spec, testInput(), widgetBackend())
-	if err != nil {
-		t.Fatalf("go shared-module invoke: %v", err)
-	}
-	if res.Output != "hi mail" {
-		t.Fatalf("go shared module not imported: %v", res.Output)
 	}
 }
 

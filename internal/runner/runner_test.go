@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -584,106 +582,6 @@ func TestReconcileRetiresStaleRegistrations(t *testing.T) {
 	if _, err := r.Invoke(context.Background(), drop, testInput(), nil); err != nil {
 		t.Fatalf("reinstalled body: %v", err)
 	}
-}
-
-func TestGoBuildAndInvoke(t *testing.T) {
-	if testing.Short() {
-		t.Skip("compiles with the host toolchain")
-	}
-	r := New()
-	spec := Spec{
-		Repository: "t1", Function: "gofn.g.test",
-		Runtime: "go",
-		Source: `
-import "substratefn.local/substratefn"
-
-func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, error) {
-	host.Logf("depth %d", in.CausalDepth)
-	got, err := host.Get("g.test/widgets/widget", "w1")
-	if err != nil {
-		return nil, err
-	}
-	return &substratefn.Result{
-		Output: got["id"],
-		Effects: []substratefn.Effect{{Action: "put", Kind: "g.test/widgets/widget", ID: "out"}},
-	}, nil
-}
-`,
-		TimeoutMs: 30000,
-		ReadTypes: []string{"g.test/widgets/widget"},
-	}
-	res, err := r.Invoke(context.Background(), spec, testInput(), widgetBackend())
-	if err != nil {
-		t.Fatalf("invoke: %v", err)
-	}
-	if res.Output != "w1" || len(res.Effects) != 1 || len(res.Logs) != 1 {
-		t.Fatalf("result: %+v", res)
-	}
-	// The second invocation rides the cached binary and the live process.
-	if _, err := r.Invoke(context.Background(), spec, testInput(), widgetBackend()); err != nil {
-		t.Fatalf("second invoke: %v", err)
-	}
-
-	// Review W1 #9: a corrupt cache artifact is invalidated and rebuilt once
-	// instead of wedging the installation across restarts.
-	key := spec.Key()
-	r.mu.Lock()
-	p := r.gos[key]
-	r.mu.Unlock()
-	p.kill()
-	// Wait for the reap, not just the signal: while the kernel still has the
-	// artifact open for execution, rewriting it is ETXTBSY.
-	<-p.waited
-	dir, err := r.binDir()
-	if err != nil {
-		t.Fatalf("bin dir: %v", err)
-	}
-	bkey, err := buildKey(spec)
-	if err != nil {
-		t.Fatalf("build key: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, bkey), []byte("not a binary"), 0o755); err != nil {
-		t.Fatalf("corrupt artifact: %v", err)
-	}
-	if res, err := r.Invoke(context.Background(), spec, testInput(), widgetBackend()); err != nil || res.Output != "w1" {
-		t.Fatalf("corrupt artifact did not rebuild: %+v %v", res, err)
-	}
-}
-
-func TestDescribeAssertsProtocolVersion(t *testing.T) {
-	// Review W2 #15: the describe roundtrip is the version negotiation. A
-	// child answering with another protocol version — a stale artifact, an
-	// SDK copied off an outdated comment — is refused before anything
-	// invokes, and a current child passes the same gate.
-	dir := t.TempDir()
-	stale := filepath.Join(dir, "stale-child")
-	if err := os.WriteFile(stale, []byte(`#!/bin/sh
-read line
-printf '{"kind":"response","reqId":1,"ok":true,"functions":["main"],"protocol":2}\n'
-read hold
-`), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	r := New()
-	spec := Spec{Repository: "t1", Function: "stale.g.test", Runtime: "go", TimeoutMs: 5000}
-	if _, err := r.startVerified(context.Background(), spec, stale); err == nil ||
-		!strings.Contains(err.Error(), "protocol 2, want 5") {
-		t.Fatalf("a stale protocol child was accepted: %v", err)
-	}
-
-	current := filepath.Join(dir, "current-child")
-	if err := os.WriteFile(current, []byte(`#!/bin/sh
-read line
-printf '{"kind":"response","reqId":1,"ok":true,"functions":["main"],"protocol":5}\n'
-read hold
-`), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	p, err := r.startVerified(context.Background(), spec, current)
-	if err != nil {
-		t.Fatalf("a current protocol child was refused: %v", err)
-	}
-	p.kill()
 }
 
 func TestCallHostCallGatingAndRoundtrip(t *testing.T) {

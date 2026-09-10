@@ -282,16 +282,13 @@ def main(input, host):
 	}
 }
 
-// The shared caches are the vector one-process-per-installation does NOT
-// close: plant an executable under the hash a neighbor's Go body will start,
-// and the substrate execs it. They are read-and-execute to every body.
-func TestBodyCannotWriteTheSharedCaches(t *testing.T) {
+// The shared work root is the vector one-process-per-installation does NOT
+// close: every installation's work dir hangs off one parent, so a body that
+// could write there could plant a module or a host script a neighbor loads. It
+// is read-only to every body; only the body's own work dir is writable.
+func TestBodyCannotWriteTheSharedWorkRoot(t *testing.T) {
 	r := New()
 	requireSandbox(t, r)
-	binDir, err := r.binDir()
-	if err != nil {
-		t.Fatalf("bin dir: %v", err)
-	}
 	pyDir, err := r.pyDir()
 	if err != nil {
 		t.Fatalf("py dir: %v", err)
@@ -316,7 +313,7 @@ def main(input, host):
 `,
 	}
 	in := testInput()
-	in.Args = map[string]any{"dirs": []any{binDir, pyDir}}
+	in.Args = map[string]any{"dirs": []any{pyDir}}
 	res, err := r.Invoke(context.Background(), spec, in, nil)
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
@@ -329,7 +326,7 @@ def main(input, host):
 		s, _ := got.(string)
 		if !strings.HasPrefix(s, "denied:") {
 			_ = os.Remove(filepath.Join(dir, "planted"))
-			t.Fatalf("a body wrote an executable into the shared cache %s: %q", dir, s)
+			t.Fatalf("a body wrote an executable into the shared work root %s: %q", dir, s)
 		}
 	}
 }

@@ -12,7 +12,7 @@
 #
 # What is held:
 #   node    .mise.toml against the console build stage
-#   go      .mise.toml against every golang stage, in both Dockerfiles
+#   go      .mise.toml against every golang stage the Dockerfiles declare
 #   pnpm    .mise.toml against web/console/package.json's packageManager
 #   alpine  Dockerfile against Dockerfile.release, which must agree
 #

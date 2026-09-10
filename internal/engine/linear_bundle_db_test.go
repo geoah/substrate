@@ -50,7 +50,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
-	"github.com/geoah/substrate/internal/runner/substratefn"
+	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -676,10 +676,10 @@ func TestLinearBundleFakeSyncMirrors(t *testing.T) {
 	installLinearResyncHand(t, ds)
 	drainTriggers(t, ds)
 
-	issueAID := substratefn.ExternalID("linear", account.ID, "issue:uuid-a")
-	issueBID := substratefn.ExternalID("linear", account.ID, "issue:uuid-b")
-	teamID := substratefn.ExternalID("linear", account.ID, "team:uuid-t")
-	userID := substratefn.ExternalID("linear", account.ID, "user:uuid-v")
+	issueAID := runner.ExternalID("linear", account.ID, "issue:uuid-a")
+	issueBID := runner.ExternalID("linear", account.ID, "issue:uuid-b")
+	teamID := runner.ExternalID("linear", account.ID, "team:uuid-t")
+	userID := runner.ExternalID("linear", account.ID, "user:uuid-v")
 
 	if n := api.pageCount(); n < 2 {
 		t.Fatalf("the paged drain made %d GraphQL reads, want >= 2 (one per page)", n)
@@ -794,7 +794,7 @@ func TestLinearBundleFakeSyncMirrors(t *testing.T) {
 	// Provider-owned edge hygiene: issue B moves to another team. `team` is
 	// a SINGLE reference, so the sync's re-write must leave exactly ONE target
 	// — the new team — never an accumulated pair.
-	team2ID := substratefn.ExternalID("linear", account.ID, "team:uuid-t2")
+	team2ID := runner.ExternalID("linear", account.ID, "team:uuid-t2")
 	api.moveIssueBTeam(map[string]any{"id": "uuid-t2", "key": "OPS", "name": "Operations"})
 	linearResync(t, ds, account.ID)
 	movedB := linearGet(t, ds, linearIssueType, issueBID)
