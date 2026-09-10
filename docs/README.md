@@ -5,8 +5,8 @@ it. Messages, mail, calendar, people, tasks and media go into one typed set of
 records behind one API, stored in Postgres on a machine you run. Assistants
 read those records and write back through the same API.
 
-The design borrows from Kubernetes, which answers the same problem: many
-semi-trusted programs cooperating over shared typed state.
+Many semi-trusted programs cooperating over one set of typed records is the
+problem Kubernetes already answered, and the design borrows its answer:
 
 - the substrate is the **API server**: typed records, declared validation, an
   ordered change feed;
@@ -39,7 +39,7 @@ API call that completes a task.
 
 ## The API
 
-- [The API](api.md) — REST and GraphQL, filters, mutations, search, errors
+- [The API](api.md): REST and GraphQL, filters, mutations, search, errors
 - [Users, tokens, and actors](auth.md)
 - [The changelog and watch](changelog.md)
 

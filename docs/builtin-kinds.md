@@ -7,7 +7,8 @@ the tables give the name, and each heading gives the package as the tree
 spells it, under the placeholder authority an import rewrites. Which door a
 package takes, what an import rewrites and how an upgrade is offered are in
 [bundles](bundles.md#the-two-doors); the provider packages, and the five
-samples that ship functions and agents rather than kinds of their own, are in
+samples this page does not table (notes, llm, web, firecrawl and pebble, whose
+kinds are described beside the functions and agents that write them), are in
 the [bundles catalog](bundles-catalog.md). Every declaration is queryable in
 your own repository (`substratectl kinds`, or
 `GET …/substrate.reamde.dev/core/kind`), descriptions included, so this page

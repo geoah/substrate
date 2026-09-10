@@ -492,8 +492,8 @@ GraphQL surface. `export` reports `beta` because 0053 did not name it:
 `GET /api/v1/export` streams the repository's recovery export, a tar of its
 directory in the snapshot format ([backups](operations.md#backups)), and it
 freezes by a decision of its own, not by age. `agents` and `embeddings` report
-`alpha`, so their shapes may still move; a surface in their `surfaces` says
-where they are served, not that they are frozen. `agents` is served on `rest`
+`alpha` because their shapes are still moving; a surface in their `surfaces`
+says where they are served, not that they are frozen. `agents` is served on `rest`
 and `embeddings` on `graphql` alone, where the semantic arm of
 [`search`](#search) is its one door.
 
@@ -565,16 +565,6 @@ The two also do not serve the same set. Discovery says which serves what
 | Per-property provenance, `propertyMeta` | single-record reads only | single-record reads only |
 | Operational verbs: triggers, bundles, catalog, blobs, vocabulary apply, function and agent calls | yes | none |
 
-Search is the deliberate one. **Filtering is REST's job** and **ranking is the
-GraphQL query's**: `?filter=` selects rows by predicate, `search` scores and
-orders them, and the two answer different questions. A client that needs
-ranking posts the `search` query to `POST /api/v1/graphql`; there is no other
-door. `propertyMeta` is the other asymmetry: it is assembled per record, so a
-list never carries it on either surface. Both are listed here rather than left
-for a client to find out by trying, which is the rule: an asymmetry is written
-down or it is a bug
-([decision 0053](decisions/0053-rest-is-supported-all-of-graphql-is-preview.md)).
-
 GraphQL's whole read and write surface serves at one endpoint,
 `POST /api/v1/graphql`, and its `filter` argument takes
 [the filter grammar](#the-filter-grammar) whole. Every argument carries that
@@ -599,6 +589,34 @@ query ($f: JSON) {
 # {"f": {"kinds": ["ada.example.com/tasks/task"],
 #        "properties": {"status": {"eq": "open"}}}}
 ```
+
+The five mutations spell their arguments out, and only `put` carries the whole
+record: `put(input)`, `patch(kind, id, input, ifVersion)`,
+`delete(kind, id, ifVersion)`,
+`merge(kind, winner, loser, winnerVersion, loserVersion)` and
+`split(mergeId, ifVersion)`. Every version argument is an optional `Long`
+carrying the [precondition](#the-five-mutations) the REST body carries. Watch
+`split`: its argument is `mergeId`, where the REST body key for the same value
+is `merge`.
+
+```graphql
+mutation ($k: String!, $id: ID!, $in: JSON!) {
+  patch(kind: $k, id: $id, input: $in) { id version }
+}
+# variables:
+# {"k": "samples.substrate.reamde.dev/tasks/task", "id": "kq3v9x2m41pf",
+#  "in": {"properties": {"status": "done"}}}
+```
+
+Search is the deliberate one. **Filtering is REST's job** and **ranking is the
+GraphQL query's**: `?filter=` selects rows by predicate, `search` scores and
+orders them, and the two answer different questions. A client that needs
+ranking posts the `search` query to `POST /api/v1/graphql`; there is no other
+door. `propertyMeta` is the other asymmetry: it is assembled per record, so a
+list never carries it on either surface. Both are listed here rather than left
+for a client to find out by trying, which is the rule: an asymmetry is written
+down or it is a bug
+([decision 0053](decisions/0053-rest-is-supported-all-of-graphql-is-preview.md)).
 
 ### Generated names and scalars
 
