@@ -157,7 +157,7 @@ func openInternalDataset(t *testing.T, opts ...Option) *dataset {
 	if !ok {
 		t.Fatalf("dataset is a %T", d)
 	}
-	importVocabulary(t, ds)
+	importVocabulary(t, ds, "tasks")
 	return ds
 }
 
@@ -193,12 +193,17 @@ func openCoreDataset(t *testing.T, opts ...Option) *dataset {
 	return ds
 }
 
-// importVocabulary imports the shipped vocabulary bundles (all of them when
-// none are named) through the ordinary install path. Repository creation seeds
-// CORE ALONE — people/tasks/messaging/calendar/media are vocabulary bundles a
-// user imports — so any test touching that vocabulary imports it first.
+// importVocabulary imports the named shipped sample packages through the
+// ordinary install path, each package's `requires:` ahead of it. Repository
+// creation seeds the core package alone, so a test touching sample vocabulary
+// imports it first, and it names what it reads: every package is a registry
+// build and a projection pass. An empty list would mean all five, which is
+// never what a caller wants here.
 func importVocabulary(t *testing.T, ds substrate.Dataset, names ...string) {
 	t.Helper()
+	if len(names) == 0 {
+		t.Fatal("importVocabulary: name the sample packages this test reads")
+	}
 	if err := enginetest.ImportVocabulary(context.Background(), ds, names...); err != nil {
 		t.Fatalf("import the shipped vocabulary: %v", err)
 	}

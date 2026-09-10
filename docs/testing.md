@@ -89,14 +89,15 @@ concurrently. A `*_db_test.go` failure that looks arbitrary usually is, so
 confirm it alone before believing it:
 
 ```bash
-mise run test:db:engine                # about 70 s on 16 cores; the answer you can trust
+mise run test:db:engine                # about 106 s on 16 cores; the answer you can trust
 go test ./internal/engine/ -run TestFold -v
 ```
 
-The engine package is about 850 top-level tests: about 70 s of wall time on a
-16 core machine (measured 2026-09-08) and longer on a 4 vCPU CI runner, where
-a shard's log says what it costs, so the comment above is this machine's
-number, not a promise.
+The engine package is about 765 top-level tests: about 106 s of wall time on a
+16 core machine (best of three runs, measured 2026-09-10; 117 s on the same
+box before the fixture stopped importing the sample packages no test reads)
+and longer on a 4 vCPU CI runner, where a shard's log says what it costs, so
+the comment above is this machine's number, not a promise.
 
 `test:db:engine` is the engine package with `test:db`'s flags, and it is also
 the task CI shards: with `SHARD` and `SHARDS` in the environment it runs one
@@ -108,8 +109,8 @@ under [What CI runs](#what-ci-runs).
 ### The engine fixture, and where the time goes
 
 Almost every engine test opens its own service, creates a repository and
-imports the sample vocabulary. Four things the harness does keep that under
-90 s on 16 cores, and this page is the one place that explains them (the code
+imports the sample vocabulary. Five things the harness does keep that near
+106 s on 16 cores, and this page is the one place that explains them (the code
 comments point here).
 
 **A migrated template database, copied per test.** `engine.Open` runs once
@@ -163,6 +164,20 @@ and sixteen repositories fsyncing one ext4 journal serialize on it.
 `/dev/shm` when that is a tmpfs with at least 512 MB free, and says so once
 on stderr. A container's 64 MB `/dev/shm` falls back to the default;
 `TMPDIR=/tmp` opts out.
+
+**One sample package in the fixture.** Every fixture that imports sample
+vocabulary imports `tasks`, whose `requires:` pull `people` and `scheduling`:
+three packages, and every kind the suite reads except the messaging and
+calendar ones. Each package is a separate `ApplyVocabularyDocuments` and so a
+separate registry build, narrowing classification, declaration projection and
+index pass, which is why a fixture names what it needs rather than importing
+the shipped five. `newDataset` is the external half's default and
+`openInternalDataset` the internal half's; `newVocabularyDataset(t, names...)`
+imports exactly the packages a test names, and the twenty-one tests that read
+a messaging or calendar kind name theirs. Both halves' `importVocabulary`
+refuses an empty name list, because `enginetest.ImportVocabulary` reads that
+as all five and a caller who wants all five says `enginetest.Vocabulary...`.
+This is worth 11 s of the suite's wall clock, 117 s to 106 s.
 
 To see what a run spent, capture it as JSON once and read it:
 

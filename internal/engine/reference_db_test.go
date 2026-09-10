@@ -435,7 +435,7 @@ func TestRequiredRepeatedReferenceRefusesAnEmptyList(t *testing.T) {
 func TestReferencesResolveAcrossTheCalendarSample(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, ds := newDataset(t)
+	_, ds := newVocabularyDataset(t, "tasks", "calendar")
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}

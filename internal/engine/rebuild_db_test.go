@@ -597,7 +597,7 @@ func TestRebuildRefusesWhatItCannotReplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
-	importVocabulary(t, ds)
+	importVocabulary(t, ds, "tasks")
 	a := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Ada Lovelace"},
 	})

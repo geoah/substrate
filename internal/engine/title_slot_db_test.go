@@ -26,7 +26,7 @@ const (
 // engine derives the column, so the value is dropped rather than refused.
 func TestTaskAndTranscriptTitleThemselvesFromName(t *testing.T) {
 	t.Parallel()
-	_, ds := newDataset(t)
+	_, ds := newVocabularyDataset(t, "tasks", "calendar")
 
 	task := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: taskType, Properties: map[string]any{"name": "Buy milk"},

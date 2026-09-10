@@ -354,7 +354,7 @@ func TestChangesCursorWalkSkipsNoSeqUnderConcurrentWriters(t *testing.T) {
 // patch whose seq the poller never observes is a message never delivered.
 func TestChangesCursorWalkSeesEveryPatchDuringASyncBurst(t *testing.T) {
 	t.Parallel()
-	_, ds := newDataset(t)
+	_, ds := newVocabularyDataset(t, "messaging")
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}

@@ -117,7 +117,7 @@ func fullSync(t *testing.T, ds substrate.Dataset) {
 // THE headline test: a full re-sync of identical data is completely silent.
 func TestResyncIsSilent(t *testing.T) {
 	t.Parallel()
-	_, ds := newDataset(t)
+	_, ds := newVocabularyDataset(t, "messaging", "calendar")
 	fullSync(t, ds)
 	seq := maxSeq(t, ds)
 	if seq == 0 {
@@ -152,7 +152,7 @@ func TestResyncIsSilent(t *testing.T) {
 func TestWriterKeyDeterminismAndRefinements(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, ds := newDataset(t)
+	_, ds := newVocabularyDataset(t, "tasks", "calendar")
 	installShelf(t, ds)
 	work := mustPut(t, ds, owner, substrate.PutInput{Kind: "book", Properties: map[string]any{"title": "Piranesi"}})
 	editionID := extID("audible.asin", "B0123ABCDE")
@@ -196,29 +196,26 @@ func TestWriterKeyDeterminismAndRefinements(t *testing.T) {
 		}
 	}
 	// So is the format enum: there is no `audiobook` type, only this value.
-	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+	_, err := ds.Put(ctx, owner, substrate.PutInput{
 		Kind: "bookedition", Properties: map[string]any{"format": "vinyl", "work": work.ID},
-	}); err == nil {
-		t.Fatal("expected an enum violation")
-	}
+	})
+	wantRefusal(t, err, substrate.ErrValidation, "format")
 	// Undeclared properties are rejected.
-	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+	_, err = ds.Put(ctx, owner, substrate.PutInput{
 		Kind: "task", Properties: map[string]any{"nope": 1},
-	}); err == nil {
-		t.Fatal("expected an unknown-property error")
-	}
+	})
+	wantRefusal(t, err, substrate.ErrValidation, "nope")
 	// Refined property types validate.
-	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+	_, err = ds.Put(ctx, owner, substrate.PutInput{
 		Kind: "calendar", Properties: map[string]any{"name": "x", "timezone": "Mars/Olympus"},
-	}); err == nil {
-		t.Fatal("expected an IANA timezone error")
-	}
+	})
+	wantRefusal(t, err, substrate.ErrValidation, "timezone")
 }
 
 func TestFinalizersAndCascadeGC(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, ds := newDataset(t)
+	_, ds := newVocabularyDataset(t, "messaging")
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}

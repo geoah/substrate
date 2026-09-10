@@ -403,7 +403,7 @@ func newHookDatasetWithDSN(t *testing.T, triggers []enginetest.Trigger, fns ...m
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
-	importVocabulary(t, ds)
+	importVocabulary(t, ds, "tasks")
 	if err := enginetest.Install(ctx, ds, owner, fnConnector(triggers, fns...)); err != nil {
 		t.Fatalf("register connector: %v", err)
 	}
