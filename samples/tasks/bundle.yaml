@@ -17,27 +17,6 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: tasks
-  # version 2: THE TYPED CORE SWEEP. Declarations in this closure moved to the
-  # declared spellings — whichever of them they used: a tool entry naming its arm,
-  # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
-  # naming its properties. THE PACKAGE IS VERSIONED AS A UNIT, so this bump
-  # carries the closure whole rather than saying every declaration in it moved.
-  #
-  # version 3: the settled state vocabulary (decision record 0013). The task's
-  # `dropped` is `abandoned`, matching project, and the tasklog's `completed`
-  # is `done`, matching the task's own terminal state.
-  # version 4: `tasklog` binds `occurrencelog`. The `task` kind pins its own
-  # version for its `recurring` binding (#122).
-  # version 6: every link is a `type: reference` property carrying
-  # `mustExist: true`, and an owning one carries `onDelete: cascade`.
-  # version 7: the SUGGESTED MAPPING from a linear issue onto `task`. A
-  # mapping onto a kind is declared by the package that owns that kind
-  # (docs/decisions/0049), so the projection the linear provider used to run
-  # as a function is this package's declaration now, and the import drops it
-  # while that provider is absent.
-  # version 8: the bundle pins the floor under each package it requires
-  # (`requiresAtLeast`, decision record 0070): the versions this closure was
-  # verified against. Additive.
   version: 8
 ---
 # ---- the bundle document: the import unit -------------------------------------

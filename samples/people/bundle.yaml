@@ -33,13 +33,6 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: people
-  # version 3: every link is a `type: reference` property carrying
-  # `mustExist: true`.
-  # version 4: the five SUGGESTED MAPPINGS onto `person` (github `user`,
-  # google `contact` and `emailaddress`, linear `user` and an issue's
-  # assignee). A mapping onto a kind is declared by the package that owns that
-  # kind (docs/decisions/0049), so they are this package's, and the import
-  # drops the ones whose provider this repository does not hold.
   version: 4
 ---
 # ---- the bundle document: the import unit -------------------------------------

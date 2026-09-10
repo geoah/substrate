@@ -10,12 +10,6 @@ data:
     created `received` and never moves; anything you mean to send starts as
     a `draft` and walks the send path, so composing and delivery are one record
     rather than two systems.
-  # The declaration inherited the package's version before this pin.
-  # version 2: `sentAt` is a declared property (datetime). The sent
-  # transition stamped it as an undeclared string before.
-  # version 4: `conversation`, `author`, `mentions`, `replyTo` and
-  # `threadRoot` are `type: reference` properties carrying `mustExist: true`,
-  # and `conversation` carries `onDelete: cascade`.
   version: 4
   names:
     singular: conversationmessage

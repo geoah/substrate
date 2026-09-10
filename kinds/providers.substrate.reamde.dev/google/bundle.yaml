@@ -30,7 +30,7 @@
 #   longer redirect a token exchange or a revocation (review-google #1).
 # Connect:  create an account, then run the host OAuth flow against it —
 #   the callback URL the user registers in their Google client is the host's
-#   GET …/api/v1/oauth/callback (see README).
+#   GET …/api/v1/oauth/callback (see docs/bundles-catalog.md).
 #
 # This file is the SCHEMA closure (the atomic install unit). The delivery
 # wiring lives beside it in triggers.yaml as ordinary data records.
@@ -41,51 +41,6 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: google
-  # version 2: THE TYPED CORE SWEEP. Declarations in this closure moved to the
-  # declared spellings — whichever of them they used: a tool entry naming its arm,
-  # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
-  # naming its properties. THE PACKAGE IS VERSIONED AS A UNIT, so this bump
-  # carries the closure whole rather than saying every declaration in it moved.
-  # version 3: the grants group under one `permissions:` object, and the permission
-  # to write is `writes:` inside it. This closure's functions and agents
-  # follow core's declaration.
-  # version 5: gmailsync flattens an html-only body to markdown instead of
-  # stripping its tags, so a message whose only body is html keeps its links.
-  # version 6: `account` on every mirror kind is a pinned owner
-  # reference instead of a string, so disconnecting an account collects
-  # the rows it synced (docs/decisions/0032).
-  # version 7: gmailsync and calendarsync write the shared kinds' `account`
-  # as the reference property that kind declares (docs/decisions/0034).
-  # version 9: the inline functions' `timeoutMs` (int ms) is `timeout`, the
-  # duration datatype (ISO 8601); the retype rides core's function kind bump.
-  # version 10: the flattener cuts inline data: URIs before the source cap and
-  # backs off out of a link label at the body cap.
-  # version 11: the series slice. calendarsync fetches each recurring master
-  # beside the singleEvents instances and writes a calendareventseries with
-  # its rule, its skipped and extra dates and its anchor; the instances carry
-  # the `series` reference and `originalStartAt`; the account's `calendarSeries`
-  # switch turns all of it off; the event mirror gains `originalStartTime`.
-  # version 12: full (token-less) event reads stamp the series with
-  # `materializedFrom` / `materializedUntil`, the window whose occurrences
-  # exist as rows, so the occurrences read (decision 0043) expands the rule
-  # only outside it; delta walks leave the stamp alone.
-  # version 13: every link is a `type: reference` property. The contact and
-  # emailaddress subjects are `subject: true` references with
-  # `mustExist: true`, every account reference carries `onDelete: cascade`, and
-  # the syncs write the core rows' calendar, series, thread, sender,
-  # recipients, organizer, attendees and participants as ordinary properties.
-  # version 14: MIRRORS ONLY. Both `-> person` mappings are gone and
-  # `contact.person` and `emailaddress.person` are unpinned, optional subject
-  # slots, because a mapping onto a kind is declared by the package that owns
-  # that kind (docs/decisions/0049) and this package owns no person. With
-  # them go every row this closure wrote into somebody else's package: the
-  # gmail and calendar syncs stop emitting `emailthread`, `emailmessage`,
-  # `calendar`, `calendarevent` and `calendareventseries`, `requires:` names
-  # nothing, and the one-shot contact-id migration is deleted (no store old
-  # enough to need it can open on the package grammar of record 0047). The
-  # instance mirrors keep `recurringEventId`, `recurrence` and
-  # `originalStartTime`, so the recurrence data a series row derived is still
-  # synced.
   version: 14
 ---
 # ---- the bundle document: the install unit --------------------------------

@@ -10,26 +10,6 @@ data:
     range or a value set (`isbn`, `asin`). Package-local — only the package
     that declares it may use it — so a shape is stated once instead of repeated
     on every property that wants it.
-  # version 2: the display template dropped the authority. A declaration's
-  # identity is `<authority>/<package>/<name>` and the dotted composite it used
-  # to render names nothing — the bump is what carries the new template into
-  # repositories that already stored the old one.
-  # version 3: the declaration gained a `description` — the bump is what
-  # carries it into repositories that already stored the version 2 one.
-  # version 4: TYPED. `definition` and `name` are gone; the refinement — the
-  # base, the pattern, the range and the value set — is properties, and the base
-  # is the closed set of built-in datatypes rather than free text.
-  # version 6: the declaration's own `version` became an incremental
-  # integer, maintained by the engine.
-  # version 7: the base set gained `decimal`, the exact string-carried
-  # number. Additive, so live refinements are untouched.
-  # version 8: an admitted value may be marked `deprecated` (issue 110):
-  # reserved, stored, and read by no server-side path.
-  # version 10: `source` gains `published`, the origin a provider install
-  # writes (decision record 0048).
-  # version 11: an admitted value may name its previous spelling with
-  # `renamedFrom` (decision record 0066); admission rewrites the live records
-  # holding the old value. Additive, so live refinements are untouched.
   version: 11
   names:
     singular: propertytype

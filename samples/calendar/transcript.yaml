@@ -9,11 +9,6 @@ data:
     A meeting's transcript, pointed at the occurrence that actually happened
     and the people who spoke. The text is embedded, so what was said in a
     meeting is searchable alongside everything else rather than only scrollable.
-  # The declaration inherited the package's version before this pin.
-  # version 2: `name` is the heading, declared. A transcript used to hold it
-  # in the built-in title slot, which is not a kind's storage (#123).
-  # version 4: `meeting` and `speakers` are reference properties, carrying
-  # `mustExist: true`.
   version: 4
   names:
     singular: transcript

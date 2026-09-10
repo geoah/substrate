@@ -28,7 +28,7 @@
 #      which turns it into tasks through the graphql and mutate host functions.
 #
 # The agent wants an `llmprovider` row at the id it names (`default`); the
-# function wants nothing at all. See README.md beside this file.
+# function wants nothing at all. See docs/bundles-catalog.md.
 #
 # This bundle declares NO inputs and no OAuth: the endpoint is open, and the
 # one optional credential (`source.webhook.key`) lives on the trigger record.
@@ -43,8 +43,6 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: pebble
-  # version 3: the bundle pins the floor under the package it requires
-  # (`requiresAtLeast`, decision record 0070). Additive.
   version: 3
 ---
 kind: substrate.reamde.dev/core/bundle

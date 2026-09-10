@@ -17,33 +17,6 @@ data:
     written by the loop as it runs. A user turn is the envelope or the human's
     message, an assistant turn its prose and tool calls, a tool turn one dispatched
     call's result.
-  # version 3: `thread` became a REFERENCE and tool rows gained `ok`. The
-  # declaration carried no version of its own before this, inheriting the
-  # package's — and an unbumped edit is a no-op to the upgrade, so this key
-  # is what carries the change into repositories that already hold the row.
-  # version 4: `toolCalls` is typed — a repeated {id, name, arguments} object
-  # instead of a json blob; the arguments stay the verbatim wire string.
-  # version 5: the thread pointer pins with `kind:`, the reference property's
-  # own word.
-  # version 6: rows carry `changes` — the changelog entries their dispatch
-  # wrote, stamped by the engine — and `system` joins the roles: the
-  # substrate's own turns (a proposal decision), so a reader of the thread
-  # needs nothing but the rows to see what happened.
-  # version 7: `role` and `changes.op` become enums. `op` declares every op
-  # the effect applier can stamp, merge and split included (effects.go), not
-  # just the five the prose named: a stamped op outside the declared set
-  # would refuse the loop's own message write.
-  # version 8: `changes.op` says on the property that it carries the changelog
-  # op verbatim, so a reader does not take it for a trigger's change class.
-  # version 9: the constructor invariants. Every row the loop writes carries a
-  # `role` and a `turn`, so both are required, and a turn counts from 0, so it
-  # carries `min: 0`.
-  # version 11: a tool row names the tool it answers for in `name`, where the
-  # property was `tool`; the word matches `toolCalls.name`, the same tool name
-  # on the assistant turn that dispatched the call.
-  # version 12: `changes.op` declares the ops the changelog carries: put,
-  # patch, delete, merge and split. `link` and `unlink` are retired verbs, and
-  # no changelog a binary will replay stamps them.
   version: 12
   names:
     singular: llmmessage

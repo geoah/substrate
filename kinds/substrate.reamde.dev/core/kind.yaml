@@ -10,24 +10,6 @@ data:
     The vocabulary browses through the same API as data, so every kind this
     repository holds is a row here, and these properties are what the engine
     validates every write against.
-  # version 11: the first version this kind pins itself, above the 10 it took
-  # from the package. A declared link gained `deprecated` and the reserved
-  # `properties` block (issue 110): additive, so every stored declaration keeps
-  # its shape and the upgrade is what carries the room for the new keys.
-  # version 12: `authority` drops `required`, which contradicted "absent on a
-  # repository-local kind"; an index requires the `properties` it covers and a
-  # declared link requires its target, both refused empty by the loader.
-  # version 13: `names.plural` retired — the collection segment is the kind name
-  # now (issue 253, decision 0033), so `names` declares only `singular`.
-  # version 14: a link between records is a `type: reference` property, so a
-  # declaration's links live in `properties` with everything else and the
-  # loader validates them there. The separate block they used to live in is
-  # gone, with the keys only it took.
-  # version 15: `source` gains `published`, the origin a provider install
-  # writes (decision record 0048).
-  # version 16: `retired` declares the property names, enum values and states
-  # the kind has spent (decision record 0055). Additive.
-  # version 17: `names.plural` is removed (issue 319).
   version: 17
   names:
     singular: kind

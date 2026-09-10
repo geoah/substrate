@@ -12,32 +12,6 @@ data:
     record, create one, or delete one. A learner or an app writes it, accepting
     the decision applies it, and the envelope is frozen once proposed so nobody
     can swap what was reviewed.
-  # The declaration carried no version of its own before this, inheriting the
-  # package's (6 at the time) — and an unbumped edit is a no-op to the
-  # upgrade, so this key is what carries the change into repositories that
-  # already hold the row.
-  # version 7: `thread` — the proposing thread, stamped by the agent loop's
-  # propose built-in, which is where a decision reports back.
-  # version 8: the decision transitions carry `notifies: thread` — the
-  # declared marker that replaced the engine's hardcoded write-back
-  # (docs/plans/thread-interactions.md), behavior identical.
-  # version 9: `policy` and `policyRevision` — stamped by the engine when the
-  # policy door converts a held write into this request; frozen with the
-  # envelope, because the audit must not be reworded under a pending request.
-  # version 10: `decidedAt` is a declared property (datetime, managed). The
-  # decision transitions stamped it as an undeclared string before, invisible
-  # to the declaration and untyped in the filter grammar.
-  # version 11: `op`'s description says what the accept does and how a policy
-  # selector's `put` or `patch` becomes create or patch here, so a reader of a
-  # gated request can write the selector that matches it.
-  # version 12: a display template, and `targetVersion` carries `min: 1`, since
-  # a record's first version is 1 and a CAS assertion below it names none.
-  # version 14: `target` is an unpinned `type: reference` property with
-  # `mustExist: true`, so a request names any patchable record.
-  # version 15: `ifVersion`, a delete request's precondition on its target.
-  # The policy door writes it from the gated delete's own `ifVersion`, and
-  # the accept refuses when the target has moved, as it did already for a
-  # patch through `diff.ifVersion`.
   version: 15
   names:
     singular: recordpatchrequest

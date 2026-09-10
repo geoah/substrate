@@ -14,7 +14,7 @@
 #   document below), never config-record properties (review-google #1).
 # Connect:  create an account, then run the host OAuth flow against it —
 #   the redirect URL registered in the WHOOP developer dashboard is the host's
-#   GET …/api/v1/oauth/callback (see README).
+#   GET …/api/v1/oauth/callback (see docs/bundles-catalog.md).
 #
 # This file is the SCHEMA closure (the atomic install unit). The delivery
 # wiring lives beside it in triggers.yaml as ordinary data records.
@@ -25,22 +25,6 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: whoop
-  # version 2: THE TYPED CORE SWEEP. Declarations in this closure moved to the
-  # declared spellings — whichever of them they used: a tool entry naming its arm,
-  # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
-  # naming its properties. THE PACKAGE IS VERSIONED AS A UNIT, so this bump
-  # carries the closure whole rather than saying every declaration in it moved.
-  # version 3: the grants group under one `permissions:` object, and the permission
-  # to write is `writes:` inside it. This closure's functions and agents
-  # follow core's declaration.
-  # version 5: `account` on every mirror kind is a pinned owner
-  # reference instead of a string, so disconnecting an account collects
-  # the rows it synced (docs/decisions/0032).
-  # version 7: the inline functions' `timeoutMs` (int ms) is `timeout`, the
-  # duration datatype (ISO 8601); the retype rides core's function kind bump.
-  # version 8: every account reference in this closure carries
-  # `onDelete: cascade`, so disconnecting an account collects the rows it
-  # synced.
   version: 8
 ---
 # ---- the bundle document: the install unit --------------------------------
@@ -74,7 +58,7 @@ data:
   # OAuth-AUTHENTICATED `DELETE /developer/v2/user/access`, a method+auth
   # shape the host facility cannot speak. Declaring an invented endpoint made
   # every account deletion changelog a revoke failure while the remote grant stayed
-  # live; the field is optional, so it is simply omitted and the README
+  # live; the field is optional, so it is simply omitted and the catalog page
   # documents manual revocation.
   oauth2:
     clientInput: client

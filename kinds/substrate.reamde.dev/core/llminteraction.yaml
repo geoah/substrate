@@ -17,9 +17,6 @@ data:
     One batch of questions an agent asked the user, waiting in the thread
     it came from: answering (or dismissing) it is one reviewed transition,
     which reports back into the thread and resumes the agent.
-  # The declaration inherited the package's version before this pin.
-  # version 10: `resolvedAt` is a declared property (datetime, managed). The
-  # answer and dismiss transitions stamped it as an undeclared string before.
   version: 11
   names:
     singular: llminteraction

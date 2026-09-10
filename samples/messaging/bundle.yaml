@@ -24,11 +24,6 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: messaging
-  # version 4: `conversation`'s enum property `kind` is `category` (#125).
-  # version 5: every link is a `type: reference` property carrying
-  # `mustExist: true`, and an owning one carries `onDelete: cascade`.
-  # version 6: the bundle pins the floor under the package it requires
-  # (`requiresAtLeast`, decision record 0070). Additive.
   version: 6
 ---
 # ---- the bundle document: the import unit -------------------------------------

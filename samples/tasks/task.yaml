@@ -10,16 +10,6 @@ data:
     issue, or proposed by an agent. Status carries the whole lifecycle — a
     proposal waits for the owner, an open task is due, and completing it stamps
     the time by itself.
-  # The declaration inherited the package's version before this pin.
-  # version 3: `completedAt` is a declared property (datetime). The done
-  # transition stamped it as an undeclared string before.
-  # version 4: `name` is the heading, declared. A task used to hold it in the
-  # built-in title slot, which is not a kind's storage (#123).
-  # version 5: binds the `recurring` trait, which contracts the
-  # recurrence/exdates/timezone triple this kind already declared (#122).
-  # version 7: `rdates` lands with the `recurring` trait's move.
-  # version 8: `project`, `assignee` and `source` are reference properties
-  # now, each with `mustExist: true`.
   version: 8
   names:
     singular: task

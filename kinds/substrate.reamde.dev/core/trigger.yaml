@@ -32,13 +32,8 @@ data:
     — bound to the one function or agent it invokes. The trigger owns its
     cursor, so enabling, replay, parking and manual runs are all verbs on
     this row.
-  # `source` is typed as of core's version 3 — one object field per arm, where
-  # it was a json blob. No version of its own: this kind takes the package's,
-  # and the package bumped for the typed core. The discriminator (`source.kind`)
-  # was removed at core version 14: the arm present names the source.
-  # version 16, the kind's first pin of its own: the webhook arm opens with an
-  # optional `key`, the credential the public endpoint checks when one is set.
-  # Every other arm and property is unchanged.
+  # `source` is one object field per arm and carries no discriminator: the
+  # arm present names the source.
   version: 16
   names:
     singular: trigger
