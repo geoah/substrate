@@ -359,10 +359,11 @@ func conformanceCases() []codeCase {
 // A code leaves this map by gaining a case above; a code in it that a case
 // DOES declare fails the check, because the excuse has gone stale.
 var unreachable = map[string]string{
-	// Needs a different configuration: every writeUnsupported site fires on an
-	// absent capability, and Start wires all of them.
-	"unsupported": "501 answers a capability the deployment omits, and testenv.Start builds a " +
-		"handler carrying every one; producing it needs a handler configured without one",
+	// Needs a different configuration: the one writeUnsupported site is the
+	// register door on a deployment with no invite code, and Start configures
+	// one (testenv.InviteCode).
+	"unsupported": "501 answers the register endpoints on a deployment with no invite code, and " +
+		"testenv.Start configures one; producing it needs a handler built without it",
 	// Needs deliberate fault injection: 500 is by definition the answer to
 	// something no request can ask for.
 	"internal": "500 is the unexpected fault, so producing one means breaking the engine " +

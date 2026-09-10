@@ -592,7 +592,7 @@ func TestDeclarationAuthority(t *testing.T) {
 	_, ds := newDataset(t)
 
 	// A user's own kind: theirs to declare.
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest("mine.example.com/mine", 1),
 		{
 			"kind":     "substrate.reamde.dev/core/kind",
@@ -629,7 +629,7 @@ func TestDeclarationAuthority(t *testing.T) {
 		},
 	}
 	for _, actor := range []substrate.Actor{owner, "api", "console"} {
-		_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, actor, shipped)
+		_, err := ds.ApplyVocabularyDocuments(ctx, actor, shipped)
 		wantErr(t, err, substrate.ErrForbidden, "actor "+string(actor)+" rewrites shipped vocabulary")
 	}
 	// And a request cannot dress itself as a substrate path to get around it.
@@ -666,7 +666,7 @@ func TestDeclarationAuthority(t *testing.T) {
 		},
 	}
 	for _, actor := range []substrate.Actor{owner, "api", "console"} {
-		_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, actor, fresh)
+		_, err := ds.ApplyVocabularyDocuments(ctx, actor, fresh)
 		wantErr(t, err, substrate.ErrForbidden, "actor "+string(actor)+" declares a new package under the publisher")
 	}
 	if _, err := ds.Get(ctx, "substrate.reamde.dev/core/package", "substrate.reamde.dev/evil"); !errors.Is(err, substrate.ErrNotFound) {
@@ -674,7 +674,7 @@ func TestDeclarationAuthority(t *testing.T) {
 	}
 	// The sibling authorities the binary ships under are NOT closed: applying
 	// a provider or sample closure by hand is a door the catalog also opens.
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		{
 			"kind":     "substrate.reamde.dev/core/package",
 			"metadata": map[string]any{"id": "providers.substrate.reamde.dev/acme"},
@@ -695,10 +695,6 @@ func TestAPublishedPackageRefusesATokenDeclarationWrite(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newCoreDataset(t)
-	inst, ok := ds.(substrate.BundleInstaller)
-	if !ok {
-		t.Fatal("dataset does not implement the closure-install seam")
-	}
 	const pkg = "acme.example.com/mirror"
 	actor := substrate.BundleActor(vocabulary.SplitPackageRef(pkg))
 	widget := func(props map[string]any) map[string]any {
@@ -723,7 +719,7 @@ func TestAPublishedPackageRefusesATokenDeclarationWrite(t *testing.T) {
 
 	// The provider install: the tier is what writes the origin, and it lands on
 	// the package row and the kind alike.
-	if _, err := inst.InstallBundleClosure(ctx, actor, closure(widget(shipped)), nil,
+	if _, err := ds.InstallBundleClosure(ctx, actor, closure(widget(shipped)), nil,
 		substrate.BundleInstall{Published: true}); err != nil {
 		t.Fatalf("install a provider closure: %v", err)
 	}
@@ -746,7 +742,7 @@ func TestAPublishedPackageRefusesATokenDeclarationWrite(t *testing.T) {
 		"mine": map[string]any{"type": "string"},
 	}))
 	for _, a := range []substrate.Actor{owner, substrate.ActorConsole, substrate.ActorCLI} {
-		_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, a, edit)
+		_, err := ds.ApplyVocabularyDocuments(ctx, a, edit)
 		wantErr(t, err, substrate.ErrForbidden, "actor "+string(a)+" writes a published declaration")
 		if !strings.Contains(err.Error(), pkg) {
 			t.Fatalf("the refusal does not name the package: %v", err)
@@ -766,7 +762,7 @@ func TestAPublishedPackageRefusesATokenDeclarationWrite(t *testing.T) {
 
 	// And the publisher's own path still upgrades it: the install verb is what
 	// changes a published declaration.
-	if _, err := inst.InstallBundleClosure(ctx, actor, edit, nil,
+	if _, err := ds.InstallBundleClosure(ctx, actor, edit, nil,
 		substrate.BundleInstall{Published: true}); err != nil {
 		t.Fatalf("upgrade a published closure: %v", err)
 	}

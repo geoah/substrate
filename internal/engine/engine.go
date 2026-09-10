@@ -199,15 +199,6 @@ func WithInsecureDisableTOTP() Option {
 	return func(o *options) { o.insecureDisableTOTP = true }
 }
 
-// The seams *service satisfies beyond substrate.Service, asserted here for
-// the same reason the dataset's are (dataset.go): a renamed method must break
-// the build, not one endpoint at runtime.
-var (
-	_ substrate.Service        = (*service)(nil)
-	_ substrate.OAuthCompleter = (*service)(nil)
-	_ substrate.SeamReporter   = (*service)(nil)
-)
-
 type service struct {
 	dsn string
 	// admin is the DSN's own user: the DDL, the role setup, and the index
@@ -763,13 +754,6 @@ func (s *service) Dataset(ctx context.Context, repository string) (substrate.Dat
 	}
 	return s.open(ctx, repo)
 }
-
-// DatasetSeams reports which optional extensions a dataset of this engine
-// satisfies (substrate.SeamReporter), for a discovery document that opens no
-// repository. The value is the typed nil of the type Dataset returns, so the
-// answer is the method set itself and can never disagree with it; nothing
-// calls a method on it.
-func (s *service) DatasetSeams() substrate.Dataset { return (*dataset)(nil) }
 
 // CreateRepository creates a repository and its control-plane row: the user IS
 // that row, and the repository it owns is born holding the shipped kinds.

@@ -80,10 +80,6 @@ func ImportVocabulary(ctx context.Context, ds substrate.Dataset, names ...string
 	if len(names) == 0 {
 		names = Vocabulary
 	}
-	sa, ok := ds.(substrate.VocabularyApplier)
-	if !ok {
-		return errors.New("enginetest: dataset does not support ApplyVocabularyDocuments")
-	}
 	// A bundle's `requires:` is enforced on import, so a test naming only
 	// "tasks" still needs people first. Requires are read from the bundle
 	// document and imported ahead, the order the catalog install resolves.
@@ -113,7 +109,7 @@ func ImportVocabulary(ctx context.Context, ds substrate.Dataset, names ...string
 			_, err := ds.KindByRef(ctx, kind)
 			return err == nil
 		}
-		if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.BundleActor(SampleAuthority, name), WithoutAbsentMappings(docs, held)); err != nil {
+		if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.BundleActor(SampleAuthority, name), WithoutAbsentMappings(docs, held)); err != nil {
 			return fmt.Errorf("enginetest: import %s: %w", name, err)
 		}
 		return nil
@@ -169,10 +165,6 @@ func InstallShelf(ctx context.Context, ds substrate.Dataset) error {
 // same closure takes, for the tests about what a vocabulary change does to
 // the vectors already bought.
 func InstallShelfVersion(ctx context.Context, ds substrate.Dataset, version int64, embed bool) error {
-	sa, ok := ds.(substrate.VocabularyApplier)
-	if !ok {
-		return errors.New("enginetest: dataset does not support ApplyVocabularyDocuments")
-	}
 	docs := []map[string]any{
 		vocabulary.PackageManifest(ShelfPackage, version),
 		{
@@ -235,7 +227,7 @@ func InstallShelfVersion(ctx context.Context, ds substrate.Dataset, version int6
 			"from": ShelfPackage + "/bookedition", "to": ShelfPackage + "/book", "property": "work",
 		}),
 	}
-	if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.BundleActor(ShelfAuthority, "shelf"), docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.BundleActor(ShelfAuthority, "shelf"), docs); err != nil {
 		return fmt.Errorf("enginetest: install the shelf fixture: %w", err)
 	}
 	return nil
@@ -246,10 +238,6 @@ func InstallShelfVersion(ctx context.Context, ds substrate.Dataset, version int6
 // actor — the closure a catalog install carries, minus the catalog. A test that
 // needs function, agent and bundle declaration rows calls this.
 func InstallBundle(ctx context.Context, ds substrate.Dataset, name string) error {
-	sa, ok := ds.(substrate.VocabularyApplier)
-	if !ok {
-		return errors.New("enginetest: dataset does not support ApplyVocabularyDocuments")
-	}
 	all, err := readBundleDir(filepath.Join(SamplesDir, name))
 	if err != nil {
 		return err
@@ -264,7 +252,7 @@ func InstallBundle(ctx context.Context, ds substrate.Dataset, name string) error
 			docs = append(docs, d)
 		}
 	}
-	if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.BundleActor(SampleAuthority, name), docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.BundleActor(SampleAuthority, name), docs); err != nil {
 		return fmt.Errorf("enginetest: install %s: %w", name, err)
 	}
 	return nil
@@ -385,12 +373,8 @@ type Trigger struct {
 // the upgrade verb (the authority is replaced whole); an existing trigger row is
 // left exactly as it stands.
 func Install(ctx context.Context, ds substrate.Dataset, actor substrate.Actor, m Manifest) error {
-	sa, ok := ds.(substrate.VocabularyApplier)
-	if !ok {
-		return errors.New("enginetest: dataset does not support ApplyVocabularyDocuments")
-	}
 	if len(m.Manifests) > 0 {
-		if _, err := sa.ApplyVocabularyDocuments(ctx, actor, m.Manifests); err != nil {
+		if _, err := ds.ApplyVocabularyDocuments(ctx, actor, m.Manifests); err != nil {
 			return err
 		}
 	}
@@ -485,10 +469,6 @@ func PeopleMapping(name string, data map[string]any) map[string]any {
 // shape a sample's suggested mappings ship in, and the reason this helper
 // re-applies rather than adding one document.
 func DeclareMappings(ctx context.Context, ds substrate.Dataset, mappings ...map[string]any) error {
-	sa, ok := ds.(substrate.VocabularyApplier)
-	if !ok {
-		return errors.New("enginetest: dataset does not support ApplyVocabularyDocuments")
-	}
 	docs, err := readBundleDir(filepath.Join(SamplesDir, "people"))
 	if err != nil {
 		return err
@@ -514,7 +494,7 @@ func DeclareMappings(ctx context.Context, ds substrate.Dataset, mappings ...map[
 		data["installs"] = append(append([]any(nil), have...), installs...)
 	}
 	docs = append(docs, mappings...)
-	if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
 		return fmt.Errorf("enginetest: declare mappings: %w", err)
 	}
 	return nil

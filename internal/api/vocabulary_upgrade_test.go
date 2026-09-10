@@ -21,8 +21,6 @@ func (d shippedUpgradeDataset) PlanShippedUpgrade(context.Context) ([]substrate.
 	return d.plans, d.err
 }
 
-var _ substrate.ShippedUpgradePlanner = shippedUpgradeDataset{}
-
 type shippedUpgradeService struct {
 	*fakeService
 	plans []substrate.ShippedUpgrade
@@ -103,12 +101,4 @@ func TestVocabularyUpgradeReportsAFailedPreview(t *testing.T) {
 	env := newShippedUpgradeEnv(t, nil, errBoom)
 	rec := env.do(t, http.MethodGet, "/api/v1/vocabulary/upgrade", env.svc.token(fakeRepository), nil)
 	wantErrorCode(t, rec, http.StatusInternalServerError, codeInternal)
-}
-
-// A dataset that does not preview the boot upgrade answers 501, the same way
-// every other optional seam does.
-func TestVocabularyUpgradeIsUnsupportedWithoutThePlanner(t *testing.T) {
-	env := newTestEnv(t)
-	rec := env.do(t, http.MethodGet, "/api/v1/vocabulary/upgrade", env.svc.token(fakeRepository), nil)
-	wantErrorCode(t, rec, http.StatusNotImplemented, codeUnsupported)
 }

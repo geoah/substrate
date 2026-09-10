@@ -35,7 +35,7 @@ func (d *fakeDataset) PlanVocabularyApply(ctx context.Context, actor substrate.A
 }
 
 // PlanVocabularyApplyWith records the origin the preview was asked under, so a
-// test can see the body's `origin` arrive at the seam.
+// test can see the body's `origin` arrive at the dataset.
 func (d *fakeDataset) PlanVocabularyApplyWith(_ context.Context, _ substrate.Actor, docs []map[string]any, opts substrate.VocabularyApply) (substrate.VocabularyPlan, error) {
 	if err := d.fail("PlanVocabularyApply"); err != nil {
 		return substrate.VocabularyPlan{}, err

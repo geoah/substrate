@@ -5,8 +5,6 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
-
-	"github.com/geoah/substrate/internal/substrate"
 )
 
 // exportRoute is the owner's recovery export, a non-record endpoint at the
@@ -28,12 +26,8 @@ const exportRoute = "/export"
 // `snapshot.json` says the same to whoever extracts what arrived.
 func (h *handler) getExport(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	exporter, ok := DatasetFrom(ctx).(substrate.Exporter)
-	if !ok {
-		writeUnsupported(w, "this service does not export a repository")
-		return
-	}
-	export, err := exporter.Export(ctx)
+	ds := DatasetFrom(ctx)
+	export, err := ds.Export(ctx)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return

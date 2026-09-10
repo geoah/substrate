@@ -317,10 +317,6 @@ func TestASuggestedMappingIsBlockedByAnOlderProvider(t *testing.T) {
 	// the `task` subject slot the tasks sample's mapping fills. Applied by
 	// hand, which is the one way a repository can hold a provider's
 	// declarations at a shape the shipped closure has moved past.
-	applier, ok := ds.(substrate.VocabularyApplier)
-	if !ok {
-		t.Skip("this dataset cannot apply vocabulary documents")
-	}
 	older := []map[string]any{
 		vocabulary.PackageManifest(linearProviderID, 11),
 		vocabulary.KindManifest(linearProviderID,
@@ -336,7 +332,7 @@ func TestASuggestedMappingIsBlockedByAnOlderProvider(t *testing.T) {
 				},
 			}),
 	}
-	if _, err := applier.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, older); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, older); err != nil {
 		t.Fatalf("apply the older linear package: %v", err)
 	}
 

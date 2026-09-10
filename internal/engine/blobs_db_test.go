@@ -17,15 +17,6 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-func blobStoreOf(t *testing.T, ds substrate.Dataset) substrate.BlobStore {
-	t.Helper()
-	bs, ok := ds.(substrate.BlobStore)
-	if !ok {
-		t.Fatal("dataset does not implement the blob store seam")
-	}
-	return bs
-}
-
 const blobPackage = "attachments.example.substrate.reamde.dev/attachments"
 
 // blobDocType declares a type carrying a blob-ref property (scalar or repeated).
@@ -46,10 +37,9 @@ func TestBlobPutStoresMintsAndStreams(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	bs := blobStoreOf(t, ds)
 	data := []byte("the untransformed provider payload")
 
-	info, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, data, "")
+	info, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, data, "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
@@ -76,7 +66,7 @@ func TestBlobPutStoresMintsAndStreams(t *testing.T) {
 	}
 
 	// GET streams the exact bytes.
-	got, raw, err := bs.GetBlob(ctx, info.Digest)
+	got, raw, err := ds.GetBlob(ctx, info.Digest)
 	if err != nil {
 		t.Fatalf("get blob: %v", err)
 	}
@@ -92,15 +82,14 @@ func TestBlobDedupOnSameBytes(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	bs := blobStoreOf(t, ds)
 	data := []byte("same bytes, same blob")
 
-	a, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "application/octet-stream"}, data, "")
+	a, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "application/octet-stream"}, data, "")
 	if err != nil {
 		t.Fatalf("put a: %v", err)
 	}
 	before := maxSeq(t, ds)
-	b, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "application/octet-stream"}, data, "")
+	b, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "application/octet-stream"}, data, "")
 	if err != nil {
 		t.Fatalf("put b: %v", err)
 	}
@@ -117,8 +106,7 @@ func TestBlobDigestMismatchRefused(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	bs := blobStoreOf(t, ds)
-	_, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, []byte("hello"),
+	_, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, []byte("hello"),
 		substrate.BlobDigestPrefix+"0000000000000000000000000000000000000000000000000000000000000000")
 	wantErr(t, err, substrate.ErrValidation, "digest mismatch")
 }
@@ -127,11 +115,10 @@ func TestBlobRefRendersManifestNotBytes(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	bs := blobStoreOf(t, ds)
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, blobDocDocs("attachment", false)); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, blobDocDocs("attachment", false)); err != nil {
 		t.Fatalf("install doc type: %v", err)
 	}
-	info, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "image/png"}, []byte("\x89PNG fake bytes"), "")
+	info, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "image/png"}, []byte("\x89PNG fake bytes"), "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
@@ -165,7 +152,7 @@ func TestBlobRefUnknownDigestRefused(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, blobDocDocs("attachment", false)); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, blobDocDocs("attachment", false)); err != nil {
 		t.Fatalf("install doc type: %v", err)
 	}
 	_, err := ds.Put(ctx, owner, substrate.PutInput{
@@ -181,8 +168,7 @@ func TestBlobGetIsRepositoryScoped(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, ds := newDataset(t)
-	bs := blobStoreOf(t, ds)
-	info, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, []byte("repository A secret archive"), "")
+	info, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, []byte("repository A secret archive"), "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
@@ -195,7 +181,7 @@ func TestBlobGetIsRepositoryScoped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open repository B: %v", err)
 	}
-	_, _, err = blobStoreOf(t, dsB).GetBlob(ctx, info.Digest)
+	_, _, err = dsB.GetBlob(ctx, info.Digest)
 	wantErr(t, err, substrate.ErrNotFound, "cross-repository blob read")
 }
 
@@ -208,16 +194,15 @@ func TestBlobGCCollectsUnreferenced(t *testing.T) {
 
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	bs := blobStoreOf(t, ds)
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, blobDocDocs("attachment", false)); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, blobDocDocs("attachment", false)); err != nil {
 		t.Fatalf("install doc type: %v", err)
 	}
 
-	kept, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, []byte("referenced payload"), "")
+	kept, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, []byte("referenced payload"), "")
 	if err != nil {
 		t.Fatalf("put kept: %v", err)
 	}
-	orphan, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, []byte("orphan payload"), "")
+	orphan, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, []byte("orphan payload"), "")
 	if err != nil {
 		t.Fatalf("put orphan: %v", err)
 	}
@@ -232,7 +217,7 @@ func TestBlobGCCollectsUnreferenced(t *testing.T) {
 	}
 
 	// The referenced blob survives, bytes and manifest.
-	if _, _, err := bs.GetBlob(ctx, kept.Digest); err != nil {
+	if _, _, err := ds.GetBlob(ctx, kept.Digest); err != nil {
 		t.Fatalf("referenced blob collected: %v", err)
 	}
 	if _, err := ds.Get(ctx, "substrate.reamde.dev/core/blob", kept.Digest); err != nil {
@@ -240,7 +225,7 @@ func TestBlobGCCollectsUnreferenced(t *testing.T) {
 	}
 	// The orphan's bytes are hard-deleted at once; its manifest is TOMBSTONED,
 	// and ordinary record GC hard-deletes the tombstone on a later pass.
-	if _, _, err := bs.GetBlob(ctx, orphan.Digest); err == nil {
+	if _, _, err := ds.GetBlob(ctx, orphan.Digest); err == nil {
 		t.Fatal("orphan bytes survived gc")
 	}
 	orphanManifest, err := ds.Get(ctx, "substrate.reamde.dev/core/blob", orphan.Digest)
@@ -266,13 +251,12 @@ func TestBlobNameIsDescriptiveAndFirstWins(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	bs := blobStoreOf(t, ds)
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, blobDocDocs("attachment", false)); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, blobDocDocs("attachment", false)); err != nil {
 		t.Fatalf("install doc type: %v", err)
 	}
 	data := []byte("%PDF-1.7 fake bytes")
 
-	info, err := bs.PutBlob(ctx, owner,
+	info, err := ds.PutBlob(ctx, owner,
 		substrate.BlobUpload{Name: "invoice.pdf", MediaType: "application/pdf"}, data, "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
@@ -287,7 +271,7 @@ func TestBlobNameIsDescriptiveAndFirstWins(t *testing.T) {
 
 	// The same bytes under another name are the same blob, still named as the
 	// first upload named it — the store never lies about what it holds.
-	again, err := bs.PutBlob(ctx, owner,
+	again, err := ds.PutBlob(ctx, owner,
 		substrate.BlobUpload{Name: "copy.pdf", MediaType: "application/pdf"}, data, "")
 	if err != nil {
 		t.Fatalf("re-put blob: %v", err)
@@ -311,7 +295,7 @@ func TestBlobNameIsDescriptiveAndFirstWins(t *testing.T) {
 	}
 
 	// And the read says it too.
-	read, _, err := bs.GetBlob(ctx, info.Digest)
+	read, _, err := ds.GetBlob(ctx, info.Digest)
 	if err != nil {
 		t.Fatalf("get blob: %v", err)
 	}
@@ -326,9 +310,8 @@ func TestBlobNameAndMediaTypeAreOptional(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	bs := blobStoreOf(t, ds)
 
-	info, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{}, []byte("anonymous bytes"), "")
+	info, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{}, []byte("anonymous bytes"), "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
@@ -351,9 +334,8 @@ func TestBlobNameRefusesAPath(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	bs := blobStoreOf(t, ds)
 	for _, name := range []string{"../../etc/passwd", `dir\file.pdf`, "line\nbreak.pdf"} {
-		_, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{Name: name}, []byte("payload "+name), "")
+		_, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{Name: name}, []byte("payload "+name), "")
 		wantErr(t, err, substrate.ErrValidation, "blob name")
 	}
 }
@@ -378,15 +360,14 @@ func TestBlobRefReadShapeAppliesBackUnchanged(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
 			_, ds, dsn := newDatasetWithDSN(t)
-			bs := blobStoreOf(t, ds)
-			if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, blobDocDocs(tc.prop, tc.repeated)); err != nil {
+			if _, err := ds.ApplyVocabularyDocuments(ctx, owner, blobDocDocs(tc.prop, tc.repeated)); err != nil {
 				t.Fatalf("install doc kind: %v", err)
 			}
-			a, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "image/png", Name: "a.png"}, []byte("first"), "")
+			a, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "image/png", Name: "a.png"}, []byte("first"), "")
 			if err != nil {
 				t.Fatalf("put blob a: %v", err)
 			}
-			b, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "image/png", Name: "b.png"}, []byte("second"), "")
+			b, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "image/png", Name: "b.png"}, []byte("second"), "")
 			if err != nil {
 				t.Fatalf("put blob b: %v", err)
 			}

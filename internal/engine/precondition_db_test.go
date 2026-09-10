@@ -247,9 +247,8 @@ func TestDeleteOfADeclarationHonorsIfVersion(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	sa := applier(t, ds)
 
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
 		swTypeDoc("widget", map[string]any{"name": map[string]any{"type": "string"}}),
 	}); err != nil {

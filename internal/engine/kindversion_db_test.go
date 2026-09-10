@@ -31,7 +31,7 @@ func TestARecordCarriesTheKindVersionThatWroteIt(t *testing.T) {
 	svc, ds := newCoreDataset(t)
 	const widget = kvPackage + "/widget"
 	name := map[string]any{"name": map[string]any{"type": "string"}}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(kvPackage, 0), kvWidget(name),
 	}); err != nil {
 		t.Fatalf("declare the widget kind: %v", err)
@@ -57,7 +57,7 @@ func TestARecordCarriesTheKindVersionThatWroteIt(t *testing.T) {
 		"name": map[string]any{"type": "string"},
 		"note": map[string]any{"type": "string"},
 	}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(kvPackage, 0), kvWidget(withNote),
 	}); err != nil {
 		t.Fatalf("re-declare the widget kind with a note: %v", err)
@@ -134,7 +134,7 @@ func TestMergeAndSplitCarryTheStampUnchanged(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newCoreDataset(t)
 	const widget = kvPackage + "/widget"
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(kvPackage, 0),
 		kvWidget(map[string]any{"name": map[string]any{"type": "string"}}),
 	}); err != nil {
@@ -144,7 +144,7 @@ func TestMergeAndSplitCarryTheStampUnchanged(t *testing.T) {
 	mustPut(t, ds, owner, substrate.PutInput{Kind: widget, ID: "w1", Properties: map[string]any{"name": "one"}})
 	mustPut(t, ds, owner, substrate.PutInput{Kind: widget, ID: "w2", Properties: map[string]any{"name": "two"}})
 
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(kvPackage, 0),
 		kvWidget(map[string]any{
 			"name": map[string]any{"type": "string"},

@@ -28,19 +28,6 @@ const (
 	runType    = "substrate.reamde.dev/core/run"
 )
 
-// fnOps is the engine's automation seam the API asserts at runtime; tests
-// reach it the same way.
-type fnOps interface {
-	ProcessTriggers(ctx context.Context) (int, error)
-	TriggerStatuses(ctx context.Context) ([]substrate.TriggerStatus, error)
-	ReplayTrigger(ctx context.Context, id string, from int64) error
-	RunTrigger(ctx context.Context, id, recordKind, recordID string) (int, error)
-	WakeTrigger(ctx context.Context, id string) (int, error)
-	TriggerFailures(ctx context.Context, id string) ([]substrate.TriggerFailure, error)
-	RetryTriggerFailure(ctx context.Context, id string, failureID int64) (int, error)
-	CallFunction(ctx context.Context, name string, args any) (any, int, error)
-}
-
 // fnDoc renders one function manifest into the test connector authority,
 // defaulting the model-facing description the loader requires.
 func fnDoc(name string, data map[string]any) map[string]any {
@@ -129,17 +116,13 @@ func fnConnector(triggers []enginetest.Trigger, fns ...map[string]any) enginetes
 }
 
 // newFnDataset provisions a repository and installs the test connector.
-func newFnDataset(t *testing.T, triggers []enginetest.Trigger, fns ...map[string]any) (substrate.Dataset, fnOps) {
+func newFnDataset(t *testing.T, triggers []enginetest.Trigger, fns ...map[string]any) substrate.Dataset {
 	t.Helper()
 	_, ds := newDataset(t)
 	if err := enginetest.Install(context.Background(), ds, owner, fnConnector(triggers, fns...)); err != nil {
 		t.Fatalf("register connector: %v", err)
 	}
-	ops, ok := ds.(fnOps)
-	if !ok {
-		t.Fatal("dataset does not implement the automation seam")
-	}
-	return ds, ops
+	return ds
 }
 
 // TestPrepareBatchCountCap is finding #13: a single admission batch cannot warm
@@ -151,7 +134,6 @@ func TestPrepareBatchCountCap(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	sa := applier(t, ds)
 	docs := []map[string]any{
 		vocabulary.PackageManifest(fnPackage, 0),
 		vocabulary.ActorManifest(fnPackage, vocabulary.PackageActor(fnPackage)),
@@ -164,15 +146,15 @@ func TestPrepareBatchCountCap(t *testing.T) {
 		docs = append(docs, pyFn(name, map[string]any{}, []any{widgetType},
 			"def main(input, host):\n    return {}\n"))
 	}
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, docs); err == nil ||
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err == nil ||
 		!strings.Contains(err.Error(), "at most 64 function bodies") {
 		t.Fatalf("a batch over the prepare cap was admitted: %v", err)
 	}
 }
 
-func process(t *testing.T, ops fnOps) int {
+func process(t *testing.T, ds substrate.Dataset) int {
 	t.Helper()
-	n, err := ops.ProcessTriggers(context.Background())
+	n, err := ds.ProcessTriggers(context.Background())
 	if err != nil {
 		t.Fatalf("process triggers: %v", err)
 	}
@@ -209,9 +191,9 @@ func dataSeq(t *testing.T, ds substrate.Dataset) int64 {
 	return out[len(out)-1].Seq
 }
 
-func statusOf(t *testing.T, ops fnOps, triggerID string) substrate.TriggerStatus {
+func statusOf(t *testing.T, ds substrate.Dataset, triggerID string) substrate.TriggerStatus {
 	t.Helper()
-	statuses, err := ops.TriggerStatuses(context.Background())
+	statuses, err := ds.TriggerStatuses(context.Background())
 	if err != nil {
 		t.Fatalf("statuses: %v", err)
 	}
@@ -236,11 +218,11 @@ def main(input, host):
 
 func TestTriggerSourceMatchingAndGlob(t *testing.T) {
 	t.Parallel()
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{
 			// Exact source, create only.
 			trigOn("exact", map[string]any{"kinds": []any{widgetType}, "ops": []any{"create"}}),
-			// Authority glob, all ops.
+			// Authority glob, all ds.
 			trigOn("glob", map[string]any{"kinds": []any{fnPackage + "/*"}}),
 		},
 		pyFn("exact", map[string]any{}, []any{taskType}, `
@@ -260,7 +242,7 @@ def main(input, host):
 
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "one"}})
 	g := mustPut(t, ds, fnActor, substrate.PutInput{Kind: gadgetType})
-	process(t, ops)
+	process(t, ds)
 
 	// Both fire on the widget; only the glob fires on the gadget.
 	if got := mustGet(t, ds, taskType, "e-"+w.ID); got.Title != widgetType {
@@ -280,7 +262,7 @@ def main(input, host):
 	// never the create-only trigger.
 	exactRows := len(actorChanges(t, ds, fnPackage+"/exact"))
 	mustPatch(t, ds, fnActor, w.Kind, w.ID, substrate.PatchInput{Properties: map[string]any{"name": "two"}})
-	process(t, ops)
+	process(t, ds)
 	if got := mustGet(t, ds, taskType, "g-"+w.ID); got.Title != widgetType+"/update" {
 		t.Fatalf("glob after update: %q", got.Title)
 	}
@@ -297,7 +279,7 @@ def main(input, host):
 
 func TestTriggerWhenGuard(t *testing.T) {
 	t.Parallel()
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("guarded", map[string]any{
 			"kinds": []any{widgetType},
 			"when":  `record != null && record.properties.assignee == repository.authority`,
@@ -313,7 +295,7 @@ func TestTriggerWhenGuard(t *testing.T) {
 		Kind:       widgetType,
 		Properties: map[string]any{"name": "mine", "assignee": testdb.Repository(t)},
 	})
-	process(t, ops)
+	process(t, ds)
 
 	if _, err := ds.Get(ctx, taskType, "t-"+other.ID); err == nil {
 		t.Fatal("guard false must skip")
@@ -322,7 +304,7 @@ func TestTriggerWhenGuard(t *testing.T) {
 		t.Fatalf("guarded task title: %q", got.Title)
 	}
 	// A skipped change still advances the cursor — false is normal, not lag.
-	if st := statusOf(t, ops, trigID("guarded")); st.Lag != 0 || st.Parked != 0 {
+	if st := statusOf(t, ds, trigID("guarded")); st.Lag != 0 || st.Parked != 0 {
 		t.Fatalf("status after skip: %+v", st)
 	}
 	// And the skip is a settled attempt in the run ledger.
@@ -356,7 +338,7 @@ func TestTriggerSelfEchoExclusion(t *testing.T) {
 	// The trigger watches the very type its callable writes: without
 	// exclusion by the CALLABLE's actor this loops forever, with it the
 	// marker settles after one run.
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("echo", map[string]any{"kinds": []any{taskType}})},
 		pyFn("echo", map[string]any{}, []any{taskType}, `
 def main(input, host):
@@ -366,7 +348,7 @@ def main(input, host):
 `))
 
 	task := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"name": "t"}})
-	process(t, ops)
+	process(t, ds)
 	marked := mustGet(t, ds, task.Kind, task.ID)
 	desc, _ := marked.Properties["description"].(string)
 	if !strings.HasPrefix(desc, "seen-") {
@@ -375,15 +357,15 @@ def main(input, host):
 
 	// The callable's own patch is now in the changelog past the cursor; more
 	// passes must not re-fire it (the marker would change with the new seq).
-	process(t, ops)
-	process(t, ops)
+	process(t, ds)
+	process(t, ds)
 	if got := mustGet(t, ds, task.Kind, task.ID); got.Properties["description"] != desc {
 		t.Fatalf("trigger saw its callable's own write: %q → %q", desc, got.Properties["description"])
 	}
 	if rows := actorChanges(t, ds, fnPackage+"/echo"); len(rows) != 1 {
 		t.Fatalf("expected exactly one function-authored row, got %d", len(rows))
 	}
-	if st := statusOf(t, ops, trigID("echo")); st.Lag != 0 {
+	if st := statusOf(t, ds, trigID("echo")); st.Lag != 0 {
 		t.Fatalf("lag after settling: %+v", st)
 	}
 }
@@ -400,7 +382,7 @@ def main(input, host):
                          "id": "%s-" + c["id"], "properties": {"name": "seen-" + str(c["seq"])}}]}
 `, prefix)
 	}
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{
 			trigOn("collapsed", map[string]any{"kinds": []any{widgetType}, "coalesce": true}),
 			trigOn("serial", map[string]any{"kinds": []any{widgetType}}),
@@ -413,7 +395,7 @@ def main(input, host):
 	mustPatch(t, ds, fnActor, w.Kind, w.ID, substrate.PatchInput{Properties: map[string]any{"name": "b"}})
 	mustPatch(t, ds, fnActor, w.Kind, w.ID, substrate.PatchInput{Properties: map[string]any{"name": "c"}})
 	lastSeq := maxSeq(t, ds)
-	process(t, ops)
+	process(t, ds)
 
 	// Coalesced: three pending changes to one record, one run, cursor past
 	// all three.
@@ -443,13 +425,13 @@ def main(input, host):
 
 func TestTriggerReplayFromZeroIsIdempotent(t *testing.T) {
 	t.Parallel()
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("mirror", map[string]any{"kinds": []any{widgetType}})},
 		pyFn("mirror", map[string]any{}, []any{taskType}, mirrorSource))
 	ctx := context.Background()
 
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "roof"}})
-	process(t, ops)
+	process(t, ds)
 	if got := mustGet(t, ds, taskType, "t-"+w.ID); got.Title != "roof" {
 		t.Fatalf("task title: %q", got.Title)
 	}
@@ -458,17 +440,17 @@ func TestTriggerReplayFromZeroIsIdempotent(t *testing.T) {
 	// under suppression, so the DATA does not move — only the run ledger
 	// records the re-delivery.
 	before := dataSeq(t, ds)
-	if err := ops.ReplayTrigger(ctx, trigID("mirror"), 0); err != nil {
+	if err := ds.ReplayTrigger(ctx, trigID("mirror"), 0); err != nil {
 		t.Fatalf("replay: %v", err)
 	}
-	if st := statusOf(t, ops, trigID("mirror")); st.Cursor != 0 {
+	if st := statusOf(t, ds, trigID("mirror")); st.Cursor != 0 {
 		t.Fatalf("cursor after replay: %+v", st)
 	}
-	process(t, ops)
+	process(t, ds)
 	if after := dataSeq(t, ds); after != before {
 		t.Fatalf("replay wrote data: seq %d → %d", before, after)
 	}
-	if st := statusOf(t, ops, trigID("mirror")); st.Lag != 0 {
+	if st := statusOf(t, ds, trigID("mirror")); st.Lag != 0 {
 		t.Fatalf("lag after replay: %+v", st)
 	}
 }
@@ -478,23 +460,23 @@ func TestTriggerParkAndAdvanceThenRetry(t *testing.T) {
 	// The body raises on the widget that carries no name: a body error at
 	// fire time is a parked failure, never a crash — and the cursor moves on
 	// so the healthy neighbor still processes.
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("mirror", map[string]any{"kinds": []any{widgetType}})},
 		pyFn("mirror", map[string]any{}, []any{taskType}, mirrorSource))
 	ctx := context.Background()
 
 	poisoned := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType})
 	healthy := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "fine"}})
-	process(t, ops)
+	process(t, ds)
 
 	if got := mustGet(t, ds, taskType, "t-"+healthy.ID); got.Title != "fine" {
 		t.Fatalf("healthy record blocked: %q", got.Title)
 	}
-	st := statusOf(t, ops, trigID("mirror"))
+	st := statusOf(t, ds, trigID("mirror"))
 	if st.Lag != 0 || st.Parked != 1 {
 		t.Fatalf("status after park: %+v", st)
 	}
-	parked, err := ops.TriggerFailures(ctx, trigID("mirror"))
+	parked, err := ds.TriggerFailures(ctx, trigID("mirror"))
 	if err != nil {
 		t.Fatalf("failures: %v", err)
 	}
@@ -512,13 +494,13 @@ func TestTriggerParkAndAdvanceThenRetry(t *testing.T) {
 	// A retry runs against CURRENT state: fix the record, retry by hand, the
 	// row clears.
 	mustPatch(t, ds, fnActor, poisoned.Kind, poisoned.ID, substrate.PatchInput{Properties: map[string]any{"name": "fixed"}})
-	if _, err := ops.RetryTriggerFailure(ctx, trigID("mirror"), parked[0].ID); err != nil {
+	if _, err := ds.RetryTriggerFailure(ctx, trigID("mirror"), parked[0].ID); err != nil {
 		t.Fatalf("retry: %v", err)
 	}
 	if got := mustGet(t, ds, taskType, "t-"+poisoned.ID); got.Title != "fixed" {
 		t.Fatalf("retried task title: %q", got.Title)
 	}
-	parked, err = ops.TriggerFailures(ctx, trigID("mirror"))
+	parked, err = ds.TriggerFailures(ctx, trigID("mirror"))
 	if err != nil {
 		t.Fatalf("failures: %v", err)
 	}
@@ -532,7 +514,7 @@ func TestTriggerTransitionViaPatch(t *testing.T) {
 	// A patch effect naming a state value is a transition and obeys the
 	// machine: open → done is declared (and stamps completedAt), done →
 	// abandoned is not and parks.
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("closer", map[string]any{
 			"kinds": []any{widgetType}, "ops": []any{"update"},
 			"when": `record != null && "want" in record.properties`,
@@ -548,10 +530,10 @@ def main(input, host):
 
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "w"}})
 	mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, ID: "t-" + w.ID, Properties: map[string]any{"name": "w"}})
-	process(t, ops)
+	process(t, ds)
 
 	mustPatch(t, ds, fnActor, w.Kind, w.ID, substrate.PatchInput{Properties: map[string]any{"want": "done"}})
-	process(t, ops)
+	process(t, ds)
 	task := mustGet(t, ds, taskType, "t-"+w.ID)
 	if task.Properties["status"] != "done" {
 		t.Fatalf("status: %v", task.Properties["status"])
@@ -563,11 +545,11 @@ def main(input, host):
 	// The illegal transition is a normal per-effect error: retried, parked,
 	// the task untouched.
 	mustPatch(t, ds, fnActor, w.Kind, w.ID, substrate.PatchInput{Properties: map[string]any{"want": "abandoned"}})
-	process(t, ops)
+	process(t, ds)
 	if got := mustGet(t, ds, taskType, "t-"+w.ID); got.Properties["status"] != "done" {
 		t.Fatalf("illegal transition applied: %v", got.Properties["status"])
 	}
-	parked, err := ops.TriggerFailures(ctx, trigID("closer"))
+	parked, err := ds.TriggerFailures(ctx, trigID("closer"))
 	if err != nil {
 		t.Fatalf("failures: %v", err)
 	}
@@ -580,7 +562,7 @@ func TestTriggerEmitViolationParks(t *testing.T) {
 	t.Parallel()
 	// samples.substrate.reamde.dev/tasks/project exists but is not in the allowlist: the effect
 	// is rejected at apply time and the delivery parks.
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("wild", map[string]any{"kinds": []any{widgetType}})},
 		pyFn("wild", map[string]any{}, []any{taskType}, `
 def main(input, host):
@@ -590,19 +572,19 @@ def main(input, host):
 	ctx := context.Background()
 
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType})
-	process(t, ops)
+	process(t, ds)
 
 	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/project", "p-"+w.ID); err == nil {
 		t.Fatal("an effect outside emit was applied")
 	}
-	parked, err := ops.TriggerFailures(ctx, trigID("wild"))
+	parked, err := ds.TriggerFailures(ctx, trigID("wild"))
 	if err != nil {
 		t.Fatalf("failures: %v", err)
 	}
 	if len(parked) != 1 || !strings.Contains(parked[0].LastError, "emit") {
 		t.Fatalf("parked rows: %+v", parked)
 	}
-	if st := statusOf(t, ops, trigID("wild")); st.Lag != 0 {
+	if st := statusOf(t, ds, trigID("wild")); st.Lag != 0 {
 		t.Fatalf("park did not advance: %+v", st)
 	}
 }
@@ -613,7 +595,7 @@ func TestTriggerEffectsAndCursorAreOneTransaction(t *testing.T) {
 	// exist), so the first effect must roll back with it: effects and cursor
 	// move together or not at all — a parked delivery leaves no half-applied
 	// write behind.
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("pair", map[string]any{"kinds": []any{widgetType}})},
 		pyFn("pair", map[string]any{}, []any{taskType}, `
 def main(input, host):
@@ -626,19 +608,19 @@ def main(input, host):
 	ctx := context.Background()
 
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType})
-	process(t, ops)
+	process(t, ds)
 
 	if _, err := ds.Get(ctx, taskType, "ok-"+w.ID); err == nil {
 		t.Fatal("the first effect survived its sibling's failure")
 	}
-	parked, err := ops.TriggerFailures(ctx, trigID("pair"))
+	parked, err := ds.TriggerFailures(ctx, trigID("pair"))
 	if err != nil {
 		t.Fatalf("failures: %v", err)
 	}
 	if len(parked) != 1 {
 		t.Fatalf("parked rows: %+v", parked)
 	}
-	if st := statusOf(t, ops, trigID("pair")); st.Lag != 0 {
+	if st := statusOf(t, ds, trigID("pair")); st.Lag != 0 {
 		t.Fatalf("cursor after rollback: %+v", st)
 	}
 	// And nothing the rolled-back transaction touched reached the changelog.
@@ -660,7 +642,7 @@ def main(input, host):
                          "id": "%s", "properties": {"count": props["count"] + 1.0}}]}
 `, target, target[:1])
 	}
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{
 			trigOn("ping", map[string]any{"kinds": []any{widgetType}}),
 			trigOn("pong", map[string]any{"kinds": []any{gadgetType}}),
@@ -673,9 +655,9 @@ def main(input, host):
 	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, ID: "w", Properties: map[string]any{"count": float64(0)}})
 	var parked []substrate.TriggerFailure
 	for range 30 {
-		process(t, ops)
+		process(t, ds)
 		for _, name := range []string{"ping", "pong"} {
-			rows, err := ops.TriggerFailures(ctx, trigID(name))
+			rows, err := ds.TriggerFailures(ctx, trigID(name))
 			if err != nil {
 				t.Fatalf("failures: %v", err)
 			}
@@ -700,7 +682,7 @@ def main(input, host):
 
 func TestTriggerManualRunLeavesCursorAlone(t *testing.T) {
 	t.Parallel()
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("mirror", map[string]any{"kinds": []any{widgetType}})},
 		pyFn("mirror", map[string]any{}, []any{taskType}, mirrorSource))
 	ctx := context.Background()
@@ -708,7 +690,7 @@ func TestTriggerManualRunLeavesCursorAlone(t *testing.T) {
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "manual"}})
 
 	// One synthesized delivery, no cursor motion: the lag stays.
-	ran, err := ops.RunTrigger(ctx, trigID("mirror"), w.Kind, w.ID)
+	ran, err := ds.RunTrigger(ctx, trigID("mirror"), w.Kind, w.ID)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -718,7 +700,7 @@ func TestTriggerManualRunLeavesCursorAlone(t *testing.T) {
 	if got := mustGet(t, ds, taskType, "t-"+w.ID); got.Title != "manual" {
 		t.Fatalf("task title: %q", got.Title)
 	}
-	if st := statusOf(t, ops, trigID("mirror")); st.Lag == 0 {
+	if st := statusOf(t, ds, trigID("mirror")); st.Lag == 0 {
 		t.Fatalf("manual run moved the cursor: %+v", st)
 	}
 	// Direct invocations mint nothing on the run ledger.
@@ -729,11 +711,11 @@ func TestTriggerManualRunLeavesCursorAlone(t *testing.T) {
 	// The ordinary dispatch that follows is a no-op in the data: same id,
 	// same value.
 	before := dataSeq(t, ds)
-	process(t, ops)
+	process(t, ds)
 	if after := dataSeq(t, ds); after != before {
 		t.Fatalf("dispatch after manual run wrote data: %d → %d", before, after)
 	}
-	if st := statusOf(t, ops, trigID("mirror")); st.Lag != 0 {
+	if st := statusOf(t, ds, trigID("mirror")); st.Lag != 0 {
 		t.Fatalf("lag after dispatch: %+v", st)
 	}
 }
@@ -741,7 +723,7 @@ func TestTriggerManualRunLeavesCursorAlone(t *testing.T) {
 func TestTriggerDeleteSource(t *testing.T) {
 	t.Parallel()
 	// record is null after delete; the effect removes the mirrored task.
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("sweeper", map[string]any{
 			"kinds": []any{widgetType}, "ops": []any{"delete"},
 			"when": `record == null`,
@@ -755,12 +737,12 @@ def main(input, host):
 
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType})
 	mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, ID: "t-" + w.ID, Properties: map[string]any{"name": "w"}})
-	process(t, ops)
+	process(t, ds)
 
 	if _, err := ds.Delete(ctx, fnActor, w.Kind, w.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete widget: %v", err)
 	}
-	process(t, ops)
+	process(t, ds)
 	got := mustGet(t, ds, taskType, "t-"+w.ID)
 	if got.DeletedAt == nil {
 		t.Fatal("the mirrored task was not tombstoned")
@@ -775,7 +757,7 @@ func TestTriggerSameStatePatchIsNoOp(t *testing.T) {
 	// must be a no-op — no transition error, no parked failure, and above all
 	// no data changelog row, because the row is what would feed the next
 	// trigger.
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("closer", map[string]any{
 			"kinds": []any{widgetType}, "ops": []any{"update"},
 		})},
@@ -789,11 +771,11 @@ def main(input, host):
 
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "w"}})
 	mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, ID: "t-" + w.ID, Properties: map[string]any{"name": "w"}})
-	process(t, ops)
+	process(t, ds)
 
 	// First delivery moves open → done and stamps completedAt.
 	mustPatch(t, ds, fnActor, w.Kind, w.ID, substrate.PatchInput{Properties: map[string]any{"name": "w2"}})
-	process(t, ops)
+	process(t, ds)
 	task := mustGet(t, ds, taskType, "t-"+w.ID)
 	if task.Properties["status"] != "done" {
 		t.Fatalf("status: %v", task.Properties["status"])
@@ -803,17 +785,17 @@ def main(input, host):
 	// Every later delivery re-asserts done against done: silence in the data.
 	mustPatch(t, ds, fnActor, w.Kind, w.ID, substrate.PatchInput{Properties: map[string]any{"name": "w3"}})
 	before := dataSeq(t, ds)
-	process(t, ops)
+	process(t, ds)
 	if after := dataSeq(t, ds); after != before {
 		t.Fatalf("a done → done patch wrote data: seq %d → %d", before, after)
 	}
-	if parked, err := ops.TriggerFailures(ctx, trigID("closer")); err != nil || len(parked) != 0 {
+	if parked, err := ds.TriggerFailures(ctx, trigID("closer")); err != nil || len(parked) != 0 {
 		t.Fatalf("parked = %v, err = %v; a same-state patch is not a failure", parked, err)
 	}
 	if got := mustGet(t, ds, taskType, "t-"+w.ID); got.Properties["completedAt"] != stamped {
 		t.Fatalf("completedAt restamped: %v → %v", stamped, got.Properties["completedAt"])
 	}
-	if st := statusOf(t, ops, trigID("closer")); st.Lag != 0 {
+	if st := statusOf(t, ds, trigID("closer")); st.Lag != 0 {
 		t.Fatalf("lag: %+v", st)
 	}
 }
@@ -823,7 +805,7 @@ func TestTriggerDisabledStandsStill(t *testing.T) {
 	// enabled: false stops delivery without losing the cursor; re-enabling
 	// resumes from where it stood — the interim change delivers late, never
 	// lost.
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("mirror", map[string]any{"kinds": []any{widgetType}})},
 		pyFn("mirror", map[string]any{}, []any{taskType}, mirrorSource))
 	ctx := context.Background()
@@ -834,11 +816,11 @@ func TestTriggerDisabledStandsStill(t *testing.T) {
 		t.Fatalf("disable: %v", err)
 	}
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "late"}})
-	process(t, ops)
+	process(t, ds)
 	if _, err := ds.Get(ctx, taskType, "t-"+w.ID); err == nil {
 		t.Fatal("a disabled trigger delivered")
 	}
-	if st := statusOf(t, ops, trigID("mirror")); st.Enabled || st.Lag == 0 {
+	if st := statusOf(t, ds, trigID("mirror")); st.Enabled || st.Lag == 0 {
 		t.Fatalf("disabled status: %+v", st)
 	}
 
@@ -847,7 +829,7 @@ func TestTriggerDisabledStandsStill(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("re-enable: %v", err)
 	}
-	process(t, ops)
+	process(t, ds)
 	if got := mustGet(t, ds, taskType, "t-"+w.ID); got.Title != "late" {
 		t.Fatalf("the backlog did not deliver after re-enable: %q", got.Title)
 	}
@@ -858,7 +840,7 @@ func TestTriggerWriteAdmission(t *testing.T) {
 	// A trigger row that cannot dispatch never lands: bad guards, unknown
 	// callables, zero or two source arms, bad recurrences all refuse at
 	// write time.
-	ds, _ := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{},
 		pyFn("mirror", map[string]any{}, []any{taskType}, mirrorSource))
 	ctx := context.Background()
@@ -949,7 +931,7 @@ func TestTriggerDispatchIsPerRepository(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
-	install := func(repository string) (substrate.Dataset, fnOps) {
+	install := func(repository string) substrate.Dataset {
 		t.Helper()
 		if _, err := svc.CreateRepository(ctx, repository); err != nil {
 			t.Fatalf("create repository %s: %v", repository, err)
@@ -970,20 +952,16 @@ def main(input, host):
 		if err != nil {
 			t.Fatalf("install into %s: %v", repository, err)
 		}
-		ops, ok := ds.(fnOps)
-		if !ok {
-			t.Fatal("dataset does not implement the automation seam")
-		}
-		return ds, ops
+		return ds
 	}
-	one, opsOne := install(testdb.Repository(t))
-	two, opsTwo := install(testdb.RepositoryLabel(t) + "2.example.com")
+	one := install(testdb.Repository(t))
+	two := install(testdb.RepositoryLabel(t) + "2.example.com")
 
 	mustPut(t, one, owner, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "only here"}})
-	if n := process(t, opsOne); n != 1 {
+	if n := process(t, one); n != 1 {
 		t.Fatalf("the writing repository ran %d deliveries, want 1", n)
 	}
-	if n := process(t, opsTwo); n != 0 {
+	if n := process(t, two); n != 0 {
 		t.Fatalf("the quiet repository ran %d deliveries off another repository's changelog", n)
 	}
 
@@ -1003,7 +981,7 @@ def main(input, host):
 	}
 	// And the cursors moved independently: the quiet repository's trigger is
 	// still at its own head, not the other's.
-	if st := statusOf(t, opsTwo, trigID("mirror")); st.Lag != 0 {
+	if st := statusOf(t, two, trigID("mirror")); st.Lag != 0 {
 		t.Fatalf("the quiet repository's trigger carries lag %d", st.Lag)
 	}
 }

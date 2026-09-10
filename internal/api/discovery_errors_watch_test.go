@@ -16,9 +16,10 @@ const changesPath = "/api/v1/changes"
 
 // --- A1: discovery + versioning + the deprecation channel ---------------
 
-// wantFeatureSurfaces is the whole roster a deployment can report, with the
-// surfaces each entry claims. Every discovery test reads it, so a new feature
-// is declared once and no test can drift from another.
+// wantFeatureSurfaces is the roster this deployment reports, with the
+// surfaces each entry claims, written out here rather than read off
+// api.features: a feature added to the literal without a route behind it has
+// to be added here too, by hand.
 var wantFeatureSurfaces = map[string][]string{
 	"triggers":   {surfaceREST},
 	"functions":  {surfaceREST},
@@ -31,7 +32,7 @@ var wantFeatureSurfaces = map[string][]string{
 	"agents":     {surfaceREST},
 }
 
-func TestDiscoveryReportsVersionsAndFeatures(t *testing.T) {
+func TestDiscoveryReportsVersionsAndBuild(t *testing.T) {
 	svc := newFakeService()
 	h := New(Config{Service: svc})
 
@@ -59,40 +60,22 @@ func TestDiscoveryReportsVersionsAndFeatures(t *testing.T) {
 		t.Fatalf("horizon = %d, want 0", doc.Changelog.Horizon)
 	}
 
-	// The feature list follows the fake's seams: it carries ChangeFeedOps and
-	// nothing else, and the fake has no embedder, so every other extension
-	// feature is absent rather than advertised over a 501.
-	stab := map[string]string{}
-	for _, f := range doc.Features {
-		stab[f.Name] = f.Stability
-	}
-	for name, want := range map[string]string{
-		"changefeed": substrate.StabilityStable,
-		"search":     substrate.StabilityBeta,
-	} {
-		if stab[name] != want {
-			t.Fatalf("feature %q stability = %q, want %q", name, stab[name], want)
-		}
-	}
-	for _, absent := range []string{"triggers", "functions", "bundles", "blobs", featureExport, featureEmbeddings, substrate.FeatureAgents} {
-		if _, ok := stab[absent]; ok {
-			t.Fatalf("feature %q advertised, but nothing here serves it", absent)
-		}
-	}
 	if version := doc.Server.Version; version == "" {
 		t.Fatalf("server version missing")
+	}
+	// A list, never null: a client that decodes an array must not have to
+	// handle a missing one. What is in it is the two tests below.
+	if body := rec.Body.String(); !strings.Contains(body, `"features":[{`) {
+		t.Fatalf("features did not serialize as a list: %s", body)
 	}
 }
 
 // Every feature says which surfaces serve it, because the two are not
 // equivalent: search is the GraphQL query's alone, and a client that read a
 // listed feature as "a REST route exists" went looking for one that never
-// shipped. Read against a dataset carrying every seam, so the whole roster is
-// on the wire.
+// shipped.
 func TestDiscoveryFeaturesNameTheirSurfaces(t *testing.T) {
-	svc := newFakeService()
-	svc.embeddings = true
-	h := New(Config{Service: allSeamsService{svc}})
+	h := New(Config{Service: newFakeService()})
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil))
@@ -184,37 +167,6 @@ func TestSearchHasNoRESTRoute(t *testing.T) {
 	}
 }
 
-// allSeams satisfies every optional Dataset extension by embedding the
-// interfaces. Discovery only type-asserts the probe, so no method is ever
-// called and none needs a body.
-type allSeams struct {
-	substrate.Dataset
-	substrate.AutomationOps
-	substrate.BundleOps
-	substrate.BundleInstaller
-	substrate.BlobStore
-	substrate.Exporter
-	substrate.ChangeFeedOps
-	substrate.AgentOps
-}
-
-type allSeamsService struct{ *fakeService }
-
-func (s allSeamsService) DatasetSeams() substrate.Dataset { return (*allSeams)(nil) }
-
-// bundleLifecycleOnly serves the bundle lifecycle verbs and nothing else: it
-// is a BundleOps that cannot install a catalog closure.
-type bundleLifecycleOnly struct {
-	substrate.Dataset
-	substrate.BundleOps
-}
-
-type bundleLifecycleService struct{ *fakeService }
-
-func (s bundleLifecycleService) DatasetSeams() substrate.Dataset {
-	return (*bundleLifecycleOnly)(nil)
-}
-
 // discoveryFeatures reads the feature list one service reports.
 func discoveryFeatures(t *testing.T, svc substrate.Service) map[string]string {
 	t.Helper()
@@ -229,29 +181,26 @@ func discoveryFeatures(t *testing.T, svc substrate.Service) map[string]string {
 	return got
 }
 
-// A deployment whose datasets carry every seam advertises every feature, each
-// with the stability the surface has actually reached. `stable` means frozen
-// for v1, and every feature of the supported REST surface is: the wire
-// changes #360 tracked have landed. `search` stays beta because its only door
-// is the preview GraphQL surface, and that surface is the only door to
-// embeddings too. `agents` and `embeddings` stay alpha because both shapes
-// are still moving. Change a stamp here and in features() together, and a
-// stable one only with a decision record, as 0053 scheduled this flip: it is
-// a promise a client has already read.
+// Every feature carries the stability its surface has reached. `stable`
+// means frozen for v1, and every feature of the supported REST surface is.
+// `search` stays beta because its only door is the preview GraphQL surface,
+// and that surface is the only door to embeddings too. `agents` and
+// `embeddings` stay alpha because both shapes are still moving.
+// Change a stamp here and in the features literal together, and a stable one
+// only with a decision record, as 0053 scheduled this flip: it is a promise a
+// client has already read.
 func TestDiscoveryStampsEachFeatureStability(t *testing.T) {
-	svc := newFakeService()
-	svc.embeddings = true
-	got := discoveryFeatures(t, allSeamsService{svc})
+	got := discoveryFeatures(t, newFakeService())
 
 	want := map[string]string{
 		"triggers":              substrate.StabilityStable,
 		"functions":             substrate.StabilityStable,
 		"bundles":               substrate.StabilityStable,
 		"blobs":                 substrate.StabilityStable,
-		featureExport:           substrate.StabilityBeta,
+		"export":                substrate.StabilityBeta,
 		"changefeed":            substrate.StabilityStable,
 		"search":                substrate.StabilityBeta,
-		featureEmbeddings:       substrate.StabilityAlpha,
+		"embeddings":            substrate.StabilityAlpha,
 		substrate.FeatureAgents: substrate.AgentStability,
 	}
 	if len(got) != len(want) {
@@ -266,78 +215,6 @@ func TestDiscoveryStampsEachFeatureStability(t *testing.T) {
 	// literal here.
 	if got[substrate.FeatureAgents] != "alpha" {
 		t.Fatalf("agents feature = %q, want alpha", got[substrate.FeatureAgents])
-	}
-}
-
-// The embed queue drains through an Embedder the host wires in, and the
-// semantic arm refuses without one, so a deployment with no embedder does not
-// list the feature however many seams its datasets carry.
-func TestDiscoveryOmitsEmbeddingsWithoutAnEmbedder(t *testing.T) {
-	svc := newFakeService()
-	svc.embeddings = false
-	got := discoveryFeatures(t, allSeamsService{svc})
-
-	if _, ok := got[featureEmbeddings]; ok {
-		t.Fatalf("embeddings advertised on a deployment with no embedder: %+v", got)
-	}
-	// The other entries are undisturbed: this drops one, not the list.
-	if got["search"] != substrate.StabilityBeta {
-		t.Fatalf("search = %q, want %q", got["search"], substrate.StabilityBeta)
-	}
-	if len(got) != len(wantFeatureSurfaces)-1 {
-		t.Fatalf("features = %+v, want every entry but embeddings", got)
-	}
-
-	// Dropping one entry must not disturb its neighbours' surfaces either.
-	h := New(Config{Service: allSeamsService{svc}})
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil))
-	for _, f := range decodeJSON[discoveryDoc](t, rec).Features {
-		if !slices.Equal(f.Surfaces, wantFeatureSurfaces[f.Name]) {
-			t.Fatalf("feature %q surfaces = %v, want %v", f.Name, f.Surfaces, wantFeatureSurfaces[f.Name])
-		}
-	}
-}
-
-// The `bundles` entry stands for the lifecycle verbs AND catalog install, and
-// install is a different seam (substrate.BundleInstaller, asserted in
-// internal/catalog). A dataset that serves only half the surface advertises
-// none of it: half a feature is what a client cannot route around.
-func TestDiscoveryOmitsBundlesWithoutTheInstaller(t *testing.T) {
-	got := discoveryFeatures(t, bundleLifecycleService{newFakeService()})
-
-	if _, ok := got["bundles"]; ok {
-		t.Fatalf("bundles advertised without BundleInstaller: %+v", got)
-	}
-}
-
-// noSeamReporter is a Service with the seam report hidden: embedding the
-// INTERFACE promotes only the methods Service names, so DatasetSeams and
-// EmbeddingsEnabled are both gone.
-type noSeamReporter struct{ substrate.Service }
-
-// A service that reports no seams lists exactly what substrate.Dataset itself
-// guarantees. Search is on that interface and /api/v1/graphql serves it, so
-// hiding it would hide a capability that works; every extension depends on a
-// seam nobody reported, so listing one would send a client to a 501.
-func TestDiscoveryWithoutASeamReporterListsTheCoreReads(t *testing.T) {
-	var svc substrate.Service = noSeamReporter{newFakeService()}
-	if _, ok := svc.(substrate.SeamReporter); ok {
-		t.Fatalf("noSeamReporter reports seams; this test asserts the opposite")
-	}
-	h := New(Config{Service: svc})
-
-	req := httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	doc := decodeJSON[discoveryDoc](t, rec)
-	if len(doc.Features) != 1 || doc.Features[0].Name != "search" {
-		t.Fatalf("features = %+v, want search alone", doc.Features)
-	}
-	// A list, never null: a client that decodes an array must not have to
-	// handle a missing one.
-	if body := rec.Body.String(); !strings.Contains(body, `"features":[{"name":"search"`) {
-		t.Fatalf("features did not serialize as a list: %s", body)
 	}
 }
 
@@ -367,15 +244,6 @@ func TestUnknownVersionPrefixIsNotServed(t *testing.T) {
 }
 
 // --- A6: the closed error set is real -----------------------------------
-
-func TestUnsupportedIs501(t *testing.T) {
-	// The fake dataset carries no bundle machinery, so the bundle status verb
-	// is a capability-absent 501 → code unsupported (never internal).
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, "/api/v1/substrate.reamde.dev/core/bundle/status", tok, nil)
-	wantErrorCode(t, rec, http.StatusNotImplemented, codeUnsupported)
-}
 
 func TestUnavailableIs503WithRetryAfter(t *testing.T) {
 	env := newTestEnv(t)

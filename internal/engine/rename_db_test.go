@@ -78,7 +78,7 @@ func rnClosure(gizmoProps, gizmoData map[string]any, target string, extra ...map
 
 func rnApply(t *testing.T, ds substrate.Dataset, docs []map[string]any) error {
 	t.Helper()
-	_, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, docs)
+	_, err := ds.ApplyVocabularyDocuments(context.Background(), owner, docs)
 	return err
 }
 

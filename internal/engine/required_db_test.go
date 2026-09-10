@@ -48,7 +48,7 @@ func requiredVocabulary(t *testing.T, ds substrate.Dataset) {
 				},
 			}),
 	}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), owner, docs); err != nil {
 		t.Fatalf("apply the required vocabulary: %v", err)
 	}
 }
@@ -169,7 +169,7 @@ func TestDeclaredDefaultMustBeStorable(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	_, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(badDefaultPackage, 0),
 		vocabulary.KindManifest(badDefaultPackage,
 			map[string]any{"singular": "seen"},

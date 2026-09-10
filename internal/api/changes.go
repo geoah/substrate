@@ -9,18 +9,13 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// annotateChanges attaches per-trigger delivery states through the feed
-// seam; a dataset without it serves plain rows rather than failing the read.
+// annotateChanges attaches each enabled trigger's stance on every row.
 func annotateChanges(ctx context.Context, ds substrate.Dataset, changes []substrate.Change) ([]substrate.ChangeRow, error) {
 	rows := make([]substrate.ChangeRow, len(changes))
 	for i := range changes {
 		rows[i].Change = changes[i]
 	}
-	ops, ok := ds.(substrate.ChangeFeedOps)
-	if !ok {
-		return rows, nil
-	}
-	states, err := ops.ChangeTriggers(ctx, changes)
+	states, err := ds.ChangeTriggers(ctx, changes)
 	if err != nil {
 		return nil, err
 	}
@@ -35,11 +30,6 @@ func annotateChanges(ctx context.Context, ds substrate.Dataset, changes []substr
 // address the same rows from opposite ends, so a client walks backward with
 // `before` and resumes forward with `from`.
 func (h *handler) getChangesPage(w http.ResponseWriter, r *http.Request, ds substrate.Dataset, f substrate.ChangeFilter) {
-	ops, ok := ds.(substrate.ChangeFeedOps)
-	if !ok {
-		writeUnsupported(w, "this substrate serves no change feed")
-		return
-	}
 	before, err := parseSeqParam(r, "before")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
@@ -88,7 +78,7 @@ func (h *handler) getChangesPage(w http.ResponseWriter, r *http.Request, ds subs
 	kept := []substrate.ChangeRow{}
 	cur := before
 	exhausted := false
-	changes, err := ops.ChangesBefore(r.Context(), cur, f, first)
+	changes, err := ds.ChangesBefore(r.Context(), cur, f, first)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return

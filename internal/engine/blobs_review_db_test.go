@@ -29,11 +29,10 @@ func TestBlobGCCannotDangleUncommittedRef(t *testing.T) {
 
 	ctx := context.Background()
 	ds, raw, _ := newDatasetWithDB(t)
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, blobDocDocs("attachment", false)); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, blobDocDocs("attachment", false)); err != nil {
 		t.Fatalf("install doc type: %v", err)
 	}
-	bs := blobStoreOf(t, ds)
-	blob, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, []byte("racy payload"), "")
+	blob, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, []byte("racy payload"), "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
@@ -79,7 +78,7 @@ func TestBlobGCCannotDangleUncommittedRef(t *testing.T) {
 
 	// The invariant: a COMMITTED reference may never point at a collected blob.
 	if refErr == nil {
-		if _, _, err := bs.GetBlob(ctx, blob.Digest); err != nil {
+		if _, _, err := ds.GetBlob(ctx, blob.Digest); err != nil {
 			t.Fatalf("DANGLING blobref: the reference committed but its blob was collected: %v", err)
 		}
 	} else if !errors.Is(refErr, substrate.ErrValidation) {
@@ -96,17 +95,16 @@ func TestBlobUploadGraceSparesFreshBlob(t *testing.T) {
 
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	bs := blobStoreOf(t, ds)
 
 	engine.BlobUploadGrace = time.Hour
-	blob, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, []byte("fresh, not yet referenced"), "")
+	blob, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, []byte("fresh, not yet referenced"), "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
 	if _, err := ds.RunGC(ctx); err != nil {
 		t.Fatalf("gc within grace: %v", err)
 	}
-	if _, _, err := bs.GetBlob(ctx, blob.Digest); err != nil {
+	if _, _, err := ds.GetBlob(ctx, blob.Digest); err != nil {
 		t.Fatalf("the grace must spare a freshly uploaded blob, but it was collected: %v", err)
 	}
 
@@ -114,7 +112,7 @@ func TestBlobUploadGraceSparesFreshBlob(t *testing.T) {
 	if _, err := ds.RunGC(ctx); err != nil {
 		t.Fatalf("gc past grace: %v", err)
 	}
-	if _, _, err := bs.GetBlob(ctx, blob.Digest); err == nil {
+	if _, _, err := ds.GetBlob(ctx, blob.Digest); err == nil {
 		t.Fatal("past the grace, an unreferenced blob must be collected")
 	}
 }
@@ -125,7 +123,6 @@ func TestBlobManifestForgeRefusedAndDedupAuthoritative(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	bs := blobStoreOf(t, ds)
 
 	forged := substrate.BlobDigestPrefix + strings.Repeat("2", 64)
 	_, err := ds.Put(ctx, owner, substrate.PutInput{
@@ -138,11 +135,11 @@ func TestBlobManifestForgeRefusedAndDedupAuthoritative(t *testing.T) {
 	wantErr(t, err, substrate.ErrForbidden, "a forged generic blob manifest must be refused")
 
 	data := []byte("same bytes, different claimed mime")
-	first, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, data, "")
+	first, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, data, "")
 	if err != nil {
 		t.Fatalf("put first: %v", err)
 	}
-	second, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "image/png"}, data, "")
+	second, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "image/png"}, data, "")
 	if err != nil {
 		t.Fatalf("put second (dedup): %v", err)
 	}
@@ -152,7 +149,7 @@ func TestBlobManifestForgeRefusedAndDedupAuthoritative(t *testing.T) {
 	if second.MediaType != "text/plain" {
 		t.Fatalf("dedup PUT returned %q, want the authoritative text/plain", second.MediaType)
 	}
-	got, _, err := bs.GetBlob(ctx, first.Digest)
+	got, _, err := ds.GetBlob(ctx, first.Digest)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -171,8 +168,7 @@ func TestBlobGCTombstonesStoredManifest(t *testing.T) {
 
 	ctx := context.Background()
 	ds, raw, _ := newDatasetWithDB(t)
-	bs := blobStoreOf(t, ds)
-	blob, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, []byte("orphan to tombstone"), "")
+	blob, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, []byte("orphan to tombstone"), "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
@@ -182,7 +178,7 @@ func TestBlobGCTombstonesStoredManifest(t *testing.T) {
 	}
 
 	// Bytes are hard-deleted immediately.
-	if _, _, err := bs.GetBlob(ctx, blob.Digest); err == nil {
+	if _, _, err := ds.GetBlob(ctx, blob.Digest); err == nil {
 		t.Fatal("orphan bytes survived gc")
 	}
 	// The manifest row is still present with deleted_at set — the tombstone.

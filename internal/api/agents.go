@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 
@@ -13,28 +12,17 @@ import (
 // (one AgentEvent per line, the changes feed's conventions); the thread it
 // writes is ordinary data any client re-reads through the record API.
 
-// agentsFrom resolves the request's dataset to the agent seam; a dataset
-// without it has no agent verbs.
-func agentsFrom(ctx context.Context) (substrate.AgentOps, bool) {
-	ops, ok := DatasetFrom(ctx).(substrate.AgentOps)
-	return ops, ok
-}
-
 // postAgentCall is the callable invocation API's agent half: arbitrary
 // input becomes the first user message, and the response carries the final
 // reply plus the thread id — the durable trace.
 func (h *handler) postAgentCall(w http.ResponseWriter, r *http.Request) {
-	ops, ok := agentsFrom(r.Context())
-	if !ok {
-		writeUnsupported(w, "this substrate runs no agents")
-		return
-	}
+	ds := DatasetFrom(r.Context())
 	var req callRequest
 	if err := decodeBody(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
 	}
-	res, err := ops.CallAgent(idempotentContext(r), pathParam(r, "name"), req.Input)
+	res, err := ds.CallAgent(idempotentContext(r), pathParam(r, "name"), req.Input)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
@@ -55,11 +43,7 @@ type chatRequest struct {
 // no trigger, no cursor; mid-run state is the same loop machinery, and the
 // transcript persists as thread/message records either way.
 func (h *handler) postAgentChat(w http.ResponseWriter, r *http.Request) {
-	ops, ok := agentsFrom(r.Context())
-	if !ok {
-		writeUnsupported(w, "this substrate runs no agents")
-		return
-	}
+	ds := DatasetFrom(r.Context())
 	var req chatRequest
 	if err := decodeBody(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
@@ -81,7 +65,7 @@ func (h *handler) postAgentChat(w http.ResponseWriter, r *http.Request) {
 		}
 		flusher.Flush()
 	}
-	_, err := ops.ChatAgent(r.Context(), ActorFrom(r.Context()),
+	_, err := ds.ChatAgent(r.Context(), ActorFrom(r.Context()),
 		pathParam(r, "name"), req.Thread, req.Message, emit)
 	if err != nil {
 		// The 200 status line is already gone, so the failure travels as its

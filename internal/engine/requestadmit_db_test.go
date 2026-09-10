@@ -64,7 +64,7 @@ def main(input, host):
                         "target": "samples.substrate.reamde.dev/tasks/task/t-bare"}}
     ]}
 `
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("proposer", map[string]any{
 			"kinds": []any{widgetType}, "ops": []any{"create"},
 		})},
@@ -76,7 +76,7 @@ def main(input, host):
 		})
 	}
 	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, ID: "w-1", Properties: map[string]any{"name": "w"}})
-	process(t, ops)
+	process(t, ds)
 
 	for _, c := range []struct{ request, target, want string }{
 		{"req-wrapped", "t-wrapped", "wrapped"},
@@ -129,7 +129,7 @@ def main(input, host):
          "properties": {"op": "create", "diff": {"properties": {"title": "nameless"}}}}
     ]}
 `
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{
 			trigOn("badshape", map[string]any{"kinds": []any{widgetType}, "ops": []any{"create"}}),
 			trigOn("badcreate", map[string]any{"kinds": []any{widgetType}, "ops": []any{"create"}}),
@@ -141,13 +141,13 @@ def main(input, host):
 		Kind: taskType, ID: "t-victim", Properties: map[string]any{"name": "untouched"},
 	})
 	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, ID: "w-1", Properties: map[string]any{"name": "w"}})
-	process(t, ops)
+	process(t, ds)
 
 	for _, c := range []struct{ fn, request, reason string }{
 		{"badshape", "req-badshape", "diff.properties must be an object"},
 		{"badcreate", "req-badcreate", "targetKind and targetId"},
 	} {
-		parked, err := ops.TriggerFailures(ctx, trigID(c.fn))
+		parked, err := ds.TriggerFailures(ctx, trigID(c.fn))
 		if err != nil {
 			t.Fatalf("%s failures: %v", c.fn, err)
 		}
@@ -413,7 +413,7 @@ func TestTwoTargetsSmuggleNothing(t *testing.T) {
 		vocabulary.KindManifest(gaugePackage, map[string]any{"singular": "secretgauge"},
 			map[string]any{"properties": map[string]any{"apiKey": map[string]any{"type": "secret"}}}),
 	}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
 		t.Fatalf("install the gauge authority: %v", err)
 	}
 	safe := mustPut(t, ds, owner, substrate.PutInput{
@@ -471,7 +471,7 @@ func TestTwoTargetsSmuggleNothing(t *testing.T) {
 func TestIdenticalReproposalIsANoOp(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ds, ops := newFnDataset(t, nil, pyFn("reproposer", map[string]any{}, []any{requestKind}, `
+	ds := newFnDataset(t, nil, pyFn("reproposer", map[string]any{}, []any{requestKind}, `
 def main(input, host):
     host.effects.propose("req-replayed", "samples.substrate.reamde.dev/tasks/task",
                          input["args"]["target"], diff={"description": "same as ever"},
@@ -483,13 +483,13 @@ def main(input, host):
 	})
 	fn := fnPackage + "/reproposer"
 
-	if _, _, err := ops.CallFunction(ctx, fn, map[string]any{"target": task.ID}); err != nil {
+	if _, _, err := ds.CallFunction(ctx, fn, map[string]any{"target": task.ID}); err != nil {
 		t.Fatalf("first delivery: %v", err)
 	}
 	first := mustGet(t, ds, requestKind, "req-replayed")
 
 	// The replay: the same body, the same staged effect, the same request id.
-	if _, _, err := ops.CallFunction(ctx, fn, map[string]any{"target": task.ID}); err != nil {
+	if _, _, err := ds.CallFunction(ctx, fn, map[string]any{"target": task.ID}); err != nil {
 		t.Fatalf("the replayed delivery parked: %v", err)
 	}
 	again := mustGet(t, ds, requestKind, "req-replayed")

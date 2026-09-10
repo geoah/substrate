@@ -200,7 +200,7 @@ func TestSampleReimportOverAnEditedCopyNeedsTheConfirmationItPreviewed(t *testin
 	editKind(t, ds, homeAuthority+"/tasks/task", "theirs")
 	header := vocabulary.PackageManifest(landed, b.Version+1)
 	header["data"].(map[string]any)["description"] = "my tasks, edited"
-	if _, err := ds.(substrate.VocabularyApplier).ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{header}); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{header}); err != nil {
 		t.Fatalf("edit the package header: %v", err)
 	}
 	held = heldStatus(t, ds, landed)
@@ -321,10 +321,6 @@ func TestAHandRehomedApplyRecordsItsOrigin(t *testing.T) {
 	ds := newDataset(t)
 	c := loadCatalog(t)
 	ctx := context.Background()
-	planner, ok := ds.(substrate.VocabularyPlanner)
-	if !ok {
-		t.Fatal("dataset does not plan a vocabulary apply")
-	}
 	const foodSample = samplesPlacehldr + "/food"
 	b, ok := c.ByID(foodSample)
 	if !ok {
@@ -342,12 +338,12 @@ func TestAHandRehomedApplyRecordsItsOrigin(t *testing.T) {
 		"a package the batch lacks":      samplesPlacehldr + "/drinks",
 		"the package the batch declares": landed,
 	} {
-		if _, err := planner.ApplyVocabularyDocumentsWith(ctx, substrate.ActorAPI, docs, substrate.VocabularyApply{Origin: origin}); !errors.Is(err, substrate.ErrValidation) {
+		if _, err := ds.ApplyVocabularyDocumentsWith(ctx, substrate.ActorAPI, docs, substrate.VocabularyApply{Origin: origin}); !errors.Is(err, substrate.ErrValidation) {
 			t.Errorf("origin %s (%q): err = %v, want ErrValidation", name, origin, err)
 		}
 	}
 
-	if _, err := planner.ApplyVocabularyDocumentsWith(ctx, substrate.ActorAPI, docs, substrate.VocabularyApply{Origin: foodSample}); err != nil {
+	if _, err := ds.ApplyVocabularyDocumentsWith(ctx, substrate.ActorAPI, docs, substrate.VocabularyApply{Origin: foodSample}); err != nil {
 		t.Fatalf("apply the rehomed closure with its origin: %v", err)
 	}
 	held := heldStatus(t, ds, landed)
@@ -365,25 +361,25 @@ func TestAHandRehomedApplyRecordsItsOrigin(t *testing.T) {
 	// Edited since, the re-apply naming the origin replaces the edit, so it
 	// takes the confirmation its own preview hands out.
 	editKind(t, ds, landed+"/meal", "mine")
-	plan, err := planner.PlanVocabularyApplyWith(ctx, substrate.ActorAPI, docs, substrate.VocabularyApply{Origin: foodSample})
+	plan, err := ds.PlanVocabularyApplyWith(ctx, substrate.ActorAPI, docs, substrate.VocabularyApply{Origin: foodSample})
 	if err != nil {
 		t.Fatalf("plan the re-apply: %v", err)
 	}
 	if !plan.DiscardsEdits || plan.PlanHash == "" {
 		t.Fatalf("the plan over an edited copy reads %+v, want discardsEdits with a hash", plan)
 	}
-	bare, err := planner.PlanVocabularyApply(ctx, substrate.ActorAPI, docs)
+	bare, err := ds.PlanVocabularyApply(ctx, substrate.ActorAPI, docs)
 	if err != nil {
 		t.Fatalf("plan the re-apply without an origin: %v", err)
 	}
 	if bare.DiscardsEdits || bare.PlanHash == plan.PlanHash {
 		t.Errorf("a plan claiming no origin discards edits or hashes like one that does: %+v", bare)
 	}
-	if _, err := planner.ApplyVocabularyDocumentsWith(ctx, substrate.ActorAPI, docs, substrate.VocabularyApply{Origin: foodSample}); !errors.Is(err, substrate.ErrLossyConversion) {
+	if _, err := ds.ApplyVocabularyDocumentsWith(ctx, substrate.ActorAPI, docs, substrate.VocabularyApply{Origin: foodSample}); !errors.Is(err, substrate.ErrLossyConversion) {
 		t.Fatalf("an unconfirmed re-apply over an edited copy: err = %v, want ErrLossyConversion", err)
 	}
 	confirm := &substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
-	if _, err := planner.ApplyVocabularyDocumentsWith(ctx, substrate.ActorAPI, docs, substrate.VocabularyApply{Origin: foodSample, Confirm: confirm}); err != nil {
+	if _, err := ds.ApplyVocabularyDocumentsWith(ctx, substrate.ActorAPI, docs, substrate.VocabularyApply{Origin: foodSample, Confirm: confirm}); err != nil {
 		t.Fatalf("the confirmed re-apply: %v", err)
 	}
 	wantOrigin(t, heldStatus(t, ds, landed), foodSample, b.Version, false)
@@ -395,7 +391,7 @@ func TestAHandRehomedApplyRecordsItsOrigin(t *testing.T) {
 	// it replaces the package as it always has and stamps nothing new, but
 	// the stamp already there stays with the row.
 	editKind(t, ds, landed+"/meal", "again")
-	if _, err := planner.ApplyVocabularyDocumentsWith(ctx, substrate.ActorAPI, docs, substrate.VocabularyApply{}); err != nil {
+	if _, err := ds.ApplyVocabularyDocumentsWith(ctx, substrate.ActorAPI, docs, substrate.VocabularyApply{}); err != nil {
 		t.Fatalf("a re-apply naming no origin: %v", err)
 	}
 	wantOrigin(t, heldStatus(t, ds, landed), foodSample, b.Version, false)

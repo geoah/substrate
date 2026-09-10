@@ -68,7 +68,7 @@ var heldRequests = map[string]struct {
 // plus the seat and root a reopen needs. Every invocation of the held body is
 // announced on the returned channel as the runner is about to start it, so a
 // test that must act mid-fire waits for that and never for a clock.
-func newHeldHookDataset(t *testing.T, released bool) (substrate.Service, substrate.Dataset, fnOps, string, string, <-chan struct{}) {
+func newHeldHookDataset(t *testing.T, released bool) (substrate.Service, substrate.Dataset, string, string, <-chan struct{}) {
 	t.Helper()
 	ctx := context.Background()
 	invoked := make(chan struct{}, 16)
@@ -97,14 +97,19 @@ func newHeldHookDataset(t *testing.T, released bool) (substrate.Service, substra
 	if err := enginetest.Install(ctx, ds, owner, connector); err != nil {
 		t.Fatalf("register connector: %v", err)
 	}
-	ops, ok := ds.(fnOps)
-	if !ok {
-		t.Fatal("dataset does not implement the automation seam")
-	}
 	if released {
 		releaseHook(t, ds)
 	}
-	return svc, ds, ops, dsn, engine.DataRootOf(svc), invoked
+	return svc, ds, dsn, engine.DataRootOf(svc), invoked
+}
+
+// dispatch runs one trigger dispatcher pass over ds, the pass the server
+// gives every repository, which is what resumes a pending request.
+func dispatch(t *testing.T, ds substrate.Dataset) {
+	t.Helper()
+	if _, err := ds.ProcessTriggers(context.Background()); err != nil {
+		t.Fatalf("dispatcher pass: %v", err)
+	}
 }
 
 // awaitInvoked waits for the held body to be invoked once.
@@ -126,20 +131,20 @@ func releaseHook(t *testing.T, ds substrate.Dataset) {
 // pendingHook asserts the trigger holds exactly one recorded request, the
 // one the door answered with fid, that nothing has fired, and that the
 // status counts it as pending and not parked.
-func pendingHook(t *testing.T, ds substrate.Dataset, ops fnOps, fid string) substrate.TriggerFailure {
+func pendingHook(t *testing.T, ds substrate.Dataset, fid string) substrate.TriggerFailure {
 	t.Helper()
 	ctx := context.Background()
 	if _, err := ds.Get(ctx, widgetType, "held-echo"); err == nil {
 		t.Fatal("the fire ran")
 	}
-	failures, err := ops.TriggerFailures(ctx, "hook-held")
+	failures, err := ds.TriggerFailures(ctx, "hook-held")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(failures) != 1 || failures[0].FireID != fid || failures[0].LastError != engine.WebhookPendingError {
 		t.Fatalf("recorded requests = %+v, want one pending entry for fire %s", failures, fid)
 	}
-	statuses, err := ops.TriggerStatuses(ctx)
+	statuses, err := ds.TriggerStatuses(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,20 +154,6 @@ func pendingHook(t *testing.T, ds substrate.Dataset, ops fnOps, fid string) subs
 		}
 	}
 	return failures[0]
-}
-
-// dispatch runs one trigger dispatcher pass over ds, the pass the server
-// gives every repository, which is what resumes a pending request.
-func dispatch(t *testing.T, ds substrate.Dataset) fnOps {
-	t.Helper()
-	ops, ok := ds.(fnOps)
-	if !ok {
-		t.Fatal("dataset does not implement the automation seam")
-	}
-	if _, err := ops.ProcessTriggers(context.Background()); err != nil {
-		t.Fatalf("dispatcher pass: %v", err)
-	}
-	return ops
 }
 
 // okRunsAfterClose counts a fire id's OK run records from the tamperer's
@@ -233,13 +224,11 @@ func noDeliveryInFeed(t *testing.T, ds substrate.Dataset) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if feed, ok := ds.(substrate.ChangeFeedOps); ok {
-		backward, err := feed.ChangesBefore(ctx, 0, substrate.ChangeFilter{}, 100000)
-		if err != nil {
-			t.Fatal(err)
-		}
-		changes = append(changes, backward...)
+	backward, err := ds.ChangesBefore(ctx, 0, substrate.ChangeFilter{}, 100000)
+	if err != nil {
+		t.Fatal(err)
 	}
+	changes = append(changes, backward...)
 	for _, ch := range changes {
 		if ch.Op == substrate.OpDelivery {
 			t.Fatalf("a delivery entry reached the public feed: seq %d", ch.Seq)
@@ -260,15 +249,11 @@ func resumedHook(t *testing.T, ds substrate.Dataset, fid, name string, blob bool
 		t.Fatalf("the resumed fire's file part = %q, want a blob digest: %v", digest, blob)
 	}
 	if blob {
-		if _, data, err := blobStoreOf(t, ds).GetBlob(context.Background(), digest); err != nil || string(data) != string(heldAudio) {
+		if _, data, err := ds.GetBlob(context.Background(), digest); err != nil || string(data) != string(heldAudio) {
 			t.Fatalf("the file part's bytes at delivery: %v", err)
 		}
 	}
-	ops, ok := ds.(fnOps)
-	if !ok {
-		t.Fatal("dataset does not implement the automation seam")
-	}
-	if left, err := ops.TriggerFailures(context.Background(), "hook-held"); err != nil || len(left) != 0 {
+	if left, err := ds.TriggerFailures(context.Background(), "hook-held"); err != nil || len(left) != 0 {
 		t.Fatalf("entries after the resumed fire = %+v, %v", left, err)
 	}
 	if n := okRuns(t, ds, fid); n != 1 {
@@ -289,7 +274,7 @@ func TestWebhookAcceptedRequestSurvivesAStopBeforeTheFire(t *testing.T) {
 	for name, shape := range heldRequests {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
-			svc, ds, ops, dsn, root, _ := newHeldHookDataset(t, true)
+			svc, ds, dsn, root, _ := newHeldHookDataset(t, true)
 			fid, err := engine.ReceiveWebhookHeld(ctx, svc, testdb.Repository(t), "hook-held", "", shape.req)
 			if err != nil {
 				t.Fatalf("receive: %v", err)
@@ -297,7 +282,7 @@ func TestWebhookAcceptedRequestSurvivesAStopBeforeTheFire(t *testing.T) {
 			if !strings.HasPrefix(fid, "hook-") {
 				t.Fatalf("fire id %q does not carry the public prefix", fid)
 			}
-			pendingHook(t, ds, ops, fid)
+			pendingHook(t, ds, fid)
 			ledger := deliveryLedger(t, dsn)
 			for _, absent := range shape.absent {
 				if strings.Contains(ledger, absent) {
@@ -318,9 +303,8 @@ func TestWebhookAcceptedRequestSurvivesAStopBeforeTheFire(t *testing.T) {
 			if _, err := ds.RunGC(ctx); err != nil {
 				t.Fatalf("gc: %v", err)
 			}
-			bs := blobStoreOf(t, ds)
 			for _, digest := range digests {
-				if _, _, err := bs.GetBlob(ctx, digest); err != nil {
+				if _, _, err := ds.GetBlob(ctx, digest); err != nil {
 					t.Fatalf("the sweep collected %s while the request was pending: %v", digest, err)
 				}
 			}
@@ -368,7 +352,7 @@ func TestWebhookFireCancelledMidRunResumesAtTheNextOpen(t *testing.T) {
 	for name, shape := range heldRequests {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
-			svc, ds, ops, dsn, root, invoked := newHeldHookDataset(t, false)
+			svc, ds, dsn, root, invoked := newHeldHookDataset(t, false)
 
 			// The door with the fire inline, under a context the test cancels
 			// once the runner has started the body, which sleeps until the
@@ -389,7 +373,7 @@ func TestWebhookFireCancelledMidRunResumesAtTheNextOpen(t *testing.T) {
 			if got.err != nil {
 				t.Fatalf("receive: %v", got.err)
 			}
-			pendingHook(t, ds, ops, got.fid)
+			pendingHook(t, ds, got.fid)
 			if _, err := ds.RunGC(ctx); err != nil {
 				t.Fatalf("gc: %v", err)
 			}
@@ -419,12 +403,12 @@ func TestWebhookAcceptedRequestRestoresIntoAFreshDatabase(t *testing.T) {
 	t.Cleanup(func() { engine.BlobUploadGrace = prev })
 	ctx := context.Background()
 	shape := heldRequests["a multipart request"]
-	svc, ds, ops, _, root, _ := newHeldHookDataset(t, true)
+	svc, ds, _, root, _ := newHeldHookDataset(t, true)
 	fid, err := engine.ReceiveWebhookHeld(ctx, svc, testdb.Repository(t), "hook-held", "", shape.req)
 	if err != nil {
 		t.Fatalf("receive: %v", err)
 	}
-	pendingHook(t, ds, ops, fid)
+	pendingHook(t, ds, fid)
 	id := ds.Repository().ID
 	if err := svc.Close(); err != nil {
 		t.Fatalf("close: %v", err)
@@ -465,20 +449,20 @@ func TestWebhookPendingEntryRetiredByAHandIsNotResumed(t *testing.T) {
 	t.Cleanup(func() { engine.BlobUploadGrace = prev })
 	ctx := context.Background()
 	shape := heldRequests["a json body"]
-	svc, ds, ops, dsn, _, _ := newHeldHookDataset(t, true)
+	svc, ds, dsn, _, _ := newHeldHookDataset(t, true)
 	fid, err := engine.ReceiveWebhookHeld(ctx, svc, testdb.Repository(t), "hook-held", "", shape.req)
 	if err != nil {
 		t.Fatalf("receive: %v", err)
 	}
-	entry := pendingHook(t, ds, ops, fid)
-	if _, err := ops.RetryTriggerFailure(ctx, "hook-held", entry.ID); err != nil {
+	entry := pendingHook(t, ds, fid)
+	if _, err := ds.RetryTriggerFailure(ctx, "hook-held", entry.ID); err != nil {
 		t.Fatalf("retry: %v", err)
 	}
 	got := hookEcho(t, ds, "held-echo")
 	if got["record"] != fid {
 		t.Fatalf("the retry echoed %v", got)
 	}
-	if left, err := ops.TriggerFailures(ctx, "hook-held"); err != nil || len(left) != 0 {
+	if left, err := ds.TriggerFailures(ctx, "hook-held"); err != nil || len(left) != 0 {
 		t.Fatalf("entries after the retry = %+v, %v", left, err)
 	}
 	dispatch(t, ds)
@@ -505,7 +489,7 @@ func TestWebhookPendingEntryRefusesAHandRetryWhileItRuns(t *testing.T) {
 	engine.BlobUploadGrace = 0
 	t.Cleanup(func() { engine.BlobUploadGrace = prev })
 	ctx := context.Background()
-	svc, _, ops, _, _, invoked := newHeldHookDataset(t, false)
+	svc, ds, _, _, invoked := newHeldHookDataset(t, false)
 	fctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	done := make(chan struct{})
@@ -516,12 +500,12 @@ func TestWebhookPendingEntryRefusesAHandRetryWhileItRuns(t *testing.T) {
 	// The body is running: the fire holds the entry, and the entry is the
 	// one row the trigger has.
 	awaitInvoked(t, invoked)
-	failures, err := ops.TriggerFailures(ctx, "hook-held")
+	failures, err := ds.TriggerFailures(ctx, "hook-held")
 	if err != nil || len(failures) != 1 {
 		t.Fatalf("recorded requests under the running fire = %+v (%v)", failures, err)
 	}
 	entry := failures[0]
-	if _, err := ops.RetryTriggerFailure(ctx, "hook-held", entry.ID); !errors.Is(err, substrate.ErrConflict) {
+	if _, err := ds.RetryTriggerFailure(ctx, "hook-held", entry.ID); !errors.Is(err, substrate.ErrConflict) {
 		t.Fatalf("a hand retry of a running entry: %v, want ErrConflict", err)
 	}
 	cancel()

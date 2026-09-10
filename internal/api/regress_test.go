@@ -67,15 +67,6 @@ func (d *bundleDataset) UninstallBundle(context.Context, string) error {
 	return nil
 }
 func (d *bundleDataset) PurgeBundle(context.Context, string) (int, error) { return 3, nil }
-func (d *bundleDataset) StartOAuth(context.Context, substrate.Actor, string) (string, error) {
-	return "", nil
-}
-
-func (d *bundleDataset) TypesImplementing(context.Context, string) ([]substrate.KindInfo, error) {
-	return nil, nil
-}
-
-var _ substrate.BundleOps = (*bundleDataset)(nil)
 
 type bundleService struct {
 	*fakeService

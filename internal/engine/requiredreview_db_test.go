@@ -51,7 +51,7 @@ func TestAddingRequiredCountsAnEmptyValueAsMissing(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, reviewDocs(false)); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, reviewDocs(false)); err != nil {
 		t.Fatalf("apply the optional declaration: %v", err)
 	}
 	for id, props := range map[string]map[string]any{
@@ -64,7 +64,7 @@ func TestAddingRequiredCountsAnEmptyValueAsMissing(t *testing.T) {
 		})
 	}
 
-	_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, reviewDocs(true))
+	_, err := ds.ApplyVocabularyDocuments(ctx, owner, reviewDocs(true))
 	if err == nil {
 		t.Fatal("adding `required` must be refused while live records hold no value for it")
 	}
@@ -94,7 +94,7 @@ func TestRequiredObjectFieldIsEnforced(t *testing.T) {
 				}},
 			}}),
 	}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
 		t.Fatalf("apply the field declaration: %v", err)
 	}
 	kind := reviewAuthority + "/fields/profile"
@@ -152,7 +152,7 @@ func TestClearingARequiredReferenceIsRefused(t *testing.T) {
 				},
 			}),
 	}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
 		t.Fatalf("apply the reference declaration: %v", err)
 	}
 	ownerKind, assetKind := reviewAuthority+"/refs/owner", reviewAuthority+"/refs/asset"
@@ -208,7 +208,7 @@ func TestAddingARequiredFieldIsRefusedWhileObjectsLackIt(t *testing.T) {
 				}}),
 		}
 	}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs(false)); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs(false)); err != nil {
 		t.Fatalf("apply the optional field: %v", err)
 	}
 	kind := pkg + "/profile"
@@ -224,7 +224,7 @@ func TestAddingARequiredFieldIsRefusedWhileObjectsLackIt(t *testing.T) {
 	})
 	mustPut(t, ds, owner, substrate.PutInput{Kind: kind, ID: "none"})
 
-	_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs(true))
+	_, err := ds.ApplyVocabularyDocuments(ctx, owner, docs(true))
 	if err == nil {
 		t.Fatal("a field becoming required must be refused while objects lack a value for it")
 	}
@@ -237,7 +237,7 @@ func TestAddingARequiredFieldIsRefusedWhileObjectsLackIt(t *testing.T) {
 		Kind: kind, ID: "bare",
 		Properties: map[string]any{"contact": map[string]any{"email": "bare@example.com", "label": "home"}},
 	})
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs(true)); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs(true)); err != nil {
 		t.Fatalf("the narrowing must land once nothing is stranded: %v", err)
 	}
 }
@@ -259,7 +259,7 @@ func TestDefaultFillsACreateThatNamesNoProperties(t *testing.T) {
 				"label": map[string]any{"type": "string"},
 			}}),
 	}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
 		t.Fatalf("apply the knob declaration: %v", err)
 	}
 	created := mustPut(t, ds, owner, substrate.PutInput{Kind: pkg + "/knob", ID: "k1"})

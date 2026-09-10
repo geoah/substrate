@@ -1,7 +1,5 @@
 package substrate
 
-import "context"
-
 // ShippedUpgrade is what the running binary's boot upgrade would do to one
 // package the binary ships and seeds (the `core` package), computed at read
 // against this repository's stored declarations. The boot upgrade runs at a
@@ -22,11 +20,4 @@ type ShippedUpgrade struct {
 	// Blockers non-empty means the boot upgrade refused, and the stored
 	// declarations stand until the rows the lines name are migrated.
 	Upgrade BundleUpgrade `json:"upgrade"`
-}
-
-// ShippedUpgradePlanner is the read-only preview of the boot upgrade, an
-// optional Dataset extension (see Dataset): one entry per shipped package this
-// repository holds as shipped vocabulary. It writes nothing.
-type ShippedUpgradePlanner interface {
-	PlanShippedUpgrade(ctx context.Context) ([]ShippedUpgrade, error)
 }

@@ -284,10 +284,6 @@ func TestRebuildReproducesTheOriginStamp(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, ds := newDataset(t)
-	inst, ok := ds.(substrate.BundleInstaller)
-	if !ok {
-		t.Fatal("dataset does not implement the closure-install seam")
-	}
 	pkg := testdb.Repository(t) + "/gizmo"
 	const origin = "samples.example.com/gizmo"
 	closure := []map[string]any{
@@ -299,7 +295,7 @@ func TestRebuildReproducesTheOriginStamp(t *testing.T) {
 		vocabulary.KindManifest(pkg, map[string]any{"singular": "gizmo"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 	}
-	if _, err := inst.InstallBundleClosure(ctx, substrate.BundleActor(vocabulary.SplitPackageRef(pkg)), closure, nil,
+	if _, err := ds.InstallBundleClosure(ctx, substrate.BundleActor(vocabulary.SplitPackageRef(pkg)), closure, nil,
 		substrate.BundleInstall{Origin: origin, OriginVersion: 3}); err != nil {
 		t.Fatalf("install the closure with an origin: %v", err)
 	}

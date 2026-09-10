@@ -985,7 +985,7 @@ func (d *drill) parkAutomations(t *testing.T, e *testenv.Env) substrate.Dataset 
 	if err != nil {
 		t.Fatalf("open the source dataset: %v", err)
 	}
-	dispatcher := ds.(substrate.TriggerDispatcher)
+	dispatcher := ds
 	callable := func(name string) string { return corePkg + "/function/" + drillAuthority + "/auto/" + name }
 	putRecord(t, e, corePkg+"/trigger", "on-mirror", map[string]any{"properties": map[string]any{
 		"enabled": true, "source": map[string]any{"record": map[string]any{"kinds": []any{widgetKind}}}, "callable": callable("mirror"),
@@ -1419,7 +1419,7 @@ func (d *drill) compareRestored(t *testing.T, e *testenv.Env, ds substrate.Datas
 // the pass, so its effects are awaited.
 func (d *drill) resumeDispatch(t *testing.T, e *testenv.Env, ds substrate.Dataset) {
 	putRecord(t, e, flagKind, "release", map[string]any{"properties": map[string]any{"name": "release"}})
-	if _, err := ds.(substrate.TriggerDispatcher).ProcessTriggers(context.Background()); err != nil {
+	if _, err := ds.ProcessTriggers(context.Background()); err != nil {
 		t.Fatalf("dispatcher pass after the restore: %v", err)
 	}
 	var echo map[string]any

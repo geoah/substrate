@@ -31,7 +31,7 @@ func declareNotes(t *testing.T, ds substrate.Dataset, remarkIndexed bool) {
 	if !remarkIndexed {
 		remark["fts"] = false
 	}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), owner, []map[string]any{
 		vocabulary.PackageManifest(ftsPackage, 0),
 		vocabulary.KindManifest(ftsPackage,
 			map[string]any{"singular": "note"},
@@ -157,10 +157,6 @@ func TestARebuildAgreesAfterAnUninstallLeavesTombstones(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, ds := newDataset(t)
-	inst, ok := ds.(substrate.BundleInstaller)
-	if !ok {
-		t.Fatal("dataset does not implement the closure-install seam")
-	}
 	const pkg = "gizmos.example.substrate.reamde.dev/gizmo"
 	const gizmo = pkg + "/gizmo"
 	closure := []map[string]any{
@@ -175,7 +171,7 @@ func TestARebuildAgreesAfterAnUninstallLeavesTombstones(t *testing.T) {
 				"notes": map[string]any{"type": "text"},
 			}}),
 	}
-	if _, err := inst.InstallBundleClosure(ctx, substrate.BundleActor(vocabulary.SplitPackageRef(pkg)), closure, nil,
+	if _, err := ds.InstallBundleClosure(ctx, substrate.BundleActor(vocabulary.SplitPackageRef(pkg)), closure, nil,
 		substrate.BundleInstall{}); err != nil {
 		t.Fatalf("install the closure: %v", err)
 	}
@@ -185,7 +181,7 @@ func TestARebuildAgreesAfterAnUninstallLeavesTombstones(t *testing.T) {
 	if _, err := ds.Delete(ctx, owner, g.Kind, g.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if err := bundler(t, ds).UninstallBundle(ctx, pkg); err != nil {
+	if err := ds.UninstallBundle(ctx, pkg); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
 

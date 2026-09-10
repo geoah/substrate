@@ -34,7 +34,7 @@ def main(input, host):
 
 // newHookDatasetWithDSN is newHookDataset keeping the DSN, for a test that
 // needs the tamperer's seat beside the door.
-func newHookDatasetWithDSN(t *testing.T, triggers []enginetest.Trigger, fns ...map[string]any) (substrate.Service, substrate.Dataset, fnOps, string) {
+func newHookDatasetWithDSN(t *testing.T, triggers []enginetest.Trigger, fns ...map[string]any) (substrate.Service, substrate.Dataset, string) {
 	t.Helper()
 	ctx := context.Background()
 	svc, dsn := newService(t)
@@ -49,11 +49,7 @@ func newHookDatasetWithDSN(t *testing.T, triggers []enginetest.Trigger, fns ...m
 	if err := enginetest.Install(ctx, ds, owner, fnConnector(triggers, fns...)); err != nil {
 		t.Fatalf("register connector: %v", err)
 	}
-	ops, ok := ds.(fnOps)
-	if !ok {
-		t.Fatal("dataset does not implement the automation seam")
-	}
-	return svc, ds, ops, dsn
+	return svc, ds, dsn
 }
 
 // A payload parked before a repository carried an authority holds
@@ -63,7 +59,7 @@ func newHookDatasetWithDSN(t *testing.T, triggers []enginetest.Trigger, fns ...m
 func TestParkedEnvelopeGainsTheAuthorityOnRetry(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, ds, ops, dsn := newHookDatasetWithDSN(t,
+	svc, ds, dsn := newHookDatasetWithDSN(t,
 		[]enginetest.Trigger{hookTrigger("hook-repo", webhookSource(""), "hookrepo", true)},
 		pyFn("hookrepo", map[string]any{
 			"permissions": map[string]any{"reads": map[string]any{"kinds": []any{widgetType}}},
@@ -72,7 +68,7 @@ func TestParkedEnvelopeGainsTheAuthorityOnRetry(t *testing.T) {
 	if _, err := engine.ReceiveWebhookSync(ctx, svc, testdb.Repository(t), "hook-repo", "", jsonHook("repo", "repo")); err != nil {
 		t.Fatalf("receive: %v", err)
 	}
-	failures, err := ops.TriggerFailures(ctx, "hook-repo")
+	failures, err := ds.TriggerFailures(ctx, "hook-repo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +90,7 @@ func TestParkedEnvelopeGainsTheAuthorityOnRetry(t *testing.T) {
 	}
 
 	mustPut(t, ds, owner, substrate.PutInput{Kind: widgetType, ID: "gate", Properties: map[string]any{"name": "open"}})
-	if _, err := ops.RetryTriggerFailure(ctx, "hook-repo", failures[0].ID); err != nil {
+	if _, err := ds.RetryTriggerFailure(ctx, "hook-repo", failures[0].ID); err != nil {
 		t.Fatalf("retry: %v", err)
 	}
 	got := hookEcho(t, ds, "repo-echo")

@@ -691,8 +691,7 @@ func TestConstraintTightenedThroughAPropertyTypeIsRefused(t *testing.T) {
 	item := vocabulary.KindManifest(pkg,
 		map[string]any{"singular": "item"},
 		map[string]any{"properties": map[string]any{"code": map[string]any{"type": "code"}}})
-	sa := applier(t, ds)
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(pkg, 0), propertyType("^[a-z]+$"), item,
 	}); err != nil {
 		t.Fatalf("install the package: %v", err)
@@ -702,11 +701,11 @@ func TestConstraintTightenedThroughAPropertyTypeIsRefused(t *testing.T) {
 	})
 
 	// The property type alone tightens; the kind document is not resent.
-	_, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{propertyType("^[a-z]{3}$")})
+	_, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{propertyType("^[a-z]{3}$")})
 	wantNarrowingGuard(t, err, `type `+pkg+`/item: property "code" changes its pattern to ^[a-z]{3}$`, "1 live records")
 
 	// A change the stored value satisfies lands through the same channel.
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{propertyType("^[a-z]{1,8}$")}); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{propertyType("^[a-z]{1,8}$")}); err != nil {
 		t.Fatalf("a refinement every row satisfies must land: %v", err)
 	}
 }

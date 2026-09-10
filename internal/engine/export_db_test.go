@@ -117,7 +117,7 @@ func extractExport(t *testing.T, root string, archive []byte) {
 // snapshot the archive recorded.
 func exportToRoot(t *testing.T, ds substrate.Dataset) (string, substrate.ExportPoint, changelogfile.Snapshot) {
 	t.Helper()
-	ex, err := ds.(substrate.Exporter).Export(context.Background())
+	ex, err := ds.Export(context.Background())
 	if err != nil {
 		t.Fatalf("export: %v", err)
 	}
@@ -274,7 +274,7 @@ func TestExportOverTheAPIRestoresIntoAnEmptyDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := roDS.(substrate.Exporter).Export(ctx); !errors.Is(err, engine.ErrExportNoWriter) || !errors.Is(err, substrate.ErrUnavailable) {
+	if _, err := roDS.Export(ctx); !errors.Is(err, engine.ErrExportNoWriter) || !errors.Is(err, substrate.ErrUnavailable) {
 		t.Fatalf("a read-only export must be refused as unavailable, got %v", err)
 	}
 }
@@ -324,7 +324,7 @@ func TestExportPinsAPointWhileWritesContinue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ex, err := ds.(substrate.Exporter).Export(ctx)
+	ex, err := ds.Export(ctx)
 	if err != nil {
 		t.Fatalf("export: %v", err)
 	}
@@ -333,7 +333,7 @@ func TestExportPinsAPointWhileWritesContinue(t *testing.T) {
 	}
 	// A second export while this one holds the slot is refused, whether or
 	// not the first has started streaming.
-	if _, err := ds.(substrate.Exporter).Export(ctx); !errors.Is(err, engine.ErrExportInProgress) || !errors.Is(err, substrate.ErrConflict) {
+	if _, err := ds.Export(ctx); !errors.Is(err, engine.ErrExportInProgress) || !errors.Is(err, substrate.ErrConflict) {
 		t.Fatalf("a second export must be refused as a conflict, got %v", err)
 	}
 	// Between the pin and the stream.
@@ -372,7 +372,7 @@ func TestExportPinsAPointWhileWritesContinue(t *testing.T) {
 		t.Fatal("WriteTo did not finish")
 	}
 	// The slot is free again once the stream has ended.
-	ex2, err := ds.(substrate.Exporter).Export(ctx)
+	ex2, err := ds.Export(ctx)
 	if err != nil {
 		t.Fatalf("an export after the first finished must be admitted: %v", err)
 	}
@@ -471,7 +471,7 @@ func TestExportPinsWithEveryPoolConnectionHeld(t *testing.T) {
 	}
 	result := make(chan pinned, 1)
 	go func() {
-		ex, err := ds.(substrate.Exporter).Export(ctx)
+		ex, err := ds.Export(ctx)
 		result <- pinned{ex, err}
 	}()
 	// The export is queued on the pool behind the ninth writer (or, with the

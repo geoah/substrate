@@ -269,9 +269,8 @@ func pass(ctx context.Context, name string, fn func(context.Context)) {
 // maintenance pool, then do each repository's WORK on that repository's own
 // scoped pool — so a loop is bound by row level security exactly like a request
 // is, and the maintenance bypass is spent on the listing alone. One repository
-// never ends the pass: an unopenable repository, an unimplemented seam and a
-// failing call all log and CONTINUE, or the alphabet would decide whose
-// triggers run.
+// never ends the pass: an unopenable repository and a failing call both log
+// and CONTINUE, or the alphabet would decide whose triggers run.
 func repositoryDatasets(ctx context.Context, svc substrate.Service) []substrate.Dataset {
 	repos, err := svc.Repositories(ctx)
 	if err != nil {
@@ -305,11 +304,7 @@ func sweepGC(ctx context.Context, svc substrate.Service) {
 
 func sweepResolutions(ctx context.Context, svc substrate.Service) {
 	for _, ds := range repositoryDatasets(ctx, svc) {
-		rs, ok := ds.(substrate.ResolutionSweeper)
-		if !ok {
-			continue
-		}
-		n, err := rs.SweepResolutions(ctx)
+		n, err := ds.SweepResolutions(ctx)
 		if err != nil {
 			slog.Error("resolution sweep", "repository", ds.Repository().ID, "error", err)
 			continue
@@ -327,11 +322,7 @@ func sweepResolutions(ctx context.Context, svc substrate.Service) {
 // to one fire.
 func dispatchTriggers(ctx context.Context, svc substrate.Service) {
 	for _, ds := range repositoryDatasets(ctx, svc) {
-		fr, ok := ds.(substrate.TriggerDispatcher)
-		if !ok {
-			continue
-		}
-		n, err := fr.ProcessTriggers(ctx)
+		n, err := ds.ProcessTriggers(ctx)
 		if err != nil {
 			slog.Error("trigger dispatch", "repository", ds.Repository().ID, "error", err)
 			continue
@@ -344,16 +335,12 @@ func dispatchTriggers(ctx context.Context, svc substrate.Service) {
 
 func maintainOAuth(ctx context.Context, svc substrate.Service) {
 	for _, ds := range repositoryDatasets(ctx, svc) {
-		om, ok := ds.(substrate.OAuthMaintainer)
-		if !ok {
-			continue
-		}
-		if n, err := om.RefreshOAuthTokens(ctx); err != nil {
+		if n, err := ds.RefreshOAuthTokens(ctx); err != nil {
 			slog.Error("oauth refresh", "repository", ds.Repository().ID, "error", err)
 		} else if n > 0 {
 			slog.Info("oauth refresh", "repository", ds.Repository().ID, "refreshed", n)
 		}
-		if n, err := om.ProcessOAuthFinalizers(ctx); err != nil {
+		if n, err := ds.ProcessOAuthFinalizers(ctx); err != nil {
 			slog.Error("oauth finalizers", "repository", ds.Repository().ID, "error", err)
 		} else if n > 0 {
 			slog.Info("oauth finalizers", "repository", ds.Repository().ID, "released", n)

@@ -31,7 +31,7 @@ var firedAtChronological = []string{
 func installPings(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(datetimePackage, 0),
 		vocabulary.KindManifest(datetimePackage,
 			map[string]any{"singular": "ping"},

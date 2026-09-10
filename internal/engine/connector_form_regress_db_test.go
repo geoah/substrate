@@ -21,9 +21,8 @@ func TestConnectorFormDisplayNameAndEnumSurviveTypeRead(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	sa := applier(t, ds)
 
-	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(swPackage, 0),
 		swTypeDoc("gizmo", map[string]any{
 			"cadence": map[string]any{
@@ -84,7 +83,7 @@ func TestOAuthPopulatesAccountEmailFromGrant(t *testing.T) {
 	docs := mbStandardDocs()
 	mbWireEmail(docs)
 	mbPointOAuthAt(docs, p.ts.URL)
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
 		t.Fatalf("install bundle: %v", err)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: p.configProps()})
@@ -110,16 +109,11 @@ func TestOAuthPopulatesAccountEmailFromGrant(t *testing.T) {
 		t.Fatalf("account minted with an email before any grant: %v", account.Properties["email"])
 	}
 
-	ops := bundler(t, ds)
-	consent, err := ops.StartOAuth(ctx, owner, account.ID)
+	consent, err := ds.StartOAuth(ctx, owner, account.ID)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	oc, ok := svc.(substrate.OAuthCompleter)
-	if !ok {
-		t.Fatal("service does not implement the oauth completer seam")
-	}
-	if _, err := oc.CompleteOAuth(ctx, stateFrom(t, consent), "code-123"); err != nil {
+	if _, err := svc.CompleteOAuth(ctx, stateFrom(t, consent), "code-123"); err != nil {
 		t.Fatalf("callback: %v", err)
 	}
 

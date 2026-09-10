@@ -63,7 +63,7 @@ func graphVocabulary(t *testing.T, ds substrate.Dataset) {
 				},
 			}}),
 	}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), owner, docs); err != nil {
 		t.Fatalf("install the graph vocabulary: %v", err)
 	}
 }

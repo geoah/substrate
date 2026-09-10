@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 
@@ -9,13 +8,6 @@ import (
 
 	"github.com/geoah/substrate/internal/substrate"
 )
-
-// automationFrom resolves the request's dataset to the trigger-delivery seam;
-// a dataset without it has no trigger verbs.
-func automationFrom(ctx context.Context) (substrate.AutomationOps, bool) {
-	ops, ok := DatasetFrom(ctx).(substrate.AutomationOps)
-	return ops, ok
-}
 
 // mountTriggerVerbs registers the trigger delivery verbs under one authority.
 // It is mounted at substrate.reamde.dev/core, where the trigger records live (ruling A8:
@@ -29,20 +21,12 @@ func (h *handler) mountTriggerVerbs(r chi.Router, authority string) {
 	r.Post("/"+authority+"/trigger/{id}/parked/{fid}/retry", h.postTriggerRetry)
 }
 
-func writeNoAutomation(w http.ResponseWriter) {
-	writeUnsupported(w, "this substrate runs no triggers")
-}
-
 // getTriggerStatus is per-trigger visibility: kind, cursor, head, lag, last
 // fire and parked count, all computed — nothing is stored on the trigger
 // record.
 func (h *handler) getTriggerStatus(w http.ResponseWriter, r *http.Request) {
-	ops, ok := automationFrom(r.Context())
-	if !ok {
-		writeNoAutomation(w)
-		return
-	}
-	statuses, err := ops.TriggerStatuses(r.Context())
+	ds := DatasetFrom(r.Context())
+	statuses, err := ds.TriggerStatuses(r.Context())
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
@@ -57,17 +41,13 @@ type replayRequest struct {
 // postTriggerReplay resets an record-sourced trigger's cursor; the
 // dispatcher does the rest (retrospective runs are cursor resets).
 func (h *handler) postTriggerReplay(w http.ResponseWriter, r *http.Request) {
-	ops, ok := automationFrom(r.Context())
-	if !ok {
-		writeNoAutomation(w)
-		return
-	}
+	ds := DatasetFrom(r.Context())
 	var req replayRequest
 	if err := decodeBody(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
 	}
-	if err := ops.ReplayTrigger(r.Context(), pathParam(r, "id"), req.From); err != nil {
+	if err := ds.ReplayTrigger(r.Context(), pathParam(r, "id"), req.From); err != nil {
 		writeSubstrateError(w, err)
 		return
 	}
@@ -83,11 +63,7 @@ type runRequest struct {
 // postTriggerRun synthesizes one delivery of a record's current state
 // through the trigger's callable, without moving the cursor.
 func (h *handler) postTriggerRun(w http.ResponseWriter, r *http.Request) {
-	ops, ok := automationFrom(r.Context())
-	if !ok {
-		writeNoAutomation(w)
-		return
-	}
+	ds := DatasetFrom(r.Context())
 	var req runRequest
 	if err := decodeBody(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
@@ -97,7 +73,7 @@ func (h *handler) postTriggerRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, codeBadRequest, "a kind and an id are required — records are addressed by (kind, id)")
 		return
 	}
-	ran, err := ops.RunTrigger(r.Context(), pathParam(r, "id"), req.Kind, req.ID)
+	ran, err := ds.RunTrigger(r.Context(), pathParam(r, "id"), req.Kind, req.ID)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
@@ -111,12 +87,8 @@ func (h *handler) postTriggerRun(w http.ResponseWriter, r *http.Request) {
 // through the public door, POST /webhooks/{authority}/{trigger} (webhooks.go),
 // and a wake is the owner asking for a bare fire.
 func (h *handler) postTriggerWake(w http.ResponseWriter, r *http.Request) {
-	ops, ok := automationFrom(r.Context())
-	if !ok {
-		writeNoAutomation(w)
-		return
-	}
-	ran, err := ops.WakeTrigger(r.Context(), pathParam(r, "id"))
+	ds := DatasetFrom(r.Context())
+	ran, err := ds.WakeTrigger(r.Context(), pathParam(r, "id"))
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
@@ -126,12 +98,8 @@ func (h *handler) postTriggerWake(w http.ResponseWriter, r *http.Request) {
 
 // getTriggerParked lists a trigger's parked deliveries.
 func (h *handler) getTriggerParked(w http.ResponseWriter, r *http.Request) {
-	ops, ok := automationFrom(r.Context())
-	if !ok {
-		writeNoAutomation(w)
-		return
-	}
-	failures, err := ops.TriggerFailures(r.Context(), pathParam(r, "id"))
+	ds := DatasetFrom(r.Context())
+	failures, err := ds.TriggerFailures(r.Context(), pathParam(r, "id"))
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
@@ -141,17 +109,13 @@ func (h *handler) getTriggerParked(w http.ResponseWriter, r *http.Request) {
 
 // postTriggerRetry re-runs one parked delivery; success deletes the row.
 func (h *handler) postTriggerRetry(w http.ResponseWriter, r *http.Request) {
-	ops, ok := automationFrom(r.Context())
-	if !ok {
-		writeNoAutomation(w)
-		return
-	}
+	ds := DatasetFrom(r.Context())
 	fid, err := strconv.ParseInt(pathParam(r, "fid"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, codeBadRequest, "a parked failure id is a number")
 		return
 	}
-	ran, err := ops.RetryTriggerFailure(r.Context(), pathParam(r, "id"), fid)
+	ran, err := ds.RetryTriggerFailure(r.Context(), pathParam(r, "id"), fid)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
@@ -167,17 +131,13 @@ type callRequest struct {
 // input validated against the manifest's `input:` schema when one is
 // declared, no cursor motion, effects applied under the function's actor.
 func (h *handler) postFunctionCall(w http.ResponseWriter, r *http.Request) {
-	ops, ok := automationFrom(r.Context())
-	if !ok {
-		writeNoAutomation(w)
-		return
-	}
+	ds := DatasetFrom(r.Context())
 	var req callRequest
 	if err := decodeBody(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
 	}
-	output, effects, err := ops.CallFunction(idempotentContext(r), pathParam(r, "name"), req.Input)
+	output, effects, err := ds.CallFunction(idempotentContext(r), pathParam(r, "name"), req.Input)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return

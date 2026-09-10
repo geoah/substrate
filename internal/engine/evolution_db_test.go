@@ -41,7 +41,7 @@ func evoTypeDoc(props map[string]any) map[string]any {
 
 func evoApply(t *testing.T, ds substrate.Dataset, props map[string]any) error {
 	t.Helper()
-	_, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, []map[string]any{
+	_, err := ds.ApplyVocabularyDocuments(context.Background(), owner, []map[string]any{
 		vocabulary.PackageManifest(evoPackage, 0),
 		evoTypeDoc(props),
 	})
@@ -52,7 +52,7 @@ func evoApply(t *testing.T, ds substrate.Dataset, props map[string]any) error {
 // (decision 0055).
 func evoApplyRetiring(t *testing.T, ds substrate.Dataset, props, retired map[string]any) error {
 	t.Helper()
-	_, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, []map[string]any{
+	_, err := ds.ApplyVocabularyDocuments(context.Background(), owner, []map[string]any{
 		vocabulary.PackageManifest(evoPackage, 0),
 		vocabulary.KindManifest(evoPackage,
 			map[string]any{"singular": "gizmo"},
@@ -314,7 +314,7 @@ func TestSchemaEvolutionReservedKeysRoundTrip(t *testing.T) {
 	}
 	props["predecessor"] = map[string]any{"type": "reference", "deprecated": true}
 	apply := func() error {
-		_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		_, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 			vocabulary.PackageManifest(evoPackage, 0),
 			vocabulary.KindManifest(evoPackage,
 				map[string]any{"singular": "gizmo"},

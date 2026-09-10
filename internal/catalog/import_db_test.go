@@ -170,11 +170,7 @@ func TestImportLandsASampleUnderTheRepositoryAuthority(t *testing.T) {
 	// the edited copy takes the confirmation its preview hands out (decision
 	// record 0070; sampleupgrade_db_test.go holds the refusal without one).
 	reimportConfirmed(t, c, ds, tasksSampleID)
-	applier, ok := ds.(substrate.VocabularyApplier)
-	if !ok {
-		t.Fatal("dataset does not support ApplyVocabularyDocuments")
-	}
-	if _, err := applier.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
 		vocabulary.ActorManifest(homeAuthority+"/tasks", "helper"),
 	}); err != nil {
 		t.Fatalf("declare an actor into the copy: %v", err)
@@ -284,10 +280,6 @@ func TestEveryImportedSampleReadsUnmodified(t *testing.T) {
 func TestAHandAppliedClosureCarriesNoOrigin(t *testing.T) {
 	ds := newDataset(t)
 	ctx := context.Background()
-	applier, ok := ds.(substrate.VocabularyApplier)
-	if !ok {
-		t.Fatal("dataset does not support ApplyVocabularyDocuments")
-	}
 	const pkg = homeAuthority + "/hand"
 	closure := []map[string]any{
 		vocabulary.PackageManifest(pkg, 0),
@@ -299,7 +291,7 @@ func TestAHandAppliedClosureCarriesNoOrigin(t *testing.T) {
 		vocabulary.KindManifest(pkg, map[string]any{"singular": "widget"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 	}
-	if _, err := applier.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, closure); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, closure); err != nil {
 		t.Fatalf("apply a closure by hand: %v", err)
 	}
 	st, err := ds.(bundleStatuser).BundleStatus(ctx, pkg)
@@ -337,11 +329,7 @@ func editKind(t *testing.T, ds substrate.Dataset, ref, property string) {
 	}
 	props[property] = map[string]any{"type": "string"}
 	data["properties"] = props
-	applier, ok := ds.(substrate.VocabularyApplier)
-	if !ok {
-		t.Fatal("dataset does not support ApplyVocabularyDocuments")
-	}
-	if _, err := applier.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{{
 		"kind":     kindKindRef,
 		"metadata": map[string]any{"id": ref},
 		"data":     data,

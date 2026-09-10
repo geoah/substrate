@@ -38,11 +38,7 @@ var blobPutSem = make(chan struct{}, maxConcurrentBlobPuts)
 // status=stored. The same bytes always dedup to the same blob.
 func (h *handler) putBlob(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	bs, ok := DatasetFrom(ctx).(substrate.BlobStore)
-	if !ok {
-		writeUnsupported(w, "this service has no blob store")
-		return
-	}
+	ds := DatasetFrom(ctx)
 	// Admission bound: acquire a slot before allocating the body, so waiting
 	// requests hold only their goroutine, not a full 64 MiB buffer.
 	select {
@@ -73,7 +69,7 @@ func (h *handler) putBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info, err := bs.PutBlob(ctx, ActorFrom(ctx), substrate.BlobUpload{
+	info, err := ds.PutBlob(ctx, ActorFrom(ctx), substrate.BlobUpload{
 		Name:      uploadName(r),
 		MediaType: r.Header.Get("Content-Type"),
 	}, data, wantDigest)
@@ -144,12 +140,8 @@ func drainBlobBody(w http.ResponseWriter, r *http.Request) (data []byte, digest 
 // here — a cross-repository read is a not-found, never a leak.
 func (h *handler) getBlob(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	bs, ok := DatasetFrom(ctx).(substrate.BlobStore)
-	if !ok {
-		writeUnsupported(w, "this service has no blob store")
-		return
-	}
-	info, data, err := bs.GetBlob(ctx, chi.URLParam(r, "digest"))
+	ds := DatasetFrom(ctx)
+	info, data, err := ds.GetBlob(ctx, chi.URLParam(r, "digest"))
 	if err != nil {
 		writeSubstrateError(w, err)
 		return

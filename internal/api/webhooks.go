@@ -43,11 +43,6 @@ var webhookHeaderDenylist = map[string]bool{
 // 404 for every refusal alike and 202 with the fire id once the delivery is
 // on its way; the callable's output is never a response.
 func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
-	rc, ok := h.svc.(substrate.WebhookReceiver)
-	if !ok {
-		writeUnsupported(w, "this substrate receives no webhooks")
-		return
-	}
 	select {
 	case webhookSem <- struct{}{}:
 		defer func() { <-webhookSem }()
@@ -60,7 +55,7 @@ func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, codeBadRequest, err.Error())
 		return
 	}
-	fid, err := rc.ReceiveWebhook(r.Context(), pathParam(r, "authority"), pathParam(r, "trigger"), webhookKey(r), req)
+	fid, err := h.svc.ReceiveWebhook(r.Context(), pathParam(r, "authority"), pathParam(r, "trigger"), webhookKey(r), req)
 	if err != nil {
 		if errors.Is(err, substrate.ErrNotFound) {
 			writeError(w, http.StatusNotFound, codeNotFound, "no such webhook")

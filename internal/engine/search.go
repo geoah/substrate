@@ -23,23 +23,6 @@ const (
 	vectorDim = 1536
 )
 
-// The seam discovery asserts at runtime. Naming the shared symbol is what
-// keeps the two sides together: without it a rename in internal/api would
-// leave every deployment quietly reporting no embeddings.
-var _ substrate.EmbeddingsReporter = (*service)(nil)
-
-// EmbeddingsEnabled reports whether this engine serves embeddings at all, and
-// it always does: the provider is a repository's own llmprovider row
-// (resolveEmbedProvider), not a host setting an operator can omit, so there is
-// no build of this engine where the feature is unreachable. Discovery is
-// unauthenticated and opens no repository, so it cannot answer the narrower
-// question (whether the CALLER's repository declares a row) and is not asked
-// to: Search answers that one on the first query, naming the property no row
-// declares. The seam stays because a Service that genuinely cannot embed
-// (the API's fake, a future reader-only implementation) still reports false and
-// discovery still drops the feature for it.
-func (*service) EmbeddingsEnabled() bool { return true }
-
 func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) (substrate.SearchResult, error) {
 	var out substrate.SearchResult
 	q := strings.TrimSpace(in.Q)

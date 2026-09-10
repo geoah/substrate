@@ -80,10 +80,10 @@ func TestUnparseableStoredAgentQuarantinesInsteadOfBricking(t *testing.T) {
 	importVocabulary(t, ds, "tasks")
 	// The sibling: another INSTALLED authority, so the surviving half is not
 	// just the builtin source.
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, mbStandardDocs()); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, mbStandardDocs()); err != nil {
 		t.Fatalf("install the mail bundle: %v", err)
 	}
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, lqDocs()); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, lqDocs()); err != nil {
 		t.Fatalf("install the legacy bundle: %v", err)
 	}
 
@@ -109,9 +109,8 @@ func TestUnparseableStoredAgentQuarantinesInsteadOfBricking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a repository holding one pre-refactor agent definition failed to open: %v", err)
 	}
-	ops2 := bundler(t, ds2)
 
-	st := bundleStatusFor(t, ops2, lqPackage)
+	st := bundleStatusFor(t, ds2, lqPackage)
 	if !st.Quarantined {
 		t.Fatalf("the legacy bundle should be quarantined: %+v", st)
 	}
@@ -130,7 +129,7 @@ func TestUnparseableStoredAgentQuarantinesInsteadOfBricking(t *testing.T) {
 
 	// The sibling INSTALLED bundle is untouched — the parse failure was
 	// isolated to its own authority.
-	sibling := bundleStatusFor(t, ops2, mbPackage)
+	sibling := bundleStatusFor(t, ds2, mbPackage)
 	if sibling.Quarantined || !sibling.Installed || !sibling.Enabled {
 		t.Fatalf("the sibling bundle must stay live: %+v", sibling)
 	}
@@ -140,10 +139,10 @@ func TestUnparseableStoredAgentQuarantinesInsteadOfBricking(t *testing.T) {
 
 	// (b) Re-applying the corrected manifest clears the quarantine — the same
 	// path an admission-quarantined closure clears through.
-	if _, err := applier(t, ds2).ApplyVocabularyDocuments(ctx, owner, lqDocs()); err != nil {
+	if _, err := ds2.ApplyVocabularyDocuments(ctx, owner, lqDocs()); err != nil {
 		t.Fatalf("re-apply the corrected manifest: %v", err)
 	}
-	st = bundleStatusFor(t, ops2, lqPackage)
+	st = bundleStatusFor(t, ds2, lqPackage)
 	if st.Quarantined {
 		t.Fatalf("re-applying the corrected manifest must clear the quarantine: %+v", st)
 	}
@@ -159,7 +158,7 @@ func TestUnparseableStoredAgentQuarantinesInsteadOfBricking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen after the correction: %v", err)
 	}
-	st = bundleStatusFor(t, bundler(t, ds3), lqPackage)
+	st = bundleStatusFor(t, ds3, lqPackage)
 	if st.Quarantined || !st.Enabled {
 		t.Fatalf("a healthy closure must open live: %+v", st)
 	}

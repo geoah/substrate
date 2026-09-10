@@ -49,10 +49,9 @@ func TestBlobFSRoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds, root := fsBackedDataset(t)
-	bs := blobStoreOf(t, ds)
 
 	data := []byte("an attachment that never enters WAL")
-	info, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{
+	info, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{
 		Name: "notes.txt", MediaType: "text/plain",
 	}, data, "")
 	if err != nil {
@@ -68,7 +67,7 @@ func TestBlobFSRoundTrip(t *testing.T) {
 		t.Fatalf("the object holds %q, uploaded %q", onDisk, data)
 	}
 
-	got, read, err := bs.GetBlob(ctx, info.Digest)
+	got, read, err := ds.GetBlob(ctx, info.Digest)
 	if err != nil {
 		t.Fatalf("get blob: %v", err)
 	}
@@ -86,7 +85,7 @@ func TestBlobFSRoundTrip(t *testing.T) {
 
 	// A dedup PUT of the same bytes under another name returns the first
 	// writer's: the digest is the identity, and a name is descriptive.
-	again, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{Name: "other.txt"}, data, "")
+	again, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{Name: "other.txt"}, data, "")
 	if err != nil {
 		t.Fatalf("re-put: %v", err)
 	}
@@ -100,7 +99,7 @@ func TestBlobFSIsRepositoryScoped(t *testing.T) {
 	ctx := context.Background()
 	svc, ds, root := fsBackedDataset(t)
 	data := []byte("one repository's archive")
-	info, err := blobStoreOf(t, ds).PutBlob(ctx, owner, substrate.BlobUpload{}, data, "")
+	info, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{}, data, "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
@@ -114,10 +113,10 @@ func TestBlobFSIsRepositoryScoped(t *testing.T) {
 	// The digest is the same string in both repositories, and the second one
 	// still cannot read the first one's bytes: the repository is half the key,
 	// and it comes from the authenticated dataset rather than the request.
-	_, _, err = blobStoreOf(t, dsB).GetBlob(ctx, info.Digest)
+	_, _, err = dsB.GetBlob(ctx, info.Digest)
 	wantErr(t, err, substrate.ErrNotFound, "cross-repository blob read")
 
-	if _, err := blobStoreOf(t, dsB).PutBlob(ctx, owner, substrate.BlobUpload{}, data, ""); err != nil {
+	if _, err := dsB.PutBlob(ctx, owner, substrate.BlobUpload{}, data, ""); err != nil {
 		t.Fatalf("put the same bytes in repository B: %v", err)
 	}
 	// Storing the same bytes twice stores them twice: there is no
@@ -138,7 +137,6 @@ func TestBlobFSOrphanObjectIsUnreadableAndSwept(t *testing.T) {
 
 	ctx := context.Background()
 	_, ds, root := fsBackedDataset(t)
-	bs := blobStoreOf(t, ds)
 
 	// The bytes, written as the store would write them, with no manifest
 	// behind them — the state a crash after step 2 leaves.
@@ -158,7 +156,7 @@ func TestBlobFSOrphanObjectIsUnreadableAndSwept(t *testing.T) {
 
 	// The read resolves through the manifest, so bytes with no manifest are
 	// not a blob: a caller who guesses a digest gets a not-found, not a body.
-	_, _, err = bs.GetBlob(ctx, digest)
+	_, _, err = ds.GetBlob(ctx, digest)
 	wantErr(t, err, substrate.ErrNotFound, "read of an orphan object")
 
 	if _, err := ds.RunGC(ctx); err != nil {
@@ -184,11 +182,10 @@ func TestBlobFSFailedWriteLeavesNoStoredManifest(t *testing.T) {
 		t.Fatalf("open the fs backend: %v", err)
 	}
 	_, ds := newDataset(t, engine.WithBlobStore(refusingBackend{fs}))
-	bs := blobStoreOf(t, ds)
 
 	data := []byte("bytes the store refused")
 	digest := blobDigestOf(data)
-	if _, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{}, data, ""); err == nil {
+	if _, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{}, data, ""); err == nil {
 		t.Fatal("a store that refuses the bytes must fail the upload")
 	}
 
@@ -202,7 +199,7 @@ func TestBlobFSFailedWriteLeavesNoStoredManifest(t *testing.T) {
 		t.Fatalf("manifest status is %q, want pending", got)
 	}
 	// And it does not read as a blob.
-	_, _, err = bs.GetBlob(ctx, digest)
+	_, _, err = ds.GetBlob(ctx, digest)
 	wantErr(t, err, substrate.ErrNotFound, "read of a pending blob")
 
 	// It is collectable, which is what keeps a failed upload from accumulating.
@@ -225,8 +222,7 @@ func TestBlobFSGCDeletesTheObject(t *testing.T) {
 
 	ctx := context.Background()
 	_, ds, root := fsBackedDataset(t)
-	bs := blobStoreOf(t, ds)
-	info, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{}, []byte("unreferenced, and so collectable"), "")
+	info, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{}, []byte("unreferenced, and so collectable"), "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
@@ -239,7 +235,7 @@ func TestBlobFSGCDeletesTheObject(t *testing.T) {
 	if _, err := os.Stat(objectPath(root, ds, info.Digest)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("the collected blob's bytes are still on disk: %v", err)
 	}
-	if _, _, err := bs.GetBlob(ctx, info.Digest); err == nil {
+	if _, _, err := ds.GetBlob(ctx, info.Digest); err == nil {
 		t.Fatal("a collected blob is still readable")
 	}
 }
@@ -253,8 +249,7 @@ func TestBlobFSGraceSparesAFreshUpload(t *testing.T) {
 
 	ctx := context.Background()
 	_, ds, root := fsBackedDataset(t)
-	bs := blobStoreOf(t, ds)
-	info, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{}, []byte("fresh, not yet referenced"), "")
+	info, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{}, []byte("fresh, not yet referenced"), "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
@@ -264,7 +259,7 @@ func TestBlobFSGraceSparesAFreshUpload(t *testing.T) {
 	if _, err := os.Stat(objectPath(root, ds, info.Digest)); err != nil {
 		t.Fatalf("the grace must spare a fresh upload: %v", err)
 	}
-	if _, _, err := bs.GetBlob(ctx, info.Digest); err != nil {
+	if _, _, err := ds.GetBlob(ctx, info.Digest); err != nil {
 		t.Fatalf("the fresh blob was collected: %v", err)
 	}
 }
@@ -285,7 +280,7 @@ func TestBlobFSReopenOnTheSameRootReadsTheBytes(t *testing.T) {
 		t.Fatalf("open dataset: %v", err)
 	}
 	data := []byte("stored by one process, read by the next")
-	info, err := blobStoreOf(t, ds).PutBlob(ctx, owner, substrate.BlobUpload{}, data, "")
+	info, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{}, data, "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
@@ -309,7 +304,7 @@ func TestBlobFSReopenOnTheSameRootReadsTheBytes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open dataset again: %v", err)
 	}
-	_, read, err := blobStoreOf(t, ds2).GetBlob(ctx, info.Digest)
+	_, read, err := ds2.GetBlob(ctx, info.Digest)
 	if err != nil {
 		t.Fatalf("get blob after the reopen: %v", err)
 	}

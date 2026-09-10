@@ -47,7 +47,6 @@ func TestChangesNameEachAffectedRecordWithItsVersion(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	feed := feedOf(t, ds)
 
 	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Ada"}})
 	a = mustPatch(t, ds, owner, a.Kind, a.ID, substrate.PatchInput{Properties: map[string]any{"name": "Ada L."}})
@@ -65,7 +64,7 @@ func TestChangesNameEachAffectedRecordWithItsVersion(t *testing.T) {
 
 	forward := changesSince(t, ds, 0)
 	wantNoFold(t, forward)
-	backward, err := feed.ChangesBefore(ctx, 0, substrate.ChangeFilter{}, 500)
+	backward, err := ds.ChangesBefore(ctx, 0, substrate.ChangeFilter{}, 500)
 	if err != nil {
 		t.Fatalf("changes before: %v", err)
 	}

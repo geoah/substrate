@@ -42,17 +42,10 @@ type fakeService struct {
 	// not verified, so any code — including none — passes.
 	totpDisabled bool
 	// wrap, when set, decorates the dataset Authenticate hands a request: a
-	// test that needs an optional seam the plain fake does not carry
-	// (AutomationOps, AgentOps) returns a wrapper here.
+	// test that needs a verb this fake answers emptily (a trigger to replay,
+	// a bundle to disable) returns a wrapper carrying it here.
 	wrap func(*fakeDataset) substrate.Dataset
-	// embeddings models WithEmbedder: the engine answers the same question
-	// through the same seam, and discovery lists the feature only when it is
-	// true.
-	embeddings bool
 }
-
-// EmbeddingsEnabled is the discovery seam (substrate.EmbeddingsReporter).
-func (s *fakeService) EmbeddingsEnabled() bool { return s.embeddings }
 
 type fakeToken struct {
 	repository string
@@ -292,8 +285,8 @@ type fakeDataset struct {
 	// generation is the history generation the changes above are numbered
 	// under; restore rotates it the way a boot import does.
 	generation string
-	// trStates is the canned answer of the change-feed seam: per seq, the
-	// trigger chips the engine would compute.
+	// trStates is the canned answer of ChangeTriggers: per seq, the trigger
+	// chips the engine would compute.
 	trStates map[int64][]substrate.ChangeTrigger
 	signals  chan int64
 
@@ -965,9 +958,9 @@ func namesRecord(c substrate.Change, id string) bool {
 	return c.Payload["winner"] == id || c.Payload["loser"] == id
 }
 
-// ChangesBefore and ChangeTriggers are the change-feed seam (api/changes.go)
-// the handler asserts at runtime; the fake answers newest-first pages over
-// its slice and the canned per-seq states.
+// ChangesBefore and ChangeTriggers are the changefeed's backward page and
+// per-row trigger stance: newest-first pages over the fake's slice, and the
+// canned per-seq states.
 func (d *fakeDataset) ChangesBefore(_ context.Context, before int64, f substrate.ChangeFilter, limit int) ([]substrate.Change, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -1083,9 +1076,9 @@ func (d *fakeDataset) ProcessEmbedQueue(context.Context, int) (int, error) {
 	return 0, nil
 }
 
-// Reembed is on the frozen Dataset core, so the fake carries it; no HTTP door
-// reaches it any more, and the operator's `substratectl repository reembed`
-// is what calls it, over the DSN.
+// Reembed is on substrate.Dataset, so the fake carries it; no HTTP door
+// reaches it, and the operator's `substratectl repository reembed` is what
+// calls it, over the DSN.
 func (d *fakeDataset) Reembed(_ context.Context, all bool) (substrate.ReembedReport, error) {
 	return substrate.ReembedReport{Provider: "vectors", Model: "text-embedding-3-small", Enqueued: 7, All: all}, nil
 }
@@ -1094,23 +1087,139 @@ var _ substrate.Service = (*fakeService)(nil)
 
 var _ substrate.Dataset = (*fakeDataset)(nil)
 
-// The optional seams these fakes carry, asserted here for the reason the
-// engine asserts its own (engine/dataset.go): a fake that quietly stops
-// satisfying a seam does not fail, it makes the handler take the 501 branch
-// and the suite still passes. The seams NOT listed are absent on purpose:
-// the tests that exercise a 501 rely on their absence.
-var (
-	_ substrate.ChangeFeedOps      = (*fakeDataset)(nil)
-	_ substrate.VocabularyApplier  = (*fakeDataset)(nil)
-	_ substrate.VocabularyPlanner  = (*fakeDataset)(nil)
-	_ substrate.SeamReporter       = (*fakeService)(nil)
-	_ substrate.EmbeddingsReporter = (*fakeService)(nil)
-)
+// errFakeUnmodeled is what a verb this fake does not model answers. The
+// tests that drive such a verb wrap the dataset with one that does
+// (catalog_test.go, export_test.go, blobs_name_test.go); reaching this means a
+// test asked for behavior nobody wrote, and the 500 it produces says so.
+var errFakeUnmodeled = errors.New("fake: this verb is not modeled")
 
-// DatasetSeams is what discovery reads its feature list off, so this fake's
-// short seam list above is also the feature list the suite expects
-// (discovery_errors_watch_test.go).
-func (s *fakeService) DatasetSeams() substrate.Dataset { return (*fakeDataset)(nil) }
+// noSuch is the fake's not-found: the sentinel the HTTP layer maps to 404,
+// naming what was addressed.
+func noSuch(what, which string) error {
+	return fmt.Errorf("%w: no such %s %q", substrate.ErrNotFound, what, which)
+}
+
+// The rest of substrate.Dataset. This fake models an EMPTY repository: it
+// holds no trigger, bundle or agent, so a verb addressed at one answers
+// not-found and a listing answers empty. Two of those answers are emptier
+// than any real repository's, which always holds the seeded core package:
+// PlanShippedUpgrade previews nothing and TypesImplementing names no kind.
+
+func (d *fakeDataset) PlanShippedUpgrade(context.Context) ([]substrate.ShippedUpgrade, error) {
+	return nil, nil
+}
+
+func (d *fakeDataset) TriggerStatuses(context.Context) ([]substrate.TriggerStatus, error) {
+	return nil, nil
+}
+
+func (d *fakeDataset) ReplayTrigger(_ context.Context, id string, _ int64) error {
+	return noSuch("trigger", id)
+}
+
+func (d *fakeDataset) RunTrigger(_ context.Context, id, _, _ string) (int, error) {
+	return 0, noSuch("trigger", id)
+}
+
+func (d *fakeDataset) WakeTrigger(_ context.Context, id string) (int, error) {
+	return 0, noSuch("trigger", id)
+}
+
+func (d *fakeDataset) TriggerFailures(_ context.Context, id string) ([]substrate.TriggerFailure, error) {
+	return nil, noSuch("trigger", id)
+}
+
+func (d *fakeDataset) RetryTriggerFailure(_ context.Context, id string, _ int64) (int, error) {
+	return 0, noSuch("trigger", id)
+}
+
+func (d *fakeDataset) CallFunction(_ context.Context, name string, _ any) (any, int, error) {
+	return nil, 0, noSuch("function", name)
+}
+
+func (d *fakeDataset) ProcessTriggers(context.Context) (int, error) { return 0, nil }
+
+func (d *fakeDataset) CallAgent(_ context.Context, name string, _ any) (*substrate.AgentResult, error) {
+	return nil, noSuch("agent", name)
+}
+
+func (d *fakeDataset) ChatAgent(_ context.Context, _ substrate.Actor, name, _, _ string, _ func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+	return nil, noSuch("agent", name)
+}
+
+func (d *fakeDataset) SweepResolutions(context.Context) (int, error) { return 0, nil }
+
+func (d *fakeDataset) BundleStatuses(context.Context) ([]substrate.BundleStatus, error) {
+	return nil, nil
+}
+
+func (d *fakeDataset) BundleStatus(_ context.Context, id string) (substrate.BundleStatus, error) {
+	return substrate.BundleStatus{}, noSuch("bundle", id)
+}
+
+func (d *fakeDataset) BundlePackage(_ context.Context, id string) (string, error) {
+	return "", noSuch("bundle", id)
+}
+
+func (d *fakeDataset) DisableBundle(_ context.Context, id string) error { return noSuch("bundle", id) }
+
+func (d *fakeDataset) EnableBundle(_ context.Context, id string) error { return noSuch("bundle", id) }
+
+func (d *fakeDataset) BindBundleInput(_ context.Context, id, _, _ string) error {
+	return noSuch("bundle", id)
+}
+
+func (d *fakeDataset) UninstallBundle(_ context.Context, id string) error {
+	return noSuch("bundle", id)
+}
+
+func (d *fakeDataset) PurgeBundle(_ context.Context, id string) (int, error) {
+	return 0, noSuch("bundle", id)
+}
+
+func (d *fakeDataset) StartOAuth(_ context.Context, _ substrate.Actor, record string) (string, error) {
+	return "", noSuch("account record", record)
+}
+
+func (d *fakeDataset) TypesImplementing(context.Context, string) ([]substrate.KindInfo, error) {
+	return nil, nil
+}
+
+func (d *fakeDataset) InstallBundleClosure(context.Context, substrate.Actor, []map[string]any, []substrate.PutInput, substrate.BundleInstall) ([]*substrate.Record, error) {
+	return nil, errFakeUnmodeled
+}
+
+func (d *fakeDataset) PlanBundleUpgrade(context.Context, []map[string]any) (substrate.BundleUpgrade, error) {
+	return substrate.BundleUpgrade{}, nil
+}
+
+func (d *fakeDataset) RefreshOAuthTokens(context.Context) (int, error) { return 0, nil }
+
+func (d *fakeDataset) ProcessOAuthFinalizers(context.Context) (int, error) { return 0, nil }
+
+func (d *fakeDataset) PutBlob(context.Context, substrate.Actor, substrate.BlobUpload, []byte, string) (*substrate.BlobInfo, error) {
+	return nil, errFakeUnmodeled
+}
+
+func (d *fakeDataset) GetBlob(_ context.Context, digest string) (*substrate.BlobInfo, []byte, error) {
+	return nil, nil, noSuch("blob", digest)
+}
+
+func (d *fakeDataset) Export(context.Context) (substrate.Export, error) {
+	return nil, errFakeUnmodeled
+}
+
+// The two Service doors that carry no bearer. This fake resolves neither a
+// signed state nor a public trigger, and both refusals are ErrNotFound
+// because the door must not distinguish them (substrate.Service).
+
+func (s *fakeService) CompleteOAuth(_ context.Context, state, _ string) (string, error) {
+	return "", noSuch("oauth state", state)
+}
+
+func (s *fakeService) ReceiveWebhook(_ context.Context, _, trigger, _ string, _ substrate.WebhookRequest) (string, error) {
+	return "", noSuch("trigger", trigger)
+}
 
 func containsString(hay []string, needle string) bool {
 	for _, h := range hay {

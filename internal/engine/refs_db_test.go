@@ -33,7 +33,7 @@ func refsVocabulary(t *testing.T, ds substrate.Dataset, withHub bool) error {
 	if withHub {
 		spoke["hub"] = map[string]any{"type": "reference", "kind": refsHub}
 	}
-	_, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, []map[string]any{
+	_, err := ds.ApplyVocabularyDocuments(context.Background(), owner, []map[string]any{
 		vocabulary.PackageManifest(refsPackage, 0),
 		vocabulary.KindManifest(refsPackage,
 			map[string]any{"singular": "hub"},
@@ -255,7 +255,7 @@ func TestAReferenceFreeKindIssuesNoRefsStatements(t *testing.T) {
 	ds, _, dsn := newDatasetWithDB(t)
 	ctx := context.Background()
 	const note = refsPackage + "/note"
-	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(refsPackage, 0),
 		vocabulary.KindManifest(refsPackage,
 			map[string]any{"singular": "hub"},
@@ -323,7 +323,7 @@ func TestAContainerFlipAboveAReferenceReDerivesTombstones(t *testing.T) {
 		if repeated {
 			tool["repeated"] = true
 		}
-		_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		_, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 			vocabulary.PackageManifest(refsPackage, 0),
 			vocabulary.KindManifest(refsPackage,
 				map[string]any{"singular": "hub"},

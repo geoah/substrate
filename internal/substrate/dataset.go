@@ -5,27 +5,23 @@ import (
 	"time"
 )
 
-// Dataset is one repository's fully isolated dataset — every operation of the
-// five-mutation write surface and four-query read surface, plus the
-// system seams (tokens, GC, embeddings) the service loops need.
-// Implementations are safe for concurrent use.
+// Dataset is one repository's fully isolated dataset: every operation the
+// HTTP layer, the console and the background loops reach for, from the five
+// mutations and the reads to vocabulary apply, triggers, functions, agents,
+// bundles and blobs. Implementations are safe for concurrent use.
 //
-// THE LIBRARY CONTRACT MEANT TO FREEZE AT v1 IS THIS CORE ONLY.
-// The EXTENSION TIER — vocabulary apply, triggers, functions, agents,
-// bundles, blobs — is NOT on this interface: it is the fast-moving surface,
-// and each part of it is a named OPTIONAL EXTENSION interface in this package
-// that an implementation may also satisfy: VocabularyApplier, AutomationOps,
-// TriggerDispatcher, AgentOps, ResolutionSweeper, BundleOps, BundleInstaller,
-// BundleUpgradePlanner, ShippedUpgradePlanner, OAuthMaintainer, BlobStore,
-// ChangeFeedOps. A consumer
-// that needs one type-asserts THAT interface, never a concrete engine type,
-// and every implementation asserts each seam it satisfies at compile time
-// (`var _ substrate.BundleOps = (*dataset)(nil)`) — otherwise renaming a
-// method turns a whole endpoint family into a 501 with a green build.
-// The five mutations and four reads below are the core of the supported REST
-// contract (decision 0053). Of them only Search is a discovery feature
-// (stability.go), listed unconditionally because every dataset serves it; the
-// other stamps cover the extension seams.
+// It is ONE interface, not a core plus optional extensions a consumer
+// type-asserts: a verb declared here is a verb every implementation owes,
+// which is the engine's dataset and the API's hand-written fake
+// (internal/api/fake_test.go). A consumer calls the method; no endpoint has a
+// "this deployment cannot" branch to take.
+//
+// THE WHOLE INTERFACE IS WHAT v1 FREEZES: a method here is part of the
+// library contract and moves under the rules the REST surface moves under
+// (decision 0053, additive within v1, a break announced). Every feature
+// discovery lists (stability.go) is served from here, which is why that list
+// is a literal, and a feature's own stability stamp is what says how far its
+// shape has settled.
 type Dataset interface {
 	Repository() RepositoryInfo
 
@@ -109,6 +105,113 @@ type Dataset interface {
 	// vectors, which is the answer to a gateway swapped behind an unchanged
 	// provider row and model name.
 	Reembed(ctx context.Context, all bool) (ReembedReport, error)
+
+	// --- the changefeed's backward page and per-row trigger stance ---
+	ChangesBefore(ctx context.Context, before int64, f ChangeFilter, limit int) ([]Change, error)
+	ChangeTriggers(ctx context.Context, changes []Change) (map[int64][]ChangeTrigger, error)
+
+	// --- vocabulary (kinds, traits and property types are records) ---
+	// ApplyVocabularyDocuments admits a batch in ONE transaction: every
+	// document or none, activation on commit. A batch whose conversion plan is
+	// lossy is refused here, under ErrLossyConversion; it takes the confirmed
+	// form below.
+	ApplyVocabularyDocuments(ctx context.Context, actor Actor, docs []map[string]any) ([]*Record, error)
+	// PlanVocabularyApply stages the batch read-only and answers what admitting
+	// it would refuse and what it would rewrite.
+	PlanVocabularyApply(ctx context.Context, actor Actor, docs []map[string]any) (VocabularyPlan, error)
+	// PlanVocabularyApplyWith is the preview of ApplyVocabularyDocumentsWith:
+	// the same batch under the same decisions (the Origin a rehomed sample
+	// claims; a Confirm is ignored, a preview has nothing to consent to), so
+	// the hash it answers is the one the confirmed apply recomputes.
+	PlanVocabularyApplyWith(ctx context.Context, actor Actor, docs []map[string]any, opts VocabularyApply) (VocabularyPlan, error)
+	// ApplyVocabularyDocumentsWith carries the caller's decisions, the
+	// confirmation a lossy plan needs among them (decision 0067).
+	ApplyVocabularyDocumentsWith(ctx context.Context, actor Actor, docs []map[string]any, opts VocabularyApply) ([]*Record, error)
+	// PlanShippedUpgrade previews the boot upgrade: one entry per shipped
+	// package this repository holds as shipped vocabulary. It writes nothing.
+	PlanShippedUpgrade(ctx context.Context) ([]ShippedUpgrade, error)
+
+	// --- triggers and callables ---
+	// The trigger verbs: status is computed, a replay is a cursor reset, a run
+	// is one synthesized delivery, a wake is an immediate scan, and
+	// CallFunction is the callable invocation API (`mode: call`).
+	TriggerStatuses(ctx context.Context) ([]TriggerStatus, error)
+	ReplayTrigger(ctx context.Context, id string, from int64) error
+	RunTrigger(ctx context.Context, id, recordKind, recordID string) (int, error)
+	WakeTrigger(ctx context.Context, id string) (int, error)
+	TriggerFailures(ctx context.Context, id string) ([]TriggerFailure, error)
+	RetryTriggerFailure(ctx context.Context, id string, failureID int64) (int, error)
+	CallFunction(ctx context.Context, name string, args any) (any, int, error)
+	// ProcessTriggers is the dispatcher pass the service loop drives: each
+	// enabled trigger drains its changelog backlog to head or fires its due
+	// occurrence. Nothing reachable from the network calls it.
+	ProcessTriggers(ctx context.Context) (int, error)
+
+	// --- agents ---
+	// CallAgent is the call API's agent half; ChatAgent is the same loop with a
+	// live client attached.
+	CallAgent(ctx context.Context, name string, input any) (*AgentResult, error)
+	ChatAgent(ctx context.Context, actor Actor, name, threadID, message string, emit func(AgentEvent)) (*AgentResult, error)
+	// SweepResolutions is the resume-recovery pass the service loop drives:
+	// settled threads whose newest resolution row postdates their settlement
+	// get their dropped continuation back.
+	SweepResolutions(ctx context.Context) (int, error)
+
+	// --- bundles ---
+	// The bundle lifecycle: status is computed; disable/enable and uninstall
+	// are reversible runtime state; purge tombstones the owned package's data
+	// through the finalizer flow; StartOAuth begins the host connect flow for
+	// one account record.
+	BundleStatuses(ctx context.Context) ([]BundleStatus, error)
+	BundleStatus(ctx context.Context, id string) (BundleStatus, error)
+	// BundlePackage resolves the package a bundle owns (from the live registry
+	// or stored rows) for the lifecycle scope gate.
+	BundlePackage(ctx context.Context, id string) (string, error)
+	DisableBundle(ctx context.Context, id string) error
+	EnableBundle(ctx context.Context, id string) error
+	// BindBundleInput points a bundle's input at a chosen record (empty record
+	// clears the choice), the explicit step of input resolution.
+	BindBundleInput(ctx context.Context, id, input, record string) error
+	UninstallBundle(ctx context.Context, id string) error
+	PurgeBundle(ctx context.Context, id string) (int, error)
+	StartOAuth(ctx context.Context, actor Actor, recordID string) (string, error)
+	TypesImplementing(ctx context.Context, trait string) ([]KindInfo, error)
+	// InstallBundleClosure admits the vocabulary closure AND the shipped
+	// delivery wiring as ONE repository transaction, so a data-document failure
+	// rolls the vocabulary apply back with it.
+	InstallBundleClosure(ctx context.Context, actor Actor, vocabularyDocs []map[string]any, dataDocs []PutInput, opts BundleInstall) ([]*Record, error)
+	// PlanBundleUpgrade is the read-only preview beside InstallBundleClosure:
+	// what installing the shipped closure over the stored declarations would
+	// move, the guard lines the install would refuse it on, and the conversion
+	// plan it would run.
+	PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[string]any) (BundleUpgrade, error)
+	// The OAuth upkeep passes the service loop drives: refresh keeps stored
+	// tokens fresh, the finalizer pass revokes and releases deleted accounts
+	// ahead of GC.
+	RefreshOAuthTokens(ctx context.Context) (int, error)
+	ProcessOAuthFinalizers(ctx context.Context) (int, error)
+
+	// --- blobs ---
+	// The content-addressed byte store, repository-scoped: store bytes
+	// (deriving the digest, minting the blob manifest) and stream them back by
+	// digest.
+	PutBlob(ctx context.Context, actor Actor, up BlobUpload, data []byte, wantDigest string) (*BlobInfo, error)
+	GetBlob(ctx context.Context, digest string) (*BlobInfo, []byte, error)
+
+	// --- the owner's recovery export ---
+	// Export is the repository's directory as of one committed point, streamed
+	// as a tar in the layout a data root has and the format an operator's
+	// `repository snapshot` writes (decision 0069). The bearer token is the
+	// whole credential, because a token already reads every record and every
+	// blob the stream carries, and the sealed files in it are ciphertext under
+	// a key the stream does not hold.
+	//
+	// Export pins the committed point and returns the export that streams
+	// it. Pinning is short and serializes with the repository's writes; the
+	// streaming does not, so writes go on while a client downloads and the
+	// stream stays the point it pinned. The context is the stream's too: a
+	// caller that goes away ends it.
+	Export(ctx context.Context) (Export, error)
 }
 
 // ReembedReport is what one Reembed enqueued: the pair every vector will name

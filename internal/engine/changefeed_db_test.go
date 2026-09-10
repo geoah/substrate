@@ -11,28 +11,12 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// The cross-collection feed seam (changefeed.go): newest-first history
-// paging, the q substring filter, and per-change trigger states.
-
-// feedOps is the seam the API asserts at runtime; tests reach it the same way.
-type feedOps interface {
-	ChangesBefore(ctx context.Context, before int64, f substrate.ChangeFilter, limit int) ([]substrate.Change, error)
-	ChangeTriggers(ctx context.Context, changes []substrate.Change) (map[int64][]substrate.ChangeTrigger, error)
-}
-
-func feedOf(t *testing.T, ds substrate.Dataset) feedOps {
-	t.Helper()
-	feed, ok := ds.(feedOps)
-	if !ok {
-		t.Fatal("dataset does not implement the change-feed seam")
-	}
-	return feed
-}
+// The cross-collection feed (changefeed.go): newest-first history paging, the
+// q substring filter, and per-change trigger states.
 
 func TestChangesBeforePagesNewestFirst(t *testing.T) {
 	t.Parallel()
-	ds, _ := newFnDataset(t, nil)
-	feed := feedOf(t, ds)
+	ds := newFnDataset(t, nil)
 	ctx := context.Background()
 
 	for _, name := range []string{"one", "two", "three"} {
@@ -49,14 +33,14 @@ func TestChangesBeforePagesNewestFirst(t *testing.T) {
 
 	// before=0 reads from the head; each page continues strictly below the
 	// previous page's oldest row.
-	page, err := feed.ChangesBefore(ctx, 0, substrate.ChangeFilter{}, 2)
+	page, err := ds.ChangesBefore(ctx, 0, substrate.ChangeFilter{}, 2)
 	if err != nil {
 		t.Fatalf("changes before: %v", err)
 	}
 	if len(page) != 2 || page[0].Seq != head || page[1].Seq != head-1 {
 		t.Fatalf("first page seqs = %v, want %d,%d", seqsOf(page), head, head-1)
 	}
-	rest, err := feed.ChangesBefore(ctx, page[1].Seq, substrate.ChangeFilter{}, 500)
+	rest, err := ds.ChangesBefore(ctx, page[1].Seq, substrate.ChangeFilter{}, 500)
 	if err != nil {
 		t.Fatalf("changes before: %v", err)
 	}
@@ -75,8 +59,7 @@ func seqsOf(changes []substrate.Change) []int64 {
 
 func TestChangesQSubstringFilter(t *testing.T) {
 	t.Parallel()
-	ds, _ := newFnDataset(t, nil)
-	feed := feedOf(t, ds)
+	ds := newFnDataset(t, nil)
 	ctx := context.Background()
 
 	ada := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"assignee": "kim"}})
@@ -86,7 +69,7 @@ func TestChangesQSubstringFilter(t *testing.T) {
 	// VALUES now, so the haystack is what was written, not
 	// just the property name: "kim" appears in exactly one row's payload, and
 	// the feed's one search box finds a change by the value it wrote.
-	hits, err := feed.ChangesBefore(ctx, 0, substrate.ChangeFilter{Q: "KIM"}, 500)
+	hits, err := ds.ChangesBefore(ctx, 0, substrate.ChangeFilter{Q: "KIM"}, 500)
 	if err != nil {
 		t.Fatalf("q filter: %v", err)
 	}
@@ -102,7 +85,7 @@ func TestChangesQSubstringFilter(t *testing.T) {
 		t.Fatalf("q=id hits = %+v", hits)
 	}
 	// LIKE metacharacters are literals: nothing here contains a percent sign.
-	hits, err = feed.ChangesBefore(ctx, 0, substrate.ChangeFilter{Q: "%"}, 500)
+	hits, err = ds.ChangesBefore(ctx, 0, substrate.ChangeFilter{Q: "%"}, 500)
 	if err != nil {
 		t.Fatalf("q filter: %v", err)
 	}
@@ -116,16 +99,15 @@ func TestChangeTriggersStates(t *testing.T) {
 	// The mirror errors on a widget without a name (record.properties.name),
 	// which is what parks a delivery; taskType is in the source so the
 	// function's own task writes exercise self-actor exclusion.
-	ds, ops := newFnDataset(t,
+	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("mirror", map[string]any{"kinds": []any{widgetType, taskType}})},
 		pyFn("mirror", map[string]any{}, []any{taskType}, mirrorSource))
-	feed := feedOf(t, ds)
 	ctx := context.Background()
 	const mirror = fnPackage + "/mirror"
 
 	processed := mustPut(t, ds, owner, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "fine"}})
 	poisoned := mustPut(t, ds, owner, substrate.PutInput{Kind: widgetType})
-	process(t, ops)
+	process(t, ds)
 	pending := mustPut(t, ds, owner, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "later"}})
 	unmatched := mustPut(t, ds, owner, substrate.PutInput{Kind: gadgetType, Properties: map[string]any{"count": 1.0}})
 
@@ -133,7 +115,7 @@ func TestChangeTriggersStates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("changes: %v", err)
 	}
-	states, err := feed.ChangeTriggers(ctx, changes)
+	states, err := ds.ChangeTriggers(ctx, changes)
 	if err != nil {
 		t.Fatalf("change triggers: %v", err)
 	}
@@ -180,7 +162,6 @@ func TestRecordFilterMatchesMergeAndSplitForBothRecords(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	feed := feedOf(t, ds)
 
 	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Nina Ray"}})
 	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "N. Ray"}})
@@ -220,7 +201,7 @@ func TestRecordFilterMatchesMergeAndSplitForBothRecords(t *testing.T) {
 		if got := opsOf(forward); !maps.Equal(got, tc.want) {
 			t.Fatalf("%s: ops = %v, want %v", tc.name, got, tc.want)
 		}
-		backward, err := feed.ChangesBefore(ctx, 0, scope, 500)
+		backward, err := ds.ChangesBefore(ctx, 0, scope, 500)
 		if err != nil {
 			t.Fatalf("%s: changes before: %v", tc.name, err)
 		}

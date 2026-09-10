@@ -309,12 +309,11 @@ flag.`,
 			// shipped, not `null`.
 			rows := []catalogRow{}
 			// The seeded package first. The shipped read is optional: a
-			// server that previews no boot upgrade (a dataset without the
-			// seam) answers 404 or 501 and has no core row, and any other
-			// refusal costs the core row alone, because the catalog read
-			// still serves and is the reason the command was run. A refusal
-			// that is not one of the two expected ones is said once, on
-			// stderr.
+			// server that does not serve /vocabulary/upgrade answers 404 and
+			// has no core row, and any other refusal costs the core row
+			// alone, because the catalog read still serves and is the reason
+			// the command was run. A refusal that is not the expected 404 is
+			// said once, on stderr.
 			var shipped substrate.OperationalList[substrate.ShippedUpgrade]
 			err = cl.do(ctx, http.MethodGet, apiPrefix+"/vocabulary/upgrade", nil, nil, &shipped)
 			var ae *apiError
@@ -328,7 +327,7 @@ flag.`,
 					rows = append(rows, catalogRow{ID: s.Package, Tier: tierSeed, Installed: up.From != 0, Version: up.To, Upgrade: &up})
 				}
 			case errors.As(err, &ae):
-				if ae.Status != http.StatusNotFound && ae.Status != http.StatusNotImplemented {
+				if ae.Status != http.StatusNotFound {
 					fmt.Fprintf(a.errOut, "note: the shipped upgrade preview answered %d (%s); core is not listed\n", ae.Status, ae.Error())
 				}
 			default:

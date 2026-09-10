@@ -413,8 +413,9 @@ is on the wire: the
 [changelog](changelog.md#the-dialect-a-changelog-is-written-in) dialects are
 stored per repository, and a binary too old for a store refuses to open it,
 which surfaces as `unavailable`. That
-feature list is what replaces probing for 501s: each entry names a feature,
-its stability and the `surfaces` that serve it (`rest`, `graphql`, or both):
+feature list is what a client reads instead of trying a route to see whether
+it exists: each entry names a feature, its stability and the `surfaces` that
+serve it (`rest`, `graphql`, or both):
 
 ```json
 {"versions": [{"name": "v1", "status": "served"}],
@@ -443,11 +444,10 @@ A feature's `surfaces` are the doors to its own operations, not to its
 records: a trigger and a blob manifest are ordinary records and read on both
 surfaces whatever the entry says, while `["rest"]` means the feature's verbs
 (a replay, an install, a function call, a blob's bytes) have REST paths and no
-GraphQL field. The example above is abridged; the full roster a deployment may
-report is `triggers`, `functions`, `bundles`, `blobs`, `export`,
-`changefeed`, `search`, `embeddings` and `agents`, and which of them a given
-deployment lists is
-[what it implements](#what-a-features-stability-means).
+GraphQL field. The example above is abridged; the full list, and it is the
+same for every deployment of a given build, is `triggers`, `functions`,
+`bundles`, `blobs`, `export`, `changefeed`, `search`, `embeddings` and
+`agents`.
 
 `surfaces` is the verdict per request surface, and it is a different axis from
 a feature's stability. `compatibility` is `supported` on `rest`: the REST API
@@ -502,16 +502,18 @@ frozen. `agents` is served on `rest`, `embeddings` on `graphql` alone: its
 one REST verb, `POST /api/v1/embeddings/reembed`, was withdrawn, and
 re-embedding is now the operator's `substratectl repository reembed`.
 
-The list is derived from what the deployment implements, not written out, so a
-feature is never advertised without the code that serves it: a substrate that
-runs no triggers lists no `triggers` feature rather than listing one and
-answering `unsupported`, and `embeddings` is listed only where the deployment
-can embed at all. Discovery opens no repository, so it does not answer the
-narrower question of whether the CALLER's repository declares an
-[`llmprovider` row](agents.md): the first semantic query answers that one,
-naming the property no row declares. An entry stands for every route behind
-it, so `bundles` appears only where both the lifecycle transitions and catalog
-install are served.
+The list is a literal in the server (`internal/api/discovery.go`), and it is
+every feature the build serves: one implementation serves them all, so there
+is nothing per-deployment to compute. A client reads the list for the
+stability stamps and the `surfaces`, not to find out whether a route is
+there.
+
+`embeddings` is listed like the rest. Discovery opens no repository, so it
+does not answer the narrower question of whether the CALLER's repository
+declares an [`llmprovider` row](agents.md): the first semantic query answers
+that one, naming the property no row declares. An entry stands for every route
+behind it, so `bundles` covers the lifecycle transitions and catalog install
+together.
 
 Send every request to the `/api/v1` prefix. It is the only prefix served,
 and `versions` lists it with status `served`.
@@ -728,8 +730,10 @@ The server-error family is split so a client can tell "try again" from "never
 going to work": `internal` (500, an unexpected fault), `function_failed` (500, a
 callable's body faulted while running, distinct from `validation` so a caller
 tells its own bad arguments from the function failing to execute), `unsupported`
-(501, a feature this deployment does not offer, the thing `GET
-/.well-known/substrate/server.json` detection replaces), and `unavailable`
+(501, a door this deployment does not open: the register endpoints on a
+deployment with no invite code configured, which `GET
+/.well-known/substrate/server.json` reports as `registration.open: false`),
+and `unavailable`
 (503, always with a `Retry-After`). Two
 cases are worth calling out: a well-formed token whose repository cannot be
 opened answers `unavailable`, never a masked `401`, so a store the binary
