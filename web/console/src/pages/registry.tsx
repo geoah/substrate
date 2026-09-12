@@ -1,6 +1,6 @@
 /** Registry (`/registry`): every bundle this substrate knows: the ones this
  * repository holds, with their runtime state (from the computed status
- * endpoint), and the closures shipped in the catalog it has not taken yet.
+ * endpoint), and the ones in the shipped catalog it does not have yet.
  *
  * TWO SECTIONS, the two catalog tiers (decision record 0048). PROVIDERS are
  * packages a publisher owns: they install under the authority that publishes
@@ -13,40 +13,37 @@
  * edited (decision record 0070). A bundle applied outside the shipped catalog
  * has no tier and is listed on its own rather than guessed into one.
  *
- * EVERY ROW DISCLOSES ITS CLOSURE (owner ask): a fresh repository holds
- * `substrate.reamde.dev/core` and nothing else, so the reader meets this page before they
- * have any vocabulary at all and must be able to see what an import will DO
- * before pressing it. The chevron opens the closure in place — the kinds it
- * adds (linked once they are imported), its functions, agents, triggers and
- * mappings, its version and owned authority, and the authorities it REQUIRES,
- * each marked present or missing.
+ * EVERY ROW SAYS WHAT IT ADDS (owner ask): a fresh repository holds
+ * `substrate.reamde.dev/core` and nothing else, so the reader meets this page
+ * before they have any vocabulary at all, and the question is what an import
+ * will give them. The chevron opens that in place, as READABLE SECTIONS, each
+ * a heading over a list of names with the prose each declaration carries:
+ * kinds (linked once they are here), traits, functions, agents, triggers,
+ * the settings and secrets it ships, and what it requires. A counted line
+ * stands in for the rest, because the set of records a bundle may ship is
+ * open.
  *
- * REQUIREMENTS ARE A GATE, not a surprise: `schema.resolveBundle` refuses an
- * install whose `requires:` packages are absent, so the console refuses it
- * first, so the button is disabled with a tooltip naming what to take first. A
- * sample's requirements are shown REHOMED, under this repository's authority,
- * because that is what the server will look for. If the server still refuses
- * (a race), its own problems ride the toast verbatim.
+ * REQUIREMENTS NEST AND ARRIVE TOGETHER. The wire's `requires` is direct
+ * only, so the chain is walked here and shown as a tree; the button takes the
+ * whole of it, leaves first, one call each, and stops at the first refusal.
+ * Nothing is disabled: a reader who presses the one button gets the thing
+ * they asked for.
  *
  * The two doors are two endpoints: `…/catalog/{id}/install` for a provider,
  * `…/catalog/{id}/import` for a sample. enable/disable/uninstall are a
  * DIFFERENT lifecycle and keep their own words. */
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
 import type { DataTableColumn } from "@/components/data-table/data-table"
 import {
-  BotIcon,
   BoxesIcon,
-  BoxIcon,
   CheckIcon,
   CircleArrowUpIcon,
   DownloadIcon,
-  FunctionSquareIcon,
   SearchXIcon,
   TriangleAlertIcon,
-  ZapIcon,
 } from "lucide-react"
 import { DataTable, useDataTable } from "@/components/data-table/data-table"
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
@@ -89,10 +86,10 @@ import {
 } from "@/lib/api/bundles"
 import {
   catalogQueryOptions,
+  fetchCatalogItem,
   importBundle,
   installBundle,
   shippedUpgradesQueryOptions,
-  takeBundle,
 } from "@/lib/api/catalog"
 import { repositoryQueryOptions } from "@/lib/api/repository"
 import { CORE_PACKAGE } from "@/lib/api/http"
@@ -100,64 +97,56 @@ import { kindsQueryOptions } from "@/lib/api/kinds"
 import {
   ApiError,
   type BundleStatus,
+  type CatalogItem,
   type KindInfo,
   type ShippedUpgrade,
 } from "@/lib/api/types"
-import { splitKind } from "@/lib/definition"
 import {
   bundleRecordRows,
   bundleSections,
+  chainHint,
+  closureRows,
   confirmationOf,
   heldVersions,
   importFailureText,
   installedKindRows,
   lossyStepLines,
+  mappingLinksSentence,
   mergeBundles,
-  missingRequirements,
+  importPlan,
+  missingChain,
   needsConfirmation,
   presentPackages,
   previewFailed,
-  requirementsOf,
+  requirementTree,
   stepLines,
-  readySuggestedMappings,
-  REIMPORT_WARNING,
-  requiresHint,
-  samplesMappingOnto,
-  suggestedMappingHint,
-  suggestedMappingsOf,
+  triggerRows,
   upgradeAvailable,
   upgradeBlocked,
   upgradeMotion,
   pendingShippedUpgrades,
   type BundleRow,
-  type Requirement,
-  type SuggestedMappingRow,
+  type ClosureRow,
+  type RequirementNode,
 } from "@/lib/bundles"
 
-/** A row's counts: the live status when imported, else the catalog closure's
- * declared closure counts (nothing is live yet, so accounts/rows read 0). The
- * live status counts are optional on the v1 wire — guard each with `?? 0`. */
-function counts(row: BundleRow): {
-  accounts: number
-  functions: number
-  kinds: number
-  liveRecords: number
-} {
+/** A row's counts: the live status when the bundle is here, else what the
+ * shipped catalog declares. KINDS and FUNCTIONS only: the account count is
+ * the number of connected accounts, which is zero for everything nobody has
+ * connected yet, and a live row count answers a question nobody asked of a
+ * registry (owner ruling). The live status counts are optional on the v1
+ * wire, so each is guarded. */
+function counts(row: BundleRow): { functions: number; kinds: number } {
   if (row.status) {
-    const s = row.status
     return {
-      accounts: s.accounts ?? 0,
-      functions: s.functions ?? 0,
-      kinds: s.kinds ?? 0,
-      liveRecords: s.liveRecords ?? 0,
+      functions: row.status.functions ?? 0,
+      kinds: row.status.kinds ?? 0,
     }
   }
-  const r = row.catalog?.closure
+  const closure = row.catalog?.closure
   return {
-    accounts: 0,
-    functions: r?.functions?.length ?? 0,
-    kinds: r?.kinds?.length ?? 0,
-    liveRecords: 0,
+    functions: closure?.functions?.length ?? 0,
+    kinds: closure?.kinds?.length ?? 0,
   }
 }
 
@@ -188,209 +177,206 @@ function numColumn(
 }
 
 /** The row's door, named for its tier: a PROVIDER installs under the authority
- * that publishes it, a SAMPLE imports as yours. Gated by the closure's own
- * `requires:`. A missing requirement is a refusal the server WILL make
- * (schema.resolveBundle), so the button is disabled and its tooltip names what
- * to take first; the trigger is a span, since a disabled button dispatches no
- * pointer events. A refusal that still arrives (the requirement was torn down
- * between the read and the click) surfaces the server's own problems
- * verbatim. */
+ * that publishes it, a SAMPLE imports as this repository's own.
+ *
+ * IT TAKES THE WHOLE CHAIN. A bundle is refused while anything it declares
+ * against is absent, and the missing thing usually declares against something
+ * else in turn, so the button imports the missing packages leaves first, one
+ * call each, and the bundle last. Sequential because each admission is
+ * refused until the one before it has landed; it stops at the first refusal
+ * and says which bundle refused, since "the import failed" with three calls
+ * in flight names nothing.
+ *
+ * Nothing is ever disabled here: a disabled button with a sentence explaining
+ * what to press instead is a reader doing the machine's work (owner ruling).
+ *
+ * A package this repository holds below the floor the closure puts under it
+ * (`requiresAtLeast`, decision record 0070) is in the chain too, and taking it
+ * again REPLACES the copy rather than merging into it (decision record 0048),
+ * so a copy the reader has edited is confirmed first, in the same words the
+ * upgrade uses. */
 function TakeButton({
   row,
-  missing,
+  chain,
 }: {
   row: BundleRow
-  missing: Requirement[]
+  chain: RequirementNode[]
 }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const sample = row.tier === "sample"
   const verb = sample ? "Import" : "Install"
-  const running = sample ? "Importing…" : "Installing…"
+  const plan = useMemo(() => importPlan(row, chain), [row, chain])
+  // The bundles whose replacement the reader has agreed to, by id. A REF, not
+  // state: the dialog's confirm click runs the mutation in the same handler
+  // that records the consent, and a state write is not visible to it yet.
+  const consented = useRef(new Set<string>())
+  // The bundles the dialog is asking about right now, or null. Set before the
+  // run from the previews the page holds, and again mid-run when a re-read
+  // preview turns out to replace something nobody agreed to.
+  const [asking, setAsking] = useState<BundleRow[] | null>(null)
   const taking = useMutation({
-    mutationFn: () =>
-      takeBundle({
-        id: row.catalog?.id ?? row.id,
-        tier: row.tier ?? "provider",
-      }),
-    onSuccess: (status) => {
+    mutationFn: async () => {
+      let landed: BundleStatus | undefined
+      for (const bundle of plan.bundles) {
+        // RE-READ THE PREVIEW, one bundle at a time. A confirmation names one
+        // plan at one changelog head, and the step before this one moved the
+        // head, so the token the list was read with is refused (engine
+        // convert.go). A fresh read is also the only way to see that this
+        // step has BECOME lossy since the page loaded.
+        let fresh: CatalogItem
+        try {
+          fresh = await fetchCatalogItem(bundle.catalog?.id ?? bundle.id)
+        } catch (error) {
+          throw new ChainFailure(bundle.name, error)
+        }
+        if (
+          needsConfirmation(fresh.upgrade) &&
+          !consented.current.has(bundle.id)
+        ) {
+          throw new NeedsConsent(bundle)
+        }
+        try {
+          landed = await takeAgain(bundle, fresh.upgrade)
+        } catch (error) {
+          throw new ChainFailure(bundle.name, error)
+        }
+        // Seeded as each one lands, not at the end: a chain that refuses
+        // halfway has still imported everything before the refusal, and rows
+        // that read as available afterwards would be lying.
+        seedBundleStatus(queryClient, landed)
+      }
+      // The last door answers with the row's own landed status, which is what
+      // the toast names and where the setup handoff goes.
+      return landed!
+    },
+    onSuccess: (landed) => {
+      setAsking(null)
       toast.add({
         type: "success",
-        title: sample
-          ? `${row.name} imported as ${status.id}.`
-          : `${row.name} installed.`,
+        title:
+          plan.bundles.length === 1
+            ? sample
+              ? // A sample lands under THIS repository's authority, which is
+                // not the id the reader clicked, so the toast says where it
+                // went (decision record 0048).
+                `${row.name} imported as ${landed.id}.`
+              : `${row.name} installed.`
+            : `${row.name} and ${plan.bundles.length - 1} ${
+                plan.bundles.length === 2 ? "package" : "packages"
+              } it needs are here.`,
       })
-      // The door answers with the fresh status, so seed it and this row flips to
-      // held immediately, without waiting on the next status probe.
-      seedBundleStatus(queryClient, status)
-      // It lands schema + wiring the whole console reads, so refresh all, and
-      // re-read the bundle surfaces again shortly since the probe-backed reads
-      // can lag it.
-      void queryClient.invalidateQueries()
-      refetchBundleStateSoon(queryClient)
       // A bundle that landed with an empty required setting cannot run until
       // somebody fills it in, so the import hands the reader straight to the
       // form. The id is the LANDED one the door answered with: a sample's is
       // rehomed. Nothing to fill in leaves the reader on the list.
-      if ((status.setup ?? []).some((item) => item.code === "setting")) {
+      if ((landed.setup ?? []).some((item) => item.code === "setting")) {
         void navigate({
           to: "/registry/$id",
-          params: { id: status.id },
+          params: { id: landed.id },
           hash: "setup",
         })
       }
-    },
-    onError: (error) => {
-      toast.add({
-        type: "error",
-        title: `${sample ? "Importing" : "Installing"} ${row.name} failed`,
-        description: importFailureText(error),
-      })
-    },
-  })
-
-  const blocked = missing.length > 0
-  const button = (
-    <Button
-      variant="outline"
-      size="sm"
-      disabled={blocked || taking.isPending}
-      onClick={(e) => {
-        e.stopPropagation()
-        taking.mutate()
-      }}
-    >
-      {taking.isPending ? <Spinner className="size-3.5" /> : <DownloadIcon />}
-      {taking.isPending ? running : verb}
-    </Button>
-  )
-  if (!blocked) return button
-  const hint = requiresHint(missing)
-  return (
-    <Tooltip>
-      <TooltipTrigger render={<span className="inline-flex cursor-help" />}>
-        {button}
-        <span className="sr-only">{hint}</span>
-      </TooltipTrigger>
-      <TooltipContent>{hint}</TooltipContent>
-    </Tooltip>
-  )
-}
-
-/** IMPORT AGAIN: the one action that lands a suggested mapping a first import
- * dropped (decision record 0049) while the shipped closure has not moved. A
- * reader who installs Linear after importing `tasks` would otherwise have
- * nothing to press: the mapping stays `ready` forever and the projection never
- * runs.
- *
- * It CONFIRMS first, because a re-import is not a merge: the batch replaces
- * the package wholesale (decision record 0048), so a kind or a property the
- * reader added since is dropped by it, or the narrowing guard refuses the
- * import while live records still hold the old shape. That cost is the
- * dialog's whole text. Where the server's preview says the copy WAS edited
- * (`discardsEdits`, decision record 0070) the click also sends that
- * preview's `planHash` and `changelogSeq`, which the door requires. */
-function ImportAgainButton({
-  row,
-  ready,
-}: {
-  row: BundleRow
-  ready: SuggestedMappingRow[]
-}) {
-  const queryClient = useQueryClient()
-  const [confirming, setConfirming] = useState(false)
-  const importing = useMutation({
-    mutationFn: () =>
-      importBundle(row.catalog?.id ?? row.id, confirmationOf(row.upgrade)),
-    onSuccess: (status) => {
-      setConfirming(false)
-      toast.add({
-        type: "success",
-        title:
-          ready.length === 1
-            ? `${row.name} re-imported: 1 mapping landed.`
-            : `${row.name} re-imported: ${ready.length} mappings landed.`,
-      })
-      seedBundleStatus(queryClient, status)
+      // The doors land vocabulary and wiring the whole console reads, and the
+      // probe-backed reads can lag them: refresh everything, then again.
       void queryClient.invalidateQueries()
       refetchBundleStateSoon(queryClient)
     },
     onError: (error) => {
+      // Whatever ran before the stop has landed, so the rows are read again
+      // either way: the ones that imported must stop offering an import.
+      void queryClient.invalidateQueries()
+      refetchBundleStateSoon(queryClient)
+      if (error instanceof NeedsConsent) {
+        setAsking([error.bundle])
+        return
+      }
+      const failed = error instanceof ChainFailure ? error : undefined
       toast.add({
         type: "error",
-        title: `Importing ${row.name} again failed`,
-        description: importFailureText(error),
+        title: `${sample ? "Importing" : "Installing"} ${failed?.bundle ?? row.name} failed`,
+        description: importFailureText(failed?.cause ?? error),
       })
     },
   })
-  const what =
-    ready.length === 1
-      ? `the ${ready[0].label} mapping`
-      : `${ready.length} mappings`
+  // "all" is about what the row NEEDS, not about what the plan managed to
+  // order: a refused chain still has more missing than this one bundle, and a
+  // button that says "Import" and then refuses for three other packages reads
+  // as a bug in the button.
+  const label = missingChain(chain).length > 0 ? `${verb} all` : verb
+  const start = () => {
+    // The refusal is stated on the press rather than by grey-ing the button:
+    // a cycle and a package the catalog does not ship are both things the
+    // reader can do nothing about here, and both are sentences, not states.
+    if (plan.refusal) {
+      toast.add({
+        type: "error",
+        title: `${row.name} cannot be ${sample ? "imported" : "installed"} from here`,
+        description: plan.refusal,
+      })
+      return
+    }
+    const replaces = plan.bundles.filter(
+      (b) => needsConfirmation(b.upgrade) && !consented.current.has(b.id)
+    )
+    if (replaces.length) setAsking(replaces)
+    else taking.mutate()
+  }
   return (
     <>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={importing.isPending}
-              onClick={(e) => {
-                e.stopPropagation()
-                setConfirming(true)
-              }}
-            />
-          }
-        >
-          {importing.isPending ? (
-            <Spinner className="size-3.5" />
-          ) : (
-            <DownloadIcon />
-          )}
-          {importing.isPending ? "Importing…" : "Import again"}
-        </TooltipTrigger>
-        <TooltipContent>
-          {`Import ${row.name} again to land ${what}. ${REIMPORT_WARNING}`}
-        </TooltipContent>
-      </Tooltip>
-      {confirming && (
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={taking.isPending}
+        onClick={(e) => {
+          e.stopPropagation()
+          start()
+        }}
+      >
+        {taking.isPending ? <Spinner className="size-3.5" /> : <DownloadIcon />}
+        {taking.isPending ? `${verb}ing…` : label}
+      </Button>
+      {asking && (
         <Dialog
           open
-          onOpenChange={(open) =>
-            !open && !importing.isPending && setConfirming(false)
-          }
+          onOpenChange={(open) => !open && !taking.isPending && setAsking(null)}
         >
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>Import {row.name} again?</DialogTitle>
+              <DialogTitle>
+                Replace your edits to{" "}
+                {asking.length === 1 ? asking[0].name : "these packages"}?
+              </DialogTitle>
               <DialogDescription>
-                {`This lands ${what}, now that the provider each one reads is installed. ` +
-                  `Importing again replaces ${row.id} instead of merging into it, so a kind or a property you added is dropped. ` +
-                  `It is refused while live records still hold a shape the shipped package no longer declares. ` +
-                  `Your records are untouched either way.`}
+                {`${asking.map((b) => b.id).join(", ")} ` +
+                  `${asking.length === 1 ? "is" : "are"} here at a version this bundle cannot use, and ` +
+                  `${asking.length === 1 ? "it was" : "they were"} edited since ${asking.length === 1 ? "it" : "they"} arrived. ` +
+                  `Importing ${asking.length === 1 ? "it" : "them"} again replaces the package instead of merging into it, so those edits go with it. ` +
+                  `Your records are untouched.`}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
               <Button
                 variant="outline"
-                disabled={importing.isPending}
+                disabled={taking.isPending}
                 onClick={(e) => {
                   e.stopPropagation()
-                  setConfirming(false)
+                  setAsking(null)
                 }}
               >
                 Cancel
               </Button>
               <Button
-                disabled={importing.isPending}
+                disabled={taking.isPending}
                 onClick={(e) => {
                   e.stopPropagation()
-                  importing.mutate()
+                  for (const b of asking) consented.current.add(b.id)
+                  setAsking(null)
+                  taking.mutate()
                 }}
               >
-                {importing.isPending && <Spinner className="size-3.5" />}
-                Import again
+                {taking.isPending && <Spinner className="size-3.5" />}
+                {label}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -398,6 +384,30 @@ function ImportAgainButton({
       )}
     </>
   )
+}
+
+/** A step whose freshly read preview replaces something the reader has not
+ * agreed to lose. The run stops where it stands: what landed before it is
+ * here, and the dialog asks about exactly this bundle. */
+class NeedsConsent extends Error {
+  bundle: BundleRow
+  constructor(bundle: BundleRow) {
+    super(bundle.id)
+    this.bundle = bundle
+  }
+}
+
+/** Which bundle in the chain refused, carried with the server's own error so
+ * the toast can name it: one of five calls failing is not "the import
+ * failed". */
+class ChainFailure extends Error {
+  bundle: string
+  cause: unknown
+  constructor(bundle: string, cause: unknown) {
+    super(bundle)
+    this.bundle = bundle
+    this.cause = cause
+  }
 }
 
 /** Upgrade: take the shipped closure again through the row's own door, which
@@ -494,9 +504,12 @@ function UpgradeButton({
  * its preview needs: the install verb for a provider, the import verb for a
  * sample, whose closure lands rehomed over the copy this repository holds
  * (decision record 0070). */
-function takeAgain(row: BundleRow): Promise<BundleStatus> {
+function takeAgain(
+  row: BundleRow,
+  upgrade = row.upgrade
+): Promise<BundleStatus> {
   const door = row.tier === "sample" ? importBundle : installBundle
-  return door(row.catalog?.id ?? row.id, confirmationOf(row.upgrade))
+  return door(row.catalog?.id ?? row.id, confirmationOf(upgrade))
 }
 
 /** The consent to an upgrade that loses something (decisions 0067 and 0070),
@@ -679,8 +692,7 @@ function UpgradeBlockedChip({ row }: { row: BundleRow }) {
 }
 
 function buildColumns(
-  requirements: (row: BundleRow) => Requirement[],
-  mappings: (row: BundleRow) => SuggestedMappingRow[],
+  chains: (row: BundleRow) => RequirementNode[],
   confirmLoss: (row: BundleRow) => void
 ): DataTableColumn<BundleRow>[] {
   return [
@@ -709,20 +721,19 @@ function buildColumns(
     },
     {
       id: "state",
-      accessorFn: (r) => (r.status ? bundleState(r.status) : "not taken"),
+      accessorFn: (r) => (r.status ? bundleState(r.status) : "not here"),
       enableSorting: false,
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="state" />
       ),
-      // An imported bundle shows its own runtime lifecycle (enabled /
-      // disabled / uninstalled) with the setup chip BESIDE it when steps
-      // stand; one that has never been imported has no lifecycle to show, only
-      // the invitation — and, when its closure declares against vocabulary
-      // this repository lacks, what blocks it.
+      // A bundle this repository holds shows its own runtime lifecycle
+      // (enabled / disabled / uninstalled) with the setup chip BESIDE it when
+      // steps stand; one it does not hold shows the invitation, and what the
+      // button will have to take first.
       cell: ({ row }) => {
         const missing = row.original.installed
           ? []
-          : missingRequirements(requirements(row.original))
+          : missingChain(chains(row.original))
         return (
           <div className="min-w-0">
             {row.original.status ? (
@@ -754,7 +765,11 @@ function buildColumns(
             {missing.length > 0 && (
               <div
                 className="truncate pt-0.5 data text-xs text-warning"
-                title={requiresHint(missing)}
+                title={chainHint(
+                  missing,
+                  row.original.tier === "sample" ? "Import" : "Install",
+                  row.original.name
+                )}
               >
                 needs {missing.map((r) => r.package).join(", ")}
               </div>
@@ -769,10 +784,8 @@ function buildColumns(
       },
       meta: { label: "state", width: 170 },
     },
-    numColumn("accounts", "accounts", (r) => counts(r).accounts),
-    numColumn("functions", "functions", (r) => counts(r).functions),
     numColumn("kinds", "kinds", (r) => counts(r).kinds),
-    numColumn("liveRecords", "live rows", (r) => counts(r).liveRecords),
+    numColumn("functions", "functions", (r) => counts(r).functions),
     {
       id: "action",
       enableSorting: false,
@@ -788,30 +801,10 @@ function buildColumns(
                 <UpgradeButton row={row.original} onConfirmLoss={confirmLoss} />
               )}
             </div>
-          ) : row.original.tier === "sample" &&
-            readySuggestedMappings(mappings(row.original)).length > 0 ? (
-            // A held SAMPLE whose shipped closure has not moved is offered no
-            // upgrade, so this is the one action that lands a mapping the
-            // first import dropped: re-import the closure, now that the
-            // provider it reads is here.
-            //
-            // THE TIER IS PART OF THE GATE. A provider row's mappings are the
-            // INBOUND ones (which samples project onto it), so without this a
-            // held provider with a ready sample mapping would offer to import
-            // ITSELF, and the import door refuses a provider id.
-            <div className="flex justify-end">
-              <ImportAgainButton
-                row={row.original}
-                ready={readySuggestedMappings(mappings(row.original))}
-              />
-            </div>
           ) : null
         ) : row.original.catalog ? (
           <div className="flex justify-end">
-            <TakeButton
-              row={row.original}
-              missing={missingRequirements(requirements(row.original))}
-            />
+            <TakeButton row={row.original} chain={chains(row.original)} />
           </div>
         ) : null,
       meta: {
@@ -824,288 +817,304 @@ function buildColumns(
   ]
 }
 
-// ── the disclosure: what an import will actually do ─────────────────────────
+// ── the disclosure: what taking this bundle adds ────────────────────────────
 
-/** One labelled line of the disclosure grid. */
-function Line({
-  label,
+/** One section of the disclosure: a heading over a list. Sections, not chips:
+ * a reader deciding on an import is reading, and forty bordered words in a
+ * row is not something anybody reads (owner ruling). */
+function Group({
+  title,
   children,
 }: {
-  label: string
+  title: string
   children: React.ReactNode
 }) {
   return (
-    <>
-      <dt className="pt-0.5 text-muted-foreground">{label}</dt>
-      <dd className="flex min-w-0 flex-wrap items-center gap-1">{children}</dd>
-    </>
+    <section className="min-w-0">
+      <h3 className="pb-0.5 font-medium text-muted-foreground">{title}</h3>
+      {children}
+    </section>
   )
 }
 
-/** The shipped-record kinds this preview groups by, in reading order: the
- * declarations first, then the data rows an install writes. A record of any
- * other kind falls into the trailing `records` line, so a bundle shipping
- * something new is previewed rather than dropped. */
-const RECORD_KINDS = [
-  {
-    kind: `${CORE_PACKAGE}/function`,
-    label: "functions",
-    icon: FunctionSquareIcon,
-  },
-  { kind: `${CORE_PACKAGE}/agent`, label: "agents", icon: BotIcon },
-  {
-    kind: `${CORE_PACKAGE}/recordmapping`,
-    label: "mappings",
-    icon: BoxesIcon,
-  },
-  { kind: `${CORE_PACKAGE}/trigger`, label: "triggers", icon: ZapIcon },
-] as const
+/** One member on its own line: its word, then what it is. The description is
+ * the declaration's own, which is the only thing there is to read before the
+ * bundle lands. */
+function Entry({
+  name,
+  description,
+  link,
+}: {
+  name: string
+  description?: string
+  /** Where the name points once the kind is here; a name with nowhere to go
+   * renders as text rather than as a link that lies. */
+  link?: { authority: string; pkg: string; name: string }
+}) {
+  return (
+    <li className="grid grid-cols-[minmax(6rem,11rem)_minmax(0,1fr)] items-baseline gap-x-3 py-0.5">
+      {link ? (
+        <Link
+          to="/data/$authority/$pkg/$name"
+          params={link}
+          className="truncate data underline-offset-4 hover:underline"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {name}
+        </Link>
+      ) : (
+        <span className="truncate data">{name}</span>
+      )}
+      <span className="min-w-0 text-muted-foreground">{description}</span>
+    </li>
+  )
+}
 
-/** The row's closure, opened in place: what it adds, what it needs, and what it
- * IS (sample or provider) — everything the reader needs to decide before
- * the import, in the table's own voice. */
+function EntryList({ rows }: { rows: ClosureRow[] }) {
+  return (
+    <ul className="min-w-0">
+      {rows.map((r) => (
+        <Entry key={r.identity} name={r.name} description={r.description} />
+      ))}
+    </ul>
+  )
+}
+
+/** The settings and the secrets a bundle ships as records (core `setting` and
+ * `secret`): named, never valued, because the catalog carries the declaration
+ * and not what the reader will have to put in it. */
+const SETTING_KINDS = [`${CORE_PACKAGE}/setting`, `${CORE_PACKAGE}/secret`]
+
+/** The requirement chain, nested: each package marked present or missing,
+ * with what IT requires under it. The tree is what the one button takes, in
+ * this shape, so the reader can see the whole of what pressing it does. */
+function RequirementTree({ nodes }: { nodes: RequirementNode[] }) {
+  return (
+    <ul className="min-w-0">
+      {nodes.map((node) => (
+        <li key={node.package} className="py-0.5">
+          <span
+            className={cn(
+              "inline-flex items-center gap-1",
+              node.present ? "text-muted-foreground" : "text-warning"
+            )}
+          >
+            {node.present ? (
+              <CheckIcon className="size-3 shrink-0" />
+            ) : (
+              <TriangleAlertIcon className="size-3 shrink-0" />
+            )}
+            <span className="data">{node.package}</span>
+            <span>
+              {node.present
+                ? "here"
+                : node.held !== undefined
+                  ? `here at version ${node.held}, and this needs version ${node.atLeast} or later`
+                  : "not here yet"}
+            </span>
+          </span>
+          {node.requires.length > 0 && (
+            <div className="border-l pl-3">
+              <RequirementTree nodes={node.requires} />
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** The row opened in place: what the bundle adds, what it links, and what it
+ * needs first. */
 function BundleDisclosure({
   row,
-  requirements,
-  mappings,
+  chain,
   kinds,
 }: {
   row: BundleRow
-  requirements: Requirement[]
-  /** The suggested mappings this row is about, from whichever side it sits on:
-   * a sample's own, or the samples that carry one onto this provider
-   * (decision record 0049). */
-  mappings: SuggestedMappingRow[]
+  chain: RequirementNode[]
   kinds: KindInfo[]
 }) {
   const catalog = row.catalog
   const inputs = row.status?.inputs
+  const closure = catalog?.closure
   const kindRows = useMemo(
     () => installedKindRows({ id: row.id, inputs }, kinds, catalog),
     [row.id, inputs, kinds, catalog]
   )
+  const traits = useMemo(
+    () => closureRows(closure?.traits, closure?.traitDescriptions),
+    [closure]
+  )
+  const functions = useMemo(
+    () => closureRows(closure?.functions, closure?.functionDescriptions),
+    [closure]
+  )
+  const agents = useMemo(
+    () => closureRows(closure?.agents, closure?.agentDescriptions),
+    [closure]
+  )
+  const triggers = useMemo(() => triggerRows(catalog), [catalog])
   const records = useMemo(() => bundleRecordRows(catalog), [catalog])
-  const missing = missingRequirements(requirements)
+  const settings = records.filter((r) => SETTING_KINDS.includes(r.kind))
+  // Everything else the bundle ships: the set is open (a bundle may ship a
+  // record of any kind), and a list of ids nobody can act on is noise, so it
+  // is one counted line.
+  const rest = records.filter(
+    (r) =>
+      !SETTING_KINDS.includes(r.kind) &&
+      r.kind !== `${CORE_PACKAGE}/trigger` &&
+      r.kind !== `${CORE_PACKAGE}/function` &&
+      r.kind !== `${CORE_PACKAGE}/agent` &&
+      r.kind !== `${CORE_PACKAGE}/recordmapping`
+  )
+  const links = mappingLinksSentence(row)
+  const missing = missingChain(chain)
+  // A chain that cannot be ordered, or one naming a package the catalog does
+  // not ship, is a refusal rather than a list of steps: the button says the
+  // same sentence when it is pressed.
+  const { refusal } = importPlan(row, chain)
 
   return (
     <RowDetail>
       {catalog?.description && <p>{catalog.description}</p>}
-      <dl className="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-3 gap-y-1.5">
-        <Line label="authority">
-          <span className="data text-muted-foreground">{row.authority}</span>
-          {catalog?.version ? (
-            <span className="data text-muted-foreground">
-              · {catalog.version}
-            </span>
-          ) : null}
-        </Line>
+      <div className="flex flex-col gap-2.5">
+        {kindRows.length > 0 && (
+          <Group
+            title={
+              kindRows.length === 1 ? "1 kind" : `${kindRows.length} kinds`
+            }
+          >
+            <ul className="min-w-0">
+              {kindRows.map((k) => (
+                <Entry
+                  key={k.identity}
+                  name={k.name}
+                  description={
+                    k.role === "input"
+                      ? [k.description, "its records satisfy a declared input"]
+                          .filter(Boolean)
+                          .join(" · ")
+                      : k.role === "account"
+                        ? [k.description, "the account record kind"]
+                            .filter(Boolean)
+                            .join(" · ")
+                        : k.description
+                  }
+                  // A kind that is not here yet exists on paper only, so it
+                  // names itself and links nowhere.
+                  link={
+                    k.authority && k.package
+                      ? {
+                          authority: k.authority,
+                          pkg: k.package,
+                          name: k.name,
+                        }
+                      : undefined
+                  }
+                />
+              ))}
+            </ul>
+          </Group>
+        )}
+        {traits.length > 0 && (
+          <Group
+            title={traits.length === 1 ? "1 trait" : `${traits.length} traits`}
+          >
+            <EntryList rows={traits} />
+          </Group>
+        )}
+        {functions.length > 0 && (
+          <Group
+            title={
+              functions.length === 1
+                ? "1 function"
+                : `${functions.length} functions`
+            }
+          >
+            <EntryList rows={functions} />
+          </Group>
+        )}
+        {agents.length > 0 && (
+          <Group
+            title={agents.length === 1 ? "1 agent" : `${agents.length} agents`}
+          >
+            <EntryList rows={agents} />
+          </Group>
+        )}
+        {triggers.length > 0 && (
+          <Group
+            title={
+              triggers.length === 1
+                ? "1 trigger"
+                : `${triggers.length} triggers`
+            }
+          >
+            <EntryList rows={triggers} />
+          </Group>
+        )}
+        {settings.length > 0 && (
+          <Group title="Settings and secrets">
+            <ul className="min-w-0">
+              {settings.map((r) => (
+                <Entry
+                  key={`${r.kind}:${r.id}`}
+                  // A setting's id sits under the bundle's own (decision
+                  // record 0076), so its last segment is its name.
+                  name={r.id.split("/").pop() ?? r.id}
+                  description={
+                    r.kind === `${CORE_PACKAGE}/secret` ? "a secret" : undefined
+                  }
+                />
+              ))}
+            </ul>
+            <p className="pt-0.5 text-muted-foreground">
+              Their values are yours to fill in on the bundle's own page.
+            </p>
+          </Group>
+        )}
+        {rest.length > 0 && (
+          <p className="text-muted-foreground">
+            Also ships {rest.length} {rest.length === 1 ? "record" : "records"}.
+          </p>
+        )}
+        {links && (
+          <Group title="Links">
+            <p className="text-muted-foreground">{links}</p>
+          </Group>
+        )}
+        {chain.length > 0 && (
+          <Group title="Requires">
+            <RequirementTree nodes={chain} />
+            {(refusal || missing.length > 0) && (
+              <p className="pt-0.5 text-warning">
+                {refusal ||
+                  chainHint(
+                    missing,
+                    row.tier === "sample" ? "Import" : "Install",
+                    row.name
+                  )}
+              </p>
+            )}
+          </Group>
+        )}
         {row.upgrade?.available && (
-          <Line label="upgrade">
-            <span className="data">{upgradeMotion(row.upgrade)}</span>
-            {(row.upgrade.changes ?? []).map((ch) => (
-              <span
-                key={`${ch.kind}:${ch.id}`}
-                className="inline-flex items-center gap-1 rounded border bg-background px-1.5 py-0.5 data text-muted-foreground"
-                title={
-                  ch.to
-                    ? ch.from
-                      ? `${ch.id}: ${ch.from} → ${ch.to}`
-                      : `${ch.id}: new at ${ch.to}`
-                    : `${ch.id}: removed by this upgrade`
-                }
-              >
-                {ch.kind} {splitKind(ch.id).name}
-              </span>
-            ))}
+          <Group title="Update">
+            <p className="data">{upgradeMotion(row.upgrade)}</p>
             {stepLines(row.upgrade).map((line) => (
-              <span key={line} className="data text-muted-foreground">
+              <p key={line} className="text-muted-foreground">
                 {line}
-              </span>
+              </p>
             ))}
-          </Line>
+          </Group>
         )}
-        <Line label="tier">
-          <span>
-            {row.tier === "provider"
-              ? "Provider. It installs under the authority that publishes it, and each change its publisher ships arrives here as an upgrade."
-              : row.tier === "sample"
-                ? `Sample. Importing lands it as ${row.id}, yours to edit. Nothing upstream changes it afterwards.`
-                : "Applied directly. This bundle is not in the catalog, so there is nothing to preview."}
-          </span>
-        </Line>
-        {catalog?.inputs && Object.keys(catalog.inputs).length > 0 && (
-          <Line label="inputs">
-            {Object.entries(catalog.inputs).map(([name, input]) => (
-              <span
-                key={name}
-                className="inline-flex items-center gap-1 rounded border bg-background px-1.5 py-0.5 data text-muted-foreground"
-                title={
-                  input.description
-                    ? `${input.kind}\n\n${input.description}`
-                    : input.kind
-                }
-              >
-                {name}
-              </span>
-            ))}
-          </Line>
-        )}
-        {requirements.length > 0 && (
-          <Line label="requires">
-            {requirements.map((req) => (
-              <span
-                key={req.package}
-                className={cn(
-                  "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 data",
-                  req.present
-                    ? "bg-background text-muted-foreground"
-                    : "border-warning/40 text-warning"
-                )}
-                title={
-                  req.present
-                    ? `${req.package} is imported`
-                    : `${req.package} is not imported yet. Import it first`
-                }
-              >
-                {req.present ? (
-                  <CheckIcon className="size-3 shrink-0" />
-                ) : (
-                  <TriangleAlertIcon className="size-3 shrink-0" />
-                )}
-                {req.package}
-                <span className="sr-only">
-                  {req.present ? " imported" : " missing"}
-                </span>
-              </span>
-            ))}
-          </Line>
-        )}
-        {mappings.length > 0 && (
-          <Line label="mappings">
-            {mappings.map((m) => (
-              <span
-                key={`${m.sample}:${m.mapping.id}`}
-                className={cn(
-                  "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 data",
-                  m.landed
-                    ? "bg-background text-muted-foreground"
-                    : "border-warning/40 text-warning"
-                )}
-                title={m.title}
-              >
-                <BoxesIcon className="size-3 shrink-0" />
-                {row.tier === "provider"
-                  ? `${m.sampleWord}: ${m.label}`
-                  : m.label}
-                <span>{m.state}</span>
-              </span>
-            ))}
-          </Line>
-        )}
-        <Line label="kinds">
-          {kindRows.length ? (
-            kindRows.map((k) => {
-              // The host's own roles ride the hover, not a second chip: a kind
-              // a declared input resolves records of, and the `account` kind
-              // the connect flow writes tokens onto, are the two the reader
-              // must be able to tell from ordinary vocabulary.
-              const named =
-                k.role === "input"
-                  ? `${k.identity} (its records satisfy a declared input)`
-                  : k.role === "account"
-                    ? `${k.identity} (the account record kind)`
-                    : k.identity
-              // What the kind is, on the same hover: a reader deciding on an
-              // import should not have to install it to find out.
-              const title = k.description
-                ? `${named}\n\n${k.description}`
-                : named
-              return k.authority && k.package && k.name ? (
-                <Link
-                  key={k.identity}
-                  to="/data/$authority/$pkg/$name"
-                  params={{
-                    authority: k.authority,
-                    pkg: k.package,
-                    name: k.name,
-                  }}
-                  className="rounded border bg-background px-1.5 py-0.5 data underline-offset-4 hover:underline"
-                  title={title}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {k.name}
-                </Link>
-              ) : (
-                // Not imported yet (or unreconciled): the kind exists on paper
-                // only, so it names itself and links nowhere.
-                <span
-                  key={k.identity}
-                  className="rounded border bg-background px-1.5 py-0.5 data text-muted-foreground"
-                  title={title}
-                >
-                  {k.name}
-                </span>
-              )
-            })
-          ) : (
-            <span className="text-muted-foreground">none</span>
-          )}
-        </Line>
-        {RECORD_KINDS.map(({ kind, label, icon: Icon }) => {
-          const members = records.filter((r) => r.kind === kind)
-          if (!members.length) return null
-          return (
-            <Line key={kind} label={label}>
-              {members.map((m) => (
-                <span
-                  key={m.id}
-                  className="inline-flex items-center gap-1 rounded border bg-background px-1.5 py-0.5 data text-muted-foreground"
-                  title={m.id}
-                >
-                  <Icon className="size-3 shrink-0" />
-                  {m.name}
-                </span>
-              ))}
-            </Line>
-          )
-        })}
-        {(() => {
-          // Everything the bundle ships that is not one of the four above —
-          // the llm example's provider rows, say. Grouped under one line
-          // because the set is open: a bundle may ship a record of any kind.
-          const grouped = new Set<string>(RECORD_KINDS.map((r) => r.kind))
-          const rest = records.filter((r) => !grouped.has(r.kind))
-          if (!rest.length) return null
-          return (
-            <Line label="records">
-              {rest.map((m) => (
-                <span
-                  key={`${m.kind}:${m.id}`}
-                  className="inline-flex items-center gap-1 rounded border bg-background px-1.5 py-0.5 data text-muted-foreground"
-                  title={`${m.kind}/${m.id}`}
-                >
-                  <BoxIcon className="size-3 shrink-0" />
-                  {m.name}
-                </span>
-              ))}
-            </Line>
-          )
-        })()}
-      </dl>
-      {missing.length > 0 && (
-        <p className="text-warning">{requiresHint(missing)}</p>
-      )}
-      {suggestedMappingHint(mappings, row.installed) && (
-        <p className="text-warning">
-          {suggestedMappingHint(mappings, row.installed)}
-        </p>
-      )}
+      </div>
       {(row.upgrade?.blockers?.length ?? 0) > 0 && (
         <div className="space-y-1 text-warning">
           <p>
             {previewFailed(row)
-              ? "The upgrade could not be previewed, so it is not offered yet."
-              : "The upgrade is blocked. Live records still hold a shape it would drop."}
+              ? "The update could not be previewed, so it is not offered yet."
+              : "The update is blocked. Live records still hold a shape it would drop."}
           </p>
           {row.upgrade?.blockers?.map((b) => (
             <p key={b} className="data text-xs">
@@ -1147,8 +1156,7 @@ function BundleSection({
   prefsKey,
   emptyTitle,
   emptyDescription,
-  requirements,
-  mappings,
+  chains,
   kinds,
   onOpen,
 }: {
@@ -1158,8 +1166,7 @@ function BundleSection({
   prefsKey: string
   emptyTitle: string
   emptyDescription: string
-  requirements: (row: BundleRow) => Requirement[]
-  mappings: (row: BundleRow) => SuggestedMappingRow[]
+  chains: (row: BundleRow) => RequirementNode[]
   kinds: KindInfo[]
   onOpen: (row: BundleRow) => void
 }) {
@@ -1172,8 +1179,8 @@ function BundleSection({
   // dependency.
   const closeLoss = useCallback(() => setLossyID(null), [])
   const columns = useMemo(
-    () => buildColumns(requirements, mappings, confirmLoss),
-    [requirements, mappings, confirmLoss]
+    () => buildColumns(chains, confirmLoss),
+    [chains, confirmLoss]
   )
   const table = useDataTable({
     columns,
@@ -1200,12 +1207,7 @@ function BundleSection({
         table={table}
         onRowClick={(row) => onOpen(row)}
         renderExpanded={(row) => (
-          <BundleDisclosure
-            row={row}
-            requirements={requirements(row)}
-            mappings={mappings(row)}
-            kinds={kinds}
-          />
+          <BundleDisclosure row={row} chain={chains(row)} kinds={kinds} />
         )}
         empty={
           <Empty className="py-10">
@@ -1246,7 +1248,7 @@ export function RegistryPage() {
   const repository = useQuery(repositoryQueryOptions)
   // The kind registry answers two more: which packages this repository already
   // holds (a requirement is met when its package is live), and where a
-  // closure's kinds actually browse once they land.
+  // bundle's kinds actually browse once they land.
   const registry = useQuery(kindsQueryOptions)
   const kinds = useMemo(() => registry.data ?? [], [registry.data])
   const home = repository.data?.authority ?? ""
@@ -1265,37 +1267,24 @@ export function RegistryPage() {
   // under it (`requiresAtLeast`, decision record 0070), read against the
   // version each held bundle's status reports.
   const versions = useMemo(() => heldVersions(allRows), [allRows])
-  const requirements = useMemo(() => {
-    const byId = new Map<string, Requirement[]>()
+  // The requirement chain under each row, walked across every row: a
+  // requirement is supplied by another entry in either section, and what THAT
+  // one requires is the rest of what one button has to take.
+  const chains = useMemo(() => {
+    const byId = new Map(allRows.map((row) => [row.id, row]))
+    const trees = new Map<string, RequirementNode[]>()
     for (const row of allRows) {
-      byId.set(row.id, requirementsOf(row, present, versions))
+      trees.set(row.id, requirementTree(row, byId, present, versions))
     }
-    return (row: BundleRow) => byId.get(row.id) ?? []
+    return (row: BundleRow) => trees.get(row.id) ?? []
   }, [allRows, present, versions])
-  // The suggested mappings, from whichever side a row sits on: a sample's own
-  // (what an import would project, and what is waiting), a provider's inbound
-  // (which samples are waiting for exactly this install). Computed over EVERY
-  // row, because the two sides are in the two different sections.
-  const mappings = useMemo(() => {
-    const byId = new Map<string, SuggestedMappingRow[]>()
-    for (const row of allRows) {
-      byId.set(
-        row.id,
-        row.tier === "provider"
-          ? samplesMappingOnto(row, allRows)
-          : suggestedMappingsOf(row)
-      )
-    }
-    return (row: BundleRow) => byId.get(row.id) ?? []
-  }, [allRows])
   const sections = useMemo(() => bundleSections(allRows), [allRows])
   const heldCount = allRows.filter((r) => r.installed).length
 
   // The kind registry is a read the whole console shares (the sidebar holds it
   // warm); waiting for it here keeps a requirement from reading as missing for
-  // one frame and disabling a button that is perfectly legal. The repository
-  // read is waited on for the same reason: without the authority a sample row
-  // would preview the wrong identity for a frame.
+  // one frame. The repository read is waited on for the same reason: without
+  // the authority a sample row would preview the wrong identity for a frame.
   if (
     statuses.isPending ||
     catalog.isPending ||
@@ -1334,8 +1323,8 @@ export function RegistryPage() {
   }
 
   // Only a bundle this repository holds has a detail page (it reads runtime
-  // status); a catalog closure is taken from its row button and read from the
-  // chevron's disclosure.
+  // status); a shipped one is taken from its row button and read from the
+  // chevron.
   const open = (row: BundleRow) => {
     if (row.status)
       void navigate({ to: "/registry/$id", params: { id: row.id } })
@@ -1346,8 +1335,8 @@ export function RegistryPage() {
       <div className="shrink-0 px-6 pt-5 pb-1">
         <h1 className="text-lg font-semibold">Registry</h1>
         <p className="text-xs text-muted-foreground">
-          {heldCount.toLocaleString()} of {allRows.length.toLocaleString()}{" "}
-          taken
+          {heldCount.toLocaleString()} of {allRows.length.toLocaleString()} in
+          this repository
         </p>
         <p className="pt-0.5 text-xs text-muted-foreground">
           A new repository holds{" "}
@@ -1367,8 +1356,7 @@ export function RegistryPage() {
           prefsKey="registry.providers"
           emptyTitle="No providers"
           emptyDescription="This substrate ships no providers."
-          requirements={requirements}
-          mappings={mappings}
+          chains={chains}
           kinds={kinds}
           onOpen={open}
         />
@@ -1383,8 +1371,7 @@ export function RegistryPage() {
           prefsKey="registry.samples"
           emptyTitle="No samples"
           emptyDescription="This substrate ships no samples."
-          requirements={requirements}
-          mappings={mappings}
+          chains={chains}
           kinds={kinds}
           onOpen={open}
         />
@@ -1396,8 +1383,7 @@ export function RegistryPage() {
             prefsKey="registry.applied"
             emptyTitle="Nothing applied directly"
             emptyDescription="Every bundle came from the catalog."
-            requirements={requirements}
-            mappings={mappings}
+            chains={chains}
             kinds={kinds}
             onOpen={open}
           />

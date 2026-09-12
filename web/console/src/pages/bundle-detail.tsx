@@ -91,6 +91,7 @@ import {
 } from "@/lib/api/bundles"
 import {
   catalogItemQueryOptions,
+  importBundle,
   oauthCallbackURL,
   type CatalogItem,
 } from "@/lib/api/catalog"
@@ -106,7 +107,12 @@ import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
 import {
   accountKindOf,
   bundleRecordRows,
+  confirmationOf,
   declaresProviderInterfaces,
+  importFailureText,
+  missingRequirements,
+  readyMappings,
+  REIMPORT_WARNING,
   installedKindRows,
   isInputSetupCode,
   isSettingSetupCode,
@@ -180,7 +186,7 @@ function CallbackUrlNote() {
  * requirement torn down after the import reads as missing here rather than
  * silently rotting. Renders only when the shipped closure names any. */
 function RequiresNote({ requirements }: { requirements: Requirement[] }) {
-  const missing = requirements.filter((r) => !r.present)
+  const missing = missingRequirements(requirements)
   return (
     <div className="rounded-md border bg-muted/30 px-4 py-3">
       <span className="text-xs font-medium">Requires</span>
@@ -244,6 +250,114 @@ function requiresNoteText(missing: Requirement[]): string {
     )
   }
   return parts.join(" ")
+}
+
+/** IMPORT AGAIN: the one action that lands a mapping a first import dropped
+ * (decision record 0049). A sample ships one mapping per provider it knows,
+ * and the door admits only the ones that resolve at the time; a reader who
+ * installs a provider afterwards would otherwise have nothing to press, and
+ * the projection would never run.
+ *
+ * It lives HERE, on the page of the bundle it re-imports, and not on the
+ * registry list: a row in a table is no place for a state machine about
+ * somebody else's package (owner ruling).
+ *
+ * It CONFIRMS first, because a re-import is not a merge: the batch replaces
+ * the package wholesale (decision record 0048), so a kind or a property the
+ * reader added since is dropped by it, or the narrowing guard refuses the
+ * import while live records still hold the old shape. Where the server's
+ * preview says the copy WAS edited (`discardsEdits`, decision record 0070)
+ * the click also sends that preview's `planHash` and `changelogSeq`, which
+ * the door requires. */
+function ImportAgainNote({ item }: { item: CatalogItem }) {
+  const queryClient = useQueryClient()
+  const [confirming, setConfirming] = useState(false)
+  const ready = readyMappings({ catalog: item })
+  const importing = useMutation({
+    mutationFn: () => importBundle(item.id, confirmationOf(item.upgrade)),
+    onSuccess: (status) => {
+      setConfirming(false)
+      toast.add({
+        type: "success",
+        title:
+          ready.length === 1
+            ? `${item.name} re-imported: 1 link landed.`
+            : `${item.name} re-imported: ${ready.length} links landed.`,
+      })
+      seedBundleStatus(queryClient, status)
+      void queryClient.invalidateQueries()
+      refetchBundleStateSoon(queryClient)
+    },
+    onError: (error) => {
+      toast.add({
+        type: "error",
+        title: `Could not re-import ${item.name}`,
+        description: importFailureText(error),
+      })
+    },
+  })
+  if (!ready.length) return null
+  const providers = [
+    ...new Set(ready.map((m) => m.package.split("/").pop() ?? m.package)),
+  ].join(", ")
+  const what = ready.length === 1 ? "1 link" : `${ready.length} links`
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/30 px-4 py-3">
+      <div className="min-w-0">
+        <span className="text-xs font-medium">Links waiting</span>
+        <p className="pt-1 text-xs text-muted-foreground">
+          {`Import again to land ${what}, now that ${providers} ${
+            ready.length === 1 ? "is" : "are"
+          } installed. ${REIMPORT_WARNING}`}
+        </p>
+      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={importing.isPending}
+        onClick={() => setConfirming(true)}
+      >
+        {importing.isPending && <Spinner className="size-3.5" />}
+        Import again
+      </Button>
+      {confirming && (
+        <Dialog
+          open
+          onOpenChange={(open) =>
+            !open && !importing.isPending && setConfirming(false)
+          }
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Import {item.name} again?</DialogTitle>
+              <DialogDescription>
+                {`This lands ${what}, now that the provider each one reads is installed. ` +
+                  `A re-import REPLACES ${item.id} rather than merging into it: a kind or a property you added is dropped by it, ` +
+                  `and it is refused outright while live records still hold a shape the shipped package no longer declares. ` +
+                  `Your records are untouched either way.`}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                disabled={importing.isPending}
+                onClick={() => setConfirming(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={importing.isPending}
+                onClick={() => importing.mutate()}
+              >
+                {importing.isPending && <Spinner className="size-3.5" />}
+                Import again
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  )
 }
 
 // ── the lifecycle verbs ─────────────────────────────────────────────────────
@@ -1582,6 +1696,7 @@ export function BundleDetailPage() {
           {requirements.length > 0 && (
             <RequiresNote requirements={requirements} />
           )}
+          {item && <ImportAgainNote item={item} />}
           {hasSetup && (
             // The anchor the Registry sends a fresh import to when its status
             // says a setting is still empty.

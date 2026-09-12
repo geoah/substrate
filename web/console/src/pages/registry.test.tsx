@@ -1,16 +1,16 @@
 // @vitest-environment jsdom
 /** The Registry page as the reader meets it on a FRESH repository: core alone
- * is held, so every row is an invitation and the only questions that matter are
- * what it will do, where it will land, and whether it can happen at all.
+ * is here, so every row is an invitation and the only questions that matter
+ * are what it adds, where it will land, and what has to arrive with it.
  *
  * What is asserted here: the TWO SECTIONS and the door each one offers
- * (Install for a provider, Import as yours for a sample, decision record
- * 0048), the identity a sample previews before it is imported, the disclosure
- * (a row opens onto its closure: kinds, functions, triggers, requirements),
- * the GATE (the button is refused client-side while a `requires:` package is
- * missing, in the same words the server would use, and a sample's
- * requirements are read REHOMED), and the refusal path (a server problem rides
- * the toast verbatim, never flattened into "the import failed"). */
+ * (Install for a provider, Import for a sample, decision record 0048), the
+ * identity a sample previews before it is imported, the disclosure as
+ * READABLE SECTIONS (kinds, traits, functions, triggers, each name with the
+ * prose its declaration carries), the REQUIREMENT CHAIN (walked past the
+ * direct `requires` the wire carries, shown nested, and taken by the row's
+ * own button leaves first), and the refusal path (a server problem rides the
+ * toast verbatim, naming the bundle in the chain that refused). */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { NuqsTestingAdapter } from "nuqs/adapters/testing"
@@ -113,6 +113,106 @@ const PEOPLE = bundle({
       "samples.substrate.reamde.dev/people/person",
       "samples.substrate.reamde.dev/people/personmerge",
     ],
+    kindDescriptions: {
+      "samples.substrate.reamde.dev/people/person": "one human being",
+    },
+  },
+  suggestedMappings: [
+    {
+      id: "samples.substrate.reamde.dev/people/fromgoogle",
+      from: "providers.substrate.reamde.dev/google/contact",
+      to: "samples.substrate.reamde.dev/people/person",
+      package: "providers.substrate.reamde.dev/google",
+      state: "waiting",
+    },
+  ],
+})
+
+/** A traits-only sample: it declares no kind at all, and used to render as an
+ * empty row that looked like it did nothing. */
+const SCHEDULING = bundle({
+  id: "samples.substrate.reamde.dev/scheduling",
+  name: "scheduling",
+  authority: "samples.substrate.reamde.dev",
+  package: "scheduling",
+  description: "Two shared contracts the repeating kinds bind.",
+  tier: "sample",
+  closure: {
+    kinds: null,
+    functions: null,
+    agents: null,
+    mappings: null,
+    records: null,
+    triggers: null,
+    traits: ["samples.substrate.reamde.dev/scheduling/recurring"],
+    traitDescriptions: {
+      "samples.substrate.reamde.dev/scheduling/recurring":
+        "a repeat rule stored and never expanded",
+    },
+  },
+})
+
+/** A sample whose requirement itself requires two more: the chain the wire
+ * does not carry. */
+const PEBBLE = bundle({
+  id: "samples.substrate.reamde.dev/pebble",
+  name: "pebble",
+  authority: "samples.substrate.reamde.dev",
+  package: "pebble",
+  description: "A ring that writes things down.",
+  tier: "sample",
+  requires: ["samples.substrate.reamde.dev/tasks"],
+  closure: {
+    kinds: null,
+    traits: null,
+    agents: null,
+    mappings: null,
+    kindDescriptions: undefined,
+    functions: ["samples.substrate.reamde.dev/pebble/ingest"],
+    functionDescriptions: {
+      "samples.substrate.reamde.dev/pebble/ingest":
+        "turns a capture into a note",
+    },
+    triggers: ["pebble-webhook"],
+    triggerCallables: {
+      "pebble-webhook":
+        "substrate.reamde.dev/core/function/samples.substrate.reamde.dev/pebble/ingest",
+    },
+    records: [
+      { kind: "substrate.reamde.dev/core/trigger", id: "pebble-webhook" },
+    ],
+  },
+})
+
+/** The firecrawl shape: a sample whose closure ships one secret and one
+ * setting as ordinary records under its own id (decision record 0076). */
+const FIRECRAWL = bundle({
+  id: "samples.substrate.reamde.dev/firecrawl",
+  name: "firecrawl",
+  authority: "samples.substrate.reamde.dev",
+  package: "firecrawl",
+  description: "Search the web and read a page.",
+  tier: "sample",
+  closure: {
+    kinds: null,
+    traits: null,
+    agents: null,
+    mappings: null,
+    triggers: null,
+    functions: ["samples.substrate.reamde.dev/firecrawl/websearch"],
+    functionDescriptions: {
+      "samples.substrate.reamde.dev/firecrawl/websearch": "search the web",
+    },
+    records: [
+      {
+        kind: "substrate.reamde.dev/core/secret",
+        id: "samples.substrate.reamde.dev/firecrawl/apiKey",
+      },
+      {
+        kind: "substrate.reamde.dev/core/setting",
+        id: "samples.substrate.reamde.dev/firecrawl/baseUrl",
+      },
+    ],
   },
 })
 
@@ -123,7 +223,10 @@ const TASKS = bundle({
   package: "tasks",
   description: "What is owed.",
   tier: "sample",
-  requires: ["samples.substrate.reamde.dev/people"],
+  requires: [
+    "samples.substrate.reamde.dev/people",
+    "samples.substrate.reamde.dev/scheduling",
+  ],
   closure: {
     traits: null,
     triggers: null,
@@ -231,6 +334,9 @@ interface Wire {
   shipped?: ShippedUpgrade[]
   /** The repository's own authority; "" models a repository that names none. */
   authority?: string
+  /** The entry the server answers with when ONE id is read again, which is
+   * what a chain step confirms against. */
+  fresh?: (id: string) => CatalogItem | undefined
   take?: (id: string) => Response
 }
 
@@ -260,11 +366,37 @@ describe("RegistryPage", () => {
       }
       if (path === CATALOG_PATH) {
         return jsonResponse(200, {
-          items: wire.catalog ?? [PEOPLE, TASKS, GOOGLE],
+          items: wire.catalog ?? [
+            PEOPLE,
+            SCHEDULING,
+            TASKS,
+            PEBBLE,
+            FIRECRAWL,
+            GOOGLE,
+          ],
         })
       }
       if (path === SHIPPED_PATH) {
         return jsonResponse(200, { items: wire.shipped ?? [] })
+      }
+      // Every chain step re-reads its own entry before it takes it: a
+      // confirmation names one plan at one changelog head.
+      if (path.startsWith(`${CATALOG_PATH}/`) && method === "GET") {
+        const id = decodeURIComponent(path.slice(CATALOG_PATH.length + 1))
+        const items = wire.catalog ?? [
+          PEOPLE,
+          SCHEDULING,
+          TASKS,
+          PEBBLE,
+          FIRECRAWL,
+          GOOGLE,
+        ]
+        const found = (wire.fresh?.(id) ?? items.find((i) => i.id === id))!
+        return found
+          ? jsonResponse(200, found)
+          : jsonResponse(404, {
+              error: { code: "not_found", message: `no bundle ${id}` },
+            })
       }
       if (
         (path.endsWith("/install") || path.endsWith("/import")) &&
@@ -302,6 +434,43 @@ describe("RegistryPage", () => {
     vi.unstubAllGlobals()
     fetchMock.mockReset()
   })
+
+  /** The import calls made, with the confirmation each body carried. */
+  function importCalls(): { id: string; confirm?: unknown }[] {
+    return fetchMock.mock.calls
+      .filter(
+        ([url, init]) =>
+          String(url).endsWith("/import") &&
+          (init as RequestInit | undefined)?.method === "POST"
+      )
+      .map(([url, init]) => {
+        const raw = (init as RequestInit | undefined)?.body
+        const body = raw
+          ? (JSON.parse(String(raw)) as { confirm?: unknown })
+          : {}
+        return {
+          id: decodeURIComponent(
+            String(url).slice(CATALOG_PATH.length + 1, -"/import".length)
+          ),
+          confirm: body.confirm,
+        }
+      })
+  }
+
+  /** The catalog ids the page imported, in the order it sent them. */
+  function importedIDs(): string[] {
+    return fetchMock.mock.calls
+      .filter(
+        ([url, init]) =>
+          String(url).endsWith("/import") &&
+          (init as RequestInit | undefined)?.method === "POST"
+      )
+      .map(([url]) =>
+        decodeURIComponent(
+          String(url).slice(CATALOG_PATH.length + 1, -"/import".length)
+        )
+      )
+  }
 
   async function rowOf(name: string): Promise<HTMLElement> {
     const cell = await screen.findByText(name)
@@ -344,10 +513,25 @@ describe("RegistryPage", () => {
   it("a sample offers Import and previews the id it lands under", async () => {
     renderPage(<RegistryPage />)
     const people = await rowOf("people")
-    expect(
-      within(people).getByRole("button", { name: /^Import$/ })
-    ).toBeTruthy()
+    expect(within(people).getByRole("button", { name: "Import" })).toBeTruthy()
     expect(within(people).getByText(`lands as ${HOME}/people`)).toBeTruthy()
+  })
+
+  it("counts kinds and functions, and nothing else", async () => {
+    renderPage(<RegistryPage />)
+    await screen.findByText("people")
+    const samples = screen
+      .getByRole("heading", { name: "Samples" })
+      .closest("section") as HTMLElement
+    const headers = within(samples)
+      .getAllByRole("columnheader")
+      .map((h) => h.textContent)
+    expect(headers).toContain("kinds")
+    expect(headers).toContain("functions")
+    // An account count is zero for everything nobody has connected, and
+    // nobody knows what a live row count of a registry entry means.
+    expect(headers.some((h) => h?.includes("accounts"))).toBe(false)
+    expect(headers.some((h) => h?.includes("live rows"))).toBe(false)
   })
 
   it("a provider offers Install, under the authority that publishes it", async () => {
@@ -399,90 +583,277 @@ describe("RegistryPage", () => {
     expect(within(people).queryByText(/setup step/)).toBeNull()
   })
 
-  it("discloses the closure in place — kinds, functions, triggers, requirements", async () => {
+  it("says what it adds, in sections, each name with what it is", async () => {
     renderPage(<RegistryPage />)
     const detail = expand(await rowOf("google"))
-    // What it adds.
+    expect(within(detail).getByText("3 kinds")).toBeTruthy()
     for (const name of ["config", "account", "contact"]) {
       expect(within(detail).getByText(name)).toBeTruthy()
     }
+    expect(within(detail).getByText("1 function")).toBeTruthy()
     expect(within(detail).getByText("syncgoogle")).toBeTruthy()
-    expect(within(detail).getByText("ongooglesync")).toBeTruthy()
-    // What it is, and what it declares against.
+    // A provider declares no mapping at all (decision record 0049), so its
+    // row says nothing about one.
+    expect(within(detail).queryByText("Links")).toBeNull()
+    expect(within(detail).queryByText(/waiting|blocked|ready/)).toBeNull()
+  })
+
+  it("says what a traits-only sample adds, which is its traits", async () => {
+    renderPage(<RegistryPage />)
+    const detail = expand(await rowOf("scheduling"))
+    expect(within(detail).getByText("1 trait")).toBeTruthy()
+    expect(within(detail).getByText("recurring")).toBeTruthy()
     expect(
-      within(detail).getByText(
-        /installs under the authority that publishes it/i
-      )
-    ).toBeTruthy()
-    expect(
-      within(detail).getByTitle(
-        "samples.substrate.reamde.dev/people is not imported yet. Import it first"
-      )
+      within(detail).getByText("a repeat rule stored and never expanded")
     ).toBeTruthy()
   })
 
-  it("a sample's disclosure says it lands as this repository's own", async () => {
+  it("names each trigger with what it runs", async () => {
+    renderPage(<RegistryPage />)
+    const detail = expand(await rowOf("pebble"))
+    expect(within(detail).getByText("1 trigger")).toBeTruthy()
+    expect(within(detail).getByText("pebble-webhook")).toBeTruthy()
+    expect(within(detail).getByText("runs ingest")).toBeTruthy()
+  })
+
+  it("names the settings and secrets it ships, and says nothing of their values", async () => {
+    renderPage(<RegistryPage />)
+    const detail = expand(await rowOf("firecrawl"))
+    const settings = within(detail)
+      .getByText("Settings and secrets")
+      .closest("section") as HTMLElement
+    expect(within(settings).getByText("apiKey")).toBeTruthy()
+    expect(within(settings).getByText("a secret")).toBeTruthy()
+    expect(within(settings).getByText("baseUrl")).toBeTruthy()
+    expect(
+      within(settings).getByText(/values are yours to fill in/)
+    ).toBeTruthy()
+    // A setting is a record, and it is counted once: it does not turn up
+    // again in the trailing line.
+    expect(within(detail).queryByText(/Also ships/)).toBeNull()
+  })
+
+  it("hands a fresh import straight to its Setup when a setting is empty", async () => {
+    serve({
+      take: () =>
+        jsonResponse(200, {
+          id: `${HOME}/people`,
+          name: "people",
+          authority: HOME,
+          package: "people",
+          installed: true,
+          enabled: true,
+          setup: [
+            {
+              code: "setting",
+              kind: "substrate.reamde.dev/core/secret",
+              record: `${HOME}/people/apiKey`,
+              message: "API key is not set",
+            },
+          ],
+        }),
+    })
+    renderPage(<RegistryPage />)
+    const people = await rowOf("people")
+    fireEvent.click(within(people).getByRole("button", { name: "Import" }))
+    // The LANDED id, not the shipped one the click named.
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({
+        to: "/registry/$id",
+        params: { id: `${HOME}/people` },
+        hash: "setup",
+      })
+    )
+  })
+
+  it("leaves the reader on the list when the import needs nothing", async () => {
+    renderPage(<RegistryPage />)
+    const people = await rowOf("people")
+    fireEvent.click(within(people).getByRole("button", { name: "Import" }))
+    expect(
+      await screen.findByText(`people imported as ${HOME}/people.`)
+    ).toBeTruthy()
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it("says in one sentence what a sample's links do, with no state word", async () => {
     renderPage(<RegistryPage />)
     const detail = expand(await rowOf("people"))
     expect(
-      within(detail).getByText((text) =>
-        text.includes(`Importing lands it as ${HOME}/people`)
+      within(detail).getByText(
+        "Links google contact records onto person. " +
+          "Each link lands when that provider is installed and this sample is imported again."
       )
     ).toBeTruthy()
   })
 
-  it("shows a closure's declared kinds even before it is imported (no route yet)", async () => {
+  it("drops the version line, the tier sentence and the empty placeholder", async () => {
+    renderPage(<RegistryPage />)
+    const detail = expand(await rowOf("people"))
+    expect(within(detail).queryByText(/a published package/i)).toBeNull()
+    expect(within(detail).queryByText(/Importing lands it as/)).toBeNull()
+    expect(within(detail).queryByText("none")).toBeNull()
+  })
+
+  it("shows a kind's own description, and does not link it before it is here", async () => {
     renderPage(<RegistryPage />)
     const detail = expand(await rowOf("people"))
     const person = within(detail).getByText("person")
-    // Not imported: the kind exists on paper only, so it does not pretend to
-    // link anywhere, and it is previewed under the authority it WILL have.
     expect(person.tagName).toBe("SPAN")
-    expect(person.getAttribute("title")).toBe(`${HOME}/people/person`)
+    expect(within(detail).getByText("one human being")).toBeTruthy()
   })
 
-  // THE TIER GAP, PINNED. A provider whose `requires:` names a sample package
-  // cannot be installed from the console while samples import under this
-  // repository's authority: the import lands `<home>/people`, and google asks
-  // for `samples.substrate.reamde.dev/people`. Phase 4 of
-  // docs/plans/providers-and-samples.md drops those requirements; until then
-  // the API's install door is the only way, and this test says so out loud so
-  // the state is deliberate rather than discovered.
-  it("refuses the install while a required package is missing, naming it", async () => {
+  // A provider whose `requires:` names a sample package cannot be installed
+  // while samples import under this repository's authority: the import lands
+  // `<home>/people`, and google asks for
+  // `samples.substrate.reamde.dev/people`. The button is still the button:
+  // nothing here is disabled, and the server's refusal is the one that
+  // speaks.
+  it("names the whole missing chain on the row, and offers to take it", async () => {
     renderPage(<RegistryPage />)
     const google = await rowOf("google")
-    const button = within(google).getByRole("button", { name: /Install/ })
-    expect(button.hasAttribute("disabled")).toBe(true)
-    expect(
-      within(google).getByText(
-        "Import samples.substrate.reamde.dev/people, samples.substrate.reamde.dev/messaging and samples.substrate.reamde.dev/calendar first. This bundle declares against them."
-      )
-    ).toBeTruthy()
-    // …and the row itself says what is missing, without opening anything.
+    const button = within(google).getByRole("button", { name: "Install all" })
+    expect(button.hasAttribute("disabled")).toBe(false)
     expect(
       within(google).getByText(/needs samples\.substrate\.reamde\.dev\/people/)
     ).toBeTruthy()
   })
 
-  it("reads a SAMPLE's requirements rehomed: the packages the server will look for", async () => {
+  it("walks the chain the wire does not carry, and nests it", async () => {
     renderPage(<RegistryPage />)
-    const tasks = await rowOf("tasks")
-    // tasks declares against samples.substrate.reamde.dev/people, but what the
-    // import will need is this repository's own people package.
-    expect(within(tasks).getByText(`needs ${HOME}/people`)).toBeTruthy()
+    const pebble = await rowOf("pebble")
+    // pebble requires tasks; tasks requires people and scheduling. The wire
+    // says only the first.
     expect(
-      within(tasks)
-        .getByRole("button", { name: /^Import$/ })
-        .hasAttribute("disabled")
-    ).toBe(true)
+      within(pebble).getByText(
+        `needs ${HOME}/people, ${HOME}/scheduling, ${HOME}/tasks`
+      )
+    ).toBeTruthy()
+    const detail = expand(pebble)
+    expect(within(detail).getByText(`${HOME}/tasks`)).toBeTruthy()
+    expect(within(detail).getByText(`${HOME}/people`)).toBeTruthy()
+    expect(within(detail).getByText(`${HOME}/scheduling`)).toBeTruthy()
+  })
+
+  it("imports the whole chain leaves first, one call each", async () => {
+    renderPage(<RegistryPage />)
+    const pebble = await rowOf("pebble")
+    fireEvent.click(within(pebble).getByRole("button", { name: "Import all" }))
+    await waitFor(() => expect(importedIDs()).toHaveLength(4))
+    expect(importedIDs()).toEqual([
+      "samples.substrate.reamde.dev/people",
+      "samples.substrate.reamde.dev/scheduling",
+      "samples.substrate.reamde.dev/tasks",
+      "samples.substrate.reamde.dev/pebble",
+    ])
+  })
+
+  it("stops at the first refusal, names it, and leaves what landed showing as here", async () => {
+    const wire: Wire = { statuses: [] }
+    wire.take = (id) => {
+      if (id === "samples.substrate.reamde.dev/scheduling") {
+        return jsonResponse(422, {
+          error: {
+            code: "validation",
+            message: "validation error",
+            problems: ["scheduling declares a retired name"],
+          },
+        })
+      }
+      // The server has it now, so the next status read says so.
+      wire.statuses = [...(wire.statuses ?? []), peopleStatus()]
+      return jsonResponse(200, peopleStatus())
+    }
+    serve(wire)
+    renderPage(<RegistryPage />)
+    const pebble = await rowOf("pebble")
+    fireEvent.click(within(pebble).getByRole("button", { name: "Import all" }))
+    expect(await screen.findByText("Importing scheduling failed")).toBeTruthy()
+    expect(
+      await screen.findByText("scheduling declares a retired name")
+    ).toBeTruthy()
+    // The chain stopped where it refused: pebble itself was never sent.
+    expect(importedIDs()).toEqual([
+      "samples.substrate.reamde.dev/people",
+      "samples.substrate.reamde.dev/scheduling",
+    ])
+    // …and people, which DID land, reads as here rather than still offering
+    // an import.
+    const people = await rowOf("people")
+    await waitFor(() =>
+      expect(within(people).getByText("enabled")).toBeTruthy()
+    )
+  })
+
+  it("confirms each step against the preview read just before it", async () => {
+    // The copy of people here was edited, so importing it again replaces
+    // those edits and the door wants the confirmation its CURRENT preview
+    // hands out. The one the page loaded with is a plan at an older head.
+    const edited = (planHash: string, changelogSeq: number): CatalogItem => ({
+      ...PEOPLE,
+      upgrade: {
+        available: false,
+        work: 0,
+        lossy: false,
+        discardsEdits: true,
+        planHash,
+        changelogSeq,
+      },
+    })
+    serve({
+      catalog: [edited("stale", 1), SCHEDULING, TASKS, PEBBLE],
+      fresh: (id) => (id === PEOPLE.id ? edited("fresh", 9) : undefined),
+    })
+    renderPage(<RegistryPage />)
+    const pebble = await rowOf("pebble")
+    fireEvent.click(within(pebble).getByRole("button", { name: "Import all" }))
+    // It asks before replacing anybody's edits, and only then runs.
+    const dialog = await screen.findByRole("dialog")
+    expect(
+      within(dialog).getByText(/Replace your edits to people\?/)
+    ).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole("button", { name: "Import all" }))
+    await waitFor(() => expect(importCalls().length).toBeGreaterThan(0))
+    expect(importCalls()[0].confirm).toEqual({
+      planHash: "fresh",
+      changelogSeq: 9,
+    })
+  })
+
+  it("refuses a chain it cannot order, and imports nothing", async () => {
+    const a = bundle({
+      id: "samples.substrate.reamde.dev/aaa",
+      name: "aaa",
+      authority: "samples.substrate.reamde.dev",
+      package: "aaa",
+      tier: "sample",
+      requires: ["samples.substrate.reamde.dev/bbb"],
+    })
+    const b = bundle({
+      id: "samples.substrate.reamde.dev/bbb",
+      name: "bbb",
+      authority: "samples.substrate.reamde.dev",
+      package: "bbb",
+      tier: "sample",
+      requires: ["samples.substrate.reamde.dev/aaa"],
+    })
+    serve({ catalog: [a, b] })
+    renderPage(<RegistryPage />)
+    const row = await rowOf("aaa")
+    fireEvent.click(within(row).getByRole("button", { name: "Import all" }))
+    expect(
+      await screen.findByText("aaa cannot be imported from here")
+    ).toBeTruthy()
+    expect(
+      await screen.findByText(/require each other, so there is no order/)
+    ).toBeTruthy()
+    expect(importedIDs()).toEqual([])
   })
 
   it("imports a sample through the import door, with the SHIPPED id", async () => {
     renderPage(<RegistryPage />)
     const people = await rowOf("people")
-    const button = within(people).getByRole("button", {
-      name: /^Import$/,
-    })
+    const button = within(people).getByRole("button", { name: "Import" })
     expect(button.hasAttribute("disabled")).toBe(false)
     fireEvent.click(button)
     await waitFor(() =>
@@ -559,7 +930,7 @@ describe("RegistryPage", () => {
     })
     renderPage(<RegistryPage />)
     const people = await rowOf("people")
-    fireEvent.click(within(people).getByRole("button", { name: /^Import$/ }))
+    fireEvent.click(within(people).getByRole("button", { name: "Import" }))
     expect(await screen.findByText(problem)).toBeTruthy()
   })
 
@@ -577,7 +948,7 @@ describe("RegistryPage", () => {
       const people = await rowOf("people")
       expect(within(people).getByText("enabled")).toBeTruthy()
       expect(
-        within(people).queryByRole("button", { name: /^Import$/ })
+        within(people).queryByRole("button", { name: "Import" })
       ).toBeNull()
     })
 
@@ -594,19 +965,15 @@ describe("RegistryPage", () => {
       })
     })
 
-    it("marks the rehomed requirement satisfied and lets the import through", async () => {
+    it("marks the rehomed requirement satisfied and asks only for the rest", async () => {
       renderPage(<RegistryPage />)
       const tasks = await rowOf("tasks")
-      expect(
-        within(tasks)
-          .getByRole("button", { name: /^Import$/ })
-          .hasAttribute("disabled")
-      ).toBe(false)
-      expect(within(tasks).queryByText(/needs /)).toBeNull()
+      // people is here now, under this repository's own authority, so the
+      // chain is scheduling alone.
+      expect(within(tasks).getByText(`needs ${HOME}/scheduling`)).toBeTruthy()
       const detail = expand(tasks)
-      expect(
-        within(detail).getByTitle(`${HOME}/people is imported`)
-      ).toBeTruthy()
+      expect(within(detail).getByText(`${HOME}/people`)).toBeTruthy()
+      expect(within(detail).getByText("here")).toBeTruthy()
     })
   })
 

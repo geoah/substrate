@@ -575,4 +575,110 @@ describe("BundleDetailPage", () => {
       })
     })
   })
+  // THE ONE ACTION THAT LANDS A LINK A FIRST IMPORT DROPPED (decision record
+  // 0049), moved here off the registry table: a sample ships one mapping per
+  // provider it knows, the door admits only the ones that resolve at the
+  // time, and a reader who installs the provider afterwards would otherwise
+  // have nothing to press. It replaces the package rather than merging into
+  // it, so it asks first.
+  describe("a held sample with a link waiting", () => {
+    const ready: CatalogItem = {
+      ...PEOPLE,
+      suggestedMappings: [
+        {
+          id: "samples.substrate.reamde.dev/people/fromgoogle",
+          from: "providers.substrate.reamde.dev/google/contact",
+          to: "samples.substrate.reamde.dev/people/person",
+          package: "providers.substrate.reamde.dev/google",
+          state: "ready",
+        },
+      ],
+    }
+
+    /** The bodies the import door received, decoded. */
+    function importBodies(): { confirm?: unknown }[] {
+      return fetchMock.mock.calls
+        .filter(
+          ([url, init]) =>
+            String(url).endsWith("/import") &&
+            (init as RequestInit | undefined)?.method === "POST"
+        )
+        .map(([, init]) => {
+          const raw = (init as RequestInit | undefined)?.body
+          return raw ? (JSON.parse(String(raw)) as { confirm?: unknown }) : {}
+        })
+    }
+
+    function importCalls(): string[] {
+      return fetchMock.mock.calls
+        .filter(
+          ([url, init]) =>
+            String(url).endsWith("/import") &&
+            (init as RequestInit | undefined)?.method === "POST"
+        )
+        .map(([url]) => String(url))
+    }
+
+    it("offers Import again, says what it costs, and asks before it runs", async () => {
+      serve(status({}), { catalog: [ready, GOOGLE] })
+      renderPage(<BundleDetailPage />)
+      await screen.findByText("Links waiting")
+      expect(
+        screen.getByText(/Import again to land 1 link, now that google is/)
+      ).toBeTruthy()
+      fireEvent.click(screen.getByRole("button", { name: "Import again" }))
+      const dialog = await screen.findByRole("dialog")
+      expect(within(dialog).getByText(/Import people again\?/)).toBeTruthy()
+      expect(importCalls()).toEqual([])
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: "Import again" })
+      )
+      await waitFor(() =>
+        expect(importCalls()).toEqual([
+          `${CATALOG_PATH}/samples.substrate.reamde.dev%2Fpeople/import`,
+        ])
+      )
+    })
+
+    // The server keeps a preview on an EDITED copy even when nothing shipped
+    // moved (decision record 0070), because the re-import needs the
+    // confirmation it hands out: the click sends it, never a bare POST.
+    it("over an edited copy, confirms the previewed plan", async () => {
+      serve(status({ modified: true }), {
+        catalog: [
+          {
+            ...ready,
+            upgrade: {
+              available: false,
+              work: 0,
+              lossy: false,
+              discardsEdits: true,
+              planHash: "d15c",
+              changelogSeq: 9,
+            },
+          },
+          GOOGLE,
+        ],
+      })
+      renderPage(<BundleDetailPage />)
+      await screen.findByText("Links waiting")
+      fireEvent.click(screen.getByRole("button", { name: "Import again" }))
+      const dialog = await screen.findByRole("dialog")
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: "Import again" })
+      )
+      await waitFor(() => expect(importBodies()).toHaveLength(1))
+      expect(importBodies()[0].confirm).toEqual({
+        planHash: "d15c",
+        changelogSeq: 9,
+      })
+    })
+
+    it("says nothing at all when no link is waiting", async () => {
+      renderPage(<BundleDetailPage />)
+      await screen.findByText("people")
+      expect(screen.queryByText("Links waiting")).toBeNull()
+      expect(screen.queryByRole("button", { name: "Import again" })).toBeNull()
+    })
+  })
 })
