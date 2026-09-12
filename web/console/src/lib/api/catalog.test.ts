@@ -31,6 +31,8 @@ function item(over: Partial<CatalogItem> = {}): CatalogItem {
       },
     },
     closure: {
+      traits: null,
+      triggers: null,
       agents: null,
       mappings: null,
       records: null,

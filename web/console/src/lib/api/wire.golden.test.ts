@@ -424,9 +424,15 @@ const suggestedMapping: Shape<SuggestedMapping> = {
 const bundleClosure: Shape<BundleClosure> = {
   kinds: true,
   kindDescriptions: false,
+  traits: true,
+  traitDescriptions: false,
   functions: true,
+  functionDescriptions: false,
   agents: true,
+  agentDescriptions: false,
   mappings: true,
+  triggers: true,
+  triggerCallables: false,
   records: true,
 }
 

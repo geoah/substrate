@@ -79,6 +79,8 @@ function bundle(over: Partial<CatalogItem>): CatalogItem {
     version: 1,
     tier: "provider",
     closure: {
+      traits: null,
+      triggers: null,
       kinds: null,
       functions: null,
       agents: null,
@@ -101,6 +103,8 @@ const PEOPLE = bundle({
   description: "The shipped vocabulary for humans.",
   tier: "sample",
   closure: {
+    traits: null,
+    triggers: null,
     functions: null,
     agents: null,
     mappings: null,
@@ -121,6 +125,8 @@ const TASKS = bundle({
   tier: "sample",
   requires: ["samples.substrate.reamde.dev/people"],
   closure: {
+    traits: null,
+    triggers: null,
     functions: null,
     agents: null,
     mappings: null,
@@ -148,6 +154,8 @@ const GOOGLE = bundle({
     "samples.substrate.reamde.dev/calendar",
   ],
   closure: {
+    traits: null,
+    triggers: null,
     agents: null,
     mappings: null,
     kinds: [

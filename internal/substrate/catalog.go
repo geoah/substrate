@@ -183,11 +183,30 @@ type CatalogClosure struct {
 	// registry a reader could look them up in. Omitted where a kind declares
 	// none, so the map is only as big as the prose.
 	KindDescriptions map[string]string `json:"kindDescriptions,omitempty"`
-	Functions        []string          `json:"functions"`
-	Agents           []string          `json:"agents"`
+	// Traits are the contracts the closure declares, and TraitDescriptions
+	// says what each one is. A package can ship traits and nothing else, so a
+	// closure without them reads as empty and the reader is told a bundle
+	// that adds two contracts adds nothing.
+	Traits            []string          `json:"traits"`
+	TraitDescriptions map[string]string `json:"traitDescriptions,omitempty"`
+	Functions         []string          `json:"functions"`
+	// FunctionDescriptions and AgentDescriptions are the same prose for the
+	// other two declaration planes: a name alone does not say what a function
+	// or an agent is for, and there is nowhere else to read it before the
+	// bundle lands.
+	FunctionDescriptions map[string]string `json:"functionDescriptions,omitempty"`
+	Agents               []string          `json:"agents"`
+	AgentDescriptions    map[string]string `json:"agentDescriptions,omitempty"`
 	// Mappings answers "what will this project onto the vocabulary I already
 	// have", the question a reader asks before taking a provider.
 	Mappings []string `json:"mappings"`
+	// Triggers are the ids of the core `trigger` data records the closure
+	// ships, and TriggerCallables the function or agent each one invokes.
+	// They are in Records too, which carries every data record: this pair
+	// spares the console from keying on a core kind reference to find the
+	// deliveries, which are the half of a bundle that makes it run by itself.
+	Triggers         []string          `json:"triggers"`
+	TriggerCallables map[string]string `json:"triggerCallables,omitempty"`
 	// Records are the DATA records the install writes after the declarations
 	// land: a provider's triggers, the llm sample's two keyless provider rows.
 	// They are ordinary records the moment they exist (editable, deletable),

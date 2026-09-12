@@ -74,6 +74,8 @@ function bundle(over: Partial<CatalogItem>): CatalogItem {
     version: 1,
     tier: "provider",
     closure: {
+      traits: null,
+      triggers: null,
       kinds: null,
       functions: null,
       agents: null,
@@ -94,6 +96,8 @@ const PEOPLE = bundle({
   version: 1,
   tier: "sample",
   closure: {
+    traits: null,
+    triggers: null,
     functions: null,
     agents: null,
     mappings: null,
@@ -119,6 +123,8 @@ const GOOGLE = bundle({
     "samples.substrate.reamde.dev/messaging",
   ],
   closure: {
+    traits: null,
+    triggers: null,
     agents: null,
     mappings: null,
     records: null,

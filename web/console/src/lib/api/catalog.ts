@@ -112,21 +112,37 @@ export function landedCatalog(item: CatalogItem, home: string): CatalogItem {
     closure: {
       ...closure,
       kinds: closure.kinds?.map(rehome) ?? null,
+      traits: closure.traits?.map(rehome) ?? null,
       functions: closure.functions?.map(rehome) ?? null,
       agents: closure.agents?.map(rehome) ?? null,
       mappings: closure.mappings?.map(rehome) ?? null,
-      kindDescriptions: closure.kindDescriptions
-        ? Object.fromEntries(
-            Object.entries(closure.kindDescriptions).map(([k, v]) => [
-              rehome(k),
-              v,
-            ])
-          )
-        : undefined,
+      // A trigger's id is a plain record id, so only the callable it names
+      // carries the authority that moves.
+      triggers: closure.triggers ?? null,
+      triggerCallables: rekey(closure.triggerCallables, (k) => k, rehome),
+      kindDescriptions: rekey(closure.kindDescriptions, rehome),
+      traitDescriptions: rekey(closure.traitDescriptions, rehome),
+      functionDescriptions: rekey(closure.functionDescriptions, rehome),
+      agentDescriptions: rekey(closure.agentDescriptions, rehome),
       records:
         closure.records?.map((r) => ({ ...r, kind: rehome(r.kind) })) ?? null,
     },
   }
+}
+
+/** One of the closure's keyed maps, rehomed: the keys are identities the
+ * import rewrites, and a value is prose unless it is an identity too. Absent
+ * stays absent, so an older server's omission is not turned into an empty
+ * map. */
+function rekey(
+  map: Record<string, string> | undefined,
+  key: (s: string) => string,
+  value: (s: string) => string = (s) => s
+): Record<string, string> | undefined {
+  if (!map) return undefined
+  return Object.fromEntries(
+    Object.entries(map).map(([k, v]) => [key(k), value(v)])
+  )
 }
 
 /** One catalog entry by the id it has HERE, sharing the list's cache (the same

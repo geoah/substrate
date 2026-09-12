@@ -32,12 +32,18 @@
     "turns": true
   },
   "BundleClosure": {
+    "agentDescriptions": false,
     "agents": true,
+    "functionDescriptions": false,
     "functions": true,
     "kindDescriptions": false,
     "kinds": true,
     "mappings": true,
-    "records": true
+    "records": true,
+    "traitDescriptions": false,
+    "traits": true,
+    "triggerCallables": false,
+    "triggers": true
   },
   "BundlePurged": {
     "purged": true

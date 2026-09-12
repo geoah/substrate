@@ -75,6 +75,8 @@ function catalog(over: Partial<CatalogItem> = {}): CatalogItem {
       client: { kind: "providers.substrate.reamde.dev/google/config" },
     },
     closure: {
+      traits: null,
+      triggers: null,
       agents: null,
       mappings: null,
       records: null,
@@ -201,6 +203,8 @@ describe("mergeBundles", () => {
           tier: "sample",
           installed: true,
           closure: {
+            traits: null,
+            triggers: null,
             functions: null,
             agents: null,
             mappings: null,
@@ -808,6 +812,8 @@ describe("installedKindRows — the Kinds table", () => {
       registry,
       catalog({
         closure: {
+          traits: null,
+          triggers: null,
           functions: null,
           agents: null,
           mappings: null,
@@ -833,6 +839,8 @@ describe("installedKindRows — the Kinds table", () => {
       registry,
       catalog({
         closure: {
+          traits: null,
+          triggers: null,
           functions: null,
           agents: null,
           mappings: null,
@@ -853,6 +861,8 @@ describe("installedKindRows — the Kinds table", () => {
       registry,
       catalog({
         closure: {
+          traits: null,
+          triggers: null,
           functions: null,
           agents: null,
           mappings: null,
@@ -880,6 +890,8 @@ describe("installedKindRows — the Kinds table", () => {
       [],
       catalog({
         closure: {
+          traits: null,
+          triggers: null,
           functions: null,
           agents: null,
           mappings: null,
@@ -896,6 +908,8 @@ describe("installedKindRows — the Kinds table", () => {
       [{ ...contactKind, description: "The reconciled one." }],
       catalog({
         closure: {
+          traits: null,
+          triggers: null,
           functions: null,
           agents: null,
           mappings: null,
@@ -914,6 +928,8 @@ describe("installedKindRows — the Kinds table", () => {
       registry,
       catalog({
         closure: {
+          traits: null,
+          triggers: null,
           functions: null,
           agents: null,
           mappings: null,
@@ -933,6 +949,8 @@ describe("bundleRecordRows — the Records table", () => {
     const rows = bundleRecordRows(
       catalog({
         closure: {
+          traits: null,
+          triggers: null,
           mappings: null,
           records: null,
           kinds: ["providers.substrate.reamde.dev/google/t"],
@@ -962,6 +980,8 @@ describe("bundleRecordRows — the Records table", () => {
     const rows = bundleRecordRows(
       catalog({
         closure: {
+          traits: null,
+          triggers: null,
           functions: null,
           agents: null,
           mappings: null,
@@ -991,6 +1011,8 @@ describe("bundleRecordRows — the Records table", () => {
     const withMappings = bundleRecordRows(
       catalog({
         closure: {
+          traits: null,
+          triggers: null,
           functions: null,
           agents: null,
           records: null,
@@ -1010,6 +1032,8 @@ describe("bundleRecordRows — the Records table", () => {
       bundleRecordRows(
         catalog({
           closure: {
+            traits: null,
+            triggers: null,
             functions: null,
             agents: null,
             mappings: null,
