@@ -15,7 +15,7 @@
 #
 # SEEDED, like core: this package's source is `builtin`, which is what the
 # seed, the boot upgrade, the declaration-write refusal, the merge guard and
-# the GraphQL bare-singular name all key on. Two checks name the seeded
+# the seeded-kind naming rule all key on. Two checks name the seeded
 # packages instead — `notifies:` in the loader, which cannot read a trustworthy
 # source, and the quarantine refusal — and record 0077 says why each.
 #
@@ -33,7 +33,7 @@ data:
   # Moved out of `core` (2026-09-12), renaming each local name as it went:
   # `llmprovider` -> `provider`, `llmthread` -> `thread`, `llmmessage` ->
   # `message`, `llminteraction` -> `interaction`. The rename is required, not
-  # cosmetic: a SEEDED kind's GraphQL name is its bare singular, the old
+  # cosmetic: a SEEDED kind is named by its bare singular, the old
   # core kinds are never pruned from a repository that predates the move, and
   # `llm/llmprovider` would claim `Llmprovider` beside the dormant
   # `core/llmprovider` forever. The old names are NOT retired in core, so the

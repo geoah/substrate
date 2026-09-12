@@ -6,8 +6,9 @@ pages and the code disagree, the code is right.
 Dead words, and what replaced them: **entity** → record, **group** → authority,
 **type** → kind, **capability** → trait,
 **schema** → vocabulary, **log** → changelog, **extension** → bundle,
-**relationship** and **edge** → reference, **plural** → the kind's name, which
-is the collection segment (decision 0033), **username** → the repository name,
+**relationship** and **edge** → reference, **plural** → the kind's name, the
+third segment of its reference (decision 0033), **incoming** → the
+`referencing` filter arm (decision 0079), **username** → the repository name,
 which is its authority (decision 0074), **tenant** and **identity** →
 nothing, there are none.
 
@@ -18,7 +19,7 @@ nothing, there are none.
 | **repository** | Everything one user has: one changelog, the records folded out of it, and the blob store beside them. One user, one repository, no sharing. It owns one **authority**, any hostname its user controls, chosen at registration (`ada.example.com`; a bare label is completed under the server's host), which is the repository's name, its id, the name its user logs in with, and the home of every package its user declares kinds in. |
 | **record** | One typed thing. Identity is `(kind, id)` within a repository. It is the only thing the substrate stores. |
 | **kind** | What a record is, written `<authority>/<package>/<name>`; every kind carries both. A kind declares the properties its records may carry. |
-| **authority** | The DNS-style label that publishes packages. One path segment: `/api/v1/{authority}/{package}/{kind}`. |
+| **authority** | The DNS-style label that publishes packages. One path segment: `/api/v1/{authority}/{package}/{kind}/{id}`. |
 | **package** | The set of kinds one authority versions, owns and quarantines together, named by a plain word: `samples.substrate.reamde.dev/tasks`. Two packages under one authority upgrade and fail independently. |
 | **property** | A named, typed value on a record, declared by its kind. |
 | **property type** | A named refinement of a base type plus its validations, declared in a package and reusable across its kinds. |
@@ -89,8 +90,12 @@ nothing, there are none.
 | ---- | ---------- |
 | **token** | A bearer credential, itself a record. It has full access to its repository; it carries no scopes. |
 | **blob** | Content-addressed bytes whose digest is its id and whose manifest is an ordinary record. |
-| **watch** | The ndjson tail of a collection or of the changelog, resumable from a cursor. |
-| **feature** | A named entry in `GET /.well-known/substrate/server.json` carrying its stability and the surfaces that serve it (`rest`, `graphql`, or both), so a client reads what a deployment offers instead of probing for failures. |
+| **records route** | `GET /api/v1/records`: the one read of many records, in three modes told apart by their parameters: the list (`filter`, `orderBy`, `first`, `after`, `expand`), the ranked read (`q`) and the tail (`watch=1`). `POST` there creates one record under a server-assigned id. Decision record 0079. |
+| **record path** | `/api/v1/{authority}/{package}/{kind}/{id}`: one record's URL, which is its reference value. Decision record 0033. |
+| **referencing** | The filter arm that reads a reference backwards: the records pointing at one record, matched by its canonical and former ids. The page carries `matches` naming the property each pointed from. |
+| **expand** | The list parameter naming reference properties whose referents come back beside the page under `included`, keyed by record path, one hop. |
+| **watch** | The ndjson tail of the records route, narrowed to a set of kinds, or of the changelog, resumable from a cursor. |
+| **feature** | A named entry in `GET /.well-known/substrate/server.json` carrying its stability and the surfaces that serve it (`rest`, the one there is), so a client reads what a deployment offers instead of probing for failures. |
 
 ## Words that mean something narrower than they look
 
@@ -99,9 +104,9 @@ nothing, there are none.
   document nesting them under `capabilities:` is refused. The substrate does not
   otherwise use the word; what a deployment offers is a *feature*, and what a
   kind promises is a *trait*.
-- **schema** — only GraphQL's own schema, the JSON Schema a function's
-  `arguments`/`returns` compile into, and Postgres. The substrate's declarations
-  are its *vocabulary*.
+- **schema** — only the JSON Schema a function's `arguments`/`returns`
+  compile into, and Postgres. The substrate's declarations are its
+  *vocabulary*.
 - **log** — only logging. What holds the deltas is the *changelog*.
 - **extension** — only a file extension or a Postgres extension. What you
   install is a *bundle*.

@@ -7,9 +7,9 @@ import (
 )
 
 // kindsCommand is the registry table: every kind this repository declares,
-// read from the one canonical collection (`/api/v1/substrate.reamde.dev/core/kind`).
-// `substratectl get kind` reads the same collection as ordinary records; this
-// command is the registry VIEW of it, with the declaration's own columns.
+// read as the records of `substrate.reamde.dev/core/kind`. `substratectl get
+// kind` reads the same records as ordinary ones; this command is the registry
+// VIEW of them, with the declaration's own columns.
 func (a *app) kindsCommand() *cobra.Command {
 	var output string
 	cmd := &cobra.Command{

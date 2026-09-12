@@ -1264,11 +1264,11 @@ func (d *drill) compareRestored(t *testing.T, e *testenv.Env, ds substrate.Datas
 	// vectors and the queue are derived tables the directory does not carry,
 	// so this behavior, not a row count, is what proves the import queued
 	// them.
-	before := gqlSearch(t, e, "carry the values", "semantic", []string{taskKind})
+	before := searchRecords(t, e, "carry the values", "semantic", []string{taskKind})
 	if before.ErrCode != "unavailable" || !strings.Contains(before.ErrMsg, "pending") {
 		t.Errorf("semantic search before the drain = %+v, want the unavailable code naming the pending count", before)
 	}
-	if hybrid := gqlSearch(t, e, "ledger", "hybrid", []string{taskKind}); hybrid.ErrCode != "" || hybrid.Pending == 0 || len(hybrid.IDs) == 0 {
+	if hybrid := searchRecords(t, e, "ledger", "hybrid", []string{taskKind}); hybrid.ErrCode != "" || hybrid.Pending == 0 || len(hybrid.IDs) == 0 {
 		t.Errorf("hybrid search before the drain = %+v, want lexical hits beside a non-zero backlog", hybrid)
 	}
 
@@ -1408,7 +1408,7 @@ func (d *drill) compareRestored(t *testing.T, e *testenv.Env, ds substrate.Datas
 		}
 	}
 	for q, want := range d.source.semantic {
-		if got := gqlSearch(t, e, q, "semantic", []string{taskKind}); !reflect.DeepEqual(got, want) {
+		if got := searchRecords(t, e, q, "semantic", []string{taskKind}); !reflect.DeepEqual(got, want) {
 			t.Errorf("semantic %q after the drain = %+v, want the source's %+v", q, got, want)
 		}
 	}
@@ -1766,7 +1766,7 @@ func (d *drill) replacedHistoryCursor(t *testing.T) {
 		t.Errorf("history page = head %d under %q, want at least %d under %q", current.Head, current.Generation, d.restored.head, d.restored.gen)
 	}
 	saved := fmt.Sprintf("from=%d&generation=%s", d.source.head-1, url.QueryEscape(d.source.gen))
-	for _, path := range []string{"/api/v1/changes?" + saved, "/api/v1/changes?watch=1&" + saved, recordPath(taskKind, "") + "?watch=1&" + saved} {
+	for _, path := range []string{"/api/v1/changes?" + saved, "/api/v1/changes?watch=1&" + saved, listPath(taskKind, nil) + "&watch=1&" + saved} {
 		status, raw := e.Do(http.MethodGet, path, nil)
 		if status != http.StatusGone {
 			t.Errorf("GET %s: %d %s, want 410", path, status, raw)
@@ -1789,7 +1789,7 @@ func (d *drill) replacedHistoryCursor(t *testing.T) {
 	// The re-list carries the handoff, and the resume under it streams a
 	// bookmark at the head.
 	var page substrate.Page
-	e.MustJSON(http.MethodGet, recordPath(taskKind, "")+"?first=500", nil, &page)
+	e.MustJSON(http.MethodGet, listPath(taskKind, nil)+"&first=500", nil, &page)
 	if page.Generation != d.restored.gen || page.Head < d.restored.head {
 		t.Errorf("re-list handoff = head %d under %q, want at least %d under %q", page.Head, page.Generation, d.restored.head, d.restored.gen)
 	}
@@ -1847,10 +1847,10 @@ func captureState(t *testing.T, e *testenv.Env, ds substrate.Dataset, scoped *sq
 		s.blobs[digest] = raw
 	}
 	for _, q := range lexicalQueries {
-		s.lexical[q] = gqlSearch(t, e, q, "lexical", []string{taskKind})
+		s.lexical[q] = searchRecords(t, e, q, "lexical", []string{taskKind})
 	}
 	for _, q := range semanticQueries {
-		s.semantic[q] = gqlSearch(t, e, q, "semantic", []string{taskKind})
+		s.semantic[q] = searchRecords(t, e, q, "semantic", []string{taskKind})
 	}
 	head, err := ds.Head(ctx)
 	if err != nil {
@@ -1935,11 +1935,22 @@ func diffStates(want, got *state) []string {
 // --- the record doors ----------------------------------------------------------------
 
 func recordPath(kind, id string) string {
-	p := "/api/v1/" + kind
-	if id != "" {
-		p += "/" + url.PathEscape(id)
+	return "/api/v1/" + kind + "/" + url.PathEscape(id)
+}
+
+// listPath is the records route narrowed to one kind: every list, tail and
+// ranked read is GET /records, the kind under `filter`, and `extra` is any
+// further filter arm beside it.
+func listPath(kind string, extra map[string]any) string {
+	f := map[string]any{"kinds": []string{kind}}
+	for k, v := range extra {
+		f[k] = v
 	}
-	return p
+	raw, err := json.Marshal(f)
+	if err != nil {
+		panic(err)
+	}
+	return "/api/v1/records?filter=" + url.QueryEscape(string(raw))
 }
 
 // putRecord, patchRecord and deleteRecord are the three writes every
@@ -2015,14 +2026,15 @@ func metaOf(t *testing.T, rec map[string]any, id, prop string) map[string]any {
 	return meta
 }
 
-// listRecords is one collection's records, live or tombstoned, in the
-// collection's own order.
+// listRecords is one kind's records, live or tombstoned, in the list's own
+// order.
 func listRecords(t *testing.T, e *testenv.Env, kind string, deleted bool) []any {
 	t.Helper()
-	path := recordPath(kind, "") + "?first=500"
+	var extra map[string]any
 	if deleted {
-		path += "&filter=" + url.QueryEscape(`{"deleted":true}`)
+		extra = map[string]any{"deleted": true}
 	}
+	path := listPath(kind, extra) + "&first=500"
 	var page map[string]any
 	e.MustJSON(http.MethodGet, path, nil, &page)
 	if page["cursor"] != nil && page["cursor"] != "" {
@@ -2077,43 +2089,34 @@ func parkedOf(t *testing.T, e *testenv.Env, id string) []substrate.TriggerFailur
 	return out.Items
 }
 
-// gqlSearch runs one search through GraphQL, the one door search has.
-func gqlSearch(t *testing.T, e *testenv.Env, q, mode string, kinds []string) searchAnswer {
+// searchRecords runs one ranked read through the records route, the one
+// door search has: `q` on the collection, the kinds under `filter`.
+func searchRecords(t *testing.T, e *testenv.Env, q, mode string, kinds []string) searchAnswer {
 	t.Helper()
-	var out struct {
-		Data struct {
-			Search *struct {
-				Hits []struct {
-					Record struct {
-						ID string `json:"id"`
-					} `json:"record"`
-				} `json:"hits"`
-				Pending int `json:"pending"`
-			} `json:"search"`
-		} `json:"data"`
-		Errors []struct {
-			Message    string         `json:"message"`
-			Extensions map[string]any `json:"extensions"`
-		} `json:"errors"`
+	filter, err := json.Marshal(map[string]any{"kinds": kinds})
+	if err != nil {
+		t.Fatal(err)
 	}
-	e.MustJSON(http.MethodPost, "/api/v1/graphql", map[string]any{
-		"query":     `query($q: String!, $mode: String, $kinds: [String!]) { search(q: $q, mode: $mode, kinds: $kinds, k: 10) { hits { record { id } } pending } }`,
-		"variables": map[string]any{"q": q, "mode": mode, "kinds": kinds},
-	}, &out)
+	params := url.Values{"q": {q}, "mode": {mode}, "first": {"10"}, "filter": {string(filter)}}
+	status, raw := e.Do(http.MethodGet, "/api/v1/records?"+params.Encode(), nil)
 	var a searchAnswer
-	if len(out.Errors) > 0 {
-		a.ErrMsg = out.Errors[0].Message
-		a.ErrCode, _ = out.Errors[0].Extensions["code"].(string)
+	if status/100 != 2 {
+		var envelope substrate.ErrorEnvelope
+		if err := json.Unmarshal(raw, &envelope); err != nil || envelope.Error.Code == "" {
+			t.Fatalf("search answered %d without an error envelope: %s", status, raw)
+		}
+		a.ErrCode, a.ErrMsg = envelope.Error.Code, envelope.Error.Message
 		return a
 	}
-	if out.Data.Search == nil {
-		t.Fatal("graphql search answered neither hits nor an error")
+	var out substrate.RankedPage
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("decode the ranked page: %v (%s)", err, raw)
 	}
 	a.IDs = []string{}
-	for _, h := range out.Data.Search.Hits {
-		a.IDs = append(a.IDs, h.Record.ID)
+	for _, r := range out.Records {
+		a.IDs = append(a.IDs, r.ID)
 	}
-	a.Pending = out.Data.Search.Pending
+	a.Pending = out.Pending
 	return a
 }
 

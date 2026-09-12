@@ -82,7 +82,7 @@ There is no session object beside it: a session **is** a token record, and
 
 Registration seeded the core vocabulary only, so the task kinds are not there
 yet. IMPORT the sample that ships them from the catalog built into the binary,
-and the collection exists. A catalog id is a package identity,
+and the kind exists. A catalog id is a package identity,
 `{authority}/{package}`, so the slash in it is percent-encoded to stay one path
 segment. Tasks name an assignee and bind the `recurring` trait, so `people`
 and `scheduling` are imported first: a bundle whose `requires:` is not met is
@@ -98,7 +98,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:8080/api/v1/catalog/samples.substrate.reamde.dev%2Ftasks/import
 
-substratectl get task                     # empty, but the collection is there
+substratectl get task                     # empty, but the kind is there
 ```
 
 The import rewrites the closure onto the authority THIS repository owns, so
@@ -110,13 +110,13 @@ terminal, and `substratectl apply -f bundle.yaml --as <your authority>` applies
 a closure you hold as files. All four run the same admission, which
 [vocabulary.md](vocabulary.md#admission) describes.
 
-Add a task. The collection path names the kind, so the body is only the
-properties:
+Add a task. The body names the kind, and the server assigns the id:
 
 ```http
-POST /api/v1/ada.example.com/tasks/task
+POST /api/v1/records
 Authorization: Bearer substrate_tok_…
-{"properties": {"name": "Buy milk", "dueAt": "2026-08-13T09:00:00Z"}}
+{"kind": "ada.example.com/tasks/task",
+ "properties": {"name": "Buy milk", "dueAt": "2026-08-13T09:00:00Z"}}
 
 → 201 {"id": "kq3v9x2m41pf", "kind": "ada.example.com/tasks/task",
        "properties": {"name": "Buy milk", "title": "Buy milk", "status": "open",

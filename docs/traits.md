@@ -4,8 +4,8 @@ Some properties mean the same thing on every kind that carries them. "When
 does this sit on the timeline" is one question whether the record is a
 calendar event, a dose log, or a task. A **trait** declares such a set of
 typed properties once; a kind binds it with one line under `traits:`; and
-everything that keys on the trait, the cross-kind queries, the GraphQL
-interfaces, and the host behaviors below, covers the kind from that moment
+everything that keys on the trait, the cross-kind queries and the host
+behaviors below, covers the kind from that moment
 with no further wiring. Host behavior keys on the trait a kind binds, never
 on what the kind is called.
 
@@ -127,56 +127,28 @@ From the moment that batch commits, `ingredient` answers every
 `perishable`-keyed read below, alongside any other kind, yours or a
 bundle's, that binds the same trait:
 
-```graphql
-{ records(filter: {implements: "perishable"}) {
-    nodes { id title ... on Perishable { expiresAt opened } } } }
-```
+```http
+GET /api/v1/records?filter={"implements":"perishable"}
 
-```json
-{ "id": "oat-milk", "title": "Oat milk",
-  "expiresAt": "2026-09-04T00:00:00Z", "opened": "true" }
+→ {"records": [{"id": "oat-milk", "kind": "ada.example.com/pantry/ingredient",
+                "properties": {"name": "Oat milk", "title": "Oat milk",
+                               "expiresAt": "2026-09-04T00:00:00Z", "opened": true}}, …],
+   "head": 4207, "generation": "…"}
 ```
-
-(`opened` reads back as the string `"true"`: a derived interface resolves its
-fields as strings, the caveat pinned below.)
 
 ## What binding buys: the queries
 
-**The `implements` filter.** The one generic list query narrows to a trait's
-implementors, across every package. Alone it means every implementor in the
-repository; beside `kinds` it intersects, never unions. Over REST it is the
-same filter grammar on any collection read; repository-wide it is GraphQL's
-`records`:
+**The `implements` filter.** The one generic list, `GET /api/v1/records`,
+narrows to a trait's implementors across every package. Alone it means every
+implementor in the repository; beside `kinds` it intersects, never unions; and
+it composes with the rest of the [filter grammar](api.md#the-filter-grammar),
+so a trait's own properties filter and order like any kind's:
 
-```graphql
-{
-  records(filter: {implements: "temporal",
-                   properties: {at: {gte: "2026-08-17T00:00:00Z",
-                                     lt:  "2026-08-19T00:00:00Z"}}}
-          orderBy: [{property: "at"}]) {
-    nodes { id kind title ... on Temporal { at } }
-  }
-}
-```
-
-**The trait endpoints.** `GET
-/api/v1/substrate.reamde.dev/core/trait/{id}/implementors` lists the kinds
-that bind a trait, and `.../trait/{id}/records` pages every record of every
-implementor, which is what the console's connections view over
-`accountconfig` accounts is.
-
-## The GraphQL interfaces
-
-Every trait that carries properties becomes a GraphQL **interface**, built
-mechanically at schema build (`internal/gql/schema.go`); a pure marker trait
-adds none. The interface's name is the trait's local name, TitleCased:
-`temporal` is `Temporal`, `recurring` is `Recurring`, `perishable` above
-would be `Perishable`. Each kind's generated object then implements the
-interfaces for the traits it binds, which is what makes one inline fragment
-span every implementor:
-
-```graphql
-nodes { id kind title ... on Temporal { at } }
+```http
+GET /api/v1/records?filter={"implements":"temporal",
+                             "properties":{"at":{"gte":"2026-08-17T00:00:00Z",
+                                                 "lt":"2026-08-19T00:00:00Z"}}}
+                    &orderBy=at
 ```
 
 Run against a repository holding tasks, task logs and calendar events, that
@@ -188,24 +160,22 @@ query answers all three in one ordered page:
 { "at": "2026-08-18T06:20:00Z", "id": "x-tasklog-tue",          "kind": "samples.substrate.reamde.dev/tasks/tasklog" }
 ```
 
-Where the interface's fields come from has two arms:
+`temporal` is the one trait whose properties are hot storage columns: `at` and
+`endsAt` filter and order off the columns whatever name the binding chose (a
+task's `dueAt` still answers `properties: {at: …}` under `implements:
+temporal`). Every other trait's properties are the ordinary declared
+properties its implementors carry under the trait's names, so the trait's own
+contracted properties are the ones to filter on; a coincidentally shared extra
+property is one kind's, not the trait's.
 
-- **`temporal` is special.** Its `at` and `endsAt` are hot storage columns,
-  so the interface carries them as real `DateTime` fields, resolved off the
-  columns whatever name the binding chose (a task's `dueAt` still answers
-  `... on Temporal { at }`).
-- **Every other trait's interface** derives its fields from the properties
-  its implementors share, resolved as strings. The trait's own contracted
-  properties are always in that set, so they are the fields to rely on;
-  a coincidentally shared extra property can appear and later vanish as
-  implementors come and go.
+State machines get the same treatment one level down: every state property
+filters through `properties` like any other, so "everything with a `status`
+of `open`, anywhere" is one query over every kind that declares one.
 
-State machines get the same treatment one level down: every distinct
-state-property name becomes a `Has…` interface (`HasStatus`,
-`HasProminence`) carrying the state and its stamp timestamps, so "everything
-with a status, anywhere" is also one query.
-[Generated names and scalars](api.md#generated-names-and-scalars) pins the
-naming determinism and the collision refusals.
+**The trait endpoint.** `GET
+/api/v1/substrate.reamde.dev/core/trait/{id}/implementors` lists the kinds
+that bind a trait; their records are the `implements` filter above, which is
+what the console's connections view over `accountconfig` accounts is.
 
 ## Where traits do work beyond queries
 

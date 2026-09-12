@@ -71,9 +71,9 @@ describe("coerceReferencePath", () => {
     expect(
       coerceReferencePath(
         FUNCTION,
-        `${FUNCTION}/substrate.reamde.dev/core/graphql`
+        `${FUNCTION}/substrate.reamde.dev/core/query`
       )
-    ).toEqual({ value: `${FUNCTION}/substrate.reamde.dev/core/graphql` })
+    ).toEqual({ value: `${FUNCTION}/substrate.reamde.dev/core/query` })
   })
 
   it("completes a bare id from the pin", () => {
@@ -85,12 +85,12 @@ describe("coerceReferencePath", () => {
   })
 
   it("keeps a slash-bearing SHORT FORM, because it parses as no path", () => {
-    // `substrate.reamde.dev/core/graphql` has a dotted first segment and
+    // `substrate.reamde.dev/core/query` has a dotted first segment and
     // nothing left after its kind, so it cannot be read as a path: it is the
     // identity, and the pin completes it. This is what a tool entry writes.
     expect(
-      coerceReferencePath(FUNCTION, "substrate.reamde.dev/core/graphql")
-    ).toEqual({ value: `${FUNCTION}/substrate.reamde.dev/core/graphql` })
+      coerceReferencePath(FUNCTION, "substrate.reamde.dev/core/query")
+    ).toEqual({ value: `${FUNCTION}/substrate.reamde.dev/core/query` })
     expect(coerceReferencePath(KIND, "web.example.com/page")).toEqual({
       value: `${KIND}/web.example.com/page`,
     })

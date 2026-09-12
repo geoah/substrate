@@ -364,7 +364,7 @@ func TestSchemaDeleteRefusesWithInstances(t *testing.T) {
 // A PROPERTY TYPE's values are the one exception, and the meta-kind's declaration
 // is the reason: core's `propertytype` types them as a repeated {value, label}
 // object, so a bare scalar could not be stored at all. The loader normalizes a
-// COPY (internal/vocabulary, TestTheParseNeverMutatesTheDocument), and that is the
+// COPY (internal/vocabulary, TestTheParseNeverAltersTheDocument), and that is the
 // whole of the exception.
 func TestProjectionStoresTheAuthoredDeclaration(t *testing.T) {
 	t.Parallel()
@@ -426,7 +426,7 @@ func TestProjectionStoresTheAuthoredDeclaration(t *testing.T) {
 // stamped onto its row; the row is what a reopen rebuilds the registry from, so a
 // definition that carried the stored properties verbatim would gain a `version`
 // nobody authored the moment the process restarted — one declaration, two answers,
-// and any client diffing or fingerprinting it (gql.RegistryKey) would see a change
+// and any client diffing or fingerprinting it would see a change
 // that never happened.
 func TestKindInfoDefinitionSurvivesAReload(t *testing.T) {
 	t.Parallel()
@@ -852,7 +852,7 @@ func TestDeclarationWritesNameTheDeletedSpellings(t *testing.T) {
 	for k, v := range agentRow.Properties {
 		tools[k] = v
 	}
-	tools["tools"] = []any{map[string]any{"callable": vocabulary.HostFunctionGraphQL}}
+	tools["tools"] = []any{map[string]any{"callable": vocabulary.HostFunctionQuery}}
 	_, err := ds.Put(ctx, owner, substrate.PutInput{Kind: agentKind, ID: agentID, Properties: tools})
 	wantErr(t, err, substrate.ErrValidation, "a tool entry naming its callable")
 	if !strings.Contains(err.Error(), `key "callable" is deleted — function`) {

@@ -7,7 +7,6 @@ require (
 	github.com/anthropics/anthropic-sdk-go v1.63.1
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/google/cel-go v0.31.0
-	github.com/graphql-go/graphql v0.8.1
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/pgvector/pgvector-go v0.4.1

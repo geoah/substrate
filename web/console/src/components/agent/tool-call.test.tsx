@@ -156,11 +156,13 @@ describe("the tool card", () => {
     expect(screen.getByText("query")).toBeTruthy()
   })
 
-  it("renders a mutate's stamped changes as op badge + record pill rows", () => {
+  it("renders a write's stamped changes as op badge + record pill rows", () => {
     const { container } = renderCard(
       call({
-        name: "mutate",
-        output: '{"data":{"patch":{"id":"w1"}}}',
+        name: "write",
+        arguments:
+          '{"op":"patch","kind":"crew.test.dev/crew/widget","id":"w1","input":{"properties":{"name":"w"}}}',
+        output: '{"record":{"id":"w1","kind":"crew.test.dev/crew/widget"}}',
         changes: [
           {
             seq: 202,

@@ -39,7 +39,7 @@ API call that completes a task.
 
 ## The API
 
-- [The API](api.md): REST and GraphQL, filters, mutations, search, errors
+- [The API](api.md): the records route and the record path, filters, mutations, search, errors
 - [Users, tokens, and actors](auth.md)
 - [The changelog and watch](changelog.md)
 

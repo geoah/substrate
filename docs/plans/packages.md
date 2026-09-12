@@ -91,21 +91,23 @@ data:
   record and no package until the user declares or imports one.
   (Landed without the registration half: see Open.)
 
-### Actors and GraphQL
+### Actors and generated names
 
 - Actors add a colon segment, never a slash (meta keys split on
   `<actor>/<name>`): `bundle:<authority>:<package>`,
   `function:<authority>:<package>:<name>`, `agent:<authority>:<package>:<name>`.
   Amends [0025](../decisions/0025-an-actor-carries-the-full-authority.md).
-- The GraphQL name of an installed kind was planned as `<Package>_<Kind>`
-  (`Tasks_Task`), with the authority's first label joining it only when two
-  authorities installed the same package name. That landed reading the full
-  authority as the tie-break, and
+- A generated per-kind type name for the second query surface was planned as
+  `<Package>_<Kind>` (`Tasks_Task`), with the authority's first label joining
+  it only when two authorities installed the same package name. That landed
+  reading the full authority as the tie-break, and
   [0058](../decisions/0058-a-graphql-name-always-carries-the-authority.md)
-  then made the authority a fixed part of every non-core name
-  (`Ada_example_com_Tasks_Task`), because the tie-break renamed the first
-  package's types when the second arrived. Either way, no identifier keys on a
-  first label, which retires the last first-label keying 0014 reserved.
+  then made the authority a fixed part of every non-core name, because the
+  tie-break renamed the first package's types when the second arrived.
+  [0079](../decisions/0079-graphql-is-removed-and-the-records-read-is-one-route.md)
+  removed that surface and its names altogether: a kind is addressed by its
+  reference alone. Either way, no identifier keys on a first label, which
+  retires the last first-label keying 0014 reserved.
 
 ### The shipped tree
 
@@ -145,7 +147,7 @@ user ends up with `ada.example.com/tasks/task` and
 - **Grammar and loader** (`internal/vocabulary`): `KindRef`, `SplitKindRef`,
   `SplitRecordPath`, the reference validator, `Qualified`, every declaration
   id derivation, the `package` document and its keys, bundle `installs` and
-  `requires`, the actor mints, `GraphQLName`.
+  `requires`, the actor mints.
 - **Engine**: `authorizeDeclarationWrite`, quarantine, the version unit in
   the seed and boot upgrade, `PlanBundleUpgrade`, projection's kind lookups,
   `vocabularydiff`, a vocabulary dialect bump (`maxVocabularyDialect` 3) so
@@ -188,11 +190,13 @@ the import rewrites kind ids of the final shape once.
 
 ## Open
 
-- The GraphQL disambiguation rule when two authorities install one package
-  name: settled by
+- The generated-name disambiguation rule when two authorities install one
+  package name: settled by
   [0058](../decisions/0058-a-graphql-name-always-carries-the-authority.md).
   The full authority, dots folded to underscores, is part of every non-core
-  name, not a tie-break, so a second install renames nothing.
+  name, not a tie-break, so a second install renames nothing. Moot since
+  [0079](../decisions/0079-graphql-is-removed-and-the-records-read-is-one-route.md)
+  removed the surface those names were generated for.
 - Writing the repository's own authority row at registration. The `authority`
   document kind exists and the shipped tree declares one per authority, but
   registration still records the authority on the repository row alone; the

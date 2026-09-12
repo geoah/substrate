@@ -27,9 +27,8 @@ same API. [docs/README.md](docs/README.md) draws the comparison out.
   references that point at other records; validation runs on every write, and a vocabulary evolves by integer
   versions without breaking the records underneath it.
 - **One small write API.** Five mutations (`put`, `patch`, `delete`,
-  `merge`, `split`) over REST, with full-text and vector search and a
-  resumable `watch` stream beside them. A GraphQL endpoint mirrors the reads
-  and writes as a preview.
+  `merge`, `split`) over REST, and one records route that lists, ranks
+  (full-text and vector search) and tails them.
 - **Bundles.** Vocabulary, functions and agents install and uninstall as one
   unit. The catalog compiled into the binary ships sync for Google, GitHub,
   Linear, Notion, Beeper and Whoop, so a mailbox or a calendar becomes
@@ -204,9 +203,9 @@ bin/substratectl patch task milk --state status=done  # stamps completedAt
 bin/substratectl watch --from 1
 ```
 
-The same records answer on REST at `/api/v1/geoah.me/chores/task`, on
-GraphQL at `/api/v1/graphql`, and in full-text and semantic search:
-[docs/api.md](docs/api.md). [docs/getting-started.md](docs/getting-started.md)
+The same records answer on REST at `/api/v1/geoah.me/chores/task/{id}`, in a
+filtered list at `/api/v1/records`, and in full-text and semantic search on
+the same route: [docs/api.md](docs/api.md). [docs/getting-started.md](docs/getting-started.md)
 is the longer walkthrough.
 
 ## Manage them with a function and an agent
@@ -257,13 +256,13 @@ data:
   description: Reads and updates my projects and tasks on request.
   prompt: |
     You manage the user's projects and tasks. Read them with the query
-    tool; create, complete and reprioritize them with mutate. Keep
+    tool; create, complete and reprioritize them with write. Keep
     answers short.
   provider: anthropic
   model: claude-opus-5
   tools:
     - function: substrate.reamde.dev/core/query
-    - function: substrate.reamde.dev/core/mutate
+    - function: substrate.reamde.dev/core/write
   budgets:
     maxTurns: 8
     maxToolCalls: 16

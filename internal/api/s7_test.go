@@ -10,10 +10,10 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// listWithFilter builds a people-collection list URL carrying a raw filter
-// document, so a test can send a deliberately malformed one.
+// listWithFilter builds a list URL carrying a raw filter document, so a test
+// can send a deliberately malformed one.
 func listWithFilter(filter string) string {
-	return peoplePath + "?" + url.Values{"filter": {filter}}.Encode()
+	return recordsPath + "?" + url.Values{"filter": {filter}}.Encode()
 }
 
 // A misspelled / miscased top-level write key must ERROR naming the key, never
@@ -41,7 +41,8 @@ func TestStrictDecodeNamesUnknownBodyKey(t *testing.T) {
 	}
 
 	// A create body carries the same guarantee.
-	rec = env.do(t, http.MethodPost, peoplePath, tok, map[string]any{
+	rec = env.do(t, http.MethodPost, recordsPath, tok, map[string]any{
+		"kind":       personKind,
 		"properties": map[string]any{"name": "Ada"},
 		"typo":       true,
 	})
@@ -83,7 +84,8 @@ func TestStrictDecodeNamesUnknownFilterKey(t *testing.T) {
 func TestStrictDecodeKeepsPropertiesOpen(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodPost, peoplePath, tok, map[string]any{
+	rec := env.do(t, http.MethodPost, recordsPath, tok, map[string]any{
+		"kind":       personKind,
 		"properties": map[string]any{"name": "Ada", "anythingGoesHere": 42},
 	})
 	wantStatus(t, rec, http.StatusCreated)
@@ -101,10 +103,10 @@ func TestExpiredTokenRejected(t *testing.T) {
 	future := time.Unix(1_800_000_000, 0).UTC() // 2027
 
 	expired := env.svc.tokenWith(fakeRepository, func(i *substrate.TokenInfo) { i.ExpiresAt = &past })
-	rec := env.do(t, http.MethodGet, peoplePath, expired, nil)
+	rec := env.do(t, http.MethodGet, peopleRecords, expired, nil)
 	wantErrorCode(t, rec, http.StatusUnauthorized, codeAuth)
 
 	live := env.svc.tokenWith(fakeRepository, func(i *substrate.TokenInfo) { i.ExpiresAt = &future })
-	rec = env.do(t, http.MethodGet, peoplePath, live, nil)
+	rec = env.do(t, http.MethodGet, peopleRecords, live, nil)
 	wantStatus(t, rec, http.StatusOK)
 }

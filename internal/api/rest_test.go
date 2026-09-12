@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -14,15 +13,19 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// The collection segment is the kind NAME, not a plural (decision 0033), so a
-// person's collection is /person and a record's URL equals its reference.
+// peoplePath is the person kind's reference under the version prefix: a
+// record's URL is that plus its id (decision 0033), and the path alone names
+// nothing (there is no collection route; the list is /records).
 const peoplePath = "/api/v1/samples.substrate.reamde.dev/people/person"
 
-func TestRESTUnknownCollectionIs404(t *testing.T) {
+func TestRESTUnknownKindIs404(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, "/api/v1/samples.substrate.reamde.dev/people/widgets", tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/samples.substrate.reamde.dev/people/widgets/p1", tok, nil)
 	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
+	if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "unknown kind samples.substrate.reamde.dev/people/widgets") {
+		t.Fatalf("message = %q, want the kind named", msg)
+	}
 }
 
 func TestRESTCRUD(t *testing.T) {
@@ -30,19 +33,15 @@ func TestRESTCRUD(t *testing.T) {
 	tok := env.svc.token(fakeRepository)
 	ds := env.svc.datasets[fakeRepository]
 
-	rec := env.do(t, http.MethodPost, peoplePath, tok, map[string]any{
-		"properties": map[string]any{"title": "Ada", "name": "Ada"},
-	})
-	wantStatus(t, rec, http.StatusCreated)
-	created := decodeJSON[substrate.Record](t, rec)
-	if created.Kind != "samples.substrate.reamde.dev/people/person" {
-		t.Fatalf("POST must stamp the collection's type, got %q", created.Kind)
+	created := createRecord(t, env, tok, personKind, map[string]any{"title": "Ada", "name": "Ada"})
+	if created.Kind != personKind {
+		t.Fatalf("POST must stamp the body's kind, got %q", created.Kind)
 	}
-	if ds.lastPut.Kind != "samples.substrate.reamde.dev/people/person" {
-		t.Fatalf("put input type = %q", ds.lastPut.Kind)
+	if ds.lastPut.Kind != personKind {
+		t.Fatalf("put input kind = %q", ds.lastPut.Kind)
 	}
 
-	rec = env.do(t, http.MethodGet, peoplePath+"/"+created.ID, tok, nil)
+	rec := env.do(t, http.MethodGet, peoplePath+"/"+created.ID, tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 
 	// PUT to a fresh id CREATES it, so the status is 201: the code
@@ -111,118 +110,53 @@ func TestRESTGetOneCarriesPropertyMeta(t *testing.T) {
 		t.Fatalf("propertyMeta = %+v", meta)
 	}
 
-	// The list projection stays lean: no provenance on collection reads.
-	rec = env.do(t, http.MethodGet, peoplePath, tok, nil)
+	// The list projection stays lean: no provenance on a list read.
+	rec = env.do(t, http.MethodGet, recordsOf(t, personKind), tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	if strings.Contains(rec.Body.String(), "propertyMeta") {
 		t.Fatalf("list carries propertyMeta: %s", rec.Body.String())
 	}
 }
 
-// Incoming references page independently from the canonical record read.
-func TestRESTIncomingIsSeparateAndPaged(t *testing.T) {
+// A record carries what it points at; what points BACK is a list under
+// `filter.referencing`, and the target is matched by its canonical id and
+// every former one, so a pointer written before a merge still counts.
+func TestRESTReferencingFollowsAMergedTarget(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
 	ds := env.svc.datasets[fakeRepository]
 
-	ds.records["p1"] = &substrate.Record{
-		ID: "p1", Kind: "samples.substrate.reamde.dev/people/person",
-		Properties: map[string]any{"name": "Sam"},
-	}
-	ds.incoming["p1"] = []substrate.IncomingReference{
-		{Property: "person", From: substrate.IncomingSource{
-			ID: "people-c1001", Kind: "google.connectors.substrate.reamde.dev/google/contact", Title: "Samuel Jones",
-		}},
-		{Property: "manager", From: substrate.IncomingSource{
-			ID: "p2", Kind: "samples.substrate.reamde.dev/people/person", Title: "Ada",
-		}},
-	}
+	ds.put(&substrate.Record{ID: "winner", Kind: personKind, Properties: map[string]any{"name": "Sam"}})
+	ds.put(&substrate.Record{ID: "loser", Kind: personKind, Properties: map[string]any{}})
+	ds.formers["loser"] = "winner"
+	ds.put(&substrate.Record{ID: "p2", Kind: personKind, Properties: map[string]any{
+		"name": "Ada", "manager": map[string]any{"ref": personKind + "/loser"},
+	}})
 
-	rec := env.do(t, http.MethodGet, peoplePath+"/p1", tok, nil)
+	// The record body never carries its pointers-back.
+	rec := env.do(t, http.MethodGet, peoplePath+"/winner", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
-	// The record manifest never carries incoming references: the
-	// Record.Incoming field was removed at the v1 freeze; the
-	// paged resource below is the only way to read them.
-	_ = decodeJSON[substrate.Record](t, rec)
+	if body := rec.Body.String(); strings.Contains(body, "referencing") || strings.Contains(body, "matches") {
+		t.Fatalf("the record body carries a reverse read: %s", body)
+	}
 
-	rec = env.do(t, http.MethodGet, peoplePath+"/p1/incoming?first=1", tok, nil)
+	rec = env.do(t, http.MethodGet, filterPath(t, substrate.Filter{
+		Referencing: &substrate.Referencing{Ref: personKind + "/winner"},
+	}), tok, nil)
 	wantStatus(t, rec, http.StatusOK)
-	page := decodeJSON[substrate.IncomingPage](t, rec)
-	if page.Total != 2 || len(page.Incoming) != 1 || page.Incoming[0].From.ID != "people-c1001" {
-		t.Fatalf("incoming page = %+v", page)
+	page := decodeJSON[substrate.Page](t, rec)
+	if len(page.Records) != 1 || page.Records[0].ID != "p2" {
+		t.Fatalf("referencing page = %+v", page.Records)
 	}
-
-	// The drill-down narrows by PROPERTY (the reference's declared name, was
-	// `rel`) and by source kind, so expanding one group asks for that group
-	// alone.
-	rec = env.do(t, http.MethodGet, peoplePath+"/p1/incoming?property=manager", tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	page = decodeJSON[substrate.IncomingPage](t, rec)
-	if page.Total != 1 || page.Incoming[0].From.ID != "p2" {
-		t.Fatalf("property-narrowed incoming page = %+v", page)
+	if got := page.Matches[personKind+"/p2"]; len(got) != 1 || got[0].Property != "manager" {
+		t.Fatalf("matches = %+v", page.Matches)
 	}
-
-	// `rel` is gone with the edges it named: an unknown parameter is a
-	// bad_request naming it, never a silently unnarrowed fan-in.
-	rec = env.do(t, http.MethodGet, peoplePath+"/p1/incoming?rel=manager", tok, nil)
-	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
-}
-
-func TestRESTListForcesTheCollectionType(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-
-	// The path names the type. A filter that leaves `types` unset carries its
-	// other arms through; the collection type is applied on top.
-	filter := substrate.Filter{
-		Properties: map[string]substrate.Cond{"company": {Eq: "Analytical"}},
-	}
-	raw, err := json.Marshal(filter)
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := fmt.Sprintf("%s?filter=%s&orderBy=%s&first=7&after=cur1",
-		peoplePath, url.QueryEscape(string(raw)), url.QueryEscape("at:desc,created_at"))
-
-	rec := env.do(t, http.MethodGet, path, tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-
-	q := ds.lastQuery
-	if len(q.Filter.Kinds) != 1 || q.Filter.Kinds[0] != "samples.substrate.reamde.dev/people/person" {
-		t.Fatalf("filter types = %v, want the collection's type", q.Filter.Kinds)
-	}
-	if q.Filter.Properties["company"].Eq != "Analytical" {
-		t.Fatalf("filter props lost: %+v", q.Filter.Properties)
-	}
-	want := []substrate.Order{{Property: "at", Desc: true}, {Property: "created_at"}}
-	if len(q.OrderBy) != 2 || q.OrderBy[0] != want[0] || q.OrderBy[1] != want[1] {
-		t.Fatalf("orderBy = %+v, want %+v", q.OrderBy, want)
-	}
-	if q.First != 7 || q.After != "cur1" {
-		t.Fatalf("paging = first %d after %q", q.First, q.After)
-	}
-}
-
-// A caller-supplied filter.types that conflicts with the path is not silently
-// overwritten — it is a bad_request naming the param: silent
-// override let a client believe it had filtered when it had not.
-func TestRESTListRejectsConflictingFilterTypes(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	filter := substrate.Filter{Kinds: []string{"samples.substrate.reamde.dev/messaging/conversationmessage"}}
-	raw, err := json.Marshal(filter)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rec := env.do(t, http.MethodGet, peoplePath+"?filter="+url.QueryEscape(string(raw)), tok, nil)
-	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 }
 
 func TestRESTBadFilterIsBadRequest(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, peoplePath+"?filter=%7Bnot-json", tok, nil)
+	rec := env.do(t, http.MethodGet, recordsPath+"?filter=%7Bnot-json", tok, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 }
 
@@ -257,7 +191,7 @@ func TestRESTErrorEnvelopeMapping(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ds.errs["Put"] = tc.err
 			defer delete(ds.errs, "Put")
-			rec := env.do(t, http.MethodPost, peoplePath, tok, map[string]any{"properties": map[string]any{"title": "x"}})
+			rec := env.do(t, http.MethodPost, recordsPath, tok, map[string]any{"kind": personKind, "properties": map[string]any{"title": "x"}})
 			wantErrorCode(t, rec, tc.status, tc.code)
 			// Every unavailable carries Retry-After.
 			if tc.status == http.StatusServiceUnavailable && rec.Header().Get("Retry-After") == "" {
@@ -268,7 +202,7 @@ func TestRESTErrorEnvelopeMapping(t *testing.T) {
 
 	ds.errs["Put"] = &substrate.ValidationError{Problems: []string{"name: required", "asin: malformed"}}
 	defer delete(ds.errs, "Put")
-	rec := env.do(t, http.MethodPost, peoplePath, tok, map[string]any{"properties": map[string]any{"title": "x"}})
+	rec := env.do(t, http.MethodPost, recordsPath, tok, map[string]any{"kind": personKind, "properties": map[string]any{"title": "x"}})
 	wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
 	env2 := decodeJSON[substrate.ErrorEnvelope](t, rec)
 	if len(env2.Error.Problems) != 2 || env2.Error.Problems[0] != "name: required" {

@@ -12,8 +12,7 @@ import (
 // shipping a kind called `widget`.
 func bnPackage(pkg string) string { return bnPackageKind(pkg, "widget") }
 
-// bnPackageKind is the same closure with the kind named, so two authorities can
-// publish a package of one name without claiming one GraphQL name.
+// bnPackageKind is the same closure with the kind named.
 func bnPackageKind(pkg, kind string) string {
 	authority, name, _ := strings.Cut(pkg, "/")
 	return `kind: substrate.reamde.dev/core/package
@@ -94,9 +93,8 @@ func TestABundleIDIsRefusedWhenItIsNotThePackage(t *testing.T) {
 	}
 }
 
-// A package name is one lowercase word: it is the bundle's name, the actor an
-// install writes under and every installed kind's GraphQL prefix, none of
-// which admit a hyphen.
+// A package name is one lowercase word: it is the bundle's name and the actor
+// an install writes under, neither of which admits a hyphen.
 func TestAPackageNameIsOneWord(t *testing.T) {
 	_, err := loadBnPackages(bnPackage("tools.example.com/my-llm"))
 	if err == nil || !strings.Contains(err.Error(), "data.package") {
@@ -126,99 +124,6 @@ func TestTwoAuthoritiesMayShareAPackageName(t *testing.T) {
 	}
 	if a1 != "bundle:samples.substrate.reamde.dev:llm" || a2 != "bundle:tools.example.com:llm" {
 		t.Fatalf("actors %q and %q — an actor carries the full authority and the package", a1, a2)
-	}
-}
-
-// A NON-SEED KIND ALWAYS CARRIES ITS FULL AUTHORITY (record 0058). The name
-// is a function of the reference and the source alone, so it is asserted per
-// identity: no neighbor is passed because none could change the answer,
-// which is the property that stops a second authority's install renaming the
-// first. The authority fold is injective: a dot is `_`, a hyphen is `__`, and
-// a digit-first authority gains a leading `_` so the name is a legal GraphQL
-// identifier. The console's graphqlTypeName test pins the same spellings.
-func TestGraphQLNamesAlwaysCarryTheAuthority(t *testing.T) {
-	cases := map[string]string{
-		"samples.substrate.reamde.dev/tasks/task": "Samples_substrate_reamde_dev_Tasks_Task",
-		"acme.example.com/tasks/task":             "Acme_example_com_Tasks_Task",
-		"acme.example.org/tasks/task":             "Acme_example_org_Tasks_Task",
-		"acme-dev.example.com/tasks/task":         "Acme__dev_example_com_Tasks_Task",
-		"3rd.example.com/tasks/task":              "_3rd_example_com_Tasks_Task",
-		"ada.example.com/people/person":           "Ada_example_com_People_Person",
-	}
-	for ref, want := range cases {
-		if got := vocabulary.GraphQLName(ref, vocabulary.SourceInstalled); got != want {
-			t.Errorf("GraphQLName(%s) = %q, want %q", ref, got, want)
-		}
-	}
-	if got := vocabulary.GraphQLName("substrate.reamde.dev/core/token", vocabulary.SourceBuiltin); got != "Token" {
-		t.Errorf("token = %q, want the bare Token", got)
-	}
-	// A bare reference has no authority to fold; prefixing an empty one would
-	// spell the reserved `__` introspection prefix.
-	if got := vocabulary.GraphQLName("task", vocabulary.SourceInstalled); got != "Task" {
-		t.Errorf("bare task = %q, want Task", got)
-	}
-}
-
-// TWO AUTHORITIES DIFFERING ONLY BY A HYPHEN GET TWO NAMES, AND BOTH INSTALL.
-// The fold spells a hyphen `__` and a dot `_`, so `my-host.example.com` and
-// `myhost.example.com` never meet in one GraphQL name and neither install is
-// refused. A digit-first authority installs too, under its `_` lead. The
-// packages are INSTALLED, not loaded from the shipped tree, because only a
-// non-seed kind carries its authority in the name.
-func TestAuthoritiesFoldToDistinctGraphQLNames(t *testing.T) {
-	want := map[string]string{
-		"my-host.example.com/tasks/task": "My__host_example_com_Tasks_Task",
-		"myhost.example.com/tasks/task":  "Myhost_example_com_Tasks_Task",
-		"3rd.example.com/tasks/task":     "_3rd_example_com_Tasks_Task",
-	}
-	r := vocabulary.NewRegistry()
-	for _, pkg := range []string{"my-host.example.com/tasks", "myhost.example.com/tasks", "3rd.example.com/tasks"} {
-		built, err := vocabulary.BuildPackages(mustParse(t, bnPackageKind(pkg, "task")), vocabulary.SourceInstalled)
-		if err != nil {
-			t.Fatalf("build %s: %v", pkg, err)
-		}
-		if err := r.InstallAll(built); err != nil {
-			t.Fatalf("installing %s beside the others must admit: %v", pkg, err)
-		}
-	}
-	for ref, name := range want {
-		k, ok := r.ByIdentity(ref)
-		if !ok {
-			t.Fatalf("%s did not install", ref)
-		}
-		if got := vocabulary.GraphQLName(k.Identity, k.Source); got != name {
-			t.Errorf("GraphQLName(%s) = %q, want %q", ref, got, name)
-		}
-	}
-}
-
-// A PUBLISHED kind is named like an installed one, on the same argument: a
-// provider's declarations are a copy the repository holds, so only the SEED
-// keeps the bare singular. Naming a provider's `account` bare would put it in
-// the namespace core's kinds live in, where the next shipped kind of that name
-// collides with it.
-func TestAPublishedKindIsNamedLikeAnInstalledOne(t *testing.T) {
-	if got := vocabulary.GraphQLName("providers.substrate.reamde.dev/whoop/account", vocabulary.SourcePublished); got != "Providers_substrate_reamde_dev_Whoop_Account" {
-		t.Errorf("published account = %q, want Providers_substrate_reamde_dev_Whoop_Account", got)
-	}
-	if got := vocabulary.GraphQLName("acme.example.com/whoop/account", vocabulary.SourceInstalled); got != "Acme_example_com_Whoop_Account" {
-		t.Errorf("installed account = %q, want Acme_example_com_Whoop_Account", got)
-	}
-	if got := vocabulary.GraphQLName("substrate.reamde.dev/core/token", vocabulary.SourceBuiltin); got != "Token" {
-		t.Errorf("seeded token = %q, want the bare Token", got)
-	}
-}
-
-// One GraphQL name is still one kind: two SHIPPED packages declaring one kind
-// name both want the bare singular, and the second is refused by name.
-func TestOneGraphQLNameIsStillOneKind(t *testing.T) {
-	_, err := loadBnPackages(
-		bnPackageKind("one.example.com/alpha", "widget"),
-		bnPackageKind("two.example.com/beta", "widget"),
-	)
-	if err == nil || !strings.Contains(err.Error(), "graphql name") {
-		t.Fatalf("one GraphQL name claimed twice must refuse: %v", err)
 	}
 }
 
@@ -279,40 +184,6 @@ data:
 	_, err := loadBnPackages(body)
 	if err == nil || !strings.Contains(err.Error(), "but metadata.id says") {
 		t.Fatalf("a header whose keys disagree with its id must refuse: %v", err)
-	}
-}
-
-// THE ENGINE INSTALLS THROUGH Install AND InstallAll, NEVER Finalize, so both
-// carry the registry-wide checks. A GraphQL name claimed twice is refused
-// there or it lands in the store and takes the schema build down at the next
-// read; a failed InstallAll leaves nothing behind, or the next install meets
-// half of the last one.
-func TestInstallRefusesAGraphQLNameClaimedTwice(t *testing.T) {
-	first, err := vocabulary.BuildPackages(mustParse(t, bnPackageKind("one.example.com/alpha", "widget")), vocabulary.SourceBuiltin)
-	if err != nil {
-		t.Fatalf("build the first package: %v", err)
-	}
-	second, err := vocabulary.BuildPackages(mustParse(t, bnPackageKind("two.example.com/beta", "widget")), vocabulary.SourceBuiltin)
-	if err != nil {
-		t.Fatalf("build the second package: %v", err)
-	}
-	r := vocabulary.NewRegistry()
-	if err := r.InstallAll(first); err != nil {
-		t.Fatalf("the first install must admit: %v", err)
-	}
-	err = r.InstallAll(second)
-	if err == nil || !strings.Contains(err.Error(), "graphql name") {
-		t.Fatalf("a second claim on one GraphQL name must refuse: %v", err)
-	}
-	// And it left nothing behind: the undo removes by identity, so the failed
-	// set is not half-installed.
-	for _, g := range second {
-		if _, held := r.PackageByName(g.Identity); held {
-			t.Errorf("%s survived a failed InstallAll", g.Identity)
-		}
-	}
-	if _, held := r.ByIdentity("two.example.com/beta/widget"); held {
-		t.Error("a kind of the failed set is still resolvable")
 	}
 }
 

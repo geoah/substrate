@@ -31,13 +31,13 @@
 # on the bundle status as a "provider" setup item with no declaration needed.
 #
 # Six agents, five lessons. `substrate` is the flagship: the mneme-v4 chat
-# shape, reading the whole graph through the `graphql` built-in and writing
+# shape, reading the whole graph through the `query` built-in and writing
 # NOTHING directly (every change is a proposed recordpatchrequest the owner
 # decides on — and the decision comes BACK into the thread as a `system`
-# message, resuming it). `substrateEditor` holds the `mutate` grant, scoped to
+# message, resuming it). `substrateEditor` holds the `write` grant, scoped to
 # this bundle's own `scratchpad` kind, so its tool rows show engine-stamped
 # `changes`. `substrateArbiter` is the judge: point a trigger at fresh
-# recordpatchrequests and it accepts or rejects them through `mutate`.
+# recordpatchrequests and it accepts or rejects them through `write`.
 # `substrateEcho` demonstrates delegation, and `substrateSummarizer` is the
 # sub-agent it delegates to, marked `hiddenFromChat` so the chat list never
 # offers it: it exists to be called. For functions as tools, install the
@@ -48,7 +48,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: llm
-  version: 15
+  version: 16
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -71,7 +71,7 @@ data:
 ---
 # ---- the practice surface: a kind with no stakes ----------------------------
 # The decision loop needs a kind somebody may actually change: proposals
-# target it, the editor mutates it, the arbiter accepts changes to it. It
+# target it, the editor writes it, the arbiter accepts changes to it. It
 # ships HERE so the demos depend on nothing outside this bundle.
 kind: substrate.reamde.dev/core/kind
 metadata:
@@ -81,8 +81,8 @@ data:
   package: llm
   description: >-
     A practice record for the LLM examples: a name and a note, nothing else.
-    Propose one through the assistant, mutate one through the editor, let
-    the arbiter judge a change to one.
+    Propose one through the assistant, edit one through the editor, let the
+    arbiter judge a change to one.
   names:
     singular: scratchpad
   displayTemplate: "{name}"
@@ -95,10 +95,12 @@ data:
       description: whatever is being practised on
 ---
 # ---- the flagship: chat with the substrate itself ---------------------------
-# The v4 chat contract, ported: `graphql` is the only read surface (the whole
-# repository, introspectable), and `propose` is the only write, so nothing this
-# agent is talked into can land without the owner accepting it. Its emit names
-# exactly one kind, the request type propose emits.
+# The v4 chat contract, ported: `query` is the only read surface, held to the
+# `reads` below (the declarations, so it can learn a kind's properties; the
+# requests it proposes; the practice kind), and `propose` is the only write, so
+# nothing this agent is talked into can land without the owner accepting it.
+# Its emit names the request kind propose emits and the interaction kind ask
+# lands. Widen `reads.kinds` to the kinds you want it to answer from.
 kind: substrate.reamde.dev/core/agent
 metadata:
   id: samples.substrate.reamde.dev/llm/substrate
@@ -112,30 +114,26 @@ data:
     You are the substrate assistant. You answer from the owner's records and
     you propose changes; you never write the graph directly.
 
-    Reading. The graphql tool runs a read-only query against the repository's
-    own schema, which is introspectable (__schema, __type): every kind is a
-    GraphQL type carrying its declared properties. The roots:
-
-      record(kind: "...", id: "...")          one record
-      records(filter: ..., first: N)          a page; descend through nodes { ... }
-      search(q: "...", kinds: [...], k: N)    hybrid search, tolerates near-matches
-      changelog(from: N, first: N)            the change history
-
-    Every list field returns a connection, never a bare list, so descend
-    through nodes { ... }. Do not guess field names: one introspection call
-    beats five blind retries, and every failed query burns a tool call from a
-    small budget. Batch related lookups into one query. Per-kind list fields
-    match exactly; when a name might be spelled another way, use search.
+    Reading. The query tool is the one read: kind + id for one record;
+    filter (+ orderBy, first, after, expand) for a page of records, which
+    answers {records, cursor, included?}; q (+ filter.kinds, first) for hybrid search
+    that tolerates near-matches. A filter is {kinds, ids, implements,
+    properties, labels, deleted, referencing}, properties mapping a name to
+    a condition (eq, in, prefix, gt, gte, lt, lte, contains, exists). To
+    learn a kind's properties read its declaration: kind
+    "substrate.reamde.dev/core/kind", id the kind reference. Do not guess
+    property names: one declaration read beats five blind retries, and every
+    failed call burns a tool call from a small budget. A filter matches
+    exactly; when a name might be spelled another way, use q.
 
     Writing. Every change is one propose call, which lands a
     recordpatchrequest the owner decides on: op create mints a record, op
     patch changes one, op delete tombstones one, and the diff wraps property
     values under "properties". The call's "kind" is the full kind REFERENCE,
     "{authority}/{package}/{name}" (say, samples.substrate.reamde.dev/llm/scratchpad)
-    — never the GraphQL type name. Read it off any record's `kind` field, or
-    list the declarations: records(filter: {kinds:
-    ["substrate.reamde.dev/core/kind"]}) { nodes { id } }, whose ids ARE the
-    references. Ids must come from graphql results, never invented — except a
+    Read it off any record's `kind` field, or list the declarations with
+    filter {kinds: ["substrate.reamde.dev/core/kind"]}, whose ids ARE the
+    references. Ids must come from query results, never invented — except a
     create's new id, which you choose: short, lowercase. Before proposing a
     create, search for the record first. A proposal is not applied when the
     call returns: say what you proposed and stop. Do not re-propose it, and
@@ -162,10 +160,15 @@ data:
   provider: default
   model: claude-sonnet-5
   tools:
-    - function: substrate.reamde.dev/core/graphql
+    - function: substrate.reamde.dev/core/query
     - function: substrate.reamde.dev/core/propose
     - function: substrate.reamde.dev/core/ask
   permissions:
+    reads:
+      kinds:
+        - substrate.reamde.dev/core/kind
+        - substrate.reamde.dev/core/recordpatchrequest
+        - samples.substrate.reamde.dev/llm/scratchpad
     writes:
       - substrate.reamde.dev/core/recordpatchrequest
       - substrate.reamde.dev/llm/interaction
@@ -174,12 +177,12 @@ data:
     maxToolCalls: 12
     deadlineSeconds: 300
 ---
-# ---- the mutate lesson: direct writes, scoped to the practice kind ----------
-# Where `substrate` may only propose, this one WRITES — through the `mutate`
+# ---- the write lesson: direct writes, scoped to the practice kind -----------
+# Where `substrate` may only propose, this one WRITES — through the `write`
 # built-in, every written kind held to its emit, which names scratchpads
-# alone. Each settled mutate call's row carries the engine-stamped `changes`
-# (the changelog entries it wrote), which is what the console's chips and any
-# GraphQL reader resolve.
+# alone. Each settled write call's row carries the engine-stamped `changes`
+# (the changelog entries it wrote), which is what the console's chips
+# resolve.
 kind: substrate.reamde.dev/core/agent
 metadata:
   id: samples.substrate.reamde.dev/llm/substrateEditor
@@ -187,23 +190,25 @@ data:
   authority: samples.substrate.reamde.dev
   package: llm
   description: >-
-    Edits scratchpads directly through the mutate built-in — the demo for
-    engine-stamped changes on a thread's tool rows.
+    Edits scratchpads directly through the write built-in — the demo for engine-stamped
+    changes on a thread's tool rows.
   prompt: |
-    You edit scratchpad records, and nothing else. Read them with the graphql
-    tool (the schema is introspectable; list through records and descend
-    through nodes { ... }). Write them with the mutate tool: put creates or
-    replaces one, patch changes one — properties ride under input as
-    {"properties": {...}}. Ids come from graphql results; for a new
+    You edit scratchpad records, and nothing else. Read them with the query
+    tool (kind samples.substrate.reamde.dev/llm/scratchpad lists them; kind
+    + id reads one). Write them with the write tool: op put creates or
+    updates one, op patch changes one — properties ride under input as
+    {"properties": {...}}. Ids come from query results; for a new
     scratchpad, invent a short lowercase id. After a write, answer in one
     short line naming the scratchpad id you touched. You cannot write any
     other kind, so do not try.
   provider: default
   model: claude-sonnet-5
   tools:
-    - function: substrate.reamde.dev/core/graphql
-    - function: substrate.reamde.dev/core/mutate
+    - function: substrate.reamde.dev/core/query
+    - function: substrate.reamde.dev/core/write
   permissions:
+    reads:
+      kinds: [samples.substrate.reamde.dev/llm/scratchpad]
     writes: [samples.substrate.reamde.dev/llm/scratchpad]
   budgets:
     maxTurns: 8
@@ -211,7 +216,7 @@ data:
     deadlineSeconds: 180
 ---
 # ---- the judge: an agent DECIDES a change request ----------------------------
-# The arbiter patches a request's `decision` through `mutate`. Its emit names
+# The arbiter patches a request's `decision` through `write`. Its emit names
 # the request kind (so it may write the decision) AND scratchpads (an agent's
 # accept is bounded by its emit for the kind the accept would write, so it
 # may accept scratchpad changes and nothing else — rejecting needs no such
@@ -238,14 +243,14 @@ data:
   package: llm
   description: >-
     Judges change requests: accepts a reasonable scratchpad change through
-    the mutate built-in, rejects anything else, with a rationale either way.
+    the write built-in, rejects anything else, with a rationale either way.
   prompt: |
     You judge one change request per run. The user message is a delivery
-    envelope naming the request record; read the request with the graphql
-    tool (kind "substrate.reamde.dev/core/recordpatchrequest": its op, diff,
-    rationale and target).
+    envelope naming the request record; read the request with the query
+    tool (kind "substrate.reamde.dev/core/recordpatchrequest" + its id: the
+    op, diff, rationale and target).
 
-    Decide it with ONE mutate call patching the request's decision:
+    Decide it with ONE write call, op patch on the request, input:
     {"properties": {"decision": "accepted"}} or
     {"properties": {"decision": "rejected"}}.
 
@@ -256,9 +261,13 @@ data:
   provider: default
   model: claude-sonnet-5
   tools:
-    - function: substrate.reamde.dev/core/graphql
-    - function: substrate.reamde.dev/core/mutate
+    - function: substrate.reamde.dev/core/query
+    - function: substrate.reamde.dev/core/write
   permissions:
+    reads:
+      kinds:
+        - substrate.reamde.dev/core/recordpatchrequest
+        - samples.substrate.reamde.dev/llm/scratchpad
     writes:
       - substrate.reamde.dev/core/recordpatchrequest
       - samples.substrate.reamde.dev/llm/scratchpad

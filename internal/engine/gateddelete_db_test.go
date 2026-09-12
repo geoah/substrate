@@ -30,9 +30,9 @@ func TestGatedDeleteCarriesIfVersionToTheAccept(t *testing.T) {
 	if err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
-	fake.script("mut",
-		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { delete(kind: "crew.test.dev/crew/widget", id: "w-doomed", ifVersion: 1) { id } }`,
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", toolArgs(t, map[string]any{
+			"op": "delete", "kind": crewPackage + "/widget", "id": "w-doomed", "ifVersion": 1,
 		})}}},
 		fakeTurn{content: "held, waiting."},
 	)

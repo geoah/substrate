@@ -25,8 +25,7 @@ import (
 // PackageLLM is the second package the binary seeds (record 0077): the agent
 // loop's own data, out of core so core is not everything. It is seeded, so
 // nothing keys on its NAME — the seed, the boot upgrade, the
-// declaration-write refusal and the GraphQL bare singular all read
-// `source: builtin`.
+// declaration-write refusal all read `source: builtin`.
 const (
 	AuthorityPublisher = "substrate.reamde.dev"
 	PackageCore        = AuthorityPublisher + "/core"

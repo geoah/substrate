@@ -60,7 +60,7 @@ data:
     # only a SHIPPED declaration may name it (the loader refuses one from any
     # installed package, since nothing can hand the engine a body). The four
     # host functions core ships are the agent built-ins — query, propose,
-    # graphql, mutate — and their declarations are their whole cards.
+    # write, ask — and their declarations are their whole cards.
     # The author's OBJECTIVE facts for the policy door
     # (docs/plans/thread-interactions.md): what class of effect the body has,
     # and a floor no policy or judge loosens. Facts, never grants — the grant

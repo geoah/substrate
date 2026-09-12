@@ -54,8 +54,8 @@ type Dataset interface {
 	// --- reads ---
 	// Get returns the full record by its (type, id) identity: properties,
 	// labels, annotations and machine states. A reference property carries the
-	// records this one points at; what points BACK is Incoming. A former id
-	// resolves within the type.
+	// records this one points at; what points BACK is a List under
+	// Filter.Referencing. A former id resolves within the type.
 	Get(ctx context.Context, typ, id string) (*Record, error)
 	List(ctx context.Context, q Query) (*Page, error)
 	Search(ctx context.Context, in SearchInput) (SearchResult, error)
@@ -81,11 +81,6 @@ type Dataset interface {
 	// the ordinary record delete, which is the same write either way.
 	MintToken(ctx context.Context, label string, expiresAt *time.Time) (TokenInfo, string, error)
 	Tokens(ctx context.Context) ([]TokenInfo, error)
-
-	// Incoming pages the reference properties naming one record, narrowable to
-	// one property or one source kind so a drill-down expands a group without
-	// pulling the rest.
-	Incoming(ctx context.Context, typ, id string, opts IncomingOptions) (*IncomingPage, error)
 
 	// --- background loops and the operator's re-embed ---
 	// RunGC performs one owner-reference mark-and-collect sweep for

@@ -25,7 +25,7 @@
 #   2. A FUNCTION that routes on a header and writes two kinds, one of them
 #      pointing at the other through a reference property.
 #   3. A RECORD-SOURCED trigger that hands each new instruction to an AGENT,
-#      which turns it into tasks through the graphql and mutate host functions.
+#      which turns it into tasks through the query and write host functions.
 #
 # The AGENT wants an `llm/provider` row at the id it names (`default`), which
 # is what the llm sample ships: import that one too and fill in its key, or
@@ -45,7 +45,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: pebble
-  version: 4
+  version: 5
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -268,7 +268,7 @@ data:
 ---
 # ---- the assistant: an instruction in, tasks out ----------------------------
 # Delivered by the pebble-on-instruction trigger with one instruction record
-# in the envelope. It reads through graphql and writes through mutate, and its
+# in the envelope. It reads through query and writes through write, and its
 # writes name the task kind alone, so nothing it is talked into can land
 # anywhere else.
 kind: substrate.reamde.dev/core/agent
@@ -292,27 +292,23 @@ data:
     instruction that asks for nothing to be done ("remember that the meeting
     moved") is still one task, worded as the thing to do.
 
-    Before creating a task, check for an existing one with the graphql tool:
-    the kind is samples.substrate.reamde.dev/tasks/task and its heading is the `name`
-    property, so a query like
+    Before creating a task, check for an existing one with the query tool:
+    the kind is samples.substrate.reamde.dev/tasks/task and its heading is
+    the `name` property, so a call like
 
-      { records(filter: {kinds: ["samples.substrate.reamde.dev/tasks/task"],
-          properties: {status: {in: ["open", "proposed"]}}}, first: 50)
-        { nodes { id title } } }
+      {"filter": {"kinds": ["samples.substrate.reamde.dev/tasks/task"],
+                  "properties": {"status": {"in": ["open", "proposed"]}}},
+       "first": 50}
 
-    lists what is open, `title` being the task's name. A task's own
-    properties (dueAt) need an inline fragment on the kind's GraphQL type,
-    whose name is the repository's authority, the package and the kind
-    joined by underscores with dots folded to underscores; read it from
-    __schema { types { name } } rather than guess it. Introspect (__type)
-    rather than guess when a field name is in doubt. If an open task already
-    says the same thing, do not create another.
+    lists what is open; each record's properties carry name, status and
+    dueAt. If an open task already says the same thing, do not create
+    another.
 
-    Create each missing task with ONE mutate call each:
+    Create each missing task with ONE write call each:
 
-      mutation { put(input: {kind: "samples.substrate.reamde.dev/tasks/task",
-        id: "<short-lowercase-slug>",
-        properties: {name: "<the task, one line>"}}) { id } }
+      {"op": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
+       "id": "<short-lowercase-slug>",
+       "input": {"properties": {"name": "<the task, one line>"}}}
 
     Add dueAt (RFC 3339, UTC) only when the instruction names a time. Add
     description only when the instruction carries detail beyond the heading.
@@ -324,12 +320,15 @@ data:
   provider: default
   model: claude-sonnet-5
   tools:
-    - function: substrate.reamde.dev/core/graphql
-    - function: substrate.reamde.dev/core/mutate
+    - function: substrate.reamde.dev/core/query
+    - function: substrate.reamde.dev/core/write
   budgets:
     maxTurns: 8
     maxToolCalls: 8
     deadlineSeconds: 180
   permissions:
+    reads:
+      kinds:
+        - samples.substrate.reamde.dev/tasks/task
     writes:
       - samples.substrate.reamde.dev/tasks/task

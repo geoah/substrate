@@ -16,29 +16,31 @@ import (
 
 const apiPrefix = "/api/v1"
 
-// The core package and the collections in it the CLI addresses by name. Every
-// other collection is resolved from the registry, so these are the only
-// literal names the client carries.
-//
-// The registry collection is `kinds`: the meta-kind is `substrate.reamde.dev/core/kind`,
-// self-describing the way a CRD is, so its collection needs no prefix.
+// The core package and the kinds in it the CLI addresses by name. Every
+// other kind is resolved from the registry, so these are the only literal
+// names the client carries.
 const (
 	// corePackage is the package identity publishing the substrate's own
 	// machinery kinds — the trigger/run vocabulary among them, so the trigger
 	// records AND (a resource's operational verbs live at the resource, ruling
 	// A8) the trigger delivery verbs hang off it. It is two segments, an
-	// authority and a package, because a collection path is three.
+	// authority and a package, because a kind reference is three.
 	corePackage = "substrate.reamde.dev/core"
 
-	// nameKind is the registry collection, the `kind` kind's own name; the
-	// meta-kind is substrate.reamde.dev/core/kind, self-describing the way a
-	// CRD is, so its collection needs no prefix.
+	// nameKind is the registry kind's own name: the meta-kind is
+	// substrate.reamde.dev/core/kind, self-describing the way a CRD is, and
+	// the registry is the list of its records.
 	nameKind = "kind"
 )
 
 // The repository-wide endpoints that name no kind sit at the version root, out
 // of the kind namespace (decision 0033).
 const (
+	// pathRecords is the one records route: every list, ranked read and
+	// kind-scoped tail is a GET here with the kind named INSIDE `filter`, and
+	// a create under a server-assigned id is a POST here with the kind in the
+	// body. A chosen id is a PUT at the record path instead.
+	pathRecords    = apiPrefix + "/records"
 	pathChanges    = apiPrefix + "/changes"
 	pathVocabulary = apiPrefix + "/vocabulary/apply"
 	// pathVocabularyPlan is the apply's preview: the same documents, nothing
@@ -79,14 +81,15 @@ func newClient(server, token string, hc *http.Client) *client {
 	return &client{server: strings.TrimRight(server, "/"), token: token, hc: hc}
 }
 
-// collectionPath is the kind reference AS a path:
-// /api/v1/{authority}/{package}/{kind}, where pkg is the package IDENTITY
-// (`{authority}/{package}`, decision 0047) and so already carries its own
-// separator. Every kind carries one, so every collection is three segments.
-// Every id segment is escaped, so a record id carrying a slash (a
+// recordPath is the kind reference AS a path, then the record id and any
+// sub-resource after it: /api/v1/{authority}/{package}/{kind}/{id}[/…], where
+// pkg is the package IDENTITY (`{authority}/{package}`, decision 0047) and so
+// already carries its own separator. There is no shorter path: three segments
+// name nothing on the server, every list goes through pathRecords. Every
+// segment after the kind is escaped, so a record id carrying a slash (a
 // declaration's id IS a kind reference) arrives percent-encoded rather than
 // as more path segments.
-func collectionPath(pkg, kind string, id ...string) string {
+func recordPath(pkg, kind string, id ...string) string {
 	p := apiPrefix + "/" + pkg + "/" + kind
 	for _, seg := range id {
 		p += "/" + url.PathEscape(seg)
@@ -234,17 +237,56 @@ func truncate(s string, n int) string {
 
 // --- typed calls ---
 
-type recordPage struct {
-	Records []*substrate.Record `json:"records"`
-	Cursor  string              `json:"cursor,omitempty"`
-}
-
-func (c *client) list(ctx context.Context, pkg, kind string, q url.Values) (*recordPage, error) {
-	var page recordPage
-	if err := c.do(ctx, http.MethodGet, collectionPath(pkg, kind), q, nil, &page); err != nil {
+// list reads one page of a kind's records through the records route. The
+// page is the server's whole shape, head and generation included, so a
+// `get -w --from <head> --generation <generation>` after it resumes with
+// neither a gap nor a double-see.
+func (c *client) list(ctx context.Context, pkg, kind string, q url.Values) (*substrate.Page, error) {
+	if err := setFilterKinds(q, pkg+"/"+kind); err != nil {
+		return nil, err
+	}
+	var page substrate.Page
+	if err := c.do(ctx, http.MethodGet, pathRecords, q, nil, &page); err != nil {
 		return nil, err
 	}
 	return &page, nil
+}
+
+// search is the ranked read: the query, its mode and the kinds it ranks over.
+func (c *client) search(ctx context.Context, q url.Values) (*substrate.RankedPage, error) {
+	var page substrate.RankedPage
+	if err := c.do(ctx, http.MethodGet, pathRecords, q, nil, &page); err != nil {
+		return nil, err
+	}
+	return &page, nil
+}
+
+// setFilterKinds names the kinds a records read is scoped to, INSIDE the
+// `filter` parameter: the route has no kind in its path, so the kind rides
+// with the rest of the grammar. A filter the caller already built (--filter,
+// -l) is kept and its `kinds` replaced, never appended to, because the read
+// is one kind's by construction and a user-supplied kinds list would widen
+// what `get <kind>` promised.
+func setFilterKinds(q url.Values, kinds ...string) error {
+	return editFilter(q, func(f *substrate.Filter) { f.Kinds = kinds })
+}
+
+// editFilter decodes the `filter` parameter q carries (none is the empty
+// filter), lets edit change it and writes it back.
+func editFilter(q url.Values, edit func(*substrate.Filter)) error {
+	var f substrate.Filter
+	if raw := q.Get("filter"); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &f); err != nil {
+			return fmt.Errorf("parse --filter as JSON: %w", err)
+		}
+	}
+	edit(&f)
+	b, err := json.Marshal(f)
+	if err != nil {
+		return fmt.Errorf("encode filter: %w", err)
+	}
+	q.Set("filter", string(b))
+	return nil
 }
 
 // recordRead is one GET's flat JSON: the record plus `propertyMeta`, the
@@ -259,16 +301,21 @@ type recordRead struct {
 
 func (c *client) get(ctx context.Context, pkg, kind, id string) (*substrate.Record, map[string]statusProperty, error) {
 	var e recordRead
-	if err := c.do(ctx, http.MethodGet, collectionPath(pkg, kind, id), nil, nil, &e); err != nil {
+	if err := c.do(ctx, http.MethodGet, recordPath(pkg, kind, id), nil, nil, &e); err != nil {
 		return nil, nil, err
 	}
 	return &e.Record, e.PropertyMeta, nil
 }
 
+// put writes one record. With an id it is a PUT at the record path, whose
+// URL fixes (kind, id) and the body needs neither; without one it is a POST
+// at the records route, a create under a server-assigned id, so the body
+// carries the kind reference and no id.
 func (c *client) put(ctx context.Context, pkg, kind, id string, in substrate.PutInput) (*substrate.Record, error) {
-	method, path := http.MethodPost, collectionPath(pkg, kind)
-	if id != "" {
-		method, path = http.MethodPut, collectionPath(pkg, kind, id)
+	method, path := http.MethodPut, recordPath(pkg, kind, id)
+	if id == "" {
+		method, path = http.MethodPost, pathRecords
+		in.Kind, in.ID = pkg+"/"+kind, ""
 	}
 	var e substrate.Record
 	if err := c.do(ctx, method, path, nil, in, &e); err != nil {
@@ -279,7 +326,7 @@ func (c *client) put(ctx context.Context, pkg, kind, id string, in substrate.Put
 
 func (c *client) patch(ctx context.Context, pkg, kind, id string, in substrate.PatchInput) (*substrate.Record, error) {
 	var e substrate.Record
-	if err := c.do(ctx, http.MethodPatch, collectionPath(pkg, kind, id), nil, in, &e); err != nil {
+	if err := c.do(ctx, http.MethodPatch, recordPath(pkg, kind, id), nil, in, &e); err != nil {
 		return nil, err
 	}
 	return &e, nil
@@ -287,7 +334,7 @@ func (c *client) patch(ctx context.Context, pkg, kind, id string, in substrate.P
 
 func (c *client) delete(ctx context.Context, pkg, kind, id string) (*substrate.Record, error) {
 	var e substrate.Record
-	if err := c.do(ctx, http.MethodDelete, collectionPath(pkg, kind, id), nil, nil, &e); err != nil {
+	if err := c.do(ctx, http.MethodDelete, recordPath(pkg, kind, id), nil, nil, &e); err != nil {
 		return nil, err
 	}
 	return &e, nil

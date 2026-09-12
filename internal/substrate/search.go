@@ -36,3 +36,19 @@ type SearchResult struct {
 	Hits    []Hit `json:"hits"`
 	Pending int   `json:"pending"`
 }
+
+// Ranked shapes a search result as the ranked page the records route
+// answers: the records in rank order, each one's scores keyed by record path,
+// and the pending count. Records starts non-nil so an empty ranking
+// serializes `[]`.
+func Ranked(res SearchResult) RankedPage {
+	out := RankedPage{Records: []*Record{}, Scores: map[string]Scores{}, Pending: res.Pending}
+	for _, h := range res.Hits {
+		if h.Record == nil {
+			continue
+		}
+		out.Records = append(out.Records, h.Record)
+		out.Scores[h.Record.Kind+"/"+h.Record.ID] = Scores{Lexical: h.Lexical, Semantic: h.Semantic}
+	}
+	return out
+}

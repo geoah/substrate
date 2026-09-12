@@ -44,8 +44,8 @@ grep_docs() {
 # `entity`, `tenant`, `relationship`, `singleton`, `configType`, `edge` and
 # `integration` (the provider tier's old name; Notion's own "internal
 # integration" is written around, not excepted). `type`, `schema`, `group`,
-# `log`, `extension` and `capability` all have a legitimate sense (a GraphQL
-# schema, a Postgres extension, a function's `capabilities` envelope), so they
+# `log`, `extension` and `capability` all have a legitimate sense (a JSON
+# Schema, a Postgres extension, a function's `capabilities` envelope), so they
 # are the reading pass's, not this script's.
 #
 # terms.md itself is exempt: it names the dead words on purpose, to retire them.
@@ -65,17 +65,21 @@ if grep_docs -rnE '^[[:space:]]*(apiVersion|spec):'; then
   flag "an example writes a retired envelope key; the four are kind/metadata/data/status"
 fi
 
-# --- the retired GraphQL promise ----------------------------------------
+# --- the second surface is gone -----------------------------------------
 #
-# Decision 0053 made every part of GraphQL a preview: REST is the supported
-# interface, and nothing on the GraphQL surface carries an additive promise or
-# a deprecation marker. The phrases that carried the old promise are grepped
-# for, because each is a claim the server does not keep: `structural half`
-# named the part of the schema that was frozen, `@deprecated` was the marker a
-# leaving element was promised to wear and the schema emits none, and `seven
-# mutations` is the count the old promise was written against (there are five).
-if grep_docs -rniE 'seven mutations|structural half|@deprecated'; then
-  flag "a page carries the retired GraphQL promise; all of GraphQL is preview (decision 0053)"
+# Decision 0079 removed GraphQL: REST is the one surface, every list is
+# `GET /api/v1/records`, and the reverse read is its `referencing` filter
+# arm. A page still naming the surface, or a route it took with it, describes
+# a door that answers 404 today. `gql` is matched as a whole word (the Go
+# package and the fence label), not as a fragment, so a word that merely
+# contains the letters is left alone. The decision records are outside `files`
+# and hold the history; the one spelling a live page may carry is the LINK to
+# the record that removed it, which the filename names.
+if grep_docs -rnE 'GraphQL|graphql|\bgql\b' | grep -v '0079-graphql-is-removed'; then
+  flag "a page names GraphQL; the surface is gone, every read is GET /api/v1/records (decision 0079)"
+fi
+if grep_docs -rnE '/incoming\b|trait/\{id\}/records'; then
+  flag "a page prints a removed route; the reverse read is filter.referencing and a trait's records are filter.implements (decision 0079)"
 fi
 
 # --- the stability the supported REST features reached ------------------

@@ -2,7 +2,7 @@ package testenv_test
 
 // The public change event over a real socket (decision 0061): every surface
 // that serves a change row, the feed's history page and forward read, the
-// collection watch and GraphQL's `changelog` and `history`, names the records
+// collection watch and a record's own history, names the records
 // the entry moved under `affected` and carries none of the stored replay
 // effects. internal/api is tested against a fake that never held effects, so
 // only the real engine behind the real handler can show they stay off.
@@ -175,43 +175,20 @@ func TestEveryChangeSurfaceServesTheEventAndNoEffects(t *testing.T) {
 
 	// The collection watch, drained from seq 0 and closed once the delete
 	// arrives: the stream stays open past its last row by design.
-	check("collection watch", watchRows(t, e, itemsPath+"?watch=1&from=0", 3))
+	check("collection watch", watchRows(t, e, listPath(eventRef+"/item", nil)+"&watch=1&from=0", 3))
 	check("feed watch", watchRows(t, e, "/api/v1/changes?watch=1&from=0&kinds="+eventRef+"/item", 3))
 
-	// GraphQL, both doors to a Change: the changelog walk and a record's own
-	// history. Preview surface, same projection.
-	var gql struct {
-		Data struct {
-			Changelog struct {
-				Changes []eventRow `json:"changes"`
-			} `json:"changelog"`
-		} `json:"data"`
-		Errors []map[string]any `json:"errors"`
-	}
-	const fields = `{ seq op recordId payload affected { kind id version deleted } }`
-	mustDecode(t, e, http.MethodPost, "/api/v1/graphql", map[string]any{
-		"query": `{ changelog(first: 100, filter: {kinds: ["` + eventRef + `/item"]}) { changes ` + fields + ` } }`,
-	}, &gql)
-	if len(gql.Errors) > 0 {
-		t.Fatalf("graphql changelog: %v", gql.Errors)
-	}
-	check("graphql changelog", gql.Data.Changelog.Changes)
-
+	// A record's own history: the feed narrowed to one record, the same
+	// projection.
 	var hist struct {
-		Data struct {
-			Record struct {
-				History []eventRow `json:"history"`
-			} `json:"record"`
-		} `json:"data"`
-		Errors []map[string]any `json:"errors"`
+		Changes []eventRow `json:"changes"`
 	}
-	mustDecode(t, e, http.MethodPost, "/api/v1/graphql", map[string]any{
-		"query": `{ record(kind: "` + eventRef + `/item", id: "a") { history(first: 100) ` + fields + ` } }`,
-	}, &hist)
-	if len(hist.Errors) > 0 {
-		t.Fatalf("graphql history: %v", hist.Errors)
+	mustDecode(t, e, http.MethodGet, "/api/v1/changes?first=100&recordKind="+eventRef+"/item&recordId=a", nil, &hist)
+	rows = hist.Changes
+	for i, j := 0, len(rows)-1; i < j; i, j = i+1, j-1 {
+		rows[i], rows[j] = rows[j], rows[i]
 	}
-	check("graphql history", hist.Data.Record.History)
+	check("record history", rows)
 
 	// Unfiltered, every surface serves the trigger's own write and never the
 	// ledger entry beside it. This guards the HIDING: it cannot see the
@@ -242,13 +219,6 @@ func TestEveryChangeSurfaceServesTheEventAndNoEffects(t *testing.T) {
 		t.Fatalf("forward read: %d %s", status, raw)
 	}
 	noLedger("forward read", ndjsonRows(t, strings.Split(strings.TrimSpace(string(raw)), "\n")))
-	mustDecode(t, e, http.MethodPost, "/api/v1/graphql", map[string]any{
-		"query": `{ changelog(first: 1000) { changes ` + fields + ` } }`,
-	}, &gql)
-	if len(gql.Errors) > 0 {
-		t.Fatalf("graphql changelog: %v", gql.Errors)
-	}
-	noLedger("graphql changelog", gql.Data.Changelog.Changes)
 }
 
 // mustDecode performs a request that has to succeed and decodes its body.

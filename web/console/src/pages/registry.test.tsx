@@ -58,7 +58,6 @@ import { RegistryPage } from "./registry"
 const CATALOG_PATH = "/api/v1/catalog"
 const SHIPPED_PATH = "/api/v1/vocabulary/upgrade"
 const STATUS_PATH = "/api/v1/substrate.reamde.dev/core/bundle/status"
-const REPOSITORY_PATH = "/api/v1/substrate.reamde.dev/core/repository"
 
 /** The authority this repository owns, where every imported sample lands. */
 const HOME = "ada.example.com"
@@ -340,6 +339,17 @@ interface Wire {
   take?: (id: string) => Response
 }
 
+/** The kinds a records-route URL lists, read off its `filter`: the list route
+ * is one path for every kind, so a stub dispatches on this, not the path. */
+function listedKinds(path: string): string[] {
+  const url = new URL(path, "http://x")
+  if (url.pathname !== "/api/v1/records") return []
+  const filter = JSON.parse(url.searchParams.get("filter") ?? "{}") as {
+    kinds?: string[]
+  }
+  return filter.kinds ?? []
+}
+
 describe("RegistryPage", () => {
   const fetchMock = vi.fn<typeof fetch>()
 
@@ -350,7 +360,7 @@ describe("RegistryPage", () => {
       if (path === STATUS_PATH) {
         return jsonResponse(200, { items: wire.statuses ?? [] })
       }
-      if (path.startsWith(REPOSITORY_PATH)) {
+      if (listedKinds(path).includes("substrate.reamde.dev/core/repository")) {
         return jsonResponse(200, {
           records: [
             {
@@ -361,7 +371,7 @@ describe("RegistryPage", () => {
           ],
         })
       }
-      if (path.startsWith("/api/v1/substrate.reamde.dev/core/kind")) {
+      if (listedKinds(path).includes("substrate.reamde.dev/core/kind")) {
         return jsonResponse(200, { kinds: wire.kinds ?? [CORE_KIND] })
       }
       if (path === CATALOG_PATH) {

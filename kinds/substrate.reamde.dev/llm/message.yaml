@@ -73,7 +73,7 @@ data:
       type: bool
       description: whether the dispatch a tool row answers for succeeded
     # Stamped by the ENGINE, never authored by the model: the changelog
-    # entries a tool row's dispatch wrote (a mutate's writes, a propose's
+    # entries a tool row's dispatch wrote (a write's writes, a propose's
     # request row, a function tool's applied effects), or the entries a
     # decision wrote on a system row. The seq addresses the delta in the
     # changelog; kind and id address the record it moved — so any reader of

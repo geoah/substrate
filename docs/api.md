@@ -1,58 +1,49 @@
 # The API
 
-The substrate serves one set of operations for everything: four reads
-(`record`, `records`, `search`, `changelog`) plus a watch stream, and five
-mutations. REST serves all of them but `search`, which is the GraphQL query's
-alone. REST is the supported developer interface and the whole of GraphQL is a
-preview; [discovery](#discovery) says so per surface. A new kind never adds an
-endpoint: the REST path pattern is the same routes for every package, and the
-GraphQL schema is generated from the loaded kinds.
-This page is both surfaces: the REST routes, the filter grammar, pagination,
-the mutations, discovery, the generated GraphQL names, search and the errors.
-Authentication has a page of its own,
-[users and tokens](auth.md). The record model, the filter grammar and the
-mutations hold identically over REST and GraphQL; where the two surfaces
-differ, [REST and GraphQL](#rest-and-graphql) below lists how.
+The substrate serves one REST surface, under `/api/v1`, and every client
+speaks it: the console, the CLI and an agent's `query` tool all learn the one
+grammar written here. Records are read at **one route**, `GET /api/v1/records`,
+which lists, ranks or tails them depending on its parameters, and are written
+at the **record path**, `/api/v1/{authority}/{package}/{kind}/{id}`, which is
+the record's reference value. A new kind never adds an endpoint: the routes
+are the same for every package. This page is the surface: the records route and
+its three modes, the record path, the filter grammar, pagination, the five
+mutations, discovery, search and the errors. Authentication has a page of its
+own, [users and tokens](auth.md).
 
 ## REST resources
 
-Every package serves the same routes; the collection segment is the kind's
-**name**, so a record's path after `/api/v1/` is exactly its
-[reference](data-model.md#kinds-and-references) value
+Two shapes carry every record read and write. The **records route** is the
+one list, and the **record path** is one record's URL: the kind's three
+segments and the id, which is exactly its
+[reference](data-model.md#kinds-and-references) value under `/api/v1/`
 ([decision 0033](decisions/0033-the-path-grammar-has-no-separators.md),
-[decision 0047](decisions/0047-a-kind-lives-in-a-package.md)):
+[decision 0047](decisions/0047-a-kind-lives-in-a-package.md),
+[decision 0079](decisions/0079-graphql-is-removed-and-the-records-read-is-one-route.md)):
 
 ```http
-GET    /api/v1/{authority}/{package}/{kind}       # list, filter, watch
-POST   /api/v1/{authority}/{package}/{kind}       # create, server assigns the id
+GET    /api/v1/records?filter&orderBy&first&after&expand&withAnnotations   # the list
+GET    /api/v1/records?q&mode&filter&first                                  # the ranked read
+GET    /api/v1/records?watch=1&filter&from&generation                       # the tail
+POST   /api/v1/records                            # create; the body names `kind`, the server assigns the id
 GET    /api/v1/{authority}/{package}/{kind}/{id}
-PATCH  /api/v1/{authority}/{package}/{kind}/{id}  # patch, including state transitions
 PUT    /api/v1/{authority}/{package}/{kind}/{id}  # upsert at the given id
+PATCH  /api/v1/{authority}/{package}/{kind}/{id}  # patch, including state transitions
 DELETE /api/v1/{authority}/{package}/{kind}/{id}  # soft delete; ?ifVersion= guards it
-GET    /api/v1/{authority}/{package}/{kind}/{id}/incoming   # who points at this record
 ```
 
-A method sent to the wrong shape answers `405` naming the spelling that works,
-and never falls through to a write: `POST` at a record path used to drop the id
-and create under a server-assigned one, and `PUT` at a collection created under
-a random one. Both are refused now.
+There is no per-kind list route: `/api/v1/{authority}/{package}/{kind}` names
+nothing and answers the router's JSON `404`, and a wrong method at a path that
+exists answers `405`. Neither ever falls through to a write.
 
 **There is no repository segment anywhere.** The bearer token names the
 repository, so an address never has to, and there is nothing to get wrong.
 
-The path carries a record's **full identity**: `{authority}/{package}/{kind}`
+The record path carries a record's **full identity**: `{authority}/{package}/{kind}`
 names the kind, `{id}` the id within it. Ids are unique per kind, so the same
-id may exist in two collections as two unrelated records, and a resource read is
-always scoped to its own collection. There is no cross-kind read by bare id
-anywhere on the surface.
-
-Every kind carries an authority and a package
-([decision 0042](decisions/0042-every-kind-carries-an-authority.md),
-[decision 0047](decisions/0047-a-kind-lives-in-a-package.md)), so the
-two path shapes are told apart by segment count, in one place: a three-segment
-path is a collection (`{authority}/{package}/{kind}`), a four-segment path a
-record (`{authority}/{package}/{kind}/{id}`). There is no shape that leaves
-either out, and no dot rule.
+id may exist under two kinds as two unrelated records, and a record read is
+always scoped to its kind. There is no cross-kind read by bare id anywhere on
+the surface; a list that spans kinds names each one in `filter.kinds`.
 
 One id form needs care. A [kind declaration](vocabulary.md)'s id **is** a kind
 reference, so it carries a `/`. A client percent-encodes it, and the API
@@ -62,18 +53,121 @@ decodes it exactly once:
 GET /api/v1/substrate.reamde.dev/core/kind/samples.substrate.reamde.dev%2Ftasks%2Ftask
 ```
 
-Incoming references are a derived view of their own, paged separately so a
-popular record's fan-in never inflates its document. The response is
-`{"incoming": [{"property": …, "path": …,
-"from": {"id", "kind", "title"}}], "cursor": …, "total": n}`, ordered by
-source kind, then source record, then the property and its position within
-it. `property` names the reference the source points with, and `path` locates
-it where the reference sits inside an object or a keyed map, empty at the top
-level. Every reference answers here, pinned or not. The `cursor` belongs to the
-read that minted it: replaying one with a different `property`, `fromKind` or
-target record is a `400`, not a short page. A merge INTO the target refuses
-outstanding cursors the same way, because the merged-away record's pointers
-join the order mid-walk; start the walk again.
+### The records route
+
+`GET /api/v1/records` is every "read some records" question, in **three modes**
+told apart by their parameters. The three share `filter`
+([the grammar](#the-filter-grammar)), and that is where the sharing ends: each
+mode names the parameters and the filter arms it honors and **refuses the rest
+by name** (`400 bad_request`), because a silently ignored parameter returns
+unfiltered rows that look filtered. One route to look at and one filter to
+learn, not one uniform grammar.
+
+| Mode | Selected by | Parameters | Filter arms | Answer |
+| --- | --- | --- | --- | --- |
+| **list** | neither `q` nor `watch=1` | `filter`, `orderBy`, `first`, `after`, `expand`, `withAnnotations` | all of them | `{records, cursor?, head, generation, included?, matches?}` |
+| **ranked** | `q` | `q`, `mode`, `filter`, `first` | `kinds` alone | `{records, scores, pending}` |
+| **watch** | `watch=1` | `watch`, `filter`, `from`, `generation` | `kinds` alone | the ndjson tail |
+
+A kind named in `filter.kinds` that this repository never declared is
+`404 not_found`, exactly as the record path answers for an unknown kind.
+
+**The list** is the general read: distinct records across any set of kinds,
+filtered, ordered, keyset-paged ([pagination](#pagination)), with two optional
+sidecars. `withAnnotations=1` adds each row's `annotations`, off by default
+so a list of a heavily annotated record stays small. `expand` follows
+references one hop:
+
+```http
+GET /api/v1/records?filter={"kinds":["ada.example.com/tasks/task"],
+                             "properties":{"status":{"eq":"open"}}}
+                    &orderBy=dueAt&first=20&expand=project,assignee
+
+→ {"records": [...], "cursor": "eyJv…", "head": 4207, "generation": "7f3a0c2e9b1d4e6f",
+   "included": {"ada.example.com/tasks/project/kq3v9x2m41pf": {"id": "kq3v9x2m41pf",
+                  "kind": "ada.example.com/tasks/project", "properties": {…}, …},
+                "ada.example.com/people/person/9f2k": {…}}}
+```
+
+`expand=a,b` names **reference properties declared by the kinds the filter
+admits**, and the page carries their referents under `included`, keyed by the
+record path exactly as the pointing row wrote it, each referent once however
+many rows point at it. A client that wants the join inline does one map
+lookup per `ref`. The rules: one hop only; a single or `repeated` reference
+expands and a `keyed: true` map of pointers does not; a pointer written under a former id resolves to the canonical
+record; a dangling pointer has no entry, and the row's own `{ref}` value still
+says where it pointed; a name no admitted kind declares as a reference is
+`422 validation` listing what could have been expanded; and a page whose
+expansion would load more than 500 referents is `422` telling you to lower
+`first` or expand fewer properties. A single-record `GET` does not expand.
+
+**The ranked read** is [search](#search): `q` scores and orders instead of
+filtering, `mode` picks the arm, `first` is the hit count, and `filter.kinds`
+narrows the candidates. It carries `records` in rank order, a `scores` sidecar
+keyed by record path, and `pending`; no `cursor`, `head` or `generation`,
+because a ranking has no keyset and opens no single snapshot, so it claims
+none. Every other list parameter (`orderBy`, `after`, `expand`,
+`withAnnotations`) and every filter arm but `kinds` is refused with `q` by
+name: both ranking arms cap candidates BEFORE hydration, so a predicate applied
+to the top-k afterwards would not be the filtered top-k, and the substrate does
+not pretend otherwise.
+
+**The tail** is the [watch](changelog.md#watching) narrowed to a set of kinds:
+`GET /api/v1/records?watch=1&filter={"kinds":[…]}&from=&generation=` streams
+the same ndjson frames `GET /api/v1/changes?watch=1` does, opened with a
+bookmark and resumable from one. The change filter has no property arms, so
+under `watch=1` the `filter` admits `kinds` alone and every other arm is
+refused by name; `/changes` keeps its own richer change filter (`ops`,
+`actors`, their exclusions, `recordId`+`recordKind`, `q`).
+
+### Who points at a record: `referencing`
+
+The reverse read is a filter arm, not a sub-resource. `referencing` narrows
+the list to the records holding a reference AT one record, optionally through
+one named property:
+
+```http
+GET /api/v1/records?filter={"referencing":{"ref":"ada.example.com/tasks/project/kq3v9x2m41pf",
+                                            "property":"project"}}
+
+→ {"records": [...], "head": 4207, "generation": "…",
+   "matches": {"ada.example.com/tasks/task/t9": [{"property": "project"}],
+               "ada.example.com/notes/note/n4": [{"property": "project"},
+                                                  {"property": "links", "path": "related.project"}]}}
+```
+
+The target is matched by its canonical id **and every former id**, so a pointer
+written before a [merge](projection.md#merges) still counts, and every declared
+reference answers, pinned or not, a kind's own property or one nested inside an
+object. The answer is a page of distinct RECORDS, the same envelope as every
+other list, and it composes with the rest of the grammar (`kinds` for the
+source kind, `properties`, `orderBy`, `first`/`after`, `expand`). One source
+can point at the target from two sites, so the page carries `matches` beside
+it: for each record on the page, keyed by its record path, every site at which
+it points at the target, `property` naming the reference and `path` locating
+a nested site (absent at the top level). A `ref` that is not a `<kind>/<id>`
+path, or whose kind is unknown, is `422 validation`.
+
+### Creating a record: `POST /api/v1/records`
+
+`POST /api/v1/records` is the one body-addressed write: the body is the put
+input WITH `kind`, and the server assigns the id.
+
+```http
+POST /api/v1/records
+{"kind": "ada.example.com/tasks/task",
+ "properties": {"name": "Buy milk", "dueAt": "2026-08-13T09:00:00Z"}}
+
+→ 201 {"id": "kq3v9x2m41pf", "kind": "ada.example.com/tasks/task", …, "version": 1}
+```
+
+A body with no `kind` is `422`, an unknown kind `404`, and a body carrying an
+`id` is `422` naming the door for a chosen id: `PUT` at the record path, which
+fixes `(kind, id)` in the URL. Letting `POST` upsert under a supplied id would
+make two doors to one write with two answers about what a repeat does. The
+status is `201` for a create and `200` for an update, the same rule `PUT`
+follows, and `Idempotency-Key` binds to it
+([idempotency](#idempotency-and-retries)).
 
 ## The flat record
 
@@ -82,17 +176,19 @@ Requests and responses carry the **flat record**: one JSON object with
 four-key [envelope](data-model.md#the-envelope) is the YAML document form;
 REST never wraps. `title`, `body`, and the temporal properties appear inside
 `properties` and nowhere else, so `PutInput` and `PatchInput` accept them only
-there. `PutInput` carries an optional top-level `id` and an optional
-`ifVersion`; the CLI is what maps `metadata.id` and `metadata.ifVersion` onto
-them. The `id` is how a POST to a collection names the record it creates; on a
-`PUT` the path already names it, so the path is what the write addresses.
+there. `PutInput` carries an optional top-level `kind`, `id` and `ifVersion`;
+the CLI is what maps `metadata.id` and `metadata.ifVersion` onto them. On a
+`PUT` the path names both the kind and the id, so the path is what the write
+addresses; on `POST /api/v1/records` the body's `kind` names the kind and an
+`id` is refused ([above](#creating-a-record-post-apiv1records)).
 
-A worked sequence over the to-do list. Add a task (the kind comes from the
-path):
+A worked sequence over the to-do list. Add a task (the body names the kind,
+the server assigns the id):
 
 ```http
-POST /api/v1/samples.substrate.reamde.dev/tasks/task
-{"properties": {"name": "Buy milk", "dueAt": "2026-08-13T09:00:00Z"}}
+POST /api/v1/records
+{"kind": "samples.substrate.reamde.dev/tasks/task",
+ "properties": {"name": "Buy milk", "dueAt": "2026-08-13T09:00:00Z"}}
 
 → 201 {"id": "kq3v9x2m41pf", "kind": "samples.substrate.reamde.dev/tasks/task",
        "properties": {"name": "Buy milk", "title": "Buy milk", "status": "open",
@@ -105,8 +201,9 @@ List what is open, soonest first (the filter is URL-encoded JSON, the grammar
 is below):
 
 ```http
-GET /api/v1/samples.substrate.reamde.dev/tasks/task
-      ?filter={"properties":{"status":{"eq":"open"}}}&orderBy=dueAt
+GET /api/v1/records
+      ?filter={"kinds":["samples.substrate.reamde.dev/tasks/task"],
+               "properties":{"status":{"eq":"open"}}}&orderBy=dueAt
 
 → {"records": [...], "cursor": "eyJv…", "head": 4207, "generation": "7f3a0c2e9b1d4e6f"}
 ```
@@ -146,10 +243,11 @@ rule.
 ## The five mutations
 
 The complete write surface, for every actor, forever. Each one addresses its
-target by **full identity**: the kind beside the id (on REST the path's
-`{authority}/{package}/{kind}` names the kind; on GraphQL the kind travels in
-the mutation's arguments, as `kind` on `patch`, `delete` and `merge`, and inside
-`input` on `put`), because an id is unique per kind, never per repository:
+target by **full identity**: the kind beside the id (the record path's
+`{authority}/{package}/{kind}` names the kind for `put`, `patch` and `delete`;
+`POST /api/v1/records` and `merge` carry it in the body; an agent's `write`
+tool takes it as an argument), because an id is unique per kind, never per
+repository:
 
 | Mutation | What it does                                                                                                                                                        |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -202,12 +300,15 @@ POST   /api/v1/merge   {"kind": "samples.substrate.reamde.dev/people/person",
 POST   /api/v1/split   {"merge": "m3x8", "ifVersion": 1}
 ```
 
-A record's own derived views hang off its path too, which is where
-`…/{id}/incoming` sits. That follows one rule, written into the contract: **a
-resource's operational verbs live at the resource**, its own
-`{authority}/{package}/{kind}/{id}` path. That is
-also why the trigger verbs live under `substrate.reamde.dev/core/trigger/…` — trigger
-records are core's, so their verbs sit beside them.
+One rule places every verb, written into the contract: **a resource's
+operational verbs live at the resource**, its own
+`{authority}/{package}/{kind}/{id}` path, one level below the id where no id
+can sit. That is why the trigger verbs live under
+`substrate.reamde.dev/core/trigger/…` — trigger records are core's, so their
+verbs sit beside them — and why `merge` and `split`, which act on two records,
+sit at the version root instead. A record's reverse read is not a verb: it is
+the [`referencing` filter arm](#who-points-at-a-record-referencing) of the
+records route.
 
 ### Idempotency and retries
 
@@ -221,8 +322,8 @@ delivery path carries its own idempotency key, so a redelivered change applies
 once.
 
 A retried write is NOT safe on its own when the server assigns the identity or
-the effect. A `POST /api/v1/{authority}/{package}/{kind}` with no id mints a
-random id, so a client that retries after a timeout creates a second record.
+the effect. `POST /api/v1/records` mints a random id, so a client that
+retries after a timeout creates a second record.
 `POST …/core/function/{name}/call` and `…/core/agent/{name}/call` run the body
 again, with its effects. A retried `merge` or `split` under a version
 precondition fails `conflict`, because the first attempt moved the versions,
@@ -234,11 +335,12 @@ A function or agent body hands its own external effects an idempotency key
 derived from the client's, so a retry presents the same key downstream too.
 
 ```http
-POST /api/v1/samples.substrate.reamde.dev/tasks/task
+POST /api/v1/records
 Idempotency-Key: 6f1c2e3a-9b0d-4c7e-8a21-5d3f0b9e7c44
 Content-Type: application/json
 
-{"properties": {"name": "file the report"}}
+{"kind": "samples.substrate.reamde.dev/tasks/task",
+ "properties": {"name": "file the report"}}
 ```
 
 The contract, per key:
@@ -278,8 +380,8 @@ The contract, per key:
   first attempt wrote, so the client reads it instead.
 - Agent chat streams and is excluded; there is no stored outcome to replay.
   `vocabulary/apply`, catalog import and `POST /tokens` do not take the header,
-  and a `POST` to a vocabulary kind's collection (`kind`, `trait`, ...) refuses
-  it (`422`).
+  and a `POST /api/v1/records` whose `kind` is a vocabulary kind (`kind`,
+  `trait`, ...) refuses it (`422`): a declaration is addressed by its own id.
 
 The key store is a Postgres table, `idempotency_keys`, and not part of the
 changelog: a repository restored from its directory alone
@@ -301,8 +403,9 @@ on the `POST` is the one safe create for them.
 
 ## The filter grammar
 
-A filter is one JSON document, the same shape URL-encoded in REST's `?filter=`
-and passed whole to GraphQL's `filter` argument:
+A filter is one JSON document, URL-encoded in the records route's `?filter=`,
+and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
+`--filter` take:
 
 ```json
 {"kinds": ["samples.substrate.reamde.dev/tasks/task"],
@@ -311,7 +414,8 @@ and passed whole to GraphQL's `filter` argument:
  "labels": {"owner/starred": {"eq": true}}}
 ```
 
-- `kinds` names kinds by reference (implied by the path on a REST collection).
+- `kinds` names kinds by reference. Absent, the list spans every kind in the
+  repository; a kind the repository never declared is `404`.
 - `properties` carries one condition per property. The operator set is one
   rule, not a per-type table: `secret` and `digest` properties refuse
   filtering entirely, `reference` takes `eq`, `in`, `contains` and `exists`
@@ -328,41 +432,35 @@ and passed whole to GraphQL's `filter` argument:
   `true` lists only soft-deleted ones.
 - `implements` selects every kind carrying one [trait](data-model.md#traits),
   across every package. Every arm narrows, so `implements` intersects with the
-  kinds already in play rather than widening them: on a REST collection, whose
-  path has already fixed the kind, use it to test that kind; use it on
-  GraphQL's `records` for the cross-kind query. A pair that can match nothing
-  is a `validation` error naming the mismatch, not an empty page.
+  kinds already in play rather than widening them; alone it is the cross-kind
+  query. A pair that can match nothing is a `validation` error naming the
+  mismatch, not an empty page.
+- `referencing` is the reverse read: the records pointing at one record,
+  `{"ref": "<kind>/<id>", "property": …}` with `property` optional
+  ([above](#who-points-at-a-record-referencing)).
 
-A list also takes one shaping parameter beside the grammar:
-`withAnnotations=1` adds each row's `annotations`. It is off by default so a
-list of a heavily annotated record stays small.
+Ordering is `orderBy` with camelCase columns (`dueAt`, `at:desc,createdAt`, or
+a JSON list of `{property, desc}`). Only declared properties filter and order:
+**filterable, indexed, and declared are the same set**, so a query that would
+be slow is one the grammar cannot express.
 
-Ordering is `orderBy` with camelCase columns (`dueAt`, `at:desc,createdAt`).
-Only declared properties filter and order: **filterable, indexed, and declared
-are the same set**, so a query that would be slow is one the grammar cannot
-express.
-
-A list parameter a given mode does not honor is a `bad_request` that names it,
-never a silent success. On a collection list the path names the kind, so an
-explicit `filter.kinds` conflicts and is refused (drop it, or list a different
-collection). A `watch=1` stream ignores the list-query grammar, so
-`filter`/`orderBy`/`first`/`after`/`withAnnotations` alongside it
-are refused. An `incoming` read honors `first`/`after` and the `property` and
-`fromKind` narrowings; `filter`/`orderBy` are refused. A misspelled ordering column is refused naming
-the camelCase replacement, and a malformed filter document is refused naming
-the field that would not decode.
+A parameter or a filter arm a given [mode](#the-records-route) does not honor
+is a `bad_request` that names it, never a silent success: `orderBy` with `q`,
+`filter.properties` with `watch=1`, a `first` misspelled `First`. A misspelled
+ordering column is refused naming the camelCase replacement, and a malformed
+filter document is refused naming the field that would not decode.
 
 ## Pagination
 
 Lists page forward with a keyset cursor carried behind one opaque token. You
-pass `first` for the page size and, on the next request, the `cursor` a page
-returned as `after`:
+pass `first` for the page size (default 50, at most 500) and, on the next
+request, the `cursor` a page returned as `after`:
 
 ```http
-GET /api/v1/samples.substrate.reamde.dev/tasks/task?first=50
+GET /api/v1/records?filter={"kinds":["samples.substrate.reamde.dev/tasks/task"]}&first=50
 → {"records": [...], "cursor": "eyJv…", "head": 4211, "generation": "7f3a0c2e9b1d4e6f"}
 
-GET /api/v1/samples.substrate.reamde.dev/tasks/task?first=50&after=eyJv…
+GET /api/v1/records?filter={"kinds":["samples.substrate.reamde.dev/tasks/task"]}&first=50&after=eyJv…
 → {"records": [...], "cursor": "eyJv…", "head": 4211, "generation": "7f3a0c2e9b1d4e6f"}
 ```
 
@@ -375,26 +473,29 @@ walk needs both for a strict total order. The **stability guarantee** is exact:
 a cursor walk sees every row that existed for the whole walk exactly once. A
 row inserted or deleted mid-walk may or may not appear; a row that lived
 throughout is never skipped and never repeated. The token is bound to the
-`orderBy` it was minted for, so replaying it against a different order is
-rejected rather than silently mis-seeking. An exhausted list carries no
-`cursor` at all over REST, and an empty one over GraphQL; both mean the same
-thing, there is no next page.
+`orderBy` AND the `filter` it was minted for, so replaying it against a
+different order or a different predicate is refused (`422 validation`) rather
+than silently seeking past rows the new predicate admits and answering a short
+page that looked complete. An exhausted list carries no `cursor` at all: there
+is no next page.
 
 Two continuation styles exist, and the parameter name says which you are
 holding. The changelog uses real sequence numbers, `from` forward and `before`
 backward, because a seq is a meaningful ordinal (its history response returns
-a `cursor` seq to pass as the next `before`). Record lists and `incoming`
-lists use an opaque cursor, passed back as `after`.
+a `cursor` seq to pass as the next `before`). Record lists use an opaque
+cursor, passed back as `after`.
 
 Every list response also carries the changelog **head** seq captured at the snapshot
 it was served from, pinned once at the walk's start and carried through the
 cursor, so every page of one walk reports the same head, and the history
-**generation** that head belongs to. Page a collection, then resume a
+**generation** that head belongs to. List, then resume a
 [watch](changelog.md#watching) with `from={head}&generation={generation}`:
 every listed row's change is at or before `head`, and the watch replays exactly
 the changes after it, so the handoff has no gap and no double-see. A cursor
 minted under one generation is refused after a restore replaces the history
-(`422 validation`): list again.
+with the same `410 compacted` the changefeed gives a stale `from=`, its
+problem object naming the current `head` and `generation`: list again, never
+a `422` a client would read as its own mistake.
 
 ## Discovery
 
@@ -407,8 +508,8 @@ reports: the served API versions; the server build; the
 [changelog horizon](changelog.md#frames-and-the-horizon); the reference
 grammar this deployment speaks; the authentication endpoints beside the
 versioned API (`/register`, `/login`, `/tokens`, `/password`, `/totp`); what
-registration asks for and whether it is open at all; the two request surfaces,
-each with its endpoint and its compatibility; and a feature list. No dialect
+registration asks for and whether it is open at all; the request surface,
+with its endpoint and its compatibility; and a feature list. No dialect
 is on the wire: the
 [vocabulary](vocabulary.md#vocabulary-evolution-and-the-dialect-contract) and
 [changelog](changelog.md#the-dialect-a-changelog-is-written-in) dialects are
@@ -416,21 +517,21 @@ stored per repository, and a binary too old for a store refuses to open it,
 which surfaces as `unavailable`. That
 feature list is what a client reads instead of trying a route to see whether
 it exists: each entry names a feature, its stability and the `surfaces` that
-serve it (`rest`, `graphql`, or both):
+serve it:
 
 ```json
 {"versions": [{"name": "v1", "status": "served"}],
  "server": {"version": "…", "build": "…"},
  "changelog": {"horizon": 0},
  "features": [{"name": "triggers", "stability": "stable", "surfaces": ["rest"]},
-              {"name": "changefeed", "stability": "stable", "surfaces": ["rest", "graphql"]},
-              {"name": "search", "stability": "beta", "surfaces": ["graphql"]},
+              {"name": "changefeed", "stability": "stable", "surfaces": ["rest"]},
+              {"name": "search", "stability": "beta", "surfaces": ["rest"]},
               {"name": "agents", "stability": "alpha", "surfaces": ["rest"]}],
- "surfaces": {"rest": {"endpoint": "/api/v1", "compatibility": "supported"},
-              "graphql": {"endpoint": "/api/v1/graphql", "compatibility": "preview"}},
+ "surfaces": {"rest": {"endpoint": "/api/v1", "compatibility": "supported"}},
  "grammar": {"kind": "<authority>/<package>/<name>",
              "record": "<authority>/<package>/<kind>/<id>",
-             "collection": "/api/v1/{authority}/{package}/{kind}[/{id}]",
+             "collection": "/api/v1/records",
+             "recordPath": "/api/v1/{authority}/{package}/{kind}/{id}",
              "actors": ["api", "console", "substratectl",
                         "bundle:<authority>:<package>",
                         "function:<authority>:<package>:<name>",
@@ -442,26 +543,24 @@ serve it (`rest`, `graphql`, or both):
 ```
 
 A feature's `surfaces` are the doors to its own operations, not to its
-records: a trigger and a blob manifest are ordinary records and read on both
-surfaces whatever the entry says, while `["rest"]` means the feature's verbs
-(a replay, an install, a function call, a blob's bytes) have REST paths and no
-GraphQL field. The example above is abridged; the full list, and it is the
-same for every deployment of a given build, is `triggers`, `functions`,
-`bundles`, `blobs`, `export`, `changefeed`, `search`, `embeddings` and
-`agents`.
+records: a trigger and a blob manifest are ordinary records and read through
+the records route whatever the entry says. Every entry lists `rest`, the one
+surface, and the key stays a list so a second surface, should one come, lands
+as a new name beside it rather than a reshaped document. The example above is
+abridged; the full list, and it is the same for every deployment of a given
+build, is `triggers`, `functions`, `bundles`, `blobs`, `export`, `changefeed`,
+`search`, `embeddings` and `agents`. `grammar.collection` is the records
+route and `grammar.recordPath` the record path, so a client checks the two
+shapes it must agree with the substrate about before it addresses anything.
 
 `surfaces` is the verdict per request surface, and it is a different axis from
 a feature's stability. `compatibility` is `supported` on `rest`: the REST API
 is the interface a client builds on, and a break there is announced, never
-silent. It is `preview` on `graphql`: every part of the GraphQL surface, the
-generated types, the root operations and the scalars, may change without a v1
-wire break, so a client that posts to `/api/v1/graphql` pins the server
-version. The two axes compose one way: a feature's `stability` says how far
-that feature's shape has settled, and it binds on the REST door alone, because
-the GraphQL door is `preview` for every feature whatever the feature stamps;
-a `stable` `changefeed` freezes `GET …/changes` and does not make GraphQL's
-`changelog` field stable
-([decision 0053](decisions/0053-rest-is-supported-all-of-graphql-is-preview.md)).
+silent. A second, preview surface used to sit beside it and is gone
+([decision 0079](decisions/0079-graphql-is-removed-and-the-records-read-is-one-route.md));
+the object is keyed so its removal was one key leaving, not a reshaped
+document. A feature's `stability` says how far that feature's own shape has
+settled, and it binds on the one door.
 
 `registration` is what the register door asks for. `registration.inviteRequired`
 is `false` only on a deployment with
@@ -483,18 +582,16 @@ is served and works today.
 | `beta` | Served and supported, and the shape is still moving before v1 freezes it. A break is announced, never silent. |
 | `stable` | Frozen for v1. Changes are additive only. |
 
-**Every feature of the supported REST surface that
-[decision 0053](decisions/0053-rest-is-supported-all-of-graphql-is-preview.md)
-names reports `stable`**: `triggers`, `functions`, `bundles`, `blobs` and
-`changefeed`. `search` reports `beta`, because its only door is the preview
-GraphQL surface. `export` reports `beta` because 0053 did not name it:
-`GET /api/v1/export` streams the repository's recovery export, a tar of its
-directory in the snapshot format ([backups](operations.md#backups)), and it
-freezes by a decision of its own, not by age. `agents` and `embeddings` report
-`alpha` because their shapes are still moving; a surface in their `surfaces`
-says where they are served, not that they are frozen. `agents` is served on `rest`
-and `embeddings` on `graphql` alone, where the semantic arm of
-[`search`](#search) is its one door.
+**The settled features report `stable`**: `triggers`, `functions`, `bundles`,
+`blobs` and `changefeed`. `search` reports `beta`: it is served, at
+`GET /api/v1/records?q=`, and the hit shape (the per-arm `scores` beside the
+page) is young. `export` reports `beta` too: `GET /api/v1/export` streams the
+repository's recovery export, a tar of its directory in the snapshot format
+([backups](operations.md#backups)), and it freezes by a decision of its own,
+not by age. `agents` and `embeddings` report `alpha` because their shapes are
+still moving; a surface in their `surfaces` says where they are served, not
+that they are frozen. `embeddings` reach a caller as the semantic arm of
+[`search`](#search), its one door.
 
 The list is a literal in the server (`internal/api/discovery.go`), and it is
 every feature the build serves: one implementation serves them all, so there
@@ -518,175 +615,25 @@ feature reports `alpha`, which licenses withdrawing one of its routes
 (`POST /api/v1/embeddings/reembed` was withdrawn that way, and re-embedding is
 the operator's `substratectl repository reembed`). A deprecation is
 signalled, not a silent break: a `Warning` HTTP header on the REST response,
-with a minimum sunset window before removal. GraphQL makes no such promise
-([REST and GraphQL](#rest-and-graphql) below). There is no Kubernetes-style
+with a minimum sunset window before removal. There is no Kubernetes-style
 multi-version conversion machinery.
-
-## REST and GraphQL
-
-The two surfaces make different promises, and the difference decides what a
-client may build on. Discovery states it as `surfaces`: `rest` is `supported`
-and `graphql` is `preview`.
-
-**REST is the supported developer interface.** Its routes, request and
-response shapes, error codes and headers live under `/api/v1` and widen by
-addition; a change that would break a client is announced, never silent, and
-each feature's `stability` says how far its own shape has settled. A new kind
-adds no route: the collection segment is the kind's name on the same route
-pattern.
-
-**GraphQL is a preview, all of it.** The schema is a projection derived from
-the vocabulary and rebuilt per repository: installing a bundle adds types and
-fields and uninstalling one takes them away, so a client reads it by
-introspection instead of pinning it. The root operations (`record`, `records`,
-`search`, `changelog` and the five mutations), `Record`'s own fields and the
-scalars carry no promise either: they may change, and a schema element leaves
-without a deprecation marker. A client that needs ranking posts to
-`POST /api/v1/graphql` and pins the server version. The surface stays because
-the engine executes it itself: the agent loop's
-[`substrate.reamde.dev/core/graphql`](functions.md#host-functions) host
-function reads a repository through the same schema and resolvers. The
-generated half carries only the [declaration's own upgrade
-rules](vocabulary.md#vocabulary-evolution-and-the-dialect-contract).
-
-The two also do not serve the same set. Discovery says which serves what
-(every `features` entry carries its `surfaces`), and this is the whole list:
-
-| Operation | REST | GraphQL |
-| --------- | ---- | ------- |
-| Records of every kind: read, list, filter, and the five mutations | yes | yes |
-| Ranked search, and its semantic (embedding) arm | no route | `search(q, mode, kinds, k)` |
-| Changelog, forward from a seq | `GET …/changes?from=` | `changelog(from, filter, first)` |
-| Changelog, newest-first backward page | `GET …/changes?before=` | no field |
-| The live tail | `?watch=1` on a collection or on `…/changes`, ndjson | no subscription |
-| One record's own history | `GET …/changes?recordKind=&recordId=` | `history(first)` on the record |
-| Incoming references | `GET …/{id}/incoming` | no field |
-| Per-property provenance, `propertyMeta` | single-record reads only | single-record reads only |
-| Operational verbs: triggers, bundles, catalog, blobs, vocabulary apply, function and agent calls | yes | none |
-
-GraphQL's whole read and write surface serves at one endpoint,
-`POST /api/v1/graphql`, and its `filter` argument takes
-[the filter grammar](#the-filter-grammar) whole. Every argument carries that
-grammar in its **description**, so a client with only introspection to read
-(an agent holding the `graphql` tool) gets the accepted keys, the condition
-operators and a worked date range without leaving the endpoint, and a filter
-key the grammar does not have is a `validation` error naming the keys it does.
-`records(filter, orderBy, first, after)` is the list query and
-`record(kind, id)` the single lookup, which takes both because identity is the
-pair. A page carries the same `cursor`, `head` and `generation` a REST list
-does, and no `total`: a keyset walk counts nothing.
-
-```graphql
-query ($f: JSON) {
-  records(filter: $f, first: 20) {
-    nodes { id kind title ... on Ada_example_com_Tasks_Task { status } }
-    cursor
-    head
-  }
-}
-# variables:
-# {"f": {"kinds": ["ada.example.com/tasks/task"],
-#        "properties": {"status": {"eq": "open"}}}}
-```
-
-The five mutations spell their arguments out, and only `put` carries the whole
-record: `put(input)`, `patch(kind, id, input, ifVersion)`,
-`delete(kind, id, ifVersion)`,
-`merge(kind, winner, loser, winnerVersion, loserVersion)` and
-`split(mergeId, ifVersion)`. Every version argument is an optional `Long`
-carrying the [precondition](#the-five-mutations) the REST body carries. Watch
-`split`: its argument is `mergeId`, where the REST body key for the same value
-is `merge`.
-
-```graphql
-mutation ($k: String!, $id: ID!, $in: JSON!) {
-  patch(kind: $k, id: $id, input: $in) { id version }
-}
-# variables:
-# {"k": "samples.substrate.reamde.dev/tasks/task", "id": "kq3v9x2m41pf",
-#  "in": {"properties": {"status": "done"}}}
-```
-
-Search is the deliberate one. **Filtering is REST's job** and **ranking is the
-GraphQL query's**: `?filter=` selects rows by predicate, `search` scores and
-orders them, and the two answer different questions. A client that needs
-ranking posts the `search` query to `POST /api/v1/graphql`; there is no other
-door. `propertyMeta` is the other asymmetry: it is assembled per record, so a
-list never carries it on either surface. Both are listed here rather than left
-for a client to find out by trying, which is the rule: an asymmetry is written
-down or it is a bug
-([decision 0053](decisions/0053-rest-is-supported-all-of-graphql-is-preview.md)).
-
-### Generated names and scalars
-
-A GraphQL type name is a pure function of the kind's reference and where the
-kind came from, so the schema is deterministic and installing one bundle can
-never rename another kind. The rule has two arms. A **seeded kind keeps its
-bare singular**: `substrate.reamde.dev/core/token` is `Token`. That is the core
-package alone, because creation seeds core and nothing else: every sample a
-repository imports, `people` and `tasks` included, installs as the repository's
-own. Every **other kind carries its authority and its package**: the authority
-folded (a dot becomes `_`, a hyphen becomes `__`, and a digit-first authority
-gains a leading `_`), the package's word, then the singular, each TitleCased
-and joined by underscores. The fold reads back unambiguously because an
-authority never carries an underscore, so two authorities never share a name:
-`my-host.example.com` is `My__host_example_com` and `myhost.example.com` is
-`Myhost_example_com`. The repository `ada.example.com`
-that imported the `tasks` sample has `Ada_example_com_Tasks_Task`, and the
-installed Notion provider has `Providers_substrate_reamde_dev_Notion_Page`. The
-underscore keeps every one of them out of reach of any seeded name, the
-package keeps two packages apart that declare one singular, and the authority
-keeps two authorities apart that publish a package of one word, so a name
-never depends on which of its neighbours are installed and a later install
-never renames an earlier kind
-([decision 0058](decisions/0058-a-graphql-name-always-carries-the-authority.md)).
-Interfaces follow the same determinism: one per trait that carries properties
-(a pure marker trait adds none), and one per distinct state-property name
-(`HasStatus`, `HasProminence`). They span packages, so "everything with a
-status, anywhere" is one query.
-
-Two kinds that still resolve to one name are **refused when the second is
-declared**, at the same moment every other narrowing refusal happens, and a
-kind whose computed name would land on a structural name (`Record`, `Change`,
-`Reference`, a scalar, an interface) is refused at schema build with a
-named error. Neither is ever silently renamed.
-
-Three groups of fields are the **`Long`** scalar, a 64-bit signed integer
-serialized as a JSON number: `version` and `seq`; the changelog resume seqs
-`head` and `from` with the `ifVersion` precondition; and every `int`
-property, scalar, repeated or a reference's link property. GraphQL's built-in
-`Int` is 32-bit, and graphql-go serializes a value past 2^31-1 (about 2.1
-billion) as `null` with no error. The engine accepts an `int` up to 2^53-1
-([decision 0012](decisions/0012-numbers-are-exact-or-refused.md)) and a
-repository's version or seq counter has no bound at all, so `Long` carries the
-full int64 range on the wire. The `first` and `k` page sizes stay `Int`. A
-`decimal` property is a `String` holding its exact digit string, never a
-`Float`. A JavaScript client should read the 64-bit fields through a
-64-bit-safe path if a counter can exceed 2^53, since a JSON number past that
-loses precision in the browser's `Number`.
-
-A number inside an inline JSON argument (`put(input: {properties: {count:
-5}})`) reaches the engine as a number, exactly as the same value in a variable
-does, and is held to the same types: an inline `price: 19.90` on a `decimal`
-property is refused as a bare number (decision 0012), and an inline `id: 42` is
-refused because `id` is a string. Write them as `price: "19.90"` and
-`id: "42"`, as a variable or a REST body already must.
-
-Property types render as their proper shapes. A `repeated` property is a GraphQL
-list of its element type for every kind (`[Long]`, `[Float]`, `[Boolean]`,
-`[String]`), not a bare scalar. An `object` property (inline structured fields)
-renders as the `JSON` scalar, lossless, rather than flattening to `String`. A
-`reference` property is its own generated OBJECT type, `<Kind><Property>Reference`:
-`ref` is the referent's path as the named `Reference` scalar, `target` resolves
-the referent itself (null when the pointer dangles), and each declared link
-property is a typed field beside them. A reference that declares no link
-properties generates the same object, so adding one later adds a field instead
-of replacing a scalar. A client that wants the path alone selects `{ ref }`.
 
 ## Search
 
-Search is one query, `search(q, mode, kinds, k)`, served over GraphQL and
-nowhere else. It has two arms:
+Search is the records route's **ranked read**, `GET /api/v1/records?q=`, and
+there is no other door: `?filter=` selects rows by predicate, `q` scores and
+orders them, and the two answer different questions.
+
+```http
+GET /api/v1/records?q=quarterly+review&mode=hybrid
+                    &filter={"kinds":["ada.example.com/notes/note"]}&first=20
+
+→ {"records": [{"id": "n4", "kind": "ada.example.com/notes/note", …}, …],
+   "scores": {"ada.example.com/notes/note/n4": {"lexical": 0.42, "semantic": 0.81}, …},
+   "pending": 0}
+```
+
+It has two arms:
 
 - **Lexical**, on by default for every kind. The title and every
   string-family property index into full-text search, weighted in three bands
@@ -704,21 +651,23 @@ nowhere else. It has two arms:
   ([0026](decisions/0026-embedding-vectors-are-1536-wide-or-refused.md)).
 
 `mode` picks `lexical`, `semantic`, or `hybrid` (the default): hybrid runs both
-arms, normalizes each against its own best hit, and merges. The answer is
-`hits` and `pending`. Every hit carries the record beside its raw per-arm
-scores, `lexical` and `semantic`, so a caller can threshold rather than trust a
-rank. `pending` is the number of properties the drain has yet to buy vectors
-for, counted whenever the semantic arm was asked for: non-zero means the
-ranking covers a partial index (a repository [restored from its
-directory](operations.md#backups), a `reembed` in progress), and it falls to 0
-as the drain buys. In a repository that has named no embeddings provider,
-hybrid degrades to lexical and `semantic` reports an error rather than
-pretending. While properties are queued and no vector from the resolved
-provider and model has landed yet, `semantic` refuses with the `unavailable`
-code and the count, so "no vectors yet" never reads as "no matches"; hybrid
-returns its lexical arm alone. With nothing queued, a repository with nothing
-embeddable returns no hits, and a row re-pointed at a model nobody ran
-`substratectl repository reembed` for is refused naming the command.
+arms, normalizes each against its own best hit, and merges. `first` is the hit
+count, 20 by default. The answer is the records in rank order, each one's raw
+per-arm scores under `scores` keyed by record path (`lexical` is `ts_rank`,
+`semantic` cosine similarity, 0 where an arm did not rank), so a caller can
+threshold rather than trust a rank, and `pending`: the number of properties
+the drain has yet to buy vectors for, counted whenever the semantic arm was
+asked for. Non-zero means the ranking covers a partial index (a repository
+[restored from its directory](operations.md#backups), a `reembed` in
+progress), and it falls to 0 as the drain buys. In a repository that has named
+no embeddings provider, hybrid degrades to lexical and `semantic` reports an
+error rather than pretending. While properties are queued and no vector from
+the resolved provider and model has landed yet, `semantic` refuses with the
+`unavailable` code and the count, so "no vectors yet" never reads as "no
+matches"; hybrid returns its lexical arm alone. With nothing queued, a
+repository with nothing embeddable returns no hits, and a row re-pointed at a
+model nobody ran `substratectl repository reembed` for is refused naming the
+command.
 
 **Which model bought the vectors is data, per repository.** The one
 [`llm/provider`](agents.md#providers) row declaring `embedModel` is where a
@@ -734,14 +683,15 @@ The substrate does retrieval only: it returns typed records with scores, and
 anything generative built on top (a RAG loop, an assistant) is a client
 reading this API like every other. [Functions](functions.md) run on the shared
 runner and reach the same search through a host call, under their declared
-read allowlist.
+read allowlist, and an agent reaches it through the `q` arm of its
+[`query` tool](agents.md#tools).
 
 One ranking rule is built in: the shipped `person` carries a two-state
 `prominence` machine (`utility` at birth, `known` once something promotes it,
 an address-book sync or the owner), and search ranks `utility` people below
 every `known` match, so the recruiter who emailed once never outranks a
 friend. The demotion participates in the top-k ordering, so in a mixed-kind
-search a high-scoring utility person can be pushed out of the `k` rows
+search a high-scoring utility person can be pushed out of the `first` rows
 entirely.
 
 ## Actors
@@ -801,7 +751,7 @@ rules, who writes at which tier, and how recompute yields to them.
 
 The [document envelope](data-model.md#the-envelope) (kind, metadata, data,
 status) is the one canonical representation of a record. The flat JSON that
-REST and GraphQL carry is a lossless view of it: `properties`
+REST carries is a lossless view of it: `properties`
 lands under `data`, `metadata` holds the id and the authored key spaces, and the
 server-set fields (version, timestamps, provenance) land under `status`. The
 mapping round-trips exactly, so `substratectl get -o yaml` output applies back with no
@@ -820,7 +770,7 @@ a duplicate key is a `bad_request` naming it, never a silently dropped
 precondition or a broadened filter. Openness stays only inside the map-valued
 fields that are meant to be open: `properties`, `labels`, `annotations`, an
 object-typed or `json`-typed property, and the filter's per-property operators.
-GraphQL's JSON-scalar inputs decode through the same strict path.
+An agent's `write` tool decodes its `input` through the same strict path.
 
 `PATCH` semantics are pinned:
 
@@ -836,7 +786,8 @@ GraphQL's JSON-scalar inputs decode through the same strict path.
   declared clock.
 
 Status codes follow the write: a create is `201`, an update or replace is
-`200`, consistently across POST-to-collection and PUT-at-id.
+`200`, consistently across `POST /api/v1/records` and `PUT` at the record
+path.
 
 ## Webhooks
 
@@ -901,19 +852,18 @@ opened answers `unavailable`, never a masked `401`, so a store the binary
 cannot serve is diagnosable instead of looking like a bad credential; and a
 `semantic` search over a repository whose vectors have not been bought yet
 answers `unavailable` with the number of properties still queued, so an empty
-index is never mistaken for an empty match; search has no REST route, so that
-one reaches a client as the GraphQL error's `extensions.code`, or as the
-function host's error.
+index is never mistaken for an empty match.
 
-The same problem object appears under `extensions` in a GraphQL error and in the
-[watch stream](changelog.md)'s terminal error frame, so an error means the same
-thing wherever it surfaces. An unmatched path under an API prefix is that same
+The same problem object appears in the [watch stream](changelog.md)'s terminal
+error frame and as an agent tool's error, so an error means the same thing
+wherever it surfaces. An unmatched path under an API prefix is that same
 object with `404 not_found` — never the console's HTML with a 200.
 
-One more code lives on the changelog surface: `compacted` (410) answers a
-`from=` or `before=` the changelog cannot resume, below the retention
-[horizon](changelog.md#frames-and-the-horizon), above the head, or under a
-history generation the server does not hold. Its problem object names the
+One more code answers a cursor from a history the server no longer holds:
+`compacted` (410) answers a `from=` or `before=` the changelog cannot resume,
+below the retention [horizon](changelog.md#frames-and-the-horizon), above the
+head, or under a history generation the server does not hold, and a list
+`after=` cursor minted under another generation. Its problem object names the
 current `head` and `generation`, telling a consumer that has fallen too far
 behind, or resumes after a restore, to re-list rather than silently miss rows.
 

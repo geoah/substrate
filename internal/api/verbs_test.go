@@ -58,7 +58,7 @@ func TestRESTEdgeRoutesAreGone(t *testing.T) {
 
 // `edges` no longer names a sub-resource, so it is no longer a reserved record
 // id: a record may be called `edges` and read back at its own path.
-func TestRESTEdgesIsAnOrdinaryRecordID(t *testing.T) {
+func TestRESTSubResourceWordsAreOrdinaryRecordIDs(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
 
@@ -72,9 +72,15 @@ func TestRESTEdgesIsAnOrdinaryRecordID(t *testing.T) {
 		t.Fatalf("record = %+v", e)
 	}
 
-	// `incoming` still IS one, in both directions.
-	rec = env.do(t, http.MethodPut, peopleV1+"/incoming", tok, map[string]any{"properties": map[string]any{}})
-	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
+	// So is `incoming`: the reverse read is a filter arm of /records, not a
+	// sub-resource, so no record id is reserved for it.
+	rec = env.do(t, http.MethodPut, peopleV1+"/incoming", tok, map[string]any{"properties": map[string]any{"name": "In"}})
+	wantStatus(t, rec, http.StatusCreated)
+	rec = env.do(t, http.MethodGet, peopleV1+"/incoming", tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if e := decodeJSON[substrate.Record](t, rec); e.ID != "incoming" {
+		t.Fatalf("record = %+v", e)
+	}
 }
 
 // A body that still writes `edges` beside `properties` is refused NAMING the
@@ -109,16 +115,9 @@ func TestRESTRefusesAnEdgesKeyNamingItsReplacement(t *testing.T) {
 func TestRESTFilterWithAnEdgesKeyIsAPlainUnknownField(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodPost, graphqlPath, tok, map[string]any{
-		"query":     `query ($f: JSON) { records(filter: $f) { nodes { id } } }`,
-		"variables": map[string]any{"f": map[string]any{"edges": map[string]any{"member_of": "org1"}}},
-	})
-	wantStatus(t, rec, http.StatusOK)
-	out := decodeJSON[gqlResponse](t, rec)
-	if len(out.Errors) != 1 {
-		t.Fatalf("errors = %+v", out.Errors)
-	}
-	msg := out.Errors[0].Message
+	rec := env.do(t, http.MethodGet, recordsPath+`?filter={"edges":{"member_of":"org1"}}`, tok, nil)
+	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
+	msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message
 	if !strings.Contains(msg, `unknown field "edges"`) {
 		t.Fatalf("the filter refusal must name the key: %q", msg)
 	}
@@ -130,7 +129,7 @@ func TestRESTFilterWithAnEdgesKeyIsAPlainUnknownField(t *testing.T) {
 // TestTriggerVerbsLiveUnderCore is ruling A8's verb placement: the trigger
 // verbs answer AT the resource, and trigger records are CORE's. The fake holds
 // no trigger, so the status read answers an empty list, which is the trigger
-// handler answering (an unknown collection would be 404).
+// handler answering (an unknown path would be 404).
 func TestTriggerVerbsLiveUnderCore(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
@@ -145,32 +144,20 @@ func TestTriggerVerbsLiveUnderCore(t *testing.T) {
 	}
 
 	// The folded-away authority (automation.substrate.reamde.dev, folded into
-	// core 2026-08-12) is not a route: it resolves as an unknown collection,
-	// never as a second spelling of the verbs.
+	// core 2026-08-12) is not a route: it is the router's 404, never a second
+	// spelling of the verbs.
 	rec = env.do(t, http.MethodGet, "/api/v1/automation.substrate.reamde.dev/triggers/status", tok, nil)
 	wantStatus(t, rec, http.StatusNotFound)
 }
 
-// TestWatchRejectsListParams and TestIncomingRejectsListParams are ruling A8's
-// unsupported-param rule: a param a mode does not honor is a bad_request naming
-// it, not a silent success.
+// TestWatchRejectsListParams is ruling A8's unsupported-param rule: a param a
+// mode does not honor is a bad_request naming it, not a silent success.
 func TestWatchRejectsListParams(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, peopleV1+"?watch=1&orderBy=at:desc", tok, nil)
+	rec := env.do(t, http.MethodGet, recordsOf(t, personKind, "watch=1", "orderBy=at:desc"), tok, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 	if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "orderBy") {
 		t.Fatalf("error must name orderBy: %q", msg)
-	}
-}
-
-func TestIncomingRejectsListParams(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	env.svc.datasets[fakeRepository].records["p1"] = &substrate.Record{ID: "p1", Kind: "samples.substrate.reamde.dev/people/person"}
-	rec := env.do(t, http.MethodGet, peopleV1+"/p1/incoming?filter=%7B%7D", tok, nil)
-	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
-	if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "filter") {
-		t.Fatalf("error must name filter: %q", msg)
 	}
 }

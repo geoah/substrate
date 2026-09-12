@@ -179,11 +179,10 @@ export interface PropertyAlternative {
   updatedAt: string
 }
 
-/** A create/upsert write body (`substrate.PutInput`). Everything authored
- * rides in `properties`, state properties included — and `put` refuses to move
- * one, so a transition travels as a `patch`. `kind` is implied by the
- * collection path, so the REST body omits it; it is kept here for the editor
- * dialect that carries the whole envelope. */
+/** The create/upsert write body (`substrate.PutInput`). `kind` is the full
+ * kind reference, and it is what `POST /api/v1/records` reads to place the
+ * record; on a PUT at a record path the URL has already said it. `id` is the
+ * writer's own choice, refused on the POST (a chosen id is a PUT). */
 export interface PutInput {
   kind?: string
   id?: string
@@ -193,24 +192,49 @@ export interface PutInput {
   ifVersion?: number
 }
 
-/** One keyset page of a collection list. `cursor` is the OPAQUE continuation
- * token — store it and resend it VERBATIM as `after=`
- * for the next page; it is omitted once the walk is exhausted. `head` is the
+/** One keyset page of a records list (`substrate.Page`). `cursor` is the
+ * OPAQUE continuation token — store it and resend it VERBATIM as `after=` for
+ * the next page; it is omitted once the walk is exhausted. `head` is the
  * changelog head seq at the page's snapshot and `generation` the history
- * generation it belongs to (open `watch?from={head}&generation={generation}`
- * for a gapless handoff). The server has NO offset. */
+ * generation it belongs to (open `records?watch=1&from={head}&generation=
+ * {generation}` for a gapless handoff). The server has NO offset. */
 export interface Page<T = SubstrateRecord> {
   records: T[]
   cursor?: string
   head: number
   generation: string
+  /** The referents `expand=` asked for, keyed by record path
+   * (`<kind>/<id>`), each once however many rows point at it. A dangling
+   * pointer has no entry. */
+  included?: Record<string, SubstrateRecord>
+  /** On a `filter.referencing` read: for each record on the page, keyed by
+   * its record path, every site at which it points at the target. */
+  matches?: Record<string, ReferenceSite[]>
+}
+
+/** A ranked read's answer (`substrate.RankedPage`, `GET /records?q=`): the
+ * records in rank order, each one's per-arm scores keyed by record path, and
+ * how many (record, property) pairs the semantic index still has to embed. No
+ * cursor, head or generation: a ranking has no keyset and opens no snapshot. */
+export interface RankedPage {
+  records: SubstrateRecord[]
+  scores: Record<string, Scores>
+  pending: number
+}
+
+/** One hit's raw per-arm scores (`substrate.Scores`): ts_rank for the lexical
+ * arm, cosine similarity for the semantic one, absent where an arm did not
+ * rank. */
+export interface Scores {
+  lexical?: number
+  semantic?: number
 }
 
 /** The envelope every OPERATIONAL list answers with — tokens, the catalog,
  * trigger and bundle status, parked deliveries, trait implementors. `items`
  * holds the whole set today; `cursor` is reserved so keyset pagination lands
  * as a filled field, not a reshaped body (decision 0036). The record, history
- * and incoming lists keep their own `Page`. */
+ * lists keep their own `Page`. */
 export interface OperationalList<T> {
   items: T[]
   cursor?: string
@@ -329,12 +353,12 @@ export interface Cond {
   exists?: boolean
 }
 
-/** The filter grammar (`substrate.Filter`, `?filter=` as URL-encoded JSON).
- * The console writes `properties` and `labels`; the rest rides along so the
- * mirror is whole. A state property filters through `properties` like any
- * other. `kinds` is refused on a collection read (the path names the kind) and
- * is how a repository-wide GraphQL list narrows; `implements` intersects with
- * it; `deleted` absent means live records only. */
+/** The filter grammar (`substrate.Filter`, `?filter=` as URL-encoded JSON on
+ * `GET /records`). `kinds` names the kinds a list reads — one for a
+ * collection, several for a cross-kind read, none for every kind; the ranked
+ * read and the tail admit `kinds` alone. `implements` intersects with it;
+ * `deleted` absent means live records only; `referencing` is the reverse
+ * read. A state property filters through `properties` like any other. */
 export interface RecordFilter {
   kinds?: string[]
   implements?: string
@@ -342,31 +366,26 @@ export interface RecordFilter {
   properties?: Record<string, Cond>
   labels?: Record<string, Cond>
   deleted?: boolean
+  referencing?: Referencing
 }
 
-/** One reverse pointer (`substrate.IncomingReference`): some other live
- * record's reference property names this one. */
-export interface IncomingReference {
-  /** The declared name of the source's reference property. */
+/** The target of a reverse read (`substrate.Referencing`): the records
+ * holding a reference AT `ref`, a record path (`<kind>/<id>`), narrowed to
+ * one reference property of the pointing records when `property` is set.
+ * The page is the DISTINCT pointing records; `Page.matches` says from
+ * which sites each one points. */
+export interface Referencing {
+  ref: string
+  property?: string
+}
+
+/** One place a record points at the referencing target
+ * (`substrate.ReferenceSite`): the declared property, and the dotted address
+ * of a NESTED site (`tools.fields.callable`), absent for a kind's own
+ * property. */
+export interface ReferenceSite {
   property: string
-  /** The dotted address of a NESTED reference site
-   * (`tools.fields.callable`), empty for a kind's own property. */
   path?: string
-  from: IncomingSource
-}
-
-/** The record end of a reverse pointer, shallow by design. */
-export interface IncomingSource {
-  id: string
-  /** The pointing record's kind reference. */
-  kind: string
-  title?: string
-}
-
-export interface IncomingPage {
-  incoming: IncomingReference[]
-  cursor?: string
-  total: number
 }
 
 /** One admitted value of an enum property, as the substrate serves it in a

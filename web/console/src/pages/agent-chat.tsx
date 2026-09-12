@@ -290,7 +290,7 @@ function ChatSurface({ id }: { id: string }) {
       // fetches, and `handedOver` above watches for the result.
       void client.invalidateQueries({ queryKey: ["records"] })
       // A turn's effects land as ROWS (a propose writes a change request, a
-      // mutate writes whatever the agent may write), so the glance surfaces
+      // write writes whatever the agent may write), so the glance surfaces
       // counting them are stale too, and their key is its own. Coarse on
       // purpose: the run reports a tally, not which collections moved.
       void client.invalidateQueries({ queryKey: ["records-count"] })

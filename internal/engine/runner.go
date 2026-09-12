@@ -518,29 +518,27 @@ func (ds *dataset) callFunctionOnce(ctx context.Context, name string, args any, 
 	return output, len(effects), nil
 }
 
-// callHostFunction answers a direct call to one of the four host functions. Two
-// of them are callable here and two are not, and the line is the GRANT each one
-// is scoped by:
+// callHostFunction answers a direct call to a host function. One of them is
+// callable here and the writes are not, and the line is the GRANT each one is
+// scoped by:
 //
-//   - `graphql` and `query` are reads, and the caller is a token that owns the
-//     whole repository. There is nothing narrower to hold them to, so they run
-//     in process against this dataset: the same executors the loop uses, with the
+//   - `query` is a read, and the caller is a token that owns the whole
+//     repository. There is nothing narrower to hold it to, so it runs in
+//     process against this dataset: the same executor the loop uses, with the
 //     agent's kind allowlist and row budget replaced by the token's full reach.
-//   - `propose` and `mutate` are writes bounded by the CALLING AGENT's effective
+//   - `propose` and `write` are writes bounded by the CALLING AGENT's effective
 //     emit. A direct call has no calling agent, so there is no ceiling to apply —
 //     and inventing one (the token's full reach) would turn the reviewed write
 //     into an unreviewed one. Refused, naming where the tool works.
 //
 // The output is the tool's own JSON, decoded, so a caller reads a real object
-// rather than a string holding one. No effect ever applies: the two callable arms
-// are reads.
+// rather than a string holding one. No effect ever applies: the callable arm
+// is a read.
 func (ds *dataset) callHostFunction(ctx context.Context, fn *vocabulary.Function, args any) (any, int, error) {
 	m, _ := args.(map[string]any)
 	var out string
 	var ok bool
 	switch fn.Identity() {
-	case vocabulary.HostFunctionGraphQL:
-		out, ok = ds.runGraphQLTool(ctx, substrate.Actor(fn.Actor()), ds, m, false)
 	case vocabulary.HostFunctionQuery:
 		// One call, the default row budget: a token needs no kind allowlist, but a
 		// list still answers a page rather than the repository.

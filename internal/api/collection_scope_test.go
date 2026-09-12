@@ -3,8 +3,6 @@ package api
 import (
 	"net/http"
 	"testing"
-
-	"github.com/geoah/substrate/internal/substrate"
 )
 
 const tasksPath = "/api/v1/samples.substrate.reamde.dev/tasks/task"
@@ -12,14 +10,10 @@ const tasksPath = "/api/v1/samples.substrate.reamde.dev/tasks/task"
 // createPerson returns the id of a person record in the geoah dataset.
 func createPerson(t *testing.T, env *testEnv, tok string) string {
 	t.Helper()
-	rec := env.do(t, http.MethodPost, peoplePath, tok, map[string]any{
-		"properties": map[string]any{"title": "Ada", "name": "Ada"},
-	})
-	wantStatus(t, rec, http.StatusCreated)
-	return decodeJSON[substrate.Record](t, rec).ID
+	return createRecord(t, env, tok, personKind, map[string]any{"title": "Ada", "name": "Ada"}).ID
 }
 
-func TestPatchThroughTheWrongCollectionWritesNothing(t *testing.T) {
+func TestPatchThroughTheWrongKindWritesNothing(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
 	ds := env.svc.datasets[fakeRepository]
@@ -39,28 +33,28 @@ func TestPatchThroughTheWrongCollectionWritesNothing(t *testing.T) {
 	}
 }
 
-func TestDeleteThroughTheWrongCollectionIsRefused(t *testing.T) {
+func TestDeleteThroughTheWrongKindIsRefused(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
 	ds := env.svc.datasets[fakeRepository]
 	id := createPerson(t, env, tok)
 
-	// The token collection must not delete a person (nor a person
-	// collection a token).
-	rec := env.do(t, http.MethodDelete, "/api/v1/substrate.reamde.dev/core/tokens/"+id, tok, nil)
+	// The token kind's path must not delete a person (nor a person path a
+	// token).
+	rec := env.do(t, http.MethodDelete, "/api/v1/substrate.reamde.dev/core/token/"+id, tok, nil)
 	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
 	if ds.records[id].DeletedAt != nil {
-		t.Fatal("delete through a foreign collection tombstoned the record")
+		t.Fatal("delete through a foreign kind tombstoned the record")
 	}
 
 	rec = env.do(t, http.MethodDelete, tasksPath+"/"+id, tok, nil)
 	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
 	if ds.records[id].DeletedAt != nil {
-		t.Fatal("delete through a foreign collection tombstoned the record")
+		t.Fatal("delete through a foreign kind tombstoned the record")
 	}
 }
 
-func TestMutationsThroughTheRightCollectionStillWork(t *testing.T) {
+func TestWritesThroughTheRightKindStillWork(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
 	ds := env.svc.datasets[fakeRepository]
@@ -73,11 +67,11 @@ func TestMutationsThroughTheRightCollectionStillWork(t *testing.T) {
 	rec = env.do(t, http.MethodDelete, peoplePath+"/"+id, tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	if ds.records[id].DeletedAt == nil {
-		t.Fatal("delete through the right collection must tombstone")
+		t.Fatal("delete through the right kind must tombstone")
 	}
 }
 
-func TestMutatingAMissingResourceIs404(t *testing.T) {
+func TestWritingAMissingRecordIs404(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
 	wantErrorCode(t, env.do(t, http.MethodPatch, peoplePath+"/nope", tok,

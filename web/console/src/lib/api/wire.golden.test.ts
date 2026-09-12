@@ -60,9 +60,6 @@ import type {
   ErrorEnvelope,
   ErrorPayload,
   FunctionCalled,
-  IncomingPage,
-  IncomingReference,
-  IncomingSource,
   InputStatus,
   KindInfo,
   MintedToken,
@@ -77,10 +74,14 @@ import type {
   PropertyAlternative,
   PropertyMeta,
   PutInput,
+  RankedPage,
   RecordFilter,
+  ReferenceSite,
+  Referencing,
   SessionCredential,
   SetupItem,
   ShippedRecord,
+  Scores,
   ShippedUpgrade,
   SubstrateRecord,
   SuggestedMapping,
@@ -137,22 +138,15 @@ const substrateRecord: Shape<SubstrateRecord> = {
   propertyMeta: false,
 }
 
-const incomingReference: Shape<IncomingReference> = {
+/** The reverse read's target, and one site a record points from. */
+const referencing: Shape<Referencing> = {
+  ref: true,
+  property: false,
+}
+
+const referenceSite: Shape<ReferenceSite> = {
   property: true,
   path: false,
-  from: true,
-}
-
-const incomingSource: Shape<IncomingSource> = {
-  id: true,
-  kind: true,
-  title: false,
-}
-
-const incomingPage: Shape<IncomingPage> = {
-  incoming: true,
-  cursor: false,
-  total: true,
 }
 
 const propertyMeta: Shape<PropertyMeta> = {
@@ -168,9 +162,8 @@ const propertyAlternative: Shape<PropertyAlternative> = {
   updatedAt: true,
 }
 
-/** PutInput carries `kind` for the editor's benefit even though the REST body
- * omits it (the collection path already said the kind), which is why it is
- * here rather than being treated as an extra key. */
+/** PutInput carries `kind`: `POST /records` reads it to place the record, and
+ * a PUT at a record path lets the URL say it instead. */
 const putInput: Shape<PutInput> = {
   kind: false,
   id: false,
@@ -209,6 +202,7 @@ const recordFilter: Shape<RecordFilter> = {
   properties: false,
   labels: false,
   deleted: false,
+  referencing: false,
 }
 
 const kindInfo: Shape<KindInfo> = {
@@ -269,6 +263,20 @@ const page: Shape<Page<unknown>> = {
   cursor: false,
   head: true,
   generation: true,
+  included: false,
+  matches: false,
+}
+
+/** The ranked read's envelope, and one hit's per-arm scores. */
+const rankedPage: Shape<RankedPage> = {
+  records: true,
+  scores: true,
+  pending: true,
+}
+
+const scores: Shape<Scores> = {
+  lexical: false,
+  semantic: false,
 }
 
 /** The operational-list envelope is generic; its keys do not depend on the
@@ -545,9 +553,8 @@ const mirrors: Record<string, Record<string, boolean>> = {
   ErrorPayload: errorPayload,
   ProblemDetail: problemDetail,
   SubstrateRecord: substrateRecord,
-  IncomingReference: incomingReference,
-  IncomingSource: incomingSource,
-  IncomingPage: incomingPage,
+  Referencing: referencing,
+  ReferenceSite: referenceSite,
   PropertyMeta: propertyMeta,
   PropertyAlternative: propertyAlternative,
   PutInput: putInput,
@@ -561,6 +568,8 @@ const mirrors: Record<string, Record<string, boolean>> = {
   ChangeRow: changeRow,
   ChangePage: changePage,
   Page: page,
+  RankedPage: rankedPage,
+  Scores: scores,
   OperationalList: operationalList,
   Occurrence: occurrence,
   OccurrenceLog: occurrenceLog,
@@ -647,7 +656,9 @@ const notOnTheWire: Record<string, string> = {
   // records.ts
   ListParams: "the list read's query parameters, never a JSON body",
   RecordCount: "a bounded walk's tally the console computes",
-  IncomingGroup: "a client-side fold of IncomingReference rows",
+  ReferencingRow:
+    "one (record, site) pair the console folds from a referencing page and its matches",
+  ReferencingGroup: "a client-side fold of ReferencingRow rows",
   // repository.ts
   RepositoryInfo:
     "one property read off the repository record; not the operator's substrate.RepositoryInfo",

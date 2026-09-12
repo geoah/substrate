@@ -25,9 +25,9 @@ const typesPageLimit = 100
 
 // fetchTypes reads the type registry, ENTIRELY. The registry is served as
 // records of substrate.reamde.dev/core/kind, whose properties carry the
-// projection; a bare TypeInfo array is accepted too.
+// projection, through the records route like any other kind's list.
 //
-// It pages. The collection list defaults to 50 rows and the shipped schema
+// It pages. The list defaults to 50 rows and the shipped schema
 // alone declares more than that before a single bundle is installed, so a
 // single unpaged read sees the newest 50 types and NOTHING else — which
 // resolves a bare kind name against a truncated registry, and that is worse
@@ -58,27 +58,22 @@ func (c *client) fetchTypes(ctx context.Context) ([]substrate.KindInfo, error) {
 }
 
 // fetchTypePage reads one page of the registry: its rows and the continuation
-// cursor ("" when exhausted, and always "" for the bare-array shape, which
-// does not page).
+// cursor ("" when exhausted). The rows stay raw because a declaration row
+// carries its projection in `properties`, which decodeTypeInfo reads by hand.
 func (c *client) fetchTypePage(ctx context.Context, q url.Values) ([]json.RawMessage, string, error) {
-	resp, err := c.send(ctx, http.MethodGet, collectionPath(corePackage, nameKind), q, nil)
+	if err := setFilterKinds(q, corePackage+"/"+nameKind); err != nil {
+		return nil, "", err
+	}
+	resp, err := c.send(ctx, http.MethodGet, pathRecords, q, nil)
 	if err != nil {
 		return nil, "", err
 	}
 	defer resp.Body.Close()
-	var body json.RawMessage
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return nil, "", fmt.Errorf("decode types response: %w", err)
-	}
-	var items []json.RawMessage
-	if err := json.Unmarshal(body, &items); err == nil {
-		return items, "", nil
-	}
 	var page struct {
 		Records []json.RawMessage `json:"records"`
 		Cursor  string            `json:"cursor"`
 	}
-	if err := json.Unmarshal(body, &page); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
 		return nil, "", fmt.Errorf("decode types response: %w", err)
 	}
 	return page.Records, page.Cursor, nil
@@ -187,10 +182,10 @@ func stateProperties(ti substrate.KindInfo) []string {
 	return names
 }
 
-// statesFor resolves the state properties of a collection's type, best-effort:
+// statesFor resolves the state properties of the resolved kind, best-effort:
 // a registry the CLI cannot reach costs an empty STATE column, never the read
 // itself. A qualified name resolves without a round trip, so this is where
-// that collection's registry lookup happens — and only for the output formats
+// that kind's registry lookup happens — and only for the output formats
 // that have a STATE column to fill.
 func (a *app) statesFor(ctx context.Context, col collection) []string {
 	types, err := a.types(ctx)
@@ -214,10 +209,10 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
-// collection is a resolved REST collection. Name is the kind NAME, the last
-// collection path segment (decisions 0033, 0047): the path is
-// /api/v1/{Authority}/{Package}/{Name}, which for a record is its reference
-// value.
+// collection is a resolved kind, the three parts of its reference
+// (decisions 0033, 0047): Name is the kind NAME, the last segment, and a
+// record's path is /api/v1/{Authority}/{Package}/{Name}/{id}, its reference
+// value under the prefix.
 type collection struct {
 	Authority string
 	Package   string
@@ -228,8 +223,8 @@ type collection struct {
 }
 
 // pkg renders the collection's package identity, which is the first TWO
-// segments of every path the collection is addressed by: a REST collection is
-// /api/v1/{authority}/{package}/{kind} (decision 0047), so a caller that
+// segments of every path a record of it is addressed by: a record path is
+// /api/v1/{authority}/{package}/{kind}/{id} (decision 0047), so a caller that
 // passed the authority alone would build a path the server has no route for.
 func (c collection) pkg() string { return vocabulary.PackageRef(c.Authority, c.Package) }
 
@@ -245,7 +240,7 @@ func (c collection) ref(id string) string {
 // resolveCollection turns a CLI argument into a collection. The qualified form
 // "<authority>/<package>/<name>" wins outright; a bare name with --package is
 // taken literally; a bare name otherwise resolves against the kind registry,
-// and the path always uses the resolved kind NAME.
+// and the reference always uses the resolved kind NAME.
 func (a *app) resolveCollection(ctx context.Context, arg, pkg string) (collection, error) {
 	if authority, pkgName, name := vocabulary.SplitKindRef(arg); authority != "" {
 		col := collection{Authority: authority, Package: pkgName, Name: name}
@@ -312,8 +307,8 @@ func (a *app) lookupCached(name, pkg string) (substrate.KindInfo, bool) {
 	return substrate.KindInfo{}, false
 }
 
-// collectionForKind resolves a manifest's `kind` — a kind reference — to its
-// REST collection. A bare reference resolves the way a bare kind name does,
+// collectionForKind resolves a manifest's `kind` — a kind reference — to the
+// declared kind it names. A bare reference resolves the way a bare kind name does,
 // and errors the same way when ambiguous.
 func (a *app) collectionForKind(ctx context.Context, ref string) (collection, error) {
 	authority, pkgName, name := vocabulary.SplitKindRef(ref)

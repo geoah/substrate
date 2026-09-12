@@ -10,7 +10,7 @@ import "sort"
 //	100 auth, tokens, rate limits, isolation
 //	200 records, references, merge/split, error shapes
 //	300 queries, changelog, blobs
-//	400 vocabulary upgrades, bundle lifecycle, GraphQL
+//	400 vocabulary upgrades, bundle lifecycle, the records route
 //	500 functions, triggers, agents
 //	600 recurrence, the calendar, the occurrences read
 type extraCase struct {

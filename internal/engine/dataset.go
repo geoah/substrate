@@ -252,7 +252,7 @@ func (ds *dataset) KindByRef(ctx context.Context, ref string) (substrate.KindInf
 // because a declaration that pinned none has one stamped onto its row, and after
 // a reload the map would otherwise hand back a value nobody wrote — the same
 // declaration reading differently before and after a restart, which is exactly
-// what a client diffing it (or fingerprinting it, gql.RegistryKey) would trip
+// what a client diffing it (or fingerprinting it) would trip
 // over. The stamped value is `Version` beside it, which is where a reader that
 // wants it already looks. Nothing else on a kind is engine-owned: `source` is
 // not a document key at all.

@@ -255,9 +255,11 @@ func caseAuth(c *C) {
 // caseRecords installs the tasks vocabulary from the catalog and walks one
 // record through its whole life.
 func caseRecords(c *C) {
-	// Before the install the collection does not exist.
-	status, raw := c.do(http.MethodGet, tasksCollection, nil, nil)
-	c.requiref(status == http.StatusNotFound, "the task collection answered %d before any install, want 404: %s", status, raw)
+	// Before the install the kind does not exist: a list narrowed to it is
+	// refused naming the unknown kind.
+	status, raw := c.do(http.MethodGet, listOf(tasksCollection), nil, nil)
+	c.requiref(status == http.StatusNotFound && strings.Contains(string(raw), "unknown kind "+kindOf(tasksCollection)),
+		"listing the task kind answered %d before any install, want 404 naming the unknown kind: %s", status, raw)
 
 	var cat struct {
 		Items []struct {
@@ -304,8 +306,8 @@ func caseRecords(c *C) {
 
 	// Create: 201, version 1, the declared default and the initial state land.
 	var created record
-	status, raw = c.do(http.MethodPost, tasksCollection,
-		map[string]any{"properties": map[string]any{"name": "Review the e2e report", "priority": "high"}}, &created)
+	status, raw = c.do(http.MethodPost, recordsRoute,
+		map[string]any{"kind": kindOf(tasksCollection), "properties": map[string]any{"name": "Review the e2e report", "priority": "high"}}, &created)
 	c.requiref(status == http.StatusCreated, "create answered %d, want 201: %s", status, raw)
 	c.requiref(created.Version == 1, "a fresh record's version is %d, want 1", created.Version)
 	c.requiref(created.prop("status") == "open", "a write naming no state got %q, want the initial `open`", created.prop("status"))
@@ -337,15 +339,15 @@ func caseRecords(c *C) {
 	c.stepf("patched status to `done`; the transition stamped completedAt=%s by itself", done.prop("completedAt"))
 
 	// Strict decoding: an unknown body key is refused naming it.
-	status, raw = c.do(http.MethodPost, tasksCollection, map[string]any{"bogus": true}, nil)
+	status, raw = c.do(http.MethodPost, recordsRoute, map[string]any{"kind": kindOf(tasksCollection), "bogus": true}, nil)
 	c.requiref(status == http.StatusBadRequest, "an unknown body key answered %d, want 400", status)
 	c.requiref(strings.Contains(string(raw), "bogus"), "the refusal does not name the bogus key: %s", raw)
 	c.stepf("a body with an unknown key `bogus` was refused naming it")
 
 	// Delete is a tombstone: the record leaves the list and its GET is gone.
 	var doomed record
-	status, _ = c.do(http.MethodPost, tasksCollection,
-		map[string]any{"properties": map[string]any{"name": "A task the suite deletes"}}, &doomed)
+	status, _ = c.do(http.MethodPost, recordsRoute,
+		map[string]any{"kind": kindOf(tasksCollection), "properties": map[string]any{"name": "A task the suite deletes"}}, &doomed)
 	c.requiref(status == http.StatusCreated, "creating the doomed record answered %d", status)
 	var tombstone record
 	status, raw = c.do(http.MethodDelete, tasksCollection+"/"+url.PathEscape(doomed.ID), nil, &tombstone)
@@ -360,7 +362,7 @@ func caseRecords(c *C) {
 	var page struct {
 		Records []record `json:"records"`
 	}
-	status, _ = c.do(http.MethodGet, tasksCollection, nil, &page)
+	status, _ = c.do(http.MethodGet, listOf(tasksCollection), nil, &page)
 	c.requiref(status == http.StatusOK, "listing tasks answered %d", status)
 	c.requiref(len(page.Records) == 1 && page.Records[0].ID == created.ID,
 		"the list should hold exactly the surviving task, got %d records", len(page.Records))
@@ -650,7 +652,7 @@ func (r *run) appendix() {
 	var tasks struct {
 		Records []record `json:"records"`
 	}
-	if err := r.fetch(tasksCollection, &tasks); err != nil {
+	if err := r.fetch(listOf(tasksCollection), &tasks); err != nil {
 		fmt.Fprintf(&b, "Reading the tasks failed: %v\n\n", err)
 	} else {
 		b.WriteString("### Tasks (`samples.substrate.reamde.dev/tasks/task`)\n\n")

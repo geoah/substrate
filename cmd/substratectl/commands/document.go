@@ -50,8 +50,8 @@ type documentData struct {
 // is the merge trail — the ids this record used to answer to, which is store
 // bookkeeping. Properties is the managed-property bookkeeping a single-record
 // read carries (wire `propertyMeta`), absent on lists and when nothing manages
-// anything. Incoming references are not part of the document; they page on
-// their own resource.
+// anything. What points AT a record is not part of its document; that is the
+// reverse read, `get <kind> --referencing <kind>/<id>`.
 type documentStatus struct {
 	Version int64 `yaml:"version" json:"version"`
 	// KindVersion is the version of the kind declaration the record's data was
@@ -141,7 +141,7 @@ func recordDocument(e *substrate.Record, meta map[string]statusProperty) *docume
 // keys — `authority`, `names`, `properties`, `version` — directly.
 //
 // A declaration is two things at once, and that is the whole difficulty. It is
-// a RECORD, so it reads back through the ordinary collection API and arrives
+// a RECORD, so it reads back through the ordinary records route and arrives
 // here as a substrate.Record whose Properties map holds those keys. It is also
 // the INPUT to /vocabulary/apply, which takes the authored shape. Rendering it
 // as an ordinary record nests every key one level too deep under

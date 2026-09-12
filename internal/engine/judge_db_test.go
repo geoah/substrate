@@ -59,10 +59,8 @@ func TestJudgeAcceptsWithinThresholds(t *testing.T) {
 		"autoAccept": 0.9,
 		"context":    "thread",
 	})
-	fake.script("mut",
-		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "crew.test.dev/crew/widget", id: "w-judged", properties: {name: "wanted"}}) { id } }`,
-		})}}},
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-judged", map[string]any{"name": "wanted"})}}},
 		fakeTurn{content: "held, waiting on the judge."},
 		fakeTurn{content: "the judge let it through."},
 	)
@@ -124,10 +122,8 @@ func TestJudgeEscalatesBelowThresholdAndTheOwnerDecides(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	gatePolicyWithJudge(t, ds, "wary-widgets", map[string]any{"autoAccept": 0.9, "autoRefuse": 0.9})
-	fake.script("mut",
-		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "crew.test.dev/crew/widget", id: "w-wary", properties: {name: "wanted"}}) { id } }`,
-		})}}},
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-wary", map[string]any{"name": "wanted"})}}},
 		fakeTurn{content: "held."},
 	)
 	fake.script("vjudge",
@@ -162,10 +158,8 @@ func TestJudgeAdvisesWhenAskedTo(t *testing.T) {
 		"autoAccept": 0.5,
 		"mode":       "advise",
 	})
-	fake.script("mut",
-		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "crew.test.dev/crew/widget", id: "w-advised", properties: {name: "wanted"}}) { id } }`,
-		})}}},
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-advised", map[string]any{"name": "wanted"})}}},
 		fakeTurn{content: "held."},
 	)
 	fake.script("vjudge",
@@ -192,10 +186,8 @@ func TestJudgeFailuresFailClosed(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	gatePolicyWithJudge(t, ds, "sloppy-widgets", map[string]any{"autoAccept": 0.5})
-	fake.script("mut",
-		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "crew.test.dev/crew/widget", id: "w-sloppy", properties: {name: "wanted"}}) { id } }`,
-		})}}},
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-sloppy", map[string]any{"name": "wanted"})}}},
 		fakeTurn{content: "held."},
 	)
 	// The judge padded its answer with prose: strict decode refuses, the
@@ -223,7 +215,7 @@ func TestJudgesWithHandsAreRefused(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	// The arbiter carries mutate: naming it as a judge fails closed.
+	// The arbiter carries write: naming it as a judge fails closed.
 	putPolicy(t, ds, "armed-judge", map[string]any{
 		"selector":   map[string]any{"kinds": []any{crewPackage + "/widget"}},
 		"action":     "gate",
@@ -231,10 +223,8 @@ func TestJudgesWithHandsAreRefused(t *testing.T) {
 		"mode":       "enforce",
 		"autoAccept": 0.1,
 	})
-	fake.script("mut",
-		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
-			"query": `mutation { put(input: {kind: "crew.test.dev/crew/widget", id: "w-armed", properties: {name: "wanted"}}) { id } }`,
-		})}}},
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-armed", map[string]any{"name": "wanted"})}}},
 		fakeTurn{content: "held."},
 	)
 	if _, err := ds.CallAgent(ctx, crewPackage+"/editor", "make a widget"); err != nil {

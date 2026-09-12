@@ -403,6 +403,17 @@ const REGISTRY: KindInfo[] = [
   registryKind(PROVIDER),
 ]
 
+/** The kinds a records-route URL lists, read off its `filter`: the list route
+ * is one path for every kind, so a stub dispatches on this, not the path. */
+function listedKinds(path: string): string[] {
+  const url = new URL(path, "http://x")
+  if (url.pathname !== "/api/v1/records") return []
+  const filter = JSON.parse(url.searchParams.get("filter") ?? "{}") as {
+    kinds?: string[]
+  }
+  return filter.kinds ?? []
+}
+
 /** The collections the pickers read, served from one stub so a dropdown can be
  * asserted on what the substrate would have offered. */
 function stubCollections() {
@@ -421,7 +432,8 @@ function stubCollections() {
 
   vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
     const url = String(input)
-    if (url.includes("/function?")) {
+    const kinds = listedKinds(url)
+    if (kinds.includes("substrate.reamde.dev/core/function")) {
       return Promise.resolve(
         page([
           record("substrate.reamde.dev/core/propose", {
@@ -431,7 +443,7 @@ function stubCollections() {
         ])
       )
     }
-    if (url.includes("/agent?")) {
+    if (kinds.includes("substrate.reamde.dev/core/agent")) {
       return Promise.resolve(
         page([
           record("crew.test.dev/scout", {
@@ -441,12 +453,12 @@ function stubCollections() {
         ])
       )
     }
-    if (url.includes("/kind?")) {
+    if (kinds.includes("substrate.reamde.dev/core/kind")) {
       return Promise.resolve(
         page(KIND_RECORDS.map((id) => record(id, { description: "a kind" })))
       )
     }
-    if (url.includes("/provider?")) {
+    if (kinds.includes("substrate.reamde.dev/llm/provider")) {
       return Promise.resolve(page([record("claude", { name: "the gateway" })]))
     }
     return Promise.resolve(page([]))

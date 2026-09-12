@@ -1,7 +1,7 @@
 ---
 status: superseded
-superseded-by: 0053
-date: 2026-09-08
+superseded-by: 0079
+date: 2026-09-12
 decision-makers: George Antoniadis
 ---
 
@@ -77,7 +77,7 @@ pins the conditional entry. The embedder seam is one shared symbol,
 `substrate.EmbeddingsReporter`, asserted at runtime by the API and pinned at
 compile time by the engine, so a rename breaks the build rather than the
 advertisement. The asymmetry table lives in
-[the API page](../api.md#rest-and-graphql); nothing checks that it stays
+[the API page](../api.md#discovery); nothing checks that it stays
 complete, so that half is held by review.
 
 ## More Information

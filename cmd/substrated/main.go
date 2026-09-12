@@ -1,5 +1,5 @@
 // substrate: the Substrate substrate service — one Postgres, ONE schema shared by
-// every repository, the versioned REST resource API + GraphQL + the watch
+// every repository, the versioned REST resource API + the watch
 // streams, and the background loops (GC sweep, embed queue drain, triggers,
 // oauth), each running over every repository the control-plane table holds.
 package main
