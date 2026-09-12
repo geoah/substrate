@@ -239,7 +239,7 @@ func matchChanges(tr *trigger, changes []substrate.Change) []substrate.Change {
 	self := substrate.Actor(tr.callableActor())
 	var out []substrate.Change
 	for _, ch := range changes {
-		if ch.Actor == self || ch.Kind == typeRun || ch.Op == substrate.OpDelivery {
+		if ch.Actor == self || ch.Kind == typeTriggerRun || ch.Op == substrate.OpDelivery {
 			continue
 		}
 		if !tr.Record.matches(ch.Kind, runner.OpOf(ch)) {
@@ -1159,7 +1159,7 @@ func (t *txn) putRun(r runRecord) error {
 		}
 		props["effects"] = summary
 	}
-	_, err = t.put(substrate.PutInput{Kind: typeRun, ID: id, Properties: props})
+	_, err = t.put(substrate.PutInput{Kind: typeTriggerRun, ID: id, Properties: props})
 	return err
 }
 
@@ -1192,7 +1192,7 @@ func (t *txn) pruneRuns(triggerID string) error {
 		WHERE kind = $1 AND deleted_at IS NULL
 		  AND `+referencePathSQL("props", "trigger")+` = $2 AND props->>'status' <> $3
 		ORDER BY created_at DESC, id DESC OFFSET $4`,
-		typeRun, vocabulary.RecordPath(typeTrigger, triggerID), runStatusParked, runRetention)
+		typeTriggerRun, vocabulary.RecordPath(typeTrigger, triggerID), runStatusParked, runRetention)
 	if err != nil {
 		return err
 	}
@@ -1211,7 +1211,7 @@ func (t *txn) pruneRuns(triggerID string) error {
 	}
 	_ = rows.Close()
 	for _, id := range stale {
-		if _, err := t.softDelete(eref{Kind: typeRun, ID: id}); err != nil {
+		if _, err := t.softDelete(eref{Kind: typeTriggerRun, ID: id}); err != nil {
 			return err
 		}
 	}

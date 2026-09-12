@@ -536,7 +536,7 @@ func TestADeliveryCommitsEffectsCursorAndRunTogether(t *testing.T) {
 	if err := ds.db.QueryRowContext(ctx, `
 		SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL
 		  AND `+referencePathSQL("props", "trigger")+` = $2 AND props->>'status' = 'ok'`,
-		typeRun, vocabulary.RecordPath(typeTrigger, triggerID)).Scan(&okRuns); err != nil {
+		typeTriggerRun, vocabulary.RecordPath(typeTrigger, triggerID)).Scan(&okRuns); err != nil {
 		t.Fatal(err)
 	}
 	if okRuns != 0 {
@@ -590,7 +590,7 @@ func TestADeliveryCommitsEffectsCursorAndRunTogether(t *testing.T) {
 		ops = append(ops, s)
 	}
 	_ = list.Close()
-	want := []string{"put samples.substrate.reamde.dev/tasks/task", "delivery " + typeTrigger, "put " + typeRun}
+	want := []string{"put samples.substrate.reamde.dev/tasks/task", "delivery " + typeTrigger, "put " + typeTriggerRun}
 	if strings.Join(ops, "|") != strings.Join(want, "|") {
 		t.Fatalf("the delivery's entries are %v, want %v", ops, want)
 	}
@@ -726,7 +726,7 @@ func TestAnAgentDeliveryIsClaimedBeforeItsLoopAndCompletedAfter(t *testing.T) {
 		if err := ds.db.QueryRowContext(ctx, `
 			SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL
 			  AND `+referencePathSQL("props", "trigger")+` = $2 AND props->>'status' = 'ok'`,
-			typeRun, vocabulary.RecordPath(typeTrigger, tr.ID)).Scan(&n); err != nil {
+			typeTriggerRun, vocabulary.RecordPath(typeTrigger, tr.ID)).Scan(&n); err != nil {
 			t.Fatal(err)
 		}
 		return n
@@ -1044,7 +1044,7 @@ func TestAClaimAnotherDispatchHoldsIsSkipped(t *testing.T) {
 	if err := ds.db.QueryRowContext(ctx, `
 		SELECT props->>'reason' FROM records WHERE kind = $1 AND deleted_at IS NULL
 		  AND `+referencePathSQL("props", "trigger")+` = $2 AND props->>'status' = 'skipped'`,
-		typeRun, vocabulary.RecordPath(typeTrigger, tr.ID)).Scan(&reason); err != nil {
+		typeTriggerRun, vocabulary.RecordPath(typeTrigger, tr.ID)).Scan(&reason); err != nil {
 		t.Fatalf("the skipped run record: %v", err)
 	}
 	if !strings.Contains(reason, "claimed by another dispatch") {

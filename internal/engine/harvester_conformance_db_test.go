@@ -129,7 +129,7 @@ func countLivePages(t *testing.T, ds *dataset) int {
 func maxDataSeq(t *testing.T, ds *dataset) int64 {
 	t.Helper()
 	changes, err := ds.Changes(context.Background(), 0, substrate.ChangeFilter{
-		ExcludeKinds: []string{typeRun, typeThread, typeMessage},
+		ExcludeKinds: []string{typeTriggerRun, typeThread, typeMessage},
 	}, 1_000_000)
 	if err != nil {
 		t.Fatalf("changes: %v", err)
@@ -292,7 +292,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		WHERE kind = $1 AND deleted_at IS NULL
 		  AND `+referencePathSQL("props", "trigger")+` = $2 AND `+referencePathSQL("props", "record")+` = $3
 		ORDER BY created_at DESC, id DESC LIMIT 1`,
-		typeRun, vocabulary.RecordPath(typeTrigger, "web-findurls-on-message"),
+		typeTriggerRun, vocabulary.RecordPath(typeTrigger, "web-findurls-on-message"),
 		denyMsg.ID).Scan(&denyStatus); err != nil {
 		t.Fatalf("the deny-only findurls run: %v", err)
 	}
@@ -405,7 +405,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		if err := ds.db.QueryRowContext(ctx, `
 			SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL
 			  AND `+referencePathSQL("props", "trigger")+` = $2 AND props->>'status' = 'ok'`,
-			typeRun, vocabulary.RecordPath(typeTrigger, trID)).Scan(&oks); err != nil {
+			typeTriggerRun, vocabulary.RecordPath(typeTrigger, trID)).Scan(&oks); err != nil {
 			t.Fatal(err)
 		}
 		if oks < 1 {
@@ -513,7 +513,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	}
 	for _, c := range after {
 		switch c.Kind {
-		case typeRun, typeThread, typeMessage:
+		case typeTriggerRun, typeThread, typeMessage:
 			// ledger rows are the record of the re-deliveries, not data.
 		default:
 			t.Fatalf("replay-from-zero disturbed the data at seq %d: %s (%s)", c.Seq, c.Kind, c.Op)
@@ -533,7 +533,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 				count(*) FILTER (WHERE e.props->>'status' = 'parked')
 			FROM records e JOIN changelog c ON c.record_id = e.id AND c.op = 'put'
 			WHERE e.kind = $1 AND e.deleted_at IS NULL AND `+referencePathSQL("e.props", "trigger")+` = $2 AND c.seq > $3`,
-			typeRun, vocabulary.RecordPath(typeTrigger, trID), runsHeadBefore).Scan(&settled, &parked); err != nil {
+			typeTriggerRun, vocabulary.RecordPath(typeTrigger, trID), runsHeadBefore).Scan(&settled, &parked); err != nil {
 			t.Fatal(err)
 		}
 		if parked != 0 {
@@ -575,7 +575,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	if err := ds.db.QueryRowContext(ctx, `
 		SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL
 		  AND `+referencePathSQL("props", "trigger")+` = $2 AND props->>'status' = 'ok'`,
-		typeRun, vocabulary.RecordPath(typeTrigger, "web-rollup-weekly")).Scan(&rollupOK); err != nil {
+		typeTriggerRun, vocabulary.RecordPath(typeTrigger, "web-rollup-weekly")).Scan(&rollupOK); err != nil {
 		t.Fatal(err)
 	}
 	if rollupOK < 1 {

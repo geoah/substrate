@@ -159,7 +159,7 @@ func xfCall(c *C, name string, input, out any) (int, []byte) {
 // status: a trigger delivery writes one, a direct call writes none.
 func xfRunsFor(c *C, callable string) int {
 	c.t.Helper()
-	recs, err := c.quietList(runCollection)
+	recs, err := c.quietList(triggerRunCollection)
 	c.requiref(err == nil, "listing the run records: %v", err)
 	n := 0
 	for _, rec := range recs {

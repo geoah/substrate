@@ -113,7 +113,7 @@ console-editable and changelog-visible like anything else
 | Kind      | What it is                                                                                                             |
 | --------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `trigger` | One binding of a source (a record subscription, a schedule, or a public webhook endpoint) to one callable, owning the delivery cursor. |
-| `run`     | One trigger delivery attempt, written after it settles: the delivery ledger's row. Parked runs stay until retried away; the rest are pruned to the newest few per trigger. |
+| `triggerrun` | One trigger delivery attempt, written after it settles: the delivery ledger's row. Parked runs stay until retried away; the rest are pruned to the newest few per trigger. |
 
 So is the agent runtime's data. **Agents are alpha**, so these four are a
 preview, unfrozen at v1 and not part of the frozen core:

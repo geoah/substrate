@@ -375,7 +375,7 @@ func beeperCountByAccount(t *testing.T, ds substrate.Dataset, kind, accountID st
 func beeperMaxRunPages(t *testing.T, ds substrate.Dataset) int {
 	t.Helper()
 	var most int
-	for _, run := range listLive(t, ds, typeRun) {
+	for _, run := range listLive(t, ds, typeTriggerRun) {
 		pages, ok := run.Properties["pages"].(float64)
 		if !ok {
 			continue

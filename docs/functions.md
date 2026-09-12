@@ -657,7 +657,7 @@ is the function body.
 - **Idempotent by construction.** A function composes its own ids, `put`
   upserts, and identical writes are suppressed. Replaying a trigger over the
   whole changelog is a no-op where it already ran. The dispatcher advances a
-  record trigger's cursor and writes its run record in the same transaction
+  record trigger's cursor and writes its `triggerrun` record in the same transaction
   as a function's effects, so substrate-side consequences are effectively-once
   and no crash leaves effects with no record of the delivery. An
   [agent](agents.md) delivery claims the cursor before its loop runs and
@@ -727,7 +727,7 @@ repository.
 
 `replay` answers the cursor it set; `run`, `wake` and `retry` answer
 `{"ran": n}`, the number of deliveries that applied effects. Every settled
-dispatched delivery writes a `substrate.reamde.dev/core/run` row under the
+dispatched delivery writes a `substrate.reamde.dev/core/triggerrun` row under the
 `substrate` actor, in the transaction that commits its effects and its cursor
 or fire-state motion: the trigger, the callable, the mode, the seq or fire id,
 the status (`ok`, `skipped` or `parked`), the attempt count and the

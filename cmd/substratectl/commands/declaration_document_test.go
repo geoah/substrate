@@ -174,7 +174,7 @@ func TestEveryMetaKindTakesTheDeclarationPath(t *testing.T) {
 	for _, ref := range []string{
 		"samples.substrate.reamde.dev/people/person",
 		"substrate.reamde.dev/core/token",
-		"substrate.reamde.dev/core/run",
+		"substrate.reamde.dev/core/triggerrun",
 		"task",
 	} {
 		if _, ok := declarationKindOf(ref); ok {

@@ -16,10 +16,10 @@ const (
 	importCollection  = "/api/v1/" + storyPkg + "/eventimport"
 	verdictCollection = "/api/v1/" + storyPkg + "/matchverdict"
 
-	triggerCollection  = "/api/v1/substrate.reamde.dev/core/trigger"
-	providerCollection = "/api/v1/substrate.reamde.dev/core/llmprovider"
-	requestCollection  = "/api/v1/substrate.reamde.dev/core/recordpatchrequest"
-	runCollection      = "/api/v1/substrate.reamde.dev/core/run"
+	triggerCollection    = "/api/v1/substrate.reamde.dev/core/trigger"
+	providerCollection   = "/api/v1/substrate.reamde.dev/core/llmprovider"
+	requestCollection    = "/api/v1/substrate.reamde.dev/core/recordpatchrequest"
+	triggerRunCollection = "/api/v1/substrate.reamde.dev/core/triggerrun"
 
 	transcriptKind = "samples.substrate.reamde.dev/calendar/transcript"
 	eventKind      = "samples.substrate.reamde.dev/calendar/calendarevent"

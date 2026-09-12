@@ -162,7 +162,7 @@ func okRunsAfterClose(t *testing.T, dsn, fid string) int {
 	t.Helper()
 	var n int
 	if err := rawDB(t, dsn).QueryRow(`
-		SELECT count(*) FROM records WHERE kind = 'substrate.reamde.dev/core/run' AND deleted_at IS NULL
+		SELECT count(*) FROM records WHERE kind = 'substrate.reamde.dev/core/triggerrun' AND deleted_at IS NULL
 		  AND props ->> 'fireId' = $1 AND props ->> 'status' = 'ok'`, fid).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func awaitHookEcho(t *testing.T, ds substrate.Dataset, fid string) map[string]an
 func okRuns(t *testing.T, ds substrate.Dataset, fid string) int {
 	t.Helper()
 	page, err := ds.List(context.Background(), substrate.Query{
-		Filter: substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/run"}}, First: 200,
+		Filter: substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/triggerrun"}}, First: 200,
 	})
 	if err != nil {
 		t.Fatalf("list runs: %v", err)

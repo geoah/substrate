@@ -96,7 +96,7 @@ func TestCallModeValidatesAndApplies(t *testing.T) {
 		t.Fatalf("call attribution: %+v", rows)
 	}
 	// Direct invocations mint nothing on the run ledger.
-	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{runType}}, First: 10})
+	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{triggerRunType}}, First: 10})
 	if err != nil || len(page.Records) != 0 {
 		t.Fatalf("a call minted run rows: %+v %v", page.Records, err)
 	}

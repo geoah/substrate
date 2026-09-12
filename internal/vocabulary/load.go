@@ -1260,7 +1260,7 @@ const maxCallableDescription = 1000
 
 // maxKindDescription bounds a KIND's description. A kind's is not a tooltip:
 // the console heads the kind's page with it, and a reader arriving at
-// `substrate.reamde.dev/core/run` needs what the thing is AND what writes it,
+// `substrate.reamde.dev/core/triggerrun` needs what the thing is AND what writes it,
 // which is two sentences. Still one line — the folded scalar (`>-`) is how a
 // manifest wraps one.
 const maxKindDescription = 400

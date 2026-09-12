@@ -58,11 +58,11 @@ const (
 
 // The core kinds a provider closure's install lands beside.
 const (
-	typeBundle   = "substrate.reamde.dev/core/bundle"
-	typeKind     = "substrate.reamde.dev/core/kind"
-	typeFunction = "substrate.reamde.dev/core/function"
-	typeTrigger  = "substrate.reamde.dev/core/trigger"
-	typeRun      = "substrate.reamde.dev/core/run"
+	typeBundle     = "substrate.reamde.dev/core/bundle"
+	typeKind       = "substrate.reamde.dev/core/kind"
+	typeFunction   = "substrate.reamde.dev/core/function"
+	typeTrigger    = "substrate.reamde.dev/core/trigger"
+	typeTriggerRun = "substrate.reamde.dev/core/triggerrun"
 )
 
 // --- the gates ----------------------------------------------------------------

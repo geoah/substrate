@@ -2719,7 +2719,7 @@ func TestShippedSchemaLoads(t *testing.T) {
 	// delivery plumbing and the agent loop's data, folded out of the former
 	// automation.substrate.reamde.dev / ai.substrate.reamde.dev authorities.
 	for _, ident := range []string{
-		"substrate.reamde.dev/core/trigger", "substrate.reamde.dev/core/run",
+		"substrate.reamde.dev/core/trigger", "substrate.reamde.dev/core/triggerrun",
 		"substrate.reamde.dev/core/llmprovider", "substrate.reamde.dev/core/llmthread", "substrate.reamde.dev/core/llmmessage",
 		"substrate.reamde.dev/core/agent", "substrate.reamde.dev/core/function", "substrate.reamde.dev/core/bundle",
 	} {

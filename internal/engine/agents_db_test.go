@@ -626,7 +626,7 @@ func TestAgentTriggerDispatch(t *testing.T) {
 	if err := ds.db.QueryRowContext(ctx, `
 		SELECT props->'effects' FROM records
 		WHERE kind = $1 AND deleted_at IS NULL AND `+referencePathSQL("props", "trigger")+` = $2 AND props->>'status' = 'ok'`,
-		typeRun, vocabulary.RecordPath(typeTrigger, tr.ID)).Scan(&effectsRaw); err != nil {
+		typeTriggerRun, vocabulary.RecordPath(typeTrigger, tr.ID)).Scan(&effectsRaw); err != nil {
 		t.Fatalf("the ok run row: %v", err)
 	}
 	var summary map[string]any
@@ -1060,7 +1060,7 @@ func TestAgentRetryKeepsIdempotencyKeys(t *testing.T) {
 	if err := ds.db.QueryRowContext(ctx, `
 		SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL
 		  AND `+referencePathSQL("props", "trigger")+` = $2 AND props->>'status' = 'ok'`,
-		typeRun, vocabulary.RecordPath(typeTrigger, tr.ID)).Scan(&okRuns); err != nil {
+		typeTriggerRun, vocabulary.RecordPath(typeTrigger, tr.ID)).Scan(&okRuns); err != nil {
 		t.Fatal(err)
 	}
 	if okRuns != 1 {

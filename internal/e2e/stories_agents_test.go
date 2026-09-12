@@ -510,7 +510,7 @@ func (c *C) quietGet(collection, id string) (record, error) {
 // quietRuns counts one trigger's OK run rows. Parked and skipped runs do
 // not count: a delivery that died mid-loop must never satisfy a wait.
 func (c *C) quietRuns(trigger string) int {
-	recs, err := c.quietList(runCollection)
+	recs, err := c.quietList(triggerRunCollection)
 	if err != nil {
 		return -1
 	}
