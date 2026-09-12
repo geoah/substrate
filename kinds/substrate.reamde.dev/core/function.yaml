@@ -18,10 +18,10 @@ data:
     invoked by a trigger or called directly. The declaration IS the record
     — a write admits it, the commit activates it, and the dispatcher reads
     the registry this row rebuilds into.
-  version: 14
+  version: 15
   names:
     singular: function
-  displayTemplate: "{localName}"
+  displayTemplate: "{authority}/{package}/{localName}"
   # The spent enum value, listed once and carried forward for good (decision
   # 0055): a later declaration naming `go` again is refused on every door
   # rather than quietly meaning something new.
