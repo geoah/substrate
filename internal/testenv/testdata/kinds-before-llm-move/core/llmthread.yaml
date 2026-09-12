@@ -1,0 +1,123 @@
+# one agent invocation's conversation state — there is no agent-run record,
+# the thread is the run. The loop writes it as it goes: status settles to
+# ok / overbudget / error, the token tally accumulates per assistant turn,
+# and on the ROOT thread the tally includes every sub-agent's spend (cost
+# rolls up — one number answers "what did this chain cost"). A sub-agent's
+# thread names its caller in `parent`; chat threads (mode chat) are the same
+# rows the console renders and continues.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/llmthread
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    One agent invocation's conversation state; there is no agent-run record,
+    the thread IS the run. Status, turns, tokens and cost accumulate as the
+    loop goes, and a root thread's tally rolls up every sub-agent's spend,
+    so one number answers what a chain cost.
+  version: 11
+  names:
+    singular: llmthread
+  displayTemplate: "{agent}: {status}"
+  # No index on `agent`: a reference filters by containment, which rides the
+  # repository-wide GIN index on props.
+  indices:
+    - properties:
+        - status
+  properties:
+    agent:
+      type: reference
+      kind: substrate.reamde.dev/core/agent
+      required: true
+      inverse: threads
+      inverseDescription: the runs this agent has had
+      description: the agent this thread ran
+    # NOT a reference, unlike the agent's own `provider:`. This one is what the
+    # ENGINE resolved for this run — provenance on a finished thread, not a
+    # pointer an author picks — and retyping a live string property to a
+    # reference is a narrowing the boot upgrade refuses while rows hold the old
+    # shape.
+    provider:
+      type: string
+      required: true
+      description: the llmprovider row id the run resolved
+    model:
+      type: string
+      required: true
+      description: the model id the run sent
+    mode:
+      type: enum
+      required: true
+      values:
+        - record
+        - schedule
+        - webhook
+        - manual
+        - call
+        - subagent
+        - chat
+        - judge
+      description: how the run was invoked
+    status:
+      type: enum
+      required: true
+      values:
+        - running
+        - ok
+        - overbudget
+        - error
+      description: running, then settled to ok, overbudget or error
+    reason:
+      type: string
+      description: which budget ended an overbudget run, or the error
+    agentDepth:
+      type: int
+      required: true
+      min: 0
+      max: 3
+      description: how many sub-agent hops sit above this thread (0 = root)
+    turns:
+      type: int
+      min: 0
+      description: model calls this thread burned
+    toolCalls:
+      type: int
+      min: 0
+      description: tool dispatches this thread burned
+    promptTokens:
+      type: int
+      min: 0
+      description: prompt tokens; on the root thread, sub-agents included
+    completionTokens:
+      type: int
+      min: 0
+      description: completion tokens; on the root thread, sub-agents included
+    totalTokens:
+      type: int
+      min: 0
+      description: total tokens; on the root thread, sub-agents included
+    costUSD:
+      type: float
+      min: 0
+      description: the provider row's pricing for the model applied to the
+        tally; 0 when unpriced
+    startedAt:
+      type: datetime
+      required: true
+      description: when the loop opened the thread
+    finishedAt:
+      type: datetime
+      description: when the loop settled
+    leaseUntil:
+      type: datetime
+      description: >-
+        the running turn's lease horizon — one active continuation per thread;
+        a second turn is refused while the lease is live, and a crashed turn's
+        expired lease is taken over
+    parent:
+      type: reference
+      kind: substrate.reamde.dev/core/llmthread
+      inverse: subagentThreads
+      inverseDescription: the sub-agent runs this thread called
+      description: the calling agent's thread, on sub-agent threads

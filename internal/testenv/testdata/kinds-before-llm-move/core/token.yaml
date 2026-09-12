@@ -1,0 +1,38 @@
+# one bearer credential — a RECORD, holding the hash and never the secret
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/token
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    One bearer credential: a label, the SHA-256 of a secret shown once at
+    mint, and an optional expiry. A token has full access to its repository
+    — sessions are these records, login mints one, and revoking one is an
+    ordinary record delete.
+  version: 6
+  names:
+    singular: token
+  # A token has FULL ACCESS to its repository: no scopes, no actor set, no
+  # roles. What it carries is what it is — a label, the SHA-256
+  # of a high-entropy secret shown once at mint, and an optional expiry.
+  # Sessions ARE these records: login mints one.
+  #
+  # Minting is the auth endpoints' (attributed to the substrate) and the
+  # generic surface refuses writes to this kind — but REVOKING is an ordinary
+  # record delete, so the tokens page, substratectl and the DELETE endpoint are all
+  # the same write.
+  displayTemplate: "{label}"
+  properties:
+    label:
+      type: string
+      required: true
+      description: what the token is for, chosen at mint
+    hash:
+      type: digest
+      required: true
+      description: the SHA-256 of the secret; the secret itself is shown once,
+        at mint
+    expiresAt:
+      type: datetime
+      description: when the token stops authenticating; absent = until deleted

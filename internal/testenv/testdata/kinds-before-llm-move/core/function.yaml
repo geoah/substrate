@@ -1,0 +1,238 @@
+# one declared function: a reaction to the substrate's own changes,
+# id = "<authority>/<package>/<name>". The declaration IS the record (schema is
+# records): the loader admits a write, commit activates it, and the dispatcher
+# reads the registry this row rebuilds into.
+#
+# THE PROPERTIES ARE THE DECLARATION: no `definition` blob, one property per
+# manifest key. The grant is one `permissions` object, declared once and named
+# for what it is, and the IO is FLAT: named arguments, not a recursive schema,
+# so the model-facing tool card is valid by construction.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/function
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    One declared function: a callable reaction to the substrate's own changes,
+    invoked by a trigger or called directly. The declaration IS the record
+    — a write admits it, the commit activates it, and the dispatcher reads
+    the registry this row rebuilds into.
+  version: 15
+  names:
+    singular: function
+  displayTemplate: "{authority}/{package}/{localName}"
+  # The spent enum value, listed once and carried forward for good (decision
+  # 0055): a later declaration naming `go` again is refused on every door
+  # rather than quietly meaning something new.
+  retired:
+    values:
+      runtime:
+        - go
+  properties:
+    # Every declaration carries its own version: the declaring package's,
+    # unless the declaration overrides it. It is what the boot-time upgrade
+    # diffs a repository's shipped vocabulary against, so the engine writes it
+    # on every declaration row, which is what `managed` says.
+    version:
+      type: int
+      managed: true
+      description: this declaration's incremental version, maintained by the
+        engine
+    # NOT a reference, and the reason is identity: an authority is what this
+    # declaration IS part of, not a record it points at. Pinning it made the
+    # stored row spell it as a path while the manifest spelled the name, so one
+    # declaration had two Definitions — the authored one and the one that came
+    # back after a restart.
+    authority:
+      type: string
+      required: true
+      description: the authority that declares it
+    package:
+      type: string
+      description: the package it is declared in, the middle segment of its
+        id
+    description:
+      type: string
+      required: true
+      description: the model-facing tool card — what this function does
+    # `host` is the runtime with NO body: the engine is the implementation, and
+    # only a SHIPPED declaration may name it (the loader refuses one from any
+    # installed package, since nothing can hand the engine a body). The four
+    # host functions core ships are the agent built-ins — query, propose,
+    # graphql, mutate — and their declarations are their whole cards.
+    # The author's OBJECTIVE facts for the policy door
+    # (docs/plans/thread-interactions.md): what class of effect the body has,
+    # and a floor no policy or judge loosens. Facts, never grants — the grant
+    # stays `permissions`.
+    effect:
+      type: enum
+      values:
+        - read
+        - write
+        - external
+        - irreversible
+      description: the author's declared effect class, read by the policy
+        door
+    confirmation:
+      type: enum
+      values:
+        - policy
+        - always
+      description: always means the body's effects are never auto-applied,
+        whatever any policy or judge says; absent means policy
+    runtime:
+      type: enum
+      values:
+        - python
+        - host
+      required: true
+      description: the language the inline body is written in, or host for
+        a built-in
+    # NEVER FTS-indexed: a body is up to 256 KiB of code, and indexing it would
+    # make every function the top hit for every identifier it mentions. The
+    # property name is the BODY's, so a function row carries no `source` origin
+    # marker — that word belongs to the kinds whose origin is a fact about the
+    # declaration rather than its content.
+    #
+    # Not `required:` — the requirement follows the RUNTIME, which one property's
+    # marker cannot say: an inline runtime must carry a body and the loader
+    # refuses one without it, while `host` must not, and the loader refuses one
+    # that tries.
+    source:
+      type: text
+      fts: false
+      description: the inline body, on an inline runtime
+    timeout:
+      type: duration
+      description: the inline run's wall-clock bound, an ISO 8601 duration
+        (PT30S); absent defaults to 5s and the loader caps it at 60s
+    # The FLAT argument dialect: one level of named arguments, which is what
+    # makes a card valid JSON Schema by construction and keeps the value check
+    # off a recursion. `json` is the named escape hatch for a value whose shape
+    # the function does not own.
+    arguments:
+      type: object
+      repeated: true
+      description: the named arguments a call carries, in declaration order
+      fields:
+        name:
+          type: string
+          required: true
+          description: the argument's name
+        type:
+          type: enum
+          required: true
+          values:
+            - string
+            - int
+            - float
+            - bool
+            - enum
+            - json
+          description: what the value is
+        repeated:
+          type: bool
+          description: a list of the declared type
+        required:
+          type: bool
+          description: a call without it is refused
+        description:
+          type: string
+          description: what the argument is for, as the model reads it
+        values:
+          type: string
+          repeated: true
+          description: the admitted values, on an enum
+    returns:
+      type: object
+      repeated: true
+      description: the named values the body returns
+      fields:
+        name:
+          type: string
+          required: true
+          description: the value's name
+        type:
+          type: enum
+          required: true
+          values:
+            - string
+            - int
+            - float
+            - bool
+            - enum
+            - json
+          description: what the value is
+        repeated:
+          type: bool
+          description: a list of the declared type
+        required:
+          type: bool
+          description: the body always returns it
+        description:
+          type: string
+          description: what the value carries, as the model reads it
+        values:
+          type: string
+          repeated: true
+          description: the admitted values, on an enum
+    # THE GRANT, in one object. Five bare keys beside `returns:` said nothing
+    # about being permissions, and `emit` beside `returns` read as the output
+    # shape rather than the permission to write, so they group here, and the
+    # permission to write is named for writing.
+    permissions:
+      type: object
+      description: what this function is allowed to do while it runs; leave
+        a grant out and what it covers is refused
+      fields:
+        reads:
+          type: object
+          description: which record kinds this function may read while it
+            runs, and how much; leave it out and any read it attempts fails
+          fields:
+            kinds:
+              type: reference
+              kind: substrate.reamde.dev/core/kind
+              repeated: true
+              description: the record kinds every read is held to
+            budgets:
+              type: object
+              description: how much one run may read
+              fields:
+                calls:
+                  type: int
+                  min: 1
+                  max: 1000
+                  description: how many reads one run may make
+                rows:
+                  type: int
+                  min: 1
+                  max: 10000
+                  description: how many records one run may read
+        writes:
+          type: reference
+          kind: substrate.reamde.dev/core/kind
+          repeated: true
+          description: which record kinds it may create or change
+        call:
+          type: reference
+          kind: substrate.reamde.dev/core/function
+          repeated: true
+          description: which other functions its code may invoke
+        # Host patterns, never references: an egress allowlist names the
+        # internet.
+        network:
+          type: string
+          repeated: true
+          description: the destinations it may reach, each a host, host:port
+            or CIDR (no scheme, path or glob); any entry grants network access,
+            and enforcement is all-or-nothing today
+        mutations:
+          type: enum
+          repeated: true
+          values:
+            - merge
+            - split
+          description: "the identity-changing operations it may perform: merge,
+            split"
