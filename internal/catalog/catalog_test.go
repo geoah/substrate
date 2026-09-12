@@ -110,7 +110,9 @@ func TestCatalogPreviewsTheRecordsAnInstallWrites(t *testing.T) {
 	if got := len(b.Closure.Agents); got != 6 {
 		t.Errorf("agents = %d, want 6 (%v)", got, b.Closure.Agents)
 	}
-	want := map[string]bool{"anthropic": true, "openai": true}
+	// `default` is the Anthropic row: every shipped sample agent names that
+	// id, so the row that makes them runnable is the one shipped at it.
+	want := map[string]bool{"default": true, "openai": true}
 	got := map[string]bool{}
 	for _, r := range b.Closure.Records {
 		if r.Kind != "substrate.reamde.dev/core/llmprovider" {

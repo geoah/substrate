@@ -322,7 +322,7 @@ data:
     Reply in one short line: the task ids you created, or "already tracked"
     with the id of the task that covers it.
   provider: default
-  model: anthropic/claude-sonnet-5
+  model: claude-sonnet-5
   tools:
     - function: substrate.reamde.dev/core/graphql
     - function: substrate.reamde.dev/core/mutate

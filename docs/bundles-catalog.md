@@ -110,9 +110,10 @@ sync token gives it full-plus-incremental with no window.
 
 Package `samples.substrate.reamde.dev/llm`. Import this bundle first if
 you want to run an agent at all. A fresh substrate seeds no `llmprovider` row,
-so this bundle ships the two an agent can name (`anthropic` and `openai`),
-correctly shaped for their wires and deliberately keyless, plus a `scratchpad`
-kind to practise on and six agents:
+so this bundle ships the two an agent can name, correctly shaped for their
+wires and deliberately keyless, plus a `scratchpad` kind to practise on and
+six agents. The Anthropic row's id is `default`, which is the row every
+shipped agent names, and the second row is `openai`:
 
 - `substrate` is the one to chat with: it reads the whole graph through the
   `graphql` built-in, writes nothing directly, proposes every change as a
@@ -129,9 +130,9 @@ kind to practise on and six agents:
   summarizer is `hiddenFromChat`: off the chat list, callable only by other
   agents.
 
-Importing it gives you two rows that refuse until you key them: `anthropic` on
-its own wire and `openai` pointed at `https://api.openai.com/v1`, re-pointable
-at any gateway that speaks that wire. Keying one is an ordinary record write,
+Importing it gives you two rows that refuse until you key them: `default` on
+Anthropic's own wire and `openai` pointed at `https://api.openai.com/v1`,
+re-pointable at any gateway that speaks that wire. Keying one is an ordinary record write,
 and [registering a provider](agents.md#registering-a-provider) is where that
 write, the wires and the pricing table are described.
 
@@ -140,8 +141,8 @@ write, the wires and the pricing table are described.
 Package `samples.substrate.reamde.dev/notes`. The smallest bundle that shows
 an agent calling functions as tools and delegating to a sub-agent, and the one
 to read first. It needs no network, no credentials and no other bundle's
-vocabulary, so it imports on a fresh substrate and is driven by hand in one
-command, and its two functions stand on their own with no model at all:
+vocabulary, so it imports on a fresh substrate, and its two functions stand on
+their own with no model at all:
 
 ```bash
 substratectl import samples.substrate.reamde.dev/notes   # or: apply --as-mine -f samples/notes/bundle.yaml
@@ -158,8 +159,8 @@ which is the capability envelope in one closure.
 
 Both agents name `provider: default`, so running them wants an `llmprovider`
 row at that id — [nothing seeds one](agents.md#providers), and the LLM example
-above ships `anthropic` and `openai` rather than `default`. Calling an agent is
-an API call, not a CLI verb:
+above is what ships it. Import that bundle too and key its `default` row.
+Calling an agent is an API call, not a CLI verb:
 
 ```bash
 curl -s -X POST "$SUBSTRATE_SERVER/api/v1/substrate.reamde.dev/core/agent/notekeeper/call" \
@@ -168,13 +169,13 @@ curl -s -X POST "$SUBSTRATE_SERVER/api/v1/substrate.reamde.dev/core/agent/noteke
 ```
 
 One run leaves TWO `llmthread` rows, the root agent's and the sub-agent's own,
-each with its own turn and token tallies; cost rolls up onto the root. If the
-`default` row points straight at Anthropic rather than at a gateway, two things
-about the row differ: model names are bare there (`claude-sonnet-5` and
-`claude-haiku-4-5-20251001`, where these manifests carry the gateway aliases
-`anthropic/claude-sonnet-5` and `anthropic/claude-haiku-4-5`), and `pricing` is
-keyed by the model string AS SENT, so a model the table does not name runs
-uncosted ([providers](agents.md#providers)).
+each with its own turn and token tallies; cost rolls up onto the root. These
+manifests name models the way Anthropic's own wire does (`claude-sonnet-5`,
+`claude-haiku-4-5`), which is what the shipped `default` row speaks; point that
+row at a gateway instead and the model names become the gateway's aliases
+(`anthropic/claude-sonnet-5`). `pricing` is keyed by the model string AS SENT,
+so a model the table does not name runs uncosted
+([providers](agents.md#providers)).
 
 ## Google
 
@@ -535,7 +536,8 @@ the capture came from a press-and-hold. It requires
   delivers each new instruction to the agent.
 - **Agents (1)**: `assistant` reads the open tasks through the `graphql` host
   function and writes `samples.substrate.reamde.dev/tasks/task` records through
-  `mutate`. It names `provider: default`, a row nothing seeds.
+  `mutate`. It names `provider: default`, which the LLM example above ships:
+  import that bundle too and key its row.
 
 **The endpoint** is `POST
 https://<your-substrate-host>/webhooks/<authority>/pebble-webhook`, where

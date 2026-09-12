@@ -188,7 +188,7 @@ data:
     preamble, at most six words. Prefer the concrete nouns already in the text
     over a summary of it.
   provider: default
-  model: anthropic/claude-haiku-4-5
+  model: claude-haiku-4-5
   budgets:
     maxTurns: 2
     maxToolCalls: 1
@@ -221,7 +221,7 @@ data:
     words joined by hyphens. Reply with the saved id and the title, one short
     sentence, once savenote has returned.
   provider: default
-  model: anthropic/claude-sonnet-5
+  model: claude-sonnet-5
   tools:
     - function: samples.substrate.reamde.dev/notes/stats
     - function: samples.substrate.reamde.dev/notes/savenote

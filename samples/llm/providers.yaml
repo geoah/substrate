@@ -1,13 +1,19 @@
 # The provider rows, as DATA — ordinary records the install PUTs after the
 # closure lands, editable and deletable like anything else.
 #
+# The Anthropic row's id is `default`, which is the row every shipped agent
+# names: the notes, pebble and reading-list samples all say
+# `provider: default`, so importing this bundle is what makes them runnable.
+# Its label still says anthropic, because the id is which row and the label is
+# which vendor.
+#
 # Both ship WITHOUT a key. `apiKey` is secret-typed: it reads back redacted
 # from every API and never appears in a changelog payload, so the only way one
 # arrives is you writing it. Until then an agent naming the row refuses at
 # dispatch, saying which row it wanted.
 kind: substrate.reamde.dev/core/llmprovider
 metadata:
-  id: anthropic
+  id: default
 data:
   properties:
     label: anthropic

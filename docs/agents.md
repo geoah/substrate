@@ -399,12 +399,11 @@ cannot invent a key — one shipped without it only postpones the failure to the
 first dispatch while looking configured. An agent naming a row that is not
 there refuses at dispatch and says which row it wanted.
 
-The web and notes bundles' agents name `provider: default`, so a repository
-that installs either wants a row at that id, and no shipped bundle writes
-one. The LLM example (**Registry → Examples**) installs two correctly-shaped
-keyless rows at `anthropic` and `openai`, which its own agents name directly.
-Write a `default` row yourself, by hand as the document below or by copying
-one of those two. There are
+Every shipped sample agent names `provider: default`, so a repository that
+imports one wants a row at that id. The LLM example (**Registry → Examples**)
+is what ships it: two correctly-shaped keyless rows, `default` on Anthropic's
+wire and `openai` on OpenAI's, which its own agents name too. Import it and
+key one, or write the row yourself as the document below. There are
 no `cheap`/`mid`/`strong` rows: a tier was a model id hiding behind a name, and
 the model is the agent's own word now.
 
