@@ -790,6 +790,10 @@ var typeDataKeys = map[string]bool{
 	// (decision 0055): parsed by parseKindRetirement, refused on every
 	// admission door if declared again.
 	"retired": true,
+	// `movedFrom` is the reference this kind used to be spelled as (decision
+	// 0078): admitting it moves the old kind's live rows and repoints every
+	// live reference at them.
+	"movedFrom": true,
 }
 
 // namesKeys is the `names` block's key set: the kind's own name and nothing
@@ -900,6 +904,7 @@ func (l *loader) parseType(doc Document) *Kind {
 		t.PropOrder = append(t.PropOrder, n)
 	}
 	sort.Strings(t.PropOrder)
+	l.parseMovedFrom(where, d, t)
 	// After the properties: a retired name that is also declared is refused.
 	l.parseKindRetirement(where, d, t)
 

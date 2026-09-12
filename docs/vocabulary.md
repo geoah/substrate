@@ -312,6 +312,19 @@ Nothing discards your records behind your back; a conversion writes values
 the changelog keeps, and a lossy one runs only when you confirm the plan you
 previewed ([below](#backfilling-and-remapping)).
 
+**Moving: `movedFrom:` carries the records.** A KIND may declare the reference
+it used to be spelled as, and admitting it on a repository that still declares
+that kind carries every live row here, same id and same properties, repoints
+every live reference at it, and tombstones the old rows: one transaction,
+ordinary record writes, one `move` step on the conversion plan saying how many
+records travelled ([decision
+0078](decisions/0078-a-kind-move-is-ordinary-record-writes.md)). The old kind
+stays declared and empty, never pruned and never retired, and a second
+admission finds nothing to move. A move that would strand a property (one the
+old kind declares and the new one neither declares nor renames) is refused,
+because the rows travel with their properties untouched. This is how the agent
+runtime's four kinds left `core` for `substrate.reamde.dev/llm`.
+
 **Renaming: `renamedFrom:` moves the values.** A property may declare the name
 it replaces:
 

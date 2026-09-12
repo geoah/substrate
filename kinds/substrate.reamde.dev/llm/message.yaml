@@ -18,6 +18,12 @@ data:
     message, an assistant turn its prose and tool calls, a tool turn one dispatched
     call's result.
   version: 12
+  # Where this kind was before it moved out of core (decision record
+  # 0078). Admitting it on a repository that still declares the old kind
+  # carries every live row here, same id and same properties, and
+  # repoints every live reference at it, in the transaction that lands
+  # this declaration. The old kind stays declared and empty.
+  movedFrom: substrate.reamde.dev/core/llmmessage
   names:
     singular: message
   displayTemplate: "{role} #{turn}"

@@ -49,6 +49,8 @@ import (
 	"math/big"
 	"regexp"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -214,8 +216,8 @@ func checkDeclaredDefaults(candidate *vocabulary.Registry, touched map[string]bo
 // candidate registry (dropped types are refuse-with-instances' whole-type
 // count) across the touched packages and returns the narrowing diffs. Pure
 // classification — the counts run later, inside the batch transaction.
-func classifyNarrowings(current, candidate *vocabulary.Registry, touched map[string]bool) []narrowing {
-	return classifyNarrowingsExcept(current, candidate, touched, nil)
+func classifyNarrowings(current, candidate *vocabulary.Registry, touched map[string]bool, moved map[string]string) []narrowing {
+	return classifyNarrowingsExcept(current, candidate, touched, nil, moved)
 }
 
 // classifyNarrowingsExcept is classifyNarrowings with the kind identities the
@@ -226,6 +228,11 @@ func classifyNarrowingsExcept(
 	current, candidate *vocabulary.Registry,
 	touched map[string]bool,
 	skip map[string]bool,
+	// moved is old kind identity -> new one for every kind this same
+	// admission MOVES (move.go, record 0078). A reference still naming an old
+	// identity is not pointing "elsewhere": the transaction carries it to the
+	// pin the candidate declares, so the count must not see it.
+	moved map[string]string,
 ) []narrowing {
 	var out []narrowing
 	for _, aname := range sortedKeys(touched) {
@@ -239,7 +246,7 @@ func classifyNarrowingsExcept(
 				if skip[candT.Identity] {
 					continue
 				}
-				out = append(out, typeNarrowings(cur.Kinds[tn], candT)...)
+				out = append(out, typeNarrowings(cur.Kinds[tn], candT, moved)...)
 			}
 		}
 	}
@@ -247,7 +254,7 @@ func classifyNarrowingsExcept(
 }
 
 // typeNarrowings classifies one type's property-level diff.
-func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
+func typeNarrowings(curT, candT *vocabulary.Kind, moved map[string]string) []narrowing {
 	var out []narrowing
 	ident := curT.Identity
 	// renamed names the candidate properties that take a stored property's
@@ -278,7 +285,7 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 						ident, pname, to, to),
 					query: countPropQuery, args: []any{ident, to},
 				})
-				out = append(out, propertyNarrowings(ident, pname, curP, candT.Props[to], candT)...)
+				out = append(out, propertyNarrowings(ident, pname, curP, candT.Props[to], candT, moved)...)
 				continue
 			}
 			if curP.IsState() {
@@ -300,7 +307,7 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 			})
 			continue
 		}
-		out = append(out, propertyNarrowings(ident, pname, curP, candP, candT)...)
+		out = append(out, propertyNarrowings(ident, pname, curP, candP, candT, moved)...)
 	}
 	// A property the candidate ADDS as required is the same stranding as one
 	// that becomes required, and was the one shape of it nothing classified: the
@@ -333,7 +340,7 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 // candP as the candidate declares it, counted under pname, the name live rows
 // carry. On a rename candP is the declaration under the NEW name and pname the
 // old one, which is why the counts key on pname rather than on candP.Name.
-func propertyNarrowings(ident, pname string, curP, candP *vocabulary.Property, candT *vocabulary.Kind) []narrowing {
+func propertyNarrowings(ident, pname string, curP, candP *vocabulary.Property, candT *vocabulary.Kind, moved map[string]string) []narrowing {
 	var out []narrowing
 	switch {
 	case curP.IsState() != candP.IsState():
@@ -422,10 +429,11 @@ func propertyNarrowings(ident, pname string, curP, candP *vocabulary.Property, c
 			// or one type → another) strands stored references pointing elsewhere
 			//.
 			if curP.Datatype == vocabulary.DatatypeReference && refTargetNarrows(curP.To, candP.To) {
+				q, args := countRefOffTarget(ident, pname, acceptedTargets(candP.To, moved))
 				out = append(out, narrowing{
 					format: fmt.Sprintf("type %s: reference %q narrows its target to %s while %%d live records point elsewhere — repoint them first",
 						ident, pname, candP.To),
-					query: countRefOffTargetQuery, args: []any{ident, pname, candP.To},
+					query: q, args: args,
 				})
 			}
 			if curP.Datatype == vocabulary.DatatypeReference {
@@ -512,10 +520,38 @@ const countLinkPropNonIntQuery = `SELECT count(*) ` + linkFrom + `
 // `props`, which is what lets one query answer for both value shapes (a bare
 // path and the object a link-data reference stores) and for every depth: the
 // index is the derivation of all of them.
-const countRefOffTargetQuery = `SELECT count(DISTINCT r.src) FROM refs r
+// countRefOffTarget counts the live records whose reference names a kind
+// outside `accept`. The accepted list is bound one placeholder per entry
+// rather than as an array, because the engine binds no array types anywhere
+// else and one query shape that needs a driver extension is one more thing a
+// reader has to know.
+func countRefOffTarget(ident, pname string, accept []string) (string, []any) {
+	args := []any{ident, pname}
+	var holes []string
+	for _, k := range accept {
+		args = append(args, k)
+		holes = append(holes, "$"+strconv.Itoa(len(args)))
+	}
+	return `SELECT count(DISTINCT r.src) FROM refs r
 	JOIN records x ON x.repository = r.repository AND x.kind = r.src_kind AND x.id = r.src
 	WHERE r.src_kind = $1 AND r.property = $2 AND x.deleted_at IS NULL
-	  AND r.dst_kind <> $3`
+	  AND r.dst_kind NOT IN (` + strings.Join(holes, ", ") + `)`, args
+}
+
+// acceptedTargets is what a repointed reference may name and not be counted:
+// the pin the candidate declares, plus every kind identity this admission
+// MOVES onto it (move.go). A row pointing at a kind that is traveling to the
+// pin is already pointing at the pin, one transaction early.
+func acceptedTargets(to string, moved map[string]string) []string {
+	out := []string{to}
+	for old, now := range moved {
+		if now == to {
+			out = append(out, old)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
 
 const countDanglingRefQuery = `SELECT count(*) FROM refs r
 	JOIN records x ON x.repository = r.repository AND x.kind = r.src_kind AND x.id = r.src

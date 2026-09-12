@@ -202,6 +202,8 @@ export function stepLines(plan: ConversionPlan | undefined): string[] {
   return (plan?.steps ?? []).map((s) => {
     const n = `${s.records} live ${s.records === 1 ? "record" : "records"}`
     switch (s.step) {
+      case "move":
+        return `moves ${n} from ${s.from} to ${s.to}, repointing every reference`
       case "rename":
         return `renames ${s.from} to ${s.to} on ${s.kind}: ${n} rewritten`
       case "backfill":

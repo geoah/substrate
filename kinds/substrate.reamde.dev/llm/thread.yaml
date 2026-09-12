@@ -17,6 +17,12 @@ data:
     loop goes, and a root thread's tally rolls up every sub-agent's spend,
     so one number answers what a chain cost.
   version: 11
+  # Where this kind was before it moved out of core (decision record
+  # 0078). Admitting it on a repository that still declares the old kind
+  # carries every live row here, same id and same properties, and
+  # repoints every live reference at it, in the transaction that lands
+  # this declaration. The old kind stays declared and empty.
+  movedFrom: substrate.reamde.dev/core/llmthread
   names:
     singular: thread
   displayTemplate: "{agent}: {status}"

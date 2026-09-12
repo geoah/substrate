@@ -148,12 +148,17 @@ existed, and the shipped sample claims no upgrade over it.
 The preview also carries the **conversion plan** the install would run
 ([decision 0067](decisions/0067-a-lossy-conversion-runs-only-with-a-confirmation-bound-to-its-preview.md)):
 `steps`, one per record rewrite the closure declares against the live records
-(`rename`, `backfill`, `remap` and `null`, [vocabulary
+(`move`, `rename`, `backfill`, `remap` and `null`, [vocabulary
 evolution](vocabulary.md#backfilling-and-remapping)), each with the number of
 live records it touches; `work`, the sum of those counts; `lossy`, true when a
 step removes values from the fold (a dropped property nulled, an enum value
 renamed onto a value live records already hold); and `planHash` and
 `changelogSeq`, the plan's identity and the changelog head it was counted at.
+A `move` step is a whole kind's rows travelling to the kind that named it with
+`movedFrom:` ([decision
+0078](decisions/0078-a-kind-move-is-ordinary-record-writes.md)): same id, same
+properties, every reference at the old kind repointed, the old kind left
+declared and empty. It runs first, loses nothing, and is never lossy.
 A lossless plan installs on the bare `POST …/install`. A lossy one runs only
 with a body confirming what was previewed, `{"confirm": {"planHash",
 "changelogSeq"}}`: without it the install is refused with the `lossy` code,

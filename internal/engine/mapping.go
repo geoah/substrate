@@ -964,12 +964,17 @@ func sortedOfferKeys(m map[offerKey]offer) []offerKey {
 type managerRow struct {
 	actor string
 	tier  substrate.Tier
+	// principal is the token id the write stood behind, empty where none did.
+	// A kind move carries it with the manager (move.go), because who wrote a
+	// value is the whole row and not two thirds of it.
+	principal string
 }
 
 // managersOf reads the target's property-manager ledger, property → manager.
 // The tier column is NOT NULL, so the row is the whole answer.
 func (t *txn) managersOf(ref eref) (map[string]managerRow, error) {
-	rows, err := t.query(`SELECT property, actor, tier FROM property_managers WHERE record_kind = $1 AND record_id = $2`,
+	rows, err := t.query(
+		`SELECT property, actor, tier, coalesce(principal, '') FROM property_managers WHERE record_kind = $1 AND record_id = $2`,
 		ref.Kind, ref.ID)
 	if err != nil {
 		return nil, err
@@ -977,11 +982,11 @@ func (t *txn) managersOf(ref eref) (map[string]managerRow, error) {
 	defer func() { _ = rows.Close() }()
 	out := map[string]managerRow{}
 	for rows.Next() {
-		var property, actor, tier string
-		if err := rows.Scan(&property, &actor, &tier); err != nil {
+		var property, actor, tier, principal string
+		if err := rows.Scan(&property, &actor, &tier, &principal); err != nil {
 			return nil, err
 		}
-		out[property] = managerRow{actor: actor, tier: substrate.Tier(tier)}
+		out[property] = managerRow{actor: actor, tier: substrate.Tier(tier), principal: principal}
 	}
 	return out, rows.Err()
 }

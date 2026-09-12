@@ -341,7 +341,17 @@ Nothing keys on a first label.
   ([0063](docs/decisions/0063-a-property-rename-is-ordinary-record-writes.md),
   [0066](docs/decisions/0066-a-backfill-and-an-enum-remap-are-ordinary-record-writes.md)).
   `required` beside a `default` backfills the same way, and a remap onto a
-  value the stored declaration still admits is refused as lossy.
+  value the stored declaration still admits is refused as lossy. `movedFrom`
+  is live on a KIND, and only on the SHIPPED boot upgrade: admitting a seeded
+  declaration that names a kind the repository still declares carries every
+  live row of it here, same id and same properties, repoints every live
+  reference at it and tombstones the old rows, in the same transaction and as
+  ordinary record writes
+  ([0078](docs/decisions/0078-a-kind-move-is-ordinary-record-writes.md)). The
+  old kind stays declared and empty; a second boot finds nothing to move. The
+  apply door and the catalog store the key and REFUSE the move, because they
+  publish a candidate registry before any rewrite could run and because a move
+  reaches past the write path's admission rules.
   There is no `edges.<rel>.properties` and no `data.edges`:
   a reference is the only link between records, data on the link is the
   reference property's own `properties:` block, and a write carrying a link

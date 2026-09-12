@@ -293,3 +293,62 @@ func TestUnparseableStoredAgentQuarantinesInsteadOfBricking(t *testing.T) {
 		t.Fatalf("a healthy closure must open live: %+v", st)
 	}
 }
+
+// A SEEDED closure is never quarantined (record 0077): a repository whose core
+// or llm declarations no longer admit resolves nothing, so serving it "without"
+// them would be a lie dressed as a recovery. The open fails instead, naming the
+// closure, which is the one answer an operator can act on.
+func TestASeededClosureRefusesRatherThanQuarantines(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := engine.MigratedDSN(t)
+	open := func() (substrate.Service, error) {
+		return engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()),
+			engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(engine.SeedKindsDir))
+	}
+	svc, err := open()
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	raw, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleApp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+	// Damage the SEEDED llm package's stored provider declaration the way the
+	// mail bundle above is damaged: a properties value this binary cannot parse.
+	if _, err := raw.ExecContext(ctx,
+		`UPDATE records SET props = jsonb_set(props, '{properties}', '"not a map"'::jsonb)
+		 WHERE kind = $1 AND id = $2`,
+		"substrate.reamde.dev/core/kind", "substrate.reamde.dev/llm/provider"); err != nil {
+		t.Fatalf("damage the stored llm closure: %v", err)
+	}
+	_ = svc.Close()
+
+	svc2, err := open()
+	if err != nil {
+		// Refused one step earlier, at Open rather than at the first Dataset.
+		// Same answer, and it must carry the same two facts.
+		if !strings.Contains(err.Error(), "substrate.reamde.dev/llm") ||
+			!strings.Contains(err.Error(), "declares no property") {
+			t.Fatalf("the refusal at open does not name the closure and the reason: %v", err)
+		}
+		return
+	}
+	t.Cleanup(func() { _ = svc2.Close() })
+	_, err = svc2.Dataset(ctx, testdb.Repository(t))
+	if err == nil {
+		t.Fatal("a repository whose seeded closure no longer loads must refuse, not open without it")
+	}
+	if !strings.Contains(err.Error(), "substrate.reamde.dev/llm") {
+		t.Fatalf("the refusal does not name the seeded closure it refused for: %v", err)
+	}
+	// The reason travels with it: an operator reading the refusal has to see
+	// what the closure failed on, not only that it did.
+	if !strings.Contains(err.Error(), "declares no property") {
+		t.Fatalf("the refusal does not carry the admission reason: %v", err)
+	}
+}

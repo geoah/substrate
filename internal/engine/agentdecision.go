@@ -22,6 +22,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -204,8 +205,28 @@ func (t *txn) putThreadSystemRow(threadID string, env map[string]any, wrote []ch
 	if len(wrote) > 0 {
 		props["changes"] = changeProps(wrote)
 	}
+	if err := t.requireThreadKinds(); err != nil {
+		return err
+	}
 	_, err = t.put(substrate.PutInput{Kind: typeMessage, ID: id, Properties: props})
 	return err
+}
+
+// requireThreadKinds refuses a thread write on a repository whose boot upgrade
+// has not landed the agent runtime's kinds. The loop addresses them by
+// constant, so writing "somewhere else" would put a turn into a dormant kind
+// under ordinals nothing else counts. A `notifies:` transition is the one write
+// that can reach here before the upgrade, and it must say what is missing
+// rather than land half of itself (records 0077, 0078).
+func (t *txn) requireThreadKinds() error {
+	reg := t.declarations()
+	for _, ident := range []string{typeThread, typeMessage} {
+		if _, ok := reg.ByIdentity(ident); !ok {
+			return fmt.Errorf("%w: this repository does not declare %s: the shipped vocabulary upgrade that moves the agent runtime's kinds has not landed here, and a thread cannot be written to until it does",
+				substrate.ErrValidation, ident)
+		}
+	}
+	return nil
 }
 
 // nextThreadTurn is the thread's next message ordinal — the max stored

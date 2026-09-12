@@ -593,7 +593,7 @@ export interface ConversionPlan {
 
 /** One record rewrite a declaration change performs (substrate.ConversionStep). */
 export interface ConversionStep {
-  step: "rename" | "backfill" | "remap" | "null"
+  step: "move" | "rename" | "backfill" | "remap" | "null"
   kind: string
   /** The property written, under its candidate name. */
   property: string

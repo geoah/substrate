@@ -72,11 +72,14 @@ const KindRecordPatchRequest = "substrate.reamde.dev/core/recordpatchrequest"
 // KindLLMThread is the thread kind a `notifies:` transition reports into.
 const KindLLMThread = "substrate.reamde.dev/llm/thread"
 
-// kindLLMThreadPreMove is where that kind lived before record 0077. The boot
-// upgrade never prunes, so a repository seeded by an older binary still
-// declares it and still declares the kinds pinned at it; the `notifies:` check
-// accepts it so this binary can finalize a closure it did not write.
-const kindLLMThreadPreMove = "substrate.reamde.dev/core/llmthread"
+// The two kinds' pre-move identities (record 0077). The boot upgrade never
+// prunes, so a repository seeded by an older binary still declares them and
+// still declares what points at them; the loader accepts both spellings so
+// this binary can parse a closure it did not write, long enough to move it.
+const (
+	kindLLMThreadPreMove      = "substrate.reamde.dev/core/llmthread"
+	kindLLMInteractionPreMove = "substrate.reamde.dev/core/llminteraction"
+)
 
 // KindLLMInteraction is the batch-of-questions kind the `ask` built-in emits.
 const KindLLMInteraction = "substrate.reamde.dev/llm/interaction"
@@ -412,7 +415,16 @@ func (l *loader) parseAgent(d Document) *Agent {
 				return nil
 			}
 		case AgentToolAsk:
-			if !a.EmitAllows(KindLLMInteraction) {
+			// EITHER interaction kind. A repository seeded before record 0077
+			// holds stored agent declarations whose grant names the old one,
+			// and those are PARSED at open, before the upgrade that moves the
+			// kind can rewrite them; accepting only the new spelling would
+			// quarantine every sample package with an ask agent on the boot
+			// that was supposed to migrate it. The move rewrites the grant
+			// (engine/move.go repointGrants), so the legacy spelling is
+			// transitional and nothing new can declare it: the old kind is
+			// declared nowhere a fresh repository can see.
+			if !a.EmitAllows(KindLLMInteraction) && !a.EmitAllows(kindLLMInteractionPreMove) {
 				l.errf("%s: data.tools: ask needs %s in data.permissions.writes, which names the interaction kind the agent may create", where, KindLLMInteraction)
 				return nil
 			}

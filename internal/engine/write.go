@@ -686,11 +686,14 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// the reviewer read it, so nothing swaps a harmless patch for an arbitrary
 	// delete under an undecided request.
 	if sp.ty.Identity == vocabulary.KindRecordPatchRequest {
-		if create {
+		switch {
+		case create && t.movingRecords:
+			// A move carries a record that was admitted here once already.
+		case create:
 			if err := t.admitRequestDiff(sp); err != nil {
 				return nil, err
 			}
-		} else {
+		default:
 			if err := t.canonicalizeResubmittedDiff(sp); err != nil {
 				return nil, err
 			}
@@ -704,11 +707,16 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// answers ride the answering transition alone, and only the owner's hand
 	// resolves.
 	if sp.ty.Identity == vocabulary.KindLLMInteraction {
-		if create {
+		switch {
+		case create && t.movingRecords:
+			// Likewise: the batch contract was judged when the ask landed it,
+			// and a moved interaction arrives with the answers and the state it
+			// already had.
+		case create:
 			if err := t.admitInteraction(sp); err != nil {
 				return nil, err
 			}
-		} else {
+		default:
 			if err := t.guardInteraction(sp); err != nil {
 				return nil, err
 			}

@@ -617,6 +617,8 @@ type vocabularyStage struct {
 	// conversions are the record rewrites the candidate declares (a rename, a
 	// backfill, a remap, a null: convert.go), performed inside the transaction
 	// after the projection and admitted by admitConversion once the guards
+	// moveRefusals is this door's whole answer to `movedFrom` (move.go).
+	moveRefusals []string
 	// pass; conversionGuards names what refuses the batch without a count: a
 	// reader of a renamed name (renameGuards).
 	conversions      conversionPlan
@@ -635,6 +637,12 @@ func (st *vocabularyStage) guards(q sqlReader) ([]string, error) {
 	guards = append(guards, st.strandedMappings...)
 	guards = append(guards, st.retirements...)
 	guards = append(guards, st.conversionGuards...)
+	// `movedFrom` is stored here and honored nowhere but the shipped upgrade
+	// (move.go's header): this door publishes its candidate registry before any
+	// rewrite could run, and a move reaches past the write path's admission
+	// rules, which is a license no repository token holds. A batch that would
+	// imply one is refused, naming the key.
+	guards = append(guards, st.moveRefusals...)
 	narrowed, err := narrowingGuards(q, st.narrowings)
 	if err != nil {
 		return nil, err
@@ -838,6 +846,10 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	}
 
 	conversions := classifyConversions(current, candidate, touched, nil)
+	// A kind MOVE (record 0078) is classified only to be REFUSED here: this
+	// door stores `movedFrom` and performs nothing, so nothing is passed to the
+	// conversion plan and the narrowing counts stand at full strength.
+	moveRefusals := userDoorMoveGuards(classifyKindMoves(current, candidate, touched, nil))
 	return &vocabularyStage{
 		candidate: candidate,
 		touched:   touched,
@@ -858,7 +870,8 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		// removed, required added — is classified here against the currently
 		// stored definitions and refused while live rows would be stranded,
 		// with the count. Additive changes pass through untouched (schemadiff.go).
-		narrowings: classifyNarrowings(current, candidate, touched),
+		narrowings:   classifyNarrowings(current, candidate, touched, nil),
+		moveRefusals: moveRefusals,
 		// A rename, a backfill, a remap and a null are neither: the
 		// transaction rewrites the live records (convert.go), and what refuses
 		// them without a count is a reader of the old name the candidate
@@ -1991,6 +2004,23 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 		var inadmissible []quarantinedPackage
 		good, inadmissible = ds.admissibleSubset(built)
 		quarantined = append(quarantined, inadmissible...)
+	}
+	// A SEEDED package is never quarantined, at either step (record 0077): a
+	// repository whose own meta-kinds do not admit resolves nothing, and the
+	// engine writes the llm kinds from Go constants, so serving the repository
+	// "without" either of them would be a lie dressed as a recovery. The build
+	// half already returns an error (buildPackagesSeparately); this is the
+	// admission half, which reaches the same closure by the other road.
+	for _, q := range quarantined {
+		if !seededPackageName(q.name) {
+			continue
+		}
+		ds.svc.log.Error("substrate: REFUSING to open a repository whose SEEDED closure no longer admits under this binary. "+
+			"Core and llm are what everything else resolves against, so serving the repository without one of them would "+
+			"answer wrongly rather than not at all",
+			"repository", logSafeID(ds.info.ID), "package", logSafeID(q.name), "reason", logSafeText(q.reason))
+		return fmt.Errorf("substrate/engine: repository %s: the seeded closure %s no longer admits under this binary: %s",
+			ds.info.ID, q.name, q.reason)
 	}
 	if err := ds.clearGroupQuarantine(ctx, good); err != nil {
 		return err
