@@ -226,8 +226,8 @@ export function KindBrowsePage() {
     return (
       <PageEmpty
         icon={<SearchXIcon />}
-        title="The registry didn't load"
-        description="The kind registry is what names this collection."
+        title="Kinds didn't load"
+        description="This page needs the list of kinds to name the collection."
       >
         <Button
           variant="outline"
@@ -244,8 +244,8 @@ export function KindBrowsePage() {
     return (
       <PageEmpty
         icon={<SearchXIcon />}
-        title="Unknown collection"
-        description={`${authority}/${pkg}/${name} is not in the kind registry.`}
+        title="No such kind"
+        description={`This repository has no kind called ${authority}/${pkg}/${name}.`}
       />
     )
   }
@@ -359,8 +359,8 @@ export function KindBrowsePage() {
                         </EmptyTitle>
                         <EmptyDescription>
                           {hasFilters
-                            ? "No record satisfies the active filters."
-                            : "Nothing has written to this collection."}
+                            ? "No record matches the filters you set."
+                            : "Press New to create the first one."}
                         </EmptyDescription>
                       </EmptyHeader>
                       {hasFilters && (

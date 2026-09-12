@@ -172,7 +172,7 @@ describe("the record dropdown", () => {
 
   it("says the collection is empty rather than that nothing matched", () => {
     open({ options: [] })
-    expect(screen.getByText(/no records yet/)).toBeTruthy()
+    expect(screen.getByText(/no records of this kind yet/)).toBeTruthy()
   })
 
   it("says so when the page did not hold the whole collection", () => {

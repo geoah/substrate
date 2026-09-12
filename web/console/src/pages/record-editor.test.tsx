@@ -223,7 +223,7 @@ describe("the record editor", () => {
     const yaml = await yamlLens()
     yaml.replace(yaml.text().replace("status: open", "status: done"))
     await waitFor(() =>
-      expect(screen.getByText(/moves by transition/)).toBeTruthy()
+      expect(screen.getByText(/changes by transition/)).toBeTruthy()
     )
     expect(
       (

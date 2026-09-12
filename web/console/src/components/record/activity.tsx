@@ -136,9 +136,8 @@ function CreationFallback({
         </span>
       </div>
       <p className="mt-0.5 text-muted-foreground/70">
-        From the record's own metadata — the change feed holds no record of
-        {hadRows ? " the creation" : " this record"} (it predates the retained
-        changelog).
+        Read from the record itself. The changelog no longer holds
+        {hadRows ? " the creation" : " this record"}.
       </p>
     </div>
   )
@@ -243,7 +242,7 @@ export function ActivityRail({ record }: { record: SubstrateRecord }) {
         )}
         empty={
           <p className="px-4 py-3 text-xs text-muted-foreground">
-            No recorded changes — the feed holds nothing for this record.
+            No changes recorded for this record.
           </p>
         }
       />

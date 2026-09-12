@@ -343,13 +343,13 @@ export function requiresHint(missing: Requirement[]): string {
     const names = andList(absent.map((r) => r.package))
     parts.push(
       absent.length === 1
-        ? `Import ${names} first — this bundle declares against it.`
-        : `Import ${names} first — this bundle declares against them.`
+        ? `Import ${names} first. This bundle declares against it.`
+        : `Import ${names} first. This bundle declares against them.`
     )
   }
   for (const r of old) {
     parts.push(
-      `Import ${r.package} again first: this bundle needs it at version ${r.atLeast} or later, and this repository holds version ${r.held}.`
+      `Import ${r.package} again first. This bundle needs version ${r.atLeast} or later. This repository holds version ${r.held}.`
     )
   }
   return parts.join(" ")
@@ -413,7 +413,7 @@ function packageWord(pkg: string): string {
  * the package rather than merging into it (decision record 0048), so a kind or
  * a property the reader added since is dropped by it. */
 export const REIMPORT_WARNING =
-  "Re-importing replaces that package and may remove your changes."
+  "Importing again replaces the package and may remove your changes."
 
 function suggestedRow(
   mapping: SuggestedMapping,

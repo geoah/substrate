@@ -136,10 +136,10 @@ function ValueEditor({
         }}
       />
       <span className="px-1 text-xs text-muted-foreground">
-        Enter applies, comma = any of
+        Press Enter to apply. A comma means any of
         {canPrefix(field) && (
           <>
-            , <span className="data">geo*</span> = starts with
+            . <span className="data">geo*</span> means starts with
           </>
         )}
       </span>
@@ -301,7 +301,7 @@ export function DataTableFilters({
             <Command>
               <CommandInput placeholder="Filter by…" />
               <CommandList>
-                <CommandEmpty>No filterable property.</CommandEmpty>
+                <CommandEmpty>No property can be filtered here.</CommandEmpty>
                 <CommandGroup>
                   {fields.map((field) => (
                     // [&>svg:last-child]:hidden drops CommandItem's built-in

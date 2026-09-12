@@ -133,8 +133,8 @@ function RecordEditor({
   if (registry.isError || !kindInfo) {
     return (
       <EditorEmpty
-        title="Unknown collection"
-        description={`${authority}/${name} is not in the kind registry.`}
+        title="No such kind"
+        description={`This repository has no kind called ${authority}/${name}.`}
       />
     )
   }
@@ -142,7 +142,7 @@ function RecordEditor({
     return (
       <EditorEmpty
         title="The record didn't load"
-        description={`${authority}/${name}/${id} — ${record.error.message}`}
+        description={`${authority}/${name}/${id}: ${record.error.message}`}
       />
     )
   }
@@ -283,8 +283,8 @@ export function RecordEditorForm({
         type: "error",
         title:
           mode === "edit"
-            ? `Could not update the ${kind.name}`
-            : `Could not create the ${kind.name}`,
+            ? `Saving the ${kind.name} failed`
+            : `Creating the ${kind.name} failed`,
         description: api.message,
       })
     },
@@ -300,7 +300,7 @@ export function RecordEditorForm({
     if (error) {
       toast.add({
         type: "error",
-        title: "Nothing to format",
+        title: "Formatting failed",
         description: error,
       })
       return

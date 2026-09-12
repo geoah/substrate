@@ -177,7 +177,7 @@ function KindsTable({
               <FileCode2Icon />
             </EmptyMedia>
             <EmptyTitle>
-              {error ? "The registry didn't load" : "Nothing declared here"}
+              {error ? "Kinds didn't load" : "No kinds here"}
             </EmptyTitle>
             <EmptyDescription>
               {error ? (

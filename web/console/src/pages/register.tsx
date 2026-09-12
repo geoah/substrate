@@ -162,9 +162,7 @@ export function RegisterPage() {
   function fail(err: unknown) {
     if (err instanceof ApiError) {
       if (err.code === "rate_limited") {
-        setError(
-          `Too many attempts — the door is rate limited on purpose. Try again in ${err.retryAfter ?? 5}s.`
-        )
+        setError(`Too many attempts. Try again in ${err.retryAfter ?? 5}s.`)
         return
       }
       setError(err.message)
@@ -303,14 +301,14 @@ export function RegisterPage() {
                         value={recoveryKey}
                       />
                       <FieldDescription>
-                        Never stored by the substrate. With it, a backup of your
-                        repository is recoverable on any substrate; without it,
-                        only this server&rsquo;s own key can read your secrets.
+                        Nobody can recover this key for you. With it, an export
+                        of your repository opens on any substrate. Without it,
+                        only this server can read your secrets.
                       </FieldDescription>
                     </Field>
                   )}
                   <Field>
-                    <Button type="submit">I saved it — continue</Button>
+                    <Button type="submit">Saved, continue</Button>
                   </Field>
                 </FieldGroup>
               </form>
@@ -323,11 +321,10 @@ export function RegisterPage() {
               <CardTitle>Register</CardTitle>
               <CardDescription>
                 {inviteRequired
-                  ? "An invite code creates your user and your repository, seeded with the shipped kinds."
-                  : "This substrate asks for no invite code: registering creates your user and your repository, seeded with the shipped kinds."}{" "}
-                {totpRequired
-                  ? `All three are required: the repository, a password and a ${CODE_DIGITS}-digit code.`
-                  : "This substrate does not verify a second factor, so there is no authenticator to enroll: a repository name and a password make the user."}
+                  ? "An invite code creates your repository, seeded with the shipped kinds."
+                  : "Registering creates your repository, seeded with the shipped kinds."}{" "}
+                {totpRequired &&
+                  `It takes the repository name, a password and a ${CODE_DIGITS}-digit code.`}
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-6">
@@ -377,12 +374,13 @@ export function RegisterPage() {
                       disabled={enrollment !== null}
                     />
                     <FieldDescription>
-                      Any hostname you control, such as ada.example.com: it is
-                      the name you sign in with, the authority your repository
-                      owns, and where every kind you declare lives. A plain name
-                      is completed under this host
-                      {authority ? ` (${authority})` : ""}. It cannot be changed
-                      later.
+                      Any hostname you control, such as ada.example.com. It is
+                      the name you sign in with, and where every kind you
+                      declare lives.
+                      {authority
+                        ? ` A plain name lands as ${authority}.`
+                        : ""}{" "}
+                      You cannot change it later.
                     </FieldDescription>
                   </Field>
                   <Field>
@@ -396,9 +394,10 @@ export function RegisterPage() {
                       disabled={enrollment !== null}
                     />
                     <FieldDescription>
-                      At least {MIN_PASSWORD} characters. There is no self-serve
-                      recovery: lose both factors and only the operator can
-                      reset you.
+                      At least {MIN_PASSWORD} characters.{" "}
+                      {totpRequired
+                        ? "If you lose both factors, only the operator can reset you."
+                        : "If you lose it, only the operator can reset you."}
                     </FieldDescription>
                   </Field>
                   <Field
@@ -444,7 +443,7 @@ export function RegisterPage() {
                       <p className="text-sm text-muted-foreground">
                         Scan this with your password manager or authenticator
                         app, then prove it with one code below. Nothing has been
-                        written yet — leaving now creates nothing.
+                        written yet, so leaving now creates nothing.
                       </p>
                     </div>
                     <div className="flex justify-center">
@@ -454,7 +453,7 @@ export function RegisterPage() {
                           size={168}
                           marginSize={0}
                           level="M"
-                          title="TOTP enrollment QR code"
+                          title="Authenticator setup QR code"
                         />
                       </div>
                     </div>

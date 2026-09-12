@@ -204,7 +204,7 @@ function TakeButton({
 }) {
   const queryClient = useQueryClient()
   const sample = row.tier === "sample"
-  const verb = sample ? "Import as yours" : "Install"
+  const verb = sample ? "Import" : "Install"
   const running = sample ? "Importing…" : "Installing…"
   const taking = useMutation({
     mutationFn: () =>
@@ -231,7 +231,7 @@ function TakeButton({
     onError: (error) => {
       toast.add({
         type: "error",
-        title: `Could not ${sample ? "import" : "install"} ${row.name}`,
+        title: `${sample ? "Importing" : "Installing"} ${row.name} failed`,
         description: importFailureText(error),
       })
     },
@@ -306,7 +306,7 @@ function ImportAgainButton({
     onError: (error) => {
       toast.add({
         type: "error",
-        title: `Could not re-import ${row.name}`,
+        title: `Importing ${row.name} again failed`,
         description: importFailureText(error),
       })
     },
@@ -339,7 +339,7 @@ function ImportAgainButton({
           {importing.isPending ? "Importing…" : "Import again"}
         </TooltipTrigger>
         <TooltipContent>
-          {`Re-import ${row.name} to land ${what}. ${REIMPORT_WARNING}`}
+          {`Import ${row.name} again to land ${what}. ${REIMPORT_WARNING}`}
         </TooltipContent>
       </Tooltip>
       {confirming && (
@@ -354,8 +354,8 @@ function ImportAgainButton({
               <DialogTitle>Import {row.name} again?</DialogTitle>
               <DialogDescription>
                 {`This lands ${what}, now that the provider each one reads is installed. ` +
-                  `A re-import REPLACES ${row.id} rather than merging into it: a kind or a property you added is dropped by it, ` +
-                  `and it is refused outright while live records still hold a shape the shipped closure no longer declares. ` +
+                  `Importing again replaces ${row.id} instead of merging into it, so a kind or a property you added is dropped. ` +
+                  `It is refused while live records still hold a shape the shipped package no longer declares. ` +
                   `Your records are untouched either way.`}
               </DialogDescription>
             </DialogHeader>
@@ -434,7 +434,7 @@ function UpgradeButton({
     onError: (error) => {
       toast.add({
         type: "error",
-        title: `Could not upgrade ${row.name}`,
+        title: `Upgrading ${row.name} failed`,
         description: importFailureText(error),
       })
     },
@@ -546,7 +546,7 @@ function LossyUpgradeDialog({
       }
       toast.add({
         type: "error",
-        title: `Could not upgrade ${row?.name}`,
+        title: `Upgrading ${row?.name} failed`,
         description: importFailureText(error),
       })
     },
@@ -560,8 +560,8 @@ function LossyUpgradeDialog({
     onClose()
     toast.add({
       type: "success",
-      title: `The re-read plan for ${row?.name} loses nothing`,
-      description: "Upgrade takes it without a confirmation.",
+      title: `Upgrading ${row?.name} now loses nothing`,
+      description: "Press Upgrade to take it.",
     })
   }, [lossless, onClose, row?.name])
   if (!row || lossless) return null
@@ -580,26 +580,25 @@ function LossyUpgradeDialog({
           <DialogTitle>
             {upgrade?.discardsEdits
               ? `Upgrade ${row.name} and replace your edits?`
-              : `Upgrade ${row.name} and lose values?`}
+              : `Upgrade ${row.name} and remove values?`}
           </DialogTitle>
           <DialogDescription>
             {(upgrade?.discardsEdits
-              ? `You edited ${row.id} since it was imported. This upgrade REPLACES the package with the shipped closure, so those edits go with it; your records are untouched. `
+              ? `You edited ${row.id} since you imported it. Upgrading replaces the package with the shipped one, so your edits go with it. Your records are untouched. `
               : "") +
               (upgrade?.lossy
-                ? `This upgrade rewrites ${upgrade?.work ?? 0} live ${
+                ? `Upgrading rewrites ${upgrade?.work ?? 0} live ${
                     upgrade?.work === 1 ? "record" : "records"
-                  }, and some of the rewrites remove values from your records. ` +
-                  `The removed values stay in the changelog; nothing is erased. `
+                  } and removes some values from them. ` +
+                  `The removed values stay in the changelog. `
                 : "") +
-              `The confirmation covers exactly this plan: if anything is written before it lands, the server refuses it and the preview is read again.`}
+              `This confirms exactly the plan below. If anything is written before it lands, the plan is read again.`}
           </DialogDescription>
         </DialogHeader>
         {stale && (
           <p role="status" className="text-sm text-warning">
-            Records changed since this preview was read, so the server refused
-            the confirmation. The plan below was read again: check it and
-            confirm what it says now.
+            Records changed since this plan was read, so the upgrade was
+            refused. Check the plan below and confirm it again.
           </p>
         )}
         <ul className="space-y-1 text-sm">
@@ -629,7 +628,7 @@ function LossyUpgradeDialog({
             {upgrading.isPending && <Spinner className="size-3.5" />}
             {upgrade?.discardsEdits
               ? "Upgrade and replace my edits"
-              : "Upgrade and accept the loss"}
+              : "Upgrade and remove values"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -916,10 +915,10 @@ function BundleDisclosure({
         <Line label="tier">
           <span>
             {row.tier === "provider"
-              ? "Provider: a published package. It installs under the authority that publishes it, and its publisher ships each change as an upgrade."
+              ? "Provider. It installs under the authority that publishes it, and each change its publisher ships arrives here as an upgrade."
               : row.tier === "sample"
-                ? `Sample: vocabulary to copy. Importing lands it as ${row.id}, yours to edit, and nothing upstream changes it afterwards.`
-                : "Applied directly: this bundle is not in the shipped catalog, so it has no tier and no closure to preview."}
+                ? `Sample. Importing lands it as ${row.id}, yours to edit. Nothing upstream changes it afterwards.`
+                : "Applied directly. This bundle is not in the catalog, so there is nothing to preview."}
           </span>
         </Line>
         {catalog?.inputs && Object.keys(catalog.inputs).length > 0 && (
@@ -953,7 +952,7 @@ function BundleDisclosure({
                 title={
                   req.present
                     ? `${req.package} is imported`
-                    : `${req.package} is not imported — the import is refused until it is`
+                    : `${req.package} is not imported yet. Import it first`
                 }
               >
                 {req.present ? (
@@ -1093,8 +1092,8 @@ function BundleDisclosure({
         <div className="space-y-1 text-warning">
           <p>
             {previewFailed(row)
-              ? "The upgrade could not be previewed: the server's preview failed, and its log says why. Nothing is offered until it runs."
-              : "The upgrade is blocked: live records still hold the shape it would drop, and the server refuses to strand them."}
+              ? "The upgrade could not be previewed, so it is not offered yet."
+              : "The upgrade is blocked. Live records still hold a shape it would drop."}
           </p>
           {row.upgrade?.blockers?.map((b) => (
             <p key={b} className="data text-xs">
@@ -1105,8 +1104,8 @@ function BundleDisclosure({
       )}
       {!catalog && (
         <p className="text-muted-foreground">
-          This bundle was applied directly — the shipped catalog has no closure
-          for it, so only what the registry reconciled is listed.
+          This bundle was applied directly. The catalog does not ship it, so
+          only what this repository already knows is listed.
         </p>
       )}
       {row.installed && (
@@ -1336,13 +1335,13 @@ export function RegistryPage() {
         <h1 className="text-lg font-semibold">Registry</h1>
         <p className="text-xs text-muted-foreground">
           {heldCount.toLocaleString()} of {allRows.length.toLocaleString()}{" "}
-          taken, from <span className="data">/api/v1/catalog</span>
+          taken
         </p>
         <p className="pt-0.5 text-xs text-muted-foreground">
-          A new repository ships{" "}
-          <span className="data">substrate.reamde.dev/core</span> alone, and
-          every other kind it records into comes from here. Expand a row to see
-          what it adds.
+          A new repository holds{" "}
+          <span className="data">substrate.reamde.dev/core</span> and nothing
+          else. Every other kind comes from here. Expand a row to see what a
+          bundle adds.
         </p>
         {pending.map((item) => (
           <PendingUpgradeNotice key={item.package} item={item} />
@@ -1351,11 +1350,11 @@ export function RegistryPage() {
       <div className="min-h-0 flex-1 overflow-auto">
         <BundleSection
           title="Providers"
-          description="Packages a publisher owns: they install under the authority that publishes them, and their upgrades arrive here."
+          description="Packages a publisher owns. Installing one keeps the publisher's authority, and its upgrades arrive here."
           rows={sections.providers}
           prefsKey="registry.providers"
           emptyTitle="No providers"
-          emptyDescription="This binary ships no provider packages."
+          emptyDescription="This substrate ships no providers."
           requirements={requirements}
           mappings={mappings}
           kinds={kinds}
@@ -1365,13 +1364,13 @@ export function RegistryPage() {
           title="Samples"
           description={
             home
-              ? `Vocabulary to copy: importing one lands it under ${home}, yours to edit.`
-              : "Vocabulary to copy: importing one lands it under this repository's own authority, yours to edit."
+              ? `Kinds to copy. Importing one lands them under ${home}, yours to edit.`
+              : "Kinds to copy. Importing one lands them under this repository's own authority, yours to edit."
           }
           rows={sections.samples}
           prefsKey="registry.samples"
           emptyTitle="No samples"
-          emptyDescription="This binary ships no sample packages."
+          emptyDescription="This substrate ships no samples."
           requirements={requirements}
           mappings={mappings}
           kinds={kinds}
@@ -1380,11 +1379,11 @@ export function RegistryPage() {
         {sections.applied.length > 0 && (
           <BundleSection
             title="Applied directly"
-            description="Bundles this repository applied outside the shipped catalog, so there is no closure to preview and no tier to place them under."
+            description="Bundles applied outside the catalog. There is nothing to preview and no upgrade to offer."
             rows={sections.applied}
             prefsKey="registry.applied"
             emptyTitle="Nothing applied directly"
-            emptyDescription="Every bundle here came from the shipped catalog."
+            emptyDescription="Every bundle came from the catalog."
             requirements={requirements}
             mappings={mappings}
             kinds={kinds}
@@ -1426,8 +1425,8 @@ function PendingUpgradeNotice({ item }: { item: ShippedUpgrade }) {
             </>
           ) : null}{" "}
           {refused
-            ? "was refused when the server started. The stored declarations stand until what the lines below name is resolved and the server starts again."
-            : "is admitted and lands when the server starts again. Until then this repository runs on the declarations it stores."}
+            ? "was refused when the server started. Fix what the lines below name, then start the server again."
+            : "lands when the server starts again. Until then this repository runs on the kinds it already stores."}
         </span>
       </p>
       {refused && (

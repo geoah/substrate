@@ -376,8 +376,8 @@ export function KindDefinition({
           </EmptyMedia>
           <EmptyTitle>No stored declaration</EmptyTitle>
           <EmptyDescription>
-            The registry knows <span className="data">{kind.identity}</span> but
-            carries no declaration for it.
+            This repository knows <span className="data">{kind.identity}</span>{" "}
+            but holds no declaration for it.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>

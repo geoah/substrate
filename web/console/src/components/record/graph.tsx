@@ -544,7 +544,7 @@ function GraphNode({
     // state of the graph, not an error.
     return (
       <p className="py-1 text-xs text-muted-foreground">
-        This record is not here — a reference may name one that does not exist.
+        This record is not here. A reference can name one that does not exist.
       </p>
     )
   }
@@ -672,7 +672,7 @@ export function GraphRail({
           </EmptyMedia>
           <EmptyTitle>Nothing is linked</EmptyTitle>
           <EmptyDescription>
-            This record points nowhere, and no live record points at it.
+            This record points at nothing, and nothing points at it.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>

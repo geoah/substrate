@@ -52,10 +52,10 @@ export function CommandMenu({
       open={open}
       onOpenChange={onOpenChange}
       title="Go to"
-      description="Jump to a page or a type"
+      description="Jump to a page or a kind"
     >
       <Command>
-        <CommandInput placeholder="Go to page or type…" />
+        <CommandInput placeholder="Go to a page or a kind…" />
         <CommandList>
           <CommandEmpty>No matches.</CommandEmpty>
           <CommandGroup heading="Pages">

@@ -194,7 +194,7 @@ function RequiresNote({ requirements }: { requirements: Requirement[] }) {
               req.present
                 ? `${req.package} is imported`
                 : req.held !== undefined
-                  ? `${req.package} is imported at version ${req.held}; this bundle needs version ${req.atLeast} or later`
+                  ? `${req.package} is imported at version ${req.held}, but this bundle needs version ${req.atLeast} or later`
                   : `${req.package} is not imported`
             }
           >
@@ -213,7 +213,7 @@ function RequiresNote({ requirements }: { requirements: Requirement[] }) {
       <p className="pt-1.5 text-xs text-muted-foreground">
         {missing.length
           ? requiresNoteText(missing)
-          : "The vocabulary this bundle's mappings, references and trigger subscriptions point at. All of it is imported."}
+          : "The packages this bundle points at. Every one of them is imported."}
       </p>
     </div>
   )
@@ -231,14 +231,12 @@ function requiresNoteText(missing: Requirement[]): string {
     parts.push(
       `Not in this repository: ${absent
         .map((r) => r.package)
-        .join(
-          ", "
-        )}. This bundle's mappings and references point at it — re-import that package's bundle from the registry.`
+        .join(", ")}. This bundle points at it. Import it from the registry.`
     )
   }
   for (const r of old) {
     parts.push(
-      `${r.package} is imported at version ${r.held}, and this bundle needs version ${r.atLeast} or later: import that package's bundle again first.`
+      `${r.package} is imported at version ${r.held}. This bundle needs version ${r.atLeast} or later. Import it again from the registry first.`
     )
   }
   return parts.join(" ")
@@ -269,7 +267,7 @@ function verbPlan(verb: BundleVerb | "purge", b: BundleStatus): VerbPlan {
         label: "Disable",
         done: "Disabled.",
         title: `Disable ${b.name}?`,
-        body: "Execution stops — triggers stop delivering and callables stop resolving. The vocabulary and data stay exactly as they are; enable brings it back with the cursors intact.",
+        body: "The bundle stops running. Triggers stop delivering and functions stop resolving. Its kinds and records stay as they are. Enable picks it up where it left off.",
         run: (id) => runBundleVerb(id, "disable"),
       }
     case "enable":
@@ -277,7 +275,7 @@ function verbPlan(verb: BundleVerb | "purge", b: BundleStatus): VerbPlan {
         label: "Enable",
         done: "Enabled.",
         title: `Enable ${b.name}?`,
-        body: "Execution resumes from where the cursors stand.",
+        body: "The bundle starts running again, from where it left off.",
         run: (id) => runBundleVerb(id, "enable"),
       }
     case "uninstall":
@@ -285,7 +283,7 @@ function verbPlan(verb: BundleVerb | "purge", b: BundleStatus): VerbPlan {
         label: "Uninstall",
         done: "Uninstalled.",
         title: `Uninstall ${b.name}?`,
-        body: "Tears down the vocabulary, callables and runtime registration for good. Refused while live data remains — purge the data first. Reinstalling means re-applying the closure.",
+        body: "This removes the bundle's kinds and functions. It is refused while any record of those kinds is still live, so purge the data first. Installing again starts from scratch.",
         destructive: true,
         run: (id) => uninstallBundle(id).then(() => null),
       }
@@ -296,13 +294,14 @@ function verbPlan(verb: BundleVerb | "purge", b: BundleStatus): VerbPlan {
         title: `Purge ${b.name}'s data?`,
         body: (
           <>
-            Tombstones every live row in <span className="data">{b.id}</span> —{" "}
+            This deletes every live record in{" "}
+            <span className="data">{b.id}</span>,{" "}
             <span className="data">
               {(b.liveRecords ?? 0).toLocaleString()}
             </span>{" "}
-            {(b.liveRecords ?? 0) === 1 ? "record" : "records"} — through the
-            finalizer flow. Refused while the bundle is running: disable it
-            first. This is not reversible, and it must run before uninstall.
+            {(b.liveRecords ?? 0) === 1 ? "record" : "records"} in all. It is
+            refused while the bundle is running, so disable it first. This
+            cannot be undone, and uninstall needs it done.
           </>
         ),
         destructive: true,
@@ -336,7 +335,7 @@ function LifecycleButtons({ bundle }: { bundle: BundleStatus }) {
       setConfirming(null)
       toast.add({
         type: "error",
-        title: `Could not ${plan.label.toLowerCase()} the bundle`,
+        title: `${plan.label} failed`,
         description: error.message,
       })
       void queryClient.invalidateQueries()
@@ -387,7 +386,7 @@ function LifecycleButtons({ bundle }: { bundle: BundleStatus }) {
       </div>
       {!bundle.installed && (
         <p className="max-w-xs text-right text-xs text-muted-foreground">
-          Uninstalled — re-apply the closure to reinstall (
+          Uninstalled. Re-apply the closure to reinstall (
           <span className="data">substratectl apply -f bundle.yaml</span>).
           Enable cannot restore a removed registration.
         </p>
@@ -536,8 +535,8 @@ function InputCard({
       toast.add({
         type: "error",
         title: record
-          ? `Could not bind ${input.name}`
-          : `Could not unbind ${input.name}`,
+          ? `Binding ${input.name} failed`
+          : `Unbinding ${input.name} failed`,
         description: error.message,
       })
     },
@@ -591,9 +590,9 @@ function InputCard({
       )}
       {!kind ? (
         <p className="px-4 py-3 text-xs text-muted-foreground">
-          The registry has not reconciled{" "}
-          <span className="data">{input.kind}</span>, so its records cannot be
-          listed here.
+          This repository does not have{" "}
+          <span className="data">{input.kind}</span> yet, so there are no
+          records to list.
         </p>
       ) : records.isPending ? (
         <Skeleton className="m-3 h-16 rounded-md" />
@@ -611,9 +610,8 @@ function InputCard({
         </p>
       ) : rows.length === 0 ? (
         <p className="px-4 py-3 text-xs text-muted-foreground">
-          No live <span className="data">{splitKind(input.kind).name}</span>{" "}
-          record exists yet. Create one and, as the sole record of its kind, it
-          resolves this input on its own.
+          There is no <span className="data">{splitKind(input.kind).name}</span>{" "}
+          record yet. Create one and it resolves this input on its own.
         </p>
       ) : (
         <div>
@@ -701,8 +699,8 @@ function InputCard({
           }
           description={
             <>
-              A <span className="data">secret</span> field is write-only. Leave
-              it blank on edit to keep the sealed value.
+              A <span className="data">secret</span> field never reads back.
+              Leave it blank to keep the stored value.
             </>
           }
         />
@@ -758,7 +756,7 @@ function PropertyGrid({ record }: { record: SubstrateRecord }) {
   if (!rows.length) {
     return (
       <p className="px-4 py-3 text-xs text-muted-foreground">
-        This record declares no properties beyond its title.
+        This record has no properties to show.
       </p>
     )
   }
@@ -820,12 +818,12 @@ function AccountRow({
           target = new URL(url)
         } catch {
           throw new Error(
-            "The connect flow returned an invalid authorization URL."
+            "The provider returned an address the console cannot open."
           )
         }
         if (target.protocol !== "https:") {
           throw new Error(
-            "The connect flow returned a non-HTTPS authorization URL; refusing to open it."
+            "The provider returned an address that is not HTTPS, so the console will not open it."
           )
         }
         if (tab) tab.location.href = url
@@ -843,15 +841,15 @@ function AccountRow({
         setAwaitingReturn(true)
         toast.add({
           type: "success",
-          title: "Consent opened in a new tab",
-          description: "Approve there — this page updates when you return.",
+          title: "The provider opened in a new tab",
+          description: "Approve there. This page updates when you come back.",
         })
       } else {
         // No tab opened → never claim success. The blocker ate it.
         toast.add({
           type: "error",
-          title: "Your browser blocked the consent tab",
-          description: "Allow pop-ups for this site, then Connect again.",
+          title: "Your browser blocked the new tab",
+          description: "Allow pop-ups for this site, then press Connect again.",
         })
       }
       void queryClient.invalidateQueries({ queryKey: ["trait", "records"] })
@@ -860,7 +858,7 @@ function AccountRow({
       setConfirming(false)
       toast.add({
         type: "error",
-        title: "Could not start the connect flow",
+        title: "Connecting failed",
         description: error.message,
       })
     },
@@ -899,8 +897,8 @@ function AccountRow({
           type: "error",
           title: "Connecting failed",
           description: msg.correlation
-            ? `The host rejected the grant. Reference ${msg.correlation}.`
-            : "The host rejected the grant.",
+            ? `The provider refused. Reference ${msg.correlation}.`
+            : "The provider refused.",
         })
       }
     }
@@ -958,7 +956,7 @@ function AccountRow({
           onClick={() => setConfirming(true)}
         >
           {connect.isPending && <Spinner className="size-3.5" />}
-          {connected ? "Reconnect" : "Connect account"}
+          {connected ? "Reconnect" : "Connect"}
         </Button>
       </div>
       {confirming && (
@@ -975,11 +973,9 @@ function AccountRow({
                 {recordTitle(account.properties) || "this account"}?
               </DialogTitle>
               <DialogDescription>
-                This opens the provider's consent screen in a new tab. On
-                approval the host stores a credential reference on this account
-                and begins syncing the enabled data.
-                {connected &&
-                  " Reconnecting replaces the current grant — the previous consent is superseded."}
+                This opens the provider in a new tab. Once you approve, this
+                account starts syncing the data you turned on.
+                {connected && " Reconnecting replaces the current approval."}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -1008,7 +1004,7 @@ function AccountRow({
           open={editing}
           onOpenChange={setEditing}
           title={`Edit ${recordTitle(account.properties) || type.name}`}
-          description="Change which data this account syncs, the cadence and the backfill depth. Token state is host-managed and not editable here."
+          description="Change what this account syncs, how often, and how far back. The connection itself is not edited here."
         />
       )}
     </div>
@@ -1059,7 +1055,7 @@ function AccountsSection({
         open={adding}
         onOpenChange={setAdding}
         title={`Add ${accountType.name}`}
-        description="Create the account, then Connect it to run the host OAuth flow. The feature toggles and cadence take effect once it is connected."
+        description="Create the account, then press Connect to approve it with the provider. What it syncs takes effect once it is connected."
       />
     ) : null
 
@@ -1069,7 +1065,7 @@ function AccountsSection({
   if (accounts.isError) {
     return (
       <p className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
-        The accounts didn't load — {accounts.error.message}
+        The accounts didn't load: {accounts.error.message}
         <Button
           variant="outline"
           size="sm"
@@ -1096,7 +1092,7 @@ function AccountsSection({
               </EmptyMedia>
               <EmptyTitle>No accounts yet</EmptyTitle>
               <EmptyDescription>
-                Add an account, then connect it to run the host OAuth flow.
+                Add an account, then connect it with the provider.
               </EmptyDescription>
             </EmptyHeader>
             <div className="flex justify-center pt-1">
@@ -1108,21 +1104,20 @@ function AccountsSection({
           </Empty>
         ) : (
           <p className="rounded-md border px-4 py-3 text-xs text-muted-foreground">
-            This provider declares no account-config kind.
+            This provider has no accounts to connect.
           </p>
         )
       ) : (
         <div className="rounded-md border">
           {blocked && (
             <p className="border-b bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
-              Connecting is refused until the provider is installed, enabled and
-              its OAuth client is set up.
+              Connecting needs the provider installed, enabled and set up first.
             </p>
           )}
           {capped && (
             <p className="border-b bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
-              Showing the first accounts only — this substrate has more than the
-              embedded list caps at. Open the account type to browse them all.
+              Showing the first accounts only. Open the account kind to browse
+              them all.
             </p>
           )}
           {mine.map((account) => (
@@ -1382,9 +1377,7 @@ function KindsSection({
               <BoxesIcon />
             </EmptyMedia>
             <EmptyTitle>No record kinds</EmptyTitle>
-            <EmptyDescription>
-              This bundle installed no record kinds.
-            </EmptyDescription>
+            <EmptyDescription>This bundle adds no kinds.</EmptyDescription>
           </EmptyHeader>
         </Empty>
       }
@@ -1422,7 +1415,7 @@ function RecordsSection({
             </EmptyMedia>
             <EmptyTitle>No other records</EmptyTitle>
             <EmptyDescription>
-              This bundle ships no functions, agents, mappings or data records.
+              This bundle ships no functions, agents or other records.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
@@ -1462,7 +1455,7 @@ export function BundleDetailPage() {
             </EmptyMedia>
             <EmptyTitle>The bundle didn't load</EmptyTitle>
             <EmptyDescription>
-              <span className="data">{id}</span> — {status.error.message}
+              <span className="data">{id}</span>: {status.error.message}
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
@@ -1509,8 +1502,8 @@ export function BundleDetailPage() {
             <SetupBadge count={setupCount(bundle)} />
             {bundle.quarantined && bundle.quarantineReason ? (
               <span className="basis-full text-xs text-warning">
-                Quarantined: {bundle.quarantineReason} Re-install the bundle to
-                clear it.
+                Quarantined: {bundle.quarantineReason} Install the bundle again
+                to clear it.
               </span>
             ) : null}
             {item?.tier ? (
@@ -1569,16 +1562,12 @@ export function BundleDetailPage() {
               <p className="pb-2 text-xs text-muted-foreground">
                 {(bundle.inputs?.length ?? 0) > 0 ? (
                   <>
-                    Each declared input resolves ONE record: an explicitly bound
-                    one first, then the record named{" "}
-                    <span className="data">default</span>, then the sole live
-                    record of its kind.
+                    Each input uses one record. A record you bind wins, then the
+                    one named <span className="data">default</span>, then the
+                    only record of its kind.
                   </>
                 ) : (
-                  <>
-                    What this bundle still needs before the paths it ships will
-                    run, in the server's own words.
-                  </>
+                  <>What this bundle still needs before it will run.</>
                 )}
               </p>
               {registry.isPending ? (
@@ -1596,9 +1585,8 @@ export function BundleDetailPage() {
             <section>
               <h2 className="pb-1 text-sm font-medium">Accounts</h2>
               <p className="pb-2 text-xs text-muted-foreground">
-                The provider's connected accounts (a{" "}
-                <span className="data">accountconfig</span> trait query); the
-                host runs the OAuth flow.
+                The accounts this provider syncs. Connect one to approve it with
+                the provider.
               </p>
               <AccountsSection bundle={bundle} types={types} />
             </section>
@@ -1606,9 +1594,9 @@ export function BundleDetailPage() {
           <section>
             <h2 className="pb-1 text-sm font-medium">Kinds</h2>
             <p className="pb-2 text-xs text-muted-foreground">
-              The record kinds this bundle installed in{" "}
+              The kinds this bundle added under{" "}
               <span className="data">{bundle.authority}</span>, each with its
-              live row count.
+              live record count.
             </p>
             {registry.isPending ? (
               <Skeleton className="h-24 w-full rounded-md" />
@@ -1625,8 +1613,8 @@ export function BundleDetailPage() {
           <section>
             <h2 className="pb-1 text-sm font-medium">Records</h2>
             <p className="pb-2 text-xs text-muted-foreground">
-              The rest of the closure — its functions, agents and mappings, and
-              the records the install wrote beside them.
+              The functions, agents and mappings this bundle ships, and the
+              records it wrote beside them.
             </p>
             {catalog.isPending || registry.isPending ? (
               <Skeleton className="h-24 w-full rounded-md" />

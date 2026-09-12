@@ -128,7 +128,7 @@ export function DataCountsZone({
       />
       {own.length === 0 ? (
         <p className="text-xs text-muted-foreground">
-          No authorities declare kinds yet — import a sample package from the
+          No authorities declare kinds yet. Import a sample package from the
           registry, or declare a kind of your own.
         </p>
       ) : (

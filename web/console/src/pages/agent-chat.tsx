@@ -381,14 +381,14 @@ function ChatSurface({ id }: { id: string }) {
                   mean "loading" here — only a fetch in flight can. */}
               {messages.isPending && messages.isFetching && (
                 <p className="py-8 text-center text-sm text-muted-foreground">
-                  Loading the transcript…
+                  Loading the messages…
                 </p>
               )}
               {turns.length === 0 && !streaming && !messages.isFetching && (
                 <p className="py-8 text-center text-sm text-muted-foreground">
                   {thread
-                    ? "This thread has no turns."
-                    : "Send a message to open a thread against this agent."}
+                    ? "This thread has no messages yet."
+                    : "Send a message to start a thread with this agent."}
                 </p>
               )}
               <Transcript turns={turns} liveKey={liveKey} />
@@ -423,8 +423,8 @@ function ChatSurface({ id }: { id: string }) {
                 rows={2}
                 placeholder={
                   thread
-                    ? "Continue this thread…  (⌘↵ to send)"
-                    : "Message the agent…  (⌘↵ to send)"
+                    ? "Continue this thread…  ⌘↵ to send"
+                    : "Message the agent…  ⌘↵ to send"
                 }
                 disabled={busy}
                 className="min-h-0 resize-none"

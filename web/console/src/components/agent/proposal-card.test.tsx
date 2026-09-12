@@ -164,7 +164,7 @@ describe("ProposalCard", () => {
     expect(await screen.findByText(/"scribe"/)).toBeTruthy()
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Mint the rule and accept" })
+      screen.getByRole("button", { name: "Save the rule and accept" })
     )
 
     await waitFor(() => {

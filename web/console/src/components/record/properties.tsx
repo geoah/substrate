@@ -187,7 +187,7 @@ function LooseValue({ value }: { value: unknown }) {
 
 function Row({ row, kinds }: { row: PropertyRow; kinds: KindInfo[] }) {
   const doc = row.spec
-    ? [typeLabel(row.spec), row.spec.description].filter(Boolean).join(" — ")
+    ? [typeLabel(row.spec), row.spec.description].filter(Boolean).join(" · ")
     : undefined
   return (
     <div className="flex min-w-0 flex-col gap-1">
@@ -279,9 +279,7 @@ export function PropertiesRail({
             <ListIcon />
           </EmptyMedia>
           <EmptyTitle>No data</EmptyTitle>
-          <EmptyDescription>
-            This record carries no properties.
-          </EmptyDescription>
+          <EmptyDescription>This record has no properties.</EmptyDescription>
         </EmptyHeader>
       </Empty>
     )

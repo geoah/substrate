@@ -118,7 +118,7 @@ describe("AccountPage", () => {
     ).toBe(true)
 
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { repository: "geoah" }))
-    fireEvent.change(card.getByLabelText("Code from the NEW secret"), {
+    fireEvent.change(card.getByLabelText("Code from the new secret"), {
       target: { value: "222 222" },
     })
     fireEvent.click(card.getByRole("button", { name: "Replace authenticator" }))

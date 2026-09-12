@@ -585,7 +585,7 @@ describe("requirementsOf / requiresHint — what to import first", () => {
         )
       )
     ).toBe(
-      "Import samples.substrate.reamde.dev/tasks first — this bundle declares against it."
+      "Import samples.substrate.reamde.dev/tasks first. This bundle declares against it."
     )
     expect(
       requiresHint(
@@ -603,7 +603,7 @@ describe("requirementsOf / requiresHint — what to import first", () => {
         )
       )
     ).toBe(
-      "Import samples.substrate.reamde.dev/messaging and samples.substrate.reamde.dev/calendar first — this bundle declares against them."
+      "Import samples.substrate.reamde.dev/messaging and samples.substrate.reamde.dev/calendar first. This bundle declares against them."
     )
   })
 })
@@ -634,7 +634,7 @@ describe("requiresAtLeast: the floor under a requirement (decision record 0070)"
       { package: "ada.example.com/scheduling", present: true, held: 2 },
     ])
     expect(requiresHint(missingRequirements(reqs))).toBe(
-      "Import ada.example.com/people again first: this bundle needs it at version 4 or later, and this repository holds version 3."
+      "Import ada.example.com/people again first. This bundle needs version 4 or later. This repository holds version 3."
     )
   })
 
@@ -662,8 +662,8 @@ describe("requiresAtLeast: the floor under a requirement (decision record 0070)"
       versions
     )
     expect(requiresHint(missingRequirements(reqs))).toBe(
-      "Import ada.example.com/scheduling first — this bundle declares against it. " +
-        "Import ada.example.com/people again first: this bundle needs it at version 4 or later, and this repository holds version 3."
+      "Import ada.example.com/scheduling first. This bundle declares against it. " +
+        "Import ada.example.com/people again first. This bundle needs version 4 or later. This repository holds version 3."
     )
   })
 

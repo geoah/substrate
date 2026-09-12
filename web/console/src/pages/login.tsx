@@ -36,10 +36,10 @@ function describeError(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.code === "rate_limited") {
       const wait = err.retryAfter ?? 5
-      return `Too many attempts — the door is rate limited on purpose. Try again in ${wait}s.`
+      return `Too many attempts. Try again in ${wait}s.`
     }
     if (err.code === "auth") {
-      return "The repository, password or code is wrong — or there have been too many failed attempts. Wait for a fresh code and try again."
+      return "The repository, password or code is wrong. Wait for a fresh code and try again."
     }
     return err.message
   }
@@ -118,7 +118,7 @@ export function LoginPage() {
             <CardDescription>
               {totpRequired
                 ? `Your repository, password and the current ${CODE_DIGITS}-digit code.`
-                : "Your repository and password — this substrate does not verify a second factor."}{" "}
+                : "Your repository name and password."}{" "}
               Signing in mints a token that stays in this browser.
             </CardDescription>
           </CardHeader>
@@ -189,14 +189,14 @@ export function LoginPage() {
           </CardContent>
         </Card>
         <p className="text-center text-xs text-muted-foreground">
-          Holding an invite code?{" "}
+          Have an invite code?{" "}
           <Link
             to="/register"
             className="underline underline-offset-4 hover:text-foreground"
           >
             Register
           </Link>{" "}
-          — it creates your repository and signs you in.
+          to create your repository and sign in.
         </p>
       </div>
     </div>

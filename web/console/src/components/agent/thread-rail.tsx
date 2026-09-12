@@ -98,7 +98,7 @@ export function ThreadRail({
           </div>
         ) : threads.isError ? (
           <p className="px-3 py-3 text-xs text-muted-foreground">
-            The threads didn't load — {threads.error.message}
+            The threads didn't load: {threads.error.message}
           </p>
         ) : rows.length === 0 ? (
           <p className="px-3 py-3 text-xs text-muted-foreground">

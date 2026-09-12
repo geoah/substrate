@@ -242,10 +242,10 @@ export function PropertyForm({
           />
           <FieldDescription>
             {record
-              ? "A record's id is fixed: this write lands on the record you opened."
+              ? "A record's id never changes. This saves onto the record you opened."
               : declared
-                ? `Required. A ${kind.name} is addressed by the identity it declares, and the substrate never mints one.`
-                : "Optional. Leave it blank and the substrate mints one."}
+                ? `Required. A ${kind.name} carries its own id, so write one here.`
+                : "Optional. Leave it blank and the substrate makes one."}
           </FieldDescription>
         </Field>
 
@@ -275,9 +275,9 @@ export function PropertyForm({
             self={record?.id}
             derivedNote={
               derivesAuthority && field.name === AUTHORITY_PROPERTY
-                ? "Derived from the record id: its first segment."
+                ? "Taken from the record id, its first segment."
                 : derivesPackage && field.name === PACKAGE_PROPERTY
-                  ? "Derived from the record id: its second segment."
+                  ? "Taken from the record id, its second segment."
                   : undefined
             }
           />

@@ -95,7 +95,7 @@ export function ActivityCard({ kinds }: { kinds: KindInfo[] }) {
         ) : recent.data.length === 0 ? (
           <div className="flex items-center gap-2 px-4 py-3 text-xs text-muted-foreground">
             <InboxIcon className="size-3.5" />
-            The changelog is empty — nothing has written yet.
+            The changelog is empty. Nothing has been written yet.
           </div>
         ) : (
           <div className="flex flex-col">

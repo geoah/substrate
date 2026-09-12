@@ -238,7 +238,7 @@ export function ProposalCard({ id }: { id: string }) {
               (<span className="data">{verdict.outcome}</span>)
             </>
           )}
-          {verdict.rationale && <> — {verdict.rationale}</>}
+          {verdict.rationale && <>: {verdict.rationale}</>}
         </p>
       )}
       {error && <p className="text-xs text-destructive">{error}</p>}
@@ -280,8 +280,8 @@ export function ProposalCard({ id }: { id: string }) {
       {remedyOpen && remedyRule && (
         <div className="flex flex-col gap-1.5 rounded-sm border bg-background/60 p-2">
           <p className="text-xs text-muted-foreground">
-            Accepting this way also mints ONE standing rule, exactly this narrow
-            — every future diff of this class lands without review:
+            This also saves a rule. Every future change like this one lands
+            without asking you.
           </p>
           <pre className="overflow-x-auto rounded-sm bg-muted/40 p-1.5 data text-[0.7rem]">
             {JSON.stringify(remedyRule, null, 2)}
@@ -294,7 +294,7 @@ export function ProposalCard({ id }: { id: string }) {
               onClick={() => void acceptAndAllow()}
             >
               {submitting === "accepted" && <Spinner className="size-3" />}
-              Mint the rule and accept
+              Save the rule and accept
             </Button>
           </div>
         </div>
@@ -330,8 +330,8 @@ function ChangePreview({
   if (op === "delete") {
     return (
       <p className="text-xs text-destructive/80">
-        Deletes <span className="data">{targetLabel}</span> — the record is
-        tombstoned, not erased.
+        Deletes <span className="data">{targetLabel}</span>. It stops answering
+        reads, and the changelog keeps what it was.
       </p>
     )
   }

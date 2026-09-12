@@ -361,11 +361,11 @@ describe("BundleDetailPage", () => {
       await screen.findByText("google")
       const note = screen.getByText("Requires").closest("div") as HTMLElement
       await within(note).findByTitle(
-        "samples.substrate.reamde.dev/people is imported at version 4; this bundle needs version 5 or later"
+        "samples.substrate.reamde.dev/people is imported at version 4, but this bundle needs version 5 or later"
       )
       expect(
         screen.getByText(
-          /samples\.substrate\.reamde\.dev\/people is imported at version 4, and this bundle needs version 5 or later: import that package's bundle again first\./
+          /samples\.substrate\.reamde\.dev\/people is imported at version 4\. This bundle needs version 5 or later\. Import it again from the registry first\./
         )
       ).toBeTruthy()
     })

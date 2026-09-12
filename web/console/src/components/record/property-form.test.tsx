@@ -248,7 +248,7 @@ data:
     renderForm(templateYAML(llmprovider), { record })
     const edit = screen.getByLabelText("Status") as HTMLSelectElement
     expect(edit.disabled).toBe(true)
-    expect(screen.getByText(/moves by transition/)).toBeTruthy()
+    expect(screen.getByText(/changes by transition/)).toBeTruthy()
   })
 
   it("edits a repeated object as rows of its declared fields, not as JSON", () => {
@@ -734,7 +734,7 @@ data:
     const id = screen.getByLabelText(/^Record id/) as HTMLInputElement
     expect(id.placeholder).toBe("<authority>/<package>/<name>")
     expect(id.getAttribute("aria-invalid")).toBe("true")
-    expect(screen.getByText(/never mints one/)).toBeTruthy()
+    expect(screen.getByText(/carries its own id/)).toBeTruthy()
   })
 
   it("derives a declaration's authority from its id, and never asks for it", () => {
@@ -816,7 +816,7 @@ data:
     // The hint names the path the loader's own refusal names.
     expect(
       screen.getByText(
-        /needs substrate\.reamde\.dev\/core\/recordpatchrequest in data\.permissions\.writes/
+        /data\.permissions\.writes must name substrate\.reamde\.dev\/core\/recordpatchrequest/
       )
     ).toBeTruthy()
     view.unmount()
@@ -828,6 +828,6 @@ data:
         - substrate.reamde.dev/core/recordpatchrequest
 `
     )
-    expect(screen.queryByText(/propose lands a change request/)).toBeNull()
+    expect(screen.queryByText(/propose writes a change request/)).toBeNull()
   })
 })

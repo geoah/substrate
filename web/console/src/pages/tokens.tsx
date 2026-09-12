@@ -77,7 +77,7 @@ async function copy(secret: string) {
   } catch {
     toast.add({
       type: "error",
-      title: "Could not reach the clipboard — select and copy.",
+      title: "Copying failed. Select the secret and copy it.",
     })
   }
 }
@@ -94,12 +94,11 @@ function MintedPanel({
     <Card className="ring-primary/30">
       <CardHeader>
         <CardTitle>
-          “{minted.token.label}” is live — copy the secret now
+          “{minted.token.label}” is live. Copy the secret now
         </CardTitle>
         <CardDescription>
-          This is the only time the secret is shown. The substrate stores its
-          SHA-256 and nothing else — lose it and the only remedy is minting
-          another.
+          This is the only time the secret is shown. If you lose it, mint
+          another token.
         </CardDescription>
         <CardAction>
           <Button
@@ -153,7 +152,7 @@ function MintForm({ onMinted }: { onMinted: (m: MintedToken) => void }) {
     onError: (error) => {
       toast.add({
         type: "error",
-        title: "Could not mint",
+        title: "Minting failed",
         description: error.message,
       })
     },
@@ -164,7 +163,7 @@ function MintForm({ onMinted }: { onMinted: (m: MintedToken) => void }) {
       <CardHeader>
         <CardTitle>Mint a token</CardTitle>
         <CardDescription>
-          For a script, a device, or another browser. The label is how you will
+          For a script, a device or another browser. The label is how you
           recognise it here.
         </CardDescription>
       </CardHeader>
@@ -204,7 +203,7 @@ function MintForm({ onMinted }: { onMinted: (m: MintedToken) => void }) {
               />
             ) : (
               <FieldDescription>
-                Optional. A token without an expiry lives until revoked.
+                Optional. A token without an expiry lasts until you revoke it.
               </FieldDescription>
             )}
           </Field>
@@ -250,7 +249,7 @@ function TokenRows({
     onError: (error) => {
       toast.add({
         type: "error",
-        title: "Could not revoke",
+        title: "Revoking failed",
         description: error.message,
       })
     },
@@ -305,9 +304,8 @@ export function TokensPage() {
         <div>
           <h1 className="text-lg font-semibold">Tokens</h1>
           <p className="text-xs text-muted-foreground">
-            Every way into this repository — a session is a token record, so
-            this is also every browser you are signed in on. A token has full
-            access; there are no scopes.
+            Every way into this repository, including every browser you are
+            signed in on. Signing in mints a token. Every token has full access.
           </p>
         </div>
       </div>
@@ -338,7 +336,7 @@ export function TokensPage() {
                   <EmptyMedia variant="icon">
                     <SearchXIcon />
                   </EmptyMedia>
-                  <EmptyTitle>Could not load your tokens</EmptyTitle>
+                  <EmptyTitle>Your tokens didn't load</EmptyTitle>
                   <EmptyDescription>
                     {tokens.error instanceof ApiError
                       ? tokens.error.message
@@ -363,7 +361,7 @@ export function TokensPage() {
                   </EmptyMedia>
                   <EmptyTitle>No tokens</EmptyTitle>
                   <EmptyDescription>
-                    Signing in mints one, so this list is never empty for long.
+                    Signing in mints one, so this list will not stay empty.
                   </EmptyDescription>
                 </EmptyHeader>
               </Empty>

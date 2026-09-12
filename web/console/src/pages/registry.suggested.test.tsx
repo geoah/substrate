@@ -297,7 +297,7 @@ describe("Registry suggested mappings", () => {
     expect(chip.textContent).toContain("ready")
     expect(
       within(detail).getByText(
-        "To enable this mapping, import people again. Re-importing replaces that package and may remove your changes."
+        "To enable this mapping, import people again. Importing again replaces the package and may remove your changes."
       )
     ).toBeTruthy()
   })
@@ -327,7 +327,7 @@ describe("Registry suggested mappings", () => {
     )
     expect(
       within(detail).getByText(
-        "To enable this mapping, upgrade github, then import people again. Re-importing replaces that package and may remove your changes."
+        "To enable this mapping, upgrade github, then import people again. Importing again replaces the package and may remove your changes."
       )
     ).toBeTruthy()
   })
@@ -347,7 +347,7 @@ describe("Registry suggested mappings", () => {
     // The confirmation states the 0048 cost before anything runs.
     const dialog = await screen.findByRole("dialog")
     expect(within(dialog).getByText(/Import people again\?/)).toBeTruthy()
-    expect(dialog.textContent).toContain(`REPLACES ${HOME}/people`)
+    expect(dialog.textContent).toContain(`replaces ${HOME}/people`)
     expect(dialog.textContent).toContain("a kind or a property you added")
     expect(imported).toEqual([])
     fireEvent.click(

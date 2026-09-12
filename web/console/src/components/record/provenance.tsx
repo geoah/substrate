@@ -144,7 +144,7 @@ export function ProvenanceRail({
           </EmptyMedia>
           <EmptyTitle>No managed properties</EmptyTitle>
           <EmptyDescription>
-            No actor holds a property on this record.
+            Nothing else writes to this record's properties.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>

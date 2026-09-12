@@ -112,7 +112,7 @@ function templateDoc(kind: KindInfo): Document {
 
   const idNode = doc.getIn(["metadata", "id"], true)
   if (isScalar(idNode)) {
-    idNode.comment = " optional — omit to let the substrate mint one"
+    idNode.comment = " optional: omit to let the substrate mint one"
   }
 
   const propsMap = doc.getIn(["data", "properties"], true)
@@ -331,7 +331,7 @@ export function validateApplyDoc(
   ) {
     problems.push({
       severity: "error",
-      message: `\`metadata.id\` is required: a ${kind.name} is addressed by the identity it declares, and the substrate never mints one.`,
+      message: `\`metadata.id\` is required. A ${kind.name} carries its own id, so write one here.`,
       path: "metadata.id",
       line: lineOfKey(text, "id"),
     })
@@ -344,7 +344,7 @@ export function validateApplyDoc(
   ) {
     problems.push({
       severity: "warning",
-      message: `\`metadata.id\` does not rename a record — this write lands on ${ctx.record.id}.`,
+      message: `\`metadata.id\` does not rename a record. This write lands on ${ctx.record.id}.`,
       path: "metadata.id",
       line: lineOfKey(text, "id"),
     })
@@ -410,7 +410,7 @@ export function validateApplyDoc(
     ) {
       problems.push({
         severity: "error",
-        message: `\`${spec.name}\` is a state: it moves by transition, not by editing. Leave it at \`${String(
+        message: `\`${spec.name}\` is a state. It changes by transition, not by editing. Leave it at \`${String(
           ctx.record.properties?.[spec.name] ?? ""
         )}\`.`,
         path: spec.name,

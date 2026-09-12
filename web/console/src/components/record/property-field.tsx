@@ -202,9 +202,7 @@ export function PropertyField({
           onChange={(e) => onChange(e.target.value)}
         >
           {showEmpty && (
-            <option value="">
-              {field.required ? "— select —" : "— none —"}
-            </option>
+            <option value="">{field.required ? "Select…" : "None"}</option>
           )}
           {field.options?.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -233,7 +231,7 @@ export function PropertyField({
           value={text}
           onChange={(e) => onChange(e.target.value)}
         >
-          {!text && <option value="">— select —</option>}
+          {!text && <option value="">Select…</option>}
           {(field.spec.states ?? []).map((state) => (
             <option key={state} value={state}>
               {state}
@@ -242,8 +240,8 @@ export function PropertyField({
         </select>
         {help(
           frozen
-            ? "A state moves by transition, not by editing."
-            : "The state this record is born into."
+            ? "A state changes by transition, not by editing it here."
+            : "The state this record starts in."
         )}
         {error && <FieldError>{error}</FieldError>}
       </Field>
@@ -284,7 +282,7 @@ export function PropertyField({
         {help(
           pinned
             ? `Each one points at a ${pinned}.`
-            : "Each one points at any kind: give the whole path."
+            : "Each one points at any kind. Give the whole path."
         )}
         {error && <FieldError>{error}</FieldError>}
       </Field>
@@ -306,7 +304,7 @@ export function PropertyField({
         />
         {help(
           field.spec.keyPattern
-            ? `Each key holds to the ${field.spec.keyPattern} contract.`
+            ? `Each key must match ${field.spec.keyPattern}.`
             : undefined
         )}
         {error && <FieldError>{error}</FieldError>}
@@ -395,7 +393,7 @@ export function PropertyField({
         />
         <FieldDescription>
           {field.description
-            ? `${field.description} — one per line.`
+            ? `${field.description}: one per line.`
             : "One value per line."}
         </FieldDescription>
         {error && <FieldError>{error}</FieldError>}
@@ -452,7 +450,7 @@ export function PropertyField({
       />
       {help(
         isSecret && mode === "patch"
-          ? "Sealed. Leave blank to keep the stored value."
+          ? "This value never reads back. Leave it blank to keep the stored one."
           : undefined
       )}
       {error && <FieldError>{error}</FieldError>}
@@ -588,7 +586,7 @@ function ReferenceField({
       {help(
         pinned
           ? `Points at a ${pinned}.`
-          : "Points at any kind: name it, or give the whole path."
+          : "Points at any kind. Name it, or give the whole path."
       )}
       {error && <FieldError>{error}</FieldError>}
     </Field>

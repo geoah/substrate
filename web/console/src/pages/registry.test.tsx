@@ -308,7 +308,7 @@ describe("RegistryPage", () => {
   it("says a new repository ships core alone and takes the rest from here", async () => {
     renderPage(<RegistryPage />)
     await screen.findByText("people")
-    expect(screen.getByText(/A new repository ships/)).toBeTruthy()
+    expect(screen.getByText(/A new repository holds/)).toBeTruthy()
   })
 
   it("lists the two tiers in their own sections", async () => {
@@ -328,16 +328,16 @@ describe("RegistryPage", () => {
     // The section says where an import lands, in its own copy.
     expect(
       within(samples).getByText(
-        `Vocabulary to copy: importing one lands it under ${HOME}, yours to edit.`
+        `Kinds to copy. Importing one lands them under ${HOME}, yours to edit.`
       )
     ).toBeTruthy()
   })
 
-  it("a sample offers Import as yours and previews the id it lands under", async () => {
+  it("a sample offers Import and previews the id it lands under", async () => {
     renderPage(<RegistryPage />)
     const people = await rowOf("people")
     expect(
-      within(people).getByRole("button", { name: /Import as yours/ })
+      within(people).getByRole("button", { name: /^Import$/ })
     ).toBeTruthy()
     expect(within(people).getByText(`lands as ${HOME}/people`)).toBeTruthy()
   })
@@ -401,10 +401,14 @@ describe("RegistryPage", () => {
     expect(within(detail).getByText("syncgoogle")).toBeTruthy()
     expect(within(detail).getByText("ongooglesync")).toBeTruthy()
     // What it is, and what it declares against.
-    expect(within(detail).getByText(/a published package/i)).toBeTruthy()
+    expect(
+      within(detail).getByText(
+        /installs under the authority that publishes it/i
+      )
+    ).toBeTruthy()
     expect(
       within(detail).getByTitle(
-        "samples.substrate.reamde.dev/people is not imported — the import is refused until it is"
+        "samples.substrate.reamde.dev/people is not imported yet. Import it first"
       )
     ).toBeTruthy()
   })
@@ -443,7 +447,7 @@ describe("RegistryPage", () => {
     expect(button.hasAttribute("disabled")).toBe(true)
     expect(
       within(google).getByText(
-        "Import samples.substrate.reamde.dev/people, samples.substrate.reamde.dev/messaging and samples.substrate.reamde.dev/calendar first — this bundle declares against them."
+        "Import samples.substrate.reamde.dev/people, samples.substrate.reamde.dev/messaging and samples.substrate.reamde.dev/calendar first. This bundle declares against them."
       )
     ).toBeTruthy()
     // …and the row itself says what is missing, without opening anything.
@@ -460,7 +464,7 @@ describe("RegistryPage", () => {
     expect(within(tasks).getByText(`needs ${HOME}/people`)).toBeTruthy()
     expect(
       within(tasks)
-        .getByRole("button", { name: /Import as yours/ })
+        .getByRole("button", { name: /^Import$/ })
         .hasAttribute("disabled")
     ).toBe(true)
   })
@@ -469,7 +473,7 @@ describe("RegistryPage", () => {
     renderPage(<RegistryPage />)
     const people = await rowOf("people")
     const button = within(people).getByRole("button", {
-      name: /Import as yours/,
+      name: /^Import$/,
     })
     expect(button.hasAttribute("disabled")).toBe(false)
     fireEvent.click(button)
@@ -504,9 +508,7 @@ describe("RegistryPage", () => {
     })
     renderPage(<RegistryPage />)
     const people = await rowOf("people")
-    fireEvent.click(
-      within(people).getByRole("button", { name: /Import as yours/ })
-    )
+    fireEvent.click(within(people).getByRole("button", { name: /^Import$/ }))
     expect(await screen.findByText(problem)).toBeTruthy()
   })
 
@@ -524,7 +526,7 @@ describe("RegistryPage", () => {
       const people = await rowOf("people")
       expect(within(people).getByText("enabled")).toBeTruthy()
       expect(
-        within(people).queryByRole("button", { name: /Import as yours/ })
+        within(people).queryByRole("button", { name: /^Import$/ })
       ).toBeNull()
     })
 
@@ -546,7 +548,7 @@ describe("RegistryPage", () => {
       const tasks = await rowOf("tasks")
       expect(
         within(tasks)
-          .getByRole("button", { name: /Import as yours/ })
+          .getByRole("button", { name: /^Import$/ })
           .hasAttribute("disabled")
       ).toBe(false)
       expect(within(tasks).queryByText(/needs /)).toBeNull()
@@ -656,7 +658,7 @@ describe("RegistryPage", () => {
         within(dialog).getByText(/drops middleName on .*3 live records/)
       ).toBeTruthy()
       fireEvent.click(
-        within(dialog).getByRole("button", { name: /accept the loss/ })
+        within(dialog).getByRole("button", { name: /remove values/ })
       )
       await waitFor(() => expect(installBodies()).toHaveLength(1))
       expect(installBodies()[0].confirm).toEqual({
@@ -721,10 +723,10 @@ describe("RegistryPage", () => {
       // The toast that announces the stale preview is a dialog too, so the
       // loss dialog is found by its title.
       const lossDialog = () =>
-        screen.getByRole("dialog", { name: /and lose values/ })
-      await screen.findByRole("dialog", { name: /and lose values/ })
+        screen.getByRole("dialog", { name: /and remove values/ })
+      await screen.findByRole("dialog", { name: /and remove values/ })
       fireEvent.click(
-        within(lossDialog()).getByRole("button", { name: /accept the loss/ })
+        within(lossDialog()).getByRole("button", { name: /remove values/ })
       )
       await waitFor(() => expect(installs).toBe(1))
       expect(installBodies()[0].confirm?.planHash).toBe("cafe")
@@ -736,7 +738,7 @@ describe("RegistryPage", () => {
           .length
       await waitFor(() => expect(catalogReads()).toBeGreaterThanOrEqual(2))
       expect(
-        within(lossDialog()).getByText(/Records changed since this preview/)
+        within(lossDialog()).getByText(/Records changed since this plan/)
       ).toBeTruthy()
       await within(lossDialog()).findByText(
         /drops middleName on .*4 live records/,
@@ -744,7 +746,7 @@ describe("RegistryPage", () => {
         { timeout: 3000 }
       )
       fireEvent.click(
-        within(lossDialog()).getByRole("button", { name: /accept the loss/ })
+        within(lossDialog()).getByRole("button", { name: /remove values/ })
       )
       await waitFor(() => expect(installs).toBe(2))
       expect(installBodies()[1].confirm).toEqual({
@@ -913,15 +915,15 @@ describe("RegistryPage", () => {
       const google = await rowOf("google")
       fireEvent.click(within(google).getByRole("button", { name: /Upgrade/ }))
       const dialog = await screen.findByRole("dialog", {
-        name: /and lose values/,
+        name: /and remove values/,
       })
       fireEvent.click(
-        within(dialog).getByRole("button", { name: /accept the loss/ })
+        within(dialog).getByRole("button", { name: /remove values/ })
       )
       await waitFor(() => expect(installs).toBe(1))
       await waitFor(() =>
         expect(
-          screen.queryByRole("dialog", { name: /and lose values/ })
+          screen.queryByRole("dialog", { name: /and remove values/ })
         ).toBeNull()
       )
       expect(
@@ -933,10 +935,10 @@ describe("RegistryPage", () => {
         within(linearRow).getByRole("button", { name: /Upgrade/ })
       )
       const next = await screen.findByRole("dialog", {
-        name: /Upgrade linear and lose values/,
+        name: /Upgrade linear and remove values/,
       })
       expect(
-        within(next).queryByText(/Records changed since this preview/)
+        within(next).queryByText(/Records changed since this plan/)
       ).toBeNull()
     })
 

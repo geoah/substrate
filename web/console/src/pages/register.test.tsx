@@ -201,7 +201,7 @@ describe("RegisterPage", () => {
     expect(recovery.value).toBe("AGE-SECRET-KEY-1TEST")
     expect(navigate).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole("button", { name: /I saved it/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Saved, continue" }))
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({ to: "/", replace: true })
     )
@@ -278,6 +278,25 @@ describe("RegisterPage", () => {
       totpCode: "",
       label: "console",
     })
+  })
+
+  it("names the factors this door has in the password hint", () => {
+    render(<RegisterPage />)
+    expect(
+      screen.getByText(
+        /If you lose both factors, only the operator can reset you/
+      )
+    ).toBeTruthy()
+    cleanup()
+
+    // With no second factor there is only the password to lose, so the hint
+    // that counts two of them is wrong.
+    policy.totpRequired = false
+    render(<RegisterPage />)
+    expect(
+      screen.getByText(/If you lose it, only the operator can reset you/)
+    ).toBeTruthy()
+    expect(screen.queryByText(/lose both factors/)).toBeNull()
   })
 
   it("still asks for the invite code where one is read, with the factor off", () => {

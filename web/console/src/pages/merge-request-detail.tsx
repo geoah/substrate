@@ -102,12 +102,12 @@ const POSTURE_TEXT: Record<
   choice: {
     label: "your choice",
     explain:
-      "Held by you on at least one side. Recompute yields to you (§7.1), so the surviving value stands as-is after the merge — if the other value is the right one, edit the survivor afterwards.",
+      "You hold this value on at least one side, so the surviving value stands as it is. If the other one is right, edit the survivor after the merge.",
   },
   recompute: {
     label: "recompute settles",
     explain:
-      "Machine-held. Values never migrate in a merge — after it, the survivor re-derives this property from the union of both records' live sources.",
+      "A machine holds this value. After the merge the survivor works it out again from both records' sources.",
   },
 }
 
@@ -317,7 +317,7 @@ function SideBySide({
                 colSpan={4}
                 className="px-4 text-xs text-muted-foreground"
               >
-                No differences — every field the pair carries already agrees.
+                No differences. Every field the pair carries already agrees.
               </TableCell>
             </TableRow>
           )}
@@ -415,26 +415,20 @@ function VerdictDialog({
               {approving ? (
                 <>
                   <span className="block">
-                    The substrate applies the merge in the same transaction as
-                    this decision: the merged-away record is tombstoned behind
-                    the survivor's former-id trail, so every reference to it
-                    still resolves; machine-held properties recompute from the
-                    union of both sides' live sources, and values you hold stand
-                    untouched.
+                    The merged-away record stops answering reads, but every
+                    reference to it still resolves through the survivor. Values
+                    you hold are left alone.
                   </span>
                   <span className="block">
-                    Reversible: the merged-away record is tombstoned, not erased
-                    — a <span className="data">recordsplit</span> can take the
-                    merge apart later. If the request went stale (already
-                    merged, deleted), nothing partial happens: the whole
-                    decision fails and the request says why.
+                    This can be undone. A{" "}
+                    <span className="data">recordsplit</span> takes the merge
+                    apart later.
                   </span>
                 </>
               ) : (
                 <span className="block">
-                  Both records stay exactly as they are; only the decision is
-                  written. The request is kept as the rejection memory — this
-                  pair will not be suggested again.
+                  Both records are left as they are. This pair will not be
+                  suggested again.
                 </span>
               )}
             </DialogDescription>
@@ -453,8 +447,7 @@ function VerdictDialog({
               {...form.register("note")}
             />
             <FieldDescription>
-              Saved with the decision, as{" "}
-              <span className="data">owner/note</span> on this request.
+              Saved with your decision on this request.
             </FieldDescription>
             <FieldError errors={[form.formState.errors.note]} />
           </Field>
@@ -541,7 +534,7 @@ export function MergeRequestDetailPage() {
         title:
           v === "accepted"
             ? "Merged."
-            : "Rejected — this pair won't be suggested again.",
+            : "Rejected. This pair won't be suggested again.",
       })
       // A merge touches far more than this request: the pair's records, the
       // changelog, counts, the queue. Drop everything and re-read.
@@ -551,7 +544,7 @@ export function MergeRequestDetailPage() {
       setConfirming(null)
       toast.add({
         type: "error",
-        title: `Could not ${v === "accepted" ? "accept" : "reject"} the request`,
+        title: `${v === "accepted" ? "Accepting" : "Rejecting"} the request failed`,
         description: error.message,
       })
       // A conflict means it moved under us; the re-read shows the server's
@@ -572,7 +565,7 @@ export function MergeRequestDetailPage() {
             </EmptyMedia>
             <EmptyTitle>The merge request didn't load</EmptyTitle>
             <EmptyDescription>
-              <span className="data">{id}</span> — {mr.error.message}
+              <span className="data">{id}</span>: {mr.error.message}
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
@@ -701,7 +694,7 @@ export function MergeRequestDetailPage() {
             <GitMergeIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
             {decision === "accepted" ? (
               <p>
-                Merged — the survivor{" "}
+                Merged. The survivor{" "}
                 <span className="data">
                   {winnerRef ? (
                     <RecordPeek target={winnerRef} types={types} />
@@ -709,15 +702,14 @@ export function MergeRequestDetailPage() {
                     winnerTitle
                   )}
                 </span>{" "}
-                carries both histories now, its machine-held properties
-                recomputed from the union of sources.{" "}
-                <span className="data">recordsplit</span> can take the merge
-                apart if it was wrong.
+                carries both histories now.{" "}
+                <span className="data">recordsplit</span> takes the merge apart
+                if it was wrong.
               </p>
             ) : (
               <p>
-                Rejected — the pair stays separate. This request is the
-                rejection memory: the matcher will not suggest{" "}
+                Rejected. The pair stays separate, and you will not be asked
+                about{" "}
                 <span className="data">
                   {loserRef ? (
                     <RecordPeek target={loserRef} types={types} />
@@ -750,12 +742,12 @@ export function MergeRequestDetailPage() {
             />
           ) : sideError ? (
             <div className="mx-6 mb-4 rounded-md border px-4 py-3 text-sm text-muted-foreground">
-              One side of the pair didn't load — {sideError.message}
+              One side of the pair didn't load: {sideError.message}
             </div>
           ) : sideTypeMissing ? (
             <div className="mx-6 mb-4 rounded-md border px-4 py-3 text-sm text-muted-foreground">
-              The pair's type isn't in the registry, so the side-by-side can't
-              render. The verdict buttons still work.
+              This repository does not have the pair's kind, so the two records
+              cannot be shown side by side. You can still accept or reject.
             </div>
           ) : (
             <div className="mx-6 mb-4 flex flex-col gap-2">
